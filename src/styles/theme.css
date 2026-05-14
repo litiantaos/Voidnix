@@ -1,0 +1,52 @@
+:root {
+  --color-surface: #f5f5f7;
+  --color-accent: #3b82f6;
+  --color-text-primary: rgba(0, 0, 0, 0.85);
+  --color-text-secondary: rgba(0, 0, 0, 0.70);
+  --color-text-subtle: rgba(0, 0, 0, 0.50);
+  --color-text-muted: rgba(0, 0, 0, 0.40);
+  --color-text-hint: rgba(0, 0, 0, 0.35);
+  --color-text-faint: rgba(0, 0, 0, 0.30);
+  --color-text-disabled: rgba(0, 0, 0, 0.25);
+  --color-border: rgba(0, 0, 0, 0.08);
+  --font-sans: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: transparent;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

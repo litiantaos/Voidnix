@@ -1,0 +1,43 @@
+{
+  "name": "voidnix",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "lint": "eslint . --fix",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:debug-app": "tauri build --debug && bash src-tauri/finder-extension/embed.sh debug && open src-tauri/target/debug/bundle/macos/Voidnix.app",
+    "tauri:release-app": "tauri build && bash src-tauri/finder-extension/embed.sh release"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
+    "@tauri-apps/plugin-dialog": "^2.7.0",
+    "@tauri-apps/plugin-global-shortcut": "^2.3.1",
+    "@tauri-apps/plugin-http": "^2.5.8",
+    "@tauri-apps/plugin-notification": "^2.3.3",
+    "@tauri-apps/plugin-store": "^2.4.2",
+    "@vueuse/core": "^14.3.0",
+    "marked": "^18.0.3",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.33"
+  },
+  "devDependencies": {
+    "@iconify-json/ri": "^1.2.10",
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^25.6.0",
+    "@unocss/eslint-plugin": "^66.6.8",
+    "@unocss/preset-wind4": "^66.6.8",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/eslint-config-typescript": "^14.7.0",
+    "eslint": "^10.3.0",
+    "eslint-plugin-vue": "^10.9.0",
+    "typescript": "~6.0.3",
+    "unocss": "^66.6.8",
+    "vite": "^8.0.10",
+    "vue-tsc": "^3.2.7"
+  }
+}

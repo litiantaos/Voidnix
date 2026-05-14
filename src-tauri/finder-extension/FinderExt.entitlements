@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Finder Sync extensions must be sandboxed. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Let the extension act on URLs passed in from Finder's selection. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!--
+	  IPC with the main app:
+	  The extension writes command JSON files to
+	    ~/Library/Application Support/Voidnix/commands/
+	  which the (non-sandboxed) main app watches via notify.
+	  This path is resolved via getpwuid(getuid())->pw_dir in the extension,
+	  bypassing the per-container NSHomeDirectory().
+
+	  We used to use an App Group container, but on macOS 15+ / macOS 26
+	  TCC rejects group containers whose identifier isn't prefixed by the
+	  signing Team ID ("Group containers identifiers should be prefixed by
+	  requestor's team ID" — containermanagerd). The home-relative-path
+	  exception works for both ad-hoc and Developer ID signing.
+	-->
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<array>
+		<string>/Library/Application Support/Voidnix/</string>
+	</array>
+</dict>
+</plist>
