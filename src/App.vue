@@ -21,7 +21,6 @@ const appStore = useAppStore()
 const updateStore = useUpdateStore()
 
 let lastShortcutTime = 0
-let isWindowVisible = false
 
 function markSkip() {
   lastShortcutTime = Date.now()
@@ -151,17 +150,18 @@ onMounted(async () => {
 
     let lastTranslateShortcutTime = 0
 
-    unlistenShortcut = await listen<string>(
+    unlistenShortcut = await listen<{ id: string; wasVisible: boolean }>(
       'shortcut-pressed',
       async (event) => {
         markSkip()
-        const shortcutId = event.payload
-        const wasVisible = isWindowVisible
+        const shortcutId = event.payload.id
+        // 以 Rust 端按下瞬间的窗口状态为准，避免与后端 WINDOW_VISIBLE 不同步
+        // （比如 useSearchCommand 直接 invoke hide_window 时前端没有同步状态）。
+        const wasVisible = event.payload.wasVisible
         const now = Date.now()
 
         if (shortcutId === 'main') {
           if (wasVisible) {
-            isWindowVisible = false
             invoke('hide_window').catch(() => {})
             return
           }
@@ -170,7 +170,6 @@ onMounted(async () => {
             return
           }
           if (wasVisible && appStore.activeModuleId === 'clipboard') {
-            isWindowVisible = false
             invoke('hide_window').catch(() => {})
             return
           }
@@ -186,7 +185,6 @@ onMounted(async () => {
           lastTranslateShortcutTime = now
           if (wasVisible && appStore.activeModuleId === 'translate') {
             console.log('[translate] Window already visible with translate module, hiding')
-            isWindowVisible = false
             invoke('hide_window').catch(() => {})
             return
           }
@@ -212,7 +210,6 @@ onMounted(async () => {
           }
         } else if (shortcutId === 'chat') {
           if (wasVisible && appStore.activeModuleId === 'chat') {
-            isWindowVisible = false
             invoke('hide_window').catch(() => {})
             return
           }
@@ -240,7 +237,6 @@ onMounted(async () => {
     // This is emitted by the backend right before window.show().
     unlistenShowingWindow = await listen('showing-window', () => {
       markSkip()
-      isWindowVisible = true
     })
 
     // Native click-outside monitor (NSEvent global monitor) detects clicks
@@ -248,7 +244,6 @@ onMounted(async () => {
     // macOS Accessory policy where set_focus() may not work.
     unlistenClickOutside = await listen('click-outside', () => {
       console.log('[hide] click-outside triggered')
-      isWindowVisible = false
       invoke('hide_window').catch(() => {})
     })
 
@@ -267,7 +262,6 @@ onMounted(async () => {
 
     unlistenFocus = await win!.onFocusChanged(({ payload: focused }: { payload: boolean }) => {
       if (focused) {
-        isWindowVisible = true
         window.dispatchEvent(new CustomEvent('window-focused'))
       } else if (
         Date.now() - lastShortcutTime > 200 &&
@@ -277,10 +271,8 @@ onMounted(async () => {
         invoke<boolean>('is_app_active').then((active) => {
           console.log('[hide] onFocusChanged blur, is_app_active=', active)
           if (active) return
-          isWindowVisible = false
           invoke('hide_window').catch(() => {})
         }).catch(() => {
-          isWindowVisible = false
           invoke('hide_window').catch(() => {})
         })
       }

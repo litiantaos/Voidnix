@@ -214,7 +214,7 @@ onUnmounted(() => {
             </slot>
           </div>
 
-          <div class="hide-scrollbar px-5 pb-1 flex-1 overflow-auto">
+          <div class="hide-scrollbar px-5 flex-1 overflow-auto">
             <slot>
               <p
                 v-if="message"

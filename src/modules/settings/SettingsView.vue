@@ -12,7 +12,10 @@ import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import UpdateDialog from '@/components/ui/UpdateDialog.vue'
-import { useSettingsInput, type SettingItem } from '@/composables/useSettingsInput'
+import {
+  useSettingsInput,
+  type SettingItem,
+} from '@/composables/useSettingsInput'
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
@@ -24,7 +27,11 @@ const showUpdateDialog = ref(false)
 const appVersion = ref('')
 
 if (isTauri) {
-  getVersion().then((v) => { appVersion.value = v }).catch(() => {})
+  getVersion()
+    .then((v) => {
+      appVersion.value = v
+    })
+    .catch(() => {})
 }
 
 function isVisible(...keywords: string[]) {
@@ -49,6 +56,12 @@ const handleQuitApp = async () => {
   }
 }
 
+const handleOpenGitHub = async () => {
+  if (isTauri) {
+    await open('https://github.com/litiantaos/Voidnix')
+  }
+}
+
 const handleCheckUpdate = async () => {
   if (updateStore.downloaded) {
     showUpdateDialog.value = true
@@ -64,21 +77,15 @@ const handleCheckUpdate = async () => {
       title: '已是最新版本',
       message: `当前版本 v${appVersion.value} 已是最新版本。`,
       showCancel: false,
-      okLabel: '好',
+      okLabel: '好的',
     })
   } else {
     await appStore.showConfirm({
       title: '检查更新失败',
       message: updateStore.error ?? '网络错误，请稍后重试。',
       showCancel: false,
-      okLabel: '好',
+      okLabel: '好的',
     })
-  }
-}
-
-const handleOpenGitHub = async () => {
-  if (isTauri) {
-    await open('https://github.com/litiantaos/Voidnix')
   }
 }
 
@@ -90,35 +97,44 @@ const visibleItems = computed<SettingItem[]>(() => {
       id: 'app-shortcut',
       title: '启动快捷键',
       type: 'shortcut',
+      icon: 'i-ri-keyboard-line',
       value: settings.globalShortcut,
       update: handleGlobalShortcutChange,
     })
   }
 
-  if (isVisible('版本', 'version', '关于', 'about', 'github', '更新', 'update')) {
-    items.push({
-      id: 'app-version',
-      title: '当前版本',
-      type: 'button',
-      icon: 'i-ri-information-line',
-      value: appVersion.value ? `v${appVersion.value}` : '',
-      action: handleOpenGitHub,
-    })
-  }
-
-  if (isVisible('更新', 'update', '版本', 'version', '检查')) {
+  if (isVisible('更新', 'update', '版本', 'version', '检查', '应用', 'app')) {
     const checkLabel = updateStore.checking
       ? '检查中…'
       : updateStore.downloaded
         ? '有新版本，点击安装'
         : '检查更新'
+    let versionLabel = appVersion.value ? `当前版本：${appVersion.value}` : ''
+    if (updateStore.downloaded && updateStore.info) {
+      versionLabel = `新版本：${updateStore.info.newVersion}（当前版本：${updateStore.info.currentVersion}）`
+    }
     items.push({
       id: 'check-update',
       title: checkLabel,
+      subtitle: versionLabel,
       type: 'button',
-      icon: updateStore.downloaded ? 'i-ri-arrow-up-circle-line' : 'i-ri-refresh-line',
+      icon: updateStore.downloaded
+        ? 'i-ri-arrow-up-circle-line'
+        : 'i-ri-refresh-line',
       value: '',
       action: handleCheckUpdate,
+    })
+  }
+
+  if (isVisible('关于', 'about', 'github', '项目', 'project')) {
+    items.push({
+      id: 'about',
+      title: '关于',
+      type: 'button',
+      icon: 'i-ri-information-line',
+      subtitle: 'github.com/litiantaos/Voidnix',
+      value: '',
+      action: handleOpenGitHub,
     })
   }
 
@@ -127,6 +143,7 @@ const visibleItems = computed<SettingItem[]>(() => {
       id: 'quit-app',
       title: '退出应用',
       type: 'button',
+      icon: 'i-ri-logout-box-line',
       value: '',
       action: handleQuitApp,
     })
@@ -145,13 +162,17 @@ const selectedIndex = ref(0)
       :items="visibleItems"
       v-model:selected-index="selectedIndex"
       keyboard-navigation
-      @execute="(item: SettingItem, _i: number, e?: KeyboardEvent) => handleExecute(item, e)"
+      @execute="
+        (item: SettingItem, _i: number, e?: KeyboardEvent) =>
+          handleExecute(item, e)
+      "
     >
       <template #item="{ item, selected, hoverable, setRef, select }">
         <BaseListItem
           :ref="setRef"
           :id="`set-${item.id}`"
           :title="item.title"
+          :subtitle="item.subtitle"
           :icon="item.icon"
           :hoverable="hoverable"
           :selected="selected"
@@ -165,18 +186,11 @@ const selectedIndex = ref(0)
               @update:model-value="item.update"
             />
           </template>
-          <template v-else-if="item.id === 'app-version' && appVersion" #trailing>
-            <span class="text-xs text-tx-muted font-mono">v{{ appVersion }}</span>
-          </template>
         </BaseListItem>
       </template>
     </BaseList>
 
-    <BaseEmptyState
-      v-else
-      icon="i-ri-search-line"
-      title="没有找到相关设置"
-    />
+    <BaseEmptyState v-else icon="i-ri-search-line" title="没有找到相关设置" />
   </div>
 
   <UpdateDialog v-if="showUpdateDialog" @close="showUpdateDialog = false" />

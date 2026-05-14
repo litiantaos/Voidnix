@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import type { SearchResult } from '@/types/module'
 import ContentView from '@/components/layout/ContentView.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 
 import { useScrollPosition } from '@/composables/useScrollPosition'
@@ -144,14 +145,13 @@ function onTagClose() {
       </div>
 
       <!-- 更新提示按钮 -->
-      <button
+      <BaseButton
         v-if="updateStore.downloaded"
-        class="flex-none flex items-center justify-center h-7 w-7 rounded-md text-accent hover:bg-black/5 transition-colors"
-        title="有新版本可用，点击安装"
+        size="icon"
         @click="showUpdateDialog = true"
       >
-        <span class="i-ri-arrow-up-circle-line text-base"></span>
-      </button>
+        <div class="i-ri-arrow-up-circle-line text-accent"></div>
+      </BaseButton>
     </div>
 
     <!-- 内容区 -->

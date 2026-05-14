@@ -38,11 +38,11 @@ async function onConfirm() {
     @cancel="emit('close')"
   >
     <div class="flex flex-col gap-3">
-      <div class="flex items-center gap-2 text-xs text-tx-subtle">
+      <div class="text-xs text-tx-subtle flex gap-2 items-center">
         <span class="text-tx-muted">当前版本</span>
         <span class="font-mono">v{{ updateStore.info?.currentVersion }}</span>
         <span class="i-ri-arrow-right-line text-tx-hint"></span>
-        <span class="font-mono text-accent font-medium">v{{ updateStore.info?.newVersion }}</span>
+        <span class="text-accent font-medium font-mono">v{{ updateStore.info?.newVersion }}</span>
       </div>
 
       <p v-if="updateStore.info?.body" class="text-xs text-tx-subtle leading-relaxed line-clamp-4">
@@ -50,7 +50,7 @@ async function onConfirm() {
       </p>
 
       <button
-        class="text-xs text-accent/80 hover:text-accent text-left transition-colors"
+        class="text-xs text-accent/80 text-left transition-colors hover:text-accent"
         @click="openReleases"
       >
         查看完整更新说明 →

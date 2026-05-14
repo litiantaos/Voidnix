@@ -158,7 +158,17 @@ pub async fn register_global_shortcut(
             let shortcut_id = id.clone();
             let _ = app_clone.global_shortcut().on_shortcut(new_sc, move |app, _shortcut, event| {
                 if event.state() == ShortcutState::Pressed {
-                    let _ = app.emit("shortcut-pressed", shortcut_id.clone());
+                    // 按下瞬间的窗口可见性快照，前端用此判断 toggle 行为，
+                    // 避免前端自维护的 isWindowVisible 与 Rust 端不同步
+                    // （比如执行 onExecute 后 useSearchCommand 直接调 hide_window 时）。
+                    let was_visible = WINDOW_VISIBLE.load(Ordering::SeqCst);
+                    let _ = app.emit(
+                        "shortcut-pressed",
+                        serde_json::json!({
+                            "id": shortcut_id.clone(),
+                            "wasVisible": was_visible,
+                        }),
+                    );
 
                     let app_handle = app.clone();
                     let id_for_check = shortcut_id.clone();

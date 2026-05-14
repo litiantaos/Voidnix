@@ -8,6 +8,7 @@ export interface SettingItem {
   title: string
   type: 'shortcut' | 'select' | 'input' | 'button'
   value: string | number
+  subtitle?: string
   icon?: string
   options?: ({ label: string; value: string | number } | { label: string; options: { label: string; value: string | number }[] })[]
   inputType?: 'text' | 'password'
