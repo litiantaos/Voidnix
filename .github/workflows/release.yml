@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: 安装前端依赖
+        run: bun install
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Rust 依赖
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 构建并打包
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Voidnix ${{ github.ref_name }}
+          releaseBody: |
+            ## 安装
+
+            下载 `Voidnix_*_aarch64.dmg`（Apple Silicon）或 `Voidnix_*_x64.dmg`（Intel）安装。
+
+            > 首次打开若提示"无法验证开发者"，在终端执行：
+            > ```
+            > xattr -cr /Applications/Voidnix.app
+            > ```
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

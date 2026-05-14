@@ -43,6 +43,7 @@
     "http:allow-fetch-read-body",
     "http:allow-fetch-cancel",
     "http:default",
+    "updater:default",
     {
       "identifier": "http:default",
       "allow": [
