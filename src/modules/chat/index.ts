@@ -1,9 +1,10 @@
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
 import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
 import { useSettingsStore } from '@/stores/settings'
+import { generateRequestId } from '@/composables/useStreamOutput'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import ChatView from './ChatView.vue'
 import ChatSettings from './ChatSettings.vue'
 import ChatToolbar from './ChatToolbar.vue'
@@ -36,9 +37,12 @@ export const isGenerating = ref(false)
 export const streamingMessage = ref('')
 
 // 监听器句柄
-let unlistenChunk: (() => void) | null = null
-let unlistenDone: (() => void) | null = null
+let unlistenChunk: UnlistenFn | null = null
+let unlistenDone: UnlistenFn | null = null
 let initializing = false
+
+// 当前请求 ID
+let currentRequestId = ''
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2)
@@ -50,23 +54,28 @@ export async function initListeners() {
   initializing = true
 
   try {
-    unlistenChunk = await listen<{ content: string }>('chat-chunk', (event) => {
-      if (isGenerating.value) {
-        // 直接追加，由 vue-stream-markdown 的 streaming mode 处理增量动画
-        streamingMessage.value += event.payload.content
-      }
-    })
+    unlistenChunk = await listen<{ requestId: string; content: string }>(
+      'chat-chunk',
+      (event) => {
+        // 只处理当前请求的 chunk
+        if (isGenerating.value && event.payload.requestId === currentRequestId) {
+          streamingMessage.value += event.payload.content
+        }
+      },
+    )
 
-    // 保存 unlisten 句柄防止泄漏
-    unlistenDone = await listen('chat-done', () => {
-      if (streamingMessage.value) {
-        currentConversation.value.messages.push({
-          role: 'assistant',
-          content: streamingMessage.value,
-        })
-        streamingMessage.value = ''
+    unlistenDone = await listen<{ requestId: string }>('chat-done', (event) => {
+      if (event.payload.requestId === currentRequestId) {
+        if (streamingMessage.value) {
+          currentConversation.value.messages.push({
+            role: 'assistant',
+            content: streamingMessage.value,
+          })
+          streamingMessage.value = ''
+        }
+        isGenerating.value = false
+        currentRequestId = ''
       }
-      isGenerating.value = false
     })
   } finally {
     initializing = false
@@ -117,6 +126,9 @@ export async function sendMessage(content: string) {
   // 准备消息列表
   const messages: ChatMessage[] = [...currentConversation.value.messages]
 
+  // 生成请求 ID
+  currentRequestId = generateRequestId()
+
   // 开始生成
   isGenerating.value = true
   streamingMessage.value = ''
@@ -127,11 +139,13 @@ export async function sendMessage(content: string) {
       endpoint: config.endpoint,
       apiKey: config.apiKey,
       model: activeModel,
+      requestId: currentRequestId,
     })
   } catch (e) {
     console.error('Chat stream error:', e)
     isGenerating.value = false
     streamingMessage.value = ''
+    currentRequestId = ''
     // 仅显示用户友好的错误信息，不泄露原始异常
     const errorMsg =
       e instanceof Error
@@ -162,6 +176,7 @@ export function newConversation() {
   }
   streamingMessage.value = ''
   isGenerating.value = false
+  currentRequestId = ''
 }
 
 // 停止生成：忽略后续到达的流式数据，将当前缓冲内容作为最终结果
@@ -175,6 +190,7 @@ export function stopGenerating() {
     })
     streamingMessage.value = ''
   }
+  currentRequestId = ''
 }
 
 const mod: AppModule = {

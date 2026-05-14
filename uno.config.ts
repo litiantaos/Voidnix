@@ -37,7 +37,7 @@ export default defineConfig({
   },
   shortcuts: {
     'ui-ctrl':
-      'h-7 px-3 rounded-md outline-none border-none text-xs font-medium bg-black/4 text-tx-primary transition-all',
+      'h-7 px-3 rounded-md outline-none border-none text-xs font-medium bg-black/4 text-tx-primary transition-all focus-within:ring-1 focus-within:ring-inset focus-within:ring-accent/40',
     'ui-disabled': 'opacity-50 cursor-not-allowed',
     'ui-clickable': 'cursor-pointer select-none',
     'ui-hover': 'hover:bg-black/4',

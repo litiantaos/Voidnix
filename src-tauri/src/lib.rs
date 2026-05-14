@@ -3,6 +3,7 @@ mod db;
 mod clipboard_monitor;
 mod http;
 mod mac_utils;
+mod sse;
 #[cfg(target_os = "macos")]
 mod text_selection;
 
@@ -51,6 +52,7 @@ pub fn run() {
             commands::translate::get_selected_text,
             commands::translate::translate_youdao,
             commands::translate::translate_ai,
+            commands::translate::translate_ai_stream,
             commands::chat::chat_stream,
             commands::finder_ext::open_extensions_prefs,
             commands::finder_ext::set_finder_ext_enabled,

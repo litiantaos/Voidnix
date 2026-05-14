@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::time::Duration;
 
+use crate::sse::{self, ChatMessage};
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TranslateResult {
     pub source: String,
@@ -167,80 +169,8 @@ pub async fn translate_youdao(
 }
 
 // ============================================================================
-// AI Translation (OpenAI-compatible non-streaming)
+// AI Translation (OpenAI-compatible non-streaming) — 保留兼容
 // ============================================================================
-
-/// SSRF 防护：复用 chat.rs 中的验证逻辑
-fn parse_scheme_host(raw: &str) -> Option<(&str, &str)> {
-    let s = raw.trim();
-    let scheme_end = s.find("://")?;
-    let scheme = &s[..scheme_end];
-    let rest = &s[scheme_end + 3..];
-    let host_end = rest
-        .find(|c: char| c == '/' || c == '?' || c == '#')
-        .unwrap_or(rest.len());
-    let host_port = &rest[..host_end];
-    let host = host_port.split(':').next()?;
-    if scheme.is_empty() || host.is_empty() {
-        return None;
-    }
-    Some((scheme, host))
-}
-
-const BLOCKED_HOST_PREFIXES: &[&str] = &[
-    "127.",
-    "10.",
-    "192.168.",
-    "172.16.", "172.17.", "172.18.", "172.19.",
-    "172.20.", "172.21.", "172.22.", "172.23.",
-    "172.24.", "172.25.", "172.26.", "172.27.",
-    "172.28.", "172.29.", "172.30.", "172.31.",
-    "169.254.",
-    "0.",
-];
-
-fn validate_translate_endpoint(endpoint: &str) -> Result<String, String> {
-    let trimmed = endpoint.trim();
-    let (scheme, host) = parse_scheme_host(trimmed)
-        .ok_or_else(|| format!("Invalid endpoint URL: '{}'", trimmed))?;
-
-    let host_lower = host.to_lowercase();
-    let is_localhost =
-        host_lower == "localhost" || host_lower == "127.0.0.1" || host_lower == "[::1]";
-
-    if scheme != "https" && !is_localhost {
-        return Err(
-            "HTTP is not allowed for remote endpoints. Use HTTPS or localhost for development."
-                .into(),
-        );
-    }
-
-    if host_lower == "0.0.0.0"
-        || host_lower == "[::1]"
-        || host_lower == "metadata.google.internal"
-        || host_lower == "metadata.tencentyun.com"
-    {
-        return Err(format!(
-            "Endpoint '{}' is blocked for security reasons.",
-            host
-        ));
-    }
-
-    for prefix in BLOCKED_HOST_PREFIXES {
-        if host_lower.starts_with(prefix) {
-            return Err(format!(
-                "Private/internal network endpoints are not allowed: '{}'.",
-                host
-            ));
-        }
-    }
-
-    if host.contains('@') {
-        return Err("Endpoint URL must not contain credentials.".into());
-    }
-
-    Ok(trimmed.to_string())
-}
 
 /// 中文占比是否超过阈值
 fn is_chinese_dominant(text: &str) -> bool {
@@ -249,18 +179,20 @@ fn is_chinese_dominant(text: &str) -> bool {
         .filter(|c| {
             let cp = *c as u32;
             (cp >= 0x4E00 && cp <= 0x9FFF)
-            || (cp >= 0x3400 && cp <= 0x4DBF)
-            || (cp >= 0xF900 && cp <= 0xFAFF)
+                || (cp >= 0x3400 && cp <= 0x4DBF)
+                || (cp >= 0xF900 && cp <= 0xFAFF)
         })
         .count();
 
     let total_significant = text
         .chars()
-        .filter(|c| c.is_alphabetic() || {
-            let cp = *c as u32;
-            (cp >= 0x4E00 && cp <= 0x9FFF)
-                || (cp >= 0x3400 && cp <= 0x4DBF)
-                || (cp >= 0xF900 && cp <= 0xFAFF)
+        .filter(|c| {
+            c.is_alphabetic() || {
+                let cp = *c as u32;
+                (cp >= 0x4E00 && cp <= 0x9FFF)
+                    || (cp >= 0x3400 && cp <= 0x4DBF)
+                    || (cp >= 0xF900 && cp <= 0xFAFF)
+            }
         })
         .count();
 
@@ -282,13 +214,25 @@ fn smart_target_lang(text: &str, target_lang: &str) -> String {
     let is_chinese = is_chinese_dominant(text);
     match target_lang {
         "zh" => {
-            if is_chinese { "en".to_string() } else { "zh".to_string() }
+            if is_chinese {
+                "en".to_string()
+            } else {
+                "zh".to_string()
+            }
         }
         "en" => {
-            if is_chinese { "en".to_string() } else { "zh".to_string() }
+            if is_chinese {
+                "en".to_string()
+            } else {
+                "zh".to_string()
+            }
         }
         other => {
-            if is_chinese { other.to_string() } else { "zh".to_string() }
+            if is_chinese {
+                other.to_string()
+            } else {
+                "zh".to_string()
+            }
         }
     }
 }
@@ -336,7 +280,7 @@ pub async fn translate_ai(
         return Err("文本不能为空".to_string());
     }
 
-    let safe_endpoint = validate_translate_endpoint(&endpoint)?;
+    let (_scheme, safe_endpoint) = sse::validate_endpoint(&endpoint)?;
 
     if model.trim().is_empty() {
         return Err("模型名称不能为空".into());
@@ -417,7 +361,7 @@ pub async fn translate_ai(
     }
 
     // 引擎名：从 endpoint 提取域名，或使用模型名
-    let engine_label = parse_scheme_host(&safe_endpoint)
+    let engine_label = sse::parse_scheme_host(&safe_endpoint)
         .map(|(_, host)| {
             let parts: Vec<&str> = host.split('.').collect();
             if parts.len() >= 2 {
@@ -436,6 +380,68 @@ pub async fn translate_ai(
 }
 
 // ============================================================================
+// AI Translation (OpenAI-compatible streaming) — 新增流式版本
+// ============================================================================
+
+#[tauri::command]
+pub async fn translate_ai_stream(
+    app: tauri::AppHandle,
+    text: String,
+    endpoint: String,
+    api_key: String,
+    model: String,
+    target_lang: Option<String>,
+    prompt: Option<String>,
+    request_id: String,
+) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Err("文本不能为空".to_string());
+    }
+
+    let (_scheme, safe_endpoint) = sse::validate_endpoint(&endpoint)?;
+
+    if model.trim().is_empty() {
+        return Err("模型名称不能为空".into());
+    }
+
+    if api_key.trim().is_empty() {
+        return Err("API Key 不能为空".into());
+    }
+
+    // 智能方向
+    let to_lang_code = smart_target_lang(&text, target_lang.as_deref().unwrap_or("zh"));
+    let from_lang_name = detect_source_lang_name(&text);
+    let to_lang_name = lang_code_to_name(&to_lang_code);
+
+    // 渲染提示词
+    let template = prompt.as_deref().unwrap_or(DEFAULT_TRANSLATE_PROMPT);
+    let rendered = render_prompt(template, &text, from_lang_name, to_lang_name);
+
+    let messages = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: SYSTEM_PROMPT.to_string(),
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: rendered,
+        },
+    ];
+
+    sse::stream_openai_request(sse::StreamConfig {
+        app: &app,
+        endpoint: &safe_endpoint,
+        api_key: &api_key,
+        model: &model,
+        messages,
+        chunk_event: "translate-chunk",
+        done_event: "translate-done",
+        request_id: &request_id,
+    })
+    .await
+}
+
+// ============================================================================
 // Utilities
 // ============================================================================
 
@@ -448,7 +454,14 @@ fn truncate_for_sign(s: &str) -> String {
         return s.to_string();
     }
     let first: String = chars.iter().take(10).collect();
-    let last: String = chars.iter().rev().take(10).collect::<Vec<_>>().into_iter().rev().collect();
+    let last: String = chars
+        .iter()
+        .rev()
+        .take(10)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     format!("{}{}{}", first, chars.len(), last)
 }
 

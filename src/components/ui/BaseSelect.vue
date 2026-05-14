@@ -257,28 +257,24 @@ onUnmounted(() => {
     ref="selectRef"
     :id="id"
     data-settings-control
-    class="custom-select outline-none min-w-0 w-full relative overflow-hidden"
+    :class="[
+      'ui-ctrl custom-select flex items-center justify-between ui-clickable min-w-0 w-full relative overflow-hidden',
+      disabled ? 'ui-disabled' : '',
+    ]"
     tabindex="0"
     @keydown="onKeyDown"
+    @click="toggleOpen"
   >
-    <div
-      @click="toggleOpen"
-      :class="[
-        'ui-ctrl flex items-center justify-between ui-clickable min-w-0 overflow-hidden',
-        disabled ? 'ui-disabled' : '',
-      ]"
+    <span
+      :class="selectedLabel ? 'text-tx-primary' : 'text-tx-hint'"
+      class="truncate"
     >
-      <span
-        :class="selectedLabel ? 'text-tx-primary' : 'text-tx-hint'"
-        class="truncate"
-      >
-        {{ selectedLabel || placeholder }}
-      </span>
-      <i
-        class="i-ri-arrow-down-s-line text-sm text-tx-muted ml-2 flex-none transition-transform duration-200"
-        :class="isOpen ? 'rotate-180' : ''"
-      />
-    </div>
+      {{ selectedLabel || placeholder }}
+    </span>
+    <i
+      class="i-ri-arrow-down-s-line text-sm text-tx-muted ml-2 flex-none transition-transform duration-200"
+      :class="isOpen ? 'rotate-180' : ''"
+    />
 
     <Teleport to="body">
       <Transition
