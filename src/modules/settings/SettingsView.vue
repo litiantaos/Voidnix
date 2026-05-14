@@ -1,19 +1,31 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { getVersion } from '@tauri-apps/api/app'
+import { open } from '@tauri-apps/plugin-shell'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
+import { useUpdateStore } from '@/stores/update'
+import { isTauri } from '@/utils/tauri'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
+import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 import { useSettingsInput, type SettingItem } from '@/composables/useSettingsInput'
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
+const updateStore = useUpdateStore()
 const { handleExecute, setShortcutRef } = useSettingsInput()
 
 const query = computed(() => appStore.searchQuery.toLowerCase().trim())
+const showUpdateDialog = ref(false)
+const appVersion = ref('')
+
+if (isTauri) {
+  getVersion().then((v) => { appVersion.value = v }).catch(() => {})
+}
 
 function isVisible(...keywords: string[]) {
   if (!query.value) return true
@@ -37,6 +49,39 @@ const handleQuitApp = async () => {
   }
 }
 
+const handleCheckUpdate = async () => {
+  if (updateStore.downloaded) {
+    showUpdateDialog.value = true
+    return
+  }
+  updateStore.reset()
+  const hasUpdate = await updateStore.check()
+  if (hasUpdate) {
+    await updateStore.download()
+    showUpdateDialog.value = true
+  } else if (!updateStore.error) {
+    await appStore.showConfirm({
+      title: '已是最新版本',
+      message: `当前版本 v${appVersion.value} 已是最新版本。`,
+      showCancel: false,
+      okLabel: '好',
+    })
+  } else {
+    await appStore.showConfirm({
+      title: '检查更新失败',
+      message: updateStore.error ?? '网络错误，请稍后重试。',
+      showCancel: false,
+      okLabel: '好',
+    })
+  }
+}
+
+const handleOpenGitHub = async () => {
+  if (isTauri) {
+    await open('https://github.com/litiantaos/Voidnix')
+  }
+}
+
 const visibleItems = computed<SettingItem[]>(() => {
   const items: SettingItem[] = []
 
@@ -47,6 +92,33 @@ const visibleItems = computed<SettingItem[]>(() => {
       type: 'shortcut',
       value: settings.globalShortcut,
       update: handleGlobalShortcutChange,
+    })
+  }
+
+  if (isVisible('版本', 'version', '关于', 'about', 'github', '更新', 'update')) {
+    items.push({
+      id: 'app-version',
+      title: '当前版本',
+      type: 'button',
+      icon: 'i-ri-information-line',
+      value: appVersion.value ? `v${appVersion.value}` : '',
+      action: handleOpenGitHub,
+    })
+  }
+
+  if (isVisible('更新', 'update', '版本', 'version', '检查')) {
+    const checkLabel = updateStore.checking
+      ? '检查中…'
+      : updateStore.downloaded
+        ? '有新版本，点击安装'
+        : '检查更新'
+    items.push({
+      id: 'check-update',
+      title: checkLabel,
+      type: 'button',
+      icon: updateStore.downloaded ? 'i-ri-arrow-up-circle-line' : 'i-ri-refresh-line',
+      value: '',
+      action: handleCheckUpdate,
     })
   }
 
@@ -93,6 +165,9 @@ const selectedIndex = ref(0)
               @update:model-value="item.update"
             />
           </template>
+          <template v-else-if="item.id === 'app-version' && appVersion" #trailing>
+            <span class="text-xs text-tx-muted font-mono">v{{ appVersion }}</span>
+          </template>
         </BaseListItem>
       </template>
     </BaseList>
@@ -103,4 +178,6 @@ const selectedIndex = ref(0)
       title="没有找到相关设置"
     />
   </div>
+
+  <UpdateDialog v-if="showUpdateDialog" @close="showUpdateDialog = false" />
 </template>

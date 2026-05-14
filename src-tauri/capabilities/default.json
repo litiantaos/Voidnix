@@ -44,6 +44,8 @@
     "http:allow-fetch-cancel",
     "http:default",
     "updater:default",
+    "shell:allow-open",
+    "process:allow-restart",
     {
       "identifier": "http:default",
       "allow": [

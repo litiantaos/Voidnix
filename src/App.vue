@@ -7,6 +7,7 @@ import MainView from '@/components/layout/MainView.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
+import { useUpdateStore } from '@/stores/update'
 import { pendingText } from '@/modules/translate'
 import { isTauri } from '@/utils/tauri'
 
@@ -17,6 +18,7 @@ if (isTauri) {
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
+const updateStore = useUpdateStore()
 
 let lastShortcutTime = 0
 let isWindowVisible = false
@@ -101,6 +103,16 @@ onMounted(async () => {
     await settings.loadSettings()
   } catch (e) {
     console.error('Settings load error:', e)
+  }
+
+  // 启动后延迟检查更新，有新版本则后台静默下载
+  if (isTauri) {
+    setTimeout(async () => {
+      const hasUpdate = await updateStore.check()
+      if (hasUpdate) {
+        await updateStore.download()
+      }
+    }, 3000)
   }
 
   if (isTauri) {

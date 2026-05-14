@@ -3,13 +3,17 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useScroll } from '@vueuse/core'
 import { getModule } from '@/core/module-registry'
 import { useAppStore } from '@/stores/app'
+import { useUpdateStore } from '@/stores/update'
 import type { SearchResult } from '@/types/module'
 import ContentView from '@/components/layout/ContentView.vue'
+import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 
 import { useScrollPosition } from '@/composables/useScrollPosition'
 import { useSearchCommand } from '@/composables/useSearchCommand'
 
 const appStore = useAppStore()
+const updateStore = useUpdateStore()
+const showUpdateDialog = ref(false)
 
 const searchInput = ref<HTMLInputElement>()
 const contentViewRef = ref<InstanceType<typeof ContentView>>()
@@ -138,6 +142,16 @@ function onTagClose() {
         </span>
         <component :is="activeModule.toolbar" v-else />
       </div>
+
+      <!-- 更新提示按钮 -->
+      <button
+        v-if="updateStore.downloaded"
+        class="flex-none flex items-center justify-center h-7 w-7 rounded-md text-accent hover:bg-black/5 transition-colors"
+        title="有新版本可用，点击安装"
+        @click="showUpdateDialog = true"
+      >
+        <span class="i-ri-arrow-up-circle-line text-base"></span>
+      </button>
     </div>
 
     <!-- 内容区 -->
@@ -153,4 +167,6 @@ function onTagClose() {
       @update:selected-index="(i: number) => (selectedIndex = i)"
     />
   </div>
+
+  <UpdateDialog v-if="showUpdateDialog" @close="showUpdateDialog = false" />
 </template>
