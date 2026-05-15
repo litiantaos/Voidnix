@@ -6,6 +6,9 @@ mod mac_utils;
 mod sse;
 #[cfg(target_os = "macos")]
 mod text_selection;
+mod webkit_tuning;
+#[cfg(feature = "specta")]
+mod type_gen;
 
 use tauri::Manager;
 use db::Database;
@@ -57,6 +60,13 @@ pub fn run() {
             commands::finder_ext::open_extensions_prefs,
             commands::finder_ext::set_finder_ext_enabled,
             commands::finder_ext::quit_app,
+            commands::screenshot::capture_screen,
+            commands::screenshot::ocr_image,
+            commands::screenshot::save_screenshot,
+            commands::screenshot::copy_screenshot_to_clipboard,
+            commands::screenshot::enter_screenshot_mode,
+            commands::screenshot::exit_screenshot_mode,
+            commands::window::set_main_window_size,
         ])
         .setup(|app| {
             commands::awake::init(app)?;
@@ -85,6 +95,33 @@ pub fn run() {
                         let _: () = unsafe { objc2::msg_send![layer, setCornerRadius: 16.0_f64] };
                         let _: () = unsafe { objc2::msg_send![layer, setMasksToBounds: true] };
                     }
+                }
+                // webkit_tuning 驯化组件安装（在 contentView 圆角设置之后）
+                webkit_tuning::install(&window)?;
+            }
+
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("screenshot") {
+                use objc2_app_kit::{NSScreen, NSWindow, NSWindowAnimationBehavior, NSWindowCollectionBehavior};
+                use objc2_foundation::MainThreadMarker;
+                let raw = window.ns_window().unwrap().cast::<NSWindow>();
+                unsafe {
+                    let ns_window = raw.as_ref().unwrap();
+                    ns_window.setAnimationBehavior(NSWindowAnimationBehavior::None);
+                    ns_window.setLevel(objc2_app_kit::NSScreenSaverWindowLevel as isize);
+                    let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
+                        | NSWindowCollectionBehavior::FullScreenAuxiliary
+                        | NSWindowCollectionBehavior::Stationary;
+                    ns_window.setCollectionBehavior(behavior);
+                    let mtm = MainThreadMarker::new().unwrap();
+                    let screen = NSScreen::mainScreen(mtm).unwrap();
+                    // display=true：让 contentView/WKWebView 立即随窗口 resize，
+                    // 避免 viewport 与 NSWindow 尺寸不同步导致首次截屏遮罩留缝隙
+                    ns_window.setFrame_display(screen.frame(), true);
+                    // alpha=0 + ignoresMouseEvents：窗口不可见、不拦截点击，但 JS 持续运行
+                    ns_window.setAlphaValue(0.0);
+                    let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: true];
+                    ns_window.orderFrontRegardless();
                 }
             }
 

@@ -1,8 +1,8 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
-import { invoke } from '@tauri-apps/api/core'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { commands } from '@/bindings'
 
 const mod: AppModule = {
   id: 'ip',
@@ -29,8 +29,8 @@ const mod: AppModule = {
   onModuleSearch: async (query) => {
     const trimmed = query.trim()
     try {
-      const data = await invoke<{ success: boolean; ip?: string; country?: string; region?: string; city?: string; isp?: string; org?: string; message?: string }>('fetch_ip_info', { ip: trimmed || null })
-      
+      const data = await commands.fetchIpInfo(trimmed || null)
+
       if (data.success && data.ip) {
         const location = [data.country, data.region, data.city].filter(Boolean).join(' ')
         return [

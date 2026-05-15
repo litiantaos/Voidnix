@@ -23,6 +23,8 @@ export const useAppStore = defineStore('app', () => {
   let dialogResolve: ((value: boolean) => void) | null = null
 
   const showSettings = ref(false)
+  // webkit_tuning 驯化：首帧呈现等待期间显示骨架占位（Req 1.6）
+  const showPaintSkeleton = ref(false)
 
   function setActiveModule(id: string | null) {
     activeModuleId.value = id
@@ -77,5 +79,6 @@ export const useAppStore = defineStore('app', () => {
     resolveConfirm,
     showSettings,
     toggleSettings,
+    showPaintSkeleton,
   }
 })

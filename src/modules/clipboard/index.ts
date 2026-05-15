@@ -1,21 +1,16 @@
 import { ref } from 'vue'
+import { defineAsyncComponent } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
-import ClipboardView from './ClipboardView.vue'
-import ClipboardSettings from './ClipboardSettings.vue'
-import ClipboardHeader from './ClipboardHeader.vue'
-import ClipboardToolbar from './ClipboardToolbar.vue'
+import { commands, type ClipboardItem } from '@/bindings'
 
-export interface ClipboardItem {
-  id: string
-  content: string
-  content_type: string
-  source_app: string
-  created_at: string
-  is_favorite: boolean
-  score: number
-}
+const ClipboardView = defineAsyncComponent(() => import('./ClipboardView.vue'))
+const ClipboardSettings = defineAsyncComponent(() => import('./ClipboardSettings.vue'))
+const ClipboardHeader = defineAsyncComponent(() => import('./ClipboardHeader.vue'))
+const ClipboardToolbar = defineAsyncComponent(() => import('./ClipboardToolbar.vue'))
+
+export type { ClipboardItem }
 
 export const history = ref<ClipboardItem[]>([])
 export const activeTab = ref<'all' | 'favorites'>('all')
@@ -25,11 +20,11 @@ export async function fetchClipboardHistory(
   filterFavorite: boolean = false,
 ) {
   try {
-    const res = await invoke<ClipboardItem[]>('get_clipboard_history', {
-      query: query,
-      filterFavorite: filterFavorite,
-      limit: 100,
-    })
+    const res = await commands.getClipboardHistory(
+      query || null,
+      filterFavorite || null,
+      100,
+    )
     history.value = res
   } catch (e) {
     console.error('Failed to fetch clipboard history:', e)
@@ -61,7 +56,7 @@ const mod: AppModule = {
   settings: ClipboardSettings,
   toolbar: ClipboardToolbar,
   onInit: async () => {
-    // The background Rust task handles the polling now
+    // 后台 Rust 任务负责轮询，此处无需初始化
   },
   onSearch: async (query) => {
     if (query.toLowerCase().includes('clipboard') || query.includes('剪贴板')) {
@@ -75,13 +70,9 @@ const mod: AppModule = {
         data: { kind: 'module', moduleId: 'clipboard' }
       }]
     }
-    
+
     try {
-      const items = await invoke<ClipboardItem[]>('get_clipboard_history', {
-        query: query,
-        filterFavorite: null,
-        limit: 20,
-      })
+      const items = await commands.getClipboardHistory(query || null, null, 20)
       return items.map((item) => {
         let title = item.content
         if (item.content_type === 'image') {

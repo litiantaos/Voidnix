@@ -9,6 +9,7 @@
     "lint": "eslint . --fix",
     "preview": "vite preview",
     "tauri": "tauri",
+    "gen:bindings": "cd src-tauri && cargo test --features specta export_bindings -- --nocapture",
     "tauri:debug-app": "tauri build --debug && bash src-tauri/finder-extension/embed.sh debug && open src-tauri/target/debug/bundle/macos/Voidnix.app",
     "tauri:release-app": "tauri build && bash src-tauri/finder-extension/embed.sh release"
   },

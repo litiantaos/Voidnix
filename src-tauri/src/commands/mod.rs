@@ -6,3 +6,5 @@ pub mod awake;
 pub mod translate;
 pub mod chat;
 pub mod finder_ext;
+pub mod screenshot;
+pub mod window;

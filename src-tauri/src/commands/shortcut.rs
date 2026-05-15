@@ -10,6 +10,7 @@ static SELECTED_TEXT: Mutex<String> = Mutex::new(String::new());
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub fn is_app_active() -> bool {
     #[cfg(target_os = "macos")]
     return crate::mac_utils::is_app_active();
@@ -17,19 +18,30 @@ pub fn is_app_active() -> bool {
     true
 }
 
+/// 供 webkit_tuning 模块读写窗口可见状态。
+pub(crate) fn set_window_visible(v: bool) {
+    WINDOW_VISIBLE.store(v, Ordering::SeqCst);
+}
+
+/// 供 webkit_tuning 模块添加点击监视器。
+#[cfg(target_os = "macos")]
+pub(crate) fn add_click_monitor(app: &AppHandle) {
+    click_monitor::add(app);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn add_click_monitor(_app: &AppHandle) {}
+
 #[tauri::command]
 pub fn hide_window(app: AppHandle) {
+    // T13：替换为 webkit_tuning::hide_main，由驯化模块负责 alpha=0 + ignoresMouseEvents
+    // 以及 click_monitor 移除，不再直接调用 window.hide() / app.hide()。
+    crate::webkit_tuning::hide_main(&app);
     WINDOW_VISIBLE.store(false, Ordering::SeqCst);
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.hide();
-        #[cfg(all(target_os = "macos", not(debug_assertions)))]
-        let _ = app.hide();
-    }
-    #[cfg(target_os = "macos")]
-    click_monitor::remove();
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub fn get_selected_text_cached() -> String {
     SELECTED_TEXT.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
@@ -131,6 +143,15 @@ mod click_monitor {
     }
 }
 
+// 供截图模块在进入全屏覆盖前移除全局点击监视器
+#[cfg(target_os = "macos")]
+pub(crate) fn remove_click_monitor() {
+    click_monitor::remove();
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn remove_click_monitor() {}
+
 // ============================================================================
 // Shortcut registration
 // ============================================================================
@@ -185,6 +206,23 @@ pub async fn register_global_shortcut(
 
                         crate::text_selection::log(&format!("[shortcut] id={} window_hidden={} front_pid={:?}", id_for_check, window_hidden, front_pid));
 
+                        if id_for_check == "screenshot" {
+                            // 截图必须在窗口显示/全屏之前完成，否则会截到自己
+                            let app_clone = app_handle.clone();
+                            std::thread::spawn(move || {
+                                let result = crate::commands::screenshot::capture_screen();
+                                match result {
+                                    Ok(data) => {
+                                        let _ = app_clone.emit("screenshot-ready", data);
+                                    }
+                                    Err(e) => {
+                                        let _ = app_clone.emit("screenshot-ready-error", e);
+                                    }
+                                }
+                            });
+                            return;
+                        }
+
                         if id_for_check == "translate" {
                             #[cfg(target_os = "macos")]
                             {
@@ -211,19 +249,7 @@ pub async fn register_global_shortcut(
                                     // 先 show 窗口（与其他快捷键行为一致），
                                     // 前端 shortcut-pressed 收到时 isWindowVisible 还是 false，
                                     // 能正常进入 waitForSelectedText 流程。
-                                    let _ = app_handle.emit("showing-window", ());
-                                    WINDOW_VISIBLE.store(true, Ordering::SeqCst);
-                                    #[cfg(all(target_os = "macos", not(debug_assertions)))]
-                                    let _ = app_handle.show();
-                                    if let Some(window) = app_handle.get_webview_window("main") {
-                                        let _ = window.show();
-                                    }
-                                    crate::mac_utils::activate_app();
-                                    if let Some(window) = app_handle.get_webview_window("main") {
-                                        let _ = window.set_focus();
-                                    }
-                                    #[cfg(target_os = "macos")]
-                                    click_monitor::add(&app_handle);
+                                    crate::webkit_tuning::show_main(&app_handle);
 
                                     // 后台线程提取文本，完成后 emit translate-text-ready
                                     let app_clone = app_handle.clone();
@@ -248,22 +274,7 @@ pub async fn register_global_shortcut(
                         // Show window after text extraction (translate) or immediately (others).
                         // For translate: extraction is fast (~5-30ms), so the delay is minimal.
                         if window_hidden {
-                            let _ = app_handle.emit("showing-window", ());
-                            // Release 构建会调用 app.hide() 隐藏整个应用，
-                            // 必须先 show() 解除隐藏，再 activate，否则对隐藏中的 app
-                            // 调用 activateIgnoringOtherApps 无效。
-                            WINDOW_VISIBLE.store(true, Ordering::SeqCst);
-                            #[cfg(all(target_os = "macos", not(debug_assertions)))]
-                            let _ = app_handle.show();
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                let _ = window.show();
-                            }
-                            crate::mac_utils::activate_app();
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                let _ = window.set_focus();
-                            }
-                            #[cfg(target_os = "macos")]
-                            click_monitor::add(&app_handle);
+                            crate::webkit_tuning::show_main(&app_handle);
                         } else {
                             crate::mac_utils::activate_app();
                             if let Some(window) = app_handle.get_webview_window("main") {

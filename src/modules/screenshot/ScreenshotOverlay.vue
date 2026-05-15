@@ -1,7 +1,7 @@
 <template>
   <div
     ref="rootEl"
-    class="fixed inset-0 z-[9999] overflow-hidden"
+    class="inset-0 fixed z-[9999] overflow-hidden"
     :style="{ cursor: cursorStyle }"
     @mousedown="onMouseDown"
     @mousemove="onMouseMove"
@@ -12,24 +12,24 @@
     <!-- 截图背景 -->
     <img
       :src="screenshot.data_url"
-      class="fixed inset-0 w-full h-full"
+      class="h-full w-full inset-0 fixed"
       style="image-rendering: pixelated; pointer-events: none; user-select: none;"
       draggable="false"
     />
 
     <!-- 遮罩层（选区外置灰，选区内透明） -->
     <template v-if="hasSelection">
-      <div class="fixed bg-black/45 pointer-events-none" :style="maskTop" />
-      <div class="fixed bg-black/45 pointer-events-none" :style="maskBottom" />
-      <div class="fixed bg-black/45 pointer-events-none" :style="maskLeft" />
-      <div class="fixed bg-black/45 pointer-events-none" :style="maskRight" />
+      <div class="bg-black/45 pointer-events-none fixed" :style="maskTop" />
+      <div class="bg-black/45 pointer-events-none fixed" :style="maskBottom" />
+      <div class="bg-black/45 pointer-events-none fixed" :style="maskLeft" />
+      <div class="bg-black/45 pointer-events-none fixed" :style="maskRight" />
     </template>
-    <div v-else class="fixed inset-0 bg-black/45 pointer-events-none" />
+    <div v-else class="bg-black/45 pointer-events-none inset-0 fixed" />
 
     <!-- 十字线（未确定选区时）：CSS custom property 设在根容器上，挂载即有正确初始值 -->
     <template v-if="!hasSelection && phase === 'select'">
-      <div ref="crossH" class="absolute bg-white/60 pointer-events-none" style="left: 0; right: 0; height: 1px; top: var(--cross-y)" />
-      <div ref="crossV" class="absolute bg-white/60 pointer-events-none" style="top: 0; bottom: 0; width: 1px; left: var(--cross-x)" />
+      <div ref="crossH" class="bg-white/60 pointer-events-none absolute" style="left: 0; right: 0; height: 1px; top: var(--cross-y)" />
+      <div ref="crossV" class="bg-white/60 pointer-events-none absolute" style="top: 0; bottom: 0; width: 1px; left: var(--cross-x)" />
     </template>
 
     <!-- 选区边框 + 控制点 -->

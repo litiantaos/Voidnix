@@ -5,6 +5,7 @@ use std::time::Duration;
 use crate::sse::{self, ChatMessage};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct TranslateResult {
     pub source: String,
     pub translation: String,
@@ -22,6 +23,7 @@ pub struct TranslateResult {
 /// If the first read is empty (clipboard not yet updated), it polls for up to
 /// 300ms before giving up.
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn get_selected_text() -> Result<String, String> {
     use std::time::Instant;
     use tokio::process::Command;
@@ -65,6 +67,7 @@ pub async fn get_selected_text() -> Result<String, String> {
 // ============================================================================
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn translate_youdao(
     text: String,
     app_key: String,
@@ -268,6 +271,7 @@ fn render_prompt(template: &str, text: &str, from_lang: &str, to_lang: &str) -> 
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn translate_ai(
     text: String,
     endpoint: String,

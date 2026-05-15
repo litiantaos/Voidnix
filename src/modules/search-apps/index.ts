@@ -1,7 +1,8 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
 import { invoke } from '@tauri-apps/api/core'
-import { isTauri, toSearchResults, type TauriSearchResult } from '@/utils/tauri'
+import { commands } from '@/bindings'
+import { isTauri, toSearchResults } from '@/utils/tauri'
 
 const mod: AppModule = {
   id: 'search-apps',
@@ -14,7 +15,7 @@ const mod: AppModule = {
     if (!isTauri) return []
 
     try {
-      const apps = await invoke<TauriSearchResult[]>('search_apps', { query }).catch(() => [])
+      const apps = await commands.searchApps(query).catch(() => [])
       return toSearchResults(apps, 'search-apps')
     } catch (e) {
       console.error('[search-apps-module] search error:', e)

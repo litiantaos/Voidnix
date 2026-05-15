@@ -32,10 +32,11 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS (preset-wind4) | Pinia | SQLite
 ## 开发
 
 ```bash
-bun install          # 安装依赖
-bun run tauri dev    # 开发模式
-bun run build        # 前端构建检查
-bun run lint         # 格式化 + UnoCSS 排序
+bun install                  # 安装依赖
+bun run tauri dev            # 开发模式
+bun run build                # 前端构建检查
+bun run lint                 # 格式化 + UnoCSS 排序
+bun run gen:bindings         # 重新生成 src/bindings.ts（修改 Rust 结构体后执行）
 cd src-tauri && cargo check  # Rust 编译检查
 ```
 

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::process::Command;
 
 #[derive(Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct ScreenshotData {
     pub data_url: String,
     pub width: u32,
@@ -55,6 +56,7 @@ pub fn capture_screen() -> Result<ScreenshotData, String> {
 
 /// OCR 识别图像文字（Apple Vision，无需权限）
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn ocr_image(image_data: String) -> Result<String, String> {
     let data = decode_image_data(&image_data)?;
     let ts = std::time::SystemTime::now()

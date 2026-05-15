@@ -1,6 +1,8 @@
+import { defineAsyncComponent } from 'vue'
 import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
-import FinderExtView from './FinderExtView.vue'
+
+const FinderExtView = defineAsyncComponent(() => import('./FinderExtView.vue'))
 
 const mod: AppModule = {
   id: 'finder-ext',

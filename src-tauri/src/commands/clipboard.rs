@@ -13,6 +13,7 @@ thread_local! {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct ClipboardItem {
     pub id: String,
     pub content: String,
@@ -24,6 +25,7 @@ pub struct ClipboardItem {
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn get_clipboard_history(
     query: Option<String>,
     filter_favorite: Option<bool>,

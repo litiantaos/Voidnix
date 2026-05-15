@@ -1,20 +1,18 @@
 import { ref } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { defineAsyncComponent } from 'vue'
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
-import TranslateView from './TranslateView.vue'
-import TranslateSettings from './TranslateSettings.vue'
-import TranslateToolbar from './TranslateToolbar.vue'
+import { commands, type TranslateResult as BindingsTranslateResult } from '@/bindings'
 
-export interface TranslateResult {
-  source: string
-  translation: string
-  engine: string
-  loading?: boolean
-}
+const TranslateView = defineAsyncComponent(() => import('./TranslateView.vue'))
+const TranslateSettings = defineAsyncComponent(() => import('./TranslateSettings.vue'))
+const TranslateToolbar = defineAsyncComponent(() => import('./TranslateToolbar.vue'))
+
+/** 前端扩展类型：在 bindings 的 TranslateResult 基础上增加 loading 状态 */
+export type TranslateResult = BindingsTranslateResult & { loading?: boolean }
 
 export const translateResults = ref<TranslateResult[]>([])
 export const isTranslating = ref(false)
@@ -58,12 +56,7 @@ export async function translateText(text: string) {
       const engine = engineLabel(config)
       placeholder.push({ source: text, translation: '', engine, loading: true })
       promises.push(
-        invoke<TranslateResult>('translate_youdao', {
-          text,
-          appKey: config.appKey,
-          appSecret: config.appSecret,
-          targetLang,
-        })
+        commands.translateYoudao(text, config.appKey, config.appSecret, targetLang)
           .then((result) => {
             translateResults.value.splice(i, 1, result)
           })
@@ -86,14 +79,7 @@ export async function translateText(text: string) {
           loading: true,
         })
         promises.push(
-          invoke<TranslateResult>('translate_ai', {
-            text,
-            endpoint: config.endpoint,
-            apiKey: config.apiKey,
-            model,
-            targetLang,
-            prompt: config.prompt || undefined,
-          })
+          commands.translateAi(text, config.endpoint, config.apiKey, model, targetLang, config.prompt ?? null)
             .then((result) => {
               result.engine += engineSuffix
               translateResults.value.splice(i, 1, result)
@@ -119,7 +105,7 @@ export async function translateText(text: string) {
 
 export async function getSelectedText(): Promise<string> {
   try {
-    const text = await invoke<string>('get_selected_text')
+    const text = await commands.getSelectedText()
     return text
   } catch (e) {
     console.error('Failed to get selected text:', e)
@@ -172,12 +158,7 @@ const mod: AppModule = {
       if (config.type === 'youdao') {
         if (!config.appKey || !config.appSecret) continue
         promises.push(
-          invoke<TranslateResult>('translate_youdao', {
-            text: query,
-            appKey: config.appKey,
-            appSecret: config.appSecret,
-            targetLang,
-          })
+          commands.translateYoudao(query, config.appKey, config.appSecret, targetLang)
             .then((result) => {
               results.push({
                 id: `youdao-${Date.now()}`,
@@ -206,14 +187,7 @@ const mod: AppModule = {
         const activeModels = config.models.filter((m) => m.trim())
         for (const model of activeModels) {
           promises.push(
-            invoke<TranslateResult>('translate_ai', {
-              text: query,
-              endpoint: config.endpoint,
-              apiKey: config.apiKey,
-              model,
-              targetLang,
-              prompt: config.prompt || undefined,
-            })
+            commands.translateAi(query, config.endpoint, config.apiKey, model, targetLang, config.prompt ?? null)
               .then((result) => {
                 const label =
                   activeModels.length > 1

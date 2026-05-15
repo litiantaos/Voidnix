@@ -4,5 +4,7 @@
 <dict>
     <key>LSUIElement</key>
     <true/>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Voidnix 需要屏幕录制权限以实现截图功能</string>
 </dict>
 </plist>

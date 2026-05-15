@@ -1,6 +1,8 @@
+import { defineAsyncComponent } from 'vue'
 import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
-import AwakeView from './AwakeView.vue'
+
+const AwakeView = defineAsyncComponent(() => import('./AwakeView.vue'))
 
 const mod: AppModule = {
   id: 'awake',

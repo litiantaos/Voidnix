@@ -1,7 +1,7 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
-import { invoke } from '@tauri-apps/api/core'
-import { isTauri, toSearchResults, type TauriSearchResult } from '@/utils/tauri'
+import { commands } from '@/bindings'
+import { isTauri, toSearchResults } from '@/utils/tauri'
 
 const mod: AppModule = {
   id: 'search-files',
@@ -13,9 +13,7 @@ const mod: AppModule = {
   onSearch: async (query) => {
     if (!isTauri || !query.trim()) return []
     try {
-      const files = await invoke<TauriSearchResult[]>('search_files', {
-        query,
-      }).catch(() => [])
+      const files = await commands.searchFiles(query).catch(() => [])
       return toSearchResults(files, 'search-files')
     } catch (e) {
       console.error('[search-files-module] error:', e)
@@ -26,6 +24,7 @@ const mod: AppModule = {
     if (!isTauri) return
     const path = result.data?.path
     if (path) {
+      const { invoke } = await import('@tauri-apps/api/core')
       await invoke('launch_app', { path })
     }
   },

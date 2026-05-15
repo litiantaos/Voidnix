@@ -37,6 +37,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const clipboardMaxDays = ref(30)
   const translateShortcut = ref('CommandOrControl+Shift+T')
   const chatShortcut = ref('CommandOrControl+Shift+A')
+  const screenshotShortcut = ref('CommandOrControl+Shift+X')
 
   // 翻译设置
   const youdaoAppKey = ref('')
@@ -228,6 +229,9 @@ export const useSettingsStore = defineStore('settings', () => {
       const chs = await store.get<string>('chatShortcut')
       if (chs) chatShortcut.value = chs
 
+      const scs = await store.get<string>('screenshotShortcut')
+      if (scs) screenshotShortcut.value = scs
+
       const yak = await store.get<string>('youdaoAppKey')
       if (yak) youdaoAppKey.value = yak
 
@@ -309,11 +313,9 @@ export const useSettingsStore = defineStore('settings', () => {
     'clipboardShortcut',
   )
   const setClipboardMaxDays = createSetter(clipboardMaxDays, 'clipboardMaxDays')
-  const setTranslateShortcut = createSetter(
-    translateShortcut,
-    'translateShortcut',
-  )
+  const setTranslateShortcut = createSetter(translateShortcut, 'translateShortcut')
   const setChatShortcut = createSetter(chatShortcut, 'chatShortcut')
+  const setScreenshotShortcut = createSetter(screenshotShortcut, 'screenshotShortcut')
   const setYoudaoAppKey = createSetter(youdaoAppKey, 'youdaoAppKey')
   const setYoudaoAppSecret = createSetter(youdaoAppSecret, 'youdaoAppSecret')
   const setTranslateTargetLang = createSetter(
@@ -338,6 +340,7 @@ export const useSettingsStore = defineStore('settings', () => {
     clipboardMaxDays,
     translateShortcut,
     chatShortcut,
+    screenshotShortcut,
     youdaoAppKey,
     youdaoAppSecret,
     translateTargetLang,
@@ -354,6 +357,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setClipboardMaxDays,
     setTranslateShortcut,
     setChatShortcut,
+    setScreenshotShortcut,
     setYoudaoAppKey,
     setYoudaoAppSecret,
     setTranslateTargetLang,

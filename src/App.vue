@@ -1,19 +1,32 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import MainView from '@/components/layout/MainView.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
+import ScreenshotOverlay from '@/modules/screenshot/ScreenshotOverlay.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { pendingText } from '@/modules/translate'
 import { isTauri } from '@/utils/tauri'
 
+interface ScreenshotData { data_url: string; width: number; height: number; scale: number }
+
 let win: ReturnType<typeof getCurrentWindow> | null = null
 if (isTauri) {
   win = getCurrentWindow()
+}
+const isScreenshot = win?.label === 'screenshot'
+
+const showScreenshot = ref(false)
+const screenshotData = ref<ScreenshotData | null>(null)
+
+async function onScreenshotClose() {
+  await invoke('exit_screenshot_mode').catch(() => {})
+  showScreenshot.value = false
+  screenshotData.value = null
 }
 
 const settings = useSettingsStore()
@@ -51,6 +64,11 @@ let unlistenOpenModule: (() => void) | null = null
 let unlistenShowingWindow: (() => void) | null = null
 let unlistenTranslateReady: (() => void) | null = null
 let unlistenClickOutside: (() => void) | null = null
+let unlistenScreenshotReady: (() => void) | null = null
+// webkit_tuning 驯化事件监听（Req 1.6, 2.7）
+let unlistenPreShow: (() => void) | null = null
+let unlistenAwaitingPaint: (() => void) | null = null
+let unlistenPainted: (() => void) | null = null
 let translateReadyResolver: ((text: string) => void) | null = null
 
 async function waitForSelectedText(): Promise<string> {
@@ -98,13 +116,29 @@ async function setupGlobalShortcut(
 }
 
 onMounted(async () => {
+  if (isScreenshot) {
+    window.addEventListener('__screenshot_ready', () => {
+      const data = (window as unknown as { __screenshotData?: ScreenshotData }).__screenshotData
+      if (!data) return
+      // 连续触发时先 unmount 旧实例，确保 sel/phase/shapes 等状态重置
+      showScreenshot.value = false
+      screenshotData.value = null
+      requestAnimationFrame(() => {
+        screenshotData.value = data
+        showScreenshot.value = true
+      })
+    })
+    return
+  }
+
+  // ── 以下是主窗口逻辑 ──
+
   try {
     await settings.loadSettings()
   } catch (e) {
     console.error('Settings load error:', e)
   }
 
-  // 启动后延迟检查更新，有新版本则后台静默下载
   if (isTauri) {
     setTimeout(async () => {
       const hasUpdate = await updateStore.check()
@@ -119,34 +153,27 @@ onMounted(async () => {
     await setupGlobalShortcut('clipboard', settings.clipboardShortcut)
     await setupGlobalShortcut('translate', settings.translateShortcut)
     await setupGlobalShortcut('chat', settings.chatShortcut)
+    await setupGlobalShortcut('screenshot', settings.screenshotShortcut)
 
-    watch(
-      () => settings.globalShortcut,
-      async (newVal, oldVal) => {
-        await setupGlobalShortcut('main', newVal, oldVal)
-      },
-    )
+    watch(() => settings.globalShortcut, async (newVal, oldVal) => {
+      await setupGlobalShortcut('main', newVal, oldVal)
+    })
 
-    watch(
-      () => settings.clipboardShortcut,
-      async (newVal, oldVal) => {
-        await setupGlobalShortcut('clipboard', newVal, oldVal)
-      },
-    )
+    watch(() => settings.clipboardShortcut, async (newVal, oldVal) => {
+      await setupGlobalShortcut('clipboard', newVal, oldVal)
+    })
 
-    watch(
-      () => settings.translateShortcut,
-      async (newVal, oldVal) => {
-        await setupGlobalShortcut('translate', newVal, oldVal)
-      },
-    )
+    watch(() => settings.translateShortcut, async (newVal, oldVal) => {
+      await setupGlobalShortcut('translate', newVal, oldVal)
+    })
 
-    watch(
-      () => settings.chatShortcut,
-      async (newVal, oldVal) => {
-        await setupGlobalShortcut('chat', newVal, oldVal)
-      },
-    )
+    watch(() => settings.chatShortcut, async (newVal, oldVal) => {
+      await setupGlobalShortcut('chat', newVal, oldVal)
+    })
+
+    watch(() => settings.screenshotShortcut, async (newVal, oldVal) => {
+      await setupGlobalShortcut('screenshot', newVal, oldVal)
+    })
 
     let lastTranslateShortcutTime = 0
 
@@ -155,8 +182,6 @@ onMounted(async () => {
       async (event) => {
         markSkip()
         const shortcutId = event.payload.id
-        // 以 Rust 端按下瞬间的窗口状态为准，避免与后端 WINDOW_VISIBLE 不同步
-        // （比如 useSearchCommand 直接 invoke hide_window 时前端没有同步状态）。
         const wasVisible = event.payload.wasVisible
         const now = Date.now()
 
@@ -181,32 +206,21 @@ onMounted(async () => {
           appStore.setActiveModule('clipboard')
           appStore.setSearchQuery('')
         } else if (shortcutId === 'translate') {
-          console.log('[translate] Shortcut pressed, wasVisible:', wasVisible)
           lastTranslateShortcutTime = now
           if (wasVisible && appStore.activeModuleId === 'translate') {
-            console.log('[translate] Window already visible with translate module, hiding')
             invoke('hide_window').catch(() => {})
             return
           }
-          console.log('[translate] Setting active module to translate')
           appStore.setActiveModule('translate')
           appStore.setSearchQuery('')
           if (wasVisible) {
-            // Window already visible — Voidnix is frontmost, no selected text
-            // in another app to extract. Just switch module, don't wait for text.
-            console.log('[translate] Window visible, skipping text extraction')
-          } else {
-            // Window was hidden — another app was frontmost with possibly
-            // selected text. Wait for the backend to extract it.
-            try {
-              const text = await waitForSelectedText()
-              console.log('[translate] Got text:', text)
-              const trimmedText = text.trim()
-              pendingText.value = trimmedText
-            } catch (e) {
-              console.error('[translate] Error:', e)
-              pendingText.value = ''
-            }
+            return
+          }
+          try {
+            const text = await waitForSelectedText()
+            pendingText.value = text.trim()
+          } catch (e) {
+            pendingText.value = ''
           }
         } else if (shortcutId === 'chat') {
           if (wasVisible && appStore.activeModuleId === 'chat') {
@@ -220,6 +234,8 @@ onMounted(async () => {
           }
           appStore.setActiveModule('chat')
           appStore.setSearchQuery('')
+        } else if (shortcutId === 'screenshot') {
+          // screenshot 由 screenshot-ready 事件处理，此处忽略
         }
       },
     )
@@ -233,31 +249,38 @@ onMounted(async () => {
       }
     })
 
-    // Mark skip before the window shows, so the blur handler won't immediately hide it.
-    // This is emitted by the backend right before window.show().
     unlistenShowingWindow = await listen('showing-window', () => {
       markSkip()
     })
 
-    // Native click-outside monitor (NSEvent global monitor) detects clicks
-    // outside the window regardless of focus state. Works on first run with
-    // macOS Accessory policy where set_focus() may not work.
     unlistenClickOutside = await listen('click-outside', () => {
-      console.log('[hide] click-outside triggered')
       invoke('hide_window').catch(() => {})
     })
 
-    // Persistent listener: backend emits this after extracting selected text via
-    // Accessibility API / AppleScript. Registered once at mount to avoid race conditions.
     unlistenTranslateReady = await listen<string>('translate-text-ready', (e) => {
-      console.log('[translate] Received translate-text-ready event:', e.payload)
       if (translateReadyResolver) {
-        console.log('[translate] Resolving pending promise with text:', e.payload)
         translateReadyResolver(e.payload || '')
         translateReadyResolver = null
-      } else {
-        console.log('[translate] No pending resolver, event ignored')
       }
+    })
+
+    unlistenScreenshotReady = await listen<ScreenshotData>('screenshot-ready', async (e) => {
+      markSkip()
+      await invoke('enter_screenshot_mode', { data: e.payload })
+    })
+
+    // webkit_tuning 驯化事件（Req 1.6, 2.7）
+    // pre-show：触发 rAF 让 WebKit 渲染管线就绪，严格先于 alpha=1
+    unlistenPreShow = await listen('webkit-tuning:pre-show', () => {
+      requestAnimationFrame(() => { /* 触发同步 layout，避免首帧白底 */ })
+    })
+    // awaiting-paint：80ms 超时 fallback，显示骨架占位
+    unlistenAwaitingPaint = await listen('webkit-tuning:awaiting-paint', () => {
+      appStore.showPaintSkeleton = true
+    })
+    // painted：首帧呈现完成，撤掉骨架
+    unlistenPainted = await listen('webkit-tuning:painted', () => {
+      appStore.showPaintSkeleton = false
     })
 
     unlistenFocus = await win!.onFocusChanged(({ payload: focused }: { payload: boolean }) => {
@@ -269,7 +292,6 @@ onMounted(async () => {
         !appStore.isDialogOpen
       ) {
         invoke<boolean>('is_app_active').then((active) => {
-          console.log('[hide] onFocusChanged blur, is_app_active=', active)
           if (active) return
           invoke('hide_window').catch(() => {})
         }).catch(() => {
@@ -283,6 +305,10 @@ onMounted(async () => {
 })
 
 onUnmounted(async () => {
+  if (isScreenshot) {
+    return
+  }
+
   document.removeEventListener('keydown', onLocalShortcut)
   if (isTauri) {
     if (unlistenFocus) unlistenFocus()
@@ -291,6 +317,10 @@ onUnmounted(async () => {
     if (unlistenShowingWindow) unlistenShowingWindow()
     if (unlistenTranslateReady) unlistenTranslateReady()
     if (unlistenClickOutside) unlistenClickOutside()
+    if (unlistenScreenshotReady) unlistenScreenshotReady()
+    if (unlistenPreShow) unlistenPreShow()
+    if (unlistenAwaitingPaint) unlistenAwaitingPaint()
+    if (unlistenPainted) unlistenPainted()
 
     await invoke('register_global_shortcut', {
       id: 'main',
@@ -315,14 +345,36 @@ onUnmounted(async () => {
       newShortcut: '',
       oldShortcut: settings.chatShortcut,
     }).catch(() => {})
+
+    await invoke('register_global_shortcut', {
+      id: 'screenshot',
+      newShortcut: '',
+      oldShortcut: settings.screenshotShortcut,
+    }).catch(() => {})
   }
 })
 </script>
 
 <template>
-  <MainView />
+  <!-- 截图窗口：只渲染截图覆盖层 -->
+  <template v-if="isScreenshot">
+    <ScreenshotOverlay
+      v-if="showScreenshot && screenshotData"
+      :initial-screenshot="screenshotData"
+      @close="onScreenshotClose"
+    />
+  </template>
 
-  <!-- 全局确认弹窗（Store 驱动，Promise 式调用） -->
+  <!-- 主窗口：正常启动器 -->
+  <template v-else>
+    <MainView />
+    <ScreenshotOverlay
+      v-if="showScreenshot && screenshotData"
+      :initial-screenshot="screenshotData"
+      @close="onScreenshotClose"
+    />
+  </template>
+
   <BaseDialog
     v-if="appStore.isDialogOpen && appStore.dialogOptions"
     :title="appStore.dialogOptions.title"

@@ -19,6 +19,7 @@ thread_local! {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct SearchResult {
     pub id: String,
     pub title: String,
@@ -887,6 +888,7 @@ pub fn init_app_watcher() {
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn search_apps(query: String) -> Result<Vec<SearchResult>, String> {
     log::info!("search_apps called with query: '{}'", query);
     let apps = get_cached_apps().await;
@@ -971,6 +973,7 @@ pub async fn search_apps(query: String) -> Result<Vec<SearchResult>, String> {
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
     if query.trim().is_empty() {
         return Ok(vec![]);
@@ -1217,6 +1220,7 @@ pub async fn reveal_in_finder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub fn score_items(query: String, items: Vec<String>) -> Vec<u32> {
     if query.trim().is_empty() {
         return vec![0; items.len()];
