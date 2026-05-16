@@ -35,7 +35,6 @@ const variantClasses: Record<string, string> = {
       variantClasses[variant],
       
       disabled ? 'ui-disabled' : '',
-      'ui-clickable',
     ]"
   >
     <slot />

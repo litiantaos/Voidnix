@@ -210,6 +210,25 @@ pub(crate) struct RealWindow {
     ns_window: *mut objc2::runtime::AnyObject,
 }
 
+/// 从 NSWindow 获取 WKWebView 指针（contentView 的第一个子视图）。
+/// `setWindowOcclusionDetectionEnabled:` 等 SPI 只在 WKWebView 上有效。
+#[cfg(target_os = "macos")]
+unsafe fn get_wkwebview(ns_window: *mut objc2::runtime::AnyObject) -> *mut objc2::runtime::AnyObject {
+    if ns_window.is_null() { return std::ptr::null_mut(); }
+    let mut result = std::ptr::null_mut();
+    // 包在 try_block 里防止 contentView/subviews 消息抛异常
+    obj_exception::try_block(|| {
+        let content_view: *mut objc2::runtime::AnyObject = objc2::msg_send![ns_window, contentView];
+        if content_view.is_null() { return; }
+        let subviews: *mut objc2::runtime::AnyObject = objc2::msg_send![content_view, subviews];
+        if subviews.is_null() { return; }
+        let count: usize = objc2::msg_send![subviews, count];
+        if count == 0 { return; }
+        result = objc2::msg_send![subviews, objectAtIndex: 0usize];
+    });
+    result
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // RealPresentationBridge：真实 SPI 桥（仅 macOS）
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,19 +250,8 @@ impl PresentationBridge for RealPresentationBridge<'_> {
             Err(_) => return false,
         };
 
-        // WKWebView 是 NSWindow.contentView 的子视图
-        let wk_view_ptr: *mut objc2::runtime::AnyObject = unsafe {
-            let content_view: *mut objc2::runtime::AnyObject =
-                objc2::msg_send![ns_window_ptr, contentView];
-            if content_view.is_null() { return false; }
-            let subviews: *mut objc2::runtime::AnyObject =
-                objc2::msg_send![content_view, subviews];
-            if subviews.is_null() { return false; }
-            let count: usize = objc2::msg_send![subviews, count];
-            if count == 0 { return false; }
-            objc2::msg_send![subviews, objectAtIndex: 0usize]
-        };
-
+        // WKWebView 是 NSWindow.contentView 的第一个子视图
+        let wk_view_ptr = unsafe { get_wkwebview(ns_window_ptr) };
         if wk_view_ptr.is_null() { return false; }
 
         // 用 C 函数指针 + Box<dyn FnOnce> 传递回调，避免 block2 跨 FFI 的 ABI 问题
@@ -371,17 +379,23 @@ impl WindowOps for RealWindow {
     }
 
     fn occlusion_detection(&self) -> bool {
-        let mut result = true;
-        obj_exception::try_block(|| unsafe {
-            result = objc2::msg_send![self.ns_window, windowOcclusionDetectionEnabled];
-        });
-        result
+        unsafe {
+            extern "C" {
+                fn voidnix_get_occlusion_detection(view: *mut objc2::runtime::AnyObject) -> bool;
+            }
+            let wk_view = get_wkwebview(self.ns_window);
+            voidnix_get_occlusion_detection(wk_view)
+        }
     }
 
     fn set_occlusion_detection(&self, v: bool) {
-        obj_exception::try_block(|| unsafe {
-            let _: () = objc2::msg_send![self.ns_window, setWindowOcclusionDetectionEnabled: v];
-        });
+        unsafe {
+            extern "C" {
+                fn voidnix_set_occlusion_detection(view: *mut objc2::runtime::AnyObject, enabled: bool);
+            }
+            let wk_view = get_wkwebview(self.ns_window);
+            voidnix_set_occlusion_detection(wk_view, v);
+        }
     }
 
     fn collection_behavior(&self) -> u64 {
@@ -530,6 +544,43 @@ pub fn install(window: &WebviewWindow) -> tauri::Result<()> {
     #[cfg(not(target_os = "macos"))]
     {
         // 非 macOS 平台：记录禁用状态
+        log::component_status("Tuning_Toggle", log::Status::Disabled, Some("non-macos"));
+    }
+
+    Ok(())
+}
+
+/// 截屏窗口轻量 install：仅装 Throttling_Suppressor（关 occlusion detection + Transient）。
+///
+/// 不装 Frame_Animator/Webview_Frame_Pin（截屏覆盖层全屏，无需会话最大尺寸锁定），
+/// 不调用 emoji_warmer（截屏窗口不展示 emoji）。
+///
+/// 关 occlusion detection 是关键：让 WKWebView 即使被 orderOut/不在当前 Space 也
+/// 不进入渲染节流，使得 orderOut + orderFrontRegardless 这套苹果文档化、所有
+/// macOS 版本稳定的标准 Space 迁移路径不再有"空桌面卡顿"副作用。
+pub fn install_screenshot(window: &WebviewWindow) -> tauri::Result<()> {
+    if window.label() != "screenshot" {
+        return Ok(());
+    }
+
+    if !toggle::is_enabled() {
+        log::component_status("Tuning_Toggle", log::Status::Disabled, None);
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(real_window) = RealWindow::from_webview_window(window) {
+            throttling::install(&real_window);
+            // presentation 是进程级一次性 install，main 已装时此处幂等
+            presentation::install();
+        } else {
+            log::component_status("Tuning_Toggle", log::Status::Fallback, Some("ns-window-unavailable"));
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
         log::component_status("Tuning_Toggle", log::Status::Disabled, Some("non-macos"));
     }
 

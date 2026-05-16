@@ -34,12 +34,16 @@
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "focus": false,
+        "focus": true,
         "visible": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$TEMP/**"]
+      }
     }
   },
   "bundle": {

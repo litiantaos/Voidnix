@@ -253,7 +253,7 @@ function onExecute(item: ChatSettingsItem) {
           >
             <template #suffix>
               <button
-                class="i-ri-eye-line text-black/35 shrink-0 cursor-pointer hover:text-black/60"
+                class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
                 :class="{ 'i-ri-eye-off-line': passwordVisible }"
                 @click.stop="passwordVisible = !passwordVisible"
               />

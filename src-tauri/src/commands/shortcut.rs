@@ -55,6 +55,7 @@ pub fn get_selected_text_cached() -> String {
 #[cfg(target_os = "macos")]
 mod click_monitor {
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use objc2::runtime::AnyObject;
     use tauri::{Emitter, Manager};
 
@@ -63,6 +64,12 @@ mod click_monitor {
     unsafe impl Sync for SendObj {}
 
     static MONITOR: Mutex<SendObj> = Mutex::new(SendObj(std::ptr::null_mut()));
+    /// 为 true 时跳过 click-outside 发送（原生对话框弹出期间使用）
+    static SUPPRESSED: AtomicBool = AtomicBool::new(false);
+
+    pub fn suppress(v: bool) {
+        SUPPRESSED.store(v, Ordering::SeqCst);
+    }
 
     pub fn add(app: &tauri::AppHandle) {
         use objc2::ClassType;
@@ -76,6 +83,7 @@ mod click_monitor {
         let app_handle = app.clone();
 
         let block = block2::RcBlock::new(move |_event: *mut AnyObject| {
+            if SUPPRESSED.load(Ordering::SeqCst) { return; }
             unsafe {
                 let app = match app_handle.get_webview_window("main") {
                     Some(w) => w,
@@ -152,6 +160,15 @@ pub(crate) fn remove_click_monitor() {
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn remove_click_monitor() {}
 
+/// 暂停/恢复 click-outside 检测（原生对话框弹出期间调用）
+#[cfg(target_os = "macos")]
+pub(crate) fn suppress_click_monitor(v: bool) {
+    click_monitor::suppress(v);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn suppress_click_monitor(_v: bool) {}
+
 // ============================================================================
 // Shortcut registration
 // ============================================================================
@@ -213,7 +230,13 @@ pub async fn register_global_shortcut(
                                 let result = crate::commands::screenshot::capture_screen();
                                 match result {
                                     Ok(data) => {
-                                        let _ = app_clone.emit("screenshot-ready", data);
+                                        // 直接在主线程进入截屏模式，绕开 main 窗口 IPC 中转。
+                                        // enter_screenshot_mode_sync 内部会 SkyLight 迁移、
+                                        // 揭开 alpha、向 screenshot webview 注入数据。
+                                        let app_for_enter = app_clone.clone();
+                                        let _ = app_clone.run_on_main_thread(move || {
+                                            crate::commands::screenshot::enter_screenshot_mode_sync(&app_for_enter, data);
+                                        });
                                     }
                                     Err(e) => {
                                         let _ = app_clone.emit("screenshot-ready-error", e);

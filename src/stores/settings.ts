@@ -38,6 +38,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const translateShortcut = ref('CommandOrControl+Shift+T')
   const chatShortcut = ref('CommandOrControl+Shift+A')
   const screenshotShortcut = ref('CommandOrControl+Shift+X')
+  const screenshotSavePath = ref('')  // 空字符串表示使用下载文件夹
 
   // 翻译设置
   const youdaoAppKey = ref('')
@@ -232,6 +233,9 @@ export const useSettingsStore = defineStore('settings', () => {
       const scs = await store.get<string>('screenshotShortcut')
       if (scs) screenshotShortcut.value = scs
 
+      const ssp = await store.get<string>('screenshotSavePath')
+      if (ssp !== null && ssp !== undefined) screenshotSavePath.value = ssp
+
       const yak = await store.get<string>('youdaoAppKey')
       if (yak) youdaoAppKey.value = yak
 
@@ -316,6 +320,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const setTranslateShortcut = createSetter(translateShortcut, 'translateShortcut')
   const setChatShortcut = createSetter(chatShortcut, 'chatShortcut')
   const setScreenshotShortcut = createSetter(screenshotShortcut, 'screenshotShortcut')
+  const setScreenshotSavePath = createSetter(screenshotSavePath, 'screenshotSavePath')
   const setYoudaoAppKey = createSetter(youdaoAppKey, 'youdaoAppKey')
   const setYoudaoAppSecret = createSetter(youdaoAppSecret, 'youdaoAppSecret')
   const setTranslateTargetLang = createSetter(
@@ -341,6 +346,7 @@ export const useSettingsStore = defineStore('settings', () => {
     translateShortcut,
     chatShortcut,
     screenshotShortcut,
+    screenshotSavePath,
     youdaoAppKey,
     youdaoAppSecret,
     translateTargetLang,
@@ -358,6 +364,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setTranslateShortcut,
     setChatShortcut,
     setScreenshotShortcut,
+    setScreenshotSavePath,
     setYoudaoAppKey,
     setYoudaoAppSecret,
     setTranslateTargetLang,

@@ -20,6 +20,8 @@ export const useAppStore = defineStore('app', () => {
   const isDialogOpen = ref(false)
   const dialogOptions = ref<ConfirmOptions | null>(null)
   const lastDialogCloseTime = ref(0)
+  // 原生系统对话框（如文件选择器）打开期间，抑制失焦隐藏
+  const suppressBlur = ref(false)
   let dialogResolve: ((value: boolean) => void) | null = null
 
   const showSettings = ref(false)
@@ -71,6 +73,7 @@ export const useAppStore = defineStore('app', () => {
     isDialogOpen,
     dialogOptions,
     lastDialogCloseTime,
+    suppressBlur,
     setActiveModule,
     setSearchQuery,
     setComposing,

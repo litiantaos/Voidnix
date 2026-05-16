@@ -258,7 +258,7 @@ onUnmounted(() => {
     :id="id"
     data-settings-control
     :class="[
-      'ui-ctrl custom-select flex items-center justify-between ui-clickable min-w-0 w-full relative overflow-hidden',
+      'ui-ctrl custom-select flex items-center justify-between min-w-0 w-full relative overflow-hidden',
       disabled ? 'ui-disabled' : '',
     ]"
     tabindex="0"
@@ -297,7 +297,7 @@ onUnmounted(() => {
           v-if="isOpen"
           data-select-dropdown
           :style="dropdownStyle"
-          class="p-1 rounded-lg bg-white max-w-[80vw] shadow-lg"
+          class="p-1 rounded-lg bg-white max-w-[80vw] select-none shadow-lg"
         >
           <template v-for="(item, index) in flatItems" :key="index">
             <div
@@ -311,7 +311,7 @@ onUnmounted(() => {
               @click.stop="selectOption(index)"
               @mouseover="highlightedIndex = index"
               :class="[
-                'text-sm font-medium px-3 py-1.5 rounded-md cursor-pointer transition-colors truncate',
+                'text-sm font-medium px-3 py-1.5 rounded-md transition-colors truncate',
                 index === highlightedIndex
                   ? 'ui-active text-accent'
                   : 'ui-hover text-tx-secondary',

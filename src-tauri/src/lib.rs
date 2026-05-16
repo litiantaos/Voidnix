@@ -3,6 +3,8 @@ mod db;
 mod clipboard_monitor;
 mod http;
 mod mac_utils;
+#[cfg(target_os = "macos")]
+mod skylight;
 mod sse;
 #[cfg(target_os = "macos")]
 mod text_selection;
@@ -66,7 +68,10 @@ pub fn run() {
             commands::screenshot::copy_screenshot_to_clipboard,
             commands::screenshot::enter_screenshot_mode,
             commands::screenshot::exit_screenshot_mode,
+            commands::screenshot::show_screenshot_window,
             commands::window::set_main_window_size,
+            commands::window::get_home_dir,
+            commands::window::pick_directory,
         ])
         .setup(|app| {
             commands::awake::init(app)?;
@@ -108,21 +113,38 @@ pub fn run() {
                 unsafe {
                     let ns_window = raw.as_ref().unwrap();
                     ns_window.setAnimationBehavior(NSWindowAnimationBehavior::None);
-                    ns_window.setLevel(objc2_app_kit::NSScreenSaverWindowLevel as isize);
-                    let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
-                        | NSWindowCollectionBehavior::FullScreenAuxiliary
-                        | NSWindowCollectionBehavior::Stationary;
+                    // Status 级别覆盖 Dock（~20）和菜单栏（24），但不像 PopUpMenu（101）
+                    // 那样被系统当作全局菜单跟随用户切换 Space。
+                    ns_window.setLevel(objc2_app_kit::NSStatusWindowLevel as isize);
+                    let _: () = objc2::msg_send![ns_window, setAcceptsMouseMovedEvents: true];
+                    // FullScreenAuxiliary：允许覆盖全屏应用。
+                    // Transient：窗口不出现在 Mission Control / Exposé 中。
+                    // IgnoresCycle：不参与 Cmd+~ 窗口切换。
+                    // 不设 CanJoinAllSpaces——那会让窗口同时显示在所有桌面，
+                    // 违背"截屏窗口只属于触发桌面"的语义。
+                    let behavior = NSWindowCollectionBehavior::FullScreenAuxiliary
+                        | NSWindowCollectionBehavior::Transient
+                        | NSWindowCollectionBehavior::IgnoresCycle;
                     ns_window.setCollectionBehavior(behavior);
                     let mtm = MainThreadMarker::new().unwrap();
                     let screen = NSScreen::mainScreen(mtm).unwrap();
-                    // display=true：让 contentView/WKWebView 立即随窗口 resize，
-                    // 避免 viewport 与 NSWindow 尺寸不同步导致首次截屏遮罩留缝隙
                     ns_window.setFrame_display(screen.frame(), true);
-                    // alpha=0 + ignoresMouseEvents：窗口不可见、不拦截点击，但 JS 持续运行
+                    // 关键：立刻 orderFrontRegardless 让窗口处于 ordered 状态。
+                    // 配合 throttling::install 的 windowOcclusionDetectionEnabled=NO，
+                    // WKWebView 始终保持在渲染管线中，避免空桌面"冷启动"延迟。
+                    // alpha=0 + ignoresMouseEvents 让窗口在视觉/交互上完全隐身。
+                    // 平时窗口 ordered 在启动 Space，触发截屏时由 SkyLight 强制迁移
+                    // 到当前 active Space（瞬时操作，不依赖系统动画）。
                     ns_window.setAlphaValue(0.0);
                     let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: true];
                     ns_window.orderFrontRegardless();
                 }
+                // 安装 Throttling_Suppressor：关 occlusion detection + Transient flag，
+                // 让 WKWebView 在 orderOut 期间仍保持渲染管线活跃，
+                // 避免空桌面截屏时因 Space 迁移引起的卡顿。
+                webkit_tuning::install_screenshot(&window)?;
+                // 安装 CALayer 背景层：工业级零编码直贴 CGImage 的基础设施。
+                commands::screenshot::install_background_layer(&window);
             }
 
             clipboard_monitor::start_monitor(app.handle().clone());
@@ -131,7 +153,53 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             commands::finder_ext::init_finder_ext(app.handle().clone());
 
+            // 监听应用激活通知：从 Mission Control 返回时重新激活截屏窗口的鼠标追踪
+            #[cfg(target_os = "macos")]
+            {
+                use objc2_foundation::{NSNotificationCenter, NSNotificationName, NSString};
+                use objc2::rc::Retained;
+                use std::sync::OnceLock;
+
+                // 用 OnceLock 持有 app handle，供 block 内使用
+                static SCREENSHOT_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+                let _ = SCREENSHOT_APP_HANDLE.set(app.handle().clone());
+
+                let mtm = objc2_foundation::MainThreadMarker::new().unwrap();
+                let center = NSNotificationCenter::defaultCenter();
+                let name: Retained<NSString> = NSString::from_str("NSApplicationDidBecomeActiveNotification");
+                let name_ref: &NSNotificationName = unsafe { std::mem::transmute::<&NSString, &NSNotificationName>(&name) };
+
+                unsafe {
+                    center.addObserverForName_object_queue_usingBlock(
+                        Some(name_ref),
+                        None,
+                        None,
+                        &block2::RcBlock::new(|_notification| {
+                            if let Some(handle) = SCREENSHOT_APP_HANDLE.get() {
+                                commands::screenshot::reactivate_screenshot_window(handle);
+                            }
+                        }),
+                    );
+                }
+                let _ = mtm; // suppress unused warning
+            }
+
             tauri::async_runtime::spawn(commands::search::prewarm_cache());
+
+            // 截屏 JPEG 编码器预热：异步在主线程上做一次 1×1 编码，
+            // 让 NSBitmapImageRep / Image I/O 完成 lazy 加载，真正第一次截屏不付出
+            // 首次代价（实测 ~120ms 降到稳定的 30-50ms）。
+            #[cfg(target_os = "macos")]
+            {
+                let app_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    // 延迟 500ms 等启动主路径稳定，再做预热
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    let _ = app_handle.run_on_main_thread(|| {
+                        commands::screenshot::prewarm_jpeg_encoder();
+                    });
+                });
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

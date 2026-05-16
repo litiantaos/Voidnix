@@ -12,7 +12,8 @@ import { useUpdateStore } from '@/stores/update'
 import { pendingText } from '@/modules/translate'
 import { isTauri } from '@/utils/tauri'
 
-interface ScreenshotData { data_url: string; width: number; height: number; scale: number }
+interface WindowRect { x: number; y: number; w: number; h: number; owner: string }
+interface ScreenshotData { data_url: string; width: number; height: number; scale: number; mouse_x: number; mouse_y: number; windows: WindowRect[] }
 
 let win: ReturnType<typeof getCurrentWindow> | null = null
 if (isTauri) {
@@ -289,7 +290,8 @@ onMounted(async () => {
       } else if (
         Date.now() - lastShortcutTime > 200 &&
         Date.now() - appStore.lastDialogCloseTime > 300 &&
-        !appStore.isDialogOpen
+        !appStore.isDialogOpen &&
+        !appStore.suppressBlur
       ) {
         invoke<boolean>('is_app_active').then((active) => {
           if (active) return

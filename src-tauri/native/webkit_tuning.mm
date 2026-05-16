@@ -5,6 +5,7 @@
 #import <Foundation/Foundation.h>
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
+#include <objc/message.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <mach/mach_time.h>
@@ -134,7 +135,61 @@ extern "C" bool voidnix_do_after_next_presentation_update_fn(
     return true;
 }
 
-// 系统 emoji 字体预热（T9 实装）。
+// NSApplication.setPresentationOptions 对参数组合有严格限制，非法组合会抛异常。
+// 在 ObjC 层做 @try/@catch 保护，避免异常传播到 Rust。
+extern "C" void voidnix_set_presentation_options(NSUInteger options) {
+    @try {
+        [[NSApplication sharedApplication] setPresentationOptions:options];
+    } @catch (NSException *e) {
+        NSLog(@"[webkit_tuning] setPresentationOptions(%lu) threw: %@ - %@",
+              (unsigned long)options, e.name, e.reason);
+    }
+}
+
+// 切换 activation policy。LSUIElement (accessory) 应用调用 setPresentationOptions
+// 对热角/Dock 无效，必须临时切到 regular 才能真正接管屏幕。
+// 0 = NSApplicationActivationPolicyRegular
+// 1 = NSApplicationActivationPolicyAccessory
+extern "C" void voidnix_set_activation_policy(NSInteger policy) {
+    @try {
+        [[NSApplication sharedApplication] setActivationPolicy:(NSApplicationActivationPolicy)policy];
+    } @catch (NSException *e) {
+        NSLog(@"[webkit_tuning] setActivationPolicy(%ld) threw: %@ - %@",
+              (long)policy, e.name, e.reason);
+    }
+}
+
+
+// 在 ObjC 层做 respondsToSelector 检查，避免异常传播到 Rust。
+extern "C" void voidnix_set_occlusion_detection(id view, bool enabled) {
+    if (view == nil) return;
+    SEL sel = NSSelectorFromString(@"setWindowOcclusionDetectionEnabled:");
+    if (![view respondsToSelector:sel]) return;
+    @try {
+        // BOOL 是基本类型，不能用 performSelector:withObject:
+        // 用 objc_msgSend 直接调用
+        typedef void (*SetOcclusionFn)(id, SEL, BOOL);
+        SetOcclusionFn fn = (SetOcclusionFn)objc_msgSend;
+        fn(view, sel, (BOOL)enabled);
+    } @catch (NSException *e) {
+        NSLog(@"[webkit_tuning] setWindowOcclusionDetectionEnabled threw: %@", e);
+    }
+}
+
+extern "C" bool voidnix_get_occlusion_detection(id view) {
+    if (view == nil) return true;
+    SEL sel = NSSelectorFromString(@"windowOcclusionDetectionEnabled");
+    if (![view respondsToSelector:sel]) return true;
+    @try {
+        typedef BOOL (*GetOcclusionFn)(id, SEL);
+        GetOcclusionFn fn = (GetOcclusionFn)objc_msgSend;
+        return (bool)fn(view, sel);
+    } @catch (NSException *e) {
+        NSLog(@"[webkit_tuning] windowOcclusionDetectionEnabled threw: %@", e);
+        return true;
+    }
+}
+
 // 把若干 emoji 探针绘制到 1×1 离屏 NSBitmapImageRep，触发 CoreText 字体加载，
 // 使后续首次渲染不出现字体回退停顿（Req 4.3）。
 // 分片执行：每片用 mach_absolute_time 自查，超过 8ms 则 dispatch_async 让出主线程（Req 4.2）。

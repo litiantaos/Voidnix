@@ -108,7 +108,7 @@ function onKeyDown(e: KeyboardEvent) {
   <div
     ref="rootRef"
     data-settings-control
-    class="ui-ctrl flex gap-1.5 w-36 ui-clickable items-center justify-center"
+    class="ui-ctrl flex gap-1.5 w-36 items-center justify-center"
 
     tabindex="0"
     @click="startRecording"

@@ -19,7 +19,7 @@ const emit = defineEmits<{
 
 <template>
   <div
-    class="group text-tx-primary p-3 rounded-lg flex gap-3 ui-clickable"
+    class="group text-tx-primary p-3 rounded-lg flex gap-3 select-none"
     :class="[
       selected ? 'ui-active' : 'bg-transparent',
       hoverable !== false && !selected ? 'ui-hover' : '',

@@ -14,8 +14,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::webkit_tuning::{log, WindowOps};
 
-/// NSWindowCollectionBehaviorTransient 位掩码（值 = 1 << 2 = 4）。
-const TRANSIENT: u64 = 1 << 2;
+/// NSWindowCollectionBehaviorTransient 位掩码（值 = 1 << 3 = 8）。
+const TRANSIENT: u64 = 1 << 3;
 
 /// 组件失败计数器；达到 FAIL_LIMIT 后永久禁用。
 static FAIL_COUNT: AtomicU8 = AtomicU8::new(0);
