@@ -17,8 +17,14 @@ export interface SearchResult {
 }
 
 /**
- * 模块布局声明。将视图与其 chrome（header/footer）组合在一起，
- * 使 ContentView 能按模式整体切换布局上下文。
+ * 模块布局声明。集中所有"模块向 App Shell 贡献的 UI 槽位"。
+ * 槽位名描述位置而非外形：
+ *   - view: 主视图区
+ *   - header / footer: 视图上下方的固定 chrome
+ *   - searchBarAccessory: 全局搜索栏右侧的附属区域
+ *
+ * 视图内部的私有 UI（如截图标注调色板）不属于此契约，
+ * 由模块自行组合，禁止占用 toolbar / header / footer 等会与槽位混淆的命名。
  */
 export interface ModuleLayout {
   /** 主视图组件 */
@@ -27,6 +33,8 @@ export interface ModuleLayout {
   header?: Component
   /** 视图下方固定区域（如操作栏） */
   footer?: Component
+  /** 全局搜索栏右侧的附属区域（模型选择器、状态标签、按钮组等，内容不限） */
+  searchBarAccessory?: Component
 }
 
 export interface AppModule {
@@ -55,13 +63,10 @@ export interface AppModule {
   onDeactivate?(): Promise<void>
 
   /**
-   * 模块布局。声明视图及其 chrome（header/footer）。
+   * 模块布局。声明视图及其 chrome（header/footer）以及对外壳的槽位贡献。
    * 不提供时，ContentView 使用标准列表视图。
    */
   layout?: ModuleLayout
-
-  // 模块工具栏，渲染在顶部搜索栏右侧。支持字符串（纯文本标签）或组件（自定义交互）。
-  toolbar?: string | Component
 
   // 在全局搜索中使用的搜索回调
   onSearch?(query: string): Promise<SearchResult[]>

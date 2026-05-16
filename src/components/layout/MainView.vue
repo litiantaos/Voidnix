@@ -132,16 +132,10 @@ function onTagClose() {
         @compositionend="appStore.setComposing(false)"
       />
       <div
-        v-if="activeModule?.toolbar"
+        v-if="activeModule?.layout?.searchBarAccessory"
         class="flex gap-2 min-w-0 items-center overflow-hidden"
       >
-        <span
-          v-if="typeof activeModule.toolbar === 'string'"
-          class="text-xs text-black/30"
-        >
-          {{ activeModule.toolbar }}
-        </span>
-        <component :is="activeModule.toolbar" v-else />
+        <component :is="activeModule.layout.searchBarAccessory" />
       </div>
 
       <!-- 更新提示按钮 -->

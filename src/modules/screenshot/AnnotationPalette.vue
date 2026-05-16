@@ -102,26 +102,26 @@ function changeLineWidth(delta: number) {
 
 const style = computed(() => {
   const { x, y, w, h } = props.sel
-  const toolbarH = 44
-  const toolbarW = 320
+  const paletteH = 44
+  const paletteW = 320
   const gap = 8
 
   // 水平位置：优先对齐选区左边，超出屏幕右边时右对齐选区右边
   const leftAligned = Math.max(4, x)
-  const rightAligned = x + w - toolbarW
-  const left = leftAligned + toolbarW <= props.screenWidth ? leftAligned : Math.max(4, rightAligned)
+  const rightAligned = x + w - paletteW
+  const left = leftAligned + paletteW <= props.screenWidth ? leftAligned : Math.max(4, rightAligned)
 
   // 垂直位置：优先显示在选区下方外侧，不够时显示在上方外侧，都不够时显示在内侧底部
   const below = y + h + gap
-  const above = y - toolbarH - gap
+  const above = y - paletteH - gap
   let top: number
-  if (below + toolbarH <= props.screenHeight) {
+  if (below + paletteH <= props.screenHeight) {
     top = below
   } else if (above >= 0) {
     top = above
   } else {
     // 选区占满屏幕，显示在内侧底部
-    top = y + h - toolbarH - gap
+    top = y + h - paletteH - gap
   }
 
   return { top: `${top}px`, left: `${left}px` }

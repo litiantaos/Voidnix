@@ -245,15 +245,14 @@ export function useSearchCommand(opts: Options) {
         if (appStore.isDialogOpen) return
 
         const el = document.activeElement
-        const isControl =
+        const isFormControl =
           el?.tagName === 'SELECT' ||
           el?.tagName === 'INPUT' ||
           el?.tagName === 'TEXTAREA' ||
           el?.hasAttribute('contenteditable') ||
-          el?.classList.contains('outline-none') ||
-          el?.classList.contains('custom-select')
+          el?.hasAttribute('data-settings-control')
 
-        if (isControl) {
+        if (isFormControl) {
           if (el === searchInput.value) {
             // allow standard behavior to proceed
           } else {

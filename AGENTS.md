@@ -16,9 +16,21 @@ cd src-tauri && cargo check  # Rust 编译检查
 
 ## 模块系统
 
-`src/modules/<name>/index.ts` 实现 `AppModule` 接口，`main.ts` glob 自动注册。Vue 组件（`layout.view` / `settings` / `toolbar`）用 `defineAsyncComponent` 懒加载，仅在首次激活时下载。
+`src/modules/<name>/index.ts` 实现 `AppModule` 接口，`main.ts` glob 自动注册。Vue 组件用 `defineAsyncComponent` 懒加载，仅在首次激活时下载。
 
-关键字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `layout.view` / `layout.header|footer` / `useSearchInput` / `multiline` / `hidden` / `order` / `settings`
+关键字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `layout` / `useSearchInput` / `multiline` / `hidden` / `order` / `settings`
+
+**模块向 App Shell 贡献的 UI 槽位**（仅这些，不增不减）：
+
+| 槽位 | 位置 | 用途 |
+|---|---|---|
+| `layout.view` | 内容区 | 主视图 |
+| `layout.header` | 视图上方 | 标签栏等 chrome |
+| `layout.footer` | 视图下方 | 操作栏等 chrome |
+| `layout.searchBarAccessory` | 搜索栏右侧 | 附属区域（选择器、状态标签、按钮组等，内容不限） |
+| `settings` | 内容区（设置模式占满） | 模块设置面板 |
+
+槽位组件命名以 `Actions` / `Header` / `Footer` 后缀对应位置。模块视图内部的私有 UI（如截图标注调色板）**禁止**使用 `Toolbar` / `Header` / `Footer` 等会与槽位混淆的命名，应使用语义明确的名字如 `AnnotationPalette` / `MessageComposer` / `HistoryFilter`。
 
 ```typescript
 SearchResult {

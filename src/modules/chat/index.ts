@@ -7,9 +7,9 @@ import { useSettingsStore } from '@/stores/settings'
 import { generateRequestId } from '@/composables/useStreamOutput'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
-const ChatView = defineAsyncComponent(() => import('./ChatView.vue'))
-const ChatSettings = defineAsyncComponent(() => import('./ChatSettings.vue'))
-const ChatToolbar = defineAsyncComponent(() => import('./ChatToolbar.vue'))
+const ChatView = defineAsyncComponent(() => import('./View.vue'))
+const ChatSettings = defineAsyncComponent(() => import('./Settings.vue'))
+const ChatActions = defineAsyncComponent(() => import('./Actions.vue'))
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -202,9 +202,8 @@ const mod: AppModule = {
   icon: 'i-ri-chat-ai-line',
   keywords: ['chat', 'ai', 'gpt', '对话', '聊天', '助手', 'assistant'],
   order: 9,
-  layout: { view: ChatView },
+  layout: { view: ChatView, searchBarAccessory: ChatActions },
   settings: ChatSettings,
-  toolbar: ChatToolbar,
   multiline: true,
   onInit: async () => {
     await initListeners()

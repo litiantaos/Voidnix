@@ -5,10 +5,10 @@ import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
 import { commands, type ClipboardItem } from '@/bindings'
 
-const ClipboardView = defineAsyncComponent(() => import('./ClipboardView.vue'))
-const ClipboardSettings = defineAsyncComponent(() => import('./ClipboardSettings.vue'))
-const ClipboardHeader = defineAsyncComponent(() => import('./ClipboardHeader.vue'))
-const ClipboardToolbar = defineAsyncComponent(() => import('./ClipboardToolbar.vue'))
+const ClipboardView = defineAsyncComponent(() => import('./View.vue'))
+const ClipboardSettings = defineAsyncComponent(() => import('./Settings.vue'))
+const ClipboardHeader = defineAsyncComponent(() => import('./Header.vue'))
+const ClipboardActions = defineAsyncComponent(() => import('./Actions.vue'))
 
 export type { ClipboardItem }
 
@@ -52,9 +52,9 @@ const mod: AppModule = {
   layout: {
     view: ClipboardView,
     header: ClipboardHeader,
+    searchBarAccessory: ClipboardActions,
   },
   settings: ClipboardSettings,
-  toolbar: ClipboardToolbar,
   onInit: async () => {
     // 后台 Rust 任务负责轮询，此处无需初始化
   },

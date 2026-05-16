@@ -2,7 +2,7 @@ import { defineAsyncComponent } from 'vue'
 import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
 
-const ScreenshotView = defineAsyncComponent(() => import('./ScreenshotView.vue'))
+const ScreenshotView = defineAsyncComponent(() => import('./View.vue'))
 
 const mod: AppModule = {
   id: 'screenshot',

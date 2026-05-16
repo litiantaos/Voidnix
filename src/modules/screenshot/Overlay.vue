@@ -113,8 +113,8 @@
       @mousedown.stop
     />
 
-    <!-- 工具栏 -->
-    <ScreenshotToolbar
+    <!-- 标注调色板 -->
+    <AnnotationPalette
       v-if="hasSelection"
       :sel="sel"
       :active-tool="activeTool"
@@ -154,7 +154,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import ScreenshotToolbar from './ScreenshotToolbar.vue'
+import AnnotationPalette from './AnnotationPalette.vue'
 import { useSettingsStore } from '@/stores/settings'
 
 // 文字输入内联状态
@@ -359,22 +359,22 @@ const maskRight = computed(() => ({
   left: `${sel.value.x + sel.value.w}px`, height: `${sel.value.h}px`,
 }))
 
-// 工具栏位置预测：与 ScreenshotToolbar 内部 style 计算保持一致
+// 标注调色板位置预测：与 AnnotationPalette 内部 style 计算保持一致
 // 'below'：选区下方外侧 / 'above'：选区上方外侧 / 'inside'：选区内底部
-const TOOLBAR_H = 44
-const TOOLBAR_GAP = 8
-const toolbarPosition = computed<'below' | 'above' | 'inside'>(() => {
+const PALETTE_H = 44
+const PALETTE_GAP = 8
+const palettePosition = computed<'below' | 'above' | 'inside'>(() => {
   const { y, h } = sel.value
-  if (y + h + TOOLBAR_GAP + TOOLBAR_H <= screenH.value) return 'below'
-  if (y - TOOLBAR_H - TOOLBAR_GAP >= 0) return 'above'
+  if (y + h + PALETTE_GAP + PALETTE_H <= screenH.value) return 'below'
+  if (y - PALETTE_H - PALETTE_GAP >= 0) return 'above'
   return 'inside'
 })
 
 // 选区尺寸标签位置：默认显示在选区左上角外侧，空间不足时显示在内侧
-// 当工具栏也在选区上方外侧时，尺寸标签强制显示在内侧，避免与工具栏重叠
+// 当调色板也在选区上方外侧时，尺寸标签强制显示在内侧，避免与之重叠
 const selSizeStyle = computed(() => {
   const { y } = sel.value
-  if (y >= 22 && toolbarPosition.value !== 'above') {
+  if (y >= 22 && palettePosition.value !== 'above') {
     return { top: '-22px', left: '0px' }
   }
   return { top: '4px', left: '4px' }

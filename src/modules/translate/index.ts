@@ -7,9 +7,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
 import { commands, type TranslateResult as BindingsTranslateResult } from '@/bindings'
 
-const TranslateView = defineAsyncComponent(() => import('./TranslateView.vue'))
-const TranslateSettings = defineAsyncComponent(() => import('./TranslateSettings.vue'))
-const TranslateToolbar = defineAsyncComponent(() => import('./TranslateToolbar.vue'))
+const TranslateView = defineAsyncComponent(() => import('./View.vue'))
+const TranslateSettings = defineAsyncComponent(() => import('./Settings.vue'))
+const TranslateActions = defineAsyncComponent(() => import('./Actions.vue'))
 
 /** 前端扩展类型：在 bindings 的 TranslateResult 基础上增加 loading 状态 */
 export type TranslateResult = BindingsTranslateResult & { loading?: boolean }
@@ -121,9 +121,8 @@ const mod: AppModule = {
   keywords: ['translate', '翻译', '翻譯', 'fanyi', 'youdao', '有道'],
   order: 8,
   placeholder: '输入要翻译的文本，按回车翻译',
-  layout: { view: TranslateView },
+  layout: { view: TranslateView, searchBarAccessory: TranslateActions },
   settings: TranslateSettings,
-  toolbar: TranslateToolbar,
   multiline: true,
   onSearch: async (query) => {
     if (
