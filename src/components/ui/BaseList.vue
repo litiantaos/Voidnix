@@ -1,3 +1,42 @@
+<template>
+  <div @mousemove="onMouseMove" class="p-2 flex flex-col gap-1">
+    <template v-for="(item, i) in items" :key="i">
+      <div
+        v-if="
+          groupField &&
+          (i === 0 || getGroupValue(item) !== getGroupValue(items[i - 1])) &&
+          (groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item))
+        "
+        class="text-xs text-tx-faint tracking-wider font-medium px-3 py-1.5 uppercase"
+      >
+        <slot
+          name="group-title"
+          :group="getGroupValue(item)"
+          :item="item"
+          :index="i"
+        >
+          {{
+            groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item)
+          }}
+        </slot>
+      </div>
+
+      <div>
+        <slot
+          name="item"
+          :item="item"
+          :index="i"
+          :selected="localIndex === i"
+          :hoverable="!isKeyboardNavigation"
+          :set-ref="(el: unknown) => setItemRef(el, i)"
+          :select="() => setSelectedIndex(i)"
+          :execute="() => emit('execute', item, i)"
+        />
+      </div>
+    </template>
+  </div>
+</template>
+
 <script setup lang="ts" generic="T">
 import { ref, watch, nextTick } from 'vue'
 import { onKeyStroke } from '@vueuse/core'
@@ -155,42 +194,3 @@ function getGroupValue(item: T): string {
   )
 }
 </script>
-
-<template>
-  <div @mousemove="onMouseMove" class="p-2 flex flex-col gap-1">
-    <template v-for="(item, i) in items" :key="i">
-      <div
-        v-if="
-          groupField &&
-          (i === 0 || getGroupValue(item) !== getGroupValue(items[i - 1])) &&
-          (groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item))
-        "
-        class="text-xs text-tx-faint tracking-wider font-medium px-3 py-1.5 uppercase"
-      >
-        <slot
-          name="group-title"
-          :group="getGroupValue(item)"
-          :item="item"
-          :index="i"
-        >
-          {{
-            groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item)
-          }}
-        </slot>
-      </div>
-
-      <div>
-        <slot
-          name="item"
-          :item="item"
-          :index="i"
-          :selected="localIndex === i"
-          :hoverable="!isKeyboardNavigation"
-          :set-ref="(el: unknown) => setItemRef(el, i)"
-          :select="() => setSelectedIndex(i)"
-          :execute="() => emit('execute', item, i)"
-        />
-      </div>
-    </template>
-  </div>
-</template>

@@ -1,12 +1,3 @@
-<script setup lang="ts">
-defineProps<{
-  icon?: string
-  title?: string
-  description?: string
-  loading?: boolean
-}>()
-</script>
-
 <template>
   <div
     class="text-tx-muted flex flex-1 flex-col gap-3 select-none items-center justify-center"
@@ -26,3 +17,12 @@ defineProps<{
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+defineProps<{
+  icon?: string
+  title?: string
+  description?: string
+  loading?: boolean
+}>()
+</script>

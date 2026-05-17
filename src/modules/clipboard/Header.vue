@@ -1,7 +1,3 @@
-<script setup lang="ts">
-import { activeTab } from './index'
-</script>
-
 <template>
   <div class="flex gap-4">
     <button
@@ -28,3 +24,7 @@ import { activeTab } from './index'
     </button>
   </div>
 </template>
+
+<script setup lang="ts">
+import { activeTab } from './index'
+</script>

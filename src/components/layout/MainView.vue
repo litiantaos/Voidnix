@@ -1,3 +1,95 @@
+<template>
+  <div class="bg-surface flex flex-col h-screen w-screen shadow-lg">
+    <!-- 搜索栏 -->
+    <div class="px-5 border-b border-black/5 flex gap-3 h-15 items-center">
+      <div
+        v-if="activeModule"
+        class="text-xs text-black/70 px-3 rounded-md bg-black/5 flex flex-none gap-1.5 h-7 cursor-default select-none items-center relative"
+        @mouseenter="isTagHovered = true"
+        @mouseleave="isTagHovered = false"
+      >
+        <span class="shrink-0 h-3.5 w-3.5 relative">
+          <Transition
+            enter-active-class="transition duration-150 ease-out"
+            enter-from-class="opacity-0 scale-75"
+            enter-to-class="opacity-100 scale-100"
+            leave-active-class="transition duration-100 ease-in"
+            leave-from-class="opacity-100 scale-100"
+            leave-to-class="opacity-0 scale-75"
+          >
+            <button
+              v-if="isTagHovered"
+              key="close"
+              class="rounded-full bg-black/10 flex h-3.5 w-3.5 transition-colors duration-150 items-center inset-0 justify-center absolute hover:bg-black/20"
+              @click="onTagClose"
+            >
+              <span class="i-ri-close-line text-[10px] text-black/60"></span>
+            </button>
+            <span
+              v-else
+              key="icon"
+              :class="activeModule.icon"
+              class="text-[10px] text-black/50 flex h-3.5 w-3.5 items-center inset-0 justify-center absolute"
+            ></span>
+          </Transition>
+        </span>
+        <span>{{ activeModule.name }}</span>
+      </div>
+      <input
+        ref="searchInput"
+        id="main-search-input"
+        :value="appStore.searchQuery"
+        :readonly="activeModule?.multiline"
+        :disabled="activeModule?.disableSearchInput"
+        class="text-base text-black/85 outline-none bg-transparent flex-1 placeholder:text-black/25"
+        :class="{ 'cursor-default': activeModule?.multiline || activeModule?.disableSearchInput }"
+        :placeholder="
+          activeModule
+            ? activeModule.disableSearchInput
+              ? ''
+              : activeModule.multiline
+                ? ''
+                : activeModule.placeholder || `在 ${activeModule.name} 中搜索`
+            : '搜索应用或文件，输入 / 搜索扩展'
+        "
+        @input="onInput"
+        @compositionstart="appStore.setComposing(true)"
+        @compositionend="appStore.setComposing(false)"
+      />
+      <div
+        v-if="activeModule?.layout?.searchBarAccessory"
+        class="flex gap-2 min-w-0 items-center overflow-hidden"
+      >
+        <component :is="activeModule.layout.searchBarAccessory" />
+      </div>
+
+      <!-- 更新提示按钮 -->
+      <BaseButton
+        v-if="updateStore.downloaded"
+        size="icon"
+        @click="showUpdateDialog = true"
+      >
+        <div class="i-ri-arrow-up-circle-line text-accent"></div>
+      </BaseButton>
+    </div>
+
+    <!-- 内容区 -->
+    <ContentView
+      ref="contentViewRef"
+      :module="activeModule"
+      :results="activeModule ? undefined : results"
+      :initial-loading="!activeModule && isLoading && results.length === 0"
+      :selected-index="activeModule ? undefined : selectedIndex"
+      :group-field="activeModule ? undefined : getGroupKey"
+      :group-title="activeModule ? undefined : getGroupTitle"
+      :on-execute="activeModule ? undefined : handleExecute"
+      @update:selected-index="(i: number) => (selectedIndex = i)"
+    />
+  </div>
+
+  <UpdateDialog v-if="showUpdateDialog" @close="showUpdateDialog = false" />
+</template>
+
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useScroll } from '@vueuse/core'
@@ -75,92 +167,3 @@ function onTagClose() {
   handleTagClose()
 }
 </script>
-
-<template>
-  <div class="bg-surface flex flex-col h-screen w-screen shadow-lg">
-    <!-- 搜索栏 -->
-    <div class="px-5 border-b border-black/5 flex gap-3 h-15 items-center">
-      <div
-        v-if="activeModule"
-        class="text-xs text-black/70 px-3 rounded-md bg-black/5 flex flex-none gap-1.5 h-7 cursor-default select-none items-center relative"
-        @mouseenter="isTagHovered = true"
-        @mouseleave="isTagHovered = false"
-      >
-        <span class="shrink-0 h-3.5 w-3.5 relative">
-          <Transition
-            enter-active-class="transition duration-150 ease-out"
-            enter-from-class="opacity-0 scale-75"
-            enter-to-class="opacity-100 scale-100"
-            leave-active-class="transition duration-100 ease-in"
-            leave-from-class="opacity-100 scale-100"
-            leave-to-class="opacity-0 scale-75"
-          >
-            <button
-              v-if="isTagHovered"
-              key="close"
-              class="rounded-full bg-black/10 flex h-3.5 w-3.5 transition-colors duration-150 items-center inset-0 justify-center absolute hover:bg-black/20"
-              @click="onTagClose"
-            >
-              <span class="i-ri-close-line text-[10px] text-black/60"></span>
-            </button>
-            <span
-              v-else
-              key="icon"
-              :class="activeModule.icon"
-              class="text-[10px] text-black/50 flex h-3.5 w-3.5 items-center inset-0 justify-center absolute"
-            ></span>
-          </Transition>
-        </span>
-        <span>{{ activeModule.name }}</span>
-      </div>
-      <input
-        ref="searchInput"
-        id="main-search-input"
-        :value="appStore.searchQuery"
-        :readonly="activeModule?.multiline"
-        class="text-base text-black/85 outline-none bg-transparent flex-1 placeholder:text-black/25"
-        :class="{ 'cursor-default': activeModule?.multiline }"
-        :placeholder="
-          activeModule
-            ? activeModule.multiline
-              ? ''
-              : activeModule.placeholder || `在 ${activeModule.name} 中搜索`
-            : '搜索应用或文件，输入 / 搜索扩展'
-        "
-        @input="onInput"
-        @compositionstart="appStore.setComposing(true)"
-        @compositionend="appStore.setComposing(false)"
-      />
-      <div
-        v-if="activeModule?.layout?.searchBarAccessory"
-        class="flex gap-2 min-w-0 items-center overflow-hidden"
-      >
-        <component :is="activeModule.layout.searchBarAccessory" />
-      </div>
-
-      <!-- 更新提示按钮 -->
-      <BaseButton
-        v-if="updateStore.downloaded"
-        size="icon"
-        @click="showUpdateDialog = true"
-      >
-        <div class="i-ri-arrow-up-circle-line text-accent"></div>
-      </BaseButton>
-    </div>
-
-    <!-- 内容区 -->
-    <ContentView
-      ref="contentViewRef"
-      :module="activeModule"
-      :results="activeModule ? undefined : results"
-      :initial-loading="!activeModule && isLoading && results.length === 0"
-      :selected-index="activeModule ? undefined : selectedIndex"
-      :group-field="activeModule ? undefined : getGroupKey"
-      :group-title="activeModule ? undefined : getGroupTitle"
-      :on-execute="activeModule ? undefined : handleExecute"
-      @update:selected-index="(i: number) => (selectedIndex = i)"
-    />
-  </div>
-
-  <UpdateDialog v-if="showUpdateDialog" @close="showUpdateDialog = false" />
-</template>

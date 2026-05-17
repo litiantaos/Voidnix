@@ -1,3 +1,40 @@
+<template>
+  <div class="flex flex-col h-full">
+    <BaseList
+      :items="items"
+      v-model:selected-index="selectedIndex"
+      keyboard-navigation
+      group-field="groupId"
+      @execute="handleExecute"
+    >
+      <template #group-title="{ item }">
+        {{ item.groupTitle }}
+      </template>
+      <template #item="{ item, selected, hoverable, setRef, select }">
+        <BaseListItem
+          :ref="setRef"
+          :title="item.title"
+          :subtitle="item.subtitle"
+          :hoverable="hoverable"
+          :selected="selected"
+          @click="select"
+          @dblclick="handleExecute"
+        >
+          <template #trailing>
+            <BaseButton
+              @click="toggleAwake"
+              :disabled="isLoading"
+              :variant="isEnabled ? 'primary' : 'default'"
+            >
+              {{ isEnabled ? '已开启' : '已关闭' }}
+            </BaseButton>
+          </template>
+        </BaseListItem>
+      </template>
+    </BaseList>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
@@ -56,40 +93,3 @@ function handleExecute(_item?: unknown, _index?: number, e?: KeyboardEvent) {
   }
 }
 </script>
-
-<template>
-  <div class="flex flex-col h-full">
-    <BaseList
-      :items="items"
-      v-model:selected-index="selectedIndex"
-      keyboard-navigation
-      group-field="groupId"
-      @execute="handleExecute"
-    >
-      <template #group-title="{ item }">
-        {{ item.groupTitle }}
-      </template>
-      <template #item="{ item, selected, hoverable, setRef, select }">
-        <BaseListItem
-          :ref="setRef"
-          :title="item.title"
-          :subtitle="item.subtitle"
-          :hoverable="hoverable"
-          :selected="selected"
-          @click="select"
-          @dblclick="handleExecute"
-        >
-          <template #trailing>
-            <BaseButton
-              @click="toggleAwake"
-              :disabled="isLoading"
-              :variant="isEnabled ? 'primary' : 'default'"
-            >
-              {{ isEnabled ? '已开启' : '已关闭' }}
-            </BaseButton>
-          </template>
-        </BaseListItem>
-      </template>
-    </BaseList>
-  </div>
-</template>

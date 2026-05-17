@@ -1,3 +1,42 @@
+<template>
+  <!-- 截图窗口：只渲染截图覆盖层 -->
+  <template v-if="isScreenshot">
+    <ScreenshotOverlay
+      v-if="showScreenshot && screenshotData"
+      :initial-screenshot="screenshotData"
+      @close="onScreenshotClose"
+    />
+  </template>
+
+  <!-- 钉图窗口：独立浮动图片窗口 -->
+  <template v-else-if="isPin">
+    <PinView />
+  </template>
+
+  <!-- 主窗口：正常启动器 -->
+  <template v-else>
+    <MainView />
+    <ScreenshotOverlay
+      v-if="showScreenshot && screenshotData"
+      :initial-screenshot="screenshotData"
+      @close="onScreenshotClose"
+    />
+  </template>
+
+  <BaseDialog
+    v-if="appStore.isDialogOpen && appStore.dialogOptions"
+    :title="appStore.dialogOptions.title"
+    :message="appStore.dialogOptions.message"
+    :size="appStore.dialogOptions.size"
+    :kind="appStore.dialogOptions.kind"
+    :ok-label="appStore.dialogOptions.okLabel"
+    :cancel-label="appStore.dialogOptions.cancelLabel"
+    :show-cancel="appStore.dialogOptions.showCancel"
+    @confirm="appStore.resolveConfirm(true)"
+    @cancel="appStore.resolveConfirm(false)"
+  />
+</template>
+
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -5,11 +44,13 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import MainView from '@/components/layout/MainView.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
-import ScreenshotOverlay from '@/modules/screenshot/Overlay.vue'
+import ScreenshotOverlay from '@/modules/screenshot/overlay/Overlay.vue'
+import PinView from '@/modules/screenshot/overlay/PinView.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { pendingText } from '@/modules/translate'
+import { pendingOcrData, pendingOcrImagePath } from '@/modules/ocr'
 import { isTauri } from '@/utils/tauri'
 
 interface WindowRect { x: number; y: number; w: number; h: number; owner: string }
@@ -20,12 +61,14 @@ if (isTauri) {
   win = getCurrentWindow()
 }
 const isScreenshot = win?.label === 'screenshot'
+// 钉图窗口的 label 形如 'pin-{ts}'
+const isPin = win?.label?.startsWith('pin-') ?? false
 
 const showScreenshot = ref(false)
 const screenshotData = ref<ScreenshotData | null>(null)
 
-async function onScreenshotClose() {
-  await invoke('exit_screenshot_mode').catch(() => {})
+async function onScreenshotClose(forOcr = false) {
+  await invoke('exit_screenshot_mode', { noRestoreFocus: forOcr }).catch(() => {})
   showScreenshot.value = false
   screenshotData.value = null
 }
@@ -66,6 +109,7 @@ let unlistenShowingWindow: (() => void) | null = null
 let unlistenTranslateReady: (() => void) | null = null
 let unlistenClickOutside: (() => void) | null = null
 let unlistenScreenshotReady: (() => void) | null = null
+let unlistenOcrReady: (() => void) | null = null
 // webkit_tuning 驯化事件监听（Req 1.6, 2.7）
 let unlistenPreShow: (() => void) | null = null
 let unlistenAwaitingPaint: (() => void) | null = null
@@ -132,7 +176,10 @@ onMounted(async () => {
     return
   }
 
-  // ── 以下是主窗口逻辑 ──
+  if (isPin) {
+    // 钉图窗口：PinView 自行处理
+    return
+  }
 
   try {
     await settings.loadSettings()
@@ -220,7 +267,7 @@ onMounted(async () => {
           try {
             const text = await waitForSelectedText()
             pendingText.value = text.trim()
-          } catch (e) {
+          } catch {
             pendingText.value = ''
           }
         } else if (shortcutId === 'chat') {
@@ -270,6 +317,15 @@ onMounted(async () => {
       await invoke('enter_screenshot_mode', { data: e.payload })
     })
 
+    unlistenOcrReady = await listen<{ image_path: string; sel_x: number; sel_y: number; sel_w: number; sel_h: number; scale: number; annotation_png: string }>('ocr-ready', (e) => {
+      markSkip()
+      const d = e.payload
+      pendingOcrImagePath.value = d.image_path
+      pendingOcrData.value = { selX: d.sel_x, selY: d.sel_y, selW: d.sel_w, selH: d.sel_h, scale: d.scale, annotationPng: d.annotation_png }
+      appStore.setActiveModule('ocr')
+      appStore.setSearchQuery('')
+    })
+
     // webkit_tuning 驯化事件（Req 1.6, 2.7）
     // pre-show：触发 rAF 让 WebKit 渲染管线就绪，严格先于 alpha=1
     unlistenPreShow = await listen('webkit-tuning:pre-show', () => {
@@ -307,7 +363,7 @@ onMounted(async () => {
 })
 
 onUnmounted(async () => {
-  if (isScreenshot) {
+  if (isScreenshot || isPin) {
     return
   }
 
@@ -320,6 +376,7 @@ onUnmounted(async () => {
     if (unlistenTranslateReady) unlistenTranslateReady()
     if (unlistenClickOutside) unlistenClickOutside()
     if (unlistenScreenshotReady) unlistenScreenshotReady()
+    if (unlistenOcrReady) unlistenOcrReady()
     if (unlistenPreShow) unlistenPreShow()
     if (unlistenAwaitingPaint) unlistenAwaitingPaint()
     if (unlistenPainted) unlistenPainted()
@@ -356,37 +413,3 @@ onUnmounted(async () => {
   }
 })
 </script>
-
-<template>
-  <!-- 截图窗口：只渲染截图覆盖层 -->
-  <template v-if="isScreenshot">
-    <ScreenshotOverlay
-      v-if="showScreenshot && screenshotData"
-      :initial-screenshot="screenshotData"
-      @close="onScreenshotClose"
-    />
-  </template>
-
-  <!-- 主窗口：正常启动器 -->
-  <template v-else>
-    <MainView />
-    <ScreenshotOverlay
-      v-if="showScreenshot && screenshotData"
-      :initial-screenshot="screenshotData"
-      @close="onScreenshotClose"
-    />
-  </template>
-
-  <BaseDialog
-    v-if="appStore.isDialogOpen && appStore.dialogOptions"
-    :title="appStore.dialogOptions.title"
-    :message="appStore.dialogOptions.message"
-    :size="appStore.dialogOptions.size"
-    :kind="appStore.dialogOptions.kind"
-    :ok-label="appStore.dialogOptions.okLabel"
-    :cancel-label="appStore.dialogOptions.cancelLabel"
-    :show-cancel="appStore.dialogOptions.showCancel"
-    @confirm="appStore.resolveConfirm(true)"
-    @cancel="appStore.resolveConfirm(false)"
-  />
-</template>

@@ -1,3 +1,218 @@
+<template>
+  <div class="pb-4 flex flex-col h-full">
+    <BaseList
+      :items="allItems"
+      v-model:selected-index="selectedIndex"
+      keyboard-navigation
+      :group-field="(item: TranslateSettingsItem) => item.group"
+      :group-title="(g: string) => g"
+      @execute="(item: TranslateSettingsItem) => onExecute(item)"
+    >
+      <template #group-title="{ group }">
+        <div class="flex items-center">
+          <span>{{ group }}</span>
+          <BaseButton
+            v-if="group === '翻译服务'"
+            class="ml-auto"
+            @click.stop="openCreateModal()"
+          >
+            <div class="i-ri-add-line text-sm" />
+          </BaseButton>
+        </div>
+      </template>
+
+      <template #item="{ item, selected, hoverable: h, setRef, select }">
+        <!-- 快捷键 -->
+        <BaseListItem
+          v-if="item.type === 'shortcut'"
+          :ref="setRef"
+          :id="`si-${SHORTCUT_ITEM_ID}`"
+          title="启动快捷键"
+          :selected="selected"
+          :hoverable="h"
+          @click="select"
+        >
+          <template #trailing>
+            <ShortcutInput
+              :ref="(el: any) => setShortcutRef(`si-${SHORTCUT_ITEM_ID}`, el)"
+              :model-value="settings.translateShortcut"
+              @update:model-value="handleTranslateShortcutChange"
+            />
+          </template>
+        </BaseListItem>
+
+        <!-- 目标语言 -->
+        <BaseListItem
+          v-else-if="item.type === 'lang'"
+          :ref="setRef"
+          :id="`si-${LANG_ITEM_ID}`"
+          title="目标语言"
+          :selected="selected"
+          :hoverable="h"
+          @click="select"
+        >
+          <template #trailing>
+            <BaseSelect
+              :ref="(el: any) => setSelectRef(`si-${LANG_ITEM_ID}`, el)"
+              :model-value="settings.translateTargetLang"
+              :options="targetLangOptions"
+              @update:model-value="
+                (val: string | number) => handleTargetLangChange(String(val))
+              "
+            />
+          </template>
+        </BaseListItem>
+
+        <!-- 翻译服务 -->
+        <BaseListItem
+          v-else
+          :ref="setRef"
+          :title="providerLabel(item.config)"
+          :subtitle="
+            item.config.type === 'ai'
+              ? item.config.models.filter(Boolean).join('、') || '未配置模型'
+              : item.config.appKey
+                ? '已配置'
+                : '未配置'
+          "
+          :selected="selected"
+          :hoverable="h"
+          @click="select"
+          @dblclick="openConfigModal(item.config)"
+        />
+      </template>
+    </BaseList>
+
+    <!-- 编辑弹窗 -->
+    <BaseDialog
+      v-if="showConfigModal"
+      :title="
+        isCreating
+          ? '添加翻译服务'
+          : '编辑翻译服务'
+      "
+      variant="form"
+      size="md"
+      show-footer
+      ok-label="保存"
+      @confirm="saveConfigModal"
+      @cancel="closeConfigModal"
+    >
+      <div class="flex flex-col gap-4">
+        <!-- 有道表单 -->
+        <template v-if="editingType === 'youdao'">
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs text-tx-faint font-medium">APP ID</span>
+            <BaseInput
+              v-model="youdaoForm.appKey"
+              :type="passwordVisible ? 'text' : 'password'"
+              placeholder="有道翻译 App Key"
+            >
+              <template #suffix>
+                <button
+                  class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
+                  :class="{ 'i-ri-eye-off-line': passwordVisible }"
+                  @click.stop="passwordVisible = !passwordVisible"
+                />
+              </template>
+            </BaseInput>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs text-tx-faint font-medium">APP KEY</span>
+            <BaseInput
+              v-model="youdaoForm.appSecret"
+              :type="passwordVisible ? 'text' : 'password'"
+              placeholder="有道翻译 App Secret"
+            >
+              <template #suffix>
+                <button
+                  class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
+                  :class="{ 'i-ri-eye-off-line': passwordVisible }"
+                  @click.stop="passwordVisible = !passwordVisible"
+                />
+              </template>
+            </BaseInput>
+          </div>
+        </template>
+
+        <!-- AI 表单 -->
+        <template v-else>
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs text-tx-faint font-medium">API URL</span>
+            <BaseInput
+              v-model="aiForm.endpoint"
+              placeholder="https://api.openai.com/v1"
+            />
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs text-tx-faint font-medium">API KEY</span>
+            <BaseInput
+              v-model="aiForm.apiKey"
+              :type="passwordVisible ? 'text' : 'password'"
+              placeholder="sk-..."
+            >
+              <template #suffix>
+                <button
+                  class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
+                  :class="{ 'i-ri-eye-off-line': passwordVisible }"
+                  @click.stop="passwordVisible = !passwordVisible"
+                />
+              </template>
+            </BaseInput>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs text-tx-faint font-medium">模型</span>
+            <div class="flex flex-col gap-1.5">
+              <div
+                v-for="(_, index) in aiForm.models"
+                :key="index"
+                class="flex gap-1.5 items-center"
+              >
+                <BaseInput
+                  v-model="aiForm.models[index]"
+                  placeholder="gpt-4o"
+                  class="flex-1"
+                />
+                <BaseButton
+                  v-if="index > 0"
+                  size="icon"
+                  class="text-red-500"
+                  @click="removeModel(index)"
+                >
+                  <div class="i-ri-close-line" />
+                </BaseButton>
+                <BaseButton v-else size="icon" @click="addModel">
+                  <div class="i-ri-add-line" />
+                </BaseButton>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs text-tx-faint font-medium">提示词</span>
+            <BaseTextarea
+              v-model="aiForm.prompt"
+              placeholder="Translate the following text from {fromLang} to {toLang}:\n\n{text}"
+            />
+          </div>
+        </template>
+      </div>
+
+      <template #footer-start>
+        <BaseButton
+          v-if="canDeleteConfig"
+          class="text-red-500 hover:text-red-600"
+          @click="deleteAndClose"
+        >
+          删除
+        </BaseButton>
+      </template>
+    </BaseDialog>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
@@ -237,218 +452,3 @@ const editingType = computed(() => {
   return config?.type || 'ai'
 })
 </script>
-
-<template>
-  <div class="pb-4 flex flex-col h-full">
-    <BaseList
-      :items="allItems"
-      v-model:selected-index="selectedIndex"
-      keyboard-navigation
-      :group-field="(item: TranslateSettingsItem) => item.group"
-      :group-title="(g: string) => g"
-      @execute="(item: TranslateSettingsItem) => onExecute(item)"
-    >
-      <template #group-title="{ group }">
-        <div class="flex items-center">
-          <span>{{ group }}</span>
-          <BaseButton
-            v-if="group === '翻译服务'"
-            class="ml-auto"
-            @click.stop="openCreateModal()"
-          >
-            <div class="i-ri-add-line text-sm" />
-          </BaseButton>
-        </div>
-      </template>
-
-      <template #item="{ item, selected, hoverable: h, setRef, select }">
-        <!-- 快捷键 -->
-        <BaseListItem
-          v-if="item.type === 'shortcut'"
-          :ref="setRef"
-          :id="`si-${SHORTCUT_ITEM_ID}`"
-          title="启动快捷键"
-          :selected="selected"
-          :hoverable="h"
-          @click="select"
-        >
-          <template #trailing>
-            <ShortcutInput
-              :ref="(el: any) => setShortcutRef(`si-${SHORTCUT_ITEM_ID}`, el)"
-              :model-value="settings.translateShortcut"
-              @update:model-value="handleTranslateShortcutChange"
-            />
-          </template>
-        </BaseListItem>
-
-        <!-- 目标语言 -->
-        <BaseListItem
-          v-else-if="item.type === 'lang'"
-          :ref="setRef"
-          :id="`si-${LANG_ITEM_ID}`"
-          title="目标语言"
-          :selected="selected"
-          :hoverable="h"
-          @click="select"
-        >
-          <template #trailing>
-            <BaseSelect
-              :ref="(el: any) => setSelectRef(`si-${LANG_ITEM_ID}`, el)"
-              :model-value="settings.translateTargetLang"
-              :options="targetLangOptions"
-              @update:model-value="
-                (val: string | number) => handleTargetLangChange(String(val))
-              "
-            />
-          </template>
-        </BaseListItem>
-
-        <!-- 翻译服务 -->
-        <BaseListItem
-          v-else
-          :ref="setRef"
-          :title="providerLabel(item.config)"
-          :subtitle="
-            item.config.type === 'ai'
-              ? item.config.models.filter(Boolean).join('、') || '未配置模型'
-              : item.config.appKey
-                ? '已配置'
-                : '未配置'
-          "
-          :selected="selected"
-          :hoverable="h"
-          @click="select"
-          @dblclick="openConfigModal(item.config)"
-        />
-      </template>
-    </BaseList>
-
-    <!-- 编辑弹窗 -->
-    <BaseDialog
-      v-if="showConfigModal"
-      :title="
-        isCreating
-          ? '添加翻译服务'
-          : '编辑翻译服务'
-      "
-      variant="form"
-      size="md"
-      show-footer
-      ok-label="保存"
-      @confirm="saveConfigModal"
-      @cancel="closeConfigModal"
-    >
-      <div class="flex flex-col gap-4">
-        <!-- 有道表单 -->
-        <template v-if="editingType === 'youdao'">
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">APP ID</span>
-            <BaseInput
-              v-model="youdaoForm.appKey"
-              :type="passwordVisible ? 'text' : 'password'"
-              placeholder="有道翻译 App Key"
-            >
-              <template #suffix>
-                <button
-                  class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
-                  :class="{ 'i-ri-eye-off-line': passwordVisible }"
-                  @click.stop="passwordVisible = !passwordVisible"
-                />
-              </template>
-            </BaseInput>
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">APP KEY</span>
-            <BaseInput
-              v-model="youdaoForm.appSecret"
-              :type="passwordVisible ? 'text' : 'password'"
-              placeholder="有道翻译 App Secret"
-            >
-              <template #suffix>
-                <button
-                  class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
-                  :class="{ 'i-ri-eye-off-line': passwordVisible }"
-                  @click.stop="passwordVisible = !passwordVisible"
-                />
-              </template>
-            </BaseInput>
-          </div>
-        </template>
-
-        <!-- AI 表单 -->
-        <template v-else>
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">API URL</span>
-            <BaseInput
-              v-model="aiForm.endpoint"
-              placeholder="https://api.openai.com/v1"
-            />
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">API KEY</span>
-            <BaseInput
-              v-model="aiForm.apiKey"
-              :type="passwordVisible ? 'text' : 'password'"
-              placeholder="sk-..."
-            >
-              <template #suffix>
-                <button
-                  class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
-                  :class="{ 'i-ri-eye-off-line': passwordVisible }"
-                  @click.stop="passwordVisible = !passwordVisible"
-                />
-              </template>
-            </BaseInput>
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">模型</span>
-            <div class="flex flex-col gap-1.5">
-              <div
-                v-for="(_, index) in aiForm.models"
-                :key="index"
-                class="flex gap-1.5 items-center"
-              >
-                <BaseInput
-                  v-model="aiForm.models[index]"
-                  placeholder="gpt-4o"
-                  class="flex-1"
-                />
-                <BaseButton
-                  v-if="index > 0"
-                  size="icon"
-                  class="text-red-500"
-                  @click="removeModel(index)"
-                >
-                  <div class="i-ri-close-line" />
-                </BaseButton>
-                <BaseButton v-else size="icon" @click="addModel">
-                  <div class="i-ri-add-line" />
-                </BaseButton>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">提示词</span>
-            <BaseTextarea
-              v-model="aiForm.prompt"
-              placeholder="Translate the following text from {fromLang} to {toLang}:\n\n{text}"
-            />
-          </div>
-        </template>
-      </div>
-
-      <template #footer-start>
-        <BaseButton
-          v-if="canDeleteConfig"
-          class="text-red-500 hover:text-red-600"
-          @click="deleteAndClose"
-        >
-          删除
-        </BaseButton>
-      </template>
-    </BaseDialog>
-  </div>
-</template>

@@ -1,62 +1,3 @@
-<script setup lang="ts">
-import { onMounted, watch } from 'vue'
-import { history, activeTab, fetchClipboardHistory } from './index'
-import { invoke } from '@tauri-apps/api/core'
-import { onKeyStroke } from '@vueuse/core'
-import BaseList from '@/components/ui/BaseList.vue'
-import BaseListItem from '@/components/ui/BaseListItem.vue'
-import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
-import { useAppStore } from '@/stores/app'
-
-const appStore = useAppStore()
-
-const MULTILINE_THRESHOLD = 80
-const shouldMultiline = (item: { content_type: string; content: string }) =>
-  item.content_type === 'image' ||
-  (item.content_type === 'text' && item.content.length > MULTILINE_THRESHOLD)
-
-onMounted(() => {
-  fetchClipboardHistory(appStore.searchQuery, activeTab.value === 'favorites')
-})
-
-watch([activeTab, () => appStore.searchQuery], ([tab, query]) => {
-  fetchClipboardHistory(query, tab === 'favorites')
-})
-
-// Handle Tab key to switch between tabs
-onKeyStroke('Tab', (e) => {
-  if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
-  e.preventDefault()
-  activeTab.value = activeTab.value === 'all' ? 'favorites' : 'all'
-})
-
-const copyToClipboard = async (id: string) => {
-  try {
-    await invoke('paste_clipboard_item', { id })
-  } catch (e) {
-    console.error('Failed to paste clipboard:', e)
-  }
-}
-
-const toggleFavorite = async (id: string, event: MouseEvent) => {
-  event.stopPropagation()
-  try {
-    await invoke('toggle_clipboard_favorite', { id })
-    // Optimistic UI update
-    const item = history.value.find((i) => i.id === id)
-    if (item) {
-      item.is_favorite = !item.is_favorite
-    }
-    // If we are in favorites tab and un-favorited, remove it from view
-    if (activeTab.value === 'favorites') {
-      history.value = history.value.filter((i) => i.is_favorite)
-    }
-  } catch (e) {
-    console.error('Failed to toggle favorite:', e)
-  }
-}
-</script>
-
 <template>
   <BaseEmptyState
     v-if="history.length === 0"
@@ -130,3 +71,62 @@ const toggleFavorite = async (id: string, event: MouseEvent) => {
     </template>
   </BaseList>
 </template>
+
+<script setup lang="ts">
+import { onMounted, watch } from 'vue'
+import { history, activeTab, fetchClipboardHistory } from './index'
+import { invoke } from '@tauri-apps/api/core'
+import { onKeyStroke } from '@vueuse/core'
+import BaseList from '@/components/ui/BaseList.vue'
+import BaseListItem from '@/components/ui/BaseListItem.vue'
+import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
+import { useAppStore } from '@/stores/app'
+
+const appStore = useAppStore()
+
+const MULTILINE_THRESHOLD = 80
+const shouldMultiline = (item: { content_type: string; content: string }) =>
+  item.content_type === 'image' ||
+  (item.content_type === 'text' && item.content.length > MULTILINE_THRESHOLD)
+
+onMounted(() => {
+  fetchClipboardHistory(appStore.searchQuery, activeTab.value === 'favorites')
+})
+
+watch([activeTab, () => appStore.searchQuery], ([tab, query]) => {
+  fetchClipboardHistory(query, tab === 'favorites')
+})
+
+// Handle Tab key to switch between tabs
+onKeyStroke('Tab', (e) => {
+  if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
+  e.preventDefault()
+  activeTab.value = activeTab.value === 'all' ? 'favorites' : 'all'
+})
+
+const copyToClipboard = async (id: string) => {
+  try {
+    await invoke('paste_clipboard_item', { id })
+  } catch (e) {
+    console.error('Failed to paste clipboard:', e)
+  }
+}
+
+const toggleFavorite = async (id: string, event: MouseEvent) => {
+  event.stopPropagation()
+  try {
+    await invoke('toggle_clipboard_favorite', { id })
+    // Optimistic UI update
+    const item = history.value.find((i) => i.id === id)
+    if (item) {
+      item.is_favorite = !item.is_favorite
+    }
+    // If we are in favorites tab and un-favorited, remove it from view
+    if (activeTab.value === 'favorites') {
+      history.value = history.value.filter((i) => i.is_favorite)
+    }
+  } catch (e) {
+    console.error('Failed to toggle favorite:', e)
+  }
+}
+</script>

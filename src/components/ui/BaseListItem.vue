@@ -1,22 +1,3 @@
-<script setup lang="ts">
-defineProps<{
-  selected?: boolean
-  hoverable?: boolean
-  title?: string
-  subtitle?: string
-  icon?: string
-  iconClass?: string
-  iconWrapperClass?: string
-  multilineTitle?: boolean
-}>()
-
-const emit = defineEmits<{
-  click: [MouseEvent]
-  dblclick: [MouseEvent]
-  mouseover: [MouseEvent]
-}>()
-</script>
-
 <template>
   <div
     class="group text-tx-primary p-3 rounded-lg flex gap-3 select-none"
@@ -60,3 +41,22 @@ const emit = defineEmits<{
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+defineProps<{
+  selected?: boolean
+  hoverable?: boolean
+  title?: string
+  subtitle?: string
+  icon?: string
+  iconClass?: string
+  iconWrapperClass?: string
+  multilineTitle?: boolean
+}>()
+
+const emit = defineEmits<{
+  click: [MouseEvent]
+  dblclick: [MouseEvent]
+  mouseover: [MouseEvent]
+}>()
+</script>

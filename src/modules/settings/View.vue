@@ -1,3 +1,44 @@
+<template>
+  <div class="pb-4 flex flex-col h-full">
+    <BaseList
+      v-if="visibleItems.length > 0"
+      :items="visibleItems"
+      v-model:selected-index="selectedIndex"
+      keyboard-navigation
+      @execute="
+        (item: SettingItem, _i: number, e?: KeyboardEvent) =>
+          handleExecute(item, e)
+      "
+    >
+      <template #item="{ item, selected, hoverable, setRef, select }">
+        <BaseListItem
+          :ref="setRef"
+          :id="`set-${item.id}`"
+          :title="item.title"
+          :subtitle="item.subtitle"
+          :icon="item.icon"
+          :hoverable="hoverable"
+          :selected="selected"
+          @click="select"
+          @dblclick="handleExecute(item)"
+        >
+          <template v-if="item.type === 'shortcut'" #trailing>
+            <ShortcutInput
+              :ref="(el: any) => setShortcutRef(`si-${item.id}`, el)"
+              :model-value="String(item.value)"
+              @update:model-value="item.update"
+            />
+          </template>
+        </BaseListItem>
+      </template>
+    </BaseList>
+
+    <BaseEmptyState v-else icon="i-ri-search-line" title="没有找到相关设置" />
+  </div>
+
+  <UpdateDialog v-if="showUpdateDialog" @close="showUpdateDialog = false" />
+</template>
+
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
@@ -154,44 +195,3 @@ const visibleItems = computed<SettingItem[]>(() => {
 
 const selectedIndex = ref(0)
 </script>
-
-<template>
-  <div class="pb-4 flex flex-col h-full">
-    <BaseList
-      v-if="visibleItems.length > 0"
-      :items="visibleItems"
-      v-model:selected-index="selectedIndex"
-      keyboard-navigation
-      @execute="
-        (item: SettingItem, _i: number, e?: KeyboardEvent) =>
-          handleExecute(item, e)
-      "
-    >
-      <template #item="{ item, selected, hoverable, setRef, select }">
-        <BaseListItem
-          :ref="setRef"
-          :id="`set-${item.id}`"
-          :title="item.title"
-          :subtitle="item.subtitle"
-          :icon="item.icon"
-          :hoverable="hoverable"
-          :selected="selected"
-          @click="select"
-          @dblclick="handleExecute(item)"
-        >
-          <template v-if="item.type === 'shortcut'" #trailing>
-            <ShortcutInput
-              :ref="(el: any) => setShortcutRef(`si-${item.id}`, el)"
-              :model-value="String(item.value)"
-              @update:model-value="item.update"
-            />
-          </template>
-        </BaseListItem>
-      </template>
-    </BaseList>
-
-    <BaseEmptyState v-else icon="i-ri-search-line" title="没有找到相关设置" />
-  </div>
-
-  <UpdateDialog v-if="showUpdateDialog" @close="showUpdateDialog = false" />
-</template>

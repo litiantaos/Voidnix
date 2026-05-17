@@ -1,3 +1,80 @@
+<template>
+  <Teleport to="body">
+    <div
+      class="flex items-center inset-0 justify-center fixed z-100"
+      @keydown="onKeyDown"
+    >
+      <Transition
+        appear
+        enter-from-class="backdrop-from"
+        leave-to-class="backdrop-from"
+      >
+        <div class="backdrop-to inset-0 absolute" @click="onOverlayClick" />
+      </Transition>
+      <Transition
+        appear
+        enter-from-class="dialog-from"
+        leave-to-class="dialog-from"
+      >
+        <div
+          ref="dialogRef"
+          class="dialog-to outline-none rounded-lg bg-white flex flex-col shadow-md relative z-10"
+          :class="sizeClass"
+          role="dialog"
+          aria-modal="true"
+          :aria-labelledby="titleId"
+          :aria-describedby="message ? descId : undefined"
+          tabindex="-1"
+        >
+          <div class="text-sm text-tx-primary font-bold p-5">
+            <slot name="header">
+              <h3 :id="titleId">
+                {{ title }}
+              </h3>
+            </slot>
+          </div>
+
+          <div class="hide-scrollbar px-5 flex-1 overflow-auto">
+            <slot>
+              <p
+                v-if="message"
+                :id="descId"
+                class="text-xs text-tx-subtle leading-relaxed whitespace-pre-wrap break-all"
+              >
+                {{ message }}
+              </p>
+            </slot>
+          </div>
+
+          <slot v-if="resolvedShowFooter" name="footer">
+            <div class="p-5 flex gap-2 justify-between">
+              <div>
+                <slot name="footer-start" />
+              </div>
+              <div class="flex gap-2">
+                <BaseButton
+                  v-if="showCancel"
+                  :active="focusIndex === 0"
+                  @click="emit('cancel', 'cancel')"
+                >
+                  {{ cancelLabel || '取消' }}
+                </BaseButton>
+                <BaseButton
+                  variant="primary"
+                  :active="focusIndex === 1"
+                  @click="emit('confirm')"
+                >
+                  {{ okLabel || '确定' }}
+                </BaseButton>
+              </div>
+            </div>
+          </slot>
+        </div>
+      </Transition>
+    </div>
+  </Teleport>
+</template>
+
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, useId } from 'vue'
 import BaseButton from './BaseButton.vue'
@@ -177,83 +254,6 @@ onUnmounted(() => {
   }
 })
 </script>
-
-<template>
-  <Teleport to="body">
-    <div
-      class="flex items-center inset-0 justify-center fixed z-100"
-      @keydown="onKeyDown"
-    >
-      <Transition
-        appear
-        enter-from-class="backdrop-from"
-        leave-to-class="backdrop-from"
-      >
-        <div class="backdrop-to inset-0 absolute" @click="onOverlayClick" />
-      </Transition>
-      <Transition
-        appear
-        enter-from-class="dialog-from"
-        leave-to-class="dialog-from"
-      >
-        <div
-          ref="dialogRef"
-          class="dialog-to outline-none rounded-lg bg-white flex flex-col shadow-md relative z-10"
-          :class="sizeClass"
-          role="dialog"
-          aria-modal="true"
-          :aria-labelledby="titleId"
-          :aria-describedby="message ? descId : undefined"
-          tabindex="-1"
-        >
-          <div class="text-sm text-tx-primary font-bold p-5">
-            <slot name="header">
-              <h3 :id="titleId">
-                {{ title }}
-              </h3>
-            </slot>
-          </div>
-
-          <div class="hide-scrollbar px-5 flex-1 overflow-auto">
-            <slot>
-              <p
-                v-if="message"
-                :id="descId"
-                class="text-xs text-tx-subtle leading-relaxed"
-              >
-                {{ message }}
-              </p>
-            </slot>
-          </div>
-
-          <slot v-if="resolvedShowFooter" name="footer">
-            <div class="p-5 flex gap-2 justify-between">
-              <div>
-                <slot name="footer-start" />
-              </div>
-              <div class="flex gap-2">
-                <BaseButton
-                  v-if="showCancel"
-                  :active="focusIndex === 0"
-                  @click="emit('cancel', 'cancel')"
-                >
-                  {{ cancelLabel || '取消' }}
-                </BaseButton>
-                <BaseButton
-                  variant="primary"
-                  :active="focusIndex === 1"
-                  @click="emit('confirm')"
-                >
-                  {{ okLabel || '确定' }}
-                </BaseButton>
-              </div>
-            </div>
-          </slot>
-        </div>
-      </Transition>
-    </div>
-  </Teleport>
-</template>
 
 <style scoped>
 .backdrop-to {

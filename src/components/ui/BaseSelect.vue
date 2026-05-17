@@ -1,3 +1,77 @@
+<template>
+  <div
+    ref="selectRef"
+    :id="id"
+    data-settings-control
+    :class="[
+      'ui-ctrl custom-select flex items-center justify-between min-w-0 w-full relative overflow-hidden',
+      disabled ? 'ui-disabled' : '',
+    ]"
+    tabindex="0"
+    @keydown="onKeyDown"
+    @click="toggleOpen"
+  >
+    <span
+      :class="selectedLabel ? 'text-tx-primary' : 'text-tx-hint'"
+      class="truncate"
+    >
+      {{ selectedLabel || placeholder }}
+    </span>
+    <i
+      class="i-ri-arrow-down-s-line text-sm text-tx-muted ml-2 flex-none transition-transform duration-200"
+      :class="isOpen ? 'rotate-180' : ''"
+    />
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition duration-150 ease-out"
+        :enter-from-class="
+          dropUp
+            ? 'opacity-0 scale-95 translate-y-1'
+            : 'opacity-0 scale-95 -translate-y-1'
+        "
+        enter-to-class="opacity-100 scale-100 translate-0"
+        leave-active-class="transition duration-100 ease-in"
+        leave-from-class="opacity-100 scale-100 translate-0"
+        :leave-to-class="
+          dropUp
+            ? 'opacity-0 scale-95 translate-y-1'
+            : 'opacity-0 scale-95 -translate-y-1'
+        "
+      >
+        <div
+          v-if="isOpen"
+          data-select-dropdown
+          :style="dropdownStyle"
+          class="p-1 rounded-lg bg-white max-w-[80vw] select-none shadow-lg"
+        >
+          <template v-for="(item, index) in flatItems" :key="index">
+            <div
+              v-if="item.type === 'group'"
+              class="text-xs text-tx-faint tracking-wider font-medium px-3 py-1.5 uppercase"
+            >
+              {{ item.label }}
+            </div>
+            <div
+              v-else
+              @click.stop="selectOption(index)"
+              @mouseover="highlightedIndex = index"
+              :class="[
+                'text-sm font-medium px-3 py-1.5 rounded-md transition-colors truncate',
+                index === highlightedIndex
+                  ? 'ui-active text-accent'
+                  : 'ui-hover text-tx-secondary',
+              ]"
+            >
+              {{ item.label }}
+            </div>
+          </template>
+        </div>
+      </Transition>
+    </Teleport>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 
@@ -251,77 +325,3 @@ onUnmounted(() => {
   document.removeEventListener('mousedown', onClickOutside)
 })
 </script>
-
-<template>
-  <div
-    ref="selectRef"
-    :id="id"
-    data-settings-control
-    :class="[
-      'ui-ctrl custom-select flex items-center justify-between min-w-0 w-full relative overflow-hidden',
-      disabled ? 'ui-disabled' : '',
-    ]"
-    tabindex="0"
-    @keydown="onKeyDown"
-    @click="toggleOpen"
-  >
-    <span
-      :class="selectedLabel ? 'text-tx-primary' : 'text-tx-hint'"
-      class="truncate"
-    >
-      {{ selectedLabel || placeholder }}
-    </span>
-    <i
-      class="i-ri-arrow-down-s-line text-sm text-tx-muted ml-2 flex-none transition-transform duration-200"
-      :class="isOpen ? 'rotate-180' : ''"
-    />
-
-    <Teleport to="body">
-      <Transition
-        enter-active-class="transition duration-150 ease-out"
-        :enter-from-class="
-          dropUp
-            ? 'opacity-0 scale-95 translate-y-1'
-            : 'opacity-0 scale-95 -translate-y-1'
-        "
-        enter-to-class="opacity-100 scale-100 translate-0"
-        leave-active-class="transition duration-100 ease-in"
-        leave-from-class="opacity-100 scale-100 translate-0"
-        :leave-to-class="
-          dropUp
-            ? 'opacity-0 scale-95 translate-y-1'
-            : 'opacity-0 scale-95 -translate-y-1'
-        "
-      >
-        <div
-          v-if="isOpen"
-          data-select-dropdown
-          :style="dropdownStyle"
-          class="p-1 rounded-lg bg-white max-w-[80vw] select-none shadow-lg"
-        >
-          <template v-for="(item, index) in flatItems" :key="index">
-            <div
-              v-if="item.type === 'group'"
-              class="text-xs text-tx-faint tracking-wider font-medium px-3 py-1.5 uppercase"
-            >
-              {{ item.label }}
-            </div>
-            <div
-              v-else
-              @click.stop="selectOption(index)"
-              @mouseover="highlightedIndex = index"
-              :class="[
-                'text-sm font-medium px-3 py-1.5 rounded-md transition-colors truncate',
-                index === highlightedIndex
-                  ? 'ui-active text-accent'
-                  : 'ui-hover text-tx-secondary',
-              ]"
-            >
-              {{ item.label }}
-            </div>
-          </template>
-        </div>
-      </Transition>
-    </Teleport>
-  </div>
-</template>

@@ -1,3 +1,48 @@
+<template>
+  <div class="pb-4 flex flex-col h-full">
+    <BaseList
+      :items="items"
+      v-model:selected-index="selectedIndex"
+      keyboard-navigation
+      @execute="(item: SettingItem, _i: number, e?: KeyboardEvent) => handleExecute(item, e)"
+    >
+      <template #item="{ item, selected, hoverable, setRef, select }">
+        <BaseListItem
+          :ref="setRef"
+          :id="`si-${item.id}`"
+          :title="item.title"
+          :hoverable="hoverable"
+          :selected="selected"
+          @click="select"
+          @dblclick="() => handleExecute(item)"
+        >
+          <template #trailing>
+            <ShortcutInput
+              v-if="item.type === 'shortcut'"
+              :ref="(el: any) => setShortcutRef(`si-${item.id}`, el)"
+              :model-value="String(item.value)"
+              @update:model-value="item.update!"
+            />
+            <BaseSelect
+              v-else-if="item.type === 'select'"
+              :ref="(el: any) => setSelectRef(`si-${item.id}`, el)"
+              :model-value="item.value"
+              :options="item.options!"
+              @update:model-value="item.update!"
+            />
+            <BaseButton
+              v-else-if="item.type === 'button'"
+              @click="item.action!"
+            >
+              清空
+            </BaseButton>
+          </template>
+        </BaseListItem>
+      </template>
+    </BaseList>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
@@ -76,48 +121,3 @@ const items = computed<SettingItem[]>(() => [
 
 const selectedIndex = ref(0)
 </script>
-
-<template>
-  <div class="pb-4 flex flex-col h-full">
-    <BaseList
-      :items="items"
-      v-model:selected-index="selectedIndex"
-      keyboard-navigation
-      @execute="(item: SettingItem, _i: number, e?: KeyboardEvent) => handleExecute(item, e)"
-    >
-      <template #item="{ item, selected, hoverable, setRef, select }">
-        <BaseListItem
-          :ref="setRef"
-          :id="`si-${item.id}`"
-          :title="item.title"
-          :hoverable="hoverable"
-          :selected="selected"
-          @click="select"
-          @dblclick="() => handleExecute(item)"
-        >
-          <template #trailing>
-            <ShortcutInput
-              v-if="item.type === 'shortcut'"
-              :ref="(el: any) => setShortcutRef(`si-${item.id}`, el)"
-              :model-value="String(item.value)"
-              @update:model-value="item.update!"
-            />
-            <BaseSelect
-              v-else-if="item.type === 'select'"
-              :ref="(el: any) => setSelectRef(`si-${item.id}`, el)"
-              :model-value="item.value"
-              :options="item.options!"
-              @update:model-value="item.update!"
-            />
-            <BaseButton
-              v-else-if="item.type === 'button'"
-              @click="item.action!"
-            >
-              清空
-            </BaseButton>
-          </template>
-        </BaseListItem>
-      </template>
-    </BaseList>
-  </div>
-</template>

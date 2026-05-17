@@ -1,3 +1,18 @@
+<template>
+  <button
+    :disabled="disabled"
+    :class="[
+      'ui-ctrl flex-none',
+      sizeClasses[size],
+      variantClasses[variant],
+      
+      disabled ? 'ui-disabled' : '',
+    ]"
+  >
+    <slot />
+  </button>
+</template>
+
 <script setup lang="ts">
 interface Props {
   variant?: 'default' | 'primary' | 'outline'
@@ -25,18 +40,3 @@ const variantClasses: Record<string, string> = {
     'border border-solid border-black/12 bg-transparent text-tx-primary hover:bg-black/4',
 }
 </script>
-
-<template>
-  <button
-    :disabled="disabled"
-    :class="[
-      'ui-ctrl flex-none',
-      sizeClasses[size],
-      variantClasses[variant],
-      
-      disabled ? 'ui-disabled' : '',
-    ]"
-  >
-    <slot />
-  </button>
-</template>

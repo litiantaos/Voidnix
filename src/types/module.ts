@@ -100,6 +100,12 @@ export interface AppModule {
   multiline?: boolean
 
   /**
+   * 禁用主搜索框（输入框置 disabled，不响应键入）。
+   * 适用于无搜索语义的模块（如 OCR 结果展示）。
+   */
+  disableSearchInput?: boolean
+
+  /**
    * 模块设置视图。进入设置模式时占满整个内容区，不携带 view 模式的 chrome。
    */
   settings?: Component

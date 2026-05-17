@@ -1,0 +1,15 @@
+{
+  "identifier": "pin-windows",
+  "description": "Permissions for pin image windows (label starts with pin-)",
+  "windows": ["pin-*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-close",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-set-always-on-top"
+  ]
+}

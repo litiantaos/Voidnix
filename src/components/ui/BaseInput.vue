@@ -1,3 +1,31 @@
+<template>
+  <div
+    data-settings-control
+    :class="[
+      'ui-ctrl flex items-center gap-2',
+      error ? 'border-red-400' : '',
+      disabled ? 'ui-disabled bg-black/2' : '',
+    ]"
+  >
+    <slot name="prefix" />
+    <input
+      ref="inputRef"
+      :type="type"
+      :value="modelValue"
+      :placeholder="placeholder"
+      :disabled="disabled"
+      class="text-tx-primary outline-none bg-transparent flex-1 min-w-0 placeholder:text-tx-hint"
+      @input="onInput"
+      @focus="emit('focus', $event)"
+      @blur="emit('blur', $event)"
+      @keydown="onKeydown"
+      @compositionstart="onCompositionStart"
+      @compositionend="onCompositionEnd"
+    />
+    <slot name="suffix" />
+  </div>
+</template>
+
 <script setup lang="ts">
 import { toRef } from 'vue'
 import { useInputControl } from '@/composables/useInputControl'
@@ -49,31 +77,3 @@ function onCompositionEnd() {
 
 defineExpose({ focus, blur, inputRef })
 </script>
-
-<template>
-  <div
-    data-settings-control
-    :class="[
-      'ui-ctrl flex items-center gap-2',
-      error ? 'border-red-400' : '',
-      disabled ? 'ui-disabled bg-black/2' : '',
-    ]"
-  >
-    <slot name="prefix" />
-    <input
-      ref="inputRef"
-      :type="type"
-      :value="modelValue"
-      :placeholder="placeholder"
-      :disabled="disabled"
-      class="text-tx-primary outline-none bg-transparent flex-1 min-w-0 placeholder:text-tx-hint"
-      @input="onInput"
-      @focus="emit('focus', $event)"
-      @blur="emit('blur', $event)"
-      @keydown="onKeydown"
-      @compositionstart="onCompositionStart"
-      @compositionend="onCompositionEnd"
-    />
-    <slot name="suffix" />
-  </div>
-</template>

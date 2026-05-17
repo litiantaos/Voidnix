@@ -36,6 +36,18 @@
         "skipTaskbar": true,
         "focus": true,
         "visible": false
+      },
+      {
+        "label": "ocr",
+        "title": "OCR 识别",
+        "width": 480,
+        "height": 560,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false
       }
     ],
     "security": {

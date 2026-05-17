@@ -1,33 +1,3 @@
-<script setup lang="ts">
-import { ref } from 'vue'
-import { open } from '@tauri-apps/plugin-shell'
-import { relaunch } from '@tauri-apps/plugin-process'
-import BaseDialog from './BaseDialog.vue'
-import { useUpdateStore } from '@/stores/update'
-import { isTauri } from '@/utils/tauri'
-
-const emit = defineEmits<{ (e: 'close'): void }>()
-
-const updateStore = useUpdateStore()
-const installing = ref(false)
-
-async function openReleases() {
-  if (isTauri) {
-    await open('https://github.com/litiantaos/Voidnix/releases')
-  }
-}
-
-async function onConfirm() {
-  installing.value = true
-  try {
-    await updateStore.install()
-    await relaunch()
-  } catch {
-    installing.value = false
-  }
-}
-</script>
-
 <template>
   <BaseDialog
     title="发现新版本"
@@ -58,3 +28,33 @@ async function onConfirm() {
     </div>
   </BaseDialog>
 </template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { open } from '@tauri-apps/plugin-shell'
+import { relaunch } from '@tauri-apps/plugin-process'
+import BaseDialog from './BaseDialog.vue'
+import { useUpdateStore } from '@/stores/update'
+import { isTauri } from '@/utils/tauri'
+
+const emit = defineEmits<{ (e: 'close'): void }>()
+
+const updateStore = useUpdateStore()
+const installing = ref(false)
+
+async function openReleases() {
+  if (isTauri) {
+    await open('https://github.com/litiantaos/Voidnix/releases')
+  }
+}
+
+async function onConfirm() {
+  installing.value = true
+  try {
+    await updateStore.install()
+    await relaunch()
+  } catch {
+    installing.value = false
+  }
+}
+</script>

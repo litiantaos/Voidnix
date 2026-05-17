@@ -1,3 +1,55 @@
+<template>
+  <div class="pb-4 flex flex-col h-full">
+    <BaseList
+      :items="items"
+      v-model:selected-index="selectedIndex"
+      keyboard-navigation
+      :group-field="(item: Item) => item.group"
+      :group-title="(g: string) => g"
+      @execute="(item: Item) => onExecute(item)"
+    >
+      <template #item="{ item, selected, hoverable: h, setRef, select }">
+        <!-- 快捷键 -->
+        <BaseListItem
+          v-if="item.type === 'shortcut'"
+          :ref="setRef"
+          :id="`si-${SHORTCUT_ITEM_ID}`"
+          title="启动快捷键"
+          :selected="selected"
+          :hoverable="h"
+          @click="select"
+        >
+          <template #trailing>
+            <ShortcutInput
+              :ref="(el: any) => setShortcutRef(`si-${SHORTCUT_ITEM_ID}`, el)"
+              :model-value="settings.screenshotShortcut"
+              @update:model-value="handleShortcutChange"
+            />
+          </template>
+        </BaseListItem>
+
+        <!-- 保存路径 -->
+        <BaseListItem
+          v-else-if="item.type === 'savePath'"
+          :ref="setRef"
+          title="截图保存位置"
+          :subtitle="savePathDisplay(settings.screenshotSavePath)"
+          :selected="selected"
+          :hoverable="h"
+          @click="select"
+          @dblclick="pickSavePath"
+        >
+          <template #trailing>
+            <BaseButton @click.stop="pickSavePath">
+              <div class="i-ri-folder-open-line text-sm"></div>
+            </BaseButton>
+          </template>
+        </BaseListItem>
+      </template>
+    </BaseList>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
@@ -58,55 +110,3 @@ function onExecute(item: Item) {
   }
 }
 </script>
-
-<template>
-  <div class="pb-4 flex flex-col h-full">
-    <BaseList
-      :items="items"
-      v-model:selected-index="selectedIndex"
-      keyboard-navigation
-      :group-field="(item: Item) => item.group"
-      :group-title="(g: string) => g"
-      @execute="(item: Item) => onExecute(item)"
-    >
-      <template #item="{ item, selected, hoverable: h, setRef, select }">
-        <!-- 快捷键 -->
-        <BaseListItem
-          v-if="item.type === 'shortcut'"
-          :ref="setRef"
-          :id="`si-${SHORTCUT_ITEM_ID}`"
-          title="启动快捷键"
-          :selected="selected"
-          :hoverable="h"
-          @click="select"
-        >
-          <template #trailing>
-            <ShortcutInput
-              :ref="(el: any) => setShortcutRef(`si-${SHORTCUT_ITEM_ID}`, el)"
-              :model-value="settings.screenshotShortcut"
-              @update:model-value="handleShortcutChange"
-            />
-          </template>
-        </BaseListItem>
-
-        <!-- 保存路径 -->
-        <BaseListItem
-          v-else-if="item.type === 'savePath'"
-          :ref="setRef"
-          title="截图保存位置"
-          :subtitle="savePathDisplay(settings.screenshotSavePath)"
-          :selected="selected"
-          :hoverable="h"
-          @click="select"
-          @dblclick="pickSavePath"
-        >
-          <template #trailing>
-            <BaseButton @click.stop="pickSavePath">
-              <div class="i-ri-folder-open-line text-sm"></div>
-            </BaseButton>
-          </template>
-        </BaseListItem>
-      </template>
-    </BaseList>
-  </div>
-</template>

@@ -659,17 +659,21 @@ pub async fn show_screenshot_window(_app: tauri::AppHandle) -> Result<(), String
     Ok(())
 }
 
+/// 退出截屏模式。no_restore_focus 为 true 时不恢复前台应用焦点（OCR 场景）。
 #[tauri::command]
-pub async fn exit_screenshot_mode(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn exit_screenshot_mode(
+    app: tauri::AppHandle,
+    no_restore_focus: Option<bool>,
+) -> Result<(), String> {
     let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
     let app_c = app.clone();
-    app.run_on_main_thread(move || { let _ = tx.send(exit_impl(&app_c)); })
+    app.run_on_main_thread(move || { let _ = tx.send(exit_impl(&app_c, no_restore_focus.unwrap_or(false))); })
         .map_err(|e| e.to_string())?;
     rx.recv().map_err(|e| e.to_string())?
 }
 
 #[cfg(target_os = "macos")]
-fn exit_impl(app: &tauri::AppHandle) -> Result<(), String> {
+fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), String> {
     use tauri::Manager;
     use objc2_app_kit::{NSApplicationActivationOptions, NSWindow, NSWindowAnimationBehavior, NSWorkspace};
 
@@ -689,7 +693,7 @@ fn exit_impl(app: &tauri::AppHandle) -> Result<(), String> {
     }
 
     let prev_pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
-    if prev_pid > 0 {
+    if !no_restore_focus && prev_pid > 0 {
         let ws = NSWorkspace::sharedWorkspace();
         if let Some(target) = ws.runningApplications().iter()
             .find(|a| a.processIdentifier() as i32 == prev_pid)
@@ -702,7 +706,7 @@ fn exit_impl(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn exit_impl(_app: &tauri::AppHandle) -> Result<(), String> { Ok(()) }
+fn exit_impl(_app: &tauri::AppHandle, _no_restore_focus: bool) -> Result<(), String> { Ok(()) }
 
 // ── reactivate / mouse_tracker（不变）────────────────────────────────────────
 
@@ -804,3 +808,245 @@ pub(crate) fn stop_mouse_tracker() { mouse_tracker::stop(); }
 pub(crate) fn start_mouse_tracker(_app: &tauri::AppHandle) {}
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn stop_mouse_tracker() {}
+
+// ── OCR 窗口 ──────────────────────────────────────────────────────────────────
+
+/// 退出截屏模式，打开 OCR 窗口并传入选区数据。
+#[tauri::command]
+pub async fn open_ocr_window(
+    app: tauri::AppHandle,
+    sel_x: f64, sel_y: f64, sel_w: f64, sel_h: f64,
+    scale: f64,
+    annotation_png: String,
+) -> Result<(), String> {
+    use tauri::Manager;
+
+    // 先生成选区 PNG 保存到临时文件，供 OCR 窗口预览
+    let ann = if annotation_png.is_empty() { None } else { Some(decode_image_data(&annotation_png)?) };
+
+    #[cfg(target_os = "macos")]
+    let image_path = {
+        let png = crop_with_annotation(sel_x, sel_y, sel_w, sel_h, scale, ann.as_deref())?;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+        let path = std::env::temp_dir().join(format!("voidnix_ocr_preview_{}.png", ts));
+        std::fs::write(&path, &png).map_err(|e| e.to_string())?;
+        path.to_string_lossy().to_string()
+    };
+    #[cfg(not(target_os = "macos"))]
+    let image_path = String::new();
+
+    let ocr_data = serde_json::json!({
+        "image_path": image_path,
+        "sel_x": sel_x,
+        "sel_y": sel_y,
+        "sel_w": sel_w,
+        "sel_h": sel_h,
+        "scale": scale,
+        "annotation_png": annotation_png,
+    });
+
+    let window = app.get_webview_window("ocr").ok_or("找不到 OCR 窗口")?;
+
+    // 注入数据并触发事件
+    let json = serde_json::to_string(&ocr_data).map_err(|e| e.to_string())?;
+    window.eval(&format!(
+        "window.__ocrData = {}; window.dispatchEvent(new CustomEvent('__ocr_ready'));",
+        json
+    )).map_err(|e| e.to_string())?;
+
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+// ── 钉图 ──────────────────────────────────────────────────────────────────────
+
+/// 将选区截图钉在屏幕上（用 Tauri webview 创建独立窗口，支持移动/缩放/透明度/关闭）。
+#[tauri::command]
+pub async fn pin_image(
+    app: tauri::AppHandle,
+    sel_x: f64, sel_y: f64, sel_w: f64, sel_h: f64,
+    scale: f64,
+    annotation_png: String,
+) -> Result<(), String> {
+    let ann = if annotation_png.is_empty() { None } else { Some(decode_image_data(&annotation_png)?) };
+
+    #[cfg(target_os = "macos")]
+    {
+        let png = crop_with_annotation(sel_x, sel_y, sel_w, sel_h, scale, ann.as_deref())?;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+        let path = std::env::temp_dir().join(format!("voidnix_pin_{}.png", ts));
+        std::fs::write(&path, &png).map_err(|e| e.to_string())?;
+
+        let path_str = path.to_string_lossy().to_string();
+        let win_w = sel_w;
+        let win_h = sel_h;
+        // 钉图窗口与截屏选区同位置（前端逻辑像素，左上原点）
+        let win_x = sel_x;
+        let win_y = sel_y;
+        let label = format!("pin-{}", ts);
+
+        // 主线程创建 Tauri webview 窗口
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+        let app_clone = app.clone();
+        app.run_on_main_thread(move || {
+            let r = create_pin_webview(&app_clone, &label, &path_str, win_w, win_h, win_x, win_y);
+            let _ = tx.send(r);
+        }).map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())??;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, ann);
+        return Err("仅支持 macOS".to_string());
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn create_pin_webview(
+    app: &tauri::AppHandle,
+    label: &str,
+    image_path: &str,
+    width: f64,
+    height: f64,
+    pos_x: f64,
+    pos_y: f64,
+) -> Result<(), String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+
+    // URL 把图片路径作为 query 参数传给 PinView
+    let url_path = format!("/?img={}&pin=1", urlencoding::encode(image_path));
+    let url = WebviewUrl::App(url_path.into());
+
+    let builder = WebviewWindowBuilder::new(app, label, url)
+        .title("")
+        .inner_size(width, height)
+        .position(pos_x, pos_y)
+        .min_inner_size(80.0, 80.0)
+        .resizable(true)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(true)
+        .visible(true)  // 直接显示，不等待内容加载
+        .accept_first_mouse(true);  // 立即接受鼠标事件
+
+    let window = builder.build().map_err(|e| e.to_string())?;
+
+    // 应用 macOS 专属配置：圆角、不随 app 失活隐藏、跨 Space 可见
+    if let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) {
+        unsafe {
+            if let Some(ns) = raw.as_ref() {
+                // 不随 app 失活隐藏（核心修复：钉图独立于 Voidnix 激活状态）
+                let _: () = objc2::msg_send![ns, setHidesOnDeactivate: false];
+                // 浮动层级：高于普通窗口
+                ns.setLevel(objc2_app_kit::NSFloatingWindowLevel as isize);
+                // 在所有桌面可见 + 可覆盖全屏 + 不出现在 Mission Control
+                let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
+                    | NSWindowCollectionBehavior::FullScreenAuxiliary
+                    | NSWindowCollectionBehavior::Stationary;
+                ns.setCollectionBehavior(behavior);
+                // 圆角窗口：contentView.layer.cornerRadius
+                if let Some(content_view) = ns.contentView() {
+                    let _: () = objc2::msg_send![&content_view, setWantsLayer: true];
+                    let layer: *mut objc2::runtime::AnyObject = objc2::msg_send![&content_view, layer];
+                    if !layer.is_null() {
+                        let _: () = objc2::msg_send![layer, setCornerRadius: 10.0_f64];
+                        let _: () = objc2::msg_send![layer, setMasksToBounds: true];
+                    }
+                }
+            }
+        }
+    }
+
+    // 窗口已经设置为 visible(true)，不需要再调用 show
+    Ok(())
+}
+
+/// 设置当前钉图窗口透明度
+#[tauri::command]
+pub async fn set_pin_window_opacity(window: tauri::WebviewWindow, opacity: f64) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWindow;
+        use tauri::Manager;
+        let app_handle = window.app_handle().clone();
+        let opacity_val = opacity.clamp(0.1, 1.0);
+        // 在主线程获取 ns_window 并设置透明度，所有 NSWindow 操作必须在主线程
+        app_handle.run_on_main_thread(move || {
+            if let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) {
+                unsafe {
+                    if let Some(ns) = raw.as_ref() {
+                        ns.setAlphaValue(opacity_val);
+                    }
+                }
+            }
+        }).map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, opacity);
+    }
+    Ok(())
+}
+
+// ── OCR 主窗口触发 ────────────────────────────────────────────────────────────
+
+/// 退出截屏，通知主窗口切换到 OCR 模块并传入截图数据。
+#[tauri::command]
+pub async fn open_ocr_in_main_window(
+    app: tauri::AppHandle,
+    sel_x: f64, sel_y: f64, sel_w: f64, sel_h: f64,
+    scale: f64,
+    annotation_png: String,
+) -> Result<(), String> {
+    use tauri::Manager;
+
+    let ann = if annotation_png.is_empty() { None } else { Some(decode_image_data(&annotation_png)?) };
+
+    // 生成预览图
+    #[cfg(target_os = "macos")]
+    let image_path = {
+        let png = crop_with_annotation(sel_x, sel_y, sel_w, sel_h, scale, ann.as_deref())?;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+        let path = std::env::temp_dir().join(format!("voidnix_ocr_preview_{}.png", ts));
+        std::fs::write(&path, &png).map_err(|e| e.to_string())?;
+        path.to_string_lossy().to_string()
+    };
+    #[cfg(not(target_os = "macos"))]
+    let image_path = String::new();
+
+    let payload = serde_json::json!({
+        "image_path": image_path,
+        "sel_x": sel_x,
+        "sel_y": sel_y,
+        "sel_w": sel_w,
+        "sel_h": sel_h,
+        "scale": scale,
+        "annotation_png": annotation_png,
+    });
+
+    // 显示主窗口并发送 ocr-ready 事件（在主线程执行）
+    if let Some(main_window) = app.get_webview_window("main") {
+        use tauri::Emitter;
+        let payload_clone = payload.clone();
+        let main_window_clone = main_window.clone();
+        
+        app.run_on_main_thread(move || {
+            let _ = main_window_clone.show();
+            let _ = main_window_clone.set_focus();
+            crate::mac_utils::activate_app();
+            let _ = main_window_clone.emit("ocr-ready", payload_clone);
+        }).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}

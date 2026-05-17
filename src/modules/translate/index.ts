@@ -5,7 +5,10 @@ import type { AppModule, SearchResult } from '@/types/module'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
-import { commands, type TranslateResult as BindingsTranslateResult } from '@/bindings'
+import {
+  commands,
+  type TranslateResult as BindingsTranslateResult,
+} from '@/bindings'
 
 const TranslateView = defineAsyncComponent(() => import('./View.vue'))
 const TranslateSettings = defineAsyncComponent(() => import('./Settings.vue'))
@@ -56,13 +59,18 @@ export async function translateText(text: string) {
       const engine = engineLabel(config)
       placeholder.push({ source: text, translation: '', engine, loading: true })
       promises.push(
-        commands.translateYoudao(text, config.appKey, config.appSecret, targetLang)
+        commands
+          .translateYoudao(text, config.appKey, config.appSecret, targetLang)
           .then((result) => {
             translateResults.value.splice(i, 1, result)
           })
           .catch((e) => {
             const msg = e instanceof Error ? e.message : String(e)
-            translateResults.value.splice(i, 1, { source: text, translation: msg, engine })
+            translateResults.value.splice(i, 1, {
+              source: text,
+              translation: msg,
+              engine,
+            })
           }),
       )
     } else if (config.type === 'ai') {
@@ -79,7 +87,15 @@ export async function translateText(text: string) {
           loading: true,
         })
         promises.push(
-          commands.translateAi(text, config.endpoint, config.apiKey, model, targetLang, config.prompt ?? null)
+          commands
+            .translateAi(
+              text,
+              config.endpoint,
+              config.apiKey,
+              model,
+              targetLang,
+              config.prompt ?? null,
+            )
             .then((result) => {
               result.engine += engineSuffix
               translateResults.value.splice(i, 1, result)
@@ -120,7 +136,6 @@ const mod: AppModule = {
   icon: 'i-ri-translate-2',
   keywords: ['translate', '翻译', '翻譯', 'fanyi', 'youdao', '有道'],
   order: 8,
-  placeholder: '输入要翻译的文本，按回车翻译',
   layout: { view: TranslateView, searchBarAccessory: TranslateActions },
   settings: TranslateSettings,
   multiline: true,
@@ -157,7 +172,8 @@ const mod: AppModule = {
       if (config.type === 'youdao') {
         if (!config.appKey || !config.appSecret) continue
         promises.push(
-          commands.translateYoudao(query, config.appKey, config.appSecret, targetLang)
+          commands
+            .translateYoudao(query, config.appKey, config.appSecret, targetLang)
             .then((result) => {
               results.push({
                 id: `youdao-${Date.now()}`,
@@ -186,7 +202,15 @@ const mod: AppModule = {
         const activeModels = config.models.filter((m) => m.trim())
         for (const model of activeModels) {
           promises.push(
-            commands.translateAi(query, config.endpoint, config.apiKey, model, targetLang, config.prompt ?? null)
+            commands
+              .translateAi(
+                query,
+                config.endpoint,
+                config.apiKey,
+                model,
+                targetLang,
+                config.prompt ?? null,
+              )
               .then((result) => {
                 const label =
                   activeModels.length > 1
@@ -208,9 +232,7 @@ const mod: AppModule = {
                   id: `ai-error-${Date.now()}`,
                   title: msg,
                   description:
-                    activeModels.length > 1
-                      ? `翻译 · ${model.trim()}`
-                      : '翻译',
+                    activeModels.length > 1 ? `翻译 · ${model.trim()}` : '翻译',
                   module: 'translate',
                   icon: 'i-ri-error-warning-line',
                   score: 100,

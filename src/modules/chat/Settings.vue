@@ -1,3 +1,144 @@
+<template>
+  <div class="pb-4 flex flex-col h-full">
+    <BaseList
+      :items="allItems"
+      v-model:selected-index="selectedIndex"
+      keyboard-navigation
+      :group-field="(item: ChatSettingsItem) => item.group"
+      :group-title="(g: string) => g"
+      @execute="(item: ChatSettingsItem) => onExecute(item)"
+    >
+      <template #group-title="{ group }">
+        <div class="flex items-center">
+          <span>{{ group }}</span>
+          <BaseButton
+            v-if="group === '提供商'"
+            class="ml-auto"
+            @click.stop="addAndEdit"
+          >
+            <div class="i-ri-add-line text-sm" />
+          </BaseButton>
+        </div>
+      </template>
+
+      <template #item="{ item, selected, hoverable: h, setRef, select }">
+        <!-- 快捷键 -->
+        <BaseListItem
+          v-if="item.type === 'shortcut'"
+          :ref="setRef"
+          :id="`si-${SHORTCUT_ITEM_ID}`"
+          title="启动快捷键"
+          :selected="selected"
+          :hoverable="h"
+          @click="select"
+        >
+          <template #trailing>
+            <ShortcutInput
+              :ref="(el: any) => setShortcutRef(`si-${SHORTCUT_ITEM_ID}`, el)"
+              :model-value="settings.chatShortcut"
+              @update:model-value="handleChatShortcutChange"
+            />
+          </template>
+        </BaseListItem>
+
+        <!-- 提供商 -->
+        <BaseListItem
+          v-else
+          :ref="setRef"
+          :title="providerLabel(item.config.endpoint, 'API')"
+          :subtitle="
+            item.config.models.filter(Boolean).join('、') || '未配置模型'
+          "
+          :selected="selected"
+          :hoverable="h"
+          @click="select"
+          @dblclick="openConfigModal(item.config)"
+        />
+      </template>
+    </BaseList>
+
+    <!-- 编辑弹窗 -->
+    <BaseDialog
+      v-if="showConfigModal"
+      :title="isCreating ? '添加提供商' : '编辑提供商'"
+      variant="form"
+      size="md"
+      show-footer
+      ok-label="保存"
+      @confirm="saveConfigModal"
+      @cancel="closeConfigModal"
+    >
+      <div class="flex flex-col gap-4">
+        <!-- API URL -->
+        <div class="flex flex-col gap-1.5">
+          <span class="text-xs text-tx-faint font-medium">API URL</span>
+          <BaseInput
+            v-model="modalForm.endpoint"
+            placeholder="https://api.openai.com/v1"
+          />
+        </div>
+
+        <!-- API KEY -->
+        <div class="flex flex-col gap-1.5">
+          <span class="text-xs text-tx-faint font-medium">API KEY</span>
+          <BaseInput
+            v-model="modalForm.apiKey"
+            :type="passwordVisible ? 'text' : 'password'"
+            placeholder="sk-..."
+          >
+            <template #suffix>
+              <button
+                class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
+                :class="{ 'i-ri-eye-off-line': passwordVisible }"
+                @click.stop="passwordVisible = !passwordVisible"
+              />
+            </template>
+          </BaseInput>
+        </div>
+
+        <!-- 模型 -->
+        <div class="flex flex-col gap-1.5">
+          <span class="text-xs text-tx-faint font-medium">模型</span>
+          <div class="flex flex-col gap-1.5">
+            <div
+              v-for="(_, index) in modalForm.models"
+              :key="index"
+              class="flex gap-1.5 items-center"
+            >
+              <BaseInput
+                v-model="modalForm.models[index]"
+                placeholder="gpt-5"
+                class="flex-1"
+              />
+              <BaseButton
+                v-if="index > 0"
+                size="icon"
+                class="text-red-500"
+                @click="removeModel(index)"
+              >
+                <div class="i-ri-close-line" />
+              </BaseButton>
+              <BaseButton v-else size="icon" @click="addModel">
+                <div class="i-ri-add-line" />
+              </BaseButton>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template #footer-start>
+        <BaseButton
+          v-if="!isCreating && settings.chatConfigs.length > 1"
+          class="text-red-500 hover:text-red-600"
+          @click="deleteAndClose"
+        >
+          删除
+        </BaseButton>
+      </template>
+    </BaseDialog>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useSettingsStore, type ChatApiConfig } from '@/stores/settings'
@@ -162,144 +303,3 @@ function onExecute(item: ChatSettingsItem) {
   }
 }
 </script>
-
-<template>
-  <div class="pb-4 flex flex-col h-full">
-    <BaseList
-      :items="allItems"
-      v-model:selected-index="selectedIndex"
-      keyboard-navigation
-      :group-field="(item: ChatSettingsItem) => item.group"
-      :group-title="(g: string) => g"
-      @execute="(item: ChatSettingsItem) => onExecute(item)"
-    >
-      <template #group-title="{ group }">
-        <div class="flex items-center">
-          <span>{{ group }}</span>
-          <BaseButton
-            v-if="group === '提供商'"
-            class="ml-auto"
-            @click.stop="addAndEdit"
-          >
-            <div class="i-ri-add-line text-sm" />
-          </BaseButton>
-        </div>
-      </template>
-
-      <template #item="{ item, selected, hoverable: h, setRef, select }">
-        <!-- 快捷键 -->
-        <BaseListItem
-          v-if="item.type === 'shortcut'"
-          :ref="setRef"
-          :id="`si-${SHORTCUT_ITEM_ID}`"
-          title="启动快捷键"
-          :selected="selected"
-          :hoverable="h"
-          @click="select"
-        >
-          <template #trailing>
-            <ShortcutInput
-              :ref="(el: any) => setShortcutRef(`si-${SHORTCUT_ITEM_ID}`, el)"
-              :model-value="settings.chatShortcut"
-              @update:model-value="handleChatShortcutChange"
-            />
-          </template>
-        </BaseListItem>
-
-        <!-- 提供商 -->
-        <BaseListItem
-          v-else
-          :ref="setRef"
-          :title="providerLabel(item.config.endpoint, 'API')"
-          :subtitle="
-            item.config.models.filter(Boolean).join('、') || '未配置模型'
-          "
-          :selected="selected"
-          :hoverable="h"
-          @click="select"
-          @dblclick="openConfigModal(item.config)"
-        />
-      </template>
-    </BaseList>
-
-    <!-- 编辑弹窗 -->
-    <BaseDialog
-      v-if="showConfigModal"
-      :title="isCreating ? '添加提供商' : '编辑提供商'"
-      variant="form"
-      size="md"
-      show-footer
-      ok-label="保存"
-      @confirm="saveConfigModal"
-      @cancel="closeConfigModal"
-    >
-      <div class="flex flex-col gap-4">
-        <!-- API URL -->
-        <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-tx-faint font-medium">API URL</span>
-          <BaseInput
-            v-model="modalForm.endpoint"
-            placeholder="https://api.openai.com/v1"
-          />
-        </div>
-
-        <!-- API KEY -->
-        <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-tx-faint font-medium">API KEY</span>
-          <BaseInput
-            v-model="modalForm.apiKey"
-            :type="passwordVisible ? 'text' : 'password'"
-            placeholder="sk-..."
-          >
-            <template #suffix>
-              <button
-                class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
-                :class="{ 'i-ri-eye-off-line': passwordVisible }"
-                @click.stop="passwordVisible = !passwordVisible"
-              />
-            </template>
-          </BaseInput>
-        </div>
-
-        <!-- 模型 -->
-        <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-tx-faint font-medium">模型</span>
-          <div class="flex flex-col gap-1.5">
-            <div
-              v-for="(_, index) in modalForm.models"
-              :key="index"
-              class="flex gap-1.5 items-center"
-            >
-              <BaseInput
-                v-model="modalForm.models[index]"
-                placeholder="gpt-5"
-                class="flex-1"
-              />
-              <BaseButton
-                v-if="index > 0"
-                size="icon"
-                class="text-red-500"
-                @click="removeModel(index)"
-              >
-                <div class="i-ri-close-line" />
-              </BaseButton>
-              <BaseButton v-else size="icon" @click="addModel">
-                <div class="i-ri-add-line" />
-              </BaseButton>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <template #footer-start>
-        <BaseButton
-          v-if="!isCreating && settings.chatConfigs.length > 1"
-          class="text-red-500 hover:text-red-600"
-          @click="deleteAndClose"
-        >
-          删除
-        </BaseButton>
-      </template>
-    </BaseDialog>
-  </div>
-</template>

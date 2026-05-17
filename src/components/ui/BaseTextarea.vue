@@ -1,3 +1,32 @@
+<template>
+  <div
+    :class="[
+      'ui-ctrl h-auto! text-sm! flex items-start gap-2',
+      error ? 'border-red-400' : '',
+      disabled ? 'ui-disabled bg-black/2' : '',
+    ]"
+  >
+    <textarea
+      ref="textareaRef"
+      :value="modelValue"
+      :placeholder="placeholder"
+      :disabled="disabled"
+      :rows="rows"
+      class="text-tx-primary py-2 outline-none bg-transparent flex-1 min-w-0 resize-none placeholder:text-tx-hint"
+      :style="{
+        maxHeight: maxHeight > 0 ? maxHeight + 'px' : undefined,
+        height,
+      }"
+      @input="onInput"
+      @keydown="onKeydown"
+      @compositionstart="onCompositionStart"
+      @compositionend="onCompositionEnd"
+      @focus="emit('focus', $event)"
+      @blur="emit('blur', $event)"
+    />
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref, watch, nextTick, toRef, onMounted } from 'vue'
 import { useInputControl } from '@/composables/useInputControl'
@@ -84,32 +113,3 @@ onMounted(() => {
 
 defineExpose({ focus, blur, textareaRef })
 </script>
-
-<template>
-  <div
-    :class="[
-      'ui-ctrl h-auto! text-sm! flex items-start gap-2',
-      error ? 'border-red-400' : '',
-      disabled ? 'ui-disabled bg-black/2' : '',
-    ]"
-  >
-    <textarea
-      ref="textareaRef"
-      :value="modelValue"
-      :placeholder="placeholder"
-      :disabled="disabled"
-      :rows="rows"
-      class="text-tx-primary py-2 outline-none bg-transparent flex-1 min-w-0 resize-none placeholder:text-tx-hint"
-      :style="{
-        maxHeight: maxHeight > 0 ? maxHeight + 'px' : undefined,
-        height,
-      }"
-      @input="onInput"
-      @keydown="onKeydown"
-      @compositionstart="onCompositionStart"
-      @compositionend="onCompositionEnd"
-      @focus="emit('focus', $event)"
-      @blur="emit('blur', $event)"
-    />
-  </div>
-</template>

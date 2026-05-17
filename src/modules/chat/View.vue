@@ -1,3 +1,52 @@
+<template>
+  <BaseEmptyState
+    v-if="!isConfigured"
+    icon="i-ri-settings-3-line"
+    title="请先配置 AI API"
+  />
+
+  <div v-else class="px-5 pt-5 flex flex-col h-full min-h-0">
+    <div
+      v-if="displayMessages.length > 0"
+      class="flex flex-1 flex-col gap-3 min-h-0 overflow-y-auto"
+    >
+      <div
+        v-for="(msg, index) in displayMessages"
+        :key="index"
+        class="text-sm text-tx-primary leading-relaxed pl-3 border-l-3 w-full"
+        :class="
+          msg.role === 'user'
+            ? 'border-l-blue-500 whitespace-pre-wrap break-all overflow-hidden'
+            : 'border-l-gray-300'
+        "
+      >
+        <template v-if="msg.role === 'user'">{{ msg.content }}</template>
+        <div
+          v-else
+          class="markdown-body"
+          v-html="marked(msg.content)"
+        />
+      </div>
+    </div>
+
+    <div
+      class="py-5 pointer-events-none bottom-0 sticky from-transparent to-surface via-surface/60 via-30% bg-linear-to-b"
+    >
+      <div v-if="displayMessages.length === 0" class="py-6 space-y-1">
+        <h1 class="text-xl font-bold">来点有意思的吧！</h1>
+        <p class="text-xs text-tx-muted">日常问题、工作任务...</p>
+      </div>
+      <BaseTextarea
+        ref="textareaRef"
+        v-model="inputText"
+        placeholder="聊点什么..."
+        class="bg-[#f0f0f0] pointer-events-auto"
+        @submit="handleSubmit"
+      />
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
@@ -54,55 +103,6 @@ async function handleSubmit() {
 
 onMounted(() => nextTick(() => textareaRef.value?.focus()))
 </script>
-
-<template>
-  <BaseEmptyState
-    v-if="!isConfigured"
-    icon="i-ri-settings-3-line"
-    title="请先配置 AI API"
-  />
-
-  <div v-else class="px-5 pt-5 flex flex-col h-full min-h-0">
-    <div
-      v-if="displayMessages.length > 0"
-      class="flex flex-1 flex-col gap-3 min-h-0 overflow-y-auto"
-    >
-      <div
-        v-for="(msg, index) in displayMessages"
-        :key="index"
-        class="text-sm text-tx-primary leading-relaxed pl-3 border-l-3 w-full"
-        :class="
-          msg.role === 'user'
-            ? 'border-l-blue-500 whitespace-pre-wrap break-all overflow-hidden'
-            : 'border-l-gray-300'
-        "
-      >
-        <template v-if="msg.role === 'user'">{{ msg.content }}</template>
-        <div
-          v-else
-          class="markdown-body"
-          v-html="marked(msg.content)"
-        />
-      </div>
-    </div>
-
-    <div
-      class="py-5 pointer-events-none bottom-0 sticky from-transparent to-surface via-surface/60 via-30% bg-linear-to-b"
-    >
-      <div v-if="displayMessages.length === 0" class="py-6 space-y-1">
-        <h1 class="text-xl font-bold">来点有意思的吧！</h1>
-        <p class="text-xs text-tx-muted">日常问题、工作任务...</p>
-      </div>
-      <BaseTextarea
-        ref="textareaRef"
-        v-model="inputText"
-        placeholder="聊点什么..."
-        class="bg-[#f0f0f0] pointer-events-auto"
-        @submit="handleSubmit"
-      />
-    </div>
-  </div>
-</template>
 
 <style scoped>
 .markdown-body :deep(h1),
