@@ -1,0 +1,8 @@
+{
+  "id": "calculator",
+  "title": "计算器",
+  "description": "支持数学表达式计算及历史记录",
+  "order": 2,
+  "frontend": true,
+  "backend": false
+}

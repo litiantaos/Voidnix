@@ -1,0 +1,8 @@
+{
+  "id": "translate",
+  "title": "翻译",
+  "description": "选词翻译扩展",
+  "order": 8,
+  "frontend": true,
+  "backend": true
+}

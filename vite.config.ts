@@ -29,6 +29,7 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
+      '@ext': resolve(__dirname, 'extensions'),
     },
   },
   build: {

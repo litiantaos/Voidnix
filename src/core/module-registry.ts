@@ -46,15 +46,27 @@ export async function deactivateModule(id: string) {
 const MODULE_SEARCH_TIMEOUT = 3000
 const OVERALL_SEARCH_TIMEOUT = 8000
 
-function withTimeout<T>(promise: Promise<T>, ms: number, moduleId: string): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  moduleId: string,
+): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      console.warn(`[module-registry] Module ${moduleId} search timed out after ${ms}ms`)
+      console.warn(
+        `[module-registry] Module ${moduleId} search timed out after ${ms}ms`,
+      )
       reject(new Error(`Module ${moduleId} timed out`))
     }, ms)
     promise.then(
-      (val) => { clearTimeout(timer); resolve(val) },
-      (err) => { clearTimeout(timer); reject(err) },
+      (val) => {
+        clearTimeout(timer)
+        resolve(val)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      },
     )
   })
 }
@@ -69,24 +81,12 @@ export async function searchAll(
   const processResults = () => {
     const flattened = allResults.flat()
 
-    const ALLOWED_KINDS = [
-      'application',
-      'file',
-      'folder',
-      'module',
-      'clipboard',
-    ]
-
     const groups = new Map<
       string,
       { maxScore: number; items: SearchResult[] }
     >()
     for (const item of flattened) {
       let kind = item.data?.kind || 'other'
-
-      if (!ALLOWED_KINDS.includes(kind)) {
-        continue
-      }
 
       if (kind === 'file' || kind === 'folder') {
         kind = 'file_and_folder'
@@ -137,7 +137,9 @@ export async function searchAll(
   try {
     await withTimeout(overallPromise, OVERALL_SEARCH_TIMEOUT, 'overall')
   } catch {
-    console.warn('[module-registry] Overall search timed out, returning partial results')
+    console.warn(
+      '[module-registry] Overall search timed out, returning partial results',
+    )
   }
 
   return processResults()

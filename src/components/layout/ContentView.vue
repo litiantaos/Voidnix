@@ -15,7 +15,7 @@
       class="hide-scrollbar outline-none flex flex-1 flex-col min-h-0 relative overflow-y-auto"
     >
       <div class="flex flex-1 flex-col">
-        <!-- Custom view (from layout or settings) -->
+        <!-- Custom view (from layout or panel) -->
         <component v-if="resolvedLayout.view" :is="resolvedLayout.view" />
 
         <!-- Standard list -->
@@ -65,7 +65,7 @@
                     v-else-if="isImageIcon(item) && !isModuleItem(item)"
                     :src="getIconSrc(item)"
                     class="h-[115%] max-w-[115%] w-[115%] object-contain"
-                    :class="{ rounded: item.data?.kind === 'clipboard' }"
+                    :class="{ rounded: item.data?.iconStyle === 'rounded' }"
                     :alt="item.title"
                   />
                   <div
@@ -168,12 +168,12 @@ const currentSelectedIndex = computed(
 
 /**
  * 将布局决策逻辑收拢到一处。
- * settings 模式：独立视图，无 chrome，占满整个内容区。
+ * panel 模式：独立视图，无 chrome，占满整个内容区。
  * view 模式：使用模块声明的 layout（含 header/footer chrome）。
  */
 const resolvedLayout = computed(() => {
-  if (appStore.showSettings && props.module?.settings) {
-    return { header: undefined, view: props.module.settings, footer: undefined }
+  if (appStore.showPanel && props.module?.panel) {
+    return { header: undefined, view: props.module.panel, footer: undefined }
   }
   return {
     header: props.module?.layout?.header,
@@ -257,4 +257,3 @@ const getIconSrc = (item: SearchResult) => {
   return icon?.startsWith('data:') ? icon : 'data:image/png;base64,' + icon
 }
 </script>
-

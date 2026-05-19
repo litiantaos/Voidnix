@@ -12,8 +12,8 @@ export const commands = {
 	translateAi: (text: string, endpoint: string, apiKey: string, model: string, targetLang: string | null, prompt: string | null) => __TAURI_INVOKE<TranslateResult>("translate_ai", { text, endpoint, apiKey, model, targetLang, prompt }),
 	/**
 	 *  Read clipboard with polling fallback.
-	 * 
-	 *  The translate shortcut handler (in shortcut.rs) already executed AppleScript
+	 *
+	 *  The translate shortcut handler already executed AppleScript
 	 *  Cmd+C before the window activated. This function reads the clipboard.
 	 *  If the first read is empty (clipboard not yet updated), it polls for up to
 	 *  300ms before giving up.
@@ -22,8 +22,11 @@ export const commands = {
 	fetchIpInfo: (ip: string | null) => __TAURI_INVOKE<IpInfo>("fetch_ip_info", { ip }),
 	isAppActive: () => __TAURI_INVOKE<boolean>("is_app_active"),
 	getSelectedTextCached: () => __TAURI_INVOKE<string>("get_selected_text_cached"),
-	/**  OCR 识别图像文字（Apple Vision，无需权限） */
-	ocrImage: (imageData: string) => __TAURI_INVOKE<string>("ocr_image", { imageData }),
+	/**
+	 *  OCR 识别选区文字（Apple Vision）。
+	 *  annotation_png: 前端 canvas 标注层的 PNG base64（可为空）。
+	 */
+	ocrImage: (selX: number | null, selY: number | null, selW: number | null, selH: number | null, scale: number | null, annotationPng: string) => __TAURI_INVOKE<string>("ocr_image", { selX, selY, selW, selH, scale, annotationPng }),
 };
 
 /* Types */

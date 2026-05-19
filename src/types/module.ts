@@ -58,6 +58,13 @@ export interface AppModule {
    */
   hidden?: boolean
 
+  /**
+   * 模块独立窗口的视图组件映射。
+   * key 为窗口 label 或 label 前缀（如 'pin-'），value 为对应的根组件。
+   * App.vue 挂载时会检查 Tauri 窗口的 label，匹配时优先渲染该组件。
+   */
+  windowViews?: Record<string, Component>
+
   onInit?(): Promise<void>
   onActivate?(): Promise<void>
   onDeactivate?(): Promise<void>
@@ -94,10 +101,33 @@ export interface AppModule {
   keepSearchInput?: boolean
 
   /**
-   * 模块自持多行输入，搜索框退化为模块标识。
-   * 启用后模块需在自己的 layout.view 中内嵌 textarea。
+   * 模块二级面板组件（如配置页、功能结果页等）。
+   * 激活后占满内容区，隐藏模块主视图的 header/footer chrome。
    */
-  multiline?: boolean
+  panel?: Component
+
+  /**
+   * 外部通过 `open-module-panel` 事件触发打开面板时的回调。
+   * 由框架层统一分发，模块在此解析 payload 并更新内部状态。
+   */
+  onOpenPanel?(payload: unknown): void | Promise<void>
+
+  /**
+   * 模块在全局范围注册的快捷键及其处理逻辑
+   */
+  globalShortcuts?: {
+    /** 快捷键的唯一标识，用于在配置文件中存放用户自定义按键 */
+    id: string
+    /** 快捷键的默认值 */
+    default?: string
+    /** 快捷键触发后的执行回调，传递被触发时应用是否处于可见状态 */
+    onExecute: (wasVisible: boolean) => void
+  }[]
+
+  /**
+   * 当前模块如果是作为一个单独的窗口存在时的渲染组件。
+   */
+  windowView?: Component
 
   /**
    * 禁用主搜索框（输入框置 disabled，不响应键入）。
@@ -106,7 +136,7 @@ export interface AppModule {
   disableSearchInput?: boolean
 
   /**
-   * 模块设置视图。进入设置模式时占满整个内容区，不携带 view 模式的 chrome。
+   * 搜索框是否允多行输入（例如翻译、对话模块）
    */
-  settings?: Component
+  multiline?: boolean
 }

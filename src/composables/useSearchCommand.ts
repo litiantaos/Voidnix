@@ -262,9 +262,9 @@ export function useSearchCommand(opts: Options) {
           }
         }
 
-        if (appStore.showSettings) {
+        if (appStore.showPanel) {
           e.preventDefault()
-          appStore.showSettings = false
+          appStore.showPanel = false
           return
         }
         e.preventDefault()

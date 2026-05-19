@@ -1,0 +1,8 @@
+{
+  "id": "awake",
+  "title": "保持系统唤醒",
+  "description": "通过虚拟外接显示器触发 macOS 原生的 Clamshell Mode，支持 MacBook 合盖熄屏不休眠",
+  "order": 50,
+  "frontend": true,
+  "backend": true
+}

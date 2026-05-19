@@ -1,0 +1,8 @@
+{
+  "id": "chat",
+  "title": "AI Chat",
+  "description": "AI 对话扩展",
+  "order": 9,
+  "frontend": true,
+  "backend": true
+}

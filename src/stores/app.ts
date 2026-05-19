@@ -24,13 +24,13 @@ export const useAppStore = defineStore('app', () => {
   const suppressBlur = ref(false)
   let dialogResolve: ((value: boolean) => void) | null = null
 
-  const showSettings = ref(false)
+  const showPanel = ref(false)
   // webkit_tuning 驯化：首帧呈现等待期间显示骨架占位（Req 1.6）
   const showPaintSkeleton = ref(false)
 
   function setActiveModule(id: string | null) {
     activeModuleId.value = id
-    showSettings.value = false // 切模块时重置设置面板
+    showPanel.value = false // 切模块时关闭面板
   }
 
   function setSearchQuery(query: string) {
@@ -62,8 +62,8 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  function toggleSettings() {
-    showSettings.value = !showSettings.value
+  function togglePanel() {
+    showPanel.value = !showPanel.value
   }
 
   return {
@@ -80,8 +80,8 @@ export const useAppStore = defineStore('app', () => {
     setDialogOpen,
     showConfirm,
     resolveConfirm,
-    showSettings,
-    toggleSettings,
+    showPanel,
+    togglePanel,
     showPaintSkeleton,
   }
 })

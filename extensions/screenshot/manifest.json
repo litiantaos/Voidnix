@@ -1,0 +1,8 @@
+{
+  "id": "screenshot",
+  "title": "截屏",
+  "description": "区域截屏、标注、OCR",
+  "order": 9,
+  "frontend": true,
+  "backend": true
+}

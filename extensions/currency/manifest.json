@@ -1,0 +1,8 @@
+{
+  "id": "currency",
+  "title": "人民币",
+  "description": "实时汇率转换计算",
+  "order": 3,
+  "frontend": true,
+  "backend": false
+}

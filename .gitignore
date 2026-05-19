@@ -34,6 +34,10 @@ src-tauri/target/
 # Tauri generated
 src-tauri/gen/
 
+# Legacy directories (removed after migration)
+# src/modules/
+# src-tauri/src/commands/
+
 # Bun
 bun.lockb
 

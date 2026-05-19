@@ -4,12 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "bun run sync:extensions && vite",
     "build": "vue-tsc --noEmit && vite build",
     "lint": "eslint . --fix",
     "preview": "vite preview",
     "tauri": "tauri",
-    "gen:bindings": "cd src-tauri && cargo test --features specta export_bindings -- --nocapture",
+    "sync:extensions": "bun run scripts/sync-extensions.ts",
+    "check:extensions": "bun run scripts/sync-extensions.ts --check",
+    "gen:bindings": "bun run sync:extensions && cd src-tauri && cargo test --features specta export_bindings -- --nocapture",
     "tauri:debug-app": "tauri build --debug && bash src-tauri/finder-extension/embed.sh debug && open src-tauri/target/debug/bundle/macos/Voidnix.app",
     "tauri:release-app": "tauri build && bash src-tauri/finder-extension/embed.sh release"
   },

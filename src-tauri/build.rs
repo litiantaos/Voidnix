@@ -29,6 +29,8 @@ fn main() {
 
     println!("cargo:rerun-if-changed=native/awake_display.m");
     println!("cargo:rerun-if-changed=build.rs");
+    // 追踪 extensions 目录变更，确保 #[path] 引用的外部文件修改后触发重新编译
+    println!("cargo:rerun-if-changed=../extensions");
 
     // 仅在 macOS 目标上编译 webkit_tuning.mm 桥接静态库
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();

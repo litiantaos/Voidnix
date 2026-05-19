@@ -598,20 +598,22 @@ pub fn show_main(app: &AppHandle) {
     steps.push("pre-show");
 
     // 更新可见状态
-    crate::commands::shortcut::set_window_visible(true);
+    crate::extensions::shortcut::set_window_visible(true);
 
     if !toggle::is_enabled() {
         // toggle 禁用：走 Tauri 默认 show 路径
         #[cfg(all(target_os = "macos", not(debug_assertions)))]
         let _ = app.show();
         if let Some(window) = app.get_webview_window("main") {
+            #[cfg(target_os = "macos")]
+            crate::skylight::move_webview_window_to_active_space(&window);
             let _ = window.show();
         }
         crate::mac_utils::activate_app();
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.set_focus();
         }
-        crate::commands::shortcut::add_click_monitor(app);
+        crate::click_monitor::add(app);
         steps.push("legacy-show");
         log::event("show", &steps);
         return;
@@ -621,6 +623,10 @@ pub fn show_main(app: &AppHandle) {
     {
         if let Some(window) = app.get_webview_window("main") {
             if let Some(real_window) = RealWindow::from_webview_window(&window) {
+                // SkyLight 迁移到当前 active Space
+                #[cfg(target_os = "macos")]
+                crate::skylight::move_webview_window_to_active_space(&window);
+
                 // prepare_show：恢复鼠标事件响应，orderFrontRegardless（alpha 仍为 0）
                 throttling::prepare_show(&real_window, &mut steps);
 
@@ -651,7 +657,7 @@ pub fn show_main(app: &AppHandle) {
         let _ = window.set_focus();
     }
     steps.push("focus");
-    crate::commands::shortcut::add_click_monitor(app);
+    crate::click_monitor::add(app);
     log::event("show", &steps);
 }
 
@@ -667,7 +673,7 @@ pub fn hide_main(app: &AppHandle) {
             let _ = app.hide();
         }
         steps.push("legacy-hide");
-        crate::commands::shortcut::remove_click_monitor();
+    crate::click_monitor::remove();
         steps.push("click-monitor-remove");
         log::event("hide", &steps);
         return;
@@ -696,7 +702,7 @@ pub fn hide_main(app: &AppHandle) {
         steps.push("legacy-hide");
     }
 
-    crate::commands::shortcut::remove_click_monitor();
+    crate::click_monitor::remove();
     steps.push("click-monitor-remove");
     log::event("hide", &steps);
 }

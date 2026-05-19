@@ -128,6 +128,22 @@ pub fn move_window_to_active_space(
     prev_spaces
 }
 
+/// 便利入口：从 Tauri WebviewWindow 提取 NSWindow 信息并迁移到当前 active Space。
+///
+/// 调用方必须在主线程执行。返回原 Space ID 列表。
+pub fn move_webview_window_to_active_space(window: &tauri::WebviewWindow) -> Vec<u64> {
+    use objc2_app_kit::NSWindow;
+
+    let Ok(raw) = window.ns_window() else { return Vec::new() };
+    let ns_window_ptr = raw.cast::<NSWindow>() as *mut c_void;
+
+    let window_number: objc2_foundation::NSInteger = unsafe {
+        objc2::msg_send![raw.cast::<NSWindow>().as_ref().unwrap(), windowNumber]
+    };
+
+    move_window_to_active_space(window_number as i64, ns_window_ptr)
+}
+
 /// 枚举 SLSCopyManagedDisplaySpaces，找到 `Current Space` 字段对应的 sid。
 ///
 /// 数据结构（参考 puffnfresh/4053980 + yabai 实现）：

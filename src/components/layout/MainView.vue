@@ -149,10 +149,10 @@ const { onInput, handleExecute, handleTagClose, isLoading } = useSearchCommand({
   reset,
 })
 
-// 进入设置面板时释放搜索栏焦点，让键盘事件能到达设置列表
+// 进入模块面板时释放搜索栏焦点，让键盘事件能到达面板内容
 // 注意：必须先把焦点转移到容器，否则窗口会因失焦而自动隐藏
 watch(
-  () => appStore.showSettings,
+  () => appStore.showPanel,
   (val) => {
     if (val) {
       contentViewRef.value?.scrollContainer?.focus()

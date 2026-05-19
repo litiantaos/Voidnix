@@ -1,26 +1,9 @@
 <template>
-  <!-- 截图窗口：只渲染截图覆盖层 -->
-  <template v-if="isScreenshot">
-    <ScreenshotOverlay
-      v-if="showScreenshot && screenshotData"
-      :initial-screenshot="screenshotData"
-      @close="onScreenshotClose"
-    />
-  </template>
-
-  <!-- 钉图窗口：独立浮动图片窗口 -->
-  <template v-else-if="isPin">
-    <PinView />
-  </template>
+  <component :is="activeWindowView" v-if="activeWindowView" />
 
   <!-- 主窗口：正常启动器 -->
   <template v-else>
     <MainView />
-    <ScreenshotOverlay
-      v-if="showScreenshot && screenshotData"
-      :initial-screenshot="screenshotData"
-      @close="onScreenshotClose"
-    />
   </template>
 
   <BaseDialog
@@ -38,39 +21,53 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, watch, shallowRef, type Component } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import MainView from '@/components/layout/MainView.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
-import ScreenshotOverlay from '@/modules/screenshot/overlay/Overlay.vue'
-import PinView from '@/modules/screenshot/overlay/PinView.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
-import { pendingText } from '@/modules/translate'
-import { pendingOcrData, pendingOcrImagePath } from '@/modules/ocr'
 import { isTauri } from '@/utils/tauri'
+import { getAllModules, getModule } from '@/core/module-registry'
 
-interface WindowRect { x: number; y: number; w: number; h: number; owner: string }
-interface ScreenshotData { data_url: string; width: number; height: number; scale: number; mouse_x: number; mouse_y: number; windows: WindowRect[] }
+interface WindowRect {
+  x: number
+  y: number
+  w: number
+  h: number
+  owner: string
+}
+interface ScreenshotData {
+  data_url: string
+  width: number
+  height: number
+  scale: number
+  mouse_x: number
+  mouse_y: number
+  windows: WindowRect[]
+}
 
 let win: ReturnType<typeof getCurrentWindow> | null = null
 if (isTauri) {
   win = getCurrentWindow()
 }
-const isScreenshot = win?.label === 'screenshot'
-// 钉图窗口的 label 形如 'pin-{ts}'
-const isPin = win?.label?.startsWith('pin-') ?? false
 
-const showScreenshot = ref(false)
-const screenshotData = ref<ScreenshotData | null>(null)
-
-async function onScreenshotClose(forOcr = false) {
-  await invoke('exit_screenshot_mode', { noRestoreFocus: forOcr }).catch(() => {})
-  showScreenshot.value = false
-  screenshotData.value = null
+const activeWindowView = shallowRef<Component | null>(null)
+if (win?.label) {
+  for (const mod of getAllModules()) {
+    if (mod.windowViews) {
+      for (const [prefix, viewComp] of Object.entries(mod.windowViews)) {
+        if (win.label.startsWith(prefix)) {
+          activeWindowView.value = viewComp
+          break
+        }
+      }
+    }
+    if (activeWindowView.value) break
+  }
 }
 
 const settings = useSettingsStore()
@@ -106,41 +103,12 @@ let unlistenFocus: (() => void) | null = null
 let unlistenShortcut: (() => void) | null = null
 let unlistenOpenModule: (() => void) | null = null
 let unlistenShowingWindow: (() => void) | null = null
-let unlistenTranslateReady: (() => void) | null = null
 let unlistenClickOutside: (() => void) | null = null
 let unlistenScreenshotReady: (() => void) | null = null
-let unlistenOcrReady: (() => void) | null = null
 // webkit_tuning 驯化事件监听（Req 1.6, 2.7）
 let unlistenPreShow: (() => void) | null = null
 let unlistenAwaitingPaint: (() => void) | null = null
 let unlistenPainted: (() => void) | null = null
-let translateReadyResolver: ((text: string) => void) | null = null
-
-async function waitForSelectedText(): Promise<string> {
-  if (translateReadyResolver) {
-    translateReadyResolver('')
-    translateReadyResolver = null
-  }
-
-  return new Promise<string>((resolve) => {
-    translateReadyResolver = resolve
-    setTimeout(async () => {
-      if (translateReadyResolver !== resolve) return
-      translateReadyResolver = null
-      try {
-        const cached = await invoke<string>('get_selected_text_cached')
-        if (cached.trim()) {
-          resolve(cached)
-          return
-        }
-        const fallback = await invoke<string>('get_selected_text')
-        resolve(fallback || '')
-      } catch {
-        resolve('')
-      }
-    }, 1500)
-  })
-}
 
 async function setupGlobalShortcut(
   id: string,
@@ -161,23 +129,8 @@ async function setupGlobalShortcut(
 }
 
 onMounted(async () => {
-  if (isScreenshot) {
-    window.addEventListener('__screenshot_ready', () => {
-      const data = (window as unknown as { __screenshotData?: ScreenshotData }).__screenshotData
-      if (!data) return
-      // 连续触发时先 unmount 旧实例，确保 sel/phase/shapes 等状态重置
-      showScreenshot.value = false
-      screenshotData.value = null
-      requestAnimationFrame(() => {
-        screenshotData.value = data
-        showScreenshot.value = true
-      })
-    })
-    return
-  }
-
-  if (isPin) {
-    // 钉图窗口：PinView 自行处理
+  if (activeWindowView.value) {
+    // 如果渲染的是独立窗口视图，不再执行主窗口的初始化逻辑（如拉取设置、检查更新、注册快捷键等）
     return
   }
 
@@ -203,27 +156,40 @@ onMounted(async () => {
     await setupGlobalShortcut('chat', settings.chatShortcut)
     await setupGlobalShortcut('screenshot', settings.screenshotShortcut)
 
-    watch(() => settings.globalShortcut, async (newVal, oldVal) => {
-      await setupGlobalShortcut('main', newVal, oldVal)
-    })
+    watch(
+      () => settings.globalShortcut,
+      async (newVal, oldVal) => {
+        await setupGlobalShortcut('main', newVal, oldVal)
+      },
+    )
 
-    watch(() => settings.clipboardShortcut, async (newVal, oldVal) => {
-      await setupGlobalShortcut('clipboard', newVal, oldVal)
-    })
+    watch(
+      () => settings.clipboardShortcut,
+      async (newVal, oldVal) => {
+        await setupGlobalShortcut('clipboard', newVal, oldVal)
+      },
+    )
 
-    watch(() => settings.translateShortcut, async (newVal, oldVal) => {
-      await setupGlobalShortcut('translate', newVal, oldVal)
-    })
+    watch(
+      () => settings.translateShortcut,
+      async (newVal, oldVal) => {
+        await setupGlobalShortcut('translate', newVal, oldVal)
+      },
+    )
 
-    watch(() => settings.chatShortcut, async (newVal, oldVal) => {
-      await setupGlobalShortcut('chat', newVal, oldVal)
-    })
+    watch(
+      () => settings.chatShortcut,
+      async (newVal, oldVal) => {
+        await setupGlobalShortcut('chat', newVal, oldVal)
+      },
+    )
 
-    watch(() => settings.screenshotShortcut, async (newVal, oldVal) => {
-      await setupGlobalShortcut('screenshot', newVal, oldVal)
-    })
-
-    let lastTranslateShortcutTime = 0
+    watch(
+      () => settings.screenshotShortcut,
+      async (newVal, oldVal) => {
+        await setupGlobalShortcut('screenshot', newVal, oldVal)
+      },
+    )
 
     unlistenShortcut = await listen<{ id: string; wasVisible: boolean }>(
       'shortcut-pressed',
@@ -231,59 +197,23 @@ onMounted(async () => {
         markSkip()
         const shortcutId = event.payload.id
         const wasVisible = event.payload.wasVisible
-        const now = Date.now()
 
         if (shortcutId === 'main') {
           if (wasVisible) {
             invoke('hide_window').catch(() => {})
             return
           }
-        } else if (shortcutId === 'clipboard') {
-          if (now - lastTranslateShortcutTime < 800) {
-            return
+        } else {
+          // Dynamic shortcut resolution via modules
+          for (const mod of getAllModules()) {
+            if (mod.globalShortcuts) {
+              const sc = mod.globalShortcuts.find((s) => s.id === shortcutId)
+              if (sc) {
+                sc.onExecute(wasVisible)
+                return
+              }
+            }
           }
-          if (wasVisible && appStore.activeModuleId === 'clipboard') {
-            invoke('hide_window').catch(() => {})
-            return
-          }
-          if (wasVisible) {
-            appStore.setActiveModule('clipboard')
-            appStore.setSearchQuery('')
-            return
-          }
-          appStore.setActiveModule('clipboard')
-          appStore.setSearchQuery('')
-        } else if (shortcutId === 'translate') {
-          lastTranslateShortcutTime = now
-          if (wasVisible && appStore.activeModuleId === 'translate') {
-            invoke('hide_window').catch(() => {})
-            return
-          }
-          appStore.setActiveModule('translate')
-          appStore.setSearchQuery('')
-          if (wasVisible) {
-            return
-          }
-          try {
-            const text = await waitForSelectedText()
-            pendingText.value = text.trim()
-          } catch {
-            pendingText.value = ''
-          }
-        } else if (shortcutId === 'chat') {
-          if (wasVisible && appStore.activeModuleId === 'chat') {
-            invoke('hide_window').catch(() => {})
-            return
-          }
-          if (wasVisible) {
-            appStore.setActiveModule('chat')
-            appStore.setSearchQuery('')
-            return
-          }
-          appStore.setActiveModule('chat')
-          appStore.setSearchQuery('')
-        } else if (shortcutId === 'screenshot') {
-          // screenshot 由 screenshot-ready 事件处理，此处忽略
         }
       },
     )
@@ -305,31 +235,36 @@ onMounted(async () => {
       invoke('hide_window').catch(() => {})
     })
 
-    unlistenTranslateReady = await listen<string>('translate-text-ready', (e) => {
-      if (translateReadyResolver) {
-        translateReadyResolver(e.payload || '')
-        translateReadyResolver = null
-      }
-    })
+    unlistenScreenshotReady = await listen<ScreenshotData>(
+      'screenshot-ready',
+      async (e) => {
+        markSkip()
+        await invoke('enter_screenshot_mode', { data: e.payload })
+      },
+    )
 
-    unlistenScreenshotReady = await listen<ScreenshotData>('screenshot-ready', async (e) => {
-      markSkip()
-      await invoke('enter_screenshot_mode', { data: e.payload })
-    })
-
-    unlistenOcrReady = await listen<{ image_path: string; sel_x: number; sel_y: number; sel_w: number; sel_h: number; scale: number; annotation_png: string }>('ocr-ready', (e) => {
-      markSkip()
-      const d = e.payload
-      pendingOcrImagePath.value = d.image_path
-      pendingOcrData.value = { selX: d.sel_x, selY: d.sel_y, selW: d.sel_w, selH: d.sel_h, scale: d.scale, annotationPng: d.annotation_png }
-      appStore.setActiveModule('ocr')
-      appStore.setSearchQuery('')
-    })
+    // 通用模块面板事件：任何模块都可以通过 Rust `open_module_panel` 触发
+    await listen<{ moduleId: string; payload: unknown }>(
+      'open-module-panel',
+      (e) => {
+        markSkip()
+        const { moduleId, payload } = e.payload
+        appStore.setActiveModule(moduleId)
+        appStore.setSearchQuery('')
+        appStore.showPanel = true
+        const mod = getModule(moduleId)
+        if (mod?.onOpenPanel) {
+          mod.onOpenPanel(payload)
+        }
+      },
+    )
 
     // webkit_tuning 驯化事件（Req 1.6, 2.7）
     // pre-show：触发 rAF 让 WebKit 渲染管线就绪，严格先于 alpha=1
     unlistenPreShow = await listen('webkit-tuning:pre-show', () => {
-      requestAnimationFrame(() => { /* 触发同步 layout，避免首帧白底 */ })
+      requestAnimationFrame(() => {
+        /* 触发同步 layout，避免首帧白底 */
+      })
     })
     // awaiting-paint：80ms 超时 fallback，显示骨架占位
     unlistenAwaitingPaint = await listen('webkit-tuning:awaiting-paint', () => {
@@ -340,30 +275,34 @@ onMounted(async () => {
       appStore.showPaintSkeleton = false
     })
 
-    unlistenFocus = await win!.onFocusChanged(({ payload: focused }: { payload: boolean }) => {
-      if (focused) {
-        window.dispatchEvent(new CustomEvent('window-focused'))
-      } else if (
-        Date.now() - lastShortcutTime > 200 &&
-        Date.now() - appStore.lastDialogCloseTime > 300 &&
-        !appStore.isDialogOpen &&
-        !appStore.suppressBlur
-      ) {
-        invoke<boolean>('is_app_active').then((active) => {
-          if (active) return
-          invoke('hide_window').catch(() => {})
-        }).catch(() => {
-          invoke('hide_window').catch(() => {})
-        })
-      }
-    })
+    unlistenFocus = await win!.onFocusChanged(
+      ({ payload: focused }: { payload: boolean }) => {
+        if (focused) {
+          window.dispatchEvent(new CustomEvent('window-focused'))
+        } else if (
+          Date.now() - lastShortcutTime > 200 &&
+          Date.now() - appStore.lastDialogCloseTime > 300 &&
+          !appStore.isDialogOpen &&
+          !appStore.suppressBlur
+        ) {
+          invoke<boolean>('is_app_active')
+            .then((active) => {
+              if (active) return
+              invoke('hide_window').catch(() => {})
+            })
+            .catch(() => {
+              invoke('hide_window').catch(() => {})
+            })
+        }
+      },
+    )
   }
 
   document.addEventListener('keydown', onLocalShortcut)
 })
 
 onUnmounted(async () => {
-  if (isScreenshot || isPin) {
+  if (activeWindowView.value) {
     return
   }
 
@@ -373,10 +312,8 @@ onUnmounted(async () => {
     if (unlistenShortcut) unlistenShortcut()
     if (unlistenOpenModule) unlistenOpenModule()
     if (unlistenShowingWindow) unlistenShowingWindow()
-    if (unlistenTranslateReady) unlistenTranslateReady()
     if (unlistenClickOutside) unlistenClickOutside()
     if (unlistenScreenshotReady) unlistenScreenshotReady()
-    if (unlistenOcrReady) unlistenOcrReady()
     if (unlistenPreShow) unlistenPreShow()
     if (unlistenAwaitingPaint) unlistenAwaitingPaint()
     if (unlistenPainted) unlistenPainted()

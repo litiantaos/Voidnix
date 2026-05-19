@@ -1,6 +1,6 @@
 # Voidnix
 
-macOS 效率启动器。Tauri 2 + Rust 后端 + Vue 3 前端。
+macOS 效率启动器。Tauri 2 + Rust 后端 + Vue 3 前端。核心架构：应用作为基底框架和功能扩展完全解耦各自独立。
 
 ## 开发命令
 
@@ -14,21 +14,91 @@ cd src-tauri && cargo check  # Rust 编译检查
 ./deploy.sh                  # 一键：lint → build → cargo check → tauri build → 替换 → 嵌入 Finder 扩展
 ```
 
-## 模块系统
+## 扩展系统
 
-`src/modules/<name>/index.ts` 实现 `AppModule` 接口，`main.ts` glob 自动注册。Vue 组件用 `defineAsyncComponent` 懒加载，仅在首次激活时下载。
+### 目录约定
 
-关键字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `layout` / `useSearchInput` / `multiline` / `hidden` / `order` / `settings`
+```
+extensions/
+└── <扩展名称>/
+    ├── manifest.json          # 扩展元数据（可选）
+    ├── frontend/
+    │   └── index.ts           # Vue 模块入口，实现 AppModule 接口
+    │   └── ...                # Vue 组件等
+    └── backend/
+        └── mod.rs               # Rust 后端入口
+```
+
+### 前端示例
+
+```typescript
+import { registerModule } from '@/core/module-registry'
+import type { AppModule } from '@/types/module'
+
+const calculatorModule: AppModule = {
+  id: 'calculator',
+  title: '计算器',
+  onSearch: async (query: string) => {
+    return []
+  },
+}
+
+registerModule(calculatorModule)
+```
+
+### 后端示例
+
+```rust
+// #[tauri::command] 自动注册到 invoke_handler
+#[tauri::command]
+pub fn eval(expression: String) -> Result<String, String> {
+    Ok("42".to_string())
+}
+
+// init() 自动注册为 Tauri Plugin
+pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::<tauri::Wry>::new("calculator").build()
+}
+```
+
+### 注册机制
+
+`main.ts` glob 自动注册前端模块（`@ext/*/frontend/index.ts`）。Vue 组件用 `defineAsyncComponent` 懒加载，仅在首次激活时下载。
+
+`scripts/sync-extensions.ts` 扫描 `extensions/*/backend/mod.rs`，提取 `#[tauri::command]` 和 `pub fn init()`，生成 `src-tauri/src/extensions/mod.rs`：
+
+- `#[path]` 直接引用源文件，**不复制**
+- `configure_app!` 宏统一注册所有命令和插件
+- 模块名含连字符（如 `finder-ext`）时，Rust 端自动映射为下划线（`finder_ext`）
+
+### 新增扩展
+
+```bash
+# 1. 在 extensions/ 下新建文件夹
+mkdir extensions/my-ext/{frontend,backend}
+# 2. 写代码
+# 3. 运行同步
+bun run sync:extensions
+# 4. 开发
+bun run tauri dev
+```
+
+### 注意事项
+
+- 扩展名不要与现有扩展冲突
+- `backend/mod.rs` 中的 `#[tauri::command]` 函数会被自动发现并注册
+- `pub fn init()` 会被自动注册为 Tauri Plugin
+- 目前扩展的 backend 由单文件 `mod.rs` 组成；如需多文件，后续可扩展为支持子目录
+
+关键字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `onOpenPanel` / `layout` / `useSearchInput` / `multiline` / `hidden` / `order` / `panel`
 
 **模块向 App Shell 贡献的 UI 槽位**（仅这些，不增不减）：
 
-| 槽位 | 位置 | 用途 |
-|---|---|---|
-| `layout.view` | 内容区 | 主视图 |
-| `layout.header` | 视图上方 | 标签栏等 chrome |
-| `layout.footer` | 视图下方 | 操作栏等 chrome |
-| `layout.searchBarAccessory` | 搜索栏右侧 | 附属区域（选择器、状态标签、按钮组等，内容不限） |
-| `settings` | 内容区（设置模式占满） | 模块设置面板 |
+- `layout.view`：内容区，主视图
+- `layout.header`：视图上方，标签栏等 chrome
+- `layout.footer`：视图下方，操作栏等 chrome
+- `layout.searchBarAccessory`：搜索栏右侧，附属区域（选择器、状态标签、按钮组等，内容不限）
+- `panel`：内容区（占满，隐藏主视图 chrome），模块二级面板（配置页 / 功能结果页）
 
 槽位组件命名以 `Actions` / `Header` / `Footer` 后缀对应位置。模块视图内部的私有 UI（如截图标注调色板）**禁止**使用 `Toolbar` / `Header` / `Footer` 等会与槽位混淆的命名，应使用语义明确的名字如 `AnnotationPalette` / `MessageComposer` / `HistoryFilter`。
 
@@ -46,9 +116,11 @@ SearchResult {
 
 **前后端通信**：前端优先用 `src/bindings.ts` 导出的类型安全命令函数（由 `tauri-specta` 从 Rust 自动生成）；流式/事件类命令仍用裸 `invoke()`。Rust 用 `app.emit()`；所有 Command 须在 `lib.rs` 的 `invoke_handler` 注册。
 
+**模块面板**：`open_module_panel(moduleId, payload)` 为通用命令，Rust 显示主窗口后发送 `open-module-panel` 事件；App.vue 接收事件，激活模块、显示面板，并调用模块注册的 `onOpenPanel(payload)`。模块通过 `panel` 槽位声明面板组件，通过 `onOpenPanel` 解析 payload 更新内部状态。
+
 **窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock；`activateIgnoringOtherApps:YES` 抢焦点；失焦自动隐藏。WKWebView 驯化（`src-tauri/src/webkit_tuning/`）：隐藏时 `alphaValue=0` 不真隐藏以防节流，唤起时等待首帧呈现再显示，`VOIDNIX_DISABLE_WEBKIT_TUNING=1` 可关闭。
 
-**全局快捷键**：Rust 进程监听（`commands/shortcut.rs`），四槽位：`main` / `clipboard` / `translate` / `chat`。
+**全局快捷键**：Rust 进程监听（`extensions/shortcut/backend/mod.rs`），四槽位：`main` / `clipboard` / `translate` / `chat`。
 
 **搜索引擎**：`mdfind` + `nucleo-matcher` + 拼音首字母；权重：使用频率(≤800) + 应用(+2000) > 文件夹(+1000) > 文件。
 
@@ -62,11 +134,20 @@ SearchResult {
 src-tauri/src/
 ├── lib.rs              # 入口
 ├── mac_utils.rs        # 窗口焦点、选词
+├── click_monitor.rs    # 点击外部监听（从 shortcut 解耦）
 ├── webkit_tuning/      # WKWebView 驯化（节流抑制、首帧同步、Frame_Animator、Emoji_Warmer）
 ├── clipboard_monitor.rs / http.rs / text_selection.rs
-├── commands/           # search, clipboard, shortcut, translate, chat, awake, ip, finder_ext
+├── extensions/         # 自动生成的注册代码（#[path] 引用 extensions/*/backend/mod.rs）
 ├── type_gen.rs         # tauri-specta 类型导出（cargo test --features specta export_bindings）
 └── db/                 # SQLite
+
+extensions/             # 所有功能扩展（内置 + 第三方同一规范）
+├── <name>/
+│   ├── manifest.json     # 扩展元数据
+│   ├── frontend/
+│   │   └── index.ts      # Vue 模块入口
+│   └── backend/
+│       └── mod.rs          # Rust 命令 + init()
 ```
 
 ## UI 规范

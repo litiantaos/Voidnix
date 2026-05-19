@@ -15,17 +15,17 @@ pub fn export_bindings() {
         // 使用 Throw 模式：Result<T, E> 命令在 TS 侧直接 throw，与原有 invoke 行为一致
         .error_handling(ErrorHandlingMode::Throw)
         .commands(collect_commands![
-            crate::commands::search::search_files,
-            crate::commands::search::search_apps,
-            crate::commands::search::score_items,
-            crate::commands::clipboard::get_clipboard_history,
-            crate::commands::translate::translate_youdao,
-            crate::commands::translate::translate_ai,
-            crate::commands::translate::get_selected_text,
-            crate::commands::ip::fetch_ip_info,
-            crate::commands::shortcut::is_app_active,
-            crate::commands::shortcut::get_selected_text_cached,
-            crate::commands::screenshot::ocr_image,
+            crate::extensions::search::search_files,
+            crate::extensions::search::search_apps,
+            crate::extensions::search::score_items,
+            crate::extensions::clipboard::get_clipboard_history,
+            crate::extensions::translate::translate_youdao,
+            crate::extensions::translate::translate_ai,
+            crate::extensions::translate::get_selected_text,
+            crate::extensions::ip::fetch_ip_info,
+            crate::extensions::shortcut::is_app_active,
+            crate::extensions::shortcut::get_selected_text_cached,
+            crate::extensions::screenshot::ocr_image,
         ]);
 
     // 输出路径：相对于 src-tauri 目录，向上一级到 workspace 根，再进入 src/

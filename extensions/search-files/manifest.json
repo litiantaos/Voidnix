@@ -1,0 +1,8 @@
+{
+  "id": "search-files",
+  "title": "文件搜索",
+  "description": "全局检索并打开本地文件与文件夹",
+  "order": 99,
+  "frontend": true,
+  "backend": false
+}

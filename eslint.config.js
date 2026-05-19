@@ -16,4 +16,12 @@ export default [
   ...pluginVue.configs['flat/essential'],
   ...vueTsEslintConfig(),
   unocss.configs.flat,
+
+  {
+    name: 'app/modules-naming',
+    files: ['extensions/*/frontend/**/*.vue'],
+    rules: {
+      'vue/multi-word-component-names': 'off',
+    },
+  },
 ]
