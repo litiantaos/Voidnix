@@ -1,8 +1,0 @@
-{
-  "id": "search-apps",
-  "title": "应用搜索",
-  "description": "全局搜索并启动 macOS 应用程序",
-  "order": 99,
-  "frontend": true,
-  "backend": false
-}

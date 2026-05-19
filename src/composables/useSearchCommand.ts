@@ -8,7 +8,6 @@ import {
   getAllModules,
 } from '@/core/module-registry'
 import { useAppStore } from '@/stores/app'
-import { useModulesStore } from '@/stores/modules'
 import type { SearchResult } from '@/types/module'
 import { isTauri } from '@/utils/tauri'
 import type { AppModule } from '@/types/module'
@@ -25,7 +24,6 @@ interface Options {
 
 export function useSearchCommand(opts: Options) {
   const appStore = useAppStore()
-  const modulesStore = useModulesStore()
   const { searchInput, results, selectedIndex, activeModule, save, restore, reset } = opts
 
   let searchTimeout: ReturnType<typeof setTimeout> | null = null
@@ -321,7 +319,6 @@ export function useSearchCommand(opts: Options) {
   }
 
   onMounted(async () => {
-    modulesStore.loadModules()
     if (!activeModule.value?.multiline) searchInput.value?.focus()
     await loadDefaultResults()
     window.addEventListener('window-focused', focusHandler)

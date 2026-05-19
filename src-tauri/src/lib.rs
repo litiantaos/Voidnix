@@ -1,20 +1,12 @@
-mod db;
-mod clipboard_monitor;
-mod http;
-mod mac_utils;
-#[cfg(target_os = "macos")]
-mod skylight;
-mod sse;
-#[cfg(target_os = "macos")]
-mod text_selection;
-mod webkit_tuning;
-mod click_monitor;
+mod core;
+mod infra;
+mod macos;
 #[cfg(feature = "specta")]
 mod type_gen;
 mod extensions;
 
 use tauri::Manager;
-use db::Database;
+use infra::db::Database;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -30,10 +22,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
-        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init());
@@ -46,7 +35,7 @@ pub fn run() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             #[cfg(target_os = "macos")]
-            crate::text_selection::init_ax_timeout();
+            crate::macos::text_selection::init_ax_timeout();
 
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             let db_path = app_data_dir.join("launcher.db");
@@ -65,7 +54,7 @@ pub fn run() {
                         let _: () = unsafe { objc2::msg_send![layer, setMasksToBounds: true] };
                     }
                 }
-                webkit_tuning::install(&window)?;
+                macos::webkit_tuning::install(&window)?;
             }
 
             #[cfg(target_os = "macos")]
@@ -90,7 +79,7 @@ pub fn run() {
                     let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: true];
                     ns_window.orderFrontRegardless();
                 }
-                webkit_tuning::install_screenshot(&window)?;
+                macos::webkit_tuning::install_screenshot(&window)?;
             }
 
             #[cfg(target_os = "macos")]

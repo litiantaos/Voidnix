@@ -29,19 +29,7 @@ export async function initAllModules() {
   }
 }
 
-export async function activateModule(id: string) {
-  const mod = modules.get(id)
-  if (mod?.onActivate) {
-    await mod.onActivate()
-  }
-}
 
-export async function deactivateModule(id: string) {
-  const mod = modules.get(id)
-  if (mod?.onDeactivate) {
-    await mod.onDeactivate()
-  }
-}
 
 const MODULE_SEARCH_TIMEOUT = 3000
 const OVERALL_SEARCH_TIMEOUT = 8000

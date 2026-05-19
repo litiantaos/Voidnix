@@ -18,16 +18,58 @@ cd src-tauri && cargo check  # Rust 编译检查
 
 ### 目录约定
 
+前端文件平铺在扩展根目录，Rust 后端放在 `native/` 子目录：
+
 ```
 extensions/
 └── <扩展名称>/
-    ├── manifest.json          # 扩展元数据（可选）
-    ├── frontend/
-    │   └── index.ts           # Vue 模块入口，实现 AppModule 接口
-    │   └── ...                # Vue 组件等
-    └── backend/
-        └── mod.rs               # Rust 后端入口
+    ├── index.ts              # Vue 模块入口，元数据 + 运行时逻辑一体
+    ├── ...                   # Vue 组件、composables 等前端文件平铺
+    └── native/
+        └── mod.rs            # Rust 后端入口
 ```
+
+**各形态示例**：
+
+```
+# 纯前端，单文件
+extensions/calculator/
+└── index.ts
+
+# 纯后端
+extensions/search/
+├── index.ts
+└── native/
+    └── mod.rs
+
+# 前端多文件 + 后端
+extensions/chat/
+├── index.ts
+├── View.vue
+├── Actions.vue
+└── native/
+    └── mod.rs
+
+# 大型前端 + 后端（如 screenshot）
+extensions/screenshot/
+├── index.ts
+├── View.vue
+├── composables/
+├── windows/
+└── native/
+    └── mod.rs
+```
+
+### 注册机制
+
+`main.ts` glob 自动注册前端模块（`@ext/*/index.ts`）。Vue 组件用 `defineAsyncComponent` 懒加载，仅在首次激活时下载。
+
+`scripts/sync-extensions.ts` 扫描 `extensions/*/native/mod.rs` 和 `src-tauri/src/*.rs`（核心模块），提取 `#[tauri::command]` 和 `pub fn init()`，生成 `src-tauri/src/extensions/mod.rs`：
+
+- `#[path]` 直接引用源文件，**不复制**
+- `configure_app!` 宏统一注册所有命令和插件
+- 核心模块（shortcut、window）通过 `crate::模块名` 引用，扩展通过 `crate::extensions::模块名`
+- 模块名含连字符（如 `finder-ext`）时，Rust 端自动映射为下划线（`finder_ext`）
 
 ### 前端示例
 
@@ -37,7 +79,11 @@ import type { AppModule } from '@/types/module'
 
 const calculatorModule: AppModule = {
   id: 'calculator',
-  title: '计算器',
+  name: '计算器',
+  description: '支持数学表达式计算及历史记录',
+  icon: 'i-ri-calculator-line',
+  keywords: ['calc', 'calculator', 'math', '计算器', '数学'],
+  order: 2,
   onSearch: async (query: string) => {
     return []
   },
@@ -61,22 +107,12 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 }
 ```
 
-### 注册机制
-
-`main.ts` glob 自动注册前端模块（`@ext/*/frontend/index.ts`）。Vue 组件用 `defineAsyncComponent` 懒加载，仅在首次激活时下载。
-
-`scripts/sync-extensions.ts` 扫描 `extensions/*/backend/mod.rs`，提取 `#[tauri::command]` 和 `pub fn init()`，生成 `src-tauri/src/extensions/mod.rs`：
-
-- `#[path]` 直接引用源文件，**不复制**
-- `configure_app!` 宏统一注册所有命令和插件
-- 模块名含连字符（如 `finder-ext`）时，Rust 端自动映射为下划线（`finder_ext`）
-
 ### 新增扩展
 
 ```bash
 # 1. 在 extensions/ 下新建文件夹
-mkdir extensions/my-ext/{frontend,backend}
-# 2. 写代码
+mkdir extensions/my-ext
+# 2. 写代码（index.ts + native/mod.rs）
 # 3. 运行同步
 bun run sync:extensions
 # 4. 开发
@@ -86,11 +122,19 @@ bun run tauri dev
 ### 注意事项
 
 - 扩展名不要与现有扩展冲突
-- `backend/mod.rs` 中的 `#[tauri::command]` 函数会被自动发现并注册
+- `native/mod.rs` 中的 `#[tauri::command]` 函数会被自动发现并注册
 - `pub fn init()` 会被自动注册为 Tauri Plugin
-- 目前扩展的 backend 由单文件 `mod.rs` 组成；如需多文件，后续可扩展为支持子目录
+- 目前扩展的 native 由单文件 `mod.rs` 组成；如需多文件，后续可扩展为支持子目录
+- 核心能力（shortcut、window 等）放在 `src-tauri/src/core/` 下，不在 extensions/ 中
 
-关键字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `onOpenPanel` / `layout` / `useSearchInput` / `multiline` / `hidden` / `order` / `panel`
+## 核心模块 vs 扩展
+
+| 类别 | 位置 | 说明 |
+|---|---|---|
+| 核心模块 | `src-tauri/src/core/*.rs` | 应用基础设施：快捷键、窗口管理等，与 App Shell 紧耦合 |
+| 扩展 | `extensions/*/native/mod.rs` | 独立功能模块：搜索、翻译、截屏等，通过 `#[path]` 引用 |
+
+运行时字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `onActivate` / `onDeactivate` / `onOpenPanel` / `onSearchInput` / `layout` / `panel` / `globalShortcuts` / `windowViews`
 
 **模块向 App Shell 贡献的 UI 槽位**（仅这些，不增不减）：
 
@@ -114,13 +158,13 @@ SearchResult {
 
 ## 架构要点
 
-**前后端通信**：前端优先用 `src/bindings.ts` 导出的类型安全命令函数（由 `tauri-specta` 从 Rust 自动生成）；流式/事件类命令仍用裸 `invoke()`。Rust 用 `app.emit()`；所有 Command 须在 `lib.rs` 的 `invoke_handler` 注册。
+**前后端通信**：前端优先用 `src/bindings.ts` 导出的类型安全命令函数（由 `tauri-specta` 从 Rust 自动生成）；流式/事件类命令仍用裸 `invoke()`。Rust 用 `app.emit()`；所有 Command 须在 `configure_app!` 宏注册。
 
 **模块面板**：`open_module_panel(moduleId, payload)` 为通用命令，Rust 显示主窗口后发送 `open-module-panel` 事件；App.vue 接收事件，激活模块、显示面板，并调用模块注册的 `onOpenPanel(payload)`。模块通过 `panel` 槽位声明面板组件，通过 `onOpenPanel` 解析 payload 更新内部状态。
 
-**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock；`activateIgnoringOtherApps:YES` 抢焦点；失焦自动隐藏。WKWebView 驯化（`src-tauri/src/webkit_tuning/`）：隐藏时 `alphaValue=0` 不真隐藏以防节流，唤起时等待首帧呈现再显示，`VOIDNIX_DISABLE_WEBKIT_TUNING=1` 可关闭。
+**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock；`activateIgnoringOtherApps:YES` 抢焦点；失焦自动隐藏。WKWebView 驯化（`src-tauri/src/macos/webkit_tuning/`）：隐藏时 `alphaValue=0` 不真隐藏以防节流，唤起时等待首帧呈现再显示，`VOIDNIX_DISABLE_WEBKIT_TUNING=1` 可关闭。
 
-**全局快捷键**：Rust 进程监听（`extensions/shortcut/backend/mod.rs`），四槽位：`main` / `clipboard` / `translate` / `chat`。
+**全局快捷键**：Rust 核心模块监听（`src-tauri/src/core/shortcut.rs`），四槽位：`main` / `clipboard` / `translate` / `chat`。
 
 **搜索引擎**：`mdfind` + `nucleo-matcher` + 拼音首字母；权重：使用频率(≤800) + 应用(+2000) > 文件夹(+1000) > 文件。
 
@@ -133,20 +177,32 @@ SearchResult {
 ```
 src-tauri/src/
 ├── lib.rs              # 入口
-├── mac_utils.rs        # 窗口焦点、选词
-├── click_monitor.rs    # 点击外部监听（从 shortcut 解耦）
-├── webkit_tuning/      # WKWebView 驯化（节流抑制、首帧同步、Frame_Animator、Emoji_Warmer）
-├── clipboard_monitor.rs / http.rs / text_selection.rs
-├── extensions/         # 自动生成的注册代码（#[path] 引用 extensions/*/backend/mod.rs）
-├── type_gen.rs         # tauri-specta 类型导出（cargo test --features specta export_bindings）
-└── db/                 # SQLite
+├── main.rs             # macOS 入口
+├── extensions.rs       # 自动生成的扩展注册（#[path] 引用 extensions/*/native/mod.rs）
+├── core/               # 核心模块（Tauri 命令 + init() 插件）
+│   ├── mod.rs
+│   ├── shortcut.rs     # 全局快捷键
+│   └── window.rs       # 窗口管理命令
+├── infra/              # 基础设施模块（无 Tauri 命令，跨平台通用）
+│   ├── mod.rs
+│   ├── db.rs           # SQLite 数据库
+│   ├── http.rs         # HTTP 客户端
+│   └── sse.rs          # SSE 流式请求
+├── macos/              # macOS 原生桥接模块
+│   ├── mod.rs
+│   ├── mac_utils.rs        # 窗口焦点、选词
+│   ├── click_monitor.rs    # 点击外部监听
+│   ├── clipboard_monitor.rs
+│   ├── text_selection.rs   # AX 文本选中 + 剪贴板注入
+│   ├── skylight.rs         # Space 迁移（私有 API）
+│   └── webkit_tuning/      # WKWebView 驯化（节流抑制、首帧同步、Frame_Animator、Emoji_Warmer）
+└── type_gen.rs         # tauri-specta 类型导出（cargo test --features specta export_bindings）
 
-extensions/             # 所有功能扩展（内置 + 第三方同一规范）
+extensions/             # 所有功能扩展
 ├── <name>/
-│   ├── manifest.json     # 扩展元数据
-│   ├── frontend/
-│   │   └── index.ts      # Vue 模块入口
-│   └── backend/
+│   ├── index.ts            # Vue 模块入口
+│   ├── ...                 # 前端文件平铺（组件、composables 等）
+│   └── native/
 │       └── mod.rs          # Rust 命令 + init()
 ```
 

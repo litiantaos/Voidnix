@@ -1,8 +1,0 @@
-{
-  "id": "time",
-  "title": "时间戳",
-  "description": "时间与时间戳转换",
-  "order": 4,
-  "frontend": true,
-  "backend": false
-}

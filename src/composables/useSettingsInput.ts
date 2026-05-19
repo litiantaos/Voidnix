@@ -14,8 +14,7 @@ export interface SettingItem {
   inputType?: 'text' | 'password'
   placeholder?: string
   action?: () => void
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  update?: (val: any) => void
+  update?: (val: string | number) => void
 }
 
 export function useSettingsInput() {
@@ -26,16 +25,16 @@ export function useSettingsInput() {
   const editingValue = ref<Record<string, string>>({})
   const editingOriginal = ref<Record<string, string>>({})
 
-  function setSelectRef(id: string, el: InstanceType<typeof BaseSelect> | null) {
-    if (el) selectRefs.value[id] = el
+  function setSelectRef(id: string, el: unknown) {
+    if (el) selectRefs.value[id] = el as InstanceType<typeof BaseSelect>
   }
 
-  function setInputRef(id: string, el: InstanceType<typeof BaseInput> | null) {
-    if (el) inputRefs.value[id] = el
+  function setInputRef(id: string, el: unknown) {
+    if (el) inputRefs.value[id] = el as InstanceType<typeof BaseInput>
   }
 
-  function setShortcutRef(id: string, el: InstanceType<typeof ShortcutInput> | null) {
-    if (el) shortcutRefs.value[id] = el
+  function setShortcutRef(id: string, el: unknown) {
+    if (el) shortcutRefs.value[id] = el as InstanceType<typeof ShortcutInput>
   }
 
   function togglePasswordVisibility(id: string) {

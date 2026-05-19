@@ -1,8 +1,0 @@
-{
-  "id": "shortcut",
-  "title": "shortcut",
-  "description": "shortcut",
-  "order": 99,
-  "frontend": false,
-  "backend": true
-}

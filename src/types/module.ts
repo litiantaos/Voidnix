@@ -124,10 +124,7 @@ export interface AppModule {
     onExecute: (wasVisible: boolean) => void
   }[]
 
-  /**
-   * 当前模块如果是作为一个单独的窗口存在时的渲染组件。
-   */
-  windowView?: Component
+  
 
   /**
    * 禁用主搜索框（输入框置 disabled，不响应键入）。

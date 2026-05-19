@@ -1,8 +1,0 @@
-{
-  "id": "settings",
-  "title": "设置",
-  "description": "应用设置",
-  "order": 999,
-  "frontend": true,
-  "backend": false
-}

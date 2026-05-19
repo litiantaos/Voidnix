@@ -12,16 +12,13 @@
     "sync:extensions": "bun run scripts/sync-extensions.ts",
     "check:extensions": "bun run scripts/sync-extensions.ts --check",
     "gen:bindings": "bun run sync:extensions && cd src-tauri && cargo test --features specta export_bindings -- --nocapture",
-    "tauri:debug-app": "tauri build --debug && bash src-tauri/finder-extension/embed.sh debug && open src-tauri/target/debug/bundle/macos/Voidnix.app",
-    "tauri:release-app": "tauri build && bash src-tauri/finder-extension/embed.sh release"
+    "tauri:debug-app": "tauri build --debug && bash scripts/embed.sh debug && open src-tauri/target/debug/bundle/macos/Voidnix.app",
+    "tauri:release-app": "tauri build && bash scripts/embed.sh release"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
-    "@tauri-apps/plugin-dialog": "^2.7.0",
     "@tauri-apps/plugin-global-shortcut": "^2.3.1",
-    "@tauri-apps/plugin-http": "^2.5.8",
-    "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-store": "^2.4.2",

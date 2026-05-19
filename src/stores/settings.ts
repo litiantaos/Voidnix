@@ -26,19 +26,18 @@ export interface TranslateApiConfig {
 }
 
 function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2, 6)
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
 
 export const useSettingsStore = defineStore('settings', () => {
   let store: Store | null = null
 
   const globalShortcut = ref('CommandOrControl+Shift+Space')
-  const clipboardShortcut = ref('CommandOrControl+Shift+C')
   const clipboardMaxDays = ref(30)
-  const translateShortcut = ref('CommandOrControl+Shift+T')
-  const chatShortcut = ref('CommandOrControl+Shift+A')
-  const screenshotShortcut = ref('CommandOrControl+Shift+X')
-  const screenshotSavePath = ref('')  // 空字符串表示使用下载文件夹
+  const screenshotSavePath = ref('')
+
+  // 通用快捷键覆盖表：moduleId/.id → 用户自定义快捷键
+  const shortcutOverrides = ref<Record<string, string>>({})
 
   // 翻译设置
   const youdaoAppKey = ref('')
@@ -103,6 +102,9 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Finder extension
   const finderExtEnabled = ref(false)
+
+  // 通用模块配置存储（键为 moduleId，值为任意可序列化数据）
+  const moduleConfigs = ref<Record<string, unknown>>({})
 
   function createSetter<T>(r: Ref<T>, key: string) {
     return async (val: T) => {
@@ -217,21 +219,28 @@ export const useSettingsStore = defineStore('settings', () => {
       const gs = await store.get<string>('globalShortcut')
       if (gs) globalShortcut.value = gs
 
-      const cs = await store.get<string>('clipboardShortcut')
-      if (cs) clipboardShortcut.value = cs
-
       const maxDays = await store.get<number>('clipboardMaxDays')
       if (maxDays !== null && maxDays !== undefined)
         clipboardMaxDays.value = maxDays
 
-      const ts = await store.get<string>('translateShortcut')
-      if (ts) translateShortcut.value = ts
+      // 迁移旧快捷键字段到新的通用覆盖表
+      const overrides = await store.get<Record<string, string>>('shortcutOverrides')
+      const migrated = { ...(overrides || {}) }
 
-      const chs = await store.get<string>('chatShortcut')
-      if (chs) chatShortcut.value = chs
-
-      const scs = await store.get<string>('screenshotShortcut')
-      if (scs) screenshotShortcut.value = scs
+      // 逐个迁移旧键（新表优先，旧键仅当新表无对应记录时回填）
+      const oldShortcutMigrations: [string, string][] = [
+        ['clipboardShortcut', 'clipboard'],
+        ['translateShortcut', 'translate'],
+        ['chatShortcut', 'chat'],
+        ['screenshotShortcut', 'screenshot'],
+      ]
+      for (const [oldKey, newId] of oldShortcutMigrations) {
+        if (!migrated[newId]) {
+          const oldVal = await store.get<string>(oldKey)
+          if (oldVal) migrated[newId] = oldVal
+        }
+      }
+      shortcutOverrides.value = migrated
 
       const ssp = await store.get<string>('screenshotSavePath')
       if (ssp !== null && ssp !== undefined) screenshotSavePath.value = ssp
@@ -312,15 +321,32 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   const setGlobalShortcut = createSetter(globalShortcut, 'globalShortcut')
-  const setClipboardShortcut = createSetter(
-    clipboardShortcut,
-    'clipboardShortcut',
-  )
   const setClipboardMaxDays = createSetter(clipboardMaxDays, 'clipboardMaxDays')
-  const setTranslateShortcut = createSetter(translateShortcut, 'translateShortcut')
-  const setChatShortcut = createSetter(chatShortcut, 'chatShortcut')
-  const setScreenshotShortcut = createSetter(screenshotShortcut, 'screenshotShortcut')
   const setScreenshotSavePath = createSetter(screenshotSavePath, 'screenshotSavePath')
+
+  function getShortcutOverride(id: string): string | undefined {
+    return shortcutOverrides.value[id]
+  }
+
+  async function setShortcutOverride(id: string, value: string) {
+    shortcutOverrides.value = { ...shortcutOverrides.value, [id]: value }
+    if (store) {
+      await store.set('shortcutOverrides', shortcutOverrides.value)
+      await store.save()
+    }
+  }
+
+  function getModuleConfig<T>(moduleId: string): T | undefined {
+    return moduleConfigs.value[moduleId] as T | undefined
+  }
+
+  async function setModuleConfig(moduleId: string, config: unknown) {
+    moduleConfigs.value = { ...moduleConfigs.value, [moduleId]: config }
+    if (store) {
+      await store.set('moduleConfigs', moduleConfigs.value)
+      await store.save()
+    }
+  }
   const setYoudaoAppKey = createSetter(youdaoAppKey, 'youdaoAppKey')
   const setYoudaoAppSecret = createSetter(youdaoAppSecret, 'youdaoAppSecret')
   const setTranslateTargetLang = createSetter(
@@ -341,12 +367,9 @@ export const useSettingsStore = defineStore('settings', () => {
 
   return {
     globalShortcut,
-    clipboardShortcut,
     clipboardMaxDays,
-    translateShortcut,
-    chatShortcut,
-    screenshotShortcut,
     screenshotSavePath,
+    shortcutOverrides,
     youdaoAppKey,
     youdaoAppSecret,
     translateTargetLang,
@@ -359,12 +382,12 @@ export const useSettingsStore = defineStore('settings', () => {
     finderExtEnabled,
     loadSettings,
     setGlobalShortcut,
-    setClipboardShortcut,
     setClipboardMaxDays,
-    setTranslateShortcut,
-    setChatShortcut,
-    setScreenshotShortcut,
     setScreenshotSavePath,
+    getShortcutOverride,
+    setShortcutOverride,
+    getModuleConfig,
+    setModuleConfig,
     setYoudaoAppKey,
     setYoudaoAppSecret,
     setTranslateTargetLang,

@@ -18,7 +18,7 @@ fn main() {
             "AppKit",
             "-o",
             awake_dest.to_str().unwrap(),
-            "native/awake_display.m",
+            "../extensions/awake/native/awake_display.m",
         ])
         .status()
         .expect("Failed to compile awake_display.m");
@@ -27,7 +27,7 @@ fn main() {
         panic!("Failed to compile awake_display.m");
     }
 
-    println!("cargo:rerun-if-changed=native/awake_display.m");
+    println!("cargo:rerun-if-changed=../extensions/awake/native/awake_display.m");
     println!("cargo:rerun-if-changed=build.rs");
     // 追踪 extensions 目录变更，确保 #[path] 引用的外部文件修改后触发重新编译
     println!("cargo:rerun-if-changed=../extensions");
@@ -46,7 +46,7 @@ fn main() {
 /// 编译 native/screenshot_overlay.mm 为 libscreenshot_overlay.a。
 /// 提供 CALayer 直贴 CGImage 的工业级背景层桥（替代 PNG/JPEG 编码 + WebView img 加载）。
 fn build_screenshot_overlay(out_dir: &str) {
-    let mm_src = "native/screenshot_overlay.mm";
+    let mm_src = "../extensions/screenshot/native/screenshot_overlay.mm";
     let mm_obj = Path::new(out_dir).join("screenshot_overlay.o");
     let lib_path = Path::new(out_dir).join("libscreenshot_overlay.a");
 
@@ -79,7 +79,7 @@ fn build_screenshot_overlay(out_dir: &str) {
     println!("cargo:rustc-link-search=native={out_dir}");
     println!("cargo:rustc-link-lib=static=screenshot_overlay");
     println!("cargo:rustc-link-lib=framework=QuartzCore");
-    println!("cargo:rerun-if-changed=native/screenshot_overlay.mm");
+    println!("cargo:rerun-if-changed=../extensions/screenshot/native/screenshot_overlay.mm");
 }
 
 /// 链接 macOS 私有 framework SkyLight（用于 Space 迁移私有 API）。
@@ -93,7 +93,7 @@ fn link_skylight() {
 /// 把 native/webkit_tuning.mm 编译为 libwebkit_tuning.a 并写入链接指令。
 /// 流程：clang++ → .o，再 ar rcs → .a，输出到 OUT_DIR。
 fn build_webkit_tuning(out_dir: &str) {
-    let mm_src = "native/webkit_tuning.mm";
+    let mm_src = "src/macos/webkit_tuning/webkit_tuning.mm";
     let mm_obj = Path::new(out_dir).join("webkit_tuning.o");
     let lib_path = Path::new(out_dir).join("libwebkit_tuning.a");
 
@@ -130,5 +130,5 @@ fn build_webkit_tuning(out_dir: &str) {
     println!("cargo:rustc-link-lib=framework=WebKit");
     println!("cargo:rustc-link-lib=framework=AppKit");
     println!("cargo:rustc-link-lib=dylib=c++");
-    println!("cargo:rerun-if-changed=native/webkit_tuning.mm");
+    println!("cargo:rerun-if-changed=src/macos/webkit_tuning/webkit_tuning.mm");
 }

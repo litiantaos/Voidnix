@@ -26,6 +26,4 @@ export function setCachedIcon(path: string, icon: string): void {
   iconCache.set(path, icon)
 }
 
-export function clearIconCache(): void {
-  iconCache.clear()
-}
+

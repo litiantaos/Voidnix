@@ -1,8 +1,0 @@
-{
-  "id": "uuid",
-  "title": "UUID 生成",
-  "description": "生成 UUID v4",
-  "order": 7,
-  "frontend": true,
-  "backend": false
-}

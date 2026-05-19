@@ -33,29 +33,14 @@ import { useUpdateStore } from '@/stores/update'
 import { isTauri } from '@/utils/tauri'
 import { getAllModules, getModule } from '@/core/module-registry'
 
-interface WindowRect {
-  x: number
-  y: number
-  w: number
-  h: number
-  owner: string
-}
-interface ScreenshotData {
-  data_url: string
-  width: number
-  height: number
-  scale: number
-  mouse_x: number
-  mouse_y: number
-  windows: WindowRect[]
-}
-
 let win: ReturnType<typeof getCurrentWindow> | null = null
 if (isTauri) {
   win = getCurrentWindow()
 }
 
 const activeWindowView = shallowRef<Component | null>(null)
+
+let allGlobalShortcuts: { id: string; default?: string; onExecute: (wasVisible: boolean) => void }[] = []
 if (win?.label) {
   for (const mod of getAllModules()) {
     if (mod.windowViews) {
@@ -73,6 +58,10 @@ if (win?.label) {
 const settings = useSettingsStore()
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
+
+function effectiveShortcut(id: string, fallback?: string): string {
+  return settings.getShortcutOverride(id) || fallback || ''
+}
 
 let lastShortcutTime = 0
 
@@ -104,7 +93,6 @@ let unlistenShortcut: (() => void) | null = null
 let unlistenOpenModule: (() => void) | null = null
 let unlistenShowingWindow: (() => void) | null = null
 let unlistenClickOutside: (() => void) | null = null
-let unlistenScreenshotReady: (() => void) | null = null
 // webkit_tuning 驯化事件监听（Req 1.6, 2.7）
 let unlistenPreShow: (() => void) | null = null
 let unlistenAwaitingPaint: (() => void) | null = null
@@ -151,10 +139,14 @@ onMounted(async () => {
 
   if (isTauri) {
     await setupGlobalShortcut('main', settings.globalShortcut)
-    await setupGlobalShortcut('clipboard', settings.clipboardShortcut)
-    await setupGlobalShortcut('translate', settings.translateShortcut)
-    await setupGlobalShortcut('chat', settings.chatShortcut)
-    await setupGlobalShortcut('screenshot', settings.screenshotShortcut)
+
+    allGlobalShortcuts = getAllModules()
+      .flatMap((m) => (m.globalShortcuts || []))
+      .filter((s) => s.id !== 'main')
+
+    for (const sc of allGlobalShortcuts) {
+      await setupGlobalShortcut(sc.id, effectiveShortcut(sc.id, sc.default))
+    }
 
     watch(
       () => settings.globalShortcut,
@@ -164,31 +156,17 @@ onMounted(async () => {
     )
 
     watch(
-      () => settings.clipboardShortcut,
-      async (newVal, oldVal) => {
-        await setupGlobalShortcut('clipboard', newVal, oldVal)
+      () => settings.shortcutOverrides,
+      async (_newVal, oldVal) => {
+        for (const sc of allGlobalShortcuts) {
+          const newS = effectiveShortcut(sc.id, sc.default)
+          const oldS = oldVal?.[sc.id] || sc.default || ''
+          if (newS !== oldS) {
+            await setupGlobalShortcut(sc.id, newS, oldS)
+          }
+        }
       },
-    )
-
-    watch(
-      () => settings.translateShortcut,
-      async (newVal, oldVal) => {
-        await setupGlobalShortcut('translate', newVal, oldVal)
-      },
-    )
-
-    watch(
-      () => settings.chatShortcut,
-      async (newVal, oldVal) => {
-        await setupGlobalShortcut('chat', newVal, oldVal)
-      },
-    )
-
-    watch(
-      () => settings.screenshotShortcut,
-      async (newVal, oldVal) => {
-        await setupGlobalShortcut('screenshot', newVal, oldVal)
-      },
+      { deep: true },
     )
 
     unlistenShortcut = await listen<{ id: string; wasVisible: boolean }>(
@@ -234,14 +212,6 @@ onMounted(async () => {
     unlistenClickOutside = await listen('click-outside', () => {
       invoke('hide_window').catch(() => {})
     })
-
-    unlistenScreenshotReady = await listen<ScreenshotData>(
-      'screenshot-ready',
-      async (e) => {
-        markSkip()
-        await invoke('enter_screenshot_mode', { data: e.payload })
-      },
-    )
 
     // 通用模块面板事件：任何模块都可以通过 Rust `open_module_panel` 触发
     await listen<{ moduleId: string; payload: unknown }>(
@@ -313,7 +283,6 @@ onUnmounted(async () => {
     if (unlistenOpenModule) unlistenOpenModule()
     if (unlistenShowingWindow) unlistenShowingWindow()
     if (unlistenClickOutside) unlistenClickOutside()
-    if (unlistenScreenshotReady) unlistenScreenshotReady()
     if (unlistenPreShow) unlistenPreShow()
     if (unlistenAwaitingPaint) unlistenAwaitingPaint()
     if (unlistenPainted) unlistenPainted()
@@ -324,29 +293,16 @@ onUnmounted(async () => {
       oldShortcut: settings.globalShortcut,
     }).catch(() => {})
 
-    await invoke('register_global_shortcut', {
-      id: 'clipboard',
-      newShortcut: '',
-      oldShortcut: settings.clipboardShortcut,
-    }).catch(() => {})
-
-    await invoke('register_global_shortcut', {
-      id: 'translate',
-      newShortcut: '',
-      oldShortcut: settings.translateShortcut,
-    }).catch(() => {})
-
-    await invoke('register_global_shortcut', {
-      id: 'chat',
-      newShortcut: '',
-      oldShortcut: settings.chatShortcut,
-    }).catch(() => {})
-
-    await invoke('register_global_shortcut', {
-      id: 'screenshot',
-      newShortcut: '',
-      oldShortcut: settings.screenshotShortcut,
-    }).catch(() => {})
+    for (const sc of allGlobalShortcuts) {
+      const effective = effectiveShortcut(sc.id, sc.default)
+      if (effective) {
+        await invoke('register_global_shortcut', {
+          id: sc.id,
+          newShortcut: '',
+          oldShortcut: effective,
+        }).catch(() => {})
+      }
+    }
   }
 })
 </script>

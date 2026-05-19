@@ -1,8 +1,0 @@
-{
-  "id": "search",
-  "title": "search",
-  "description": "search",
-  "order": 99,
-  "frontend": false,
-  "backend": true
-}

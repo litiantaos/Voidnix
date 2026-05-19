@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { isTauri } from '@/utils/tauri'
+import type { Update as TauriUpdate } from '@tauri-apps/plugin-updater'
 
 export interface UpdateInfo {
   currentVersion: string
@@ -16,9 +17,7 @@ export const useUpdateStore = defineStore('update', () => {
   const error = ref<string | null>(null)
   const info = ref<UpdateInfo | null>(null)
 
-  // 持有 updater 对象，下载完成后调用 install()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let _updater: any = null
+  let _updater: TauriUpdate | null = null
 
   async function check(): Promise<boolean> {
     if (!isTauri) return false

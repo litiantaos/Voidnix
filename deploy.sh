@@ -23,7 +23,7 @@ rm -rf /Applications/Voidnix.app
 cp -R src-tauri/target/release/bundle/macos/Voidnix.app /Applications/
 
 echo "==> [6/6] 嵌入 Finder 扩展"
-src-tauri/finder-extension/embed.sh /Applications/Voidnix.app
+scripts/embed.sh /Applications/Voidnix.app
 
 echo ""
 echo "完成。Voidnix 已更新至 /Applications/Voidnix.app"

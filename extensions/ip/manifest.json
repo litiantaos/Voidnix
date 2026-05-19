@@ -1,9 +1,0 @@
-{
-  "id": "ip",
-  "title": "IP 信息",
-  "description": "查询本机或指定 IP 信息",
-  "order": 5,
-  "keywords": ["ip", "network", "网络", "地址"],
-  "frontend": true,
-  "backend": true
-}

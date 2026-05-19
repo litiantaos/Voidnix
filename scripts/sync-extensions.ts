@@ -1,11 +1,13 @@
 #!/usr/bin/env bun
-import { readdir, readFile, writeFile, stat, mkdir } from 'node:fs/promises'
+import { readdir, readFile, writeFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 const ROOT = process.cwd()
 const EXTENSIONS_DIR = join(ROOT, 'extensions')
-const BACKEND_EXT_DIR = join(ROOT, 'src-tauri', 'src', 'extensions')
+const BACKEND_EXT_FILE = join(ROOT, 'src-tauri', 'src', 'extensions.rs')
+const TYPE_GEN_FILE = join(ROOT, 'src-tauri', 'src', 'type_gen.rs')
 const COMMANDS_DIR = join(ROOT, 'src-tauri', 'src', 'commands')
+const CORE_DIR = join(ROOT, 'src-tauri', 'src')
 
 const IS_CHECK_MODE = process.argv.includes('--check')
 
@@ -30,6 +32,9 @@ async function scanExtensions(): Promise<string[]> {
 // 匹配 #[tauri::command] 及后续可能的 #[cfg_attr(...)]，然后 pub (async)? fn name(
 const COMMAND_REGEX = /#\[tauri::command\]\s*(?:#\[.*?\]\s*)*pub\s+(?:async\s+)?fn\s+(\w+)/g
 
+// 匹配 specta 注解的命令（用于生成 TypeScript bindings）
+const SPECTA_COMMAND_REGEX = /#\[tauri::command\]\s*#\[cfg_attr\(feature\s*=\s*"specta"[^)]*\)\]\s*pub\s+(?:async\s+)?fn\s+(\w+)/g
+
 // 匹配 pub fn init(  而非 init_something(
 const INIT_REGEX = /^pub\s+fn\s+init\s*\(/m
 
@@ -37,6 +42,15 @@ function extractCommands(content: string): string[] {
   const commands: string[] = []
   let match: RegExpExecArray | null
   while ((match = COMMAND_REGEX.exec(content)) !== null) {
+    commands.push(match[1])
+  }
+  return commands
+}
+
+function extractSpectaCommands(content: string): string[] {
+  const commands: string[] = []
+  let match: RegExpExecArray | null
+  while ((match = SPECTA_COMMAND_REGEX.exec(content)) !== null) {
     commands.push(match[1])
   }
   return commands
@@ -50,9 +64,13 @@ interface ModuleMeta {
   module: string
   commands: string[]
   hasInit: boolean
-  source: 'built-in' | 'extension'
+  source: 'built-in' | 'extension' | 'core'
   backendPath?: string  // relative path from src-tauri/src/extensions/ to mod.rs
+  spectaCommands?: string[]  // 需要生成 TypeScript bindings 的命令
 }
+
+// 核心模块：不在 extensions/ 下，而是 src-tauri/src/core/ 下的 .rs 文件
+const CORE_MODULES = ['shortcut', 'window']
 
 async function scanBuiltInCommands(): Promise<ModuleMeta[]> {
   const results: ModuleMeta[] = []
@@ -65,12 +83,29 @@ async function scanBuiltInCommands(): Promise<ModuleMeta[]> {
     const module = file.replace('.rs', '')
     const content = await readFile(join(COMMANDS_DIR, file), 'utf-8')
     const commands = extractCommands(content)
+    const spectaCommands = extractSpectaCommands(content)
     const init = hasInit(content)
     if (commands.length > 0 || init) {
-      results.push({ module, commands, hasInit: init, source: 'built-in' })
+      results.push({ module, commands, spectaCommands, hasInit: init, source: 'built-in' })
     }
   }
 
+  return results
+}
+
+async function scanCoreModules(): Promise<ModuleMeta[]> {
+  const results: ModuleMeta[] = []
+  for (const name of CORE_MODULES) {
+    const filePath = join(CORE_DIR, 'core', `${name}.rs`)
+    if (!(await pathExists(filePath))) continue
+    const content = await readFile(filePath, 'utf-8')
+    const commands = extractCommands(content)
+    const spectaCommands = extractSpectaCommands(content)
+    const init = hasInit(content)
+    if (commands.length > 0 || init) {
+      results.push({ module: name, commands, spectaCommands, hasInit: init, source: 'core' })
+    }
+  }
   return results
 }
 
@@ -80,19 +115,21 @@ async function scanExtensionBackends(): Promise<ModuleMeta[]> {
 
   const dirs = await readdir(EXTENSIONS_DIR, { withFileTypes: true })
   for (const dir of dirs.filter(d => d.isDirectory())) {
-    const modFile = join(EXTENSIONS_DIR, dir.name, 'backend', 'mod.rs')
+    const modFile = join(EXTENSIONS_DIR, dir.name, 'native', 'mod.rs')
     if (!(await pathExists(modFile))) continue
 
     const content = await readFile(modFile, 'utf-8')
     const commands = extractCommands(content)
+    const spectaCommands = extractSpectaCommands(content)
     const init = hasInit(content)
     if (commands.length > 0 || init) {
       results.push({
         module: dir.name,
         commands,
+        spectaCommands,
         hasInit: init,
         source: 'extension',
-        backendPath: `../../../extensions/${dir.name}/backend/mod.rs`
+        backendPath: `../../extensions/${dir.name}/native/mod.rs`
       })
     }
   }
@@ -100,7 +137,7 @@ async function scanExtensionBackends(): Promise<ModuleMeta[]> {
   return results
 }
 
-function buildRegistryContent(allModules: ModuleMeta[]): { modContent: string; registryContent: string } {
+function buildModContent(allModules: ModuleMeta[]): string {
   const extModules = allModules.filter(m => m.source === 'extension')
 
   // mod declarations with #[path] for extension backends
@@ -116,8 +153,8 @@ function buildRegistryContent(allModules: ModuleMeta[]): { modContent: string; r
 
   const commandPaths: string[] = []
   for (const m of allModules) {
-    const prefix = m.source === 'built-in' ? 'crate::commands' : 'crate::extensions'
     const modName = rustModuleName(m.module)
+    const prefix = m.source === 'extension' ? `crate::extensions` : `crate::core`
     for (const cmd of m.commands) {
       commandPaths.push(`        ${prefix}::${modName}::${cmd},`)
     }
@@ -126,14 +163,14 @@ function buildRegistryContent(allModules: ModuleMeta[]): { modContent: string; r
   const initLines: string[] = []
   for (const m of allModules) {
     if (m.hasInit) {
-      const prefix = m.source === 'built-in' ? 'crate::commands' : 'crate::extensions'
       const modName = rustModuleName(m.module)
+    const prefix = m.source === 'extension' ? `crate::extensions` : `crate::core`
       initLines.push(`        .plugin(${prefix}::${modName}::init())`)
     }
   }
 
   // 用 macro_rules! 在调用点展开，保留 lib.rs 顶层的具体类型推断
-  const modContent = [
+  return [
     `// Auto-generated by scripts/sync-extensions.ts`,
     `// Do not edit manually.`,
     ``,
@@ -149,61 +186,94 @@ function buildRegistryContent(allModules: ModuleMeta[]): { modContent: string; r
     `pub(crate) use configure_app;`,
     ``,
     ...modLines,
-    `pub mod registry;`,
     ``,
   ].join('\n')
+}
 
-  // registry.rs 保留为占位（未来可放扩展的辅助函数）
-  const registryContent = [
+function buildTypeGenContent(allModules: ModuleMeta[]): string {
+  const rustModuleName = (name: string) => name.replace(/-/g, '_')
+
+  const commandPaths: string[] = []
+  for (const m of allModules) {
+    if (m.spectaCommands && m.spectaCommands.length > 0) {
+      const modName = rustModuleName(m.module)
+      const prefix = m.source === 'extension' ? `crate::extensions` : `crate::core`
+      for (const cmd of m.spectaCommands!) {
+        commandPaths.push(`            ${prefix}::${modName}::${cmd},`)
+      }
+    }
+  }
+
+  return [
     `// Auto-generated by scripts/sync-extensions.ts`,
     `// Do not edit manually.`,
     ``,
-    `// 命令注册通过 extensions/mod.rs 中的 configure_app! 宏完成`,
+    `// 此模块仅在 specta feature 启用时编译。`,
+    `// 运行方式：cargo test --features specta export_bindings -- --nocapture`,
+    `#![cfg(feature = "specta")]`,
+    ``,
+    `use specta_typescript::Typescript;`,
+    `use tauri_specta::{collect_commands, Builder, ErrorHandlingMode};`,
+    ``,
+    `/// 生成 TypeScript bindings 并写入 src/bindings.ts。`,
+    `#[test]`,
+    `pub fn export_bindings() {`,
+    `    let builder = Builder::<tauri::Wry>::new()`,
+    `        .error_handling(ErrorHandlingMode::Throw)`,
+    `        .commands(collect_commands![`,
+    ...commandPaths,
+    `        ]);`,
+    ``,
+    `    let out_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/bindings.ts");`,
+    ``,
+    `    builder`,
+    `        .export(Typescript::default(), &out_path)`,
+    `        .expect("生成 TypeScript bindings 失败");`,
+    ``,
+    `    println!(`,
+    `        "✅ bindings 已生成：{}",`,
+    `        out_path.canonicalize().unwrap().display()`,
+    `    );`,
+    `}`,
     ``,
   ].join('\n')
-
-  return { modContent, registryContent }
 }
 
 async function generateRegistry(allModules: ModuleMeta[]) {
-  const { modContent, registryContent } = buildRegistryContent(allModules)
+  const modContent = buildModContent(allModules)
+  await writeFile(BACKEND_EXT_FILE, modContent)
 
-  await mkdir(BACKEND_EXT_DIR, { recursive: true })
-  await writeFile(join(BACKEND_EXT_DIR, 'mod.rs'), modContent)
-  await writeFile(join(BACKEND_EXT_DIR, 'registry.rs'), registryContent)
+  const typeGenContent = buildTypeGenContent(allModules)
+  await writeFile(TYPE_GEN_FILE, typeGenContent)
 }
 
 async function checkRegistry(allModules: ModuleMeta[]): Promise<boolean> {
-  const { modContent, registryContent } = buildRegistryContent(allModules)
+  const modContent = buildModContent(allModules)
 
-  const modPath = join(BACKEND_EXT_DIR, 'mod.rs')
-  const registryPath = join(BACKEND_EXT_DIR, 'registry.rs')
-
-  let ok = true
-
-  if (await pathExists(modPath)) {
-    const existing = await readFile(modPath, 'utf-8')
+  if (await pathExists(BACKEND_EXT_FILE)) {
+    const existing = await readFile(BACKEND_EXT_FILE, 'utf-8')
     if (existing !== modContent) {
-      console.error(`[sync-extensions] CHECK FAILED: ${modPath} is out of date.`)
-      ok = false
+      console.error(`[sync-extensions] CHECK FAILED: ${BACKEND_EXT_FILE} is out of date.`)
+      return false
     }
   } else {
-    console.error(`[sync-extensions] CHECK FAILED: ${modPath} does not exist.`)
-    ok = false
+    console.error(`[sync-extensions] CHECK FAILED: ${BACKEND_EXT_FILE} does not exist.`)
+    return false
   }
 
-  if (await pathExists(registryPath)) {
-    const existing = await readFile(registryPath, 'utf-8')
-    if (existing !== registryContent) {
-      console.error(`[sync-extensions] CHECK FAILED: ${registryPath} is out of date.`)
-      ok = false
+  const typeGenContent = buildTypeGenContent(allModules)
+  if (await pathExists(TYPE_GEN_FILE)) {
+    const existing = await readFile(TYPE_GEN_FILE, 'utf-8')
+    if (existing !== typeGenContent) {
+      console.error(`[sync-extensions] CHECK FAILED: ${TYPE_GEN_FILE} is out of date.`)
+      return false
     }
   } else {
-    console.error(`[sync-extensions] CHECK FAILED: ${registryPath} does not exist.`)
-    ok = false
+    console.error(`[sync-extensions] CHECK FAILED: ${TYPE_GEN_FILE} does not exist.`)
+    return false
   }
 
-  return ok
+  return true
 }
 
 async function main() {
@@ -213,8 +283,9 @@ async function main() {
   console.log(`[sync-extensions] Found ${extNames.length} extension(s): ${extNames.join(', ') || 'none'}`)
 
   const builtIns = await scanBuiltInCommands()
+  const coreModules = await scanCoreModules()
   const extBackends = await scanExtensionBackends()
-  const allModules = [...builtIns, ...extBackends]
+  const allModules = [...builtIns, ...coreModules, ...extBackends]
 
   if (IS_CHECK_MODE) {
     const ok = await checkRegistry(allModules)
@@ -232,7 +303,7 @@ async function main() {
   const totalPlugins = allModules.filter(m => m.hasInit).length
 
   console.log('[sync-extensions] Done.')
-  console.log(`  Modules:  ${builtIns.length} built-in + ${extBackends.length} extension`)
+  console.log(`  Modules:  ${builtIns.length} built-in + ${coreModules.length} core + ${extBackends.length} extension`)
   console.log(`  Commands: ${totalCommands}`)
   console.log(`  Plugins:  ${totalPlugins}`)
 }

@@ -21,14 +21,6 @@
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-is-registered",
-    "dialog:allow-open",
-    "dialog:allow-save",
-    "dialog:allow-message",
-    "dialog:allow-ask",
-    "dialog:allow-confirm",
-    "notification:allow-notify",
-    "notification:allow-request-permission",
-    "notification:allow-is-permission-granted",
     "store:allow-get",
     "store:allow-set",
     "store:allow-delete",
@@ -41,20 +33,8 @@
     "store:allow-save",
     "store:allow-load",
     "store:default",
-    "http:allow-fetch",
-    "http:allow-fetch-send",
-    "http:allow-fetch-read-body",
-    "http:allow-fetch-cancel",
-    "http:default",
     "updater:default",
     "shell:allow-open",
-    "process:allow-restart",
-    {
-      "identifier": "http:default",
-      "allow": [
-        { "url": "http://ip-api.com/*" },
-        { "url": "https://ip-api.com/*" }
-      ]
-    }
+    "process:allow-restart"
   ]
 }

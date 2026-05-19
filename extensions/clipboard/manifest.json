@@ -1,8 +1,0 @@
-{
-  "id": "clipboard",
-  "title": "剪贴板",
-  "description": "管理剪贴板记录",
-  "order": 1,
-  "frontend": true,
-  "backend": true
-}

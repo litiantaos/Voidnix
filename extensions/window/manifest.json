@@ -1,8 +1,0 @@
-{
-  "id": "window",
-  "title": "window",
-  "description": "window",
-  "order": 99,
-  "frontend": false,
-  "backend": true
-}
