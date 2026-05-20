@@ -44,13 +44,14 @@ APPEX_DIR="$BUILD_DIR/FinderExt.appex"
 
 # ---------- Compile extension ---------------------------------------------
 echo "==> Compiling Finder Sync extension..."
-clang -fobjc-arc \
+clang++ -fobjc-arc \
+    -std=c++17 \
     -framework Foundation \
     -framework AppKit \
     -framework FinderSync \
     -mmacosx-version-min=11.0 \
     -o "$BINARY" \
-    "$APPEX_SRC/FinderSync.m"
+    "$APPEX_SRC/FinderSync.mm"
 
 # ---------- Stage the .appex bundle ---------------------------------------
 echo "==> Creating .appex bundle..."

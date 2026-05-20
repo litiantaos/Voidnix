@@ -5,11 +5,13 @@ use std::process::Command;
 fn main() {
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
 
-    // 编译 awake_display.m → 可执行文件（不在本特性范围内，保持原状）
+    // 编译 awake_display.mm → 可执行文件
     let awake_dest = Path::new(&out_dir).join("awake_display");
-    let status = Command::new("clang")
+    let status = Command::new("clang++")
         .args([
             "-fobjc-arc",
+            "-std=c++17",
+            "-mmacosx-version-min=11.0",
             "-framework",
             "Foundation",
             "-framework",
@@ -18,16 +20,16 @@ fn main() {
             "AppKit",
             "-o",
             awake_dest.to_str().unwrap(),
-            "../extensions/awake/native/awake_display.m",
+            "../extensions/awake/native/awake_display.mm",
         ])
         .status()
-        .expect("Failed to compile awake_display.m");
+        .expect("Failed to compile awake_display.mm");
 
     if !status.success() {
-        panic!("Failed to compile awake_display.m");
+        panic!("Failed to compile awake_display.mm");
     }
 
-    println!("cargo:rerun-if-changed=../extensions/awake/native/awake_display.m");
+    println!("cargo:rerun-if-changed=../extensions/awake/native/awake_display.mm");
     println!("cargo:rerun-if-changed=build.rs");
     // 追踪 extensions 目录变更，确保 #[path] 引用的外部文件修改后触发重新编译
     println!("cargo:rerun-if-changed=../extensions");
