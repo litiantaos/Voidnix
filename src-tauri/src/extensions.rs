@@ -5,6 +5,11 @@ macro_rules! configure_app {
     ($builder:expr) => {
         $builder
             .invoke_handler(tauri::generate_handler![
+        crate::core::permission::check_screen_recording_permission,
+        crate::core::permission::check_accessibility_permission,
+        crate::core::permission::request_accessibility_permission,
+        crate::core::permission::check_full_disk_access_permission,
+        crate::core::permission::open_privacy_settings,
         crate::core::shortcut::is_app_active,
         crate::core::shortcut::hide_window,
         crate::core::shortcut::get_selected_text_cached,

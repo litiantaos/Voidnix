@@ -10,6 +10,7 @@ export interface SettingItem {
   value: string | number
   subtitle?: string
   icon?: string
+  group?: string
   options?: ({ label: string; value: string | number } | { label: string; options: { label: string; value: string | number }[] })[]
   inputType?: 'text' | 'password'
   placeholder?: string

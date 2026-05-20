@@ -227,7 +227,7 @@ const mod: AppModule = {
   icon: 'i-ri-translate-2',
   keywords: ['translate', '翻译', '翻譯', 'fanyi', 'youdao', '有道'],
   order: 8,
-  multiline: true,
+  disableSearchInput: true,
   layout: { view: TranslateView, searchBarAccessory: TranslateActions },
   panel: TranslateSettings,
   onInit: async () => {

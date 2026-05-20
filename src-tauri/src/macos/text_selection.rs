@@ -220,12 +220,16 @@ pub fn init_ax_timeout() {
     ax::init_timeout();
 }
 
+#[cfg(debug_assertions)]
 pub fn log(msg: &str) {
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/voidnix-ts.log") {
         let _ = writeln!(f, "{}", msg);
     }
 }
+
+#[cfg(not(debug_assertions))]
+pub fn log(_msg: &str) {}
 
 /// Layer 1 only（在后台线程调用）。
 #[cfg(target_os = "macos")]

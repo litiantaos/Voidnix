@@ -20,7 +20,8 @@ pub async fn toggle_awake(app: tauri::AppHandle, state: State<'_, AwakeState>, e
         }
 
         // Write the executable to a temporary file
-        let temp_dir = std::env::temp_dir();
+        let temp_dir = std::env::temp_dir().join("com.litiantao.voidnix");
+        let _ = std::fs::create_dir_all(&temp_dir);
         let bin_path = temp_dir.join("Display Wakelock");
         
         std::fs::write(&bin_path, AWAKE_BIN).map_err(|e| e.to_string())?;

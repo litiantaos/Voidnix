@@ -1029,7 +1029,6 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .setup(|_app, _api| {
             #[cfg(target_os = "macos")]
             {
-                // 快捷键钩子：在快捷键按下后、窗口显示前完成截屏全流程
                 use tauri::Emitter;
                 crate::core::shortcut::register_shortcut_hook("screenshot", Box::new(|app, _ctx| {
                     let app_clone = app.clone();
@@ -1053,4 +1052,22 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             Ok(())
         })
         .build()
+}
+
+pub(crate) fn cleanup_temp_files() {
+    let temp_dir = std::env::temp_dir();
+    if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("voidnix_") && (name.ends_with(".png") || name.ends_with(".jpg")) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+    // 清理 awake 临时可执行文件
+    let awake_dir = temp_dir.join("com.litiantao.voidnix");
+    let awake_bin = awake_dir.join("Display Wakelock");
+    let _ = std::fs::remove_file(&awake_bin);
+    let _ = std::fs::remove_dir(&awake_dir);
 }

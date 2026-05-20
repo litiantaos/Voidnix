@@ -70,7 +70,7 @@ interface ModuleMeta {
 }
 
 // 核心模块：不在 extensions/ 下，而是 src-tauri/src/core/ 下的 .rs 文件
-const CORE_MODULES = ['shortcut', 'window']
+const CORE_MODULES = ['permission', 'shortcut', 'window']
 
 async function scanBuiltInCommands(): Promise<ModuleMeta[]> {
   const results: ModuleMeta[] = []

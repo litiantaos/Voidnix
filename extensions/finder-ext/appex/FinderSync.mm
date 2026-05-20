@@ -40,7 +40,7 @@
 
         dir = [[[[realHome stringByAppendingPathComponent:@"Library"]
                     stringByAppendingPathComponent:@"Application Support"]
-                    stringByAppendingPathComponent:@"Voidnix"]
+                    stringByAppendingPathComponent:@"com.litiantao.voidnix"]
                     stringByAppendingPathComponent:@"commands"];
 
         NSFileManager *fm = [NSFileManager defaultManager];

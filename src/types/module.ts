@@ -127,13 +127,8 @@ export interface AppModule {
   
 
   /**
-   * 禁用主搜索框（输入框置 disabled，不响应键入）。
-   * 适用于无搜索语义的模块（如 OCR 结果展示）。
+   * 禁用主搜索框（输入框置 disabled，不响应键入，保留 placeholder）。
+   * 适用于模块自行接管输入区的场景（如聊天、翻译使用独立 textarea）。
    */
   disableSearchInput?: boolean
-
-  /**
-   * 搜索框是否允多行输入（例如翻译、对话模块）
-   */
-  multiline?: boolean
 }

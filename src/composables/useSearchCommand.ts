@@ -193,7 +193,7 @@ export function useSearchCommand(opts: Options) {
         break
       case 'Enter':
         if (appStore.activeModuleId) {
-          if (activeModule.value?.multiline) return
+          if (activeModule.value?.disableSearchInput) return
           if (
             activeModule.value?.useSearchInput &&
             activeModule.value?.onSearchInput
@@ -313,13 +313,13 @@ export function useSearchCommand(opts: Options) {
   }
 
   const focusHandler = () => {
-    if (activeModule.value?.multiline) return
+    if (activeModule.value?.disableSearchInput) return
     searchInput.value?.focus()
     if (appStore.searchQuery) searchInput.value?.select()
   }
 
   onMounted(async () => {
-    if (!activeModule.value?.multiline) searchInput.value?.focus()
+    if (!activeModule.value?.disableSearchInput) searchInput.value?.focus()
     await loadDefaultResults()
     window.addEventListener('window-focused', focusHandler)
 

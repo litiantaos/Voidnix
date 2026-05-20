@@ -15,12 +15,11 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 static FINDER_EXT_ENABLED: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
-pub fn set_finder_ext_enabled(enabled: bool) {
+pub fn set_finder_ext_enabled(app: tauri::AppHandle, enabled: bool) {
     FINDER_EXT_ENABLED.store(enabled, Ordering::Relaxed);
     log::info!("finder_ext enabled={}", enabled);
 
-    // 写/删标志文件，让沙盒内的 FinderSync 扩展能感知开关状态
-    let flag_path = command_dir().join("enabled");
+    let flag_path = command_dir(&app).join("enabled");
     if enabled {
         let _ = fs::write(&flag_path, b"1");
     } else {
@@ -70,13 +69,10 @@ impl notify::EventHandler for CommandHandler {
 }
 
 /// IPC directory shared between the sandboxed extension and this main app.
-/// Path: ~/Library/Application Support/Voidnix/commands/
-fn command_dir() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = home
-        .join("Library")
-        .join("Application Support")
-        .join("Voidnix")
+/// Uses app_data_dir() so the path is consistent with other local files.
+fn command_dir(app: &AppHandle) -> PathBuf {
+    let dir = app.path().app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
         .join("commands");
     if let Err(e) = fs::create_dir_all(&dir) {
         log::error!("Failed to create command dir {:?}: {}", dir, e);
@@ -85,7 +81,7 @@ fn command_dir() -> PathBuf {
 }
 
 pub fn init_finder_ext(app_handle: AppHandle) {
-    let cmd_dir = command_dir();
+    let cmd_dir = command_dir(&app_handle);
 
     // Remove stale .tmp files; replay any .json queued before we started.
     if let Ok(entries) = fs::read_dir(&cmd_dir) {
@@ -392,9 +388,12 @@ fn reveal_and_rename(path: &Path) {
 
 #[tauri::command]
 pub fn quit_app(app_handle: AppHandle) {
+    // 清理临时文件
+    crate::extensions::screenshot::cleanup_temp_files();
+
     // 禁用 Finder 扩展
     FINDER_EXT_ENABLED.store(false, Ordering::Relaxed);
-    let flag_path = command_dir().join("enabled");
+    let flag_path = command_dir(&app_handle).join("enabled");
     let _ = fs::remove_file(&flag_path);
 
     // 终止 Finder 扩展进程

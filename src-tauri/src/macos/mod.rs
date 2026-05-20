@@ -1,6 +1,7 @@
 pub mod click_monitor;
 pub mod clipboard_monitor;
 pub mod mac_utils;
+pub mod permission;
 #[cfg(target_os = "macos")]
 pub mod skylight;
 #[cfg(target_os = "macos")]

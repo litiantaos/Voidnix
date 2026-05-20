@@ -197,7 +197,7 @@ const mod: AppModule = {
   icon: 'i-ri-chat-ai-line',
   keywords: ['chat', 'ai', 'gpt', '对话', '聊天', '助手', 'assistant'],
   order: 9,
-  multiline: true,
+  disableSearchInput: true,
   layout: { view: ChatView, searchBarAccessory: ChatActions },
   panel: ChatSettings,
   globalShortcuts: [

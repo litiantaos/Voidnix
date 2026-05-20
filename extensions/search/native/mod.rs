@@ -119,7 +119,7 @@ fn icon_cache_path(cache_dir: &Path, app_path: &str) -> std::path::PathBuf {
 fn get_app_icon(app_path: &str) -> Option<String> {
     let cache_dir = dirs::cache_dir()
         .unwrap_or_else(|| Path::new("/tmp").to_path_buf())
-        .join("Launcher")
+        .join("com.litiantao.voidnix")
         .join("icons");
 
     let _ = fs::create_dir_all(&cache_dir);
@@ -136,7 +136,6 @@ fn get_app_icon(app_path: &str) -> Option<String> {
                 ));
             }
         }
-        // 缓存文件存在但为空或读取失败，删除后重新提取
         let _ = fs::remove_file(&cached_path);
     }
 
@@ -152,11 +151,10 @@ fn get_app_icon(app_path: &str) -> Option<String> {
     }
 }
 
-/// 从 macOS 提取应用图标：先用 NSWorkspace 获取系统样式图标，失败后才注册到 Launch Services 重试
 fn extract_app_icon(app_path: &str) -> Option<String> {
     let cache_dir = dirs::cache_dir()
         .unwrap_or_else(|| Path::new("/tmp").to_path_buf())
-        .join("Launcher")
+        .join("com.litiantao.voidnix")
         .join("icons");
 
     let cached_path = icon_cache_path(&cache_dir, app_path);

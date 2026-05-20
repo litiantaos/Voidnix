@@ -4,6 +4,8 @@
       v-if="visibleItems.length > 0"
       :items="visibleItems"
       v-model:selected-index="selectedIndex"
+      group-field="group"
+      :group-title="(g: string) => g"
       keyboard-navigation
       @execute="
         (item: SettingItem, _i: number, e?: KeyboardEvent) =>
@@ -40,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
 import { open } from '@tauri-apps/plugin-shell'
@@ -66,6 +68,23 @@ const { handleExecute, setShortcutRef } = useSettingsInput()
 const query = computed(() => appStore.searchQuery.toLowerCase().trim())
 const showUpdateDialog = ref(false)
 const appVersion = ref('')
+
+const permScreenRecording = ref<boolean | null>(null)
+const permAccessibility = ref<boolean | null>(null)
+const permFullDiskAccess = ref<boolean | null>(null)
+
+async function refreshPermissions() {
+  if (!isTauri) return
+  try {
+    permScreenRecording.value = await invoke<boolean>('check_screen_recording_permission')
+    permAccessibility.value = await invoke<boolean>('check_accessibility_permission')
+    permFullDiskAccess.value = await invoke<boolean>('check_full_disk_access_permission')
+  } catch {
+    // 权限检查失败（非 macOS 或不支持），保持 null
+  }
+}
+
+onMounted(refreshPermissions)
 
 if (isTauri) {
   getVersion()
@@ -130,6 +149,24 @@ const handleCheckUpdate = async () => {
   }
 }
 
+function permStatus(granted: boolean | null): string {
+  if (granted === null) return '检查中…'
+  return granted ? '已授权' : '未授权 — 点击前往系统设置'
+}
+
+async function handleRequestAccessibility() {
+  if (!isTauri) return
+  const granted = await invoke<boolean>('request_accessibility_permission')
+  permAccessibility.value = granted
+}
+
+async function handleOpenPrivacy(kind: string) {
+  if (!isTauri) return
+  await invoke('open_privacy_settings', { kind })
+  // 返回刷新状态，给系统一点时间响应
+  setTimeout(refreshPermissions, 1000)
+}
+
 const visibleItems = computed<SettingItem[]>(() => {
   const items: SettingItem[] = []
 
@@ -139,6 +176,7 @@ const visibleItems = computed<SettingItem[]>(() => {
       title: '启动快捷键',
       type: 'shortcut',
       icon: 'i-ri-keyboard-line',
+      group: '应用',
       value: settings.globalShortcut,
       update: handleGlobalShortcutChange,
     })
@@ -162,6 +200,7 @@ const visibleItems = computed<SettingItem[]>(() => {
       icon: updateStore.downloaded
         ? 'i-ri-arrow-up-circle-line'
         : 'i-ri-refresh-line',
+      group: '应用',
       value: '',
       action: handleCheckUpdate,
     })
@@ -174,6 +213,7 @@ const visibleItems = computed<SettingItem[]>(() => {
       type: 'button',
       icon: 'i-ri-information-line',
       subtitle: 'github.com/litiantaos/Voidnix',
+      group: '应用',
       value: '',
       action: handleOpenGitHub,
     })
@@ -185,8 +225,48 @@ const visibleItems = computed<SettingItem[]>(() => {
       title: '退出应用',
       type: 'button',
       icon: 'i-ri-logout-box-line',
+      group: '应用',
       value: '',
       action: handleQuitApp,
+    })
+  }
+
+  if (isVisible('权限', '隐私', '录制', '辅助', '磁盘', 'accessibility', 'screen', 'disk', 'privacy')) {
+    items.push({
+      id: 'perm-screen-recording',
+      title: '屏幕录制权限',
+      subtitle: permStatus(permScreenRecording.value),
+      type: 'button',
+      icon: permScreenRecording.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
+      group: '隐私权限',
+      value: '',
+      action: () => handleOpenPrivacy('screen_recording'),
+    })
+    items.push({
+      id: 'perm-accessibility',
+      title: '辅助功能权限',
+      subtitle: permStatus(permAccessibility.value),
+      type: 'button',
+      icon: permAccessibility.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
+      group: '隐私权限',
+      value: '',
+      action: () => {
+        if (permAccessibility.value) {
+          handleOpenPrivacy('accessibility')
+        } else {
+          handleRequestAccessibility()
+        }
+      },
+    })
+    items.push({
+      id: 'perm-full-disk-access',
+      title: '完全磁盘访问权限',
+      subtitle: permStatus(permFullDiskAccess.value),
+      type: 'button',
+      icon: permFullDiskAccess.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
+      group: '隐私权限',
+      value: '',
+      action: () => handleOpenPrivacy('full_disk_access'),
     })
   }
 

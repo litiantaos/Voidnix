@@ -39,17 +39,14 @@
         ref="searchInput"
         id="main-search-input"
         :value="appStore.searchQuery"
-        :readonly="activeModule?.multiline"
         :disabled="activeModule?.disableSearchInput"
-        class="text-base text-black/85 outline-none bg-transparent flex-1 placeholder:text-black/25"
-        :class="{ 'cursor-default': activeModule?.multiline || activeModule?.disableSearchInput }"
+        class="text-base text-black/85 outline-none bg-transparent flex-1 disabled:text-black/85 placeholder:text-black/25 disabled:opacity-100"
+        :class="{ 'cursor-default': activeModule?.disableSearchInput }"
         :placeholder="
           activeModule
             ? activeModule.disableSearchInput
               ? ''
-              : activeModule.multiline
-                ? ''
-                : activeModule.placeholder || `在 ${activeModule.name} 中搜索`
+              : activeModule.placeholder || `在 ${activeModule.name} 中搜索`
             : '搜索应用或文件，输入 / 搜索扩展'
         "
         @input="onInput"
