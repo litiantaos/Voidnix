@@ -106,6 +106,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // 通用模块配置存储（键为 moduleId，值为任意可序列化数据）
   const moduleConfigs = ref<Record<string, unknown>>({})
 
+  // Awake 显示模式
+  const awakeMirrorMode = ref(true)
+
   function createSetter<T>(r: Ref<T>, key: string) {
     return async (val: T) => {
       r.value = val
@@ -303,6 +306,12 @@ export const useSettingsStore = defineStore('settings', () => {
       const fee = await store.get<boolean>('finderExtEnabled')
       if (fee !== null && fee !== undefined) finderExtEnabled.value = fee
 
+      const mConfigs = await store.get<Record<string, unknown>>('moduleConfigs')
+      if (mConfigs) moduleConfigs.value = mConfigs
+
+      const amm = await store.get<boolean>('awakeMirrorMode')
+      if (amm !== null && amm !== undefined) awakeMirrorMode.value = amm
+
       // 同步 finder ext 启用状态到后端
       if (isTauri) {
         invoke('set_finder_ext_enabled', { enabled: finderExtEnabled.value }).catch(() => {})
@@ -364,6 +373,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
   const setActiveModelKey = createSetter(activeModelKey, 'activeModelKey')
+  const setAwakeMirrorMode = createSetter(awakeMirrorMode, 'awakeMirrorMode')
 
   return {
     globalShortcut,
@@ -380,6 +390,7 @@ export const useSettingsStore = defineStore('settings', () => {
     activeModelKey,
     activeChatConfig,
     finderExtEnabled,
+    awakeMirrorMode,
     loadSettings,
     setGlobalShortcut,
     setClipboardMaxDays,
@@ -400,6 +411,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateChatConfig,
     setActiveModelKey,
     setFinderExtEnabled,
+    setAwakeMirrorMode,
     saveChatConfigs,
     saveTranslateConfigs,
   }

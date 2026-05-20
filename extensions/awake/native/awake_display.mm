@@ -30,6 +30,11 @@
 
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
+        BOOL mirrorMode = NO;
+        if (argc > 1 && strcmp(argv[1], "--mirror") == 0) {
+            mirrorMode = YES;
+        }
+
         NSBundle *bundle = [NSBundle bundleWithPath:@"/System/Library/Frameworks/CoreDisplay.framework"];
         if (![bundle load]) {
             NSLog(@"Failed to load CoreDisplay.framework");
@@ -59,7 +64,7 @@ int main(int argc, const char * argv[]) {
         CGVirtualDisplay *display = [[CGVirtualDisplayClass alloc] initWithDescriptor:descriptor];
 
         CGVirtualDisplayMode *mode = [[CGVirtualDisplayModeClass alloc] initWithWidth:1920 height:1080 refreshRate:60.0];
-        
+
         CGVirtualDisplaySettings *settings = [[CGVirtualDisplaySettingsClass alloc] init];
         settings.hiDPI = 1;
         settings.modes = @[mode];
@@ -69,19 +74,34 @@ int main(int argc, const char * argv[]) {
             NSLog(@"Failed to apply virtual display settings");
             return 1;
         }
-        
-        // Notify parent process we are ready
+
+        {
+            CGDirectDisplayID virtualID = display.displayID;
+            if (virtualID != kCGNullDirectDisplay) {
+                CGDisplayConfigRef config = NULL;
+                CGError err = CGBeginDisplayConfiguration(&config);
+                if (err == kCGErrorSuccess && config != NULL) {
+                    if (mirrorMode) {
+                        CGConfigureDisplayMirrorOfDisplay(config, virtualID, CGMainDisplayID());
+                    } else {
+                        CGConfigureDisplayMirrorOfDisplay(config, virtualID, kCGNullDirectDisplay);
+                    }
+                    err = CGCompleteDisplayConfiguration(config, kCGConfigureForSession);
+                    if (err != kCGErrorSuccess) {
+                        NSLog(@"Warning: failed to configure display: %d", err);
+                    }
+                } else {
+                    NSLog(@"Warning: failed to begin display configuration: %d", err);
+                }
+            }
+        }
+
         printf("READY\n");
         fflush(stdout);
 
-        // Wait for stdin to close
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), stdin) != NULL) {
-            // Keep running
         }
-        
-        // When stdin is closed, exit gracefully
-        // display will be released by ARC, or the OS cleans it up when process dies.
     }
     return 0;
 }

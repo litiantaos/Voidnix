@@ -26,7 +26,6 @@
         >
           <template v-if="item.type === 'shortcut'" #trailing>
             <ShortcutInput
-              :ref="(el) => setShortcutRef(`si-${item.id}`, el)"
               :model-value="String(item.value)"
               @update:model-value="item.update"
             />
@@ -63,7 +62,7 @@ import {
 const settings = useSettingsStore()
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
-const { handleExecute, setShortcutRef } = useSettingsInput()
+const { handleExecute } = useSettingsInput()
 
 const query = computed(() => appStore.searchQuery.toLowerCase().trim())
 const showUpdateDialog = ref(false)

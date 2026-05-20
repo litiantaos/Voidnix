@@ -1,7 +1,5 @@
 import { ref } from 'vue'
-import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
-import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 
 export interface SettingItem {
   id: string
@@ -18,24 +16,21 @@ export interface SettingItem {
   update?: (val: string | number) => void
 }
 
+/**
+ * 设置项的交互逻辑。
+ *
+ * Enter 键由 BaseList 通过 DOM querySelector 统一处理（查找
+ * [data-settings-control][tabindex="0"] 元素并执行 focus() + click()）。
+ * 这里仅处理需要额外状态管理的 input 编辑生命周期和 button 的延迟触发。
+ */
 export function useSettingsInput() {
-  const selectRefs = ref<Record<string, InstanceType<typeof BaseSelect>>>({})
   const inputRefs = ref<Record<string, InstanceType<typeof BaseInput>>>({})
-  const shortcutRefs = ref<Record<string, InstanceType<typeof ShortcutInput>>>({})
   const passwordVisibility = ref<Record<string, boolean>>({})
   const editingValue = ref<Record<string, string>>({})
   const editingOriginal = ref<Record<string, string>>({})
 
-  function setSelectRef(id: string, el: unknown) {
-    if (el) selectRefs.value[id] = el as InstanceType<typeof BaseSelect>
-  }
-
   function setInputRef(id: string, el: unknown) {
     if (el) inputRefs.value[id] = el as InstanceType<typeof BaseInput>
-  }
-
-  function setShortcutRef(id: string, el: unknown) {
-    if (el) shortcutRefs.value[id] = el as InstanceType<typeof ShortcutInput>
   }
 
   function togglePasswordVisibility(id: string) {
@@ -73,8 +68,12 @@ export function useSettingsInput() {
   }
 
   /**
-   * 处理设置项的执行逻辑（回车/双击）。
-   * @returns true 表示已消费该事件（标准类型），false 表示未识别需调用方自行处理
+   * 处理设置项的执行逻辑（回车 / 双击）。
+   *
+   * Enter 键的控件聚焦由 BaseList 内置机制统一处理（DOM querySelector
+   * [data-settings-control][tabindex="0"]），这里不再重复聚焦逻辑。
+   *
+   * @returns true 表示已消费该事件，false 表示未识别需调用方自行处理
    */
   function handleExecute(
     item: SettingItem,
@@ -85,21 +84,9 @@ export function useSettingsInput() {
     if (item.type === 'button' && item.action) {
       setTimeout(() => item.action!(), 150)
       return true
-    } else if (item.type === 'shortcut') {
-      const ref = shortcutRefs.value[`si-${item.id}`]
-      if (ref) {
-        ref.focus()
-        ref.startRecording()
-      }
-      return true
-    } else if (item.type === 'select') {
-      const ref = selectRefs.value[`si-${item.id}`]
-      if (ref) {
-        ref.focus()
-        ref.toggleOpen()
-      }
-      return true
-    } else if (item.type === 'input') {
+    }
+
+    if (item.type === 'input') {
       if (item.id in editingValue.value) {
         commitEdit(item)
         inputRefs.value[`si-${item.id}`]?.blur()
@@ -114,15 +101,11 @@ export function useSettingsInput() {
   }
 
   return {
-    selectRefs,
     inputRefs,
-    shortcutRefs,
     passwordVisibility,
     editingValue,
     editingOriginal,
-    setSelectRef,
     setInputRef,
-    setShortcutRef,
     togglePasswordVisibility,
     startEdit,
     onEditInput,

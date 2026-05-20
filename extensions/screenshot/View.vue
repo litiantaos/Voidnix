@@ -21,7 +21,6 @@
         >
           <template #trailing>
             <ShortcutInput
-              :ref="(el) => setShortcutRef(`si-${SHORTCUT_ITEM_ID}`, el)"
               :model-value="screenshotShortcutValue"
               @update:model-value="handleShortcutChange"
             />
@@ -63,7 +62,7 @@ import { useSettingsInput } from '@/composables/useSettingsInput'
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
-const { setShortcutRef, shortcutRefs } = useSettingsInput()
+useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'screenshot-shortcut'
 
@@ -106,10 +105,7 @@ const items: Item[] = [
 const selectedIndex = ref(0)
 
 function onExecute(item: Item) {
-  if (item.type === 'shortcut') {
-    const r = shortcutRefs.value[`si-${SHORTCUT_ITEM_ID}`]
-    if (r) { r.focus(); r.startRecording() }
-  } else {
+  if (item.type === 'savePath') {
     pickSavePath()
   }
 }

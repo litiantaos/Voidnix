@@ -4,22 +4,6 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 
 /** Commands */
 export const commands = {
-	searchFiles: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_files", { query }),
-	searchApps: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_apps", { query }),
-	scoreItems: (query: string, items: string[]) => __TAURI_INVOKE<number[]>("score_items", { query, items }),
-	getClipboardHistory: (query: string | null, filterFavorite: boolean | null, limit: number | null) => __TAURI_INVOKE<ClipboardItem[]>("get_clipboard_history", { query, filterFavorite, limit }),
-	translateYoudao: (text: string, appKey: string, appSecret: string, targetLang: string | null) => __TAURI_INVOKE<TranslateResult>("translate_youdao", { text, appKey, appSecret, targetLang }),
-	translateAi: (text: string, endpoint: string, apiKey: string, model: string, targetLang: string | null, prompt: string | null) => __TAURI_INVOKE<TranslateResult>("translate_ai", { text, endpoint, apiKey, model, targetLang, prompt }),
-	/**
-	 *  Read clipboard with polling fallback.
-	 *
-	 *  The translate shortcut handler already executed AppleScript
-	 *  Cmd+C before the window activated. This function reads the clipboard.
-	 *  If the first read is empty (clipboard not yet updated), it polls for up to
-	 *  300ms before giving up.
-	 */
-	getSelectedText: () => __TAURI_INVOKE<string>("get_selected_text"),
-	fetchIpInfo: (ip: string | null) => __TAURI_INVOKE<IpInfo>("fetch_ip_info", { ip }),
 	isAppActive: () => __TAURI_INVOKE<boolean>("is_app_active"),
 	getSelectedTextCached: () => __TAURI_INVOKE<string>("get_selected_text_cached"),
 	/**
@@ -27,6 +11,22 @@ export const commands = {
 	 *  annotation_png: 前端 canvas 标注层的 PNG base64（可为空）。
 	 */
 	ocrImage: (selX: number | null, selY: number | null, selW: number | null, selH: number | null, scale: number | null, annotationPng: string) => __TAURI_INVOKE<string>("ocr_image", { selX, selY, selW, selH, scale, annotationPng }),
+	/**
+	 *  Read clipboard with polling fallback.
+	 * 
+	 *  The translate shortcut handler (in shortcut.rs) already executed AppleScript
+	 *  Cmd+C before the window activated. This function reads the clipboard.
+	 *  If the first read is empty (clipboard not yet updated), it polls for up to
+	 *  300ms before giving up.
+	 */
+	getSelectedText: () => __TAURI_INVOKE<string>("get_selected_text"),
+	translateYoudao: (text: string, appKey: string, appSecret: string, targetLang: string | null) => __TAURI_INVOKE<TranslateResult>("translate_youdao", { text, appKey, appSecret, targetLang }),
+	translateAi: (text: string, endpoint: string, apiKey: string, model: string, targetLang: string | null, prompt: string | null) => __TAURI_INVOKE<TranslateResult>("translate_ai", { text, endpoint, apiKey, model, targetLang, prompt }),
+	searchApps: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_apps", { query }),
+	searchFiles: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_files", { query }),
+	scoreItems: (query: string, items: string[]) => __TAURI_INVOKE<number[]>("score_items", { query, items }),
+	fetchIpInfo: (ip: string | null) => __TAURI_INVOKE<IpInfo>("fetch_ip_info", { ip }),
+	getClipboardHistory: (query: string | null, filterFavorite: boolean | null, limit: number | null) => __TAURI_INVOKE<ClipboardItem[]>("get_clipboard_history", { query, filterFavorite, limit }),
 };
 
 /* Types */

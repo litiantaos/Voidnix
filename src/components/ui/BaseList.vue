@@ -180,6 +180,15 @@ if (props.keyboardNavigation) {
     if (isSettingsControl(activeEl) && activeEl!.id !== 'main-search-input') return
     e.preventDefault()
     if (props.items.length > 0) {
+      const el = itemRefs.value[localIndex.value]
+      if (el) {
+        const control = el.querySelector<HTMLElement>('[data-settings-control][tabindex="0"]')
+        if (control) {
+          control.focus()
+          control.click()
+          return
+        }
+      }
       emit('execute', props.items[localIndex.value], localIndex.value, e)
     }
   })

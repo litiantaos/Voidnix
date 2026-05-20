@@ -19,13 +19,11 @@
           <template #trailing>
             <ShortcutInput
               v-if="item.type === 'shortcut'"
-              :ref="(el) => setShortcutRef(`si-${item.id}`, el)"
               :model-value="String(item.value)"
               @update:model-value="item.update!"
             />
             <BaseSelect
               v-else-if="item.type === 'select'"
-              :ref="(el) => setSelectRef(`si-${item.id}`, el)"
               :model-value="item.value"
               :options="item.options!"
               @update:model-value="item.update!"
@@ -57,7 +55,7 @@ import { useSettingsInput, type SettingItem } from '@/composables/useSettingsInp
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
-const { handleExecute, setSelectRef, setShortcutRef } = useSettingsInput()
+const { handleExecute } = useSettingsInput()
 
 const clipboardShortcutValue = computed({
   get: () => settings.getShortcutOverride('clipboard') || 'CommandOrControl+Shift+C',

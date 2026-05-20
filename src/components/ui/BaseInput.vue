@@ -1,11 +1,13 @@
 <template>
   <div
     data-settings-control
+    tabindex="0"
     :class="[
       'ui-ctrl flex items-center gap-2',
       error ? 'border-red-400' : '',
       disabled ? 'ui-disabled bg-black/2' : '',
     ]"
+    @click="focus()"
   >
     <slot name="prefix" />
     <input

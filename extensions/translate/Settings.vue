@@ -34,7 +34,6 @@
         >
           <template #trailing>
             <ShortcutInput
-              :ref="(el) => setShortcutRef(`si-${SHORTCUT_ITEM_ID}`, el)"
               :model-value="translateShortcutValue"
               @update:model-value="handleTranslateShortcutChange"
             />
@@ -53,7 +52,6 @@
         >
           <template #trailing>
             <BaseSelect
-              :ref="(el) => setSelectRef(`si-${LANG_ITEM_ID}`, el)"
               :model-value="settings.translateTargetLang"
               :options="targetLangOptions"
               @update:model-value="
@@ -227,8 +225,7 @@ import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { useSettingsInput } from '@/composables/useSettingsInput'
 
 const settings = useSettingsStore()
-const { setShortcutRef, setSelectRef, shortcutRefs, selectRefs } =
-  useSettingsInput()
+useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'translate-shortcut'
 const LANG_ITEM_ID = 'translate-target-lang'
@@ -432,18 +429,6 @@ const selectedIndex = ref(0)
 function onExecute(item: TranslateSettingsItem) {
   if (item.type === 'provider') {
     openConfigModal(item.config)
-  } else if (item.type === 'shortcut') {
-    const ref = shortcutRefs.value[`si-${SHORTCUT_ITEM_ID}`]
-    if (ref) {
-      ref.focus()
-      ref.startRecording()
-    }
-  } else if (item.type === 'lang') {
-    const ref = selectRefs.value[`si-${LANG_ITEM_ID}`]
-    if (ref) {
-      ref.focus()
-      ref.toggleOpen()
-    }
   }
 }
 

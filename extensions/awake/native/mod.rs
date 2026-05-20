@@ -1,13 +1,15 @@
 use std::process::{Command, Stdio, Child};
 use std::sync::Mutex;
-use tauri::{State, Manager, Emitter};
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::{State, Emitter};
 use tauri::tray::{TrayIconBuilder, MouseButton, TrayIconEvent};
 
 pub struct AwakeState {
     pub process: Mutex<Option<Child>>,
 }
 
-// Embed the compiled executable
+static MIRROR_MODE: AtomicBool = AtomicBool::new(true);
+
 const AWAKE_BIN: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/awake_display"));
 
 #[tauri::command]
@@ -16,17 +18,15 @@ pub async fn toggle_awake(app: tauri::AppHandle, state: State<'_, AwakeState>, e
 
     if enable {
         if process_guard.is_some() {
-            return Ok(true); // Already running
+            return Ok(true);
         }
 
-        // Write the executable to a temporary file
         let temp_dir = std::env::temp_dir().join("com.litiantao.voidnix");
         let _ = std::fs::create_dir_all(&temp_dir);
         let bin_path = temp_dir.join("Display Wakelock");
-        
+
         std::fs::write(&bin_path, AWAKE_BIN).map_err(|e| e.to_string())?;
-        
-        // Ensure it is executable
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -35,8 +35,9 @@ pub async fn toggle_awake(app: tauri::AppHandle, state: State<'_, AwakeState>, e
             std::fs::set_permissions(&bin_path, perms).map_err(|e| e.to_string())?;
         }
 
-        // Spawn the process
+        let mode_arg = if MIRROR_MODE.load(Ordering::Relaxed) { "--mirror" } else { "--extend" };
         let child = Command::new(&bin_path)
+            .arg(mode_arg)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -44,18 +45,14 @@ pub async fn toggle_awake(app: tauri::AppHandle, state: State<'_, AwakeState>, e
             .map_err(|e| e.to_string())?;
 
         *process_guard = Some(child);
-        
-        // Setup tray icon
+
         if let Some(tray) = app.tray_by_id("awake_tray") {
             let _ = tray.set_visible(true);
         } else {
-            // Load the converted PNG icon using Tauri v2 Image API
             let icon_bytes = include_bytes!("../../../public/bar-icon-fill.png");
-            
-            // In Tauri v2, if "image-png" feature is enabled, Image::from_bytes is available
             let icon = tauri::image::Image::from_bytes(icon_bytes);
             if let Ok(icon) = icon {
-                let _ = TrayIconBuilder::with_id("awake_tray")
+                let tray_icon = TrayIconBuilder::with_id("awake_tray")
                     .icon(icon)
                     .icon_as_template(true)
                     .on_tray_icon_event(|tray, event| {
@@ -64,33 +61,32 @@ pub async fn toggle_awake(app: tauri::AppHandle, state: State<'_, AwakeState>, e
                             ..
                         } = event
                         {
-                            let app = tray.app_handle();
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
+                            let app = tray.app_handle().clone();
+                            let _ = app.clone().run_on_main_thread(move || {
+                                crate::macos::webkit_tuning::show_main(&app);
                                 let _ = app.emit("open-module", "awake");
-                            }
+                            });
                         }
                     })
                     .build(&app);
+                if let Err(e) = tray_icon {
+                    eprintln!("Failed to build tray icon: {:?}", e);
+                }
             }
         }
-        
+
         Ok(true)
     } else {
         if let Some(mut child) = process_guard.take() {
-            // Close stdin, which causes the process to exit
             drop(child.stdin.take());
-            // Optionally wait or kill
             let _ = child.kill();
             let _ = child.wait();
         }
-        
-        // Hide tray icon instead of removing it to prevent macOS crash
+
         if let Some(tray) = app.tray_by_id("awake_tray") {
             let _ = tray.set_visible(false);
         }
-        
+
         Ok(false)
     }
 }
@@ -101,6 +97,33 @@ pub async fn is_awake_enabled(state: State<'_, AwakeState>) -> Result<bool, Stri
     Ok(process_guard.is_some())
 }
 
+#[tauri::command]
+pub async fn set_awake_mode(state: State<'_, AwakeState>, mirror: bool) -> Result<bool, String> {
+    MIRROR_MODE.store(mirror, Ordering::Relaxed);
+
+    let mut process_guard = state.process.lock().map_err(|e| e.to_string())?;
+    if let Some(mut child) = process_guard.take() {
+        drop(child.stdin.take());
+        let _ = child.kill();
+        let _ = child.wait();
+
+        let mode_arg = if mirror { "--mirror" } else { "--extend" };
+        let temp_dir = std::env::temp_dir().join("com.litiantao.voidnix");
+        let bin_path = temp_dir.join("Display Wakelock");
+
+        let new_child = Command::new(&bin_path)
+            .arg(mode_arg)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+
+        *process_guard = Some(new_child);
+    }
+
+    Ok(mirror)
+}
 
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("awake")

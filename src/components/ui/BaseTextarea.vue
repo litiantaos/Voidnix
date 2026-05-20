@@ -1,10 +1,13 @@
 <template>
   <div
+    data-settings-control
+    tabindex="0"
     :class="[
       'ui-ctrl h-auto! text-sm! flex items-start gap-2',
       error ? 'border-red-400' : '',
       disabled ? 'ui-disabled bg-black/2' : '',
     ]"
+    @click="focus()"
   >
     <textarea
       ref="textareaRef"

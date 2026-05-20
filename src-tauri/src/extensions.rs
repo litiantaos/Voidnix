@@ -45,6 +45,7 @@ macro_rules! configure_app {
         crate::extensions::ip::fetch_ip_info,
         crate::extensions::awake::toggle_awake,
         crate::extensions::awake::is_awake_enabled,
+        crate::extensions::awake::set_awake_mode,
         crate::extensions::clipboard::get_clipboard_history,
         crate::extensions::clipboard::clear_clipboard_history,
         crate::extensions::clipboard::toggle_clipboard_favorite,

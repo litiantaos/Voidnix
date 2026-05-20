@@ -34,7 +34,6 @@
         >
           <template #trailing>
             <ShortcutInput
-              :ref="(el) => setShortcutRef(`si-${SHORTCUT_ITEM_ID}`, el)"
               :model-value="chatShortcutValue"
               @update:model-value="handleChatShortcutChange"
             />
@@ -151,7 +150,7 @@ import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { useSettingsInput } from '@/composables/useSettingsInput'
 
 const settings = useSettingsStore()
-const { setShortcutRef, shortcutRefs } = useSettingsInput()
+useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'chat-shortcut'
 
@@ -297,13 +296,6 @@ const selectedIndex = ref(0)
 function onExecute(item: ChatSettingsItem) {
   if (item.type === 'provider') {
     openConfigModal(item.config)
-  } else {
-    // 委托 useSettingsInput 处理快捷键聚焦
-    const ref = shortcutRefs.value[`si-${SHORTCUT_ITEM_ID}`]
-    if (ref) {
-      ref.focus()
-      ref.startRecording()
-    }
   }
 }
 </script>
