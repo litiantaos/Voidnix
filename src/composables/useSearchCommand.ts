@@ -1,6 +1,7 @@
 import { ref, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
 import { onKeyStroke } from '@vueuse/core'
 import { invoke } from '@tauri-apps/api/core'
+import { open } from '@tauri-apps/plugin-shell'
 import { listen } from '@tauri-apps/api/event'
 import {
   searchAll,
@@ -33,6 +34,37 @@ export function useSearchCommand(opts: Options) {
   const isLoading = ref(false)
 
   // --- helpers ---
+
+  interface WebSearchQuery {
+    type: 'search' | 'url'
+    engine?: 'google' | 'bing'
+    keyword: string
+    url?: string
+  }
+
+  function parseWebSearchQuery(rawQuery: string): WebSearchQuery {
+    const isBing = rawQuery.startsWith('//b ') || rawQuery === '//b'
+    const keyword = rawQuery.startsWith('//b ')
+      ? rawQuery.slice(4).trim()
+      : rawQuery === '//b'
+        ? ''
+        : rawQuery.slice(2).trim()
+
+    if (!keyword) return { type: 'search', engine: isBing ? 'bing' : 'google', keyword: '' }
+
+    if (/^https?:\/\//.test(keyword)) {
+      return { type: 'url', keyword: '', url: keyword }
+    }
+
+    if (
+      /^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(keyword) ||
+      /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?(\/.*)?$/.test(keyword)
+    ) {
+      return { type: 'url', keyword: '', url: `https://${keyword}` }
+    }
+
+    return { type: 'search', engine: isBing ? 'bing' : 'google', keyword }
+  }
 
   function buildModuleResults(): SearchResult[] {
     return getAllModules()
@@ -87,6 +119,41 @@ export function useSearchCommand(opts: Options) {
     appStore.setSearchQuery(query)
 
     if (searchTimeout) clearTimeout(searchTimeout)
+
+    if (!appStore.activeModuleId && query.startsWith('//')) {
+      const parsed = parseWebSearchQuery(query)
+
+      if (parsed.type === 'url') {
+        results.value = [{
+          id: 'open-url',
+          title: '打开链接',
+          description: parsed.url!,
+          icon: 'i-ri-links-line',
+          module: 'system',
+          score: -1,
+          data: { kind: 'open-url', url: parsed.url! },
+        }]
+        selectedIndex.value = 0
+        return
+      }
+
+      const engine = parsed.engine === 'bing' ? 'Bing' : 'Google'
+      const desc = parsed.engine === 'bing'
+        ? '在默认浏览器中打开'
+        : '在默认浏览器中打开，//b 可使用 Bing 搜索'
+
+      results.value = [{
+        id: 'web-search',
+        title: `${engine} 搜索`,
+        description: desc,
+        icon: 'i-ri-earth-line',
+        module: 'system',
+        score: -1,
+        data: { kind: 'web-search', engine: parsed.engine, keyword: parsed.keyword },
+      }]
+      selectedIndex.value = 0
+      return
+    }
 
     if (!appStore.activeModuleId && query.startsWith('/')) {
       if (!wasToolListMode) {
@@ -192,6 +259,33 @@ export function useSearchCommand(opts: Options) {
         }
         break
       case 'Enter':
+        if (!appStore.activeModuleId && appStore.searchQuery.startsWith('//')) {
+          const parsed = parseWebSearchQuery(appStore.searchQuery)
+          if (parsed.type === 'url') {
+            e.preventDefault()
+            open(parsed.url!).catch(() => {})
+            appStore.setSearchQuery('')
+            if (searchInput.value) searchInput.value.value = ''
+            loadDefaultResults().finally(() => {
+              invoke('hide_window').catch(() => {})
+            })
+            return
+          }
+          const keyword = parsed.keyword
+          if (keyword) {
+            e.preventDefault()
+            const url = parsed.engine === 'bing'
+              ? `https://www.bing.com/search?q=${encodeURIComponent(keyword)}`
+              : `https://www.google.com/search?q=${encodeURIComponent(keyword)}`
+            open(url).catch(() => {})
+            appStore.setSearchQuery('')
+            if (searchInput.value) searchInput.value.value = ''
+            loadDefaultResults().finally(() => {
+              invoke('hide_window').catch(() => {})
+            })
+          }
+          return
+        }
         if (appStore.activeModuleId) {
           if (activeModule.value?.disableSearchInput) return
           if (
