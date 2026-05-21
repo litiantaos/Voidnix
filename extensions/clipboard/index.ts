@@ -8,7 +8,6 @@ import { useAppStore } from '@/stores/app'
 
 const ClipboardView = defineAsyncComponent(() => import('./View.vue'))
 const ClipboardSettings = defineAsyncComponent(() => import('./Settings.vue'))
-const ClipboardHeader = defineAsyncComponent(() => import('./Header.vue'))
 const ClipboardActions = defineAsyncComponent(() => import('./Actions.vue'))
 
 export type { ClipboardItem }
@@ -66,7 +65,6 @@ const mod: AppModule = {
   order: 1,
   layout: {
     view: ClipboardView,
-    header: ClipboardHeader,
     searchBarAccessory: ClipboardActions,
   },
   panel: ClipboardSettings,

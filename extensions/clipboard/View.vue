@@ -11,11 +11,10 @@
     :keyboard-navigation="true"
     @execute="(item) => copyToClipboard(item.id)"
   >
-    <template #item="{ item, selected, hoverable, setRef, execute }">
+    <template #item="{ item, selected, setRef, execute }">
       <BaseListItem
         :ref="setRef"
         :selected="selected"
-        :hoverable="hoverable"
         :multilineTitle="shouldMultiline(item)"
         :icon="
           item.content_type === 'image'
@@ -77,7 +76,6 @@
 import { onMounted, watch } from 'vue'
 import { history, activeTab, fetchClipboardHistory, invalidateCache, loading } from './index'
 import { invoke } from '@tauri-apps/api/core'
-import { onKeyStroke } from '@vueuse/core'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -91,7 +89,8 @@ const shouldMultiline = (item: { content_type: string; content: string }) =>
   (item.content_type === 'text' && item.content.length > MULTILINE_THRESHOLD)
 
 onMounted(() => {
-  fetchClipboardHistory(appStore.searchQuery, activeTab.value === 'favorites')
+  activeTab.value = 'all'
+  fetchClipboardHistory(appStore.searchQuery, false)
 })
 
 let debounceTimer: ReturnType<typeof setTimeout>
@@ -100,12 +99,6 @@ watch([activeTab, () => appStore.searchQuery], ([tab, query]) => {
   debounceTimer = setTimeout(() => {
     fetchClipboardHistory(query, tab === 'favorites')
   }, 80)
-})
-
-onKeyStroke('Tab', (e) => {
-  if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
-  e.preventDefault()
-  activeTab.value = activeTab.value === 'all' ? 'favorites' : 'all'
 })
 
 const copyToClipboard = async (id: string) => {

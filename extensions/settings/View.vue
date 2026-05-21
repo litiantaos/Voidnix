@@ -12,14 +12,13 @@
           handleExecute(item, e)
       "
     >
-      <template #item="{ item, selected, hoverable, setRef, select }">
+      <template #item="{ item, selected, setRef, select }">
         <BaseListItem
           :ref="setRef"
           :id="`set-${item.id}`"
           :title="item.title"
           :subtitle="item.subtitle"
           :icon="item.icon"
-          :hoverable="hoverable"
           :selected="selected"
           @click="select"
           @dblclick="handleExecute(item)"

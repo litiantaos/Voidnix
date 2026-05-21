@@ -8,7 +8,7 @@
       :group-title="(g: string) => g"
       @execute="(item: Item) => onExecute(item)"
     >
-      <template #item="{ item, selected, hoverable: h, setRef, select }">
+      <template #item="{ item, selected, setRef, select }">
         <!-- 快捷键 -->
         <BaseListItem
           v-if="item.type === 'shortcut'"
@@ -16,7 +16,6 @@
           :id="`si-${SHORTCUT_ITEM_ID}`"
           title="启动快捷键"
           :selected="selected"
-          :hoverable="h"
           @click="select"
         >
           <template #trailing>
@@ -34,7 +33,6 @@
           title="截图保存位置"
           :subtitle="savePathDisplay(settings.screenshotSavePath)"
           :selected="selected"
-          :hoverable="h"
           @click="select"
           @dblclick="pickSavePath"
         >

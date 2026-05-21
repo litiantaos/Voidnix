@@ -8,14 +8,13 @@
       :group-title="(g: string) => g"
       @execute="(item: FinderExtItem) => item.type === 'toggle' && toggle()"
     >
-      <template #item="{ item, selected, hoverable: h, setRef, select }">
+      <template #item="{ item, selected, setRef, select }">
         <BaseListItem
           v-if="item.type === 'toggle'"
           :ref="setRef"
           title="访达右键菜单"
           subtitle="开启后将引导你到系统设置中启用扩展（文件提供程序 → Voidnix）"
           :selected="selected"
-          :hoverable="h"
           @click="select"
         >
           <template #trailing>
@@ -33,7 +32,6 @@
           :ref="setRef"
           :title="(item as ActionItem).title"
           :selected="selected"
-          :hoverable="h"
           @click="select"
         />
       </template>

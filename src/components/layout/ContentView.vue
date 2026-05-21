@@ -45,11 +45,10 @@
             @update:selected-index="handleUpdateSelectedIndex"
             @execute="handleExecute"
           >
-            <template #item="{ item, selected, hoverable, setRef, select }">
+            <template #item="{ item, selected, setRef, select }">
               <BaseListItem
                 :ref="setRef"
                 :selected="selected"
-                :hoverable="hoverable"
                 :icon-wrapper-class="getIconWrapperClass(item)"
                 @click="select"
                 @dblclick="handleExecute(item)"

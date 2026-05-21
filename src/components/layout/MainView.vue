@@ -1,7 +1,7 @@
 <template>
   <div class="bg-surface flex flex-col h-screen w-screen shadow-lg">
     <!-- 搜索栏 -->
-    <div class="px-5 border-b border-black/5 flex gap-3 h-15 items-center">
+    <div ref="searchBarRef" class="px-5 border-b border-black/5 flex gap-3 h-15 items-center" @keydown="onSearchBarKeydown">
       <div
         v-if="activeModule"
         class="text-xs text-black/70 px-3 rounded-md bg-black/5 flex flex-none gap-1.5 h-7 cursor-default select-none items-center relative"
@@ -105,6 +105,7 @@ const appStore = useAppStore()
 const updateStore = useUpdateStore()
 const showUpdateDialog = ref(false)
 
+const searchBarRef = ref<HTMLDivElement>()
 const searchInput = ref<HTMLInputElement>()
 const contentViewRef = ref<InstanceType<typeof ContentView>>()
 const results = ref<SearchResult[]>([])
@@ -158,6 +159,41 @@ watch(
     }
   },
 )
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+function getSearchBarFocusables(): HTMLElement[] {
+  if (!searchBarRef.value) return []
+  return Array.from(searchBarRef.value.querySelectorAll(FOCUSABLE_SELECTOR))
+}
+
+function onSearchBarKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Tab') return
+
+  const focusable = getSearchBarFocusables()
+  if (focusable.length === 0) return
+
+  e.preventDefault()
+  e.stopPropagation()
+
+  const active = document.activeElement as HTMLElement
+  let idx = focusable.indexOf(active)
+
+  if (e.shiftKey) {
+    idx = idx <= 0 ? focusable.length - 1 : idx - 1
+  } else {
+    idx = idx < 0 || idx >= focusable.length - 1 ? 0 : idx + 1
+  }
+
+  focusable[idx].focus()
+}
 
 function onTagClose() {
   isTagHovered.value = false

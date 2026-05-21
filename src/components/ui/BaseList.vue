@@ -1,5 +1,5 @@
 <template>
-  <div @mousemove="onMouseMove" class="p-2 flex flex-col gap-1">
+  <div class="p-2 flex flex-col gap-1">
     <template v-for="(item, i) in items" :key="i">
       <div
         v-if="
@@ -27,7 +27,6 @@
           :item="item"
           :index="i"
           :selected="localIndex === i"
-          :hoverable="!isKeyboardNavigation"
           :set-ref="(el: unknown) => setItemRef(el, i)"
           :select="() => setSelectedIndex(i)"
           :execute="() => emit('execute', item, i)"
@@ -87,21 +86,7 @@ function setItemRef(el: unknown, index: number) {
   }
 }
 
-const isKeyboardNavigation = ref(false)
-let lastMousePos = { x: 0, y: 0 }
-
-function onMouseMove(e: MouseEvent) {
-  if (
-    Math.abs(e.clientX - lastMousePos.x) > 1 ||
-    Math.abs(e.clientY - lastMousePos.y) > 1
-  ) {
-    isKeyboardNavigation.value = false
-  }
-  lastMousePos = { x: e.clientX, y: e.clientY }
-}
-
 watch(localIndex, async (index) => {
-  isKeyboardNavigation.value = true
   await nextTick()
 
   const el = itemRefs.value[index]
@@ -178,6 +163,7 @@ if (props.keyboardNavigation) {
     if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
     const activeEl = document.activeElement
     if (isSettingsControl(activeEl) && activeEl!.id !== 'main-search-input') return
+    if (activeEl?.tagName === 'BUTTON' && activeEl.id !== 'main-search-input') return
     e.preventDefault()
     if (props.items.length > 0) {
       const el = itemRefs.value[localIndex.value]

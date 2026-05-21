@@ -10,12 +10,11 @@
       <template #group-title="{ item }">
         {{ item.groupTitle }}
       </template>
-      <template #item="{ item, selected, hoverable, setRef, select }">
+      <template #item="{ item, selected, setRef, select }">
         <BaseListItem
           :ref="setRef"
           :title="item.title"
           :subtitle="item.subtitle"
-          :hoverable="hoverable"
           :selected="selected"
           @click="select"
           @dblclick="() => handleExecute(item)"

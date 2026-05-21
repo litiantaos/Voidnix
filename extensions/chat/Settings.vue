@@ -21,7 +21,7 @@
         </div>
       </template>
 
-      <template #item="{ item, selected, hoverable: h, setRef, select }">
+      <template #item="{ item, selected, setRef, select }">
         <!-- 快捷键 -->
         <BaseListItem
           v-if="item.type === 'shortcut'"
@@ -29,7 +29,6 @@
           :id="`si-${SHORTCUT_ITEM_ID}`"
           title="启动快捷键"
           :selected="selected"
-          :hoverable="h"
           @click="select"
         >
           <template #trailing>
@@ -49,7 +48,6 @@
             item.config.models.filter(Boolean).join('、') || '未配置模型'
           "
           :selected="selected"
-          :hoverable="h"
           @click="select"
           @dblclick="openConfigModal(item.config)"
         />
