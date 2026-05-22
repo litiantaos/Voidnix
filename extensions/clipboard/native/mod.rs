@@ -89,7 +89,7 @@ pub async fn get_clipboard_history(
                 }
             });
             items.retain(|i| i.score >= 0);
-            items.sort_by(|a, b| b.score.cmp(&a.score));
+            items.sort_by_key(|b| std::cmp::Reverse(b.score));
         }
     }
 

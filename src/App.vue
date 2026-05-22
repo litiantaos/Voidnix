@@ -81,6 +81,7 @@ async function toggleWindow() {
 }
 
 function onLocalShortcut(e: KeyboardEvent) {
+  if (appStore.shortcutRecording) return
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'Space') {
     e.preventDefault()
     markSkip()
@@ -111,8 +112,10 @@ async function setupGlobalShortcut(
       newShortcut: newShortcut,
       oldShortcut: oldShortcut || null,
     })
+    appStore.clearShortcutError(id)
   } catch (e) {
-    console.error('Failed to register shortcut', e)
+    const msg = String(e)
+    appStore.setShortcutError(id, msg)
   }
 }
 
@@ -172,6 +175,7 @@ onMounted(async () => {
     unlistenShortcut = await listen<{ id: string; wasVisible: boolean }>(
       'shortcut-pressed',
       async (event) => {
+        if (appStore.shortcutRecording) return
         markSkip()
         const shortcutId = event.payload.id
         const wasVisible = event.payload.wasVisible

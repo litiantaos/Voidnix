@@ -44,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted } from 'vue'
+import { ref, watch, nextTick, onMounted, onActivated } from 'vue'
 import {
   translateResults,
   isTranslating,
@@ -99,6 +99,10 @@ async function handleCopy(translation: string) {
 }
 
 onMounted(() => {
+  nextTick(() => textareaRef.value?.focus())
+})
+
+onActivated(() => {
   nextTick(() => textareaRef.value?.focus())
 })
 </script>

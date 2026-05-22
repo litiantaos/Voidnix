@@ -26,8 +26,12 @@ export const useAppStore = defineStore('app', () => {
   let dialogResolve: ((value: boolean) => void) | null = null
 
   const showPanel = ref(false)
+  const shortcutRecording = ref(false)
   // webkit_tuning 驯化：首帧呈现等待期间显示骨架占位（Req 1.6）
   const showPaintSkeleton = ref(false)
+
+  // 快捷键注册错误（如系统占用），key 为 shortcut id，value 为错误描述
+  const shortcutErrors = ref<Record<string, string>>({})
 
   function setActiveModule(id: string | null) {
     const oldMod = activeModuleId.value ? getModule(activeModuleId.value) : null
@@ -73,6 +77,21 @@ export const useAppStore = defineStore('app', () => {
     showPanel.value = !showPanel.value
   }
 
+  function setShortcutRecording(value: boolean) {
+    shortcutRecording.value = value
+  }
+
+  function setShortcutError(id: string, error: string) {
+    shortcutErrors.value = { ...shortcutErrors.value, [id]: error }
+  }
+
+  function clearShortcutError(id: string) {
+    if (!(id in shortcutErrors.value)) return
+    const next = { ...shortcutErrors.value }
+    delete next[id]
+    shortcutErrors.value = next
+  }
+
   return {
     activeModuleId,
     searchQuery,
@@ -89,6 +108,11 @@ export const useAppStore = defineStore('app', () => {
     resolveConfirm,
     showPanel,
     togglePanel,
+    shortcutRecording,
+    setShortcutRecording,
+    shortcutErrors,
+    setShortcutError,
+    clearShortcutError,
     showPaintSkeleton,
   }
 })

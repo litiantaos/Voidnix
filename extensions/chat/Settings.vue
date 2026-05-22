@@ -34,6 +34,7 @@
           <template #trailing>
             <ShortcutInput
               :model-value="chatShortcutValue"
+              shortcut-id="chat"
               @update:model-value="handleChatShortcutChange"
             />
           </template>

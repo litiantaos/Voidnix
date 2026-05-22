@@ -164,7 +164,7 @@ fn current_active_space_id(cid: i32) -> Option<u64> {
     let displays: CFArray<CFDictionary<*const c_void, *const c_void>> =
         unsafe { CFArray::wrap_under_create_rule(raw) };
 
-    if displays.len() == 0 {
+    if displays.is_empty() {
         return None;
     }
 

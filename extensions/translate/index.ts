@@ -153,7 +153,7 @@ export async function translateText(text: string) {
         const requestId = generateRequestId()
         streamIndexMap.set(requestId, i)
         promises.push(
-          invoke('translate_ai_stream', {
+          invoke<void>('translate_ai_stream', {
             text,
             endpoint: config.endpoint,
             apiKey: config.apiKey,

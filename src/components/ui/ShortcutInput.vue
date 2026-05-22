@@ -3,13 +3,15 @@
     ref="rootRef"
     data-settings-control
     class="ui-ctrl flex gap-1.5 w-36 items-center justify-center"
-
     tabindex="0"
     @click="startRecording"
-    @blur="stopRecording"
+    @blur="onBlur"
     @keydown="onKeyDown"
   >
-    <template v-if="isRecording">
+    <template v-if="isRecording && !readyToRecord">
+      <span class="text-tx-muted">...</span>
+    </template>
+    <template v-else-if="isRecording && readyToRecord">
       <span class="text-tx-muted animate-pulse">请按下快捷键</span>
     </template>
     <template v-else-if="keys.length">
@@ -29,11 +31,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { useAppStore } from '@/stores/app'
+
+const appStore = useAppStore()
 
 const props = withDefaults(
   defineProps<{
     modelValue: string
+    shortcutId?: string
     maxKeys?: number
   }>(),
   {
@@ -47,6 +55,27 @@ const emit = defineEmits<{
 
 const rootRef = ref<HTMLElement | null>(null)
 const isRecording = ref(false)
+const readyToRecord = ref(false)
+let unlistenRecord: (() => void) | null = null
+
+onMounted(() => {
+  listen<{ id: string; shortcut: string }>(
+    'shortcut-recording-captured',
+    (event) => {
+      if (!isRecording.value) return
+      if (event.payload.id !== props.shortcutId) return
+      emit('update:modelValue', event.payload.shortcut)
+      stopRecording()
+      blur()
+    },
+  ).then((fn) => {
+    unlistenRecord = fn
+  })
+})
+
+onUnmounted(() => {
+  unlistenRecord?.()
+})
 
 function focus() {
   rootRef.value?.focus()
@@ -54,7 +83,6 @@ function focus() {
 
 function blur() {
   rootRef.value?.blur()
-  isRecording.value = false
 }
 
 defineExpose({ focus, blur, startRecording })
@@ -83,21 +111,60 @@ const keys = computed(() => {
   })
 })
 
-function startRecording() {
+async function startRecording() {
   isRecording.value = true
+  appStore.setShortcutRecording(true)
+
+  if (props.shortcutId) {
+    try {
+      await invoke('start_shortcut_recording', {
+        id: props.shortcutId,
+      })
+    } catch (e) {
+      console.error('Failed to start shortcut recording:', e)
+    }
+  }
+
+  readyToRecord.value = true
 }
 
-function stopRecording() {
+async function stopRecording() {
   isRecording.value = false
+  readyToRecord.value = false
+  appStore.setShortcutRecording(false)
+
+  if (props.shortcutId) {
+    invoke('stop_shortcut_recording', {
+      id: props.shortcutId,
+    }).catch((e) => {
+      console.error('Failed to stop shortcut recording:', e)
+    })
+  }
+}
+
+function onBlur() {
+  if (isRecording.value) {
+    stopRecording()
+  }
 }
 
 function onKeyDown(e: KeyboardEvent) {
   if (!isRecording.value) return
+  if (!readyToRecord.value) {
+    e.preventDefault()
+    return
+  }
 
   e.preventDefault()
   e.stopPropagation()
 
   if (e.key === 'Escape') {
+    stopRecording()
+    blur()
+    return
+  }
+
+  if (e.key === 'Enter') {
     stopRecording()
     blur()
     return
@@ -130,6 +197,7 @@ function onKeyDown(e: KeyboardEvent) {
     const shortcut = [...finalModifiers, key].join('+')
     emit('update:modelValue', shortcut)
     stopRecording()
+    blur()
   }
 }
 </script>

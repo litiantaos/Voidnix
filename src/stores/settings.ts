@@ -103,6 +103,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // Finder extension
   const finderExtEnabled = ref(false)
 
+  // zsh-autosuggestions
+  const zshAutosuggestionsEnabled = ref(false)
+
   // 通用模块配置存储（键为 moduleId，值为任意可序列化数据）
   const moduleConfigs = ref<Record<string, unknown>>({})
 
@@ -306,6 +309,9 @@ export const useSettingsStore = defineStore('settings', () => {
       const fee = await store.get<boolean>('finderExtEnabled')
       if (fee !== null && fee !== undefined) finderExtEnabled.value = fee
 
+      const zsa = await store.get<boolean>('zshAutosuggestionsEnabled')
+      if (zsa !== null && zsa !== undefined) zshAutosuggestionsEnabled.value = zsa
+
       const mConfigs = await store.get<Record<string, unknown>>('moduleConfigs')
       if (mConfigs) moduleConfigs.value = mConfigs
 
@@ -315,6 +321,7 @@ export const useSettingsStore = defineStore('settings', () => {
       // 同步 finder ext 启用状态到后端
       if (isTauri) {
         invoke('set_finder_ext_enabled', { enabled: finderExtEnabled.value }).catch(() => {})
+        invoke('set_zsh_autosuggestions_enabled', { enabled: zshAutosuggestionsEnabled.value }).catch(() => {})
       }
     } catch (e) {
       console.warn('Failed to load settings.json, using defaults:', e)
@@ -372,6 +379,17 @@ export const useSettingsStore = defineStore('settings', () => {
       invoke('set_finder_ext_enabled', { enabled: val }).catch(() => {})
     }
   }
+
+  const setZshAutosuggestionsEnabled = async (val: boolean) => {
+    zshAutosuggestionsEnabled.value = val
+    if (store) {
+      await store.set('zshAutosuggestionsEnabled', val)
+      await store.save()
+    }
+    if (isTauri) {
+      invoke('set_zsh_autosuggestions_enabled', { enabled: val }).catch(() => {})
+    }
+  }
   const setActiveModelKey = createSetter(activeModelKey, 'activeModelKey')
   const setAwakeMirrorMode = createSetter(awakeMirrorMode, 'awakeMirrorMode')
 
@@ -391,6 +409,7 @@ export const useSettingsStore = defineStore('settings', () => {
     activeChatConfig,
     finderExtEnabled,
     awakeMirrorMode,
+    zshAutosuggestionsEnabled,
     loadSettings,
     setGlobalShortcut,
     setClipboardMaxDays,
@@ -412,6 +431,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setActiveModelKey,
     setFinderExtEnabled,
     setAwakeMirrorMode,
+    setZshAutosuggestionsEnabled,
     saveChatConfigs,
     saveTranslateConfigs,
   }

@@ -181,9 +181,9 @@ fn is_chinese_dominant(text: &str) -> bool {
         .chars()
         .filter(|c| {
             let cp = *c as u32;
-            (cp >= 0x4E00 && cp <= 0x9FFF)
-                || (cp >= 0x3400 && cp <= 0x4DBF)
-                || (cp >= 0xF900 && cp <= 0xFAFF)
+            (0x4E00..=0x9FFF).contains(&cp)
+                || (0x3400..=0x4DBF).contains(&cp)
+                || (0xF900..=0xFAFF).contains(&cp)
         })
         .count();
 
@@ -192,9 +192,9 @@ fn is_chinese_dominant(text: &str) -> bool {
         .filter(|c| {
             c.is_alphabetic() || {
                 let cp = *c as u32;
-                (cp >= 0x4E00 && cp <= 0x9FFF)
-                    || (cp >= 0x3400 && cp <= 0x4DBF)
-                    || (cp >= 0xF900 && cp <= 0xFAFF)
+                (0x4E00..=0x9FFF).contains(&cp)
+                    || (0x3400..=0x4DBF).contains(&cp)
+                    || (0xF900..=0xFAFF).contains(&cp)
             }
         })
         .count();
@@ -414,6 +414,7 @@ let template = resolve_template(prompt.as_ref(), DEFAULT_TRANSLATE_PROMPT);
 // ============================================================================
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn translate_ai_stream(
     app: tauri::AppHandle,
     text: String,

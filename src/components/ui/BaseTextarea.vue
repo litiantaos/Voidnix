@@ -15,7 +15,8 @@
       :placeholder="placeholder"
       :disabled="disabled"
       :rows="rows"
-      class="text-tx-primary py-2 outline-none bg-transparent flex-1 min-w-0 resize-none placeholder:text-tx-hint"
+      class="text-tx-primary py-2 outline-none bg-transparent flex-1 min-w-0 resize-none overflow-y-hidden placeholder:text-tx-hint"
+      :class="{ 'overflow-y-auto': maxHeight > 0 }"
       :style="{
         maxHeight: maxHeight > 0 ? maxHeight + 'px' : undefined,
         height,
@@ -31,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, toRef, onMounted } from 'vue'
+import { ref, watch, nextTick, toRef, onMounted, onActivated } from 'vue'
 import { useInputControl } from '@/composables/useInputControl'
 import { useAppStore } from '@/stores/app'
 
@@ -100,7 +101,7 @@ function onKeydown(e: KeyboardEvent) {
 
 function autoResize() {
   const el = textareaRef.value
-  if (!el) return
+  if (!el || !el.isConnected) return
   el.style.height = 'auto'
   const h = el.scrollHeight
   height.value = (props.maxHeight > 0 ? Math.min(h, props.maxHeight) : h) + 'px'
@@ -111,6 +112,10 @@ watch(() => props.modelValue, () => {
 })
 
 onMounted(() => {
+  nextTick(() => autoResize())
+})
+
+onActivated(() => {
   nextTick(() => autoResize())
 })
 

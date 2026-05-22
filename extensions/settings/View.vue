@@ -97,8 +97,8 @@ function isVisible(...keywords: string[]) {
   return keywords.some((k) => k.toLowerCase().includes(query.value))
 }
 
-const handleGlobalShortcutChange = async (val: string) => {
-  await settings.setGlobalShortcut(val)
+const handleGlobalShortcutChange = async (val: string | number) => {
+  await settings.setGlobalShortcut(val as string)
 }
 
 const handleQuitApp = async () => {

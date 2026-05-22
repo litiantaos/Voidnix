@@ -66,7 +66,7 @@ pub fn run() {
                 unsafe {
                     let ns_window = raw.as_ref().unwrap();
                     ns_window.setAnimationBehavior(NSWindowAnimationBehavior::None);
-                    ns_window.setLevel(objc2_app_kit::NSStatusWindowLevel as isize);
+                    ns_window.setLevel(objc2_app_kit::NSStatusWindowLevel);
                     let _: () = objc2::msg_send![ns_window, setAcceptsMouseMovedEvents: true];
                     let behavior = NSWindowCollectionBehavior::FullScreenAuxiliary
                         | NSWindowCollectionBehavior::Transient

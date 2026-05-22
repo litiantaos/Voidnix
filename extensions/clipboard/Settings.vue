@@ -19,6 +19,7 @@
             <ShortcutInput
               v-if="item.type === 'shortcut'"
               :model-value="String(item.value)"
+              shortcut-id="clipboard"
               @update:model-value="item.update!"
             />
             <BaseSelect
@@ -61,8 +62,8 @@ const clipboardShortcutValue = computed({
   set: (val: string) => settings.setShortcutOverride('clipboard', val),
 })
 
-const handleClipboardShortcutChange = async (val: string) => {
-  await settings.setShortcutOverride('clipboard', val)
+const handleClipboardShortcutChange = async (val: string | number) => {
+  await settings.setShortcutOverride('clipboard', val as string)
 }
 
 const maxDaysOptions = [
@@ -72,9 +73,10 @@ const maxDaysOptions = [
   { label: '永久', value: 0 },
 ]
 
-const handleMaxDaysChange = async (val: number) => {
-  if (!isNaN(val)) {
-    await settings.setClipboardMaxDays(val)
+const handleMaxDaysChange = async (val: string | number) => {
+  const n = val as number
+  if (!isNaN(n)) {
+    await settings.setClipboardMaxDays(n)
   }
 }
 

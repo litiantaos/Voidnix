@@ -8,7 +8,6 @@ pub const MAX_MESSAGE_CONTENT_LEN: usize = 32_768; // 32 KiB — 单条消息上
 pub const MAX_CONVERSATION_MESSAGES: usize = 100; // 历史消息条数硬上限
 
 /// ─── SSRF 防护 ──────────────────────────────────────────
-
 /// 手动解析 URL 提取 scheme + host，不依赖 url crate
 pub fn parse_scheme_host(raw: &str) -> Option<(&str, &str)> {
     let s = raw.trim();
@@ -16,7 +15,7 @@ pub fn parse_scheme_host(raw: &str) -> Option<(&str, &str)> {
     let scheme = &s[..scheme_end];
     let rest = &s[scheme_end + 3..];
     let host_end = rest
-        .find(|c: char| c == '/' || c == '?' || c == '#')
+        .find(['/', '?', '#'])
         .unwrap_or(rest.len());
     let host_port = &rest[..host_end];
     let host = host_port.split(':').next()?;
@@ -97,7 +96,6 @@ pub fn validate_endpoint(endpoint: &str) -> Result<(String, String), String> {
 }
 
 /// ─── 消息安全处理 ──────────────────────────────────────
-
 pub fn truncate_message(content: &str) -> String {
     if content.len() <= MAX_MESSAGE_CONTENT_LEN {
         content.to_string()
@@ -131,7 +129,6 @@ pub fn trim_conversation(messages: &[ChatMessage]) -> Vec<ChatMessage> {
 }
 
 /// ─── SSE 流式请求配置 ──────────────────────────────────
-
 pub struct StreamConfig<'a> {
     pub app: &'a tauri::AppHandle,
     pub endpoint: &'a str,
@@ -144,7 +141,6 @@ pub struct StreamConfig<'a> {
 }
 
 /// ─── 通用 SSE 流式请求 ──────────────────────────────────
-
 /// 发起 OpenAI 兼容的流式请求，通过事件推送 chunk
 pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<(), String> {
     let url = format!(

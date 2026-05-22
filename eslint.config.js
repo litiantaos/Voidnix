@@ -19,7 +19,7 @@ export default [
 
   {
     name: 'app/modules-naming',
-    files: ['extensions/*/frontend/**/*.vue'],
+    files: ['extensions/**/*.vue'],
     rules: {
       'vue/multi-word-component-names': 'off',
     },

@@ -42,9 +42,9 @@ pub fn start_monitor(app_handle: AppHandle) {
                     // Emojis generally fall into certain high unicode blocks
                     let is_all_emoji = text.chars().all(|c| {
                         let cp = c as u32;
-                        (cp >= 0x1F300 && cp <= 0x1FAFF) || // Misc Symbols and Pictographs, Emoticons, Transport, Symbols
-                        (cp >= 0x2600 && cp <= 0x27BF) ||   // Misc Symbols, Dingbats
-                        (cp >= 0xFE00 && cp <= 0xFE0F)      // Variation Selectors
+                        (0x1F300..=0x1FAFF).contains(&cp) || // Misc Symbols and Pictographs, Emoticons, Transport, Symbols
+                        (0x2600..=0x27BF).contains(&cp) ||   // Misc Symbols, Dingbats
+                        (0xFE00..=0xFE0F).contains(&cp)      // Variation Selectors
                     });
 
                     if is_all_emoji {

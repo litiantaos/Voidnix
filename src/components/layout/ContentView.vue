@@ -15,10 +15,10 @@
       class="hide-scrollbar outline-none flex flex-1 flex-col min-h-0 relative overflow-y-auto"
     >
       <div class="flex flex-1 flex-col">
-        <KeepAlive :max="10">
+        <KeepAlive v-if="resolvedLayout.view" :max="10">
           <component
             :is="resolvedLayout.view"
-            :key="props.module?.id ?? 'main'"
+            :key="`${props.module?.id ?? 'main'}-${appStore.showPanel ? 'panel' : 'view'}`"
           />
         </KeepAlive>
 

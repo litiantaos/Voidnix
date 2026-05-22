@@ -40,6 +40,7 @@ export async function fetchClipboardHistory(
     const res = await commands.getClipboardHistory(
       query || null,
       filterFavorite || null,
+      null,
     )
     history.value = res
     tabCache.set(key, res)
@@ -113,7 +114,7 @@ const mod: AppModule = {
     }
 
     try {
-      const items = await commands.getClipboardHistory(query || null, null)
+      const items = await commands.getClipboardHistory(query || null, null, null)
       return items.map((item) => {
         let title = item.content
         if (item.content_type === 'image') {

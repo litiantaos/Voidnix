@@ -1,0 +1,20 @@
+import { defineAsyncComponent } from 'vue'
+import { registerModule } from '@/core/module-registry'
+import type { AppModule } from '@/types/module'
+
+const View = defineAsyncComponent(() => import('./View.vue'))
+
+const mod: AppModule = {
+  id: 'zsh-autosuggestions',
+  name: '终端自动建议',
+  description: 'zsh 命令行智能预测补全，根据历史记录、使用频率和目录上下文提供 ghost text 建议',
+  icon: 'i-ri-terminal-box-line',
+  keywords: ['zsh', 'autosuggestions', '终端', '命令', '补全', '预测', 'shell', '历史'],
+  order: 80,
+  layout: { view: View },
+  onSearch: async () => {
+    return []
+  },
+}
+
+registerModule(mod)

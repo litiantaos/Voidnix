@@ -572,7 +572,7 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
     let self_pid = std::process::id() as i32;
     let prev_pid = NSWorkspace::sharedWorkspace()
         .frontmostApplication()
-        .map(|a| a.processIdentifier() as i32)
+        .map(|a| a.processIdentifier())
         .filter(|&p| p != self_pid)
         .unwrap_or(0);
     PREV_FRONT_PID.store(prev_pid, Ordering::SeqCst);
@@ -630,7 +630,7 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
         d.data_url = picker_jpeg_path().to_string_lossy().to_string();
 
         if let Ok(json) = serde_json::to_string(&d) {
-            let _ = window.eval(&format!(
+            let _ = window.eval(format!(
                 "window.__screenshotData = {}; window.dispatchEvent(new CustomEvent('__screenshot_ready'));",
                 json
             ));
@@ -696,7 +696,7 @@ fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), Strin
     if !no_restore_focus && prev_pid > 0 {
         let ws = NSWorkspace::sharedWorkspace();
         if let Some(target) = ws.runningApplications().iter()
-            .find(|a| a.processIdentifier() as i32 == prev_pid)
+            .find(|a| a.processIdentifier() == prev_pid)
         {
             #[allow(deprecated)]
             target.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
@@ -785,7 +785,7 @@ mod mouse_tracker {
         let Some(window) = app.get_webview_window("screenshot") else { return };
         let loc = NSEvent::mouseLocation();
         let cx = loc.x; let cy = screen_h - loc.y;
-        let _ = window.eval(&format!("window.__setScreenshotCross && window.__setScreenshotCross({},{})", cx, cy));
+        let _ = window.eval(format!("window.__setScreenshotCross && window.__setScreenshotCross({},{})", cx, cy));
         if let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) {
             unsafe {
                 if let Some(ns) = raw.as_ref() {
@@ -850,7 +850,7 @@ pub async fn open_ocr_window(
 
     // 注入数据并触发事件
     let json = serde_json::to_string(&ocr_data).map_err(|e| e.to_string())?;
-    window.eval(&format!(
+    window.eval(format!(
         "window.__ocrData = {}; window.dispatchEvent(new CustomEvent('__ocr_ready'));",
         json
     )).map_err(|e| e.to_string())?;
@@ -947,7 +947,7 @@ fn create_pin_webview(
                 // 不随 app 失活隐藏（核心修复：钉图独立于 Voidnix 激活状态）
                 let _: () = objc2::msg_send![ns, setHidesOnDeactivate: false];
                 // 浮动层级：高于普通窗口
-                ns.setLevel(objc2_app_kit::NSFloatingWindowLevel as isize);
+                ns.setLevel(objc2_app_kit::NSFloatingWindowLevel);
                 // 在所有桌面可见 + 可覆盖全屏 + 不出现在 Mission Control
                 let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
                     | NSWindowCollectionBehavior::FullScreenAuxiliary

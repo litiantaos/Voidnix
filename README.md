@@ -1,6 +1,6 @@
 # Voidnix
 
-macOS 效率启动器。模块化架构，极简界面，原生性能。
+macOS 效率启动器。模块化架构，极简设计，原生性能。
 
 ## 技术栈
 
@@ -17,7 +17,7 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS (preset-wind4) | Pinia | SQLite
 - [x] 汇率转换 / UUID / 时间戳 / IP / Base64（斜杠命令触发）
 - [x] 右键菜单
 - [x] 截屏标注 + OCR
-- [ ] 终端辅助（在终端中输入时显示一个小窗自动联想并补全）
+- [x] 终端自动建议（终端输入显示自动建议）
 - [ ] 录屏 + 轻剪
 - [ ] 视频处理
 - [ ] 窗口管理（快捷操作窗口尺寸/位置/布局）
@@ -25,11 +25,10 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS (preset-wind4) | Pinia | SQLite
 ## 快捷键
 
 - `Cmd+Shift+Space`：唤起/隐藏主窗口
-- `Cmd+Shift+C`：唤起剪贴板历史
-- `Tab`：切换选项卡
-- `↑↓`：切换列表选项
+- `Tab`：切换搜索栏操作项
+- `↑↓`：切换列表项
 - `Enter`：执行选中项
-- `Escape`：清空搜索 / 退回主界面
+- `Escape`：清空搜索 / 返回界面
 
 ## 开发
 

@@ -37,11 +37,15 @@
 </template>
 
 <script setup lang="ts" generic="T">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onActivated, onDeactivated } from 'vue'
 import { onKeyStroke } from '@vueuse/core'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
+
+const isActive = ref(true)
+onActivated(() => { isActive.value = true })
+onDeactivated(() => { isActive.value = false })
 
 const props = withDefaults(
   defineProps<{
@@ -135,6 +139,7 @@ if (props.keyboardNavigation) {
   }
 
   onKeyStroke('ArrowDown', (e) => {
+    if (!isActive.value) return
     if (!appStore.activeModuleId) return
     if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
     const activeEl = document.activeElement
@@ -147,6 +152,7 @@ if (props.keyboardNavigation) {
     }
   })
   onKeyStroke('ArrowUp', (e) => {
+    if (!isActive.value) return
     if (!appStore.activeModuleId) return
     if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
     const activeEl = document.activeElement
@@ -159,6 +165,7 @@ if (props.keyboardNavigation) {
     }
   })
   onKeyStroke('Enter', (e) => {
+    if (!isActive.value) return
     if (!appStore.activeModuleId) return
     if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
     const activeEl = document.activeElement

@@ -704,6 +704,8 @@ pub fn hide_main(app: &AppHandle) {
 
     crate::macos::click_monitor::remove();
     steps.push("click-monitor-remove");
+    #[cfg(target_os = "macos")]
+    let _ = app.hide();
     log::event("hide", &steps);
 }
 

@@ -10,6 +10,8 @@ macro_rules! configure_app {
         crate::core::permission::request_accessibility_permission,
         crate::core::permission::check_full_disk_access_permission,
         crate::core::permission::open_privacy_settings,
+        crate::core::shortcut::start_shortcut_recording,
+        crate::core::shortcut::stop_shortcut_recording,
         crate::core::shortcut::is_app_active,
         crate::core::shortcut::hide_window,
         crate::core::shortcut::get_selected_text_cached,
@@ -28,6 +30,8 @@ macro_rules! configure_app {
         crate::extensions::screenshot::pin_image,
         crate::extensions::screenshot::set_pin_window_opacity,
         crate::extensions::screenshot::open_module_panel,
+        crate::extensions::zsh_autosuggestions::set_zsh_autosuggestions_enabled,
+        crate::extensions::zsh_autosuggestions::zsh_autosuggestions_status,
         crate::extensions::chat::chat_stream,
         crate::extensions::translate::get_selected_text,
         crate::extensions::translate::translate_youdao,
@@ -54,6 +58,7 @@ macro_rules! configure_app {
         .plugin(crate::core::shortcut::init())
         .plugin(crate::core::window::init())
         .plugin(crate::extensions::screenshot::init())
+        .plugin(crate::extensions::zsh_autosuggestions::init())
         .plugin(crate::extensions::chat::init())
         .plugin(crate::extensions::translate::init())
         .plugin(crate::extensions::search::init())
@@ -67,6 +72,8 @@ pub(crate) use configure_app;
 
 #[path = "../../extensions/screenshot/native/mod.rs"]
 pub mod screenshot;
+#[path = "../../extensions/zsh-autosuggestions/native/mod.rs"]
+pub mod zsh_autosuggestions;
 #[path = "../../extensions/chat/native/mod.rs"]
 pub mod chat;
 #[path = "../../extensions/translate/native/mod.rs"]

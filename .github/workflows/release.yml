@@ -36,15 +36,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Voidnix ${{ github.ref_name }}
-          releaseBody: |
-            ## 安装
-
-            下载 `Voidnix_*_aarch64.dmg`（Apple Silicon）或 `Voidnix_*_x64.dmg`（Intel）安装。
-
-            > 首次打开若提示"无法验证开发者"，在终端执行：
-            > ```
-            > xattr -cr /Applications/Voidnix.app
-            > ```
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true

@@ -34,6 +34,7 @@
           <template #trailing>
             <ShortcutInput
               :model-value="translateShortcutValue"
+              shortcut-id="translate"
               @update:model-value="handleTranslateShortcutChange"
             />
           </template>

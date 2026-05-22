@@ -280,7 +280,7 @@ fn extract_icon_from_bundle(app_path: &str, cached_path: &Path) -> Option<String
                     .into_iter()
                     .flatten()
                     .filter_map(|e| e.ok())
-                    .filter(|e| e.path().extension().map_or(false, |ext| ext == "icns"))
+                    .filter(|e| e.path().extension().is_some_and(|ext| ext == "icns"))
                     .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
                     .collect();
                 log::warn!("[icon] Icon not found: {:?}, available: {:?}", icon_path, icns_files);
@@ -509,7 +509,7 @@ fn scan_apps_from_dir_depth(dir: &Path, depth: u32) -> Vec<String> {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "app") {
+            if path.extension().is_some_and(|ext| ext == "app") {
                 if let Some(path_str) = path.to_str() {
                     apps.push(path_str.to_string());
                 }
@@ -566,7 +566,7 @@ fn to_pinyin_initials(name: &str) -> String {
             } else {
                 c.to_pinyin()
                     .map(|p| p.plain().chars().next().unwrap_or(c))
-                    .or_else(|| Some(c)) // 即使不是拼音，也保留原字符（比如数字和符号）
+                    .or(Some(c)) // 即使不是拼音，也保留原字符（比如数字和符号）
             }
         })
         .collect()
@@ -873,7 +873,7 @@ pub fn init_app_watcher() {
                     // 等待 5 秒防抖，确保新安装应用的 bundle 完全就绪
                     sleep(Duration::from_secs(5)).await;
                     // 清空通道里积压的其他事件
-                    while let Ok(_) = rx.try_recv() {}
+                    while rx.try_recv().is_ok() {}
 
                     log::info!("Detected app folder changes, rebuilding cache...");
 
@@ -948,7 +948,7 @@ pub async fn search_apps(query: String) -> Result<Vec<SearchResult>, String> {
                 })
                 .collect();
 
-            scored_apps.sort_by(|a, b| b.0.cmp(&a.0));
+            scored_apps.sort_by_key(|b| std::cmp::Reverse(b.0));
 
             scored_apps
                 .into_iter()
@@ -1142,7 +1142,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
             files_with_meta.push((score, is_dir, name, path));
         }
 
-        files_with_meta.sort_by(|a, b| b.0.cmp(&a.0));
+        files_with_meta.sort_by_key(|b| std::cmp::Reverse(b.0));
 
         files_with_meta
             .into_iter()

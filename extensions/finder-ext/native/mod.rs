@@ -105,7 +105,7 @@ pub fn init_finder_ext(app_handle: AppHandle) {
 
     if let Some(window) = app_handle.get_webview_window("main") {
         let flag = shutdown_flag.clone();
-        let _ = window.on_window_event(move |event| {
+        window.on_window_event(move |event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 flag.store(true, Ordering::SeqCst);
             }
@@ -268,7 +268,7 @@ fn handle_open_terminal(_handle: &AppHandle, paths: &[PathBuf], target: &str) {
     };
 
     let _ = Command::new("open")
-        .args(["-b", "com.apple.Terminal", &dir.to_string_lossy().to_string()])
+        .args(["-b", "com.apple.Terminal", dir.to_string_lossy().as_ref()])
         .spawn();
 }
 
@@ -285,11 +285,11 @@ fn handle_toggle_hidden() {
                 .unwrap_or(false)
         });
         let Some(finder) = finder else { return };
-        let pid = finder.processIdentifier() as i32;
+        let pid = finder.processIdentifier();
 
         let frontmost_pid = ws
             .frontmostApplication()
-            .map(|a| a.processIdentifier() as i32);
+            .map(|a| a.processIdentifier());
 
         if frontmost_pid != Some(pid) {
             #[allow(deprecated)]
@@ -378,7 +378,7 @@ fn reveal_and_rename(path: &Path) {
                 .unwrap_or(false)
         });
         if let Some(finder) = finder {
-            let pid = finder.processIdentifier() as i32;
+            let pid = finder.processIdentifier();
             // Return (0x24) 触发 Finder 对选中文件进入重命名模式
             const KEY_RETURN: u16 = 0x24;
             crate::macos::text_selection::post_key_to_pid(pid, KEY_RETURN, 0);
