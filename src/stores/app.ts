@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { getModule } from '@/core/module-registry'
 
 export interface ConfirmOptions {
   title: string
@@ -29,8 +30,14 @@ export const useAppStore = defineStore('app', () => {
   const showPaintSkeleton = ref(false)
 
   function setActiveModule(id: string | null) {
+    const oldMod = activeModuleId.value ? getModule(activeModuleId.value) : null
+    const newMod = id ? getModule(id) : null
+
     activeModuleId.value = id
-    showPanel.value = false // 切模块时关闭面板
+    showPanel.value = false
+
+    if (oldMod?.onDeactivate) oldMod.onDeactivate()
+    if (newMod?.onActivate) newMod.onActivate()
   }
 
   function setSearchQuery(query: string) {

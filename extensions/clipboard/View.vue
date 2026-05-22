@@ -1,6 +1,6 @@
 <template>
   <BaseEmptyState
-    v-if="history.length === 0 && !loading"
+    v-if="history.length === 0"
     title="暂无剪贴板记录"
     icon="i-ri-clipboard-line"
   />
@@ -74,7 +74,7 @@
 
 <script setup lang="ts">
 import { onMounted, watch } from 'vue'
-import { history, activeTab, fetchClipboardHistory, invalidateCache, loading } from './index'
+import { history, activeTab, fetchClipboardHistory, invalidateCache } from './index'
 import { invoke } from '@tauri-apps/api/core'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
@@ -89,6 +89,7 @@ const shouldMultiline = (item: { content_type: string; content: string }) =>
   (item.content_type === 'text' && item.content.length > MULTILINE_THRESHOLD)
 
 onMounted(() => {
+  if (history.value.length > 0) return
   activeTab.value = 'all'
   fetchClipboardHistory(appStore.searchQuery, false)
 })

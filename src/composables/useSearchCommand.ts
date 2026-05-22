@@ -395,12 +395,11 @@ export function useSearchCommand(opts: Options) {
       appStore.setSearchQuery('')
       if (searchInput.value) searchInput.value.value = ''
     } else {
+      results.value = buildModuleResults()
+      selectedIndex.value = 0
       appStore.setActiveModule(null)
       appStore.setSearchQuery('/')
       if (searchInput.value) searchInput.value.value = '/'
-
-      results.value = buildModuleResults()
-      if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
       restore('tools')
     }
     searchInput.value?.focus()

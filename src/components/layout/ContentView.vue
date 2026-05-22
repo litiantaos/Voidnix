@@ -16,10 +16,14 @@
     >
       <div class="flex flex-1 flex-col">
         <!-- Custom view (from layout or panel) -->
-        <component v-if="resolvedLayout.view" :is="resolvedLayout.view" />
+        <component
+          v-if="resolvedLayout.view"
+          :is="resolvedLayout.view"
+          :key="props.module?.id ?? 'main'"
+        />
 
         <!-- Standard list -->
-        <template v-else>
+        <template v-if="!resolvedLayout.view">
           <BaseEmptyState
             v-if="currentLoading && currentResults.length === 0"
             :loading="true"

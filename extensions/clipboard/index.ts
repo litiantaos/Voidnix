@@ -12,11 +12,11 @@ const ClipboardActions = defineAsyncComponent(() => import('./Actions.vue'))
 
 export type { ClipboardItem }
 
-export const loading = ref(false)
 export const history = shallowRef<ClipboardItem[]>([])
 export const activeTab = ref<'all' | 'favorites'>('all')
 
 const tabCache = new Map<string, ClipboardItem[]>()
+let fetching = false
 
 function cacheKey(tab: 'all' | 'favorites', query: string) {
   return `${tab}:${query}`
@@ -34,7 +34,8 @@ export async function fetchClipboardHistory(
     return
   }
 
-  loading.value = true
+  if (fetching) return
+  fetching = true
   try {
     const res = await commands.getClipboardHistory(
       query || null,
@@ -46,7 +47,7 @@ export async function fetchClipboardHistory(
   } catch (e) {
     console.error('Failed to fetch clipboard history:', e)
   } finally {
-    loading.value = false
+    fetching = false
   }
 }
 
@@ -90,6 +91,10 @@ const mod: AppModule = {
   ],
   onInit: async () => {
     // 后台 Rust 任务负责轮询，此处无需初始化
+  },
+  onActivate: async () => {
+    activeTab.value = 'all'
+    await fetchClipboardHistory('', false)
   },
   onSearch: async (query) => {
     if (query.toLowerCase().includes('clipboard') || query.includes('剪贴板')) {
