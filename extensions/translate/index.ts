@@ -264,6 +264,7 @@ const mod: AppModule = {
     },
   ],
   onSearch: async (query) => {
+    if (!query.trim()) return []
     if (
       'translate'.includes(query.toLowerCase()) ||
       '翻译'.includes(query) ||

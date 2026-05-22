@@ -12,6 +12,7 @@ const mod: AppModule = {
   placeholder: '输入时间戳或日期字符串',
   order: 4,
   onSearch: async (query) => {
+    if (!query.trim()) return []
     if (
       'time'.includes(query.toLowerCase()) ||
       'date'.includes(query.toLowerCase()) ||

@@ -68,39 +68,9 @@ export async function searchAll(
 
   const processResults = () => {
     const flattened = allResults.flat()
-
-    const groups = new Map<
-      string,
-      { maxScore: number; items: SearchResult[] }
-    >()
-    for (const item of flattened) {
-      let kind = item.data?.kind || 'other'
-
-      if (kind === 'file' || kind === 'folder') {
-        kind = 'file_and_folder'
-      }
-      const score = item.score || 0
-      if (!groups.has(kind)) {
-        groups.set(kind, { maxScore: score, items: [] })
-      }
-      const group = groups.get(kind)!
-      group.items.push(item)
-      if (score > group.maxScore) {
-        group.maxScore = score
-      }
-    }
-
-    const sortedGroups = Array.from(groups.values()).sort(
-      (a, b) => b.maxScore - a.maxScore,
-    )
-
-    const finalResults: SearchResult[] = []
-    for (const group of sortedGroups) {
-      group.items.sort((a, b) => (b.score || 0) - (a.score || 0))
-      finalResults.push(...group.items)
-    }
-
-    return finalResults.slice(0, 80)
+    const filtered = flattened.filter((item) => (item.score || 0) > 0)
+    filtered.sort((a, b) => (b.score || 0) - (a.score || 0))
+    return filtered.slice(0, 80)
   }
 
   const promises = activeModules.map(async (m, i) => {

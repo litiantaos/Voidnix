@@ -13,6 +13,7 @@ const mod: AppModule = {
   placeholder: '输入指定 IP 地址，留空则查询本机',
   order: 5,
   onSearch: async (query) => {
+    if (!query.trim()) return []
     if ('ip'.includes(query.toLowerCase()) || '网络'.includes(query)) {
       return [{
         id: 'ip-module',

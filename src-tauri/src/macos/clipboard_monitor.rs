@@ -144,13 +144,23 @@ pub fn start_monitor(app_handle: AppHandle) {
                     }
                 }
 
-                // Cleanup old items (is_favorite = 0)
-                // 1. Delete older than max_days
+                const MAX_ROWS: i64 = 5000;
+
                 if max_days > 0 {
                     let _ = conn.execute(
                         "DELETE FROM clipboard_history WHERE is_favorite = 0 AND created_at < datetime('now', ?1)",
                         rusqlite::params![format!("-{} days", max_days)],
                     );
+                } else {
+                    let count: i64 = conn
+                        .query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| row.get(0))
+                        .unwrap_or(0);
+                    if count > MAX_ROWS {
+                        let _ = conn.execute(
+                            "DELETE FROM clipboard_history WHERE is_favorite = 0 AND created_at < (SELECT MIN(created_at) FROM (SELECT created_at FROM clipboard_history ORDER BY created_at DESC LIMIT ?1))",
+                            rusqlite::params![MAX_ROWS],
+                        );
+                    }
                 }
             }
         }

@@ -77,8 +77,6 @@
       :results="activeModule ? undefined : results"
       :initial-loading="!activeModule && isLoading && results.length === 0"
       :selected-index="activeModule ? undefined : selectedIndex"
-      :group-field="activeModule ? undefined : getGroupKey"
-      :group-title="activeModule ? undefined : getGroupTitle"
       :on-execute="activeModule ? undefined : handleExecute"
       @update:selected-index="(i: number) => (selectedIndex = i)"
     />
@@ -120,22 +118,6 @@ const activeModule = computed(() => {
   const id = appStore.activeModuleId
   return (id ? getModule(id) : null) ?? null
 })
-
-const kindMap: Record<string, string> = {
-  application: '应用',
-  file_and_folder: '文件',
-  module: '扩展',
-  clipboard: '剪贴板',
-}
-
-function getGroupKey(result: SearchResult): string {
-  const k = (result.data?.kind as string) || 'other'
-  return k === 'file' || k === 'folder' ? 'file_and_folder' : k
-}
-
-function getGroupTitle(group: string): string {
-  return kindMap[group] || ''
-}
 
 const { onInput, handleExecute, handleTagClose, isLoading } = useSearchCommand({
   searchInput,

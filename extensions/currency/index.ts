@@ -53,6 +53,7 @@ const mod: AppModule = {
     ensureRates()
   },
   onSearch: async (query) => {
+    if (!query.trim()) return []
     if ('currency'.includes(query.toLowerCase()) || '汇率'.includes(query)) {
       return [{
         id: 'currency-module',

@@ -224,6 +224,7 @@ const mod: AppModule = {
     await initListeners()
   },
   onSearch: async (query) => {
+    if (!query.trim()) return []
     const q = query.toLowerCase()
     if (
       q.includes('chat') ||

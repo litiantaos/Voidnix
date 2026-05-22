@@ -42,6 +42,7 @@ const mod: AppModule = {
   placeholder: '输入文本',
   order: 6,
   onSearch: async (query) => {
+    if (!query.trim()) return []
     if (
       'base64'.includes(query.toLowerCase()) ||
       '编码'.includes(query) ||

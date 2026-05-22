@@ -26,6 +26,11 @@ impl Database {
             )",
             [],
         ).expect("Failed to create clipboard_history table");
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_clipboard_created_at ON clipboard_history(created_at)",
+            [],
+        ).expect("Failed to create clipboard_history index");
         
         Self {
             conn: Mutex::new(conn),

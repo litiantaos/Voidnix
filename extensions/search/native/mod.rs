@@ -7,6 +7,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::fs;
+use std::io::BufRead;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -906,7 +907,7 @@ pub async fn search_apps(query: String) -> Result<Vec<SearchResult>, String> {
                 kind: "application".to_string(),
                 icon: app.icon_cache.clone(),
                 last_used: app.last_used.clone(),
-                score: Some((2100 - i as i32).max(1800)),
+                score: Some((1000 - i as i32).max(0)),
             })
             .collect()
     } else {
@@ -951,7 +952,7 @@ pub async fn search_apps(query: String) -> Result<Vec<SearchResult>, String> {
 
             scored_apps
                 .into_iter()
-                .take(20)
+                .take(30)
                 .enumerate()
                 .map(|(i, (score, app))| SearchResult {
                     id: format!("app-{}", i),
@@ -960,7 +961,7 @@ pub async fn search_apps(query: String) -> Result<Vec<SearchResult>, String> {
                     kind: "application".to_string(),
                     icon: app.icon_cache.clone(),
                     last_used: app.last_used.clone(),
-                    score: Some((score + 2000) as i32),
+                    score: Some((score + 500) as i32),
                 })
                 .collect()
         });
@@ -990,7 +991,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         "Code".to_string(),
     ];
 
-    let mut command = tokio::process::Command::new("mdfind");
+    let mut command = std::process::Command::new("mdfind");
     command.arg("-name").arg(&query);
     command.arg("-attr").arg("kMDItemUseCount");
 
@@ -1003,23 +1004,83 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         }
     }
 
-    let mdfind_future = command.output();
-    let output = match tokio::time::timeout(std::time::Duration::from_secs(8), mdfind_future).await {
-        Ok(Ok(out)) => out,
-        Ok(Err(e)) => return Err(format!("mdfind failed: {}", e)),
-        Err(_) => {
-            log::warn!("mdfind timed out after 8s for query: {}", query);
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("mdfind spawn failed: {}", e))?;
+    let stdout = child.stdout.take().ok_or("no stdout")?;
+
+    const MAX_ENTRIES: usize = 300;
+
+    let read_entries = tokio::task::spawn_blocking(move || {
+        let reader = std::io::BufReader::new(stdout);
+        let mut results: Vec<(String, u32)> = Vec::new();
+        let mut current_path = String::new();
+        let mut current_use_count: u32 = 0;
+        let mut has_pending = false;
+
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => break,
+            };
+            let trimmed = line.trim();
+
+            if trimmed.is_empty() {
+                if has_pending {
+                    results.push((std::mem::take(&mut current_path), std::mem::take(&mut current_use_count)));
+                    has_pending = false;
+                    if results.len() >= MAX_ENTRIES {
+                        break;
+                    }
+                }
+                continue;
+            }
+
+            if trimmed.starts_with('/') {
+                if has_pending {
+                    results.push((std::mem::take(&mut current_path), std::mem::take(&mut current_use_count)));
+                    has_pending = false;
+                    if results.len() >= MAX_ENTRIES {
+                        break;
+                    }
+                }
+
+                let parts: Vec<&str> = trimmed.split("   ").collect();
+                current_path = parts.first().map(|s| s.trim().to_string()).unwrap_or_default();
+
+                for part in &parts[1..] {
+                    if let Some(val) = part.trim().strip_prefix("kMDItemUseCount = ") {
+                        current_use_count = val.trim().parse().unwrap_or(0);
+                    }
+                }
+                has_pending = true;
+            } else if let Some(val) = trimmed.strip_prefix("kMDItemUseCount = ") {
+                current_use_count = val.trim().parse().unwrap_or(0);
+            }
+        }
+
+        if has_pending {
+            results.push((std::mem::take(&mut current_path), std::mem::take(&mut current_use_count)));
+        }
+        results
+    });
+
+    let entries = match tokio::time::timeout(std::time::Duration::from_secs(4), read_entries).await {
+        Ok(Ok(entries)) => entries,
+        _ => {
+            let _ = child.kill();
             return Err("Search timed out".to_string());
         }
     };
 
+    let _ = child.kill();
+
     if SEARCH_SESSION.get_current_id() != search_id {
-        return Ok(vec![]); // superseded by newer search
+        return Ok(vec![]);
     }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    let entries = parse_mdfind_file_output(&stdout);
 
     let scored_files: Vec<(u32, u32, String, String)> = MATCHER.with(|matcher_cell| {
         let mut matcher = matcher_cell.borrow_mut();
@@ -1028,7 +1089,6 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 
         entries
             .into_iter()
-            .take(300)
             .filter_map(|(path, use_count)| {
                 let name = Path::new(&path)
                     .file_name()
@@ -1079,17 +1139,16 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
             let is_dir = std::fs::metadata(&path)
                 .map(|m| m.is_dir())
                 .unwrap_or(false);
-            let final_score = score + if is_dir { 1000 } else { 0 };
-            files_with_meta.push((final_score, is_dir, name, path));
+            files_with_meta.push((score, is_dir, name, path));
         }
 
         files_with_meta.sort_by(|a, b| b.0.cmp(&a.0));
 
         files_with_meta
             .into_iter()
-            .take(40)
+            .take(50)
             .enumerate()
-            .map(|(i, (final_score, is_dir, name, path))| {
+            .map(|(i, (score, is_dir, name, path))| {
                 let kind_str = if is_dir { "folder" } else { "file" };
                 SearchResult {
                     id: format!("{}-{}", kind_str, i),
@@ -1098,7 +1157,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
                     kind: kind_str.to_string(),
                     icon: None,
                     last_used: None,
-                    score: Some(final_score as i32),
+                    score: Some(score as i32),
                 }
             })
             .collect::<Vec<_>>()
@@ -1107,47 +1166,6 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
     .map_err(|e| format!("Failed to compute file metadata: {}", e))?;
 
     Ok(results)
-}
-
-fn parse_mdfind_file_output(stdout: &str) -> Vec<(String, u32)> {
-    let mut results = Vec::new();
-    let mut current_path = String::new();
-    let mut current_use_count: u32 = 0;
-    let mut has_pending = false;
-
-    let mut flush = |path: &mut String, use_count: &mut u32, pending: &mut bool| {
-        if *pending {
-            results.push((std::mem::take(path), std::mem::take(use_count)));
-            *pending = false;
-        }
-    };
-
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            flush(&mut current_path, &mut current_use_count, &mut has_pending);
-            continue;
-        }
-
-        if trimmed.starts_with('/') {
-            flush(&mut current_path, &mut current_use_count, &mut has_pending);
-
-            let parts: Vec<&str> = trimmed.split("   ").collect();
-            current_path = parts.first().map(|s| s.trim().to_string()).unwrap_or_default();
-
-            for part in &parts[1..] {
-                if let Some(val) = part.trim().strip_prefix("kMDItemUseCount = ") {
-                    current_use_count = val.trim().parse().unwrap_or(0);
-                }
-            }
-            has_pending = true;
-        } else if let Some(val) = trimmed.strip_prefix("kMDItemUseCount = ") {
-            current_use_count = val.trim().parse().unwrap_or(0);
-        }
-    }
-    flush(&mut current_path, &mut current_use_count, &mut has_pending);
-
-    results
 }
 
 #[tauri::command]

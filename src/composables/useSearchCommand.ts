@@ -83,14 +83,22 @@ export function useSearchCommand(opts: Options) {
 
   async function loadDefaultResults() {
     if (!isTauri) return
+    const searchId = ++currentSearchId
     isLoading.value = true
     try {
-      results.value = await searchAll('')
-      selectedIndex.value = 0
+      const defaultResults = await searchAll('')
+      if (searchId === currentSearchId) {
+        results.value = defaultResults
+        selectedIndex.value = 0
+      }
     } catch {
-      results.value = []
+      if (searchId === currentSearchId) {
+        results.value = []
+      }
     } finally {
-      isLoading.value = false
+      if (searchId === currentSearchId) {
+        isLoading.value = false
+      }
     }
   }
 
@@ -117,7 +125,6 @@ export function useSearchCommand(opts: Options) {
     const query = (e.target as HTMLInputElement).value
     const wasToolListMode = appStore.searchQuery.startsWith('/')
     appStore.setSearchQuery(query)
-
     if (searchTimeout) clearTimeout(searchTimeout)
 
     if (!appStore.activeModuleId && query.startsWith('//')) {
@@ -210,16 +217,33 @@ export function useSearchCommand(opts: Options) {
     if (query.trim()) {
       searchTimeout = setTimeout(async () => {
         try {
-          const finalResults = await searchAll(query, (r) => {
-            if (searchId === currentSearchId) {
-              results.value = r
-              if (selectedIndex.value >= r.length) selectedIndex.value = 0
-            }
-          })
-          if (searchId === currentSearchId) {
-            results.value = finalResults
-            if (selectedIndex.value >= finalResults.length) selectedIndex.value = 0
+          let batchTimer: ReturnType<typeof setTimeout> | null = null
+          let batched: SearchResult[] = []
+
+          const applyResults = (newResults: SearchResult[]) => {
+            if (searchId !== currentSearchId) return
+            results.value = newResults
+            selectedIndex.value = 0
           }
+
+          const flush = () => {
+            batchTimer = null
+            applyResults(batched)
+          }
+
+          const onUpdate = (r: SearchResult[]) => {
+            if (searchId !== currentSearchId) return
+            batched = r
+            if (batchTimer) clearTimeout(batchTimer)
+            batchTimer = setTimeout(flush, 80)
+          }
+
+          const finalResults = await searchAll(query, onUpdate)
+          if (batchTimer) {
+            clearTimeout(batchTimer)
+            batchTimer = null
+          }
+          applyResults(finalResults)
         } catch {
           if (searchId === currentSearchId) {
             results.value = []
@@ -394,6 +418,7 @@ export function useSearchCommand(opts: Options) {
     if (appStore.searchQuery) {
       appStore.setSearchQuery('')
       if (searchInput.value) searchInput.value.value = ''
+      loadDefaultResults()
     } else {
       results.value = buildModuleResults()
       selectedIndex.value = 0

@@ -16,7 +16,7 @@ export const history = shallowRef<ClipboardItem[]>([])
 export const activeTab = ref<'all' | 'favorites'>('all')
 
 const tabCache = new Map<string, ClipboardItem[]>()
-let fetching = false
+export const loading = ref(false)
 
 function cacheKey(tab: 'all' | 'favorites', query: string) {
   return `${tab}:${query}`
@@ -34,20 +34,19 @@ export async function fetchClipboardHistory(
     return
   }
 
-  if (fetching) return
-  fetching = true
+  if (loading.value) return
+  loading.value = true
   try {
     const res = await commands.getClipboardHistory(
       query || null,
       filterFavorite || null,
-      100,
     )
     history.value = res
     tabCache.set(key, res)
   } catch (e) {
     console.error('Failed to fetch clipboard history:', e)
   } finally {
-    fetching = false
+    loading.value = false
   }
 }
 
@@ -90,13 +89,15 @@ const mod: AppModule = {
     },
   ],
   onInit: async () => {
-    // 后台 Rust 任务负责轮询，此处无需初始化
+    await fetchClipboardHistory('', false)
   },
   onActivate: async () => {
     activeTab.value = 'all'
-    await fetchClipboardHistory('', false)
+    fetchClipboardHistory('', false)
   },
   onSearch: async (query) => {
+    if (!query.trim()) return []
+
     if (query.toLowerCase().includes('clipboard') || query.includes('剪贴板')) {
       return [
         {
@@ -112,7 +113,7 @@ const mod: AppModule = {
     }
 
     try {
-      const items = await commands.getClipboardHistory(query || null, null, 20)
+      const items = await commands.getClipboardHistory(query || null, null)
       return items.map((item) => {
         let title = item.content
         if (item.content_type === 'image') {

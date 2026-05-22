@@ -64,6 +64,7 @@ const mod: AppModule = {
     }
   },
   onSearch: async (query) => {
+    if (!query.trim()) return []
     if (
       'ocr'.includes(query.toLowerCase()) ||
       '识别'.includes(query) ||

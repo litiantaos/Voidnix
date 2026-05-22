@@ -39,7 +39,7 @@ pub async fn get_clipboard_history(
     if let Some(true) = filter_favorite {
         sql.push_str(" WHERE is_favorite = 1");
     }
-    sql.push_str(" ORDER BY created_at DESC");
+    sql.push_str(" ORDER BY created_at DESC LIMIT 500");
 
     let mut stmt = conn
         .prepare(&sql)
@@ -95,8 +95,6 @@ pub async fn get_clipboard_history(
 
     if let Some(l) = limit {
         items.truncate(l as usize);
-    } else {
-        items.truncate(100);
     }
 
     Ok(items)

@@ -15,12 +15,12 @@
       class="hide-scrollbar outline-none flex flex-1 flex-col min-h-0 relative overflow-y-auto"
     >
       <div class="flex flex-1 flex-col">
-        <!-- Custom view (from layout or panel) -->
-        <component
-          v-if="resolvedLayout.view"
-          :is="resolvedLayout.view"
-          :key="props.module?.id ?? 'main'"
-        />
+        <KeepAlive :max="10">
+          <component
+            :is="resolvedLayout.view"
+            :key="props.module?.id ?? 'main'"
+          />
+        </KeepAlive>
 
         <!-- Standard list -->
         <template v-if="!resolvedLayout.view">

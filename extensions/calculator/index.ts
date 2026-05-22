@@ -65,6 +65,7 @@ const mod: AppModule = {
     await loadHistory()
   },
   onSearch: async (query) => {
+    if (!query.trim()) return []
     if ('calculator'.includes(query.toLowerCase()) || '计算'.includes(query)) {
       return [
         {
@@ -97,7 +98,7 @@ const mod: AppModule = {
               description: `计算: ${query}`,
               module: 'calculator',
               icon: 'i-ri-calculator-line',
-              score: 200,
+              score: 2000,
               data: { kind: 'module', expr: query, value: String(formatted) },
             },
           ]

@@ -3,6 +3,7 @@
     v-if="history.length === 0"
     title="暂无剪贴板记录"
     icon="i-ri-clipboard-line"
+    :loading="loading"
   />
 
   <BaseList
@@ -11,7 +12,7 @@
     :keyboard-navigation="true"
     @execute="(item) => copyToClipboard(item.id)"
   >
-    <template #item="{ item, selected, setRef, execute }">
+    <template #item="{ item, selected, setRef, select, execute }">
       <BaseListItem
         :ref="setRef"
         :selected="selected"
@@ -23,7 +24,8 @@
               ? 'i-ri-file-fill'
               : 'i-ri-file-text-fill'
         "
-        @click="execute"
+        @click="select"
+        @dblclick="execute"
       >
         <template #title>
           <div
@@ -73,8 +75,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
-import { history, activeTab, fetchClipboardHistory, invalidateCache } from './index'
+import { onMounted, onDeactivated, watch } from 'vue'
+import { history, activeTab, loading, fetchClipboardHistory, invalidateCache } from './index'
 import { invoke } from '@tauri-apps/api/core'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
@@ -92,6 +94,10 @@ onMounted(() => {
   if (history.value.length > 0) return
   activeTab.value = 'all'
   fetchClipboardHistory(appStore.searchQuery, false)
+})
+
+onDeactivated(() => {
+  clearTimeout(debounceTimer)
 })
 
 let debounceTimer: ReturnType<typeof setTimeout>

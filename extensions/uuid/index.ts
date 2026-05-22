@@ -23,6 +23,7 @@ const mod: AppModule = {
   placeholder: '输入数字批量生成，例如: 10',
   order: 7,
   onSearch: async (query) => {
+    if (!query.trim()) return []
     if ('uuid'.includes(query.toLowerCase()) || 'guid'.includes(query.toLowerCase())) {
       return [{
         id: 'uuid-module',
