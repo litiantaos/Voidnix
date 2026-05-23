@@ -1,14 +1,14 @@
 import { ref, shallowRef } from 'vue'
-import { defineAsyncComponent } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { registerModule } from '@/core/module-registry'
+import { asyncView } from '@/core/async-view'
 import type { AppModule } from '@/types/module'
 import { commands, type ClipboardItem } from '@/bindings'
 import { useAppStore } from '@/stores/app'
 
-const ClipboardView = defineAsyncComponent(() => import('./View.vue'))
-const ClipboardSettings = defineAsyncComponent(() => import('./Settings.vue'))
-const ClipboardActions = defineAsyncComponent(() => import('./Actions.vue'))
+const ClipboardView = asyncView(() => import('./View.vue'))
+const ClipboardSettings = asyncView(() => import('./Settings.vue'))
+const ClipboardActions = asyncView(() => import('./Actions.vue'))
 
 export type { ClipboardItem }
 

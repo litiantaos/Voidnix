@@ -1,13 +1,12 @@
-import { ref, defineAsyncComponent } from 'vue'
+import { ref } from 'vue'
 import { registerModule } from '@/core/module-registry'
+import { asyncView } from '@/core/async-view'
 import type { AppModule } from '@/types/module'
 
-const ScreenshotView = defineAsyncComponent(() => import('./View.vue'))
-const ScreenshotWindow = defineAsyncComponent(
-  () => import('./windows/Host.vue'),
-)
-const PinWindow = defineAsyncComponent(() => import('./windows/PinWindow.vue'))
-const ScreenshotOcr = defineAsyncComponent(() => import('./OcrView.vue'))
+const ScreenshotView = asyncView(() => import('./View.vue'))
+const ScreenshotWindow = asyncView(() => import('./windows/Host.vue'))
+const PinWindow = asyncView(() => import('./windows/PinWindow.vue'))
+const ScreenshotOcr = asyncView(() => import('./OcrView.vue'))
 
 // OCR 待识别数据（由截屏标注界面通过 open_module_panel 触发时注入）
 export const pendingOcrData = ref<{

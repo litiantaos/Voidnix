@@ -27,8 +27,6 @@ export const useAppStore = defineStore('app', () => {
 
   const showPanel = ref(false)
   const shortcutRecording = ref(false)
-  // webkit_tuning 驯化：首帧呈现等待期间显示骨架占位（Req 1.6）
-  const showPaintSkeleton = ref(false)
 
   // 快捷键注册错误（如系统占用），key 为 shortcut id，value 为错误描述
   const shortcutErrors = ref<Record<string, string>>({})
@@ -113,6 +111,5 @@ export const useAppStore = defineStore('app', () => {
     shortcutErrors,
     setShortcutError,
     clearShortcutError,
-    showPaintSkeleton,
   }
 })

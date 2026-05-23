@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onDeactivated, watch } from 'vue'
+import { onDeactivated, watch } from 'vue'
 import { history, activeTab, loading, fetchClipboardHistory, invalidateCache } from './index'
 import { invoke } from '@tauri-apps/api/core'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -89,12 +89,6 @@ const MULTILINE_THRESHOLD = 80
 const shouldMultiline = (item: { content_type: string; content: string }) =>
   item.content_type === 'image' ||
   (item.content_type === 'text' && item.content.length > MULTILINE_THRESHOLD)
-
-onMounted(() => {
-  if (history.value.length > 0) return
-  activeTab.value = 'all'
-  fetchClipboardHistory(appStore.searchQuery, false)
-})
 
 onDeactivated(() => {
   clearTimeout(debounceTimer)

@@ -94,10 +94,8 @@ let unlistenShortcut: (() => void) | null = null
 let unlistenOpenModule: (() => void) | null = null
 let unlistenShowingWindow: (() => void) | null = null
 let unlistenClickOutside: (() => void) | null = null
-// webkit_tuning 驯化事件监听（Req 1.6, 2.7）
+// webkit_tuning 驯化事件监听：pre-show 触发同步 layout，避免首帧白底
 let unlistenPreShow: (() => void) | null = null
-let unlistenAwaitingPaint: (() => void) | null = null
-let unlistenPainted: (() => void) | null = null
 
 async function setupGlobalShortcut(
   id: string,
@@ -233,20 +231,11 @@ onMounted(async () => {
       },
     )
 
-    // webkit_tuning 驯化事件（Req 1.6, 2.7）
-    // pre-show：触发 rAF 让 WebKit 渲染管线就绪，严格先于 alpha=1
+    // webkit_tuning 驯化事件：pre-show 触发 rAF 让 WebKit 渲染管线就绪，严格先于 alpha=1
     unlistenPreShow = await listen('webkit-tuning:pre-show', () => {
       requestAnimationFrame(() => {
         /* 触发同步 layout，避免首帧白底 */
       })
-    })
-    // awaiting-paint：80ms 超时 fallback，显示骨架占位
-    unlistenAwaitingPaint = await listen('webkit-tuning:awaiting-paint', () => {
-      appStore.showPaintSkeleton = true
-    })
-    // painted：首帧呈现完成，撤掉骨架
-    unlistenPainted = await listen('webkit-tuning:painted', () => {
-      appStore.showPaintSkeleton = false
     })
 
     unlistenFocus = await win!.onFocusChanged(
@@ -288,8 +277,6 @@ onUnmounted(async () => {
     if (unlistenShowingWindow) unlistenShowingWindow()
     if (unlistenClickOutside) unlistenClickOutside()
     if (unlistenPreShow) unlistenPreShow()
-    if (unlistenAwaitingPaint) unlistenAwaitingPaint()
-    if (unlistenPainted) unlistenPainted()
 
     await invoke('register_global_shortcut', {
       id: 'main',

@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { initAllModules } from '@/core/module-registry'
+import { preloadAllViews } from '@/core/async-view'
 import App from './App.vue'
 import 'virtual:uno.css'
 import './styles/theme.css'
@@ -17,3 +18,6 @@ app.mount('#app')
 initAllModules().catch(e => {
   console.error('Failed to init modules:', e)
 })
+
+// 并发预热所有扩展视图 chunk，消除首次激活时的拉取卡顿
+preloadAllViews()

@@ -1,16 +1,16 @@
 import { ref } from 'vue'
-import { defineAsyncComponent } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { registerModule } from '@/core/module-registry'
+import { asyncView } from '@/core/async-view'
 import type { AppModule } from '@/types/module'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { generateRequestId } from '@/composables/useStreamOutput'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
-const ChatView = defineAsyncComponent(() => import('./View.vue'))
-const ChatSettings = defineAsyncComponent(() => import('./Settings.vue'))
-const ChatActions = defineAsyncComponent(() => import('./Actions.vue'))
+const ChatView = asyncView(() => import('./View.vue'))
+const ChatSettings = asyncView(() => import('./Settings.vue'))
+const ChatActions = asyncView(() => import('./Actions.vue'))
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'

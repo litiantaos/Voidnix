@@ -1,6 +1,6 @@
 import { ref } from 'vue'
-import { defineAsyncComponent } from 'vue'
 import { registerModule } from '@/core/module-registry'
+import { asyncView } from '@/core/async-view'
 import type { AppModule, SearchResult } from '@/types/module'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -14,9 +14,9 @@ import {
   type TranslateResult as BindingsTranslateResult,
 } from '@/bindings'
 
-const TranslateView = defineAsyncComponent(() => import('./View.vue'))
-const TranslateSettings = defineAsyncComponent(() => import('./Settings.vue'))
-const TranslateActions = defineAsyncComponent(() => import('./Actions.vue'))
+const TranslateView = asyncView(() => import('./View.vue'))
+const TranslateSettings = asyncView(() => import('./Settings.vue'))
+const TranslateActions = asyncView(() => import('./Actions.vue'))
 
 /** 前端扩展类型：在 bindings 的 TranslateResult 基础上增加 loading 状态 */
 export type TranslateResult = BindingsTranslateResult & { loading?: boolean }

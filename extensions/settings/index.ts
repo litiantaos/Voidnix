@@ -1,8 +1,8 @@
-import { defineAsyncComponent } from 'vue'
 import { registerModule } from '@/core/module-registry'
+import { asyncView } from '@/core/async-view'
 import type { AppModule } from '@/types/module'
 
-const SettingsView = defineAsyncComponent(() => import('./View.vue'))
+const SettingsView = asyncView(() => import('./View.vue'))
 
 const mod: AppModule = {
   id: 'settings',
