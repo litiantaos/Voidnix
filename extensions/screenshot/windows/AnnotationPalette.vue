@@ -69,8 +69,43 @@
       </div>
     </div>
 
+    <!-- 模糊模式切换（仅 blur 工具时显示） -->
+    <div
+      v-if="activeTool === 'blur'"
+      class="text-xs border border-black/10 rounded-md bg-black/5 flex h-7 overflow-hidden"
+    >
+      <button
+        type="button"
+        class="px-2 flex gap-1 h-full transition-colors items-center"
+        :class="
+          blurMode === 'selection'
+            ? 'bg-accent text-white'
+            : 'text-tx-secondary hover:bg-black/8'
+        "
+        title="模糊整个选区"
+        @click="emit('blur-mode', 'selection')"
+      >
+        <span class="i-ri-checkbox-blank-line text-sm" />
+        选区
+      </button>
+      <button
+        type="button"
+        class="px-2 flex gap-1 h-full transition-colors items-center"
+        :class="
+          blurMode === 'text'
+            ? 'bg-accent text-white'
+            : 'text-tx-secondary hover:bg-black/8'
+        "
+        title="仅模糊选区内的文本"
+        @click="emit('blur-mode', 'text')"
+      >
+        <span class="i-ri-text text-sm" />
+        文本
+      </button>
+    </div>
+
     <!-- 模糊度（仅 blur 工具时显示） -->
-    <div v-else class="flex gap-0.5 h-7 items-center" title="模糊度">
+    <div v-if="activeTool === 'blur'" class="flex gap-0.5 h-7 items-center" title="模糊度">
       <span class="i-ri-contrast-drop-line text-sm text-tx-muted mr-0.5 shrink-0" />
       <input
         :value="blurAmount"
@@ -122,6 +157,7 @@ import { ref, computed } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 
 type Tool = 'rect' | 'line' | 'arrow' | 'text' | 'blur' | null
+type BlurMode = 'selection' | 'text'
 
 const props = defineProps<{
   sel: { x: number; y: number; w: number; h: number }
@@ -129,6 +165,7 @@ const props = defineProps<{
   color: string
   lineWidth: number
   blurAmount: number
+  blurMode: BlurMode
   screenHeight: number
   screenWidth: number
 }>()
@@ -138,6 +175,7 @@ const emit = defineEmits<{
   (e: 'color', c: string): void
   (e: 'line-width', n: number): void
   (e: 'blur-amount', n: number): void
+  (e: 'blur-mode', m: BlurMode): void
   (e: 'ocr'): void
   (e: 'pin'): void
   (e: 'copy'): void
@@ -190,7 +228,7 @@ const EDGE_PAD = 8
 
 const style = computed(() => {
   const { x, y, w, h } = props.sel
-  const paletteW = 360
+  const paletteW = props.activeTool === 'blur' ? 460 : 360
   const maxLeft = props.screenWidth - paletteW - EDGE_PAD
   const leftAligned = Math.max(EDGE_PAD, x)
   const left = leftAligned + paletteW <= props.screenWidth - EDGE_PAD

@@ -17,6 +17,7 @@ pub fn export_bindings() {
             crate::core::shortcut::is_app_active,
             crate::core::shortcut::get_selected_text_cached,
             crate::extensions::screenshot::ocr_image,
+            crate::extensions::screenshot::detect_text_regions,
             crate::extensions::translate::get_selected_text,
             crate::extensions::translate::translate_youdao,
             crate::extensions::translate::translate_ai,

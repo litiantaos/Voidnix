@@ -26,6 +26,7 @@
           <template v-if="item.type === 'shortcut'" #trailing>
             <ShortcutInput
               :model-value="String(item.value)"
+              shortcut-id="main"
               @update:model-value="item.update"
             />
           </template>

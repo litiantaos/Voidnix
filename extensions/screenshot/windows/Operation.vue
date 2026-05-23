@@ -155,18 +155,17 @@
 
     <!-- 模糊选中边框（与控制点一体，DOM 层同步显示/隐藏） -->
     <div
-      v-if="selectedShapeIndex !== null && phase === 'annotate' && selectedShape?.type === 'blur'"
+      v-if="blurFrameStyle && phase === 'annotate'"
       class="border border-accent border-dashed pointer-events-none absolute z-10"
-      :style="blurSelectionStyle"
+      :style="blurFrameStyle"
     />
 
-    <!-- 形状控制点覆盖层（选中形状时显示） -->
-    <template v-if="selectedShapeIndex !== null && phase === 'annotate'">
+    <!-- 形状控制点覆盖层（选中形状 / 绘制中的 blur 形状时显示） -->
+    <template v-if="effectiveShape && phase === 'annotate'">
       <!-- 矩形/模糊：8个控制点 + (矩形)圆角/旋转控制点 -->
       <template
         v-if="
-          selectedShape &&
-          (selectedShape.type === 'rect' || selectedShape.type === 'blur')
+          effectiveShape.type === 'rect' || effectiveShape.type === 'blur'
         "
       >
         <div
@@ -231,7 +230,7 @@
             v-else
             class="border border-accent rounded-full bg-white h-2.5 w-2.5 absolute -translate-x-1/2 -translate-y-1/2"
             :style="{
-              cursor: handleCursor(hp.id, selectedShape?.rotation ?? 0),
+              cursor: handleCursor(hp.id, effectiveShape?.rotation ?? 0),
             }"
           />
         </div>
@@ -239,8 +238,7 @@
       <!-- 直线/箭头：首尾2个控制点 -->
       <template
         v-else-if="
-          selectedShape &&
-          (selectedShape.type === 'line' || selectedShape.type === 'arrow')
+          effectiveShape.type === 'line' || effectiveShape.type === 'arrow'
         "
       >
         <div
@@ -256,7 +254,7 @@
         </div>
       </template>
       <!-- 文本：只有右边中间一个控制点（调整宽度） -->
-      <template v-else-if="selectedShape && selectedShape.type === 'text'">
+      <template v-else-if="effectiveShape.type === 'text'">
         <div
           v-for="hp in shapeHandles"
           :key="hp.id"
@@ -303,12 +301,14 @@
       :color="annotColor"
       :line-width="annotLineWidth"
       :blur-amount="annotBlurAmount"
+      :blur-mode="annotBlurMode"
       :screen-height="screenH"
       :screen-width="screenW"
       @tool="setTool"
       @color="annotColor = $event"
       @line-width="annotLineWidth = $event"
       @blur-amount="annotBlurAmount = $event"
+      @blur-mode="annotBlurMode = $event"
       @ocr="doOcr"
       @pin="doPin"
       @copy="doCopy"
@@ -332,6 +332,7 @@ import { useDrawing } from '../composables/useDrawing'
 import { useMaskStyles } from '../composables/useMaskStyles'
 import { useScreenshotActions } from '../composables/useScreenshotActions'
 import { useOverlayEvents } from '../composables/useOverlayEvents'
+import { useTextDetection } from '../composables/useTextDetection'
 
 const props = defineProps<{ initialScreenshot: ScreenshotData }>()
 const emit = defineEmits<{ (e: 'close', forOcr?: boolean): void }>()
@@ -350,6 +351,18 @@ const phase = ref<'select' | 'annotate'>('select')
 const selection = useSelection({ screenW, screenH, windows })
 const annotation = useAnnotation()
 const magnifier = useMagnifier({ initialScreenshot: props.initialScreenshot, screenW, screenH, dpr })
+const textDetection = useTextDetection({ dpr })
+
+// 绘制中的 blur 优先：控制点和选中框从开始拖动起就显示，松手后无缝切到 selectedShape。
+// 仅当鼠标已移动（形状有实际尺寸）时才认作活动形状，避免按下鼠标的瞬间在点位置闪出零尺寸控制点。
+const effectiveShape = computed(() => {
+  if (annotation.isDrawing.value && annotation.currentShape.value?.type === 'blur') {
+    const s = annotation.currentShape.value
+    if (s.x1 !== s.x2 || s.y1 !== s.y2) return s
+  }
+  return annotation.selectedShape.value
+})
+
 const drawing = useDrawing({
   annotateCanvas,
   dpr,
@@ -357,6 +370,7 @@ const drawing = useDrawing({
   bgImage: magnifier.bgImage,
   shapes: annotation.shapes,
   textInput: ref({ visible: false, editingIndex: null }),
+  textRegions: textDetection.textRegions,
 })
 
 const textInputComposable = useTextInput({
@@ -382,7 +396,7 @@ const actions = useScreenshotActions({
 
 const shapeHandlesComposable = useShapeHandles({
   sel: selection.sel,
-  selectedShape: annotation.selectedShape,
+  selectedShape: effectiveShape,
   selectedShapeIndex: annotation.selectedShapeIndex,
   textInput: textInputComposable.textInput,
   fromLocal: annotation.fromLocal,
@@ -418,6 +432,7 @@ const events = useOverlayEvents({
   annotColor: annotation.annotColor,
   annotLineWidth: annotation.annotLineWidth,
   annotBlurAmount: annotation.annotBlurAmount,
+  annotBlurMode: annotation.annotBlurMode,
   shapes: annotation.shapes,
   currentShape: annotation.currentShape,
   isDrawing: annotation.isDrawing,
@@ -458,8 +473,7 @@ const {
   annotColor,
   annotLineWidth,
   annotBlurAmount,
-  selectedShapeIndex,
-  selectedShape,
+  annotBlurMode,
   handleCursor,
   setTool,
 } = annotation
@@ -510,9 +524,9 @@ const {
 } = events
 const { doCopy, doSave, doOcr, doPin, doCancel } = actions
 // ── 模糊元素选中边框样式（DOM 层，与控制点天然同步） ────────
-const blurSelectionStyle = computed(() => {
-  if (!selectedShape.value || selectedShape.value.type !== 'blur') return {}
-  const s = selectedShape.value
+const blurFrameStyle = computed(() => {
+  const s = effectiveShape.value
+  if (!s || s.type !== 'blur') return null
   const x = Math.min(s.x1, s.x2)
   const y = Math.min(s.y1, s.y2)
   const w = Math.abs(s.x2 - s.x1)
@@ -591,8 +605,37 @@ watch(annotation.annotBlurAmount, (v) => {
 watch(annotation.selectedShapeIndex, (idx) => {
   if (idx === null) return
   const s = annotation.shapes.value[idx]
-  if (s && s.type === 'blur' && typeof s.blurAmount === 'number') {
-    annotation.annotBlurAmount.value = s.blurAmount
+  if (s && s.type === 'blur') {
+    if (typeof s.blurAmount === 'number') annotation.annotBlurAmount.value = s.blurAmount
+    const mode = s.blurMode ?? 'selection'
+    annotation.annotBlurMode.value = mode
+    if (mode === 'text') textDetection.detect()
   }
 })
+
+// 模糊模式切换：更新当前选中 shape；切到文本模式时按需触发检测。
+watch(annotation.annotBlurMode, (mode) => {
+  const s = annotation.selectedShape.value
+  if (s && s.type === 'blur') {
+    s.blurMode = mode
+    drawing.redraw()
+  }
+  if (mode === 'text') textDetection.detect()
+})
+
+// 选中 blur 工具且为文本模式时，预热检测（用户开始画框前完成）。
+watch(annotation.activeTool, (tool) => {
+  if (tool === 'blur' && annotation.annotBlurMode.value === 'text') {
+    textDetection.detect()
+  }
+})
+
+// 进入标注阶段即预热文本检测，把 Swift 冷启动放在「框选完成 → 选择工具 → 拖动」
+// 这段空闲里，避免用户第一次拉文本模糊选区时看到延迟。
+watch(phase, (p) => {
+  if (p === 'annotate') textDetection.detect()
+}, { immediate: true })
+
+// 文本区域更新后，重绘画布以应用最新结果。
+watch(textDetection.textRegions, () => drawing.redraw(), { deep: true })
 </script>

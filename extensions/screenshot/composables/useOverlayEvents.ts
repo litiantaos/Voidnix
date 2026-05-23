@@ -1,6 +1,6 @@
 import { nextTick, type Ref } from 'vue'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import type { Sel, Shape, Tool, Phase, WindowRect } from './useTypes'
+import type { Sel, Shape, Tool, Phase, WindowRect, BlurMode } from './useTypes'
 import { DRAG_THRESHOLD } from './useTypes'
 
 export function useOverlayEvents(options: {
@@ -22,6 +22,7 @@ export function useOverlayEvents(options: {
   annotColor: Ref<string>
   annotLineWidth: Ref<number>
   annotBlurAmount: Ref<number>
+  annotBlurMode: Ref<BlurMode>
   shapes: Ref<Shape[]>
   currentShape: Ref<Shape | null>
   isDrawing: Ref<boolean>
@@ -208,6 +209,8 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
         cornerRadius: options.activeTool.value === 'rect' ? 0 : undefined,
         blurAmount:
           options.activeTool.value === 'blur' ? options.annotBlurAmount.value : undefined,
+        blurMode:
+          options.activeTool.value === 'blur' ? options.annotBlurMode.value : undefined,
       }
       return
     }

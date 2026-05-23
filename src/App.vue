@@ -97,19 +97,11 @@ let unlistenClickOutside: (() => void) | null = null
 // webkit_tuning 驯化事件监听：pre-show 触发同步 layout，避免首帧白底
 let unlistenPreShow: (() => void) | null = null
 
-async function setupGlobalShortcut(
-  id: string,
-  newShortcut: string,
-  oldShortcut?: string,
-) {
+async function setupGlobalShortcut(id: string, shortcut: string) {
   if (!isTauri) return
 
   try {
-    await invoke('register_global_shortcut', {
-      id: id,
-      newShortcut: newShortcut,
-      oldShortcut: oldShortcut || null,
-    })
+    await invoke('register_global_shortcut', { id, shortcut })
     appStore.clearShortcutError(id)
   } catch (e) {
     const msg = String(e)
@@ -151,20 +143,16 @@ onMounted(async () => {
 
     watch(
       () => settings.globalShortcut,
-      async (newVal, oldVal) => {
-        await setupGlobalShortcut('main', newVal, oldVal)
+      async (newVal) => {
+        await setupGlobalShortcut('main', newVal)
       },
     )
 
     watch(
       () => settings.shortcutOverrides,
-      async (_newVal, oldVal) => {
+      async () => {
         for (const sc of allGlobalShortcuts) {
-          const newS = effectiveShortcut(sc.id, sc.default)
-          const oldS = oldVal?.[sc.id] || sc.default || ''
-          if (newS !== oldS) {
-            await setupGlobalShortcut(sc.id, newS, oldS)
-          }
+          await setupGlobalShortcut(sc.id, effectiveShortcut(sc.id, sc.default))
         }
       },
       { deep: true },
@@ -280,19 +268,14 @@ onUnmounted(async () => {
 
     await invoke('register_global_shortcut', {
       id: 'main',
-      newShortcut: '',
-      oldShortcut: settings.globalShortcut,
+      shortcut: '',
     }).catch(() => {})
 
     for (const sc of allGlobalShortcuts) {
-      const effective = effectiveShortcut(sc.id, sc.default)
-      if (effective) {
-        await invoke('register_global_shortcut', {
-          id: sc.id,
-          newShortcut: '',
-          oldShortcut: effective,
-        }).catch(() => {})
-      }
+      await invoke('register_global_shortcut', {
+        id: sc.id,
+        shortcut: '',
+      }).catch(() => {})
     }
   }
 })

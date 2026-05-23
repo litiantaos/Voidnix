@@ -30,6 +30,16 @@ pub struct WindowRect {
     pub owner: String,
 }
 
+/// 文本检测返回的单个文本行边界（CSS 像素，左上原点）。
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct TextRegion {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
 /// 截屏元数据（不再含 data_url，背景图由 CALayer 直贴）。
 /// data_url 字段保留但置空，前端不再用它加载背景图。
 #[derive(Serialize, Deserialize, Clone)]
@@ -473,7 +483,93 @@ print((req.results ?? []).compactMap {{ $0.topCandidates(1).first?.string }}.joi
     Err("仅支持 macOS".to_string())
 }
 
-/// 保存选区（含标注）到文件。
+/// 检测当前截屏中所有文本的紧致边界框（Apple Vision）。
+/// 返回坐标为 CSS 像素、左上原点。
+/// 注意：使用 `candidate.boundingBox(for:)` 拿字形紧贴框，并按空白拆段，
+/// 避免覆盖到文本之间的空白（这是文字模糊不冗余覆盖的关键）。
+#[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
+pub async fn detect_text_regions(scale: f64) -> Result<Vec<TextRegion>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let path = picker_jpeg_path();
+        if !path.exists() {
+            return Err("无截屏数据".to_string());
+        }
+        let script = format!(
+            r#"import Vision; import AppKit
+let url = URL(fileURLWithPath: "{path}")
+guard let img = NSImage(contentsOf: url), let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else {{ exit(0) }}
+let imgW = Double(cg.width), imgH = Double(cg.height)
+let scale: Double = {scale}
+let req = VNRecognizeTextRequest()
+req.recognitionLevel = .accurate
+req.usesLanguageCorrection = false
+req.recognitionLanguages = ["zh-Hans","zh-Hant","en-US","ja"]
+try? VNImageRequestHandler(cgImage: cg, options: [:]).perform([req])
+func emit(_ rect: CGRect) {{
+  let xPx = rect.origin.x * imgW
+  let wPx = rect.size.width * imgW
+  let hPx = rect.size.height * imgH
+  let yPxBottom = rect.origin.y * imgH
+  let yPxTop = imgH - yPxBottom - hPx
+  print("\(xPx/scale),\(yPxTop/scale),\(wPx/scale),\(hPx/scale)")
+}}
+for obs in (req.results ?? []) {{
+  guard let candidate = obs.topCandidates(1).first else {{ continue }}
+  let str = candidate.string
+  var start = str.startIndex
+  var emittedAny = false
+  while start < str.endIndex {{
+    while start < str.endIndex, str[start].isWhitespace {{ start = str.index(after: start) }}
+    if start >= str.endIndex {{ break }}
+    var end = start
+    while end < str.endIndex, !str[end].isWhitespace {{ end = str.index(after: end) }}
+    if start < end {{
+      do {{
+        if let rect = try candidate.boundingBox(for: start..<end) {{
+          emit(rect.boundingBox)
+          emittedAny = true
+        }}
+      }} catch {{}}
+    }}
+    start = end
+  }}
+  if !emittedAny {{
+    emit(obs.boundingBox)
+  }}
+}}"#,
+            path = path.display(),
+            scale = scale,
+        );
+        let out = Command::new("swift").args(["-e", &script]).output()
+            .map_err(|e| format!("swift 失败: {}", e))?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        }
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let mut regions = Vec::new();
+        for line in stdout.lines() {
+            let line = line.trim();
+            if line.is_empty() { continue; }
+            let parts: Vec<&str> = line.split(',').collect();
+            if parts.len() != 4 { continue; }
+            let (Ok(x), Ok(y), Ok(w), Ok(h)) = (
+                parts[0].parse::<f64>(),
+                parts[1].parse::<f64>(),
+                parts[2].parse::<f64>(),
+                parts[3].parse::<f64>(),
+            ) else { continue };
+            regions.push(TextRegion { x, y, w, h });
+        }
+        Ok(regions)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = scale;
+        Err("仅支持 macOS".to_string())
+    }
+}
 /// path 可以是完整文件路径，也可以是目录路径（此时自动生成文件名）。
 #[tauri::command]
 pub async fn save_screenshot(

@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { Shape, Sel } from './useTypes'
+import type { Shape, Sel, TextRegion } from './useTypes'
 import { measureTextMetrics } from './wrapText'
 
 export function useDrawing(options: {
@@ -12,6 +12,7 @@ export function useDrawing(options: {
     visible: boolean
     editingIndex: number | null
   }>
+  textRegions: Ref<TextRegion[]>
 }) {
   function redraw(preview?: Shape | null) {
     const canvas = options.annotateCanvas.value
@@ -120,6 +121,27 @@ export function useDrawing(options: {
         return
       }
 
+      const mode = shape.blurMode ?? 'selection'
+
+      // 文本模糊：先求出与本形状相交的文本行矩形（canvas 坐标）。
+      // 若无相交（或检测尚未完成 / 无文本），直接跳过绘制：露出背景。
+      let clipRects: { x: number; y: number; w: number; h: number }[] | null = null
+      if (mode === 'text') {
+        clipRects = []
+        for (const r of options.textRegions.value) {
+          const rx = r.x - options.sel.value.x
+          const ry = r.y - options.sel.value.y
+          const ix1 = Math.max(bx, rx)
+          const iy1 = Math.max(by, ry)
+          const ix2 = Math.min(bx + bw, rx + r.w)
+          const iy2 = Math.min(by + bh, ry + r.h)
+          if (ix2 > ix1 && iy2 > iy1) {
+            clipRects.push({ x: ix1, y: iy1, w: ix2 - ix1, h: iy2 - iy1 })
+          }
+        }
+        if (clipRects.length === 0) return
+      }
+
       const amount = shape.blurAmount ?? 15
       const radius = Math.max(1, Math.min(100, Math.round(amount * options.dpr.value)))
 
@@ -140,7 +162,11 @@ export function useDrawing(options: {
 
       ctx.save()
       ctx.beginPath()
-      ctx.rect(bx, by, bw, bh)
+      if (clipRects) {
+        for (const r of clipRects) ctx.rect(r.x, r.y, r.w, r.h)
+      } else {
+        ctx.rect(bx, by, bw, bh)
+      }
       ctx.clip()
       ctx.drawImage(off, 0, 0, off.width, off.height, bx, by, bw, bh)
       ctx.restore()

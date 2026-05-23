@@ -26,6 +26,7 @@ export interface Sel {
 
 export type Tool = 'rect' | 'line' | 'arrow' | 'text' | 'blur' | null
 export type Phase = 'select' | 'annotate'
+export type BlurMode = 'selection' | 'text'
 
 export interface Shape {
   type: Tool
@@ -41,11 +42,20 @@ export interface Shape {
   cornerRadius?: number
   rotation?: number
   blurAmount?: number
+  blurMode?: BlurMode
 }
 
 export interface ShapeHandle {
   id: string
   style: Record<string, string>
+}
+
+/// 屏幕坐标系下检测出的文本行边界（CSS 像素，左上原点）。
+export interface TextRegion {
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 // ── 常量 ──────────────────────────────────────────────────

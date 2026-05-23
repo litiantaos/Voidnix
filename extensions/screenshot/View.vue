@@ -21,6 +21,7 @@
           <template #trailing>
             <ShortcutInput
               :model-value="screenshotShortcutValue"
+              shortcut-id="screenshot"
               @update:model-value="handleShortcutChange"
             />
           </template>

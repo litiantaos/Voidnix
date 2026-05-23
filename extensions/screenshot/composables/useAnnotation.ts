@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import type { Shape, Tool } from './useTypes'
+import type { Shape, Tool, BlurMode } from './useTypes'
 
 export function useAnnotation() {
   // ── 标注工具 ──────────────────────────────────────────────
@@ -7,6 +7,7 @@ export function useAnnotation() {
   const annotColor = ref('#ff3b30')
   const annotLineWidth = ref(3)
   const annotBlurAmount = ref(15)
+  const annotBlurMode = ref<BlurMode>('selection')
 
   // ── 形状数据 ──────────────────────────────────────────────
   const shapes = ref<Shape[]>([])
@@ -118,6 +119,7 @@ export function useAnnotation() {
     annotColor,
     annotLineWidth,
     annotBlurAmount,
+    annotBlurMode,
     shapes,
     currentShape,
     isDrawing,

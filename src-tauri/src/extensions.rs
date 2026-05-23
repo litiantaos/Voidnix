@@ -21,6 +21,7 @@ macro_rules! configure_app {
         crate::core::window::pick_directory,
         crate::extensions::screenshot::capture_screen,
         crate::extensions::screenshot::ocr_image,
+        crate::extensions::screenshot::detect_text_regions,
         crate::extensions::screenshot::save_screenshot,
         crate::extensions::screenshot::copy_screenshot_to_clipboard,
         crate::extensions::screenshot::enter_screenshot_mode,

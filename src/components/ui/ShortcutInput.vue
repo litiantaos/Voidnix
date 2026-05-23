@@ -59,11 +59,10 @@ const readyToRecord = ref(false)
 let unlistenRecord: (() => void) | null = null
 
 onMounted(() => {
-  listen<{ id: string; shortcut: string }>(
+  listen<{ shortcut: string }>(
     'shortcut-recording-captured',
     (event) => {
       if (!isRecording.value) return
-      if (event.payload.id !== props.shortcutId) return
       emit('update:modelValue', event.payload.shortcut)
       stopRecording()
       blur()
