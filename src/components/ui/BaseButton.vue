@@ -3,35 +3,38 @@
     :disabled="disabled"
     :class="[
       'ui-ctrl flex-none',
-      sizeClasses[size],
+      isIconOnly
+        ? 'w-7 px-0 text-sm flex items-center justify-center'
+        : icon
+          ? 'flex gap-1.5 items-center'
+          : '',
       variantClasses[variant],
-      
       disabled ? 'ui-disabled' : '',
     ]"
   >
+    <i v-if="icon" :class="[icon, 'text-sm']" />
     <slot />
   </button>
 </template>
 
 <script setup lang="ts">
+import { computed, useSlots } from 'vue'
+
 interface Props {
   variant?: 'default' | 'primary' | 'outline'
-  size?: 'default' | 'icon'
   active?: boolean
   disabled?: boolean
+  icon?: string
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   variant: 'default',
-  size: 'default',
   active: false,
   disabled: false,
 })
 
-const sizeClasses: Record<string, string> = {
-  default: '',
-  icon: 'w-7 flex items-center justify-center px-0 text-sm',
-}
+const slots = useSlots()
+const isIconOnly = computed(() => !!props.icon && !slots.default)
 
 const variantClasses: Record<string, string> = {
   default: 'hover:bg-black/8',

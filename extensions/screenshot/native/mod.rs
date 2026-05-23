@@ -8,6 +8,19 @@ use std::sync::atomic::{AtomicI32, Ordering};
 #[cfg(target_os = "macos")]
 static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
 
+/// 截屏会话代次。enter 时自增；exit 的 fade 完成回调里若代次已变，
+/// 说明在 fade 过程中又触发了新一次截屏，此时不能清空 CALayer 背景，
+/// 否则会把新截屏的背景一起抹掉。
+#[cfg(target_os = "macos")]
+static SCREENSHOT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 截屏会话占用锁。enter 期间为 true，hook 据此屏蔽重复触发，
+/// 避免连按快捷键叠加多次 capture + 多帧 Operation.vue 重 mount。
+/// exit_impl 主线程入口处释放（fade 仅视觉，逻辑会话已结束）。
+#[cfg(target_os = "macos")]
+static IS_IN_SCREENSHOT_SESSION: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// 全局持有最近一次截屏的 CGImageRef（裸指针，CFRetain 管理生命周期）。
 #[cfg(target_os = "macos")]
 struct SendCgImage(*mut std::ffi::c_void);
@@ -264,6 +277,30 @@ fn cg_image_ptr_to_jpeg(raw: *mut std::ffi::c_void) -> Result<Vec<u8>, String> {
     }
 }
 
+/// 把 PNG 字节解码成 CGImage（保留 +1 引用，调用方负责 release）。
+/// 钉图路径用：从 crop_with_annotation 的 PNG 重新解码，交给 CALayer 直贴渲染，
+/// 不等 WebView 加载就能看到图像。
+#[cfg(target_os = "macos")]
+fn png_bytes_to_cgimage(png: &[u8]) -> *mut std::ffi::c_void {
+    use objc2::runtime::AnyObject;
+    if png.is_empty() { return std::ptr::null_mut(); }
+    unsafe {
+        let cls_data = objc2::class!(NSData);
+        let ns_data: *mut AnyObject = objc2::msg_send![
+            cls_data,
+            dataWithBytes: png.as_ptr() as *const std::ffi::c_void,
+            length: png.len()
+        ];
+        if ns_data.is_null() { return std::ptr::null_mut(); }
+        let cls_rep = objc2::class!(NSBitmapImageRep);
+        let rep: *mut AnyObject = objc2::msg_send![cls_rep, imageRepWithData: ns_data];
+        if rep.is_null() { return std::ptr::null_mut(); }
+        let cg: *mut std::ffi::c_void = objc2::msg_send![rep, CGImage];
+        if cg.is_null() { return std::ptr::null_mut(); }
+        CGImageRetain(cg)
+    }
+}
+
 // ── 预热 ─────────────────────────────────────────────────────────────────────
 
 /// 启动时预热 JPEG 编码器（放大镜路径），让首次编码不付出 lazy 加载代价。
@@ -485,8 +522,11 @@ print((req.results ?? []).compactMap {{ $0.topCandidates(1).first?.string }}.joi
 
 /// 检测当前截屏中所有文本的紧致边界框（Apple Vision）。
 /// 返回坐标为 CSS 像素、左上原点。
-/// 注意：使用 `candidate.boundingBox(for:)` 拿字形紧贴框，并按空白拆段，
-/// 避免覆盖到文本之间的空白（这是文字模糊不冗余覆盖的关键）。
+/// 实现：每个 VNRecognizedTextObservation 直接 emit 其 boundingBox（即一整行的包络框）。
+/// 历史上曾按词边界（candidate.boundingBox(for:)）拆段以避免覆盖行内空白，但实测会出现：
+///   - 行内多个 word box 高度不齐（如 "Hello" 与 "world"），上下边缘留缝
+///   - 部分 word 的 boundingBox(for:) 返回 nil，导致整行内零散字符漏掉
+/// 行内空格被一并模糊在视觉上无副作用（空白处模糊后仍是空白），换取"绝不漏行"。
 #[tauri::command]
 #[cfg_attr(feature = "specta", specta::specta)]
 pub async fn detect_text_regions(scale: f64) -> Result<Vec<TextRegion>, String> {
@@ -516,28 +556,7 @@ func emit(_ rect: CGRect) {{
   print("\(xPx/scale),\(yPxTop/scale),\(wPx/scale),\(hPx/scale)")
 }}
 for obs in (req.results ?? []) {{
-  guard let candidate = obs.topCandidates(1).first else {{ continue }}
-  let str = candidate.string
-  var start = str.startIndex
-  var emittedAny = false
-  while start < str.endIndex {{
-    while start < str.endIndex, str[start].isWhitespace {{ start = str.index(after: start) }}
-    if start >= str.endIndex {{ break }}
-    var end = start
-    while end < str.endIndex, !str[end].isWhitespace {{ end = str.index(after: end) }}
-    if start < end {{
-      do {{
-        if let rect = try candidate.boundingBox(for: start..<end) {{
-          emit(rect.boundingBox)
-          emittedAny = true
-        }}
-      }} catch {{}}
-    }}
-    start = end
-  }}
-  if !emittedAny {{
-    emit(obs.boundingBox)
-  }}
+  emit(obs.boundingBox)
 }}"#,
             path = path.display(),
             scale = scale,
@@ -639,6 +658,96 @@ fn decode_image_data(s: &str) -> Result<Vec<u8>, String> {
     base64::engine::general_purpose::STANDARD.decode(b64).map_err(|e| e.to_string())
 }
 
+// ── 窗口淡入/淡出 ─────────────────────────────────────────────────────────────
+
+/// 用 contentView.layer.opacity（CABasicAnimation）做淡入/淡出。
+/// 关键：NSWindow.alphaValue 保持 1.0，否则 alpha=0 时 macOS 不进行命中测试，
+/// 用户没法拖拽选区。`ns_window_addr` 是 NSWindow 指针的 usize 副本。
+#[cfg(target_os = "macos")]
+fn fade_window_layer_opacity(
+    ns_window_addr: usize,
+    target: f32,
+    duration: f64,
+    completion: Option<Box<dyn FnOnce() + Send + 'static>>,
+) {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::NSString;
+    use std::sync::{Arc, Mutex};
+
+    unsafe {
+        let nsw = ns_window_addr as *mut AnyObject;
+        let content_view: *mut AnyObject = objc2::msg_send![nsw, contentView];
+        if content_view.is_null() {
+            if let Some(cb) = completion { cb(); }
+            return;
+        }
+        let _: () = objc2::msg_send![content_view, setWantsLayer: true];
+        let layer: *mut AnyObject = objc2::msg_send![content_view, layer];
+        if layer.is_null() {
+            if let Some(cb) = completion { cb(); }
+            return;
+        }
+
+        let from_opacity: f32 = objc2::msg_send![layer, opacity];
+        let cls_anim = objc2::class!(CABasicAnimation);
+        let key_path = NSString::from_str("opacity");
+        let anim: *mut AnyObject = objc2::msg_send![cls_anim, animationWithKeyPath: &*key_path];
+
+        let cls_num = objc2::class!(NSNumber);
+        let from_val: *mut AnyObject = objc2::msg_send![cls_num, numberWithFloat: from_opacity];
+        let to_val: *mut AnyObject = objc2::msg_send![cls_num, numberWithFloat: target];
+        let _: () = objc2::msg_send![anim, setFromValue: from_val];
+        let _: () = objc2::msg_send![anim, setToValue: to_val];
+        let _: () = objc2::msg_send![anim, setDuration: duration];
+
+        // 显式设置模型层的最终值，否则动画结束后会跳回 fromValue。
+        let _: () = objc2::msg_send![layer, setOpacity: target];
+
+        let anim_key = NSString::from_str("voidnix-fade-opacity");
+        let cls_ct = objc2::class!(CATransaction);
+
+        match completion {
+            Some(cb) => {
+                let slot: Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>> =
+                    Arc::new(Mutex::new(Some(cb)));
+                let slot_clone = Arc::clone(&slot);
+                let done = block2::RcBlock::new(move || {
+                    if let Some(f) = slot_clone.lock().unwrap().take() {
+                        f();
+                    }
+                });
+                let _: () = objc2::msg_send![cls_ct, begin];
+                let _: () = objc2::msg_send![cls_ct, setCompletionBlock: &*done];
+                let _: () = objc2::msg_send![layer, addAnimation: anim, forKey: &*anim_key];
+                let _: () = objc2::msg_send![cls_ct, commit];
+            }
+            None => {
+                let _: () = objc2::msg_send![layer, addAnimation: anim, forKey: &*anim_key];
+            }
+        }
+    }
+}
+
+/// 直接设置 contentView.layer.opacity（无动画）。
+#[cfg(target_os = "macos")]
+fn set_window_layer_opacity(ns_window_addr: usize, opacity: f32) {
+    use objc2::runtime::AnyObject;
+    unsafe {
+        let nsw = ns_window_addr as *mut AnyObject;
+        let content_view: *mut AnyObject = objc2::msg_send![nsw, contentView];
+        if content_view.is_null() { return; }
+        let _: () = objc2::msg_send![content_view, setWantsLayer: true];
+        let layer: *mut AnyObject = objc2::msg_send![content_view, layer];
+        if layer.is_null() { return; }
+        // 关闭隐式动画，直接生效
+        let cls_ct = objc2::class!(CATransaction);
+        let _: () = objc2::msg_send![cls_ct, begin];
+        let _: () = objc2::msg_send![cls_ct, setDisableActions: true];
+        let _: () = objc2::msg_send![layer, setOpacity: opacity];
+        let _: () = objc2::msg_send![cls_ct, commit];
+    }
+}
+
 // ── enter / exit ──────────────────────────────────────────────────────────────
 
 /// Tauri command 入口（保留兼容，实际路径走 enter_screenshot_mode_sync）
@@ -664,6 +773,9 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
     use tauri::Manager;
     use objc2_app_kit::{NSEvent, NSScreen, NSWindow, NSWindowAnimationBehavior, NSWorkspace};
     use objc2_foundation::MainThreadMarker;
+
+    // 进入新会话：让正在 fade out 的 exit 完成回调失效（避免清空新背景）
+    SCREENSHOT_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     let self_pid = std::process::id() as i32;
     let prev_pid = NSWorkspace::sharedWorkspace()
@@ -701,12 +813,26 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
             voidnix_screenshot_set_background(ns_window_ptr, cg_image_ptr);
         }
 
+        // 先把旧的 picker JPEG 删掉，再用当前帧生成新的（同步约 40ms）。
+        // 必须在 eval 之前完成，否则前端 loadPickerImage 的轮询会先抓到上一次截屏的旧文件，
+        // 放大镜里就是上次的画面。NSBitmapImageRep initWithCGImage 必须在主线程。
+        let _ = std::fs::remove_file(picker_jpeg_path());
+        if !cg_image_ptr.is_null() {
+            prepare_picker_jpeg(cg_image_ptr);
+        }
+
         // SkyLight 迁移到当前 active Space（用 SLSAddWindowsToSpaces，
         // 全屏 Space 和普通桌面都支持，跨 macOS 13/14/15 稳定）
         let window_number: objc2_foundation::NSInteger = objc2::msg_send![ns_window, windowNumber];
         let _ = crate::macos::skylight::move_window_to_active_space(window_number as i64, ns_window_ptr);
 
-        // 揭开隐身
+        // 待命态：layer.opacity=0（视觉不可见）+ alpha=1.0（保留命中测试）+
+        // ignoresMouseEvents=false（事件本窗口接收，绝不击穿到底下应用——若让
+        // Finder 等拿到 mousedown，implicit grab 后即便后续解锁也截不回这一次拖动）。
+        // 视觉淡入推迟到 Operation.vue.onMounted → screenshot_overlay_ready 触发，
+        // mount 前的 mousedown 即使没 handler 也只是"丢"，不会被外部 grab。
+        let ns_window_addr = raw.cast::<NSWindow>() as usize;
+        set_window_layer_opacity(ns_window_addr, 0.0);
         let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: false];
         ns_window.setAlphaValue(1.0);
         let _: () = objc2::msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()];
@@ -731,14 +857,6 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
                 json
             ));
         }
-
-        // 背景已通过 CALayer 显示，现在在主线程同步生成 picker JPEG（放大镜用）。
-        // NSBitmapImageRep initWithCGImage: 必须在主线程调用，后台线程会静默失败。
-        // 此时背景已在屏幕上，这里多花 ~40ms 用户感知不到。
-        let cg_ptr = get_cg_image();
-        if !cg_ptr.is_null() {
-            prepare_picker_jpeg(cg_ptr);
-        }
     }
     start_mouse_tracker(app);
     Ok(())
@@ -754,6 +872,32 @@ fn enter_impl(_app: &tauri::AppHandle, _data: &ScreenshotData) -> Result<(), Str
 pub async fn show_screenshot_window(_app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
+
+/// 截屏 overlay 前端就绪信号：在 Operation.vue.onMounted 里 invoke。
+/// 此时 @mousedown 等监听已挂在 DOM 上，触发淡入让用户看到 UI。
+/// 鼠标事件接收已在 enter_impl 里开启，这里只负责视觉上的解锁。
+#[tauri::command]
+pub async fn screenshot_overlay_ready(app: tauri::AppHandle) -> Result<(), String> {
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let app_c = app.clone();
+    app.run_on_main_thread(move || { let _ = tx.send(overlay_ready_impl(&app_c)); })
+        .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())?
+}
+
+#[cfg(target_os = "macos")]
+fn overlay_ready_impl(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    use objc2_app_kit::NSWindow;
+    let window = app.get_webview_window("screenshot").ok_or("找不到截图窗口")?;
+    let raw = window.ns_window().map_err(|e| e.to_string())?.cast::<NSWindow>();
+    let ns_window_addr = raw.cast::<NSWindow>() as usize;
+    fade_window_layer_opacity(ns_window_addr, 1.0, 0.18, None);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn overlay_ready_impl(_app: &tauri::AppHandle) -> Result<(), String> { Ok(()) }
 
 /// 退出截屏模式。no_restore_focus 为 true 时不恢复前台应用焦点（OCR 场景）。
 #[tauri::command]
@@ -774,19 +918,36 @@ fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), Strin
     use objc2_app_kit::{NSApplicationActivationOptions, NSWindow, NSWindowAnimationBehavior, NSWorkspace};
 
     stop_mouse_tracker();
+    // 逻辑会话已结束（视觉淡出还在跑也无所谓），立即释放占用锁。
+    // 后续快捷键能马上进入新会话；新 enter_impl 会自增 SCREENSHOT_GEN
+    // 让旧 fade 的 completion 跳过清理，避免误擦新背景。
+    IS_IN_SCREENSHOT_SESSION.store(false, std::sync::atomic::Ordering::SeqCst);
 
     let window = app.get_webview_window("screenshot").ok_or("找不到截图窗口")?;
     let raw = window.ns_window().map_err(|e| e.to_string())?.cast::<NSWindow>();
+    let session_gen = SCREENSHOT_GEN.load(std::sync::atomic::Ordering::SeqCst);
+    let ns_window_addr = raw.cast::<NSWindow>() as usize;
     unsafe {
         let ns_window: &NSWindow = raw.as_ref().ok_or("NSWindow 为空")?;
         ns_window.setAnimationBehavior(NSWindowAnimationBehavior::None);
-        ns_window.setAlphaValue(0.0);
+        // 立即停止接收鼠标事件并交出 key 状态，UI 视觉上仍在淡出
         let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: true];
         let _: () = objc2::msg_send![ns_window, resignKeyWindow];
-        // 清除 CALayer 背景，释放显存引用
-        let ptr = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
-        voidnix_screenshot_clear_background(ptr);
     }
+
+    // 淡出：layer.opacity → 0，动画结束后清理 CALayer 背景（释放显存），
+    // 同时把 NSWindow.alpha 设回 0 让窗口彻底休眠。
+    // 若期间又触发了新一次截屏（代次变化），跳过收尾以免抹掉新背景。
+    fade_window_layer_opacity(ns_window_addr, 0.0, 0.15, Some(Box::new(move || {
+        if SCREENSHOT_GEN.load(std::sync::atomic::Ordering::SeqCst) == session_gen {
+            unsafe {
+                let ptr = ns_window_addr as *mut std::ffi::c_void;
+                voidnix_screenshot_clear_background(ptr);
+                let nsw = ns_window_addr as *mut objc2::runtime::AnyObject;
+                let _: () = objc2::msg_send![nsw, setAlphaValue: 0.0_f64];
+            }
+        }
+    })));
 
     let prev_pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
     if !no_restore_focus && prev_pid > 0 {
@@ -977,6 +1138,10 @@ pub async fn pin_image(
         let path = std::env::temp_dir().join(format!("voidnix_pin_{}.png", ts));
         std::fs::write(&path, &png).map_err(|e| e.to_string())?;
 
+        // 同步把 PNG 解码成 CGImage：钉图窗口用 CALayer 直接呈现，瞬时可见，
+        // 不等 WebView 加载完毕。raw 指针跨线程靠 usize 中转。
+        let cg_addr = png_bytes_to_cgimage(&png) as usize;
+
         let path_str = path.to_string_lossy().to_string();
         let win_w = sel_w;
         let win_h = sel_h;
@@ -989,7 +1154,8 @@ pub async fn pin_image(
         let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
         let app_clone = app.clone();
         app.run_on_main_thread(move || {
-            let r = create_pin_webview(&app_clone, &label, &path_str, win_w, win_h, win_x, win_y);
+            let cg_ptr = cg_addr as *mut std::ffi::c_void;
+            let r = create_pin_webview(&app_clone, &label, &path_str, win_w, win_h, win_x, win_y, cg_ptr);
             let _ = tx.send(r);
         }).map_err(|e| e.to_string())?;
         rx.recv().map_err(|e| e.to_string())??;
@@ -1012,6 +1178,7 @@ fn create_pin_webview(
     height: f64,
     pos_x: f64,
     pos_y: f64,
+    cg_image: *mut std::ffi::c_void,
 ) -> Result<(), String> {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
@@ -1042,13 +1209,16 @@ fn create_pin_webview(
             if let Some(ns) = raw.as_ref() {
                 // 不随 app 失活隐藏（核心修复：钉图独立于 Voidnix 激活状态）
                 let _: () = objc2::msg_send![ns, setHidesOnDeactivate: false];
-                // 浮动层级：高于普通窗口
-                ns.setLevel(objc2_app_kit::NSFloatingWindowLevel);
+                // 提到 status 层级：与截屏窗口同级，新窗口排在前面，
+                // 这样截屏 fade-out 还没完成时钉图就能立刻可见而不被截屏盖住。
+                ns.setLevel(objc2_app_kit::NSStatusWindowLevel);
                 // 在所有桌面可见 + 可覆盖全屏 + 不出现在 Mission Control
                 let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
                     | NSWindowCollectionBehavior::FullScreenAuxiliary
                     | NSWindowCollectionBehavior::Stationary;
                 ns.setCollectionBehavior(behavior);
+                // 缩放时锁定内容长宽比为原始选区比例（macOS 自动约束 resize）
+                ns.setContentAspectRatio(objc2_foundation::NSSize::new(width, height));
                 // 圆角窗口：contentView.layer.cornerRadius
                 if let Some(content_view) = ns.contentView() {
                     let _: () = objc2::msg_send![&content_view, setWantsLayer: true];
@@ -1058,9 +1228,25 @@ fn create_pin_webview(
                         let _: () = objc2::msg_send![layer, setMasksToBounds: true];
                     }
                 }
+
+                // 钉图核心：把图像作为 CALayer 直接贴在 contentView 下，瞬时呈现。
+                // 不等 WebView 把 HTML/Vue/<img> 加载完毕（那条链路要 100-150ms），
+                // 钉图按钮按下的瞬间就能看到图。复用 screenshot_overlay.mm 的实现。
+                let ns_window_void = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
+                if !cg_image.is_null() {
+                    voidnix_screenshot_install_background_layer(ns_window_void);
+                    voidnix_screenshot_set_background(ns_window_void, cg_image);
+                    // CALayer.setContents 自身会 retain，这里释放 png_bytes_to_cgimage 加上的引用。
+                    CGImageRelease(cg_image);
+                }
+
+                // 显式抬起为 key 并激活 app，确保钉图窗口出现时立即聚焦
+                // （builder.focused(true) 在某些情形下不够确定）
+                let _: () = objc2::msg_send![ns, makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()];
             }
         }
     }
+    crate::macos::mac_utils::activate_app();
 
     // 窗口已经设置为 visible(true)，不需要再调用 show
     Ok(())
@@ -1127,6 +1313,11 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             {
                 use tauri::Emitter;
                 crate::core::shortcut::register_shortcut_hook("screenshot", Box::new(|app, _ctx| {
+                    // 已在截屏会话中：屏蔽重复触发，避免叠加 capture 与 overlay。
+                    // swap 拿独占权，true→true 表示已占；false→true 表示本次抢到。
+                    if IS_IN_SCREENSHOT_SESSION.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                        return true;
+                    }
                     let app_clone = app.clone();
                     std::thread::spawn(move || {
                         let result = capture_screen();
@@ -1138,6 +1329,8 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                                 });
                             }
                             Err(e) => {
+                                // capture 失败需立刻释放锁，否则后续快捷键全被屏蔽
+                                IS_IN_SCREENSHOT_SESSION.store(false, std::sync::atomic::Ordering::SeqCst);
                                 let _ = app_clone.emit("screenshot-ready-error", e);
                             }
                         }

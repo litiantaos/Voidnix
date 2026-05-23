@@ -12,6 +12,13 @@ export const commands = {
 	 */
 	ocrImage: (selX: number | null, selY: number | null, selW: number | null, selH: number | null, scale: number | null, annotationPng: string) => __TAURI_INVOKE<string>("ocr_image", { selX, selY, selW, selH, scale, annotationPng }),
 	/**
+	 *  检测当前截屏中所有文本的紧致边界框（Apple Vision）。
+	 *  返回坐标为 CSS 像素、左上原点。
+	 *  注意：使用 `candidate.boundingBox(for:)` 拿字形紧贴框，并按空白拆段，
+	 *  避免覆盖到文本之间的空白（这是文字模糊不冗余覆盖的关键）。
+	 */
+	detectTextRegions: (scale: number | null) => __TAURI_INVOKE<TextRegion[]>("detect_text_regions", { scale }),
+	/**
 	 *  Read clipboard with polling fallback.
 	 * 
 	 *  The translate shortcut handler (in shortcut.rs) already executed AppleScript
@@ -60,6 +67,14 @@ export type SearchResult = {
 	icon: string | null,
 	last_used: string | null,
 	score: number | null,
+};
+
+/**  文本检测返回的单个文本行边界（CSS 像素，左上原点）。 */
+export type TextRegion = {
+	x: number | null,
+	y: number | null,
+	w: number | null,
+	h: number | null,
 };
 
 export type TranslateResult = {

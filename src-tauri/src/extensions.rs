@@ -26,6 +26,7 @@ macro_rules! configure_app {
         crate::extensions::screenshot::copy_screenshot_to_clipboard,
         crate::extensions::screenshot::enter_screenshot_mode,
         crate::extensions::screenshot::show_screenshot_window,
+        crate::extensions::screenshot::screenshot_overlay_ready,
         crate::extensions::screenshot::exit_screenshot_mode,
         crate::extensions::screenshot::open_ocr_window,
         crate::extensions::screenshot::pin_image,

@@ -125,7 +125,7 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
     }
     if (type === 'text') {
       const w = textWidth ?? 160
-      const fontSize = Math.max(14, shape.lineWidth * 6)
+      const fontSize = shape.fontSize ?? Math.max(14, shape.lineWidth * 6)
       const lines =
         shape.textLines ?? (shape.text ? shape.text.split('\n') : [''])
       const lineH = Math.round(fontSize * 1.3)
@@ -172,6 +172,7 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
       const s = options.shapes.value[hitIdx]
       options.selectedShapeIndex.value = hitIdx
       options.activeTool.value = s.type
+      // 文本：点击即进入编辑（编辑态可直接拖 slider 改字号，palette 已 stop 冒泡防止误 commit）
       if (s.type === 'text') {
         options.openTextInput(options.sel.value.x + s.x1, options.sel.value.y + s.y1, hitIdx)
         return
@@ -244,7 +245,7 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
       if (idx === null) return
       const s = options.shapes.value[idx]
       const tw = s.textWidth ?? 160
-      const fontSize = Math.max(14, s.lineWidth * 6)
+      const fontSize = s.fontSize ?? Math.max(14, s.lineWidth * 6)
       const lines = s.textLines ?? (s.text ? s.text.split('\n') : [''])
       const lineH = Math.round(fontSize * 1.3)
       const th = lineH * lines.length
@@ -281,7 +282,7 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
         const tw = s.textWidth ?? 160
         const newX1 = options.shapeDragStart.value.x1 + dx
         const newY1 = options.shapeDragStart.value.y1 + dy
-        const fontSize = Math.max(14, s.lineWidth * 6)
+        const fontSize = s.fontSize ?? Math.max(14, s.lineWidth * 6)
         const lines = s.textLines ?? (s.text ? s.text.split('\n') : [''])
         const lineH = Math.round(fontSize * 1.3)
         const th = lineH * lines.length
@@ -369,14 +370,26 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
     }
 
     if (options.phase.value === 'annotate' && options.isDragging.value && !options.activeTool.value) {
-      options.sel.value.x = Math.max(
+      const newX = Math.max(
         0,
         Math.min(cx - options.dragStart.value.x, options.screenW.value - options.sel.value.w),
       )
-      options.sel.value.y = Math.max(
+      const newY = Math.max(
         0,
         Math.min(cy - options.dragStart.value.y, options.screenH.value - options.sel.value.h),
       )
+      // 反向平移所有标注，保持其相对于截屏背景（绝对屏幕坐标）的位置不变
+      const dx = newX - options.sel.value.x
+      const dy = newY - options.sel.value.y
+      if (dx !== 0 || dy !== 0) {
+        for (const s of options.shapes.value) {
+          s.x1 -= dx; s.x2 -= dx
+          s.y1 -= dy; s.y2 -= dy
+        }
+      }
+      options.sel.value.x = newX
+      options.sel.value.y = newY
+      options.redraw()
       return
     }
 
@@ -506,6 +519,9 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
       if (hasSize) {
         options.shapes.value.push(shape)
         options.selectedShapeIndex.value = options.shapes.value.length - 1
+      } else {
+        // 在选区空白处单击（未拖动出形状）：取消当前工具激活
+        options.activeTool.value = null
       }
       options.redraw()
     }

@@ -6,12 +6,8 @@ v-if="modelOptions.length > 0"
      class="min-w-0 w-50"
     @update:model-value="handleModelChange"
   />
-  <BaseButton size="icon" @click="newConversation">
-    <div class="i-ri-add-line text-sm"></div>
-  </BaseButton>
-  <BaseButton size="icon" @click="appStore.togglePanel()">
-    <div class="i-ri-settings-3-line text-sm"></div>
-  </BaseButton>
+  <BaseButton icon="i-ri-add-line" @click="newConversation" />
+  <BaseButton icon="i-ri-settings-3-line" @click="appStore.togglePanel()" />
 </template>
 
 <script setup lang="ts">

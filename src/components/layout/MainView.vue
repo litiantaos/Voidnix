@@ -63,11 +63,9 @@
       <!-- 更新提示按钮 -->
       <BaseButton
         v-if="updateStore.downloaded"
-        size="icon"
+        icon="i-ri-arrow-up-circle-line text-accent"
         @click="showUpdateDialog = true"
-      >
-        <div class="i-ri-arrow-up-circle-line text-accent"></div>
-      </BaseButton>
+      />
     </div>
 
     <!-- 内容区 -->

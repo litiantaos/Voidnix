@@ -6,6 +6,7 @@ export function useAnnotation() {
   const activeTool = ref<Tool>(null)
   const annotColor = ref('#ff3b30')
   const annotLineWidth = ref(3)
+  const annotFontSize = ref(24)
   const annotBlurAmount = ref(15)
   const annotBlurMode = ref<BlurMode>('selection')
 
@@ -118,6 +119,7 @@ export function useAnnotation() {
     activeTool,
     annotColor,
     annotLineWidth,
+    annotFontSize,
     annotBlurAmount,
     annotBlurMode,
     shapes,

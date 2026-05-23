@@ -14,10 +14,9 @@
           <BaseButton
             v-if="group === '翻译服务'"
             class="ml-auto"
+            icon="i-ri-add-line"
             @click.stop="openCreateModal()"
-          >
-            <div class="i-ri-add-line text-sm" />
-          </BaseButton>
+          />
         </div>
       </template>
 
@@ -173,15 +172,11 @@
                 />
                 <BaseButton
                   v-if="index > 0"
-                  size="icon"
                   class="text-red-500"
+                  icon="i-ri-close-line"
                   @click="removeModel(index)"
-                >
-                  <div class="i-ri-close-line" />
-                </BaseButton>
-                <BaseButton v-else size="icon" @click="addModel">
-                  <div class="i-ri-add-line" />
-                </BaseButton>
+                />
+                <BaseButton v-else icon="i-ri-add-line" @click="addModel" />
               </div>
             </div>
           </div>

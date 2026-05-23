@@ -7,6 +7,7 @@ export function useTextInput(options: {
   sel: Ref<Sel>
   annotColor: Ref<string>
   annotLineWidth: Ref<number>
+  annotFontSize: Ref<number>
   shapes: Ref<Shape[]>
   selectedShapeIndex: Ref<number | null>
   isHoveringSelectedShape: Ref<boolean>
@@ -25,7 +26,7 @@ export function useTextInput(options: {
     editingIndex: null as number | null,
   })
 
-  const textFontSize = computed(() => Math.max(14, options.annotLineWidth.value * 6))
+  const textFontSize = computed(() => options.annotFontSize.value)
 
   const isDraggingTextInput = ref(false)
   const textInputDragStart = ref({ mx: 0, my: 0, canvasX: 0, canvasY: 0 })
@@ -66,8 +67,9 @@ export function useTextInput(options: {
         : options.annotColor.value
     const fs =
       idx !== null
-        ? Math.max(14, (options.shapes.value[idx]?.lineWidth ?? options.annotLineWidth.value) * 6)
-        : textFontSize.value
+        ? (options.shapes.value[idx]?.fontSize
+            ?? Math.max(14, (options.shapes.value[idx]?.lineWidth ?? options.annotLineWidth.value) * 6))
+        : options.annotFontSize.value
     return {
       color,
       fontSize: `${fs}px`,
@@ -115,6 +117,7 @@ export function useTextInput(options: {
         y2: screenY - options.sel.value.y,
         color: options.annotColor.value,
         lineWidth: options.annotLineWidth.value,
+        fontSize: options.annotFontSize.value,
         text: '',
         textLines: [],
         textWidth: 160,
@@ -158,10 +161,9 @@ export function useTextInput(options: {
     textInput.value.editingIndex = null
 
     if (t.trim() && idx !== null) {
-      const fontSize = Math.max(
-        14,
-        (options.shapes.value[idx]?.lineWidth ?? options.annotLineWidth.value) * 6,
-      )
+      const existing = options.shapes.value[idx]
+      const fontSize = existing?.fontSize
+        ?? Math.max(14, (existing?.lineWidth ?? options.annotLineWidth.value) * 6)
       const font = `${fontSize}px -apple-system, sans-serif`
       const wrappedLines = wrapText(t, textInput.value.width, font)
 
@@ -171,8 +173,9 @@ export function useTextInput(options: {
         y1: textInput.value.canvasY,
         x2: textInput.value.canvasX,
         y2: textInput.value.canvasY,
-        color: options.shapes.value[idx]?.color ?? options.annotColor.value,
-        lineWidth: options.shapes.value[idx]?.lineWidth ?? options.annotLineWidth.value,
+        color: existing?.color ?? options.annotColor.value,
+        lineWidth: existing?.lineWidth ?? options.annotLineWidth.value,
+        fontSize,
         text: t,
         textLines: wrappedLines,
         textWidth: textInput.value.width,

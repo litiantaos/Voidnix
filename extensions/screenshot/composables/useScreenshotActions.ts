@@ -10,7 +10,7 @@ export function useScreenshotActions(options: {
   annotateCanvas: Ref<HTMLCanvasElement | undefined>
   bgImage: Ref<HTMLImageElement | null>
   rootEl: Ref<HTMLElement | undefined>
-  emit: (e: 'close', forOcr?: boolean) => void
+  emit: (e: 'close', noRestoreFocus?: boolean) => void
 }) {
   async function getAnnotationPng(): Promise<string> {
     if (!options.annotateCanvas.value || options.shapes.value.length === 0) return ''
@@ -90,23 +90,29 @@ export function useScreenshotActions(options: {
 
   async function doPin() {
     const ann = await getAnnotationPng()
-    await invoke('pin_image', {
+    // 钉图窗口创建走主线程 webview build，耗时约 100ms；
+    // 这里不 await，立刻 doCancel(true) 让截屏窗口先开始 fade out，
+    // 钉图窗口在 fade 期间出现，整体观感更连贯。
+    // noRestoreFocus=true：exit_impl 不重新激活上一个 app，焦点能留在钉图窗口。
+    invoke('pin_image', {
       selX: options.sel.value.x,
       selY: options.sel.value.y,
       selW: options.sel.value.w,
       selH: options.sel.value.h,
       scale: options.dpr.value,
       annotationPng: ann,
+    }).catch((err) => {
+      console.error('pin_image failed:', err)
     })
-    doCancel()
+    doCancel(true)
   }
 
-  function doCancel(forOcr = false) {
+  function doCancel(noRestoreFocus = false) {
     if (options.rootEl.value) options.rootEl.value.style.cursor = 'default'
     document.body.style.cursor = 'default'
     requestAnimationFrame(() => {
       document.body.style.cursor = ''
-      options.emit('close', forOcr)
+      options.emit('close', noRestoreFocus)
     })
   }
 

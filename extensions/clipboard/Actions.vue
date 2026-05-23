@@ -1,13 +1,9 @@
 <template>
-  <BaseButton size="icon" @click="toggleFavoriteTab">
-    <div
-      :class="activeTab === 'favorites' ? 'i-ri-star-fill text-amber-400' : 'i-ri-star-line'"
-      class="text-sm"
-    ></div>
-  </BaseButton>
-  <BaseButton size="icon" @click="appStore.togglePanel()">
-    <div class="i-ri-settings-3-line text-sm"></div>
-  </BaseButton>
+  <BaseButton
+    :icon="activeTab === 'favorites' ? 'i-ri-star-fill text-amber-400' : 'i-ri-star-line'"
+    @click="toggleFavoriteTab"
+  />
+  <BaseButton icon="i-ri-settings-3-line" @click="appStore.togglePanel()" />
 </template>
 
 <script setup lang="ts">

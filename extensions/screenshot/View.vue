@@ -38,9 +38,7 @@
           @dblclick="pickSavePath"
         >
           <template #trailing>
-            <BaseButton @click.stop="pickSavePath">
-              <div class="i-ri-folder-open-line text-sm"></div>
-            </BaseButton>
+            <BaseButton icon="i-ri-folder-open-line" @click.stop="pickSavePath" />
           </template>
         </BaseListItem>
       </template>

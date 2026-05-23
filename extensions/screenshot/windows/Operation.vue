@@ -279,7 +279,7 @@
       <!-- 拖动边框：点击可拖动文本框 -->
       <div
         class="rounded-sm cursor-move inset-0 absolute"
-        :style="{ padding: '1px', border: '1px dashed rgba(0,0,0,0.35)' }"
+        :style="{ padding: '1px', border: '1px dashed #3b82f6' }"
         @mousedown.stop="startTextInputDrag($event)"
       />
       <textarea
@@ -300,6 +300,7 @@
       :active-tool="activeTool"
       :color="annotColor"
       :line-width="annotLineWidth"
+      :font-size="annotFontSize"
       :blur-amount="annotBlurAmount"
       :blur-mode="annotBlurMode"
       :screen-height="screenH"
@@ -307,6 +308,7 @@
       @tool="setTool"
       @color="annotColor = $event"
       @line-width="annotLineWidth = $event"
+      @font-size="annotFontSize = $event"
       @blur-amount="annotBlurAmount = $event"
       @blur-mode="annotBlurMode = $event"
       @ocr="doOcr"
@@ -320,6 +322,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import AnnotationPalette from './AnnotationPalette.vue'
 import type { ScreenshotData } from '../composables/useTypes'
 import { MAGNIFIER_SIZE } from '../composables/useTypes'
@@ -333,9 +336,10 @@ import { useMaskStyles } from '../composables/useMaskStyles'
 import { useScreenshotActions } from '../composables/useScreenshotActions'
 import { useOverlayEvents } from '../composables/useOverlayEvents'
 import { useTextDetection } from '../composables/useTextDetection'
+import { wrapText } from '../composables/wrapText'
 
 const props = defineProps<{ initialScreenshot: ScreenshotData }>()
-const emit = defineEmits<{ (e: 'close', forOcr?: boolean): void }>()
+const emit = defineEmits<{ (e: 'close', noRestoreFocus?: boolean): void }>()
 
 const rootEl = ref<HTMLElement>()
 const annotateCanvas = ref<HTMLCanvasElement>()
@@ -353,11 +357,12 @@ const annotation = useAnnotation()
 const magnifier = useMagnifier({ initialScreenshot: props.initialScreenshot, screenW, screenH, dpr })
 const textDetection = useTextDetection({ dpr })
 
-// 绘制中的 blur 优先：控制点和选中框从开始拖动起就显示，松手后无缝切到 selectedShape。
+// 绘制中的形状优先：控制点和选中框从开始拖动起就显示，松手后无缝切到 selectedShape。
 // 仅当鼠标已移动（形状有实际尺寸）时才认作活动形状，避免按下鼠标的瞬间在点位置闪出零尺寸控制点。
+// 文本是单击创建，没有拖动过程，故不在此处处理。
 const effectiveShape = computed(() => {
-  if (annotation.isDrawing.value && annotation.currentShape.value?.type === 'blur') {
-    const s = annotation.currentShape.value
+  const s = annotation.currentShape.value
+  if (annotation.isDrawing.value && s && s.type !== 'text') {
     if (s.x1 !== s.x2 || s.y1 !== s.y2) return s
   }
   return annotation.selectedShape.value
@@ -377,6 +382,7 @@ const textInputComposable = useTextInput({
   sel: selection.sel,
   annotColor: annotation.annotColor,
   annotLineWidth: annotation.annotLineWidth,
+  annotFontSize: annotation.annotFontSize,
   shapes: annotation.shapes,
   selectedShapeIndex: annotation.selectedShapeIndex,
   isHoveringSelectedShape: annotation.isHoveringSelectedShape,
@@ -472,6 +478,7 @@ const {
   activeTool,
   annotColor,
   annotLineWidth,
+  annotFontSize,
   annotBlurAmount,
   annotBlurMode,
   handleCursor,
@@ -559,6 +566,10 @@ function setCrossPosition(cx: number, cy: number) {
 ).__setScreenshotCross = setCrossPosition
 
 onMounted(() => {
+  // @mousedown 等监听已挂在 DOM 上，通知 Rust 解锁窗口鼠标事件并启动淡入。
+  // 早于这一刻的点击会因 ignoresMouseEvents=true 击穿到底下应用，不会被吞。
+  invoke('screenshot_overlay_ready').catch(() => {})
+
   if (rootEl.value) {
     rootEl.value.style.setProperty(
       '--cross-x',
@@ -602,14 +613,51 @@ watch(annotation.annotBlurAmount, (v) => {
   }
 })
 
+// 调字号：若当前选中是 text，同步更新字号并按新字号重新换行。
+// 若正在编辑该形状，textarea 高度需要按新字号重算。
+watch(annotation.annotFontSize, (v) => {
+  const s = annotation.selectedShape.value
+  if (s && s.type === 'text') {
+    s.fontSize = v
+    if (s.text) {
+      const font = `${v}px -apple-system, sans-serif`
+      s.textLines = wrapText(s.text, s.textWidth ?? 160, font)
+    }
+    drawing.redraw()
+    const ti = textInputComposable.textInput.value
+    if (ti.visible && ti.editingIndex === annotation.selectedShapeIndex.value) {
+      nextTick(() => textInputComposable.autoResizeTextInput())
+    }
+  }
+})
+
+// 调线宽：若当前选中是 rect/line/arrow，同步更新。
+watch(annotation.annotLineWidth, (v) => {
+  const s = annotation.selectedShape.value
+  if (s && (s.type === 'rect' || s.type === 'line' || s.type === 'arrow')) {
+    s.lineWidth = v
+    drawing.redraw()
+  }
+})
+
 watch(annotation.selectedShapeIndex, (idx) => {
   if (idx === null) return
   const s = annotation.shapes.value[idx]
-  if (s && s.type === 'blur') {
+  if (!s) return
+  // 选中 blur：同步 blur 参数
+  if (s.type === 'blur') {
     if (typeof s.blurAmount === 'number') annotation.annotBlurAmount.value = s.blurAmount
     const mode = s.blurMode ?? 'selection'
     annotation.annotBlurMode.value = mode
     if (mode === 'text') textDetection.detect()
+  }
+  // 选中 text：同步字号
+  if (s.type === 'text' && typeof s.fontSize === 'number') {
+    annotation.annotFontSize.value = s.fontSize
+  }
+  // 选中 rect/line/arrow：同步线宽
+  if (s.type === 'rect' || s.type === 'line' || s.type === 'arrow') {
+    annotation.annotLineWidth.value = s.lineWidth
   }
 })
 

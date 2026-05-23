@@ -39,6 +39,7 @@ export interface Shape {
   text?: string
   textLines?: string[]
   textWidth?: number
+  fontSize?: number
   cornerRadius?: number
   rotation?: number
   blurAmount?: number

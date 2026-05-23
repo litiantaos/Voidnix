@@ -86,7 +86,7 @@ export function useShapeHandles(options: {
     }
 
     if (s.type === 'text') {
-      const fontSize = Math.max(14, s.lineWidth * 6)
+      const fontSize = s.fontSize ?? Math.max(14, s.lineWidth * 6)
       const lines = s.textLines ?? (s.text ? s.text.split('\n') : [''])
       const lineH = Math.round(fontSize * 1.3)
       const th = lineH * Math.max(1, lines.length)
@@ -292,7 +292,7 @@ export function useShapeHandles(options: {
           options.textInput.value.width = newWidth
         }
 
-        const fontSize = Math.max(14, s.lineWidth * 6)
+        const fontSize = s.fontSize ?? Math.max(14, s.lineWidth * 6)
         const font = `${fontSize}px -apple-system, sans-serif`
         s.textLines = wrapText(s.text ?? '', newWidth, font)
       }

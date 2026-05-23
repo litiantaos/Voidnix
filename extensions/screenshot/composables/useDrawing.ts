@@ -93,7 +93,7 @@ export function useDrawing(options: {
       ) {
         return
       }
-      const fontSize = Math.max(14, lineWidth * 6)
+      const fontSize = shape.fontSize ?? Math.max(14, lineWidth * 6)
       const lineH = Math.round(fontSize * 1.3)
       const font = `${fontSize}px -apple-system, sans-serif`
       ctx.font = font

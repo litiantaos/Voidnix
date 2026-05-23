@@ -1,7 +1,5 @@
 <template>
-  <BaseButton size="icon" @click="appStore.togglePanel()">
-    <div class="i-ri-settings-3-line text-sm"></div>
-  </BaseButton>
+  <BaseButton icon="i-ri-settings-3-line" @click="appStore.togglePanel()" />
 </template>
 
 <script setup lang="ts">
