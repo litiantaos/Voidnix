@@ -94,6 +94,10 @@ pub(crate) trait WindowOps {
 
     // ── observer 计数（用于 Property 11 install/teardown 循环验证）─────────
     fn observer_count(&self) -> u32;
+
+    // ── key window（非激活式焦点管理）─────────────────────────────────────
+    fn make_key(&self);
+    fn resign_key(&self);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,7 +154,7 @@ pub(crate) fn uninstall_for_test<W: WindowOps>(window: &W) {
 /// show_main 的 trait-based 版本（供测试使用）。
 ///
 /// toggle 禁用时推入 "legacy-show" 步骤并返回。
-/// 启用时：prepare_show → await_paint（alpha 设为 1）→ 推入 "focus"。
+/// 启用时：prepare_show → await_paint（alpha 设为 1）→ make_key → 推入 "make-key"。
 #[cfg(any(test, feature = "webkit_tuning_mock"))]
 pub(crate) fn show_main_with<W: WindowOps>(
     window: &W,
@@ -161,11 +165,11 @@ pub(crate) fn show_main_with<W: WindowOps>(
         steps.push("legacy-show");
         return;
     }
-    // pre-show 信号（Property 4：此时刻严格先于 alpha=1）
     steps.push("pre-show");
     throttling::prepare_show(window, steps);
     presentation::await_paint(window, bridge, None, steps);
-    steps.push("focus");
+    window.make_key();
+    steps.push("make-key");
 }
 
 /// hide_main 的 trait-based 版本（供测试使用）。
@@ -173,6 +177,8 @@ pub(crate) fn show_main_with<W: WindowOps>(
 /// toggle 禁用时推入 "legacy-hide" 步骤并返回。
 #[cfg(any(test, feature = "webkit_tuning_mock"))]
 pub(crate) fn hide_main_with<W: WindowOps>(window: &W, steps: &mut log::Steps) {
+    window.resign_key();
+    steps.push("resign-key");
     if !toggle::is_enabled() {
         steps.push("legacy-hide");
         return;
@@ -506,6 +512,18 @@ impl WindowOps for RealWindow {
     fn observer_count(&self) -> u32 {
         0
     }
+
+    fn make_key(&self) {
+        obj_exception::try_block(|| unsafe {
+            let _: () = objc2::msg_send![self.ns_window, makeKeyWindow];
+        });
+    }
+
+    fn resign_key(&self) {
+        obj_exception::try_block(|| unsafe {
+            let _: () = objc2::msg_send![self.ns_window, resignKeyWindow];
+        });
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -587,21 +605,27 @@ pub fn install_screenshot(window: &WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
+/// 让主窗口成为 key window（不激活应用，用于 NSPanel 非激活模式）。
+pub fn make_main_window_key(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    if let Some(window) = app.get_webview_window("main") {
+        if let Some(real_window) = RealWindow::from_webview_window(&window) {
+            real_window.make_key();
+        }
+    }
+}
+
 /// 主窗口 show 入口。T14 实装：调用 throttling::prepare_show + presentation::await_paint。
 pub fn show_main(app: &AppHandle) {
     let mut steps = log::Steps::new();
 
-    // emit showing-window（前端用于抑制失焦自动隐藏）
     let _ = app.emit("showing-window", ());
-    // emit pre-show（前端触发 rAF，Req 2.7）
     let _ = app.emit("webkit-tuning:pre-show", ());
     steps.push("pre-show");
 
-    // 更新可见状态
     crate::core::shortcut::set_window_visible(true);
 
     if !toggle::is_enabled() {
-        // toggle 禁用：走 Tauri 默认 show 路径
         #[cfg(all(target_os = "macos", not(debug_assertions)))]
         let _ = app.show();
         if let Some(window) = app.get_webview_window("main") {
@@ -609,12 +633,10 @@ pub fn show_main(app: &AppHandle) {
             crate::macos::skylight::move_webview_window_to_active_space(&window);
             let _ = window.show();
         }
-        crate::macos::mac_utils::activate_app();
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.set_focus();
-        }
+        make_main_window_key(app);
         crate::macos::click_monitor::add(app);
         steps.push("legacy-show");
+        steps.push("make-key");
         log::event("show", &steps);
         return;
     }
@@ -623,19 +645,14 @@ pub fn show_main(app: &AppHandle) {
     {
         if let Some(window) = app.get_webview_window("main") {
             if let Some(real_window) = RealWindow::from_webview_window(&window) {
-                // SkyLight 迁移到当前 active Space
                 #[cfg(target_os = "macos")]
                 crate::macos::skylight::move_webview_window_to_active_space(&window);
 
-                // prepare_show：恢复鼠标事件响应，orderFrontRegardless（alpha 仍为 0）
                 throttling::prepare_show(&real_window, &mut steps);
 
-                // await_paint：等待 WKWebView 首帧呈现后再设 alpha=1
-                // 使用真实 SPI 桥（RealPresentationBridge）
                 let bridge = RealPresentationBridge { window: &window };
                 presentation::await_paint(&real_window, &bridge, Some(app), &mut steps);
             } else {
-                // 无法提取 NSWindow：fallback 到 Tauri 默认 show
                 #[cfg(not(debug_assertions))]
                 let _ = app.show();
                 let _ = window.show();
@@ -652,11 +669,8 @@ pub fn show_main(app: &AppHandle) {
         steps.push("legacy-show");
     }
 
-    crate::macos::mac_utils::activate_app();
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_focus();
-    }
-    steps.push("focus");
+    make_main_window_key(app);
+    steps.push("make-key");
     crate::macos::click_monitor::add(app);
     log::event("show", &steps);
 }
@@ -665,12 +679,17 @@ pub fn show_main(app: &AppHandle) {
 pub fn hide_main(app: &AppHandle) {
     let mut steps = log::Steps::new();
 
+    #[cfg(target_os = "macos")]
+    if let Some(window) = app.get_webview_window("main") {
+        if let Some(real_window) = RealWindow::from_webview_window(&window) {
+            real_window.resign_key();
+            steps.push("resign-key");
+        }
+    }
+
     if !toggle::is_enabled() {
-        // toggle 禁用：走 Tauri 默认 hide 路径
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.hide();
-            #[cfg(all(target_os = "macos", not(debug_assertions)))]
-            let _ = app.hide();
         }
         steps.push("legacy-hide");
     crate::macos::click_monitor::remove();
@@ -685,10 +704,7 @@ pub fn hide_main(app: &AppHandle) {
             if let Some(real_window) = RealWindow::from_webview_window(&window) {
                 throttling::hide(&real_window, &mut steps);
             } else {
-                // 无法提取 NSWindow：fallback
                 let _ = window.hide();
-                #[cfg(not(debug_assertions))]
-                let _ = app.hide();
                 steps.push("fallback-orderOut");
             }
         }
@@ -704,8 +720,6 @@ pub fn hide_main(app: &AppHandle) {
 
     crate::macos::click_monitor::remove();
     steps.push("click-monitor-remove");
-    #[cfg(target_os = "macos")]
-    let _ = app.hide();
     log::event("hide", &steps);
 }
 

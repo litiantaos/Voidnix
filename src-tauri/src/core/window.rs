@@ -27,7 +27,6 @@ pub async fn pick_directory(app: tauri::AppHandle) -> Result<String, String> {
     app.run_on_main_thread(move || {
         #[cfg(target_os = "macos")]
         {
-            use tauri::Manager;
             use objc2::runtime::AnyObject;
             use objc2_foundation::NSString;
             unsafe {
@@ -47,12 +46,8 @@ pub async fn pick_directory(app: tauri::AppHandle) -> Result<String, String> {
                 // NSModalResponseOK = 1
                 let response: isize = objc2::msg_send![panel, runModal];
 
-                // panel 关闭后恢复检测，重新激活 Voidnix 并抢回主窗口焦点
                 crate::macos::click_monitor::suppress(false);
-                crate::macos::mac_utils::activate_app();
-                if let Some(win) = app_clone.get_webview_window("main") {
-                    let _ = win.set_focus();
-                }
+                crate::macos::webkit_tuning::make_main_window_key(&app_clone);
 
                 if response == 1 {
                     let urls: *mut AnyObject = objc2::msg_send![panel, URLs];

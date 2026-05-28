@@ -165,13 +165,7 @@ pub async fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(
         }
     }
 
-    // Hide our UI AND yield focus
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.hide();
-    }
-    
-    #[cfg(target_os = "macos")]
-    let _ = app.hide(); 
+    crate::macos::webkit_tuning::hide_main(&app);
 
     tokio::spawn(async move {
         // Wait for macOS to completely finish the focus transition

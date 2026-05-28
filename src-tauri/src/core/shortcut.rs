@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{LazyLock, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{Manager, Emitter};
+use tauri::Emitter;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 pub(crate) static SELECTED_TEXT: Mutex<String> = Mutex::new(String::new());
@@ -178,10 +178,7 @@ pub async fn register_global_shortcut(
                     if window_hidden {
                         crate::macos::webkit_tuning::show_main(&app_handle);
                     } else {
-                        crate::macos::mac_utils::activate_app();
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            let _ = window.set_focus();
-                        }
+                        crate::macos::webkit_tuning::make_main_window_key(&app_handle);
                     }
                 });
             },

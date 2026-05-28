@@ -77,6 +77,12 @@ pub(crate) struct MockWindow {
     // ── observer 计数 ───────────────────────────────────────────────────────
     /// 当前已注册的 NSNotification + KVO observer 数量。
     pub observer_count: AtomicU32,
+
+    // ── key window ──────────────────────────────────────────────────────────
+    /// makeKeyWindow 被调用的次数。
+    pub make_key_count: AtomicU32,
+    /// resignKeyWindow 被调用的次数。
+    pub resign_key_count: AtomicU32,
 }
 
 impl Default for MockWindow {
@@ -112,6 +118,9 @@ impl Default for MockWindow {
             wkwebview_frame: Mutex::new(Frame::new(0.0, 0.0, 720.0, 480.0)),
 
             observer_count: AtomicU32::new(0),
+
+            make_key_count: AtomicU32::new(0),
+            resign_key_count: AtomicU32::new(0),
         }
     }
 }
@@ -236,6 +245,15 @@ impl WindowOps for Arc<MockWindow> {
     // ── observer count ───────────────────────────────────────────────────────
     fn observer_count(&self) -> u32 {
         self.observer_count.load(Ordering::SeqCst)
+    }
+
+    // ── key window ───────────────────────────────────────────────────────────
+    fn make_key(&self) {
+        self.make_key_count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn resign_key(&self) {
+        self.resign_key_count.fetch_add(1, Ordering::SeqCst);
     }
 }
 

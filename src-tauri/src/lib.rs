@@ -14,11 +14,7 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            use tauri::Manager;
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            crate::macos::webkit_tuning::show_main(app);
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -54,6 +50,7 @@ pub fn run() {
                         let _: () = unsafe { objc2::msg_send![layer, setMasksToBounds: true] };
                     }
                 }
+                macos::panel::convert_to_panel(raw.cast());
                 macos::webkit_tuning::install(&window)?;
             }
 
