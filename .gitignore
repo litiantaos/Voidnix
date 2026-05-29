@@ -9,13 +9,9 @@ lerna-debug.log*
 
 node_modules
 dist
-dist-ssr
-*.local
 
 # Environment variables
 .env
-*.key
-*.key.pub
 
 # TypeScript
 *.tsbuildinfo
@@ -23,25 +19,20 @@ dist-ssr
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
 *.sw?
 
 # Rust
+**/*.rs.bk
 src-tauri/target/
+src-tauri/gen/
 src-tauri/proptest-regressions/
 
 # Tauri generated
 src-tauri/gen/
 
-# Legacy directories (removed after migration)
-# src/modules/
-# src-tauri/src/commands/
+# AI tools
+.claude/
 
-# Bun
-bun.lockb
-
+# Coverage
+coverage/

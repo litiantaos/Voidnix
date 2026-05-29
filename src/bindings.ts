@@ -6,34 +6,21 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 export const commands = {
 	isAppActive: () => __TAURI_INVOKE<boolean>("is_app_active"),
 	getSelectedTextCached: () => __TAURI_INVOKE<string>("get_selected_text_cached"),
-	/**
-	 *  OCR 识别选区文字（Apple Vision）。
-	 *  annotation_png: 前端 canvas 标注层的 PNG base64（可为空）。
-	 */
 	ocrImage: (selX: number | null, selY: number | null, selW: number | null, selH: number | null, scale: number | null, annotationPng: string) => __TAURI_INVOKE<string>("ocr_image", { selX, selY, selW, selH, scale, annotationPng }),
-	/**
-	 *  检测当前截屏中所有文本的紧致边界框（Apple Vision）。
-	 *  返回坐标为 CSS 像素、左上原点。
-	 *  注意：使用 `candidate.boundingBox(for:)` 拿字形紧贴框，并按空白拆段，
-	 *  避免覆盖到文本之间的空白（这是文字模糊不冗余覆盖的关键）。
-	 */
 	detectTextRegions: (scale: number | null) => __TAURI_INVOKE<TextRegion[]>("detect_text_regions", { scale }),
-	/**
-	 *  Read clipboard with polling fallback.
-	 * 
-	 *  The translate shortcut handler (in shortcut.rs) already executed AppleScript
-	 *  Cmd+C before the window activated. This function reads the clipboard.
-	 *  If the first read is empty (clipboard not yet updated), it polls for up to
-	 *  300ms before giving up.
-	 */
 	getSelectedText: () => __TAURI_INVOKE<string>("get_selected_text"),
-	translateYoudao: (text: string, appKey: string, appSecret: string, targetLang: string | null) => __TAURI_INVOKE<TranslateResult>("translate_youdao", { text, appKey, appSecret, targetLang }),
 	translateAi: (text: string, endpoint: string, apiKey: string, model: string, targetLang: string | null, prompt: string | null) => __TAURI_INVOKE<TranslateResult>("translate_ai", { text, endpoint, apiKey, model, targetLang, prompt }),
+	translateYoudao: (text: string, appKey: string, appSecret: string, targetLang: string | null) => __TAURI_INVOKE<TranslateResult>("translate_youdao", { text, appKey, appSecret, targetLang }),
 	searchApps: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_apps", { query }),
 	searchFiles: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_files", { query }),
 	scoreItems: (query: string, items: string[]) => __TAURI_INVOKE<number[]>("score_items", { query, items }),
 	fetchIpInfo: (ip: string | null) => __TAURI_INVOKE<IpInfo>("fetch_ip_info", { ip }),
-	getClipboardHistory: (query: string | null, filterFavorite: boolean | null, limit: number | null) => __TAURI_INVOKE<ClipboardItem[]>("get_clipboard_history", { query, filterFavorite, limit }),
+	getClipboardHistory: (query: string | null, filterFavorite: boolean | null, limit: number | null, previewOnly: boolean | null) => __TAURI_INVOKE<ClipboardItem[]>("get_clipboard_history", { query, filterFavorite, limit, previewOnly }),
+	deleteClipboardItems: (ids: string[]) => __TAURI_INVOKE<null>("delete_clipboard_items", { ids }),
+	getClipboardImage: (id: string) => __TAURI_INVOKE<string | null>("get_clipboard_image", { id }),
+	pasteClipboardItem: (id: string) => __TAURI_INVOKE<null>("paste_clipboard_item", { id }),
+	pasteClipboardItems: (ids: string[]) => __TAURI_INVOKE<null>("paste_clipboard_items", { ids }),
+	toggleClipboardFavorite: (id: string) => __TAURI_INVOKE<null>("toggle_clipboard_favorite", { id }),
 };
 
 /* Types */
@@ -45,6 +32,9 @@ export type ClipboardItem = {
 	created_at: string,
 	is_favorite: boolean,
 	score: number,
+	file_size: number | null,
+	image_width: number | null,
+	image_height: number | null,
 };
 
 export type IpInfo = {
@@ -69,7 +59,6 @@ export type SearchResult = {
 	score: number | null,
 };
 
-/**  文本检测返回的单个文本行边界（CSS 像素，左上原点）。 */
 export type TextRegion = {
 	x: number | null,
 	y: number | null,

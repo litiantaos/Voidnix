@@ -50,6 +50,7 @@
             : '搜索应用或文件，输入 / 搜索扩展'
         "
         @input="onInput"
+        @keydown="onSearchKeydown"
         @compositionstart="appStore.setComposing(true)"
         @compositionend="appStore.setComposing(false)"
       />
@@ -84,8 +85,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useScroll } from '@vueuse/core'
+import { listen } from '@tauri-apps/api/event'
 import { getModule } from '@/core/module-registry'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
@@ -96,6 +98,7 @@ import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 
 import { useScrollPosition } from '@/composables/useScrollPosition'
 import { useSearchCommand } from '@/composables/useSearchCommand'
+import { triggerDelete } from '@ext/clipboard/index'
 
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
@@ -179,4 +182,23 @@ function onTagClose() {
   isTagHovered.value = false
   handleTagClose()
 }
+
+function onSearchKeydown(e: KeyboardEvent) {
+  if (e.key === 'Backspace' && !appStore.searchQuery && !e.metaKey && !e.ctrlKey) {
+    e.preventDefault()
+    handleTagClose()
+  }
+}
+
+let unlistenCmdBs: (() => void) | undefined
+onMounted(() => {
+  listen('cmd-backspace', () => {
+    if (appStore.activeModuleId === 'clipboard') {
+      triggerDelete()
+    } else if (!appStore.searchQuery) {
+      handleTagClose()
+    }
+  }).then(fn => { unlistenCmdBs = fn })
+})
+onUnmounted(() => { unlistenCmdBs?.() })
 </script>

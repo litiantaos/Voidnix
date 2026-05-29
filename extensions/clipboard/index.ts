@@ -18,6 +18,10 @@ export const activeTab = ref<'all' | 'favorites'>('all')
 const tabCache = new Map<string, ClipboardItem[]>()
 export const loading = ref(false)
 
+let _deleteHandler: (() => void) | null = null
+export function registerDeleteHandler(fn: () => void) { _deleteHandler = fn }
+export function triggerDelete() { _deleteHandler?.() }
+
 function cacheKey(tab: 'all' | 'favorites', query: string) {
   return `${tab}:${query}`
 }
@@ -41,6 +45,7 @@ export async function fetchClipboardHistory(
       query || null,
       filterFavorite || null,
       null,
+      true,
     )
     history.value = res
     tabCache.set(key, res)
@@ -94,7 +99,6 @@ const mod: AppModule = {
   },
   onActivate: async () => {
     activeTab.value = 'all'
-    fetchClipboardHistory('', false)
   },
   onSearch: async (query) => {
     if (!query.trim()) return []
@@ -114,7 +118,7 @@ const mod: AppModule = {
     }
 
     try {
-      const items = await commands.getClipboardHistory(query || null, null, null)
+      const items = await commands.getClipboardHistory(query || null, null, null, null)
       return items.map((item) => {
         let title = item.content
         if (item.content_type === 'image') {
@@ -153,10 +157,11 @@ const mod: AppModule = {
     }
   },
   onExecute: async (result) => {
-    const id = result.data?.id || result.id
+    const id = (result.data?.id as string) || result.id
     if (id) {
       try {
-        await invoke('paste_clipboard_item', { id })
+        await commands.pasteClipboardItem(id)
+        invalidateCache()
       } catch (e) {
         console.error('Failed to paste clipboard item:', e)
       }

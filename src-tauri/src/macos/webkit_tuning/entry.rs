@@ -309,3 +309,24 @@ pub(crate) fn resize_main_with<W: WindowOps>(
     frame_animator::ensure_capacity(window, w, h, steps);
     frame_animator::animate(window, w, h, steps);
 }
+
+/// 拦截 Cmd+Backspace，阻止 WKWebView 返回导航，通过 Tauri 事件通知前端。
+#[cfg(target_os = "macos")]
+pub fn intercept_cmd_backspace(app: &AppHandle) {
+    use once_cell::sync::OnceCell;
+
+    static APP_HANDLE: OnceCell<AppHandle> = OnceCell::new();
+    let _ = APP_HANDLE.set(app.clone());
+
+    extern "C" fn callback() {
+        if let Some(h) = APP_HANDLE.get() {
+            let _ = h.emit("cmd-backspace", ());
+        }
+    }
+
+    extern "C" {
+        fn voidnix_intercept_cmd_backspace(cb: extern "C" fn());
+    }
+
+    unsafe { voidnix_intercept_cmd_backspace(callback); }
+}

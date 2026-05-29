@@ -190,6 +190,24 @@ extern "C" bool voidnix_get_occlusion_detection(id view) {
     }
 }
 
+// 拦截 Cmd+Backspace，阻止 WKWebView 原生返回导航。
+static id _keyboardMonitor = nil;
+static void (*_cmd_backspace_cb)(void) = NULL;
+
+extern "C" void voidnix_intercept_cmd_backspace(void (*cb)(void)) {
+    _cmd_backspace_cb = cb;
+    if (_keyboardMonitor) return;
+    _keyboardMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+        handler:^NSEvent *(NSEvent *event) {
+            if ((event.modifierFlags & NSEventModifierFlagCommand) &&
+                event.keyCode == 51) {
+                if (_cmd_backspace_cb) _cmd_backspace_cb();
+                return nil;
+            }
+            return event;
+        }];
+}
+
 // 把若干 emoji 探针绘制到 1×1 离屏 NSBitmapImageRep，触发 CoreText 字体加载，
 // 使后续首次渲染不出现字体回退停顿（Req 4.3）。
 // 分片执行：每片用 mach_absolute_time 自查，超过 8ms 则 dispatch_async 让出主线程（Req 4.2）。

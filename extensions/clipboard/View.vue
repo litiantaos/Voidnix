@@ -8,25 +8,27 @@
 
   <BaseList
     v-else
+    ref="listRef"
     :items="history"
-    :keyboard-navigation="true"
-    @execute="(item) => copyToClipboard(item.id)"
+    keyboard-navigation
+    multi-select
+    :selected-ids="selectedIds"
+    id-field="id"
+    @update:selected-ids="selectedIds = $event"
+    @execute="handleExecute"
   >
-    <template #item="{ item, selected, setRef, select, execute }">
+    <template #item="{ item, selected, multiSelected }">
       <BaseListItem
-        :ref="setRef"
-        :selected="selected"
+        :ref="(el: unknown) => setImageRef(el, item)"
+        :selected="selected || multiSelected"
         :multilineTitle="shouldMultiline(item)"
-        :icon="
-          item.content_type === 'image'
-            ? 'i-ri-image-fill'
-            : item.content_type === 'file'
-              ? 'i-ri-file-fill'
-              : 'i-ri-file-text-fill'
-        "
-        @click="select"
-        @dblclick="execute"
       >
+        <template #icon>
+          <div v-if="getColor(item)" class="rounded h-4 w-4" :style="{ backgroundColor: getColor(item)! }"></div>
+          <i v-else-if="item.content_type === 'text'" class="i-ri-t-box-line text-sm text-accent"></i>
+          <i v-else-if="item.content_type === 'image'" class="i-ri-image-line text-sm text-emerald-500"></i>
+          <i v-else class="i-ri-folder-3-line text-sm text-amber-500"></i>
+        </template>
         <template #title>
           <div
             v-if="item.content_type === 'text'"
@@ -36,38 +38,44 @@
           </div>
           <div v-else-if="item.content_type === 'image'" class="mb-2 mt-0.5">
             <img
-              :src="item.content"
-              class="rounded-md bg-black/5 max-h-32 max-w-full object-contain"
+              v-if="imageCache.get(item.id)"
+              :src="imageCache.get(item.id)"
+              class="rounded-md bg-black/5 h-32 w-48 object-cover object-top"
               loading="lazy"
               alt="剪贴板图片"
             />
+            <div
+              v-else
+              class="rounded-md bg-black/5 flex h-32 w-48 items-center justify-center"
+            >
+              <div class="i-ri-image-line text-2xl text-black/20"></div>
+            </div>
           </div>
           <div v-else class="truncate">
-            {{ '[文件] ' + item.content.split('/').pop() }}
+            {{ item.content.split('/').filter(Boolean).pop() || item.content }}
           </div>
         </template>
         <template #subtitle>
           <div class="flex gap-2 items-center">
             <span>{{ item.source_app }}</span>
             <span>•</span>
-            <span>{{ item.created_at }}</span>
+            <span>{{ formatTime(item.created_at) }}</span>
+            <template v-if="item.file_size">
+              <span>•</span>
+              <span>{{ formatSize(item.file_size) }}</span>
+            </template>
+            <template v-if="item.image_width && item.image_height">
+              <span>•</span>
+              <span>{{ item.image_width }}×{{ item.image_height }}</span>
+            </template>
           </div>
         </template>
         <template #trailing>
-          <button
-            class="p-1.5 rounded-md transition-all focus:outline-none hover:bg-black/5"
-            :class="!item.is_favorite && 'opacity-50 group-hover:opacity-100'"
-            @click="toggleFavorite(item.id, $event)"
-          >
-            <div
-              :class="
-                item.is_favorite
-                  ? 'i-ri-star-fill text-yellow-400'
-                  : 'i-ri-star-line text-tx-subtle'
-              "
-              class="text-sm"
-            ></div>
-          </button>
+          <BaseButton
+            variant="ghost"
+            :icon="item.is_favorite ? 'i-ri-star-fill text-yellow-400' : 'i-ri-star-line text-tx-subtle'"
+            @click.stop="toggleFavorite(item.id)"
+          />
         </template>
       </BaseListItem>
     </template>
@@ -75,24 +83,24 @@
 </template>
 
 <script setup lang="ts">
-import { onDeactivated, watch } from 'vue'
-import { history, activeTab, loading, fetchClipboardHistory, invalidateCache } from './index'
-import { invoke } from '@tauri-apps/api/core'
+import { ref, onActivated, onDeactivated, onUnmounted, watch, shallowReactive } from 'vue'
+import { history, activeTab, loading, fetchClipboardHistory, invalidateCache, registerDeleteHandler } from './index'
+import { commands } from '@/bindings'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
+
+const listRef = ref<{ selectedIndex: number; setSelectedIndex: (i: number) => void }>()
+const selectedIds = ref(new Set<string>())
 
 const MULTILINE_THRESHOLD = 80
 const shouldMultiline = (item: { content_type: string; content: string }) =>
   item.content_type === 'image' ||
   (item.content_type === 'text' && item.content.length > MULTILINE_THRESHOLD)
-
-onDeactivated(() => {
-  clearTimeout(debounceTimer)
-})
 
 let debounceTimer: ReturnType<typeof setTimeout>
 watch([activeTab, () => appStore.searchQuery], ([tab, query]) => {
@@ -102,24 +110,39 @@ watch([activeTab, () => appStore.searchQuery], ([tab, query]) => {
   }, 80)
 })
 
-const copyToClipboard = async (id: string) => {
+watch(() => appStore.activeModuleId, (id) => {
+  if (id !== 'clipboard') {
+    clearTimeout(debounceTimer)
+    selectedIds.value = new Set()
+  }
+})
+
+// ── 粘贴 ──
+async function handleExecute() {
+  const ids = selectedIds.value.size > 0
+    ? [...selectedIds.value]
+    : [history.value[listRef.value?.selectedIndex ?? 0]?.id].filter(Boolean)
+  selectedIds.value = new Set()
+  if (ids.length === 0) return
   try {
-    await invoke('paste_clipboard_item', { id })
+    if (ids.length > 1) {
+      await commands.pasteClipboardItems(ids)
+    } else {
+      await commands.pasteClipboardItem(ids[0])
+    }
+    invalidateCache()
   } catch (e) {
     console.error('Failed to paste clipboard:', e)
   }
 }
 
-const toggleFavorite = async (id: string, event: MouseEvent) => {
-  event.stopPropagation()
+// ── 收藏 ──
+const toggleFavorite = async (id: string) => {
   try {
-    await invoke('toggle_clipboard_favorite', { id })
-    const item = history.value.find((i) => i.id === id)
-    if (item) {
-      history.value = history.value.map((i) =>
-        i.id === id ? { ...i, is_favorite: !i.is_favorite } : i,
-      )
-    }
+    await commands.toggleClipboardFavorite(id)
+    history.value = history.value.map((i) =>
+      i.id === id ? { ...i, is_favorite: !i.is_favorite } : i,
+    )
     if (activeTab.value === 'favorites') {
       history.value = history.value.filter((i) => i.is_favorite)
     }
@@ -127,5 +150,94 @@ const toggleFavorite = async (id: string, event: MouseEvent) => {
   } catch (e) {
     console.error('Failed to toggle favorite:', e)
   }
+}
+
+// ── 删除 ──
+async function handleDelete() {
+  const ids = selectedIds.value.size > 0
+    ? [...selectedIds.value]
+    : [history.value[listRef.value?.selectedIndex ?? 0]?.id].filter(Boolean)
+  if (ids.length === 0) return
+
+  const count = ids.length
+  const confirmed = await appStore.showConfirm({
+    title: '删除剪贴板记录',
+    message: count > 1 ? `确定要删除 ${count} 条记录吗？` : '确定要删除这条记录吗？',
+    kind: 'warning',
+    okLabel: '删除',
+    cancelLabel: '取消',
+  })
+  if (!confirmed) return
+
+  try {
+    await commands.deleteClipboardItems(ids)
+    selectedIds.value = new Set()
+    invalidateCache()
+    await fetchClipboardHistory(appStore.searchQuery, activeTab.value === 'favorites')
+  } catch (e) {
+    console.error('Failed to delete clipboard items:', e)
+  }
+}
+
+onActivated(() => registerDeleteHandler(handleDelete))
+onDeactivated(() => registerDeleteHandler(() => {}))
+
+// ── 图片懒加载 ──
+const imageCache = shallowReactive(new Map<string, string>())
+const pendingImages = new Set<string>()
+
+const observer = new IntersectionObserver(
+  (entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue
+      const id = (entry.target as HTMLElement).dataset.imageId
+      if (id && !imageCache.has(id) && !pendingImages.has(id)) {
+        pendingImages.add(id)
+        commands.getClipboardImage(id).then((data) => {
+          if (data) imageCache.set(id, data)
+          pendingImages.delete(id)
+        })
+      }
+      observer.unobserve(entry.target)
+    }
+  },
+  { rootMargin: '200px' },
+)
+
+function setImageRef(el: unknown, item: { id: string; content_type: string }) {
+  if (item.content_type !== 'image') return
+  if (imageCache.has(item.id) || pendingImages.has(item.id)) return
+  const htmlEl = (el as { $el?: HTMLElement })?.$el ?? (el as HTMLElement | null)
+  if (!htmlEl) return
+  htmlEl.dataset.imageId = item.id
+  observer.observe(htmlEl)
+}
+
+onUnmounted(() => observer.disconnect())
+
+// ── 工具函数 ──
+const COLOR_RE = /^(?:#[0-9a-fA-F]{3,8}|(?:rgb|hsl)a?\s*\([\d\s,%.\/]+\))$/
+const colorCache = new Map<string, string | null>()
+
+function getColor(item: { id: string; content_type: string; content: string }): string | null {
+  if (item.content_type !== 'text') return null
+  let cached = colorCache.get(item.id)
+  if (cached === undefined) {
+    const line = item.content.trim().split('\n')[0].trim()
+    cached = COLOR_RE.test(line) ? line : null
+    colorCache.set(item.id, cached)
+  }
+  return cached
+}
+
+function formatTime(at: string): string {
+  const m = at.match(/\d{2}:\d{2}/)
+  return m ? m[0] : at
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 </script>

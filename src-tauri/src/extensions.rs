@@ -59,8 +59,11 @@ macro_rules! configure_app {
         crate::extensions::awake::set_awake_mode,
         crate::extensions::clipboard::get_clipboard_history,
         crate::extensions::clipboard::clear_clipboard_history,
+        crate::extensions::clipboard::delete_clipboard_items,
         crate::extensions::clipboard::toggle_clipboard_favorite,
+        crate::extensions::clipboard::get_clipboard_image,
         crate::extensions::clipboard::paste_clipboard_item,
+        crate::extensions::clipboard::paste_clipboard_items,
             ])
         .plugin(crate::core::shortcut::init())
         .plugin(crate::core::window::init())

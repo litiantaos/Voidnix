@@ -23,11 +23,20 @@ pub fn start_monitor(app_handle: AppHandle) {
 
                 let mut content = String::new();
                 let mut content_type = String::new();
+                let mut file_size: Option<i32> = None;
+                let mut image_width: Option<i32> = None;
+                let mut image_height: Option<i32> = None;
 
                 // Try File URL
                 if let Some(s) = pb.stringForType(NSPasteboardTypeFileURL) {
                     content = s.to_string();
                     content_type = "file".to_string();
+                    // 获取文件大小
+                    let path = content.strip_prefix("file://").unwrap_or(&content);
+                    let decoded_path = percent_decode(path);
+                    if let Ok(meta) = std::fs::metadata(&decoded_path) {
+                        file_size = Some(meta.len().min(i32::MAX as u64) as i32);
+                    }
                 } else if let Some(s) = pb.stringForType(NSPasteboardTypeString) {
                     // Try Text
                     let text = s.to_string().trim().to_string();
@@ -59,6 +68,12 @@ pub fn start_monitor(app_handle: AppHandle) {
                     let len: usize = msg_send![&d, length];
                     if len > 0 && !ptr.is_null() {
                         let slice = std::slice::from_raw_parts(ptr as *const u8, len);
+                        file_size = Some((len as u64).min(i32::MAX as u64) as i32);
+                        // PNG header: width at offset 16, height at offset 20 (big-endian u32)
+                        if len >= 24 && slice[0..4] == [0x89, 0x50, 0x4E, 0x47] {
+                            image_width = Some(u32::from_be_bytes(slice[16..20].try_into().unwrap()) as i32);
+                            image_height = Some(u32::from_be_bytes(slice[20..24].try_into().unwrap()) as i32);
+                        }
                         content = format!("data:image/png;base64,{}", base64.encode(slice));
                         content_type = "image".to_string();
                     }
@@ -106,31 +121,33 @@ pub fn start_monitor(app_handle: AppHandle) {
                     .map(|rows| rows.filter_map(|r| r.ok()).collect())
                     .unwrap_or_default();
 
-                // If any of the duplicates is marked as favorite, preserve it
                 let is_favorite = existing_items.iter().any(|&fav| fav);
 
                 if !existing_items.is_empty() {
-                    // Delete all existing duplicates so we can move it to the top
                     let _ = conn.execute(
-                        "DELETE FROM clipboard_history WHERE content = ?1",
-                        rusqlite::params![content],
+                        "UPDATE clipboard_history SET created_at = datetime('now'), source_app = ?2, file_size = ?3, image_width = ?4, image_height = ?5 WHERE content = ?1",
+                        rusqlite::params![content, source_app, file_size, image_width, image_height],
+                    );
+                    if is_favorite {
+                        let _ = conn.execute(
+                            "UPDATE clipboard_history SET is_favorite = 1 WHERE content = ?1",
+                            rusqlite::params![content],
+                        );
+                    }
+                } else {
+                    let id = format!(
+                        "{}",
+                        SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis()
+                    );
+
+                    let _ = conn.execute(
+                        "INSERT INTO clipboard_history (id, content, content_type, source_app, is_favorite, file_size, image_width, image_height) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        rusqlite::params![id, content, content_type, source_app, is_favorite, file_size, image_width, image_height],
                     );
                 }
-
-                // Generate ID
-                let id = format!(
-                    "{}",
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis()
-                );
-
-                // Insert into DB
-                let _ = conn.execute(
-                    "INSERT INTO clipboard_history (id, content, content_type, source_app, is_favorite) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    rusqlite::params![id, content, content_type, source_app, is_favorite],
-                );
 
                 use tauri_plugin_store::StoreExt;
                 let store = app_handle.store("settings.json");
@@ -165,4 +182,25 @@ pub fn start_monitor(app_handle: AppHandle) {
             }
         }
     });
+}
+
+fn percent_decode(s: &str) -> String {
+    let mut result = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(
+                std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""),
+                16,
+            ) {
+                result.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        result.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&result).into_owned()
 }

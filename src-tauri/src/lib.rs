@@ -52,6 +52,7 @@ pub fn run() {
                 }
                 macos::panel::convert_to_panel(raw.cast());
                 macos::webkit_tuning::install(&window)?;
+                macos::webkit_tuning::intercept_cmd_backspace(app.handle());
             }
 
             #[cfg(target_os = "macos")]

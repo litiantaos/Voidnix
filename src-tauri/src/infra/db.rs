@@ -31,6 +31,12 @@ impl Database {
             "CREATE INDEX IF NOT EXISTS idx_clipboard_created_at ON clipboard_history(created_at)",
             [],
         ).expect("Failed to create clipboard_history index");
+
+        // 迁移：添加 file_size 列（已存在则忽略）
+        let _ = conn.execute("ALTER TABLE clipboard_history ADD COLUMN file_size INTEGER", []);
+        // 迁移：添加图片分辨率列
+        let _ = conn.execute("ALTER TABLE clipboard_history ADD COLUMN image_width INTEGER", []);
+        let _ = conn.execute("ALTER TABLE clipboard_history ADD COLUMN image_height INTEGER", []);
         
         Self {
             conn: Mutex::new(conn),

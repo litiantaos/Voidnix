@@ -21,7 +21,7 @@
 import { computed, useSlots } from 'vue'
 
 interface Props {
-  variant?: 'default' | 'primary' | 'outline'
+  variant?: 'default' | 'primary' | 'outline' | 'ghost'
   active?: boolean
   disabled?: boolean
   icon?: string
@@ -41,5 +41,6 @@ const variantClasses: Record<string, string> = {
   primary: 'bg-accent text-white hover:bg-accent/90',
   outline:
     'border border-solid border-black/12 bg-transparent text-tx-primary hover:bg-black/4',
+  ghost: 'bg-transparent hover:bg-black/5',
 }
 </script>

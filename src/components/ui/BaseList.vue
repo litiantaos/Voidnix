@@ -21,13 +21,18 @@
         </slot>
       </div>
 
-      <div>
+      <div
+        :ref="(el: unknown) => setItemRef(el, i)"
+        @click="multiSelect ? onItemClick(i, $event) : undefined"
+        @dblclick="multiSelect ? onItemDblClick(i) : undefined"
+      >
         <slot
           name="item"
           :item="item"
           :index="i"
           :selected="localIndex === i"
-          :set-ref="(el: unknown) => setItemRef(el, i)"
+          :multi-selected="isMultiSelected(i)"
+          :set-ref="undefined"
           :select="() => setSelectedIndex(i)"
           :execute="() => emit('execute', item, i)"
         />
@@ -54,15 +59,21 @@ const props = withDefaults(
     keyboardNavigation?: boolean
     groupField?: keyof T | ((item: T) => string)
     groupTitle?: (group: string) => string
+    multiSelect?: boolean
+    selectedIds?: Set<string>
+    idField?: string
   }>(),
   {
     selectedIndex: 0,
     keyboardNavigation: false,
+    multiSelect: false,
+    idField: 'id',
   },
 )
 
 const emit = defineEmits<{
   'update:selectedIndex': [index: number]
+  'update:selectedIds': [ids: Set<string>]
   select: [index: number]
   execute: [item: T, index: number, event?: KeyboardEvent]
 }>()
@@ -81,53 +92,64 @@ function setSelectedIndex(index: number) {
   emit('select', index)
 }
 
+defineExpose({ selectedIndex: localIndex, setSelectedIndex })
+
+// ── Refs ──
 const itemRefs = ref<HTMLElement[]>([])
 function setItemRef(el: unknown, index: number) {
   if (el) {
-    // If it's a Vue component, use $el, otherwise use the element itself
     itemRefs.value[index] =
       (el as { $el: HTMLElement }).$el || (el as HTMLElement)
   }
 }
 
-watch(localIndex, async (index) => {
-  await nextTick()
+// ── Multi-select ──
+let anchorIndex = -1
 
-  const el = itemRefs.value[index]
-  if (el) {
-    const container = el.closest('.overflow-y-auto, .overflow-auto')
-    if (container) {
-      const itemWrapper = el.parentElement!
-      let topElement: HTMLElement = itemWrapper
+function getId(item: T): string {
+  return (item as Record<string, unknown>)[props.idField] as string
+}
 
-      let isFirstInGroup = index === 0
-      if (!isFirstInGroup && props.groupField) {
-        const currentGroup = getGroupValue(props.items[index])
-        const prevGroup = getGroupValue(props.items[index - 1])
-        if (currentGroup !== prevGroup) {
-          isFirstInGroup = true
-        }
-      }
+function isMultiSelected(index: number): boolean {
+  if (!props.multiSelect || !props.selectedIds) return false
+  return props.selectedIds.has(getId(props.items[index]))
+}
 
-      if (isFirstInGroup && itemWrapper.previousElementSibling) {
-        topElement = itemWrapper.previousElementSibling as HTMLElement
-      }
+function emitIds(ids: Set<string>) {
+  emit('update:selectedIds', ids)
+}
 
-      const elRectTop = topElement.getBoundingClientRect().top
-      const elRectBottom = itemWrapper.getBoundingClientRect().bottom
-      const containerRect = container.getBoundingClientRect()
-      const PADDING = 8
-
-      if (elRectBottom > containerRect.bottom - PADDING) {
-        container.scrollTop += elRectBottom - containerRect.bottom + PADDING
-      } else if (elRectTop < containerRect.top + PADDING) {
-        container.scrollTop -= containerRect.top - elRectTop + PADDING
-      }
+function onItemClick(index: number, e: MouseEvent) {
+  if (!props.multiSelect) return
+  const ids = new Set(props.selectedIds ?? [])
+  if (e.metaKey || e.ctrlKey) {
+    if (ids.size === 0) ids.add(getId(props.items[localIndex.value]))
+    const id = getId(props.items[index])
+    if (ids.has(id)) ids.delete(id)
+    else ids.add(id)
+    anchorIndex = index
+    setSelectedIndex(index)
+    emitIds(ids)
+  } else if (e.shiftKey && anchorIndex >= 0) {
+    const [start, end] = [Math.min(anchorIndex, index), Math.max(anchorIndex, index)]
+    const newIds = new Set<string>()
+    for (let i = start; i <= end; i++) {
+      newIds.add(getId(props.items[i]))
     }
+    setSelectedIndex(index)
+    emitIds(newIds)
+  } else {
+    anchorIndex = index
+    setSelectedIndex(index)
+    emitIds(new Set())
   }
-})
+}
 
-// Enable keyboard navigation if requested
+function onItemDblClick(index: number) {
+  emit('execute', props.items[index], index)
+}
+
+// ── Keyboard ──
 if (props.keyboardNavigation) {
   function isSettingsControl(activeEl: Element | null) {
     return (
@@ -144,6 +166,33 @@ if (props.keyboardNavigation) {
     if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
     const activeEl = document.activeElement
     if (isSettingsControl(activeEl) && activeEl!.id !== 'main-search-input') return
+
+    if (props.multiSelect && e.shiftKey) {
+      e.preventDefault()
+      const next = Math.min(localIndex.value + 1, props.items.length - 1)
+      if (anchorIndex < 0) anchorIndex = localIndex.value
+      const [start, end] = [Math.min(anchorIndex, next), Math.max(anchorIndex, next)]
+      const ids = new Set<string>()
+      for (let i = start; i <= end; i++) {
+        ids.add(getId(props.items[i]))
+      }
+      setSelectedIndex(next)
+      emitIds(ids)
+      return
+    }
+
+    if (props.multiSelect && (props.selectedIds?.size ?? 0) > 0) {
+      e.preventDefault()
+      const indices = [...(props.selectedIds ?? [])]
+        .map(id => props.items.findIndex(item => getId(item) === id))
+        .filter(i => i >= 0)
+        .sort((a, b) => a - b)
+      const target = Math.min(indices[indices.length - 1] + 1, props.items.length - 1)
+      setSelectedIndex(target)
+      emitIds(new Set())
+      return
+    }
+
     e.preventDefault()
     if (props.items.length > 0) {
       setSelectedIndex(
@@ -151,12 +200,40 @@ if (props.keyboardNavigation) {
       )
     }
   })
+
   onKeyStroke('ArrowUp', (e) => {
     if (!isActive.value) return
     if (!appStore.activeModuleId) return
     if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
     const activeEl = document.activeElement
     if (isSettingsControl(activeEl) && activeEl!.id !== 'main-search-input') return
+
+    if (props.multiSelect && e.shiftKey) {
+      e.preventDefault()
+      const next = Math.max(localIndex.value - 1, 0)
+      if (anchorIndex < 0) anchorIndex = localIndex.value
+      const [start, end] = [Math.min(anchorIndex, next), Math.max(anchorIndex, next)]
+      const ids = new Set<string>()
+      for (let i = start; i <= end; i++) {
+        ids.add(getId(props.items[i]))
+      }
+      setSelectedIndex(next)
+      emitIds(ids)
+      return
+    }
+
+    if (props.multiSelect && (props.selectedIds?.size ?? 0) > 0) {
+      e.preventDefault()
+      const indices = [...(props.selectedIds ?? [])]
+        .map(id => props.items.findIndex(item => getId(item) === id))
+        .filter(i => i >= 0)
+        .sort((a, b) => a - b)
+      const target = Math.max(indices[0] - 1, 0)
+      setSelectedIndex(target)
+      emitIds(new Set())
+      return
+    }
+
     e.preventDefault()
     if (props.items.length > 0) {
       setSelectedIndex(
@@ -164,6 +241,26 @@ if (props.keyboardNavigation) {
       )
     }
   })
+
+  if (props.multiSelect) {
+    onKeyStroke('a', (e) => {
+      if (!isActive.value) return
+      if (!appStore.activeModuleId) return
+      if (!(e.metaKey || e.ctrlKey)) return
+      e.preventDefault()
+      const ids = new Set(props.items.map(item => getId(item)))
+      emitIds(ids)
+    })
+
+    onKeyStroke('Escape', (e) => {
+      if (!isActive.value) return
+      if (!appStore.activeModuleId) return
+      if ((props.selectedIds?.size ?? 0) === 0) return
+      e.preventDefault()
+      emitIds(new Set())
+    })
+  }
+
   onKeyStroke('Enter', (e) => {
     if (!isActive.value) return
     if (!appStore.activeModuleId) return
@@ -186,6 +283,42 @@ if (props.keyboardNavigation) {
     }
   })
 }
+
+// ── Scroll ──
+watch(localIndex, async (index) => {
+  await nextTick()
+  const el = itemRefs.value[index]
+  if (el) {
+    const container = el.closest('.overflow-y-auto, .overflow-auto')
+    if (container) {
+      let topElement: HTMLElement = el
+
+      let isFirstInGroup = index === 0
+      if (!isFirstInGroup && props.groupField) {
+        const currentGroup = getGroupValue(props.items[index])
+        const prevGroup = getGroupValue(props.items[index - 1])
+        if (currentGroup !== prevGroup) {
+          isFirstInGroup = true
+        }
+      }
+
+      if (isFirstInGroup && el.previousElementSibling) {
+        topElement = el.previousElementSibling as HTMLElement
+      }
+
+      const elRectTop = topElement.getBoundingClientRect().top
+      const elRectBottom = el.getBoundingClientRect().bottom
+      const containerRect = container.getBoundingClientRect()
+      const PADDING = 8
+
+      if (elRectBottom > containerRect.bottom - PADDING) {
+        container.scrollTop += elRectBottom - containerRect.bottom + PADDING
+      } else if (elRectTop < containerRect.top + PADDING) {
+        container.scrollTop -= containerRect.top - elRectTop + PADDING
+      }
+    }
+  }
+})
 
 function getGroupValue(item: T): string {
   if (!props.groupField) return ''
