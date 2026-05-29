@@ -2,7 +2,7 @@
   <img
     v-if="previewDataUrl"
     :src="previewDataUrl"
-    class="absolute z-50 block rounded-md"
+    class="rounded-md block absolute z-50"
     :style="imgStyle"
     draggable="false"
     @mousedown.stop

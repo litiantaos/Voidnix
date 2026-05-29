@@ -109,25 +109,67 @@ async function scanCoreModules(): Promise<ModuleMeta[]> {
   return results
 }
 
+async function scanRsFiles(dir: string): Promise<string[]> {
+  const results: string[] = []
+  if (!(await pathExists(dir))) return results
+  const entries = await readdir(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      results.push(...await scanRsFiles(fullPath))
+    } else if (entry.isFile() && entry.name.endsWith('.rs')) {
+      results.push(fullPath)
+    }
+  }
+  return results
+}
+
+function rsPathToModulePath(nativeDir: string, filePath: string): string {
+  const relPath = filePath.slice(nativeDir.length + 1)
+  return relPath
+    .replace(/\.rs$/, '')
+    .replace(/\/mod$/, '')
+    .replace(/\//g, '::')
+}
+
 async function scanExtensionBackends(): Promise<ModuleMeta[]> {
   const results: ModuleMeta[] = []
   if (!(await pathExists(EXTENSIONS_DIR))) return results
 
   const dirs = await readdir(EXTENSIONS_DIR, { withFileTypes: true })
   for (const dir of dirs.filter(d => d.isDirectory())) {
-    const modFile = join(EXTENSIONS_DIR, dir.name, 'native', 'mod.rs')
+    const nativeDir = join(EXTENSIONS_DIR, dir.name, 'native')
+    const modFile = join(nativeDir, 'mod.rs')
     if (!(await pathExists(modFile))) continue
 
-    const content = await readFile(modFile, 'utf-8')
-    const commands = extractCommands(content)
-    const spectaCommands = extractSpectaCommands(content)
-    const init = hasInit(content)
-    if (commands.length > 0 || init) {
+    const allCommands: string[] = []
+    const allSpectaCommands: string[] = []
+    let hasInitFn = false
+
+    const modContent = await readFile(modFile, 'utf-8')
+    allCommands.push(...extractCommands(modContent))
+    allSpectaCommands.push(...extractSpectaCommands(modContent))
+    if (hasInit(modContent)) hasInitFn = true
+
+    const rsFiles = await scanRsFiles(nativeDir)
+    for (const filePath of rsFiles) {
+      if (filePath === modFile) continue
+      const modulePath = rsPathToModulePath(nativeDir, filePath)
+      const content = await readFile(filePath, 'utf-8')
+      for (const cmd of extractCommands(content)) {
+        allCommands.push(`${modulePath}::${cmd}`)
+      }
+      for (const cmd of extractSpectaCommands(content)) {
+        allSpectaCommands.push(`${modulePath}::${cmd}`)
+      }
+    }
+
+    if (allCommands.length > 0 || hasInitFn) {
       results.push({
         module: dir.name,
-        commands,
-        spectaCommands,
-        hasInit: init,
+        commands: allCommands,
+        spectaCommands: allSpectaCommands,
+        hasInit: hasInitFn,
         source: 'extension',
         backendPath: `../../extensions/${dir.name}/native/mod.rs`
       })
