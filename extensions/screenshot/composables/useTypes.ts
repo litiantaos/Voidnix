@@ -25,7 +25,7 @@ export interface Sel {
 }
 
 export type Tool = 'rect' | 'line' | 'arrow' | 'text' | 'blur' | null
-export type Phase = 'select' | 'annotate'
+export type Phase = 'select' | 'annotate' | 'scroll'
 export type BlurMode = 'selection' | 'text'
 
 export interface Shape {

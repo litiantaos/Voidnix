@@ -81,6 +81,7 @@ fn build_screenshot_overlay(out_dir: &str) {
     println!("cargo:rustc-link-search=native={out_dir}");
     println!("cargo:rustc-link-lib=static=screenshot_overlay");
     println!("cargo:rustc-link-lib=framework=QuartzCore");
+    println!("cargo:rustc-link-lib=framework=ImageIO");
     println!("cargo:rerun-if-changed=../extensions/screenshot/native/screenshot_overlay.mm");
 }
 

@@ -107,6 +107,31 @@ export function useScreenshotActions(options: {
     doCancel(true)
   }
 
+  /// 滚动截屏：把 finish_scroll_capture 返回的 dataURL 复制到剪贴板，然后退出。
+  async function doScrollCopy(dataUrl: string) {
+    if (!dataUrl) {
+      doCancel()
+      return
+    }
+    await invoke('copy_scroll_result_to_clipboard', { resultDataUrl: dataUrl })
+    doCancel()
+  }
+
+  /// 滚动截屏：保存到设置目录。
+  async function doScrollSave(dataUrl: string) {
+    if (!dataUrl) {
+      doCancel()
+      return
+    }
+    const settings = useSettingsStore()
+    const savePath = settings.screenshotSavePath || '~/Downloads'
+    const path = savePath.startsWith('~/')
+      ? savePath.replace('~', await invoke<string>('get_home_dir').catch(() => ''))
+      : savePath
+    await invoke('save_scroll_result', { resultDataUrl: dataUrl, path })
+    doCancel()
+  }
+
   function doCancel(noRestoreFocus = false) {
     if (options.rootEl.value) options.rootEl.value.style.cursor = 'default'
     document.body.style.cursor = 'default'
@@ -122,6 +147,8 @@ export function useScreenshotActions(options: {
     doSave,
     doOcr,
     doPin,
+    doScrollCopy,
+    doScrollSave,
     doCancel,
   }
 }

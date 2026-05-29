@@ -2,7 +2,7 @@
   <div
     ref="rootEl"
     class="select-none inset-0 fixed z-9999 overflow-hidden"
-    :style="{ cursor: cursorStyle }"
+    :style="{ cursor: cursorStyle, pointerEvents: phase === 'scroll' ? 'none' : 'auto' }"
     @mousedown="onMouseDown"
     @mousemove="onMouseMove"
     @mouseup="onMouseUp($event)"
@@ -117,7 +117,7 @@
     </template>
 
     <!-- 选区边框 + 8个控制点 -->
-    <template v-if="hasSelection">
+    <template v-if="hasSelection && phase !== 'scroll'">
       <div
         class="border border-accent pointer-events-none absolute"
         :style="selectionStyle"
@@ -138,6 +138,14 @@
       </div>
     </template>
 
+    <!-- 滚动截屏阶段：仅显示选区边框 -->
+    <template v-if="hasSelection && phase === 'scroll'">
+      <div
+        class="border border-accent pointer-events-none absolute"
+        :style="selectionStyle"
+      />
+    </template>
+
     <!-- 标注 canvas -->
     <canvas
       v-if="hasSelection && phase === 'annotate'"
@@ -152,7 +160,6 @@
       :width="sel.w * dpr"
       :height="sel.h * dpr"
     />
-
     <!-- 模糊选中边框（与控制点一体，DOM 层同步显示/隐藏） -->
     <div
       v-if="blurFrameStyle && phase === 'annotate'"
@@ -295,7 +302,7 @@
 
     <!-- 标注调色板 -->
     <AnnotationPalette
-      v-if="hasSelection && phase === 'annotate'"
+      v-if="hasSelection && (phase === 'annotate' || phase === 'scroll')"
       :sel="sel"
       :active-tool="activeTool"
       :color="annotColor"
@@ -305,6 +312,8 @@
       :blur-mode="annotBlurMode"
       :screen-height="screenH"
       :screen-width="screenW"
+      :mode="phase === 'scroll' ? 'scroll' : 'annotate'"
+      class="pointer-events-auto"
       @tool="setTool"
       @color="annotColor = $event"
       @line-width="annotLineWidth = $event"
@@ -316,6 +325,23 @@
       @copy="doCopy"
       @save="doSave"
       @cancel="doCancel"
+      @scroll-start="onScrollStart"
+      @scroll-finish="onScrollFinish"
+      @scroll-save="onScrollSave"
+      @scroll-cancel="onScrollCancel"
+    />
+
+    <!-- 滚动截屏：右侧实时预览面板 -->
+    <ScrollPreview
+      v-if="phase === 'scroll'"
+      class="pointer-events-auto"
+      :sel="sel"
+      :dpr="dpr"
+      :preview-data-url="scrollCapture.previewDataUrl.value"
+      :preview-width="scrollCapture.previewWidth.value"
+      :preview-height="scrollCapture.previewHeight.value"
+      :screen-width="screenW"
+      :screen-height="screenH"
     />
   </div>
 </template>
@@ -324,7 +350,8 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import AnnotationPalette from './AnnotationPalette.vue'
-import type { ScreenshotData } from '../composables/useTypes'
+import ScrollPreview from './ScrollPreview.vue'
+import type { ScreenshotData, Phase } from '../composables/useTypes'
 import { MAGNIFIER_SIZE } from '../composables/useTypes'
 import { useSelection } from '../composables/useSelection'
 import { useAnnotation } from '../composables/useAnnotation'
@@ -336,6 +363,7 @@ import { useMaskStyles } from '../composables/useMaskStyles'
 import { useScreenshotActions } from '../composables/useScreenshotActions'
 import { useOverlayEvents } from '../composables/useOverlayEvents'
 import { useTextDetection } from '../composables/useTextDetection'
+import { useScrollCapture } from '../composables/useScrollCapture'
 import { wrapText } from '../composables/wrapText'
 
 const props = defineProps<{ initialScreenshot: ScreenshotData }>()
@@ -349,7 +377,7 @@ const screenW = ref(props.initialScreenshot.width)
 const screenH = ref(props.initialScreenshot.height)
 const dpr = ref(props.initialScreenshot.scale)
 const windows = ref(props.initialScreenshot.windows ?? [])
-const phase = ref<'select' | 'annotate'>('select')
+const phase = ref<Phase>('select')
 
 // ── 组合 composables ──────────────────────────────────────
 const selection = useSelection({ screenW, screenH, windows })
@@ -469,8 +497,14 @@ const events = useOverlayEvents({
   doOcr: actions.doOcr,
   doPin: actions.doPin,
   doCancel: actions.doCancel,
+  onScrollCancel: () => onScrollCancelRef(),
+  onScrollFinish: () => onScrollFinishRef(),
   rootEl,
 })
+
+// 转发：events 在 onScrollCancel/Finish 之前构造，用 ref 解决前向引用。
+let onScrollCancelRef: () => Promise<void> | void = () => {}
+let onScrollFinishRef: () => Promise<void> | void = () => {}
 
 // ── 从 composables 解构模板需要的属性和方法 ──────────────────
 const { sel, hasSelection, hoverWindow, startSelResize } = selection
@@ -530,6 +564,65 @@ const {
   onKeyDown,
 } = events
 const { doCopy, doSave, doOcr, doPin, doCancel } = actions
+
+// ── 滚动截屏 ─────────────────────────────────────────────
+const scrollCapture = useScrollCapture({ dpr })
+
+async function onScrollStart() {
+  if (!hasSelection.value) return
+  // 进入滚动截屏阶段：清空已有标注（互斥关系）；选中态/绘制态全部复位
+  annotation.shapes.value = []
+  annotation.selectedShapeIndex.value = null
+  annotation.activeTool.value = null
+  annotation.isDrawing.value = false
+  annotation.currentShape.value = null
+  phase.value = 'scroll'
+  await scrollCapture.start(sel.value)
+  // 启动失败：回退到 annotate 阶段
+  if (scrollCapture.error.value) {
+    phase.value = 'annotate'
+    return
+  }
+  // 进入滚动模式后，根 div 必须保持可接收键盘事件以响应 Esc
+  // 但鼠标在选区内的 mousedown 由原生 setIgnoresMouseEvents 放行，不会触达此 div
+  nextTick(() => rootEl.value?.focus())
+}
+
+async function onScrollFinish() {
+  // 完成：finish_scroll_capture 拿到 dataURL → 默认复制到剪贴板
+  try {
+    const dataUrl = await scrollCapture.finish()
+    if (dataUrl) {
+      await actions.doScrollCopy(dataUrl)
+    } else {
+      doCancel()
+    }
+  } catch (err) {
+    console.error('[scroll] finish failed:', err)
+    doCancel()
+  }
+}
+onScrollFinishRef = onScrollFinish
+
+async function onScrollSave() {
+  try {
+    const dataUrl = await scrollCapture.finish()
+    if (dataUrl) {
+      await actions.doScrollSave(dataUrl)
+    } else {
+      doCancel()
+    }
+  } catch (err) {
+    console.error('[scroll] save failed:', err)
+    doCancel()
+  }
+}
+
+async function onScrollCancel() {
+  await scrollCapture.cancel()
+  doCancel()
+}
+onScrollCancelRef = onScrollCancel
 // ── 模糊元素选中边框样式（DOM 层，与控制点天然同步） ────────
 const blurFrameStyle = computed(() => {
   const s = effectiveShape.value
@@ -593,10 +686,22 @@ onMounted(() => {
   })
   magnifier.loadPickerImage()
   window.addEventListener('focus', refocus)
+  // ESC 兜底：用户点过画布/遮罩后焦点可能漂移到 body，根 div 的 @keydown 不再收
+  // 到 ESC。挂在 window 上确保任何阶段都能退出。其他键仍由根 div 处理。
+  window.addEventListener('keydown', onWindowKeyDown)
 })
+
+function onWindowKeyDown(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return
+  // 已被根 div 的 @keydown 处理过的不再重复（事件冒泡到 window 时根 div 已处理）；
+  // 这里只在根 div 没接到时兜底——通过 activeElement 判断。
+  if (document.activeElement === rootEl.value) return
+  events.onKeyDown(e)
+}
 
 onUnmounted(() => {
   window.removeEventListener('focus', refocus)
+  window.removeEventListener('keydown', onWindowKeyDown)
   delete (window as unknown as { __setScreenshotCross?: unknown })
     .__setScreenshotCross
 })

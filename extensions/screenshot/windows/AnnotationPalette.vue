@@ -5,6 +5,27 @@
         :style="style"
         @mousedown.stop
     >
+        <!-- 滚动截屏模式：只保留确定/保存/取消，统一使用基础按钮样式 -->
+        <template v-if="mode === 'scroll'">
+            <BaseButton
+                title="完成滚动截屏 (Enter)"
+                icon="i-ri-check-line"
+                @click="$emit('scroll-finish')"
+            />
+            <BaseButton
+                title="保存"
+                icon="i-ri-save-line"
+                @click="$emit('scroll-save')"
+            />
+            <BaseButton
+                title="取消 (Esc)"
+                icon="i-ri-close-line"
+                @click="$emit('scroll-cancel')"
+            />
+        </template>
+
+        <!-- 标注模式：完整工具栏 -->
+        <template v-else>
         <!-- 工具按钮 -->
         <BaseButton
             v-for="t in tools"
@@ -124,6 +145,11 @@
             @click="$emit('ocr')"
         />
         <BaseButton
+            title="滚动截屏"
+            icon="i-ri-arrow-down-double-line"
+            @click="$emit('scroll-start')"
+        />
+        <BaseButton
             title="钉图"
             icon="i-ri-pushpin-line"
             @click="$emit('pin')"
@@ -139,6 +165,7 @@
             icon="i-ri-close-line"
             @click="$emit('cancel')"
         />
+        </template>
     </div>
 </template>
 
@@ -149,6 +176,7 @@ import BaseSlider from "@/components/ui/BaseSlider.vue";
 
 type Tool = "rect" | "line" | "arrow" | "text" | "blur" | null;
 type BlurMode = "selection" | "text";
+type PaletteMode = "annotate" | "scroll";
 
 const props = defineProps<{
     sel: { x: number; y: number; w: number; h: number };
@@ -160,6 +188,7 @@ const props = defineProps<{
     blurMode: BlurMode;
     screenHeight: number;
     screenWidth: number;
+    mode?: PaletteMode;
 }>();
 
 const emit = defineEmits<{
@@ -174,6 +203,10 @@ const emit = defineEmits<{
     (e: "copy"): void;
     (e: "save"): void;
     (e: "cancel"): void;
+    (e: "scroll-start"): void;
+    (e: "scroll-finish"): void;
+    (e: "scroll-save"): void;
+    (e: "scroll-cancel"): void;
 }>();
 
 const showColors = ref(false);

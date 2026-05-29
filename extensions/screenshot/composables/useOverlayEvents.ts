@@ -74,6 +74,8 @@ export function useOverlayEvents(options: {
   doOcr: () => Promise<void>
   doPin: () => Promise<void>
   doCancel: (forOcr?: boolean) => void
+  onScrollCancel?: () => Promise<void> | void
+  onScrollFinish?: () => Promise<void> | void
 
   // DOM
   rootEl: Ref<HTMLElement | undefined>
@@ -150,6 +152,9 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
   // ── 鼠标事件 ──────────────────────────────────────────────
   function onMouseDown(e: MouseEvent) {
     if (e.button !== 0) return
+    // 滚动截屏阶段：选区内由原生 CAShapeLayer 挖洞放行（事件根本不会进 Vue），
+    // 选区外则由本 div 接收——什么也不做，避免误触发选区/标注逻辑。
+    if (options.phase.value === 'scroll') return
     const { clientX: cx, clientY: cy } = e
 
     if (options.textInput.value.visible) {
@@ -221,6 +226,8 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
   }
 
   function onMouseMove(e: MouseEvent) {
+    // 滚动截屏阶段：不更新十字线/放大镜/选区拖动，让事件保持轻量
+    if (options.phase.value === 'scroll') return
     const { clientX: cx, clientY: cy } = e
 
     if (options.rootEl.value) {
@@ -549,6 +556,15 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
         options.cancelText()
         return
       }
+      // 滚动截屏阶段：调上层的 onScrollCancel（exit_scroll_capture + doCancel）。
+      if (options.phase.value === 'scroll') {
+        if (options.onScrollCancel) {
+          void options.onScrollCancel()
+        } else {
+          options.doCancel()
+        }
+        return
+      }
       if (options.selectedShapeIndex.value !== null) {
         options.selectedShapeIndex.value = null
         options.isHoveringSelectedShape.value = false
@@ -556,8 +572,14 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
       }
       options.doCancel()
     }
-    if (e.key === 'Enter' && options.hasSelection.value && !options.textInput.value.visible)
+    if (e.key === 'Enter' && options.hasSelection.value && !options.textInput.value.visible) {
+      // 滚动截屏阶段：Enter 等同于"完成"按钮（拷贝拼接结果）
+      if (options.phase.value === 'scroll') {
+        if (options.onScrollFinish) void options.onScrollFinish()
+        return
+      }
       options.doCopy()
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
       if (options.selectedShapeIndex.value !== null) {
         options.shapes.value.splice(options.selectedShapeIndex.value, 1)
