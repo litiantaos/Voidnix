@@ -1,13 +1,15 @@
 import { ref } from 'vue'
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
+import { moduleSelfResult, makeToggleHandler } from '@/core/module-helpers'
 import type { AppModule, SearchResult } from '@/types/module'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
-import { useAppStore } from '@/stores/app'
+import { toErrorMessage } from '@/utils/error'
+import { providerLabelFromUrl } from '@/utils/provider'
 import { generateRequestId } from '@/composables/useStreamOutput'
 import {
   commands,
@@ -85,14 +87,7 @@ export function destroyStreamListeners() {
 
 function engineLabel(config: TranslateApiConfig): string {
   if (config.type === 'youdao') return '有道翻译'
-  if (!config.endpoint) return '翻译'
-  try {
-    const parts = new URL(config.endpoint).hostname.split('.')
-    if (parts.length >= 2) return parts[parts.length - 2].toUpperCase()
-    return parts[0].toUpperCase()
-  } catch {
-    return '翻译'
-  }
+  return providerLabelFromUrl(config.endpoint, '翻译')
 }
 
 export async function translateText(text: string) {
@@ -113,27 +108,35 @@ export async function translateText(text: string) {
   const promises: Promise<void>[] = []
 
   const placeholder: TranslateResult[] = []
-  let idx = 0
+  const youdaoIndexMap = new Map<string, number>()
 
   for (const config of configs) {
     if (config.type === 'youdao') {
       if (!config.appKey || !config.appSecret) continue
-      const i = idx++
+      const requestId = generateRequestId()
       const engine = engineLabel(config)
+      const i = placeholder.length
       placeholder.push({ source: text, translation: '', engine, loading: true })
+      youdaoIndexMap.set(requestId, i)
       promises.push(
         commands
           .translateYoudao(text, config.appKey, config.appSecret, targetLang)
           .then((result) => {
-            translateResults.value.splice(i, 1, result)
+            const idx = youdaoIndexMap.get(requestId)
+            if (idx !== undefined && translateResults.value[idx]) {
+              translateResults.value.splice(idx, 1, result)
+            }
           })
           .catch((e) => {
-            const msg = e instanceof Error ? e.message : String(e)
-            translateResults.value.splice(i, 1, {
-              source: text,
-              translation: msg,
-              engine,
-            })
+            const idx = youdaoIndexMap.get(requestId)
+            const msg = toErrorMessage(e)
+            if (idx !== undefined) {
+              translateResults.value.splice(idx, 1, {
+                source: text,
+                translation: msg,
+                engine,
+              })
+            }
           })
           .finally(() => checkAllDone()),
       )
@@ -142,8 +145,8 @@ export async function translateText(text: string) {
       const activeModels = config.models.filter((m) => m.trim())
       for (const model of activeModels) {
         const engineSuffix = ` · ${model.trim()}`
-        const i = idx++
         const engine = engineLabel(config) + engineSuffix
+        const i = placeholder.length
         placeholder.push({
           source: text,
           translation: '',
@@ -163,12 +166,15 @@ export async function translateText(text: string) {
             requestId,
           })
             .catch((e: unknown) => {
-              const msg = e instanceof Error ? e.message : String(e)
-              translateResults.value.splice(i, 1, {
-                source: text,
-                translation: msg,
-                engine,
-              })
+              const idx = streamIndexMap.get(requestId)
+              const msg = toErrorMessage(e)
+              if (idx !== undefined) {
+                translateResults.value.splice(idx, 1, {
+                  source: text,
+                  translation: msg,
+                  engine,
+                })
+              }
               streamIndexMap.delete(requestId)
             })
             .finally(() => checkAllDone()),
@@ -243,24 +249,14 @@ const mod: AppModule = {
     {
       id: 'translate',
       default: 'CommandOrControl+Shift+T',
-      onExecute: async (wasVisible: boolean) => {
-        const appStore = useAppStore()
-        if (wasVisible && appStore.activeModuleId === 'translate') {
-          invoke('hide_window').catch(() => {})
-          return
-        }
-        appStore.setActiveModule('translate')
-        appStore.setSearchQuery('')
-        if (wasVisible) {
-          return
-        }
+      onExecute: makeToggleHandler('translate', async () => {
         try {
           const text = await waitForSelectedText()
           pendingText.value = text.trim()
         } catch {
           pendingText.value = ''
         }
-      },
+      }),
     },
   ],
   onSearch: async (query) => {
@@ -270,17 +266,7 @@ const mod: AppModule = {
       '翻译'.includes(query) ||
       '翻譯'.includes(query)
     ) {
-      return [
-        {
-          id: 'translate-module',
-          title: '翻译',
-          description: '打开翻译扩展',
-          module: 'translate',
-          icon: 'i-ri-translate-2',
-          score: 100,
-          data: { kind: 'module', moduleId: 'translate' },
-        },
-      ]
+      return [moduleSelfResult(mod)]
     }
     return []
   },
@@ -311,7 +297,7 @@ const mod: AppModule = {
               })
             })
             .catch((e) => {
-              const msg = e instanceof Error ? e.message : String(e)
+              const msg = toErrorMessage(e)
               results.push({
                 id: `youdao-error-${Date.now()}`,
                 title: msg,
@@ -352,7 +338,7 @@ const mod: AppModule = {
                 })
               })
               .catch((e) => {
-                const msg = e instanceof Error ? e.message : String(e)
+                const msg = toErrorMessage(e)
                 results.push({
                   id: `ai-error-${Date.now()}`,
                   title: msg,

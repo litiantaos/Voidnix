@@ -10,7 +10,7 @@
 //!   setDuration:0.18 → setFrame:display:NO animate:YES → endGrouping，全部包在
 //!   try_block 内；末尾重设 cornerRadius=16.0 + masksToBounds=true。
 //! - 失败兜底：try_block 返回 false 时回退到 set_window_frame(target, false)，
-//!   steps.push("fallback-set-size")，FAIL_COUNT+1。
+//!   steps.push("fallback-set-size")，FAIL_COUNTER+1。
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use crate::macos::webkit_tuning::{Frame, WindowOps, log};
@@ -20,19 +20,30 @@ use crate::macos::webkit_tuning::{Frame, WindowOps, log};
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Frame_Animator 失败计数器。3 次失败后永久禁用动画路径，回退到直接 setFrame。
-static FAIL_COUNT: AtomicU8 = AtomicU8::new(0);
-/// 永久禁用阈值。
-const FAIL_LIMIT: u8 = 3;
+static FAIL_COUNTER: FailCounter = FailCounter::new(3);
 
-/// 判断 Frame_Animator 是否已永久禁用。
-fn is_disabled() -> bool {
-    FAIL_COUNT.load(Ordering::SeqCst) >= FAIL_LIMIT
+struct FailCounter {
+    count: AtomicU8,
+    limit: u8,
 }
 
-/// 记录一次失败，累计到 FAIL_LIMIT 后永久禁用。
-fn record_failure() {
-    FAIL_COUNT.fetch_add(1, Ordering::SeqCst);
+impl FailCounter {
+    const fn new(limit: u8) -> Self {
+        Self { count: AtomicU8::new(0), limit }
+    }
+    fn is_disabled(&self) -> bool {
+        self.count.load(Ordering::SeqCst) >= self.limit
+    }
+    fn record_failure(&self) {
+        self.count.fetch_add(1, Ordering::SeqCst);
+    }
+    fn reset(&self) {
+        self.count.store(0, Ordering::SeqCst);
+    }
 }
+
+fn is_disabled() -> bool { FAIL_COUNTER.is_disabled() }
+fn record_failure() { FAIL_COUNTER.record_failure() }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Webview_Frame_Pin
@@ -102,9 +113,9 @@ pub fn ensure_capacity<W: WindowOps>(window: &W, w: f64, h: f64, steps: &mut log
 ///
 /// 失败路径（try_block 返回 false）：
 ///   回退到 set_window_frame(target, false)（无动画），
-///   重设圆角，steps.push("fallback-set-size")，FAIL_COUNT+1，返回 false。
+///   重设圆角，steps.push("fallback-set-size")，FAIL_COUNTER+1，返回 false。
 ///
-/// 永久禁用路径（FAIL_COUNT >= FAIL_LIMIT）：
+/// 永久禁用路径（FAIL_COUNTER >= limit）：
 ///   直接 set_window_frame(target, false)，
 ///   steps.push("fallback-set-size-disabled")，返回 false。
 pub fn animate<W: WindowOps>(window: &W, w: f64, h: f64, steps: &mut log::Steps) -> bool {
@@ -155,13 +166,8 @@ mod tests {
     use proptest::prelude::*;
     use std::sync::atomic::Ordering;
 
-    /// 测试间串行锁：FAIL_COUNT 是全局静态，多个测试并发修改会互相干扰。
-    static FAIL_COUNT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// 重置 FAIL_COUNT 为 0，在每个需要干净状态的测试开头调用。
-    fn reset_fail_count() {
-        FAIL_COUNT.store(0, Ordering::SeqCst);
-    }
+    /// 测试间串行锁：FAIL_COUNTER 是全局静态，多个测试并发修改会互相干扰。
+    static FAIL_COUNTER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(256))]
@@ -246,8 +252,8 @@ mod tests {
                 1..16
             )
         ) {
-            let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            reset_fail_count();
+            let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            FAIL_COUNTER.reset();
             let w = MockWindow::new();
             install(&w);
 
@@ -287,8 +293,8 @@ mod tests {
             // false=hide 操作，true=show 操作；两者都不调用 animate
             ops in proptest::collection::vec(any::<bool>(), 0..32)
         ) {
-            let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            reset_fail_count();
+            let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            FAIL_COUNTER.reset();
             let w = MockWindow::new();
             install(&w);
 
@@ -385,8 +391,8 @@ mod tests {
     /// steps 含 "ca-animate"，ca_transaction_count == 1。
     #[test]
     fn animate_sets_window_frame_and_corner_radius() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         install(&w);
         let mut steps = log::Steps::new();
@@ -406,8 +412,8 @@ mod tests {
     /// animate 多次调用：ca_transaction_count 累计等于成功次数。
     #[test]
     fn animate_multiple_calls_accumulate_ca_count() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         install(&w);
 
@@ -425,12 +431,12 @@ mod tests {
         assert!(w.content_view_masks_to_bounds(), "最终 masksToBounds 应为 true");
     }
 
-    /// animate 永久禁用路径：FAIL_COUNT >= FAIL_LIMIT 时直接 fallback，不产生 CA 事务。
+    /// animate 永久禁用路径：FAIL_COUNTER >= limit 时直接 fallback，不产生 CA 事务。
     #[test]
     fn animate_fallback_when_disabled() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
-        FAIL_COUNT.store(FAIL_LIMIT, Ordering::SeqCst);
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
+        FAIL_COUNTER.count.store(3, Ordering::SeqCst);
         let w = MockWindow::new();
         let mut steps = log::Steps::new();
         let ok = animate(&w, 800.0, 600.0, &mut steps);
@@ -446,14 +452,14 @@ mod tests {
         // fallback 路径也应重设圆角
         assert_eq!(w.content_view_corner_radius(), 16.0, "fallback 后 cornerRadius 应为 16.0");
         assert!(w.content_view_masks_to_bounds(), "fallback 后 masksToBounds 应为 true");
-        reset_fail_count();
+        FAIL_COUNTER.reset();
     }
 
     /// animate 不调用时，ca_transaction_count 保持为 0（Property 10 单元验证）。
     #[test]
     fn no_animate_no_ca_transactions() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         install(&w);
 

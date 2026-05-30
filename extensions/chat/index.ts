@@ -2,9 +2,10 @@ import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
+import { moduleSelfResult, makeToggleHandler } from '@/core/module-helpers'
 import type { AppModule } from '@/types/module'
 import { useSettingsStore } from '@/stores/settings'
-import { useAppStore } from '@/stores/app'
+import { toErrorMessage } from '@/utils/error'
 import { generateRequestId } from '@/composables/useStreamOutput'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
@@ -28,7 +29,7 @@ const MAX_MESSAGES = 100
 
 // 当前对话
 export const currentConversation = ref<ChatConversation>({
-  id: generateId(),
+  id: generateRequestId(),
   messages: [],
   createdAt: Date.now(),
 })
@@ -47,9 +48,6 @@ let initializing = false
 // 当前请求 ID
 let currentRequestId = ''
 
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2)
-}
 
 // 初始化监听器
 export async function initListeners() {
@@ -144,10 +142,7 @@ export async function sendMessage(content: string) {
     isGenerating.value = false
     streamingMessage.value = ''
     currentRequestId = ''
-    const errorMsg =
-      e instanceof Error
-        ? e.message || '未知错误，请检查 API 配置和网络连接'
-        : '请求失败，请检查 API 配置和网络连接'
+    const errorMsg = toErrorMessage(e, '未知错误，请检查 API 配置和网络连接')
     currentConversation.value.messages.push({
       role: 'assistant',
       content: `错误: ${errorMsg}`,
@@ -167,7 +162,7 @@ export function destroyListeners() {
 // 新建对话
 export function newConversation() {
   currentConversation.value = {
-    id: generateId(),
+    id: generateRequestId(),
     messages: [],
     createdAt: Date.now(),
   }
@@ -178,6 +173,7 @@ export function newConversation() {
 
 // 停止生成
 export function stopGenerating() {
+  invoke('chat_abort').catch(() => {})
   isGenerating.value = false
 
   if (streamingMessage.value) {
@@ -204,20 +200,7 @@ const mod: AppModule = {
     {
       id: 'chat',
       default: 'CommandOrControl+Shift+A',
-      onExecute: (wasVisible: boolean) => {
-        const appStore = useAppStore()
-        if (wasVisible && appStore.activeModuleId === 'chat') {
-          invoke('hide_window').catch(() => {})
-          return
-        }
-        if (wasVisible) {
-          appStore.setActiveModule('chat')
-          appStore.setSearchQuery('')
-          return
-        }
-        appStore.setActiveModule('chat')
-        appStore.setSearchQuery('')
-      },
+      onExecute: makeToggleHandler('chat'),
     },
   ],
   onInit: async () => {
@@ -232,17 +215,7 @@ const mod: AppModule = {
       q.includes('对话') ||
       q.includes('聊天')
     ) {
-      return [
-        {
-          id: 'chat-module',
-          title: 'AI Chat',
-          description: '打开 AI 对话扩展',
-          module: 'chat',
-          icon: 'i-ri-chat-ai-line',
-          score: 100,
-          data: { kind: 'module', moduleId: 'chat' },
-        },
-      ]
+      return [moduleSelfResult(mod)]
     }
     return []
   },

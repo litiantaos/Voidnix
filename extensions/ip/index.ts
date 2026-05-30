@@ -1,7 +1,8 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { moduleSelfResult } from '@/core/module-helpers'
+import { copyAndHide } from '@/utils/clipboard'
+import { toErrorMessage } from '@/utils/error'
 import { commands } from '@/bindings'
 
 const mod: AppModule = {
@@ -15,15 +16,7 @@ const mod: AppModule = {
   onSearch: async (query) => {
     if (!query.trim()) return []
     if ('ip'.includes(query.toLowerCase()) || '网络'.includes(query)) {
-      return [{
-        id: 'ip-module',
-        title: 'IP 查询',
-        description: '查看本机或指定 IP 信息',
-        module: 'ip',
-        icon: 'i-ri-global-line',
-        score: 100,
-        data: { kind: 'module', moduleId: 'ip' }
-      }]
+      return [moduleSelfResult(mod)]
     }
     return []
   },
@@ -44,15 +37,14 @@ const mod: AppModule = {
         return [{ id: 'ip-err', title: '查询失败', description: data.message || '未知错误', module: 'ip', icon: 'i-ri-error-warning-line' }]
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = toErrorMessage(e)
       return [{ id: 'ip-err', title: '网络请求失败', description: msg, module: 'ip', icon: 'i-ri-error-warning-line' }]
     }
   },
   onExecute: async (result) => {
     if (result.id === 'ip-err') return
     try {
-      await writeText(result.title)
-      getCurrentWindow().hide()
+      await copyAndHide(result.title)
     } catch (e) {
       console.error('Failed to copy IP info:', e)
     }

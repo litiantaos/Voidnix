@@ -1,7 +1,7 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { moduleSelfResult } from '@/core/module-helpers'
+import { copyAndHide } from '@/utils/clipboard'
 
 const generateNanoId = (size = 21) => {
   const urlAlphabet = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
@@ -25,15 +25,7 @@ const mod: AppModule = {
   onSearch: async (query) => {
     if (!query.trim()) return []
     if ('uuid'.includes(query.toLowerCase()) || 'guid'.includes(query.toLowerCase())) {
-      return [{
-        id: 'uuid-module',
-        title: '生成 UUID',
-        description: '打开 UUID 生成器',
-        module: 'uuid',
-        icon: 'i-ri-fingerprint-line',
-        score: 100,
-        data: { kind: 'module', moduleId: 'uuid' }
-      }]
+      return [moduleSelfResult(mod)]
     }
     return []
   },
@@ -61,8 +53,7 @@ const mod: AppModule = {
   },
   onExecute: async (result) => {
     try {
-      await writeText(result.title)
-      getCurrentWindow().hide()
+      await copyAndHide(result.title)
     } catch (e) {
       console.error('Failed to copy UUID:', e)
     }

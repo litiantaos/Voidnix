@@ -78,6 +78,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, useId } from 'vue'
 import BaseButton from './BaseButton.vue'
+import { getFocusableElements, trapFocus } from '@/utils/dom'
 
 /** 弹窗关闭来源 */
 export type CloseReason = 'cancel' | 'escape' | 'overlay'
@@ -96,14 +97,14 @@ interface Props {
   okLabel?: string
   cancelLabel?: string
   showCancel?: boolean
-  showFooter?: boolean
+  showFooter?: boolean | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   variant: 'confirm',
   size: 'sm',
   showCancel: true,
-  showFooter: undefined as unknown as boolean,
+  showFooter: null,
 })
 
 const emit = defineEmits<{
@@ -114,7 +115,7 @@ const emit = defineEmits<{
 // --- 派生状态：showFooter 由 variant + 显式 prop 共同决定 ---
 // 显式传 showFooter 则尊重传值，否则按 variant 取默认值
 const resolvedShowFooter = computed(() => {
-  if (props.showFooter !== undefined) return props.showFooter
+  if (props.showFooter !== null) return props.showFooter
   return props.variant === 'confirm'
 })
 
@@ -137,41 +138,6 @@ const sizeClass = computed(() => {
   return sizeMap[props.size]
 })
 
-// --- 焦点陷阱 ---
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(', ')
-
-function getFocusableElements(): HTMLElement[] {
-  if (!dialogRef.value) return []
-  return Array.from(dialogRef.value.querySelectorAll(FOCUSABLE_SELECTOR))
-}
-
-function trapTab(e: KeyboardEvent) {
-  const focusable = getFocusableElements()
-  if (focusable.length === 0) return
-
-  const first = focusable[0]
-  const last = focusable[focusable.length - 1]
-
-  if (e.shiftKey) {
-    if (document.activeElement === first) {
-      e.preventDefault()
-      last.focus()
-    }
-  } else {
-    if (document.activeElement === last) {
-      e.preventDefault()
-      first.focus()
-    }
-  }
-}
-
 // --- 限定作用域的键盘处理 ---
 function onKeyDown(e: KeyboardEvent) {
   // Escape：始终关闭弹窗
@@ -184,7 +150,7 @@ function onKeyDown(e: KeyboardEvent) {
 
   // Tab：焦点陷阱循环（两种模式通用）
   if (e.key === 'Tab') {
-    trapTab(e)
+    trapFocus(getFocusableElements(dialogRef.value!), e)
     return
   }
 
@@ -233,7 +199,7 @@ function onOverlayClick() {
 onMounted(() => {
   previousFocusEl = document.activeElement as HTMLElement
   nextTick(() => {
-    const focusable = getFocusableElements()
+    const focusable = getFocusableElements(dialogRef.value!)
     if (focusable.length > 0) {
       if (props.variant === 'confirm') {
         // 确认型：聚焦确认按钮（最后一个可聚焦元素）

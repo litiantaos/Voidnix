@@ -85,12 +85,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useScroll } from '@vueuse/core'
-import { listen } from '@tauri-apps/api/event'
+import { invoke } from '@tauri-apps/api/core'
+import { useTauriListener } from '@/composables/useTauriListener'
 import { getModule } from '@/core/module-registry'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
+import { isTauri } from '@/utils/tauri'
 import type { SearchResult } from '@/types/module'
 import ContentView from '@/components/layout/ContentView.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -98,7 +100,7 @@ import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 
 import { useScrollPosition } from '@/composables/useScrollPosition'
 import { useSearchCommand } from '@/composables/useSearchCommand'
-import { triggerDelete } from '@ext/clipboard/index'
+import { getFocusableElements, cycleFocus } from '@/utils/dom'
 
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
@@ -110,6 +112,20 @@ const contentViewRef = ref<InstanceType<typeof ContentView>>()
 const results = ref<SearchResult[]>([])
 const selectedIndex = ref(0)
 const isTagHovered = ref(false)
+
+const WINDOW_WIDTH = 720
+const SEARCH_BAR_HEIGHT = 60
+const ITEM_HEIGHT = 52
+const LIST_PADDING = 16
+const MIN_WINDOW_HEIGHT = 200
+const MAX_WINDOW_HEIGHT = 480
+
+function resizeWindowForResultCount(count: number) {
+  if (!isTauri) return
+  let height = SEARCH_BAR_HEIGHT + LIST_PADDING + count * ITEM_HEIGHT + LIST_PADDING
+  height = Math.max(MIN_WINDOW_HEIGHT, Math.min(height, MAX_WINDOW_HEIGHT))
+  invoke('set_main_window_size', { width: WINDOW_WIDTH, height }).catch(() => {})
+}
 
 const scrollContainer = computed(() => contentViewRef.value?.scrollContainer)
 const { y: scrollTop } = useScroll(scrollContainer)
@@ -130,6 +146,18 @@ const { onInput, handleExecute, handleTagClose, isLoading } = useSearchCommand({
   reset,
 })
 
+watch(
+  [results, activeModule, () => appStore.showPanel],
+  () => {
+    if (activeModule.value) {
+      invoke('set_main_window_size', { width: WINDOW_WIDTH, height: MAX_WINDOW_HEIGHT }).catch(() => {})
+      return
+    }
+    resizeWindowForResultCount(results.value.length)
+  },
+  { immediate: true },
+)
+
 // 进入模块面板时释放搜索栏焦点，让键盘事件能到达面板内容
 // 注意：必须先把焦点转移到容器，否则窗口会因失焦而自动隐藏
 watch(
@@ -143,39 +171,12 @@ watch(
   },
 )
 
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(', ')
-
-function getSearchBarFocusables(): HTMLElement[] {
-  if (!searchBarRef.value) return []
-  return Array.from(searchBarRef.value.querySelectorAll(FOCUSABLE_SELECTOR))
-}
-
 function onSearchBarKeydown(e: KeyboardEvent) {
   if (e.key !== 'Tab') return
-
-  const focusable = getSearchBarFocusables()
+  const focusable = getFocusableElements(searchBarRef.value!)
   if (focusable.length === 0) return
-
-  e.preventDefault()
-  e.stopPropagation()
-
-  const active = document.activeElement as HTMLElement
-  let idx = focusable.indexOf(active)
-
-  if (e.shiftKey) {
-    idx = idx <= 0 ? focusable.length - 1 : idx - 1
-  } else {
-    idx = idx < 0 || idx >= focusable.length - 1 ? 0 : idx + 1
-  }
-
-  focusable[idx].focus()
+  e.preventDefault(); e.stopPropagation()
+  cycleFocus(focusable, e)
 }
 
 function onTagClose() {
@@ -190,15 +191,9 @@ function onSearchKeydown(e: KeyboardEvent) {
   }
 }
 
-let unlistenCmdBs: (() => void) | undefined
-onMounted(() => {
-  listen('cmd-backspace', () => {
-    if (appStore.activeModuleId === 'clipboard') {
-      triggerDelete()
-    } else if (!appStore.searchQuery) {
-      handleTagClose()
-    }
-  }).then(fn => { unlistenCmdBs = fn })
+useTauriListener('cmd-backspace', () => {
+  if (!appStore.searchQuery) {
+    handleTagClose()
+  }
 })
-onUnmounted(() => { unlistenCmdBs?.() })
 </script>

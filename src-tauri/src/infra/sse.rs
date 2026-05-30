@@ -1,5 +1,6 @@
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::Ordering;
 use tauri::Emitter;
 
 /// ─── 安全常量 ───────────────────────────────────────────
@@ -49,6 +50,12 @@ const BLOCKED_HOST_PREFIXES: &[&str] = &[
     "0.",
 ];
 
+const BLOCKED_HOST_EXACT: &[&str] = &[
+    "0.0.0.0",
+    "metadata.google.internal",
+    "metadata.tencentyun.com",
+];
+
 /// 验证 endpoint 安全性，返回 (scheme, safe_endpoint)
 pub fn validate_endpoint(endpoint: &str) -> Result<(String, String), String> {
     let trimmed = endpoint.trim();
@@ -59,6 +66,7 @@ pub fn validate_endpoint(endpoint: &str) -> Result<(String, String), String> {
     let host_lower = host.to_lowercase();
     let is_localhost = host_lower == "localhost"
         || host_lower == "127.0.0.1"
+        || host_lower == "::1"
         || host_lower == "[::1]";
 
     if scheme != "https" && !is_localhost {
@@ -68,13 +76,25 @@ pub fn validate_endpoint(endpoint: &str) -> Result<(String, String), String> {
         );
     }
 
-    if host_lower == "0.0.0.0"
-        || host_lower == "[::1]"
-        || host_lower == "metadata.google.internal"
-        || host_lower == "metadata.tencentyun.com"
-    {
+    for exact in BLOCKED_HOST_EXACT {
+        if host_lower == *exact {
+            return Err(format!(
+                "Endpoint '{}' is blocked for security reasons.",
+                host
+            ));
+        }
+    }
+
+    if host_lower.starts_with("fc") || host_lower.starts_with("fd") || host_lower.starts_with("fe80") {
         return Err(format!(
-            "Endpoint '{}' is blocked for security reasons.",
+            "Private/internal IPv6 network endpoints are not allowed: '{}'.",
+            host
+        ));
+    }
+
+    if host_lower.starts_with("::ffff:") || host_lower.starts_with("[::ffff:") {
+        return Err(format!(
+            "IPv4-mapped IPv6 addresses are not allowed: '{}'.",
             host
         ));
     }
@@ -93,6 +113,17 @@ pub fn validate_endpoint(endpoint: &str) -> Result<(String, String), String> {
     }
 
     Ok((scheme.to_string(), trimmed.to_string()))
+}
+
+pub fn validate_ai_request(endpoint: &str, model: &str, api_key: &str) -> Result<String, String> {
+    let (_scheme, safe_endpoint) = validate_endpoint(endpoint)?;
+    if model.trim().is_empty() {
+        return Err("模型名称不能为空".into());
+    }
+    if api_key.trim().is_empty() {
+        return Err("API Key 不能为空".into());
+    }
+    Ok(safe_endpoint)
 }
 
 /// ─── 消息安全处理 ──────────────────────────────────────
@@ -138,6 +169,7 @@ pub struct StreamConfig<'a> {
     pub chunk_event: &'a str,
     pub done_event: &'a str,
     pub request_id: &'a str,
+    pub abort_flag: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
 /// ─── 通用 SSE 流式请求 ──────────────────────────────────
@@ -196,6 +228,15 @@ pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<(), Strin
     let mut buffer = String::new();
 
     while let Some(item) = stream.next().await {
+        if let Some(flag) = config.abort_flag {
+            if flag.swap(false, Ordering::SeqCst) {
+                let _ = config.app.emit(
+                    config.done_event,
+                    serde_json::json!({ "requestId": config.request_id }),
+                );
+                return Ok(());
+            }
+        }
         let chunk = item.map_err(|e| {
             log::error!("Stream read error: {}", e);
             "Stream connection interrupted.".to_string()

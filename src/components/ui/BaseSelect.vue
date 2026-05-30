@@ -8,6 +8,9 @@
             disabled ? 'ui-disabled' : '',
         ]"
         tabindex="0"
+        role="combobox"
+        :aria-expanded="isOpen"
+        aria-haspopup="listbox"
         @keydown="onKeyDown"
         @click="toggleOpen"
     >
@@ -44,6 +47,7 @@
                     data-select-dropdown
                     :style="dropdownStyle"
                     class="p-1 rounded-lg bg-white max-w-[80vw] select-none shadow-lg"
+                    role="listbox"
                 >
                     <template v-for="(item, index) in flatItems" :key="index">
                         <div

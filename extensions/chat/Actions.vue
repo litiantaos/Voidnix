@@ -12,6 +12,7 @@ v-if="modelOptions.length > 0"
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { providerLabelFromUrl } from '@/utils/provider'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { newConversation } from './index'
@@ -20,17 +21,6 @@ import BaseSelect from '@/components/ui/BaseSelect.vue'
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
-
-function providerLabel(url: string, fallback: string): string {
-  if (!url) return fallback
-  try {
-    const parts = new URL(url).hostname.split('.')
-    if (parts.length >= 2) return parts[parts.length - 2].toUpperCase()
-    return parts[0].toUpperCase()
-  } catch {
-    return fallback
-  }
-}
 
 const modelOptions = computed(() => {
   if (settings.chatConfigs.length <= 1) {
@@ -41,7 +31,7 @@ const modelOptions = computed(() => {
       .map((m) => ({ label: m, value: `${config.id}::${m}` }))
   }
   return settings.chatConfigs.map((config) => ({
-    label: providerLabel(config.endpoint, 'API'),
+    label: providerLabelFromUrl(config.endpoint, 'API'),
     options: config.models
       .filter((m) => m.trim())
       .map((m) => ({ label: m, value: `${config.id}::${m}` })),

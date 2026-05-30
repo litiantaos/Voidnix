@@ -31,7 +31,6 @@
 <script setup lang="ts">
 import { toRef } from 'vue'
 import { useInputControl } from '@/composables/useInputControl'
-import { useAppStore } from '@/stores/app'
 
 interface Props {
   modelValue?: string
@@ -54,9 +53,9 @@ const emit = defineEmits<{
   focus: [FocusEvent]
   blur: [FocusEvent]
   keydown: [KeyboardEvent]
+  compositionstart: []
+  compositionend: []
 }>()
-
-const appStore = useAppStore()
 
 const {
   elRef: inputRef,
@@ -70,11 +69,11 @@ const {
 })
 
 function onCompositionStart() {
-  appStore.setComposing(true)
+  emit('compositionstart')
 }
 
 function onCompositionEnd() {
-  appStore.setComposing(false)
+  emit('compositionend')
 }
 
 defineExpose({ focus, blur, inputRef })

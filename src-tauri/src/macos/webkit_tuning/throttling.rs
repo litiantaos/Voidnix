@@ -17,17 +17,30 @@ use crate::macos::webkit_tuning::{log, WindowOps};
 /// NSWindowCollectionBehaviorTransient 位掩码（值 = 1 << 3 = 8）。
 const TRANSIENT: u64 = 1 << 3;
 
-/// 组件失败计数器；达到 FAIL_LIMIT 后永久禁用。
-static FAIL_COUNT: AtomicU8 = AtomicU8::new(0);
-const FAIL_LIMIT: u8 = 3;
+static FAIL_COUNTER: FailCounter = FailCounter::new(3);
 
-fn is_disabled() -> bool {
-    FAIL_COUNT.load(Ordering::SeqCst) >= FAIL_LIMIT
+struct FailCounter {
+    count: AtomicU8,
+    limit: u8,
 }
 
-fn record_failure() {
-    FAIL_COUNT.fetch_add(1, Ordering::SeqCst);
+impl FailCounter {
+    const fn new(limit: u8) -> Self {
+        Self { count: AtomicU8::new(0), limit }
+    }
+    fn is_disabled(&self) -> bool {
+        self.count.load(Ordering::SeqCst) >= self.limit
+    }
+    fn record_failure(&self) {
+        self.count.fetch_add(1, Ordering::SeqCst);
+    }
+    fn reset(&self) {
+        self.count.store(0, Ordering::SeqCst);
+    }
 }
+
+fn is_disabled() -> bool { FAIL_COUNTER.is_disabled() }
+fn record_failure() { FAIL_COUNTER.record_failure() }
 
 /// 一次性安装：设置 occlusionDetection=false 与 collectionBehavior |= Transient。
 ///
@@ -112,21 +125,16 @@ mod tests {
     use proptest::prelude::*;
     use std::time::Instant;
 
-    /// 重置全局失败计数器，避免测试间相互污染。
-    fn reset_fail_count() {
-        FAIL_COUNT.store(0, Ordering::SeqCst);
-    }
-
-    /// 所有操作全局 FAIL_COUNT 的测试必须持有此锁，避免并行测试相互污染。
-    static FAIL_COUNT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// 所有操作全局 FAIL_COUNTER 的测试必须持有此锁，避免并行测试相互污染。
+    static FAIL_COUNTER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     // ── 基础单元测试 ─────────────────────────────────────────────────────────
 
     /// install 后 occlusion_detection 应为 false，collectionBehavior 应包含 Transient。
     #[test]
     fn install_sets_occlusion_false_and_transient() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         assert!(w.occlusion_detection(), "安装前 occlusion_detection 应为 true");
         install(&w);
@@ -141,8 +149,8 @@ mod tests {
     /// hide 后 alpha==0，ignores_mouse==true，order_out_count==0，steps 含 alpha-fade-hide。
     #[test]
     fn hide_sets_alpha_zero_and_ignores_mouse() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         install(&w);
         w.set_alpha(1.0);
@@ -161,8 +169,8 @@ mod tests {
     /// prepare_show 后 ignores_mouse 应为 false，order_front_count > 0，steps 含 prepare-show。
     #[test]
     fn prepare_show_restores_mouse_and_orders_front() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         install(&w);
         w.set_ignores_mouse(true);
@@ -184,8 +192,8 @@ mod tests {
     /// 注：Property 4 完整时序（pre-show → alpha=1 ≤16ms）在 T10 跨组件验证。
     #[test]
     fn prepare_show_does_not_set_alpha() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         install(&w);
         w.set_alpha(0.0); // 模拟隐藏状态
@@ -200,30 +208,30 @@ mod tests {
         );
     }
 
-    // ── 边界用例：FAIL_COUNT 达到上限后 hide 走 fallback 路径 ────────────────
+    // ── 边界用例：FAIL_COUNTER 达到上限后 hide 走 fallback 路径 ────────────────
     // Validates: Requirements 2.8
     //
     // 注：在纯 Rust 单元测试中无法直接注入 Obj-C 异常让 try_block 返回 false，
-    // 因此通过将 FAIL_COUNT 直接设为 FAIL_LIMIT 来模拟永久禁用状态，
+    // 因此通过将 FAIL_COUNTER 直接设为上限来模拟永久禁用状态，
     // 验证 hide 在该状态下走 fallback 路径并写入相应步骤。
     #[test]
     fn hide_fallback_when_permanently_disabled() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
-        // 直接将 FAIL_COUNT 设为上限，模拟永久禁用
-        FAIL_COUNT.store(FAIL_LIMIT, Ordering::SeqCst);
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
+        // 直接将 FAIL_COUNTER 设为上限，模拟永久禁用
+        FAIL_COUNTER.count.store(3, Ordering::SeqCst);
         let w = MockWindow::new();
         let mut steps = log::Steps::new();
         hide(&w, &mut steps);
         // 永久禁用路径：steps 应包含 fallback 相关步骤
         assert!(
             steps.iter().any(|s| s.contains("fallback") || s.contains("disabled")),
-            "FAIL_COUNT 达到上限后 hide 应走 fallback 路径，steps={:?}",
+            "FAIL_COUNTER 达到上限后 hide 应走 fallback 路径，steps={:?}",
             steps
         );
         // 永久禁用时不应修改 alpha（不执行 try_block 内的操作）
         assert_eq!(w.alpha(), 1.0, "永久禁用时 hide 不应修改 alpha");
-        reset_fail_count();
+        FAIL_COUNTER.reset();
     }
 
     // ── Property 3: Hide 后置条件不变量 ─────────────────────────────────────
@@ -241,8 +249,8 @@ mod tests {
             // false=hide, true=show
             ops in proptest::collection::vec(any::<bool>(), 1..32)
         ) {
-            let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            reset_fail_count();
+            let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            FAIL_COUNTER.reset();
             let w = MockWindow::new();
             install(&w);
 
@@ -285,8 +293,8 @@ mod tests {
         fn property_5_collection_behavior_always_transient(
             ops in proptest::collection::vec(any::<bool>(), 0..32)
         ) {
-            let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            reset_fail_count();
+            let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            FAIL_COUNTER.reset();
             let w = MockWindow::new();
             install(&w);
 
@@ -325,8 +333,8 @@ mod tests {
         fn property_4_prepare_show_does_not_set_alpha(
             initial_alpha in proptest::num::f64::POSITIVE
         ) {
-            let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            reset_fail_count();
+            let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            FAIL_COUNTER.reset();
             let w = MockWindow::new();
             install(&w);
             // 设置任意初始 alpha（模拟各种初始状态）

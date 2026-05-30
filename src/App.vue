@@ -21,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch, shallowRef, type Component } from 'vue'
+import { onMounted, onUnmounted, watch, shallowRef, onErrorCaptured, type Component } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -30,7 +30,7 @@ import BaseDialog from '@/components/ui/BaseDialog.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
-import { isTauri } from '@/utils/tauri'
+import { isTauri, hideWindow } from '@/utils/tauri'
 import { getAllModules, getModule } from '@/core/module-registry'
 
 let win: ReturnType<typeof getCurrentWindow> | null = null
@@ -58,6 +58,11 @@ if (win?.label) {
 const settings = useSettingsStore()
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
+
+onErrorCaptured((err) => {
+  console.error('[Voidnix] Uncaught component error:', err)
+  return false
+})
 
 function effectiveShortcut(id: string, fallback?: string): string {
   return settings.getShortcutOverride(id) || fallback || ''
@@ -167,8 +172,8 @@ onMounted(async () => {
         const wasVisible = event.payload.wasVisible
 
         if (shortcutId === 'main') {
-          if (wasVisible) {
-            invoke('hide_window').catch(() => {})
+           if (wasVisible) {
+            hideWindow()
             return
           }
         } else {
@@ -199,9 +204,9 @@ onMounted(async () => {
       markSkip()
     })
 
-    unlistenClickOutside = await listen('click-outside', () => {
-      invoke('hide_window').catch(() => {})
-    })
+     unlistenClickOutside = await listen('click-outside', () => {
+       hideWindow(true)
+     })
 
     // 通用模块面板事件：任何模块都可以通过 Rust `open_module_panel` 触发
     await listen<{ moduleId: string; payload: unknown }>(
@@ -239,10 +244,10 @@ onMounted(async () => {
           invoke<boolean>('is_app_active')
             .then((active) => {
               if (active) return
-              invoke('hide_window').catch(() => {})
+              hideWindow(true)
             })
             .catch(() => {
-              invoke('hide_window').catch(() => {})
+              hideWindow(true)
             })
         }
       },

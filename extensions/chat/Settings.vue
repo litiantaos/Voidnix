@@ -43,7 +43,7 @@
         <BaseListItem
           v-else
           :ref="setRef"
-          :title="providerLabel(item.config.endpoint, 'API')"
+          :title="providerLabelFromUrl(item.config.endpoint, 'API')"
           :subtitle="
             item.config.models.filter(Boolean).join('、') || '未配置模型'
           "
@@ -141,32 +141,16 @@ import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
+import { providerLabelFromUrl } from '@/utils/provider'
 import { useSettingsInput } from '@/composables/useSettingsInput'
+import { useShortcutConfig } from '@/composables/useShortcutConfig'
 
 const settings = useSettingsStore()
 useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'chat-shortcut'
 
-/** 从 URL 中提取倒数第一个点和倒数第二个点之间的文本，转大写 */
-function providerLabel(url: string, fallback: string): string {
-  if (!url) return fallback
-  try {
-    const parts = new URL(url).hostname.split('.')
-    if (parts.length >= 2) return parts[parts.length - 2].toUpperCase()
-    return parts[0].toUpperCase()
-  } catch {
-    return fallback
-  }
-}
-
-const handleChatShortcutChange = async (val: string) => {
-  await settings.setShortcutOverride('chat', val)
-}
-
-const chatShortcutValue = computed(
-  () => settings.getShortcutOverride('chat') || 'CommandOrControl+Shift+A',
-)
+const { value: chatShortcutValue, update: handleChatShortcutChange } = useShortcutConfig('chat', 'CommandOrControl+Shift+A')
 
 interface ModalForm {
   endpoint: string

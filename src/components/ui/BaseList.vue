@@ -1,5 +1,5 @@
 <template>
-  <div class="p-2 flex flex-col gap-1">
+  <div class="p-2 flex flex-col gap-1" role="listbox" aria-label="搜索结果">
     <template v-for="(item, i) in items" :key="i">
       <div
         v-if="
@@ -45,6 +45,7 @@
 import { ref, watch, nextTick, onActivated, onDeactivated } from 'vue'
 import { onKeyStroke } from '@vueuse/core'
 import { useAppStore } from '@/stores/app'
+import { isComposing as isComposingCheck, isFormControl, wrapIndex } from '@/utils/dom'
 
 const appStore = useAppStore()
 
@@ -123,14 +124,17 @@ function onItemClick(index: number, e: MouseEvent) {
   if (!props.multiSelect) return
   const ids = new Set(props.selectedIds ?? [])
   if (e.metaKey || e.ctrlKey) {
-    if (ids.size === 0) ids.add(getId(props.items[localIndex.value]))
+    if (ids.size === 0) {
+      ids.add(getId(props.items[localIndex.value]))
+      if (anchorIndex < 0) anchorIndex = localIndex.value
+    }
     const id = getId(props.items[index])
     if (ids.has(id)) ids.delete(id)
     else ids.add(id)
-    anchorIndex = index
     setSelectedIndex(index)
     emitIds(ids)
-  } else if (e.shiftKey && anchorIndex >= 0) {
+  } else if (e.shiftKey) {
+    if (anchorIndex < 0) anchorIndex = localIndex.value
     const [start, end] = [Math.min(anchorIndex, index), Math.max(anchorIndex, index)]
     const newIds = new Set<string>()
     for (let i = start; i <= end; i++) {
@@ -151,94 +155,50 @@ function onItemDblClick(index: number) {
 
 // ── Keyboard ──
 if (props.keyboardNavigation) {
-  function isSettingsControl(activeEl: Element | null) {
-    return (
-      activeEl &&
-      (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) ||
-        activeEl.classList.contains('custom-select') ||
-        activeEl.hasAttribute('data-settings-control'))
-    )
-  }
-
-  onKeyStroke('ArrowDown', (e) => {
+  onKeyStroke(['ArrowDown', 'ArrowUp'], (e) => {
     if (!isActive.value) return
     if (!appStore.activeModuleId) return
-    if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
-    const activeEl = document.activeElement
-    if (isSettingsControl(activeEl) && activeEl!.id !== 'main-search-input') return
+    if (appStore.isComposing || isComposingCheck(e)) return
+    if (isFormControl(document.activeElement, { settingsControl: true }) && (document.activeElement as Element).id !== 'main-search-input') return
+
+    const direction = e.key === 'ArrowDown' ? 'down' : 'up'
 
     if (props.multiSelect && e.shiftKey) {
       e.preventDefault()
-      const next = Math.min(localIndex.value + 1, props.items.length - 1)
-      if (anchorIndex < 0) anchorIndex = localIndex.value
-      const [start, end] = [Math.min(anchorIndex, next), Math.max(anchorIndex, next)]
-      const ids = new Set<string>()
-      for (let i = start; i <= end; i++) {
-        ids.add(getId(props.items[i]))
+      if (direction === 'down') {
+        const next = Math.min(localIndex.value + 1, props.items.length - 1)
+        if (next !== localIndex.value) {
+          if (anchorIndex < 0) anchorIndex = localIndex.value
+          const [start, end] = [Math.min(anchorIndex, next), Math.max(anchorIndex, next)]
+          const ids = new Set<string>()
+          for (let i = start; i <= end; i++) {
+            ids.add(getId(props.items[i]))
+          }
+          setSelectedIndex(next)
+          emitIds(ids)
+        }
+      } else {
+        const next = Math.max(localIndex.value - 1, 0)
+        if (next !== localIndex.value) {
+          if (anchorIndex < 0) anchorIndex = localIndex.value
+          const [start, end] = [Math.min(anchorIndex, next), Math.max(anchorIndex, next)]
+          const ids = new Set<string>()
+          for (let i = start; i <= end; i++) {
+            ids.add(getId(props.items[i]))
+          }
+          setSelectedIndex(next)
+          emitIds(ids)
+        }
       }
-      setSelectedIndex(next)
-      emitIds(ids)
-      return
-    }
-
-    if (props.multiSelect && (props.selectedIds?.size ?? 0) > 0) {
-      e.preventDefault()
-      const indices = [...(props.selectedIds ?? [])]
-        .map(id => props.items.findIndex(item => getId(item) === id))
-        .filter(i => i >= 0)
-        .sort((a, b) => a - b)
-      const target = Math.min(indices[indices.length - 1] + 1, props.items.length - 1)
-      setSelectedIndex(target)
-      emitIds(new Set())
       return
     }
 
     e.preventDefault()
     if (props.items.length > 0) {
-      setSelectedIndex(
-        localIndex.value >= props.items.length - 1 ? 0 : localIndex.value + 1,
-      )
-    }
-  })
-
-  onKeyStroke('ArrowUp', (e) => {
-    if (!isActive.value) return
-    if (!appStore.activeModuleId) return
-    if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
-    const activeEl = document.activeElement
-    if (isSettingsControl(activeEl) && activeEl!.id !== 'main-search-input') return
-
-    if (props.multiSelect && e.shiftKey) {
-      e.preventDefault()
-      const next = Math.max(localIndex.value - 1, 0)
-      if (anchorIndex < 0) anchorIndex = localIndex.value
-      const [start, end] = [Math.min(anchorIndex, next), Math.max(anchorIndex, next)]
-      const ids = new Set<string>()
-      for (let i = start; i <= end; i++) {
-        ids.add(getId(props.items[i]))
-      }
+      const next = wrapIndex(localIndex.value, props.items.length, direction)
       setSelectedIndex(next)
-      emitIds(ids)
-      return
-    }
-
-    if (props.multiSelect && (props.selectedIds?.size ?? 0) > 0) {
-      e.preventDefault()
-      const indices = [...(props.selectedIds ?? [])]
-        .map(id => props.items.findIndex(item => getId(item) === id))
-        .filter(i => i >= 0)
-        .sort((a, b) => a - b)
-      const target = Math.max(indices[0] - 1, 0)
-      setSelectedIndex(target)
-      emitIds(new Set())
-      return
-    }
-
-    e.preventDefault()
-    if (props.items.length > 0) {
-      setSelectedIndex(
-        localIndex.value <= 0 ? props.items.length - 1 : localIndex.value - 1,
-      )
+      anchorIndex = next
+      if ((props.selectedIds?.size ?? 0) > 0) emitIds(new Set())
     }
   })
 
@@ -264,10 +224,9 @@ if (props.keyboardNavigation) {
   onKeyStroke('Enter', (e) => {
     if (!isActive.value) return
     if (!appStore.activeModuleId) return
-    if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
-    const activeEl = document.activeElement
-    if (isSettingsControl(activeEl) && activeEl!.id !== 'main-search-input') return
-    if (activeEl?.tagName === 'BUTTON' && activeEl.id !== 'main-search-input') return
+    if (appStore.isComposing || isComposingCheck(e)) return
+    if (isFormControl(document.activeElement, { settingsControl: true }) && (document.activeElement as Element).id !== 'main-search-input') return
+    if (document.activeElement?.tagName === 'BUTTON' && document.activeElement!.id !== 'main-search-input') return
     e.preventDefault()
     if (props.items.length > 0) {
       const el = itemRefs.value[localIndex.value]

@@ -245,7 +245,32 @@ pub fn hide_main(app: &AppHandle) {
     log::event("hide", &steps);
 }
 
-pub fn resize_main(_app: &AppHandle, _w: f64, _h: f64) -> Result<(), String> {
+pub fn resize_main(app: &AppHandle, w: f64, h: f64) -> Result<(), String> {
+    let mut steps = log::Steps::new();
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(window) = app.get_webview_window("main") {
+            if let Some(real_window) = RealWindow::from_webview_window(&window) {
+                frame_animator::ensure_capacity(&real_window, w, h, &mut steps);
+                frame_animator::animate(&real_window, w, h, &mut steps);
+            } else {
+                return Err("NSWindow unavailable".into());
+            }
+        } else {
+            return Err("Main window not found".into());
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.set_size(tauri::LogicalSize::new(w, h));
+        }
+        steps.push("legacy-set-size");
+    }
+
+    log::event("resize", &steps);
     Ok(())
 }
 

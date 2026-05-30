@@ -24,7 +24,7 @@
         <div
           v-else
           class="markdown-body"
-          v-html="marked(msg.content)"
+          v-html="renderMarkdown(msg.content)"
         />
       </div>
     </div>
@@ -51,6 +51,7 @@
 import { computed, ref, nextTick, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import {
   currentConversation,
   streamingMessage,
@@ -64,6 +65,11 @@ marked.setOptions({
   gfm: true,
   breaks: true,
 })
+
+const renderMarkdown = (content: string) => {
+  const result = marked.parse(content)
+  return typeof result === 'string' ? DOMPurify.sanitize(result) : ''
+}
 
 const MAX_INPUT_LENGTH = 8192
 

@@ -216,9 +216,34 @@ extensions/             # 所有功能扩展
 
 **样式**：主题色 `accent`；`rounded-md`（控件）/ `rounded-lg`（面板）；`h-7`；`text-sm` / `text-xs`；色阶 `text-tx-primary → secondary → subtle → muted → hint → faint → disabled`；工具类 `ui-ctrl` `ui-ring` `ui-focus-within` `ui-disabled` `ui-active`
 
+## 共享工具
+
+前端共享工具集中在 `src/utils/` 和 `src/core/` 下，扩展中禁止重复实现：
+
+| 模块 | 导出 | 用途 |
+|---|---|---|
+| `src/utils/clipboard.ts` | `copyAndHide(value)` | 复制到剪贴板并隐藏窗口 |
+| `src/utils/tauri.ts` | `isTauri`, `hideWindow(auto?)`, `toSearchResults()`, `cacheIconFromResult()` | Tauri 环境判断、窗口隐藏、搜索结果转换 |
+| `src/utils/provider.ts` | `providerLabelFromUrl(url, fallback)` | 从 API URL 提取提供商标签 |
+| `src/utils/error.ts` | `toErrorMessage(e, fallback?)` | 统一 Error → 字符串 |
+| `src/utils/dom.ts` | `getFocusableElements()`, `isComposing()`, `isFormControl()`, `cycleFocus()`, `trapFocus()`, `wrapIndex()` | DOM 查询、键盘事件、焦点管理 |
+| `src/core/module-helpers.ts` | `moduleSelfResult()`, `getVisibleModules()`, `moduleToSearchResult()`, `keywordModuleSearch()`, `makeToggleHandler()` | 模块搜索结果构建、快捷键 toggle 处理 |
+
+Composables：`useSearchCommand` `useScrollPosition` `useInputControl` `useSettingsInput` `useTauriListener` `useShortcutConfig`
+
+**settingsStore 内部工具**：`parseActiveConfig()` `createConfigManager()` `createSyncedSetter()` `loadSetting()`
+
 ## 状态管理
 
-`appStore`（窗口/弹窗）/ `modulesStore`（模块列表）/ `settingsStore`（持久化）；Composables：`useSearchCommand` `useScrollPosition` `useInputControl` `useSettingsInput`
+`appStore`（窗口/弹窗）/ `settingsStore`（持久化）
+
+## Rust 共享工具
+
+| 模块 | 导出 | 用途 |
+|---|---|---|
+| `infra::db::Database` | `conn()` | 封装 Mutex lock + poison recovery |
+| `infra::sse` | `validate_ai_request(endpoint, model, api_key)` | AI 请求端点/模型/密钥统一校验 |
+| `webkit_tuning::FailCounter` | `new(limit)`, `is_disabled()`, `record_failure()`, `reset()` | 原子失败计数器，替代重复 static+fn |
 
 ## 约定
 

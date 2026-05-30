@@ -25,15 +25,7 @@ fn prepare_ai_translate(
         return Err("文本不能为空".to_string());
     }
 
-    let (_scheme, safe_endpoint) = sse::validate_endpoint(endpoint)?;
-
-    if model.trim().is_empty() {
-        return Err("模型名称不能为空".into());
-    }
-
-    if api_key.trim().is_empty() {
-        return Err("API Key 不能为空".into());
-    }
+    let safe_endpoint = sse::validate_ai_request(endpoint, model, api_key)?;
 
     let to_lang_code = smart_target_lang(text, target_lang.unwrap_or("zh"));
     let from_lang_name = detect_source_lang_name(text);
@@ -176,6 +168,7 @@ pub async fn translate_ai_stream(
         chunk_event: "translate-chunk",
         done_event: "translate-done",
         request_id: &request_id,
+        abort_flag: None,
     })
     .await
 }

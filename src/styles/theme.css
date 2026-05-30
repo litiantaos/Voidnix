@@ -23,7 +23,6 @@ body {
   background: transparent;
   color: var(--color-text-primary);
   overflow: hidden;
-  user-select: none;
 }
 
 ::-webkit-scrollbar {

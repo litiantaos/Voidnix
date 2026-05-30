@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
+import { moduleSelfResult } from '@/core/module-helpers'
 import type { AppModule } from '@/types/module'
 
 const ScreenshotView = asyncView(() => import('./View.vue'))
@@ -70,17 +71,7 @@ const mod: AppModule = {
       '文字识别'.includes(query) ||
       'shibie'.includes(query.toLowerCase())
     ) {
-      return [
-        {
-          id: 'screenshot-ocr',
-          title: 'OCR 文字识别',
-          description: '打开截图 OCR',
-          module: 'screenshot',
-          icon: 'i-ri-scan-line',
-          score: 100,
-          data: { kind: 'module', moduleId: 'screenshot', openPanel: true },
-        },
-      ]
+      return [moduleSelfResult(mod)]
     }
     return []
   },

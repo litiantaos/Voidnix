@@ -34,7 +34,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, toRef, onMounted, onActivated } from 'vue'
 import { useInputControl } from '@/composables/useInputControl'
-import { useAppStore } from '@/stores/app'
 
 interface Props {
   modelValue?: string
@@ -60,9 +59,9 @@ const emit = defineEmits<{
   focus: [FocusEvent]
   blur: [FocusEvent]
   keydown: [KeyboardEvent]
+  compositionstart: []
+  compositionend: []
 }>()
-
-const appStore = useAppStore()
 
 const {
   elRef: textareaRef,
@@ -83,16 +82,16 @@ function onInput(e: Event) {
 }
 
 function onCompositionStart() {
-  appStore.setComposing(true)
+  emit('compositionstart')
 }
 
 function onCompositionEnd() {
-  appStore.setComposing(false)
+  emit('compositionend')
 }
 
 function onKeydown(e: KeyboardEvent) {
   baseOnKeydown(e)
-  if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
+  if (e.isComposing || e.keyCode === 229) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     emit('submit')

@@ -5,9 +5,10 @@
             selected ? 'ui-active' : 'bg-transparent',
             multilineTitle ? 'items-start' : 'items-center',
         ]"
+        role="option"
+        :aria-selected="selected"
         @click="emit('click', $event)"
         @dblclick="emit('dblclick', $event)"
-        @mouseover="emit('mouseover', $event)"
     >
         <div
             v-if="icon || $slots.icon"
@@ -59,6 +60,5 @@ defineProps<{
 const emit = defineEmits<{
     click: [MouseEvent];
     dblclick: [MouseEvent];
-    mouseover: [MouseEvent];
 }>();
 </script>

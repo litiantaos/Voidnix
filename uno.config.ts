@@ -10,7 +10,7 @@ export default defineConfig({
     presetWind4(),
     presetAttributify(),
     presetIcons({
-      warn: true,
+      warn: false,
       collections: {
         ri: () => import("@iconify-json/ri/icons.json").then((i) => i.default),
       },

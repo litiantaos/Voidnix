@@ -13,7 +13,9 @@ impl Database {
             let _ = fs::create_dir_all(parent);
         }
         let conn = Connection::open(&db_path).expect("Failed to open database");
-        
+
+        conn.pragma_update(None, "journal_mode", "WAL").expect("Failed to set WAL mode");
+
         // Initialize tables
         conn.execute(
             "CREATE TABLE IF NOT EXISTS clipboard_history (
@@ -41,5 +43,9 @@ impl Database {
         Self {
             conn: Mutex::new(conn),
         }
+    }
+
+    pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 }

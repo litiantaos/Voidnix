@@ -1,5 +1,6 @@
 <template>
   <button
+    type="button"
     :disabled="disabled"
     :class="[
       'ui-ctrl flex-none',
@@ -22,14 +23,12 @@ import { computed, useSlots } from 'vue'
 
 interface Props {
   variant?: 'default' | 'primary' | 'outline' | 'ghost'
-  active?: boolean
   disabled?: boolean
   icon?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   variant: 'default',
-  active: false,
   disabled: false,
 })
 

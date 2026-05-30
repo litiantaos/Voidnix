@@ -1,10 +1,11 @@
 import { ref, shallowRef } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
+import { moduleSelfResult, makeToggleHandler } from '@/core/module-helpers'
 import type { AppModule } from '@/types/module'
 import { commands, type ClipboardItem } from '@/bindings'
 import { useAppStore } from '@/stores/app'
+import { listen } from '@tauri-apps/api/event'
 
 const ClipboardView = asyncView(() => import('./View.vue'))
 const ClipboardSettings = asyncView(() => import('./Settings.vue'))
@@ -78,24 +79,17 @@ const mod: AppModule = {
     {
       id: 'clipboard',
       default: 'CommandOrControl+Shift+C',
-      onExecute: (wasVisible: boolean) => {
-        const appStore = useAppStore()
-        if (wasVisible && appStore.activeModuleId === 'clipboard') {
-          invoke('hide_window').catch(() => {})
-          return
-        }
-        if (wasVisible) {
-          appStore.setActiveModule('clipboard')
-          appStore.setSearchQuery('')
-          return
-        }
-        appStore.setActiveModule('clipboard')
-        appStore.setSearchQuery('')
-      },
+      onExecute: makeToggleHandler('clipboard'),
     },
   ],
   onInit: async () => {
     await fetchClipboardHistory('', false)
+    await listen('cmd-backspace', () => {
+      const appStore = useAppStore()
+      if (appStore.activeModuleId === 'clipboard') {
+        triggerDelete()
+      }
+    })
   },
   onActivate: async () => {
     activeTab.value = 'all'
@@ -104,17 +98,7 @@ const mod: AppModule = {
     if (!query.trim()) return []
 
     if (query.toLowerCase().includes('clipboard') || query.includes('剪贴板')) {
-      return [
-        {
-          id: 'clipboard-module',
-          title: '剪贴板历史',
-          description: '打开剪贴板管理扩展',
-          module: 'clipboard',
-          icon: 'i-ri-clipboard-line',
-          score: 100,
-          data: { kind: 'module', moduleId: 'clipboard' },
-        },
-      ]
+      return [moduleSelfResult(mod)]
     }
 
     try {

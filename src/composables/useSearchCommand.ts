@@ -2,15 +2,15 @@ import { ref, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
 import { onKeyStroke } from '@vueuse/core'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-shell'
-import { listen } from '@tauri-apps/api/event'
+import { useTauriListener } from '@/composables/useTauriListener'
 import {
   searchAll,
   executeResult,
-  getAllModules,
 } from '@/core/module-registry'
+import { getVisibleModules, moduleToSearchResult } from '@/core/module-helpers'
 import { useAppStore } from '@/stores/app'
 import type { SearchResult } from '@/types/module'
-import { isTauri } from '@/utils/tauri'
+import { isTauri, hideWindow } from '@/utils/tauri'
 import type { AppModule } from '@/types/module'
 
 interface Options {
@@ -29,9 +29,27 @@ export function useSearchCommand(opts: Options) {
 
   let searchTimeout: ReturnType<typeof setTimeout> | null = null
   let currentSearchId = 0
-  let unlistenCacheUpdated: (() => void) | undefined
 
   const isLoading = ref(false)
+
+  function clearSearch(value = '') {
+    appStore.setSearchQuery(value)
+    if (searchInput.value) searchInput.value.value = value
+  }
+
+  function goBackToToolList() {
+    appStore.setActiveModule(null)
+    clearSearch('/')
+    results.value = buildModuleResults()
+    if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
+    restore('tools')
+  }
+
+  useTauriListener('app-cache-updated', () => {
+    if (!appStore.activeModuleId && !appStore.searchQuery) {
+      loadDefaultResults()
+    }
+  })
 
   // --- helpers ---
 
@@ -67,18 +85,7 @@ export function useSearchCommand(opts: Options) {
   }
 
   function buildModuleResults(): SearchResult[] {
-    return getAllModules()
-      .filter((m) => !m.hidden)
-      .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999))
-      .map((m) => ({
-        id: `module-${m.id}`,
-        title: m.name,
-        description: m.description,
-        icon: m.icon,
-        module: 'system',
-        score: 1000,
-        data: { kind: 'module', moduleId: m.id },
-      }))
+    return getVisibleModules().map((m) => moduleToSearchResult(m, 1000))
   }
 
   async function loadDefaultResults() {
@@ -110,13 +117,12 @@ export function useSearchCommand(opts: Options) {
       save('tools')
       reset()
       appStore.setActiveModule(result.data.moduleId as string)
-      appStore.setSearchQuery('')
-      if (searchInput.value) searchInput.value.value = ''
+      clearSearch()
       return
     }
     await executeResult(result)
     appStore.setActiveModule(null)
-    invoke('hide_window').catch(() => {})
+    hideWindow()
   }
 
   // --- input ---
@@ -175,9 +181,7 @@ export function useSearchCommand(opts: Options) {
         return
       }
 
-      const modules = getAllModules()
-        .filter((m) => !m.hidden)
-        .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999))
+      const modules = getVisibleModules()
 
       try {
         const itemsToScore = modules.map(
@@ -193,15 +197,7 @@ export function useSearchCommand(opts: Options) {
           .filter((item) => item.score > 0)
           .sort((a, b) => b.score - a.score)
 
-        results.value = matchedModules.map(({ module: m, score }) => ({
-          id: `module-${m.id}`,
-          title: m.name,
-          description: m.description,
-          icon: m.icon,
-          module: 'system',
-          score,
-          data: { kind: 'module', moduleId: m.id },
-        }))
+        results.value = matchedModules.map(({ module: m, score }) => moduleToSearchResult(m, score))
 
         if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
       } catch (e) {
@@ -288,10 +284,9 @@ export function useSearchCommand(opts: Options) {
           if (parsed.type === 'url') {
             e.preventDefault()
             open(parsed.url!).catch(() => {})
-            appStore.setSearchQuery('')
-            if (searchInput.value) searchInput.value.value = ''
+            clearSearch()
             loadDefaultResults().finally(() => {
-              invoke('hide_window').catch(() => {})
+              hideWindow()
             })
             return
           }
@@ -302,10 +297,9 @@ export function useSearchCommand(opts: Options) {
               ? `https://www.bing.com/search?q=${encodeURIComponent(keyword)}`
               : `https://www.google.com/search?q=${encodeURIComponent(keyword)}`
             open(url).catch(() => {})
-            appStore.setSearchQuery('')
-            if (searchInput.value) searchInput.value.value = ''
+            clearSearch()
             loadDefaultResults().finally(() => {
-              invoke('hide_window').catch(() => {})
+              hideWindow()
             })
           }
           return
@@ -321,8 +315,7 @@ export function useSearchCommand(opts: Options) {
               e.preventDefault()
               activeModule.value.onSearchInput(query)
               if (!activeModule.value.keepSearchInput) {
-                appStore.setSearchQuery('')
-                if (searchInput.value) searchInput.value.value = ''
+                clearSearch()
               }
             }
           }
@@ -347,13 +340,7 @@ export function useSearchCommand(opts: Options) {
 
         if (appStore.activeModuleId && !appStore.searchQuery) {
           e.preventDefault()
-          appStore.setActiveModule(null)
-          appStore.setSearchQuery('/')
-          if (searchInput.value) searchInput.value.value = '/'
-
-          results.value = buildModuleResults()
-          if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
-          restore('tools')
+          goBackToToolList()
         }
         break
       }
@@ -386,24 +373,16 @@ export function useSearchCommand(opts: Options) {
         e.preventDefault()
         if (appStore.activeModuleId) {
           if (appStore.searchQuery) {
-            appStore.setSearchQuery('')
-            if (searchInput.value) searchInput.value.value = ''
+            clearSearch()
           } else {
-            appStore.setActiveModule(null)
-            appStore.setSearchQuery('/')
-            if (searchInput.value) searchInput.value.value = '/'
-
-            results.value = buildModuleResults()
-            if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
-            restore('tools')
+            goBackToToolList()
           }
         } else if (appStore.searchQuery) {
-          appStore.setSearchQuery('')
-          if (searchInput.value) searchInput.value.value = ''
+          clearSearch()
           loadDefaultResults()
           searchInput.value?.focus()
         } else {
-          invoke('hide_window').catch(() => {})
+          hideWindow()
         }
         break
       }
@@ -416,16 +395,10 @@ export function useSearchCommand(opts: Options) {
 
   const handleTagClose = () => {
     if (appStore.searchQuery) {
-      appStore.setSearchQuery('')
-      if (searchInput.value) searchInput.value.value = ''
+      clearSearch()
       loadDefaultResults()
     } else {
-      results.value = buildModuleResults()
-      selectedIndex.value = 0
-      appStore.setActiveModule(null)
-      appStore.setSearchQuery('/')
-      if (searchInput.value) searchInput.value.value = '/'
-      restore('tools')
+      goBackToToolList()
     }
     searchInput.value?.focus()
   }
@@ -440,17 +413,10 @@ export function useSearchCommand(opts: Options) {
     if (!activeModule.value?.disableSearchInput) searchInput.value?.focus()
     await loadDefaultResults()
     window.addEventListener('window-focused', focusHandler)
-
-    unlistenCacheUpdated = await listen('app-cache-updated', () => {
-      if (!appStore.activeModuleId && !appStore.searchQuery) {
-        loadDefaultResults()
-      }
-    })
   })
 
   onUnmounted(() => {
     window.removeEventListener('window-focused', focusHandler)
-    unlistenCacheUpdated?.()
   })
 
   return {

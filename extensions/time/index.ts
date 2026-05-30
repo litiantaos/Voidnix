@@ -1,7 +1,7 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { moduleSelfResult } from '@/core/module-helpers'
+import { copyAndHide } from '@/utils/clipboard'
 
 const mod: AppModule = {
   id: 'time',
@@ -19,17 +19,7 @@ const mod: AppModule = {
       'timestamp'.includes(query.toLowerCase()) ||
       '时间'.includes(query)
     ) {
-      return [
-        {
-          id: 'time-module',
-          title: '时间戳转换',
-          description: '打开时间与时间戳转换扩展',
-          module: 'time',
-          icon: 'i-ri-time-line',
-          score: 100,
-          data: { kind: 'module', moduleId: 'time' },
-        },
-      ]
+      return [moduleSelfResult(mod)]
     }
     return []
   },
@@ -103,8 +93,7 @@ const mod: AppModule = {
   },
   onExecute: async (result) => {
     try {
-      await writeText(result.title)
-      getCurrentWindow().hide()
+      await copyAndHide(result.title)
     } catch (e) {
       console.error('Failed to copy time:', e)
     }

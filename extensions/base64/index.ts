@@ -1,7 +1,7 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { moduleSelfResult } from '@/core/module-helpers'
+import { copyAndHide } from '@/utils/clipboard'
 
 const encodeBase64 = (str: string): string => {
   try {
@@ -48,17 +48,7 @@ const mod: AppModule = {
       '编码'.includes(query) ||
       '解码'.includes(query)
     ) {
-      return [
-        {
-          id: 'base64-module',
-          title: 'Base64 编解码',
-          description: '打开 Base64 编解码扩展',
-          module: 'base64',
-          icon: 'i-ri-code-box-line',
-          score: 100,
-          data: { kind: 'module', moduleId: 'base64' },
-        },
-      ]
+      return [moduleSelfResult(mod)]
     }
     return []
   },
@@ -98,8 +88,7 @@ const mod: AppModule = {
   },
   onExecute: async (result) => {
     try {
-      await writeText(result.title)
-      getCurrentWindow().hide()
+      await copyAndHide(result.title)
     } catch (e) {
       console.error('Failed to copy base64:', e)
     }

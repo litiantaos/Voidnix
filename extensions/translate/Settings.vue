@@ -215,7 +215,9 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
+import { providerLabelFromUrl } from '@/utils/provider'
 import { useSettingsInput } from '@/composables/useSettingsInput'
+import { useShortcutConfig } from '@/composables/useShortcutConfig'
 
 const settings = useSettingsStore()
 useSettingsInput()
@@ -223,13 +225,7 @@ useSettingsInput()
 const SHORTCUT_ITEM_ID = 'translate-shortcut'
 const LANG_ITEM_ID = 'translate-target-lang'
 
-const handleTranslateShortcutChange = async (val: string) => {
-  await settings.setShortcutOverride('translate', val)
-}
-
-const translateShortcutValue = computed(
-  () => settings.getShortcutOverride('translate') || 'CommandOrControl+Shift+T',
-)
+const { value: translateShortcutValue, update: handleTranslateShortcutChange } = useShortcutConfig('translate', 'CommandOrControl+Shift+T')
 
 const targetLangOptions = [
   { label: '中文', value: 'zh' },
@@ -245,17 +241,9 @@ const handleTargetLangChange = async (val: string) => {
   await settings.setTranslateTargetLang(val)
 }
 
-/** 从 URL 中提取提供商标签 */
 function providerLabel(config: TranslateApiConfig): string {
   if (config.type === 'youdao') return '有道翻译'
-  if (!config.endpoint) return '翻译'
-  try {
-    const parts = new URL(config.endpoint).hostname.split('.')
-    if (parts.length >= 2) return parts[parts.length - 2].toUpperCase()
-    return parts[0].toUpperCase()
-  } catch {
-    return '翻译'
-  }
+  return providerLabelFromUrl(config.endpoint, '翻译')
 }
 
 // ── 编辑弹窗状态 ──────────────────────────────────────────

@@ -1,12 +1,20 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{LazyLock, Mutex, mpsc};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::Emitter;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 pub(crate) static SELECTED_TEXT: Mutex<String> = Mutex::new(String::new());
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(false);
+static LAST_SHOW_MS: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
 
 // ── 快捷键录制模式 ───────────────────────────────────────────────────────────
 //
@@ -64,12 +72,19 @@ pub fn is_app_active() -> bool {
 /// 供 webkit_tuning 模块读写窗口可见状态。
 pub(crate) fn set_window_visible(v: bool) {
     WINDOW_VISIBLE.store(v, Ordering::SeqCst);
+    if v {
+        LAST_SHOW_MS.store(now_ms(), Ordering::SeqCst);
+    }
 }
 
 #[tauri::command]
-pub fn hide_window(app: tauri::AppHandle) {
-    // T13：替换为 webkit_tuning::hide_main，由驯化模块负责 alpha=0 + ignoresMouseEvents
-    // 以及 click_monitor 移除，不再直接调用 window.hide() / app.hide()。
+pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
+    if auto.unwrap_or(false) {
+        let elapsed = now_ms().saturating_sub(LAST_SHOW_MS.load(Ordering::SeqCst));
+        if elapsed < 500 {
+            return;
+        }
+    }
     crate::macos::webkit_tuning::hide_main(&app);
     WINDOW_VISIBLE.store(false, Ordering::SeqCst);
 }
@@ -146,7 +161,7 @@ pub async fn register_global_shortcut(
                 let _ = app.emit(
                     "shortcut-pressed",
                     serde_json::json!({
-                        "id": shortcut_id.clone(),
+                        "id": shortcut_id,
                         "wasVisible": was_visible,
                     }),
                 );
@@ -155,7 +170,7 @@ pub async fn register_global_shortcut(
                 let id_for_check = shortcut_id.clone();
 
                 let _ = app.run_on_main_thread(move || {
-                    let window_hidden = !WINDOW_VISIBLE.load(Ordering::SeqCst);
+                    let window_hidden = !was_visible;
 
                     #[cfg(target_os = "macos")]
                     let front_pid: Option<i32> = {

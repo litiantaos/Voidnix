@@ -47,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
@@ -56,6 +56,7 @@ import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { useSettingsInput } from '@/composables/useSettingsInput'
+import { useShortcutConfig } from '@/composables/useShortcutConfig'
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
@@ -63,13 +64,7 @@ useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'screenshot-shortcut'
 
-const screenshotShortcutValue = computed(
-  () => settings.getShortcutOverride('screenshot') || 'CommandOrControl+Shift+X',
-)
-
-const handleShortcutChange = async (val: string) => {
-  await settings.setShortcutOverride('screenshot', val)
-}
+const { value: screenshotShortcutValue, update: handleShortcutChange } = useShortcutConfig('screenshot', 'CommandOrControl+Shift+X')
 
 async function pickSavePath() {
   // NSOpenPanel 运行期间抑制失焦隐藏

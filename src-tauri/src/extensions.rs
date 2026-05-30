@@ -39,6 +39,7 @@ macro_rules! configure_app {
         crate::extensions::screenshot::ocr::copy_screenshot_to_clipboard,
         crate::extensions::zsh_autosuggestions::set_zsh_autosuggestions_enabled,
         crate::extensions::zsh_autosuggestions::zsh_autosuggestions_status,
+        crate::extensions::chat::chat_abort,
         crate::extensions::chat::chat_stream,
         crate::extensions::translate::get_selected_text,
         crate::extensions::translate::ai_translate::translate_ai,

@@ -1,4 +1,13 @@
 use crate::infra::sse::{self, ChatMessage};
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static ABORT_FLAG: LazyLock<AtomicBool> = LazyLock::new(|| AtomicBool::new(false));
+
+#[tauri::command]
+pub fn chat_abort() {
+    ABORT_FLAG.store(true, Ordering::SeqCst);
+}
 
 /// ─── 主入口 ──────────────────────────────────────────────
 
@@ -12,15 +21,7 @@ pub async fn chat_stream(
     request_id: Option<String>,
 ) -> Result<(), String> {
     // ── 入口安全校验 ──────────────────────────────────────
-    let (_scheme, safe_endpoint) = sse::validate_endpoint(&endpoint)?;
-
-    if model.trim().is_empty() {
-        return Err("Model name must not be empty.".into());
-    }
-
-    if api_key.trim().is_empty() {
-        return Err("API key must not be empty.".into());
-    }
+    let safe_endpoint = sse::validate_ai_request(&endpoint, &model, &api_key)?;
 
     // 消息裁剪与截断
     let trimmed_messages = sse::trim_conversation(&messages);
@@ -36,6 +37,7 @@ pub async fn chat_stream(
         chunk_event: "chat-chunk",
         done_event: "chat-done",
         request_id: &req_id,
+        abort_flag: Some(&ABORT_FLAG),
     })
     .await
 }

@@ -3,6 +3,7 @@ import { ref, computed, type Ref } from 'vue'
 import { Store, load } from '@tauri-apps/plugin-store'
 import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from '@/utils/tauri'
+import { generateRequestId } from '@/composables/useStreamOutput'
 
 export interface ChatApiConfig {
   id: string
@@ -25,12 +26,20 @@ export interface TranslateApiConfig {
   prompt: string
 }
 
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-}
+const generateId = generateRequestId
 
 export const useSettingsStore = defineStore('settings', () => {
   let store: Store | null = null
+
+  function parseActiveConfig<T>(key: string, configs: T[], matchFallback?: (configs: T[]) => T | undefined): T | undefined {
+    const sep = key.indexOf('::')
+    if (sep !== -1) {
+      const id = key.substring(0, sep)
+      const found = (configs as Array<{ id: string } & T>).find((c) => c.id === id)
+      if (found) return found
+    }
+    return matchFallback?.(configs)
+  }
 
   const globalShortcut = ref('CommandOrControl+Shift+Space')
   const clipboardMaxDays = ref(30)
@@ -63,17 +72,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const activeTranslateModelKey = ref('')
 
   // 从 activeTranslateModelKey 解析当前 AI 翻译 config
-  const activeTranslateConfig = computed<TranslateApiConfig | null>(() => {
-    const key = activeTranslateModelKey.value
-    const sep = key.indexOf('::')
-    if (sep !== -1) {
-      const id = key.substring(0, sep)
-      const found = translateConfigs.value.find((c) => c.id === id)
-      if (found) return found
-    }
-    // 回退到第一个 AI 配置
-    return translateConfigs.value.find((c) => c.type === 'ai') || null
-  })
+  const activeTranslateConfig = computed<TranslateApiConfig | null>(() =>
+    parseActiveConfig(activeTranslateModelKey.value, translateConfigs.value, (c) => c.find((c) => c.type === 'ai')) ?? null
+  )
 
   // AI Chat 设置
   const chatConfigs = ref<ChatApiConfig[]>([
@@ -89,16 +90,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const activeModelKey = ref('')
 
   // 从 activeModelKey 解析当前 config
-  const activeChatConfig = computed<ChatApiConfig>(() => {
-    const key = activeModelKey.value
-    const sep = key.indexOf('::')
-    if (sep !== -1) {
-      const id = key.substring(0, sep)
-      const found = chatConfigs.value.find((c) => c.id === id)
-      if (found) return found
-    }
-    return chatConfigs.value[0]
-  })
+  const activeChatConfig = computed<ChatApiConfig>(() =>
+    parseActiveConfig(activeModelKey.value, chatConfigs.value, (c) => c[0])!
+  )
 
   // Finder extension
   const finderExtEnabled = ref(false)
@@ -122,112 +116,76 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function saveChatConfigs() {
-    if (store) {
-      await store.set('chatConfigs', chatConfigs.value)
-      await store.set('activeModelKey', activeModelKey.value)
-      await store.save()
-    }
-  }
-
-  async function saveTranslateConfigs() {
-    if (store) {
-      await store.set('translateConfigs', translateConfigs.value)
-      await store.set('activeTranslateModelKey', activeTranslateModelKey.value)
-      await store.save()
-    }
-  }
-
-  async function addTranslateConfig(): Promise<string> {
-    const config: TranslateApiConfig = {
-      id: generateId(),
-      type: 'ai',
-      appKey: '',
-      appSecret: '',
-      endpoint: '',
-      apiKey: '',
-      models: [],
-      prompt: '',
-    }
-    translateConfigs.value.push(config)
-    activeTranslateModelKey.value = `${config.id}::`
-    await saveTranslateConfigs()
-    return config.id
-  }
-
-  async function removeTranslateConfig(id: string) {
-    const config = translateConfigs.value.find((c) => c.id === id)
-    if (!config || config.isDefault) return
-    const idx = translateConfigs.value.findIndex((c) => c.id === id)
-    if (idx === -1) return
-    translateConfigs.value.splice(idx, 1)
-    if (activeTranslateModelKey.value.startsWith(`${id}::`)) {
-      const first = translateConfigs.value.find((c) => c.type === 'ai')
-      if (first) {
-        activeTranslateModelKey.value = `${first.id}::${first.models[0] || ''}`
-      } else {
-        activeTranslateModelKey.value = ''
+  function createConfigManager<T extends { id: string }>(opts: {
+    configs: Ref<T[]>
+    activeKey: Ref<string>
+    storeKey: string
+    activeKeyStoreKey: string
+    generateId: () => string
+  }) {
+    async function save() {
+      if (store) {
+        await store.set(opts.storeKey, opts.configs.value)
+        await store.set(opts.activeKeyStoreKey, opts.activeKey.value)
+        await store.save()
       }
     }
-    await saveTranslateConfigs()
-  }
-
-  async function updateTranslateConfig(
-    id: string,
-    patch: Partial<Omit<TranslateApiConfig, 'id' | 'type'>>,
-  ) {
-    const config = translateConfigs.value.find((c) => c.id === id)
-    if (!config) return
-    Object.assign(config, patch)
-    await saveTranslateConfigs()
-  }
-
-  async function addChatConfig(): Promise<string> {
-    const config: ChatApiConfig = {
-      id: generateId(),
-      endpoint: '',
-      apiKey: '',
-      models: [],
+    async function add(): Promise<string> {
+      const id = opts.generateId()
+      opts.configs.value.push({ id } as T)
+      opts.activeKey.value = `${id}::`
+      await save()
+      return id
     }
-    chatConfigs.value.push(config)
-    activeModelKey.value = `${config.id}::`
-    await saveChatConfigs()
-    return config.id
-  }
-
-  async function removeChatConfig(id: string) {
-    const idx = chatConfigs.value.findIndex((c) => c.id === id)
-    if (idx === -1) return
-    chatConfigs.value.splice(idx, 1)
-    if (chatConfigs.value.length === 0) {
-      await addChatConfig()
-    } else if (activeModelKey.value.startsWith(`${id}::`)) {
-      const first = chatConfigs.value[0]
-      activeModelKey.value = `${first.id}::${first.models[0] || ''}`
+    async function remove(id: string) {
+      const idx = opts.configs.value.findIndex((c) => c.id === id)
+      if (idx === -1) return
+      opts.configs.value.splice(idx, 1)
+      if (opts.activeKey.value.startsWith(`${id}::`)) {
+        opts.activeKey.value = opts.configs.value.length > 0
+          ? `${opts.configs.value[0].id}::`
+          : ''
+      }
+      await save()
     }
-    await saveChatConfigs()
+    async function update(id: string, partial: Partial<T>) {
+      const config = opts.configs.value.find((c) => c.id === id)
+      if (!config) return
+      Object.assign(config, partial)
+      await save()
+    }
+    return { save, add, remove, update }
   }
 
-  async function updateChatConfig(
-    id: string,
-    patch: Partial<Omit<ChatApiConfig, 'id'>>,
-  ) {
-    const config = chatConfigs.value.find((c) => c.id === id)
-    if (!config) return
-    Object.assign(config, patch)
-    await saveChatConfigs()
+  const chatConfigManager = createConfigManager({
+    configs: chatConfigs,
+    activeKey: activeModelKey,
+    storeKey: 'chatConfigs',
+    activeKeyStoreKey: 'activeModelKey',
+    generateId: generateRequestId,
+  })
+
+  const translateConfigManager = createConfigManager({
+    configs: translateConfigs,
+    activeKey: activeTranslateModelKey,
+    storeKey: 'translateConfigs',
+    activeKeyStoreKey: 'activeTranslateModelKey',
+    generateId: generateRequestId,
+  })
+
+  async function loadSetting<T>(key: string, ref: Ref<T>) {
+    const val = await store!.get<T>(key)
+    if (val !== null && val !== undefined) {
+      ref.value = val
+    }
   }
 
   async function loadSettings() {
     try {
       store = await load('settings.json', { autoSave: false, defaults: {} })
 
-      const gs = await store.get<string>('globalShortcut')
-      if (gs) globalShortcut.value = gs
-
-      const maxDays = await store.get<number>('clipboardMaxDays')
-      if (maxDays !== null && maxDays !== undefined)
-        clipboardMaxDays.value = maxDays
+      await loadSetting('globalShortcut', globalShortcut)
+      await loadSetting('clipboardMaxDays', clipboardMaxDays)
 
       // 迁移旧快捷键字段到新的通用覆盖表
       const overrides = await store.get<Record<string, string>>('shortcutOverrides')
@@ -248,17 +206,10 @@ export const useSettingsStore = defineStore('settings', () => {
       }
       shortcutOverrides.value = migrated
 
-      const ssp = await store.get<string>('screenshotSavePath')
-      if (ssp !== null && ssp !== undefined) screenshotSavePath.value = ssp
-
-      const yak = await store.get<string>('youdaoAppKey')
-      if (yak) youdaoAppKey.value = yak
-
-      const yas = await store.get<string>('youdaoAppSecret')
-      if (yas) youdaoAppSecret.value = yas
-
-      const ttl = await store.get<string>('translateTargetLang')
-      if (ttl) translateTargetLang.value = ttl
+      await loadSetting('screenshotSavePath', screenshotSavePath)
+      await loadSetting('youdaoAppKey', youdaoAppKey)
+      await loadSetting('youdaoAppSecret', youdaoAppSecret)
+      await loadSetting('translateTargetLang', translateTargetLang)
 
       // 翻译提供商配置（优先读取新的 translateConfigs）
       const tConfigs = await store.get<Record<string, unknown>[]>('translateConfigs')
@@ -267,15 +218,14 @@ export const useSettingsStore = defineStore('settings', () => {
         // 标记第一个有道翻译为默认（不可删除）
         const firstYoudao = translateConfigs.value.find((c) => c.type === 'youdao')
         if (firstYoudao) firstYoudao.isDefault = true
-        const tKey = await store.get<string>('activeTranslateModelKey')
-        if (tKey) activeTranslateModelKey.value = tKey
+        await loadSetting('activeTranslateModelKey', activeTranslateModelKey)
       } else {
         // 迁移：将旧的 youdaoAppKey/youdaoAppSecret 合入第一个 Youdao 配置
         const youdaoCfg = translateConfigs.value.find((c) => c.type === 'youdao')
         if (youdaoCfg && (youdaoAppKey.value || youdaoAppSecret.value)) {
           youdaoCfg.appKey = youdaoAppKey.value
           youdaoCfg.appSecret = youdaoAppSecret.value
-          await saveTranslateConfigs()
+          await translateConfigManager.save()
         }
       }
 
@@ -306,17 +256,10 @@ export const useSettingsStore = defineStore('settings', () => {
         activeModelKey.value = key
       }
 
-      const fee = await store.get<boolean>('finderExtEnabled')
-      if (fee !== null && fee !== undefined) finderExtEnabled.value = fee
-
-      const zsa = await store.get<boolean>('zshAutosuggestionsEnabled')
-      if (zsa !== null && zsa !== undefined) zshAutosuggestionsEnabled.value = zsa
-
-      const mConfigs = await store.get<Record<string, unknown>>('moduleConfigs')
-      if (mConfigs) moduleConfigs.value = mConfigs
-
-      const amm = await store.get<boolean>('awakeMirrorMode')
-      if (amm !== null && amm !== undefined) awakeMirrorMode.value = amm
+      await loadSetting('finderExtEnabled', finderExtEnabled)
+      await loadSetting('zshAutosuggestionsEnabled', zshAutosuggestionsEnabled)
+      await loadSetting('moduleConfigs', moduleConfigs)
+      await loadSetting('awakeMirrorMode', awakeMirrorMode)
 
       // 同步 finder ext 启用状态到后端
       if (isTauri) {
@@ -369,27 +312,25 @@ export const useSettingsStore = defineStore('settings', () => {
     translateTargetLang,
     'translateTargetLang',
   )
-  const setFinderExtEnabled = async (val: boolean) => {
-    finderExtEnabled.value = val
-    if (store) {
-      await store.set('finderExtEnabled', val)
-      await store.save()
-    }
-    if (isTauri) {
-      invoke('set_finder_ext_enabled', { enabled: val }).catch(() => {})
+  function createSyncedSetter(
+    ref: Ref<boolean>,
+    storeKey: string,
+    tauriCommand?: string,
+  ) {
+    return async (val: boolean) => {
+      ref.value = val
+      if (store) {
+        await store.set(storeKey, val)
+        await store.save()
+      }
+      if (tauriCommand && isTauri) {
+        invoke(tauriCommand, { enabled: val }).catch(() => {})
+      }
     }
   }
 
-  const setZshAutosuggestionsEnabled = async (val: boolean) => {
-    zshAutosuggestionsEnabled.value = val
-    if (store) {
-      await store.set('zshAutosuggestionsEnabled', val)
-      await store.save()
-    }
-    if (isTauri) {
-      invoke('set_zsh_autosuggestions_enabled', { enabled: val }).catch(() => {})
-    }
-  }
+  const setFinderExtEnabled = createSyncedSetter(finderExtEnabled, 'finderExtEnabled', 'set_finder_ext_enabled')
+  const setZshAutosuggestionsEnabled = createSyncedSetter(zshAutosuggestionsEnabled, 'zshAutosuggestionsEnabled', 'set_zsh_autosuggestions_enabled')
   const setActiveModelKey = createSetter(activeModelKey, 'activeModelKey')
   const setAwakeMirrorMode = createSetter(awakeMirrorMode, 'awakeMirrorMode')
 
@@ -421,18 +362,18 @@ export const useSettingsStore = defineStore('settings', () => {
     setYoudaoAppKey,
     setYoudaoAppSecret,
     setTranslateTargetLang,
-    addTranslateConfig,
-    removeTranslateConfig,
-    updateTranslateConfig,
+    addChatConfig: chatConfigManager.add,
+    removeChatConfig: chatConfigManager.remove,
+    updateChatConfig: chatConfigManager.update,
     setActiveTranslateModelKey: createSetter(activeTranslateModelKey, 'activeTranslateModelKey'),
-    addChatConfig,
-    removeChatConfig,
-    updateChatConfig,
+    addTranslateConfig: translateConfigManager.add,
+    removeTranslateConfig: translateConfigManager.remove,
+    updateTranslateConfig: translateConfigManager.update,
     setActiveModelKey,
     setFinderExtEnabled,
     setAwakeMirrorMode,
     setZshAutosuggestionsEnabled,
-    saveChatConfigs,
-    saveTranslateConfigs,
+    saveChatConfigs: chatConfigManager.save,
+    saveTranslateConfigs: translateConfigManager.save,
   }
 })

@@ -1,6 +1,15 @@
+import { invoke } from '@tauri-apps/api/core'
 import type { SearchResult as BindingsSearchResult } from '@/bindings'
 import type { SearchResult } from '@/types/module'
 import { getCachedIcon, setCachedIcon } from './icon-cache'
+
+export function hideWindow(auto = false) {
+  if (auto) {
+    invoke('hide_window', { auto: true }).catch(() => {})
+  } else {
+    invoke('hide_window').catch(() => {})
+  }
+}
 
 export const isTauri =
   typeof window !== 'undefined' &&

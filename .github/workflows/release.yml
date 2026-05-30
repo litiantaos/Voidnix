@@ -19,6 +19,18 @@ jobs:
       - name: 安装前端依赖
         run: bun install
 
+      - name: Lint
+        run: bun run lint
+
+      - name: 前端构建（含类型检查）
+        run: bun run build
+
+      - name: 验证扩展同步产物
+        run: bun run check:extensions
+
+      - name: Rust 编译检查
+        run: cd src-tauri && cargo check
+
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
 

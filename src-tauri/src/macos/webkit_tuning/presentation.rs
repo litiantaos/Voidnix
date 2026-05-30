@@ -16,17 +16,30 @@ use crate::macos::webkit_tuning::{log, PresentationBridge, WindowOps};
 /// presentation update 等待超时（毫秒）。Req 1.2。
 const PAINT_TIMEOUT_MS: u64 = 80;
 
-/// 组件失败计数器；达到 FAIL_LIMIT 后永久禁用。
-static FAIL_COUNT: AtomicU8 = AtomicU8::new(0);
-const FAIL_LIMIT: u8 = 3;
+static FAIL_COUNTER: FailCounter = FailCounter::new(3);
 
-fn is_disabled() -> bool {
-    FAIL_COUNT.load(Ordering::SeqCst) >= FAIL_LIMIT
+struct FailCounter {
+    count: AtomicU8,
+    limit: u8,
 }
 
-fn record_failure() {
-    FAIL_COUNT.fetch_add(1, Ordering::SeqCst);
+impl FailCounter {
+    const fn new(limit: u8) -> Self {
+        Self { count: AtomicU8::new(0), limit }
+    }
+    fn is_disabled(&self) -> bool {
+        self.count.load(Ordering::SeqCst) >= self.limit
+    }
+    fn record_failure(&self) {
+        self.count.fetch_add(1, Ordering::SeqCst);
+    }
+    fn reset(&self) {
+        self.count.store(0, Ordering::SeqCst);
+    }
 }
+
+fn is_disabled() -> bool { FAIL_COUNTER.is_disabled() }
+fn record_failure() { FAIL_COUNTER.record_failure() }
 
 /// 记录组件就绪状态。
 pub fn install() {
@@ -104,11 +117,11 @@ mod tests {
     use proptest::prelude::*;
     use std::time::Instant;
 
-    /// 所有操作全局 FAIL_COUNT 的测试必须持有此锁，避免并行测试相互污染。
-    static FAIL_COUNT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// 所有操作全局 FAIL_COUNTER 的测试必须持有此锁，避免并行测试相互污染。
+    static FAIL_COUNTER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn reset_fail_count() {
-        FAIL_COUNT.store(0, Ordering::SeqCst);
+        FAIL_COUNTER.reset();
     }
 
     // ── Property 1: Show 时 alpha 序列受 paint/timeout 因果约束 ─────────────
@@ -128,8 +141,8 @@ mod tests {
             d_ms in 0u64..200u64,
             paint_will_arrive in any::<bool>()
         ) {
-            let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            reset_fail_count();
+            let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            FAIL_COUNTER.reset();
 
             let w = MockWindow::new();
             w.set_alpha(0.0); // 模拟隐藏状态
@@ -186,8 +199,8 @@ mod tests {
         fn property_2_bridge_not_called_for_non_main_label(
             label in proptest::sample::select(vec!["main", "screenshot", "x", ""])
         ) {
-            let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            reset_fail_count();
+            let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            FAIL_COUNTER.reset();
 
             let bridge = MockPresentationBridge::new(true, 0);
             let w = MockWindow::new();
@@ -218,8 +231,8 @@ mod tests {
     /// paint 正常到达：alpha=1，steps 含 await-paint-ok。
     #[test]
     fn await_paint_ok_sets_alpha_and_step() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         w.set_alpha(0.0);
         let bridge = MockPresentationBridge::new(true, 0);
@@ -232,8 +245,8 @@ mod tests {
     /// paint 超时（ok=false）：alpha=1，steps 含 await-paint-timeout。
     #[test]
     fn await_paint_timeout_sets_alpha_and_step() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         w.set_alpha(0.0);
         // paint 不到达（ok=false）
@@ -247,8 +260,8 @@ mod tests {
     /// SPI 不可用（schedule 返回 false）：alpha=1，steps 含 await-paint-spi-missing。
     #[test]
     fn await_paint_spi_missing_fallback() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         w.set_alpha(0.0);
         let bridge = MockPresentationBridge::unavailable();
@@ -258,13 +271,13 @@ mod tests {
         assert!(steps.contains(&"await-paint-spi-missing"), "steps={:?}", steps);
     }
 
-    /// 永久禁用（FAIL_COUNT >= FAIL_LIMIT）：alpha=1，steps 含 await-paint-disabled，
+    /// 永久禁用（FAIL_COUNTER >= limit）：alpha=1，steps 含 await-paint-disabled，
     /// bridge 不被调用。
     #[test]
     fn await_paint_disabled_after_fail_limit() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
-        FAIL_COUNT.store(FAIL_LIMIT, Ordering::SeqCst);
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
+        FAIL_COUNTER.count.store(3, Ordering::SeqCst);
         let w = MockWindow::new();
         w.set_alpha(0.0);
         let bridge = MockPresentationBridge::new(true, 0);
@@ -274,21 +287,21 @@ mod tests {
         assert!(steps.contains(&"await-paint-disabled"), "steps={:?}", steps);
         // 永久禁用时不应调用 bridge
         assert_eq!(bridge.schedule_count(), 0, "永久禁用时不应调用 bridge");
-        reset_fail_count();
+        FAIL_COUNTER.reset();
     }
 
-    /// SPI 不可用时 FAIL_COUNT 递增。
+    /// SPI 不可用时 FAIL_COUNTER 递增。
     #[test]
     fn await_paint_spi_missing_increments_fail_count() {
-        let _g = FAIL_COUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        reset_fail_count();
+        let _g = FAIL_COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FAIL_COUNTER.reset();
         let w = MockWindow::new();
         let bridge = MockPresentationBridge::unavailable();
         let mut steps = log::Steps::new();
-        let before = FAIL_COUNT.load(Ordering::SeqCst);
+        let before = FAIL_COUNTER.count.load(Ordering::SeqCst);
         await_paint(&w, &bridge, None, &mut steps);
-        let after = FAIL_COUNT.load(Ordering::SeqCst);
-        assert_eq!(after, before + 1, "SPI 不可用时 FAIL_COUNT 应递增");
-        reset_fail_count();
+        let after = FAIL_COUNTER.count.load(Ordering::SeqCst);
+        assert_eq!(after, before + 1, "SPI 不可用时 FAIL_COUNTER 应递增");
+        FAIL_COUNTER.reset();
     }
 }

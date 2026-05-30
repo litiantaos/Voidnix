@@ -1,7 +1,7 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { moduleSelfResult } from '@/core/module-helpers'
+import { copyAndHide } from '@/utils/clipboard'
 
 const COMMON_CURRENCIES = [
   { code: 'CNY', name: '人民币' },
@@ -55,15 +55,7 @@ const mod: AppModule = {
   onSearch: async (query) => {
     if (!query.trim()) return []
     if ('currency'.includes(query.toLowerCase()) || '汇率'.includes(query)) {
-      return [{
-        id: 'currency-module',
-        title: '汇率转换',
-        description: '打开汇率转换扩展',
-        module: 'currency',
-        icon: 'i-ri-money-cny-circle-line',
-        score: 100,
-        data: { kind: 'module', moduleId: 'currency' }
-      }]
+      return [moduleSelfResult(mod)]
     }
     return []
   },
@@ -138,8 +130,7 @@ const mod: AppModule = {
   onExecute: async (result) => {
     if (result.id === 'err') return
     try {
-      await writeText(result.title.split(' ')[0])
-      getCurrentWindow().hide()
+      await copyAndHide(result.title.split(' ')[0])
     } catch (e) {
       console.error('Failed to copy currency:', e)
     }

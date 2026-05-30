@@ -31,9 +31,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { useTauriListener } from '@/composables/useTauriListener'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
@@ -56,24 +56,12 @@ const emit = defineEmits<{
 const rootRef = ref<HTMLElement | null>(null)
 const isRecording = ref(false)
 const readyToRecord = ref(false)
-let unlistenRecord: (() => void) | null = null
 
-onMounted(() => {
-  listen<{ shortcut: string }>(
-    'shortcut-recording-captured',
-    (event) => {
-      if (!isRecording.value) return
-      emit('update:modelValue', event.payload.shortcut)
-      stopRecording()
-      blur()
-    },
-  ).then((fn) => {
-    unlistenRecord = fn
-  })
-})
-
-onUnmounted(() => {
-  unlistenRecord?.()
+useTauriListener<{ shortcut: string }>('shortcut-recording-captured', (payload) => {
+  if (!isRecording.value) return
+  emit('update:modelValue', payload.shortcut)
+  stopRecording()
+  blur()
 })
 
 function focus() {
