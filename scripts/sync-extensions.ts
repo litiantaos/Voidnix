@@ -66,8 +66,8 @@ interface ModuleMeta {
   commands: string[]
   hasInit: boolean
   source: 'built-in' | 'extension' | 'core'
-  backendPath?: string // relative path from src-tauri/src/extensions/ to mod.rs
-  spectaCommands?: string[] // 需要生成 TypeScript bindings 的命令
+  backendPath?: string
+  spectaCommands?: string[]
 }
 
 // 核心模块：不在 extensions/ 下，而是 src-tauri/src/core/ 下的 .rs 文件
@@ -183,7 +183,6 @@ async function scanExtensionBackends(): Promise<ModuleMeta[]> {
 function buildModContent(allModules: ModuleMeta[]): string {
   const extModules = allModules.filter((m) => m.source === 'extension')
 
-  // mod declarations with #[path] for extension backends
   const rustModuleName = (name: string) => name.replace(/-/g, '_')
 
   const modLines: string[] = []

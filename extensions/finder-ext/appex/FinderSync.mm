@@ -188,7 +188,7 @@
 // provided by the Foundation framework. It loads the principal class
 // declared in Info.plist (NSExtensionPrincipalClass).
 
-extern int NSExtensionMain(int argc, const char *argv[]);
+extern "C" int NSExtensionMain(int argc, const char *argv[]);
 
 int main(int argc, const char *argv[]) {
     return NSExtensionMain(argc, argv);

@@ -5,6 +5,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+if [ -f .env ]; then
+  set -a; source .env; set +a
+fi
+
 echo "==> [1/3] tauri build: 格式化 + lint + 类型检查 + 前端构建 + Rust 编译 + 打包"
 bun run tauri build
 

@@ -7,6 +7,7 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Build
 node_modules
 dist
 
@@ -16,23 +17,18 @@ dist
 # TypeScript
 *.tsbuildinfo
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.DS_Store
-*.sw?
-
 # Rust
 **/*.rs.bk
 src-tauri/target/
 src-tauri/gen/
 src-tauri/proptest-regressions/
 
-# Tauri generated
-src-tauri/gen/
-
-# AI tools
-.claude/
-
 # Coverage
 coverage/
+
+# Editor / AI tools
+.vscode/*
+.claude/
+
+# System files
+.DS_Store
