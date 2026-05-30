@@ -40,7 +40,11 @@ if (isTauri) {
 
 const activeWindowView = shallowRef<Component | null>(null)
 
-let allGlobalShortcuts: { id: string; default?: string; onExecute: (wasVisible: boolean) => void }[] = []
+let allGlobalShortcuts: {
+  id: string
+  default?: string
+  onExecute: (wasVisible: boolean) => void
+}[] = []
 if (win?.label) {
   for (const mod of getAllModules()) {
     if (mod.windowViews) {
@@ -139,7 +143,7 @@ onMounted(async () => {
     await setupGlobalShortcut('main', settings.globalShortcut)
 
     allGlobalShortcuts = getAllModules()
-      .flatMap((m) => (m.globalShortcuts || []))
+      .flatMap((m) => m.globalShortcuts || [])
       .filter((s) => s.id !== 'main')
 
     for (const sc of allGlobalShortcuts) {
@@ -172,7 +176,7 @@ onMounted(async () => {
         const wasVisible = event.payload.wasVisible
 
         if (shortcutId === 'main') {
-           if (wasVisible) {
+          if (wasVisible) {
             hideWindow()
             return
           }
@@ -204,25 +208,22 @@ onMounted(async () => {
       markSkip()
     })
 
-     unlistenClickOutside = await listen('click-outside', () => {
-       hideWindow(true)
-     })
+    unlistenClickOutside = await listen('click-outside', () => {
+      hideWindow(true)
+    })
 
     // 通用模块面板事件：任何模块都可以通过 Rust `open_module_panel` 触发
-    await listen<{ moduleId: string; payload: unknown }>(
-      'open-module-panel',
-      (e) => {
-        markSkip()
-        const { moduleId, payload } = e.payload
-        appStore.setActiveModule(moduleId)
-        appStore.setSearchQuery('')
-        appStore.showPanel = true
-        const mod = getModule(moduleId)
-        if (mod?.onOpenPanel) {
-          mod.onOpenPanel(payload)
-        }
-      },
-    )
+    await listen<{ moduleId: string; payload: unknown }>('open-module-panel', (e) => {
+      markSkip()
+      const { moduleId, payload } = e.payload
+      appStore.setActiveModule(moduleId)
+      appStore.setSearchQuery('')
+      appStore.showPanel = true
+      const mod = getModule(moduleId)
+      if (mod?.onOpenPanel) {
+        mod.onOpenPanel(payload)
+      }
+    })
 
     // webkit_tuning 驯化事件：pre-show 触发 rAF 让 WebKit 渲染管线就绪，严格先于 alpha=1
     unlistenPreShow = await listen('webkit-tuning:pre-show', () => {
@@ -231,27 +232,25 @@ onMounted(async () => {
       })
     })
 
-    unlistenFocus = await win!.onFocusChanged(
-      ({ payload: focused }: { payload: boolean }) => {
-        if (focused) {
-          window.dispatchEvent(new CustomEvent('window-focused'))
-        } else if (
-          Date.now() - lastShortcutTime > 200 &&
-          Date.now() - appStore.lastDialogCloseTime > 300 &&
-          !appStore.isDialogOpen &&
-          !appStore.suppressBlur
-        ) {
-          invoke<boolean>('is_app_active')
-            .then((active) => {
-              if (active) return
-              hideWindow(true)
-            })
-            .catch(() => {
-              hideWindow(true)
-            })
-        }
-      },
-    )
+    unlistenFocus = await win!.onFocusChanged(({ payload: focused }: { payload: boolean }) => {
+      if (focused) {
+        window.dispatchEvent(new CustomEvent('window-focused'))
+      } else if (
+        Date.now() - lastShortcutTime > 200 &&
+        Date.now() - appStore.lastDialogCloseTime > 300 &&
+        !appStore.isDialogOpen &&
+        !appStore.suppressBlur
+      ) {
+        invoke<boolean>('is_app_active')
+          .then((active) => {
+            if (active) return
+            hideWindow(true)
+          })
+          .catch(() => {
+            hideWindow(true)
+          })
+      }
+    })
   }
 
   document.addEventListener('keydown', onLocalShortcut)

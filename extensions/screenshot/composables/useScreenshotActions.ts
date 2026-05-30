@@ -35,10 +35,7 @@ export function useScreenshotActions(options: {
     const settings = useSettingsStore()
     const savePath = settings.screenshotSavePath || '~/Downloads'
     const path = savePath.startsWith('~/')
-      ? savePath.replace(
-          '~',
-          await invoke<string>('get_home_dir').catch(() => ''),
-        )
+      ? savePath.replace('~', await invoke<string>('get_home_dir').catch(() => ''))
       : savePath
     await invoke('save_screenshot', {
       selX: options.sel.value.x,

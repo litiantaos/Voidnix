@@ -67,8 +67,8 @@ export function useTextInput(options: {
         : options.annotColor.value
     const fs =
       idx !== null
-        ? (options.shapes.value[idx]?.fontSize
-            ?? Math.max(14, (options.shapes.value[idx]?.lineWidth ?? options.annotLineWidth.value) * 6))
+        ? (options.shapes.value[idx]?.fontSize ??
+          Math.max(14, (options.shapes.value[idx]?.lineWidth ?? options.annotLineWidth.value) * 6))
         : options.annotFontSize.value
     return {
       color,
@@ -162,8 +162,9 @@ export function useTextInput(options: {
 
     if (t.trim() && idx !== null) {
       const existing = options.shapes.value[idx]
-      const fontSize = existing?.fontSize
-        ?? Math.max(14, (existing?.lineWidth ?? options.annotLineWidth.value) * 6)
+      const fontSize =
+        existing?.fontSize ??
+        Math.max(14, (existing?.lineWidth ?? options.annotLineWidth.value) * 6)
       const font = `${fontSize}px -apple-system, sans-serif`
       const wrappedLines = wrapText(t, textInput.value.width, font)
 

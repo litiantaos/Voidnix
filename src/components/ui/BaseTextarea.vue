@@ -106,9 +106,12 @@ function autoResize() {
   height.value = (props.maxHeight > 0 ? Math.min(h, props.maxHeight) : h) + 'px'
 }
 
-watch(() => props.modelValue, () => {
-  nextTick(() => autoResize())
-})
+watch(
+  () => props.modelValue,
+  () => {
+    nextTick(() => autoResize())
+  },
+)
 
 onMounted(() => {
   nextTick(() => autoResize())

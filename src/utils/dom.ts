@@ -15,7 +15,10 @@ export function isComposing(e: KeyboardEvent): boolean {
   return !!(e.isComposing || e.keyCode === 229)
 }
 
-export function isFormControl(el: Element | null | undefined, extraChecks?: { settingsControl?: boolean }): boolean {
+export function isFormControl(
+  el: Element | null | undefined,
+  extraChecks?: { settingsControl?: boolean },
+): boolean {
   if (!el) return false
   const tag = el.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true

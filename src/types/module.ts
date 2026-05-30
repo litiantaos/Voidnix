@@ -75,13 +75,10 @@ export interface AppModule {
    */
   layout?: ModuleLayout
 
-  // 在全局搜索中使用的搜索回调
   onSearch?(query: string): Promise<SearchResult[]>
 
-  // 在模块内部（激活状态下）使用的搜索回调（供标准列表视图使用）
   onModuleSearch?(query: string): Promise<SearchResult[]>
 
-  // 执行某项结果时的回调
   onExecute?(result: SearchResult): Promise<void>
 
   /**
@@ -123,8 +120,6 @@ export interface AppModule {
     /** 快捷键触发后的执行回调，传递被触发时应用是否处于可见状态 */
     onExecute: (wasVisible: boolean) => void
   }[]
-
-  
 
   /**
    * 禁用主搜索框（输入框置 disabled，不响应键入，保留 placeholder）。

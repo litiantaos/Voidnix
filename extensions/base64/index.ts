@@ -6,12 +6,9 @@ import { copyAndHide } from '@/utils/clipboard'
 const encodeBase64 = (str: string): string => {
   try {
     return btoa(
-      encodeURIComponent(str).replace(
-        /%([0-9A-F]{2})/g,
-        function toSolidBytes(_match, p1) {
-          return String.fromCharCode(Number('0x' + p1))
-        },
-      ),
+      encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function toSolidBytes(_match, p1) {
+        return String.fromCharCode(Number('0x' + p1))
+      }),
     )
   } catch {
     return ''

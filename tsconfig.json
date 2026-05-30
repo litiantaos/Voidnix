@@ -20,6 +20,12 @@
       "@ext/*": ["./extensions/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "extensions/**/*.ts", "extensions/**/*.vue"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.d.ts",
+    "src/**/*.tsx",
+    "extensions/**/*.ts",
+    "extensions/**/*.vue"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

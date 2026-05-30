@@ -10,8 +10,6 @@ use infra::db::Database;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    env_logger::init();
-
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             crate::macos::webkit_tuning::show_main(app);

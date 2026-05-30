@@ -52,9 +52,7 @@
             <BaseSelect
               :model-value="settings.translateTargetLang"
               :options="targetLangOptions"
-              @update:model-value="
-                (val: string | number) => handleTargetLangChange(String(val))
-              "
+              @update:model-value="(val: string | number) => handleTargetLangChange(String(val))"
             />
           </template>
         </BaseListItem>
@@ -81,11 +79,7 @@
     <!-- 编辑弹窗 -->
     <BaseDialog
       v-if="showConfigModal"
-      :title="
-        isCreating
-          ? '添加翻译服务'
-          : '编辑翻译服务'
-      "
+      :title="isCreating ? '添加翻译服务' : '编辑翻译服务'"
       variant="form"
       size="md"
       show-footer
@@ -134,10 +128,7 @@
         <template v-else>
           <div class="flex flex-col gap-1.5">
             <span class="text-xs text-tx-faint font-medium">API URL</span>
-            <BaseInput
-              v-model="aiForm.endpoint"
-              placeholder="https://api.openai.com/v1"
-            />
+            <BaseInput v-model="aiForm.endpoint" placeholder="https://api.openai.com/v1" />
           </div>
 
           <div class="flex flex-col gap-1.5">
@@ -165,11 +156,7 @@
                 :key="index"
                 class="flex gap-1.5 items-center"
               >
-                <BaseInput
-                  v-model="aiForm.models[index]"
-                  placeholder="gpt-4o"
-                  class="flex-1"
-                />
+                <BaseInput v-model="aiForm.models[index]" placeholder="gpt-4o" class="flex-1" />
                 <BaseButton
                   v-if="index > 0"
                   class="text-red-500"
@@ -225,7 +212,10 @@ useSettingsInput()
 const SHORTCUT_ITEM_ID = 'translate-shortcut'
 const LANG_ITEM_ID = 'translate-target-lang'
 
-const { value: translateShortcutValue, update: handleTranslateShortcutChange } = useShortcutConfig('translate', 'CommandOrControl+Shift+T')
+const { value: translateShortcutValue, update: handleTranslateShortcutChange } = useShortcutConfig(
+  'translate',
+  'CommandOrControl+Shift+T',
+)
 
 const targetLangOptions = [
   { label: '中文', value: 'zh' },
@@ -320,9 +310,7 @@ async function saveConfigModal() {
     })
   } else {
     if (!editingConfigId.value) return
-    const config = settings.translateConfigs.find(
-      (c) => c.id === editingConfigId.value,
-    )
+    const config = settings.translateConfigs.find((c) => c.id === editingConfigId.value)
     if (!config) return
 
     if (config.type === 'youdao') {
@@ -356,9 +344,7 @@ function removeModel(index: number) {
 
 const canDeleteConfig = computed(() => {
   if (isCreating.value) return false
-  const config = settings.translateConfigs.find(
-    (c) => c.id === editingConfigId.value,
-  )
+  const config = settings.translateConfigs.find((c) => c.id === editingConfigId.value)
   if (!config || config.isDefault) return false
   return true
 })
@@ -416,9 +402,7 @@ function onExecute(item: TranslateSettingsItem) {
 /** 当前编辑的配置类型（弹窗中判断表单布局） */
 const editingType = computed(() => {
   if (isCreating.value) return 'ai'
-  const config = settings.translateConfigs.find(
-    (c) => c.id === editingConfigId.value,
-  )
+  const config = settings.translateConfigs.find((c) => c.id === editingConfigId.value)
   return config?.type || 'ai'
 })
 </script>

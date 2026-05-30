@@ -1,21 +1,10 @@
 <template>
   <Teleport to="body">
-    <div
-      class="flex items-center inset-0 justify-center fixed z-100"
-      @keydown="onKeyDown"
-    >
-      <Transition
-        appear
-        enter-from-class="backdrop-from"
-        leave-to-class="backdrop-from"
-      >
+    <div class="flex items-center inset-0 justify-center fixed z-100" @keydown="onKeyDown">
+      <Transition appear enter-from-class="backdrop-from" leave-to-class="backdrop-from">
         <div class="backdrop-to inset-0 absolute" @click="onOverlayClick" />
       </Transition>
-      <Transition
-        appear
-        enter-from-class="dialog-from"
-        leave-to-class="dialog-from"
-      >
+      <Transition appear enter-from-class="dialog-from" leave-to-class="dialog-from">
         <div
           ref="dialogRef"
           class="dialog-to outline-none rounded-lg bg-white flex flex-col shadow-md relative z-10"
@@ -59,11 +48,7 @@
                 >
                   {{ cancelLabel || '取消' }}
                 </BaseButton>
-                <BaseButton
-                  variant="primary"
-                  :active="focusIndex === 1"
-                  @click="emit('confirm')"
-                >
+                <BaseButton variant="primary" :active="focusIndex === 1" @click="emit('confirm')">
                   {{ okLabel || '确定' }}
                 </BaseButton>
               </div>
@@ -112,23 +97,18 @@ const emit = defineEmits<{
   (e: 'cancel', reason: CloseReason): void
 }>()
 
-// --- 派生状态：showFooter 由 variant + 显式 prop 共同决定 ---
-// 显式传 showFooter 则尊重传值，否则按 variant 取默认值
 const resolvedShowFooter = computed(() => {
   if (props.showFooter !== null) return props.showFooter
   return props.variant === 'confirm'
 })
 
-// --- DOM 引用与 ARIA ID ---
 const dialogRef = ref<HTMLElement>()
 const titleId = useId()
 const descId = useId()
 let previousFocusEl: HTMLElement | null = null
 
-// --- 焦点索引（仅 confirm 模式有效） ---
-const focusIndex = ref(1) // 0: cancel, 1: ok
+const focusIndex = ref(1)
 
-// --- 尺寸映射 ---
 const sizeClass = computed(() => {
   const sizeMap: Record<string, string> = {
     sm: 'w-40% max-h-80vh',
@@ -138,7 +118,6 @@ const sizeClass = computed(() => {
   return sizeMap[props.size]
 })
 
-// --- 限定作用域的键盘处理 ---
 function onKeyDown(e: KeyboardEvent) {
   // Escape：始终关闭弹窗
   if (e.key === 'Escape') {
@@ -160,9 +139,7 @@ function onKeyDown(e: KeyboardEvent) {
   // 输入框内不拦截方向键和回车
   const target = e.target as HTMLElement
   const isInput =
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT'
+    target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
   if (isInput) return
 
   if (e.key === 'ArrowRight') {
@@ -188,14 +165,12 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
-// --- 遮罩点击 ---
 function onOverlayClick() {
   // confirm 模式下 warning 禁止遮罩关闭；form 模式始终可关闭
   if (props.variant === 'confirm' && props.kind === 'warning') return
   emit('cancel', 'overlay')
 }
 
-// --- 生命周期：焦点管理 ---
 onMounted(() => {
   previousFocusEl = document.activeElement as HTMLElement
   nextTick(() => {

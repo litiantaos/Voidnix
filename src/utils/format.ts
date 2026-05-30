@@ -9,7 +9,6 @@ export function getParentPath(path: unknown): string {
 export function formatPathParts(path: unknown): { head: string; tail: string } {
   if (typeof path !== 'string' || !path) return { head: '', tail: '' }
 
-  // 将 macOS 主目录替换为 ~
   const displayPath = path.replace(/^\/Users\/[^/]+/, '~')
 
   const lastSlashIndex = displayPath.lastIndexOf('/')

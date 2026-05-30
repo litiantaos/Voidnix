@@ -28,17 +28,58 @@ const mod: AppModule = {
       if (data.success && data.ip) {
         const location = [data.country, data.region, data.city].filter(Boolean).join(' ')
         return [
-          { id: 'ip-addr', title: data.ip, description: 'IP 地址', module: 'ip', icon: 'i-ri-global-line', data: { isHighlight: true } },
-          { id: 'ip-loc', title: location, description: '地理位置', module: 'ip', icon: 'i-ri-map-pin-line' },
-          { id: 'ip-isp', title: data.isp || '', description: '运营商 (ISP)', module: 'ip', icon: 'i-ri-router-line' },
-          { id: 'ip-org', title: data.org || '', description: '组织 (Org)', module: 'ip', icon: 'i-ri-building-line' }
-        ].filter(i => i.title)
+          {
+            id: 'ip-addr',
+            title: data.ip,
+            description: 'IP 地址',
+            module: 'ip',
+            icon: 'i-ri-global-line',
+            data: { isHighlight: true },
+          },
+          {
+            id: 'ip-loc',
+            title: location,
+            description: '地理位置',
+            module: 'ip',
+            icon: 'i-ri-map-pin-line',
+          },
+          {
+            id: 'ip-isp',
+            title: data.isp || '',
+            description: '运营商 (ISP)',
+            module: 'ip',
+            icon: 'i-ri-router-line',
+          },
+          {
+            id: 'ip-org',
+            title: data.org || '',
+            description: '组织 (Org)',
+            module: 'ip',
+            icon: 'i-ri-building-line',
+          },
+        ].filter((i) => i.title)
       } else {
-        return [{ id: 'ip-err', title: '查询失败', description: data.message || '未知错误', module: 'ip', icon: 'i-ri-error-warning-line' }]
+        return [
+          {
+            id: 'ip-err',
+            title: '查询失败',
+            description: data.message || '未知错误',
+            module: 'ip',
+            icon: 'i-ri-error-warning-line',
+          },
+        ]
       }
     } catch (e: unknown) {
       const msg = toErrorMessage(e)
-      return [{ id: 'ip-err', title: '网络请求失败', description: msg, module: 'ip', icon: 'i-ri-error-warning-line' }]
+      return [
+        {
+          id: 'ip-err',
+          title: '网络请求失败',
+          description: msg,
+          module: 'ip',
+          icon: 'i-ri-error-warning-line',
+        },
+      ]
     }
   },
   onExecute: async (result) => {
@@ -48,7 +89,7 @@ const mod: AppModule = {
     } catch (e) {
       console.error('Failed to copy IP info:', e)
     }
-  }
+  },
 }
 
 registerModule(mod)

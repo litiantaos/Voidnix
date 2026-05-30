@@ -15,7 +15,6 @@ export function useShapeHandles(options: {
   fromLocal: (s: Shape, localX: number, localY: number) => { x: number; y: number }
   redraw: () => void
 }) {
-  // 拖动形状控制点
   const draggingShapeHandle = ref<string | null>(null)
   const shapeHandleDragStart = ref({
     mx: 0,
@@ -29,7 +28,6 @@ export function useShapeHandles(options: {
     rotation: 0,
   })
 
-  // 旋转：仅矩形支持，通过显式 'rot' 控制点触发
   const rotateStart = ref({ angleStart: 0, rotationStart: 0 })
 
   function screenPos(canvasX: number, canvasY: number) {
@@ -103,9 +101,7 @@ export function useShapeHandles(options: {
       const rx = x1 + tw + TEXT_DRAG_PAD
       const my = y1 + th / 2
 
-      return [
-        { id: 'e', style: hpStyle(rx, my) },
-      ]
+      return [{ id: 'e', style: hpStyle(rx, my) }]
     }
 
     return []
@@ -137,16 +133,11 @@ export function useShapeHandles(options: {
     e.preventDefault()
   }
 
-  function applyShapeHandleDrag(
-    cx: number,
-    cy: number,
-    shiftKey: boolean,
-  ) {
+  function applyShapeHandleDrag(cx: number, cy: number, shiftKey: boolean) {
     const s = options.selectedShape.value
     if (!s || draggingShapeHandle.value === null) return
     const hid = draggingShapeHandle.value
-    const { mx, my, x1, y1, x2, y2, cr, tw, rotation } =
-      shapeHandleDragStart.value
+    const { mx, my, x1, y1, x2, y2, cr, tw, rotation } = shapeHandleDragStart.value
     const dxScreen = cx - mx,
       dyScreen = cy - my
 
@@ -154,9 +145,7 @@ export function useShapeHandles(options: {
       const sxCenter = options.sel.value.x + (x1 + x2) / 2
       const syCenter = options.sel.value.y + (y1 + y2) / 2
       const angleNow = Math.atan2(cy - syCenter, cx - sxCenter)
-      let next =
-        rotateStart.value.rotationStart +
-        (angleNow - rotateStart.value.angleStart)
+      let next = rotateStart.value.rotationStart + (angleNow - rotateStart.value.angleStart)
       if (shiftKey) {
         const step = (15 * Math.PI) / 180
         next = Math.round(next / step) * step
@@ -280,15 +269,14 @@ export function useShapeHandles(options: {
         const handleNewX = handleStartX + dxScreen
         const minHandleX = options.sel.value.x + x1 + TEXT_MIN_WIDTH
         const maxHandleX = options.sel.value.x + options.sel.value.w - 10
-        const clampedHandleX = Math.max(
-          minHandleX,
-          Math.min(maxHandleX, handleNewX),
-        )
+        const clampedHandleX = Math.max(minHandleX, Math.min(maxHandleX, handleNewX))
         const newWidth = clampedHandleX - (options.sel.value.x + x1)
 
         s.textWidth = newWidth
-        if (options.textInput.value.visible &&
-          options.textInput.value.editingIndex === options.selectedShapeIndex.value) {
+        if (
+          options.textInput.value.visible &&
+          options.textInput.value.editingIndex === options.selectedShapeIndex.value
+        ) {
           options.textInput.value.width = newWidth
         }
 

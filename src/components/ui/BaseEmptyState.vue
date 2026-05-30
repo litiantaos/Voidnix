@@ -1,12 +1,7 @@
 <template>
-  <div
-    class="text-tx-muted flex flex-1 flex-col gap-3 select-none items-center justify-center"
-  >
+  <div class="text-tx-muted flex flex-1 flex-col gap-3 select-none items-center justify-center">
     <slot name="icon">
-      <i
-        v-if="loading"
-        class="i-ri-loader-4-line text-2xl opacity-50 animate-spin"
-      ></i>
+      <i v-if="loading" class="i-ri-loader-4-line text-2xl opacity-50 animate-spin"></i>
       <i v-else-if="icon" :class="icon" class="text-2xl opacity-50"></i>
     </slot>
     <div class="text-sm font-medium">

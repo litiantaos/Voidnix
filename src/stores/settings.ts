@@ -16,10 +16,8 @@ export interface TranslateApiConfig {
   id: string
   type: 'youdao' | 'ai'
   isDefault?: boolean
-  // 有道
   appKey: string
   appSecret: string
-  // AI
   endpoint: string
   apiKey: string
   models: string[]
@@ -31,7 +29,11 @@ const generateId = generateRequestId
 export const useSettingsStore = defineStore('settings', () => {
   let store: Store | null = null
 
-  function parseActiveConfig<T>(key: string, configs: T[], matchFallback?: (configs: T[]) => T | undefined): T | undefined {
+  function parseActiveConfig<T>(
+    key: string,
+    configs: T[],
+    matchFallback?: (configs: T[]) => T | undefined,
+  ): T | undefined {
     const sep = key.indexOf('::')
     if (sep !== -1) {
       const id = key.substring(0, sep)
@@ -48,12 +50,10 @@ export const useSettingsStore = defineStore('settings', () => {
   // 通用快捷键覆盖表：moduleId/.id → 用户自定义快捷键
   const shortcutOverrides = ref<Record<string, string>>({})
 
-  // 翻译设置
   const youdaoAppKey = ref('')
   const youdaoAppSecret = ref('')
   const translateTargetLang = ref('zh')
 
-  // 翻译提供商配置
   const translateConfigs = ref<TranslateApiConfig[]>([
     {
       id: generateId(),
@@ -72,11 +72,13 @@ export const useSettingsStore = defineStore('settings', () => {
   const activeTranslateModelKey = ref('')
 
   // 从 activeTranslateModelKey 解析当前 AI 翻译 config
-  const activeTranslateConfig = computed<TranslateApiConfig | null>(() =>
-    parseActiveConfig(activeTranslateModelKey.value, translateConfigs.value, (c) => c.find((c) => c.type === 'ai')) ?? null
+  const activeTranslateConfig = computed<TranslateApiConfig | null>(
+    () =>
+      parseActiveConfig(activeTranslateModelKey.value, translateConfigs.value, (c) =>
+        c.find((c) => c.type === 'ai'),
+      ) ?? null,
   )
 
-  // AI Chat 设置
   const chatConfigs = ref<ChatApiConfig[]>([
     {
       id: generateId(),
@@ -90,20 +92,17 @@ export const useSettingsStore = defineStore('settings', () => {
   const activeModelKey = ref('')
 
   // 从 activeModelKey 解析当前 config
-  const activeChatConfig = computed<ChatApiConfig>(() =>
-    parseActiveConfig(activeModelKey.value, chatConfigs.value, (c) => c[0])!
+  const activeChatConfig = computed<ChatApiConfig>(
+    () => parseActiveConfig(activeModelKey.value, chatConfigs.value, (c) => c[0])!,
   )
 
-  // Finder extension
   const finderExtEnabled = ref(false)
 
-  // zsh-autosuggestions
   const zshAutosuggestionsEnabled = ref(false)
 
   // 通用模块配置存储（键为 moduleId，值为任意可序列化数据）
   const moduleConfigs = ref<Record<string, unknown>>({})
 
-  // Awake 显示模式
   const awakeMirrorMode = ref(true)
 
   function createSetter<T>(r: Ref<T>, key: string) {
@@ -142,9 +141,7 @@ export const useSettingsStore = defineStore('settings', () => {
       if (idx === -1) return
       opts.configs.value.splice(idx, 1)
       if (opts.activeKey.value.startsWith(`${id}::`)) {
-        opts.activeKey.value = opts.configs.value.length > 0
-          ? `${opts.configs.value[0].id}::`
-          : ''
+        opts.activeKey.value = opts.configs.value.length > 0 ? `${opts.configs.value[0].id}::` : ''
       }
       await save()
     }
@@ -247,9 +244,7 @@ export const useSettingsStore = defineStore('settings', () => {
         let key = await store.get<string>('activeModelKey')
         if (!key) {
           const oldId = await store.get<string>('activeChatConfigId')
-          const cfg = oldId
-            ? chatConfigs.value.find((c) => c.id === oldId)
-            : chatConfigs.value[0]
+          const cfg = oldId ? chatConfigs.value.find((c) => c.id === oldId) : chatConfigs.value[0]
           // 旧数据 activeModel 已清理，取第一个模型
           key = cfg ? `${cfg.id}::${cfg.models[0] || ''}` : ''
         }
@@ -264,7 +259,9 @@ export const useSettingsStore = defineStore('settings', () => {
       // 同步 finder ext 启用状态到后端
       if (isTauri) {
         invoke('set_finder_ext_enabled', { enabled: finderExtEnabled.value }).catch(() => {})
-        invoke('set_zsh_autosuggestions_enabled', { enabled: zshAutosuggestionsEnabled.value }).catch(() => {})
+        invoke('set_zsh_autosuggestions_enabled', {
+          enabled: zshAutosuggestionsEnabled.value,
+        }).catch(() => {})
       }
     } catch (e) {
       console.warn('Failed to load settings.json, using defaults:', e)
@@ -308,15 +305,8 @@ export const useSettingsStore = defineStore('settings', () => {
   }
   const setYoudaoAppKey = createSetter(youdaoAppKey, 'youdaoAppKey')
   const setYoudaoAppSecret = createSetter(youdaoAppSecret, 'youdaoAppSecret')
-  const setTranslateTargetLang = createSetter(
-    translateTargetLang,
-    'translateTargetLang',
-  )
-  function createSyncedSetter(
-    ref: Ref<boolean>,
-    storeKey: string,
-    tauriCommand?: string,
-  ) {
+  const setTranslateTargetLang = createSetter(translateTargetLang, 'translateTargetLang')
+  function createSyncedSetter(ref: Ref<boolean>, storeKey: string, tauriCommand?: string) {
     return async (val: boolean) => {
       ref.value = val
       if (store) {
@@ -329,8 +319,16 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  const setFinderExtEnabled = createSyncedSetter(finderExtEnabled, 'finderExtEnabled', 'set_finder_ext_enabled')
-  const setZshAutosuggestionsEnabled = createSyncedSetter(zshAutosuggestionsEnabled, 'zshAutosuggestionsEnabled', 'set_zsh_autosuggestions_enabled')
+  const setFinderExtEnabled = createSyncedSetter(
+    finderExtEnabled,
+    'finderExtEnabled',
+    'set_finder_ext_enabled',
+  )
+  const setZshAutosuggestionsEnabled = createSyncedSetter(
+    zshAutosuggestionsEnabled,
+    'zshAutosuggestionsEnabled',
+    'set_zsh_autosuggestions_enabled',
+  )
   const setActiveModelKey = createSetter(activeModelKey, 'activeModelKey')
   const setAwakeMirrorMode = createSetter(awakeMirrorMode, 'awakeMirrorMode')
 

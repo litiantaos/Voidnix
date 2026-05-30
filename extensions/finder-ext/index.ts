@@ -5,14 +5,7 @@ import type { AppModule } from '@/types/module'
 
 const FinderExtView = asyncView(() => import('./View.vue'))
 
-const keywords = [
-  'finder',
-  '访达',
-  '右键',
-  '菜单',
-  '扩展',
-  'extension',
-]
+const keywords = ['finder', '访达', '右键', '菜单', '扩展', 'extension']
 
 const mod: AppModule = {
   id: 'finder-ext',

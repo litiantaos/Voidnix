@@ -9,7 +9,10 @@ export interface SettingItem {
   subtitle?: string
   icon?: string
   group?: string
-  options?: ({ label: string; value: string | number } | { label: string; options: { label: string; value: string | number }[] })[]
+  options?: (
+    | { label: string; value: string | number }
+    | { label: string; options: { label: string; value: string | number }[] }
+  )[]
   inputType?: 'text' | 'password'
   placeholder?: string
   action?: () => void
@@ -75,10 +78,7 @@ export function useSettingsInput() {
    *
    * @returns true 表示已消费该事件，false 表示未识别需调用方自行处理
    */
-  function handleExecute(
-    item: SettingItem,
-    e?: KeyboardEvent | MouseEvent,
-  ): boolean {
+  function handleExecute(item: SettingItem, e?: KeyboardEvent | MouseEvent): boolean {
     if (e) e.preventDefault()
 
     if (item.type === 'button' && item.action) {

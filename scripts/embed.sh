@@ -4,23 +4,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Finder extension source files
 APPEX_SRC="$PROJECT_DIR/extensions/finder-ext/appex"
 EXT_BUNDLE_ID="com.litiantao.voidnix.FinderExt"
 
-# ---------- Detect signing identity ---------------------------------------
+# ---------- 检测签名身份 ---------------------------------------------------
 SIGN_IDENTITY=""
 DEV_CERT=$(security find-identity -v -p codesigning 2>/dev/null \
     | grep "Apple Development" | head -1 | sed 's/.*"\(.*\)".*/\1/')
 if [ -n "$DEV_CERT" ]; then
     SIGN_IDENTITY="$DEV_CERT"
-    echo "==> Using signing identity: $SIGN_IDENTITY"
+    echo "==> 使用签名身份: $SIGN_IDENTITY"
 else
     SIGN_IDENTITY="-"
-    echo "==> No Apple Development certificate found, using ad-hoc signing."
+    echo "==> 未找到 Apple Development 证书，使用临时签名。"
 fi
 
-# ---------- Locate app bundle ---------------------------------------------
+# ---------- 定位 app bundle ------------------------------------------------
 TARGET_ARG="${1:-release}"
 if [[ "$TARGET_ARG" == /* ]]; then
     APP_PATH="$TARGET_ARG"
@@ -31,8 +30,8 @@ else
 fi
 
 if [ ! -d "$APP_PATH" ]; then
-    echo "==> Voidnix.app not found at $APP_PATH"
-    echo "    Run 'bun run tauri build' first."
+    echo "==> 未找到 Voidnix.app: $APP_PATH"
+    echo "    请先运行 'bun run tauri build'。"
     exit 1
 fi
 
@@ -42,8 +41,8 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 BINARY="$BUILD_DIR/FinderExt"
 APPEX_DIR="$BUILD_DIR/FinderExt.appex"
 
-# ---------- Compile extension ---------------------------------------------
-echo "==> Compiling Finder Sync extension..."
+# ---------- 编译扩展 -------------------------------------------------------
+echo "==> 编译 Finder Sync 扩展..."
 clang++ -fobjc-arc \
     -std=c++17 \
     -framework Foundation \
@@ -53,37 +52,37 @@ clang++ -fobjc-arc \
     -o "$BINARY" \
     "$APPEX_SRC/FinderSync.mm"
 
-# ---------- Stage the .appex bundle ---------------------------------------
-echo "==> Creating .appex bundle..."
+# ---------- 构建 .appex bundle ---------------------------------------------
+echo "==> 创建 .appex bundle..."
 mkdir -p "$APPEX_DIR/Contents/MacOS"
 cp "$BINARY" "$APPEX_DIR/Contents/MacOS/FinderExt"
 cp "$APPEX_SRC/Info.plist" "$APPEX_DIR/Contents/Info.plist"
 
-# ---------- Sign the staged .appex ----------------------------------------
-echo "==> Signing extension (Hardened Runtime + entitlements)..."
+# ---------- 签名扩展 -------------------------------------------------------
+echo "==> 签名扩展（Hardened Runtime + entitlements）..."
 codesign --force --sign "$SIGN_IDENTITY" \
     --options runtime \
     --entitlements "$APPEX_SRC/FinderExt.entitlements" \
     "$APPEX_DIR"
 
-# ---------- Kill any running extension instances before replacing ----------
-echo "==> Terminating any running Finder extension instances..."
+# ---------- 终止运行中的扩展进程 -------------------------------------------
+echo "==> 终止运行中的 Finder 扩展进程..."
 killall -9 FinderExt 2>/dev/null || true
 
-# ---------- Embed into app bundle -----------------------------------------
-echo "==> Embedding extension into $APP_PATH..."
+# ---------- 嵌入主 app bundle ----------------------------------------------
+echo "==> 嵌入扩展到 $APP_PATH..."
 PLUGINS_DIR="$APP_PATH/Contents/PlugIns"
 mkdir -p "$PLUGINS_DIR"
 rm -rf "$PLUGINS_DIR/FinderExt.appex"
 cp -r "$APPEX_DIR" "$PLUGINS_DIR/"
 
-echo "==> Re-signing extension in place..."
+echo "==> 就地重签扩展..."
 codesign --force --sign "$SIGN_IDENTITY" \
     --options runtime \
     --entitlements "$APPEX_SRC/FinderExt.entitlements" \
     "$PLUGINS_DIR/FinderExt.appex"
 
-# ---------- Re-sign the main app ------------------------------------------
+# ---------- 重签主 app -----------------------------------------------------
 APP_ENTITLEMENTS="$BUILD_DIR/App.entitlements"
 cat > "$APP_ENTITLEMENTS" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -96,52 +95,41 @@ cat > "$APP_ENTITLEMENTS" <<'EOF'
 </plist>
 EOF
 
-echo "==> Re-signing application bundle (Hardened Runtime)..."
+echo "==> 重签主应用（Hardened Runtime）..."
 codesign --force --sign "$SIGN_IDENTITY" \
     --options runtime \
     --entitlements "$APP_ENTITLEMENTS" \
     "$APP_PATH"
 
-# ---------- Refresh pluginkit registration --------------------------------
-echo "==> Refreshing pluginkit registration..."
+# ---------- 刷新 pluginkit 注册 --------------------------------------------
+echo "==> 刷新 pluginkit 注册..."
 pluginkit -r "$PLUGINS_DIR/FinderExt.appex" 2>/dev/null || true
 
 if pluginkit -a "$PLUGINS_DIR/FinderExt.appex"; then
-    echo "    Extension registered successfully."
+    echo "    扩展注册成功。"
 else
-    echo "==> WARNING: Extension registration failed."
-    echo "    Check Console.app for details (filter: 'pluginkit')."
+    echo "==> 警告：扩展注册失败。"
+    echo "    请在 Console.app 中查看详情（筛选 'pluginkit'）。"
 fi
 
-echo "==> Reloading pkd and Finder to pick up the new extension..."
+echo "==> 重载 pkd 和 Finder 以加载新扩展..."
 killall -KILL pkd 2>/dev/null || true
 killall Finder 2>/dev/null || true
 
-# ---------- Final Gatekeeper check ----------------------------------------
+# ---------- Gatekeeper 验证 ------------------------------------------------
 EXT_BINARY="$PLUGINS_DIR/FinderExt.appex/Contents/MacOS/FinderExt"
 if spctl --assess -v "$EXT_BINARY" 2>/dev/null; then
-    echo "==> Extension passed Gatekeeper validation."
+    echo "==> 扩展通过 Gatekeeper 验证。"
 else
-    echo "==> Extension is ad-hoc / dev-signed (expected for local builds)."
+    echo "==> 扩展为临时/开发签名（本地构建正常）。"
 fi
 
-# ---------- Status summary ------------------------------------------------
+# ---------- 状态汇总 -------------------------------------------------------
 echo ""
-echo "==> Done. Final registration state:"
+echo "==> 完成。最终注册状态："
 pluginkit -mAvv -p com.apple.FinderSync 2>/dev/null \
     | awk -v id="$EXT_BUNDLE_ID" '
         $0 ~ id { printing = 1 }
         printing { print }
         printing && /^$/ { exit }
     ' || true
-
-cat <<EOT
-
-Next steps:
-  1. Launch Voidnix (the main app starts the file watcher).
-  2. Open System Settings → General → Login Items & Extensions
-     (macOS 26 groups Finder Sync under "File Providers" / "文件提供程序")
-     and enable "Voidnix Finder Extension".
-  3. Right-click a file/folder inside ~/Desktop, ~/Documents, ~/Downloads,
-     ~/Pictures, ~/Movies, or ~/Music to see the menu.
-EOT

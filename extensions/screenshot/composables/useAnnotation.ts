@@ -2,7 +2,6 @@ import { ref, computed } from 'vue'
 import type { Shape, Tool, BlurMode } from './useTypes'
 
 export function useAnnotation() {
-  // ── 标注工具 ──────────────────────────────────────────────
   const activeTool = ref<Tool>(null)
   const annotColor = ref('#ff3b30')
   const annotLineWidth = ref(3)
@@ -19,9 +18,7 @@ export function useAnnotation() {
   // 选中形状
   const selectedShapeIndex = ref<number | null>(null)
   const selectedShape = computed(() =>
-    selectedShapeIndex.value !== null
-      ? (shapes.value[selectedShapeIndex.value] ?? null)
-      : null,
+    selectedShapeIndex.value !== null ? (shapes.value[selectedShapeIndex.value] ?? null) : null,
   )
 
   // 鼠标是否在选中元素上
@@ -53,11 +50,7 @@ export function useAnnotation() {
   }
 
   // 屏幕坐标 (canvasX, canvasY) → 形状本地坐标（反向旋转）
-  function toLocal(
-    s: Shape,
-    canvasX: number,
-    canvasY: number,
-  ): { lx: number; ly: number } {
+  function toLocal(s: Shape, canvasX: number, canvasY: number): { lx: number; ly: number } {
     const { cx, cy } = shapeCenter(s)
     const r = s.rotation ?? 0
     const dx = canvasX - cx,
@@ -68,11 +61,7 @@ export function useAnnotation() {
   }
 
   // 形状本地坐标 → 屏幕坐标（应用 rotation）
-  function fromLocal(
-    s: Shape,
-    localX: number,
-    localY: number,
-  ): { x: number; y: number } {
+  function fromLocal(s: Shape, localX: number, localY: number): { x: number; y: number } {
     const { cx, cy } = shapeCenter(s)
     const r = s.rotation ?? 0
     const dx = localX - cx,

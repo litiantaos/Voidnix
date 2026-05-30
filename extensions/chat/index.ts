@@ -27,45 +27,32 @@ export interface ChatConversation {
 /** 前端消息历史硬上限（与 Rust 端 MAX_CONVERSATION_MESSAGES 对齐） */
 const MAX_MESSAGES = 100
 
-// 当前对话
 export const currentConversation = ref<ChatConversation>({
   id: generateRequestId(),
   messages: [],
   createdAt: Date.now(),
 })
 
-// 是否正在生成
 export const isGenerating = ref(false)
 
-// 当前流式消息
 export const streamingMessage = ref('')
 
-// 监听器句柄
 let unlistenChunk: UnlistenFn | null = null
 let unlistenDone: UnlistenFn | null = null
 let initializing = false
 
-// 当前请求 ID
 let currentRequestId = ''
 
-
-// 初始化监听器
 export async function initListeners() {
   if (unlistenChunk || initializing) return
   initializing = true
 
   try {
-    unlistenChunk = await listen<{ requestId: string; content: string }>(
-      'chat-chunk',
-      (event) => {
-        if (
-          isGenerating.value &&
-          event.payload.requestId === currentRequestId
-        ) {
-          streamingMessage.value += event.payload.content
-        }
-      },
-    )
+    unlistenChunk = await listen<{ requestId: string; content: string }>('chat-chunk', (event) => {
+      if (isGenerating.value && event.payload.requestId === currentRequestId) {
+        streamingMessage.value += event.payload.content
+      }
+    })
 
     unlistenDone = await listen<{ requestId: string }>('chat-done', (event) => {
       if (event.payload.requestId === currentRequestId) {
@@ -97,7 +84,6 @@ function trimHistory() {
     : recent
 }
 
-// 发送消息
 export async function sendMessage(content: string) {
   if (!content.trim() || isGenerating.value) return
 
@@ -159,7 +145,6 @@ export function destroyListeners() {
   initializing = false
 }
 
-// 新建对话
 export function newConversation() {
   currentConversation.value = {
     id: generateRequestId(),
@@ -171,7 +156,6 @@ export function newConversation() {
   currentRequestId = ''
 }
 
-// 停止生成
 export function stopGenerating() {
   invoke('chat_abort').catch(() => {})
   isGenerating.value = false
@@ -209,12 +193,7 @@ const mod: AppModule = {
   onSearch: async (query) => {
     if (!query.trim()) return []
     const q = query.toLowerCase()
-    if (
-      q.includes('chat') ||
-      q.includes('ai') ||
-      q.includes('对话') ||
-      q.includes('聊天')
-    ) {
+    if (q.includes('chat') || q.includes('ai') || q.includes('对话') || q.includes('聊天')) {
       return [moduleSelfResult(mod)]
     }
     return []

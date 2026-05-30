@@ -21,7 +21,7 @@ pub(crate) use entry::{Frame, WindowOps, PresentationBridge};
 
 pub use entry::{install, install_screenshot, make_main_window_key, show_main, hide_main, resize_main, intercept_cmd_backspace};
 
-#[cfg(any(test, feature = "webkit_tuning_mock"))]
+#[cfg(test)]
 pub(crate) use entry::{install_with, show_main_with, hide_main_with, resize_main_with};
 
 #[cfg(test)]

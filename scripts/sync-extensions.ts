@@ -24,8 +24,8 @@ async function scanExtensions(): Promise<string[]> {
   if (!(await pathExists(EXTENSIONS_DIR))) return []
   const items = await readdir(EXTENSIONS_DIR, { withFileTypes: true })
   return items
-    .filter(d => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'README.md')
-    .map(d => d.name)
+    .filter((d) => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'README.md')
+    .map((d) => d.name)
     .sort()
 }
 
@@ -33,7 +33,8 @@ async function scanExtensions(): Promise<string[]> {
 const COMMAND_REGEX = /#\[tauri::command\]\s*(?:#\[.*?\]\s*)*pub\s+(?:async\s+)?fn\s+(\w+)/g
 
 // 匹配 specta 注解的命令（用于生成 TypeScript bindings）
-const SPECTA_COMMAND_REGEX = /#\[tauri::command\]\s*#\[cfg_attr\(feature\s*=\s*"specta"[^)]*\)\]\s*pub\s+(?:async\s+)?fn\s+(\w+)/g
+const SPECTA_COMMAND_REGEX =
+  /#\[tauri::command\]\s*#\[cfg_attr\(feature\s*=\s*"specta"[^)]*\)\]\s*pub\s+(?:async\s+)?fn\s+(\w+)/g
 
 // 匹配 pub fn init(  而非 init_something(
 const INIT_REGEX = /^pub\s+fn\s+init\s*\(/m
@@ -65,8 +66,8 @@ interface ModuleMeta {
   commands: string[]
   hasInit: boolean
   source: 'built-in' | 'extension' | 'core'
-  backendPath?: string  // relative path from src-tauri/src/extensions/ to mod.rs
-  spectaCommands?: string[]  // 需要生成 TypeScript bindings 的命令
+  backendPath?: string // relative path from src-tauri/src/extensions/ to mod.rs
+  spectaCommands?: string[] // 需要生成 TypeScript bindings 的命令
 }
 
 // 核心模块：不在 extensions/ 下，而是 src-tauri/src/core/ 下的 .rs 文件
@@ -116,7 +117,7 @@ async function scanRsFiles(dir: string): Promise<string[]> {
   for (const entry of entries) {
     const fullPath = join(dir, entry.name)
     if (entry.isDirectory()) {
-      results.push(...await scanRsFiles(fullPath))
+      results.push(...(await scanRsFiles(fullPath)))
     } else if (entry.isFile() && entry.name.endsWith('.rs')) {
       results.push(fullPath)
     }
@@ -137,7 +138,7 @@ async function scanExtensionBackends(): Promise<ModuleMeta[]> {
   if (!(await pathExists(EXTENSIONS_DIR))) return results
 
   const dirs = await readdir(EXTENSIONS_DIR, { withFileTypes: true })
-  for (const dir of dirs.filter(d => d.isDirectory())) {
+  for (const dir of dirs.filter((d) => d.isDirectory())) {
     const nativeDir = join(EXTENSIONS_DIR, dir.name, 'native')
     const modFile = join(nativeDir, 'mod.rs')
     if (!(await pathExists(modFile))) continue
@@ -171,7 +172,7 @@ async function scanExtensionBackends(): Promise<ModuleMeta[]> {
         spectaCommands: allSpectaCommands,
         hasInit: hasInitFn,
         source: 'extension',
-        backendPath: `../../extensions/${dir.name}/native/mod.rs`
+        backendPath: `../../extensions/${dir.name}/native/mod.rs`,
       })
     }
   }
@@ -180,7 +181,7 @@ async function scanExtensionBackends(): Promise<ModuleMeta[]> {
 }
 
 function buildModContent(allModules: ModuleMeta[]): string {
-  const extModules = allModules.filter(m => m.source === 'extension')
+  const extModules = allModules.filter((m) => m.source === 'extension')
 
   // mod declarations with #[path] for extension backends
   const rustModuleName = (name: string) => name.replace(/-/g, '_')
@@ -206,7 +207,7 @@ function buildModContent(allModules: ModuleMeta[]): string {
   for (const m of allModules) {
     if (m.hasInit) {
       const modName = rustModuleName(m.module)
-    const prefix = m.source === 'extension' ? `crate::extensions` : `crate::core`
+      const prefix = m.source === 'extension' ? `crate::extensions` : `crate::core`
       initLines.push(`        .plugin(${prefix}::${modName}::init())`)
     }
   }
@@ -322,7 +323,9 @@ async function main() {
   console.log('[sync-extensions] Scanning extensions...')
 
   const extNames = await scanExtensions()
-  console.log(`[sync-extensions] Found ${extNames.length} extension(s): ${extNames.join(', ') || 'none'}`)
+  console.log(
+    `[sync-extensions] Found ${extNames.length} extension(s): ${extNames.join(', ') || 'none'}`,
+  )
 
   const builtIns = await scanBuiltInCommands()
   const coreModules = await scanCoreModules()
@@ -342,15 +345,17 @@ async function main() {
   await generateRegistry(allModules)
 
   const totalCommands = allModules.reduce((sum, m) => sum + m.commands.length, 0)
-  const totalPlugins = allModules.filter(m => m.hasInit).length
+  const totalPlugins = allModules.filter((m) => m.hasInit).length
 
   console.log('[sync-extensions] Done.')
-  console.log(`  Modules:  ${builtIns.length} built-in + ${coreModules.length} core + ${extBackends.length} extension`)
+  console.log(
+    `  Modules:  ${builtIns.length} built-in + ${coreModules.length} core + ${extBackends.length} extension`,
+  )
   console.log(`  Commands: ${totalCommands}`)
   console.log(`  Plugins:  ${totalPlugins}`)
 }
 
-main().catch(e => {
+main().catch((e) => {
   console.error('[sync-extensions] Error:', e)
   process.exit(1)
 })

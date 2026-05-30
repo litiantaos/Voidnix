@@ -4,7 +4,7 @@ macOS 效率启动器。模块化架构，极简设计，原生性能。
 
 ## 技术栈
 
-Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS (preset-wind4) | Pinia | SQLite
+Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
 ## 功能
 
@@ -16,7 +16,7 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS (preset-wind4) | Pinia | SQLite
 - [x] 计算器（输入数学表达式触发）
 - [x] 汇率转换 / UUID / 时间戳 / IP / Base64（斜杠命令触发）
 - [x] 右键菜单
-- [x] 截屏标注 + OCR
+- [x] 截屏 + 滚动截屏 + 标注 + OCR
 - [x] 终端自动建议（终端输入显示自动建议）
 - [ ] 录屏 + 轻剪
 - [ ] 视频处理
@@ -29,20 +29,3 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS (preset-wind4) | Pinia | SQLite
 - `↑↓`：切换列表项
 - `Enter`：执行选中项
 - `Escape`：清空搜索 / 返回界面
-
-## 开发
-
-```bash
-bun install                  # 安装依赖
-bun run tauri dev            # 开发模式
-bun run build                # 前端构建检查
-bun run lint                 # 格式化 + UnoCSS 排序
-bun run gen:bindings         # 重新生成 src/bindings.ts（修改 Rust 结构体后执行）
-cd src-tauri && cargo check  # Rust 编译检查
-```
-
-## 权限
-
-- **辅助功能**：全局快捷键、剪贴板粘贴
-- **屏幕录制**：截屏/录屏
-- **无需权限**：OCR（Apple Vision）

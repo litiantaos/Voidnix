@@ -15,7 +15,7 @@ app.use(createPinia())
 app.mount('#app')
 
 // 异步初始化模块，不阻塞 Vue 挂载和全局快捷键注册
-initAllModules().catch(e => {
+initAllModules().catch((e) => {
   console.error('Failed to init modules:', e)
 })
 

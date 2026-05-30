@@ -18,7 +18,7 @@ const COMMON_CURRENCIES = [
   { code: 'CHF', name: '瑞士法郎' },
   { code: 'NZD', name: '新西兰元' },
   { code: 'RUB', name: '俄罗斯卢布' },
-  { code: 'INR', name: '印度卢比' }
+  { code: 'INR', name: '印度卢比' },
 ]
 
 let ratesCache: Record<string, number> = {}
@@ -29,7 +29,9 @@ const ensureRates = async () => {
   if (isFetching) return
   isFetching = true
   try {
-    const res = await window.fetch('https://api.exchangerate-api.com/v4/latest/USD', { method: 'GET' })
+    const res = await window.fetch('https://api.exchangerate-api.com/v4/latest/USD', {
+      method: 'GET',
+    })
     const data = await res.json()
     if (data && data.rates) {
       ratesCache = data.rates
@@ -62,7 +64,15 @@ const mod: AppModule = {
   onModuleSearch: async (query) => {
     await ensureRates()
     if (Object.keys(ratesCache).length === 0) {
-      return [{ id: 'err', title: '无法获取汇率', description: '请检查网络连接', module: 'currency', icon: 'i-ri-error-warning-line' }]
+      return [
+        {
+          id: 'err',
+          title: '无法获取汇率',
+          description: '请检查网络连接',
+          module: 'currency',
+          icon: 'i-ri-error-warning-line',
+        },
+      ]
     }
 
     let amount = 1
@@ -71,10 +81,10 @@ const mod: AppModule = {
 
     const trimmed = query.trim().toUpperCase()
     const match = trimmed.match(/^([\d.]+)?\s*([A-Za-z$€£¥]+)?(?:\s+(?:TO|->|>)\s+([A-Za-z]+))?$/i)
-    
+
     if (match) {
       if (match[1]) amount = parseFloat(match[1])
-      
+
       let maybeBase = match[2]
       if (maybeBase === '¥' || maybeBase === 'RMB') maybeBase = 'CNY'
       if (maybeBase === '$') maybeBase = 'USD'
@@ -104,16 +114,19 @@ const mod: AppModule = {
     const results: SearchResult[] = []
     const baseRate = ratesCache[baseCurrency] || 1
 
-    const targetList = targetCurrency 
-      ? COMMON_CURRENCIES.filter(c => c.code === targetCurrency)
-      : COMMON_CURRENCIES.filter(c => c.code !== baseCurrency)
+    const targetList = targetCurrency
+      ? COMMON_CURRENCIES.filter((c) => c.code === targetCurrency)
+      : COMMON_CURRENCIES.filter((c) => c.code !== baseCurrency)
 
     for (const target of targetList) {
       const targetRate = ratesCache[target.code]
       if (!targetRate) continue
 
       const converted = (amount / baseRate) * targetRate
-      const formatted = converted >= 0.01 ? converted.toFixed(2) : converted.toPrecision(4).replace(/0+$/, '').replace(/\.$/, '')
+      const formatted =
+        converted >= 0.01
+          ? converted.toFixed(2)
+          : converted.toPrecision(4).replace(/0+$/, '').replace(/\.$/, '')
 
       results.push({
         id: target.code,
@@ -121,7 +134,7 @@ const mod: AppModule = {
         description: target.name,
         module: 'currency',
         icon: 'i-ri-money-cny-circle-line',
-        data: { isHighlight: true }
+        data: { isHighlight: true },
       })
     }
 
@@ -134,7 +147,7 @@ const mod: AppModule = {
     } catch (e) {
       console.error('Failed to copy currency:', e)
     }
-  }
+  },
 }
 
 registerModule(mod)

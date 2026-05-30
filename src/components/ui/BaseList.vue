@@ -9,15 +9,8 @@
         "
         class="text-xs text-tx-faint tracking-wider font-medium px-3 py-1.5 uppercase"
       >
-        <slot
-          name="group-title"
-          :group="getGroupValue(item)"
-          :item="item"
-          :index="i"
-        >
-          {{
-            groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item)
-          }}
+        <slot name="group-title" :group="getGroupValue(item)" :item="item" :index="i">
+          {{ groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item) }}
         </slot>
       </div>
 
@@ -43,15 +36,19 @@
 
 <script setup lang="ts" generic="T">
 import { ref, watch, nextTick, onActivated, onDeactivated } from 'vue'
-import { onKeyStroke } from '@vueuse/core'
+import { onKeyStroke } from '@/utils/events'
 import { useAppStore } from '@/stores/app'
 import { isComposing as isComposingCheck, isFormControl, wrapIndex } from '@/utils/dom'
 
 const appStore = useAppStore()
 
 const isActive = ref(true)
-onActivated(() => { isActive.value = true })
-onDeactivated(() => { isActive.value = false })
+onActivated(() => {
+  isActive.value = true
+})
+onDeactivated(() => {
+  isActive.value = false
+})
 
 const props = withDefaults(
   defineProps<{
@@ -99,8 +96,7 @@ defineExpose({ selectedIndex: localIndex, setSelectedIndex })
 const itemRefs = ref<HTMLElement[]>([])
 function setItemRef(el: unknown, index: number) {
   if (el) {
-    itemRefs.value[index] =
-      (el as { $el: HTMLElement }).$el || (el as HTMLElement)
+    itemRefs.value[index] = (el as { $el: HTMLElement }).$el || (el as HTMLElement)
   }
 }
 
@@ -159,7 +155,11 @@ if (props.keyboardNavigation) {
     if (!isActive.value) return
     if (!appStore.activeModuleId) return
     if (appStore.isComposing || isComposingCheck(e)) return
-    if (isFormControl(document.activeElement, { settingsControl: true }) && (document.activeElement as Element).id !== 'main-search-input') return
+    if (
+      isFormControl(document.activeElement, { settingsControl: true }) &&
+      (document.activeElement as Element).id !== 'main-search-input'
+    )
+      return
 
     const direction = e.key === 'ArrowDown' ? 'down' : 'up'
 
@@ -208,7 +208,7 @@ if (props.keyboardNavigation) {
       if (!appStore.activeModuleId) return
       if (!(e.metaKey || e.ctrlKey)) return
       e.preventDefault()
-      const ids = new Set(props.items.map(item => getId(item)))
+      const ids = new Set(props.items.map((item) => getId(item)))
       emitIds(ids)
     })
 
@@ -225,8 +225,16 @@ if (props.keyboardNavigation) {
     if (!isActive.value) return
     if (!appStore.activeModuleId) return
     if (appStore.isComposing || isComposingCheck(e)) return
-    if (isFormControl(document.activeElement, { settingsControl: true }) && (document.activeElement as Element).id !== 'main-search-input') return
-    if (document.activeElement?.tagName === 'BUTTON' && document.activeElement!.id !== 'main-search-input') return
+    if (
+      isFormControl(document.activeElement, { settingsControl: true }) &&
+      (document.activeElement as Element).id !== 'main-search-input'
+    )
+      return
+    if (
+      document.activeElement?.tagName === 'BUTTON' &&
+      document.activeElement!.id !== 'main-search-input'
+    )
+      return
     e.preventDefault()
     if (props.items.length > 0) {
       const el = itemRefs.value[localIndex.value]
@@ -282,9 +290,7 @@ watch(localIndex, async (index) => {
 function getGroupValue(item: T): string {
   if (!props.groupField) return ''
   return String(
-    typeof props.groupField === 'function'
-      ? props.groupField(item)
-      : item[props.groupField],
+    typeof props.groupField === 'function' ? props.groupField(item) : item[props.groupField],
   )
 }
 </script>

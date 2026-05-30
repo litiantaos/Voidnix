@@ -64,7 +64,10 @@ useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'screenshot-shortcut'
 
-const { value: screenshotShortcutValue, update: handleShortcutChange } = useShortcutConfig('screenshot', 'CommandOrControl+Shift+X')
+const { value: screenshotShortcutValue, update: handleShortcutChange } = useShortcutConfig(
+  'screenshot',
+  'CommandOrControl+Shift+X',
+)
 
 async function pickSavePath() {
   // NSOpenPanel 运行期间抑制失焦隐藏
@@ -75,7 +78,9 @@ async function pickSavePath() {
       await settings.setScreenshotSavePath(selected)
     }
   } finally {
-    setTimeout(() => { appStore.suppressBlur = false }, 800)
+    setTimeout(() => {
+      appStore.suppressBlur = false
+    }, 800)
   }
 }
 
@@ -85,8 +90,14 @@ function savePathDisplay(path: string): string {
 }
 
 // ── 列表项 ─────────────────────────────────────────────────
-interface ShortcutItem { type: 'shortcut'; group: string }
-interface SavePathItem { type: 'savePath'; group: string }
+interface ShortcutItem {
+  type: 'shortcut'
+  group: string
+}
+interface SavePathItem {
+  type: 'savePath'
+  group: string
+}
 type Item = ShortcutItem | SavePathItem
 
 const items: Item[] = [

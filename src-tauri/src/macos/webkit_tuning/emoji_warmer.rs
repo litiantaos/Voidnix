@@ -52,7 +52,7 @@ fn warm_once() {
 
 /// 仅供测试使用的无操作调度：不启动异步任务，直接记录组件状态日志。
 /// 在单元测试中无法使用 tauri::async_runtime，因此用此函数替代 schedule。
-#[cfg(any(test, feature = "webkit_tuning_mock"))]
+#[cfg(test)]
 pub(crate) fn schedule_noop() {
     crate::macos::webkit_tuning::log::component_status(
         "Emoji_Warmer",

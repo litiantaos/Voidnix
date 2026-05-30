@@ -11,10 +11,7 @@ import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
 import { toErrorMessage } from '@/utils/error'
 import { providerLabelFromUrl } from '@/utils/provider'
 import { generateRequestId } from '@/composables/useStreamOutput'
-import {
-  commands,
-  type TranslateResult as BindingsTranslateResult,
-} from '@/bindings'
+import { commands, type TranslateResult as BindingsTranslateResult } from '@/bindings'
 
 const TranslateView = asyncView(() => import('./View.vue'))
 const TranslateSettings = asyncView(() => import('./Settings.vue'))
@@ -52,18 +49,15 @@ async function initStreamListeners() {
       },
     )
 
-    unlistenDone = await listen<{ requestId: string }>(
-      'translate-done',
-      (event) => {
-        const { requestId } = event.payload
-        const idx = streamIndexMap.get(requestId)
-        if (idx !== undefined && translateResults.value[idx]) {
-          translateResults.value[idx].loading = false
-        }
-        streamIndexMap.delete(requestId)
-        checkAllDone()
-      },
-    )
+    unlistenDone = await listen<{ requestId: string }>('translate-done', (event) => {
+      const { requestId } = event.payload
+      const idx = streamIndexMap.get(requestId)
+      if (idx !== undefined && translateResults.value[idx]) {
+        translateResults.value[idx].loading = false
+      }
+      streamIndexMap.delete(requestId)
+      checkAllDone()
+    })
   } finally {
     streamInitializing = false
   }
@@ -324,9 +318,7 @@ const mod: AppModule = {
               )
               .then((result) => {
                 const label =
-                  activeModels.length > 1
-                    ? `${result.engine} · ${model.trim()}`
-                    : result.engine
+                  activeModels.length > 1 ? `${result.engine} · ${model.trim()}` : result.engine
                 results.push({
                   id: `ai-${Date.now()}`,
                   title: result.translation,
@@ -342,8 +334,7 @@ const mod: AppModule = {
                 results.push({
                   id: `ai-error-${Date.now()}`,
                   title: msg,
-                  description:
-                    activeModels.length > 1 ? `翻译 · ${model.trim()}` : '翻译',
+                  description: activeModels.length > 1 ? `翻译 · ${model.trim()}` : '翻译',
                   module: 'translate',
                   icon: 'i-ri-error-warning-line',
                   score: 100,

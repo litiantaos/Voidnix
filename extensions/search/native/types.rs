@@ -1,6 +1,6 @@
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
@@ -65,7 +65,7 @@ impl SearchSession {
     }
 }
 
-pub(super) static APP_CACHE: Lazy<RwLock<Option<Arc<Vec<CachedApp>>>>> =
-    Lazy::new(|| RwLock::new(None));
+pub(super) static APP_CACHE: LazyLock<RwLock<Option<Arc<Vec<CachedApp>>>>> =
+    LazyLock::new(|| RwLock::new(None));
 pub(super) static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
-pub(super) static SEARCH_SESSION: Lazy<SearchSession> = Lazy::new(SearchSession::new);
+pub(super) static SEARCH_SESSION: LazyLock<SearchSession> = LazyLock::new(SearchSession::new);

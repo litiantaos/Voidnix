@@ -16,10 +16,7 @@ export function getFileIcon(result: SearchResult): { icon: string; color: string
     return { icon: 'i-ri-folder-fill', color: 'text-blue-400' }
   }
 
-  const ext = ((result.data?.path as string) || '')
-    .split('.')
-    .pop()
-    ?.toLowerCase()
+  const ext = ((result.data?.path as string) || '').split('.').pop()?.toLowerCase()
   switch (ext) {
     case 'png':
     case 'jpg':

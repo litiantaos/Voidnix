@@ -71,8 +71,11 @@ function tokenize(expr: string): Token[] | null {
   let i = 0
   while (i < expr.length) {
     const ch = expr[i]
-    if (ch === ' ' || ch === '\t') { i++; continue }
-    if ('0' <= ch && ch <= '9' || ch === '.') {
+    if (ch === ' ' || ch === '\t') {
+      i++
+      continue
+    }
+    if (('0' <= ch && ch <= '9') || ch === '.') {
       let num = ''
       while (i < expr.length && (('0' <= expr[i] && expr[i] <= '9') || expr[i] === '.')) {
         num += expr[i++]
@@ -80,10 +83,19 @@ function tokenize(expr: string): Token[] | null {
       const val = parseFloat(num)
       if (isNaN(val)) return null
       tokens.push({ type: 'num', value: num })
-    } else if (ch === '(') { tokens.push({ type: 'lp', value: '(' }); i++ }
-    else if (ch === ')') { tokens.push({ type: 'rp', value: ')' }); i++ }
-    else if ('+-*/%'.includes(ch)) {
-      if (ch === '-' && (tokens.length === 0 || tokens[tokens.length - 1].type === 'lp' || tokens[tokens.length - 1].type === 'op')) {
+    } else if (ch === '(') {
+      tokens.push({ type: 'lp', value: '(' })
+      i++
+    } else if (ch === ')') {
+      tokens.push({ type: 'rp', value: ')' })
+      i++
+    } else if ('+-*/%'.includes(ch)) {
+      if (
+        ch === '-' &&
+        (tokens.length === 0 ||
+          tokens[tokens.length - 1].type === 'lp' ||
+          tokens[tokens.length - 1].type === 'op')
+      ) {
         let num = '-'
         i++
         while (i < expr.length && (('0' <= expr[i] && expr[i] <= '9') || expr[i] === '.')) {
@@ -93,13 +105,15 @@ function tokenize(expr: string): Token[] | null {
         if (isNaN(val)) return null
         tokens.push({ type: 'num', value: num })
       } else {
-        tokens.push({ type: 'op', value: ch }); i++
+        tokens.push({ type: 'op', value: ch })
+        i++
       }
+    } else if (ch === '*' && i + 1 < expr.length && expr[i + 1] === '*') {
+      tokens.push({ type: 'op', value: '**' })
+      i += 2
+    } else {
+      return null
     }
-    else if (ch === '*' && i + 1 < expr.length && expr[i + 1] === '*') {
-      tokens.push({ type: 'op', value: '**' }); i += 2
-    }
-    else { return null }
   }
   return tokens
 }
@@ -110,7 +124,11 @@ function parseExpression(tokens: Token[]): number | null {
   function parseAddSub(): number | null {
     let left = parseMulDiv()
     if (left === null) return null
-    while (pos < tokens.length && tokens[pos].type === 'op' && (tokens[pos].value === '+' || tokens[pos].value === '-')) {
+    while (
+      pos < tokens.length &&
+      tokens[pos].type === 'op' &&
+      (tokens[pos].value === '+' || tokens[pos].value === '-')
+    ) {
       const op = tokens[pos++].value
       const right = parseMulDiv()
       if (right === null) return null
@@ -122,13 +140,15 @@ function parseExpression(tokens: Token[]): number | null {
   function parseMulDiv(): number | null {
     let left = parsePower()
     if (left === null) return null
-    while (pos < tokens.length && tokens[pos].type === 'op' && ('*/%'.includes(tokens[pos].value))) {
+    while (pos < tokens.length && tokens[pos].type === 'op' && '*/%'.includes(tokens[pos].value)) {
       const op = tokens[pos++].value
       const right = parsePower()
       if (right === null) return null
       if (op === '*') left *= right
-      else if (op === '/') { if (right === 0) return null; left /= right }
-      else left %= right
+      else if (op === '/') {
+        if (right === 0) return null
+        left /= right
+      } else left %= right
     }
     return left
   }
@@ -158,7 +178,10 @@ function parseExpression(tokens: Token[]): number | null {
   function parseAtom(): number | null {
     if (pos >= tokens.length) return null
     const tok = tokens[pos]
-    if (tok.type === 'num') { pos++; return parseFloat(tok.value) }
+    if (tok.type === 'num') {
+      pos++
+      return parseFloat(tok.value)
+    }
     if (tok.type === 'lp') {
       pos++
       const val = parseAddSub()
@@ -193,11 +216,7 @@ const mod: AppModule = {
     }
 
     const withExponent = query.replace(/\^/g, '**')
-    if (
-      withExponent.trim() &&
-      ALLOWED_CHARS.test(withExponent) &&
-      /[+\-*/]/.test(withExponent)
-    ) {
+    if (withExponent.trim() && ALLOWED_CHARS.test(withExponent) && /[+\-*/]/.test(withExponent)) {
       try {
         const result = evaluateMath(query)
         if (result !== null) {
@@ -213,9 +232,7 @@ const mod: AppModule = {
             },
           ]
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
     return []
   },
@@ -258,20 +275,10 @@ const mod: AppModule = {
   },
   onExecute: async (result) => {
     try {
-      if (
-        result.data &&
-        !result.data.isHistory &&
-        result.data.expr &&
-        result.data.value
-      ) {
-        await saveHistory(
-          result.data.expr as string,
-          result.data.value as string,
-        )
+      if (result.data && !result.data.isHistory && result.data.expr && result.data.value) {
+        await saveHistory(result.data.expr as string, result.data.value as string)
       }
-      const value = result.data?.value
-        ? String(result.data.value)
-        : result.title.replace('= ', '')
+      const value = result.data?.value ? String(result.data.value) : result.title.replace('= ', '')
       await writeText(value)
       getCurrentWindow().hide()
     } catch (e) {

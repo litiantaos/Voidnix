@@ -2,7 +2,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use rayon::prelude::*;
 use tauri::Emitter;
 
 use super::app_discovery::{collect_apps_with_metadata, get_bundle_name};
@@ -62,7 +61,7 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
     tokio::spawn(async move {
         let apps_with_icons = tokio::task::spawn_blocking(move || {
             result_clone
-                .par_iter()
+                .iter()
                 .map(|app| {
                     let icon = get_app_icon(&app.path);
                     CachedApp {

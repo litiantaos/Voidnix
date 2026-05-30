@@ -1,4 +1,4 @@
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use pinyin::ToPinyin;
 
 pub(super) fn to_pinyin_full(name: &str) -> String {
@@ -15,7 +15,7 @@ pub(super) fn to_pinyin_full(name: &str) -> String {
         .collect()
 }
 
-static PINYIN_WORDS: Lazy<Vec<(&str, &str)>> = Lazy::new(|| {
+static PINYIN_WORDS: LazyLock<Vec<(&str, &str)>> = LazyLock::new(|| {
     vec![
         ("音乐", "yinyue"),
         ("相册", "xiangce"),

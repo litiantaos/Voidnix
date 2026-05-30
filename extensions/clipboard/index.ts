@@ -20,17 +20,18 @@ const tabCache = new Map<string, ClipboardItem[]>()
 export const loading = ref(false)
 
 let _deleteHandler: (() => void) | null = null
-export function registerDeleteHandler(fn: () => void) { _deleteHandler = fn }
-export function triggerDelete() { _deleteHandler?.() }
+export function registerDeleteHandler(fn: () => void) {
+  _deleteHandler = fn
+}
+export function triggerDelete() {
+  _deleteHandler?.()
+}
 
 function cacheKey(tab: 'all' | 'favorites', query: string) {
   return `${tab}:${query}`
 }
 
-export async function fetchClipboardHistory(
-  query: string = '',
-  filterFavorite: boolean = false,
-) {
+export async function fetchClipboardHistory(query: string = '', filterFavorite: boolean = false) {
   const tab = filterFavorite ? 'favorites' : 'all'
   const key = cacheKey(tab, query)
 

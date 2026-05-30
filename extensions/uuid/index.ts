@@ -32,21 +32,42 @@ const mod: AppModule = {
   onModuleSearch: async (query) => {
     const count = parseInt(query)
     const items: SearchResult[] = []
-    
+
     if (isNaN(count) || count <= 1) {
       const uuid = crypto.randomUUID()
       const nano = generateNanoId()
       items.push(
         { id: 'v4-standard', title: uuid, description: 'UUID v4 (标准)', module: 'uuid' },
-        { id: 'v4-nodash', title: uuid.replace(/-/g, ''), description: 'UUID v4 (无短横线)', module: 'uuid' },
-        { id: 'v4-upper', title: uuid.toUpperCase(), description: 'UUID v4 (大写)', module: 'uuid' },
-        { id: 'nanoid', title: nano, description: 'NanoID', module: 'uuid', icon: 'i-ri-key-2-line' }
+        {
+          id: 'v4-nodash',
+          title: uuid.replace(/-/g, ''),
+          description: 'UUID v4 (无短横线)',
+          module: 'uuid',
+        },
+        {
+          id: 'v4-upper',
+          title: uuid.toUpperCase(),
+          description: 'UUID v4 (大写)',
+          module: 'uuid',
+        },
+        {
+          id: 'nanoid',
+          title: nano,
+          description: 'NanoID',
+          module: 'uuid',
+          icon: 'i-ri-key-2-line',
+        },
       )
     } else {
       const total = Math.min(count, 100)
       for (let i = 0; i < total; i++) {
         const uuid = crypto.randomUUID()
-        items.push({ id: `multi-${i}`, title: uuid, description: `UUID v4 (${i + 1})`, module: 'uuid' })
+        items.push({
+          id: `multi-${i}`,
+          title: uuid,
+          description: `UUID v4 (${i + 1})`,
+          module: 'uuid',
+        })
       }
     }
     return items
@@ -57,7 +78,7 @@ const mod: AppModule = {
     } catch (e) {
       console.error('Failed to copy UUID:', e)
     }
-  }
+  },
 }
 
 registerModule(mod)

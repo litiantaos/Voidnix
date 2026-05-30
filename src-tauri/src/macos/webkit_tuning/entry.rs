@@ -274,7 +274,7 @@ pub fn resize_main(app: &AppHandle, w: f64, h: f64) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(any(test, feature = "webkit_tuning_mock"))]
+#[cfg(test)]
 pub(crate) fn install_with<W: WindowOps>(window: &W) {
     if !toggle::is_enabled() {
         log::component_status("Tuning_Toggle", log::Status::Disabled, None);
@@ -291,7 +291,7 @@ pub(crate) fn uninstall_for_test<W: WindowOps>(window: &W) {
     let _ = window.observer_count();
 }
 
-#[cfg(any(test, feature = "webkit_tuning_mock"))]
+#[cfg(test)]
 pub(crate) fn show_main_with<W: WindowOps>(
     window: &W,
     bridge: &dyn PresentationBridge,
@@ -308,7 +308,7 @@ pub(crate) fn show_main_with<W: WindowOps>(
     steps.push("make-key");
 }
 
-#[cfg(any(test, feature = "webkit_tuning_mock"))]
+#[cfg(test)]
 pub(crate) fn hide_main_with<W: WindowOps>(window: &W, steps: &mut log::Steps) {
     window.resign_key();
     steps.push("resign-key");
@@ -320,7 +320,7 @@ pub(crate) fn hide_main_with<W: WindowOps>(window: &W, steps: &mut log::Steps) {
     steps.push("click-monitor-remove");
 }
 
-#[cfg(any(test, feature = "webkit_tuning_mock"))]
+#[cfg(test)]
 pub(crate) fn resize_main_with<W: WindowOps>(
     window: &W,
     w: f64,
@@ -338,9 +338,9 @@ pub(crate) fn resize_main_with<W: WindowOps>(
 /// 拦截 Cmd+Backspace，阻止 WKWebView 返回导航，通过 Tauri 事件通知前端。
 #[cfg(target_os = "macos")]
 pub fn intercept_cmd_backspace(app: &AppHandle) {
-    use once_cell::sync::OnceCell;
+    use std::sync::OnceLock;
 
-    static APP_HANDLE: OnceCell<AppHandle> = OnceCell::new();
+    static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
     let _ = APP_HANDLE.set(app.clone());
 
     extern "C" fn callback() {

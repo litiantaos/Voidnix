@@ -14,7 +14,6 @@ export function useMaskStyles(options: {
   isDraggingTextInput: Ref<boolean>
   isHoveringSelectedShape: Ref<boolean>
 }) {
-  // ── 遮罩样式 ──────────────────────────────────────────────
   const selectionStyle = computed(() => ({
     left: `${options.sel.value.x}px`,
     top: `${options.sel.value.y}px`,

@@ -37,9 +37,7 @@ const sessionKey = ref(0)
 let unmountTimer: ReturnType<typeof setTimeout> | null = null
 
 async function onScreenshotClose(noRestoreFocus = false) {
-  await invoke('exit_screenshot_mode', { noRestoreFocus }).catch(
-    () => {},
-  )
+  await invoke('exit_screenshot_mode', { noRestoreFocus }).catch(() => {})
   // exit_impl 启动 0.15s 的 fade-out 后立即返回；这里延迟卸载 overlay，
   // 让 Vue UI 与 CALayer 背景一起淡出，避免视觉断层。
   if (unmountTimer) clearTimeout(unmountTimer)
@@ -51,8 +49,7 @@ async function onScreenshotClose(noRestoreFocus = false) {
 }
 
 function handleReady() {
-  const data = (window as unknown as { __screenshotData?: ScreenshotData })
-    .__screenshotData
+  const data = (window as unknown as { __screenshotData?: ScreenshotData }).__screenshotData
   if (!data) return
   // 新一次截屏覆盖上一次未完的延迟卸载，避免误清新数据。
   if (unmountTimer) {

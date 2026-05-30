@@ -41,12 +41,9 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
     })
 
     // 监听 passthrough 状态切换
-    unlistenPassthrough = await listen<boolean>(
-      'screenshot-scroll-passthrough',
-      (event) => {
-        isPassthrough.value = event.payload
-      },
-    )
+    unlistenPassthrough = await listen<boolean>('screenshot-scroll-passthrough', (event) => {
+      isPassthrough.value = event.payload
+    })
 
     try {
       await invoke('enter_scroll_capture', {

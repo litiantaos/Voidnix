@@ -1,7 +1,11 @@
 <template>
   <div class="bg-surface flex flex-col h-screen w-screen shadow-lg">
     <!-- 搜索栏 -->
-    <div ref="searchBarRef" class="px-5 border-b border-black/5 flex gap-3 h-15 items-center" @keydown="onSearchBarKeydown">
+    <div
+      ref="searchBarRef"
+      class="px-5 border-b border-black/5 flex gap-3 h-15 items-center"
+      @keydown="onSearchBarKeydown"
+    >
       <div
         v-if="activeModule"
         class="text-xs text-black/70 px-3 rounded-md bg-black/5 flex flex-none gap-1.5 h-7 cursor-default select-none items-center relative"
@@ -69,6 +73,8 @@
       />
     </div>
 
+    <div v-if="isDev" class="bg-accent h-1 w-4 left-1/2 top-1 absolute" />
+
     <!-- 内容区 -->
     <ContentView
       ref="contentViewRef"
@@ -86,13 +92,11 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { useScroll } from '@vueuse/core'
-import { invoke } from '@tauri-apps/api/core'
+import { useScroll } from '@/utils/events'
 import { useTauriListener } from '@/composables/useTauriListener'
 import { getModule } from '@/core/module-registry'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
-import { isTauri } from '@/utils/tauri'
 import type { SearchResult } from '@/types/module'
 import ContentView from '@/components/layout/ContentView.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -102,6 +106,7 @@ import { useScrollPosition } from '@/composables/useScrollPosition'
 import { useSearchCommand } from '@/composables/useSearchCommand'
 import { getFocusableElements, cycleFocus } from '@/utils/dom'
 
+const isDev = import.meta.env.DEV
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
 const showUpdateDialog = ref(false)
@@ -112,20 +117,6 @@ const contentViewRef = ref<InstanceType<typeof ContentView>>()
 const results = ref<SearchResult[]>([])
 const selectedIndex = ref(0)
 const isTagHovered = ref(false)
-
-const WINDOW_WIDTH = 720
-const SEARCH_BAR_HEIGHT = 60
-const ITEM_HEIGHT = 52
-const LIST_PADDING = 16
-const MIN_WINDOW_HEIGHT = 200
-const MAX_WINDOW_HEIGHT = 480
-
-function resizeWindowForResultCount(count: number) {
-  if (!isTauri) return
-  let height = SEARCH_BAR_HEIGHT + LIST_PADDING + count * ITEM_HEIGHT + LIST_PADDING
-  height = Math.max(MIN_WINDOW_HEIGHT, Math.min(height, MAX_WINDOW_HEIGHT))
-  invoke('set_main_window_size', { width: WINDOW_WIDTH, height }).catch(() => {})
-}
 
 const scrollContainer = computed(() => contentViewRef.value?.scrollContainer)
 const { y: scrollTop } = useScroll(scrollContainer)
@@ -146,18 +137,6 @@ const { onInput, handleExecute, handleTagClose, isLoading } = useSearchCommand({
   reset,
 })
 
-watch(
-  [results, activeModule, () => appStore.showPanel],
-  () => {
-    if (activeModule.value) {
-      invoke('set_main_window_size', { width: WINDOW_WIDTH, height: MAX_WINDOW_HEIGHT }).catch(() => {})
-      return
-    }
-    resizeWindowForResultCount(results.value.length)
-  },
-  { immediate: true },
-)
-
 // 进入模块面板时释放搜索栏焦点，让键盘事件能到达面板内容
 // 注意：必须先把焦点转移到容器，否则窗口会因失焦而自动隐藏
 watch(
@@ -175,7 +154,8 @@ function onSearchBarKeydown(e: KeyboardEvent) {
   if (e.key !== 'Tab') return
   const focusable = getFocusableElements(searchBarRef.value!)
   if (focusable.length === 0) return
-  e.preventDefault(); e.stopPropagation()
+  e.preventDefault()
+  e.stopPropagation()
   cycleFocus(focusable, e)
 }
 
@@ -185,7 +165,13 @@ function onTagClose() {
 }
 
 function onSearchKeydown(e: KeyboardEvent) {
-  if (e.key === 'Backspace' && !appStore.searchQuery && !e.metaKey && !e.ctrlKey) {
+  if (
+    e.key === 'Backspace' &&
+    !appStore.searchQuery &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    activeModule.value
+  ) {
     e.preventDefault()
     handleTagClose()
   }

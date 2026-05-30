@@ -19,8 +19,7 @@ export function useMagnifier(options: {
     let left = crossX.value - MAGNIFIER_SIZE - MAGNIFIER_OFFSET
     let top = crossY.value + MAGNIFIER_OFFSET
     if (left < 0) left = crossX.value + MAGNIFIER_OFFSET
-    if (top + totalH > options.screenH.value)
-      top = crossY.value - totalH - MAGNIFIER_OFFSET
+    if (top + totalH > options.screenH.value) top = crossY.value - totalH - MAGNIFIER_OFFSET
     return { left: `${left}px`, top: `${top}px`, width: `${MAGNIFIER_SIZE}px` }
   })
 
@@ -74,15 +73,9 @@ export function useMagnifier(options: {
       canvasSize,
       canvasSize,
     )
-    const px = ctx.getImageData(
-      Math.floor(canvasSize / 2),
-      Math.floor(canvasSize / 2),
-      1,
-      1,
-    ).data
+    const px = ctx.getImageData(Math.floor(canvasSize / 2), Math.floor(canvasSize / 2), 1, 1).data
     pickedColor.value =
-      '#' +
-      [px[0], px[1], px[2]].map((v) => v.toString(16).padStart(2, '0')).join('')
+      '#' + [px[0], px[1], px[2]].map((v) => v.toString(16).padStart(2, '0')).join('')
   }
 
   return {

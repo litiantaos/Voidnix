@@ -1,12 +1,9 @@
 import { ref, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
-import { onKeyStroke } from '@vueuse/core'
+import { onKeyStroke } from '@/utils/events'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-shell'
 import { useTauriListener } from '@/composables/useTauriListener'
-import {
-  searchAll,
-  executeResult,
-} from '@/core/module-registry'
+import { searchAll, executeResult } from '@/core/module-registry'
 import { getVisibleModules, moduleToSearchResult } from '@/core/module-helpers'
 import { useAppStore } from '@/stores/app'
 import type { SearchResult } from '@/types/module'
@@ -137,33 +134,36 @@ export function useSearchCommand(opts: Options) {
       const parsed = parseWebSearchQuery(query)
 
       if (parsed.type === 'url') {
-        results.value = [{
-          id: 'open-url',
-          title: '打开链接',
-          description: parsed.url!,
-          icon: 'i-ri-links-line',
-          module: 'system',
-          score: -1,
-          data: { kind: 'open-url', url: parsed.url! },
-        }]
+        results.value = [
+          {
+            id: 'open-url',
+            title: '打开链接',
+            description: parsed.url!,
+            icon: 'i-ri-links-line',
+            module: 'system',
+            score: -1,
+            data: { kind: 'open-url', url: parsed.url! },
+          },
+        ]
         selectedIndex.value = 0
         return
       }
 
       const engine = parsed.engine === 'bing' ? 'Bing' : 'Google'
-      const desc = parsed.engine === 'bing'
-        ? '在默认浏览器中打开'
-        : '在默认浏览器中打开，//b 可使用 Bing 搜索'
+      const desc =
+        parsed.engine === 'bing' ? '在默认浏览器中打开' : '在默认浏览器中打开，//b 可使用 Bing 搜索'
 
-      results.value = [{
-        id: 'web-search',
-        title: `${engine} 搜索`,
-        description: desc,
-        icon: 'i-ri-earth-line',
-        module: 'system',
-        score: -1,
-        data: { kind: 'web-search', engine: parsed.engine, keyword: parsed.keyword },
-      }]
+      results.value = [
+        {
+          id: 'web-search',
+          title: `${engine} 搜索`,
+          description: desc,
+          icon: 'i-ri-earth-line',
+          module: 'system',
+          score: -1,
+          data: { kind: 'web-search', engine: parsed.engine, keyword: parsed.keyword },
+        },
+      ]
       selectedIndex.value = 0
       return
     }
@@ -263,9 +263,7 @@ export function useSearchCommand(opts: Options) {
         e.preventDefault()
         if (results.value.length > 0) {
           selectedIndex.value =
-            selectedIndex.value >= results.value.length - 1
-              ? 0
-              : selectedIndex.value + 1
+            selectedIndex.value >= results.value.length - 1 ? 0 : selectedIndex.value + 1
         }
         break
       case 'ArrowUp':
@@ -273,9 +271,7 @@ export function useSearchCommand(opts: Options) {
         e.preventDefault()
         if (results.value.length > 0) {
           selectedIndex.value =
-            selectedIndex.value <= 0
-              ? results.value.length - 1
-              : selectedIndex.value - 1
+            selectedIndex.value <= 0 ? results.value.length - 1 : selectedIndex.value - 1
         }
         break
       case 'Enter':
@@ -293,9 +289,10 @@ export function useSearchCommand(opts: Options) {
           const keyword = parsed.keyword
           if (keyword) {
             e.preventDefault()
-            const url = parsed.engine === 'bing'
-              ? `https://www.bing.com/search?q=${encodeURIComponent(keyword)}`
-              : `https://www.google.com/search?q=${encodeURIComponent(keyword)}`
+            const url =
+              parsed.engine === 'bing'
+                ? `https://www.bing.com/search?q=${encodeURIComponent(keyword)}`
+                : `https://www.google.com/search?q=${encodeURIComponent(keyword)}`
             open(url).catch(() => {})
             clearSearch()
             loadDefaultResults().finally(() => {
@@ -306,10 +303,7 @@ export function useSearchCommand(opts: Options) {
         }
         if (appStore.activeModuleId) {
           if (activeModule.value?.disableSearchInput) return
-          if (
-            activeModule.value?.useSearchInput &&
-            activeModule.value?.onSearchInput
-          ) {
+          if (activeModule.value?.useSearchInput && activeModule.value?.onSearchInput) {
             const query = appStore.searchQuery.trim()
             if (query) {
               e.preventDefault()
@@ -397,7 +391,7 @@ export function useSearchCommand(opts: Options) {
     if (appStore.searchQuery) {
       clearSearch()
       loadDefaultResults()
-    } else {
+    } else if (appStore.activeModuleId) {
       goBackToToolList()
     }
     searchInput.value?.focus()

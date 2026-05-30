@@ -5,26 +5,14 @@
       v-if="imageUrl"
       class="border border-black/8 rounded-lg bg-black/4 shrink-0 overflow-hidden"
     >
-      <img
-        :src="imageUrl"
-        class="h-auto max-h-40 w-full block object-contain"
-        alt="截图预览"
-      />
+      <img :src="imageUrl" class="h-auto max-h-40 w-full block object-contain" alt="截图预览" />
     </div>
 
     <!-- 识别中 -->
-    <BaseEmptyState
-      v-if="isLoading"
-      icon="i-ri-loader-4-line"
-      title="识别中..."
-      loading
-    />
+    <BaseEmptyState v-if="isLoading" icon="i-ri-loader-4-line" title="识别中..." loading />
 
     <!-- 错误 -->
-    <div
-      v-else-if="error"
-      class="text-sm text-red-500 p-3 rounded-md bg-red-50"
-    >
+    <div v-else-if="error" class="text-sm text-red-500 p-3 rounded-md bg-red-50">
       {{ error }}
     </div>
 

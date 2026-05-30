@@ -17,7 +17,7 @@ export const useAppStore = defineStore('app', () => {
   const activeModuleId = ref<string | null>(null)
   const searchQuery = ref('')
   const isComposing = ref(false)
-  
+
   const isDialogOpen = ref(false)
   const dialogOptions = ref<ConfirmOptions | null>(null)
   const lastDialogCloseTime = ref(0)
@@ -28,7 +28,6 @@ export const useAppStore = defineStore('app', () => {
   const showPanel = ref(false)
   const shortcutRecording = ref(false)
 
-  // 快捷键注册错误（如系统占用），key 为 shortcut id，value 为错误描述
   const shortcutErrors = ref<Record<string, string>>({})
 
   function setActiveModule(id: string | null) {

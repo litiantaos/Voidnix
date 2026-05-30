@@ -7,10 +7,7 @@
       group-field="group"
       :group-title="(g: string) => g"
       keyboard-navigation
-      @execute="
-        (item: SettingItem, _i: number, e?: KeyboardEvent) =>
-          handleExecute(item, e)
-      "
+      @execute="(item: SettingItem, _i: number, e?: KeyboardEvent) => handleExecute(item, e)"
     >
       <template #item="{ item, selected, setRef, select }">
         <BaseListItem
@@ -54,10 +51,7 @@ import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import UpdateDialog from '@/components/ui/UpdateDialog.vue'
-import {
-  useSettingsInput,
-  type SettingItem,
-} from '@/composables/useSettingsInput'
+import { useSettingsInput, type SettingItem } from '@/composables/useSettingsInput'
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
@@ -78,9 +72,7 @@ async function refreshPermissions() {
     permScreenRecording.value = await invoke<boolean>('check_screen_recording_permission')
     permAccessibility.value = await invoke<boolean>('check_accessibility_permission')
     permFullDiskAccess.value = await invoke<boolean>('check_full_disk_access_permission')
-  } catch {
-    // 权限检查失败（非 macOS 或不支持），保持 null
-  }
+  } catch {}
 }
 
 onMounted(refreshPermissions)
@@ -162,7 +154,6 @@ async function handleRequestAccessibility() {
 async function handleOpenPrivacy(kind: string) {
   if (!isTauri) return
   await invoke('open_privacy_settings', { kind })
-  // 返回刷新状态，给系统一点时间响应
   setTimeout(refreshPermissions, 1000)
 }
 
@@ -196,9 +187,7 @@ const visibleItems = computed<SettingItem[]>(() => {
       title: checkLabel,
       subtitle: versionLabel,
       type: 'button',
-      icon: updateStore.downloaded
-        ? 'i-ri-arrow-up-circle-line'
-        : 'i-ri-refresh-line',
+      icon: updateStore.downloaded ? 'i-ri-arrow-up-circle-line' : 'i-ri-refresh-line',
       group: '应用',
       value: '',
       action: handleCheckUpdate,
@@ -230,7 +219,9 @@ const visibleItems = computed<SettingItem[]>(() => {
     })
   }
 
-  if (isVisible('权限', '隐私', '录制', '辅助', '磁盘', 'accessibility', 'screen', 'disk', 'privacy')) {
+  if (
+    isVisible('权限', '隐私', '录制', '辅助', '磁盘', 'accessibility', 'screen', 'disk', 'privacy')
+  ) {
     items.push({
       id: 'perm-screen-recording',
       title: '屏幕录制权限',

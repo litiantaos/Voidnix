@@ -18,22 +18,10 @@
       <div class="bg-black/45 pointer-events-none fixed" :style="maskRight" />
     </template>
     <template v-else-if="phase === 'select' && hoverWindow">
-      <div
-        class="bg-black/45 pointer-events-none fixed"
-        :style="hoverMaskTop"
-      />
-      <div
-        class="bg-black/45 pointer-events-none fixed"
-        :style="hoverMaskBottom"
-      />
-      <div
-        class="bg-black/45 pointer-events-none fixed"
-        :style="hoverMaskLeft"
-      />
-      <div
-        class="bg-black/45 pointer-events-none fixed"
-        :style="hoverMaskRight"
-      />
+      <div class="bg-black/45 pointer-events-none fixed" :style="hoverMaskTop" />
+      <div class="bg-black/45 pointer-events-none fixed" :style="hoverMaskBottom" />
+      <div class="bg-black/45 pointer-events-none fixed" :style="hoverMaskLeft" />
+      <div class="bg-black/45 pointer-events-none fixed" :style="hoverMaskRight" />
     </template>
     <div v-else class="bg-black/45 pointer-events-none inset-0 fixed" />
 
@@ -93,20 +81,14 @@
       <div
         class="text-xs text-black font-mono border-t border-black/20 bg-white flex gap-2 h-6 select-none items-center justify-center"
       >
-        <div
-          class="border border-black/20 h-3 w-3"
-          :style="{ background: pickedColor }"
-        ></div>
+        <div class="border border-black/20 h-3 w-3" :style="{ background: pickedColor }"></div>
         <div>{{ pickedColor }}</div>
       </div>
     </div>
 
     <!-- 窗口高亮 -->
     <template v-if="!hasSelection && phase === 'select' && hoverWindow">
-      <div
-        class="border border-accent pointer-events-none absolute"
-        :style="hoverWindowStyle"
-      >
+      <div class="border border-accent pointer-events-none absolute" :style="hoverWindowStyle">
         <div
           class="text-xs text-tx-primary px-1.5 py-0.5 rounded bg-surface pointer-events-none select-none shadow absolute"
           :style="hoverSizeStyle"
@@ -118,10 +100,7 @@
 
     <!-- 选区边框 + 8个控制点 -->
     <template v-if="hasSelection && phase !== 'scroll'">
-      <div
-        class="border border-accent pointer-events-none absolute"
-        :style="selectionStyle"
-      >
+      <div class="border border-accent pointer-events-none absolute" :style="selectionStyle">
         <div
           class="text-xs text-tx-primary px-1.5 py-0.5 rounded bg-surface pointer-events-none select-none shadow absolute"
           :style="selSizeStyle"
@@ -140,10 +119,7 @@
 
     <!-- 滚动截屏阶段：仅显示选区边框 -->
     <template v-if="hasSelection && phase === 'scroll'">
-      <div
-        class="border border-accent pointer-events-none absolute"
-        :style="selectionStyle"
-      />
+      <div class="border border-accent pointer-events-none absolute" :style="selectionStyle" />
     </template>
 
     <!-- 标注 canvas -->
@@ -170,19 +146,14 @@
     <!-- 形状控制点覆盖层（选中形状 / 绘制中的 blur 形状时显示） -->
     <template v-if="effectiveShape && phase === 'annotate'">
       <!-- 矩形/模糊：8个控制点 + (矩形)圆角/旋转控制点 -->
-      <template
-        v-if="
-          effectiveShape.type === 'rect' || effectiveShape.type === 'blur'
-        "
-      >
+      <template v-if="effectiveShape.type === 'rect' || effectiveShape.type === 'blur'">
         <div
           v-for="hp in shapeHandles"
           :key="hp.id"
           class="pointer-events-auto absolute z-100"
           :class="{
             'cursor-ns-resize': hp.id === 'cr',
-            'cursor-grab hover:cursor-grab active:cursor-grabbing':
-              hp.id === 'rot',
+            'cursor-grab hover:cursor-grab active:cursor-grabbing': hp.id === 'rot',
           }"
           :style="hp.style"
           @mousedown.stop="startShapeHandleDrag(hp.id, $event)"
@@ -196,12 +167,7 @@
               height="11"
               viewBox="0 0 11 11"
             >
-              <g
-                stroke="#3b82f6"
-                stroke-width="1.5"
-                fill="none"
-                stroke-linecap="round"
-              >
+              <g stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round">
                 <path d="M 3.4 1.45 A 4.25 4.25 0 0 1 7.6 1.45" />
                 <path d="M 9.55 3.4 A 4.25 4.25 0 0 1 9.55 7.6" />
                 <path d="M 7.6 9.55 A 4.25 4.25 0 0 1 3.4 9.55" />
@@ -243,11 +209,7 @@
         </div>
       </template>
       <!-- 直线/箭头：首尾2个控制点 -->
-      <template
-        v-else-if="
-          effectiveShape.type === 'line' || effectiveShape.type === 'arrow'
-        "
-      >
+      <template v-else-if="effectiveShape.type === 'line' || effectiveShape.type === 'arrow'">
         <div
           v-for="hp in shapeHandles"
           :key="hp.id"
@@ -382,7 +344,12 @@ const phase = ref<Phase>('select')
 // ── 组合 composables ──────────────────────────────────────
 const selection = useSelection({ screenW, screenH, windows })
 const annotation = useAnnotation()
-const magnifier = useMagnifier({ initialScreenshot: props.initialScreenshot, screenW, screenH, dpr })
+const magnifier = useMagnifier({
+  initialScreenshot: props.initialScreenshot,
+  screenW,
+  screenH,
+  dpr,
+})
 const textDetection = useTextDetection({ dpr })
 
 // 绘制中的形状优先：控制点和选中框从开始拖动起就显示，松手后无缝切到 selectedShape。
@@ -527,19 +494,11 @@ const {
   onTextInputInput,
   onTextInputKeydown,
 } = textInputComposable
-const {
-  pickedColor,
-  crossX,
-  crossY,
-  magnifierStyle,
-} = magnifier
+const { pickedColor, crossX, crossY, magnifierStyle } = magnifier
 function setMagnifierCanvas(el: unknown) {
   magnifier.magnifierCanvas.value = (el as HTMLCanvasElement | null) ?? undefined
 }
-const {
-  shapeHandles,
-  startShapeHandleDrag,
-} = shapeHandlesComposable
+const { shapeHandles, startShapeHandleDrag } = shapeHandlesComposable
 const {
   selectionStyle,
   hoverWindowStyle,
@@ -556,13 +515,7 @@ const {
   handles,
   cursorStyle,
 } = maskStyles
-const {
-  onMouseDown,
-  onMouseMove,
-  onMouseUp,
-  onDoubleClick,
-  onKeyDown,
-} = events
+const { onMouseDown, onMouseMove, onMouseUp, onDoubleClick, onKeyDown } = events
 const { doCopy, doSave, doOcr, doPin, doCancel } = actions
 
 // ── 滚动截屏 ─────────────────────────────────────────────
@@ -651,8 +604,7 @@ function setCrossPosition(cx: number, cy: number) {
   }
   crossX.value = cx
   crossY.value = cy
-  if (phase.value === 'select')
-    magnifier.updateMagnifier(cx, cy)
+  if (phase.value === 'select') magnifier.updateMagnifier(cx, cy)
 }
 ;(
   window as unknown as { __setScreenshotCross?: (x: number, y: number) => void }
@@ -664,24 +616,15 @@ onMounted(() => {
   invoke('screenshot_overlay_ready').catch(() => {})
 
   if (rootEl.value) {
-    rootEl.value.style.setProperty(
-      '--cross-x',
-      `${props.initialScreenshot.mouse_x}px`,
-    )
-    rootEl.value.style.setProperty(
-      '--cross-y',
-      `${props.initialScreenshot.mouse_y}px`,
-    )
+    rootEl.value.style.setProperty('--cross-x', `${props.initialScreenshot.mouse_x}px`)
+    rootEl.value.style.setProperty('--cross-y', `${props.initialScreenshot.mouse_y}px`)
   }
   selection.hoverWindow.value = selection.findWindowAt(
     props.initialScreenshot.mouse_x,
     props.initialScreenshot.mouse_y,
   )
   nextTick(() => {
-    magnifier.updateMagnifier(
-      props.initialScreenshot.mouse_x,
-      props.initialScreenshot.mouse_y,
-    )
+    magnifier.updateMagnifier(props.initialScreenshot.mouse_x, props.initialScreenshot.mouse_y)
     refocus()
   })
   magnifier.loadPickerImage()
@@ -702,8 +645,7 @@ function onWindowKeyDown(e: KeyboardEvent) {
 onUnmounted(() => {
   window.removeEventListener('focus', refocus)
   window.removeEventListener('keydown', onWindowKeyDown)
-  delete (window as unknown as { __setScreenshotCross?: unknown })
-    .__setScreenshotCross
+  delete (window as unknown as { __setScreenshotCross?: unknown }).__setScreenshotCross
 })
 
 watch(annotateCanvas, () => {
@@ -785,9 +727,13 @@ watch(annotation.activeTool, (tool) => {
 
 // 进入标注阶段即预热文本检测，把 Swift 冷启动放在「框选完成 → 选择工具 → 拖动」
 // 这段空闲里，避免用户第一次拉文本模糊选区时看到延迟。
-watch(phase, (p) => {
-  if (p === 'annotate') textDetection.detect()
-}, { immediate: true })
+watch(
+  phase,
+  (p) => {
+    if (p === 'annotate') textDetection.detect()
+  },
+  { immediate: true },
+)
 
 // 文本区域更新后，重绘画布以应用最新结果。
 watch(textDetection.textRegions, () => drawing.redraw(), { deep: true })

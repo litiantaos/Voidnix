@@ -28,12 +28,7 @@
               :options="item.options!"
               @update:model-value="item.update!"
             />
-            <BaseButton
-              v-else-if="item.type === 'button'"
-              @click="item.action!"
-            >
-              清空
-            </BaseButton>
+            <BaseButton v-else-if="item.type === 'button'" @click="item.action!"> 清空 </BaseButton>
           </template>
         </BaseListItem>
       </template>

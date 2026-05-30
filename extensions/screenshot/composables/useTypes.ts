@@ -1,4 +1,3 @@
-// ── 类型 ──────────────────────────────────────────────────
 export interface WindowRect {
   x: number
   y: number
@@ -59,7 +58,6 @@ export interface TextRegion {
   h: number
 }
 
-// ── 常量 ──────────────────────────────────────────────────
 export const MAGNIFIER_SIZE = 120
 export const MAGNIFIER_ZOOM = 4
 export const MAGNIFIER_OFFSET = 20

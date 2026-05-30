@@ -6,12 +6,17 @@ macOS 效率启动器。Tauri 2 + Rust 后端 + Vue 3 前端。核心架构：�
 
 ```bash
 bun install                  # 安装依赖
-bun run tauri dev            # 开发模式
-bun run build                # 类型检查 + 前端构建（失败即中断）
-bun run lint                 # ESLint + UnoCSS 自动修复
-bun run gen:bindings         # 重新生成 src/bindings.ts（修改 Rust 结构体后执行）
-cd src-tauri && cargo check  # Rust 编译检查
-./deploy.sh                  # 一键：lint → build → cargo check → tauri build → 替换 → 嵌入 Finder 扩展
+bun run tauri:dev            # 开发模式（sync → 格式化 + lint → 启动）
+./deploy.sh                  # 打包部署（tauri build → 替换 .app → 嵌入 Finder 扩展）
+```
+
+内部命令（由 tauri 自动调用或组合使用）：
+
+```bash
+bun run dev                  # 仅启动 Vite 开发服务器（tauri.conf.json beforeDevCommand）
+bun run build                # sync → 格式化 + lint → 类型检查 → 前端构建（tauri.conf.json beforeBuildCommand）
+bun run lint                 # Prettier 格式化 + ESLint 修复（含 UnoCSS class 排序）
+bun run sync:extensions      # 同步扩展注册
 ```
 
 ## 扩展系统
@@ -27,37 +32,6 @@ extensions/
     ├── ...                   # Vue 组件、composables 等前端文件平铺
     └── native/
         └── mod.rs            # Rust 后端入口
-```
-
-**各形态示例**：
-
-```
-# 纯前端，单文件
-extensions/calculator/
-└── index.ts
-
-# 纯后端
-extensions/search/
-├── index.ts
-└── native/
-    └── mod.rs
-
-# 前端多文件 + 后端
-extensions/chat/
-├── index.ts
-├── View.vue
-├── Actions.vue
-└── native/
-    └── mod.rs
-
-# 大型前端 + 后端（如 screenshot）
-extensions/screenshot/
-├── index.ts
-├── View.vue
-├── composables/
-├── windows/
-└── native/
-    └── mod.rs
 ```
 
 ### 注册机制
@@ -129,10 +103,10 @@ bun run tauri dev
 
 ## 核心模块 vs 扩展
 
-| 类别 | 位置 | 说明 |
-|---|---|---|
-| 核心模块 | `src-tauri/src/core/*.rs` | 应用基础设施：快捷键、窗口管理等，与 App Shell 紧耦合 |
-| 扩展 | `extensions/*/native/mod.rs` | 独立功能模块：搜索、翻译、截屏等，通过 `#[path]` 引用 |
+| 类别     | 位置                         | 说明                                                  |
+| -------- | ---------------------------- | ----------------------------------------------------- |
+| 核心模块 | `src-tauri/src/core/*.rs`    | 应用基础设施：快捷键、窗口管理等，与 App Shell 紧耦合 |
+| 扩展     | `extensions/*/native/mod.rs` | 独立功能模块：搜索、翻译、截屏等，通过 `#[path]` 引用 |
 
 运行时字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `onActivate` / `onDeactivate` / `onOpenPanel` / `onSearchInput` / `layout` / `panel` / `globalShortcuts` / `windowViews`
 
@@ -158,7 +132,7 @@ SearchResult {
 
 ## 架构要点
 
-**前后端通信**：前端优先用 `src/bindings.ts` 导出的类型安全命令函数（由 `tauri-specta` 从 Rust 自动生成）；流式/事件类命令仍用裸 `invoke()`。Rust 用 `app.emit()`；所有 Command 须在 `configure_app!` 宏注册。
+**前后端通信**：前端优先用 `src/bindings.ts` 导出的类型安全命令函数（由 `tauri-specta` 从 Rust 自动生成；修改 Rust 结构体后运行 `bun run sync:extensions && cd src-tauri && cargo test --features specta export_bindings -- --nocapture` 重新生成）；流式/事件类命令仍用裸 `invoke()`。Rust 用 `app.emit()`；所有 Command 须在 `configure_app!` 宏注册。
 
 **模块面板**：`open_module_panel(moduleId, payload)` 为通用命令，Rust 显示主窗口后发送 `open-module-panel` 事件；App.vue 接收事件，激活模块、显示面板，并调用模块注册的 `onOpenPanel(payload)`。模块通过 `panel` 槽位声明面板组件，通过 `onOpenPanel` 解析 payload 更新内部状态。
 
@@ -210,7 +184,7 @@ extensions/             # 所有功能扩展
 
 只用 `@/components/ui/` 原子组件，禁止手写底层标签。
 
-**原子组件**：`BaseButton` `BaseDialog` `BaseEmptyState` `BaseInput` `BaseList` `BaseListItem` `BaseSelect` `BaseTextarea` `ShortcutInput`
+**原子组件**：`BaseButton` `BaseDialog` `BaseEmptyState` `BaseInput` `BaseList` `BaseListItem` `BaseSelect` `BaseSlider` `BaseTextarea` `ShortcutInput`
 
 **布局**：`MainView` / `ContentView`
 
@@ -220,14 +194,15 @@ extensions/             # 所有功能扩展
 
 前端共享工具集中在 `src/utils/` 和 `src/core/` 下，扩展中禁止重复实现：
 
-| 模块 | 导出 | 用途 |
-|---|---|---|
-| `src/utils/clipboard.ts` | `copyAndHide(value)` | 复制到剪贴板并隐藏窗口 |
-| `src/utils/tauri.ts` | `isTauri`, `hideWindow(auto?)`, `toSearchResults()`, `cacheIconFromResult()` | Tauri 环境判断、窗口隐藏、搜索结果转换 |
-| `src/utils/provider.ts` | `providerLabelFromUrl(url, fallback)` | 从 API URL 提取提供商标签 |
-| `src/utils/error.ts` | `toErrorMessage(e, fallback?)` | 统一 Error → 字符串 |
-| `src/utils/dom.ts` | `getFocusableElements()`, `isComposing()`, `isFormControl()`, `cycleFocus()`, `trapFocus()`, `wrapIndex()` | DOM 查询、键盘事件、焦点管理 |
-| `src/core/module-helpers.ts` | `moduleSelfResult()`, `getVisibleModules()`, `moduleToSearchResult()`, `keywordModuleSearch()`, `makeToggleHandler()` | 模块搜索结果构建、快捷键 toggle 处理 |
+| 模块                         | 导出                                                                                                                  | 用途                                   |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `src/utils/events.ts`        | `useScroll()`, `onKeyStroke()`                                                                                        | 滚动位置追踪、键盘事件监听（自动清理） |
+| `src/utils/clipboard.ts`     | `copyAndHide(value)`                                                                                                  | 复制到剪贴板并隐藏窗口                 |
+| `src/utils/tauri.ts`         | `isTauri`, `hideWindow(auto?)`, `toSearchResults()`, `cacheIconFromResult()`                                          | Tauri 环境判断、窗口隐藏、搜索结果转换 |
+| `src/utils/provider.ts`      | `providerLabelFromUrl(url, fallback)`                                                                                 | 从 API URL 提取提供商标签              |
+| `src/utils/error.ts`         | `toErrorMessage(e, fallback?)`                                                                                        | 统一 Error → 字符串                    |
+| `src/utils/dom.ts`           | `getFocusableElements()`, `isComposing()`, `isFormControl()`, `cycleFocus()`, `trapFocus()`, `wrapIndex()`            | DOM 查询、键盘事件、焦点管理           |
+| `src/core/module-helpers.ts` | `moduleSelfResult()`, `getVisibleModules()`, `moduleToSearchResult()`, `keywordModuleSearch()`, `makeToggleHandler()` | 模块搜索结果构建、快捷键 toggle 处理   |
 
 Composables：`useSearchCommand` `useScrollPosition` `useInputControl` `useSettingsInput` `useTauriListener` `useShortcutConfig`
 
@@ -239,10 +214,10 @@ Composables：`useSearchCommand` `useScrollPosition` `useInputControl` `useSetti
 
 ## Rust 共享工具
 
-| 模块 | 导出 | 用途 |
-|---|---|---|
-| `infra::db::Database` | `conn()` | 封装 Mutex lock + poison recovery |
-| `infra::sse` | `validate_ai_request(endpoint, model, api_key)` | AI 请求端点/模型/密钥统一校验 |
+| 模块                         | 导出                                                         | 用途                               |
+| ---------------------------- | ------------------------------------------------------------ | ---------------------------------- |
+| `infra::db::Database`        | `conn()`                                                     | 封装 Mutex lock + poison recovery  |
+| `infra::sse`                 | `validate_ai_request(endpoint, model, api_key)`              | AI 请求端点/模型/密钥统一校验      |
 | `webkit_tuning::FailCounter` | `new(limit)`, `is_disabled()`, `record_failure()`, `reset()` | 原子失败计数器，替代重复 static+fn |
 
 ## 约定

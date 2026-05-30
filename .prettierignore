@@ -1,0 +1,6 @@
+dist
+dist-ssr
+coverage
+src-tauri
+node_modules
+src/bindings.ts

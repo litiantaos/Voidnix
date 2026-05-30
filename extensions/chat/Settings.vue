@@ -44,9 +44,7 @@
           v-else
           :ref="setRef"
           :title="providerLabelFromUrl(item.config.endpoint, 'API')"
-          :subtitle="
-            item.config.models.filter(Boolean).join('、') || '未配置模型'
-          "
+          :subtitle="item.config.models.filter(Boolean).join('、') || '未配置模型'"
           :selected="selected"
           @click="select"
           @dblclick="openConfigModal(item.config)"
@@ -69,10 +67,7 @@
         <!-- API URL -->
         <div class="flex flex-col gap-1.5">
           <span class="text-xs text-tx-faint font-medium">API URL</span>
-          <BaseInput
-            v-model="modalForm.endpoint"
-            placeholder="https://api.openai.com/v1"
-          />
+          <BaseInput v-model="modalForm.endpoint" placeholder="https://api.openai.com/v1" />
         </div>
 
         <!-- API KEY -->
@@ -102,11 +97,7 @@
               :key="index"
               class="flex gap-1.5 items-center"
             >
-              <BaseInput
-                v-model="modalForm.models[index]"
-                placeholder="gpt-5"
-                class="flex-1"
-              />
+              <BaseInput v-model="modalForm.models[index]" placeholder="gpt-5" class="flex-1" />
               <BaseButton
                 v-if="index > 0"
                 class="text-red-500"
@@ -150,7 +141,10 @@ useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'chat-shortcut'
 
-const { value: chatShortcutValue, update: handleChatShortcutChange } = useShortcutConfig('chat', 'CommandOrControl+Shift+A')
+const { value: chatShortcutValue, update: handleChatShortcutChange } = useShortcutConfig(
+  'chat',
+  'CommandOrControl+Shift+A',
+)
 
 interface ModalForm {
   endpoint: string

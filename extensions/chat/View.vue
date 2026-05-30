@@ -1,9 +1,5 @@
 <template>
-  <BaseEmptyState
-    v-if="!isConfigured"
-    icon="i-ri-settings-3-line"
-    title="请先配置 AI API"
-  />
+  <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置 AI API" />
 
   <div v-else class="px-5 pt-5 flex flex-col h-full min-h-0">
     <div
@@ -21,11 +17,7 @@
         "
       >
         <template v-if="msg.role === 'user'">{{ msg.content }}</template>
-        <div
-          v-else
-          class="markdown-body"
-          v-html="renderMarkdown(msg.content)"
-        />
+        <div v-else class="markdown-body" v-html="renderMarkdown(msg.content)" />
       </div>
     </div>
 
@@ -52,12 +44,7 @@ import { computed, ref, nextTick, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import {
-  currentConversation,
-  streamingMessage,
-  sendMessage,
-  isGenerating,
-} from './index'
+import { currentConversation, streamingMessage, sendMessage, isGenerating } from './index'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 
@@ -77,7 +64,6 @@ const settings = useSettingsStore()
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const inputText = ref('')
 
-// 消息列表
 const streamingMessageObj = computed(() => {
   if (!streamingMessage.value) return null
   return { role: 'assistant' as const, content: streamingMessage.value }
@@ -91,8 +77,6 @@ const displayMessages = computed(() => {
   return messages
 })
 
-
-
 const isConfigured = computed(
   () => settings.activeChatConfig.endpoint && settings.activeChatConfig.apiKey,
 )
@@ -100,8 +84,7 @@ const isConfigured = computed(
 async function handleSubmit() {
   const text = inputText.value.trim()
   if (!text || isGenerating.value) return
-  if (text.length > MAX_INPUT_LENGTH)
-    inputText.value = text.slice(0, MAX_INPUT_LENGTH)
+  if (text.length > MAX_INPUT_LENGTH) inputText.value = text.slice(0, MAX_INPUT_LENGTH)
   inputText.value = ''
   await sendMessage(text)
   nextTick(() => textareaRef.value?.focus())
@@ -122,9 +105,15 @@ onMounted(() => nextTick(() => textareaRef.value?.focus()))
   margin-bottom: 0.5em;
 }
 
-.markdown-body :deep(h1) { font-size: 1.5em; }
-.markdown-body :deep(h2) { font-size: 1.3em; }
-.markdown-body :deep(h3) { font-size: 1.1em; }
+.markdown-body :deep(h1) {
+  font-size: 1.5em;
+}
+.markdown-body :deep(h2) {
+  font-size: 1.3em;
+}
+.markdown-body :deep(h3) {
+  font-size: 1.1em;
+}
 
 .markdown-body :deep(p) {
   margin-bottom: 0.75em;

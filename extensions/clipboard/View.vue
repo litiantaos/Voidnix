@@ -24,9 +24,19 @@
         :multilineTitle="shouldMultiline(item)"
       >
         <template #icon>
-          <div v-if="getColor(item)" class="rounded h-4 w-4" :style="{ backgroundColor: getColor(item)! }"></div>
-          <i v-else-if="item.content_type === 'text'" class="i-ri-t-box-line text-sm text-accent"></i>
-          <i v-else-if="item.content_type === 'image'" class="i-ri-image-line text-sm text-emerald-500"></i>
+          <div
+            v-if="getColor(item)"
+            class="rounded h-4 w-4"
+            :style="{ backgroundColor: getColor(item)! }"
+          ></div>
+          <i
+            v-else-if="item.content_type === 'text'"
+            class="i-ri-t-box-line text-sm text-accent"
+          ></i>
+          <i
+            v-else-if="item.content_type === 'image'"
+            class="i-ri-image-line text-sm text-emerald-500"
+          ></i>
           <i v-else class="i-ri-folder-3-line text-sm text-amber-500"></i>
         </template>
         <template #title>
@@ -44,10 +54,7 @@
               loading="lazy"
               alt="剪贴板图片"
             />
-            <div
-              v-else
-              class="rounded-md bg-black/5 flex h-32 w-48 items-center justify-center"
-            >
+            <div v-else class="rounded-md bg-black/5 flex h-32 w-48 items-center justify-center">
               <div class="i-ri-image-line text-2xl text-black/20"></div>
             </div>
           </div>
@@ -73,7 +80,9 @@
         <template #trailing>
           <BaseButton
             variant="ghost"
-            :icon="item.is_favorite ? 'i-ri-star-fill text-yellow-400' : 'i-ri-star-line text-tx-subtle'"
+            :icon="
+              item.is_favorite ? 'i-ri-star-fill text-yellow-400' : 'i-ri-star-line text-tx-subtle'
+            "
             @click.stop="toggleFavorite(item.id)"
           />
         </template>
@@ -84,7 +93,14 @@
 
 <script setup lang="ts">
 import { ref, onActivated, onDeactivated, onUnmounted, watch, shallowReactive } from 'vue'
-import { history, activeTab, loading, fetchClipboardHistory, invalidateCache, registerDeleteHandler } from './index'
+import {
+  history,
+  activeTab,
+  loading,
+  fetchClipboardHistory,
+  invalidateCache,
+  registerDeleteHandler,
+} from './index'
 import { commands } from '@/bindings'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
@@ -110,18 +126,21 @@ watch([activeTab, () => appStore.searchQuery], ([tab, query]) => {
   }, 80)
 })
 
-watch(() => appStore.activeModuleId, (id) => {
-  if (id !== 'clipboard') {
-    clearTimeout(debounceTimer)
-    selectedIds.value = new Set()
-  }
-})
+watch(
+  () => appStore.activeModuleId,
+  (id) => {
+    if (id !== 'clipboard') {
+      clearTimeout(debounceTimer)
+      selectedIds.value = new Set()
+    }
+  },
+)
 
-// ── 粘贴 ──
 async function handleExecute() {
-  const ids = selectedIds.value.size > 0
-    ? [...selectedIds.value]
-    : [history.value[listRef.value?.selectedIndex ?? 0]?.id].filter(Boolean)
+  const ids =
+    selectedIds.value.size > 0
+      ? [...selectedIds.value]
+      : [history.value[listRef.value?.selectedIndex ?? 0]?.id].filter(Boolean)
   selectedIds.value = new Set()
   if (ids.length === 0) return
   try {
@@ -136,7 +155,6 @@ async function handleExecute() {
   }
 }
 
-// ── 收藏 ──
 const toggleFavorite = async (id: string) => {
   try {
     await commands.toggleClipboardFavorite(id)
@@ -152,11 +170,11 @@ const toggleFavorite = async (id: string) => {
   }
 }
 
-// ── 删除 ──
 async function handleDelete() {
-  const ids = selectedIds.value.size > 0
-    ? [...selectedIds.value]
-    : [history.value[listRef.value?.selectedIndex ?? 0]?.id].filter(Boolean)
+  const ids =
+    selectedIds.value.size > 0
+      ? [...selectedIds.value]
+      : [history.value[listRef.value?.selectedIndex ?? 0]?.id].filter(Boolean)
   if (ids.length === 0) return
 
   const count = ids.length

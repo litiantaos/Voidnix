@@ -23,19 +23,14 @@
         class="p-3 rounded-md bg-black/4"
         tabindex="0"
         @dblclick="!result.loading && handleCopy(result.translation)"
-        @keydown.enter.prevent="
-          !result.loading && handleCopy(result.translation)
-        "
+        @keydown.enter.prevent="!result.loading && handleCopy(result.translation)"
       >
         <div class="text-xs text-tx-faint mb-1.5">{{ result.engine }}</div>
         <div
           v-if="result.loading && !result.translation"
           class="i-ri-loader-4-line text-base text-tx-muted animate-spin"
         ></div>
-        <p
-          v-else
-          class="text-sm text-tx-primary leading-relaxed wrap-break-word"
-        >
+        <p v-else class="text-sm text-tx-primary leading-relaxed wrap-break-word">
           {{ result.translation }}<span v-if="result.loading" class="animate-pulse">▍</span>
         </p>
       </div>
@@ -45,13 +40,7 @@
 
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, onActivated } from 'vue'
-import {
-  translateResults,
-  isTranslating,
-  translateText,
-  pendingText,
-  inputText,
-} from './index'
+import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'

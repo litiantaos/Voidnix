@@ -6,7 +6,6 @@ export function useSelection(options: {
   screenH: Ref<number>
   windows: Ref<WindowRect[]>
 }) {
-  // ── 选区状态 ──────────────────────────────────────────────
   const sel = ref<Sel>({ x: 0, y: 0, w: 0, h: 0 })
   const dragStart = ref({ x: 0, y: 0 })
   const isDragging = ref(false)

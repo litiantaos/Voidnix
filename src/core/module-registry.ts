@@ -29,21 +29,13 @@ export async function initAllModules() {
   }
 }
 
-
-
 const MODULE_SEARCH_TIMEOUT = 3000
 const OVERALL_SEARCH_TIMEOUT = 8000
 
-function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  moduleId: string,
-): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number, moduleId: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      console.warn(
-        `[module-registry] Module ${moduleId} search timed out after ${ms}ms`,
-      )
+      console.warn(`[module-registry] Module ${moduleId} search timed out after ${ms}ms`)
       reject(new Error(`Module ${moduleId} timed out`))
     }, ms)
     promise.then(
@@ -75,11 +67,7 @@ export async function searchAll(
 
   const promises = activeModules.map(async (m, i) => {
     try {
-      const res = await withTimeout(
-        m.onSearch!(query),
-        MODULE_SEARCH_TIMEOUT,
-        m.id,
-      )
+      const res = await withTimeout(m.onSearch!(query), MODULE_SEARCH_TIMEOUT, m.id)
       allResults[i] = res
       if (onUpdate) {
         onUpdate(processResults())
@@ -95,9 +83,7 @@ export async function searchAll(
   try {
     await withTimeout(overallPromise, OVERALL_SEARCH_TIMEOUT, 'overall')
   } catch {
-    console.warn(
-      '[module-registry] Overall search timed out, returning partial results',
-    )
+    console.warn('[module-registry] Overall search timed out, returning partial results')
   }
 
   return processResults()

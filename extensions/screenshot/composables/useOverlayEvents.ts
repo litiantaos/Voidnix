@@ -81,7 +81,7 @@ export function useOverlayEvents(options: {
   rootEl: Ref<HTMLElement | undefined>
 }) {
   // ── 命中测试 ──────────────────────────────────────────────
-function hitTestShape(shape: Shape, px: number, py: number): boolean {
+  function hitTestShape(shape: Shape, px: number, py: number): boolean {
     const HIT = 8
     const { type, x1, y1, x2, y2, textWidth } = shape
 
@@ -128,16 +128,10 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
     if (type === 'text') {
       const w = textWidth ?? 160
       const fontSize = shape.fontSize ?? Math.max(14, shape.lineWidth * 6)
-      const lines =
-        shape.textLines ?? (shape.text ? shape.text.split('\n') : [''])
+      const lines = shape.textLines ?? (shape.text ? shape.text.split('\n') : [''])
       const lineH = Math.round(fontSize * 1.3)
       const h = lineH * lines.length
-      return (
-        px >= x1 - HIT &&
-        px <= x1 + w + HIT &&
-        py >= y1 - HIT &&
-        py <= y1 + h + HIT
-      )
+      return px >= x1 - HIT && px <= x1 + w + HIT && py >= y1 - HIT && py <= y1 + h + HIT
     }
     return false
   }
@@ -213,10 +207,8 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
         color: options.annotColor.value,
         lineWidth: options.annotLineWidth.value,
         cornerRadius: options.activeTool.value === 'rect' ? 0 : undefined,
-        blurAmount:
-          options.activeTool.value === 'blur' ? options.annotBlurAmount.value : undefined,
-        blurMode:
-          options.activeTool.value === 'blur' ? options.annotBlurMode.value : undefined,
+        blurAmount: options.activeTool.value === 'blur' ? options.annotBlurAmount.value : undefined,
+        blurMode: options.activeTool.value === 'blur' ? options.annotBlurMode.value : undefined,
       }
       return
     }
@@ -237,8 +229,7 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
     options.crossX.value = cx
     options.crossY.value = cy
 
-    if (options.phase.value === 'select')
-      options.updateMagnifier(cx, cy)
+    if (options.phase.value === 'select') options.updateMagnifier(cx, cy)
 
     if (options.textInputPendingDrag.value || options.isDraggingTextInput.value) {
       const dx = cx - options.textInputDragStart.value.mx
@@ -326,7 +317,12 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
         options.pendingDrag.value = false
         options.isDragging.value = true
         options.hoverWindow.value = null
-        options.sel.value = { x: options.dragStart.value.x, y: options.dragStart.value.y, w: 0, h: 0 }
+        options.sel.value = {
+          x: options.dragStart.value.x,
+          y: options.dragStart.value.y,
+          w: 0,
+          h: 0,
+        }
       }
     }
 
@@ -355,7 +351,11 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
       return
     }
 
-    if (options.phase.value === 'select' && !options.isDragging.value && !options.pendingDrag.value) {
+    if (
+      options.phase.value === 'select' &&
+      !options.isDragging.value &&
+      !options.pendingDrag.value
+    ) {
       options.hoverWindow.value = options.findWindowAt(cx, cy)
     }
 
@@ -376,7 +376,11 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
       }
     }
 
-    if (options.phase.value === 'annotate' && options.isDragging.value && !options.activeTool.value) {
+    if (
+      options.phase.value === 'annotate' &&
+      options.isDragging.value &&
+      !options.activeTool.value
+    ) {
       const newX = Math.max(
         0,
         Math.min(cx - options.dragStart.value.x, options.screenW.value - options.sel.value.w),
@@ -390,8 +394,10 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
       const dy = newY - options.sel.value.y
       if (dx !== 0 || dy !== 0) {
         for (const s of options.shapes.value) {
-          s.x1 -= dx; s.x2 -= dx
-          s.y1 -= dy; s.y2 -= dy
+          s.x1 -= dx
+          s.x2 -= dx
+          s.y1 -= dy
+          s.y2 -= dy
         }
       }
       options.sel.value.x = newX
@@ -521,8 +527,7 @@ function hitTestShape(shape: Shape, px: number, py: number): boolean {
       const shape = { ...options.currentShape.value }
       options.currentShape.value = null
       options.isDrawing.value = false
-      const hasSize =
-        Math.abs(shape.x2 - shape.x1) > 2 || Math.abs(shape.y2 - shape.y1) > 2
+      const hasSize = Math.abs(shape.x2 - shape.x1) > 2 || Math.abs(shape.y2 - shape.y1) > 2
       if (hasSize) {
         options.shapes.value.push(shape)
         options.selectedShapeIndex.value = options.shapes.value.length - 1

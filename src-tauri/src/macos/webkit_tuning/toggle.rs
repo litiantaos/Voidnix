@@ -9,7 +9,7 @@
 //! 在 `cfg(test)` 下额外提供 `override_enabled` / `clear_override` 用于注入；
 //! 生产构建路径仍走纯 `*ENABLED`，无锁开销。
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 /// 决策纯函数：根据环境变量字符串值决定是否启用 webkit_tuning 驯化。
 ///
@@ -20,7 +20,7 @@ pub(crate) fn decide(s: Option<&str>) -> bool {
 }
 
 /// 进程级 Toggle 快照：启动时读取环境变量并固化。
-static ENABLED: Lazy<bool> = Lazy::new(|| {
+static ENABLED: LazyLock<bool> = LazyLock::new(|| {
     decide(std::env::var("VOIDNIX_DISABLE_WEBKIT_TUNING").ok().as_deref())
 });
 

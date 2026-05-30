@@ -1,10 +1,7 @@
 <template>
   <div class="flex flex-1 flex-col overflow-hidden">
     <!-- Header -->
-    <div
-      v-if="resolvedLayout.header"
-      class="text-xs px-5 py-2 border-b border-black/5 shrink-0"
-    >
+    <div v-if="resolvedLayout.header" class="text-xs px-5 py-2 border-b border-black/5 shrink-0">
       <component :is="resolvedLayout.header" />
     </div>
 
@@ -24,10 +21,7 @@
 
         <!-- Standard list -->
         <template v-if="!resolvedLayout.view">
-          <BaseEmptyState
-            v-if="currentLoading && currentResults.length === 0"
-            :loading="true"
-          />
+          <BaseEmptyState v-if="currentLoading && currentResults.length === 0" :loading="true" />
 
           <BaseEmptyState
             v-else-if="currentResults.length === 0"
@@ -81,28 +75,19 @@
                     v-else-if="isFileOrFolder(item)"
                     class="rounded-md bg-black/4 flex h-full w-full items-center justify-center"
                   >
-                    <i
-                      :class="[getFileIcon(item).icon, getFileIcon(item).color]"
-                      class="text-sm"
-                    />
+                    <i :class="[getFileIcon(item).icon, getFileIcon(item).color]" class="text-sm" />
                   </div>
                   <span v-else class="text-sm text-black/30 font-medium">
                     {{ item.title[0]?.toUpperCase() }}
                   </span>
                 </template>
                 <template #title>
-                  <div
-                    :class="
-                      item.data?.isHighlight ? 'text-accent font-medium' : ''
-                    "
-                  >
+                  <div :class="item.data?.isHighlight ? 'text-accent font-medium' : ''">
                     {{ item.title }}
                   </div>
                 </template>
                 <template #subtitle>
-                  <span v-if="item.description" class="truncate">{{
-                    item.description
-                  }}</span>
+                  <span v-if="item.description" class="truncate">{{ item.description }}</span>
                   <template v-else-if="item.data?.path && isFileOrFolder(item)">
                     <span
                       class="flex-[0_1_auto] min-w-0 truncate"
@@ -165,9 +150,7 @@ const currentLoading = computed(() => {
   if (props.initialLoading) return true
   return props.results !== undefined ? false : internalLoading.value
 })
-const currentSelectedIndex = computed(
-  () => props.selectedIndex ?? internalSelectedIndex.value,
-)
+const currentSelectedIndex = computed(() => props.selectedIndex ?? internalSelectedIndex.value)
 
 /**
  * 将布局决策逻辑收拢到一处。
@@ -246,8 +229,7 @@ const handleUpdateSelectedIndex = (i: number) => {
   }
 }
 
-const getIcon = (item: SearchResult) =>
-  item.icon || item.data?.icon || props.module?.icon
+const getIcon = (item: SearchResult) => item.icon || item.data?.icon || props.module?.icon
 const isIconFont = (item: SearchResult) => getIcon(item)?.startsWith('i-')
 const isImageIcon = (item: SearchResult) => getIcon(item) && !isIconFont(item)
 const isModuleItem = (item: SearchResult) => item.data?.kind === 'module'
