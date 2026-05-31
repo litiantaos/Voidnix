@@ -38,9 +38,11 @@
             realHome = NSHomeDirectory();
         }
 
-        dir = [[[[realHome stringByAppendingPathComponent:@"Library"]
+        dir = [[[[[[realHome stringByAppendingPathComponent:@"Library"]
                     stringByAppendingPathComponent:@"Application Support"]
                     stringByAppendingPathComponent:@"com.litiantao.voidnix"]
+                    stringByAppendingPathComponent:@"extensions"]
+                    stringByAppendingPathComponent:@"finder-ext"]
                     stringByAppendingPathComponent:@"commands"];
 
         NSFileManager *fm = [NSFileManager defaultManager];

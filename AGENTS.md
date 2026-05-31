@@ -103,10 +103,8 @@ bun run tauri dev
 
 ## 核心模块 vs 扩展
 
-| 类别     | 位置                         | 说明                                                  |
-| -------- | ---------------------------- | ----------------------------------------------------- |
-| 核心模块 | `src-tauri/src/core/*.rs`    | 应用基础设施：快捷键、窗口管理等，与 App Shell 紧耦合 |
-| 扩展     | `extensions/*/native/mod.rs` | 独立功能模块：搜索、翻译、截屏等，通过 `#[path]` 引用 |
+- **核心模块**（`src-tauri/src/core/*.rs`）：应用基础设施（快捷键、窗口管理等），与 App Shell 紧耦合
+- **扩展**（`extensions/*/native/mod.rs`）：独立功能模块（搜索、翻译、截屏等），通过 `#[path]` 引用
 
 运行时字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `onActivate` / `onDeactivate` / `onOpenPanel` / `onSearchInput` / `layout` / `panel` / `globalShortcuts` / `windowViews`
 
@@ -160,6 +158,7 @@ src-tauri/src/
 ├── infra/              # 基础设施模块（无 Tauri 命令，跨平台通用）
 │   ├── mod.rs
 │   ├── db.rs           # SQLite 数据库
+│   ├── path.rs         # 存储路径集中管理
 │   ├── http.rs         # HTTP 客户端
 │   └── sse.rs          # SSE 流式请求
 ├── macos/              # macOS 原生桥接模块
@@ -194,19 +193,17 @@ extensions/             # 所有功能扩展
 
 前端共享工具集中在 `src/utils/` 和 `src/core/` 下，扩展中禁止重复实现：
 
-| 模块                         | 导出                                                                                                                  | 用途                                   |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `src/utils/events.ts`        | `useScroll()`, `onKeyStroke()`                                                                                        | 滚动位置追踪、键盘事件监听（自动清理） |
-| `src/utils/clipboard.ts`     | `copyAndHide(value)`                                                                                                  | 复制到剪贴板并隐藏窗口                 |
-| `src/utils/tauri.ts`         | `isTauri`, `hideWindow(auto?)`, `toSearchResults()`, `cacheIconFromResult()`                                          | Tauri 环境判断、窗口隐藏、搜索结果转换 |
-| `src/utils/provider.ts`      | `providerLabelFromUrl(url, fallback)`                                                                                 | 从 API URL 提取提供商标签              |
-| `src/utils/error.ts`         | `toErrorMessage(e, fallback?)`                                                                                        | 统一 Error → 字符串                    |
-| `src/utils/dom.ts`           | `getFocusableElements()`, `isComposing()`, `isFormControl()`, `cycleFocus()`, `trapFocus()`, `wrapIndex()`            | DOM 查询、键盘事件、焦点管理           |
-| `src/core/module-helpers.ts` | `moduleSelfResult()`, `getVisibleModules()`, `moduleToSearchResult()`, `keywordModuleSearch()`, `makeToggleHandler()` | 模块搜索结果构建、快捷键 toggle 处理   |
+- `src/utils/events.ts`：`useScroll()`、`onKeyStroke()` — 滚动位置追踪、键盘事件监听（自动清理）
+- `src/utils/clipboard.ts`：`copyAndHide(value)` — 复制到剪贴板并隐藏窗口
+- `src/utils/tauri.ts`：`isTauri`、`hideWindow(auto?)`、`toSearchResults()`、`cacheIconFromResult()` — Tauri 环境判断、窗口隐藏、搜索结果转换
+- `src/utils/provider.ts`：`providerLabelFromUrl(url, fallback)` — 从 API URL 提取提供商标签
+- `src/utils/error.ts`：`toErrorMessage(e, fallback?)` — 统一 Error → 字符串
+- `src/utils/dom.ts`：`getFocusableElements()`、`isComposing()`、`isFormControl()`、`cycleFocus()`、`trapFocus()`、`wrapIndex()` — DOM 查询、键盘事件、焦点管理
+- `src/core/module-helpers.ts`：`moduleSelfResult()`、`getVisibleModules()`、`moduleToSearchResult()`、`keywordModuleSearch()`、`makeToggleHandler()` — 模块搜索结果构建、快捷键 toggle 处理
 
 Composables：`useSearchCommand` `useScrollPosition` `useInputControl` `useSettingsInput` `useTauriListener` `useShortcutConfig`
 
-**settingsStore 内部工具**：`parseActiveConfig()` `createConfigManager()` `createSyncedSetter()` `loadSetting()`
+**settingsStore 内部工具**：`parseActiveConfig()` `createConfigManager()` `createSyncedSetter()`
 
 ## 状态管理
 
@@ -214,11 +211,50 @@ Composables：`useSearchCommand` `useScrollPosition` `useInputControl` `useSetti
 
 ## Rust 共享工具
 
-| 模块                         | 导出                                                         | 用途                               |
-| ---------------------------- | ------------------------------------------------------------ | ---------------------------------- |
-| `infra::db::Database`        | `conn()`                                                     | 封装 Mutex lock + poison recovery  |
-| `infra::sse`                 | `validate_ai_request(endpoint, model, api_key)`              | AI 请求端点/模型/密钥统一校验      |
-| `webkit_tuning::FailCounter` | `new(limit)`, `is_disabled()`, `record_failure()`, `reset()` | 原子失败计数器，替代重复 static+fn |
+- `infra::path`：`SETTINGS_STORE_PATH`、`clipboard_db_path()`、`finder_ext_command_dir()`、`zsh_daemon_dir()`、`zsh_daemon_bin_path()`、`zsh_daemon_flag_path()`、`icon_cache_dir()` — 存储路径集中管理
+- `infra::db::Database`：`conn()` — 封装 Mutex lock + poison recovery
+- `infra::sse`：`validate_ai_request(endpoint, model, api_key)` — AI 请求端点/模型/密钥统一校验
+- `webkit_tuning::FailCounter`：`new(limit)`、`is_disabled()`、`record_failure()`、`reset()` — 原子失败计数器
+
+## 存储结构
+
+应用数据按职责分目录存储，路径由 `infra::path` 集中管理，扩展禁止自行拼接路径：
+
+```
+~/Library/Application Support/com.litiantao.voidnix/
+├── config/
+│   └── settings.json           # 应用配置（tauri-plugin-store，按领域分组）
+├── data/
+│   ├── clipboard.db            # 剪贴板历史（SQLite）
+│   └── calc_history.json       # 计算器历史（tauri-plugin-store）
+└── extensions/
+    ├── finder-ext/
+    │   └── commands/           # Finder 扩展 IPC 目录
+    └── zsh-autosuggestions/    # Zsh 守护进程
+        ├── bin/                # 守护进程二进制
+        ├── enabled             # 启用标志
+        ├── sock                # Unix socket
+        └── zsh-autosuggestions.db  # 命令历史（SQLite）
+
+~/Library/Caches/com.litiantao.voidnix/
+└── icons/                      # 应用图标缓存
+```
+
+**settings.json 分组结构**（禁止平铺）：
+
+```json
+{
+  "shortcuts": { "global": "...", "overrides": {} },
+  "clipboard": { "maxDays": 30 },
+  "screenshot": { "savePath": "" },
+  "translate": { "targetLang": "zh", "configs": [], "activeModelKey": "" },
+  "chat": { "configs": [], "activeModelKey": "" },
+  "extensions": { "finderExt": false, "zshAutosuggestions": false, "awakeMirrorMode": true }
+}
+```
+
+- 新增配置项归入所属分组，禁止在根层级新增 key
+- 新增扩展的数据目录放在 `extensions/` 下，禁止平铺到 app_data_dir 根目录
 
 ## 约定
 
@@ -228,3 +264,4 @@ Composables：`useSearchCommand` `useScrollPosition` `useInputControl` `useSetti
 - 干净简洁的代码，精神洁癖，强迫症。
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`
 - Git commit：`<type>(<scope>): <中文描述>`，不主动执行 git 操作
+- 文档尽量不用表格

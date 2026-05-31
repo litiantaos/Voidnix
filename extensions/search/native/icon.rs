@@ -31,12 +31,7 @@ fn icon_cache_path(cache_dir: &Path, app_path: &str) -> std::path::PathBuf {
 }
 
 pub(super) fn get_app_icon(app_path: &str) -> Option<String> {
-    let cache_dir = dirs::cache_dir()
-        .unwrap_or_else(|| Path::new("/tmp").to_path_buf())
-        .join("com.litiantao.voidnix")
-        .join("icons");
-
-    let _ = fs::create_dir_all(&cache_dir);
+    let cache_dir = crate::infra::path::icon_cache_dir();
 
     let cached_path = icon_cache_path(&cache_dir, app_path);
 
@@ -66,10 +61,7 @@ pub(super) fn get_app_icon(app_path: &str) -> Option<String> {
 }
 
 fn extract_app_icon(app_path: &str) -> Option<String> {
-    let cache_dir = dirs::cache_dir()
-        .unwrap_or_else(|| Path::new("/tmp").to_path_buf())
-        .join("com.litiantao.voidnix")
-        .join("icons");
+    let cache_dir = crate::infra::path::icon_cache_dir();
 
     let cached_path = icon_cache_path(&cache_dir, app_path);
 

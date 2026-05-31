@@ -1,19 +1,15 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::Manager;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
 const DAEMON_BIN_NAME: &str = "zsh-autosuggestions";
 
 fn app_daemon_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
-    app.path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("zsh-autosuggestions")
+    crate::infra::path::zsh_daemon_dir(app)
 }
 
 fn installed_bin_path(app: &tauri::AppHandle) -> std::path::PathBuf {
-    app_daemon_dir(app).join("bin").join(DAEMON_BIN_NAME)
+    crate::infra::path::zsh_daemon_bin_path(app)
 }
 
 fn source_bin_path() -> Option<std::path::PathBuf> {
@@ -24,7 +20,7 @@ fn source_bin_path() -> Option<std::path::PathBuf> {
 }
 
 fn flag_path(app: &tauri::AppHandle) -> std::path::PathBuf {
-    app_daemon_dir(app).join("enabled")
+    crate::infra::path::zsh_daemon_flag_path(app)
 }
 
 fn install_daemon_bin(app: &tauri::AppHandle) -> bool {

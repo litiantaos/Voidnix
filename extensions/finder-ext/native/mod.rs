@@ -71,13 +71,7 @@ impl notify::EventHandler for CommandHandler {
 /// IPC directory shared between the sandboxed extension and this main app.
 /// Uses app_data_dir() so the path is consistent with other local files.
 fn command_dir(app: &AppHandle) -> PathBuf {
-    let dir = app.path().app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("commands");
-    if let Err(e) = fs::create_dir_all(&dir) {
-        log::error!("Failed to create command dir {:?}: {}", dir, e);
-    }
-    dir
+    crate::infra::path::finder_ext_command_dir(app)
 }
 
 pub fn init_finder_ext(app_handle: AppHandle) {

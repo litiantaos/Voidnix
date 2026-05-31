@@ -31,8 +31,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             crate::macos::text_selection::init_ax_timeout();
 
-            let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-            let db_path = app_data_dir.join("launcher.db");
+            let db_path = infra::path::clipboard_db_path(app.handle());
             app.manage(Database::new(db_path));
 
             #[cfg(target_os = "macos")]

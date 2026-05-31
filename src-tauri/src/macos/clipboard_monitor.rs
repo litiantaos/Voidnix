@@ -183,12 +183,12 @@ pub fn start_monitor(app_handle: AppHandle) {
             }
 
             use tauri_plugin_store::StoreExt;
-            let store = app_handle.store("settings.json");
+            let store = app_handle.store(crate::infra::path::SETTINGS_STORE_PATH);
             let mut max_days: i32 = 30;
 
-            if let Ok(store) = store {
-                if let Some(v) = store.get("clipboardMaxDays") {
-                    if let Some(n) = v.as_i64() {
+            if let Ok(s) = store {
+                if let Some(clipboard) = s.get("clipboard") {
+                    if let Some(n) = clipboard.get("maxDays").and_then(|v| v.as_i64()) {
                         max_days = n as i32;
                     }
                 }
