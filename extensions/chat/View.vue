@@ -28,6 +28,7 @@
         <h1 class="text-xl font-bold">来点有意思的吧！</h1>
         <p class="text-xs text-tx-muted">日常问题、工作任务...</p>
       </div>
+
       <BaseTextarea
         ref="textareaRef"
         v-model="inputText"

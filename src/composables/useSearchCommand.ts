@@ -321,23 +321,7 @@ export function useSearchCommand(opts: Options) {
           handleExecute(results.value[selectedIndex.value])
         }
         break
-      case 'Backspace': {
-        const el = document.activeElement
-        if (
-          el?.tagName === 'INPUT' ||
-          el?.tagName === 'TEXTAREA' ||
-          el?.tagName === 'SELECT' ||
-          el?.hasAttribute('contenteditable')
-        ) {
-          return
-        }
 
-        if (appStore.activeModuleId && !appStore.searchQuery) {
-          e.preventDefault()
-          goBackToToolList()
-        }
-        break
-      }
       case 'Escape': {
         if (appStore.isDialogOpen) return
 
@@ -359,9 +343,9 @@ export function useSearchCommand(opts: Options) {
           }
         }
 
-        if (appStore.showPanel) {
+        if (appStore.activePanel) {
           e.preventDefault()
-          appStore.showPanel = false
+          appStore.closePanel()
           return
         }
         e.preventDefault()
@@ -383,7 +367,7 @@ export function useSearchCommand(opts: Options) {
     }
   }
 
-  onKeyStroke(['ArrowDown', 'ArrowUp', 'Enter', 'Backspace', 'Escape'], onKeydown)
+  onKeyStroke(['ArrowDown', 'ArrowUp', 'Enter', 'Escape'], onKeydown)
 
   // --- tag & focus ---
 

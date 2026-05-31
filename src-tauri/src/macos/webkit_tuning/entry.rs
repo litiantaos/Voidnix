@@ -199,6 +199,7 @@ pub fn show_main(app: &AppHandle) {
 }
 
 pub fn hide_main(app: &AppHandle) {
+    crate::core::shortcut::set_window_visible(false);
     let mut steps = log::Steps::new();
 
     #[cfg(target_os = "macos")]

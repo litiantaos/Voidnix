@@ -1,15 +1,9 @@
 <template>
   <BaseList
-    :items="allItems"
+    :items="items"
     v-model:selected-index="selectedIndex"
     keyboard-navigation
-    :group-field="(item: ZshAsItem) => item.group"
-    :group-title="(g: string) => g"
-    @execute="
-      (item: ZshAsItem) => {
-        if (item.type === 'toggle') toggle()
-      }
-    "
+    @execute="toggle"
   >
     <template #item="{ selected, setRef, select }">
       <BaseListItem
@@ -39,20 +33,12 @@ import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 
-interface ToggleItem {
-  type: 'toggle'
-  group: string
-}
-
-type ZshAsItem = ToggleItem
-
 const settings = useSettingsStore()
 const selectedIndex = ref(0)
+const items = [{}]
 
 const toggle = async () => {
   const newVal = !settings.zshAutosuggestionsEnabled
   await settings.setZshAutosuggestionsEnabled(newVal)
 }
-
-const allItems: ZshAsItem[] = [{ type: 'toggle', group: '通用' }]
 </script>

@@ -72,6 +72,7 @@ export function useScreenshotActions(options: {
 
     await invoke('open_module_panel', {
       moduleId: 'screenshot',
+      panelId: 'ocr',
       payload: {
         selX: options.sel.value.x,
         selY: options.sel.value.y,

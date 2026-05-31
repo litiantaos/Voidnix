@@ -1,5 +1,7 @@
 <template>
-  <div class="p-5 flex flex-col gap-4 h-full overflow-y-auto">
+  <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置翻译服务" />
+
+  <div v-else class="p-5 flex flex-col gap-4 h-full overflow-y-auto">
     <BaseTextarea
       ref="textareaRef"
       v-model="inputText"
@@ -39,14 +41,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onActivated } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onActivated } from 'vue'
+import { useSettingsStore } from '@/stores/settings'
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 
+const settings = useSettingsStore()
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
+
+const isConfigured = computed(() =>
+  settings.translateConfigs.some(
+    (c) =>
+      (c.type === 'youdao' && c.appKey && c.appSecret) ||
+      (c.type === 'ai' && c.endpoint && c.apiKey),
+  ),
+)
 
 watch(
   pendingText,

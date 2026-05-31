@@ -1,7 +1,7 @@
 <template>
   <component :is="activeWindowView" v-if="activeWindowView" />
 
-  <!-- 主窗口：正常启动器 -->
+  <!-- 主窗口 -->
   <template v-else>
     <MainView />
   </template>
@@ -213,17 +213,20 @@ onMounted(async () => {
     })
 
     // 通用模块面板事件：任何模块都可以通过 Rust `open_module_panel` 触发
-    await listen<{ moduleId: string; payload: unknown }>('open-module-panel', (e) => {
-      markSkip()
-      const { moduleId, payload } = e.payload
-      appStore.setActiveModule(moduleId)
-      appStore.setSearchQuery('')
-      appStore.showPanel = true
-      const mod = getModule(moduleId)
-      if (mod?.onOpenPanel) {
-        mod.onOpenPanel(payload)
-      }
-    })
+    await listen<{ moduleId: string; panelId: string; payload: unknown }>(
+      'open-module-panel',
+      (e) => {
+        markSkip()
+        const { moduleId, panelId, payload } = e.payload
+        appStore.setActiveModule(moduleId)
+        appStore.setSearchQuery('')
+        appStore.openPanel(panelId)
+        const mod = getModule(moduleId)
+        if (mod?.onOpenPanel) {
+          mod.onOpenPanel(panelId, payload)
+        }
+      },
+    )
 
     // webkit_tuning 驯化事件：pre-show 触发 rAF 让 WebKit 渲染管线就绪，严格先于 alpha=1
     unlistenPreShow = await listen('webkit-tuning:pre-show', () => {

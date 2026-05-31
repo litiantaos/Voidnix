@@ -108,9 +108,7 @@ fn main() {
                 .filter(|rc| !rc.command.trim().is_empty())
                 .map(|rc| db::Command {
                     command: rc.command,
-                    directory: std::env::current_dir()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default(),
+                    directory: String::new(),
                     timestamp: rc.timestamp.unwrap_or(now),
                     exit_code: 0,
                     duration_ms: rc.duration.unwrap_or(0),
@@ -204,9 +202,11 @@ fn main() {
                 session_id: session,
             };
 
-            let path = db_path();
-            if let Ok(conn) = db::init_db(&path) {
-                db::record_command(&conn, &cmd, &prev).ok();
+            if record_via_socket(&sock_path(), &cmd, &prev).is_err() {
+                let path = db_path();
+                if let Ok(conn) = db::init_db(&path) {
+                    db::record_command(&conn, &cmd, &prev).ok();
+                }
             }
         }
 
@@ -332,4 +332,41 @@ fn fallback_query(
         suggestion: ranked[0].command.clone(),
         alternatives: alts,
     }
+}
+
+fn record_via_socket(
+    sock: &std::path::Path,
+    cmd: &db::Command,
+    prev: &str,
+) -> Result<(), String> {
+    let stream =
+        std::os::unix::net::UnixStream::connect(sock).map_err(|e| format!("connect: {}", e))?;
+
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_millis(100)))
+        .ok();
+    stream
+        .set_write_timeout(Some(std::time::Duration::from_millis(50)))
+        .ok();
+
+    let req = protocol::Envelope {
+        msg_type: "record".to_string(),
+        payload: serde_json::to_value(protocol::RecordReq {
+            command: cmd.command.clone(),
+            dir: cmd.directory.clone(),
+            exit_code: cmd.exit_code,
+            duration: cmd.duration_ms,
+            session: cmd.session_id.clone(),
+            prev: prev.to_string(),
+        })
+        .unwrap(),
+    };
+
+    serde_json::to_writer(&stream, &req).map_err(|e| format!("write: {}", e))?;
+    let _ = std::io::Write::write(&mut &stream, b"\n");
+
+    let mut buf = [0u8; 64];
+    let _ = std::io::Read::read(&mut &stream, &mut buf);
+
+    Ok(())
 }

@@ -43,8 +43,8 @@
         <BaseListItem
           v-else
           :ref="setRef"
-          :title="providerLabelFromUrl(item.config.endpoint, 'API')"
-          :subtitle="item.config.models.filter(Boolean).join('、') || '未配置模型'"
+          :title="providerLabelFromUrl(item.config.endpoint, '默认提供商')"
+          :subtitle="item.config.models.filter(Boolean).join('、') || '未配置'"
           :selected="selected"
           @click="select"
           @dblclick="openConfigModal(item.config)"
@@ -203,6 +203,9 @@ async function saveConfigModal() {
       apiKey: modalForm.value.apiKey,
       models,
     })
+    if (models.length > 0) {
+      await settings.setActiveModelKey(`${id}::${models[0]}`)
+    }
   } else {
     if (!editingConfigId.value) return
     await settings.updateChatConfig(editingConfigId.value, {
@@ -210,6 +213,14 @@ async function saveConfigModal() {
       apiKey: modalForm.value.apiKey,
       models,
     })
+    if (models.length > 0 && !settings.activeModelKey.startsWith(`${editingConfigId.value}::`)) {
+      await settings.setActiveModelKey(`${editingConfigId.value}::${models[0]}`)
+    } else if (models.length > 0) {
+      const currentModel = settings.activeModelKey.split('::').slice(1).join('::')
+      if (!models.includes(currentModel)) {
+        await settings.setActiveModelKey(`${editingConfigId.value}::${models[0]}`)
+      }
+    }
   }
   closeConfigModal()
 }

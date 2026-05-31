@@ -414,10 +414,7 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
         .unwrap_or(0);
     PREV_FRONT_PID.store(prev_pid, Ordering::SeqCst);
 
-    if let Some(main_window) = app.get_webview_window("main") {
-        let _ = main_window.hide();
-    }
-    crate::macos::click_monitor::remove();
+    crate::macos::webkit_tuning::hide_main(app);
 
     let window = app
         .get_webview_window("screenshot")

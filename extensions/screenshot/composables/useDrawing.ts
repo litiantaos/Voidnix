@@ -154,8 +154,11 @@ export function useDrawing(options: {
       off.width = srcW
       off.height = srcH
       const offCtx = off.getContext('2d')!
-      offCtx.filter = `blur(${radius}px)`
       offCtx.drawImage(options.bgImage.value, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH)
+
+      const imgData = offCtx.getImageData(0, 0, srcW, srcH)
+      stackBlur(imgData.data, srcW, srcH, radius)
+      offCtx.putImageData(imgData, 0, 0)
 
       ctx.save()
       ctx.beginPath()
@@ -201,9 +204,81 @@ export function useDrawing(options: {
     ctx.fill()
   }
 
+  function stackBlur(data: Uint8ClampedArray, w: number, h: number, radius: number) {
+    if (radius < 1) return
+    const r = Math.min(radius, 254)
+    const size = r * 2 + 1
+    const tmp = new Uint8ClampedArray(data.length)
+
+    function boxBlurH(src: Uint8ClampedArray, dst: Uint8ClampedArray) {
+      for (let y = 0; y < h; y++) {
+        let rs = 0,
+          gs = 0,
+          bs = 0,
+          as = 0
+        const row = y * w * 4
+        for (let k = -r; k <= r; k++) {
+          const i = row + Math.min(Math.max(k, 0), w - 1) * 4
+          rs += src[i]
+          gs += src[i + 1]
+          bs += src[i + 2]
+          as += src[i + 3]
+        }
+        for (let x = 0; x < w; x++) {
+          const di = row + x * 4
+          dst[di] = rs / size
+          dst[di + 1] = gs / size
+          dst[di + 2] = bs / size
+          dst[di + 3] = as / size
+          const rm = row + Math.min(Math.max(x - r, 0), w - 1) * 4
+          const rp = row + Math.min(x + r + 1, w - 1) * 4
+          rs += src[rp] - src[rm]
+          gs += src[rp + 1] - src[rm + 1]
+          bs += src[rp + 2] - src[rm + 2]
+          as += src[rp + 3] - src[rm + 3]
+        }
+      }
+    }
+
+    function boxBlurV(src: Uint8ClampedArray, dst: Uint8ClampedArray) {
+      for (let x = 0; x < w; x++) {
+        let rs = 0,
+          gs = 0,
+          bs = 0,
+          as = 0
+        for (let k = -r; k <= r; k++) {
+          const i = Math.min(Math.max(k, 0), h - 1) * w * 4 + x * 4
+          rs += src[i]
+          gs += src[i + 1]
+          bs += src[i + 2]
+          as += src[i + 3]
+        }
+        for (let y = 0; y < h; y++) {
+          const di = y * w * 4 + x * 4
+          dst[di] = rs / size
+          dst[di + 1] = gs / size
+          dst[di + 2] = bs / size
+          dst[di + 3] = as / size
+          const rm = Math.min(Math.max(y - r, 0), h - 1) * w * 4 + x * 4
+          const rp = Math.min(y + r + 1, h - 1) * w * 4 + x * 4
+          rs += src[rp] - src[rm]
+          gs += src[rp + 1] - src[rm + 1]
+          bs += src[rp + 2] - src[rm + 2]
+          as += src[rp + 3] - src[rm + 3]
+        }
+      }
+    }
+
+    for (let pass = 0; pass < 3; pass++) {
+      boxBlurH(data, tmp)
+      boxBlurV(tmp, data)
+    }
+  }
+
   return {
     redraw,
     drawShape,
     drawArrow,
+    stackBlur,
   }
 }

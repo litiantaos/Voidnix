@@ -30,6 +30,10 @@ impl Server {
     pub fn new(db_path: &std::path::Path) -> Result<Self, String> {
         let conn = db::init_db(db_path).map_err(|e| format!("init db: {}", e))?;
 
+        if let Err(e) = db::cleanup_old_commands(&conn, 90) {
+            eprintln!("cleanup warning: {}", e);
+        }
+
         let stats = db::get_command_stats(&conn).map_err(|e| format!("get stats: {}", e))?;
 
         let mut dir_counts: HashMap<String, HashMap<String, i64>> = HashMap::new();
@@ -98,6 +102,9 @@ impl Server {
                     drop(inner);
                     let db = state.db.lock().unwrap();
                     let mut inner = state.inner.blocking_write();
+                    if inner.seq_cache.len() >= 500 {
+                        inner.seq_cache.clear();
+                    }
                     let counts =
                         db::get_sequence_counts(&db, &req.prev).unwrap_or_default();
                     inner.seq_cache.insert(req.prev.clone(), counts.clone());

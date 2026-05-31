@@ -1,17 +1,9 @@
 use crate::infra::db::Database;
 use crate::core::shortcut::set_window_visible;
+use crate::infra::pinyin;
 use base64::Engine;
-use nucleo_matcher::{
-    pattern::{CaseMatching, Normalization, Pattern},
-    Matcher,
-};
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
 use tauri::Manager;
-
-thread_local! {
-    static MATCHER: RefCell<Matcher> = RefCell::new(Matcher::default());
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -86,29 +78,22 @@ pub async fn get_clipboard_history(
 
     if let Some(q) = query {
         if !q.is_empty() {
-            MATCHER.with(|m| {
+            pinyin::MATCHER.with(|m| {
                 let mut matcher = m.borrow_mut();
-                let pattern = Pattern::parse(&q, CaseMatching::Ignore, Normalization::Smart);
+                let pattern = pinyin::match_query(&q);
 
                 for item in items.iter_mut() {
-                    let mut text_to_match = item.content.clone();
-                    // 如果只希望搜索剪贴板的内容，而不希望搜索到应用名称（比如搜索 fa 把 Safari 复制的所有东西都搜出来）
-                    // 则不要把 source_app 拼接到搜索文本中
-                    if item.content_type == "image" {
-                        text_to_match = "图片 image".to_string();
+                    let text_to_match = if item.content_type == "image" {
+                        "图片 image".to_string()
                     } else if item.content_type == "file" {
-                        text_to_match = format!("文件 file {}", item.content);
-                    }
+                        format!("文件 file {}", item.content)
+                    } else {
+                        item.content.clone()
+                    };
 
                     let mut buf = Vec::new();
-                    if let Some(score) = pattern.score(
-                        nucleo_matcher::Utf32Str::new(&text_to_match, &mut buf),
-                        &mut matcher,
-                    ) {
-                        item.score = score as i32;
-                    } else {
-                        item.score = -1; // no match
-                    }
+                    let score = pinyin::pinyin_score(&q, &text_to_match, &pattern, &mut matcher, &mut buf);
+                    item.score = if score > 0 { score as i32 } else { -1 };
                 }
             });
             items.retain(|i| i.score >= 0);
@@ -187,6 +172,9 @@ fn write_to_pasteboard(content: &str, content_type: &str) {
     unsafe {
         let pb = NSPasteboard::generalPasteboard();
         pb.clearContents();
+
+        let marker = NSString::from_str("com.litiantao.voidnix.clipboard");
+        pb.setString_forType(&NSString::from_str(""), &marker);
 
         if content_type == "text" {
             let ns_string = NSString::from_str(content);

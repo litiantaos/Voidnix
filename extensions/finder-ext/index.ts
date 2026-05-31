@@ -1,6 +1,5 @@
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
-import { keywordModuleSearch } from '@/core/module-helpers'
 import type { AppModule } from '@/types/module'
 
 const FinderExtView = asyncView(() => import('./View.vue'))
@@ -14,8 +13,8 @@ const mod: AppModule = {
   icon: 'i-ri-folder-add-line',
   keywords,
   order: 60,
-  layout: { view: FinderExtView },
-  onSearch: async (query) => keywordModuleSearch(mod, query),
+  view: FinderExtView,
+  onSearch: async () => [],
 }
 
 registerModule(mod)

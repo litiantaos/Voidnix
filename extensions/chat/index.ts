@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
-import { moduleSelfResult, makeToggleHandler } from '@/core/module-helpers'
+import { makeToggleHandler } from '@/core/module-helpers'
 import type { AppModule } from '@/types/module'
 import { useSettingsStore } from '@/stores/settings'
 import { toErrorMessage } from '@/utils/error'
@@ -178,8 +178,9 @@ const mod: AppModule = {
   keywords: ['chat', 'ai', 'gpt', '对话', '聊天', '助手', 'assistant'],
   order: 9,
   disableSearchInput: true,
-  layout: { view: ChatView, searchBarAccessory: ChatActions },
-  panel: ChatSettings,
+  view: ChatView,
+  searchBarAccessory: ChatActions,
+  panels: { settings: ChatSettings },
   globalShortcuts: [
     {
       id: 'chat',
@@ -190,14 +191,7 @@ const mod: AppModule = {
   onInit: async () => {
     await initListeners()
   },
-  onSearch: async (query) => {
-    if (!query.trim()) return []
-    const q = query.toLowerCase()
-    if (q.includes('chat') || q.includes('ai') || q.includes('对话') || q.includes('聊天')) {
-      return [moduleSelfResult(mod)]
-    }
-    return []
-  },
+  onSearch: async () => [],
   onModuleSearch: async () => {
     return []
   },

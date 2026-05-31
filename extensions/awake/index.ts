@@ -1,6 +1,5 @@
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
-import { keywordModuleSearch } from '@/core/module-helpers'
 import type { AppModule } from '@/types/module'
 
 const AwakeView = asyncView(() => import('./View.vue'))
@@ -14,8 +13,8 @@ const mod: AppModule = {
   icon: 'i-ri-macbook-line',
   keywords,
   order: 50,
-  layout: { view: AwakeView },
-  onSearch: async (query) => keywordModuleSearch(mod, query),
+  view: AwakeView,
+  onSearch: async () => [],
 }
 
 registerModule(mod)

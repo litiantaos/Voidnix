@@ -2,7 +2,6 @@ mod types;
 #[allow(unused_imports)]
 pub use types::SearchResult;
 
-mod pinyin;
 mod icon;
 mod app_discovery;
 mod cache;

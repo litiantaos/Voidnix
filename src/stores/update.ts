@@ -16,6 +16,7 @@ export const useUpdateStore = defineStore('update', () => {
   const checking = ref(false)
   const error = ref<string | null>(null)
   const info = ref<UpdateInfo | null>(null)
+  const dialogVisible = ref(false)
 
   let _updater: TauriUpdate | null = null
 
@@ -75,6 +76,14 @@ export const useUpdateStore = defineStore('update', () => {
     }
   }
 
+  function showDialog() {
+    dialogVisible.value = true
+  }
+
+  function closeDialog() {
+    dialogVisible.value = false
+  }
+
   function reset() {
     available.value = false
     downloading.value = false
@@ -83,6 +92,7 @@ export const useUpdateStore = defineStore('update', () => {
     error.value = null
     info.value = null
     _updater = null
+    dialogVisible.value = false
   }
 
   return {
@@ -92,9 +102,12 @@ export const useUpdateStore = defineStore('update', () => {
     checking,
     error,
     info,
+    dialogVisible,
     check,
     download,
     install,
+    showDialog,
+    closeDialog,
     reset,
   }
 })

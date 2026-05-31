@@ -1,6 +1,5 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
-import { moduleSelfResult } from '@/core/module-helpers'
 import { copyAndHide } from '@/utils/clipboard'
 
 const generateNanoId = (size = 21) => {
@@ -14,6 +13,8 @@ const generateNanoId = (size = 21) => {
   return id
 }
 
+let currentResults: SearchResult[] = []
+
 const mod: AppModule = {
   id: 'uuid',
   name: 'UUID 生成',
@@ -22,13 +23,8 @@ const mod: AppModule = {
   keywords: ['uuid', 'guid', '生成', 'generate'],
   placeholder: '输入数字批量生成，例如: 10',
   order: 7,
-  onSearch: async (query) => {
-    if (!query.trim()) return []
-    if ('uuid'.includes(query.toLowerCase()) || 'guid'.includes(query.toLowerCase())) {
-      return [moduleSelfResult(mod)]
-    }
-    return []
-  },
+  listOptions: { multiSelect: true },
+  onSearch: async () => [],
   onModuleSearch: async (query) => {
     const count = parseInt(query)
     const items: SearchResult[] = []
@@ -70,11 +66,14 @@ const mod: AppModule = {
         })
       }
     }
+    currentResults = items
     return items
   },
-  onExecute: async (result) => {
+  onExecute: async (result, selectedResults) => {
+    if (currentResults.length === 0) return
     try {
-      await copyAndHide(result.title)
+      const items = selectedResults ?? [result]
+      await copyAndHide(items.map((r) => r.title).join('\n'))
     } catch (e) {
       console.error('Failed to copy UUID:', e)
     }

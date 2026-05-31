@@ -24,6 +24,9 @@ export function useAnnotation() {
   // 鼠标是否在选中元素上
   const isHoveringSelectedShape = ref(false)
 
+  // 鼠标是否在任意标注元素上（无工具时用于光标提示）
+  const isHoveringAnyShape = ref(false)
+
   // 拖动整个形状
   const isDraggingShape = ref(false)
   const shapeDragStart = ref({ mx: 0, my: 0, x1: 0, y1: 0, x2: 0, y2: 0 })
@@ -118,6 +121,7 @@ export function useAnnotation() {
     selectedShapeIndex,
     selectedShape,
     isHoveringSelectedShape,
+    isHoveringAnyShape,
     isDraggingShape,
     shapeDragStart,
     draggingShapeHandle,

@@ -1,7 +1,7 @@
 import { ref, shallowRef } from 'vue'
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
-import { moduleSelfResult, makeToggleHandler } from '@/core/module-helpers'
+import { makeToggleHandler } from '@/core/module-helpers'
 import type { AppModule } from '@/types/module'
 import { commands, type ClipboardItem } from '@/bindings'
 import { useAppStore } from '@/stores/app'
@@ -18,6 +18,7 @@ export const activeTab = ref<'all' | 'favorites'>('all')
 
 const tabCache = new Map<string, ClipboardItem[]>()
 export const loading = ref(false)
+let fetchVersion = 0
 
 let _deleteHandler: (() => void) | null = null
 export function registerDeleteHandler(fn: () => void) {
@@ -40,7 +41,7 @@ export async function fetchClipboardHistory(query: string = '', filterFavorite: 
     return
   }
 
-  if (loading.value) return
+  const version = ++fetchVersion
   loading.value = true
   try {
     const res = await commands.getClipboardHistory(
@@ -49,12 +50,16 @@ export async function fetchClipboardHistory(query: string = '', filterFavorite: 
       null,
       true,
     )
-    history.value = res
-    tabCache.set(key, res)
+    if (version === fetchVersion) {
+      history.value = res
+      tabCache.set(key, res)
+    }
   } catch (e) {
     console.error('Failed to fetch clipboard history:', e)
   } finally {
-    loading.value = false
+    if (version === fetchVersion) {
+      loading.value = false
+    }
   }
 }
 
@@ -71,11 +76,9 @@ const mod: AppModule = {
   shortcut: '⌘⇧C',
   placeholder: '搜索剪贴板记录',
   order: 1,
-  layout: {
-    view: ClipboardView,
-    searchBarAccessory: ClipboardActions,
-  },
-  panel: ClipboardSettings,
+  view: ClipboardView,
+  searchBarAccessory: ClipboardActions,
+  panels: { settings: ClipboardSettings },
   globalShortcuts: [
     {
       id: 'clipboard',
@@ -91,16 +94,19 @@ const mod: AppModule = {
         triggerDelete()
       }
     })
+    await listen('clipboard-updated', () => {
+      const appStore = useAppStore()
+      invalidateCache()
+      fetchClipboardHistory(appStore.searchQuery, activeTab.value === 'favorites')
+    })
   },
   onActivate: async () => {
     activeTab.value = 'all'
+    invalidateCache()
+    await fetchClipboardHistory('', false)
   },
   onSearch: async (query) => {
     if (!query.trim()) return []
-
-    if (query.toLowerCase().includes('clipboard') || query.includes('剪贴板')) {
-      return [moduleSelfResult(mod)]
-    }
 
     try {
       const items = await commands.getClipboardHistory(query || null, null, null, null)

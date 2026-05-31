@@ -415,6 +415,11 @@ const maskStyles = useMaskStyles({
   isDraggingShape: annotation.isDraggingShape,
   isDraggingTextInput: textInputComposable.isDraggingTextInput,
   isHoveringSelectedShape: annotation.isHoveringSelectedShape,
+  isHoveringAnyShape: annotation.isHoveringAnyShape,
+  isDragging: selection.isDragging,
+  activeTool: annotation.activeTool,
+  crossX: magnifier.crossX,
+  crossY: magnifier.crossY,
 })
 
 const events = useOverlayEvents({
@@ -440,6 +445,7 @@ const events = useOverlayEvents({
   drawStart: annotation.drawStart,
   selectedShapeIndex: annotation.selectedShapeIndex,
   isHoveringSelectedShape: annotation.isHoveringSelectedShape,
+  isHoveringAnyShape: annotation.isHoveringAnyShape,
   isDraggingShape: annotation.isDraggingShape,
   shapeDragStart: annotation.shapeDragStart,
   draggingShapeHandle: shapeHandlesComposable.draggingShapeHandle,

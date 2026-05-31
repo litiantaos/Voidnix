@@ -1,6 +1,5 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
-import { moduleSelfResult } from '@/core/module-helpers'
 import { copyAndHide } from '@/utils/clipboard'
 
 const encodeBase64 = (str: string): string => {
@@ -38,17 +37,7 @@ const mod: AppModule = {
   keywords: ['base64', 'encode', 'decode', '编码', '解码'],
   placeholder: '输入文本',
   order: 6,
-  onSearch: async (query) => {
-    if (!query.trim()) return []
-    if (
-      'base64'.includes(query.toLowerCase()) ||
-      '编码'.includes(query) ||
-      '解码'.includes(query)
-    ) {
-      return [moduleSelfResult(mod)]
-    }
-    return []
-  },
+  onSearch: async () => [],
   onModuleSearch: async (query) => {
     const trimmed = query.trim()
     if (!trimmed) return []

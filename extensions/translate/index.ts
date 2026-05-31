@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
-import { moduleSelfResult, makeToggleHandler } from '@/core/module-helpers'
+import { makeToggleHandler } from '@/core/module-helpers'
 import type { AppModule, SearchResult } from '@/types/module'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -228,8 +228,9 @@ const mod: AppModule = {
   keywords: ['translate', '翻译', '翻譯', 'fanyi', 'youdao', '有道'],
   order: 8,
   disableSearchInput: true,
-  layout: { view: TranslateView, searchBarAccessory: TranslateActions },
-  panel: TranslateSettings,
+  view: TranslateView,
+  searchBarAccessory: TranslateActions,
+  panels: { settings: TranslateSettings },
   onInit: async () => {
     unlistenReady = await listen<string>('translate-text-ready', (e) => {
       if (translateReadyResolver) {
@@ -253,17 +254,7 @@ const mod: AppModule = {
       }),
     },
   ],
-  onSearch: async (query) => {
-    if (!query.trim()) return []
-    if (
-      'translate'.includes(query.toLowerCase()) ||
-      '翻译'.includes(query) ||
-      '翻譯'.includes(query)
-    ) {
-      return [moduleSelfResult(mod)]
-    }
-    return []
-  },
+  onSearch: async () => [],
   onModuleSearch: async (query) => {
     if (!query.trim()) return []
 

@@ -176,6 +176,19 @@ pub fn record_command(
     Ok(())
 }
 
+pub fn cleanup_old_commands(conn: &Connection, retention_days: i64) -> rusqlite::Result<()> {
+    if retention_days <= 0 {
+        return Ok(());
+    }
+    let cutoff = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+        - retention_days * 86400;
+    conn.execute("DELETE FROM commands WHERE timestamp < ?1", params![cutoff])?;
+    Ok(())
+}
+
 pub fn get_command_stats(conn: &Connection) -> rusqlite::Result<Vec<CommandStat>> {
     let mut stmt = conn.prepare(
         "SELECT command, count, last_used FROM command_stats ORDER BY count DESC",

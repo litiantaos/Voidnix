@@ -86,7 +86,6 @@ pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
         }
     }
     crate::macos::webkit_tuning::hide_main(&app);
-    WINDOW_VISIBLE.store(false, Ordering::SeqCst);
 }
 
 #[tauri::command]

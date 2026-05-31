@@ -5,6 +5,7 @@ macro_rules! configure_app {
     ($builder:expr) => {
         $builder
             .invoke_handler(tauri::generate_handler![
+        crate::core::keyword_match::match_keywords,
         crate::core::permission::check_screen_recording_permission,
         crate::core::permission::check_accessibility_permission,
         crate::core::permission::request_accessibility_permission,
@@ -38,7 +39,6 @@ macro_rules! configure_app {
         crate::extensions::screenshot::ocr::save_screenshot,
         crate::extensions::screenshot::ocr::copy_screenshot_to_clipboard,
         crate::extensions::zsh_autosuggestions::set_zsh_autosuggestions_enabled,
-        crate::extensions::zsh_autosuggestions::zsh_autosuggestions_status,
         crate::extensions::chat::chat_abort,
         crate::extensions::chat::chat_stream,
         crate::extensions::translate::get_selected_text,

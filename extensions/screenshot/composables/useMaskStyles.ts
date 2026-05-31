@@ -13,6 +13,11 @@ export function useMaskStyles(options: {
   isDraggingShape: Ref<boolean>
   isDraggingTextInput: Ref<boolean>
   isHoveringSelectedShape: Ref<boolean>
+  isDragging: Ref<boolean>
+  isHoveringAnyShape: Ref<boolean>
+  activeTool: Ref<Tool>
+  crossX: Ref<number>
+  crossY: Ref<number>
 }) {
   const selectionStyle = computed(() => ({
     left: `${options.sel.value.x}px`,
@@ -198,6 +203,14 @@ export function useMaskStyles(options: {
     if (options.isDraggingShape.value) return 'move'
     if (options.isDraggingTextInput.value) return 'move'
     if (options.isHoveringSelectedShape.value) return 'move'
+    if (options.isDragging.value) return 'grabbing'
+    if (!options.activeTool.value) {
+      if (options.isHoveringAnyShape.value) return 'pointer'
+      const { x, y, w, h } = options.sel.value
+      const cx = options.crossX.value,
+        cy = options.crossY.value
+      if (cx >= x && cx <= x + w && cy >= y && cy <= y + h) return 'grab'
+    }
     return 'default'
   })
 

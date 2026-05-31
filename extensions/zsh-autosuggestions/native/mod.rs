@@ -23,22 +23,74 @@ fn flag_path(app: &tauri::AppHandle) -> std::path::PathBuf {
     crate::infra::path::zsh_daemon_flag_path(app)
 }
 
+fn import_marker_path(app: &tauri::AppHandle) -> std::path::PathBuf {
+    app_daemon_dir(app).join(".imported")
+}
+
+fn version_marker_path(app: &tauri::AppHandle) -> std::path::PathBuf {
+    app_daemon_dir(app).join(".installed_version")
+}
+
 fn install_daemon_bin(app: &tauri::AppHandle) -> bool {
     let dest = installed_bin_path(app);
-    if dest.exists() {
-        return true;
-    }
-
     let source = match source_bin_path() {
         Some(s) => s,
-        None => return false,
+        None => return dest.exists(),
     };
+
+    let current_version = env!("CARGO_PKG_VERSION");
+    let version_ok =
+        std::fs::read_to_string(version_marker_path(app)).is_ok_and(|v| v == current_version);
+    let mtime_ok = !std::fs::metadata(&source)
+        .and_then(|m| m.modified())
+        .ok()
+        .zip(std::fs::metadata(&dest).and_then(|m| m.modified()).ok())
+        .is_some_and(|(src, dst)| src > dst);
+
+    if dest.exists() && version_ok && mtime_ok {
+        return true;
+    }
 
     if let Some(parent) = dest.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    std::fs::copy(&source, &dest).is_ok()
+    if std::fs::copy(&source, &dest).is_ok() {
+        let _ = std::fs::write(version_marker_path(app), current_version);
+        true
+    } else {
+        false
+    }
+}
+
+fn import_history(app: &tauri::AppHandle) {
+    let bin = installed_bin_path(app);
+    if !bin.exists() {
+        return;
+    }
+    let result = std::process::Command::new(&bin)
+        .arg("import")
+        .env("ZSH_AS_DATA_DIR", app_daemon_dir(app).display().to_string())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output();
+    match result {
+        Ok(out) if out.status.success() => {
+            log::info!(
+                "zsh-autosuggestions: {}",
+                String::from_utf8_lossy(&out.stdout).trim()
+            );
+        }
+        Ok(out) => {
+            log::warn!(
+                "zsh-autosuggestions import failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        Err(e) => {
+            log::warn!("zsh-autosuggestions import error: {}", e);
+        }
+    }
 }
 
 fn remove_old_zshrc_line(zshrc: &std::path::Path) {
@@ -46,14 +98,21 @@ fn remove_old_zshrc_line(zshrc: &std::path::Path) {
         return;
     };
 
+    let trailing_nl = content.ends_with('\n');
     let new_content: String = content
         .lines()
         .filter(|line| !line.contains("voidnix zsh-autosuggestions"))
         .collect::<Vec<&str>>()
         .join("\n");
 
-    if new_content != content {
-        let _ = std::fs::write(zshrc, new_content);
+    let final_content = if trailing_nl && !new_content.is_empty() {
+        format!("{}\n", new_content)
+    } else {
+        new_content
+    };
+
+    if final_content != content {
+        let _ = std::fs::write(zshrc, final_content);
     }
 }
 
@@ -76,10 +135,9 @@ fn write_zshrc_line(app: &tauri::AppHandle) {
         bin.display()
     );
 
-    if let Ok(content) = std::fs::read_to_string(&zshrc) {
-        if content.contains(&line) {
-            return;
-        }
+    let content = std::fs::read_to_string(&zshrc).unwrap_or_default();
+    if content.contains(&line) {
+        return;
     }
 
     let _ = std::fs::OpenOptions::new()
@@ -88,7 +146,13 @@ fn write_zshrc_line(app: &tauri::AppHandle) {
         .open(&zshrc)
         .and_then(|mut f| {
             use std::io::Write;
-            writeln!(f, "\n{}", line)
+            if !content.is_empty() {
+                if !content.ends_with('\n') {
+                    writeln!(f)?;
+                }
+                writeln!(f)?;
+            }
+            writeln!(f, "{}", line)
         });
 }
 
@@ -102,6 +166,10 @@ pub fn set_zsh_autosuggestions_enabled(app: tauri::AppHandle, enabled: bool) {
     let flag = flag_path(&app);
     if enabled {
         install_daemon_bin(&app);
+        if !import_marker_path(&app).exists() {
+            import_history(&app);
+            let _ = std::fs::write(import_marker_path(&app), b"1");
+        }
         let _ = std::fs::write(&flag, b"1");
         write_zshrc_line(&app);
     } else {
@@ -111,44 +179,6 @@ pub fn set_zsh_autosuggestions_enabled(app: tauri::AppHandle, enabled: bool) {
     }
 
     log::info!("zsh-autosuggestions enabled={}", enabled);
-}
-
-#[tauri::command]
-pub fn zsh_autosuggestions_status(app: tauri::AppHandle) -> serde_json::Value {
-    let installed = check_zshrc_installed();
-    let running = check_daemon_running(&app);
-    let enabled = ENABLED.load(Ordering::Relaxed);
-
-    serde_json::json!({
-        "installed": installed,
-        "daemonRunning": running,
-        "enabled": enabled,
-    })
-}
-
-fn check_zshrc_installed() -> bool {
-    if let Some(home) = dirs::home_dir() {
-        let zshrc = home.join(".zshrc");
-        if let Ok(content) = std::fs::read_to_string(&zshrc) {
-            return content.contains("voidnix zsh-autosuggestions");
-        }
-    }
-    false
-}
-
-fn check_daemon_running(app: &tauri::AppHandle) -> bool {
-    let bin = installed_bin_path(app);
-    if !bin.exists() {
-        return false;
-    }
-    std::process::Command::new(&bin)
-        .arg("ping")
-        .env("ZSH_AS_DATA_DIR", app_daemon_dir(app).display().to_string())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
 }
 
 fn kill_daemon() {

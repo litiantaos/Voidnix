@@ -1,6 +1,5 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
-import { moduleSelfResult } from '@/core/module-helpers'
 import { copyAndHide } from '@/utils/clipboard'
 
 const COMMON_CURRENCIES = [
@@ -54,13 +53,7 @@ const mod: AppModule = {
   onInit: async () => {
     ensureRates()
   },
-  onSearch: async (query) => {
-    if (!query.trim()) return []
-    if ('currency'.includes(query.toLowerCase()) || '汇率'.includes(query)) {
-      return [moduleSelfResult(mod)]
-    }
-    return []
-  },
+  onSearch: async () => [],
   onModuleSearch: async (query) => {
     await ensureRates()
     if (Object.keys(ratesCache).length === 0) {

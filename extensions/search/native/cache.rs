@@ -6,7 +6,7 @@ use tauri::Emitter;
 
 use super::app_discovery::{collect_apps_with_metadata, get_bundle_name};
 use super::icon::get_app_icon;
-use super::pinyin::{to_pinyin_full, to_pinyin_initials};
+use crate::infra::pinyin::{to_pinyin_full, to_pinyin_initials};
 use super::types::{APP_CACHE, APP_HANDLE, CachedApp, SEARCH_SESSION};
 
 pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {

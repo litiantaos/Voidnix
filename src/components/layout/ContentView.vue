@@ -1,10 +1,5 @@
 <template>
   <div class="flex flex-1 flex-col overflow-hidden">
-    <!-- Header -->
-    <div v-if="resolvedLayout.header" class="text-xs px-5 py-2 border-b border-black/5 shrink-0">
-      <component :is="resolvedLayout.header" />
-    </div>
-
     <!-- Scrollable Content -->
     <div
       ref="scrollContainer"
@@ -12,15 +7,15 @@
       class="hide-scrollbar outline-none flex flex-1 flex-col min-h-0 relative overflow-y-auto"
     >
       <div class="flex flex-1 flex-col">
-        <KeepAlive v-if="resolvedLayout.view" :max="10">
+        <KeepAlive v-if="resolvedView" :max="10">
           <component
-            :is="resolvedLayout.view"
-            :key="`${props.module?.id ?? 'main'}-${appStore.showPanel ? 'panel' : 'view'}`"
+            :is="resolvedView"
+            :key="`${props.module?.id ?? 'main'}-${appStore.activePanel ?? 'view'}`"
           />
         </KeepAlive>
 
         <!-- Standard list -->
-        <template v-if="!resolvedLayout.view">
+        <template v-if="!resolvedView">
           <BaseEmptyState v-if="currentLoading && currentResults.length === 0" :loading="true" />
 
           <BaseEmptyState
@@ -38,15 +33,18 @@
             :items="currentResults"
             :selected-index="currentSelectedIndex"
             keyboard-navigation
+            :multi-select="isMultiSelect"
+            :selected-ids="selectedIds"
+            @update:selected-ids="selectedIds = $event"
             :group-field="!module ? groupField : undefined"
             :group-title="!module ? groupTitle : undefined"
             @update:selected-index="handleUpdateSelectedIndex"
             @execute="handleExecute"
           >
-            <template #item="{ item, selected, setRef, select }">
+            <template #item="{ item, selected, multiSelected, setRef, select }">
               <BaseListItem
                 :ref="setRef"
-                :selected="selected"
+                :selected="selected || multiSelected"
                 :icon-wrapper-class="getIconWrapperClass(item)"
                 @click="select"
                 @dblclick="handleExecute(item)"
@@ -106,18 +104,14 @@
         </template>
       </div>
     </div>
-
-    <!-- Footer -->
-    <div v-if="resolvedLayout.footer" class="shrink-0">
-      <component :is="resolvedLayout.footer" />
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue'
 import { useAppStore } from '@/stores/app'
-import type { AppModule, SearchResult } from '@/types/module'
+import { invoke } from '@tauri-apps/api/core'
+import type { AppModule, ModuleSearchItem, SearchResult } from '@/types/module'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -143,7 +137,10 @@ const appStore = useAppStore()
 const internalResults = ref<SearchResult[]>([])
 const internalLoading = ref(false)
 const internalSelectedIndex = ref(0)
+const selectedIds = ref(new Set<string>())
 let debounceTimer: ReturnType<typeof setTimeout>
+
+const isMultiSelect = computed(() => !!props.module?.listOptions?.multiSelect)
 
 const currentResults = computed(() => props.results ?? internalResults.value)
 const currentLoading = computed(() => {
@@ -154,25 +151,55 @@ const currentSelectedIndex = computed(() => props.selectedIndex ?? internalSelec
 
 /**
  * 将布局决策逻辑收拢到一处。
- * panel 模式：独立视图，无 chrome，占满整个内容区。
- * view 模式：使用模块声明的 layout（含 header/footer chrome）。
+ * panel 模式：使用模块声明的命名面板，占满整个内容区。
+ * view 模式：使用模块声明的 view。
  */
-const resolvedLayout = computed(() => {
-  if (appStore.showPanel && props.module?.panel) {
-    return { header: undefined, view: props.module.panel, footer: undefined }
+const resolvedView = computed(() => {
+  const panelId = appStore.activePanel
+  if (panelId && props.module?.panels?.[panelId]) {
+    return props.module.panels[panelId]
   }
-  return {
-    header: props.module?.layout?.header,
-    view: props.module?.layout?.view,
-    footer: props.module?.layout?.footer,
-  }
+  return props.module?.view
 })
 
 const scrollContainer = ref<HTMLElement>()
 defineExpose({ scrollContainer })
 
+function itemToSearchResult(item: ModuleSearchItem): SearchResult {
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.subtitle,
+    icon: item.icon,
+    module: props.module?.id ?? '',
+    score: 100,
+    data: { kind: 'module', ...item },
+  }
+}
+
+const filteredItems = computed(() => internalResults.value.map((r) => r.data as ModuleSearchItem))
+provide('filteredItems', filteredItems)
+
 const doSearch = async (query: string) => {
   if (props.results !== undefined) return
+
+  if (props.module?.searchItems) {
+    const items = props.module.searchItems()
+    if (!query.trim()) {
+      internalResults.value = items.map(itemToSearchResult)
+    } else {
+      const keywordSets = items.map((item) => [item.title, item.subtitle ?? '', ...item.keywords])
+      const scores = await invoke<number[]>('match_keywords', { query, keywordSets })
+      internalResults.value = items
+        .map((item, i) => ({ item, score: scores[i] ?? 0 }))
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map(({ item }) => itemToSearchResult(item))
+    }
+    internalLoading.value = false
+    return
+  }
+
   if (!props.module?.onModuleSearch) return
 
   internalLoading.value = true
@@ -205,19 +232,29 @@ watch(
       clearTimeout(debounceTimer)
       internalResults.value = []
       internalSelectedIndex.value = 0
+      selectedIds.value = new Set()
       doSearch(appStore.searchQuery)
     }
   },
 )
 
-onMounted(() => doSearch(appStore.searchQuery))
-onUnmounted(() => clearTimeout(debounceTimer))
+onMounted(() => {
+  doSearch(appStore.searchQuery)
+})
+onUnmounted(() => {
+  clearTimeout(debounceTimer)
+})
 
 const handleExecute = async (result: SearchResult) => {
+  const multiResults =
+    isMultiSelect.value && selectedIds.value.size > 0
+      ? currentResults.value.filter((r) => selectedIds.value.has(r.id))
+      : undefined
+  if (multiResults) selectedIds.value = new Set()
   if (props.onExecute) {
     props.onExecute(result)
   } else if (props.module?.onExecute) {
-    await props.module.onExecute(result)
+    await props.module.onExecute(result, multiResults)
   }
 }
 

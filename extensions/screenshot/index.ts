@@ -1,7 +1,6 @@
 import { ref } from 'vue'
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
-import { moduleSelfResult } from '@/core/module-helpers'
 import type { AppModule } from '@/types/module'
 
 const ScreenshotView = asyncView(() => import('./View.vue'))
@@ -25,10 +24,10 @@ const mod: AppModule = {
   name: '截屏',
   description: '区域截屏、标注、OCR',
   icon: 'i-ri-screenshot-line',
-  keywords: ['screenshot', '截屏', '截图', 'jietu', 'ocr'],
+  keywords: ['screenshot', '截屏', '截图', 'jietu', 'ocr', '识别', '文字识别', 'shibie'],
   order: 9,
-  layout: { view: ScreenshotView },
-  panel: ScreenshotOcr,
+  view: ScreenshotView,
+  panels: { ocr: ScreenshotOcr },
   windowViews: {
     screenshot: ScreenshotWindow,
     'pin-': PinWindow,
@@ -36,14 +35,14 @@ const mod: AppModule = {
   globalShortcuts: [
     {
       id: 'screenshot',
-      default: 'CommandOrControl+Shift+X',
+      default: 'CommandOrControl+Shift+S',
       onExecute: () => {
         // Rust 端 hook 已在 shortcut.rs 中处理截屏全流程（capture + enter 模式），
         // 前端 onExecute 此处为占位，确保模块声明让 App.vue 能注册快捷键。
       },
     },
   ],
-  onOpenPanel: (payload: unknown) => {
+  onOpenPanel: (_panelId: string, payload: unknown) => {
     const d = payload as {
       selX: number
       selY: number
@@ -63,25 +62,14 @@ const mod: AppModule = {
       previewPng: d.previewPng ?? '',
     }
   },
-  onSearch: async (query) => {
-    if (!query.trim()) return []
-    if (
-      'ocr'.includes(query.toLowerCase()) ||
-      '识别'.includes(query) ||
-      '文字识别'.includes(query) ||
-      'shibie'.includes(query.toLowerCase())
-    ) {
-      return [moduleSelfResult(mod)]
-    }
-    return []
-  },
+  onSearch: async () => [],
   onExecute: async (result) => {
     if (result.data?.openPanel) {
       const { useAppStore } = await import('@/stores/app')
       const appStore = useAppStore()
       appStore.setActiveModule('screenshot')
       appStore.setSearchQuery('')
-      appStore.showPanel = true
+      appStore.openPanel('ocr')
     }
   },
 }

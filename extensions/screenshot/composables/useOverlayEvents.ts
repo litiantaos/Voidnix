@@ -29,6 +29,7 @@ export function useOverlayEvents(options: {
   drawStart: Ref<{ x: number; y: number }>
   selectedShapeIndex: Ref<number | null>
   isHoveringSelectedShape: Ref<boolean>
+  isHoveringAnyShape: Ref<boolean>
   isDraggingShape: Ref<boolean>
   shapeDragStart: Ref<{ mx: number; my: number; x1: number; y1: number; x2: number; y2: number }>
 
@@ -374,6 +375,25 @@ export function useOverlayEvents(options: {
       } else {
         options.isHoveringSelectedShape.value = false
       }
+    }
+
+    if (
+      options.phase.value === 'annotate' &&
+      !options.activeTool.value &&
+      !options.isDraggingShape.value &&
+      !options.isDrawing.value &&
+      !options.isDragging.value &&
+      options.draggingShapeHandle.value === null
+    ) {
+      if (options.isInsideSel(cx, cy)) {
+        const canvasX = cx - options.sel.value.x
+        const canvasY = cy - options.sel.value.y
+        options.isHoveringAnyShape.value = findShapeAt(canvasX, canvasY) >= 0
+      } else {
+        options.isHoveringAnyShape.value = false
+      }
+    } else if (options.phase.value !== 'annotate' || options.activeTool.value) {
+      options.isHoveringAnyShape.value = false
     }
 
     if (

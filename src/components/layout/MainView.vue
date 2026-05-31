@@ -1,14 +1,17 @@
 <template>
   <div class="bg-surface flex flex-col h-screen w-screen shadow-lg">
+    <div v-if="isDev" class="bg-accent h-1 w-8 left-1/2 top-1 absolute -translate-x-1/2" />
+
     <!-- 搜索栏 -->
     <div
       ref="searchBarRef"
       class="px-5 border-b border-black/5 flex gap-3 h-15 items-center"
       @keydown="onSearchBarKeydown"
     >
+      <!-- 扩展标签 -->
       <div
         v-if="activeModule"
-        class="text-xs text-black/70 px-3 rounded-md bg-black/5 flex flex-none gap-1.5 h-7 cursor-default select-none items-center relative"
+        class="text-xs text-black/70 px-3 rounded-md bg-black/5 flex flex-none gap-1.5 h-7 select-none items-center"
         @mouseenter="isTagHovered = true"
         @mouseleave="isTagHovered = false"
       >
@@ -24,7 +27,7 @@
             <button
               v-if="isTagHovered"
               key="close"
-              class="rounded-full bg-black/10 flex h-3.5 w-3.5 transition-colors duration-150 items-center inset-0 justify-center absolute hover:bg-black/20"
+              class="rounded-full bg-black/10 flex h-3.5 w-3.5 transition-colors items-center inset-0 justify-center absolute hover:bg-black/20"
               @click="onTagClose"
             >
               <span class="i-ri-close-line text-[10px] text-black/60"></span>
@@ -39,13 +42,13 @@
         </span>
         <span>{{ activeModule.name }}</span>
       </div>
+
       <input
         ref="searchInput"
         id="main-search-input"
         :value="appStore.searchQuery"
         :disabled="activeModule?.disableSearchInput"
         class="text-base text-black/85 outline-none bg-transparent flex-1 disabled:text-black/85 placeholder:text-black/25 disabled:opacity-100"
-        :class="{ 'cursor-default': activeModule?.disableSearchInput }"
         :placeholder="
           activeModule
             ? activeModule.disableSearchInput
@@ -54,26 +57,25 @@
             : '搜索应用或文件，输入 / 搜索扩展'
         "
         @input="onInput"
-        @keydown="onSearchKeydown"
         @compositionstart="appStore.setComposing(true)"
         @compositionend="appStore.setComposing(false)"
       />
+
+      <!-- 扩展附加区 -->
       <div
-        v-if="activeModule?.layout?.searchBarAccessory"
+        v-if="activeModule?.searchBarAccessory"
         class="flex gap-2 min-w-0 items-center overflow-hidden"
       >
-        <component :is="activeModule.layout.searchBarAccessory" />
+        <component :is="activeModule.searchBarAccessory" />
       </div>
 
       <!-- 更新提示按钮 -->
       <BaseButton
         v-if="updateStore.downloaded"
         icon="i-ri-arrow-up-circle-line text-accent"
-        @click="showUpdateDialog = true"
+        @click="updateStore.showDialog()"
       />
     </div>
-
-    <div v-if="isDev" class="bg-accent h-1 w-4 left-1/2 top-1 absolute" />
 
     <!-- 内容区 -->
     <ContentView
@@ -87,13 +89,12 @@
     />
   </div>
 
-  <UpdateDialog v-if="showUpdateDialog" @close="showUpdateDialog = false" />
+  <UpdateDialog v-if="updateStore.dialogVisible" @close="updateStore.closeDialog()" />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useScroll } from '@/utils/events'
-import { useTauriListener } from '@/composables/useTauriListener'
 import { getModule } from '@/core/module-registry'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
@@ -109,7 +110,6 @@ import { getFocusableElements, cycleFocus } from '@/utils/dom'
 const isDev = import.meta.env.DEV
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
-const showUpdateDialog = ref(false)
 
 const searchBarRef = ref<HTMLDivElement>()
 const searchInput = ref<HTMLInputElement>()
@@ -140,7 +140,7 @@ const { onInput, handleExecute, handleTagClose, isLoading } = useSearchCommand({
 // 进入模块面板时释放搜索栏焦点，让键盘事件能到达面板内容
 // 注意：必须先把焦点转移到容器，否则窗口会因失焦而自动隐藏
 watch(
-  () => appStore.showPanel,
+  () => appStore.activePanel,
   (val) => {
     if (val) {
       contentViewRef.value?.scrollContainer?.focus()
@@ -163,23 +163,4 @@ function onTagClose() {
   isTagHovered.value = false
   handleTagClose()
 }
-
-function onSearchKeydown(e: KeyboardEvent) {
-  if (
-    e.key === 'Backspace' &&
-    !appStore.searchQuery &&
-    !e.metaKey &&
-    !e.ctrlKey &&
-    activeModule.value
-  ) {
-    e.preventDefault()
-    handleTagClose()
-  }
-}
-
-useTauriListener('cmd-backspace', () => {
-  if (!appStore.searchQuery) {
-    handleTagClose()
-  }
-})
 </script>

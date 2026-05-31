@@ -1,5 +1,8 @@
 <template>
-  <BaseButton icon="i-ri-settings-3-line" @click="appStore.togglePanel()" />
+  <BaseButton
+    :icon="appStore.activePanel === 'settings' ? 'i-ri-settings-3-fill' : 'i-ri-settings-3-line'"
+    @click="appStore.togglePanel('settings')"
+  />
 </template>
 
 <script setup lang="ts">

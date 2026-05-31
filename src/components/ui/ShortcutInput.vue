@@ -145,6 +145,13 @@ function onKeyDown(e: KeyboardEvent) {
   e.preventDefault()
   e.stopPropagation()
 
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    emit('update:modelValue', '')
+    stopRecording()
+    blur()
+    return
+  }
+
   if (e.key === 'Escape') {
     stopRecording()
     blur()

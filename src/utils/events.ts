@@ -19,6 +19,12 @@ export function useScroll(element: Ref<HTMLElement | undefined>) {
     { immediate: true },
   )
 
+  watch(y, (newY) => {
+    if (el && el.scrollTop !== newY) {
+      el.scrollTop = newY
+    }
+  })
+
   onUnmounted(() => {
     el?.removeEventListener('scroll', update)
     stop()

@@ -106,17 +106,15 @@ bun run tauri dev
 - **核心模块**（`src-tauri/src/core/*.rs`）：应用基础设施（快捷键、窗口管理等），与 App Shell 紧耦合
 - **扩展**（`extensions/*/native/mod.rs`）：独立功能模块（搜索、翻译、截屏等），通过 `#[path]` 引用
 
-运行时字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `onActivate` / `onDeactivate` / `onOpenPanel` / `onSearchInput` / `layout` / `panel` / `globalShortcuts` / `windowViews`
+运行时字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `onActivate` / `onDeactivate` / `onOpenPanel` / `onSearchInput` / `view` / `searchBarAccessory` / `panels` / `globalShortcuts` / `windowViews` / `searchItems`
 
 **模块向 App Shell 贡献的 UI 槽位**（仅这些，不增不减）：
 
-- `layout.view`：内容区，主视图
-- `layout.header`：视图上方，标签栏等 chrome
-- `layout.footer`：视图下方，操作栏等 chrome
-- `layout.searchBarAccessory`：搜索栏右侧，附属区域（选择器、状态标签、按钮组等，内容不限）
-- `panel`：内容区（占满，隐藏主视图 chrome），模块二级面板（配置页 / 功能结果页）
+- `view`：内容区，主视图（不提供时 ContentView 使用标准列表）
+- `searchBarAccessory`：搜索栏右侧，附属区域（选择器、状态标签、按钮组等，内容不限）
+- `panels`：命名面板，key 为面板标识（如 `settings`、`ocr`），激活时替换主视图占满内容区
 
-槽位组件命名以 `Actions` / `Header` / `Footer` 后缀对应位置。模块视图内部的私有 UI（如截图标注调色板）**禁止**使用 `Toolbar` / `Header` / `Footer` 等会与槽位混淆的命名，应使用语义明确的名字如 `AnnotationPalette` / `MessageComposer` / `HistoryFilter`。
+槽位组件命名以 `Actions` 后缀对应位置。模块视图内部的私有 UI（如截图标注调色板）**禁止**使用 `Toolbar` / `Header` / `Footer` 等会与槽位混淆的命名，应使用语义明确的名字如 `AnnotationPalette` / `MessageComposer` / `HistoryFilter`。
 
 ```typescript
 SearchResult {
@@ -132,13 +130,17 @@ SearchResult {
 
 **前后端通信**：前端优先用 `src/bindings.ts` 导出的类型安全命令函数（由 `tauri-specta` 从 Rust 自动生成；修改 Rust 结构体后运行 `bun run sync:extensions && cd src-tauri && cargo test --features specta export_bindings -- --nocapture` 重新生成）；流式/事件类命令仍用裸 `invoke()`。Rust 用 `app.emit()`；所有 Command 须在 `configure_app!` 宏注册。
 
-**模块面板**：`open_module_panel(moduleId, payload)` 为通用命令，Rust 显示主窗口后发送 `open-module-panel` 事件；App.vue 接收事件，激活模块、显示面板，并调用模块注册的 `onOpenPanel(payload)`。模块通过 `panel` 槽位声明面板组件，通过 `onOpenPanel` 解析 payload 更新内部状态。
+**模块面板**：`open_module_panel(moduleId, panelId, payload)` 为通用命令，Rust 显示主窗口后发送 `open-module-panel` 事件；App.vue 接收事件，激活模块、打开指定面板，并调用模块注册的 `onOpenPanel(panelId, payload)`。模块通过 `panels` 槽位声明面板组件（key 为面板标识），通过 `onOpenPanel` 解析 payload 更新内部状态。前端通过 `appStore.togglePanel(panelId)` / `openPanel(panelId)` / `closePanel()` 控制面板切换。
 
 **窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock；`activateIgnoringOtherApps:YES` 抢焦点；失焦自动隐藏。WKWebView 驯化（`src-tauri/src/macos/webkit_tuning/`）：隐藏时 `alphaValue=0` 不真隐藏以防节流，唤起时等待首帧呈现再显示，`VOIDNIX_DISABLE_WEBKIT_TUNING=1` 可关闭。
 
 **全局快捷键**：Rust 核心模块监听（`src-tauri/src/core/shortcut.rs`），四槽位：`main` / `clipboard` / `translate` / `chat`。
 
 **搜索引擎**：`mdfind` + `nucleo-matcher` + 拼音首字母；权重：使用频率(≤800) + 应用(+2000) > 文件夹(+1000) > 文件。
+
+**统一拼音匹配**：所有文本匹配（全局搜索、模块发现、剪贴板历史、斜杠命令、扩展内过滤）统一走 `infra::pinyin::pinyin_score()` — 拼音全拼 + 首字母 + 紧凑 + 多音字纠偏 → nucleo 模糊打分。禁止任何模块单独实现文本匹配逻辑。
+
+**声明式搜索项 `searchItems`**：模块通过 `searchItems: () => ModuleSearchItem[]` 声明可搜索项，框架层（ContentView）自动调用 `match_keywords` 做拼音模糊匹配，并通过 `provide('filteredItems')` 向 `view` 子组件提供过滤结果。子组件通过 `inject('filteredItems')` 读取，用 `isVisible(item.id)` 判断可见性。适用于设置项、开关项等半静态内容；动态内容（剪贴板历史、计算器结果等）仍用 `onModuleSearch`。
 
 **弹窗**：`BaseDialog`，`variant: confirm|form`；`appStore.showConfirm()` 返回 `Promise<boolean>`。
 
@@ -153,13 +155,15 @@ src-tauri/src/
 ├── extensions.rs       # 自动生成的扩展注册（#[path] 引用 extensions/*/native/mod.rs）
 ├── core/               # 核心模块（Tauri 命令 + init() 插件）
 │   ├── mod.rs
+│   ├── keyword_match.rs # 统一关键词匹配命令（match_keywords）
 │   ├── shortcut.rs     # 全局快捷键
 │   └── window.rs       # 窗口管理命令
 ├── infra/              # 基础设施模块（无 Tauri 命令，跨平台通用）
 │   ├── mod.rs
 │   ├── db.rs           # SQLite 数据库
-│   ├── path.rs         # 存储路径集中管理
 │   ├── http.rs         # HTTP 客户端
+│   ├── path.rs         # 存储路径集中管理
+│   ├── pinyin.rs       # 拼音 + nucleo 统一匹配（pinyin_score / match_query / expand_pinyin）
 │   └── sse.rs          # SSE 流式请求
 ├── macos/              # macOS 原生桥接模块
 │   ├── mod.rs
@@ -199,7 +203,7 @@ extensions/             # 所有功能扩展
 - `src/utils/provider.ts`：`providerLabelFromUrl(url, fallback)` — 从 API URL 提取提供商标签
 - `src/utils/error.ts`：`toErrorMessage(e, fallback?)` — 统一 Error → 字符串
 - `src/utils/dom.ts`：`getFocusableElements()`、`isComposing()`、`isFormControl()`、`cycleFocus()`、`trapFocus()`、`wrapIndex()` — DOM 查询、键盘事件、焦点管理
-- `src/core/module-helpers.ts`：`moduleSelfResult()`、`getVisibleModules()`、`moduleToSearchResult()`、`keywordModuleSearch()`、`makeToggleHandler()` — 模块搜索结果构建、快捷键 toggle 处理
+- `src/core/module-helpers.ts`：`moduleSelfResult()`、`getVisibleModules()`、`moduleToSearchResult()`、`keywordSearchAll()`、`makeToggleHandler()` — 模块搜索结果构建、快捷键 toggle 处理
 
 Composables：`useSearchCommand` `useScrollPosition` `useInputControl` `useSettingsInput` `useTauriListener` `useShortcutConfig`
 
@@ -212,6 +216,7 @@ Composables：`useSearchCommand` `useScrollPosition` `useInputControl` `useSetti
 ## Rust 共享工具
 
 - `infra::path`：`SETTINGS_STORE_PATH`、`clipboard_db_path()`、`finder_ext_command_dir()`、`zsh_daemon_dir()`、`zsh_daemon_bin_path()`、`zsh_daemon_flag_path()`、`icon_cache_dir()` — 存储路径集中管理
+- `infra::pinyin`：`to_pinyin_full()`、`to_pinyin_initials()`、`word_pinyin_overrides()`、`expand_pinyin()`、`pinyin_score()`、`match_query()` — 拼音展开 + nucleo 模糊打分（全应用唯一匹配函数）
 - `infra::db::Database`：`conn()` — 封装 Mutex lock + poison recovery
 - `infra::sse`：`validate_ai_request(endpoint, model, api_key)` — AI 请求端点/模型/密钥统一校验
 - `webkit_tuning::FailCounter`：`new(limit)`、`is_disabled()`、`record_failure()`、`reset()` — 原子失败计数器

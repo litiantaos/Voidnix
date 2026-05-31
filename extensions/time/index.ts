@@ -1,6 +1,5 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
-import { moduleSelfResult } from '@/core/module-helpers'
 import { copyAndHide } from '@/utils/clipboard'
 
 const mod: AppModule = {
@@ -11,18 +10,7 @@ const mod: AppModule = {
   keywords: ['time', 'date', 'timestamp', '时间', '时间戳', '日期'],
   placeholder: '输入时间戳或日期字符串',
   order: 4,
-  onSearch: async (query) => {
-    if (!query.trim()) return []
-    if (
-      'time'.includes(query.toLowerCase()) ||
-      'date'.includes(query.toLowerCase()) ||
-      'timestamp'.includes(query.toLowerCase()) ||
-      '时间'.includes(query)
-    ) {
-      return [moduleSelfResult(mod)]
-    }
-    return []
-  },
+  onSearch: async () => [],
   onModuleSearch: async (query) => {
     const trimmed = query.trim()
     const results: SearchResult[] = []

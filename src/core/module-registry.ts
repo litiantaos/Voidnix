@@ -1,4 +1,5 @@
 import type { AppModule, SearchResult } from '@/types/module'
+import { keywordSearchAll } from '@/core/module-helpers'
 
 const modules = new Map<string, AppModule>()
 const initialized = new Set<string>()
@@ -30,7 +31,6 @@ export async function initAllModules() {
 }
 
 const MODULE_SEARCH_TIMEOUT = 3000
-const OVERALL_SEARCH_TIMEOUT = 8000
 
 function withTimeout<T>(promise: Promise<T>, ms: number, moduleId: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -57,21 +57,28 @@ export async function searchAll(
 ): Promise<SearchResult[]> {
   const activeModules = getAllModules().filter((m) => m.onSearch)
   const allResults: SearchResult[][] = Array(activeModules.length).fill([])
+  let keywordResults: SearchResult[] = []
 
   const processResults = () => {
-    const flattened = allResults.flat()
+    const flattened = [...allResults.flat(), ...keywordResults]
     const filtered = flattened.filter((item) => (item.score || 0) > 0)
     filtered.sort((a, b) => (b.score || 0) - (a.score || 0))
     return filtered.slice(0, 80)
   }
 
+  const keywordPromise = query.trim()
+    ? keywordSearchAll(query).then((r) => {
+        keywordResults = r
+        onUpdate?.(processResults())
+        return r
+      })
+    : Promise.resolve([])
+
   const promises = activeModules.map(async (m, i) => {
     try {
       const res = await withTimeout(m.onSearch!(query), MODULE_SEARCH_TIMEOUT, m.id)
       allResults[i] = res
-      if (onUpdate) {
-        onUpdate(processResults())
-      }
+      onUpdate?.(processResults())
       return res
     } catch (e) {
       console.error(`[module-registry] Module ${m.id} search error:`, e)
@@ -79,12 +86,7 @@ export async function searchAll(
     }
   })
 
-  const overallPromise = Promise.all(promises)
-  try {
-    await withTimeout(overallPromise, OVERALL_SEARCH_TIMEOUT, 'overall')
-  } catch {
-    console.warn('[module-registry] Overall search timed out, returning partial results')
-  }
+  await Promise.all([keywordPromise.catch(() => []), ...promises])
 
   return processResults()
 }

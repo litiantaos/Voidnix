@@ -33,12 +33,10 @@
 
     <BaseEmptyState v-else icon="i-ri-search-line" title="没有找到相关设置" />
   </div>
-
-  <UpdateDialog v-if="showUpdateDialog" @close="showUpdateDialog = false" />
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, inject, type ComputedRef } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
 import { open } from '@tauri-apps/plugin-shell'
@@ -50,16 +48,19 @@ import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
-import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 import { useSettingsInput, type SettingItem } from '@/composables/useSettingsInput'
+import type { ModuleSearchItem } from '@/types/module'
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
 const { handleExecute } = useSettingsInput()
 
+const filteredItems = inject<ComputedRef<ModuleSearchItem[]>>(
+  'filteredItems',
+  computed(() => []),
+)
 const query = computed(() => appStore.searchQuery.toLowerCase().trim())
-const showUpdateDialog = ref(false)
 const appVersion = ref('')
 
 const permScreenRecording = ref<boolean | null>(null)
@@ -83,11 +84,6 @@ if (isTauri) {
       appVersion.value = v
     })
     .catch(() => {})
-}
-
-function isVisible(...keywords: string[]) {
-  if (!query.value) return true
-  return keywords.some((k) => k.toLowerCase().includes(query.value))
 }
 
 const handleGlobalShortcutChange = async (val: string | number) => {
@@ -115,14 +111,14 @@ const handleOpenGitHub = async () => {
 
 const handleCheckUpdate = async () => {
   if (updateStore.downloaded) {
-    showUpdateDialog.value = true
+    updateStore.showDialog()
     return
   }
   updateStore.reset()
   const hasUpdate = await updateStore.check()
   if (hasUpdate) {
     await updateStore.download()
-    showUpdateDialog.value = true
+    updateStore.showDialog()
   } else if (!updateStore.error) {
     await appStore.showConfirm({
       title: '已是最新版本',
@@ -157,110 +153,107 @@ async function handleOpenPrivacy(kind: string) {
   setTimeout(refreshPermissions, 1000)
 }
 
-const visibleItems = computed<SettingItem[]>(() => {
+const allSettingsItems = computed<SettingItem[]>(() => {
   const items: SettingItem[] = []
 
-  if (isVisible('应用', 'app', '快捷键', 'shortcut', 'keyboard', '唤醒')) {
-    items.push({
-      id: 'app-shortcut',
-      title: '启动快捷键',
-      type: 'shortcut',
-      icon: 'i-ri-keyboard-line',
-      group: '应用',
-      value: settings.globalShortcut,
-      update: handleGlobalShortcutChange,
-    })
-  }
+  items.push({
+    id: 'app-shortcut',
+    title: '启动快捷键',
+    type: 'shortcut',
+    icon: 'i-ri-keyboard-line',
+    group: '应用',
+    value: settings.globalShortcut,
+    update: handleGlobalShortcutChange,
+  })
 
-  if (isVisible('更新', 'update', '版本', 'version', '检查', '应用', 'app')) {
-    const checkLabel = updateStore.checking
-      ? '检查中…'
-      : updateStore.downloaded
-        ? '有新版本，点击安装'
-        : '检查更新'
-    let versionLabel = appVersion.value ? `当前版本：${appVersion.value}` : ''
-    if (updateStore.downloaded && updateStore.info) {
-      versionLabel = `新版本：${updateStore.info.newVersion}（当前版本：${updateStore.info.currentVersion}）`
-    }
-    items.push({
-      id: 'check-update',
-      title: checkLabel,
-      subtitle: versionLabel,
-      type: 'button',
-      icon: updateStore.downloaded ? 'i-ri-arrow-up-circle-line' : 'i-ri-refresh-line',
-      group: '应用',
-      value: '',
-      action: handleCheckUpdate,
-    })
+  const checkLabel = updateStore.checking
+    ? '检查中…'
+    : updateStore.downloaded
+      ? '有新版本，点击安装'
+      : '检查更新'
+  let versionLabel = appVersion.value ? `当前版本：${appVersion.value}` : ''
+  if (updateStore.downloaded && updateStore.info) {
+    versionLabel = `新版本：${updateStore.info.newVersion}（当前版本：${updateStore.info.currentVersion}）`
   }
+  items.push({
+    id: 'check-update',
+    title: checkLabel,
+    subtitle: versionLabel,
+    type: 'button',
+    icon: updateStore.downloaded ? 'i-ri-arrow-up-circle-line' : 'i-ri-refresh-line',
+    group: '应用',
+    value: '',
+    action: handleCheckUpdate,
+  })
 
-  if (isVisible('关于', 'about', 'github', '项目', 'project')) {
-    items.push({
-      id: 'about',
-      title: '关于',
-      type: 'button',
-      icon: 'i-ri-information-line',
-      subtitle: 'github.com/litiantaos/Voidnix',
-      group: '应用',
-      value: '',
-      action: handleOpenGitHub,
-    })
-  }
+  items.push({
+    id: 'about',
+    title: '关于',
+    type: 'button',
+    icon: 'i-ri-information-line',
+    subtitle: 'github.com/litiantaos/Voidnix',
+    group: '应用',
+    value: '',
+    action: handleOpenGitHub,
+  })
 
-  if (isVisible('退出', 'quit', 'exit', '关闭', 'close')) {
-    items.push({
-      id: 'quit-app',
-      title: '退出应用',
-      type: 'button',
-      icon: 'i-ri-logout-box-line',
-      group: '应用',
-      value: '',
-      action: handleQuitApp,
-    })
-  }
+  items.push({
+    id: 'quit-app',
+    title: '退出应用',
+    type: 'button',
+    icon: 'i-ri-logout-box-line',
+    group: '应用',
+    value: '',
+    action: handleQuitApp,
+  })
 
-  if (
-    isVisible('权限', '隐私', '录制', '辅助', '磁盘', 'accessibility', 'screen', 'disk', 'privacy')
-  ) {
-    items.push({
-      id: 'perm-screen-recording',
-      title: '屏幕录制权限',
-      subtitle: permStatus(permScreenRecording.value),
-      type: 'button',
-      icon: permScreenRecording.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
-      group: '隐私权限',
-      value: '',
-      action: () => handleOpenPrivacy('screen_recording'),
-    })
-    items.push({
-      id: 'perm-accessibility',
-      title: '辅助功能权限',
-      subtitle: permStatus(permAccessibility.value),
-      type: 'button',
-      icon: permAccessibility.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
-      group: '隐私权限',
-      value: '',
-      action: () => {
-        if (permAccessibility.value) {
-          handleOpenPrivacy('accessibility')
-        } else {
-          handleRequestAccessibility()
-        }
-      },
-    })
-    items.push({
-      id: 'perm-full-disk-access',
-      title: '完全磁盘访问权限',
-      subtitle: permStatus(permFullDiskAccess.value),
-      type: 'button',
-      icon: permFullDiskAccess.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
-      group: '隐私权限',
-      value: '',
-      action: () => handleOpenPrivacy('full_disk_access'),
-    })
-  }
+  items.push({
+    id: 'perm-screen-recording',
+    title: '屏幕录制权限',
+    subtitle: permStatus(permScreenRecording.value),
+    type: 'button',
+    icon: permScreenRecording.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
+    group: '隐私权限',
+    value: '',
+    action: () => handleOpenPrivacy('screen_recording'),
+  })
+  items.push({
+    id: 'perm-accessibility',
+    title: '辅助功能权限',
+    subtitle: permStatus(permAccessibility.value),
+    type: 'button',
+    icon: permAccessibility.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
+    group: '隐私权限',
+    value: '',
+    action: () => {
+      if (permAccessibility.value) {
+        handleOpenPrivacy('accessibility')
+      } else {
+        handleRequestAccessibility()
+      }
+    },
+  })
+  items.push({
+    id: 'perm-full-disk-access',
+    title: '完全磁盘访问权限',
+    subtitle: permStatus(permFullDiskAccess.value),
+    type: 'button',
+    icon: permFullDiskAccess.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
+    group: '隐私权限',
+    value: '',
+    action: () => handleOpenPrivacy('full_disk_access'),
+  })
 
   return items
+})
+
+const visibleItems = computed<SettingItem[]>(() => {
+  if (!query.value) return allSettingsItems.value
+
+  const itemMap = new Map(allSettingsItems.value.map((item) => [item.id, item]))
+  return filteredItems.value
+    .map((fi) => itemMap.get(fi.id))
+    .filter((item): item is SettingItem => item !== undefined)
 })
 
 const selectedIndex = ref(0)

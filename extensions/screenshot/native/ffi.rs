@@ -119,7 +119,7 @@ pub(super) fn decode_image_data(s: &str) -> Result<Vec<u8>, String> {
 }
 
 pub fn picker_jpeg_path() -> std::path::PathBuf {
-    std::env::temp_dir().join("voidnix_picker.jpg")
+    std::env::temp_dir().join("voidnix").join("picker.jpg")
 }
 
 #[cfg(target_os = "macos")]
@@ -130,7 +130,11 @@ pub(super) fn prepare_picker_jpeg(raw: *mut std::ffi::c_void) {
     }
     match cg_image_ptr_to_jpeg(raw) {
         Ok(data) => {
-            if let Err(e) = std::fs::write(picker_jpeg_path(), &data) {
+            let path = picker_jpeg_path();
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::write(path, &data) {
                 eprintln!("[shot] prepare_picker_jpeg write error: {}", e);
             }
         }

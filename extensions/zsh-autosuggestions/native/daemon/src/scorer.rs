@@ -114,9 +114,15 @@ fn compute_frecency(candidates: &[CommandStat], now: SystemTime) -> Vec<f64> {
     let mut raw = vec![0.0f64; n];
     let mut max = 0.0f64;
 
+    let now_secs = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
     for (i, c) in candidates.iter().enumerate() {
+        let last_used_secs = c.last_used.clamp(0, now_secs as i64) as u64;
         let dt = now
-            .duration_since(SystemTime::UNIX_EPOCH + Duration::from_secs(c.last_used as u64))
+            .duration_since(SystemTime::UNIX_EPOCH + Duration::from_secs(last_used_secs))
             .unwrap_or(Duration::from_secs(0))
             .as_secs_f64()
             .max(0.0);

@@ -25,7 +25,7 @@ export const useAppStore = defineStore('app', () => {
   const suppressBlur = ref(false)
   let dialogResolve: ((value: boolean) => void) | null = null
 
-  const showPanel = ref(false)
+  const activePanel = ref<string | null>(null)
   const shortcutRecording = ref(false)
 
   const shortcutErrors = ref<Record<string, string>>({})
@@ -35,7 +35,7 @@ export const useAppStore = defineStore('app', () => {
     const newMod = id ? getModule(id) : null
 
     activeModuleId.value = id
-    showPanel.value = false
+    activePanel.value = null
 
     if (oldMod?.onDeactivate) oldMod.onDeactivate()
     if (newMod?.onActivate) newMod.onActivate()
@@ -70,8 +70,16 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  function togglePanel() {
-    showPanel.value = !showPanel.value
+  function openPanel(panelId: string) {
+    activePanel.value = panelId
+  }
+
+  function closePanel() {
+    activePanel.value = null
+  }
+
+  function togglePanel(panelId: string) {
+    activePanel.value = activePanel.value === panelId ? null : panelId
   }
 
   function setShortcutRecording(value: boolean) {
@@ -103,7 +111,9 @@ export const useAppStore = defineStore('app', () => {
     setDialogOpen,
     showConfirm,
     resolveConfirm,
-    showPanel,
+    activePanel,
+    openPanel,
+    closePanel,
     togglePanel,
     shortcutRecording,
     setShortcutRecording,

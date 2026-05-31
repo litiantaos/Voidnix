@@ -25,12 +25,14 @@ pub fn install_background_layer(_window: &tauri::WebviewWindow) {}
 pub async fn open_module_panel(
     app: tauri::AppHandle,
     module_id: String,
+    panel_id: String,
     payload: serde_json::Value,
 ) -> Result<(), String> {
     use tauri::Emitter;
 
     let event_payload = serde_json::json!({
         "moduleId": module_id,
+        "panelId": panel_id,
         "payload": payload,
     });
 

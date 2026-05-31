@@ -1,9 +1,17 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule } from '@/types/module'
-import { moduleSelfResult } from '@/core/module-helpers'
 import { copyAndHide } from '@/utils/clipboard'
 import { toErrorMessage } from '@/utils/error'
 import { commands } from '@/bindings'
+
+const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/
+const IPV6_RE = /^[\da-fA-F:]+$/
+
+function isValidIpLike(s: string): boolean {
+  if (IPV4_RE.test(s)) return true
+  if (s.includes(':') && IPV6_RE.test(s) && s.length >= 2) return true
+  return false
+}
 
 const mod: AppModule = {
   id: 'ip',
@@ -13,15 +21,10 @@ const mod: AppModule = {
   keywords: ['ip', 'network', '网络', '地址'],
   placeholder: '输入指定 IP 地址，留空则查询本机',
   order: 5,
-  onSearch: async (query) => {
-    if (!query.trim()) return []
-    if ('ip'.includes(query.toLowerCase()) || '网络'.includes(query)) {
-      return [moduleSelfResult(mod)]
-    }
-    return []
-  },
+  onSearch: async () => [],
   onModuleSearch: async (query) => {
     const trimmed = query.trim()
+    if (trimmed && !isValidIpLike(trimmed)) return []
     try {
       const data = await commands.fetchIpInfo(trimmed || null)
 

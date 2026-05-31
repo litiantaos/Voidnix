@@ -57,23 +57,32 @@ pub fn get_history_file_path() -> Option<PathBuf> {
 
 fn parse_zsh_history(content: &str) -> Vec<RawCommand> {
     let mut commands = Vec::new();
+    let mut current: Option<RawCommand> = None;
 
-    for line in content.lines() {
-        let line = line.trim();
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
         if line.is_empty() {
             continue;
         }
 
         if let Some(caps) = ZSH_LINE_RE.captures(line) {
+            if let Some(cmd) = current.take() {
+                commands.push(cmd);
+            }
             let ts = caps.get(1).and_then(|m| m.as_str().parse::<i64>().ok());
             let dur = caps.get(2).and_then(|m| m.as_str().parse::<i64>().ok());
-            let cmd = caps.get(3).map(|m| m.as_str().to_string()).unwrap_or_default();
-
-            commands.push(RawCommand {
-                command: cmd,
+            let cmd_text = caps
+                .get(3)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            current = Some(RawCommand {
+                command: cmd_text,
                 timestamp: ts,
                 duration: dur,
             });
+        } else if let Some(ref mut cmd) = current {
+            cmd.command.push('\n');
+            cmd.command.push_str(line);
         } else {
             commands.push(RawCommand {
                 command: line.to_string(),
@@ -81,6 +90,10 @@ fn parse_zsh_history(content: &str) -> Vec<RawCommand> {
                 duration: None,
             });
         }
+    }
+
+    if let Some(cmd) = current {
+        commands.push(cmd);
     }
 
     commands

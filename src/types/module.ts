@@ -17,24 +17,18 @@ export interface SearchResult {
 }
 
 /**
- * 模块布局声明。集中所有"模块向 App Shell 贡献的 UI 槽位"。
- * 槽位名描述位置而非外形：
- *   - view: 主视图区
- *   - header / footer: 视图上下方的固定 chrome
- *   - searchBarAccessory: 全局搜索栏右侧的附属区域
- *
- * 视图内部的私有 UI（如截图标注调色板）不属于此契约，
+ * 视图内部的私有 UI（如截图标注调色板）不属于模块槽位契约，
  * 由模块自行组合，禁止占用 toolbar / header / footer 等会与槽位混淆的命名。
  */
-export interface ModuleLayout {
-  /** 主视图组件 */
-  view: Component
-  /** 视图上方固定区域（如标签栏） */
-  header?: Component
-  /** 视图下方固定区域（如操作栏） */
-  footer?: Component
-  /** 全局搜索栏右侧的附属区域（模型选择器、状态标签、按钮组等，内容不限） */
-  searchBarAccessory?: Component
+
+export interface ModuleSearchItem {
+  id: string
+  title: string
+  subtitle?: string
+  icon?: string
+  keywords: string[]
+  group?: string
+  [key: string]: unknown
 }
 
 export interface AppModule {
@@ -59,6 +53,14 @@ export interface AppModule {
   hidden?: boolean
 
   /**
+   * 无自定义 view 时，ContentView 标准列表的行为配置。
+   * 有 view 时此字段无效。
+   */
+  listOptions?: {
+    multiSelect?: boolean
+  }
+
+  /**
    * 模块独立窗口的视图组件映射。
    * key 为窗口 label 或 label 前缀（如 'pin-'），value 为对应的根组件。
    * App.vue 挂载时会检查 Tauri 窗口的 label，匹配时优先渲染该组件。
@@ -69,17 +71,31 @@ export interface AppModule {
   onActivate?(): Promise<void>
   onDeactivate?(): Promise<void>
 
+  /** 主视图组件。不提供时，ContentView 使用标准列表视图 */
+  view?: Component
+
+  /** 搜索栏右侧附属区域（模型选择器、状态标签、按钮组等，内容不限） */
+  searchBarAccessory?: Component
+
   /**
-   * 模块布局。声明视图及其 chrome（header/footer）以及对外壳的槽位贡献。
-   * 不提供时，ContentView 使用标准列表视图。
+   * 命名面板。key 为面板标识，激活时替换主视图占满内容区。
+   * 适用于配置页、功能结果页等二级界面。
    */
-  layout?: ModuleLayout
+  panels?: Record<string, Component>
 
   onSearch?(query: string): Promise<SearchResult[]>
 
   onModuleSearch?(query: string): Promise<SearchResult[]>
 
-  onExecute?(result: SearchResult): Promise<void>
+  /**
+   * 声明式搜索项。框架自动调用 match_keywords 做拼音模糊匹配，
+   * 并通过 provide('filteredItems') 向 view 子组件提供过滤结果。
+   * 适用于设置项、开关项等半静态内容。
+   * 动态内容（剪贴板历史、计算器结果等）仍用 onModuleSearch。
+   */
+  searchItems?: () => ModuleSearchItem[]
+
+  onExecute?(result: SearchResult, selectedResults?: SearchResult[]): Promise<void>
 
   /**
    * 是否使用主搜索框作为输入源。
@@ -98,16 +114,10 @@ export interface AppModule {
   keepSearchInput?: boolean
 
   /**
-   * 模块二级面板组件（如配置页、功能结果页等）。
-   * 激活后占满内容区，隐藏模块主视图的 header/footer chrome。
-   */
-  panel?: Component
-
-  /**
    * 外部通过 `open-module-panel` 事件触发打开面板时的回调。
    * 由框架层统一分发，模块在此解析 payload 并更新内部状态。
    */
-  onOpenPanel?(payload: unknown): void | Promise<void>
+  onOpenPanel?(panelId: string, payload: unknown): void | Promise<void>
 
   /**
    * 模块在全局范围注册的快捷键及其处理逻辑

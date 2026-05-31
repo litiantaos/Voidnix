@@ -1,9 +1,8 @@
 use crate::infra::db::Database;
 use base64::{engine::general_purpose::STANDARD as base64, Engine as _};
 use std::ffi::c_void;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 struct ClipboardSnapshot {
     content: String,
@@ -15,107 +14,147 @@ struct ClipboardSnapshot {
 }
 
 pub fn start_monitor(app_handle: AppHandle) {
-    let snapshots: Arc<Mutex<Option<ClipboardSnapshot>>> = Arc::new(Mutex::new(None));
-
     std::thread::spawn(move || {
         let mut last_change_count: isize = 0;
 
         loop {
             std::thread::sleep(Duration::from_millis(500));
 
-            let snap_clone = snapshots.clone();
-            let _app_clone = app_handle.clone();
-
-            let (tx, rx) = std::sync::mpsc::channel::<isize>();
+            let (tx, rx) = std::sync::mpsc::channel::<(isize, Option<ClipboardSnapshot>)>();
 
             let _ = app_handle.run_on_main_thread(move || {
                 use objc2::msg_send;
                 use objc2_app_kit::{
-                    NSPasteboard, NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSPasteboardTypeString, NSWorkspace,
+                    NSPasteboard, NSPasteboardTypeFileURL, NSPasteboardTypePNG,
+                    NSPasteboardTypeString, NSWorkspace,
                 };
+                use objc2_foundation::NSString;
 
-                unsafe {
+                let result = unsafe {
                     let pb = NSPasteboard::generalPasteboard();
                     let change_count = pb.changeCount();
 
-                    let _ = tx.send(change_count);
-                    if change_count == last_change_count {
-                        return;
-                    }
-
-                    let mut content = String::new();
-                    let mut content_type = String::new();
-                    let mut file_size: Option<i32> = None;
-                    let mut image_width: Option<i32> = None;
-                    let mut image_height: Option<i32> = None;
-
-                    if let Some(s) = pb.stringForType(NSPasteboardTypeFileURL) {
-                        content = s.to_string();
-                        content_type = "file".to_string();
-                        let path = content.strip_prefix("file://").unwrap_or(&content);
-                        let decoded_path = percent_decode(path);
-                        if let Ok(meta) = std::fs::metadata(&decoded_path) {
-                            file_size = Some(meta.len().min(i32::MAX as u64) as i32);
-                        }
-                    } else if let Some(s) = pb.stringForType(NSPasteboardTypeString) {
-                        let text = s.to_string().trim().to_string();
-
-                        if text.is_empty() || text.chars().count() <= 2 {
-                            return;
+                    let snapshot = (|| -> Option<ClipboardSnapshot> {
+                        if change_count == last_change_count {
+                            return None;
                         }
 
-                        let is_all_emoji = text.chars().all(|c| {
-                            let cp = c as u32;
-                            (0x1F300..=0x1FAFF).contains(&cp)
-                                || (0x2600..=0x27BF).contains(&cp)
-                                || (0xFE00..=0xFE0F).contains(&cp)
-                        });
-
-                        if is_all_emoji {
-                            return;
-                        }
-
-                        content = text;
-                        content_type = "text".to_string();
-                    } else if let Some(d) = pb.dataForType(NSPasteboardTypePNG) {
-                        let ptr: *const c_void = msg_send![&d, bytes];
-                        let len: usize = msg_send![&d, length];
-                        if len > 0 && !ptr.is_null() {
-                            let slice = std::slice::from_raw_parts(ptr as *const u8, len);
-                            file_size = Some((len as u64).min(i32::MAX as u64) as i32);
-                            if len >= 24 && slice[0..4] == [0x89, 0x50, 0x4E, 0x47] {
-                                image_width = Some(u32::from_be_bytes(slice[16..20].try_into().unwrap()) as i32);
-                                image_height = Some(u32::from_be_bytes(slice[20..24].try_into().unwrap()) as i32);
+                        if let Some(types) = pb.types() {
+                            let marker =
+                                NSString::from_str("com.litiantao.voidnix.clipboard");
+                            if types.containsObject(&marker) {
+                                return None;
                             }
-                            content = format!("data:image/png;base64,{}", base64.encode(slice));
-                            content_type = "image".to_string();
+
+                            let transient =
+                                NSString::from_str("org.nspasteboard.TransientType");
+                            let concealed =
+                                NSString::from_str("org.nspasteboard.ConcealedType");
+                            let auto_gen =
+                                NSString::from_str("org.nspasteboard.AutoGeneratedType");
+                            if types.containsObject(&transient)
+                                || types.containsObject(&concealed)
+                                || types.containsObject(&auto_gen)
+                            {
+                                return None;
+                            }
                         }
-                    }
 
-                    if content.is_empty() {
-                        return;
-                    }
+                        let mut content = String::new();
+                        let mut content_type = String::new();
+                        let mut file_size: Option<i32> = None;
+                        let mut image_width: Option<i32> = None;
+                        let mut image_height: Option<i32> = None;
 
-                    let mut source_app = String::from("Unknown");
-                    let ws = NSWorkspace::sharedWorkspace();
-                    if let Some(app) = ws.frontmostApplication() {
-                        if let Some(name) = app.localizedName() {
-                            source_app = name.to_string();
+                        if let Some(s) = pb.stringForType(NSPasteboardTypeFileURL) {
+                            content = s.to_string();
+                            content_type = "file".to_string();
+                            let path =
+                                content.strip_prefix("file://").unwrap_or(&content);
+                            let decoded_path = percent_decode(path);
+                            if let Ok(meta) = std::fs::metadata(&decoded_path) {
+                                file_size =
+                                    Some(meta.len().min(i32::MAX as u64) as i32);
+                            }
+                        } else if let Some(s) = pb.stringForType(NSPasteboardTypeString) {
+                            let text = s.to_string().trim().to_string();
+
+                            if text.is_empty() {
+                                return None;
+                            }
+
+                            let is_all_emoji = text.chars().all(|c| {
+                                let cp = c as u32;
+                                (0x1F300..=0x1FAFF).contains(&cp)
+                                    || (0x2600..=0x27BF).contains(&cp)
+                                    || (0xFE00..=0xFE0F).contains(&cp)
+                            });
+
+                            if is_all_emoji {
+                                return None;
+                            }
+
+                            content = text;
+                            content_type = "text".to_string();
+                        } else if let Some(d) = pb.dataForType(NSPasteboardTypePNG) {
+                            let ptr: *const c_void = msg_send![&d, bytes];
+                            let len: usize = msg_send![&d, length];
+                            if len > 0 && !ptr.is_null() {
+                                let slice =
+                                    std::slice::from_raw_parts(ptr as *const u8, len);
+                                file_size =
+                                    Some((len as u64).min(i32::MAX as u64) as i32);
+                                if len >= 24
+                                    && slice[0..4] == [0x89, 0x50, 0x4E, 0x47]
+                                {
+                                    image_width = Some(
+                                        u32::from_be_bytes(
+                                            slice[16..20].try_into().unwrap(),
+                                        ) as i32,
+                                    );
+                                    image_height = Some(
+                                        u32::from_be_bytes(
+                                            slice[20..24].try_into().unwrap(),
+                                        ) as i32,
+                                    );
+                                }
+                                content = format!(
+                                    "data:image/png;base64,{}",
+                                    base64.encode(slice)
+                                );
+                                content_type = "image".to_string();
+                            }
                         }
-                    }
 
-                    *snap_clone.lock().unwrap() = Some(ClipboardSnapshot {
-                        content,
-                        content_type,
-                        file_size,
-                        image_width,
-                        image_height,
-                        source_app,
-                    });
-                }
+                        if content.is_empty() {
+                            return None;
+                        }
+
+                        let mut source_app = String::from("Unknown");
+                        let ws = NSWorkspace::sharedWorkspace();
+                        if let Some(app) = ws.frontmostApplication() {
+                            if let Some(name) = app.localizedName() {
+                                source_app = name.to_string();
+                            }
+                        }
+
+                        Some(ClipboardSnapshot {
+                            content,
+                            content_type,
+                            file_size,
+                            image_width,
+                            image_height,
+                            source_app,
+                        })
+                    })();
+
+                    (change_count, snapshot)
+                };
+
+                let _ = tx.send(result);
             });
 
-            let Ok(new_change_count) = rx.recv() else {
+            let Ok((new_change_count, snap)) = rx.recv() else {
                 continue;
             };
 
@@ -124,7 +163,6 @@ pub fn start_monitor(app_handle: AppHandle) {
             }
             last_change_count = new_change_count;
 
-            let snap = snapshots.lock().unwrap().take();
             let Some(snap) = snap else {
                 continue;
             };
@@ -212,6 +250,8 @@ pub fn start_monitor(app_handle: AppHandle) {
                     );
                 }
             }
+
+            let _ = app_handle.emit("clipboard-updated", ());
         }
     });
 }

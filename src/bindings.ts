@@ -17,10 +17,10 @@ export const commands = {
 	fetchIpInfo: (ip: string | null) => __TAURI_INVOKE<IpInfo>("fetch_ip_info", { ip }),
 	getClipboardHistory: (query: string | null, filterFavorite: boolean | null, limit: number | null, previewOnly: boolean | null) => __TAURI_INVOKE<ClipboardItem[]>("get_clipboard_history", { query, filterFavorite, limit, previewOnly }),
 	deleteClipboardItems: (ids: string[]) => __TAURI_INVOKE<null>("delete_clipboard_items", { ids }),
+	toggleClipboardFavorite: (id: string) => __TAURI_INVOKE<null>("toggle_clipboard_favorite", { id }),
 	getClipboardImage: (id: string) => __TAURI_INVOKE<string | null>("get_clipboard_image", { id }),
 	pasteClipboardItem: (id: string) => __TAURI_INVOKE<null>("paste_clipboard_item", { id }),
 	pasteClipboardItems: (ids: string[]) => __TAURI_INVOKE<null>("paste_clipboard_items", { ids }),
-	toggleClipboardFavorite: (id: string) => __TAURI_INVOKE<null>("toggle_clipboard_favorite", { id }),
 };
 
 /* Types */

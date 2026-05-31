@@ -1,19 +1,10 @@
-use nucleo_matcher::{
-    pattern::{CaseMatching, Normalization, Pattern},
-    Matcher, Utf32Str,
-};
-use std::cell::RefCell;
 use std::io::BufRead;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use super::cache::get_cached_apps;
-use super::pinyin::{to_pinyin_full, to_pinyin_initials, word_pinyin_overrides};
+use crate::infra::pinyin;
 use super::types::{SearchResult, SEARCH_SESSION};
-
-thread_local! {
-    static MATCHER: RefCell<Matcher> = RefCell::new(Matcher::default());
-}
 
 #[tauri::command]
 #[cfg_attr(feature = "specta", specta::specta)]
@@ -40,28 +31,24 @@ pub async fn search_apps(query: String) -> Result<Vec<SearchResult>, String> {
             })
             .collect()
     } else {
-        let results = MATCHER.with(|matcher_cell| {
+        let results = pinyin::MATCHER.with(|matcher_cell| {
             let mut matcher = matcher_cell.borrow_mut();
-            let pattern = Pattern::parse(&query, CaseMatching::Ignore, Normalization::Smart);
+            let pattern = pinyin::match_query(&query);
             let mut buf = Vec::new();
 
             let mut scored_apps: Vec<(u32, &_)> = apps
                 .iter()
                 .filter_map(|app| {
-                    let words = word_pinyin_overrides(&app.name);
                     let combined = format!(
-                        "{} {} {} {} {} {}",
+                        "{} {} {} {} {}",
                         app.name,
                         app.bundle_name,
                         app.pinyin_full,
                         app.pinyin_initials,
                         app.pinyin_compact,
-                        words
                     );
 
-                    let mut score = pattern
-                        .score(Utf32Str::new(&combined, &mut buf), &mut matcher)
-                        .unwrap_or(0);
+                    let mut score = pinyin::pinyin_score(&query, &combined, &pattern, &mut matcher, &mut buf);
 
                     if score > 0 {
                         let system_count = app.use_count.load(Ordering::Relaxed);
@@ -228,9 +215,9 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         return Ok(vec![]);
     }
 
-    let scored_files: Vec<(u32, u32, String, String)> = MATCHER.with(|matcher_cell| {
+    let scored_files: Vec<(u32, u32, String, String)> = pinyin::MATCHER.with(|matcher_cell| {
         let mut matcher = matcher_cell.borrow_mut();
-        let pattern = Pattern::parse(&query, CaseMatching::Ignore, Normalization::Smart);
+        let pattern = pinyin::match_query(&query);
         let mut buf = Vec::new();
 
         entries
@@ -242,29 +229,14 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
                     .unwrap_or("Unknown")
                     .to_string();
 
-                let name_pinyin = to_pinyin_full(&name);
-                let name_initials = to_pinyin_initials(&name);
-
                 let parent = Path::new(&path)
                     .parent()
                     .and_then(|p| p.file_name())
                     .and_then(|s| s.to_str())
                     .unwrap_or("");
-                let parent_pinyin = to_pinyin_full(parent);
 
-                let compact = name_pinyin
-                    .chars()
-                    .filter(|c| !c.is_whitespace())
-                    .collect::<String>();
-                let words = word_pinyin_overrides(&name);
-                let combined = format!(
-                    "{} {} {} {} {} {}",
-                    name, name_pinyin, name_initials, parent_pinyin, compact, words
-                );
-
-                let mut score = pattern
-                    .score(Utf32Str::new(&combined, &mut buf), &mut matcher)
-                    .unwrap_or(0);
+                let combined = format!("{} {}", name, parent);
+                let mut score = pinyin::pinyin_score(&query, &combined, &pattern, &mut matcher, &mut buf);
 
                 if score > 0 {
                     let boost = std::cmp::min(use_count * 10, 800);
@@ -394,25 +366,15 @@ pub fn score_items(query: String, items: Vec<String>) -> Vec<u32> {
         return vec![0; items.len()];
     }
 
-    MATCHER.with(|matcher_cell| {
+    pinyin::MATCHER.with(|matcher_cell| {
         let mut matcher = matcher_cell.borrow_mut();
-        let pattern = Pattern::parse(&query, CaseMatching::Ignore, Normalization::Smart);
+        let pattern = pinyin::match_query(&query);
         let mut buf = Vec::new();
 
         items
             .into_iter()
             .map(|item| {
-                let pinyin_full = to_pinyin_full(&item);
-                let pinyin_initials = to_pinyin_initials(&item);
-                let compact = pinyin_full
-                    .chars()
-                    .filter(|c| !c.is_whitespace())
-                    .collect::<String>();
-                let combined = format!("{} {} {} {}", item, pinyin_full, pinyin_initials, compact);
-
-                pattern
-                    .score(Utf32Str::new(&combined, &mut buf), &mut matcher)
-                    .unwrap_or(0)
+                pinyin::pinyin_score(&query, &item, &pattern, &mut matcher, &mut buf)
             })
             .collect()
     })

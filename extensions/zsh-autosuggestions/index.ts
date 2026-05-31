@@ -1,6 +1,5 @@
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
-import { keywordModuleSearch } from '@/core/module-helpers'
 import type { AppModule } from '@/types/module'
 
 const View = asyncView(() => import('./View.vue'))
@@ -14,8 +13,8 @@ const mod: AppModule = {
   icon: 'i-ri-terminal-box-line',
   keywords,
   order: 80,
-  layout: { view: View },
-  onSearch: async (query) => keywordModuleSearch(mod, query),
+  view: View,
+  onSearch: async () => [],
 }
 
 registerModule(mod)

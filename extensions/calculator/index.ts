@@ -1,6 +1,5 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
-import { moduleSelfResult } from '@/core/module-helpers'
 import { load } from '@tauri-apps/plugin-store'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -211,9 +210,6 @@ const mod: AppModule = {
   },
   onSearch: async (query) => {
     if (!query.trim()) return []
-    if ('calculator'.includes(query.toLowerCase()) || '计算'.includes(query)) {
-      return [moduleSelfResult(mod)]
-    }
 
     const withExponent = query.replace(/\^/g, '**')
     if (withExponent.trim() && ALLOWED_CHARS.test(withExponent) && /[+\-*/]/.test(withExponent)) {
