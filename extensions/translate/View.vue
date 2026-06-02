@@ -1,15 +1,17 @@
 <template>
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置翻译服务" />
 
-  <div v-else class="p-5 flex flex-col gap-4 h-full overflow-y-auto">
-    <BaseTextarea
-      ref="textareaRef"
-      v-model="inputText"
-      placeholder="输入文本"
-      :rows="1"
-      :max-height="0"
-      @submit="handleSubmit"
-    />
+  <div v-else class="flex flex-col h-full overflow-y-auto">
+    <div class="px-5 pb-2 pt-5">
+      <BaseTextarea
+        ref="textareaRef"
+        v-model="inputText"
+        placeholder="输入文本"
+        :rows="1"
+        :max-height="0"
+        @submit="handleSubmit"
+      />
+    </div>
 
     <BaseEmptyState
       v-if="isTranslating && translateResults.length === 0"
@@ -18,24 +20,27 @@
       loading
     />
 
-    <div v-if="translateResults.length > 0" class="flex flex-col gap-3">
-      <div
-        v-for="(result, index) in translateResults"
-        :key="index"
-        class="p-3 rounded-md bg-black/4"
-        tabindex="0"
-        @dblclick="!result.loading && handleCopy(result.translation)"
-        @keydown.enter.prevent="!result.loading && handleCopy(result.translation)"
+    <div class="px-3">
+      <BaseList
+        v-if="translateResults.length > 0"
+        :items="translateResults"
+        v-model:selected-index="selectedIndex"
+        @execute="onExecuteResult"
       >
-        <div class="text-xs text-tx-faint mb-1.5">{{ result.engine }}</div>
-        <div
-          v-if="result.loading && !result.translation"
-          class="i-ri-loader-4-line text-base text-tx-muted animate-spin"
-        ></div>
-        <p v-else class="text-sm text-tx-primary leading-relaxed wrap-break-word">
-          {{ result.translation }}<span v-if="result.loading" class="animate-pulse">▍</span>
-        </p>
-      </div>
+        <template #item="{ item, selected }">
+          <BaseListItem :selected="selected" multiline-title :subtitle="item.engine">
+            <template #title>
+              <div
+                v-if="item.loading && !item.translation"
+                class="i-ri-loader-4-line text-base text-tx-muted animate-spin"
+              />
+              <span v-else class="leading-relaxed font-normal wrap-break-word">
+                {{ item.translation }}<span v-if="item.loading" class="animate-pulse">▍</span>
+              </span>
+            </template>
+          </BaseListItem>
+        </template>
+      </BaseList>
     </div>
   </div>
 </template>
@@ -48,9 +53,13 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
+import BaseList from '@/components/ui/BaseList.vue'
+import BaseListItem from '@/components/ui/BaseListItem.vue'
+import type { TranslateResult } from './index'
 
 const settings = useSettingsStore()
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
+const selectedIndex = ref(0)
 
 const isConfigured = computed(() =>
   settings.translateConfigs.some(
@@ -82,17 +91,22 @@ watch(
   },
 )
 
+watch(translateResults, () => {
+  selectedIndex.value = 0
+})
+
 function handleSubmit() {
   const text = inputText.value.trim()
   if (text) {
     translateText(text)
+    ;(document.activeElement as HTMLElement)?.blur()
   }
 }
 
-async function handleCopy(translation: string) {
-  if (!translation) return
+async function onExecuteResult(result: TranslateResult) {
+  if (!result.translation || result.loading) return
   try {
-    await writeText(translation)
+    await writeText(result.translation)
     getCurrentWindow().hide()
   } catch (e) {
     console.error('Failed to copy:', e)
@@ -100,10 +114,14 @@ async function handleCopy(translation: string) {
 }
 
 onMounted(() => {
-  nextTick(() => textareaRef.value?.focus())
+  if (!isTranslating.value) {
+    nextTick(() => textareaRef.value?.focus())
+  }
 })
 
 onActivated(() => {
-  nextTick(() => textareaRef.value?.focus())
+  if (!isTranslating.value) {
+    nextTick(() => textareaRef.value?.focus())
+  }
 })
 </script>

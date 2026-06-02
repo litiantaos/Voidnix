@@ -87,7 +87,12 @@ pub fn lang_code_to_name_en(code: &str) -> &str {
 
 pub fn build_system_prompt(to_lang: &str) -> String {
     format!(
-        "You are a professional translator. Translate the following text to {}.",
+        "You are a professional translator. Translate the user text to {}.\n\
+         Rules:\n\
+         - Output ONLY the translated text.\n\
+         - No explanations, notes, commentary, or preamble.\n\
+         - No quotes, no markdown, no code blocks.\n\
+         - Preserve the original tone, formatting, and meaning.",
         lang_code_to_name_en(to_lang)
     )
 }

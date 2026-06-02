@@ -191,6 +191,7 @@ export const useSettingsStore = defineStore('settings', () => {
         const firstYoudao = translateConfigs.value.find((c) => c.type === 'youdao')
         if (firstYoudao) firstYoudao.isDefault = true
       }
+      if (translate?.activeModelKey) activeTranslateModelKey.value = translate.activeModelKey
 
       const chat = await store.get<{
         configs?: ChatApiConfig[]

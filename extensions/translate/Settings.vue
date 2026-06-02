@@ -90,7 +90,7 @@
             <BaseInput
               v-model="youdaoForm.appKey"
               :type="passwordVisible ? 'text' : 'password'"
-              placeholder="有道翻译 App Key"
+              placeholder="App ID"
             >
               <template #suffix>
                 <button
@@ -102,11 +102,11 @@
             </BaseInput>
           </div>
           <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">APP KEY</span>
+            <span class="text-xs text-tx-faint font-medium">APP SECRET</span>
             <BaseInput
               v-model="youdaoForm.appSecret"
               :type="passwordVisible ? 'text' : 'password'"
-              placeholder="有道翻译 App Secret"
+              placeholder="App Secret"
             >
               <template #suffix>
                 <button
@@ -298,6 +298,7 @@ async function saveConfigModal() {
     const id = await settings.addTranslateConfig()
     const models = aiForm.value.models.filter((m) => m.trim())
     await settings.updateTranslateConfig(id, {
+      type: 'ai',
       endpoint: aiForm.value.endpoint,
       apiKey: aiForm.value.apiKey,
       models,
@@ -316,6 +317,7 @@ async function saveConfigModal() {
     } else {
       const models = aiForm.value.models.filter((m) => m.trim())
       await settings.updateTranslateConfig(editingConfigId.value, {
+        type: 'ai',
         endpoint: aiForm.value.endpoint,
         apiKey: aiForm.value.apiKey,
         models,

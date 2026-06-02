@@ -6,6 +6,54 @@ use super::lang_utils::{
     resolve_template, smart_target_lang, DEFAULT_TRANSLATE_PROMPT,
 };
 
+static PREAMBLE_PATTERNS: &[&str] = &[
+    "here is the translation",
+    "here's the translation",
+    "the translation is",
+    "translated text",
+    "translation result",
+    "translation:",
+    "以下是翻译",
+    "翻译结果",
+    "翻译如下",
+    "翻译：",
+    "翻译:",
+];
+
+pub fn clean_translation(raw: &str) -> String {
+    let mut s = raw.trim().to_string();
+
+    if s.starts_with("```") && s.ends_with("```") {
+        let inner = &s[3..s.len() - 3];
+        let inner = inner.trim_start_matches(|c: char| c.is_alphanumeric() || c == '+');
+        s = inner.trim().to_string();
+    }
+
+    let mut pair_strip = |open: char, close: char| {
+        if s.starts_with(open) && s.ends_with(close) && s.len() > 2 {
+            s = s[1..s.len() - 1].trim().to_string();
+        }
+    };
+    pair_strip('"', '"');
+    pair_strip('"', '"');
+    pair_strip('「', '」');
+    pair_strip('『', '』');
+
+    let lower = s.to_lowercase();
+    for pat in PREAMBLE_PATTERNS {
+        if lower.starts_with(pat) {
+            let remaining = &s[pat.len()..];
+            let trimmed = remaining.trim_start_matches(|c: char| c == ':' || c =='\u{ff1a}' || c == ' ' || c == '\n');
+            if !trimmed.is_empty() {
+                s = trimmed.to_string();
+            }
+            break;
+        }
+    }
+
+    s
+}
+
 struct PrepareResult {
     text: String,
     safe_endpoint: String,
@@ -101,16 +149,16 @@ pub async fn translate_ai(
         .await
         .map_err(|e| format!("JSON 解析错误: {}", e))?;
 
-    let translation = json
-        .get("choices")
-        .and_then(|c| c.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|choice| choice.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let translation = clean_translation(
+        json
+            .get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|choice| choice.get("message"))
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .unwrap_or(""),
+    );
 
     if translation.is_empty() {
         return Err("翻译返回为空".to_string());
