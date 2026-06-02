@@ -21,6 +21,7 @@ pub fn export_bindings() {
             crate::extensions::translate::get_selected_text,
             crate::extensions::translate::ai_translate::translate_ai,
             crate::extensions::translate::youdao::translate_youdao,
+            crate::extensions::window_manager::get_screen_info,
             crate::extensions::search::commands::search_apps,
             crate::extensions::search::commands::search_files,
             crate::extensions::search::commands::score_items,

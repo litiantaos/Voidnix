@@ -45,6 +45,11 @@ macro_rules! configure_app {
         crate::extensions::translate::ai_translate::translate_ai,
         crate::extensions::translate::ai_translate::translate_ai_stream,
         crate::extensions::translate::youdao::translate_youdao,
+        crate::extensions::window_manager::get_screen_info,
+        crate::extensions::window_manager::set_frontmost_window_layout,
+        crate::extensions::window_manager::check_window_manager_accessibility,
+        crate::extensions::window_manager::toggle_drag_snap,
+        crate::extensions::window_manager::is_drag_snap_active,
         crate::extensions::search::commands::search_apps,
         crate::extensions::search::commands::search_files,
         crate::extensions::search::commands::get_recent_apps,
@@ -72,6 +77,7 @@ macro_rules! configure_app {
         .plugin(crate::extensions::zsh_autosuggestions::init())
         .plugin(crate::extensions::chat::init())
         .plugin(crate::extensions::translate::init())
+        .plugin(crate::extensions::window_manager::init())
         .plugin(crate::extensions::search::init())
         .plugin(crate::extensions::finder_ext::init())
         .plugin(crate::extensions::ip::init())
@@ -89,6 +95,8 @@ pub mod zsh_autosuggestions;
 pub mod chat;
 #[path = "../../extensions/translate/native/mod.rs"]
 pub mod translate;
+#[path = "../../extensions/window-manager/native/mod.rs"]
+pub mod window_manager;
 #[path = "../../extensions/search/native/mod.rs"]
 pub mod search;
 #[path = "../../extensions/finder-ext/native/mod.rs"]

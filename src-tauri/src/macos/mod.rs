@@ -8,4 +8,6 @@ pub mod permission;
 pub mod skylight;
 #[cfg(target_os = "macos")]
 pub mod text_selection;
+#[cfg(target_os = "macos")]
+pub mod window_snap;
 pub mod webkit_tuning;

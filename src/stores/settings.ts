@@ -88,6 +88,10 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const awakeMirrorMode = ref(true)
 
+  const wmCustomWidth = ref(800)
+  const wmCustomHeight = ref(600)
+  const wmDragSnapEnabled = ref(true)
+
   function createSetter<T>(r: Ref<T>, groupKey: string, field: string) {
     return async (val: T) => {
       r.value = val
@@ -199,16 +203,28 @@ export const useSettingsStore = defineStore('settings', () => {
         finderExt?: boolean
         zshAutosuggestions?: boolean
         awakeMirrorMode?: boolean
+        windowManager?: { customWidth?: number; customHeight?: number; dragSnapEnabled?: boolean }
       }>('extensions')
       if (extensions?.finderExt != null) finderExtEnabled.value = extensions.finderExt
       if (extensions?.zshAutosuggestions != null)
         zshAutosuggestionsEnabled.value = extensions.zshAutosuggestions
       if (extensions?.awakeMirrorMode != null) awakeMirrorMode.value = extensions.awakeMirrorMode
+      if (extensions?.windowManager?.customWidth != null)
+        wmCustomWidth.value = extensions.windowManager.customWidth
+      if (extensions?.windowManager?.customHeight != null)
+        wmCustomHeight.value = extensions.windowManager.customHeight
+      if (extensions?.windowManager?.dragSnapEnabled != null)
+        wmDragSnapEnabled.value = extensions.windowManager.dragSnapEnabled
 
       if (isTauri) {
         invoke('set_finder_ext_enabled', { enabled: finderExtEnabled.value }).catch(() => {})
         invoke('set_zsh_autosuggestions_enabled', {
           enabled: zshAutosuggestionsEnabled.value,
+        }).catch(() => {})
+        invoke('toggle_drag_snap', {
+          enabled: wmDragSnapEnabled.value,
+          customWidth: wmCustomWidth.value,
+          customHeight: wmCustomHeight.value,
         }).catch(() => {})
       }
     } catch (e) {
@@ -280,6 +296,43 @@ export const useSettingsStore = defineStore('settings', () => {
   const setActiveModelKey = createSetter(activeModelKey, 'chat', 'activeModelKey')
   const setAwakeMirrorMode = createSetter(awakeMirrorMode, 'extensions', 'awakeMirrorMode')
 
+  async function setWmField(field: string, val: number) {
+    if (store) {
+      const group = (await store.get<Record<string, unknown>>('extensions')) || {}
+      const wm = (group.windowManager as Record<string, unknown>) || {}
+      wm[field] = val
+      group.windowManager = wm
+      await store.set('extensions', group)
+      await store.save()
+    }
+  }
+  async function setWmCustomWidth(val: number) {
+    wmCustomWidth.value = val
+    await setWmField('customWidth', val)
+  }
+  async function setWmCustomHeight(val: number) {
+    wmCustomHeight.value = val
+    await setWmField('customHeight', val)
+  }
+  async function setWmDragSnapEnabled(val: boolean) {
+    wmDragSnapEnabled.value = val
+    if (store) {
+      const group = (await store.get<Record<string, unknown>>('extensions')) || {}
+      const wm = (group.windowManager as Record<string, unknown>) || {}
+      wm.dragSnapEnabled = val
+      group.windowManager = wm
+      await store.set('extensions', group)
+      await store.save()
+    }
+    if (isTauri) {
+      invoke('toggle_drag_snap', {
+        enabled: val,
+        customWidth: wmCustomWidth.value,
+        customHeight: wmCustomHeight.value,
+      }).catch(() => {})
+    }
+  }
+
   return {
     globalShortcut,
     clipboardMaxDays,
@@ -293,6 +346,9 @@ export const useSettingsStore = defineStore('settings', () => {
     finderExtEnabled,
     awakeMirrorMode,
     zshAutosuggestionsEnabled,
+    wmCustomWidth,
+    wmCustomHeight,
+    wmDragSnapEnabled,
     loadSettings,
     setGlobalShortcut,
     setClipboardMaxDays,
@@ -310,5 +366,8 @@ export const useSettingsStore = defineStore('settings', () => {
     setFinderExtEnabled,
     setAwakeMirrorMode,
     setZshAutosuggestionsEnabled,
+    setWmCustomWidth,
+    setWmCustomHeight,
+    setWmDragSnapEnabled,
   }
 })
