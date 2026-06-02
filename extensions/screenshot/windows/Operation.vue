@@ -26,7 +26,7 @@
     <div v-else class="bg-black/45 pointer-events-none inset-0 fixed" />
 
     <!-- 十字线 -->
-    <template v-if="phase === 'select'">
+    <template v-if="showCrosshair">
       <div
         class="bg-accent/80 pointer-events-none absolute"
         style="left: 0; right: 0; height: 1px; top: var(--cross-y)"
@@ -39,7 +39,7 @@
 
     <!-- 放大镜 -->
     <div
-      v-if="phase === 'select'"
+      v-if="showCrosshair"
       class="border border-black/20 rounded-lg pointer-events-none shadow-xl absolute z-50 overflow-hidden"
       :style="magnifierStyle"
     >
@@ -264,7 +264,7 @@
 
     <!-- 标注调色板 -->
     <AnnotationPalette
-      v-if="hasSelection && (phase === 'annotate' || phase === 'scroll')"
+      v-if="hasSelection && (phase === 'annotate' || phase === 'scroll') && !selResizeHandle"
       :sel="sel"
       :active-tool="activeTool"
       :color="annotColor"
@@ -340,6 +340,7 @@ const screenH = ref(props.initialScreenshot.height)
 const dpr = ref(props.initialScreenshot.scale)
 const windows = ref(props.initialScreenshot.windows ?? [])
 const phase = ref<Phase>('select')
+const showCrosshair = computed(() => phase.value === 'select' || !!selection.selResizeHandle.value)
 
 // ── 组合 composables ──────────────────────────────────────
 const selection = useSelection({ screenW, screenH, windows })
@@ -480,7 +481,7 @@ let onScrollCancelRef: () => Promise<void> | void = () => {}
 let onScrollFinishRef: () => Promise<void> | void = () => {}
 
 // ── 从 composables 解构模板需要的属性和方法 ──────────────────
-const { sel, hasSelection, hoverWindow, startSelResize } = selection
+const { sel, hasSelection, hoverWindow, selResizeHandle, startSelResize } = selection
 const {
   activeTool,
   annotColor,

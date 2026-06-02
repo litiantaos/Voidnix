@@ -269,6 +269,7 @@ export function useOverlayEvents(options: {
 
     if (options.selResizeHandle.value) {
       options.applySelResize(cx, cy)
+      options.updateMagnifier(cx, cy)
       return
     }
 
