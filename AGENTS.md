@@ -106,13 +106,13 @@ bun run tauri dev
 - **核心模块**（`src-tauri/src/core/*.rs`）：应用基础设施（快捷键、窗口管理等），与 App Shell 紧耦合
 - **扩展**（`extensions/*/native/mod.rs`）：独立功能模块（搜索、翻译、截屏等），通过 `#[path]` 引用
 
-运行时字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `onActivate` / `onDeactivate` / `onOpenPanel` / `onSearchInput` / `view` / `searchBarAccessory` / `panels` / `globalShortcuts` / `windowViews` / `searchItems`
+运行时字段：`onSearch` / `onModuleSearch` / `onExecute` / `onInit` / `onActivate` / `onDeactivate` / `onOpenSubview` / `onSearchInput` / `view` / `searchBarAccessory` / `subviews` / `globalShortcuts` / `windowViews` / `searchItems`
 
 **模块向 App Shell 贡献的 UI 槽位**（仅这些，不增不减）：
 
 - `view`：内容区，主视图（不提供时 ContentView 使用标准列表）
 - `searchBarAccessory`：搜索栏右侧，附属区域（选择器、状态标签、按钮组等，内容不限）
-- `panels`：命名面板，key 为面板标识（如 `settings`、`ocr`），激活时替换主视图占满内容区
+- `subviews`：命名子视图，key 为子视图标识（如 `settings`、`ocr`），激活时替换主视图占满内容区
 
 槽位组件命名以 `Actions` 后缀对应位置。模块视图内部的私有 UI（如截图标注调色板）**禁止**使用 `Toolbar` / `Header` / `Footer` 等会与槽位混淆的命名，应使用语义明确的名字如 `AnnotationPalette` / `MessageComposer` / `HistoryFilter`。
 
@@ -130,7 +130,7 @@ SearchResult {
 
 **前后端通信**：前端优先用 `src/bindings.ts` 导出的类型安全命令函数（由 `tauri-specta` 从 Rust 自动生成；修改 Rust 结构体后运行 `bun run sync:extensions && cd src-tauri && cargo test --features specta export_bindings -- --nocapture` 重新生成）；流式/事件类命令仍用裸 `invoke()`。Rust 用 `app.emit()`；所有 Command 须在 `configure_app!` 宏注册。
 
-**模块面板**：`open_module_panel(moduleId, panelId, payload)` 为通用命令，Rust 显示主窗口后发送 `open-module-panel` 事件；App.vue 接收事件，激活模块、打开指定面板，并调用模块注册的 `onOpenPanel(panelId, payload)`。模块通过 `panels` 槽位声明面板组件（key 为面板标识），通过 `onOpenPanel` 解析 payload 更新内部状态。前端通过 `appStore.togglePanel(panelId)` / `openPanel(panelId)` / `closePanel()` 控制面板切换。
+**模块子视图**：`open_module_subview(moduleId, subviewId, payload)` 为通用命令，Rust 显示主窗口后发送 `open-module-subview` 事件；App.vue 接收事件，激活模块、打开指定子视图，并调用模块注册的 `onOpenSubview(subviewId, payload)`。模块通过 `subviews` 槽位声明子视图组件（key 为子视图标识），通过 `onOpenSubview` 解析 payload 更新内部状态。前端通过 `appStore.toggleSubview(subviewId)` / `openSubview(subviewId)` / `closeSubview()` 控制子视图切换。
 
 **窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock；`activateIgnoringOtherApps:YES` 抢焦点；失焦自动隐藏。WKWebView 驯化（`src-tauri/src/macos/webkit_tuning/`）：隐藏时 `alphaValue=0` 不真隐藏以防节流，唤起时等待首帧呈现再显示，`VOIDNIX_DISABLE_WEBKIT_TUNING=1` 可关闭。
 

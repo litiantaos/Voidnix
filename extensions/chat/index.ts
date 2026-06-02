@@ -180,7 +180,7 @@ const mod: AppModule = {
   disableSearchInput: true,
   view: ChatView,
   searchBarAccessory: ChatActions,
-  panels: { settings: ChatSettings },
+  subviews: { settings: ChatSettings },
   globalShortcuts: [
     {
       id: 'chat',

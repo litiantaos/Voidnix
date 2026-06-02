@@ -137,10 +137,10 @@ const { onInput, handleExecute, handleTagClose, isLoading } = useSearchCommand({
   reset,
 })
 
-// 进入模块面板时释放搜索栏焦点，让键盘事件能到达面板内容
+// 进入模块子视图时释放搜索栏焦点，让键盘事件能到达子视图内容
 // 注意：必须先把焦点转移到容器，否则窗口会因失焦而自动隐藏
 watch(
-  () => appStore.activePanel,
+  () => appStore.activeSubview,
   (val) => {
     if (val) {
       contentViewRef.value?.scrollContainer?.focus()

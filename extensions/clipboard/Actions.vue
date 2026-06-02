@@ -4,8 +4,8 @@
     @click="toggleFavoriteTab"
   />
   <BaseButton
-    :icon="appStore.activePanel === 'settings' ? 'i-ri-settings-3-fill' : 'i-ri-settings-3-line'"
-    @click="appStore.togglePanel('settings')"
+    :icon="appStore.activeSubview === 'settings' ? 'i-ri-settings-3-fill' : 'i-ri-settings-3-line'"
+    @click="appStore.toggleSubview('settings')"
   />
 </template>
 

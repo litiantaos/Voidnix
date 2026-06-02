@@ -3,18 +3,10 @@
     <BaseList
       :items="items"
       v-model:selected-index="selectedIndex"
-      keyboard-navigation
       @execute="(item: SettingItem, _i: number, e?: KeyboardEvent) => handleExecute(item, e)"
     >
-      <template #item="{ item, selected, setRef, select }">
-        <BaseListItem
-          :ref="setRef"
-          :id="`si-${item.id}`"
-          :title="item.title"
-          :selected="selected"
-          @click="select"
-          @dblclick="() => handleExecute(item)"
-        >
+      <template #item="{ item, selected, setRef }">
+        <BaseListItem :ref="setRef" :id="`si-${item.id}`" :title="item.title" :selected="selected">
           <template #trailing>
             <ShortcutInput
               v-if="item.type === 'shortcut'"

@@ -3,7 +3,6 @@
     <BaseList
       :items="allItems"
       v-model:selected-index="selectedIndex"
-      keyboard-navigation
       :group-field="(item: TranslateSettingsItem) => item.group"
       :group-title="(g: string) => g"
       @execute="(item: TranslateSettingsItem) => onExecute(item)"
@@ -20,7 +19,7 @@
         </div>
       </template>
 
-      <template #item="{ item, selected, setRef, select }">
+      <template #item="{ item, selected, setRef }">
         <!-- 快捷键 -->
         <BaseListItem
           v-if="item.type === 'shortcut'"
@@ -28,7 +27,6 @@
           :id="`si-${SHORTCUT_ITEM_ID}`"
           title="启动快捷键"
           :selected="selected"
-          @click="select"
         >
           <template #trailing>
             <ShortcutInput
@@ -46,7 +44,6 @@
           :id="`si-${LANG_ITEM_ID}`"
           title="目标语言"
           :selected="selected"
-          @click="select"
         >
           <template #trailing>
             <BaseSelect
@@ -70,8 +67,6 @@
                 : '未配置'
           "
           :selected="selected"
-          @click="select"
-          @dblclick="openConfigModal(item.config)"
         />
       </template>
     </BaseList>

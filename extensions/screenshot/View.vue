@@ -3,12 +3,11 @@
     <BaseList
       :items="items"
       v-model:selected-index="selectedIndex"
-      keyboard-navigation
       :group-field="(item: Item) => item.group"
       :group-title="(g: string) => g"
       @execute="(item: Item) => onExecute(item)"
     >
-      <template #item="{ item, selected, setRef, select }">
+      <template #item="{ item, selected, setRef }">
         <!-- 快捷键 -->
         <BaseListItem
           v-if="item.type === 'shortcut'"
@@ -16,7 +15,6 @@
           :id="`si-${SHORTCUT_ITEM_ID}`"
           title="启动快捷键"
           :selected="selected"
-          @click="select"
         >
           <template #trailing>
             <ShortcutInput
@@ -34,8 +32,6 @@
           title="截图保存位置"
           :subtitle="savePathDisplay(settings.screenshotSavePath)"
           :selected="selected"
-          @click="select"
-          @dblclick="pickSavePath"
         >
           <template #trailing>
             <BaseButton icon="i-ri-folder-open-line" @click.stop="pickSavePath" />

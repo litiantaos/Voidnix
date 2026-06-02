@@ -10,7 +10,6 @@
     v-else
     ref="listRef"
     :items="history"
-    keyboard-navigation
     multi-select
     :selected-ids="selectedIds"
     id-field="id"

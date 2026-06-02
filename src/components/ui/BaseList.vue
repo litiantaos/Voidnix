@@ -16,8 +16,8 @@
 
       <div
         :ref="(el: unknown) => setItemRef(el, i)"
-        @click="multiSelect ? onItemClick(i, $event) : undefined"
-        @dblclick="multiSelect ? onItemDblClick(i) : undefined"
+        @click="onItemClick(i, $event)"
+        @dblclick="onItemDblClick(i)"
       >
         <slot
           name="item"
@@ -54,7 +54,6 @@ const props = withDefaults(
   defineProps<{
     items: T[]
     selectedIndex?: number
-    keyboardNavigation?: boolean
     groupField?: keyof T | ((item: T) => string)
     groupTitle?: (group: string) => string
     multiSelect?: boolean
@@ -63,7 +62,6 @@ const props = withDefaults(
   }>(),
   {
     selectedIndex: 0,
-    keyboardNavigation: false,
     multiSelect: false,
     idField: 'id',
   },
@@ -117,139 +115,139 @@ function emitIds(ids: Set<string>) {
 }
 
 function onItemClick(index: number, e: MouseEvent) {
-  if (!props.multiSelect) return
-  const ids = new Set(props.selectedIds ?? [])
-  if (e.metaKey || e.ctrlKey) {
-    if (ids.size === 0) {
-      ids.add(getId(props.items[localIndex.value]))
+  if (props.multiSelect && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+    const ids = new Set(props.selectedIds ?? [])
+    if (e.shiftKey) {
       if (anchorIndex < 0) anchorIndex = localIndex.value
+      const [start, end] = [Math.min(anchorIndex, index), Math.max(anchorIndex, index)]
+      const newIds = new Set<string>()
+      for (let i = start; i <= end; i++) {
+        newIds.add(getId(props.items[i]))
+      }
+      setSelectedIndex(index)
+      emitIds(newIds)
+    } else {
+      if (ids.size === 0) {
+        ids.add(getId(props.items[localIndex.value]))
+        if (anchorIndex < 0) anchorIndex = localIndex.value
+      }
+      const id = getId(props.items[index])
+      if (ids.has(id)) ids.delete(id)
+      else ids.add(id)
+      setSelectedIndex(index)
+      emitIds(ids)
     }
-    const id = getId(props.items[index])
-    if (ids.has(id)) ids.delete(id)
-    else ids.add(id)
-    setSelectedIndex(index)
-    emitIds(ids)
-  } else if (e.shiftKey) {
-    if (anchorIndex < 0) anchorIndex = localIndex.value
-    const [start, end] = [Math.min(anchorIndex, index), Math.max(anchorIndex, index)]
-    const newIds = new Set<string>()
-    for (let i = start; i <= end; i++) {
-      newIds.add(getId(props.items[i]))
-    }
-    setSelectedIndex(index)
-    emitIds(newIds)
   } else {
     anchorIndex = index
     setSelectedIndex(index)
-    emitIds(new Set())
   }
 }
 
 function onItemDblClick(index: number) {
   emit('execute', props.items[index], index)
+  if (props.multiSelect) emitIds(new Set())
 }
 
 // ── Keyboard ──
-if (props.keyboardNavigation) {
-  onKeyStroke(['ArrowDown', 'ArrowUp'], (e) => {
-    if (!isActive.value) return
-    if (!appStore.activeModuleId) return
-    if (appStore.isComposing || isComposingCheck(e)) return
-    if (
-      isFormControl(document.activeElement, { settingsControl: true }) &&
-      (document.activeElement as Element).id !== 'main-search-input'
-    )
-      return
+onKeyStroke(['ArrowDown', 'ArrowUp'], (e) => {
+  if (!isActive.value) return
+  if (!appStore.activeModuleId) return
+  if (appStore.isComposing || isComposingCheck(e)) return
+  if (
+    isFormControl(document.activeElement, { settingsControl: true }) &&
+    (document.activeElement as Element).id !== 'main-search-input'
+  )
+    return
 
-    const direction = e.key === 'ArrowDown' ? 'down' : 'up'
+  const direction = e.key === 'ArrowDown' ? 'down' : 'up'
 
-    if (props.multiSelect && e.shiftKey) {
-      e.preventDefault()
-      if (direction === 'down') {
-        const next = Math.min(localIndex.value + 1, props.items.length - 1)
-        if (next !== localIndex.value) {
-          if (anchorIndex < 0) anchorIndex = localIndex.value
-          const [start, end] = [Math.min(anchorIndex, next), Math.max(anchorIndex, next)]
-          const ids = new Set<string>()
-          for (let i = start; i <= end; i++) {
-            ids.add(getId(props.items[i]))
-          }
-          setSelectedIndex(next)
-          emitIds(ids)
-        }
-      } else {
-        const next = Math.max(localIndex.value - 1, 0)
-        if (next !== localIndex.value) {
-          if (anchorIndex < 0) anchorIndex = localIndex.value
-          const [start, end] = [Math.min(anchorIndex, next), Math.max(anchorIndex, next)]
-          const ids = new Set<string>()
-          for (let i = start; i <= end; i++) {
-            ids.add(getId(props.items[i]))
-          }
-          setSelectedIndex(next)
-          emitIds(ids)
-        }
-      }
-      return
-    }
-
+  if (props.multiSelect && e.shiftKey) {
     e.preventDefault()
-    if (props.items.length > 0) {
-      const next = wrapIndex(localIndex.value, props.items.length, direction)
-      setSelectedIndex(next)
-      anchorIndex = next
-      if ((props.selectedIds?.size ?? 0) > 0) emitIds(new Set())
+    if (direction === 'down') {
+      const next = Math.min(localIndex.value + 1, props.items.length - 1)
+      if (next !== localIndex.value) {
+        if (anchorIndex < 0) anchorIndex = localIndex.value
+        const [start, end] = [Math.min(anchorIndex, next), Math.max(anchorIndex, next)]
+        const ids = new Set<string>()
+        for (let i = start; i <= end; i++) {
+          ids.add(getId(props.items[i]))
+        }
+        setSelectedIndex(next)
+        emitIds(ids)
+      }
+    } else {
+      const next = Math.max(localIndex.value - 1, 0)
+      if (next !== localIndex.value) {
+        if (anchorIndex < 0) anchorIndex = localIndex.value
+        const [start, end] = [Math.min(anchorIndex, next), Math.max(anchorIndex, next)]
+        const ids = new Set<string>()
+        for (let i = start; i <= end; i++) {
+          ids.add(getId(props.items[i]))
+        }
+        setSelectedIndex(next)
+        emitIds(ids)
+      }
     }
-  })
-
-  if (props.multiSelect) {
-    onKeyStroke('a', (e) => {
-      if (!isActive.value) return
-      if (!appStore.activeModuleId) return
-      if (!(e.metaKey || e.ctrlKey)) return
-      e.preventDefault()
-      const ids = new Set(props.items.map((item) => getId(item)))
-      emitIds(ids)
-    })
-
-    onKeyStroke('Escape', (e) => {
-      if (!isActive.value) return
-      if (!appStore.activeModuleId) return
-      if ((props.selectedIds?.size ?? 0) === 0) return
-      e.preventDefault()
-      emitIds(new Set())
-    })
+    return
   }
 
-  onKeyStroke('Enter', (e) => {
+  e.preventDefault()
+  if (props.items.length > 0) {
+    const next = wrapIndex(localIndex.value, props.items.length, direction)
+    setSelectedIndex(next)
+    anchorIndex = next
+    if ((props.selectedIds?.size ?? 0) > 0) emitIds(new Set())
+  }
+})
+
+if (props.multiSelect) {
+  onKeyStroke('a', (e) => {
     if (!isActive.value) return
     if (!appStore.activeModuleId) return
-    if (appStore.isComposing || isComposingCheck(e)) return
-    if (
-      isFormControl(document.activeElement, { settingsControl: true }) &&
-      (document.activeElement as Element).id !== 'main-search-input'
-    )
-      return
-    if (
-      document.activeElement?.tagName === 'BUTTON' &&
-      document.activeElement!.id !== 'main-search-input'
-    )
-      return
+    if (!(e.metaKey || e.ctrlKey)) return
     e.preventDefault()
-    if (props.items.length > 0) {
-      const el = itemRefs.value[localIndex.value]
-      if (el) {
-        const control = el.querySelector<HTMLElement>('[data-settings-control][tabindex="0"]')
-        if (control) {
-          control.focus()
-          control.click()
-          return
-        }
-      }
-      emit('execute', props.items[localIndex.value], localIndex.value, e)
-    }
+    const ids = new Set(props.items.map((item) => getId(item)))
+    emitIds(ids)
+  })
+
+  onKeyStroke('Escape', (e) => {
+    if (!isActive.value) return
+    if (!appStore.activeModuleId) return
+    if ((props.selectedIds?.size ?? 0) === 0) return
+    e.preventDefault()
+    emitIds(new Set())
   })
 }
+
+onKeyStroke('Enter', (e) => {
+  if (!isActive.value) return
+  if (!appStore.activeModuleId) return
+  if (appStore.isComposing || isComposingCheck(e)) return
+  if (
+    isFormControl(document.activeElement, { settingsControl: true }) &&
+    (document.activeElement as Element).id !== 'main-search-input'
+  )
+    return
+  if (
+    document.activeElement?.tagName === 'BUTTON' &&
+    document.activeElement!.id !== 'main-search-input'
+  )
+    return
+  e.preventDefault()
+  if (props.items.length > 0) {
+    const el = itemRefs.value[localIndex.value]
+    if (el) {
+      const control = el.querySelector<HTMLElement>('[data-settings-control][tabindex="0"]')
+      if (control) {
+        control.focus()
+        control.click()
+        return
+      }
+    }
+    emit('execute', props.items[localIndex.value], localIndex.value, e)
+    if (props.multiSelect) emitIds(new Set())
+  }
+})
 
 // ── Scroll ──
 watch(localIndex, async (index) => {

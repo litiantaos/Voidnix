@@ -70,9 +70,9 @@ export function useScreenshotActions(options: {
       previewPng = canvas.toDataURL('image/png')
     }
 
-    await invoke('open_module_panel', {
+    await invoke('open_module_subview', {
       moduleId: 'screenshot',
-      panelId: 'ocr',
+      subviewId: 'ocr',
       payload: {
         selX: options.sel.value.x,
         selY: options.sel.value.y,

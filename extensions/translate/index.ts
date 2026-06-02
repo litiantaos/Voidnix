@@ -230,7 +230,7 @@ const mod: AppModule = {
   disableSearchInput: true,
   view: TranslateView,
   searchBarAccessory: TranslateActions,
-  panels: { settings: TranslateSettings },
+  subviews: { settings: TranslateSettings },
   onInit: async () => {
     unlistenReady = await listen<string>('translate-text-ready', (e) => {
       if (translateReadyResolver) {

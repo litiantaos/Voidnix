@@ -78,10 +78,10 @@ export interface AppModule {
   searchBarAccessory?: Component
 
   /**
-   * 命名面板。key 为面板标识，激活时替换主视图占满内容区。
+   * 命名子视图。key 为子视图标识，激活时替换主视图占满内容区。
    * 适用于配置页、功能结果页等二级界面。
    */
-  panels?: Record<string, Component>
+  subviews?: Record<string, Component>
 
   onSearch?(query: string): Promise<SearchResult[]>
 
@@ -114,10 +114,10 @@ export interface AppModule {
   keepSearchInput?: boolean
 
   /**
-   * 外部通过 `open-module-panel` 事件触发打开面板时的回调。
+   * 外部通过 `open-module-subview` 事件触发打开子视图时的回调。
    * 由框架层统一分发，模块在此解析 payload 并更新内部状态。
    */
-  onOpenPanel?(panelId: string, payload: unknown): void | Promise<void>
+  onOpenSubview?(subviewId: string, payload: unknown): void | Promise<void>
 
   /**
    * 模块在全局范围注册的快捷键及其处理逻辑

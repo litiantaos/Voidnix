@@ -3,19 +3,17 @@
     <BaseList
       :items="allItems"
       v-model:selected-index="selectedIndex"
-      keyboard-navigation
       :group-field="(item: FinderExtItem) => item.group"
       :group-title="(g: string) => g"
       @execute="(item: FinderExtItem) => item.type === 'toggle' && toggle()"
     >
-      <template #item="{ item, selected, setRef, select }">
+      <template #item="{ item, selected, setRef }">
         <BaseListItem
           v-if="item.type === 'toggle'"
           :ref="setRef"
           title="访达右键菜单"
           subtitle="开启后将引导你到系统设置中启用扩展"
           :selected="selected"
-          @click="select"
         >
           <template #trailing>
             <BaseButton
@@ -32,7 +30,6 @@
           :ref="setRef"
           :title="(item as ActionItem).title"
           :selected="selected"
-          @click="select"
         />
       </template>
     </BaseList>

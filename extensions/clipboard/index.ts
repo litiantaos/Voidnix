@@ -78,7 +78,7 @@ const mod: AppModule = {
   order: 1,
   view: ClipboardView,
   searchBarAccessory: ClipboardActions,
-  panels: { settings: ClipboardSettings },
+  subviews: { settings: ClipboardSettings },
   globalShortcuts: [
     {
       id: 'clipboard',

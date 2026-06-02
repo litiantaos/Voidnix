@@ -343,9 +343,9 @@ export function useSearchCommand(opts: Options) {
           }
         }
 
-        if (appStore.activePanel) {
+        if (appStore.activeSubview) {
           e.preventDefault()
-          appStore.closePanel()
+          appStore.closeSubview()
           return
         }
         e.preventDefault()

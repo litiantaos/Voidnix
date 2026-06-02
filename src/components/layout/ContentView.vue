@@ -10,7 +10,7 @@
         <KeepAlive v-if="resolvedView" :max="10">
           <component
             :is="resolvedView"
-            :key="`${props.module?.id ?? 'main'}-${appStore.activePanel ?? 'view'}`"
+            :key="`${props.module?.id ?? 'main'}-${appStore.activeSubview ?? 'view'}`"
           />
         </KeepAlive>
 
@@ -32,7 +32,6 @@
             v-else
             :items="currentResults"
             :selected-index="currentSelectedIndex"
-            keyboard-navigation
             :multi-select="isMultiSelect"
             :selected-ids="selectedIds"
             @update:selected-ids="selectedIds = $event"
@@ -41,13 +40,11 @@
             @update:selected-index="handleUpdateSelectedIndex"
             @execute="handleExecute"
           >
-            <template #item="{ item, selected, multiSelected, setRef, select }">
+            <template #item="{ item, selected, multiSelected, setRef }">
               <BaseListItem
                 :ref="setRef"
                 :selected="selected || multiSelected"
                 :icon-wrapper-class="getIconWrapperClass(item)"
-                @click="select"
-                @dblclick="handleExecute(item)"
               >
                 <template #icon>
                   <div
@@ -151,13 +148,13 @@ const currentSelectedIndex = computed(() => props.selectedIndex ?? internalSelec
 
 /**
  * 将布局决策逻辑收拢到一处。
- * panel 模式：使用模块声明的命名面板，占满整个内容区。
+ * subview 模式：使用模块声明的命名子视图，占满整个内容区。
  * view 模式：使用模块声明的 view。
  */
 const resolvedView = computed(() => {
-  const panelId = appStore.activePanel
-  if (panelId && props.module?.panels?.[panelId]) {
-    return props.module.panels[panelId]
+  const subviewId = appStore.activeSubview
+  if (subviewId && props.module?.subviews?.[subviewId]) {
+    return props.module.subviews[subviewId]
   }
   return props.module?.view
 })

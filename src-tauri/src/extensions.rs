@@ -20,7 +20,7 @@ macro_rules! configure_app {
         crate::core::window::set_main_window_size,
         crate::core::window::get_home_dir,
         crate::core::window::pick_directory,
-        crate::extensions::screenshot::open_module_panel,
+        crate::extensions::screenshot::open_module_subview,
         crate::extensions::screenshot::session::capture_screen,
         crate::extensions::screenshot::session::enter_screenshot_mode,
         crate::extensions::screenshot::session::show_screenshot_window,

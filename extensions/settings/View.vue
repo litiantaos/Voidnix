@@ -6,10 +6,9 @@
       v-model:selected-index="selectedIndex"
       group-field="group"
       :group-title="(g: string) => g"
-      keyboard-navigation
       @execute="(item: SettingItem, _i: number, e?: KeyboardEvent) => handleExecute(item, e)"
     >
-      <template #item="{ item, selected, setRef, select }">
+      <template #item="{ item, selected, setRef }">
         <BaseListItem
           :ref="setRef"
           :id="`set-${item.id}`"
@@ -17,8 +16,6 @@
           :subtitle="item.subtitle"
           :icon="item.icon"
           :selected="selected"
-          @click="select"
-          @dblclick="handleExecute(item)"
         >
           <template v-if="item.type === 'shortcut'" #trailing>
             <ShortcutInput

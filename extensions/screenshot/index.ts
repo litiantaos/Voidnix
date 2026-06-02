@@ -8,7 +8,7 @@ const ScreenshotWindow = asyncView(() => import('./windows/Host.vue'))
 const PinWindow = asyncView(() => import('./windows/PinWindow.vue'))
 const ScreenshotOcr = asyncView(() => import('./OcrView.vue'))
 
-// OCR 待识别数据（由截屏标注界面通过 open_module_panel 触发时注入）
+// OCR 待识别数据（由截屏标注界面通过 open_module_subview 触发时注入）
 export const pendingOcrData = ref<{
   selX: number
   selY: number
@@ -27,7 +27,7 @@ const mod: AppModule = {
   keywords: ['screenshot', '截屏', '截图', 'jietu', 'ocr', '识别', '文字识别', 'shibie'],
   order: 9,
   view: ScreenshotView,
-  panels: { ocr: ScreenshotOcr },
+  subviews: { ocr: ScreenshotOcr },
   windowViews: {
     screenshot: ScreenshotWindow,
     'pin-': PinWindow,
@@ -42,7 +42,7 @@ const mod: AppModule = {
       },
     },
   ],
-  onOpenPanel: (_panelId: string, payload: unknown) => {
+  onOpenSubview: (_subviewId: string, payload: unknown) => {
     const d = payload as {
       selX: number
       selY: number
@@ -64,12 +64,12 @@ const mod: AppModule = {
   },
   onSearch: async () => [],
   onExecute: async (result) => {
-    if (result.data?.openPanel) {
+    if (result.data?.openSubview) {
       const { useAppStore } = await import('@/stores/app')
       const appStore = useAppStore()
       appStore.setActiveModule('screenshot')
       appStore.setSearchQuery('')
-      appStore.openPanel('ocr')
+      appStore.openSubview('ocr')
     }
   },
 }

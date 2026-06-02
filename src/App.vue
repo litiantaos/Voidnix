@@ -212,18 +212,18 @@ onMounted(async () => {
       hideWindow(true)
     })
 
-    // 通用模块面板事件：任何模块都可以通过 Rust `open_module_panel` 触发
-    await listen<{ moduleId: string; panelId: string; payload: unknown }>(
-      'open-module-panel',
+    // 通用模块子视图事件：任何模块都可以通过 Rust `open_module_subview` 触发
+    await listen<{ moduleId: string; subviewId: string; payload: unknown }>(
+      'open-module-subview',
       (e) => {
         markSkip()
-        const { moduleId, panelId, payload } = e.payload
+        const { moduleId, subviewId, payload } = e.payload
         appStore.setActiveModule(moduleId)
         appStore.setSearchQuery('')
-        appStore.openPanel(panelId)
+        appStore.openSubview(subviewId)
         const mod = getModule(moduleId)
-        if (mod?.onOpenPanel) {
-          mod.onOpenPanel(panelId, payload)
+        if (mod?.onOpenSubview) {
+          mod.onOpenSubview(subviewId, payload)
         }
       },
     )

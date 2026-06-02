@@ -3,21 +3,18 @@
     <BaseList
       :items="items"
       v-model:selected-index="selectedIndex"
-      keyboard-navigation
       group-field="groupId"
       @execute="handleExecute"
     >
       <template #group-title="{ item }">
         {{ item.groupTitle }}
       </template>
-      <template #item="{ item, selected, setRef, select }">
+      <template #item="{ item, selected, setRef }">
         <BaseListItem
           :ref="setRef"
           :title="item.title"
           :subtitle="item.subtitle"
           :selected="selected"
-          @click="select"
-          @dblclick="() => handleExecute(item)"
         >
           <template #trailing>
             <BaseButton

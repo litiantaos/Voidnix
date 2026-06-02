@@ -22,24 +22,24 @@ pub fn install_background_layer(window: &tauri::WebviewWindow) {
 pub fn install_background_layer(_window: &tauri::WebviewWindow) {}
 
 #[tauri::command]
-pub async fn open_module_panel(
+pub async fn open_module_subview(
     app: tauri::AppHandle,
     module_id: String,
-    panel_id: String,
+    subview_id: String,
     payload: serde_json::Value,
 ) -> Result<(), String> {
     use tauri::Emitter;
 
     let event_payload = serde_json::json!({
         "moduleId": module_id,
-        "panelId": panel_id,
+        "subviewId": subview_id,
         "payload": payload,
     });
 
     let app_handle = app.clone();
     app.run_on_main_thread(move || {
         crate::macos::webkit_tuning::show_main(&app_handle);
-        let _ = app_handle.emit("open-module-panel", event_payload);
+        let _ = app_handle.emit("open-module-subview", event_payload);
     })
     .map_err(|e| e.to_string())?;
 
