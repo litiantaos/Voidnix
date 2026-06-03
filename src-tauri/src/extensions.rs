@@ -48,6 +48,8 @@ macro_rules! configure_app {
         crate::extensions::window_manager::check_window_manager_accessibility,
         crate::extensions::window_manager::toggle_drag_snap,
         crate::extensions::window_manager::is_drag_snap_active,
+        crate::extensions::window_manager::show_snap_panel,
+        crate::extensions::window_manager::hide_snap_panel,
         crate::extensions::search::commands::search_apps,
         crate::extensions::search::commands::search_files,
         crate::extensions::search::commands::launch_app,

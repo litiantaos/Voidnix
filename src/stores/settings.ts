@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, type Ref } from 'vue'
 import { Store, load } from '@tauri-apps/plugin-store'
 import { invoke } from '@tauri-apps/api/core'
+import { commands } from '@/bindings'
 import { isTauri } from '@/utils/tauri'
 import { generateRequestId } from '@/composables/useStreamOutput'
 
@@ -222,11 +223,9 @@ export const useSettingsStore = defineStore('settings', () => {
         invoke('set_zsh_autosuggestions_enabled', {
           enabled: zshAutosuggestionsEnabled.value,
         }).catch(() => {})
-        invoke('toggle_drag_snap', {
-          enabled: wmDragSnapEnabled.value,
-          customWidth: wmCustomWidth.value,
-          customHeight: wmCustomHeight.value,
-        }).catch(() => {})
+        commands
+          .toggleDragSnap(wmDragSnapEnabled.value, wmCustomWidth.value, wmCustomHeight.value)
+          .catch(() => {})
       }
     } catch (e) {
       console.warn('Failed to load config/settings.json, using defaults:', e)
@@ -297,7 +296,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const setActiveModelKey = createSetter(activeModelKey, 'chat', 'activeModelKey')
   const setAwakeMirrorMode = createSetter(awakeMirrorMode, 'extensions', 'awakeMirrorMode')
 
-  async function setWmField(field: string, val: number) {
+  async function setWmField(field: string, val: number | boolean) {
     if (store) {
       const group = (await store.get<Record<string, unknown>>('extensions')) || {}
       const wm = (group.windowManager as Record<string, unknown>) || {}
@@ -307,30 +306,28 @@ export const useSettingsStore = defineStore('settings', () => {
       await store.save()
     }
   }
+
+  function refreshDragSnap() {
+    if (isTauri && wmDragSnapEnabled.value) {
+      commands.toggleDragSnap(true, wmCustomWidth.value, wmCustomHeight.value).catch(() => {})
+    }
+  }
+
   async function setWmCustomWidth(val: number) {
     wmCustomWidth.value = val
     await setWmField('customWidth', val)
+    refreshDragSnap()
   }
   async function setWmCustomHeight(val: number) {
     wmCustomHeight.value = val
     await setWmField('customHeight', val)
+    refreshDragSnap()
   }
   async function setWmDragSnapEnabled(val: boolean) {
     wmDragSnapEnabled.value = val
-    if (store) {
-      const group = (await store.get<Record<string, unknown>>('extensions')) || {}
-      const wm = (group.windowManager as Record<string, unknown>) || {}
-      wm.dragSnapEnabled = val
-      group.windowManager = wm
-      await store.set('extensions', group)
-      await store.save()
-    }
+    await setWmField('dragSnapEnabled', val)
     if (isTauri) {
-      invoke('toggle_drag_snap', {
-        enabled: val,
-        customWidth: wmCustomWidth.value,
-        customHeight: wmCustomHeight.value,
-      }).catch(() => {})
+      commands.toggleDragSnap(val, wmCustomWidth.value, wmCustomHeight.value).catch(() => {})
     }
   }
 

@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+mod window_snap;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[cfg_attr(feature = "specta", specta::specta)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct ScreenInfo {
     pub x: f64,
     pub y: f64,
@@ -335,9 +337,10 @@ pub mod platform {
         }
     }
 
-    fn set_layout_on_main_thread(layout: &str, custom_width: f64, custom_height: f64) -> Result<(), String> {
-        let prev_pid = crate::core::shortcut::PREV_FRONT_PID
+    fn set_layout_on_main_thread(layout: &str, custom_width: f64, custom_height: f64, prev_pid: Option<i32>) -> Result<(), String> {
+        let fallback_pid = crate::core::shortcut::PREV_FRONT_PID
             .load(std::sync::atomic::Ordering::SeqCst);
+        let prev_pid = prev_pid.filter(|&p| p > 0).unwrap_or(fallback_pid);
         let cg_pid = find_topmost_window_pid();
 
         let primary_pid = if prev_pid > 0 { prev_pid }
@@ -453,12 +456,15 @@ pub mod platform {
         Ok(())
     }
 
-    pub fn do_set_layout(app: &tauri::AppHandle, layout: &str, custom_width: f64, custom_height: f64) -> Result<(), String> {
+    pub fn do_set_layout(app: &tauri::AppHandle, layout: &str, custom_width: f64, custom_height: f64, prev_pid: Option<i32>) -> Result<(), String> {
         let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
         let layout = layout.to_string();
         let app = app.clone();
+        let app_clone = app.clone();
         app.run_on_main_thread(move || {
-            let _ = tx.send(set_layout_on_main_thread(&layout, custom_width, custom_height));
+            let result = set_layout_on_main_thread(&layout, custom_width, custom_height, prev_pid);
+            super::window_snap::hide_panel(&app_clone);
+            let _ = tx.send(result);
         }).map_err(|e| e.to_string())?;
         rx.recv().map_err(|e| e.to_string())?
     }
@@ -469,14 +475,14 @@ pub mod platform {
 
     pub fn do_toggle_drag_snap(app: &tauri::AppHandle, enabled: bool, custom_width: f64, custom_height: f64) {
         if enabled {
-            crate::macos::window_snap::start_drag_monitor(app.clone(), custom_width, custom_height);
+            super::window_snap::start_drag_monitor(app.clone(), custom_width, custom_height);
         } else {
-            crate::macos::window_snap::stop_drag_monitor();
+            super::window_snap::stop_drag_monitor();
         }
     }
 
     pub fn do_is_drag_snap_active() -> bool {
-        crate::macos::window_snap::is_drag_monitor_running()
+        super::window_snap::is_drag_monitor_running()
     }
 }
 
@@ -484,7 +490,7 @@ pub mod platform {
 mod platform {
     use super::*;
     pub fn do_get_screens() -> Vec<ScreenInfo> { vec![] }
-    pub fn do_set_layout(_: &tauri::AppHandle, _: &str, _: f64, _: f64) -> Result<(), String> {
+    pub fn do_set_layout(_: &tauri::AppHandle, _: &str, _: f64, _: f64, _: Option<i32>) -> Result<(), String> {
         Err("仅支持 macOS".to_string())
     }
     pub fn do_check_accessibility() -> bool { false }
@@ -499,26 +505,31 @@ pub fn get_screen_info() -> Vec<ScreenInfo> {
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn set_frontmost_window_layout(
     app: tauri::AppHandle,
     layout: String,
     custom_width: Option<f64>,
     custom_height: Option<f64>,
+    prev_pid: Option<i32>,
 ) -> Result<(), String> {
     platform::do_set_layout(
         &app,
         &layout,
         custom_width.unwrap_or(800.0),
         custom_height.unwrap_or(600.0),
+        prev_pid,
     )
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub fn check_window_manager_accessibility() -> bool {
     platform::do_check_accessibility()
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn toggle_drag_snap(
     app: tauri::AppHandle,
     enabled: bool,
@@ -541,8 +552,57 @@ pub async fn toggle_drag_snap(
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
 pub fn is_drag_snap_active() -> bool {
     platform::do_is_drag_snap_active()
+}
+
+#[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
+pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let app_clone = app.clone();
+    app.run_on_main_thread(move || {
+        if let Some(w) = app_clone.get_webview_window("snap-panel") {
+            if let Ok(raw) = w.ns_window() {
+                unsafe {
+                    let ns = raw.cast::<objc2_app_kit::NSWindow>().as_ref().unwrap();
+                    use objc2_foundation::MainThreadMarker;
+                    let mtm = MainThreadMarker::new().unwrap();
+                    if let Some(screen) = objc2_app_kit::NSScreen::mainScreen(mtm) {
+                        ns.setFrame_display(screen.frame(), true);
+                    }
+                    ns.setAlphaValue(1.0);
+                }
+            }
+        }
+        let _ = tx.send(());
+    }).map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+#[cfg_attr(feature = "specta", specta::specta)]
+pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let app_clone = app.clone();
+    app.run_on_main_thread(move || {
+        if let Some(w) = app_clone.get_webview_window("snap-panel") {
+            if let Ok(raw) = w.ns_window() {
+                unsafe {
+                    let ns = raw.cast::<objc2_app_kit::NSWindow>().as_ref().unwrap();
+                    ns.setIgnoresMouseEvents(true);
+                    ns.setAlphaValue(0.0);
+                }
+            }
+        }
+        let _ = tx.send(());
+    }).map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {

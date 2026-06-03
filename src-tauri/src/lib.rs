@@ -76,19 +76,19 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("snap-panel") {
-                use objc2_app_kit::{NSWindow as SnapNSWindow, NSWindowCollectionBehavior};
+                use objc2_app_kit::{NSScreen, NSWindow as SnapNSWindow, NSWindowCollectionBehavior};
+                use objc2_foundation::MainThreadMarker;
                 let raw = window.ns_window().unwrap().cast::<SnapNSWindow>();
                 unsafe {
                     let ns_window = raw.as_ref().unwrap();
                     if let Some(cv) = ns_window.contentView() {
                         let _: () = objc2::msg_send![&cv, setWantsLayer: true];
-                        let layer: *mut objc2::runtime::AnyObject = objc2::msg_send![&cv, layer];
-                        if !layer.is_null() {
-                            let _: () = objc2::msg_send![layer, setCornerRadius: 12.0_f64];
-                            let _: () = objc2::msg_send![layer, setMasksToBounds: true];
-                        }
                     }
                     macos::panel::convert_to_panel(raw.cast());
+                    let _: () = objc2::msg_send![ns_window, setHasShadow: false];
+                    let mtm = MainThreadMarker::new().unwrap();
+                    let screen = NSScreen::mainScreen(mtm).unwrap();
+                    ns_window.setFrame_display(screen.frame(), true);
                     ns_window.setLevel(objc2_app_kit::NSStatusWindowLevel + 1);
                     let behavior = NSWindowCollectionBehavior::FullScreenAuxiliary
                         | NSWindowCollectionBehavior::Transient

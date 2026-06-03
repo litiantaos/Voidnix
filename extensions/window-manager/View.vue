@@ -86,7 +86,7 @@ function handleCustomSize(val: string) {
   }
 }
 
-function onSettingsExecute(item: SettingsItem) {
-  void item
+function onSettingsExecute() {
+  // toggle/input 项通过各自模板内的 click/input 事件处理，无需额外执行逻辑
 }
 </script>
