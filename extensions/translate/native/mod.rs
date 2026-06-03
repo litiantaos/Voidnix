@@ -74,7 +74,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                             }
                         }
 
-                        crate::macos::webkit_tuning::show_main(app);
+                        crate::core::window::show_main(app);
 
                         let app_clone = app.clone();
                         std::thread::spawn(move || {

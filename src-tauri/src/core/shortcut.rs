@@ -70,7 +70,7 @@ pub fn is_app_active() -> bool {
     true
 }
 
-/// 供 webkit_tuning 模块读写窗口可见状态。
+/// 供窗口模块读写窗口可见状态。
 pub(crate) fn set_window_visible(v: bool) {
     WINDOW_VISIBLE.store(v, Ordering::SeqCst);
     if v {
@@ -86,7 +86,7 @@ pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
             return;
         }
     }
-    crate::macos::webkit_tuning::hide_main(&app);
+    crate::core::window::hide_main(&app);
 }
 
 #[tauri::command]
@@ -199,9 +199,9 @@ pub async fn register_global_shortcut(
                     }
 
                     if window_hidden {
-                        crate::macos::webkit_tuning::show_main(&app_handle);
+                        crate::core::window::show_main(&app_handle);
                     } else {
-                        crate::macos::webkit_tuning::make_main_window_key(&app_handle);
+                        crate::core::window::make_main_window_key(&app_handle);
                     }
                 });
             },

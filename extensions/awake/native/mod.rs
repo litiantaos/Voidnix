@@ -63,7 +63,7 @@ pub async fn toggle_awake(app: tauri::AppHandle, state: State<'_, AwakeState>, e
                         {
                             let app = tray.app_handle().clone();
                             let _ = app.clone().run_on_main_thread(move || {
-                                crate::macos::webkit_tuning::show_main(&app);
+                                crate::core::window::show_main(&app);
                                 let _ = app.emit("open-module", "awake");
                             });
                         }

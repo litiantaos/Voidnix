@@ -49,10 +49,6 @@ export const useAppStore = defineStore('app', () => {
     isComposing.value = status
   }
 
-  function setDialogOpen(status: boolean) {
-    isDialogOpen.value = status
-  }
-
   function showConfirm(options: ConfirmOptions): Promise<boolean> {
     dialogOptions.value = options
     isDialogOpen.value = true
@@ -108,7 +104,6 @@ export const useAppStore = defineStore('app', () => {
     setActiveModule,
     setSearchQuery,
     setComposing,
-    setDialogOpen,
     showConfirm,
     resolveConfirm,
     activeSubview,

@@ -38,7 +38,7 @@ pub async fn open_module_subview(
 
     let app_handle = app.clone();
     app.run_on_main_thread(move || {
-        crate::macos::webkit_tuning::show_main(&app_handle);
+        crate::core::window::show_main(&app_handle);
         let _ = app_handle.emit("open-module-subview", event_payload);
     })
     .map_err(|e| e.to_string())?;
@@ -51,7 +51,6 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .setup(|_app, _api| {
             #[cfg(target_os = "macos")]
             {
-                use tauri::Emitter;
                 crate::core::shortcut::register_shortcut_hook("screenshot", Box::new(|app, _ctx| {
                     if session::IS_IN_SCREENSHOT_SESSION.swap(true, std::sync::atomic::Ordering::SeqCst) {
                         return true;
@@ -68,7 +67,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                             }
                             Err(e) => {
                                 session::IS_IN_SCREENSHOT_SESSION.store(false, std::sync::atomic::Ordering::SeqCst);
-                                let _ = app_clone.emit("screenshot-ready-error", e);
+                                eprintln!("截图失败: {}", e);
                             }
                         }
                     });

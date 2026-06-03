@@ -414,7 +414,7 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
         .unwrap_or(0);
     PREV_FRONT_PID.store(prev_pid, Ordering::SeqCst);
 
-    crate::macos::webkit_tuning::hide_main(app);
+    crate::core::window::hide_main(app);
 
     let window = app
         .get_webview_window("screenshot")
@@ -489,11 +489,6 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
 #[cfg(not(target_os = "macos"))]
 fn enter_impl(_app: &tauri::AppHandle, _data: &ScreenshotData) -> Result<(), String> {
     Err("仅支持 macOS".to_string())
-}
-
-#[tauri::command]
-pub async fn show_screenshot_window(_app: tauri::AppHandle) -> Result<(), String> {
-    Ok(())
 }
 
 #[tauri::command]

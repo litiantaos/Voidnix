@@ -101,10 +101,7 @@ function onLocalShortcut(e: KeyboardEvent) {
 let unlistenFocus: (() => void) | null = null
 let unlistenShortcut: (() => void) | null = null
 let unlistenOpenModule: (() => void) | null = null
-let unlistenShowingWindow: (() => void) | null = null
 let unlistenClickOutside: (() => void) | null = null
-// webkit_tuning 驯化事件监听：pre-show 触发同步 layout，避免首帧白底
-let unlistenPreShow: (() => void) | null = null
 
 async function setupGlobalShortcut(id: string, shortcut: string) {
   if (!isTauri) return
@@ -204,10 +201,6 @@ onMounted(async () => {
       }
     })
 
-    unlistenShowingWindow = await listen('showing-window', () => {
-      markSkip()
-    })
-
     unlistenClickOutside = await listen('click-outside', () => {
       hideWindow(true)
     })
@@ -227,13 +220,6 @@ onMounted(async () => {
         }
       },
     )
-
-    // webkit_tuning 驯化事件：pre-show 触发 rAF 让 WebKit 渲染管线就绪，严格先于 alpha=1
-    unlistenPreShow = await listen('webkit-tuning:pre-show', () => {
-      requestAnimationFrame(() => {
-        /* 触发同步 layout，避免首帧白底 */
-      })
-    })
 
     unlistenFocus = await win!.onFocusChanged(({ payload: focused }: { payload: boolean }) => {
       if (focused) {
@@ -269,9 +255,7 @@ onUnmounted(async () => {
     if (unlistenFocus) unlistenFocus()
     if (unlistenShortcut) unlistenShortcut()
     if (unlistenOpenModule) unlistenOpenModule()
-    if (unlistenShowingWindow) unlistenShowingWindow()
     if (unlistenClickOutside) unlistenClickOutside()
-    if (unlistenPreShow) unlistenPreShow()
 
     await invoke('register_global_shortcut', {
       id: 'main',

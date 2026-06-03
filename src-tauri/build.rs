@@ -34,10 +34,9 @@ fn main() {
     // 追踪 extensions 目录变更，确保 #[path] 引用的外部文件修改后触发重新编译
     println!("cargo:rerun-if-changed=../extensions");
 
-    // 仅在 macOS 目标上编译 webkit_tuning.mm 桥接静态库
+    // 仅在 macOS 目标上编译原生桥接静态库
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "macos" {
-        build_webkit_tuning(&out_dir);
         build_screenshot_overlay(&out_dir);
         link_skylight();
     }
@@ -91,47 +90,4 @@ fn build_screenshot_overlay(out_dir: &str) {
 fn link_skylight() {
     println!("cargo:rustc-link-search=framework=/System/Library/PrivateFrameworks");
     println!("cargo:rustc-link-lib=framework=SkyLight");
-}
-
-/// 把 native/webkit_tuning.mm 编译为 libwebkit_tuning.a 并写入链接指令。
-/// 流程：clang++ → .o，再 ar rcs → .a，输出到 OUT_DIR。
-fn build_webkit_tuning(out_dir: &str) {
-    let mm_src = "src/macos/webkit_tuning/webkit_tuning.mm";
-    let mm_obj = Path::new(out_dir).join("webkit_tuning.o");
-    let lib_path = Path::new(out_dir).join("libwebkit_tuning.a");
-
-    let compile = Command::new("clang++")
-        .args([
-            "-c",
-            "-fobjc-arc",
-            "-fmodules",
-            "-std=c++17",
-            "-mmacosx-version-min=11.0",
-            "-o",
-            mm_obj.to_str().unwrap(),
-            mm_src,
-        ])
-        .status()
-        .expect("failed to invoke clang++ for webkit_tuning.mm");
-    assert!(compile.success(), "clang++ failed to compile {mm_src}");
-
-    // 删旧的 .a，避免 ar rcs 在已存在的归档上反复追加
-    let _ = std::fs::remove_file(&lib_path);
-
-    let ar = Command::new("ar")
-        .args([
-            "rcs",
-            lib_path.to_str().unwrap(),
-            mm_obj.to_str().unwrap(),
-        ])
-        .status()
-        .expect("failed to invoke ar for libwebkit_tuning.a");
-    assert!(ar.success(), "ar failed to archive libwebkit_tuning.a");
-
-    println!("cargo:rustc-link-search=native={out_dir}");
-    println!("cargo:rustc-link-lib=static=webkit_tuning");
-    println!("cargo:rustc-link-lib=framework=WebKit");
-    println!("cargo:rustc-link-lib=framework=AppKit");
-    println!("cargo:rustc-link-lib=dylib=c++");
-    println!("cargo:rerun-if-changed=src/macos/webkit_tuning/webkit_tuning.mm");
 }

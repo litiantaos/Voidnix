@@ -88,12 +88,6 @@ const mod: AppModule = {
   ],
   onInit: async () => {
     await fetchClipboardHistory('', false)
-    await listen('cmd-backspace', () => {
-      const appStore = useAppStore()
-      if (appStore.activeModuleId === 'clipboard') {
-        triggerDelete()
-      }
-    })
     await listen('clipboard-updated', () => {
       const appStore = useAppStore()
       invalidateCache()

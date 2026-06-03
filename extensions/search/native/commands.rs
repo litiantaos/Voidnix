@@ -48,7 +48,7 @@ pub async fn search_apps(query: String) -> Result<Vec<SearchResult>, String> {
                         app.pinyin_compact,
                     );
 
-                    let mut score = pinyin::pinyin_score(&query, &combined, &pattern, &mut matcher, &mut buf);
+                    let mut score = pinyin::pinyin_score(&combined, &pattern, &mut matcher, &mut buf);
 
                     if score > 0 {
                         let system_count = app.use_count.load(Ordering::Relaxed);
@@ -236,7 +236,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
                     .unwrap_or("");
 
                 let combined = format!("{} {}", name, parent);
-                let mut score = pinyin::pinyin_score(&query, &combined, &pattern, &mut matcher, &mut buf);
+                let mut score = pinyin::pinyin_score(&combined, &pattern, &mut matcher, &mut buf);
 
                 if score > 0 {
                     let boost = std::cmp::min(use_count * 10, 800);
@@ -294,34 +294,6 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 }
 
 #[tauri::command]
-pub async fn get_recent_apps() -> Result<Vec<SearchResult>, String> {
-    let apps = get_cached_apps().await;
-
-    let results = tokio::task::spawn_blocking(move || {
-        let mut res: Vec<SearchResult> = apps
-            .iter()
-            .map(|app| SearchResult {
-                id: format!("recent-{}", app.name.to_lowercase().replace(' ', "-")),
-                title: app.name.clone(),
-                path: app.path.clone(),
-                kind: "application".to_string(),
-                icon: app.icon_cache.clone(),
-                last_used: app.last_used.clone(),
-                score: Some(100),
-            })
-            .collect();
-
-        res.sort_by(|a, b| b.last_used.cmp(&a.last_used));
-
-        res.into_iter().take(10).collect()
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-
-    Ok(results)
-}
-
-#[tauri::command]
 pub async fn launch_app(path: String) -> Result<(), String> {
     let p = Path::new(&path);
     if !p.is_absolute() {
@@ -342,24 +314,6 @@ pub async fn launch_app(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn reveal_in_finder(path: String) -> Result<(), String> {
-    let p = Path::new(&path);
-    if !p.is_absolute() {
-        return Err(format!("Path is not absolute: {}", path));
-    }
-    if !p.exists() {
-        return Err(format!("Path does not exist: {}", path));
-    }
-
-    tokio::process::Command::new("open")
-        .arg("-R")
-        .arg(&path)
-        .spawn()
-        .map_err(|e| format!("Failed to reveal: {}", e))?;
-    Ok(())
-}
-
-#[tauri::command]
 #[cfg_attr(feature = "specta", specta::specta)]
 pub fn score_items(query: String, items: Vec<String>) -> Vec<u32> {
     if query.trim().is_empty() {
@@ -374,7 +328,7 @@ pub fn score_items(query: String, items: Vec<String>) -> Vec<u32> {
         items
             .into_iter()
             .map(|item| {
-                pinyin::pinyin_score(&query, &item, &pattern, &mut matcher, &mut buf)
+                pinyin::pinyin_score(&item, &pattern, &mut matcher, &mut buf)
             })
             .collect()
     })

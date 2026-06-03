@@ -1,5 +1,37 @@
-// 主窗口尺寸调整命令。转发到 webkit_tuning::resize_main。
-// T11 实装：接入 webkit_tuning 顶层入口。
+/// 显示主窗口。
+pub fn show_main(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    crate::core::shortcut::set_window_visible(true);
+    if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        crate::macos::skylight::move_webview_window_to_active_space(&window);
+        let _ = window.show();
+    }
+    make_main_window_key(app);
+    crate::macos::click_monitor::add(app);
+}
+
+/// 隐藏主窗口。
+pub fn hide_main(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    crate::core::shortcut::set_window_visible(false);
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+    crate::macos::click_monitor::remove();
+}
+
+/// 将主窗口设为 key window。
+pub fn make_main_window_key(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    #[cfg(target_os = "macos")]
+    if let Some(window) = app.get_webview_window("main") {
+        use objc2_app_kit::NSWindow;
+        let raw = window.ns_window().unwrap().cast::<NSWindow>();
+        let ns_window = unsafe { raw.as_ref().unwrap() };
+        ns_window.makeKeyWindow();
+    }
+}
 
 #[tauri::command]
 pub fn set_main_window_size(
@@ -7,7 +39,13 @@ pub fn set_main_window_size(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    crate::macos::webkit_tuning::resize_main(&app, width, height)
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_size(tauri::LogicalSize::new(width, height));
+        Ok(())
+    } else {
+        Err("Main window not found".into())
+    }
 }
 
 /// 返回当前用户的 home 目录路径。
@@ -47,7 +85,7 @@ pub async fn pick_directory(app: tauri::AppHandle) -> Result<String, String> {
                 let response: isize = objc2::msg_send![panel, runModal];
 
                 crate::macos::click_monitor::suppress(false);
-                crate::macos::webkit_tuning::make_main_window_key(&app_clone);
+                make_main_window_key(&app_clone);
 
                 if response == 1 {
                     let urls: *mut AnyObject = objc2::msg_send![panel, URLs];

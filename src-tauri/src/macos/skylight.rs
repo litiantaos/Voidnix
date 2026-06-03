@@ -28,8 +28,6 @@ use std::ffi::c_void;
 extern "C" {
     fn SLSMainConnectionID() -> i32;
     fn SLSCopyManagedDisplaySpaces(cid: i32) -> CFArrayRef;
-    fn SLSMoveWindowsToManagedSpace(cid: i32, window_list: CFArrayRef, sid: u64);
-    fn SLSSpaceGetType(cid: i32, sid: u64) -> i32;
     fn SLSCopySpacesForWindows(cid: i32, selector: i32, window_list: CFArrayRef) -> CFArrayRef;
     // 把窗口附加到目标 Space 列表（保留原绑定）。
     // 与 SLSMoveWindowsToManagedSpace 不同：Move 是替换 + 仅适用 user space；
@@ -37,36 +35,6 @@ extern "C" {
     fn SLSAddWindowsToSpaces(cid: i32, windows: CFArrayRef, spaces: CFArrayRef);
     fn SLSRemoveWindowsFromSpaces(cid: i32, windows: CFArrayRef, spaces: CFArrayRef);
 }
-
-/// 诊断：返回指定窗口当前所在的所有 Space ID。
-#[allow(dead_code)]
-pub fn debug_window_spaces(window_number: i64) -> Vec<u64> {
-    let cid = unsafe { SLSMainConnectionID() };
-    let wid_num = CFNumber::from(window_number as i32);
-    let wid_array = CFArray::from_CFTypes(&[wid_num]);
-    // selector 7 = kCGSAllSpacesMask（所有 Space）
-    let raw = unsafe { SLSCopySpacesForWindows(cid, 7, wid_array.as_concrete_TypeRef()) };
-    if raw.is_null() { return Vec::new(); }
-    let arr: CFArray<CFNumber> = unsafe { CFArray::wrap_under_create_rule(raw) };
-    let mut result = Vec::with_capacity(arr.len() as usize);
-    for i in 0..arr.len() {
-        if let Some(n) = arr.get(i) {
-            if let Some(v) = n.to_i64() { result.push(v as u64); }
-        }
-    }
-    result
-}
-
-/// 诊断：返回当前 active Space ID。
-#[allow(dead_code)]
-pub fn debug_active_space() -> Option<u64> {
-    let cid = unsafe { SLSMainConnectionID() };
-    current_active_space_id(cid)
-}
-
-/// Space 类型（来自 CGSSpace.h，仅诊断用）
-#[allow(dead_code)]
-const CGS_SPACE_USER: i32 = 0;
 
 /// 把指定 windowNumber 的窗口附加到当前 active Space。
 ///

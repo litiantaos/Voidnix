@@ -47,13 +47,11 @@ specta-typescript = { version = "0.0.12", optional = true }
 tauri-specta      = { version = "2.0.0-rc.25", features = ["derive", "typescript"], optional = true }
 
 [features]
-# webkit_tuning 测试用 mock 桥接，仅 dev/test 启用
 
 # 仅用于开发时生成 TypeScript bindings，生产构建不启用
 specta = ["dep:specta", "dep:specta-typescript", "dep:tauri-specta"]
 
 [dev-dependencies]
-proptest = "1"
 
 
 [target.'cfg(target_os = "macos")'.dependencies]

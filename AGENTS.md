@@ -132,7 +132,7 @@ SearchResult {
 
 **模块子视图**：`open_module_subview(moduleId, subviewId, payload)` 为通用命令，Rust 显示主窗口后发送 `open-module-subview` 事件；App.vue 接收事件，激活模块、打开指定子视图，并调用模块注册的 `onOpenSubview(subviewId, payload)`。模块通过 `subviews` 槽位声明子视图组件（key 为子视图标识），通过 `onOpenSubview` 解析 payload 更新内部状态。前端通过 `appStore.toggleSubview(subviewId)` / `openSubview(subviewId)` / `closeSubview()` 控制子视图切换。
 
-**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock；`activateIgnoringOtherApps:YES` 抢焦点；失焦自动隐藏。WKWebView 驯化（`src-tauri/src/macos/webkit_tuning/`）：隐藏时 `alphaValue=0` 不真隐藏以防节流，唤起时等待首帧呈现再显示，`VOIDNIX_DISABLE_WEBKIT_TUNING=1` 可关闭。
+**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock；`activateIgnoringOtherApps:YES` 抢焦点；失焦自动隐藏。
 
 **全局快捷键**：Rust 核心模块监听（`src-tauri/src/core/shortcut.rs`），四槽位：`main` / `clipboard` / `translate` / `chat`。
 
@@ -171,8 +171,7 @@ src-tauri/src/
 │   ├── click_monitor.rs    # 点击外部监听
 │   ├── clipboard_monitor.rs
 │   ├── text_selection.rs   # AX 文本选中 + 剪贴板注入
-│   ├── skylight.rs         # Space 迁移（私有 API）
-│   └── webkit_tuning/      # WKWebView 驯化（节流抑制、首帧同步、Frame_Animator、Emoji_Warmer）
+│   └── skylight.rs         # Space 迁移（私有 API）
 └── type_gen.rs         # tauri-specta 类型导出（cargo test --features specta export_bindings）
 
 extensions/             # 所有功能扩展
@@ -219,7 +218,6 @@ Composables：`useSearchCommand` `useScrollPosition` `useInputControl` `useSetti
 - `infra::pinyin`：`to_pinyin_full()`、`to_pinyin_initials()`、`word_pinyin_overrides()`、`expand_pinyin()`、`pinyin_score()`、`match_query()` — 拼音展开 + nucleo 模糊打分（全应用唯一匹配函数）
 - `infra::db::Database`：`conn()` — 封装 Mutex lock + poison recovery
 - `infra::sse`：`validate_ai_request(endpoint, model, api_key)` — AI 请求端点/模型/密钥统一校验
-- `webkit_tuning::FailCounter`：`new(limit)`、`is_disabled()`、`record_failure()`、`reset()` — 原子失败计数器
 
 ## 存储结构
 

@@ -12,7 +12,7 @@ use infra::db::Database;
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            crate::macos::webkit_tuning::show_main(app);
+            crate::core::window::show_main(app);
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -48,8 +48,6 @@ pub fn run() {
                     }
                 }
                 macos::panel::convert_to_panel(raw.cast());
-                macos::webkit_tuning::install(&window)?;
-                macos::webkit_tuning::intercept_cmd_backspace(app.handle());
             }
 
             #[cfg(target_os = "macos")]
@@ -74,7 +72,33 @@ pub fn run() {
                     let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: true];
                     ns_window.orderFrontRegardless();
                 }
-                macos::webkit_tuning::install_screenshot(&window)?;
+            }
+
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("snap-panel") {
+                use objc2_app_kit::{NSWindow as SnapNSWindow, NSWindowCollectionBehavior};
+                let raw = window.ns_window().unwrap().cast::<SnapNSWindow>();
+                unsafe {
+                    let ns_window = raw.as_ref().unwrap();
+                    if let Some(cv) = ns_window.contentView() {
+                        let _: () = objc2::msg_send![&cv, setWantsLayer: true];
+                        let layer: *mut objc2::runtime::AnyObject = objc2::msg_send![&cv, layer];
+                        if !layer.is_null() {
+                            let _: () = objc2::msg_send![layer, setCornerRadius: 12.0_f64];
+                            let _: () = objc2::msg_send![layer, setMasksToBounds: true];
+                        }
+                    }
+                    macos::panel::convert_to_panel(raw.cast());
+                    ns_window.setLevel(objc2_app_kit::NSStatusWindowLevel + 1);
+                    let behavior = NSWindowCollectionBehavior::FullScreenAuxiliary
+                        | NSWindowCollectionBehavior::Transient
+                        | NSWindowCollectionBehavior::CanJoinAllSpaces;
+                    ns_window.setCollectionBehavior(behavior);
+                    ns_window.setIgnoresMouseEvents(true);
+                    let _: () = objc2::msg_send![ns_window, setAcceptsMouseMovedEvents: true];
+                    ns_window.setAlphaValue(0.0);
+                    ns_window.orderFrontRegardless();
+                }
             }
 
             #[cfg(target_os = "macos")]

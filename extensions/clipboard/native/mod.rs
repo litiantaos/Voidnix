@@ -92,7 +92,7 @@ pub async fn get_clipboard_history(
                     };
 
                     let mut buf = Vec::new();
-                    let score = pinyin::pinyin_score(&q, &text_to_match, &pattern, &mut matcher, &mut buf);
+                    let score = pinyin::pinyin_score(&text_to_match, &pattern, &mut matcher, &mut buf);
                     item.score = if score > 0 { score as i32 } else { -1 };
                 }
             });
@@ -194,7 +194,7 @@ fn write_to_pasteboard(content: &str, content_type: &str) {
 }
 
 fn hide_and_paste(app: &tauri::AppHandle) {
-    crate::macos::webkit_tuning::hide_main(app);
+    crate::core::window::hide_main(app);
     set_window_visible(false);
     std::thread::spawn(|| simulate_cmd_v());
 }

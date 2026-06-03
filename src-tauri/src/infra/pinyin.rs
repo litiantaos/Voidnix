@@ -75,7 +75,6 @@ pub fn expand_pinyin(text: &str) -> String {
 }
 
 pub fn pinyin_score(
-    _query: &str,
     text: &str,
     pattern: &Pattern,
     matcher: &mut Matcher,

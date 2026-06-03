@@ -130,64 +130,6 @@ for obs in (req.results ?? []) {{
 }
 
 #[tauri::command]
-pub async fn open_ocr_window(
-    app: tauri::AppHandle,
-    sel_x: f64,
-    sel_y: f64,
-    sel_w: f64,
-    sel_h: f64,
-    scale: f64,
-    annotation_png: String,
-) -> Result<(), String> {
-    use tauri::Manager;
-
-    let ann = if annotation_png.is_empty() {
-        None
-    } else {
-        Some(decode_image_data(&annotation_png)?)
-    };
-
-    #[cfg(target_os = "macos")]
-    let image_path = {
-        let png = crop_with_annotation(sel_x, sel_y, sel_w, sel_h, scale, ann.as_deref())?;
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let path = std::env::temp_dir().join(format!("voidnix_ocr_preview_{}.png", ts));
-        std::fs::write(&path, &png).map_err(|e| e.to_string())?;
-        path.to_string_lossy().to_string()
-    };
-    #[cfg(not(target_os = "macos"))]
-    let image_path = String::new();
-
-    let ocr_data = serde_json::json!({
-        "image_path": image_path,
-        "sel_x": sel_x,
-        "sel_y": sel_y,
-        "sel_w": sel_w,
-        "sel_h": sel_h,
-        "scale": scale,
-        "annotation_png": annotation_png,
-    });
-
-    let window = app.get_webview_window("ocr").ok_or("找不到 OCR 窗口")?;
-
-    let json = serde_json::to_string(&ocr_data).map_err(|e| e.to_string())?;
-    window
-        .eval(format!(
-            "window.__ocrData = {}; window.dispatchEvent(new CustomEvent('__ocr_ready'));",
-            json
-        ))
-        .map_err(|e| e.to_string())?;
-
-    window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn save_screenshot(
     sel_x: f64,
     sel_y: f64,

@@ -11,6 +11,11 @@ export const commands = {
 	getSelectedText: () => __TAURI_INVOKE<string>("get_selected_text"),
 	translateAi: (text: string, endpoint: string, apiKey: string, model: string, targetLang: string | null, prompt: string | null) => __TAURI_INVOKE<TranslateResult>("translate_ai", { text, endpoint, apiKey, model, targetLang, prompt }),
 	translateYoudao: (text: string, appKey: string, appSecret: string, targetLang: string | null) => __TAURI_INVOKE<TranslateResult>("translate_youdao", { text, appKey, appSecret, targetLang }),
+	getScreenInfo: () => __TAURI_INVOKE<ScreenInfo[]>("get_screen_info"),
+	setFrontmostWindowLayout: (layout: string, customWidth: number | null, customHeight: number | null, prevPid: number | null) => __TAURI_INVOKE<null>("set_frontmost_window_layout", { layout, customWidth, customHeight, prevPid }),
+	checkWindowManagerAccessibility: () => __TAURI_INVOKE<boolean>("check_window_manager_accessibility"),
+	toggleDragSnap: (enabled: boolean, customWidth: number | null, customHeight: number | null) => __TAURI_INVOKE<null>("toggle_drag_snap", { enabled, customWidth, customHeight }),
+	isDragSnapActive: () => __TAURI_INVOKE<boolean>("is_drag_snap_active"),
 	searchApps: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_apps", { query }),
 	searchFiles: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_files", { query }),
 	scoreItems: (query: string, items: string[]) => __TAURI_INVOKE<number[]>("score_items", { query, items }),
@@ -47,6 +52,14 @@ export type IpInfo = {
 	isp: string | null,
 	org: string | null,
 	asn: string | null,
+};
+
+export type ScreenInfo = {
+	x: number | null,
+	y: number | null,
+	width: number | null,
+	height: number | null,
+	is_main: boolean,
 };
 
 export type SearchResult = {

@@ -15,7 +15,7 @@ pub fn match_keywords(query: String, keyword_sets: Vec<Vec<String>>) -> Vec<u32>
             .into_iter()
             .map(|keywords| {
                 let combined = keywords.join(" ");
-                pinyin::pinyin_score(&query, &combined, &pattern, &mut matcher, &mut buf)
+                pinyin::pinyin_score(&combined, &pattern, &mut matcher, &mut buf)
             })
             .collect()
     })
