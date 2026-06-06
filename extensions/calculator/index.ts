@@ -2,7 +2,7 @@ import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
 import { load } from '@tauri-apps/plugin-store'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { hideWindow } from '@/utils/tauri'
 
 let historyCache: { expr: string; result: string }[] = []
 let historyLoaded = false
@@ -276,7 +276,7 @@ const mod: AppModule = {
       }
       const value = result.data?.value ? String(result.data.value) : result.title.replace('= ', '')
       await writeText(value)
-      getCurrentWindow().hide()
+      hideWindow()
     } catch (e) {
       console.error('Failed to execute calc item:', e)
     }

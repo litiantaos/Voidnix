@@ -132,7 +132,7 @@ SearchResult {
 
 **模块子视图**：`open_module_subview(moduleId, subviewId, payload)` 为通用命令，Rust 显示主窗口后发送 `open-module-subview` 事件；App.vue 接收事件，激活模块、打开指定子视图，并调用模块注册的 `onOpenSubview(subviewId, payload)`。模块通过 `subviews` 槽位声明子视图组件（key 为子视图标识），通过 `onOpenSubview` 解析 payload 更新内部状态。前端通过 `appStore.toggleSubview(subviewId)` / `openSubview(subviewId)` / `closeSubview()` 控制子视图切换。
 
-**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock；`activateIgnoringOtherApps:YES` 抢焦点；失焦自动隐藏。
+**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。主窗口 / SnapPanel 通过 `panel::convert_to_panel` 转为 `NonactivatingPanel` —— 显示时 `orderFrontRegardless` + `makeKeyWindow`，不抢 NSApp active，原应用菜单栏 / Dock 全程不动；关闭时 `NSApp.deactivate()` + `activate_app_by_pid(prev_pid)` 把 panel makeKey 时偷走的 system key / first responder 还给原应用窗口（直接 activate 在已 frontmost app 上是 no-op，必须先 deactivate 触发系统重新评估）。失焦或点击外部自动隐藏。
 
 **全局快捷键**：Rust 核心模块监听（`src-tauri/src/core/shortcut.rs`），四槽位：`main` / `clipboard` / `translate` / `chat`。
 

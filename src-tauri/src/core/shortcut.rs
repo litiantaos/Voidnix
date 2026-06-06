@@ -86,7 +86,9 @@ pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
             return;
         }
     }
-    crate::core::window::hide_main(&app);
+    let _ = app.clone().run_on_main_thread(move || {
+        crate::core::window::hide_main(&app);
+    });
 }
 
 #[tauri::command]
@@ -200,8 +202,6 @@ pub async fn register_global_shortcut(
 
                     if window_hidden {
                         crate::core::window::show_main(&app_handle);
-                    } else {
-                        crate::core::window::make_main_window_key(&app_handle);
                     }
                 });
             },

@@ -82,7 +82,7 @@ async function toggleWindow() {
   if (!win) return
   const visible = await win.isVisible()
   if (visible) {
-    await win.hide()
+    hideWindow()
   } else {
     await win.show()
     await win.setFocus()

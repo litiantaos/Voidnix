@@ -3,8 +3,6 @@ use std::sync::OnceLock;
 
 use objc2::runtime::AnyObject;
 
-const NONACTIVATING_PANEL_MASK: u64 = 1 << 7;
-
 struct PanelClass(*mut c_void);
 unsafe impl Send for PanelClass {}
 unsafe impl Sync for PanelClass {}
@@ -58,6 +56,13 @@ fn ensure_panel_class() -> *mut c_void {
     ptr
 }
 
+/// 把 NSWindow 替换为自定义 NSPanel 子类并打开 NonactivatingPanel 属性。
+///
+/// 这是「轻浮层」体感的基底:panel makeKey 时不抢 NSApp active,
+/// 原应用菜单栏 / Dock 不动。但 panel 仍会偷走系统级 key window /
+/// first responder —— 关闭时由调用方(`core::window::hide_main`、
+/// `window_snap::hide_panel_impl`)走 `deactivate_app + activate_app_by_pid`
+/// 把焦点还给原应用窗口。两步缺一不可。
 pub fn convert_to_panel(ns_window: *mut AnyObject) {
     if ns_window.is_null() {
         return;
@@ -68,9 +73,13 @@ pub fn convert_to_panel(ns_window: *mut AnyObject) {
     unsafe {
         object_setClass(ns_window as *mut c_void, panel_class);
 
-        let style: u64 = objc2::msg_send![ns_window, styleMask];
-        let _: () = objc2::msg_send![ns_window, setStyleMask: style | NONACTIVATING_PANEL_MASK];
+        // NSWindowStyleMaskNonactivatingPanel = 1 << 7
+        let cur_mask: usize = objc2::msg_send![ns_window, styleMask];
+        let nonactivating: usize = 1 << 7;
+        let _: () = objc2::msg_send![ns_window, setStyleMask: cur_mask | nonactivating];
 
+        // `false` 让 panel 显示后立即 makeKey 接收输入(主窗口)/被点击时立即响应
+        // (SnapPanel 首击触发 layout) —— `true` 会消耗首次点击只 makeKey 不响应。
         let _: () = objc2::msg_send![ns_window, setBecomesKeyOnlyIfNeeded: false];
         let _: () = objc2::msg_send![ns_window, setHidesOnDeactivate: false];
     }

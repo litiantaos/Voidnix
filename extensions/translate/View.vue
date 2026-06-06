@@ -50,7 +50,7 @@ import { ref, computed, watch, nextTick, onMounted, onActivated } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { hideWindow } from '@/utils/tauri'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -107,7 +107,7 @@ async function onExecuteResult(result: TranslateResult) {
   if (!result.translation || result.loading) return
   try {
     await writeText(result.translation)
-    getCurrentWindow().hide()
+    hideWindow()
   } catch (e) {
     console.error('Failed to copy:', e)
   }

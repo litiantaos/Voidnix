@@ -11,11 +11,15 @@
         <template v-if="group.nested">
           <div class="h-full w-full relative">
             <div
-              class="snap-zone rounded bg-black/7 inset-0 absolute hover:bg-black/18"
+              class="snap-zone rounded bg-black/7 inset-0 absolute"
+              :class="{ 'snap-hover': hoveredLayout === group.zones[0].layout }"
+              :data-layout="group.zones[0].layout"
               @click="onZone(group.zones[0].layout)"
             />
             <div
-              class="snap-zone rounded bg-black/7 h-40% w-40% left-30% top-30% absolute z-1 hover:bg-black/18"
+              class="snap-zone rounded bg-black/7 h-40% w-40% left-30% top-30% absolute z-1"
+              :class="{ 'snap-hover': hoveredLayout === group.zones[1].layout }"
+              :data-layout="group.zones[1].layout"
               @click.stop="onZone(group.zones[1].layout)"
             />
           </div>
@@ -25,7 +29,9 @@
             <template v-for="zone in group.zones" :key="zone.layout">
               <div
                 v-if="zone.layout === 'custom'"
-                class="snap-zone text-black/25 rounded bg-black/7 flex items-center justify-center hover:text-black/45 hover:bg-black/18"
+                class="snap-zone custom-zone text-black/25 rounded bg-black/7 flex items-center justify-center"
+                :class="{ 'snap-hover': hoveredLayout === zone.layout }"
+                :data-layout="zone.layout"
                 @click="onZone(zone.layout)"
               >
                 <svg
@@ -43,7 +49,9 @@
               </div>
               <div
                 v-else
-                class="snap-zone rounded bg-black/7 hover:bg-black/18"
+                class="snap-zone rounded bg-black/7"
+                :class="{ 'snap-hover': hoveredLayout === zone.layout }"
+                :data-layout="zone.layout"
                 @click="onZone(zone.layout)"
               />
             </template>
@@ -65,6 +73,7 @@ interface SnapData {
 
 const snapData = ref<SnapData>({ w: 800, h: 600 })
 const panel = ref<HTMLElement>()
+const hoveredLayout = ref<string | null>(null)
 
 interface ZoneDef {
   layout: string
@@ -118,6 +127,14 @@ async function onZone(layout: string) {
   }
 }
 
+function handleSnapMouse() {
+  const data = (window as unknown as { __snapMouse?: { x: number; y: number } }).__snapMouse
+  if (!data) return
+  const el = document.elementFromPoint(data.x, data.y)
+  const zone = (el as HTMLElement | null)?.closest('[data-layout]') as HTMLElement | null
+  hoveredLayout.value = zone?.dataset.layout ?? null
+}
+
 async function handleShow() {
   const data = (window as unknown as { __snapPanelData?: SnapData }).__snapPanelData
   if (data) snapData.value = data
@@ -127,6 +144,7 @@ async function handleShow() {
 
 function handleHide() {
   if (!panel.value) return
+  hoveredLayout.value = null
   const el = panel.value
   el.addEventListener('transitionend', () => commands.hideSnapPanel().catch(() => {}), {
     once: true,
@@ -138,12 +156,14 @@ onMounted(() => {
   document.body.style.overflow = 'visible'
   window.addEventListener('__snap_panel_show', handleShow)
   window.addEventListener('__snap_panel_hide', handleHide)
+  window.addEventListener('__snap_mouse', handleSnapMouse)
 })
 
 onUnmounted(() => {
   document.body.style.overflow = ''
   window.removeEventListener('__snap_panel_show', handleShow)
   window.removeEventListener('__snap_panel_hide', handleHide)
+  window.removeEventListener('__snap_mouse', handleSnapMouse)
 })
 </script>
 
@@ -156,5 +176,11 @@ onUnmounted(() => {
 .panel.show {
   opacity: 1;
   transform: scale(1);
+}
+.snap-zone.snap-hover {
+  background-color: rgba(0, 0, 0, 0.18);
+}
+.snap-zone.custom-zone.snap-hover {
+  color: rgba(0, 0, 0, 0.45);
 }
 </style>

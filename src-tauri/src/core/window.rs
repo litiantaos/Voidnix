@@ -1,10 +1,38 @@
+use std::sync::atomic::{AtomicI32, Ordering};
+
+/// 显示主窗口前的前台应用 PID。
+/// 隐藏时显式 activate 该 app,把系统级 key window 状态(及 first responder)
+/// 还给它的窗口 —— macOS 不会自动跨进程恢复 key,必须主动调。
+static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
+
 /// 显示主窗口。
+///
+/// NonactivatingPanel + LSUIElement 组合下,通过 orderFrontRegardless +
+/// makeKeyWindow 让面板取得键盘焦点,而不抢 NSApp active —— 原前台应用的
+/// 菜单栏 / Dock 高亮全程不变,视觉上像浮层从未离开过当前应用。
 pub fn show_main(app: &tauri::AppHandle) {
     use tauri::Manager;
     crate::core::shortcut::set_window_visible(true);
+
+    #[cfg(target_os = "macos")]
+    {
+        let pid = crate::macos::mac_utils::current_frontmost_pid().unwrap_or(0);
+        PREV_FRONT_PID.store(pid, Ordering::SeqCst);
+    }
+
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
-        crate::macos::skylight::move_webview_window_to_active_space(&window);
+        {
+            crate::macos::skylight::move_webview_window_to_active_space(&window);
+            use objc2_app_kit::NSWindow;
+            if let Ok(raw) = window.ns_window() {
+                unsafe {
+                    let ns_window = raw.cast::<NSWindow>().as_ref().unwrap();
+                    ns_window.orderFrontRegardless();
+                }
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
         let _ = window.show();
     }
     make_main_window_key(app);
@@ -12,13 +40,44 @@ pub fn show_main(app: &tauri::AppHandle) {
 }
 
 /// 隐藏主窗口。
+///
+/// 关闭面板后,显式 activate 原前台 app —— 它一直是 frontmost,
+/// 菜单栏不会闪;但系统级 key window / first responder 需要主动还回去,
+/// 否则用户得手动点一下输入框才能继续打字。
 pub fn hide_main(app: &tauri::AppHandle) {
     use tauri::Manager;
+
     crate::core::shortcut::set_window_visible(false);
+
+    #[cfg(target_os = "macos")]
+    if let Some(window) = app.get_webview_window("main") {
+        use objc2_app_kit::NSWindow;
+        if let Ok(raw) = window.ns_window() {
+            unsafe {
+                let ns_window = raw.cast::<NSWindow>().as_ref().unwrap();
+                ns_window.resignKeyWindow();
+                ns_window.orderOut(None);
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
     crate::macos::click_monitor::remove();
+
+    // panel 偷走 system key 后,原 app 虽仍是 frontmost,但 first responder
+    // 已丢失。`activate_app_by_pid` 在已 frontmost 的 app 上会被 macOS 跳过,
+    // 必须先 `NSApp.deactivate()` 触发系统重新评估 key window,再 activate
+    // 原 app 才能完整恢复 first responder(光标回到原输入框)。
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::mac_utils::deactivate_app();
+        let pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
+        if pid > 0 {
+            crate::macos::mac_utils::activate_app_by_pid(pid);
+        }
+    }
 }
 
 /// 将主窗口设为 key window。

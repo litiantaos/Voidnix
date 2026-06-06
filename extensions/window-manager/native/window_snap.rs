@@ -11,7 +11,7 @@
 #[cfg(target_os = "macos")]
 mod inner {
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
     use objc2::runtime::AnyObject;
     use objc2::ClassType;
@@ -63,6 +63,8 @@ mod inner {
     static APP: Mutex<Option<AppHandle>> = Mutex::new(None);
     static MONITOR: Mutex<Option<MonitorHandles>> = Mutex::new(None);
     static HIDE_TIMER: Mutex<Option<SendTimer>> = Mutex::new(None);
+    /// 面板显示前的前台应用 PID，隐藏时还原 key window 给该应用。
+    static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
 
     struct SnapState {
         custom_width: f64,
@@ -165,15 +167,18 @@ mod inner {
         let ch = state.custom_height;
         drop(state);
 
+        // 记录原前台应用 PID,layout 命令需要据此定位要操作的窗口。
+        // SnapPanel 不调 makeKeyWindow(只接收鼠标 hover/click),也不 activate
+        // NSApp —— 原前台 app 全程是 frontmost + key,菜单栏 / 输入焦点不动。
+        let pid = crate::macos::mac_utils::current_frontmost_pid().unwrap_or(0);
+        PREV_FRONT_PID.store(pid, Ordering::SeqCst);
+
         let target = compute_panel_rect(screen);
         unsafe {
             let ns_window = raw.cast::<NSWindow>().as_ref().unwrap();
             ns_window.setFrame_display(target, true);
             ns_window.setAlphaValue(0.0);
             ns_window.setIgnoresMouseEvents(false);
-            let app_any: &AnyObject = objc2::msg_send![objc2::class!(NSApplication), sharedApplication];
-            let _: () = objc2::msg_send![app_any, activateIgnoringOtherApps: true];
-            ns_window.makeKeyWindow();
         }
 
         let _ = window.eval(format!(
@@ -192,6 +197,16 @@ mod inner {
         let _ = window.eval("window.dispatchEvent(new CustomEvent('__snap_panel_hide'))");
 
         STATE.lock().unwrap().visible = false;
+
+        // 用户点击 SnapPanel 时,panel 会被 AppKit 自动 makeKey 偷走 system key,
+        // 原 app 的 first responder 随之丢失。这里沿用主窗口的恢复策略:
+        // deactivate self → activate 原 app,触发系统重新评估 key window,
+        // 让输入框光标无缝回到原应用。
+        let pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
+        crate::macos::mac_utils::deactivate_app();
+        if pid > 0 {
+            crate::macos::mac_utils::activate_app_by_pid(pid);
+        }
     }
 
     // ── Hide timer ────────────────────────────────────────────────────────
@@ -242,6 +257,25 @@ mod inner {
 
     // ── 鼠标事件 ──────────────────────────────────────────────────────────
 
+    fn forward_mouse_to_snap_panel(mx: f64, my: f64) {
+        let app_opt = APP.lock().unwrap().clone();
+        let Some(app) = app_opt else { return };
+        let Some(window) = get_snap_window(&app) else { return };
+        let Ok(raw) = window.ns_window() else { return };
+        let local_x;
+        let local_y;
+        unsafe {
+            let ns_window = raw.cast::<NSWindow>().as_ref().unwrap();
+            let frame = ns_window.frame();
+            local_x = mx - frame.origin.x;
+            local_y = (frame.origin.y + frame.size.height) - my;
+        }
+        let _ = window.eval(format!(
+            "window.__snapMouse={{x:{},y:{}}};window.dispatchEvent(new Event('__snap_mouse'));",
+            local_x as i32, local_y as i32
+        ));
+    }
+
     fn on_mouse_moved() {
         if !ENABLED.load(Ordering::SeqCst) { return; }
 
@@ -256,6 +290,7 @@ mod inner {
             });
             if in_area {
                 cancel_hide_timer();
+                forward_mouse_to_snap_panel(mx, my);
             } else {
                 schedule_hide_timer();
             }
@@ -274,16 +309,17 @@ mod inner {
     // ── Monitor 生命周期 ─────────────────────────────────────────────────
 
     pub fn start(app: AppHandle, custom_width: f64, custom_height: f64) {
-        {
-            let guard = MONITOR.lock().unwrap();
-            if guard.is_some() { return; }
-        }
-        ENABLED.store(true, Ordering::SeqCst);
+        // 始终同步最新尺寸,避免设置变更后旧值被锁死(monitor 已存在则只更新尺寸)
         {
             let mut state = STATE.lock().unwrap();
             state.custom_width = custom_width;
             state.custom_height = custom_height;
         }
+        {
+            let guard = MONITOR.lock().unwrap();
+            if guard.is_some() { return; }
+        }
+        ENABLED.store(true, Ordering::SeqCst);
         *APP.lock().unwrap() = Some(app);
 
         let moved_block = block2::RcBlock::new(move |_event: *mut AnyObject| {
@@ -355,6 +391,16 @@ mod inner {
             hide_panel_impl(app);
         }
     }
+
+    /// 返回面板显示前记录的前台应用 PID（供 layout 命令定位目标窗口）。
+    pub fn snap_prev_pid() -> i32 {
+        PREV_FRONT_PID.load(Ordering::SeqCst)
+    }
+
+    /// 取出并清零暂存的 PID（用于隐藏路径还原焦点，避免重复 activate）。
+    pub fn take_snap_prev_pid() -> i32 {
+        PREV_FRONT_PID.swap(0, Ordering::SeqCst)
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -364,6 +410,8 @@ mod inner {
     pub fn stop() {}
     pub fn is_running() -> bool { false }
     pub fn hide_panel(_app: &AppHandle) {}
+    pub fn snap_prev_pid() -> i32 { 0 }
+    pub fn take_snap_prev_pid() -> i32 { 0 }
 }
 
 pub fn start_drag_monitor(app: tauri::AppHandle, custom_width: f64, custom_height: f64) {
@@ -380,4 +428,12 @@ pub fn is_drag_monitor_running() -> bool {
 
 pub fn hide_panel(app: &tauri::AppHandle) {
     inner::hide_panel(app);
+}
+
+pub fn snap_prev_pid() -> i32 {
+    inner::snap_prev_pid()
+}
+
+pub fn take_snap_prev_pid() -> i32 {
+    inner::take_snap_prev_pid()
 }

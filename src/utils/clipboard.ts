@@ -1,7 +1,7 @@
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { hideWindow } from '@/utils/tauri'
 
 export async function copyAndHide(value: string) {
   await writeText(value)
-  await getCurrentWindow().hide()
+  hideWindow()
 }

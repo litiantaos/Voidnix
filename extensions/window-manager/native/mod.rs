@@ -338,8 +338,14 @@ pub mod platform {
     }
 
     fn set_layout_on_main_thread(layout: &str, custom_width: f64, custom_height: f64, prev_pid: Option<i32>) -> Result<(), String> {
-        let fallback_pid = crate::core::shortcut::PREV_FRONT_PID
-            .load(std::sync::atomic::Ordering::SeqCst);
+        // 优先级:显式传入 > snap-panel 自己记录的 > 主窗口路径上记录的
+        let snap_pid = super::window_snap::snap_prev_pid();
+        let fallback_pid = if snap_pid > 0 {
+            snap_pid
+        } else {
+            crate::core::shortcut::PREV_FRONT_PID
+                .load(std::sync::atomic::Ordering::SeqCst)
+        };
         let prev_pid = prev_pid.filter(|&p| p > 0).unwrap_or(fallback_pid);
         let cg_pid = find_topmost_window_pid();
 
@@ -574,6 +580,13 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
                         ns.setFrame_display(screen.frame(), true);
                     }
                     ns.setAlphaValue(1.0);
+                    // panel 已是 NonactivatingPanel：makeKey 只让面板接收事件，
+                    // 不会把 Voidnix 拉成前台 app，前台应用焦点保持不变；
+                    // 同时避免首次点击被「激活点击」吞掉。
+                    let _: () = objc2::msg_send![
+                        ns,
+                        makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()
+                    ];
                 }
             }
         }
@@ -597,6 +610,16 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
                     ns.setIgnoresMouseEvents(true);
                     ns.setAlphaValue(0.0);
                 }
+            }
+        }
+        // 用户点击触发的 layout 路径:panel 已 makeKey 偷走 system key,
+        // 隐藏后需 deactivate + activate 原 app,把 first responder 还回去。
+        #[cfg(target_os = "macos")]
+        {
+            let pid = window_snap::take_snap_prev_pid();
+            crate::macos::mac_utils::deactivate_app();
+            if pid > 0 {
+                crate::macos::mac_utils::activate_app_by_pid(pid);
             }
         }
         let _ = tx.send(());

@@ -4,8 +4,8 @@ import { asyncView } from '@/core/async-view'
 import { makeToggleHandler } from '@/core/module-helpers'
 import type { AppModule, SearchResult } from '@/types/module'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
+import { hideWindow } from '@/utils/tauri'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
 import { toErrorMessage } from '@/utils/error'
@@ -402,7 +402,7 @@ const mod: AppModule = {
     if (result.data?.translation) {
       try {
         await writeText(result.data.translation as string)
-        getCurrentWindow().hide()
+        hideWindow()
       } catch (e) {
         console.error('Failed to copy translation:', e)
       }

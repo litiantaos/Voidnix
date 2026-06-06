@@ -89,8 +89,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const awakeMirrorMode = ref(true)
 
-  const wmCustomWidth = ref(800)
-  const wmCustomHeight = ref(600)
+  const wmCustomWidth = ref(1200)
+  const wmCustomHeight = ref(800)
   const wmDragSnapEnabled = ref(true)
 
   function createSetter<T>(r: Ref<T>, groupKey: string, field: string) {
