@@ -24,7 +24,6 @@ use std::ffi::c_void;
 
 // SLS / CGS 私有符号（来自 yabai src/misc/extern.h + NUIKit/CGSInternal）。
 // 链接指令由 build.rs 处理（`-F /System/Library/PrivateFrameworks -framework SkyLight`）。
-#[allow(dead_code)]
 extern "C" {
     fn SLSMainConnectionID() -> i32;
     fn SLSCopyManagedDisplaySpaces(cid: i32) -> CFArrayRef;

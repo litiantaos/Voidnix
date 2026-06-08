@@ -2,30 +2,42 @@
   <div
     ref="rootRef"
     data-settings-control
-    class="ui-ctrl flex gap-1.5 w-36 items-center justify-center"
+    class="ui-ctrl"
+    flex
+    gap="1.5"
+    w="36"
+    items="center"
+    justify="center"
     tabindex="0"
     @click="startRecording"
     @blur="onBlur"
     @keydown="onKeyDown"
   >
     <template v-if="isRecording && !readyToRecord">
-      <span class="text-tx-muted">...</span>
+      <span text="tx-muted">...</span>
     </template>
     <template v-else-if="isRecording && readyToRecord">
-      <span class="text-tx-muted animate-pulse">请按下快捷键</span>
+      <span text="tx-muted" class="animate-pulse">请按下快捷键</span>
     </template>
     <template v-else-if="keys.length">
       <kbd
         v-for="(k, i) in keys"
         :key="i"
-        class="text-xs font-medium font-mono rounded bg-black/5 flex h-5 items-center justify-center"
+        text="xs"
+        font="medium mono"
+        rounded
+        bg="black/5"
+        flex
+        h="5"
+        items="center"
+        justify="center"
         :class="k === 'Space' ? 'text-[8px] px-2' : 'w-5'"
       >
         {{ k }}
       </kbd>
     </template>
     <template v-else>
-      <span class="text-tx-muted">未设置</span>
+      <span text="tx-muted">未设置</span>
     </template>
   </div>
 </template>

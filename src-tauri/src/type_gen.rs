@@ -32,12 +32,12 @@ pub fn export_bindings() {
             crate::extensions::search::commands::search_files,
             crate::extensions::search::commands::score_items,
             crate::extensions::ip::fetch_ip_info,
-            crate::extensions::clipboard::get_clipboard_history,
-            crate::extensions::clipboard::delete_clipboard_items,
-            crate::extensions::clipboard::toggle_clipboard_favorite,
-            crate::extensions::clipboard::get_clipboard_image,
-            crate::extensions::clipboard::paste_clipboard_item,
-            crate::extensions::clipboard::paste_clipboard_items,
+            crate::extensions::clipboard::commands::get_clipboard_history,
+            crate::extensions::clipboard::commands::delete_clipboard_items,
+            crate::extensions::clipboard::commands::toggle_clipboard_favorite,
+            crate::extensions::clipboard::commands::get_clipboard_image,
+            crate::extensions::clipboard::commands::paste_clipboard_item,
+            crate::extensions::clipboard::commands::paste_clipboard_items,
         ]);
 
     let out_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/bindings.ts");

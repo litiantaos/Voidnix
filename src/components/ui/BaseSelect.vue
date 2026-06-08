@@ -14,11 +14,16 @@
     @keydown="onKeyDown"
     @click="toggleOpen"
   >
-    <span :class="selectedLabel ? 'text-tx-primary' : 'text-tx-hint'" class="truncate">
+    <span :class="selectedLabel ? 'text-tx-primary' : 'text-tx-hint'" truncate>
       {{ selectedLabel || placeholder }}
     </span>
     <i
-      class="i-ri-arrow-down-s-line text-sm text-tx-muted ml-2 flex-none transition-transform duration-200"
+      class="i-ri-arrow-down-s-line"
+      text="sm tx-muted"
+      ml="2"
+      flex="none"
+      transition="transform"
+      duration="200"
       :class="isOpen ? 'rotate-180' : ''"
     />
 
@@ -39,14 +44,16 @@
           v-if="isOpen"
           data-select-dropdown
           :style="dropdownStyle"
-          class="p-1 rounded-lg bg-white max-w-[80vw] select-none shadow-lg"
+          p="1"
+          rounded="lg"
+          bg="white"
+          max-w="[80vw]"
+          select="none"
+          shadow="lg"
           role="listbox"
         >
           <template v-for="(item, index) in flatItems" :key="index">
-            <div
-              v-if="item.type === 'group'"
-              class="text-xs text-tx-faint tracking-wider font-medium px-3 py-1.5 uppercase"
-            >
+            <div v-if="item.type === 'group'" class="group-header">
               {{ item.label }}
             </div>
             <div

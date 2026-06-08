@@ -1,7 +1,17 @@
 <template>
   <div
     ref="rootEl"
-    class="p-2 border border-black/10 rounded-lg bg-surface/95 flex gap-2 shadow-xl items-center absolute z-50 backdrop-blur-sm"
+    p="2"
+    border="~ black/10"
+    rounded="lg"
+    bg="surface/95"
+    flex
+    gap="2"
+    shadow="xl"
+    items="center"
+    absolute
+    z="50"
+    backdrop-blur="sm"
     :style="style"
     @mousedown.stop
   >
@@ -28,12 +38,19 @@
         @click="$emit('tool', t.id)"
       />
 
-      <div class="mx-0.5 bg-black/10 shrink-0 h-5 w-px" />
+      <div m="x-0.5" bg="black/10" shrink="0" h="5" w="px" />
 
       <!-- 颜色选择器（模糊工具时不显示） -->
-      <div v-if="activeTool !== 'blur'" class="flex h-7 items-center relative">
+      <div v-if="activeTool !== 'blur'" flex h="7" items="center" relative>
         <button
-          class="border-2 rounded-full shrink-0 h-5 w-5 shadow-sm transition-transform active:scale-95"
+          border="2"
+          rounded="full"
+          shrink="0"
+          h="5"
+          w="5"
+          shadow="sm"
+          transition="transform"
+          class="active:scale-95"
           :style="{
             background: color,
             borderColor: color === '#ffffff' ? '#d1d5db' : 'white',
@@ -45,7 +62,19 @@
         <Transition name="palette-popup">
           <div
             v-if="showColors"
-            class="p-2 border border-black/10 rounded-lg bg-surface/95 flex gap-2 shadow-xl items-center left-1/2 absolute z-100 backdrop-blur-sm -translate-x-1/2"
+            p="2"
+            border="~ black/10"
+            rounded="lg"
+            bg="surface/95"
+            flex
+            gap="2"
+            shadow="xl"
+            items="center"
+            left="1/2"
+            absolute
+            z="100"
+            backdrop-blur="sm"
+            class="-translate-x-1/2"
             :class="popDir === 'up' ? 'bottom-full mb-4' : 'top-full mt-4'"
             @mousedown.stop
             @click.stop
@@ -53,7 +82,14 @@
             <button
               v-for="c in colors"
               :key="c"
-              class="border-2 rounded-full shrink-0 h-5 w-5 shadow-sm transition-transform active:scale-95"
+              border="2"
+              rounded="full"
+              shrink="0"
+              h="5"
+              w="5"
+              shadow="sm"
+              transition="transform"
+              class="active:scale-95"
               :class="{
                 'ring-2 ring-accent ring-offset-1': c === color,
               }"
@@ -89,7 +125,7 @@
       />
 
       <!-- 模糊模式切换（仅 blur 工具时显示） -->
-      <div v-if="activeTool === 'blur'" class="flex">
+      <div v-if="activeTool === 'blur'" flex>
         <BaseButton
           class="rounded-r-0!"
           :variant="blurMode === 'selection' ? 'primary' : 'default'"

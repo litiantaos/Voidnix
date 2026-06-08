@@ -1,21 +1,43 @@
 <template>
-  <div class="bg-surface flex flex-col h-screen w-screen shadow-lg">
-    <div v-if="isDev" class="bg-accent h-1 w-8 left-1/2 top-1 absolute -translate-x-1/2" />
+  <div bg="surface" flex="~ col" h="screen" w="screen" shadow="lg">
+    <div
+      v-if="isDev"
+      bg="accent"
+      h="1"
+      w="8"
+      left="1/2"
+      top="1"
+      absolute
+      class="-translate-x-1/2"
+    />
 
     <!-- 搜索栏 -->
     <div
       ref="searchBarRef"
-      class="px-5 border-b border-black/5 flex gap-3 h-15 items-center"
+      p="x-5"
+      border="b black/5"
+      flex
+      gap="3"
+      h="15"
+      items="center"
       @keydown="onSearchBarKeydown"
     >
       <!-- 扩展标签 -->
       <div
         v-if="activeModule"
-        class="text-xs text-black/70 px-3 rounded-md bg-black/5 flex flex-none gap-1.5 h-7 select-none items-center"
+        text="xs black/70"
+        p="x-3"
+        rounded="md"
+        bg="black/5"
+        flex="~ none"
+        gap="1.5"
+        h="7"
+        select="none"
+        items="center"
         @mouseenter="isTagHovered = true"
         @mouseleave="isTagHovered = false"
       >
-        <span class="shrink-0 h-3.5 w-3.5 relative">
+        <span shrink="0" h="3.5" w="3.5" relative>
           <Transition
             enter-active-class="transition duration-150 ease-out"
             enter-from-class="opacity-0 scale-75"
@@ -27,16 +49,27 @@
             <button
               v-if="isTagHovered"
               key="close"
-              class="rounded-full bg-black/10 flex h-3.5 w-3.5 transition-colors items-center inset-0 justify-center absolute hover:bg-black/20"
+              rounded="full"
+              bg="black/10"
+              flex
+              h="3.5"
+              w="3.5"
+              transition="colors"
+              class="flex-center inset-0 absolute hover:bg-black/20"
               @click="onTagClose"
             >
-              <span class="i-ri-close-line text-[10px] text-black/60"></span>
+              <span class="i-ri-close-line" text="[10px] black/60"></span>
             </button>
             <span
               v-else
               key="icon"
               :class="activeModule.icon"
-              class="text-[10px] text-black/50 flex h-3.5 w-3.5 items-center inset-0 justify-center absolute"
+              text="[10px] black/50"
+              class="flex-center"
+              h="3.5"
+              w="3.5"
+              inset="0"
+              absolute
             ></span>
           </Transition>
         </span>
@@ -48,7 +81,11 @@
         id="main-search-input"
         :value="appStore.searchQuery"
         :disabled="activeModule?.disableSearchInput"
-        class="text-base text-black/85 outline-none bg-transparent flex-1 disabled:text-black/85 placeholder:text-black/25 disabled:opacity-100"
+        text="base black/85"
+        outline="none"
+        bg="transparent"
+        flex="1"
+        :class="'disabled:text-black/85 placeholder:text-black/25 disabled:opacity-100'"
         :placeholder="
           activeModule
             ? activeModule.disableSearchInput
@@ -64,7 +101,11 @@
       <!-- 扩展附加区 -->
       <div
         v-if="activeModule?.searchBarAccessory"
-        class="flex gap-2 min-w-0 items-center overflow-hidden"
+        flex
+        gap="2"
+        min-w="0"
+        items="center"
+        overflow="hidden"
       >
         <component :is="activeModule.searchBarAccessory" />
       </div>

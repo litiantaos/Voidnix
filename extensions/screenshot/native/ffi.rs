@@ -41,6 +41,10 @@ extern "C" {
         ns_window_ptr: *mut std::ffi::c_void,
         cg_image_ptr: *mut std::ffi::c_void,
     ) -> bool;
+    pub(crate) fn voidnix_screenshot_set_background_centered(
+        ns_window_ptr: *mut std::ffi::c_void,
+        cg_image_ptr: *mut std::ffi::c_void,
+    ) -> bool;
     pub(crate) fn voidnix_screenshot_clear_background(ns_window_ptr: *mut std::ffi::c_void);
     pub(crate) fn voidnix_screenshot_install_scroll_mask(
         ns_window_ptr: *mut std::ffi::c_void,

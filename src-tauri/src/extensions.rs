@@ -20,13 +20,21 @@ macro_rules! configure_app {
         crate::core::window::set_main_window_size,
         crate::core::window::get_home_dir,
         crate::core::window::pick_directory,
+        crate::core::ext_commands::ext_list,
+        crate::core::ext_commands::ext_install,
+        crate::core::ext_commands::ext_uninstall,
+        crate::core::ext_commands::ext_entry_content,
+        crate::core::ext_commands::ext_readme,
+        crate::core::ext_commands::ext_rescan,
         crate::extensions::screenshot::open_module_subview,
         crate::extensions::screenshot::session::capture_screen,
         crate::extensions::screenshot::session::enter_screenshot_mode,
         crate::extensions::screenshot::session::screenshot_overlay_ready,
         crate::extensions::screenshot::session::exit_screenshot_mode,
         crate::extensions::screenshot::pin::pin_image,
+        crate::extensions::screenshot::pin::restore_pin_focus,
         crate::extensions::screenshot::pin::set_pin_window_opacity,
+        crate::extensions::screenshot::pin::pin_global_mouse,
         crate::extensions::screenshot::scroll_capture::enter_scroll_capture,
         crate::extensions::screenshot::scroll_capture::exit_scroll_capture,
         crate::extensions::screenshot::scroll_capture::finish_scroll_capture,
@@ -61,26 +69,18 @@ macro_rules! configure_app {
         crate::extensions::awake::toggle_awake,
         crate::extensions::awake::is_awake_enabled,
         crate::extensions::awake::set_awake_mode,
-        crate::extensions::clipboard::get_clipboard_history,
-        crate::extensions::clipboard::clear_clipboard_history,
-        crate::extensions::clipboard::delete_clipboard_items,
-        crate::extensions::clipboard::toggle_clipboard_favorite,
-        crate::extensions::clipboard::get_clipboard_image,
-        crate::extensions::clipboard::paste_clipboard_item,
-        crate::extensions::clipboard::paste_clipboard_items,
+        crate::extensions::clipboard::commands::get_clipboard_history,
+        crate::extensions::clipboard::commands::clear_clipboard_history,
+        crate::extensions::clipboard::commands::delete_clipboard_items,
+        crate::extensions::clipboard::commands::toggle_clipboard_favorite,
+        crate::extensions::clipboard::commands::get_clipboard_image,
+        crate::extensions::clipboard::commands::paste_clipboard_item,
+        crate::extensions::clipboard::commands::paste_clipboard_items,
             ])
         .plugin(crate::core::shortcut::init())
         .plugin(crate::core::window::init())
-        .plugin(crate::extensions::screenshot::init())
-        .plugin(crate::extensions::zsh_autosuggestions::init())
-        .plugin(crate::extensions::chat::init())
-        .plugin(crate::extensions::translate::init())
-        .plugin(crate::extensions::window_manager::init())
         .plugin(crate::extensions::search::init())
-        .plugin(crate::extensions::finder_ext::init())
         .plugin(crate::extensions::ip::init())
-        .plugin(crate::extensions::awake::init())
-        .plugin(crate::extensions::clipboard::init())
     };
 }
 pub(crate) use configure_app;

@@ -1,18 +1,15 @@
 <template>
-  <div class="p-5 flex flex-col gap-4 h-full overflow-y-auto">
+  <div p="5" flex="~ col" gap="4" h="full" overflow="y-auto">
     <!-- 截图预览 -->
-    <div
-      v-if="imageUrl"
-      class="border border-black/8 rounded-lg bg-black/4 shrink-0 overflow-hidden"
-    >
-      <img :src="imageUrl" class="h-auto max-h-40 w-full block object-contain" alt="截图预览" />
+    <div v-if="imageUrl" border="~ black/8" rounded="lg" bg="black/4" shrink="0" overflow="hidden">
+      <img :src="imageUrl" h="auto" max-h="40" w="full" block object="contain" alt="截图预览" />
     </div>
 
     <!-- 识别中 -->
     <BaseEmptyState v-if="isLoading" icon="i-ri-loader-4-line" title="识别中..." loading />
 
     <!-- 错误 -->
-    <div v-else-if="error" class="text-sm text-red-500 p-3 rounded-md bg-red-50">
+    <div v-else-if="error" text="sm red-500" p="3" rounded="md" bg="red-50">
       {{ error }}
     </div>
 

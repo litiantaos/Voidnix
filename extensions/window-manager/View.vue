@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex-col-full">
     <BaseList
       :items="settingsItems"
       v-model:selected-index="settingsSelectedIndex"
@@ -33,7 +33,7 @@
           :selected="selected"
         >
           <template #trailing>
-            <div class="no-number-spin flex gap-1.5 items-center" @click.stop>
+            <div class="no-number-spin" flex gap="1.5" items="center" @click.stop>
               <BaseInput
                 ref="widthInputRef"
                 type="number"
@@ -44,7 +44,7 @@
                 @focus="onFocus('width')"
                 @blur="onBlur('width')"
               />
-              <span class="text-xs text-tx-subtle select-none">×</span>
+              <span text="xs tx-subtle" select="none">×</span>
               <BaseInput
                 ref="heightInputRef"
                 type="number"

@@ -1,15 +1,16 @@
 <template>
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置 AI API" />
 
-  <div v-else class="px-5 pt-5 flex flex-col h-full min-h-0">
-    <div
-      v-if="displayMessages.length > 0"
-      class="flex flex-1 flex-col gap-3 min-h-0 overflow-y-auto"
-    >
+  <div v-else p="x-5 t-5" flex="~ col" h="full" min-h="0">
+    <div v-if="displayMessages.length > 0" flex="~ 1 col" gap="3" min-h="0" overflow="y-auto">
       <div
         v-for="(msg, index) in displayMessages"
         :key="index"
-        class="text-sm text-tx-primary leading-relaxed pl-3 border-l-3 w-full"
+        text="sm tx-primary"
+        leading="relaxed"
+        p="l-3"
+        border="l-3"
+        w="full"
         :class="
           msg.role === 'user'
             ? 'border-l-blue-500 whitespace-pre-wrap break-all overflow-hidden'
@@ -22,11 +23,15 @@
     </div>
 
     <div
-      class="py-5 pointer-events-none bottom-0 sticky from-transparent to-surface via-surface/60 via-30% bg-linear-to-b"
+      p="y-5"
+      pointer-events="none"
+      bottom="0"
+      sticky
+      class="from-transparent to-surface via-surface/60 via-30% bg-linear-to-b"
     >
-      <div v-if="displayMessages.length === 0" class="py-6 space-y-1">
-        <h1 class="text-xl font-bold">来点有意思的吧！</h1>
-        <p class="text-xs text-tx-muted">日常问题、工作任务...</p>
+      <div v-if="displayMessages.length === 0" p="y-6" space="y-1">
+        <h1 text="xl" font="bold">来点有意思的吧！</h1>
+        <p text="xs tx-muted">日常问题、工作任务...</p>
       </div>
 
       <BaseTextarea

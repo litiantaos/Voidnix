@@ -7,20 +7,22 @@
     @confirm="onConfirm"
     @cancel="emit('close')"
   >
-    <div class="flex flex-col gap-3">
-      <div class="text-xs text-tx-subtle flex gap-2 items-center">
-        <span class="text-tx-muted">当前版本</span>
-        <span class="font-mono">v{{ updateStore.info?.currentVersion }}</span>
-        <span class="i-ri-arrow-right-line text-tx-hint"></span>
-        <span class="text-accent font-medium font-mono">v{{ updateStore.info?.newVersion }}</span>
+    <div flex="~ col" gap="3">
+      <div text="xs tx-subtle" flex gap="2" items="center">
+        <span text="tx-muted">当前版本</span>
+        <span font="mono">v{{ updateStore.info?.currentVersion }}</span>
+        <span class="i-ri-arrow-right-line" text="tx-hint"></span>
+        <span text="accent" font="medium mono">v{{ updateStore.info?.newVersion }}</span>
       </div>
 
-      <p v-if="updateStore.info?.body" class="text-xs text-tx-subtle leading-relaxed line-clamp-4">
+      <p v-if="updateStore.info?.body" text="xs tx-subtle" leading="relaxed" line-clamp="4">
         {{ updateStore.info.body }}
       </p>
 
       <button
-        class="text-xs text-accent/80 text-left transition-colors hover:text-accent"
+        text="xs accent/80 left"
+        transition="colors"
+        class="hover:text-accent"
         @click="openReleases"
       >
         查看完整更新说明 →

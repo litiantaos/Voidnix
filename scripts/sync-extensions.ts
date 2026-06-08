@@ -6,7 +6,6 @@ const ROOT = process.cwd()
 const EXTENSIONS_DIR = join(ROOT, 'extensions')
 const BACKEND_EXT_FILE = join(ROOT, 'src-tauri', 'src', 'extensions.rs')
 const TYPE_GEN_FILE = join(ROOT, 'src-tauri', 'src', 'type_gen.rs')
-const COMMANDS_DIR = join(ROOT, 'src-tauri', 'src', 'commands')
 const CORE_DIR = join(ROOT, 'src-tauri', 'src')
 
 const IS_CHECK_MODE = process.argv.includes('--check')
@@ -65,34 +64,22 @@ interface ModuleMeta {
   module: string
   commands: string[]
   hasInit: boolean
-  source: 'built-in' | 'extension' | 'core'
+  source: 'extension' | 'core'
   backendPath?: string
   spectaCommands?: string[]
 }
 
 // 核心模块：不在 extensions/ 下，而是 src-tauri/src/core/ 下的 .rs 文件
-const CORE_MODULES = ['keyword_match', 'permission', 'shortcut', 'window']
-
-async function scanBuiltInCommands(): Promise<ModuleMeta[]> {
-  const results: ModuleMeta[] = []
-  if (!(await pathExists(COMMANDS_DIR))) return results
-
-  const files = await readdir(COMMANDS_DIR)
-
-  for (const file of files) {
-    if (!file.endsWith('.rs') || file === 'mod.rs') continue
-    const module = file.replace('.rs', '')
-    const content = await readFile(join(COMMANDS_DIR, file), 'utf-8')
-    const commands = extractCommands(content)
-    const spectaCommands = extractSpectaCommands(content)
-    const init = hasInit(content)
-    if (commands.length > 0 || init) {
-      results.push({ module, commands, spectaCommands, hasInit: init, source: 'built-in' })
-    }
-  }
-
-  return results
-}
+const CORE_MODULES = [
+  'keyword_match',
+  'permission',
+  'shortcut',
+  'window',
+  'tier1',
+  'ext_manifest',
+  'ext_loader',
+  'ext_commands',
+]
 
 async function scanCoreModules(): Promise<ModuleMeta[]> {
   const results: ModuleMeta[] = []
@@ -326,10 +313,9 @@ async function main() {
     `[sync-extensions] Found ${extNames.length} extension(s): ${extNames.join(', ') || 'none'}`,
   )
 
-  const builtIns = await scanBuiltInCommands()
   const coreModules = await scanCoreModules()
   const extBackends = await scanExtensionBackends()
-  const allModules = [...builtIns, ...coreModules, ...extBackends]
+  const allModules = [...coreModules, ...extBackends]
 
   if (IS_CHECK_MODE) {
     const ok = await checkRegistry(allModules)
@@ -347,9 +333,7 @@ async function main() {
   const totalPlugins = allModules.filter((m) => m.hasInit).length
 
   console.log('[sync-extensions] Done.')
-  console.log(
-    `  Modules:  ${builtIns.length} built-in + ${coreModules.length} core + ${extBackends.length} extension`,
-  )
+  console.log(`  Modules:  ${coreModules.length} core + ${extBackends.length} extension`)
   console.log(`  Commands: ${totalCommands}`)
   console.log(`  Plugins:  ${totalPlugins}`)
 }

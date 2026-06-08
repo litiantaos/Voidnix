@@ -1,23 +1,47 @@
 <template>
   <div
-    class="pt-12 flex h-screen w-screen items-start justify-center"
+    p="t-12"
+    flex
+    h="screen"
+    w="screen"
+    items="start"
+    justify="center"
     style="-webkit-app-region: no-drag"
   >
     <div
       ref="panel"
-      class="panel p-3 border border-gray-300 rounded-xl bg-[#f7f7fa] flex gap-2.5 shadow-2xl"
+      class="panel"
+      p="3"
+      border="~ gray-300"
+      rounded="xl"
+      bg="[#f7f7fa]"
+      flex
+      gap="2.5"
+      shadow="2xl"
     >
-      <div v-for="group in groups" :key="group.id" class="p-1 h-14 w-14">
+      <div v-for="group in groups" :key="group.id" p="1" h="14" w="14">
         <template v-if="group.nested">
-          <div class="h-full w-full relative">
+          <div h="full" w="full" relative>
             <div
-              class="snap-zone rounded bg-black/7 inset-0 absolute"
+              class="snap-zone"
+              rounded
+              bg="black/7"
+              inset="0"
+              absolute
               :class="{ 'snap-hover': hoveredLayout === group.zones[0].layout }"
               :data-layout="group.zones[0].layout"
               @click="onZone(group.zones[0].layout)"
             />
             <div
-              class="snap-zone rounded bg-black/7 h-40% w-40% left-30% top-30% absolute z-1"
+              class="snap-zone"
+              rounded
+              bg="black/7"
+              h="40%"
+              w="40%"
+              left="30%"
+              top="30%"
+              absolute
+              z="1"
               :class="{ 'snap-hover': hoveredLayout === group.zones[1].layout }"
               :data-layout="group.zones[1].layout"
               @click.stop="onZone(group.zones[1].layout)"
@@ -29,7 +53,10 @@
             <template v-for="zone in group.zones" :key="zone.layout">
               <div
                 v-if="zone.layout === 'custom'"
-                class="snap-zone custom-zone text-black/25 rounded bg-black/7 flex items-center justify-center"
+                class="snap-zone custom-zone flex-center"
+                text="black/25"
+                rounded
+                bg="black/7"
                 :class="{ 'snap-hover': hoveredLayout === zone.layout }"
                 :data-layout="zone.layout"
                 @click="onZone(zone.layout)"
@@ -49,7 +76,9 @@
               </div>
               <div
                 v-else
-                class="snap-zone rounded bg-black/7"
+                class="snap-zone"
+                rounded
+                bg="black/7"
                 :class="{ 'snap-hover': hoveredLayout === zone.layout }"
                 :data-layout="zone.layout"
                 @click="onZone(zone.layout)"

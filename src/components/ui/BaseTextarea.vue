@@ -15,7 +15,11 @@
       :placeholder="placeholder"
       :disabled="disabled"
       :rows="rows"
-      class="text-tx-primary py-2 outline-none bg-transparent flex-1 min-w-0 resize-none overflow-y-hidden placeholder:text-tx-hint"
+      class="input-base placeholder:text-tx-hint"
+      text="tx-primary"
+      p="y-2"
+      resize="none"
+      overflow="y-hidden"
       :class="{ 'overflow-y-auto': maxHeight > 0 }"
       :style="{
         maxHeight: maxHeight > 0 ? maxHeight + 'px' : undefined,

@@ -1,6 +1,10 @@
+use crate::core::tier1::Tier1Extension;
+use tauri::AppHandle;
+
 #[cfg(target_os = "macos")]
 mod ffi;
 #[allow(unused_imports)]
+#[cfg(target_os = "macos")]
 pub use ffi::*;
 
 mod crop;
@@ -8,6 +12,8 @@ pub mod ocr;
 pub mod pin;
 pub mod scroll_capture;
 pub mod session;
+#[cfg(target_os = "macos")]
+mod setup;
 pub use session::{capture_screen, reactivate_screenshot_window};
 
 #[cfg(target_os = "macos")]
@@ -15,7 +21,9 @@ pub fn install_background_layer(window: &tauri::WebviewWindow) {
     use objc2_app_kit::NSWindow;
     let Ok(raw) = window.ns_window() else { return };
     let ptr = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
-    unsafe { ffi::voidnix_screenshot_install_background_layer(ptr); }
+    unsafe {
+        ffi::voidnix_screenshot_install_background_layer(ptr);
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -46,37 +54,27 @@ pub async fn open_module_subview(
     Ok(())
 }
 
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("screenshot")
-        .setup(|_app, _api| {
-            #[cfg(target_os = "macos")]
-            {
-                crate::core::shortcut::register_shortcut_hook("screenshot", Box::new(|app, _ctx| {
-                    if session::IS_IN_SCREENSHOT_SESSION.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                        return true;
-                    }
-                    let app_clone = app.clone();
-                    std::thread::spawn(move || {
-                        let result = capture_screen();
-                        match result {
-                            Ok(data) => {
-                                let app_for_enter = app_clone.clone();
-                                let _ = app_clone.run_on_main_thread(move || {
-                                    session::enter_screenshot_mode_sync(&app_for_enter, data);
-                                });
-                            }
-                            Err(e) => {
-                                session::IS_IN_SCREENSHOT_SESSION.store(false, std::sync::atomic::Ordering::SeqCst);
-                                eprintln!("截图失败: {}", e);
-                            }
-                        }
-                    });
-                    true
-                }));
-            }
-            Ok(())
-        })
-        .build()
+/// Screenshot 扩展。
+///
+/// 拥有覆盖屏幕的全屏 `screenshot` 窗口、ScreenCaptureKit 截图会话、
+/// OCR/截长图/钉图等子能力，以及全局快捷键钩子。
+pub struct Plugin;
+
+impl Tier1Extension for Plugin {
+    fn id(&self) -> &'static str {
+        "screenshot"
+    }
+
+    fn on_setup(&self, _app: &AppHandle) -> tauri::Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            setup::configure_overlay_window(_app);
+            setup::install_reactivate_observer(_app);
+            setup::schedule_jpeg_prewarm(_app);
+            setup::register_shortcut_hook();
+        }
+        Ok(())
+    }
 }
 
 pub(crate) fn cleanup_temp_files() {

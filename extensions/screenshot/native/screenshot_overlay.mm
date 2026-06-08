@@ -131,6 +131,7 @@ extern "C" bool voidnix_screenshot_set_background(void *ns_window_ptr, void *cg_
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
         bg.contents = (__bridge id)cg;
+        bg.contentsGravity = kCAGravityResize;
         bg.frame = content.layer.bounds;
         bg.hidden = NO;
         // 实测某些时序下 contents 设置后不立即 commit 会有 1 帧空白
@@ -139,6 +140,46 @@ extern "C" bool voidnix_screenshot_set_background(void *ns_window_ptr, void *cg_
         return true;
     } @catch (NSException *e) {
         NSLog(@"[shot-overlay] set_background exception: %@ - %@", e.name, e.reason);
+        return false;
+    }
+}
+
+// 居中模式：用于钉图窗口被 min_inner_size 撑大、原图尺寸小于窗口时。
+// 让图按原始像素居中显示，不拉伸；窗口剩余区域保持透明。
+// contentsGravity=center 会按 CGImage 像素 / contentsScale 得到点尺寸，
+// 在 layer bounds 中居中铺放。
+extern "C" bool voidnix_screenshot_set_background_centered(
+    void *ns_window_ptr, void *cg_image_ptr
+) {
+    if (ns_window_ptr == NULL || cg_image_ptr == NULL) {
+        return false;
+    }
+    NSWindow *window = (__bridge NSWindow *)ns_window_ptr;
+    NSView *content = window.contentView;
+    if (content == nil) {
+        return false;
+    }
+    CALayer *bg = (CALayer *)objc_getAssociatedObject(content, kBackgroundLayerKey);
+    if (bg == nil) {
+        NSLog(@"[shot-overlay] background layer not installed");
+        return false;
+    }
+
+    @try {
+        CGImageRef cg = (CGImageRef)cg_image_ptr;
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        bg.contents = (__bridge id)cg;
+        bg.contentsGravity = kCAGravityCenter;
+        // 居中模式下图小于 layer，剩余区域跟随系统外观填充窗口背景色，让窗口形状可见
+        bg.backgroundColor = [[NSColor windowBackgroundColor] CGColor];
+        bg.frame = content.layer.bounds;
+        bg.hidden = NO;
+        [CATransaction commit];
+        [CATransaction flush];
+        return true;
+    } @catch (NSException *e) {
+        NSLog(@"[shot-overlay] set_background_centered exception: %@ - %@", e.name, e.reason);
         return false;
     }
 }

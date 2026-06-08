@@ -1,8 +1,8 @@
 <template>
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置翻译服务" />
 
-  <div v-else class="flex flex-col h-full overflow-y-auto">
-    <div class="px-5 pb-2 pt-5">
+  <div v-else flex="~ col" h="full" overflow="y-auto">
+    <div p="x-5 b-2 t-5">
       <BaseTextarea
         ref="textareaRef"
         v-model="inputText"
@@ -20,7 +20,7 @@
       loading
     />
 
-    <div class="px-3">
+    <div p="x-3">
       <BaseList
         v-if="translateResults.length > 0"
         :items="translateResults"
@@ -32,9 +32,10 @@
             <template #title>
               <div
                 v-if="item.loading && !item.translation"
-                class="i-ri-loader-4-line text-base text-tx-muted animate-spin"
+                class="i-ri-loader-4-line animate-spin"
+                text="base tx-muted"
               />
-              <span v-else class="leading-relaxed font-normal wrap-break-word">
+              <span v-else leading="relaxed" font="normal" wrap="break-word">
                 {{ item.translation }}<span v-if="item.loading" class="animate-pulse">▍</span>
               </span>
             </template>

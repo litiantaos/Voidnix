@@ -1,5 +1,5 @@
 <template>
-  <div class="pb-4 flex flex-col h-full">
+  <div class="flex-col-full-pb">
     <BaseList
       :items="allItems"
       v-model:selected-index="selectedIndex"
@@ -8,7 +8,7 @@
       @execute="(item: TranslateSettingsItem) => onExecute(item)"
     >
       <template #group-title="{ group }">
-        <div class="flex items-center">
+        <div flex items="center">
           <span>{{ group }}</span>
           <BaseButton
             v-if="group === '翻译服务'"
@@ -82,11 +82,11 @@
       @confirm="saveConfigModal"
       @cancel="closeConfigModal"
     >
-      <div class="flex flex-col gap-4">
+      <div flex="~ col" gap="4">
         <!-- 有道表单 -->
         <template v-if="editingType === 'youdao'">
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">APP ID</span>
+          <div class="form-field">
+            <span class="form-label">APP ID</span>
             <BaseInput
               v-model="youdaoForm.appKey"
               :type="passwordVisible ? 'text' : 'password'"
@@ -94,15 +94,17 @@
             >
               <template #suffix>
                 <button
-                  class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
+                  class="i-ri-eye-line hover:text-black/60"
+                  text="black/35"
+                  shrink="0"
                   :class="{ 'i-ri-eye-off-line': passwordVisible }"
                   @click.stop="passwordVisible = !passwordVisible"
                 />
               </template>
             </BaseInput>
           </div>
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">APP SECRET</span>
+          <div class="form-field">
+            <span class="form-label">APP SECRET</span>
             <BaseInput
               v-model="youdaoForm.appSecret"
               :type="passwordVisible ? 'text' : 'password'"
@@ -110,7 +112,9 @@
             >
               <template #suffix>
                 <button
-                  class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
+                  class="i-ri-eye-line hover:text-black/60"
+                  text="black/35"
+                  shrink="0"
                   :class="{ 'i-ri-eye-off-line': passwordVisible }"
                   @click.stop="passwordVisible = !passwordVisible"
                 />
@@ -121,13 +125,13 @@
 
         <!-- AI 表单 -->
         <template v-else>
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">API URL</span>
+          <div class="form-field">
+            <span class="form-label">API URL</span>
             <BaseInput v-model="aiForm.endpoint" placeholder="https://api.openai.com/v1" />
           </div>
 
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">API KEY</span>
+          <div class="form-field">
+            <span class="form-label">API KEY</span>
             <BaseInput
               v-model="aiForm.apiKey"
               :type="passwordVisible ? 'text' : 'password'"
@@ -135,7 +139,9 @@
             >
               <template #suffix>
                 <button
-                  class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
+                  class="i-ri-eye-line hover:text-black/60"
+                  text="black/35"
+                  shrink="0"
                   :class="{ 'i-ri-eye-off-line': passwordVisible }"
                   @click.stop="passwordVisible = !passwordVisible"
                 />
@@ -143,14 +149,10 @@
             </BaseInput>
           </div>
 
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">模型</span>
-            <div class="flex flex-col gap-1.5">
-              <div
-                v-for="(_, index) in aiForm.models"
-                :key="index"
-                class="flex gap-1.5 items-center"
-              >
+          <div class="form-field">
+            <span class="form-label">模型</span>
+            <div class="form-field">
+              <div v-for="(_, index) in aiForm.models" :key="index" flex gap="1.5" items="center">
                 <BaseInput v-model="aiForm.models[index]" placeholder="gpt-4o" class="flex-1" />
                 <BaseButton
                   v-if="index > 0"
@@ -163,8 +165,8 @@
             </div>
           </div>
 
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs text-tx-faint font-medium">提示词</span>
+          <div class="form-field">
+            <span class="form-label">提示词</span>
             <BaseTextarea
               v-model="aiForm.prompt"
               placeholder="Translate the following text from {fromLang} to {toLang}:\n\n{text}"

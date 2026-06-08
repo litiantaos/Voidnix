@@ -1,5 +1,5 @@
 <template>
-  <div class="flex gap-1.5 h-7 items-center" :title="title">
+  <div flex gap="1.5" h="7" items="center" :title="title">
     <input
       :value="modelValue"
       type="range"
@@ -12,7 +12,10 @@
     />
     <span
       v-if="!hideValue"
-      class="text-xs text-tx-secondary leading-none text-right shrink-0 tabular-nums"
+      text="xs tx-secondary right"
+      leading="none"
+      shrink="0"
+      tabular-nums
       :style="{ width: valueWidth }"
       >{{ displayValue }}</span
     >

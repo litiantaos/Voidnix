@@ -6,7 +6,6 @@ mod type_gen;
 mod extensions;
 
 use tauri::Manager;
-use infra::db::Database;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,14 +24,27 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            let registry = crate::core::tier1::Tier1Registry::new()
+                .register(crate::extensions::clipboard::Plugin)
+                .register(crate::extensions::screenshot::Plugin)
+                .register(crate::extensions::awake::Plugin)
+                .register(crate::extensions::zsh_autosuggestions::Plugin)
+                .register(crate::extensions::window_manager::Plugin)
+                .register(crate::extensions::finder_ext::Plugin)
+                .register(crate::extensions::translate::Plugin)
+                .register(crate::extensions::chat::Plugin);
+            crate::core::tier1::bootstrap(app, registry)?;
+
+            // Tier 2 扩展运行时
+            let ext_state = crate::core::ext_commands::ExtensionLoaderState::new();
+            ext_state.loader().rescan(app.handle()).ok();
+            app.manage(ext_state);
+
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             #[cfg(target_os = "macos")]
             crate::macos::text_selection::init_ax_timeout();
-
-            let db_path = infra::path::clipboard_db_path(app.handle());
-            app.manage(Database::new(db_path));
 
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
@@ -48,30 +60,6 @@ pub fn run() {
                     }
                 }
                 macos::panel::convert_to_panel(raw.cast());
-            }
-
-            #[cfg(target_os = "macos")]
-            if let Some(window) = app.get_webview_window("screenshot") {
-                use objc2_app_kit::{NSScreen, NSWindow as ScreenshotNSWindow, NSWindowAnimationBehavior, NSWindowCollectionBehavior};
-                use objc2_foundation::MainThreadMarker;
-                crate::extensions::screenshot::install_background_layer(&window);
-                let raw = window.ns_window().unwrap().cast::<ScreenshotNSWindow>();
-                unsafe {
-                    let ns_window = raw.as_ref().unwrap();
-                    ns_window.setAnimationBehavior(NSWindowAnimationBehavior::None);
-                    ns_window.setLevel(objc2_app_kit::NSStatusWindowLevel);
-                    let _: () = objc2::msg_send![ns_window, setAcceptsMouseMovedEvents: true];
-                    let behavior = NSWindowCollectionBehavior::FullScreenAuxiliary
-                        | NSWindowCollectionBehavior::Transient
-                        | NSWindowCollectionBehavior::IgnoresCycle;
-                    ns_window.setCollectionBehavior(behavior);
-                    let mtm = MainThreadMarker::new().unwrap();
-                    let screen = NSScreen::mainScreen(mtm).unwrap();
-                    ns_window.setFrame_display(screen.frame(), true);
-                    ns_window.setAlphaValue(0.0);
-                    let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: true];
-                    ns_window.orderFrontRegardless();
-                }
             }
 
             #[cfg(target_os = "macos")]
@@ -99,44 +87,6 @@ pub fn run() {
                     ns_window.setAlphaValue(0.0);
                     ns_window.orderFrontRegardless();
                 }
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                use objc2_foundation::{NSNotificationCenter, NSNotificationName, NSString};
-                use objc2::rc::Retained;
-                use std::sync::OnceLock;
-
-                static SCREENSHOT_REACTIVATE: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
-                let event_app = app.handle().clone();
-                let _ = SCREENSHOT_REACTIVATE.set(Box::new(move || {
-                    crate::extensions::screenshot::reactivate_screenshot_window(&event_app);
-                }));
-
-                let center = NSNotificationCenter::defaultCenter();
-                let name: Retained<NSString> = NSString::from_str("NSApplicationDidBecomeActiveNotification");
-                let name_ref: &NSNotificationName = unsafe { std::mem::transmute::<&NSString, &NSNotificationName>(&name) };
-
-                unsafe {
-                    center.addObserverForName_object_queue_usingBlock(
-                        Some(name_ref),
-                        None,
-                        None,
-                        &block2::RcBlock::new(|_notification| {
-                            if let Some(cb) = SCREENSHOT_REACTIVATE.get() {
-                                cb();
-                            }
-                        }),
-                    );
-                }
-
-                let app_handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                    let _ = app_handle.run_on_main_thread(|| {
-                        crate::extensions::screenshot::prewarm_jpeg_encoder();
-                    });
-                });
             }
 
             Ok(())

@@ -1,5 +1,5 @@
 <template>
-  <div class="pb-4 flex flex-col h-full">
+  <div class="flex-col-full-pb">
     <BaseList
       :items="allItems"
       v-model:selected-index="selectedIndex"
@@ -8,7 +8,7 @@
       @execute="(item: ChatSettingsItem) => onExecute(item)"
     >
       <template #group-title="{ group }">
-        <div class="flex items-center">
+        <div flex items="center">
           <span>{{ group }}</span>
           <BaseButton
             v-if="group === '提供商'"
@@ -59,16 +59,16 @@
       @confirm="saveConfigModal"
       @cancel="closeConfigModal"
     >
-      <div class="flex flex-col gap-4">
+      <div flex="~ col" gap="4">
         <!-- API URL -->
-        <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-tx-faint font-medium">API URL</span>
+        <div class="form-field">
+          <span class="form-label">API URL</span>
           <BaseInput v-model="modalForm.endpoint" placeholder="https://api.openai.com/v1" />
         </div>
 
         <!-- API KEY -->
-        <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-tx-faint font-medium">API KEY</span>
+        <div class="form-field">
+          <span class="form-label">API KEY</span>
           <BaseInput
             v-model="modalForm.apiKey"
             :type="passwordVisible ? 'text' : 'password'"
@@ -76,7 +76,9 @@
           >
             <template #suffix>
               <button
-                class="i-ri-eye-line text-black/35 shrink-0 hover:text-black/60"
+                class="i-ri-eye-line hover:text-black/60"
+                text="black/35"
+                shrink="0"
                 :class="{ 'i-ri-eye-off-line': passwordVisible }"
                 @click.stop="passwordVisible = !passwordVisible"
               />
@@ -85,14 +87,10 @@
         </div>
 
         <!-- 模型 -->
-        <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-tx-faint font-medium">模型</span>
-          <div class="flex flex-col gap-1.5">
-            <div
-              v-for="(_, index) in modalForm.models"
-              :key="index"
-              class="flex gap-1.5 items-center"
-            >
+        <div class="form-field">
+          <span class="form-label">模型</span>
+          <div class="form-field">
+            <div v-for="(_, index) in modalForm.models" :key="index" flex gap="1.5" items="center">
               <BaseInput v-model="modalForm.models[index]" placeholder="gpt-5" class="flex-1" />
               <BaseButton
                 v-if="index > 0"

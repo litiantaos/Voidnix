@@ -1,12 +1,16 @@
 <template>
-  <div class="flex flex-1 flex-col overflow-hidden">
+  <div flex="~ 1 col" overflow="hidden">
     <!-- Scrollable Content -->
     <div
       ref="scrollContainer"
       tabindex="-1"
-      class="hide-scrollbar outline-none flex flex-1 flex-col min-h-0 relative overflow-y-auto"
+      outline="none"
+      flex="~ 1 col"
+      min-h="0"
+      relative
+      class="hide-scrollbar overflow-y-auto"
     >
-      <div class="flex flex-1 flex-col">
+      <div flex="~ 1 col">
         <KeepAlive v-if="resolvedView" :max="10">
           <component
             :is="resolvedView"
@@ -49,30 +53,44 @@
                 <template #icon>
                   <div
                     v-if="isIconFont(item) && !isModuleItem(item)"
-                    class="flex h-6 w-6 items-center justify-center"
+                    h="6"
+                    w="6"
+                    class="flex-center"
                   >
                     <i :class="[getIcon(item), 'text-xl text-black/50']" />
                   </div>
                   <img
                     v-else-if="isImageIcon(item) && !isModuleItem(item)"
                     :src="getIconSrc(item)"
-                    class="h-[115%] max-w-[115%] w-[115%] object-contain"
+                    h="[115%]"
+                    max-w="[115%]"
+                    w="[115%]"
+                    object="contain"
                     :class="{ rounded: item.data?.iconStyle === 'rounded' }"
                     :alt="item.title"
                   />
                   <div
                     v-else-if="isModuleItem(item)"
-                    class="text-sm text-accent rounded-md bg-accent/10 flex h-full w-full items-center justify-center"
+                    text="sm accent"
+                    rounded="md"
+                    bg="accent/10"
+                    h="full"
+                    w="full"
+                    class="flex-center"
                   >
                     <i :class="getIcon(item) || 'i-ri-apps-2-line'" />
                   </div>
                   <div
                     v-else-if="isFileOrFolder(item)"
-                    class="rounded-md bg-black/4 flex h-full w-full items-center justify-center"
+                    rounded="md"
+                    bg="black/4"
+                    h="full"
+                    w="full"
+                    class="flex-center"
                   >
                     <i :class="[getFileIcon(item).icon, getFileIcon(item).color]" class="text-sm" />
                   </div>
-                  <span v-else class="text-sm text-black/30 font-medium">
+                  <span v-else text="sm black/30" font="medium">
                     {{ item.title[0]?.toUpperCase() }}
                   </span>
                 </template>
@@ -82,7 +100,7 @@
                   </div>
                 </template>
                 <template #subtitle>
-                  <span v-if="item.description" class="truncate">{{ item.description }}</span>
+                  <span v-if="item.description" truncate>{{ item.description }}</span>
                   <template v-else-if="item.data?.path && isFileOrFolder(item)">
                     <span
                       class="flex-[0_1_auto] min-w-0 truncate"
@@ -90,7 +108,7 @@
                     >
                       {{ formatPathParts(getParentPath(item.data.path)).head }}
                     </span>
-                    <span class="flex-none whitespace-nowrap">
+                    <span flex="none" whitespace="nowrap">
                       {{ formatPathParts(getParentPath(item.data.path)).tail }}
                     </span>
                   </template>

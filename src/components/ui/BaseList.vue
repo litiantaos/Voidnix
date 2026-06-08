@@ -1,5 +1,5 @@
 <template>
-  <div class="p-2 flex flex-col gap-1" role="listbox" aria-label="搜索结果">
+  <div p="2" flex="~ col" gap="1" role="listbox" aria-label="搜索结果">
     <template v-for="(item, i) in items" :key="i">
       <div
         v-if="
@@ -7,7 +7,7 @@
           (i === 0 || getGroupValue(item) !== getGroupValue(items[i - 1])) &&
           (groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item))
         "
-        class="text-xs text-tx-faint tracking-wider font-medium px-3 py-1.5 uppercase"
+        class="group-header"
       >
         <slot name="group-title" :group="getGroupValue(item)" :item="item" :index="i">
           {{ groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item) }}

@@ -1,0 +1,19 @@
+[extension]
+id = "time"
+name = "时间戳"
+version = "1.0.0"
+description = "时间与时间戳转换"
+author = "Voidnix"
+icon = "i-ri-time-line"
+keywords = ["time", "date", "timestamp", "时间", "时间戳", "日期"]
+voidnix_api = "^1"
+
+[entry]
+main = "index.js"
+
+[ui]
+preferred_view = "list"
+search_placeholder = "输入时间戳或日期字符串"
+
+[capabilities]
+required = ["clipboard.write"]

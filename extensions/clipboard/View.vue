@@ -25,7 +25,9 @@
         <template #icon>
           <div
             v-if="getColor(item)"
-            class="rounded h-4 w-4"
+            rounded
+            h="4"
+            w="4"
             :style="{ backgroundColor: getColor(item)! }"
           ></div>
           <i
@@ -41,28 +43,34 @@
         <template #title>
           <div
             v-if="item.content_type === 'text'"
-            class="whitespace-pre-wrap wrap-break-word line-clamp-5"
+            whitespace-pre-wrap
+            wrap-break-word
+            line-clamp="5"
           >
             {{ item.content }}
           </div>
-          <div v-else-if="item.content_type === 'image'" class="mb-2 mt-0.5">
+          <div v-else-if="item.content_type === 'image'" m="b-2 t-0.5">
             <img
               v-if="imageCache.get(item.id)"
               :src="imageCache.get(item.id)"
-              class="rounded-md bg-black/5 h-32 w-48 object-cover object-top"
+              rounded="md"
+              bg="black/5"
+              h="32"
+              w="48"
+              object="cover top"
               loading="lazy"
               alt="剪贴板图片"
             />
-            <div v-else class="rounded-md bg-black/5 flex h-32 w-48 items-center justify-center">
+            <div v-else rounded="md" bg="black/5" flex h="32" w="48" class="flex-center">
               <div class="i-ri-image-line text-2xl text-black/20"></div>
             </div>
           </div>
-          <div v-else class="truncate">
+          <div v-else truncate>
             {{ item.content.split('/').filter(Boolean).pop() || item.content }}
           </div>
         </template>
         <template #subtitle>
-          <div class="flex gap-2 items-center">
+          <div flex gap="2" items="center">
             <span>{{ item.source_app }}</span>
             <span>•</span>
             <span>{{ formatTime(item.created_at) }}</span>

@@ -6,7 +6,7 @@ import eslintConfigPrettier from 'eslint-config-prettier'
 export default [
   {
     name: 'app/files-to-lint',
-    files: ['**/*.{ts,mts,tsx,vue}'],
+    files: ['**/*.{js,ts,mts,tsx,vue}'],
   },
 
   {
@@ -23,6 +23,16 @@ export default [
     files: ['extensions/**/*.vue'],
     rules: {
       'vue/multi-word-component-names': 'off',
+    },
+  },
+
+  {
+    name: 'app/unused-vars',
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
 

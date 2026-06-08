@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex-col-full">
     <BaseList
       :items="items"
       v-model:selected-index="selectedIndex"

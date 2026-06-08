@@ -1,13 +1,20 @@
 <template>
   <Teleport to="body">
-    <div class="flex items-center inset-0 justify-center fixed z-100" @keydown="onKeyDown">
+    <div flex items="center" inset="0" justify="center" fixed z="100" @keydown="onKeyDown">
       <Transition appear enter-from-class="backdrop-from" leave-to-class="backdrop-from">
-        <div class="backdrop-to inset-0 absolute" @click="onOverlayClick" />
+        <div class="backdrop-to" inset="0" absolute @click="onOverlayClick" />
       </Transition>
       <Transition appear enter-from-class="dialog-from" leave-to-class="dialog-from">
         <div
           ref="dialogRef"
-          class="dialog-to outline-none rounded-lg bg-white flex flex-col shadow-md relative z-10"
+          class="dialog-to"
+          outline="none"
+          rounded="lg"
+          bg="white"
+          flex="~ col"
+          shadow="md"
+          relative
+          z="10"
           :class="sizeClass"
           role="dialog"
           aria-modal="true"
@@ -15,7 +22,7 @@
           :aria-describedby="message ? descId : undefined"
           tabindex="-1"
         >
-          <div class="text-sm text-tx-primary font-bold p-5">
+          <div text="sm tx-primary" font="bold" p="5">
             <slot name="header">
               <h3 :id="titleId">
                 {{ title }}
@@ -23,12 +30,15 @@
             </slot>
           </div>
 
-          <div class="hide-scrollbar px-5 flex-1 overflow-auto">
+          <div class="hide-scrollbar" p="x-5" flex="1" overflow="auto">
             <slot>
               <p
                 v-if="message"
                 :id="descId"
-                class="text-xs text-tx-subtle leading-relaxed whitespace-pre-wrap break-all"
+                text="xs tx-subtle"
+                leading="relaxed"
+                whitespace="pre-wrap"
+                break="all"
               >
                 {{ message }}
               </p>
@@ -36,11 +46,11 @@
           </div>
 
           <slot v-if="resolvedShowFooter" name="footer">
-            <div class="p-5 flex gap-2 justify-between">
+            <div p="5" flex gap="2" justify="between">
               <div>
                 <slot name="footer-start" />
               </div>
-              <div class="flex gap-2">
+              <div flex gap="2">
                 <BaseButton
                   v-if="showCancel"
                   :active="focusIndex === 0"

@@ -1,37 +1,44 @@
+use crate::core::tier1::Tier1Extension;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
 const DAEMON_BIN_NAME: &str = "zsh-autosuggestions";
 
-fn app_daemon_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
-    crate::infra::path::zsh_daemon_dir(app)
+fn app_daemon_dir(app: &AppHandle) -> PathBuf {
+    let dir = app.path().app_data_dir().unwrap_or_else(|_| PathBuf::from("."))
+        .join("extensions")
+        .join("zsh-autosuggestions");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
 }
 
-fn installed_bin_path(app: &tauri::AppHandle) -> std::path::PathBuf {
-    crate::infra::path::zsh_daemon_bin_path(app)
+fn installed_bin_path(app: &AppHandle) -> PathBuf {
+    app_daemon_dir(app).join("bin").join(DAEMON_BIN_NAME)
 }
 
-fn source_bin_path() -> Option<std::path::PathBuf> {
+fn source_bin_path() -> Option<PathBuf> {
     std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join(DAEMON_BIN_NAME)))
         .filter(|p| p.exists())
 }
 
-fn flag_path(app: &tauri::AppHandle) -> std::path::PathBuf {
-    crate::infra::path::zsh_daemon_flag_path(app)
+fn flag_path(app: &AppHandle) -> PathBuf {
+    app_daemon_dir(app).join("enabled")
 }
 
-fn import_marker_path(app: &tauri::AppHandle) -> std::path::PathBuf {
+fn import_marker_path(app: &AppHandle) -> PathBuf {
     app_daemon_dir(app).join(".imported")
 }
 
-fn version_marker_path(app: &tauri::AppHandle) -> std::path::PathBuf {
+fn version_marker_path(app: &AppHandle) -> PathBuf {
     app_daemon_dir(app).join(".installed_version")
 }
 
-fn install_daemon_bin(app: &tauri::AppHandle) -> bool {
+fn install_daemon_bin(app: &AppHandle) -> bool {
     let dest = installed_bin_path(app);
     let source = match source_bin_path() {
         Some(s) => s,
@@ -63,7 +70,7 @@ fn install_daemon_bin(app: &tauri::AppHandle) -> bool {
     }
 }
 
-fn import_history(app: &tauri::AppHandle) {
+fn import_history(app: &AppHandle) {
     let bin = installed_bin_path(app);
     if !bin.exists() {
         return;
@@ -123,7 +130,7 @@ fn remove_zshrc_line() {
     }
 }
 
-fn write_zshrc_line(app: &tauri::AppHandle) {
+fn write_zshrc_line(app: &AppHandle) {
     let Some(home) = dirs::home_dir() else { return };
     let zshrc = home.join(".zshrc");
 
@@ -157,7 +164,7 @@ fn write_zshrc_line(app: &tauri::AppHandle) {
 }
 
 #[tauri::command]
-pub fn set_zsh_autosuggestions_enabled(app: tauri::AppHandle, enabled: bool) {
+pub fn set_zsh_autosuggestions_enabled(app: AppHandle, enabled: bool) {
     ENABLED.store(enabled, Ordering::Relaxed);
 
     let dir = app_daemon_dir(&app);
@@ -189,14 +196,19 @@ fn kill_daemon() {
         .status();
 }
 
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("zsh_autosuggestions")
-        .setup(|app, _api| {
-            let flag = flag_path(app);
-            if flag.exists() {
-                ENABLED.store(true, Ordering::Relaxed);
-            }
-            Ok(())
-        })
-        .build()
+/// Zsh autosuggestions 扩展。
+pub struct Plugin;
+
+impl Tier1Extension for Plugin {
+    fn id(&self) -> &'static str {
+        "zsh-autosuggestions"
+    }
+
+    fn on_setup(&self, app: &AppHandle) -> tauri::Result<()> {
+        let flag = flag_path(app);
+        if flag.exists() {
+            ENABLED.store(true, Ordering::Relaxed);
+        }
+        Ok(())
+    }
 }

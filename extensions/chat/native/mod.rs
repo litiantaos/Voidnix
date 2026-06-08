@@ -1,3 +1,4 @@
+use crate::core::tier1::Tier1Extension;
 use crate::infra::sse::{self, ChatMessage};
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,7 +43,11 @@ pub async fn chat_stream(
     .await
 }
 
+/// Chat 扩展。
+pub struct Plugin;
 
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("chat").build()
+impl Tier1Extension for Plugin {
+    fn id(&self) -> &'static str {
+        "chat"
+    }
 }

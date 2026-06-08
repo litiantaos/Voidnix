@@ -1,5 +1,4 @@
 pub mod click_monitor;
-pub mod clipboard_monitor;
 pub mod mac_utils;
 #[cfg(target_os = "macos")]
 pub mod panel;

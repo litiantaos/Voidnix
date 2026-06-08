@@ -1,7 +1,11 @@
 <template>
   <div
     ref="rootEl"
-    class="select-none inset-0 fixed z-9999 overflow-hidden"
+    select="none"
+    inset="0"
+    fixed
+    z="9999"
+    overflow="hidden"
     :style="{ cursor: cursorStyle, pointerEvents: phase === 'scroll' ? 'none' : 'auto' }"
     @mousedown="onMouseDown"
     @mousemove="onMouseMove"
@@ -12,27 +16,29 @@
   >
     <!-- 遮罩层 -->
     <template v-if="hasSelection">
-      <div class="bg-black/45 pointer-events-none fixed" :style="maskTop" />
-      <div class="bg-black/45 pointer-events-none fixed" :style="maskBottom" />
-      <div class="bg-black/45 pointer-events-none fixed" :style="maskLeft" />
-      <div class="bg-black/45 pointer-events-none fixed" :style="maskRight" />
+      <div bg="black/45" pointer-events="none" fixed :style="maskTop" />
+      <div bg="black/45" pointer-events="none" fixed :style="maskBottom" />
+      <div bg="black/45" pointer-events="none" fixed :style="maskLeft" />
+      <div bg="black/45" pointer-events="none" fixed :style="maskRight" />
     </template>
     <template v-else-if="phase === 'select' && hoverWindow">
-      <div class="bg-black/45 pointer-events-none fixed" :style="hoverMaskTop" />
-      <div class="bg-black/45 pointer-events-none fixed" :style="hoverMaskBottom" />
-      <div class="bg-black/45 pointer-events-none fixed" :style="hoverMaskLeft" />
-      <div class="bg-black/45 pointer-events-none fixed" :style="hoverMaskRight" />
+      <div bg="black/45" pointer-events="none" fixed :style="hoverMaskTop" />
+      <div bg="black/45" pointer-events="none" fixed :style="hoverMaskBottom" />
+      <div bg="black/45" pointer-events="none" fixed :style="hoverMaskLeft" />
+      <div bg="black/45" pointer-events="none" fixed :style="hoverMaskRight" />
     </template>
-    <div v-else class="bg-black/45 pointer-events-none inset-0 fixed" />
+    <div v-else bg="black/45" pointer-events="none" inset="0" fixed />
 
     <!-- 十字线 -->
     <template v-if="showCrosshair">
       <div
-        class="bg-accent/80 pointer-events-none absolute"
+        bg="accent/80"
+        class="overlay-abs"
         style="left: 0; right: 0; height: 1px; top: var(--cross-y)"
       />
       <div
-        class="bg-accent/80 pointer-events-none absolute"
+        bg="accent/80"
+        class="overlay-abs"
         style="top: 0; bottom: 0; width: 1px; left: var(--cross-x)"
       />
     </template>
@@ -40,13 +46,15 @@
     <!-- 放大镜 -->
     <div
       v-if="showCrosshair"
-      class="border border-black/20 rounded-lg pointer-events-none shadow-xl absolute z-50 overflow-hidden"
+      border="~ black/20"
+      rounded="lg"
+      class="overlay-abs"
+      shadow="xl"
+      z="50"
+      overflow="hidden"
       :style="magnifierStyle"
     >
-      <div
-        class="relative"
-        :style="{ width: MAGNIFIER_SIZE + 'px', height: MAGNIFIER_SIZE + 'px' }"
-      >
+      <div relative :style="{ width: MAGNIFIER_SIZE + 'px', height: MAGNIFIER_SIZE + 'px' }">
         <canvas
           :ref="setMagnifierCanvas"
           :width="MAGNIFIER_SIZE * dpr"
@@ -55,11 +63,12 @@
             width: MAGNIFIER_SIZE + 'px',
             height: MAGNIFIER_SIZE + 'px',
           }"
-          class="block"
+          block
         />
-        <div class="pointer-events-none inset-0 absolute">
+        <div class="overlay-abs" inset="0">
           <div
-            class="bg-accent/80 absolute"
+            bg="accent/80"
+            absolute
             :style="{
               left: 0,
               right: 0,
@@ -68,7 +77,8 @@
             }"
           />
           <div
-            class="bg-accent/80 absolute"
+            bg="accent/80"
+            absolute
             :style="{
               top: 0,
               bottom: 0,
@@ -79,18 +89,32 @@
         </div>
       </div>
       <div
-        class="text-xs text-black font-mono border-t border-black/20 bg-white flex gap-2 h-6 select-none items-center justify-center"
+        text="xs black"
+        font="mono"
+        border="t black/20"
+        bg="white"
+        flex
+        gap="2"
+        h="6"
+        select="none"
+        class="flex-center"
       >
-        <div class="border border-black/20 h-3 w-3" :style="{ background: pickedColor }"></div>
+        <div border="~ black/20" h="3" w="3" :style="{ background: pickedColor }"></div>
         <div>{{ pickedColor }}</div>
       </div>
     </div>
 
     <!-- 窗口高亮 -->
     <template v-if="!hasSelection && phase === 'select' && hoverWindow">
-      <div class="border border-accent pointer-events-none absolute" :style="hoverWindowStyle">
+      <div border="~ accent" class="overlay-abs" :style="hoverWindowStyle">
         <div
-          class="text-xs text-tx-primary px-1.5 py-0.5 rounded bg-surface pointer-events-none select-none shadow absolute"
+          text="xs tx-primary"
+          p="x-1.5 y-0.5"
+          rounded
+          bg="surface"
+          class="overlay-abs"
+          select="none"
+          shadow
           :style="hoverSizeStyle"
         >
           {{ Math.round(hoverWindow.w) }}×{{ Math.round(hoverWindow.h) }}
@@ -100,9 +124,15 @@
 
     <!-- 选区边框 + 8个控制点 -->
     <template v-if="hasSelection && phase !== 'scroll'">
-      <div class="border border-accent pointer-events-none absolute" :style="selectionStyle">
+      <div border="~ accent" class="overlay-abs" :style="selectionStyle">
         <div
-          class="text-xs text-tx-primary px-1.5 py-0.5 rounded bg-surface pointer-events-none select-none shadow absolute"
+          text="xs tx-primary"
+          p="x-1.5 y-0.5"
+          rounded
+          bg="surface"
+          class="overlay-abs"
+          select="none"
+          shadow
           :style="selSizeStyle"
         >
           {{ Math.round(sel.w) }}×{{ Math.round(sel.h) }}
@@ -110,7 +140,13 @@
         <div
           v-for="h in handles"
           :key="h.id"
-          class="border border-accent rounded-sm bg-white h-2 w-2 pointer-events-auto absolute"
+          border="~ accent"
+          rounded="sm"
+          bg="white"
+          h="2"
+          w="2"
+          pointer-events="auto"
+          absolute
           :style="h.style"
           @mousedown.stop="startSelResize(h.id, $event)"
         />
@@ -119,14 +155,14 @@
 
     <!-- 滚动截屏阶段：仅显示选区边框 -->
     <template v-if="hasSelection && phase === 'scroll'">
-      <div class="border border-accent pointer-events-none absolute" :style="selectionStyle" />
+      <div border="~ accent" class="overlay-abs" :style="selectionStyle" />
     </template>
 
     <!-- 标注 canvas -->
     <canvas
       v-if="hasSelection && phase === 'annotate'"
       ref="annotateCanvas"
-      class="pointer-events-none absolute"
+      class="overlay-abs"
       :style="{
         left: `${sel.x}px`,
         top: `${sel.y}px`,
@@ -139,7 +175,9 @@
     <!-- 模糊选中边框（与控制点一体，DOM 层同步显示/隐藏） -->
     <div
       v-if="blurFrameStyle && phase === 'annotate'"
-      class="border border-accent border-dashed pointer-events-none absolute z-10"
+      border="~ accent dashed"
+      class="overlay-abs"
+      z="10"
       :style="blurFrameStyle"
     />
 
@@ -150,7 +188,9 @@
         <div
           v-for="hp in shapeHandles"
           :key="hp.id"
-          class="pointer-events-auto absolute z-100"
+          pointer-events="auto"
+          absolute
+          z="100"
           :class="{
             'cursor-ns-resize': hp.id === 'cr',
             'cursor-grab hover:cursor-grab active:cursor-grabbing': hp.id === 'rot',
@@ -160,9 +200,9 @@
         >
           <!-- 圆角控制点：四段弧 + 透明命中区 -->
           <template v-if="hp.id === 'cr'">
-            <div class="h-4 w-4 absolute -translate-x-1/2 -translate-y-1/2" />
+            <div h="4" w="4" absolute class="-translate-x-1/2 -translate-y-1/2" />
             <svg
-              class="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+              class="overlay-abs -translate-x-1/2 -translate-y-1/2"
               width="11"
               height="11"
               viewBox="0 0 11 11"
@@ -177,9 +217,9 @@
           </template>
           <!-- 旋转控制点：环形箭头 -->
           <template v-else-if="hp.id === 'rot'">
-            <div class="h-4 w-4 absolute -translate-x-1/2 -translate-y-1/2" />
+            <div h="4" w="4" absolute class="-translate-x-1/2 -translate-y-1/2" />
             <svg
-              class="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+              class="overlay-abs -translate-x-1/2 -translate-y-1/2"
               width="12"
               height="12"
               viewBox="0 0 12 12"
@@ -201,7 +241,13 @@
           <!-- 8个尺寸控制点：圆形 + 方向光标 -->
           <div
             v-else
-            class="border border-accent rounded-full bg-white h-2.5 w-2.5 absolute -translate-x-1/2 -translate-y-1/2"
+            border="~ accent"
+            rounded="full"
+            bg="white"
+            h="2.5"
+            w="2.5"
+            absolute
+            class="-translate-x-1/2 -translate-y-1/2"
             :style="{
               cursor: handleCursor(hp.id, effectiveShape?.rotation ?? 0),
             }"
@@ -213,12 +259,21 @@
         <div
           v-for="hp in shapeHandles"
           :key="hp.id"
-          class="pointer-events-auto absolute z-100"
+          pointer-events="auto"
+          absolute
+          z="100"
           :style="hp.style"
           @mousedown.stop="startShapeHandleDrag(hp.id, $event)"
         >
           <div
-            class="border border-accent rounded-full bg-white h-2.5 w-2.5 cursor-move absolute -translate-x-1/2 -translate-y-1/2"
+            border="~ accent"
+            rounded="full"
+            bg="white"
+            h="2.5"
+            w="2.5"
+            cursor="move"
+            absolute
+            class="-translate-x-1/2 -translate-y-1/2"
           />
         </div>
       </template>
@@ -227,12 +282,21 @@
         <div
           v-for="hp in shapeHandles"
           :key="hp.id"
-          class="pointer-events-auto absolute z-100"
+          pointer-events="auto"
+          absolute
+          z="100"
           :style="hp.style"
           @mousedown.stop="startShapeHandleDrag(hp.id, $event)"
         >
           <div
-            class="border border-accent rounded-full bg-white h-2.5 w-2.5 cursor-ew-resize absolute -translate-x-1/2 -translate-y-1/2"
+            border="~ accent"
+            rounded="full"
+            bg="white"
+            h="2.5"
+            w="2.5"
+            cursor="ew-resize"
+            absolute
+            class="-translate-x-1/2 -translate-y-1/2"
           />
         </div>
       </template>
@@ -241,20 +305,31 @@
     <!-- 文字输入框：外框可拖动移动，textarea 完全无边距与 canvas 对齐 -->
     <div
       v-if="textInput.visible"
-      class="absolute z-50"
+      absolute
+      z="50"
       :style="textInputWrapperStyle"
       @mousedown="onTextInputWrapperMouseDown"
     >
       <!-- 拖动边框：点击可拖动文本框 -->
       <div
-        class="rounded-sm cursor-move inset-0 absolute"
+        rounded="sm"
+        cursor="move"
+        inset="0"
+        absolute
         :style="{ padding: '1px', border: '1px dashed #3b82f6' }"
         @mousedown.stop="startTextInputDrag($event)"
       />
       <textarea
         ref="textInputEl"
         v-model="textInput.value"
-        class="outline-none border-none bg-transparent w-full block resize-none relative z-1"
+        outline="none"
+        border="~ none"
+        bg="transparent"
+        w="full"
+        block
+        resize="none"
+        relative
+        z="1"
         :style="textInputInnerStyle"
         rows="1"
         @input="onTextInputInput"

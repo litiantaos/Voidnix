@@ -2,8 +2,10 @@ pub mod ai_translate;
 pub mod youdao;
 mod lang_utils;
 
+use crate::core::tier1::Tier1Extension;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use tauri::AppHandle;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -51,50 +53,55 @@ pub async fn get_selected_text() -> Result<String, String> {
     Ok(String::new())
 }
 
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("translate")
-        .setup(|_app, _api| {
-            #[cfg(target_os = "macos")]
-            {
-                use tauri::Emitter;
-                crate::core::shortcut::register_shortcut_hook("translate", Box::new(|app, ctx| {
-                    if ctx.window_hidden {
-                        if let Ok(mut selected) = crate::core::shortcut::SELECTED_TEXT.lock() {
-                            *selected = String::new();
-                        }
+/// Translate 扩展。
+pub struct Plugin;
 
-                        let self_pid = std::process::id() as i32;
-                        let target_pid = ctx.front_pid.filter(|&p| p != self_pid);
+impl Tier1Extension for Plugin {
+    fn id(&self) -> &'static str {
+        "translate"
+    }
 
-                        let ax_text = crate::macos::text_selection::try_ax();
-                        let snap = crate::macos::text_selection::snapshot_clipboard();
-                        if ax_text.is_none() {
-                            if let Some(pid) = target_pid {
-                                crate::macos::text_selection::inject_copy(pid);
-                            }
-                        }
-
-                        crate::core::window::show_main(app);
-
-                        let app_clone = app.clone();
-                        std::thread::spawn(move || {
-                            let text = if let Some(t) = ax_text {
-                                t
-                            } else {
-                                crate::macos::text_selection::poll_clipboard(snap)
-                            };
-                            if let Ok(mut selected) = crate::core::shortcut::SELECTED_TEXT.lock() {
-                                *selected = text.clone();
-                            }
-                            let _ = app_clone.emit("translate-text-ready", text);
-                        });
-                        return true;
+    fn on_setup(&self, _app: &AppHandle) -> tauri::Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            use tauri::Emitter;
+            crate::core::shortcut::register_shortcut_hook("translate", Box::new(|app, ctx| {
+                if ctx.window_hidden {
+                    if let Ok(mut selected) = crate::core::shortcut::SELECTED_TEXT.lock() {
+                        *selected = String::new();
                     }
-                    let _ = app.emit("translate-text-ready", "");
-                    false
-                }));
-            }
-            Ok(())
-        })
-        .build()
+
+                    let self_pid = std::process::id() as i32;
+                    let target_pid = ctx.front_pid.filter(|&p| p != self_pid);
+
+                    let ax_text = crate::macos::text_selection::try_ax();
+                    let snap = crate::macos::text_selection::snapshot_clipboard();
+                    if ax_text.is_none() {
+                        if let Some(pid) = target_pid {
+                            crate::macos::text_selection::inject_copy(pid);
+                        }
+                    }
+
+                    crate::core::window::show_main(app);
+
+                    let app_clone = app.clone();
+                    std::thread::spawn(move || {
+                        let text = if let Some(t) = ax_text {
+                            t
+                        } else {
+                            crate::macos::text_selection::poll_clipboard(snap)
+                        };
+                        if let Ok(mut selected) = crate::core::shortcut::SELECTED_TEXT.lock() {
+                            *selected = text.clone();
+                        }
+                        let _ = app_clone.emit("translate-text-ready", text);
+                    });
+                    return true;
+                }
+                let _ = app.emit("translate-text-ready", "");
+                false
+            }));
+        }
+        Ok(())
+    }
 }

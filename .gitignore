@@ -26,9 +26,13 @@ src-tauri/proptest-regressions/
 # Coverage
 coverage/
 
-# Editor / AI tools
-.vscode/*
-.claude/
-
 # System files
 .DS_Store
+
+# Editor / AI Tool
+.vscode/
+.claude/
+
+# AI
+AGENTS.md
+CLAUDE.md

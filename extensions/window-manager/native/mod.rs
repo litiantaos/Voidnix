@@ -1,6 +1,17 @@
+use crate::core::tier1::Tier1Extension;
 use serde::{Deserialize, Serialize};
 
 mod window_snap;
+
+/// Window manager 扩展。
+pub struct Plugin;
+
+impl Tier1Extension for Plugin {
+    fn id(&self) -> &'static str {
+        "window-manager"
+    }
+}
+
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -628,6 +639,3 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("window-manager").build()
-}

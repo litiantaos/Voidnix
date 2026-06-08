@@ -12,6 +12,7 @@
     "skipLibCheck": true,
     "useDefineForClassFields": true,
     "allowImportingTsExtensions": true,
+    "allowJs": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
@@ -25,7 +26,8 @@
     "src/**/*.d.ts",
     "src/**/*.tsx",
     "extensions/**/*.ts",
-    "extensions/**/*.vue"
+    "extensions/**/*.vue",
+    "extensions/**/*.js"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

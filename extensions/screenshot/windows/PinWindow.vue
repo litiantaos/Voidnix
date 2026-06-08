@@ -1,6 +1,11 @@
 <template>
   <div
-    class="bg-transparent h-screen w-screen select-none relative overflow-hidden"
+    bg="transparent"
+    h="screen"
+    w="screen"
+    select="none"
+    relative
+    overflow="hidden"
     :style="{ borderRadius: '10px' }"
     @mouseenter="hoverActive = true"
     @mouseleave="hoverActive = false"
@@ -13,12 +18,26 @@
     <Transition name="bar">
       <div
         v-if="hoverActive"
-        class="flex gap-2 items-center right-2 top-2 absolute z-10"
+        flex
+        gap="2"
+        items="center"
+        right="2"
+        top="2"
+        absolute
+        z="10"
         @mousedown.stop
       >
-        <!-- 透明度拖动条 -->
+        <!-- 透明度拖动条：窗口太窄时隐藏，给关闭按钮让位 -->
         <div
-          class="px-2 border border-black/10 rounded-md bg-surface/90 flex h-7 shadow-lg items-center"
+          v-if="showOpacitySlider"
+          p="x-2"
+          border="~ black/10"
+          rounded="md"
+          bg="surface/90"
+          flex
+          h="7"
+          shadow="lg"
+          items="center"
           title="透明度"
         >
           <BaseSlider
@@ -45,14 +64,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { getCurrentWindow, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSlider from '@/components/ui/BaseSlider.vue'
 
 const opacity = ref(100)
 const hoverActive = ref(false)
+const winWidth = ref(window.innerWidth)
+// 滑块容器自身约 130（80 滑块 + 32 数值 + padding）+ gap 8 + 关闭按钮 28 + 右边距 8 + 缓冲
+const showOpacitySlider = computed(() => winWidth.value >= 180)
 
 let win: ReturnType<typeof getCurrentWindow> | null = null
 
@@ -73,13 +95,54 @@ onMounted(() => {
   dragScale = window.devicePixelRatio || 1
   const root = document.querySelector('[tabindex="0"]') as HTMLElement | null
   root?.focus()
+  window.addEventListener('resize', onResize)
+  startHoverPolling()
 })
 
 onUnmounted(() => {
   document.removeEventListener('mousemove', onDocMouseMove)
   document.removeEventListener('mouseup', onDocMouseUp)
+  window.removeEventListener('resize', onResize)
+  stopHoverPolling()
   if (rafId) cancelAnimationFrame(rafId)
 })
+
+function onResize() {
+  winWidth.value = window.innerWidth
+}
+
+// 失焦的 NSWindow 下 WKWebView 不派发 mouseenter/leave。
+// 轮询全局鼠标位置，与窗口当前 frame 比较，自行更新 hoverActive。
+let hoverTimer = 0
+function startHoverPolling() {
+  if (hoverTimer) return
+  hoverTimer = window.setInterval(checkHover, 80)
+}
+function stopHoverPolling() {
+  if (hoverTimer) {
+    clearInterval(hoverTimer)
+    hoverTimer = 0
+  }
+}
+async function checkHover() {
+  if (!win || isDragging) return
+  try {
+    const [mp, pos, size] = await Promise.all([
+      invoke<[number, number]>('pin_global_mouse'),
+      win.outerPosition() as Promise<PhysicalPosition>,
+      win.outerSize() as Promise<PhysicalSize>,
+    ])
+    const scale = window.devicePixelRatio || 1
+    // CSS 像素，窗口物理像素 / scale
+    const left = pos.x / scale
+    const top = pos.y / scale
+    const right = left + size.width / scale
+    const bottom = top + size.height / scale
+    hoverActive.value = mp[0] >= left && mp[0] <= right && mp[1] >= top && mp[1] <= bottom
+  } catch {
+    /* ignore */
+  }
+}
 
 function onFocus() {
   const root = document.querySelector('[tabindex="0"]') as HTMLElement | null
@@ -134,7 +197,9 @@ async function onOpacityChange() {
 }
 
 async function handleClose() {
-  if (win) await win.close()
+  if (!win) return
+  await invoke('restore_pin_focus', { window: win }).catch(() => {})
+  await win.close()
 }
 </script>
 

@@ -2,8 +2,17 @@ use super::crop::crop_with_annotation;
 use super::ffi::{
     decode_image_data, png_bytes_to_cgimage,
     voidnix_screenshot_install_background_layer, voidnix_screenshot_set_background,
-    CGImageRelease,
+    voidnix_screenshot_set_background_centered, CGImageRelease,
 };
+
+use std::sync::atomic::{AtomicI32, Ordering};
+
+// 关闭按钮 28 + 上下/左右各 8 边距 = 44
+const PIN_MIN_SIZE: f64 = 44.0;
+
+// pin 窗口关闭时需要恢复焦点的目标 PID
+// 由 screenshot exit_impl 写入，pin 创建时读取
+pub(super) static PIN_PREV_PID: AtomicI32 = AtomicI32::new(0);
 
 #[tauri::command]
 pub async fn pin_image(
@@ -34,10 +43,12 @@ pub async fn pin_image(
         let cg_addr = png_bytes_to_cgimage(&png) as usize;
 
         let path_str = path.to_string_lossy().to_string();
-        let win_w = sel_w;
-        let win_h = sel_h;
-        let win_x = sel_x;
-        let win_y = sel_y;
+        // 截图小于窗口最小尺寸时，窗口保持最小尺寸，原图居中显示；否则窗口贴合截图尺寸。
+        let centered = sel_w < PIN_MIN_SIZE || sel_h < PIN_MIN_SIZE;
+        let win_w = sel_w.max(PIN_MIN_SIZE);
+        let win_h = sel_h.max(PIN_MIN_SIZE);
+        let win_x = sel_x - (win_w - sel_w) / 2.0;
+        let win_y = sel_y - (win_h - sel_h) / 2.0;
         let label = format!("pin-{}", ts);
 
         let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
@@ -53,6 +64,7 @@ pub async fn pin_image(
                 win_x,
                 win_y,
                 cg_ptr,
+                centered,
             );
             let _ = tx.send(r);
         })
@@ -78,6 +90,7 @@ fn create_pin_webview(
     pos_x: f64,
     pos_y: f64,
     cg_image: *mut std::ffi::c_void,
+    centered: bool,
 ) -> Result<(), String> {
     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
     use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -89,7 +102,7 @@ fn create_pin_webview(
         .title("")
         .inner_size(width, height)
         .position(pos_x, pos_y)
-        .min_inner_size(80.0, 80.0)
+        .min_inner_size(PIN_MIN_SIZE, PIN_MIN_SIZE)
         .resizable(true)
         .decorations(false)
         .transparent(true)
@@ -110,7 +123,10 @@ fn create_pin_webview(
                     | NSWindowCollectionBehavior::FullScreenAuxiliary
                     | NSWindowCollectionBehavior::Stationary;
                 ns.setCollectionBehavior(behavior);
-                ns.setContentAspectRatio(objc2_foundation::NSSize::new(width, height));
+                // 居中模式下窗口尺寸 ≠ 图片尺寸，不锁宽高比，避免后续 resize 还原成图片比例
+                if !centered {
+                    ns.setContentAspectRatio(objc2_foundation::NSSize::new(width, height));
+                }
                 if let Some(content_view) = ns.contentView() {
                     let _: () = objc2::msg_send![&content_view, setWantsLayer: true];
                     let layer: *mut objc2::runtime::AnyObject =
@@ -124,7 +140,11 @@ fn create_pin_webview(
                 let ns_window_void = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
                 if !cg_image.is_null() {
                     voidnix_screenshot_install_background_layer(ns_window_void);
-                    voidnix_screenshot_set_background(ns_window_void, cg_image);
+                    if centered {
+                        voidnix_screenshot_set_background_centered(ns_window_void, cg_image);
+                    } else {
+                        voidnix_screenshot_set_background(ns_window_void, cg_image);
+                    }
                     CGImageRelease(cg_image);
                 }
 
@@ -135,9 +155,24 @@ fn create_pin_webview(
             }
         }
     }
+
     crate::macos::mac_utils::activate_app();
 
     Ok(())
+}
+
+/// 恢复 pin 窗口关闭前的焦点应用。
+#[tauri::command]
+pub async fn restore_pin_focus(window: tauri::WebviewWindow) {
+    let pid = PIN_PREV_PID.load(Ordering::SeqCst);
+    if pid > 0 {
+        // 先隐藏窗口，确保其不再是 key window
+        let _ = window.hide();
+        // 再 deactivate 触发系统重新评估 key window，恢复到原应用
+        crate::macos::mac_utils::deactivate_app();
+        crate::macos::mac_utils::activate_app_by_pid(pid);
+        PIN_PREV_PID.store(0, Ordering::SeqCst);
+    }
 }
 
 #[tauri::command]
@@ -168,4 +203,24 @@ pub async fn set_pin_window_opacity(
         let _ = (window, opacity);
     }
     Ok(())
+}
+
+/// 查全局鼠标位置（屏幕坐标，左上原点，CSS 像素）。
+/// pin 窗口失焦时 WKWebView 不派发 mouseenter/leave，前端 rAF 轮询此值
+/// 自行计算 hover 状态。
+#[tauri::command]
+pub fn pin_global_mouse() -> (f64, f64) {
+    #[cfg(target_os = "macos")]
+    {
+        let mut x = 0.0f64;
+        let mut y = 0.0f64;
+        unsafe {
+            super::ffi::voidnix_screenshot_get_mouse_location(&mut x, &mut y, 0.0);
+        }
+        (x, y)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        (0.0, 0.0)
+    }
 }

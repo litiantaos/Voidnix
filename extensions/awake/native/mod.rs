@@ -1,7 +1,8 @@
+use crate::core::tier1::Tier1Extension;
 use std::process::{Command, Stdio, Child};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{State, Emitter};
+use tauri::{State, Emitter, AppHandle};
 use tauri::tray::{TrayIconBuilder, MouseButton, TrayIconEvent};
 
 pub struct AwakeState {
@@ -125,14 +126,19 @@ pub async fn set_awake_mode(state: State<'_, AwakeState>, mirror: bool) -> Resul
     Ok(mirror)
 }
 
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("awake")
-        .setup(|app, _api| {
-            use tauri::Manager;
-            app.manage(AwakeState {
-                process: std::sync::Mutex::new(None),
-            });
-            Ok(())
-        })
-        .build()
+/// Awake 扩展。
+pub struct Plugin;
+
+impl Tier1Extension for Plugin {
+    fn id(&self) -> &'static str {
+        "awake"
+    }
+
+    fn on_setup(&self, app: &AppHandle) -> tauri::Result<()> {
+        use tauri::Manager;
+        app.manage(AwakeState {
+            process: std::sync::Mutex::new(None),
+        });
+        Ok(())
+    }
 }

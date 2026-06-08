@@ -1,3 +1,4 @@
+use crate::core::tier1::Tier1Extension;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -69,12 +70,33 @@ impl notify::EventHandler for CommandHandler {
 }
 
 /// IPC directory shared between the sandboxed extension and this main app.
-/// Uses app_data_dir() so the path is consistent with other local files.
 fn command_dir(app: &AppHandle) -> PathBuf {
-    crate::infra::path::finder_ext_command_dir(app)
+    let dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("extensions")
+        .join("finder-ext")
+        .join("commands");
+    let _ = fs::create_dir_all(&dir);
+    dir
 }
 
-pub fn init_finder_ext(app_handle: AppHandle) {
+/// Finder 扩展。
+pub struct Plugin;
+
+impl Tier1Extension for Plugin {
+    fn id(&self) -> &'static str {
+        "finder-ext"
+    }
+
+    fn on_setup(&self, app_handle: &AppHandle) -> tauri::Result<()> {
+        init_finder_ext(app_handle.clone());
+        Ok(())
+    }
+}
+
+fn init_finder_ext(app_handle: AppHandle) {
     let cmd_dir = command_dir(&app_handle);
 
     // Remove stale .tmp files; replay any .json queued before we started.
@@ -427,13 +449,3 @@ pub fn open_extensions_prefs() {
     let _ = Command::new("open").args(["-b", "com.apple.systempreferences"]).spawn();
 }
 
-
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("finder_ext")
-        .setup(|app, _api| {
-            #[cfg(target_os = "macos")]
-            crate::extensions::finder_ext::init_finder_ext(app.clone());
-            Ok(())
-        })
-        .build()
-}

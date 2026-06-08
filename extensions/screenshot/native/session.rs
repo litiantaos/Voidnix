@@ -327,7 +327,7 @@ fn enumerate_visible_windows() -> Vec<WindowRect> {
 }
 
 #[cfg(target_os = "macos")]
-static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
+pub(super) static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
 
 #[cfg(target_os = "macos")]
 static SCREENSHOT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -574,7 +574,12 @@ fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), Strin
         }
     })));
 
-    let prev_pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
+    let prev_pid = PREV_FRONT_PID.load(Ordering::SeqCst);
+    // 始终保存 prev_pid 给 pin 窗口使用（即使 noRestoreFocus=true）
+    #[cfg(target_os = "macos")]
+    {
+        super::pin::PIN_PREV_PID.store(prev_pid, Ordering::SeqCst);
+    }
     if !no_restore_focus && prev_pid > 0 {
         let ws = NSWorkspace::sharedWorkspace();
         if let Some(target) = ws
