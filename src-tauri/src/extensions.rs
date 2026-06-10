@@ -5,7 +5,6 @@ macro_rules! configure_app {
     ($builder:expr) => {
         $builder
             .invoke_handler(tauri::generate_handler![
-        crate::core::keyword_match::match_keywords,
         crate::core::permission::check_screen_recording_permission,
         crate::core::permission::check_accessibility_permission,
         crate::core::permission::request_accessibility_permission,
@@ -61,7 +60,6 @@ macro_rules! configure_app {
         crate::extensions::search::commands::search_apps,
         crate::extensions::search::commands::search_files,
         crate::extensions::search::commands::launch_app,
-        crate::extensions::search::commands::score_items,
         crate::extensions::finder_ext::set_finder_ext_enabled,
         crate::extensions::finder_ext::quit_app,
         crate::extensions::finder_ext::open_extensions_prefs,

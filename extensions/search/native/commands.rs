@@ -3,94 +3,44 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use super::cache::get_cached_apps;
-use crate::infra::pinyin;
 use super::types::{SearchResult, SEARCH_SESSION};
 
+/// 返回全量应用列表（带 use_count + last_used），由前端做拼音匹配与排序。
 #[tauri::command]
 #[cfg_attr(feature = "specta", specta::specta)]
-pub async fn search_apps(query: String) -> Result<Vec<SearchResult>, String> {
-    log::info!("search_apps called with query: '{}'", query);
+pub async fn search_apps() -> Result<Vec<SearchResult>, String> {
     let apps = get_cached_apps().await;
+    let session_deltas = SEARCH_SESSION
+        .session_use_deltas
+        .lock()
+        .ok()
+        .map(|m| m.clone())
+        .unwrap_or_default();
 
-    let results: Vec<SearchResult> = if query.trim().is_empty() {
-        let mut sorted_apps = apps.iter().collect::<Vec<_>>();
-        sorted_apps.sort_by(|a, b| b.last_used.cmp(&a.last_used));
-
-        sorted_apps
-            .into_iter()
-            .take(50)
-            .enumerate()
-            .map(|(i, app)| SearchResult {
+    let results: Vec<SearchResult> = apps
+        .iter()
+        .enumerate()
+        .map(|(i, app)| {
+            let count = app.use_count.load(Ordering::Relaxed)
+                + session_deltas.get(&app.path).copied().unwrap_or(0);
+            SearchResult {
                 id: format!("app-{}", i),
                 title: app.name.clone(),
                 path: app.path.clone(),
                 kind: "application".to_string(),
                 icon: app.icon_cache.clone(),
                 last_used: app.last_used.clone(),
-                score: Some((1000 - i as i32).max(0)),
-            })
-            .collect()
-    } else {
-        let results = pinyin::MATCHER.with(|matcher_cell| {
-            let mut matcher = matcher_cell.borrow_mut();
-            let pattern = pinyin::match_query(&query);
-            let mut buf = Vec::new();
-
-            let mut scored_apps: Vec<(u32, &_)> = apps
-                .iter()
-                .filter_map(|app| {
-                    let combined = format!(
-                        "{} {} {} {} {}",
-                        app.name,
-                        app.bundle_name,
-                        app.pinyin_full,
-                        app.pinyin_initials,
-                        app.pinyin_compact,
-                    );
-
-                    let mut score = pinyin::pinyin_score(&combined, &pattern, &mut matcher, &mut buf);
-
-                    if score > 0 {
-                        let system_count = app.use_count.load(Ordering::Relaxed);
-                        let session_count = SEARCH_SESSION
-                            .session_use_deltas
-                            .lock()
-                            .ok()
-                            .and_then(|d| d.get(&app.path).copied())
-                            .unwrap_or(0);
-                        let count = system_count + session_count;
-                        let boost = std::cmp::min(count * 10, 800);
-                        score += boost;
-                        Some((score, app))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            scored_apps.sort_by_key(|b| std::cmp::Reverse(b.0));
-
-            scored_apps
-                .into_iter()
-                .take(30)
-                .enumerate()
-                .map(|(i, (score, app))| SearchResult {
-                    id: format!("app-{}", i),
-                    title: app.name.clone(),
-                    path: app.path.clone(),
-                    kind: "application".to_string(),
-                    icon: app.icon_cache.clone(),
-                    last_used: app.last_used.clone(),
-                    score: Some((score + 500) as i32),
-                })
-                .collect()
-        });
-        results
-    };
+                score: None,
+                use_count: Some(count),
+                parent: None,
+            }
+        })
+        .collect();
 
     Ok(results)
 }
 
+/// 用 mdfind 拉候选，返回 (path, use_count) 原始列表，由前端打分排序。
 #[tauri::command]
 #[cfg_attr(feature = "specta", specta::specta)]
 pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
@@ -215,75 +165,37 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         return Ok(vec![]);
     }
 
-    let scored_files: Vec<(u32, u32, String, String)> = pinyin::MATCHER.with(|matcher_cell| {
-        let mut matcher = matcher_cell.borrow_mut();
-        let pattern = pinyin::match_query(&query);
-        let mut buf = Vec::new();
-
+    let results = tokio::task::spawn_blocking(move || {
         entries
             .into_iter()
-            .filter_map(|(path, use_count)| {
+            .enumerate()
+            .filter_map(|(i, (path, use_count))| {
+                if SEARCH_SESSION.get_current_id() != search_id {
+                    return None;
+                }
                 let name = Path::new(&path)
                     .file_name()
                     .and_then(|s| s.to_str())
                     .unwrap_or("Unknown")
                     .to_string();
-
                 let parent = Path::new(&path)
                     .parent()
                     .and_then(|p| p.file_name())
                     .and_then(|s| s.to_str())
-                    .unwrap_or("");
-
-                let combined = format!("{} {}", name, parent);
-                let mut score = pinyin::pinyin_score(&combined, &pattern, &mut matcher, &mut buf);
-
-                if score > 0 {
-                    let boost = std::cmp::min(use_count * 10, 800);
-                    score += boost;
-                    Some((score, use_count, name, path))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    });
-
-    if SEARCH_SESSION.get_current_id() != search_id {
-        return Ok(vec![]);
-    }
-
-    let results = tokio::task::spawn_blocking(move || {
-        let mut files_with_meta: Vec<(u32, bool, String, String)> =
-            Vec::with_capacity(scored_files.len());
-
-        for (score, _use_count, name, path) in scored_files {
-            if SEARCH_SESSION.get_current_id() != search_id {
-                return Vec::new();
-            }
-            let is_dir = std::fs::metadata(&path)
-                .map(|m| m.is_dir())
-                .unwrap_or(false);
-            files_with_meta.push((score, is_dir, name, path));
-        }
-
-        files_with_meta.sort_by_key(|b| std::cmp::Reverse(b.0));
-
-        files_with_meta
-            .into_iter()
-            .take(50)
-            .enumerate()
-            .map(|(i, (score, is_dir, name, path))| {
+                    .map(|s| s.to_string());
+                let is_dir = std::fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
                 let kind_str = if is_dir { "folder" } else { "file" };
-                SearchResult {
+                Some(SearchResult {
                     id: format!("{}-{}", kind_str, i),
                     title: name,
                     path,
                     kind: kind_str.to_string(),
                     icon: None,
                     last_used: None,
-                    score: Some(score as i32),
-                }
+                    score: None,
+                    use_count: Some(use_count),
+                    parent,
+                })
             })
             .collect::<Vec<_>>()
     })
@@ -311,25 +223,4 @@ pub async fn launch_app(path: String) -> Result<(), String> {
     SEARCH_SESSION.increment_use_count(&path);
 
     Ok(())
-}
-
-#[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
-pub fn score_items(query: String, items: Vec<String>) -> Vec<u32> {
-    if query.trim().is_empty() {
-        return vec![0; items.len()];
-    }
-
-    pinyin::MATCHER.with(|matcher_cell| {
-        let mut matcher = matcher_cell.borrow_mut();
-        let pattern = pinyin::match_query(&query);
-        let mut buf = Vec::new();
-
-        items
-            .into_iter()
-            .map(|item| {
-                pinyin::pinyin_score(&item, &pattern, &mut matcher, &mut buf)
-            })
-            .collect()
-    })
 }

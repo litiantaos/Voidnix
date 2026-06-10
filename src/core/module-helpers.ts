@@ -2,7 +2,7 @@ import type { AppModule, SearchResult } from '@/types/module'
 import { getAllModules } from '@/core/module-registry'
 import { useAppStore } from '@/stores/app'
 import { hideWindow } from '@/utils/tauri'
-import { invoke } from '@tauri-apps/api/core'
+import { scoreFields } from '@/utils/fuzzy'
 
 export function moduleSelfResult(mod: AppModule): SearchResult {
   return {
@@ -37,19 +37,12 @@ export function moduleToSearchResult(m: AppModule, score: number): SearchResult 
 export async function keywordSearchAll(query: string): Promise<SearchResult[]> {
   if (!query.trim()) return []
 
-  const modules = getAllModules().filter((m) => m.keywords.length > 0)
-  const keywordSets = modules.map((m) => [m.name, m.description, ...m.keywords])
-
-  const scores = await invoke<number[]>('match_keywords', { query, keywordSets })
-
-  return modules
-    .map((m, i) => ({ mod: m, score: scores[i] }))
+  return getAllModules()
+    .filter((m) => m.keywords.length > 0)
+    .map((m) => ({ mod: m, score: scoreFields([m.name, m.description, ...m.keywords], query) }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .map(({ mod: m, score }) => ({
-      ...moduleSelfResult(m),
-      score: score as number,
-    }))
+    .map(({ mod: m, score }) => ({ ...moduleSelfResult(m), score: score + 500 }))
 }
 
 export function makeToggleHandler(moduleId: string, onActivate?: () => void) {

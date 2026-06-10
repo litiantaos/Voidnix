@@ -293,17 +293,3 @@ pub(super) fn collect_apps_with_metadata() -> Vec<(String, String, Option<String
     results
 }
 
-pub(super) fn get_bundle_name(app_path: &str) -> String {
-    let plist_path = Path::new(app_path)
-        .join("Contents")
-        .join("Info.plist");
-    plist::Value::from_file(&plist_path)
-        .ok()
-        .and_then(|v| v.into_dictionary())
-        .and_then(|dict| {
-            dict.get("CFBundleName")
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_default()
-}

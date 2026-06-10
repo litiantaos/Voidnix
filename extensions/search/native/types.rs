@@ -15,15 +15,15 @@ pub struct SearchResult {
     pub icon: Option<String>,
     pub last_used: Option<String>,
     pub score: Option<i32>,
+    /// 累计使用次数（mdfind kMDItemUseCount + 会话内增量），供前端打分加权。
+    pub use_count: Option<u32>,
+    /// 文件父目录名（仅文件结果），供前端补充匹配字段。
+    pub parent: Option<String>,
 }
 
 #[derive(Debug)]
 pub(super) struct CachedApp {
     pub name: String,
-    pub bundle_name: String,
-    pub pinyin_full: String,
-    pub pinyin_initials: String,
-    pub pinyin_compact: String,
     pub path: String,
     pub icon_cache: Option<String>,
     pub last_used: Option<String>,

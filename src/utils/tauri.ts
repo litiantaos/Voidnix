@@ -31,7 +31,14 @@ export function toSearchResults(items: BindingsSearchResult[], moduleId: string)
       description: item.path,
       module: moduleId,
       score: item.score ?? 0,
-      data: { path: item.path, kind: item.kind, icon },
+      data: {
+        path: item.path,
+        kind: item.kind,
+        icon,
+        useCount: item.use_count ?? 0,
+        parent: item.parent ?? null,
+        lastUsed: item.last_used ?? null,
+      },
     }
   })
 }

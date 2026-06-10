@@ -20,6 +20,7 @@
     "dompurify": "^3.4.7",
     "marked": "^18.0.4",
     "pinia": "^3.0.4",
+    "pinyin-pro": "^3.28.1",
     "vue": "^3.5.35"
   },
   "devDependencies": {

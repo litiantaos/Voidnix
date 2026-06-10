@@ -6,6 +6,7 @@ import type { AppModule } from '@/types/module'
 import { commands, type ClipboardItem } from '@/bindings'
 import { useAppStore } from '@/stores/app'
 import { listen } from '@tauri-apps/api/event'
+import { scoreFields } from '@/utils/fuzzy'
 
 const ClipboardView = asyncView(() => import('./View.vue'))
 const ClipboardSettings = asyncView(() => import('./Settings.vue'))
@@ -28,31 +29,38 @@ export function triggerDelete() {
   _deleteHandler?.()
 }
 
-function cacheKey(tab: 'all' | 'favorites', query: string) {
-  return `${tab}:${query}`
+function matchText(item: ClipboardItem): string {
+  if (item.content_type === 'image') return '图片 image'
+  if (item.content_type === 'file') return `文件 file ${item.content}`
+  return item.content
+}
+
+function filterByQuery(items: ClipboardItem[], query: string): ClipboardItem[] {
+  const q = query.trim()
+  if (!q) return items
+  return items
+    .map((it) => ({ it, score: scoreFields([matchText(it)], q) }))
+    .filter((e) => e.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(({ it, score }) => ({ ...it, score }))
 }
 
 export async function fetchClipboardHistory(query: string = '', filterFavorite: boolean = false) {
   const tab = filterFavorite ? 'favorites' : 'all'
-  const key = cacheKey(tab, query)
+  const cached = tabCache.get(tab)
 
-  if (tabCache.has(key)) {
-    history.value = tabCache.get(key)!
+  if (cached) {
+    history.value = filterByQuery(cached, query)
     return
   }
 
   const version = ++fetchVersion
   loading.value = true
   try {
-    const res = await commands.getClipboardHistory(
-      query || null,
-      filterFavorite || null,
-      null,
-      true,
-    )
+    const res = await commands.getClipboardHistory(filterFavorite || null, null, true)
     if (version === fetchVersion) {
-      history.value = res
-      tabCache.set(key, res)
+      tabCache.set(tab, res)
+      history.value = filterByQuery(res, query)
     }
   } catch (e) {
     console.error('Failed to fetch clipboard history:', e)
@@ -103,7 +111,8 @@ const mod: AppModule = {
     if (!query.trim()) return []
 
     try {
-      const items = await commands.getClipboardHistory(query || null, null, null, null)
+      const raw = await commands.getClipboardHistory(null, null, null)
+      const items = filterByQuery(raw, query)
       return items.map((item) => {
         let title = item.content
         if (item.content_type === 'image') {

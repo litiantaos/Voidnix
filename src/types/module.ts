@@ -88,7 +88,7 @@ export interface AppModule {
   onModuleSearch?(query: string): Promise<SearchResult[]>
 
   /**
-   * 声明式搜索项。框架自动调用 match_keywords 做拼音模糊匹配，
+   * 声明式搜索项。框架自动调用 scoreFields (pinyin-pro) 做模糊匹配（中文/拼音/英文 · 全词/单字/缩写），
    * 并通过 provide('filteredItems') 向 view 子组件提供过滤结果。
    * 适用于设置项、开关项等半静态内容。
    * 动态内容（剪贴板历史、计算器结果等）仍用 onModuleSearch。

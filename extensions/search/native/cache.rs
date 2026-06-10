@@ -4,9 +4,8 @@ use std::sync::atomic::Ordering;
 
 use tauri::Emitter;
 
-use super::app_discovery::{collect_apps_with_metadata, get_bundle_name};
+use super::app_discovery::collect_apps_with_metadata;
 use super::icon::get_app_icon;
-use crate::infra::pinyin::{to_pinyin_full, to_pinyin_initials};
 use super::types::{APP_CACHE, APP_HANDLE, CachedApp, SEARCH_SESSION};
 
 pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
@@ -29,20 +28,9 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
 
     for (path, name, last_used, system_use_count) in app_metas {
         let delta = session_deltas.get(&path).copied().unwrap_or(0);
-        let bundle_name = get_bundle_name(&path);
-        let pinyin_full = to_pinyin_full(&name);
-        let pinyin_initials = to_pinyin_initials(&name);
-        let pinyin_compact = pinyin_full
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect::<String>();
 
         apps.push(CachedApp {
             name,
-            bundle_name,
-            pinyin_full,
-            pinyin_initials,
-            pinyin_compact,
             path,
             icon_cache: None,
             last_used,
@@ -66,10 +54,6 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
                     let icon = get_app_icon(&app.path);
                     CachedApp {
                         name: app.name.clone(),
-                        bundle_name: app.bundle_name.clone(),
-                        pinyin_full: app.pinyin_full.clone(),
-                        pinyin_initials: app.pinyin_initials.clone(),
-                        pinyin_compact: app.pinyin_compact.clone(),
                         path: app.path.clone(),
                         icon_cache: icon,
                         last_used: app.last_used.clone(),

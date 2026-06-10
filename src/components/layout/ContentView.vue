@@ -125,7 +125,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { invoke } from '@tauri-apps/api/core'
+import { scoreFields } from '@/utils/fuzzy'
 import type { AppModule, ModuleSearchItem, SearchResult } from '@/types/module'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
@@ -203,10 +203,11 @@ const doSearch = async (query: string) => {
     if (!query.trim()) {
       internalResults.value = items.map(itemToSearchResult)
     } else {
-      const keywordSets = items.map((item) => [item.title, item.subtitle ?? '', ...item.keywords])
-      const scores = await invoke<number[]>('match_keywords', { query, keywordSets })
       internalResults.value = items
-        .map((item, i) => ({ item, score: scores[i] ?? 0 }))
+        .map((item) => ({
+          item,
+          score: scoreFields([item.title, item.subtitle ?? '', ...item.keywords], query),
+        }))
         .filter((entry) => entry.score > 0)
         .sort((a, b) => b.score - a.score)
         .map(({ item }) => itemToSearchResult(item))

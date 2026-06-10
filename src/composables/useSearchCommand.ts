@@ -1,10 +1,10 @@
 import { ref, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
 import { onKeyStroke } from '@/utils/events'
-import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-shell'
 import { useTauriListener } from '@/composables/useTauriListener'
 import { searchAll, executeResult } from '@/core/module-registry'
 import { getVisibleModules, moduleToSearchResult } from '@/core/module-helpers'
+import { scoreFields } from '@/utils/fuzzy'
 import { useAppStore } from '@/stores/app'
 import type { SearchResult } from '@/types/module'
 import { isTauri, hideWindow } from '@/utils/tauri'
@@ -182,27 +182,17 @@ export function useSearchCommand(opts: Options) {
       }
 
       const modules = getVisibleModules()
+      const matchedModules = modules
+        .map((m) => ({
+          module: m,
+          score: scoreFields([m.name, m.id, m.description, ...m.keywords], keyword),
+        }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score)
 
-      try {
-        const itemsToScore = modules.map(
-          (m) => `${m.name} ${m.id} ${m.description} ${m.keywords.join(' ')}`,
-        )
-        const scores = await invoke<number[]>('score_items', {
-          query: keyword,
-          items: itemsToScore,
-        })
+      results.value = matchedModules.map(({ module: m, score }) => moduleToSearchResult(m, score))
 
-        const matchedModules = modules
-          .map((m, i) => ({ module: m, score: scores[i] }))
-          .filter((item) => item.score > 0)
-          .sort((a, b) => b.score - a.score)
-
-        results.value = matchedModules.map(({ module: m, score }) => moduleToSearchResult(m, score))
-
-        if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
-      } catch (e) {
-        console.error('Failed to score items:', e)
-      }
+      if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
       return
     }
 

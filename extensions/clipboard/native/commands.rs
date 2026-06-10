@@ -1,6 +1,5 @@
 use super::db::Database;
 use crate::core::shortcut::set_window_visible;
-use crate::infra::pinyin;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -23,7 +22,6 @@ pub struct ClipboardItem {
 #[tauri::command]
 #[cfg_attr(feature = "specta", specta::specta)]
 pub async fn get_clipboard_history(
-    query: Option<String>,
     filter_favorite: Option<bool>,
     limit: Option<u32>,
     preview_only: Option<bool>,
@@ -72,36 +70,6 @@ pub async fn get_clipboard_history(
                 }
             }
         }
-    }
-
-    if let Some(q) = query {
-        if !q.is_empty() {
-            pinyin::MATCHER.with(|m| {
-                let mut matcher = m.borrow_mut();
-                let pattern = pinyin::match_query(&q);
-
-                for item in items.iter_mut() {
-                    let text_to_match = if item.content_type == "image" {
-                        "图片 image".to_string()
-                    } else if item.content_type == "file" {
-                        format!("文件 file {}", item.content)
-                    } else {
-                        item.content.clone()
-                    };
-
-                    let mut buf = Vec::new();
-                    let score =
-                        pinyin::pinyin_score(&text_to_match, &pattern, &mut matcher, &mut buf);
-                    item.score = if score > 0 { score as i32 } else { -1 };
-                }
-            });
-            items.retain(|i| i.score >= 0);
-            items.sort_by_key(|b| std::cmp::Reverse(b.score));
-        }
-    }
-
-    if let Some(l) = limit {
-        items.truncate(l as usize);
     }
 
     Ok(items)

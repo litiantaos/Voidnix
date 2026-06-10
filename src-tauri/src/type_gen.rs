@@ -30,7 +30,6 @@ pub fn export_bindings() {
             crate::extensions::window_manager::hide_snap_panel,
             crate::extensions::search::commands::search_apps,
             crate::extensions::search::commands::search_files,
-            crate::extensions::search::commands::score_items,
             crate::extensions::ip::fetch_ip_info,
             crate::extensions::clipboard::commands::get_clipboard_history,
             crate::extensions::clipboard::commands::delete_clipboard_items,

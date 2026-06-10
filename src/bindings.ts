@@ -18,11 +18,12 @@ export const commands = {
 	isDragSnapActive: () => __TAURI_INVOKE<boolean>("is_drag_snap_active"),
 	showSnapPanel: () => __TAURI_INVOKE<null>("show_snap_panel"),
 	hideSnapPanel: () => __TAURI_INVOKE<null>("hide_snap_panel"),
-	searchApps: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_apps", { query }),
+	/**  返回全量应用列表（带 use_count + last_used），由前端做拼音匹配与排序。 */
+	searchApps: () => __TAURI_INVOKE<SearchResult[]>("search_apps"),
+	/**  用 mdfind 拉候选，返回 (path, use_count) 原始列表，由前端打分排序。 */
 	searchFiles: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_files", { query }),
-	scoreItems: (query: string, items: string[]) => __TAURI_INVOKE<number[]>("score_items", { query, items }),
 	fetchIpInfo: (ip: string | null) => __TAURI_INVOKE<IpInfo>("fetch_ip_info", { ip }),
-	getClipboardHistory: (query: string | null, filterFavorite: boolean | null, limit: number | null, previewOnly: boolean | null) => __TAURI_INVOKE<ClipboardItem[]>("get_clipboard_history", { query, filterFavorite, limit, previewOnly }),
+	getClipboardHistory: (filterFavorite: boolean | null, limit: number | null, previewOnly: boolean | null) => __TAURI_INVOKE<ClipboardItem[]>("get_clipboard_history", { filterFavorite, limit, previewOnly }),
 	deleteClipboardItems: (ids: string[]) => __TAURI_INVOKE<null>("delete_clipboard_items", { ids }),
 	toggleClipboardFavorite: (id: string) => __TAURI_INVOKE<null>("toggle_clipboard_favorite", { id }),
 	getClipboardImage: (id: string) => __TAURI_INVOKE<string | null>("get_clipboard_image", { id }),
@@ -72,6 +73,10 @@ export type SearchResult = {
 	icon: string | null,
 	last_used: string | null,
 	score: number | null,
+	/**  累计使用次数（mdfind kMDItemUseCount + 会话内增量），供前端打分加权。 */
+	use_count: number | null,
+	/**  文件父目录名（仅文件结果），供前端补充匹配字段。 */
+	parent: string | null,
 };
 
 export type TextRegion = {

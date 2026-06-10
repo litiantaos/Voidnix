@@ -167,9 +167,9 @@ Worker 通过 Blob URL 创建，CSP 锁定（无 DOM/网络）。宿主 `worker-
 
 **全局快捷键**：`src-tauri/src/core/shortcut.rs`，四槽位：`main` / `clipboard` / `translate` / `chat`。
 
-**搜索**：`mdfind` + `nucleo-matcher` + 拼音。权重：使用频率(≤800) + 应用(+2000) > 文件夹(+1000) > 文件。所有文本匹配统一走 `infra::pinyin::pinyin_score()`，禁止模块单独实现。
+**搜索**：Rust 端只做数据召回（`mdfind` / app 扫描 / clipboard SQL），返回全量候选 + `use_count` 元数据；过滤排序统一在前端走 `src/utils/fuzzy.ts::scoreFields()`（基于 [pinyin-pro](https://github.com/zh-lx/pinyin-pro)，`precision: 'start'` + `continuous: true` + `v: true` 三开关锁死中文缩写/全拼/ü→v 语义）。`frequencyBoost(useCount)` 做 log 平滑的频次加权，全局排序层级：模块(+500) > 应用(+300) > 文件夹(+80) > 文件。
 
-**searchItems**：模块声明 `searchItems: () => ModuleSearchItem[]`，框架自动调 `match_keywords` 做拼音模糊匹配，适合半静态内容；动态内容用 `onModuleSearch`。
+**searchItems**：模块声明 `searchItems: () => ModuleSearchItem[]`，框架自动调 `scoreFields` 做多通道模糊匹配（中文/拼音/英文，全词/单字/缩写），适合半静态内容；动态内容用 `onModuleSearch`。
 
 **UI 槽位**（仅这些，不增不减）：`view`（主视图）、`searchBarAccessory`（搜索栏右侧）、`subviews`（命名子视图）。槽位组件 `Actions` 后缀，私有 UI 禁用 `Toolbar`/`Header`/`Footer`，用语义名如 `AnnotationPalette`。
 
@@ -238,3 +238,4 @@ src/
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`
 - Git commit：`<type>(<scope>): <中文描述>`，不主动执行 git 操作
 - 文档不用表格
+- 修改代码后必须同步更新 AGENTS.md 中相关描述
