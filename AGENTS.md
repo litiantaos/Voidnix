@@ -18,6 +18,26 @@ bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
 
 内部命令（tauri.conf.json 自动调用）：`bun run dev`（Vite）、`bun run build`（sync → lint → typecheck → vite build）
 
+## 自动化测试
+
+Co-location：`*.test.ts` 同目录；Rust `#[cfg(test)]` 内联。
+
+```bash
+bun run test                       # 前端（Vitest + happy-dom，111 tests）
+bun run test:watch                 # 前端监听
+bun run test:e2e                   # E2E（Playwright，8 tests）
+cd src-tauri && cargo test --lib   # Rust（11 tests）
+```
+
+- 工具函数：`src/utils/*.test.ts` — fuzzy / format / icons / dom / error / provider
+- Store：`src/stores/*.test.ts` — app / settings / update
+- 核心：`src/core/*.test.ts` — module-registry
+- Composable：`src/composables/*.test.ts` — useSearchCommand
+- 组件：`src/components/**/*.test.ts` — BaseDialog
+- Rust：`ext_manifest::tests` / `tier1::tests`
+- E2E：Playwright 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需人工验证
+- 配置：`vitest.config.ts`、`playwright.config.ts`
+
 ## 开发 Tier 1 扩展
 
 内置扩展与主程序同编译同签名。每个扩展自包含：前端 `index.ts` + Vue 组件，Rust 后端 `native/`。

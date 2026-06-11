@@ -57,3 +57,49 @@ pub fn bootstrap(app: &mut tauri::App<Wry>, registry: Tier1Registry) -> tauri::R
     app.manage(registry);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct MockExt {
+        ext_id: &'static str,
+    }
+
+    impl Tier1Extension for MockExt {
+        fn id(&self) -> &'static str {
+            self.ext_id
+        }
+    }
+
+    #[test]
+    fn new_registry_is_empty() {
+        let reg = Tier1Registry::new();
+        assert!(reg.extensions.is_empty());
+    }
+
+    #[test]
+    fn register_single_extension() {
+        let reg = Tier1Registry::new().register(MockExt { ext_id: "test" });
+        assert_eq!(reg.extensions.len(), 1);
+        assert_eq!(reg.extensions[0].id(), "test");
+    }
+
+    #[test]
+    fn register_preserves_order() {
+        let reg = Tier1Registry::new()
+            .register(MockExt { ext_id: "first" })
+            .register(MockExt { ext_id: "second" })
+            .register(MockExt { ext_id: "third" });
+        assert_eq!(reg.extensions.len(), 3);
+        assert_eq!(reg.extensions[0].id(), "first");
+        assert_eq!(reg.extensions[1].id(), "second");
+        assert_eq!(reg.extensions[2].id(), "third");
+    }
+
+    #[test]
+    fn default_impl() {
+        let reg = Tier1Registry::default();
+        assert!(reg.extensions.is_empty());
+    }
+}

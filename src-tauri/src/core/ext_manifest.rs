@@ -182,3 +182,163 @@ pub fn tier2_extensions_dir(app: &tauri::AppHandle) -> PathBuf {
     let base = app.path().app_data_dir().unwrap_or_else(|_| PathBuf::from("."));
     base.join("extensions")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn minimal_toml() -> &'static str {
+        r#"
+[extension]
+id = "test-ext"
+name = "Test"
+version = "1.0.0"
+
+[entry]
+main = "index.js"
+"#
+    }
+
+    #[test]
+    fn parse_minimal_manifest() {
+        let m = parse_manifest(minimal_toml()).unwrap();
+        assert_eq!(m.extension.id, "test-ext");
+        assert_eq!(m.extension.name, "Test");
+        assert_eq!(m.extension.version, "1.0.0");
+        assert_eq!(m.entry.main, "index.js");
+    }
+
+    #[test]
+    fn parse_default_values() {
+        let m = parse_manifest(minimal_toml()).unwrap();
+        assert_eq!(m.extension.voidnix_api, "^1");
+        assert!(m.capabilities.required.is_empty());
+        assert!(m.capabilities.optional.is_empty());
+        assert!(m.settings.is_empty());
+        assert!(m.shortcuts.is_empty());
+        assert!(m.signature.is_none());
+    }
+
+    #[test]
+    fn parse_full_manifest() {
+        let toml = r#"
+[extension]
+id = "my-ext"
+name = "我的扩展"
+version = "2.0.0"
+description = "描述"
+author = "作者"
+icon = "i-ri-puzzle-line"
+keywords = ["kw1", "kw2"]
+voidnix_api = "^2"
+
+[entry]
+main = "main.js"
+
+[capabilities]
+required = ["clipboard.write", "http"]
+optional = ["storage"]
+
+[ui]
+preferred_view = "list"
+search_placeholder = "输入内容"
+
+[[settings]]
+type = "text"
+id = "api_key"
+label = "API Key"
+placeholder = "sk-..."
+required = true
+
+[[settings]]
+type = "switch"
+id = "dark_mode"
+label = "深色模式"
+
+[[shortcuts]]
+id = "toggle"
+default = "CmdOrCtrl+Shift+T"
+description = "切换"
+
+[signature]
+algorithm = "ed25519"
+public_key = "pk123"
+signature = "sig456"
+"#;
+        let m = parse_manifest(toml).unwrap();
+        assert_eq!(m.extension.id, "my-ext");
+        assert_eq!(m.extension.keywords, vec!["kw1", "kw2"]);
+        assert_eq!(m.capabilities.required, vec!["clipboard.write", "http"]);
+        assert_eq!(m.ui.preferred_view, "list");
+        assert_eq!(m.settings.len(), 2);
+        assert_eq!(m.shortcuts.len(), 1);
+        let sig = m.signature.unwrap();
+        assert_eq!(sig.algorithm, "ed25519");
+    }
+
+    #[test]
+    fn parse_setting_field_variants() {
+        let toml = r#"
+[extension]
+id = "s"
+name = "S"
+version = "0.1"
+
+[entry]
+main = "index.js"
+
+[[settings]]
+type = "number"
+id = "count"
+label = "数量"
+default = 42.0
+
+[[settings]]
+type = "select"
+id = "mode"
+label = "模式"
+default = "a"
+
+[[settings.options]]
+value = "a"
+label = "A"
+
+[[settings.options]]
+value = "b"
+label = "B"
+"#;
+        let m = parse_manifest(toml).unwrap();
+        assert_eq!(m.settings.len(), 2);
+    }
+
+    #[test]
+    fn parse_invalid_toml() {
+        let result = parse_manifest("this is not [[[ valid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_missing_required_field() {
+        let toml = r#"
+[extension]
+name = "No ID"
+version = "1.0"
+"#;
+        let result = parse_manifest(toml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn entry_default_main() {
+        let toml = r#"
+[extension]
+id = "e"
+name = "E"
+version = "1.0"
+
+[entry]
+"#;
+        let m = parse_manifest(toml).unwrap();
+        assert_eq!(m.entry.main, "index.js");
+    }
+}

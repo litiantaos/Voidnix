@@ -1,0 +1,165 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import { setActivePinia, createPinia } from 'pinia'
+import { useAppStore } from './app'
+import { registerModule } from '@/core/module-registry'
+import type { AppModule } from '@/types/module'
+
+const mockModule: AppModule = {
+  id: 'test-mod',
+  name: 'Test',
+  description: '',
+  icon: 'i-ri-test',
+  keywords: [],
+}
+
+describe('app store', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('初始状态', () => {
+    const store = useAppStore()
+    expect(store.activeModuleId).toBeNull()
+    expect(store.searchQuery).toBe('')
+    expect(store.isComposing).toBe(false)
+    expect(store.isDialogOpen).toBe(false)
+  })
+
+  describe('setActiveModule', () => {
+    it('切换模块并重置 subview', () => {
+      const store = useAppStore()
+      registerModule(mockModule)
+      store.openSubview('settings')
+      expect(store.activeSubview).toBe('settings')
+
+      store.setActiveModule('test-mod')
+      expect(store.activeModuleId).toBe('test-mod')
+      expect(store.activeSubview).toBeNull()
+    })
+
+    it('调用 onActivate / onDeactivate 生命周期', () => {
+      const activated: string[] = []
+      const deactivated: string[] = []
+      registerModule({
+        ...mockModule,
+        id: 'mod-a',
+        onActivate: () => activated.push('a'),
+        onDeactivate: () => deactivated.push('a'),
+      })
+      registerModule({
+        ...mockModule,
+        id: 'mod-b',
+        onActivate: () => activated.push('b'),
+        onDeactivate: () => deactivated.push('b'),
+      })
+
+      const store = useAppStore()
+      store.setActiveModule('mod-a')
+      expect(activated).toEqual(['a'])
+
+      store.setActiveModule('mod-b')
+      expect(deactivated).toEqual(['a'])
+      expect(activated).toEqual(['a', 'b'])
+
+      store.setActiveModule(null)
+      expect(deactivated).toEqual(['a', 'b'])
+    })
+  })
+
+  describe('搜索状态', () => {
+    it('setSearchQuery 更新查询', () => {
+      const store = useAppStore()
+      store.setSearchQuery('测试')
+      expect(store.searchQuery).toBe('测试')
+    })
+
+    it('setComposing 更新输入法状态', () => {
+      const store = useAppStore()
+      store.setComposing(true)
+      expect(store.isComposing).toBe(true)
+      store.setComposing(false)
+      expect(store.isComposing).toBe(false)
+    })
+  })
+
+  describe('确认对话框', () => {
+    it('showConfirm 打开对话框并返回 Promise', () => {
+      const store = useAppStore()
+      const promise = store.showConfirm({ title: '确认删除？' })
+      expect(store.isDialogOpen).toBe(true)
+      expect(store.dialogOptions?.title).toBe('确认删除？')
+      expect(promise).toBeInstanceOf(Promise)
+    })
+
+    it('resolveConfirm(true) 完成 Promise', async () => {
+      const store = useAppStore()
+      const promise = store.showConfirm({ title: '测试' })
+      store.resolveConfirm(true)
+      expect(await promise).toBe(true)
+      expect(store.isDialogOpen).toBe(false)
+    })
+
+    it('resolveConfirm(false) 完成 Promise', async () => {
+      const store = useAppStore()
+      const promise = store.showConfirm({ title: '测试' })
+      store.resolveConfirm(false)
+      expect(await promise).toBe(false)
+    })
+
+    it('关闭后记录 lastDialogCloseTime', () => {
+      const store = useAppStore()
+      store.showConfirm({ title: '测试' })
+      store.resolveConfirm(true)
+      expect(store.lastDialogCloseTime).toBeGreaterThan(0)
+    })
+  })
+
+  describe('Subview 管理', () => {
+    it('openSubview 设置当前子视图', () => {
+      const store = useAppStore()
+      store.openSubview('config')
+      expect(store.activeSubview).toBe('config')
+    })
+
+    it('closeSubview 清除当前子视图', () => {
+      const store = useAppStore()
+      store.openSubview('config')
+      store.closeSubview()
+      expect(store.activeSubview).toBeNull()
+    })
+
+    it('toggleSubview 切换子视图', () => {
+      const store = useAppStore()
+      store.toggleSubview('config')
+      expect(store.activeSubview).toBe('config')
+      store.toggleSubview('config')
+      expect(store.activeSubview).toBeNull()
+      store.toggleSubview('other')
+      expect(store.activeSubview).toBe('other')
+    })
+  })
+
+  describe('快捷键录制', () => {
+    it('setShortcutRecording 切换录制状态', () => {
+      const store = useAppStore()
+      store.setShortcutRecording(true)
+      expect(store.shortcutRecording).toBe(true)
+      store.setShortcutRecording(false)
+      expect(store.shortcutRecording).toBe(false)
+    })
+
+    it('setShortcutError / clearShortcutError 管理错误', () => {
+      const store = useAppStore()
+      store.setShortcutError('main', '冲突')
+      expect(store.shortcutErrors['main']).toBe('冲突')
+      store.clearShortcutError('main')
+      expect(store.shortcutErrors['main']).toBeUndefined()
+    })
+
+    it('clearShortcutError 无错误时不报错', () => {
+      const store = useAppStore()
+      store.clearShortcutError('nonexistent')
+      expect(Object.keys(store.shortcutErrors)).toHaveLength(0)
+    })
+  })
+})
