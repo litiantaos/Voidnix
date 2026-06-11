@@ -206,6 +206,31 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 }
 
 #[tauri::command]
+pub async fn reveal_in_finder(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.is_absolute() {
+        return Err(format!("Path is not absolute: {}", path));
+    }
+    if !p.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWorkspace;
+        use objc2_foundation::NSString;
+        let ns_path = NSString::from_str(&path);
+        let ws = NSWorkspace::sharedWorkspace();
+        let _ = ws.selectFile_inFileViewerRootedAtPath(
+            Some(&ns_path),
+            &NSString::from_str(""),
+        );
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn launch_app(path: String) -> Result<(), String> {
     let p = Path::new(&path);
     if !p.is_absolute() {

@@ -59,6 +59,7 @@ macro_rules! configure_app {
         crate::extensions::window_manager::hide_snap_panel,
         crate::extensions::search::commands::search_apps,
         crate::extensions::search::commands::search_files,
+        crate::extensions::search::commands::reveal_in_finder,
         crate::extensions::search::commands::launch_app,
         crate::extensions::finder_ext::set_finder_ext_enabled,
         crate::extensions::finder_ext::quit_app,

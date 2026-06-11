@@ -72,6 +72,7 @@ const emit = defineEmits<{
   'update:selectedIds': [ids: Set<string>]
   select: [index: number]
   execute: [item: T, index: number, event?: KeyboardEvent]
+  reveal: [item: T]
 }>()
 
 const localIndex = ref(props.selectedIndex)
@@ -235,6 +236,13 @@ onKeyStroke('Enter', (e) => {
     return
   e.preventDefault()
   if (props.items.length > 0) {
+    if (e.metaKey) {
+      const item = props.items[localIndex.value] as Record<string, unknown>
+      if ((item?.data as Record<string, unknown>)?.path) {
+        emit('reveal', props.items[localIndex.value])
+        return
+      }
+    }
     const el = itemRefs.value[localIndex.value]
     if (el) {
       const control = el.querySelector<HTMLElement>('[data-settings-control][tabindex="0"]')

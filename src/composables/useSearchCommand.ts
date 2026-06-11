@@ -1,6 +1,7 @@
 import { ref, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
 import { onKeyStroke } from '@/utils/events'
 import { open } from '@tauri-apps/plugin-shell'
+import { invoke } from '@tauri-apps/api/core'
 import { useTauriListener } from '@/composables/useTauriListener'
 import { searchAll, executeResult } from '@/core/module-registry'
 import { getVisibleModules, moduleToSearchResult } from '@/core/module-helpers'
@@ -304,6 +305,15 @@ export function useSearchCommand(opts: Options) {
             }
           }
           return
+        }
+        if (e.metaKey && results.value.length > 0) {
+          const result = results.value[selectedIndex.value]
+          if (result?.data?.path) {
+            e.preventDefault()
+            invoke('reveal_in_finder', { path: result.data.path })
+            hideWindow()
+            return
+          }
         }
         e.preventDefault()
         e.stopImmediatePropagation()

@@ -43,6 +43,7 @@
             :group-title="!module ? groupTitle : undefined"
             @update:selected-index="handleUpdateSelectedIndex"
             @execute="handleExecute"
+            @reveal="handleReveal"
           >
             <template #item="{ item, selected, multiSelected, setRef }">
               <BaseListItem
@@ -125,6 +126,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { invoke } from '@tauri-apps/api/core'
+import { hideWindow } from '@/utils/tauri'
 import { scoreFields } from '@/utils/fuzzy'
 import type { AppModule, ModuleSearchItem, SearchResult } from '@/types/module'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -271,6 +274,13 @@ const handleExecute = async (result: SearchResult) => {
     props.onExecute(result)
   } else if (props.module?.onExecute) {
     await props.module.onExecute(result, multiResults)
+  }
+}
+
+const handleReveal = async (result: SearchResult) => {
+  if (result.data?.path) {
+    await invoke('reveal_in_finder', { path: result.data.path })
+    hideWindow()
   }
 }
 
