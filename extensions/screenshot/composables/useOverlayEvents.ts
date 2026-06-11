@@ -268,7 +268,20 @@ export function useOverlayEvents(options: {
     }
 
     if (options.selResizeHandle.value) {
+      const oldX = options.sel.value.x
+      const oldY = options.sel.value.y
       options.applySelResize(cx, cy)
+      const dx = options.sel.value.x - oldX
+      const dy = options.sel.value.y - oldY
+      if (dx !== 0 || dy !== 0) {
+        for (const s of options.shapes.value) {
+          s.x1 -= dx
+          s.x2 -= dx
+          s.y1 -= dy
+          s.y2 -= dy
+        }
+      }
+      nextTick(() => options.redraw())
       options.updateMagnifier(cx, cy)
       return
     }
@@ -466,6 +479,7 @@ export function useOverlayEvents(options: {
     }
     if (options.selResizeHandle.value) {
       options.selResizeHandle.value = null
+      nextTick(() => options.redraw())
       return
     }
     if (options.isDraggingShape.value) {
