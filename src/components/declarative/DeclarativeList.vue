@@ -1,9 +1,5 @@
 <template>
-  <BaseList
-    :items="view.items"
-    @select="(i: number) => (selectedIndex = i)"
-    @execute="(item: ListItem) => onExecute(item)"
-  >
+  <BaseList :items="view.items" @select="(i: number) => (selectedIndex = i)" @execute="onExecute">
     <template
       #item="{ item, index, selected }: { item: ListItem; index: number; selected: boolean }"
     >

@@ -3,6 +3,8 @@
     <BaseList
       :items="items"
       v-model:selected-index="selectedIndex"
+      group-field="group"
+      :group-title="(g: string) => g"
       @execute="(item: SettingItem, _i: number, e?: KeyboardEvent) => handleExecute(item, e)"
     >
       <template #item="{ item, selected, setRef }">
@@ -90,6 +92,7 @@ const items = computed<SettingItem[]>(() => [
     id: 'clipboard-shortcut',
     title: '启动快捷键',
     type: 'shortcut',
+    group: '通用',
     value: clipboardShortcutValue.value,
     update: handleClipboardShortcutChange,
   },
@@ -97,6 +100,7 @@ const items = computed<SettingItem[]>(() => [
     id: 'clipboard-maxdays',
     title: '记录保留时长',
     type: 'select',
+    group: '通用',
     options: maxDaysOptions,
     value: settings.clipboardMaxDays,
     update: handleMaxDaysChange,
@@ -105,6 +109,7 @@ const items = computed<SettingItem[]>(() => [
     id: 'clipboard-clear',
     title: '清空未收藏记录',
     type: 'button',
+    group: '数据',
     value: '',
     action: handleClearHistory,
   },

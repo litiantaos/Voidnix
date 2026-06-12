@@ -33,16 +33,6 @@ export default {
 
     return { type: 'list', items }
   },
-
-  async onAction(actionId, payload, ctx) {
-    if (actionId === 'copy' || actionId === 'execute') {
-      const text = payload.item?.title || ''
-      if (text && ctx.clipboard) {
-        await ctx.clipboard.write(text)
-      }
-      await ctx.ui.hide()
-    }
-  },
 }
 
 function encodeBase64(str) {

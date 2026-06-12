@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { registerModule, getModule, getAllModules, initAllModules, searchAll } from './module-registry'
-import type { AppModule, SearchResult } from '@/types/module'
+import {
+  registerModule,
+  getModule,
+  getAllModules,
+  initAllModules,
+  searchAll,
+} from './module-registry'
+import type { AppModule } from '@/types/module'
 
 function makeModule(overrides: Partial<AppModule> & { id: string }): AppModule {
   return {
@@ -81,28 +87,52 @@ describe('module-registry', () => {
         id: 'sort-test-apps',
         hidden: true,
         onSearch: async () => [
-          { id: 'a1', title: 'Safari', module: 'sort-test-apps', score: 400, data: { kind: 'application' } },
+          {
+            id: 'a1',
+            title: 'Safari',
+            module: 'sort-test-apps',
+            score: 400,
+            data: { kind: 'application' },
+          },
         ],
       })
       const modModule = makeModule({
         id: 'sort-test-mods',
         hidden: true,
         onSearch: async () => [
-          { id: 'm1', title: 'Calculator', module: 'sort-test-mods', score: 500, data: { kind: 'module' } },
+          {
+            id: 'm1',
+            title: 'Calculator',
+            module: 'sort-test-mods',
+            score: 500,
+            data: { kind: 'module' },
+          },
         ],
       })
       const clipModule = makeModule({
         id: 'sort-test-clip',
         hidden: true,
         onSearch: async () => [
-          { id: 'c1', title: 'copied text', module: 'sort-test-clip', score: 600, data: { kind: 'clipboard' } },
+          {
+            id: 'c1',
+            title: 'copied text',
+            module: 'sort-test-clip',
+            score: 600,
+            data: { kind: 'clipboard' },
+          },
         ],
       })
       const fileModule = makeModule({
         id: 'sort-test-files',
         hidden: true,
         onSearch: async () => [
-          { id: 'f1', title: 'readme', module: 'sort-test-files', score: 700, data: { kind: 'file' } },
+          {
+            id: 'f1',
+            title: 'readme',
+            module: 'sort-test-files',
+            score: 700,
+            data: { kind: 'file' },
+          },
         ],
       })
       registerModule(appModule)
@@ -129,8 +159,20 @@ describe('module-registry', () => {
         id: 'score-test-apps',
         hidden: true,
         onSearch: async () => [
-          { id: 'a1', title: 'Finder', module: 'score-test-apps', score: 200, data: { kind: 'application' } },
-          { id: 'a2', title: 'Safari', module: 'score-test-apps', score: 400, data: { kind: 'application' } },
+          {
+            id: 'a1',
+            title: 'Finder',
+            module: 'score-test-apps',
+            score: 200,
+            data: { kind: 'application' },
+          },
+          {
+            id: 'a2',
+            title: 'Safari',
+            module: 'score-test-apps',
+            score: 400,
+            data: { kind: 'application' },
+          },
         ],
       })
       registerModule(appModule)
@@ -139,7 +181,7 @@ describe('module-registry', () => {
       const appItems = res.filter((r) => r.data?.kind === 'application')
 
       for (let i = 1; i < appItems.length; i++) {
-        expect((appItems[i - 1].score ?? 0)).toBeGreaterThanOrEqual((appItems[i].score ?? 0))
+        expect(appItems[i - 1].score ?? 0).toBeGreaterThanOrEqual(appItems[i].score ?? 0)
       }
     })
 
@@ -148,8 +190,20 @@ describe('module-registry', () => {
         id: 'merge-test-files',
         hidden: true,
         onSearch: async () => [
-          { id: 'f1', title: 'readme', module: 'merge-test-files', score: 300, data: { kind: 'file' } },
-          { id: 'd1', title: 'project', module: 'merge-test-files', score: 200, data: { kind: 'folder' } },
+          {
+            id: 'f1',
+            title: 'readme',
+            module: 'merge-test-files',
+            score: 300,
+            data: { kind: 'file' },
+          },
+          {
+            id: 'd1',
+            title: 'project',
+            module: 'merge-test-files',
+            score: 200,
+            data: { kind: 'folder' },
+          },
         ],
       })
       registerModule(fileModule)
@@ -162,9 +216,7 @@ describe('module-registry', () => {
         const firstIdx = res.indexOf(fileItems[0])
         const lastIdx = res.indexOf(fileItems[fileItems.length - 1])
         const between = res.slice(firstIdx, lastIdx + 1)
-        const hasOther = between.some(
-          (r) => r.data?.kind !== 'file' && r.data?.kind !== 'folder',
-        )
+        const hasOther = between.some((r) => r.data?.kind !== 'file' && r.data?.kind !== 'folder')
         expect(hasOther).toBe(false)
       }
     })

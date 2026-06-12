@@ -2,7 +2,7 @@
 id = "currency"
 name = "汇率转换"
 version = "1.0.0"
-description = "实时汇率转换计算"
+description = "实时汇率转换"
 author = "Voidnix"
 icon = "i-ri-exchange-cny-line"
 keywords = ["currency", "exchange", "rate", "汇率", "货币", "钱"]
@@ -16,5 +16,4 @@ preferred_view = "list"
 search_placeholder = "默认基于 1 CNY 计算，也可输入 100 USD 或 100 USD TO CNY"
 
 [capabilities]
-required = ["clipboard.write"]
 optional = ["http"]

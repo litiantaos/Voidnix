@@ -200,7 +200,7 @@ function parseExpression(tokens: Token[]): number | null {
 const mod: AppModule = {
   id: 'calculator',
   name: '计算器',
-  description: '支持数学表达式计算及历史记录',
+  description: '数学表达式计算',
   icon: 'i-ri-calculator-line',
   keywords: ['calc', 'calculator', 'math', '计算器', '数学'],
   placeholder: '输入数学表达式',

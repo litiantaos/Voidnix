@@ -35,6 +35,7 @@ export interface Capabilities {
 export interface UiConfig {
   preferred_view?: string
   search_placeholder?: string
+  disable_search_input?: boolean
 }
 
 export type SettingField =

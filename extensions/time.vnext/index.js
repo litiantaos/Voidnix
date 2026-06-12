@@ -63,16 +63,6 @@ export default {
 
     return { type: 'list', items: items }
   },
-
-  async onAction(actionId, payload, ctx) {
-    if (actionId === 'copy' || actionId === 'execute') {
-      var text = payload.item?.title || ''
-      if (text && ctx.clipboard) {
-        await ctx.clipboard.write(text)
-      }
-      await ctx.ui.hide()
-    }
-  },
 }
 
 function formatLocal(date) {

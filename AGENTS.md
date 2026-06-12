@@ -138,6 +138,8 @@ export default {
 
 `export default` 前可声明顶层变量/函数（setup code），Worker bootstrap 自动分离。
 
+**list 视图 execute 默认语义**：item 未声明 `actions` 数组且 `title` 非空时，框架直接复制 title 并隐藏窗口，不转发 worker `onAction`。扩展如需自定义 execute 行为，给 item 声明 `actions` 数组（DeclarativeList 会以上抛 primary 或首项 action.id 代替 `'execute'`，框架不再拦截），或把 `title` 留空让框架回落到转发 `onAction`。其他视图（form/detail/markdown/stream）的 action 一律转发到 worker。
+
 ### host API
 
 Capability 在 manifest 声明，运行时按需注入，未声明为 `undefined`。

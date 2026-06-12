@@ -91,9 +91,11 @@ function groupAndSort(items: SearchResult[]): SearchResult[] {
   const result: SearchResult[] = []
   for (const [, groupItems] of sortedGroups) {
     groupItems.sort((a, b) => (b.score || 0) - (a.score || 0))
-    const max = groupItems[0] && (groupItems[0].data?.kind === 'file' || groupItems[0].data?.kind === 'folder')
-      ? MAX_FILE_RESULTS
-      : MAX_APP_RESULTS
+    const max =
+      groupItems[0] &&
+      (groupItems[0].data?.kind === 'file' || groupItems[0].data?.kind === 'folder')
+        ? MAX_FILE_RESULTS
+        : MAX_APP_RESULTS
     result.push(...groupItems.slice(0, max))
   }
 

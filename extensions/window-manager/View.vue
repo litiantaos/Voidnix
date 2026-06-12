@@ -3,15 +3,16 @@
     <BaseList
       :items="settingsItems"
       v-model:selected-index="settingsSelectedIndex"
+      group-field="group"
+      :group-title="(g: string) => g"
       @execute="onSettingsExecute"
     >
       <template #item="{ item, selected, setRef }">
         <BaseListItem
           v-if="item.type === 'toggle'"
           :ref="setRef"
-          title="拖拽分屏"
-          subtitle="拖动窗口到屏幕顶部触发"
-          icon="i-ri-drag-move-2-line"
+          title="布局面板"
+          subtitle="鼠标移至屏幕顶部中心激活"
           :selected="selected"
         >
           <template #trailing>
@@ -24,14 +25,7 @@
           </template>
         </BaseListItem>
 
-        <BaseListItem
-          v-else
-          :ref="setRef"
-          title="自定义尺寸"
-          subtitle="自定义布局使用"
-          icon="i-ri-ruler-line"
-          :selected="selected"
-        >
+        <BaseListItem v-else :ref="setRef" title="自定义尺寸" :selected="selected">
           <template #trailing>
             <div class="no-number-spin" flex gap="1.5" items="center" @click.stop>
               <BaseInput
@@ -85,18 +79,20 @@ const cancelOnBlur = ref(false)
 interface ToggleItem {
   type: 'toggle'
   id: string
+  group: string
 }
 
 interface InputItem {
   type: 'input'
   id: string
+  group: string
 }
 
 type SettingsItem = ToggleItem | InputItem
 
 const settingsItems: SettingsItem[] = [
-  { type: 'toggle', id: 'wm-drag-snap' },
-  { type: 'input', id: 'wm-custom-size' },
+  { type: 'toggle', id: 'wm-drag-snap', group: '通用' },
+  { type: 'input', id: 'wm-custom-size', group: '通用' },
 ]
 
 function onFocus(field: 'width' | 'height') {

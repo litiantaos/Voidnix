@@ -9,7 +9,7 @@ const keywords = ['awake', 'sleep', 'caffeine', '合盖', '休眠', '不休眠',
 const mod: AppModule = {
   id: 'awake',
   name: '保持系统唤醒',
-  description: '通过虚拟外接显示器触发 macOS 原生的 Clamshell Mode，支持 MacBook 合盖熄屏不休眠',
+  description: '合盖不休眠',
   icon: 'i-ri-macbook-line',
   keywords,
   order: 50,

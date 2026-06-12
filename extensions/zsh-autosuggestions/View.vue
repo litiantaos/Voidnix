@@ -1,5 +1,11 @@
 <template>
-  <BaseList :items="items" v-model:selected-index="selectedIndex" @execute="toggle">
+  <BaseList
+    :items="items"
+    v-model:selected-index="selectedIndex"
+    group-field="group"
+    :group-title="(g: string) => g"
+    @execute="toggle"
+  >
     <template #item="{ selected, setRef }">
       <BaseListItem
         :ref="setRef"
@@ -29,7 +35,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 
 const settings = useSettingsStore()
 const selectedIndex = ref(0)
-const items = [{}]
+const items = [{ group: '通用' }]
 
 const toggle = async () => {
   const newVal = !settings.zshAutosuggestionsEnabled

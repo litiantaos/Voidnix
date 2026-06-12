@@ -61,7 +61,7 @@ function scoreFile(item: SearchResult, query: string): number {
 const searchApps: AppModule = {
   id: 'search-apps',
   name: '应用搜索',
-  description: '全局搜索并启动 macOS 应用程序',
+  description: '搜索并启动 macOS 应用',
   icon: 'i-ri-apps-2-line',
   keywords: ['app', 'launch', '应用', '启动', '打开', 'open'],
   order: 99,
@@ -97,7 +97,7 @@ const searchApps: AppModule = {
 const searchFiles: AppModule = {
   id: 'search-files',
   name: '文件搜索',
-  description: '全局检索并打开本地文件与文件夹',
+  description: '搜索本地文件与文件夹',
   icon: 'i-ri-file-search-line',
   keywords: ['search', 'file', 'folder', '搜索', '查找', '文件', '文件夹'],
   order: 99,

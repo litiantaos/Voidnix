@@ -16,7 +16,7 @@ function isValidIpLike(s: string): boolean {
 const mod: AppModule = {
   id: 'ip',
   name: 'IP 信息',
-  description: '查询本机或指定 IP 信息',
+  description: '查询 IP 地址信息',
   icon: 'i-ri-global-line',
   keywords: ['ip', 'network', '网络', '地址'],
   placeholder: '输入指定 IP 地址，留空则查询本机',

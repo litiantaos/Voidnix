@@ -16,14 +16,13 @@ interface Options {
   results: Ref<SearchResult[]>
   selectedIndex: Ref<number>
   activeModule: ComputedRef<AppModule | null>
-  save: (key: string) => void
   restore: (key: string) => void
   reset: () => void
 }
 
 export function useSearchCommand(opts: Options) {
   const appStore = useAppStore()
-  const { searchInput, results, selectedIndex, activeModule, save, restore, reset } = opts
+  const { searchInput, results, selectedIndex, activeModule, restore, reset } = opts
 
   let searchTimeout: ReturnType<typeof setTimeout> | null = null
   let currentSearchId = 0
@@ -112,8 +111,6 @@ export function useSearchCommand(opts: Options) {
   async function handleExecute(result: SearchResult, _index?: number, e?: KeyboardEvent) {
     if (e) e.preventDefault()
     if (result.data?.kind === 'module' && result.data.moduleId) {
-      save('tools')
-      reset()
       appStore.setActiveModule(result.data.moduleId as string)
       clearSearch()
       return

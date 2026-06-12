@@ -117,21 +117,11 @@ export default {
 
       items.push({
         id: target.code,
-        title: formatted + ' ' + target.code,
-        subtitle: target.name,
+        title: formatted,
+        subtitle: target.code + ' ' + target.name,
       })
     }
 
     return { type: 'list', items: items }
-  },
-
-  async onAction(actionId, payload, ctx) {
-    if (actionId === 'copy' || actionId === 'execute') {
-      var text = (payload.item?.title || '').split(' ')[0]
-      if (text && ctx.clipboard) {
-        await ctx.clipboard.write(text)
-      }
-      await ctx.ui.hide()
-    }
   },
 }

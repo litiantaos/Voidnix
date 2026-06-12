@@ -173,7 +173,7 @@ export function stopGenerating() {
 const mod: AppModule = {
   id: 'chat',
   name: 'AI Chat',
-  description: 'AI 对话扩展',
+  description: 'AI 对话',
   icon: 'i-ri-chat-ai-line',
   keywords: ['chat', 'ai', 'gpt', '对话', '聊天', '助手', 'assistant'],
   order: 9,

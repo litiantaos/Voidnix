@@ -22,7 +22,7 @@ export const pendingOcrData = ref<{
 const mod: AppModule = {
   id: 'screenshot',
   name: '截屏',
-  description: '区域截屏、标注、OCR',
+  description: '区域截屏、标注与 OCR',
   icon: 'i-ri-screenshot-line',
   keywords: ['screenshot', '截屏', '截图', 'jietu', 'ocr', '识别', '文字识别', 'shibie'],
   order: 9,

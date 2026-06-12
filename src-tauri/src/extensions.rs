@@ -63,6 +63,7 @@ macro_rules! configure_app {
         crate::extensions::search::commands::launch_app,
         crate::extensions::finder_ext::set_finder_ext_enabled,
         crate::extensions::finder_ext::quit_app,
+        crate::extensions::finder_ext::check_finder_ext_authorized,
         crate::extensions::finder_ext::open_extensions_prefs,
         crate::extensions::ip::fetch_ip_info,
         crate::extensions::awake::toggle_awake,

@@ -78,7 +78,7 @@ export function invalidateCache() {
 const mod: AppModule = {
   id: 'clipboard',
   name: '剪贴板',
-  description: '管理剪贴板记录',
+  description: '剪贴板历史管理',
   icon: 'i-ri-clipboard-line',
   keywords: ['clipboard', 'copy', 'paste', 'history', '剪贴板', '历史', '复制', '粘贴'],
   shortcut: '⌘⇧C',

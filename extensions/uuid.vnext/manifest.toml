@@ -2,7 +2,7 @@
 id = "uuid"
 name = "UUID 生成"
 version = "1.0.0"
-description = "生成 UUID v4 和 NanoID"
+description = "UUID v4 与 NanoID 生成"
 author = "Voidnix"
 icon = "i-ri-key-line"
 keywords = ["uuid", "guid", "生成", "generate"]
@@ -13,7 +13,4 @@ main = "index.js"
 
 [ui]
 preferred_view = "list"
-search_placeholder = "输入数字批量生成，例如: 10"
-
-[capabilities]
-required = ["clipboard.write"]
+disable_search_input = true

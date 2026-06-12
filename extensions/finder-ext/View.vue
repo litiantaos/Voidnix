@@ -12,7 +12,7 @@
           v-if="item.type === 'toggle'"
           :ref="setRef"
           title="访达右键菜单"
-          subtitle="开启后将引导你到系统设置中启用扩展"
+          :subtitle="authorized === false ? '开启后将引导你到系统设置中启用扩展' : undefined"
           :selected="selected"
         >
           <template #trailing>
@@ -46,10 +46,22 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 
 const settings = useSettingsStore()
 
+const authorized = ref<boolean | null>(null)
+
+async function checkAuthorized() {
+  try {
+    authorized.value = await invoke<boolean>('check_finder_ext_authorized')
+  } catch {
+    authorized.value = false
+  }
+}
+
+checkAuthorized()
+
 const toggle = async () => {
   const newVal = !settings.finderExtEnabled
   await settings.setFinderExtEnabled(newVal)
-  if (newVal) {
+  if (newVal && !authorized.value) {
     try {
       await invoke('open_extensions_prefs')
     } catch (e) {

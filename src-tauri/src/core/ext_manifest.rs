@@ -74,6 +74,9 @@ pub struct UiConfig {
     /// 搜索框占位符
     #[serde(default)]
     pub search_placeholder: String,
+    /// 禁用搜索框
+    #[serde(default)]
+    pub disable_search_input: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

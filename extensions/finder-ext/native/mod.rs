@@ -428,6 +428,20 @@ pub fn quit_app(app_handle: AppHandle) {
 }
 
 #[tauri::command]
+pub fn check_finder_ext_authorized() -> bool {
+    let output = Command::new("pluginkit")
+        .args(["-m", "-p", "com.apple.FinderSync", "-i", "com.litiantao.voidnix.FinderExt"])
+        .output();
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            stdout.contains("com.litiantao.voidnix.FinderExt")
+        }
+        Err(_) => false,
+    }
+}
+
+#[tauri::command]
 pub fn open_extensions_prefs() {
     // macOS 13–15: x-apple.systempreferences:com.apple.ExtensionsPreferences
     // macOS 26+:   the above URL no longer opens the right pane.

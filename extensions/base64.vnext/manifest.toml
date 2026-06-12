@@ -2,7 +2,7 @@
 id = "base64"
 name = "Base64 编解码"
 version = "1.0.0"
-description = "将文本进行 Base64 编码或解码"
+description = "Base64 编码与解码"
 author = "Voidnix"
 icon = "i-ri-code-s-slash-line"
 keywords = ["base64", "encode", "decode", "编码", "解码"]
@@ -14,6 +14,3 @@ main = "index.js"
 [ui]
 preferred_view = "list"
 search_placeholder = "输入文本"
-
-[capabilities]
-required = ["clipboard.write"]

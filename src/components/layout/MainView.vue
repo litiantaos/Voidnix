@@ -194,7 +194,6 @@ const { onInput, handleExecute, handleTagClose, isLoading } = useSearchCommand({
   results,
   selectedIndex,
   activeModule,
-  save,
   restore,
   reset,
 })
@@ -208,6 +207,18 @@ watch(
       contentViewRef.value?.scrollContainer?.focus()
     } else {
       nextTick(() => searchInput.value?.focus())
+    }
+  },
+)
+
+// 进入模块时重置滚动位置，覆盖快捷键、open-module 事件等所有进入路径
+// 从主列表进入时保存其滚动位置，goBackToToolList 调用 restore('tools') 恢复
+watch(
+  () => activeModule.value?.id,
+  (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      if (!oldId) save('tools')
+      reset()
     }
   },
 )
