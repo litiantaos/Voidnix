@@ -301,18 +301,24 @@ fn fallback_query(
         },
     };
 
-    let seq_counts = db::get_sequence_counts(&conn, prev).unwrap_or_default();
+    let filtered: Vec<db::CommandStat> = if buffer.is_empty() {
+        stats
+    } else {
+        stats.into_iter().filter(|s| s.command.starts_with(buffer)).collect()
+    };
+
+    let seq_data = db::get_sequence_counts(&conn, prev).unwrap_or_default();
 
     let mut dir_counts: std::collections::HashMap<String, std::collections::HashMap<String, i64>> =
         std::collections::HashMap::new();
-    for s in &stats {
+    for s in &filtered {
         if let Ok(dc) = db::get_dir_counts_for_command(&conn, &s.command) {
             dir_counts.insert(s.command.clone(), dc);
         }
     }
 
     let now = std::time::SystemTime::now();
-    let ranked = scorer::rank(&stats, buffer, dir, prev, &seq_counts, &dir_counts, now);
+    let ranked = scorer::rank(&filtered, dir, prev, &seq_data, &dir_counts, now);
 
     if ranked.is_empty() {
         return protocol::SuggestResp {

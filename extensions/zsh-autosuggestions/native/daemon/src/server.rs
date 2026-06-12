@@ -7,13 +7,50 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::sync::RwLock;
 
-use crate::db::{self, CommandStat};
+use crate::db::{self, CommandStat, SeqStat};
 use crate::protocol::{Envelope, PingResp, RecordReq, SuggestReq, SuggestResp};
 use crate::scorer;
 
+struct SeqCache {
+    entries: HashMap<String, (HashMap<String, SeqStat>, u64)>,
+    counter: u64,
+}
+
+impl SeqCache {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+            counter: 0,
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<&HashMap<String, SeqStat>> {
+        self.entries.get(key).map(|(v, _)| v)
+    }
+
+    fn insert(&mut self, key: String, value: HashMap<String, SeqStat>) {
+        if self.entries.len() >= 500 {
+            if let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, (_, order))| *order)
+                .map(|(k, _)| k.clone())
+            {
+                self.entries.remove(&oldest);
+            }
+        }
+        self.counter += 1;
+        self.entries.insert(key, (value, self.counter));
+    }
+
+    fn remove(&mut self, key: &str) {
+        self.entries.remove(key);
+    }
+}
+
 struct StateInner {
     stats: Vec<CommandStat>,
-    seq_cache: HashMap<String, HashMap<String, i64>>,
+    seq_cache: SeqCache,
     dir_counts: HashMap<String, HashMap<String, i64>>,
 }
 
@@ -47,7 +84,7 @@ impl Server {
                 db: Mutex::new(conn),
                 inner: RwLock::new(StateInner {
                     stats,
-                    seq_cache: HashMap::new(),
+                    seq_cache: SeqCache::new(),
                     dir_counts,
                 }),
             }),
@@ -92,40 +129,37 @@ impl Server {
     }
 
     fn suggest(state: &State, req: &SuggestReq) -> SuggestResp {
-        let inner = state.inner.blocking_read();
-
-        let seq_counts = {
-            if !req.prev.is_empty() {
-                if let Some(cached) = inner.seq_cache.get(&req.prev) {
-                    cached.clone()
-                } else {
-                    drop(inner);
-                    let db = state.db.lock().unwrap();
-                    let mut inner = state.inner.blocking_write();
-                    if inner.seq_cache.len() >= 500 {
-                        inner.seq_cache.clear();
-                    }
-                    let counts =
-                        db::get_sequence_counts(&db, &req.prev).unwrap_or_default();
-                    inner.seq_cache.insert(req.prev.clone(), counts.clone());
-                    counts
-                }
-            } else {
+        let seq_data = {
+            let inner = state.inner.blocking_read();
+            if req.prev.is_empty() {
                 HashMap::new()
+            } else if let Some(cached) = inner.seq_cache.get(&req.prev) {
+                cached.clone()
+            } else {
+                drop(inner);
+                let db = state.db.lock().unwrap();
+                let mut inner = state.inner.blocking_write();
+                let data = db::get_sequence_counts(&db, &req.prev).unwrap_or_default();
+                inner.seq_cache.insert(req.prev.clone(), data.clone());
+                data
             }
         };
 
         let inner = state.inner.blocking_read();
+
+        let candidates: Vec<CommandStat> = if req.buffer.is_empty() {
+            inner.stats.clone()
+        } else {
+            inner
+                .stats
+                .iter()
+                .filter(|s| s.command.starts_with(&req.buffer))
+                .cloned()
+                .collect()
+        };
+
         let now = SystemTime::now();
-        let ranked = scorer::rank(
-            &inner.stats,
-            &req.buffer,
-            &req.dir,
-            &req.prev,
-            &seq_counts,
-            &inner.dir_counts,
-            now,
-        );
+        let ranked = scorer::rank(&candidates, &req.dir, &req.prev, &seq_data, &inner.dir_counts, now);
 
         if ranked.is_empty() {
             return SuggestResp {
@@ -168,7 +202,22 @@ impl Server {
         }
 
         let mut inner = state.inner.blocking_write();
-        inner.stats = db::get_command_stats(&db).unwrap_or_else(|_| inner.stats.clone());
+
+        let key = req.command.trim();
+        if let Some(stat) = inner.stats.iter_mut().find(|s| s.command == key) {
+            stat.count += 1;
+            stat.last_used = now;
+            if req.exit_code != 0 {
+                stat.fail_count += 1;
+            }
+        } else if !key.is_empty() {
+            inner.stats.push(CommandStat {
+                command: key.to_string(),
+                count: 1,
+                last_used: now,
+                fail_count: if req.exit_code != 0 { 1 } else { 0 },
+            });
+        }
 
         if let Ok(dc) = db::get_dir_counts_for_command(&db, &req.command) {
             inner.dir_counts.insert(req.command.clone(), dc);

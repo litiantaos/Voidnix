@@ -208,6 +208,20 @@ impl Tier1Extension for Plugin {
         let flag = flag_path(app);
         if flag.exists() {
             ENABLED.store(true, Ordering::Relaxed);
+
+            // Auto-update daemon binary on app launch if version changed or binary missing
+            let current_version = env!("CARGO_PKG_VERSION");
+            let installed_version =
+                std::fs::read_to_string(version_marker_path(app)).unwrap_or_default();
+            if installed_version.trim() != current_version || !installed_bin_path(app).exists() {
+                if install_daemon_bin(app) {
+                    kill_daemon();
+                    log::info!(
+                        "zsh-autosuggestions: daemon binary updated to v{}",
+                        current_version
+                    );
+                }
+            }
         }
         Ok(())
     }

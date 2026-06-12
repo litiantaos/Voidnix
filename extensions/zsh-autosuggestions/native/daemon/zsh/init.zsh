@@ -18,7 +18,6 @@ export ZSH_AS_DATA_DIR="{{DATA_DIR}}"
 : ${ZSH_AS_MANUAL_REBIND:=}
 : ${ZSH_AS_BUFFER_MAX_SIZE:=}
 : ${ZSH_AS_ORIGINAL_WIDGET_PREFIX:=zsh-as-orig-}
-: ${ZSH_AS_FUZZY_SEPARATOR:='  ⊳ '}
 
 typeset -ga ZSH_AS_ACCEPT_WIDGETS
 ZSH_AS_ACCEPT_WIDGETS=(
@@ -84,7 +83,6 @@ typeset -g __zsh_as_last_cmd=""
 typeset -gi __zsh_as_last_start=0
 
 typeset -g _ZSH_AS_CURRENT_SUGGESTION=""
-typeset -g _ZSH_AS_SUGGESTION_MODE=""
 
 typeset -ga _ZSH_AS_ALTERNATIVES
 typeset -gi _ZSH_AS_ALT_INDEX=1
@@ -216,7 +214,6 @@ _zsh_as_clear() {
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
-  _ZSH_AS_SUGGESTION_MODE=""
   _zsh_as_invoke_original_widget $@
 }
 
@@ -231,7 +228,6 @@ _zsh_as_modify() {
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
-  _ZSH_AS_SUGGESTION_MODE=""
 
   _zsh_as_invoke_original_widget $@
   retval=$?
@@ -245,7 +241,6 @@ _zsh_as_modify() {
 
   if [[ "$BUFFER" = "$orig_buffer"* && "$orig_postdisplay" = "${BUFFER:$#orig_buffer}"* ]]; then
     POSTDISPLAY="${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}"
-    _ZSH_AS_SUGGESTION_MODE=prefix
     _ZSH_AS_CURRENT_SUGGESTION="$BUFFER$POSTDISPLAY"
     (( ${+_ZSH_AS_DISABLED} )) || _zsh_as_fetch
     return $retval
@@ -275,13 +270,7 @@ _zsh_as_fetch() {
 _zsh_as_render_suggestion() {
   local s="$1"
   _ZSH_AS_CURRENT_SUGGESTION="$s"
-  if [[ -z "$BUFFER" || "$s" = "$BUFFER"* ]]; then
-    _ZSH_AS_SUGGESTION_MODE=prefix
-    POSTDISPLAY="${s#$BUFFER}"
-  else
-    _ZSH_AS_SUGGESTION_MODE=fuzzy
-    POSTDISPLAY="${ZSH_AS_FUZZY_SEPARATOR}${s}"
-  fi
+  POSTDISPLAY="${s#$BUFFER}"
 }
 
 _zsh_as_suggest() {
@@ -298,8 +287,25 @@ _zsh_as_suggest() {
     POSTDISPLAY=
     _ZSH_AS_ALTERNATIVES=()
     _ZSH_AS_CURRENT_SUGGESTION=""
-    _ZSH_AS_SUGGESTION_MODE=""
     return
+  fi
+
+  # Safety net: ensure suggestion starts with current buffer (handles async races)
+  if (( $#BUFFER > 0 )) && [[ "$suggestion" != "$BUFFER"* ]]; then
+    local -i i found=0
+    for (( i = 1; i <= ${#_ZSH_AS_ALTERNATIVES}; i++ )); do
+      if [[ "${_ZSH_AS_ALTERNATIVES[$i]}" == "$BUFFER"* ]]; then
+        suggestion="${_ZSH_AS_ALTERNATIVES[$i]}"
+        found=1
+        break
+      fi
+    done
+    if (( ! found )); then
+      POSTDISPLAY=
+      _ZSH_AS_ALTERNATIVES=()
+      _ZSH_AS_CURRENT_SUGGESTION=""
+      return
+    fi
   fi
 
   _zsh_as_render_suggestion "$suggestion"
@@ -342,17 +348,12 @@ _zsh_as_accept() {
     return
   fi
 
-  if [[ "$_ZSH_AS_SUGGESTION_MODE" = fuzzy ]]; then
-    BUFFER="$_ZSH_AS_CURRENT_SUGGESTION"
-  else
-    BUFFER="$BUFFER$POSTDISPLAY"
-  fi
+  BUFFER="$BUFFER$POSTDISPLAY"
 
   POSTDISPLAY=
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
-  _ZSH_AS_SUGGESTION_MODE=""
 
   _zsh_as_invoke_original_widget $@
   retval=$?
@@ -367,16 +368,11 @@ _zsh_as_accept() {
 }
 
 _zsh_as_execute() {
-  if [[ "$_ZSH_AS_SUGGESTION_MODE" = fuzzy ]]; then
-    BUFFER="$_ZSH_AS_CURRENT_SUGGESTION"
-  else
-    BUFFER="$BUFFER$POSTDISPLAY"
-  fi
+  BUFFER="$BUFFER$POSTDISPLAY"
   POSTDISPLAY=
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
-  _ZSH_AS_SUGGESTION_MODE=""
   _zsh_as_invoke_original_widget "accept-line"
 }
 
@@ -384,15 +380,9 @@ _zsh_as_partial_accept() {
   local -i retval cursor_loc
   local original_buffer="$BUFFER"
 
-  if [[ "$_ZSH_AS_SUGGESTION_MODE" = fuzzy ]]; then
-    _zsh_as_invoke_original_widget $@
-    return $?
-  fi
-
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
-  _ZSH_AS_SUGGESTION_MODE=""
 
   BUFFER="$BUFFER$POSTDISPLAY"
 

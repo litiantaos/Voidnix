@@ -60,7 +60,7 @@ extensions/<name>/
 **双注册模型**：
 
 - `configure_app!` 宏 → 编译期 API 注册（`#[tauri::command]` + `init() -> TauriPlugin`）
-- `Tier1Extension` trait → 运行时生命周期钩子（`on_setup`：窗口初始化、监听器、资源预热）
+- `Tier1Extension` trait → 运行时生命周期钩子（`on_setup`：窗口初始化、监听器、资源预热、binary 自动部署）
 
 ```rust
 pub trait Tier1Extension: Send + Sync + 'static {
@@ -193,6 +193,8 @@ Worker 通过 Blob URL 创建，CSP 锁定（无 DOM/网络）。宿主 `worker-
 
 **UI 槽位**（仅这些，不增不减）：`view`（主视图）、`searchBarAccessory`（搜索栏右侧）、`subviews`（命名子视图）。槽位组件 `Actions` 后缀，私有 UI 禁用 `Toolbar`/`Header`/`Footer`，用语义名如 `AnnotationPalette`。
 
+**zsh-autosuggestions daemon**：独立 Rust 二进制（`extensions/zsh-autosuggestions/native/daemon/`），通过 Unix socket + SQLite 与 zsh 通信，不依赖主程序运行。纯前缀补全（无 fuzzy）。三信号加权排序：frecency（半衰期 7d，sigmoid 归一化）+ 序列预测（bigram + 3d 时效衰减）+ 目录亲和度（父目录回溯 + 深度衰减）。退出码感知：失败率 >0 的命令按 `fail_rate × 0.5` 惩罚。导入时按 30min 时间戳间隔切分会话边界过滤跨会话噪声 bigram。daemon 内存增量更新 stats（不全量重载），序列缓存 LRU 淘汰（500 容量）。daemon binary 随主程序分发（`src-tauri/Cargo.toml` `[[bin]]`），`on_setup` 启动时检测版本变化自动替换 + kill 旧进程，无需用户开关。
+
 ```typescript
 SearchResult { id, title, module; description?; icon?; score?; shortcut?; data?: { path?, kind?, icon?, ... } }
 ```
@@ -257,5 +259,5 @@ src/
 - 注释和回复用中文
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`
 - Git commit：`<type>(<scope>): <中文描述>`，不主动执行 git 操作
-- 文档不用表格
+- 文档不用表格，言简意赅
 - 修改代码后必须同步更新 AGENTS.md 中相关描述

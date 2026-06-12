@@ -16,6 +16,13 @@ pub struct CommandStat {
     pub command: String,
     pub count: i64,
     pub last_used: i64,
+    pub fail_count: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SeqStat {
+    pub count: i64,
+    pub last_seen: i64,
 }
 
 #[allow(dead_code)]
@@ -53,7 +60,8 @@ pub fn init_db(path: &Path) -> rusqlite::Result<Connection> {
         CREATE TABLE IF NOT EXISTS command_stats (
             command TEXT PRIMARY KEY,
             count INTEGER NOT NULL DEFAULT 0,
-            last_used INTEGER NOT NULL
+            last_used INTEGER NOT NULL,
+            fail_count INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE INDEX IF NOT EXISTS idx_command_stats_last_used ON command_stats(last_used);
@@ -62,8 +70,28 @@ pub fn init_db(path: &Path) -> rusqlite::Result<Connection> {
             prev_command TEXT NOT NULL,
             next_command TEXT NOT NULL,
             count INTEGER NOT NULL DEFAULT 0,
+            last_seen INTEGER NOT NULL DEFAULT 0,
             UNIQUE(prev_command, next_command)
         );",
+    )?;
+
+    // Idempotent migrations for existing databases
+    let _ = conn.execute(
+        "ALTER TABLE command_stats ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE sequences ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+
+    // Backfill last_seen from command_stats for pre-migration sequences (one-time)
+    conn.execute(
+        "UPDATE sequences SET last_seen = COALESCE(
+            (SELECT MAX(s.last_used) FROM command_stats s WHERE s.command = sequences.next_command),
+            strftime('%s', 'now')
+        ) WHERE last_seen = 0",
+        [],
     )?;
 
     Ok(conn)
@@ -112,9 +140,10 @@ pub fn save_import_batch(
 
     {
         let mut stmt = tx.prepare(
-            "INSERT INTO sequences (prev_command, next_command, count) VALUES (?1, ?2, 1)
+            "INSERT INTO sequences (prev_command, next_command, count, last_seen) VALUES (?1, ?2, 1, ?3)
              ON CONFLICT(prev_command, next_command) DO UPDATE SET
-               count = sequences.count + 1",
+               count = sequences.count + 1,
+               last_seen = MAX(sequences.last_seen, excluded.last_seen)",
         )?;
         for i in 1..commands.len() {
             let prev = commands[i - 1].command.trim();
@@ -122,7 +151,12 @@ pub fn save_import_batch(
             if prev.is_empty() || next.is_empty() {
                 continue;
             }
-            stmt.execute(params![prev, next])?;
+            // Skip cross-session bigrams: >30min gap likely means different session
+            let gap = commands[i].timestamp - commands[i - 1].timestamp;
+            if gap > 1800 {
+                continue;
+            }
+            stmt.execute(params![prev, next, commands[i].timestamp])?;
         }
     }
 
@@ -155,20 +189,22 @@ pub fn record_command(
     )?;
 
     tx.execute(
-        "INSERT INTO command_stats (command, count, last_used) VALUES (?1, 1, ?2)
+        "INSERT INTO command_stats (command, count, last_used, fail_count) VALUES (?1, 1, ?2, ?3)
          ON CONFLICT(command) DO UPDATE SET
            count = command_stats.count + 1,
-           last_used = MAX(command_stats.last_used, excluded.last_used)",
-        params![key, cmd.timestamp],
+           last_used = MAX(command_stats.last_used, excluded.last_used),
+           fail_count = command_stats.fail_count + excluded.fail_count",
+        params![key, cmd.timestamp, if cmd.exit_code != 0 { 1 } else { 0 }],
     )?;
 
     let prev = prev_command.trim();
     if !prev.is_empty() {
         tx.execute(
-            "INSERT INTO sequences (prev_command, next_command, count) VALUES (?1, ?2, 1)
+            "INSERT INTO sequences (prev_command, next_command, count, last_seen) VALUES (?1, ?2, 1, ?3)
              ON CONFLICT(prev_command, next_command) DO UPDATE SET
-               count = sequences.count + 1",
-            params![prev, key],
+               count = sequences.count + 1,
+               last_seen = MAX(sequences.last_seen, excluded.last_seen)",
+            params![prev, key, cmd.timestamp],
         )?;
     }
 
@@ -191,13 +227,14 @@ pub fn cleanup_old_commands(conn: &Connection, retention_days: i64) -> rusqlite:
 
 pub fn get_command_stats(conn: &Connection) -> rusqlite::Result<Vec<CommandStat>> {
     let mut stmt = conn.prepare(
-        "SELECT command, count, last_used FROM command_stats ORDER BY count DESC",
+        "SELECT command, count, last_used, fail_count FROM command_stats ORDER BY count DESC",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(CommandStat {
             command: row.get(0)?,
             count: row.get(1)?,
             last_used: row.get(2)?,
+            fail_count: row.get(3)?,
         })
     })?;
 
@@ -211,18 +248,24 @@ pub fn get_command_stats(conn: &Connection) -> rusqlite::Result<Vec<CommandStat>
 pub fn get_sequence_counts(
     conn: &Connection,
     prev: &str,
-) -> rusqlite::Result<std::collections::HashMap<String, i64>> {
+) -> rusqlite::Result<std::collections::HashMap<String, SeqStat>> {
     let mut stmt = conn.prepare(
-        "SELECT next_command, count FROM sequences WHERE prev_command = ?1 ORDER BY count DESC",
+        "SELECT next_command, count, last_seen FROM sequences WHERE prev_command = ?1 ORDER BY count DESC",
     )?;
     let rows = stmt.query_map(params![prev], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            SeqStat {
+                count: row.get(1)?,
+                last_seen: row.get(2)?,
+            },
+        ))
     })?;
 
     let mut map = std::collections::HashMap::new();
     for row in rows {
-        let (cmd, count) = row?;
-        map.insert(cmd, count);
+        let (cmd, stat) = row?;
+        map.insert(cmd, stat);
     }
     Ok(map)
 }

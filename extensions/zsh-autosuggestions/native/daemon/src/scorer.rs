@@ -1,16 +1,18 @@
-use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo_matcher::Matcher;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 
-use crate::db::CommandStat;
+use crate::db::{CommandStat, SeqStat};
 
 const HALF_LIFE_SECS: f64 = 7.0 * 24.0 * 3600.0;
+const SEQ_HALF_LIFE_SECS: f64 = 3.0 * 24.0 * 3600.0;
 
-const FUZZY_WEIGHT: f64 = 1.0;
-const SEQUENCE_WEIGHT: f64 = 0.5;
-const FRECENCY_WEIGHT: f64 = 0.4;
+const FRECENCY_WEIGHT: f64 = 1.0;
+const SEQUENCE_WEIGHT: f64 = 0.6;
 const DIR_WEIGHT: f64 = 0.3;
+const FAIL_PENALTY: f64 = 0.5;
+
+const FRECENCY_K: f64 = 2.0;
+const SEQUENCE_K: f64 = 2.0;
 
 #[derive(Debug, Clone)]
 pub struct RankedResult {
@@ -20,10 +22,9 @@ pub struct RankedResult {
 
 pub fn rank(
     candidates: &[CommandStat],
-    buffer: &str,
     dir: &str,
     prev: &str,
-    seq_counts: &HashMap<String, i64>,
+    seq_data: &HashMap<String, SeqStat>,
     dir_counts: &HashMap<String, HashMap<String, i64>>,
     now: SystemTime,
 ) -> Vec<RankedResult> {
@@ -32,21 +33,20 @@ pub fn rank(
         return Vec::new();
     }
 
-    let fuzzy_scores = compute_fuzzy(candidates, buffer);
     let frecency_scores = compute_frecency(candidates, now);
     let dir_scores = compute_dir_affinity(candidates, dir, dir_counts);
-    let seq_scores = compute_sequence(candidates, prev, seq_counts);
+    let seq_scores = compute_sequence(candidates, prev, seq_data, now);
 
     let mut out = Vec::with_capacity(n);
     for (i, c) in candidates.iter().enumerate() {
-        if !buffer.is_empty() && fuzzy_scores[i] == 0.0 {
-            continue;
-        }
-
-        let final_score = FUZZY_WEIGHT * fuzzy_scores[i]
+        let mut final_score = FRECENCY_WEIGHT * frecency_scores[i]
             + SEQUENCE_WEIGHT * seq_scores[i]
-            + FRECENCY_WEIGHT * frecency_scores[i]
             + DIR_WEIGHT * dir_scores[i];
+
+        if c.count > 0 && c.fail_count > 0 {
+            let fail_rate = c.fail_count as f64 / c.count as f64;
+            final_score *= 1.0 - fail_rate * FAIL_PENALTY;
+        }
 
         out.push(RankedResult {
             command: c.command.clone(),
@@ -58,91 +58,27 @@ pub fn rank(
     out
 }
 
-fn compute_fuzzy(candidates: &[CommandStat], buffer: &str) -> Vec<f64> {
-    let n = candidates.len();
-    let mut scores = vec![0.0; n];
-
-    if buffer.is_empty() {
-        for s in scores.iter_mut() {
-            *s = 1.0;
-        }
-        return scores;
-    }
-
-    let pattern = Pattern::parse(buffer, CaseMatching::Ignore, Normalization::Smart);
-    let mut matcher = Matcher::default();
-
-    let mut raw = vec![0u32; n];
-    let mut matched = vec![false; n];
-    let mut min = u32::MAX;
-    let mut max = 0u32;
-
-    for (i, c) in candidates.iter().enumerate() {
-        let needle = nucleo_matcher::Utf32Str::Ascii(c.command.as_bytes());
-        if let Some(score) = pattern.score(needle, &mut matcher) {
-            raw[i] = score;
-            matched[i] = true;
-            if score < min {
-                min = score;
-            }
-            if score > max {
-                max = score;
-            }
-        }
-    }
-
-    let span = max.saturating_sub(min);
-    for i in 0..n {
-        if !matched[i] {
-            continue;
-        }
-        if span == 0 {
-            scores[i] = 1.0;
-        } else {
-            scores[i] = (raw[i] - min) as f64 / span as f64;
-        }
-        if scores[i] < 1e-6 {
-            scores[i] = 1e-6;
-        }
-    }
-
-    scores
-}
-
 fn compute_frecency(candidates: &[CommandStat], now: SystemTime) -> Vec<f64> {
-    let n = candidates.len();
-    let mut raw = vec![0.0f64; n];
-    let mut max = 0.0f64;
-
     let now_secs = now
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
+        .as_secs() as i64;
 
-    for (i, c) in candidates.iter().enumerate() {
-        let last_used_secs = c.last_used.clamp(0, now_secs as i64) as u64;
-        let dt = now
-            .duration_since(SystemTime::UNIX_EPOCH + Duration::from_secs(last_used_secs))
-            .unwrap_or(Duration::from_secs(0))
-            .as_secs_f64()
-            .max(0.0);
+    candidates
+        .iter()
+        .map(|c| {
+            let last_used_secs = c.last_used.clamp(0, now_secs) as u64;
+            let dt = now
+                .duration_since(SystemTime::UNIX_EPOCH + Duration::from_secs(last_used_secs))
+                .unwrap_or(Duration::from_secs(0))
+                .as_secs_f64()
+                .max(0.0);
 
-        let recency = (-dt / HALF_LIFE_SECS).exp();
-        raw[i] = ((c.count as f64) + 1.0).ln() * recency;
-        if raw[i] > max {
-            max = raw[i];
-        }
-    }
-
-    if max == 0.0 {
-        return raw;
-    }
-
-    for r in raw.iter_mut() {
-        *r /= max;
-    }
-
-    raw
+            let recency = (-dt / HALF_LIFE_SECS).exp();
+            let raw = ((c.count as f64) + 1.0).ln() * recency;
+            raw / (raw + FRECENCY_K)
+        })
+        .collect()
 }
 
 fn compute_dir_affinity(
@@ -150,47 +86,76 @@ fn compute_dir_affinity(
     dir: &str,
     dir_counts: &HashMap<String, HashMap<String, i64>>,
 ) -> Vec<f64> {
-    let n = candidates.len();
-    let mut scores = vec![0.0; n];
-
     if dir.is_empty() {
-        return scores;
+        return vec![0.0; candidates.len()];
     }
 
-    for (i, c) in candidates.iter().enumerate() {
-        if let Some(dc) = dir_counts.get(&c.command) {
-            let total: i64 = dc.values().sum();
-            if total > 0 {
-                scores[i] = *dc.get(dir).unwrap_or(&0) as f64 / total as f64;
+    let ancestors = build_dir_ancestors(dir);
+
+    candidates
+        .iter()
+        .map(|c| {
+            if let Some(dc) = dir_counts.get(&c.command) {
+                let total: i64 = dc.values().sum();
+                if total > 0 {
+                    for (depth, ancestor) in ancestors.iter().enumerate() {
+                        if let Some(&count) = dc.get(ancestor) {
+                            let affinity = count as f64 / total as f64;
+                            let depth_factor = 1.0 / (1.0 + depth as f64 * 0.2);
+                            return affinity * depth_factor;
+                        }
+                    }
+                }
             }
-        }
-    }
-
-    scores
+            0.0
+        })
+        .collect()
 }
 
 fn compute_sequence(
     candidates: &[CommandStat],
     prev: &str,
-    seq_counts: &HashMap<String, i64>,
+    seq_data: &HashMap<String, SeqStat>,
+    now: SystemTime,
 ) -> Vec<f64> {
-    let n = candidates.len();
-    let mut scores = vec![0.0; n];
-
-    if prev.is_empty() || seq_counts.is_empty() {
-        return scores;
+    if prev.is_empty() || seq_data.is_empty() {
+        return vec![0.0; candidates.len()];
     }
 
-    let max = seq_counts.values().copied().max().unwrap_or(0) as f64;
-    if max == 0.0 {
-        return scores;
-    }
+    let now_secs = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
 
-    for (i, c) in candidates.iter().enumerate() {
-        if let Some(&count) = seq_counts.get(&c.command) {
-            scores[i] = count as f64 / max;
+    candidates
+        .iter()
+        .map(|c| {
+            if let Some(stat) = seq_data.get(&c.command) {
+                let dt = (now_secs - stat.last_seen).max(0) as f64;
+                let recency = (-dt / SEQ_HALF_LIFE_SECS).exp();
+                let weighted = (stat.count as f64) * recency;
+                weighted / (weighted + SEQUENCE_K)
+            } else {
+                0.0
+            }
+        })
+        .collect()
+}
+
+fn build_dir_ancestors(dir: &str) -> Vec<String> {
+    let mut ancestors = Vec::new();
+    let mut current = dir.trim_end_matches('/').to_string();
+    loop {
+        if current.is_empty() || current == "/" {
+            break;
+        }
+        ancestors.push(current.clone());
+        match current.rfind('/') {
+            Some(idx) if idx > 0 => {
+                current.truncate(idx);
+            }
+            _ => break,
         }
     }
-
-    scores
+    ancestors
 }
