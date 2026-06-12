@@ -4,9 +4,27 @@ import { invoke } from '@tauri-apps/api/core'
 import { commands } from '@/bindings'
 import { isTauri, toSearchResults } from '@/utils/tauri'
 import { scoreFields, frequencyBoost } from '@/utils/fuzzy'
+import { listen } from '@tauri-apps/api/event'
 
 const APP_BOOST = 300
 const FILE_HIT_BASE = 0
+const MIN_FILE_QUERY_LEN = 2
+
+// ── 应用前端缓存 ──
+let appListCache: SearchResult[] | null = null
+
+// 监听 Rust 侧应用缓存变更（安装/卸载/移动应用时触发）
+listen('app-cache-updated', () => {
+  appListCache = null
+}).catch(() => {})
+
+async function getAppList(): Promise<SearchResult[]> {
+  if (appListCache) return appListCache
+  const raw = await commands.searchApps().catch(() => [])
+  const items = toSearchResults(raw, 'search-apps')
+  appListCache = items
+  return items
+}
 
 function scoreApp(item: SearchResult, query: string): number {
   const useCount = (item.data?.useCount as number) ?? 0
@@ -51,8 +69,7 @@ const searchApps: AppModule = {
   onSearch: async (query) => {
     if (!isTauri) return []
     try {
-      const raw = await commands.searchApps().catch(() => [])
-      const items = toSearchResults(raw, 'search-apps')
+      const items = await getAppList()
       const scored = items
         .map((it) => ({ it, score: scoreApp(it, query) }))
         .filter((e) => e.score > 0)
@@ -87,6 +104,8 @@ const searchFiles: AppModule = {
   hidden: true,
   onSearch: async (query) => {
     if (!isTauri || !query.trim()) return []
+    // 短查询跳过文件搜索（mdfind 返回结果过多且速度慢）
+    if (query.trim().length < MIN_FILE_QUERY_LEN) return []
     try {
       const raw = await commands.searchFiles(query).catch(() => [])
       const items = toSearchResults(raw, 'search-files')

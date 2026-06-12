@@ -126,6 +126,8 @@
       :initial-loading="!activeModule && isLoading && results.length === 0"
       :selected-index="activeModule ? undefined : selectedIndex"
       :on-execute="activeModule ? undefined : handleExecute"
+      :group-field="!activeModule ? groupField : undefined"
+      :group-title="!activeModule ? groupTitle : undefined"
       @update:selected-index="(i: number) => (selectedIndex = i)"
     />
   </div>
@@ -167,6 +169,25 @@ const activeModule = computed(() => {
   const id = appStore.activeModuleId
   return (id ? getModule(id) : null) ?? null
 })
+
+// 分组逻辑：按 kind 分组，file/folder 合并为"文件"
+const GROUP_TITLES: Record<string, string> = {
+  application: '应用',
+  module: '扩展',
+  clipboard: '剪贴板',
+  'web-search': '快捷操作',
+  'open-url': '快捷操作',
+  file: '文件',
+  folder: '文件',
+}
+
+const groupField = (item: SearchResult) => {
+  const kind = item.data?.kind as string | undefined
+  if (kind === 'file' || kind === 'folder') return 'file'
+  return kind || 'other'
+}
+
+const groupTitle = (group: string) => GROUP_TITLES[group] || group
 
 const { onInput, handleExecute, handleTagClose, isLoading } = useSearchCommand({
   searchInput,

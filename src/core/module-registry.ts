@@ -32,6 +32,10 @@ export async function initAllModules() {
 
 const MODULE_SEARCH_TIMEOUT = 3000
 
+// 分组排序上限
+const MAX_APP_RESULTS = 30
+const MAX_FILE_RESULTS = 50
+
 function withTimeout<T>(promise: Promise<T>, ms: number, moduleId: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -51,6 +55,51 @@ function withTimeout<T>(promise: Promise<T>, ms: number, moduleId: string): Prom
   })
 }
 
+/** 分组排序优先级（越小越靠前） */
+const GROUP_ORDER: Record<string, number> = {
+  application: 0,
+  module: 1,
+  clipboard: 2,
+  'web-search': 3,
+  'open-url': 3,
+  file: 4,
+  folder: 4,
+}
+
+function getGroupKey(kind: string | undefined): string {
+  if (kind === 'file' || kind === 'folder') return 'file'
+  return kind || 'other'
+}
+
+/**
+ * 分组排序：各组按 GROUP_ORDER 优先级排列，组内按 score 降序。
+ */
+function groupAndSort(items: SearchResult[]): SearchResult[] {
+  const groups = new Map<string, SearchResult[]>()
+
+  for (const item of items) {
+    if ((item.score || 0) <= 0) continue
+    const key = getGroupKey(item.data?.kind as string | undefined)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(item)
+  }
+
+  const sortedGroups = [...groups.entries()].sort(
+    (a, b) => (GROUP_ORDER[a[0]] ?? 5) - (GROUP_ORDER[b[0]] ?? 5),
+  )
+
+  const result: SearchResult[] = []
+  for (const [, groupItems] of sortedGroups) {
+    groupItems.sort((a, b) => (b.score || 0) - (a.score || 0))
+    const max = groupItems[0] && (groupItems[0].data?.kind === 'file' || groupItems[0].data?.kind === 'folder')
+      ? MAX_FILE_RESULTS
+      : MAX_APP_RESULTS
+    result.push(...groupItems.slice(0, max))
+  }
+
+  return result
+}
+
 export async function searchAll(
   query: string,
   onUpdate?: (results: SearchResult[]) => void,
@@ -61,9 +110,7 @@ export async function searchAll(
 
   const processResults = () => {
     const flattened = [...allResults.flat(), ...keywordResults]
-    const filtered = flattened.filter((item) => (item.score || 0) > 0)
-    filtered.sort((a, b) => (b.score || 0) - (a.score || 0))
-    return filtered.slice(0, 80)
+    return groupAndSort(flattened)
   }
 
   const keywordPromise = query.trim()

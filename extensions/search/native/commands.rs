@@ -40,7 +40,15 @@ pub async fn search_apps() -> Result<Vec<SearchResult>, String> {
     Ok(results)
 }
 
-/// 用 mdfind 拉候选，返回 (path, use_count) 原始列表，由前端打分排序。
+/// mdfind 返回的原始条目（路径 + 元数据），一次性解析完毕。
+struct FileEntry {
+    path: String,
+    use_count: u32,
+    is_folder: bool,
+}
+
+/// 用 mdfind 拉候选，通过 kMDItemContentType 判断文件/文件夹类型，
+/// 返回带元数据的原始列表，由前端打分排序。
 #[tauri::command]
 #[cfg_attr(feature = "specta", specta::specta)]
 pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
@@ -63,6 +71,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 
     let mut command = std::process::Command::new("mdfind");
     command.arg("-name").arg(&query);
+    command.arg("-attr").arg("kMDItemContentType");
     command.arg("-attr").arg("kMDItemUseCount");
 
     if let Some(home_dir) = dirs::home_dir() {
@@ -82,13 +91,14 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         .map_err(|e| format!("mdfind spawn failed: {}", e))?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
 
-    const MAX_ENTRIES: usize = 300;
+    const MAX_ENTRIES: usize = 100;
 
     let read_entries = tokio::task::spawn_blocking(move || {
         let reader = std::io::BufReader::new(stdout);
-        let mut results: Vec<(String, u32)> = Vec::new();
+        let mut entries: Vec<FileEntry> = Vec::new();
         let mut current_path = String::new();
         let mut current_use_count: u32 = 0;
+        let mut current_is_folder = false;
         let mut has_pending = false;
 
         for line in reader.lines() {
@@ -100,12 +110,13 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 
             if trimmed.is_empty() {
                 if has_pending {
-                    results.push((
-                        std::mem::take(&mut current_path),
-                        std::mem::take(&mut current_use_count),
-                    ));
+                    entries.push(FileEntry {
+                        path: std::mem::take(&mut current_path),
+                        use_count: std::mem::take(&mut current_use_count),
+                        is_folder: current_is_folder,
+                    });
                     has_pending = false;
-                    if results.len() >= MAX_ENTRIES {
+                    if entries.len() >= MAX_ENTRIES {
                         break;
                     }
                 }
@@ -114,12 +125,13 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 
             if trimmed.starts_with('/') {
                 if has_pending {
-                    results.push((
-                        std::mem::take(&mut current_path),
-                        std::mem::take(&mut current_use_count),
-                    ));
+                    entries.push(FileEntry {
+                        path: std::mem::take(&mut current_path),
+                        use_count: std::mem::take(&mut current_use_count),
+                        is_folder: current_is_folder,
+                    });
                     has_pending = false;
-                    if results.len() >= MAX_ENTRIES {
+                    if entries.len() >= MAX_ENTRIES {
                         break;
                     }
                 }
@@ -129,29 +141,39 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
                     .first()
                     .map(|s| s.trim().to_string())
                     .unwrap_or_default();
+                current_use_count = 0;
+                current_is_folder = false;
 
                 for part in &parts[1..] {
-                    if let Some(val) = part.trim().strip_prefix("kMDItemUseCount = ") {
-                        current_use_count = val.trim().parse().unwrap_or(0);
+                    let part = part.trim();
+                    if part.starts_with("kMDItemContentType = ") {
+                        current_is_folder = part.contains("public.folder");
+                    } else if part.starts_with("kMDItemUseCount = ") {
+                        if let Some(val) = part.strip_prefix("kMDItemUseCount = ") {
+                            current_use_count = val.trim().parse().unwrap_or(0);
+                        }
                     }
                 }
                 has_pending = true;
+            } else if let Some(val) = trimmed.strip_prefix("kMDItemContentType = ") {
+                current_is_folder = val.contains("public.folder");
             } else if let Some(val) = trimmed.strip_prefix("kMDItemUseCount = ") {
                 current_use_count = val.trim().parse().unwrap_or(0);
             }
         }
 
         if has_pending {
-            results.push((
-                std::mem::take(&mut current_path),
-                std::mem::take(&mut current_use_count),
-            ));
+            entries.push(FileEntry {
+                path: std::mem::take(&mut current_path),
+                use_count: std::mem::take(&mut current_use_count),
+                is_folder: current_is_folder,
+            });
         }
-        results
+        entries
     });
 
     let entries =
-        match tokio::time::timeout(std::time::Duration::from_secs(4), read_entries).await {
+        match tokio::time::timeout(std::time::Duration::from_secs(3), read_entries).await {
             Ok(Ok(entries)) => entries,
             _ => {
                 let _ = child.kill();
@@ -165,42 +187,38 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         return Ok(vec![]);
     }
 
-    let results = tokio::task::spawn_blocking(move || {
-        entries
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, (path, use_count))| {
-                if SEARCH_SESSION.get_current_id() != search_id {
-                    return None;
-                }
-                let name = Path::new(&path)
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("Unknown")
-                    .to_string();
-                let parent = Path::new(&path)
-                    .parent()
-                    .and_then(|p| p.file_name())
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_string());
-                let is_dir = std::fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
-                let kind_str = if is_dir { "folder" } else { "file" };
-                Some(SearchResult {
-                    id: format!("{}-{}", kind_str, i),
-                    title: name,
-                    path,
-                    kind: kind_str.to_string(),
-                    icon: None,
-                    last_used: None,
-                    score: None,
-                    use_count: Some(use_count),
-                    parent,
-                })
+    // 不再需要第二次 spawn_blocking，所有元数据已在第一次遍历中获取
+    let results: Vec<SearchResult> = entries
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, entry)| {
+            if SEARCH_SESSION.get_current_id() != search_id {
+                return None;
+            }
+            let name = Path::new(&entry.path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+                .to_string();
+            let parent = Path::new(&entry.path)
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string());
+            let kind_str = if entry.is_folder { "folder" } else { "file" };
+            Some(SearchResult {
+                id: format!("{}-{}", kind_str, i),
+                title: name,
+                path: entry.path,
+                kind: kind_str.to_string(),
+                icon: None,
+                last_used: None,
+                score: None,
+                use_count: Some(entry.use_count),
+                parent,
             })
-            .collect::<Vec<_>>()
-    })
-    .await
-    .map_err(|e| format!("Failed to compute file metadata: {}", e))?;
+        })
+        .collect();
 
     Ok(results)
 }

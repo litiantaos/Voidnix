@@ -222,7 +222,7 @@ export function useSearchCommand(opts: Options) {
             if (searchId !== currentSearchId) return
             batched = r
             if (batchTimer) clearTimeout(batchTimer)
-            batchTimer = setTimeout(flush, 80)
+            batchTimer = setTimeout(flush, 30)
           }
 
           const finalResults = await searchAll(query, onUpdate)
@@ -237,7 +237,7 @@ export function useSearchCommand(opts: Options) {
             selectedIndex.value = 0
           }
         }
-      }, 100)
+      }, 50)
     } else {
       await loadDefaultResults()
     }
