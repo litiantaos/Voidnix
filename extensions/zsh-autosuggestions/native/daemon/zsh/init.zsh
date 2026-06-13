@@ -79,29 +79,44 @@ if [[ -z "$ZSH_AS_SESSION_ID" ]]; then
 fi
 
 typeset -g __zsh_as_prev=""
+typeset -g __zsh_as_prev_prev=""
+typeset -gi __zsh_as_prev_exit=0
 typeset -g __zsh_as_last_cmd=""
 typeset -gi __zsh_as_last_start=0
+typeset -gi __zsh_as_last_fetch_ms=0
 
 typeset -g _ZSH_AS_CURRENT_SUGGESTION=""
+typeset -g _ZSH_AS_LAST_IMPRESSED=""
 
 typeset -ga _ZSH_AS_ALTERNATIVES
 typeset -gi _ZSH_AS_ALT_INDEX=1
 
 #--------------------------------------------------------------------#
-# 2. Daemon auto-spawn                                               #
+# 2. Daemon health check (launchd-managed)                           #
 #--------------------------------------------------------------------#
+#
+# daemon 由 launchd 托管，zsh 不再 spawn。这里只做健康检查：
+# ping 通就返回；ping 不通时尝试 launchctl kickstart 强制重启
+# （处理 daemon 异常退出但 launchd 未及时拉起的极端情况）；
+# 仍不通则返回失败，让后续 fetch 走直接 DB 降级路径。
 
 _zsh_as_ensure_daemon() {
   [[ -x "$ZSH_AS_BIN" ]] || return 1
 
   "$ZSH_AS_BIN" ping >/dev/null 2>&1 && return 0
 
-  { "$ZSH_AS_BIN" daemon >/dev/null 2>&1 &! } 2>/dev/null
+  # launchctl kickstart 强制重启 daemon（若已注册 LaunchAgent）。
+  # label 派生：ZSH_AS_DATA_DIR = .../Application Support/<bundle-id>/extensions/zsh-autosuggestions
+  # 取倒数第三段（<bundle-id>）+ ".zsh-as"，与 mod.rs::launch_agent_label 一致。
+  local -i uid=$(id -u)
+  local bundle_id="${ZSH_AS_DATA_DIR:h:h:t}"
+  local label="${bundle_id}.zsh-as"
+  launchctl kickstart -k "gui/${uid}/${label}" >/dev/null 2>&1
 
   local -i i
-  for (( i = 0; i < 20; i++ )); do
+  for (( i = 0; i < 30; i++ )); do
     "$ZSH_AS_BIN" ping >/dev/null 2>&1 && return 0
-    sleep 0.01 2>/dev/null || break
+    sleep 0.05 2>/dev/null || break
   done
   return 1
 }
@@ -134,10 +149,19 @@ _zsh_as_highlight_apply() {
 # 4. Suggestion fetch                                                #
 #--------------------------------------------------------------------#
 
+_zsh_as_stamp_fetch() {
+  __zsh_as_last_fetch_ms=$(( EPOCHREALTIME * 1000 ))
+}
+
 _zsh_as_fetch_suggestion() {
   local buffer="$1"
   [[ -x "$ZSH_AS_BIN" ]] || return 0
-  suggestion="$("$ZSH_AS_BIN" query --buffer "$buffer" --dir "$PWD" --prev "$__zsh_as_prev" --format lines 2>/dev/null)"
+  _zsh_as_stamp_fetch
+  suggestion="$("$ZSH_AS_BIN" query \
+    --buffer "$buffer" --dir "$PWD" \
+    --prev "$__zsh_as_prev" --prev-prev "$__zsh_as_prev_prev" \
+    --prev-exit "$__zsh_as_prev_exit" \
+    --format lines 2>/dev/null)"
 }
 
 _zsh_as_async_request() {
@@ -158,9 +182,15 @@ _zsh_as_async_request() {
     fi
   fi
 
+  _zsh_as_stamp_fetch
+
   builtin exec {_ZSH_AS_ASYNC_FD}< <(
     echo $sysparams[pid]
-    "$ZSH_AS_BIN" query --buffer "$1" --dir "$PWD" --prev "$__zsh_as_prev" --format lines 2>/dev/null
+    "$ZSH_AS_BIN" query \
+      --buffer "$1" --dir "$PWD" \
+      --prev "$__zsh_as_prev" --prev-prev "$__zsh_as_prev_prev" \
+      --prev-exit "$__zsh_as_prev_exit" \
+      --format lines 2>/dev/null
   )
 
   autoload -Uz is-at-least
@@ -214,6 +244,7 @@ _zsh_as_clear() {
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
+  _ZSH_AS_LAST_IMPRESSED=""
   _zsh_as_invoke_original_widget $@
 }
 
@@ -223,6 +254,7 @@ _zsh_as_modify() {
 
   local orig_buffer="$BUFFER"
   local orig_postdisplay="$POSTDISPLAY"
+  local orig_suggestion="$_ZSH_AS_CURRENT_SUGGESTION"
 
   POSTDISPLAY=
   _ZSH_AS_ALTERNATIVES=()
@@ -246,6 +278,18 @@ _zsh_as_modify() {
     return $retval
   fi
 
+  # Reject signal: user diverged from a visible non-trivial suggestion that has
+  # been on screen for >50ms. Skip if disabled or buffer just shrank.
+  if [[ -n "$orig_suggestion" && -n "$orig_postdisplay" ]]; then
+    if [[ "$BUFFER" != "$orig_suggestion"* ]]; then
+      local -i now_ms=$(( EPOCHREALTIME * 1000 ))
+      if (( now_ms - __zsh_as_last_fetch_ms > 50 )); then
+        _zsh_as_send_feedback "$orig_suggestion" reject
+      fi
+    fi
+  fi
+  _ZSH_AS_LAST_IMPRESSED=""
+
   (( ${+_ZSH_AS_DISABLED} )) && return $retval
 
   if (( $#BUFFER > 0 )); then
@@ -267,10 +311,23 @@ _zsh_as_fetch() {
   fi
 }
 
+_zsh_as_send_feedback() {
+  local cmd="$1" kind="$2"
+  [[ -x "$ZSH_AS_BIN" ]] || return 0
+  [[ -z "$cmd" ]] && return 0
+  { "$ZSH_AS_BIN" feedback --command "$cmd" --kind "$kind" --session "$ZSH_AS_SESSION_ID" >/dev/null 2>&1 &! } 2>/dev/null
+}
+
 _zsh_as_render_suggestion() {
   local s="$1"
   _ZSH_AS_CURRENT_SUGGESTION="$s"
   POSTDISPLAY="${s#$BUFFER}"
+
+  # Impression feedback: only when something visible and not a duplicate
+  if [[ -n "$POSTDISPLAY" && "$s" != "$_ZSH_AS_LAST_IMPRESSED" ]]; then
+    _ZSH_AS_LAST_IMPRESSED="$s"
+    _zsh_as_send_feedback "$s" impression
+  fi
 }
 
 _zsh_as_suggest() {
@@ -348,12 +405,15 @@ _zsh_as_accept() {
     return
   fi
 
-  BUFFER="$BUFFER$POSTDISPLAY"
+  local accepted="$BUFFER$POSTDISPLAY"
+  BUFFER="$accepted"
+  _zsh_as_send_feedback "$accepted" accept
 
   POSTDISPLAY=
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
+  _ZSH_AS_LAST_IMPRESSED=""
 
   _zsh_as_invoke_original_widget $@
   retval=$?
@@ -368,17 +428,22 @@ _zsh_as_accept() {
 }
 
 _zsh_as_execute() {
+  if [[ -n "$_ZSH_AS_CURRENT_SUGGESTION" && -n "$POSTDISPLAY" ]]; then
+    _zsh_as_send_feedback "$_ZSH_AS_CURRENT_SUGGESTION" accept
+  fi
   BUFFER="$BUFFER$POSTDISPLAY"
   POSTDISPLAY=
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
+  _ZSH_AS_LAST_IMPRESSED=""
   _zsh_as_invoke_original_widget "accept-line"
 }
 
 _zsh_as_partial_accept() {
   local -i retval cursor_loc
   local original_buffer="$BUFFER"
+  local original_suggestion="$_ZSH_AS_CURRENT_SUGGESTION"
 
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
@@ -397,6 +462,7 @@ _zsh_as_partial_accept() {
   if (( $cursor_loc > $#original_buffer )); then
     POSTDISPLAY="${BUFFER[$(($cursor_loc + 1)),$#BUFFER]}"
     BUFFER="${BUFFER[1,$cursor_loc]}"
+    [[ -n "$original_suggestion" ]] && _zsh_as_send_feedback "$original_suggestion" accept
   else
     BUFFER="$original_buffer"
   fi
@@ -540,10 +606,14 @@ _zsh_as_precmd() {
         --exit "$exit_code" \
         --duration "$duration_ms" \
         --session "$ZSH_AS_SESSION_ID" \
-        --prev "$__zsh_as_prev" >/dev/null 2>&1 &! } 2>/dev/null
+        --prev "$__zsh_as_prev" \
+        --prev-prev "$__zsh_as_prev_prev" \
+        --prev-exit "$__zsh_as_prev_exit" >/dev/null 2>&1 &! } 2>/dev/null
     fi
 
+    __zsh_as_prev_prev="$__zsh_as_prev"
     __zsh_as_prev="$__zsh_as_last_cmd"
+    __zsh_as_prev_exit=$exit_code
   fi
 
   __zsh_as_last_cmd=""

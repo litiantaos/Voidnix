@@ -195,7 +195,16 @@ Worker 通过 Blob URL 创建，CSP 锁定（无 DOM/网络）。宿主 `worker-
 
 **UI 槽位**（仅这些，不增不减）：`view`（主视图）、`searchBarAccessory`（搜索栏右侧）、`subviews`（命名子视图）。槽位组件 `Actions` 后缀，私有 UI 禁用 `Toolbar`/`Header`/`Footer`，用语义名如 `AnnotationPalette`。
 
-**zsh-autosuggestions daemon**：独立 Rust 二进制（`extensions/zsh-autosuggestions/native/daemon/`），通过 Unix socket + SQLite 与 zsh 通信，不依赖主程序运行。纯前缀补全（无 fuzzy）。三信号加权排序：frecency（半衰期 7d，sigmoid 归一化）+ 序列预测（bigram + 3d 时效衰减）+ 目录亲和度（父目录回溯 + 深度衰减）。退出码感知：失败率 >0 的命令按 `fail_rate × 0.5` 惩罚。导入时按 30min 时间戳间隔切分会话边界过滤跨会话噪声 bigram。daemon 内存增量更新 stats（不全量重载），序列缓存 LRU 淘汰（500 容量）。daemon binary 随主程序分发（`src-tauri/Cargo.toml` `[[bin]]`），`on_setup` 启动时检测版本变化自动替换 + kill 旧进程，无需用户开关。
+**zsh-autosuggestions daemon**：独立 Rust 二进制（`extensions/zsh-autosuggestions/native/daemon/`），通过 Unix socket + SQLite 与 zsh 通信，不依赖主程序运行。多路召回 + 多信号排序 + 反馈学习。
+
+- **召回三路**（union 去重）：A 精确前缀（字节 `starts_with`，与 zsh 历史一致）；C 首字母缩写倒排索引（`gco` → `git checkout`）；D Damerau-Levenshtein ≤ 1 兜底（仅在 A+C 召回 < 3 时启用，识别 `gti` 类相邻字符 typo），Fuzzy 候选打分系数 0.6。Path B（模板聚合）已移除：在 Path A 字节前缀下 representative 必然已被收录，是死代码。
+- **排序信号**：frecency（半衰期 7d，`(count+1)^0.7 * recency` + K=10 归一，给高频留头空间）+ 序列预测三路按可用上下文降序选择 trigram（pp+prev 都在）→ recovery_sequences（prev_exit≠0）→ bigram → 0；项目亲和度（向上查 `.git`/`Cargo.toml`/`package.json`/`go.mod`/`pyproject.toml` 识别项目根，LRU 256）+ 目录亲和（父目录回溯 + 深度衰减）。
+- **反馈学习**：zsh 端 accept / partial-accept / impression / reject 信号通过 socket `feedback` 调用上报，累加到 `command_stats.accept_count / reject_count / suggested_count`；scorer 用贝叶斯收缩 `(accept+1)/(suggested+3)`（仅在 `suggested_count >= 5` 时启用）映射到 [0.7, 1.3] 乘子。Reject 严格判定：可见建议 + buffer 偏离前缀 + 距离上次 fetch > 50ms，避开异步竞态。
+- **退出码感知**：失败率 >0 的命令按 `fail_rate × 0.5` 惩罚；后继修复模式走 `recovery_sequences` 表。
+- **备选多样化**：top-5 用 MMR（λ=0.7）+ token-prefix 严格去重，避免 `git pull` / `git pull origin main` 互为子串占满 Tab cycle。
+- **导入**：按 30min 时间戳间隔切分会话边界过滤跨会话噪声 bigram/trigram。
+- **状态维护**：daemon 内存维护 `stats / initials_index / dir_counts / project_counts`，启动一次构建、record 增量更新；序列缓存真 LRU（get 刷新访问顺序，500 容量，三类 key：Bigram/Trigram/Recovery，record 时按需失效）；项目根缓存真 LRU 256。dir/project counts 启动用批量 GROUP BY 一次性加载（避免 N+1）。
+- **分发**：daemon binary 随主程序分发（`src-tauri/Cargo.toml` `[[bin]]`），由 **launchd 托管**而非 zsh spawn。`~/Library/LaunchAgents/<bundle-id>.zsh-as.plist` 包含 `RunAtLoad`（用户登录自动起）+ `KeepAlive`（崩溃自动重启）+ `ProcessType=Background`。`on_setup` 启动时：检测 binary 版本变化 → `launchctl bootout` + 替换 binary + `bootstrap` 重新拉起；binary 未变但 LaunchAgent 缺失（首次升级到 launchd 版本）→ bootstrap + 杀掉残留 zsh-spawned daemon。`set_zsh_autosuggestions_enabled(false)` → bootout + 删 plist。daemon binary 自身不再 setsid/double-fork（launchd 在独立 session 中 spawn，天然无控制 TTY）。zsh 端 `_zsh_as_ensure_daemon` 只 ping，失败时 `launchctl kickstart -k gui/<uid>/<label>` 强制重启，再失败回落直接 DB 查询。彻底消除：首次开终端标题栏闪烁进程名、关闭终端弹"是否关闭进程"、daemon 崩溃后无人重启。
 
 ```typescript
 SearchResult { id, title, module; description?; icon?; score?; shortcut?; data?: { path?, kind?, icon?, ... } }
@@ -260,6 +269,6 @@ src/
 - `isTauri()` 判断环境，非 Tauri 跳过原生调用
 - 注释和回复用中文
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`
-- Git commit：`<type>(<scope>): <中文描述>`，不主动执行 git 操作
+- Git commit：`<type>(<scope>): <中文描述>`，不写详情，不主动执行 git 操作
 - 文档不用表格，言简意赅
 - 修改代码后必须同步更新 AGENTS.md 中相关描述
