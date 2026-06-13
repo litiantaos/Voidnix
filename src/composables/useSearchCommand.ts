@@ -378,10 +378,13 @@ export function useSearchCommand(opts: Options) {
     searchInput.value?.focus()
   }
 
-  const focusHandler = () => {
+  const focusHandler = async () => {
     if (activeModule.value?.disableSearchInput) return
     searchInput.value?.focus()
     if (appStore.searchQuery) searchInput.value?.select()
+    if (!appStore.activeModuleId && !appStore.searchQuery) {
+      await loadDefaultResults()
+    }
   }
 
   onMounted(async () => {

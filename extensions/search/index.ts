@@ -12,17 +12,19 @@ const MIN_FILE_QUERY_LEN = 2
 
 // ── 应用前端缓存 ──
 let appListCache: SearchResult[] | null = null
+let iconsPending = false
 
-// 监听 Rust 侧应用缓存变更（安装/卸载/移动应用时触发）
 listen('app-cache-updated', () => {
   appListCache = null
+  iconsPending = false
 }).catch(() => {})
 
 async function getAppList(): Promise<SearchResult[]> {
-  if (appListCache) return appListCache
+  if (appListCache && !iconsPending) return appListCache
   const raw = await commands.searchApps().catch(() => [])
   const items = toSearchResults(raw, 'search-apps')
   appListCache = items
+  iconsPending = items.some((item) => item.data?.kind === 'application' && !item.data?.icon)
   return items
 }
 
