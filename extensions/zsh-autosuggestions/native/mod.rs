@@ -3,6 +3,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
+mod launchd;
+
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
 const DAEMON_BIN_NAME: &str = "zsh-autosuggestions";
@@ -38,24 +40,41 @@ fn version_marker_path(app: &AppHandle) -> PathBuf {
     app_daemon_dir(app).join(".installed_version")
 }
 
+/// 判断是否需要替换 daemon binary。
+///
+/// 工业级判定：满足以下任一条件即替换
+/// 1. 目标不存在
+/// 2. 版本 marker 缺失或与当前 `CARGO_PKG_VERSION` 不一致
+/// 3. 源文件 mtime 晚于目标 mtime（覆盖开发期 incremental 编译场景）
+fn needs_reinstall(dest: &std::path::Path, source: &std::path::Path, app: &AppHandle) -> bool {
+    if !dest.exists() {
+        return true;
+    }
+    let current_version = env!("CARGO_PKG_VERSION");
+    let installed_version =
+        std::fs::read_to_string(version_marker_path(app)).unwrap_or_default();
+    if installed_version.trim() != current_version {
+        return true;
+    }
+    let src_mtime = std::fs::metadata(source).and_then(|m| m.modified()).ok();
+    let dst_mtime = std::fs::metadata(dest).and_then(|m| m.modified()).ok();
+    matches!((src_mtime, dst_mtime), (Some(s), Some(d)) if s > d)
+}
+
 fn install_daemon_bin(app: &AppHandle) -> bool {
+    install_daemon_bin_inner(app).0
+}
+
+/// 安装 daemon binary。返回 (是否已就绪, 本次是否实际发生了替换)。
+fn install_daemon_bin_inner(app: &AppHandle) -> (bool, bool) {
     let dest = installed_bin_path(app);
     let source = match source_bin_path() {
         Some(s) => s,
-        None => return dest.exists(),
+        None => return (dest.exists(), false),
     };
 
-    let current_version = env!("CARGO_PKG_VERSION");
-    let version_ok =
-        std::fs::read_to_string(version_marker_path(app)).is_ok_and(|v| v == current_version);
-    let mtime_ok = !std::fs::metadata(&source)
-        .and_then(|m| m.modified())
-        .ok()
-        .zip(std::fs::metadata(&dest).and_then(|m| m.modified()).ok())
-        .is_some_and(|(src, dst)| src > dst);
-
-    if dest.exists() && version_ok && mtime_ok {
-        return true;
+    if !needs_reinstall(&dest, &source, app) {
+        return (true, false);
     }
 
     if let Some(parent) = dest.parent() {
@@ -63,10 +82,10 @@ fn install_daemon_bin(app: &AppHandle) -> bool {
     }
 
     if std::fs::copy(&source, &dest).is_ok() {
-        let _ = std::fs::write(version_marker_path(app), current_version);
-        true
+        let _ = std::fs::write(version_marker_path(app), env!("CARGO_PKG_VERSION"));
+        (true, true)
     } else {
-        false
+        (false, true)
     }
 }
 
@@ -179,10 +198,14 @@ pub fn set_zsh_autosuggestions_enabled(app: AppHandle, enabled: bool) {
         }
         let _ = std::fs::write(&flag, b"1");
         write_zshrc_line(&app);
+        // 注册并启动 LaunchAgent。launchd 接管后 daemon 与任何终端解耦。
+        launchd::ensure_running(&app);
     } else {
+        // 停 daemon（launchd 托管的 + 残留的 zsh-spawned）+ 移除 plist + zshrc 清理
+        launchd::uninstall(&app);
+        kill_daemon();
         let _ = std::fs::remove_file(&flag);
         remove_zshrc_line();
-        kill_daemon();
     }
 
     log::info!("zsh-autosuggestions enabled={}", enabled);
@@ -205,23 +228,28 @@ impl Tier1Extension for Plugin {
     }
 
     fn on_setup(&self, app: &AppHandle) -> tauri::Result<()> {
-        let flag = flag_path(app);
-        if flag.exists() {
-            ENABLED.store(true, Ordering::Relaxed);
+        if !flag_path(app).exists() {
+            return Ok(());
+        }
+        ENABLED.store(true, Ordering::Relaxed);
 
-            // Auto-update daemon binary on app launch if version changed or binary missing
-            let current_version = env!("CARGO_PKG_VERSION");
-            let installed_version =
-                std::fs::read_to_string(version_marker_path(app)).unwrap_or_default();
-            if installed_version.trim() != current_version || !installed_bin_path(app).exists() {
-                if install_daemon_bin(app) {
-                    kill_daemon();
-                    log::info!(
-                        "zsh-autosuggestions: daemon binary updated to v{}",
-                        current_version
-                    );
-                }
-            }
+        // binary 替换判定（仅在版本变化或首次安装时实际替换）
+        let (_, binary_replaced) = install_daemon_bin_inner(app);
+
+        if binary_replaced {
+            // binary 变了：launchd 强制重启 + 杀掉任何残留的非 launchd daemon
+            launchd::force_restart(app);
+            kill_daemon();
+            log::info!(
+                "zsh-autosuggestions: daemon binary updated to v{}, restarted via launchd",
+                env!("CARGO_PKG_VERSION")
+            );
+        } else if !launchd::is_loaded(app) {
+            // binary 没变但 LaunchAgent 没注册（首次升级到 launchd 版本、plist 被手动删等）
+            // 杀掉任何 zsh-spawned daemon 让 launchd 接管
+            kill_daemon();
+            launchd::ensure_running(app);
+            log::info!("zsh-autosuggestions: LaunchAgent registered");
         }
         Ok(())
     }
