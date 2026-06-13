@@ -223,7 +223,7 @@ src/
 │   ├── ui/             # 原子组件（BaseButton / BaseDialog / BaseEmptyState / BaseInput / BaseList / BaseListItem / BaseSelect / BaseSlider / BaseTextarea / ShortcutInput）
 │   ├── layout/         # MainView / ContentView
 │   └── declarative/    # Tier 2 声明式 UI（Host / List / Markdown / Form / Detail / Stream）
-├── composables/        # useSearchCommand / useScrollPosition / useInputControl / useSettingsInput / useTauriListener / useShortcutConfig / useStreamOutput
+├── composables/        # useSearchCommand / useScrollPosition / useInputControl / useSettingsInput / useTauriListener / useShortcutConfig / useStreamOutput / useFloating
 ├── core/               # module-registry / module-helpers / async-view / tier2-registry / worker-sandbox
 ├── stores/             # app（窗口/弹窗）/ settings（持久化 + namespace<T>）/ update
 ├── types/              # module / declarative / ext-manifest
