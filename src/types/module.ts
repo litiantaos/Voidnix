@@ -67,9 +67,9 @@ export interface AppModule {
    */
   windowViews?: Record<string, Component>
 
-  onInit?(): Promise<void>
-  onActivate?(): Promise<void>
-  onDeactivate?(): Promise<void>
+  onInit?(): void | Promise<void>
+  onActivate?(): void | Promise<void>
+  onDeactivate?(): void | Promise<void>
 
   /** 主视图组件。不提供时，ContentView 使用标准列表视图 */
   view?: Component

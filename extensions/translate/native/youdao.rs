@@ -26,7 +26,10 @@ pub async fn translate_youdao(
     let input = truncate_for_sign(&text);
 
     let sign_input = format!("{}{}{}{}{}", app_key, input, salt, curtime, app_secret);
-    let sign = format!("{:x}", sha2::Sha256::digest(sign_input.as_bytes()));
+    let sign = sha2::Sha256::digest(sign_input.as_bytes())
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
 
     let params = [
         ("q", text.as_str()),
