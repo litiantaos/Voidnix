@@ -42,8 +42,9 @@
       >
         <div
           v-if="isOpen"
+          ref="dropdownRef"
           data-select-dropdown
-          :style="dropdownStyle"
+          :style="floatingStyles"
           p="1"
           rounded="lg"
           bg="white"
@@ -76,6 +77,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useFloating } from '@/composables/useFloating'
 
 interface Option {
   label: string
@@ -110,9 +112,15 @@ const emit = defineEmits<{
 
 const isOpen = ref(false)
 const selectRef = ref<HTMLElement | null>(null)
+const dropdownRef = ref<HTMLElement | null>(null)
 const highlightedIndex = ref(0)
-const dropUp = ref(false)
-const dropdownStyle = ref<Record<string, string>>({})
+const { floatingStyles, dropUp } = useFloating(selectRef, dropdownRef, {
+  isOpen,
+  placement: 'bottom-start',
+  offset: 4,
+  padding: 20,
+  matchWidth: true,
+})
 
 interface FlatGroupItem {
   type: 'group'
@@ -159,79 +167,6 @@ const selectedLabel = computed(() => {
   return ''
 })
 
-const OPTION_HEIGHT = 32
-const GROUP_HEIGHT = 28
-const PADDING = 8
-const GAP = 4
-const MARGIN = 20
-
-const calcDropdownHeight = () => {
-  let height = 0
-  for (const item of flatItems.value) {
-    height += item.type === 'group' ? GROUP_HEIGHT : OPTION_HEIGHT
-  }
-  return height + PADDING
-}
-
-const calcDropdownStyle = () => {
-  if (!selectRef.value) return
-  const rect = selectRef.value.getBoundingClientRect()
-  const windowHeight = window.innerHeight
-  const windowWidth = window.innerWidth
-  const dropdownHeight = calcDropdownHeight()
-  const spaceBelow = windowHeight - rect.bottom - GAP
-  const spaceAbove = rect.top - GAP
-
-  let top: number
-  let maxHeight: number | undefined
-
-  if (spaceBelow >= dropdownHeight) {
-    dropUp.value = false
-    top = rect.bottom + GAP
-    maxHeight = undefined
-  } else if (spaceAbove >= dropdownHeight) {
-    dropUp.value = true
-    top = rect.top - GAP - dropdownHeight
-    maxHeight = undefined
-  } else if (spaceAbove > spaceBelow) {
-    dropUp.value = true
-    maxHeight = Math.floor(spaceAbove / OPTION_HEIGHT) * OPTION_HEIGHT + PADDING
-    top = rect.top - GAP - maxHeight
-  } else {
-    dropUp.value = false
-    maxHeight = Math.floor(spaceBelow / OPTION_HEIGHT) * OPTION_HEIGHT + PADDING
-    top = rect.bottom + GAP
-  }
-
-  const maxDropdownWidth = windowWidth - 2 * MARGIN
-  const minDropdownWidth = rect.width
-
-  const leftAlignFits = rect.left + maxDropdownWidth <= windowWidth
-  const rightAlignFits = rect.right - maxDropdownWidth >= 0
-
-  let horizontalStyle: Record<string, string>
-  if (leftAlignFits) {
-    horizontalStyle = { left: `${rect.left}px` }
-  } else if (rightAlignFits) {
-    horizontalStyle = { right: `${windowWidth - rect.right}px` }
-  } else {
-    horizontalStyle =
-      rect.left + rect.width / 2 < windowWidth / 2
-        ? { left: `${MARGIN}px` }
-        : { right: `${MARGIN}px` }
-  }
-
-  dropdownStyle.value = {
-    position: 'fixed',
-    top: `${top}px`,
-    minWidth: `${minDropdownWidth}px`,
-    maxWidth: `${maxDropdownWidth}px`,
-    zIndex: '9999',
-    ...horizontalStyle,
-    ...(maxHeight !== undefined ? { maxHeight: `${maxHeight}px`, overflowY: 'auto' } : {}),
-  }
-}
-
 const toggleOpen = () => {
   if (props.disabled) return
   isOpen.value = !isOpen.value
@@ -241,7 +176,6 @@ const toggleOpen = () => {
     )
     highlightedIndex.value =
       currentFlatIndex >= 0 ? currentFlatIndex : (optionIndices.value[0] ?? 0)
-    calcDropdownStyle()
   }
 }
 
