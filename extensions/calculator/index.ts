@@ -205,6 +205,7 @@ const mod: AppModule = {
   keywords: ['calc', 'calculator', 'math', '计算器', '数学'],
   placeholder: '输入数学表达式',
   order: 2,
+  enterHint: '复制',
   onInit: async () => {
     await loadHistory()
   },

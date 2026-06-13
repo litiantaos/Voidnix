@@ -87,6 +87,8 @@ const mod: AppModule = {
   view: ClipboardView,
   searchBarAccessory: ClipboardActions,
   subviews: { settings: ClipboardSettings },
+  enterHint: '粘贴',
+  multiSelectHint: true,
   globalShortcuts: [
     {
       id: 'clipboard',

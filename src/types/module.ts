@@ -136,4 +136,15 @@ export interface AppModule {
    * 适用于模块自行接管输入区的场景（如聊天、翻译使用独立 textarea）。
    */
   disableSearchInput?: boolean
+
+  /**
+   * 状态栏 ↵ 动作描述（如 '粘贴'、'复制'、'翻译'）。
+   * 未设置时搜索模式默认 '打开'，模块模式不显示 ↵ 提示。
+   */
+  enterHint?: string
+
+  /**
+   * 是否在状态栏显示 ⇧/⌘ 多选提示。
+   */
+  multiSelectHint?: boolean
 }

@@ -21,6 +21,7 @@ const mod: AppModule = {
   keywords: ['ip', 'network', '网络', '地址'],
   placeholder: '输入指定 IP 地址，留空则查询本机',
   order: 5,
+  enterHint: '复制',
   onSearch: async () => [],
   onModuleSearch: async (query) => {
     const trimmed = query.trim()

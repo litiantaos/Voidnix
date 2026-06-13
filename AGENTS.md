@@ -195,6 +195,8 @@ Worker 通过 Blob URL 创建，CSP 锁定（无 DOM/网络）。宿主 `worker-
 
 **UI 槽位**（仅这些，不增不减）：`view`（主视图）、`searchBarAccessory`（搜索栏右侧）、`subviews`（命名子视图）。槽位组件 `Actions` 后缀，私有 UI 禁用 `Toolbar`/`Header`/`Footer`，用语义名如 `AnnotationPalette`。
 
+**状态栏**：框架层全局组件 `StatusBar`，固定于 MainView 底部（`h-6`）。左侧显示瞬时消息（`appStore.showStatus(msg, duration)`，自动淡出）或搜索结果计数；右侧显示上下文快捷键提示（根据搜索状态/模块/子视图动态变化：有输入时 `esc 清空`，无输入时 `esc 关闭/返回`；文件结果追加 `⌘↵ 访问`）。扩展通过 `copyAndHide` / `copyAndShow`（`src/utils/clipboard.ts`）自动获得「已复制」反馈，Tier 2 通过 `ctx.clipboard.write` 自动传导，无需额外调用。模块可通过 `AppModule.enterHint`（如 `'粘贴'`/`'复制'`）自定义 ↵ 动作描述，`AppModule.multiSelectHint` 显示 `⇧/⌘ 多选` 提示。
+
 **zsh-autosuggestions daemon**：独立 Rust 二进制（`extensions/zsh-autosuggestions/native/daemon/`），通过 Unix socket + SQLite 与 zsh 通信，不依赖主程序运行。多路召回 + 多信号排序 + 反馈学习。
 
 - **召回三路**（union 去重）：A 精确前缀（字节 `starts_with`，与 zsh 历史一致）；C 首字母缩写倒排索引（`gco` → `git checkout`）；D Damerau-Levenshtein ≤ 1 兜底（仅在 A+C 召回 < 3 时启用，识别 `gti` 类相邻字符 typo），Fuzzy 候选打分系数 0.6。Path B（模板聚合）已移除：在 Path A 字节前缀下 representative 必然已被收录，是死代码。
@@ -230,11 +232,11 @@ src/
 ├── bindings.ts         # 自动生成
 ├── components/
 │   ├── ui/             # 原子组件（BaseButton / BaseDialog / BaseEmptyState / BaseInput / BaseList / BaseListItem / BaseSelect / BaseSlider / BaseTextarea / ShortcutInput）
-│   ├── layout/         # MainView / ContentView
+│   ├── layout/         # MainView / ContentView / StatusBar
 │   └── declarative/    # Tier 2 声明式 UI（Host / List / Markdown / Form / Detail / Stream）
 ├── composables/        # useSearchCommand / useScrollPosition / useInputControl / useSettingsInput / useTauriListener / useShortcutConfig / useStreamOutput / useFloating
 ├── core/               # module-registry / module-helpers / async-view / tier2-registry / worker-sandbox
-├── stores/             # app（窗口/弹窗）/ settings（持久化 + namespace<T>）/ update
+├── stores/             # app（窗口/弹窗/状态栏消息）/ settings（持久化 + namespace<T>）/ update
 ├── types/              # module / declarative / ext-manifest
 ├── utils/              # clipboard / tauri / events / dom / provider / error / format / icon-cache / icons
 └── styles/
