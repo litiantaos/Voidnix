@@ -3,10 +3,13 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use tauri::Emitter;
+use tokio::sync::Mutex;
 
 use super::app_discovery::collect_apps_with_metadata;
 use super::icon::get_app_icon;
 use super::types::{APP_CACHE, APP_HANDLE, CachedApp, SEARCH_SESSION};
+
+static INIT_GUARD: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
 
 pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
     log::info!("Starting app cache initialization...");
@@ -98,14 +101,21 @@ pub(super) async fn get_cached_apps() -> Arc<Vec<CachedApp>> {
         }
     }
 
+    let _guard = INIT_GUARD.lock().await;
+    {
+        let cache = APP_CACHE.read().await;
+        if let Some(apps) = &*cache {
+            return apps.clone();
+        }
+    }
+
     let apps = init_app_cache().await;
 
     {
         let mut cache = APP_CACHE.write().await;
-        if let Some(existing) = &*cache {
-            return existing.clone();
+        if cache.is_none() {
+            *cache = Some(apps.clone());
         }
-        *cache = Some(apps.clone());
     }
 
     apps
