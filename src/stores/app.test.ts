@@ -43,14 +43,22 @@ describe('app store', () => {
       registerModule({
         ...mockModule,
         id: 'mod-a',
-        onActivate: () => activated.push('a'),
-        onDeactivate: () => deactivated.push('a'),
+        onActivate: () => {
+          activated.push('a')
+        },
+        onDeactivate: () => {
+          deactivated.push('a')
+        },
       })
       registerModule({
         ...mockModule,
         id: 'mod-b',
-        onActivate: () => activated.push('b'),
-        onDeactivate: () => deactivated.push('b'),
+        onActivate: () => {
+          activated.push('b')
+        },
+        onDeactivate: () => {
+          deactivated.push('b')
+        },
       })
 
       const store = useAppStore()
