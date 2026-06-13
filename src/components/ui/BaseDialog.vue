@@ -1,11 +1,24 @@
 <template>
   <Teleport to="body">
     <div flex items="center" inset="0" justify="center" fixed z="100" @keydown="onKeyDown">
-      <Transition appear enter-from-class="backdrop-from" leave-to-class="backdrop-from">
-        <div class="backdrop-to" inset="0" absolute @click="onOverlayClick" />
+      <Transition
+        appear
+        enter-from-class="backdrop-from"
+        enter-active-class="backdrop-active"
+        leave-active-class="backdrop-active"
+        leave-to-class="backdrop-from"
+      >
+        <div v-if="visible" class="backdrop-to" inset="0" absolute @click="onOverlayClick" />
       </Transition>
-      <Transition appear enter-from-class="dialog-from" leave-to-class="dialog-from">
+      <Transition
+        appear
+        enter-from-class="dialog-from"
+        enter-active-class="dialog-active"
+        leave-active-class="dialog-active"
+        leave-to-class="dialog-from"
+      >
         <div
+          v-if="visible"
           ref="dialogRef"
           class="dialog-to"
           outline="none"
@@ -51,14 +64,10 @@
                 <slot name="footer-start" />
               </div>
               <div flex gap="2">
-                <BaseButton
-                  v-if="showCancel"
-                  :active="focusIndex === 0"
-                  @click="emit('cancel', 'cancel')"
-                >
+                <BaseButton v-if="showCancel" :active="focusIndex === 0" @click="close('cancel')">
                   {{ cancelLabel || '取消' }}
                 </BaseButton>
-                <BaseButton variant="primary" :active="focusIndex === 1" @click="emit('confirm')">
+                <BaseButton variant="primary" :active="focusIndex === 1" @click="close()">
                   {{ okLabel || '确定' }}
                 </BaseButton>
               </div>
@@ -119,6 +128,19 @@ let previousFocusEl: HTMLElement | null = null
 
 const focusIndex = ref(1)
 
+const visible = ref(true)
+let closing = false
+
+function close(reason?: CloseReason) {
+  if (closing) return
+  closing = true
+  visible.value = false
+  setTimeout(() => {
+    if (reason === undefined) emit('confirm')
+    else emit('cancel', reason)
+  }, 200)
+}
+
 const sizeClass = computed(() => {
   const sizeMap: Record<string, string> = {
     sm: 'w-40% max-h-80vh',
@@ -133,7 +155,7 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     e.preventDefault()
     e.stopPropagation()
-    emit('cancel', 'escape')
+    close('escape')
     return
   }
 
@@ -168,23 +190,24 @@ function onKeyDown(e: KeyboardEvent) {
     e.preventDefault()
     e.stopPropagation()
     if (focusIndex.value === 1) {
-      emit('confirm')
+      close()
     } else {
-      emit('cancel', 'cancel')
+      close('cancel')
     }
   }
 }
 
 function onOverlayClick() {
-  // confirm 模式下 warning 禁止遮罩关闭；form 模式始终可关闭
   if (props.variant === 'confirm' && props.kind === 'warning') return
-  emit('cancel', 'overlay')
+  close('overlay')
 }
 
 onMounted(() => {
   previousFocusEl = document.activeElement as HTMLElement
   nextTick(() => {
-    const focusable = getFocusableElements(dialogRef.value!)
+    const el = dialogRef.value
+    if (!el) return
+    const focusable = getFocusableElements(el)
     if (focusable.length > 0) {
       if (props.variant === 'confirm') {
         // 确认型：聚焦确认按钮（最后一个可聚焦元素）
@@ -207,19 +230,27 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.backdrop-active {
+  transition: background-color 200ms ease-out;
+}
 .backdrop-to {
   background-color: rgba(0, 0, 0, 0.5);
-  transition: background-color 200ms ease-out;
 }
 .backdrop-from {
   background-color: rgba(0, 0, 0, 0);
 }
 
+.dialog-active {
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+}
 .dialog-to {
+  opacity: 1;
   transform: scale(1);
-  transition: transform 200ms ease-out;
 }
 .dialog-from {
-  transform: scale(0.95);
+  opacity: 0;
+  transform: scale(0.96);
 }
 </style>

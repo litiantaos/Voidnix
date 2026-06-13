@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import BaseDialog from './BaseDialog.vue'
@@ -24,7 +24,12 @@ function mountDialog(props: Record<string, unknown> = {}) {
 
 describe('BaseDialog', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('渲染标题', () => {
@@ -57,19 +62,17 @@ describe('BaseDialog', () => {
 
   it('点击确定按钮触发 confirm 事件', async () => {
     const wrapper = mountDialog()
-    const buttons = wrapper.findAll('button')
-    const confirmBtn = buttons.find((b) => b.text() === '确定')
-    expect(confirmBtn).toBeDefined()
-    await confirmBtn!.trigger('click')
+    const confirmBtn = wrapper.findAll('button').find((b) => b.text() === '确定')!
+    await confirmBtn.trigger('click')
+    vi.advanceTimersByTime(200)
     expect(wrapper.emitted('confirm')).toHaveLength(1)
   })
 
   it('点击取消按钮触发 cancel 事件', async () => {
     const wrapper = mountDialog()
-    const buttons = wrapper.findAll('button')
-    const cancelBtn = buttons.find((b) => b.text() === '取消')
-    expect(cancelBtn).toBeDefined()
-    await cancelBtn!.trigger('click')
+    const cancelBtn = wrapper.findAll('button').find((b) => b.text() === '取消')!
+    await cancelBtn.trigger('click')
+    vi.advanceTimersByTime(200)
     expect(wrapper.emitted('cancel')).toHaveLength(1)
     expect(wrapper.emitted('cancel')![0]).toEqual(['cancel'])
   })
@@ -77,6 +80,7 @@ describe('BaseDialog', () => {
   it('Escape 键触发 cancel 事件（reason: escape）', async () => {
     const wrapper = mountDialog()
     await wrapper.find('[role="dialog"]').trigger('keydown', { key: 'Escape' })
+    vi.advanceTimersByTime(200)
     expect(wrapper.emitted('cancel')).toHaveLength(1)
     expect(wrapper.emitted('cancel')![0]).toEqual(['escape'])
   })
@@ -84,12 +88,14 @@ describe('BaseDialog', () => {
   it('confirm + warning 模式下遮罩点击不关闭', async () => {
     const wrapper = mountDialog({ variant: 'confirm', kind: 'warning' })
     await wrapper.find('.backdrop-to').trigger('click')
+    vi.advanceTimersByTime(200)
     expect(wrapper.emitted('cancel')).toBeUndefined()
   })
 
   it('form 模式下遮罩点击可关闭', async () => {
     const wrapper = mountDialog({ variant: 'form' })
     await wrapper.find('.backdrop-to').trigger('click')
+    vi.advanceTimersByTime(200)
     expect(wrapper.emitted('cancel')).toHaveLength(1)
     expect(wrapper.emitted('cancel')![0]).toEqual(['overlay'])
   })
@@ -102,16 +108,15 @@ describe('BaseDialog', () => {
 
   it('confirm + ArrowLeft 切换焦点到取消', async () => {
     const wrapper = mountDialog()
-    const dialog = wrapper.find('[role="dialog"]')
-    await dialog.trigger('keydown', { key: 'ArrowLeft' })
+    await wrapper.find('[role="dialog"]').trigger('keydown', { key: 'ArrowLeft' })
     expect(wrapper.emitted()).not.toHaveProperty('confirm')
     expect(wrapper.emitted()).not.toHaveProperty('cancel')
   })
 
   it('confirm + Enter 触发确认（focusIndex=1）', async () => {
     const wrapper = mountDialog()
-    const dialog = wrapper.find('[role="dialog"]')
-    await dialog.trigger('keydown', { key: 'Enter' })
+    await wrapper.find('[role="dialog"]').trigger('keydown', { key: 'Enter' })
+    vi.advanceTimersByTime(200)
     expect(wrapper.emitted('confirm')).toHaveLength(1)
   })
 
