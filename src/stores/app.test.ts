@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAppStore } from './app'
 import { registerModule } from '@/core/module-registry'
@@ -168,6 +168,42 @@ describe('app store', () => {
       const store = useAppStore()
       store.clearShortcutError('nonexistent')
       expect(Object.keys(store.shortcutErrors)).toHaveLength(0)
+    })
+  })
+
+  describe('状态栏消息', () => {
+    it('showStatus 设置消息', () => {
+      const store = useAppStore()
+      store.showStatus('已复制', 0)
+      expect(store.statusMessage).toBe('已复制')
+    })
+
+    it('showStatus duration 后自动清除', () => {
+      vi.useFakeTimers()
+      const store = useAppStore()
+      store.showStatus('已复制', 1000)
+      expect(store.statusMessage).toBe('已复制')
+      vi.advanceTimersByTime(1000)
+      expect(store.statusMessage).toBe('')
+      vi.useRealTimers()
+    })
+
+    it('clearStatus 立即清除', () => {
+      const store = useAppStore()
+      store.showStatus('已复制', 0)
+      store.clearStatus()
+      expect(store.statusMessage).toBe('')
+    })
+
+    it('连续 showStatus 替换前一条', () => {
+      vi.useFakeTimers()
+      const store = useAppStore()
+      store.showStatus('第一条', 5000)
+      store.showStatus('第二条', 5000)
+      expect(store.statusMessage).toBe('第二条')
+      vi.advanceTimersByTime(5000)
+      expect(store.statusMessage).toBe('')
+      vi.useRealTimers()
     })
   })
 })

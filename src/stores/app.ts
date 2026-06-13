@@ -30,6 +30,29 @@ export const useAppStore = defineStore('app', () => {
 
   const shortcutErrors = ref<Record<string, string>>({})
 
+  // 状态栏瞬时消息
+  const statusMessage = ref('')
+  let statusTimer: ReturnType<typeof setTimeout> | null = null
+
+  function showStatus(msg: string, duration = 2000) {
+    statusMessage.value = msg
+    if (statusTimer) clearTimeout(statusTimer)
+    if (duration > 0) {
+      statusTimer = setTimeout(() => {
+        statusMessage.value = ''
+        statusTimer = null
+      }, duration)
+    }
+  }
+
+  function clearStatus() {
+    statusMessage.value = ''
+    if (statusTimer) {
+      clearTimeout(statusTimer)
+      statusTimer = null
+    }
+  }
+
   function setActiveModule(id: string | null) {
     const oldMod = activeModuleId.value ? getModule(activeModuleId.value) : null
     const newMod = id ? getModule(id) : null
@@ -115,5 +138,8 @@ export const useAppStore = defineStore('app', () => {
     shortcutErrors,
     setShortcutError,
     clearShortcutError,
+    statusMessage,
+    showStatus,
+    clearStatus,
   }
 })

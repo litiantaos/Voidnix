@@ -130,6 +130,13 @@
       :group-title="!activeModule ? groupTitle : undefined"
       @update:selected-index="(i: number) => (selectedIndex = i)"
     />
+
+    <!-- 状态栏 -->
+    <StatusBar
+      :result-count="results.length"
+      :selected-result="results[selectedIndex]"
+      :is-loading="isLoading"
+    />
   </div>
 
   <UpdateDialog v-if="updateStore.dialogVisible" @close="updateStore.closeDialog()" />
@@ -143,6 +150,7 @@ import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import type { SearchResult } from '@/types/module'
 import ContentView from '@/components/layout/ContentView.vue'
+import StatusBar from '@/components/layout/StatusBar.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 
