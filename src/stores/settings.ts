@@ -291,6 +291,7 @@ export const useSettingsStore = defineStore('settings', () => {
     tauriCommand?: string,
   ) {
     return async (val: boolean) => {
+      const oldVal = r.value
       r.value = val
       if (store) {
         const group = (await store.get<Record<string, unknown>>(groupKey)) || {}
@@ -299,7 +300,23 @@ export const useSettingsStore = defineStore('settings', () => {
         await store.save()
       }
       if (tauriCommand && isTauri) {
-        invoke(tauriCommand, { enabled: val }).catch(() => {})
+        try {
+          await invoke(tauriCommand, { enabled: val })
+        } catch (e) {
+          // revert ref + store，保留原始错误向上抛
+          r.value = oldVal
+          if (store) {
+            try {
+              const group = (await store.get<Record<string, unknown>>(groupKey)) || {}
+              group[field] = oldVal
+              await store.set(groupKey, group)
+              await store.save()
+            } catch {
+              /* revert 失败忽略，不掩盖原始错误 */
+            }
+          }
+          throw e
+        }
       }
     }
   }
@@ -310,12 +327,14 @@ export const useSettingsStore = defineStore('settings', () => {
     'finderExt',
     'set_finder_ext_enabled',
   )
+
   const setZshAutosuggestionsEnabled = createSyncedSetter(
     zshAutosuggestionsEnabled,
     'extensions',
     'zshAutosuggestions',
     'set_zsh_autosuggestions_enabled',
   )
+
   const setActiveModelKey = createSetter(activeModelKey, 'chat', 'activeModelKey')
   const setAwakeMirrorMode = createSetter(awakeMirrorMode, 'extensions', 'awakeMirrorMode')
 

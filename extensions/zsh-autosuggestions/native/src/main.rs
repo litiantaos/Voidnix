@@ -1,0 +1,341 @@
+//! zsh-as — Voidnix 终端命令补全 binary。
+//!
+//! 两个命令：
+//!   rebuild  从 .zsh_history + signals.log 重建 sourceable zsh cache
+//!   stats    输出诊断信息
+//!
+//! 无 SQLite，无 daemon，无 IPC。stateless compute kernel。
+
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+use std::time::SystemTime;
+
+mod frecency;
+mod history;
+mod signals;
+
+#[derive(Parser)]
+#[command(
+    name = "zsh-as",
+    version,
+    about = "Voidnix zsh frecency autosuggestions"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// 输出 zsh 集成脚本（直接 include_str，无模板替换，路径走环境变量）
+    Init,
+    /// 从 .zsh_history + signals.log 重建 index.cache
+    Rebuild {
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long)]
+        history: PathBuf,
+        #[arg(long)]
+        signals: PathBuf,
+        #[arg(long, default_value_t = 7.0, value_parser = parse_half_life)]
+        half_life_days: f64,
+        #[arg(long, default_value_t = 0.8, value_parser = parse_fail_penalty)]
+        fail_penalty: f64,
+        #[arg(long, default_value_t = 5000, value_parser = parse_limit)]
+        limit: usize,
+    },
+    /// 输出诊断：行数、cache 状态、最热命令
+    Stats {
+        #[arg(long)]
+        cache: PathBuf,
+        #[arg(long)]
+        history: PathBuf,
+        #[arg(long)]
+        signals: PathBuf,
+        #[arg(long, default_value_t = 7.0, value_parser = parse_half_life)]
+        half_life_days: f64,
+        #[arg(long, default_value_t = 0.8, value_parser = parse_fail_penalty)]
+        fail_penalty: f64,
+    },
+}
+
+fn parse_half_life(s: &str) -> Result<f64, String> {
+    let v: f64 = s
+        .parse()
+        .map_err(|_| format!("half-life-days: 无效数值 '{s}'"))?;
+    if v < 1e-6 {
+        return Err("half-life-days 必须为正数".into());
+    }
+    Ok(v)
+}
+
+fn parse_fail_penalty(s: &str) -> Result<f64, String> {
+    let v: f64 = s
+        .parse()
+        .map_err(|_| format!("fail-penalty: 无效数值 '{s}'"))?;
+    if !(0.0..=1.0).contains(&v) {
+        return Err("fail-penalty 必须在 0.0..=1.0 范围内".into());
+    }
+    Ok(v)
+}
+
+fn parse_limit(s: &str) -> Result<usize, String> {
+    let v: usize = s
+        .parse()
+        .map_err(|_| format!("limit: 无效正整数 '{s}'"))?;
+    if v == 0 {
+        return Err("limit 必须为正整数".into());
+    }
+    Ok(v)
+}
+
+fn main() {
+    let cli = Cli::parse();
+    match cli.command {
+        Commands::Init => {
+            print!("{}", include_str!("../zsh/init.zsh"));
+        }
+        Commands::Rebuild {
+            out,
+            history,
+            signals,
+            half_life_days,
+            fail_penalty,
+            limit,
+        } => {
+            if let Err(e) = run_rebuild(
+                &out,
+                &history,
+                &signals,
+                half_life_days,
+                fail_penalty,
+                limit,
+            ) {
+                eprintln!("rebuild: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Stats {
+            cache,
+            history,
+            signals,
+            half_life_days,
+            fail_penalty,
+        } => {
+            run_stats(&cache, &history, &signals, half_life_days, fail_penalty);
+        }
+    }
+}
+
+fn run_rebuild(
+    out: &std::path::Path,
+    history_path: &std::path::Path,
+    signals_path: &std::path::Path,
+    half_life_days: f64,
+    fail_penalty: f64,
+    limit: usize,
+) -> Result<(), String> {
+    let now = SystemTime::now();
+    let half_life_secs = half_life_days * 86400.0;
+
+    // 先 compact/rotate signals.log：过滤无效行 + 超大时截断。
+    rotate_signals_if_needed(signals_path);
+
+    let mut stats = history::parse(history_path);
+    let history_total = stats.len();
+    signals::apply(&mut stats, signals_path);
+
+    let mut scored = frecency::compute(
+        &stats.values().cloned().collect::<Vec<_>>(),
+        now,
+        half_life_secs,
+        fail_penalty,
+    );
+    scored.truncate(limit);
+
+    let content = render_cache(&scored, history_path, now);
+    // tmp 名带 pid：多 shell 并发 rebuild 时不会共享同一 tmp 产生写覆盖竞态。
+    let tmp = out.with_extension(format!("tmp.{}", std::process::id()));
+    std::fs::write(&tmp, content).map_err(|e| format!("write {}: {}", tmp.display(), e))?;
+    std::fs::rename(&tmp, out).map_err(|e| format!("rename: {}", e))?;
+
+    println!(
+        "rebuild: {} commands (history: {})",
+        scored.len(),
+        history_total
+    );
+    Ok(())
+}
+
+fn render_cache(
+    scored: &[(String, f64)],
+    history_path: &std::path::Path,
+    now: SystemTime,
+) -> String {
+    let now_secs = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let hist_mtime = std::fs::metadata(history_path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let mut out = String::with_capacity(scored.len() * 30);
+    out.push_str("# auto-generated by zsh-as rebuild, do not edit\n");
+    out.push_str(&format!(
+        "# version=1 generated={} history_mtime={}\n",
+        now_secs, hist_mtime
+    ));
+    out.push_str("typeset -ga _zsh_as_sorted=(\n");
+    for (cmd, _) in scored {
+        out.push_str(&format!("  {}\n", quote_zsh(cmd)));
+    }
+    out.push_str(")\n");
+    out.push_str("typeset -gi _ZSH_AS_IDX_VERSION=1\n");
+    out
+}
+
+fn quote_zsh(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+fn run_stats(
+    cache: &std::path::Path,
+    history: &std::path::Path,
+    signals: &std::path::Path,
+    half_life_days: f64,
+    fail_penalty: f64,
+) {
+    let cache_exists = cache.exists();
+    let cache_size = std::fs::metadata(cache).map(|m| m.len()).unwrap_or(0);
+    let cache_lines = if cache_exists {
+        std::fs::read_to_string(cache)
+            .map(|s| s.lines().filter(|l| l.starts_with("  '")).count())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    let hist_size = std::fs::metadata(history).map(|m| m.len()).unwrap_or(0);
+    let mut stats = history::parse(history);
+    let unique = stats.len();
+    let total: u64 = stats.values().map(|s| s.count).sum();
+
+    let sig_size = std::fs::metadata(signals).map(|m| m.len()).unwrap_or(0);
+    let sig_lines = std::fs::read_to_string(signals)
+        .map(|s| s.lines().filter(|l| !l.is_empty()).count())
+        .unwrap_or(0);
+
+    println!(
+        "cache:    {} ({} bytes, {} commands)",
+        exists_label(cache_exists),
+        cache_size,
+        cache_lines
+    );
+    println!(
+        "history:  {} ({} bytes, {} unique, {} total)",
+        history.display(),
+        hist_size,
+        unique,
+        total
+    );
+    println!(
+        "signals:  {} ({} bytes, {} records)",
+        signals.display(),
+        sig_size,
+        sig_lines
+    );
+
+    if !stats.is_empty() {
+        if !history::is_extended_history(history) {
+            println!("\n! 未检测到 EXTENDED_HISTORY，frecency 退化为纯频次排序（所有命令共享文件 mtime），");
+            println!("  且多行命令续行会被当作独立命令。建议 `setopt EXTENDED_HISTORY`。");
+        }
+
+        // 与 run_rebuild 一致：先 fold signals（fail/accept/reject 计数），再算分。
+        // 否则诊断分数与实际 cache 排序不一致，误导排查。
+        signals::apply(&mut stats, signals);
+
+        let now = SystemTime::now();
+        let mut scored = frecency::compute(
+            &stats.values().cloned().collect::<Vec<_>>(),
+            now,
+            half_life_days * 86400.0,
+            fail_penalty,
+        );
+        scored.truncate(5);
+        println!("\ntop-5 by frecency:");
+        for (cmd, score) in scored {
+            println!("  {:.4}  {}", score, cmd);
+        }
+    }
+}
+
+fn exists_label(exists: bool) -> &'static str {
+    if exists {
+        "ok"
+    } else {
+        "missing"
+    }
+}
+
+/// signals.log 维护：过滤格式无效的行（清理旧格式残留），并在文件 >1MB 时
+/// 保留最后 10000 行。atomic 写回（tmp + rename）。
+///
+/// 注意：rename 会覆盖 rebuild 期间 zsh append 的新行；race 窗口 = rebuild 耗时
+/// （通常 <150ms），交互式场景丢失少量 signal，frecency 统计近似不受影响。
+fn rotate_signals_if_needed(path: &std::path::Path) {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let all_lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+    if all_lines.is_empty() {
+        return;
+    }
+
+    let valid: Vec<&str> = all_lines
+        .iter()
+        .filter(|l| signals::parse_line(l).is_some())
+        .copied()
+        .collect();
+
+    let has_invalid = valid.len() < all_lines.len();
+    let meta_len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let too_big = meta_len > 1_000_000;
+
+    if !has_invalid && !too_big {
+        return;
+    }
+
+    let keep: &[&str] = if valid.len() > 10_000 {
+        &valid[valid.len() - 10_000..]
+    } else {
+        &valid
+    };
+
+    let mut content = keep.join("\n");
+    content.push('\n');
+
+    // tmp 名带 pid，避免与并发 rebuild 的 tmp 冲突。
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    if std::fs::write(&tmp, &content).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return;
+    }
+    if std::fs::rename(&tmp, path).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+}

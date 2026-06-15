@@ -40,11 +40,13 @@
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useSettingsStore } from '@/stores/settings'
+import { useAppStore } from '@/stores/app'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 
 const settings = useSettingsStore()
+const appStore = useAppStore()
 
 const authorized = ref<boolean | null>(null)
 
@@ -60,7 +62,12 @@ checkAuthorized()
 
 const toggle = async () => {
   const newVal = !settings.finderExtEnabled
-  await settings.setFinderExtEnabled(newVal)
+  try {
+    await settings.setFinderExtEnabled(newVal)
+  } catch (e) {
+    appStore.showStatus(`开关失败：${e ?? '未知错误'}`, 4000)
+    return
+  }
   if (newVal && !authorized.value) {
     try {
       await invoke('open_extensions_prefs')

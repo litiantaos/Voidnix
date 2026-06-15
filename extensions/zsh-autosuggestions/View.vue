@@ -10,7 +10,7 @@
       <BaseListItem
         :ref="setRef"
         title="启用终端自动建议"
-        subtitle="Tab 切换备选，→ 接受，Ctrl+X 关闭"
+        subtitle="Tab 切换备选，→ 接受，Ctrl+X 开关，Ctrl+C 清空"
         :selected="selected"
       >
         <template #trailing>
@@ -29,16 +29,22 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useAppStore } from '@/stores/app'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 
 const settings = useSettingsStore()
+const appStore = useAppStore()
 const selectedIndex = ref(0)
 const items = [{ group: '通用' }]
 
 const toggle = async () => {
   const newVal = !settings.zshAutosuggestionsEnabled
-  await settings.setZshAutosuggestionsEnabled(newVal)
+  try {
+    await settings.setZshAutosuggestionsEnabled(newVal)
+  } catch (e) {
+    appStore.showStatus(`开关失败：${e ?? '未知错误'}`, 4000)
+  }
 }
 </script>
