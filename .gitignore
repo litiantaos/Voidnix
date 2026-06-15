@@ -34,6 +34,4 @@ coverage/
 .claude/
 
 # AI
-AGENTS.md
-CLAUDE.md
 test-results/
