@@ -1,23 +1,40 @@
-# zsh-autosuggestions — 智能命令行预测补全
-# 每个 ZLE widget 被包装（非替换），建议通过 POSTDISPLAY + region_highlight 渲染，
-# 异步获取通过 `zle -F` 保证按键路径永不阻塞。
+# zsh-as — Voidnix 终端命令补全
 #
-# BINARY_PATH 在 `init` 命令输出时替换为 daemon 二进制绝对路径。
+# 数据流（无 daemon、无 socket、无 SQLite）：
+#   启动：source $ZSH_AS_CACHE → 内存 assoc + sorted 数组
+#   按键：纯内存前缀匹配（sorted 数组扫描，前 N 命中即停）
+#   precmd：append signal log + 检测 $HISTFILE 新于 cache 时后台 rebuild
+#
+# 路径全部从环境变量读（由 .zshrc 行注入）：
+#   ZSH_AS_BIN      binary 路径
+#   ZSH_AS_CACHE    index.cache 路径
+#   ZSH_AS_SIGNALS  signals.log 路径
 
 #--------------------------------------------------------------------#
-# 1. Globals & config                                                #
+# 1. Config & globals                                                #
 #--------------------------------------------------------------------#
 
-typeset -g ZSH_AS_BIN="{{BINARY_PATH}}"
-
-# 数据目录（daemon 通过 ZSH_AS_DATA_DIR 环境变量读取）
-export ZSH_AS_DATA_DIR="{{DATA_DIR}}"
-
+: ${ZSH_AS_BIN:=}
+: ${ZSH_AS_CACHE:=}
+: ${ZSH_AS_SIGNALS:=}
+: ${ZSH_AS_HALF_LIFE_DAYS:=7}
+: ${ZSH_AS_FAIL_PENALTY:=0.8}
+: ${ZSH_AS_CYCLE_N:=5}
 : ${ZSH_AS_HIGHLIGHT_STYLE:=fg=8}
-: ${ZSH_AS_USE_ASYNC:=1}
-: ${ZSH_AS_MANUAL_REBIND:=}
 : ${ZSH_AS_BUFFER_MAX_SIZE:=}
 : ${ZSH_AS_ORIGINAL_WIDGET_PREFIX:=zsh-as-orig-}
+
+typeset -ga _zsh_as_sorted
+typeset -gi _ZSH_AS_IDX_VERSION=0
+
+typeset -g _ZSH_AS_LAST_CMD=""
+typeset -g _ZSH_AS_LAST_ACCEPTED=0
+typeset -g _ZSH_AS_LAST_SUGGESTED=0
+typeset -g _ZSH_AS_CURRENT_SUGGESTION=""
+typeset -ga _ZSH_AS_ALTERNATIVES
+typeset -gi _ZSH_AS_ALT_INDEX=1
+typeset -gi _ZSH_AS_LAST_REBUILD_AT=0
+typeset -gi _ZSH_AS_CACHE_MTIME=0
 
 typeset -ga ZSH_AS_ACCEPT_WIDGETS
 ZSH_AS_ACCEPT_WIDGETS=(
@@ -50,7 +67,6 @@ ZSH_AS_CLEAR_WIDGETS=(
   down-line-or-beginning-search
   up-line-or-history
   down-line-or-history
-  accept-line
   copy-earlier-word
 )
 
@@ -69,65 +85,99 @@ ZSH_AS_IGNORE_WIDGETS=(
 typeset -ga _ZSH_AS_BUILTIN_ACTIONS
 _ZSH_AS_BUILTIN_ACTIONS=(clear fetch suggest accept execute enable disable toggle cycle)
 
-typeset -g ZSH_AS_SESSION_ID
-if [[ -z "$ZSH_AS_SESSION_ID" ]]; then
-  if [[ -r /dev/urandom ]] && (( $+commands[xxd] )); then
-    ZSH_AS_SESSION_ID="$(head -c 16 /dev/urandom | xxd -p 2>/dev/null | tr -d '\n')"
-  else
-    ZSH_AS_SESSION_ID="$$-$RANDOM-$EPOCHSECONDS"
+#--------------------------------------------------------------------#
+# 2. Cache load (sourceable, <5ms)                                  #
+#--------------------------------------------------------------------#
+
+_zsh_as_load_cache() {
+  [[ -r "$ZSH_AS_CACHE" ]] || return 1
+  # source 前重置版本，防残留；source 后校验格式版本匹配
+  _ZSH_AS_IDX_VERSION=0
+  source "$ZSH_AS_CACHE"
+  (( _ZSH_AS_IDX_VERSION == 1 )) || return 1
+  return 0
+}
+
+# 解析 rebuild 应用的 history 文件：
+#   1. 优先 $HISTFILE
+#   2. $HISTFILE 为 macOS Terminal 的 session-based `.historynew` 时回落 ~/.zsh_history
+#   3. $HISTFILE 未设置时回落 ~/.zsh_history（可读才用）
+# 统一 cold start 与 precmd 两条路径的解析逻辑。输出写入 REPLY。
+_zsh_as_histfile() {
+  REPLY=""
+  local hf="${HISTFILE:-}"
+  if [[ -n "$hf" ]]; then
+    if [[ "$hf" == *.historynew ]] && [[ -r "$HOME/.zsh_history" ]]; then
+      hf="$HOME/.zsh_history"
+    fi
+    REPLY="$hf"
+    return
   fi
-fi
+  [[ -r "$HOME/.zsh_history" ]] && REPLY="$HOME/.zsh_history"
+}
 
-typeset -g __zsh_as_prev=""
-typeset -g __zsh_as_prev_prev=""
-typeset -gi __zsh_as_prev_exit=0
-typeset -g __zsh_as_last_cmd=""
-typeset -gi __zsh_as_last_start=0
-typeset -gi __zsh_as_last_fetch_ms=0
+# 首次启动 cache 不存在：rebuild 消除冷启动空窗。
+# 大 history（>5MB）走异步避免阻塞 shell 启动；小 history 同步（<150ms）。
+# 后续更新由 precmd 异步触发。
+() {
+  [[ ! -r "$ZSH_AS_CACHE" && -x "$ZSH_AS_BIN" ]] || return
+  _zsh_as_histfile
+  local hf="$REPLY"
+  [[ -n "$hf" && -r "$hf" ]] || return
+  local -i hf_size=0
+  hf_size=$(zstat +size "$hf" 2>/dev/null || echo 0)
+  local cmd=(
+    "$ZSH_AS_BIN" rebuild
+    --out "$ZSH_AS_CACHE"
+    --history "$hf"
+    --signals "$ZSH_AS_SIGNALS"
+    --half-life-days "$ZSH_AS_HALF_LIFE_DAYS"
+    --fail-penalty "$ZSH_AS_FAIL_PENALTY"
+  )
+  if (( hf_size > 5000000 )); then
+    "${cmd[@]}" >/dev/null 2>&1 &!
+  else
+    "${cmd[@]}" >/dev/null 2>&1
+  fi
+}
 
-typeset -g _ZSH_AS_CURRENT_SUGGESTION=""
-typeset -g _ZSH_AS_LAST_IMPRESSED=""
-
-typeset -ga _ZSH_AS_ALTERNATIVES
-typeset -gi _ZSH_AS_ALT_INDEX=1
+_zsh_as_load_cache
 
 #--------------------------------------------------------------------#
-# 2. Daemon health check (launchd-managed)                           #
+# 3. In-memory match (sorted 数组扫描)                              #
 #--------------------------------------------------------------------#
-#
-# daemon 由 launchd 托管，zsh 不再 spawn。这里只做健康检查：
-# ping 通就返回；ping 不通时尝试 launchctl kickstart 强制重启
-# （处理 daemon 异常退出但 launchd 未及时拉起的极端情况）；
-# 仍不通则返回失败，让后续 fetch 走直接 DB 降级路径。
 
-_zsh_as_ensure_daemon() {
-  [[ -x "$ZSH_AS_BIN" ]] || return 1
+_zsh_as_match() {
+  REPLY=""
+  (( _ZSH_AS_IDX_VERSION )) || return
+  local buf="$1"
 
-  "$ZSH_AS_BIN" ping >/dev/null 2>&1 && return 0
+  # 空 buffer（新提示符）：返回 top-1 作为默认建议，不打扰。
+  if [[ -z "$buf" ]]; then
+    (( ${#_zsh_as_sorted} )) || return
+    REPLY="${_zsh_as_sorted[1]}"
+    return
+  fi
 
-  # launchctl kickstart 强制重启 daemon（若已注册 LaunchAgent）。
-  # label 派生：ZSH_AS_DATA_DIR = .../Application Support/<bundle-id>/extensions/zsh-autosuggestions
-  # 取倒数第三段（<bundle-id>）+ ".zsh-as"，与 mod.rs::launch_agent_label 一致。
-  local -i uid=$(id -u)
-  local bundle_id="${ZSH_AS_DATA_DIR:h:h:t}"
-  local label="${bundle_id}.zsh-as"
-  launchctl kickstart -k "gui/${uid}/${label}" >/dev/null 2>&1
-
-  local -i i
-  for (( i = 0; i < 30; i++ )); do
-    "$ZSH_AS_BIN" ping >/dev/null 2>&1 && return 0
-    sleep 0.05 2>/dev/null || break
+  # ${(b)buf} 转义 glob 元字符，保证字面前缀匹配
+  local buf_esc="${(b)buf}"
+  local -a results=()
+  local cmd
+  for cmd in "${_zsh_as_sorted[@]}"; do
+    [[ "$cmd" == "$buf_esc"* ]] && results+=("$cmd")
+    (( $#results >= $ZSH_AS_CYCLE_N )) && break
   done
-  return 1
+
+  (( $#results )) || return
+  REPLY="${(F)results}"
 }
 
 #--------------------------------------------------------------------#
-# 3. Highlighting                                                    #
+# 4. Highlighting                                                    #
 #--------------------------------------------------------------------#
 
 _zsh_as_highlight_reset() {
   typeset -g _ZSH_AS_LAST_HIGHLIGHT
-
   if [[ -n "$_ZSH_AS_LAST_HIGHLIGHT" ]]; then
     region_highlight=("${(@)region_highlight:#$_ZSH_AS_LAST_HIGHLIGHT}")
     unset _ZSH_AS_LAST_HIGHLIGHT
@@ -136,85 +186,12 @@ _zsh_as_highlight_reset() {
 
 _zsh_as_highlight_apply() {
   typeset -g _ZSH_AS_LAST_HIGHLIGHT
-
   if (( $#POSTDISPLAY )); then
     typeset -g _ZSH_AS_LAST_HIGHLIGHT="$#BUFFER $(($#BUFFER + $#POSTDISPLAY)) $ZSH_AS_HIGHLIGHT_STYLE"
     region_highlight+=("$_ZSH_AS_LAST_HIGHLIGHT")
   else
     unset _ZSH_AS_LAST_HIGHLIGHT
   fi
-}
-
-#--------------------------------------------------------------------#
-# 4. Suggestion fetch                                                #
-#--------------------------------------------------------------------#
-
-_zsh_as_stamp_fetch() {
-  __zsh_as_last_fetch_ms=$(( EPOCHREALTIME * 1000 ))
-}
-
-_zsh_as_fetch_suggestion() {
-  local buffer="$1"
-  [[ -x "$ZSH_AS_BIN" ]] || return 0
-  _zsh_as_stamp_fetch
-  suggestion="$("$ZSH_AS_BIN" query \
-    --buffer "$buffer" --dir "$PWD" \
-    --prev "$__zsh_as_prev" --prev-prev "$__zsh_as_prev_prev" \
-    --prev-exit "$__zsh_as_prev_exit" \
-    --format lines 2>/dev/null)"
-}
-
-_zsh_as_async_request() {
-  zmodload zsh/system 2>/dev/null
-
-  typeset -g _ZSH_AS_ASYNC_FD _ZSH_AS_CHILD_PID
-
-  if [[ -n "$_ZSH_AS_ASYNC_FD" ]] && { true <&$_ZSH_AS_ASYNC_FD } 2>/dev/null; then
-    builtin exec {_ZSH_AS_ASYNC_FD}<&-
-    zle -F $_ZSH_AS_ASYNC_FD
-
-    if [[ -n "$_ZSH_AS_CHILD_PID" ]]; then
-      if [[ -o MONITOR ]]; then
-        kill -TERM -$_ZSH_AS_CHILD_PID 2>/dev/null
-      else
-        kill -TERM $_ZSH_AS_CHILD_PID 2>/dev/null
-      fi
-    fi
-  fi
-
-  _zsh_as_stamp_fetch
-
-  builtin exec {_ZSH_AS_ASYNC_FD}< <(
-    echo $sysparams[pid]
-    "$ZSH_AS_BIN" query \
-      --buffer "$1" --dir "$PWD" \
-      --prev "$__zsh_as_prev" --prev-prev "$__zsh_as_prev_prev" \
-      --prev-exit "$__zsh_as_prev_exit" \
-      --format lines 2>/dev/null
-  )
-
-  autoload -Uz is-at-least
-  is-at-least 5.8 || command true
-
-  read _ZSH_AS_CHILD_PID <&$_ZSH_AS_ASYNC_FD
-
-  zle -F "$_ZSH_AS_ASYNC_FD" _zsh_as_async_response
-}
-
-_zsh_as_async_response() {
-  emulate -L zsh
-
-  local suggestion
-
-  if [[ -z "$2" || "$2" == "hup" ]]; then
-    IFS='' read -rd '' -u $1 suggestion
-    suggestion="${suggestion%$'\n'}"
-    zle zsh-as-suggest -- "$suggestion"
-    builtin exec {1}<&-
-  fi
-
-  zle -F "$1"
-  _ZSH_AS_ASYNC_FD=
 }
 
 #--------------------------------------------------------------------#
@@ -244,17 +221,12 @@ _zsh_as_clear() {
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
-  _ZSH_AS_LAST_IMPRESSED=""
+  _ZSH_AS_LAST_SUGGESTED=0
   _zsh_as_invoke_original_widget $@
 }
 
 _zsh_as_modify() {
   local -i retval
-  local -i KEYS_QUEUED_COUNT
-
-  local orig_buffer="$BUFFER"
-  local orig_postdisplay="$POSTDISPLAY"
-  local orig_suggestion="$_ZSH_AS_CURRENT_SUGGESTION"
 
   POSTDISPLAY=
   _ZSH_AS_ALTERNATIVES=()
@@ -265,30 +237,6 @@ _zsh_as_modify() {
   retval=$?
 
   emulate -L zsh
-
-  if (( $PENDING > 0 || $KEYS_QUEUED_COUNT > 0 )); then
-    POSTDISPLAY="$orig_postdisplay"
-    return $retval
-  fi
-
-  if [[ "$BUFFER" = "$orig_buffer"* && "$orig_postdisplay" = "${BUFFER:$#orig_buffer}"* ]]; then
-    POSTDISPLAY="${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}"
-    _ZSH_AS_CURRENT_SUGGESTION="$BUFFER$POSTDISPLAY"
-    (( ${+_ZSH_AS_DISABLED} )) || _zsh_as_fetch
-    return $retval
-  fi
-
-  # Reject signal: user diverged from a visible non-trivial suggestion that has
-  # been on screen for >50ms. Skip if disabled or buffer just shrank.
-  if [[ -n "$orig_suggestion" && -n "$orig_postdisplay" ]]; then
-    if [[ "$BUFFER" != "$orig_suggestion"* ]]; then
-      local -i now_ms=$(( EPOCHREALTIME * 1000 ))
-      if (( now_ms - __zsh_as_last_fetch_ms > 50 )); then
-        _zsh_as_send_feedback "$orig_suggestion" reject
-      fi
-    fi
-  fi
-  _ZSH_AS_LAST_IMPRESSED=""
 
   (( ${+_ZSH_AS_DISABLED} )) && return $retval
 
@@ -302,76 +250,41 @@ _zsh_as_modify() {
 }
 
 _zsh_as_fetch() {
-  if (( ${+ZSH_AS_USE_ASYNC} )) && [[ -n "$ZSH_AS_USE_ASYNC" && "$ZSH_AS_USE_ASYNC" != "0" ]]; then
-    _zsh_as_async_request "$BUFFER"
-  else
-    local suggestion
-    _zsh_as_fetch_suggestion "$BUFFER"
-    _zsh_as_suggest "$suggestion"
-  fi
-}
-
-_zsh_as_send_feedback() {
-  local cmd="$1" kind="$2"
-  [[ -x "$ZSH_AS_BIN" ]] || return 0
-  [[ -z "$cmd" ]] && return 0
-  { "$ZSH_AS_BIN" feedback --command "$cmd" --kind "$kind" --session "$ZSH_AS_SESSION_ID" >/dev/null 2>&1 &! } 2>/dev/null
+  local suggestion
+  _zsh_as_match "$BUFFER"
+  suggestion="$REPLY"
+  _zsh_as_suggest "$suggestion"
 }
 
 _zsh_as_render_suggestion() {
   local s="$1"
   _ZSH_AS_CURRENT_SUGGESTION="$s"
   POSTDISPLAY="${s#$BUFFER}"
-
-  # Impression feedback: only when something visible and not a duplicate
-  if [[ -n "$POSTDISPLAY" && "$s" != "$_ZSH_AS_LAST_IMPRESSED" ]]; then
-    _ZSH_AS_LAST_IMPRESSED="$s"
-    _zsh_as_send_feedback "$s" impression
-  fi
 }
 
 _zsh_as_suggest() {
   emulate -L zsh
-
   local raw="$1"
 
   _ZSH_AS_ALTERNATIVES=("${(@f)raw}")
   _ZSH_AS_ALT_INDEX=1
-
   local suggestion="${_ZSH_AS_ALTERNATIVES[1]}"
 
   if [[ -z "$suggestion" ]] || (( ${+_ZSH_AS_DISABLED} )); then
     POSTDISPLAY=
     _ZSH_AS_ALTERNATIVES=()
     _ZSH_AS_CURRENT_SUGGESTION=""
+    _ZSH_AS_LAST_SUGGESTED=0
     return
   fi
 
-  # Safety net: ensure suggestion starts with current buffer (handles async races)
-  if (( $#BUFFER > 0 )) && [[ "$suggestion" != "$BUFFER"* ]]; then
-    local -i i found=0
-    for (( i = 1; i <= ${#_ZSH_AS_ALTERNATIVES}; i++ )); do
-      if [[ "${_ZSH_AS_ALTERNATIVES[$i]}" == "$BUFFER"* ]]; then
-        suggestion="${_ZSH_AS_ALTERNATIVES[$i]}"
-        found=1
-        break
-      fi
-    done
-    if (( ! found )); then
-      POSTDISPLAY=
-      _ZSH_AS_ALTERNATIVES=()
-      _ZSH_AS_CURRENT_SUGGESTION=""
-      return
-    fi
-  fi
-
+  _ZSH_AS_LAST_SUGGESTED=1
   _zsh_as_render_suggestion "$suggestion"
 }
 
 _zsh_as_cycle() {
   local -i n=${#_ZSH_AS_ALTERNATIVES}
   local -i max_cursor_pos=$#BUFFER
-
   if [[ "$KEYMAP" = "vicmd" ]]; then
     max_cursor_pos=$((max_cursor_pos - 1))
   fi
@@ -380,14 +293,20 @@ _zsh_as_cycle() {
     _zsh_as_invoke_original_widget expand-or-complete
     return
   fi
-
   if (( $#POSTDISPLAY == 0 )); then
-    [[ -n "$_ZSH_AS_ASYNC_FD" ]] && return
     _zsh_as_invoke_original_widget expand-or-complete
     return
   fi
-
-  (( n < 2 )) && return
+  # 仅 1 条备选（含空行 top-1 默认建议）：无备选可切换，清建议走补全，
+  # 避免 Tab 静默无反应。也修正非空行单备选时 Tab 卡住的既有问题。
+  (( n < 2 )) && {
+    POSTDISPLAY=
+    _ZSH_AS_ALTERNATIVES=()
+    _ZSH_AS_ALT_INDEX=1
+    _ZSH_AS_CURRENT_SUGGESTION=""
+    _zsh_as_invoke_original_widget expand-or-complete
+    return
+  }
 
   _ZSH_AS_ALT_INDEX=$(( (_ZSH_AS_ALT_INDEX % n) + 1 ))
   _zsh_as_render_suggestion "${_ZSH_AS_ALTERNATIVES[$_ZSH_AS_ALT_INDEX]}"
@@ -395,7 +314,6 @@ _zsh_as_cycle() {
 
 _zsh_as_accept() {
   local -i retval max_cursor_pos=$#BUFFER
-
   if [[ "$KEYMAP" = "vicmd" ]]; then
     max_cursor_pos=$((max_cursor_pos - 1))
   fi
@@ -405,15 +323,16 @@ _zsh_as_accept() {
     return
   fi
 
+  # 接受 suggestion：置标志位，precmd 时写入 signals.log
+  _ZSH_AS_LAST_ACCEPTED=1
+  _ZSH_AS_LAST_SUGGESTED=1
+
   local accepted="$BUFFER$POSTDISPLAY"
   BUFFER="$accepted"
-  _zsh_as_send_feedback "$accepted" accept
-
   POSTDISPLAY=
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
-  _ZSH_AS_LAST_IMPRESSED=""
 
   _zsh_as_invoke_original_widget $@
   retval=$?
@@ -428,15 +347,13 @@ _zsh_as_accept() {
 }
 
 _zsh_as_execute() {
-  if [[ -n "$_ZSH_AS_CURRENT_SUGGESTION" && -n "$POSTDISPLAY" ]]; then
-    _zsh_as_send_feedback "$_ZSH_AS_CURRENT_SUGGESTION" accept
-  fi
   BUFFER="$BUFFER$POSTDISPLAY"
   POSTDISPLAY=
   _ZSH_AS_ALTERNATIVES=()
   _ZSH_AS_ALT_INDEX=1
   _ZSH_AS_CURRENT_SUGGESTION=""
-  _ZSH_AS_LAST_IMPRESSED=""
+  _ZSH_AS_LAST_ACCEPTED=1
+  _ZSH_AS_LAST_SUGGESTED=1
   _zsh_as_invoke_original_widget "accept-line"
 }
 
@@ -462,7 +379,6 @@ _zsh_as_partial_accept() {
   if (( $cursor_loc > $#original_buffer )); then
     POSTDISPLAY="${BUFFER[$(($cursor_loc + 1)),$#BUFFER]}"
     BUFFER="${BUFFER[1,$cursor_loc]}"
-    [[ -n "$original_suggestion" ]] && _zsh_as_send_feedback "$original_suggestion" accept
   else
     BUFFER="$original_buffer"
   fi
@@ -476,10 +392,8 @@ _zsh_as_partial_accept() {
 
 _zsh_as_invoke_original_widget() {
   (( $# )) || return 0
-
   local original_widget_name="$1"
   shift
-
   if (( ${+widgets[$original_widget_name]} )); then
     zle $original_widget_name -- $@
   fi
@@ -492,7 +406,6 @@ _zsh_as_incr_bind_count() {
 
 _zsh_as_bind_widget() {
   typeset -gA _ZSH_AS_BIND_COUNTS
-
   local widget=$1
   local zsh_as_action=$2
   local prefix=$ZSH_AS_ORIGINAL_WIDGET_PREFIX
@@ -502,18 +415,15 @@ _zsh_as_bind_widget() {
     user:_zsh_as_(bound|orig)_*)
       bind_count=$((_ZSH_AS_BIND_COUNTS[$widget]))
       ;;
-
     user:*)
       _zsh_as_incr_bind_count $widget
       zle -N $prefix$bind_count-$widget ${widgets[$widget]#*:}
       ;;
-
     builtin)
       _zsh_as_incr_bind_count $widget
       eval "_zsh_as_orig_${(q)widget}() { zle .${(q)widget} }"
       zle -N $prefix$bind_count-$widget _zsh_as_orig_$widget
       ;;
-
     completion:*)
       _zsh_as_incr_bind_count $widget
       eval "zle -C $prefix$bind_count-${(q)widget} ${${(s.:.)widgets[$widget]}[2,3]}"
@@ -523,24 +433,20 @@ _zsh_as_bind_widget() {
   eval "_zsh_as_bound_${bind_count}_${(q)widget}() {
     _zsh_as_widget_$zsh_as_action $prefix$bind_count-${(q)widget} \$@
   }"
-
   zle -N -- $widget _zsh_as_bound_${bind_count}_$widget
 }
 
 _zsh_as_bind_widgets() {
   emulate -L zsh
-
   local widget
   local -a ignore_widgets
-
   ignore_widgets=(
     .\*
     _\*
-    ${_ZSH_AS_BUILTIN_ACTIONS/#/zsh-as-}
+    zsh-as-\*
     $ZSH_AS_ORIGINAL_WIDGET_PREFIX\*
     $ZSH_AS_IGNORE_WIDGETS
   )
-
   for widget in ${${(f)"$(builtin zle -la)"}:#${(j:|:)~ignore_widgets}}; do
     if [[ -n ${ZSH_AS_CLEAR_WIDGETS[(r)$widget]} ]]; then
       _zsh_as_bind_widget $widget clear
@@ -559,80 +465,93 @@ _zsh_as_bind_widgets() {
   for action in $_ZSH_AS_BUILTIN_ACTIONS modify partial_accept; do
     eval "_zsh_as_widget_$action() {
       local -i retval
-
       _zsh_as_highlight_reset
-
       _zsh_as_$action \$@
       retval=\$?
-
       _zsh_as_highlight_apply
-
       zle -R
-
       return \$retval
     }"
   done
-
   for action in $_ZSH_AS_BUILTIN_ACTIONS; do
     zle -N zsh-as-$action _zsh_as_widget_$action
   done
 }
 
 #--------------------------------------------------------------------#
-# 7. Hooks: record executed commands, re-bind on precmd              #
+# 7. Hooks: signal append + stale rebuild                           #
 #--------------------------------------------------------------------#
 
 autoload -Uz add-zsh-hook
+zmodload zsh/datetime 2>/dev/null
+zmodload zsh/stat 2>/dev/null
 
 _zsh_as_preexec() {
-  __zsh_as_last_cmd="$1"
-  __zsh_as_last_start=$EPOCHREALTIME
+  _ZSH_AS_LAST_CMD="$1"
 }
 
 _zsh_as_precmd() {
   local -i exit_code=$?
 
-  if [[ -n "$__zsh_as_last_cmd" ]]; then
-    local -i duration_ms=0
-    if (( __zsh_as_last_start > 0 )); then
-      duration_ms=$(( (EPOCHREALTIME - __zsh_as_last_start) * 1000 ))
-      (( duration_ms < 0 )) && duration_ms=0
+  # append signal（3 字段 TSV：<exit>\t<state>\t<cmd>）。
+  # 仅在有信息量时记录（失败 或 suggestion 互动），控制文件体积。
+  if [[ -n "$_ZSH_AS_LAST_CMD" ]]; then
+    # strip 所有控制字符（与 Rust 端 is_safe 对齐：拒绝 <0x20 + 0x7f）
+    local safe_cmd="${_ZSH_AS_LAST_CMD//[[:cntrl:]]/ }"
+    local state=0
+    (( _ZSH_AS_LAST_SUGGESTED )) && state=2
+    (( _ZSH_AS_LAST_ACCEPTED )) && state=1
+    if (( exit_code != 0 )) || (( state != 0 )); then
+      print -r -- "$exit_code"$'\t'"$state"$'\t'"$safe_cmd" >> "$ZSH_AS_SIGNALS" 2>/dev/null
     fi
+  fi
+  _ZSH_AS_LAST_CMD=""
+  _ZSH_AS_LAST_ACCEPTED=0
+  _ZSH_AS_LAST_SUGGESTED=0
 
-    if [[ -x "$ZSH_AS_BIN" ]]; then
-      { "$ZSH_AS_BIN" record \
-        --command "$__zsh_as_last_cmd" \
-        --dir "$PWD" \
-        --exit "$exit_code" \
-        --duration "$duration_ms" \
-        --session "$ZSH_AS_SESSION_ID" \
-        --prev "$__zsh_as_prev" \
-        --prev-prev "$__zsh_as_prev_prev" \
-        --prev-exit "$__zsh_as_prev_exit" >/dev/null 2>&1 &! } 2>/dev/null
+  # stale 检测：HISTFILE 比 cache 新 → 后台 rebuild
+  # 节流：5 秒内不重复触发，避免高频回车 fork bomb
+  if [[ -n "$ZSH_AS_BIN" && -x "$ZSH_AS_BIN" ]]; then
+    _zsh_as_histfile
+    local hf="$REPLY"
+    if [[ -n "$hf" && -r "$hf" ]] && \
+       (( EPOCHSECONDS - _ZSH_AS_LAST_REBUILD_AT > 5 )) && \
+       { [[ ! -r "$ZSH_AS_CACHE" ]] || [[ "$hf" -nt "$ZSH_AS_CACHE" ]] }; then
+      _ZSH_AS_LAST_REBUILD_AT=$EPOCHSECONDS
+      (
+        "$ZSH_AS_BIN" rebuild \
+          --out "$ZSH_AS_CACHE" \
+          --history "$hf" \
+          --signals "$ZSH_AS_SIGNALS" \
+          --half-life-days "$ZSH_AS_HALF_LIFE_DAYS" \
+          --fail-penalty "$ZSH_AS_FAIL_PENALTY" \
+          >/dev/null 2>&1
+      ) &!
     fi
-
-    __zsh_as_prev_prev="$__zsh_as_prev"
-    __zsh_as_prev="$__zsh_as_last_cmd"
-    __zsh_as_prev_exit=$exit_code
   fi
 
-  __zsh_as_last_cmd=""
-  __zsh_as_last_start=0
-
-  if [[ -z "$ZSH_AS_MANUAL_REBIND" ]]; then
-    _zsh_as_bind_widgets
-    _zsh_as_apply_keybindings
+  # reload cache：rebuild 是 atomic rename，检测 mtime 变化时重新 source
+  if [[ -r "$ZSH_AS_CACHE" ]]; then
+    local -i cur_mtime=0
+    cur_mtime=$(zstat +mtime "$ZSH_AS_CACHE" 2>/dev/null || echo 0)
+    if (( cur_mtime != _ZSH_AS_CACHE_MTIME )); then
+      _ZSH_AS_CACHE_MTIME=$cur_mtime
+      _zsh_as_load_cache
+    fi
   fi
 }
-
-zmodload zsh/datetime 2>/dev/null
 
 add-zsh-hook preexec _zsh_as_preexec
 add-zsh-hook precmd _zsh_as_precmd
 
 #--------------------------------------------------------------------#
-# 7b. zle-line-init: fetch on fresh prompts                          #
+# 8. zle-line-init / zle-line-finish (Ctrl+C 拦截)                   #
 #--------------------------------------------------------------------#
+# Ctrl+C (SIGINT) 不走任何 ZLE widget：ZLE 内部 abort 时清空 BUFFER 与
+# POSTDISPLAY 变量，但终端屏幕上 POSTDISPLAY 区域的字符可能未被擦除
+# （取决于终端的重绘行为）。解决方案：zle-line-init 时禁用 stty intr，
+# 让 ^C 作为普通按键进入 ZLE 触发 widget，在其中清空状态并强制完全重绘；
+# zle-line-finish / zshexit 时恢复 intr，保证命令执行期间 ^C 走 SIGINT。
 
 if (( ${+widgets[zle-line-init]} )); then
   case $widgets[zle-line-init] in
@@ -642,28 +561,67 @@ if (( ${+widgets[zle-line-init]} )); then
   esac
 fi
 
+if (( ${+widgets[zle-line-finish]} )); then
+  case $widgets[zle-line-finish] in
+    user:_zsh_as_*) ;;
+    user:*) zle -N _zsh_as_orig_line_finish ${widgets[zle-line-finish]#*:} ;;
+    builtin) zle -N _zsh_as_orig_line_finish .zle-line-finish ;;
+  esac
+fi
+
 _zsh_as_line_init() {
   (( ${+widgets[_zsh_as_orig_line_init]} )) && zle _zsh_as_orig_line_init -- "$@"
-
-  [[ -n "$BUFFER" ]] && return
-  [[ -z "$__zsh_as_prev" ]] && return
+  # 禁用 stty intr：^C 不再触发 SIGINT，改由 ZLE widget 处理（见 zsh-as-ctrl-c）
+  stty intr undef < /dev/tty 2>/dev/null
+  # 清空可能的残留状态（保险）
+  _zsh_as_highlight_reset
+  POSTDISPLAY=
+  _ZSH_AS_ALTERNATIVES=()
+  _ZSH_AS_ALT_INDEX=1
+  _ZSH_AS_CURRENT_SUGGESTION=""
   (( ${+_ZSH_AS_DISABLED} )) && return
-
+  # 无条件 fetch：空 BUFFER 时 _zsh_as_match 返回 top-1 作为默认建议，
+  # 非空 BUFFER（push-line / edit-command-line 重入）走前缀匹配。
   _zsh_as_widget_fetch
 }
 
+_zsh_as_line_finish() {
+  (( ${+widgets[_zsh_as_orig_line_finish]} )) && zle _zsh_as_orig_line_finish -- "$@"
+  # 恢复 stty intr：命令执行期间 ^C 走 SIGINT（中断运行中的命令）
+  stty intr '^C' < /dev/tty 2>/dev/null
+}
+
+# Ctrl+C widget：清空 suggestion 状态，中断当前行（send-break 自带清 BUFFER + 新行）
+_zsh_as_ctrl_c() {
+  _zsh_as_highlight_reset
+  POSTDISPLAY=
+  _ZSH_AS_ALTERNATIVES=()
+  _ZSH_AS_ALT_INDEX=1
+  _ZSH_AS_CURRENT_SUGGESTION=""
+  _ZSH_AS_LAST_SUGGESTED=0
+  zle .send-break
+}
+
 zle -N zle-line-init _zsh_as_line_init
+zle -N zle-line-finish _zsh_as_line_finish
+zle -N zsh-as-ctrl-c _zsh_as_ctrl_c
+
+# 安全兜底：zsh 退出时恢复 intr，防终端 ^C 失效
+_zsh_as_zshexit() {
+  stty intr '^C' < /dev/tty 2>/dev/null
+}
+add-zsh-hook zshexit _zsh_as_zshexit
 
 #--------------------------------------------------------------------#
-# 8. Startup                                                         #
+# 9. Startup                                                         #
 #--------------------------------------------------------------------#
 
-_zsh_as_ensure_daemon
 _zsh_as_bind_widgets
 
 _zsh_as_apply_keybindings() {
   bindkey '^I' zsh-as-cycle
   bindkey '^X' zsh-as-toggle
+  bindkey '^C' zsh-as-ctrl-c
 }
 
 _zsh_as_apply_keybindings
