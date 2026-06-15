@@ -10,7 +10,7 @@ let historyLoaded = false
 const loadHistory = async () => {
   if (historyLoaded) return
   try {
-    const store = await load('data/calc_history.json')
+    const store = await load('extensions/calculator/calc_history.json')
     const saved = await store.get<{ expr: string; result: string }[]>('history')
     if (saved && Array.isArray(saved)) {
       historyCache = saved
@@ -30,7 +30,7 @@ const saveHistory = async (expr: string, result: string) => {
     if (historyCache.length > 10) {
       historyCache = historyCache.slice(0, 10)
     }
-    const store = await load('data/calc_history.json')
+    const store = await load('extensions/calculator/calc_history.json')
     await store.set('history', historyCache)
     await store.save()
   } catch (e) {

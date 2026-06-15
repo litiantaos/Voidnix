@@ -4,13 +4,14 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
 
-/// 剪贴板历史 SQLite 路径：`<app_data>/data/clipboard.db`
+/// 剪贴板历史 SQLite 路径：`<app_data>/extensions/clipboard/clipboard.db`
 pub fn clipboard_db_path(app: &tauri::AppHandle) -> PathBuf {
     let dir = app
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
-        .join("data");
+        .join("extensions")
+        .join("clipboard");
     let _ = fs::create_dir_all(&dir);
     dir.join("clipboard.db")
 }

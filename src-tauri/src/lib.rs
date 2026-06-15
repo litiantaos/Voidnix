@@ -35,6 +35,9 @@ pub fn run() {
                 .register(crate::extensions::chat::Plugin);
             crate::core::tier1::bootstrap(app, registry)?;
 
+            // icon 缓存淘汰：启动时清理过期/超量文件
+            crate::infra::path::cleanup_icon_cache(400, 90);
+
             // Tier 2 扩展运行时
             let ext_state = crate::core::ext_commands::ExtensionLoaderState::new();
             ext_state.loader().rescan(app.handle()).ok();

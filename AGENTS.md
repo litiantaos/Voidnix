@@ -264,14 +264,28 @@ src/
 
 ## 存储结构
 
+扩展自管数据一律放各自 `extensions/<id>/`，无共享 `data/` 目录。
+
 ```
 ~/Library/Application Support/com.litiantao.voidnix/
-├── config/settings.json     # 分组结构，禁止平铺
-├── data/                    # clipboard.db / calc_history.json
-└── extensions/              # Tier 2 运行时 + Tier 1 自管数据（finder-ext/ zsh-autosuggestions/）
+├── config/settings.json              # 全局配置（分组结构，禁止平铺）
+└── extensions/
+    ├── clipboard/clipboard.db        # 剪贴板历史（SQLite WAL，伴随 -wal/-shm）
+    ├── calculator/calc_history.json  # 计算器历史
+    ├── finder-ext/commands/          # Finder 扩展 IPC：cmd_*.json 瞬时命令 + enabled 标志
+    ├── zsh-as/                       # zsh 补全：bin/ index.cache signals.log enabled
+    └── <tier2-id>/                   # Tier 2 运行时：manifest.toml + index.js + storage.json + assets/
 
-~/Library/Caches/com.litiantao.voidnix/icons/
+~/Library/Caches/com.litiantao.voidnix/
+├── extensions/search/icons/          # search 扩展应用图标缓存（启动时淘汰：上限 400 / 过期 90 天）
+└── WebKit/                           # 系统托管 WKWebView 缓存（勿手动清）
 ```
+
+**dev 镜像**：`com.litiantao.voidnix.dev` 同构（`tauri:dev` 用 dev bundle id）。
+
+**系统托管路径**（macOS 自动产生，勿手动删）：`~/Library/WebKit/<bundle-id>/`、`~/Library/Containers/com.litiantao.voidnix.FinderExt/`、`~/Library/Application Scripts/`、`~/Library/Caches/<bundle-id>/WebKit/`。前端无 localStorage/IndexedDB，全走 Rust 端。
+
+**已废弃路径**（早期架构残留，已清理，勿再产生）：`~/Library/Application Support/Voidnix/`（旧 daemon+SQLite 架构）、`~/Library/Group Containers/group.com.litiantao.voidnix/`（未启用 app group）、`~/Library/Preferences/voidnix.plist`（legacy identifier）。
 
 ## 约定
 
