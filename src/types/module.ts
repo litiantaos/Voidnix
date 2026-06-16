@@ -147,4 +147,10 @@ export interface AppModule {
    * 是否在状态栏显示 ⇧/⌘ 多选提示。
    */
   multiSelectHint?: boolean
+
+  /**
+   * 状态栏 ⌘⌫ 删除动作描述（如 '删除'）。
+   * 仅控制提示显示，快捷键绑定由模块自行负责。
+   */
+  deleteHint?: string
 }

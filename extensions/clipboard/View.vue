@@ -20,7 +20,7 @@
       <BaseListItem
         :ref="(el: unknown) => setImageRef(el, item)"
         :selected="selected || multiSelected"
-        :multilineTitle="shouldMultiline(item)"
+        multiline-title
       >
         <template #icon>
           <div
@@ -107,6 +107,7 @@ import {
   fetchClipboardHistory,
   invalidateCache,
   registerDeleteHandler,
+  triggerDelete,
 } from './index'
 import { commands } from '@/bindings'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -114,16 +115,13 @@ import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAppStore } from '@/stores/app'
+import { onKeyStroke } from '@/utils/events'
+import { isComposing as isComposingCheck } from '@/utils/dom'
 
 const appStore = useAppStore()
 
 const listRef = ref<{ selectedIndex: number; setSelectedIndex: (i: number) => void }>()
 const selectedIds = ref(new Set<string>())
-
-const MULTILINE_THRESHOLD = 80
-const shouldMultiline = (item: { content_type: string; content: string }) =>
-  item.content_type === 'image' ||
-  (item.content_type === 'text' && item.content.length > MULTILINE_THRESHOLD)
 
 let debounceTimer: ReturnType<typeof setTimeout>
 watch([activeTab, () => appStore.searchQuery], ([tab, query]) => {
@@ -206,6 +204,15 @@ async function handleDelete() {
 
 onActivated(() => registerDeleteHandler(handleDelete))
 onDeactivated(() => registerDeleteHandler(() => {}))
+
+onKeyStroke('Backspace', (e) => {
+  if (appStore.activeModuleId !== 'clipboard') return
+  if (appStore.activeSubview) return
+  if (!(e.metaKey || e.ctrlKey)) return
+  if (appStore.isComposing || isComposingCheck(e)) return
+  e.preventDefault()
+  triggerDelete()
+})
 
 // ── 图片懒加载 ──
 const imageCache = shallowReactive(new Map<string, string>())

@@ -89,6 +89,7 @@ const mod: AppModule = {
   subviews: { settings: ClipboardSettings },
   enterHint: '粘贴',
   multiSelectHint: true,
+  deleteHint: '删除',
   globalShortcuts: [
     {
       id: 'clipboard',
