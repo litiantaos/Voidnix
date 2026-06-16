@@ -20,6 +20,13 @@ pub struct TextRegion {
     pub h: f64,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct OcrResult {
+    pub text: String,
+    pub qr: Vec<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct ScreenshotData {

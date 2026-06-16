@@ -15,15 +15,9 @@
     :style="style"
     @mousedown.stop
   >
-    <!-- 滚动截屏模式：只保留确定/保存/取消，统一使用基础按钮样式 -->
+    <!-- 滚动截屏模式：仅保留保存（关闭/确定由统一尾部提供） -->
     <template v-if="mode === 'scroll'">
-      <BaseButton
-        title="完成滚动截屏 (Enter)"
-        icon="i-ri-check-line"
-        @click="$emit('scroll-finish')"
-      />
       <BaseButton title="保存" icon="i-ri-save-line" @click="$emit('scroll-save')" />
-      <BaseButton title="取消 (Esc)" icon="i-ri-close-line" @click="$emit('scroll-cancel')" />
     </template>
 
     <!-- 标注模式：完整工具栏 -->
@@ -155,22 +149,31 @@
       <div class="mx-0.5 bg-black/10 shrink-0 h-5 w-px" />
 
       <!-- 操作按钮 -->
-      <BaseButton title="OCR 识别" icon="i-ri-scan-line" @click="$emit('ocr')" />
+      <BaseButton title="识别" icon="i-ri-qr-scan-2-line" @click="$emit('ocr')" />
       <BaseButton
         title="滚动截屏"
         icon="i-ri-arrow-down-double-line"
         @click="$emit('scroll-start')"
       />
       <BaseButton title="钉图" icon="i-ri-pushpin-line" @click="$emit('pin')" />
-      <BaseButton title="复制 (Enter)" icon="i-ri-file-copy-line" @click="$emit('copy')" />
       <BaseButton title="保存" icon="i-ri-save-line" @click="$emit('save')" />
-      <BaseButton title="取消 (Esc)" icon="i-ri-close-line" @click="$emit('cancel')" />
     </template>
+
+    <!-- 统一尾部：关闭 + 确定（复制并关闭），始终位于最右侧 -->
+    <div class="mx-0.5 bg-black/10 shrink-0 h-5 w-px" />
+    <BaseButton variant="danger" title="关闭 (Esc)" icon="i-ri-close-line" @click="onClose" />
+    <BaseButton
+      variant="primary"
+      title="复制并关闭 (Enter)"
+      icon="i-ri-check-line"
+      @click="onConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSlider from '@/components/ui/BaseSlider.vue'
 
@@ -217,6 +220,16 @@ function selectColor(c: string) {
   showColors.value = false
 }
 
+// 统一尾部按钮：根据 mode 分发到对应事件
+function onConfirm() {
+  if (props.mode === 'scroll') emit('scroll-finish')
+  else emit('copy')
+}
+function onClose() {
+  if (props.mode === 'scroll') emit('scroll-cancel')
+  else emit('cancel')
+}
+
 // 实测尺寸：palette 在工具/选区变化后可能宽度有变，挂载/变化时同步更新。
 const paletteW = ref(380)
 const paletteH = ref(44)
@@ -252,14 +265,50 @@ function measure() {
   }
 }
 
+// scroll 模式:把工具栏屏幕矩形同步给 Rust(mouse_monitor 排除该区域,避免穿透)
+async function reportToolbarRect() {
+  if (props.mode !== 'scroll') {
+    clearToolbarRect()
+    return
+  }
+  if (!rootEl.value) return
+  await nextTick()
+  const el = rootEl.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+  invoke('set_scroll_toolbar_rect', {
+    x: rect.left,
+    y: rect.top,
+    w: rect.width,
+    h: rect.height,
+  }).catch(() => {})
+}
+
+function clearToolbarRect() {
+  invoke('set_scroll_toolbar_rect', { x: 0, y: 0, w: 0, h: 0 }).catch(() => {})
+}
+
 onMounted(() => {
-  nextTick(measure)
+  nextTick(() => {
+    measure()
+    reportToolbarRect()
+  })
 })
 
-// 工具或选区切换可能改变 palette 宽度，下一帧重新测量
+onBeforeUnmount(() => {
+  if (props.mode === 'scroll') clearToolbarRect()
+})
+
+// 工具/选区/模式变化会改变 palette 尺寸或位置，统一在一处响应：
+// 先重测尺寸（更新 paletteW/H），再上报屏幕矩形给 mouse_monitor。
 watch(
-  () => [props.activeTool, props.sel.x, props.sel.y, props.sel.w, props.sel.h] as const,
-  () => nextTick(measure),
+  () => [props.activeTool, props.sel.x, props.sel.y, props.sel.w, props.sel.h, props.mode] as const,
+  () =>
+    nextTick(() => {
+      measure()
+      reportToolbarRect()
+    }),
 )
 
 const style = computed(() => {
@@ -275,18 +324,20 @@ const style = computed(() => {
     left = Math.max(EDGE_PAD, Math.min(x + w - pw, props.screenWidth - pw - EDGE_PAD))
   }
 
+  const base = { left: `${left}px`, pointerEvents: 'auto' as const }
+
   // 垂直：优先下方；不够则上方；都不够则贴在选区内底部。
   const belowTop = y + h + PALETTE_GAP
   if (belowTop + ph <= props.screenHeight - EDGE_PAD) {
-    return { top: `${belowTop}px`, left: `${left}px` }
+    return { top: `${belowTop}px`, ...base }
   }
   if (y - ph - PALETTE_GAP >= EDGE_PAD) {
-    return { top: `${y - ph - PALETTE_GAP}px`, left: `${left}px` }
+    return { top: `${y - ph - PALETTE_GAP}px`, ...base }
   }
   const insideBottom = props.screenHeight - (y + h) + PALETTE_GAP
   return {
     bottom: `${Math.max(insideBottom, EDGE_PAD)}px`,
-    left: `${left}px`,
+    ...base,
   }
 })
 
@@ -301,6 +352,8 @@ watch(
     showColors.value = false
   },
 )
+
+defineExpose({ reportToolbarRect })
 </script>
 
 <style scoped>

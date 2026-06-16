@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use super::crop::crop_with_annotation;
-use super::ffi::{decode_image_data, picker_jpeg_path, TextRegion};
+use super::ffi::{decode_image_data, picker_jpeg_path, OcrResult, TextRegion};
 
 #[tauri::command]
 #[cfg_attr(feature = "specta", specta::specta)]
@@ -12,7 +12,7 @@ pub async fn ocr_image(
     sel_h: f64,
     scale: f64,
     annotation_png: String,
-) -> Result<String, String> {
+) -> Result<OcrResult, String> {
     let ann = if annotation_png.is_empty() {
         None
     } else {
@@ -30,14 +30,20 @@ pub async fn ocr_image(
         std::fs::write(&tmp, &png).map_err(|e| e.to_string())?;
 
         let script = format!(
-            r#"import Vision; import AppKit
+            r#"import Vision; import AppKit; import Foundation
 let url = URL(fileURLWithPath: "{path}")
-guard let img = NSImage(contentsOf: url), let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else {{ print(""); exit(0) }}
-let req = VNRecognizeTextRequest()
-req.recognitionLevel = .accurate; req.usesLanguageCorrection = true
-req.recognitionLanguages = ["zh-Hans","zh-Hant","en-US","ja"]
-try? VNImageRequestHandler(cgImage: cg, options: [:]).perform([req])
-print((req.results ?? []).compactMap {{ $0.topCandidates(1).first?.string }}.joined(separator: "\n"))"#,
+guard let img = NSImage(contentsOf: url), let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else {{ print("{{}}"); exit(0) }}
+let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+let textReq = VNRecognizeTextRequest()
+textReq.recognitionLevel = .accurate; textReq.usesLanguageCorrection = true
+textReq.recognitionLanguages = ["zh-Hans","zh-Hant","en-US","ja"]
+let qrReq = VNDetectBarcodesRequest()
+try? handler.perform([textReq, qrReq])
+let textResults = (textReq.results ?? []).compactMap {{ $0.topCandidates(1).first?.string }}.joined(separator: "\n")
+let qrResults = (qrReq.results ?? []).compactMap {{ $0.payloadStringValue }}
+let dict: [String: Any] = ["text": textResults, "qr": qrResults]
+let data = try! JSONSerialization.data(withJSONObject: dict, options: [])
+print(String(data: data, encoding: .utf8)!)"#,
             path = tmp.display()
         );
         let out = Command::new("swift")
@@ -46,7 +52,21 @@ print((req.results ?? []).compactMap {{ $0.topCandidates(1).first?.string }}.joi
             .map_err(|e| format!("swift 失败: {}", e))?;
         let _ = std::fs::remove_file(&tmp);
         if out.status.success() {
-            Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+            let json = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let parsed: serde_json::Value = serde_json::from_str(&json)
+                .map_err(|e| format!("解析识别结果失败: {}", e))?;
+            Ok(OcrResult {
+                text: parsed.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                qr: parsed
+                    .get("qr")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            })
         } else {
             Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
         }

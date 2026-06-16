@@ -339,6 +339,7 @@
 
     <!-- 标注调色板 -->
     <AnnotationPalette
+      ref="paletteRef"
       v-if="hasSelection && (phase === 'annotate' || phase === 'scroll') && !selResizeHandle"
       :sel="sel"
       :active-tool="activeTool"
@@ -380,6 +381,16 @@
       :screen-width="screenW"
       :screen-height="screenH"
     />
+    <!-- 自动停止提示 -->
+    <div
+      v-if="phase === 'scroll' && scrollCapture.atBottom.value"
+      class="pointer-events-none left-1/2 fixed -translate-x-1/2"
+      style="bottom: 20%"
+    >
+      <span class="text-xs ui-ctrl text-tx-secondary px-3 py-1.5 rounded-md">
+        已到底部，按 Enter 完成
+      </span>
+    </div>
   </div>
 </template>
 
@@ -409,6 +420,7 @@ const emit = defineEmits<{ (e: 'close', noRestoreFocus?: boolean): void }>()
 const rootEl = ref<HTMLElement>()
 const annotateCanvas = ref<HTMLCanvasElement>()
 const textInputEl = ref<HTMLTextAreaElement>()
+const paletteRef = ref<InstanceType<typeof AnnotationPalette>>()
 
 const screenW = ref(props.initialScreenshot.width)
 const screenH = ref(props.initialScreenshot.height)
@@ -618,6 +630,9 @@ async function onScrollStart() {
     phase.value = 'annotate'
     return
   }
+  // session 已创建，主动上报工具栏矩形（mouse_monitor 据此排除穿透）
+  await nextTick()
+  paletteRef.value?.reportToolbarRect()
   // 进入滚动模式后，根 div 必须保持可接收键盘事件以响应 Esc
   // 但鼠标在选区内的 mousedown 由原生 setIgnoresMouseEvents 放行，不会触达此 div
   nextTick(() => rootEl.value?.focus())

@@ -6,7 +6,7 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 export const commands = {
 	isAppActive: () => __TAURI_INVOKE<boolean>("is_app_active"),
 	getSelectedTextCached: () => __TAURI_INVOKE<string>("get_selected_text_cached"),
-	ocrImage: (selX: number | null, selY: number | null, selW: number | null, selH: number | null, scale: number | null, annotationPng: string) => __TAURI_INVOKE<string>("ocr_image", { selX, selY, selW, selH, scale, annotationPng }),
+	ocrImage: (selX: number | null, selY: number | null, selW: number | null, selH: number | null, scale: number | null, annotationPng: string) => __TAURI_INVOKE<OcrResult>("ocr_image", { selX, selY, selW, selH, scale, annotationPng }),
 	detectTextRegions: (scale: number | null) => __TAURI_INVOKE<TextRegion[]>("detect_text_regions", { scale }),
 	getSelectedText: () => __TAURI_INVOKE<string>("get_selected_text"),
 	translateAi: (text: string, endpoint: string, apiKey: string, model: string, targetLang: string | null, prompt: string | null) => __TAURI_INVOKE<TranslateResult>("translate_ai", { text, endpoint, apiKey, model, targetLang, prompt }),
@@ -20,7 +20,10 @@ export const commands = {
 	hideSnapPanel: () => __TAURI_INVOKE<null>("hide_snap_panel"),
 	/**  返回全量应用列表（带 use_count + last_used），由前端做拼音匹配与排序。 */
 	searchApps: () => __TAURI_INVOKE<SearchResult[]>("search_apps"),
-	/**  用 mdfind 拉候选，返回 (path, use_count) 原始列表，由前端打分排序。 */
+	/**
+	 *  用 mdfind 拉候选，通过 kMDItemContentType 判断文件/文件夹类型，
+	 *  返回带元数据的原始列表，由前端打分排序。
+	 */
 	searchFiles: (query: string) => __TAURI_INVOKE<SearchResult[]>("search_files", { query }),
 	fetchIpInfo: (ip: string | null) => __TAURI_INVOKE<IpInfo>("fetch_ip_info", { ip }),
 	getClipboardHistory: (filterFavorite: boolean | null, limit: number | null, previewOnly: boolean | null) => __TAURI_INVOKE<ClipboardItem[]>("get_clipboard_history", { filterFavorite, limit, previewOnly }),
@@ -55,6 +58,11 @@ export type IpInfo = {
 	isp: string | null,
 	org: string | null,
 	asn: string | null,
+};
+
+export type OcrResult = {
+	text: string,
+	qr: string[],
 };
 
 export type ScreenInfo = {

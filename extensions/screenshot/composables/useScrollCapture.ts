@@ -16,9 +16,12 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
   const isFinishing = ref(false)
   /// 鼠标当前是否在选区"洞"内（事件穿透状态）。仅供 UI 反馈。
   const isPassthrough = ref(false)
+  /// 内容连续无位移（已到底部），提示用户可完成
+  const atBottom = ref(false)
 
   let unlistenFrame: UnlistenFn | null = null
   let unlistenPassthrough: UnlistenFn | null = null
+  let unlistenStopped: UnlistenFn | null = null
 
   async function start(sel: Sel) {
     if (isActive.value) return
@@ -27,6 +30,7 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
     previewWidth.value = 0
     previewHeight.value = 0
     result.value = ''
+    atBottom.value = false
 
     // 监听帧事件
     unlistenFrame = await listen<{
@@ -43,6 +47,11 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
     // 监听 passthrough 状态切换
     unlistenPassthrough = await listen<boolean>('screenshot-scroll-passthrough', (event) => {
       isPassthrough.value = event.payload
+    })
+
+    // 监听自动停止（已到底部）
+    unlistenStopped = await listen('screenshot-scroll-stopped', () => {
+      atBottom.value = true
     })
 
     try {
@@ -64,6 +73,10 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
         unlistenPassthrough()
         unlistenPassthrough = null
       }
+      if (unlistenStopped) {
+        unlistenStopped()
+        unlistenStopped = null
+      }
     }
   }
 
@@ -82,6 +95,10 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
       if (unlistenPassthrough) {
         unlistenPassthrough()
         unlistenPassthrough = null
+      }
+      if (unlistenStopped) {
+        unlistenStopped()
+        unlistenStopped = null
       }
       return dataUrl
     } catch (e) {
@@ -111,6 +128,10 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
       unlistenPassthrough()
       unlistenPassthrough = null
     }
+    if (unlistenStopped) {
+      unlistenStopped()
+      unlistenStopped = null
+    }
   }
 
   onUnmounted(() => {
@@ -126,12 +147,17 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
       unlistenPassthrough()
       unlistenPassthrough = null
     }
+    if (unlistenStopped) {
+      unlistenStopped()
+      unlistenStopped = null
+    }
   })
 
   return {
     isActive,
     isFinishing,
     isPassthrough,
+    atBottom,
     previewDataUrl,
     previewWidth,
     previewHeight,
