@@ -193,7 +193,7 @@
           v-model="whitelistText"
           rows="10"
           placeholder="ls&#10;cat&#10;git"
-          class="w-full bg-black/[0.03] rounded-md p-2 text-xs font-mono outline-none resize-none border border-tx-faint/20 focus:border-accent/50"
+          class="text-xs font-mono p-2 outline-none border border-tx-faint/20 rounded-md bg-black/[0.03] w-full resize-none focus:border-accent/50"
         />
         <p text="xs tx-subtle" m="t-1">
           列在此处的命令直接执行无需审批。点击审批弹窗的「执行并信任」也会自动追加。
@@ -218,7 +218,7 @@
           v-model="systemPromptText"
           rows="8"
           placeholder="例如：始终用英文回答；优先使用 ripgrep 而非 grep；当前工作目录是 ~/Projects/myapp，使用 pnpm 而非 npm"
-          class="w-full bg-black/[0.03] rounded-md p-2 text-xs outline-none resize-none border border-tx-faint/20 focus:border-accent/50"
+          class="text-xs p-2 outline-none border border-tx-faint/20 rounded-md bg-black/[0.03] w-full resize-none focus:border-accent/50"
         />
         <p text="xs tx-subtle" m="t-1">
           留空使用纯默认 harness（描述工具规则、安全约束、输出风格）。

@@ -71,13 +71,7 @@ Tavily 搜索（专为 AI 设计，返回含 `answer` 字段的结构化 JSON）
 - 「执行并信任」→ 持久化到 `agent.trustedCommands`（与 settings textarea 同步）
 
 **默认白名单**（settings 初始值，用户可自由编辑增删）：
-```
-ls cat pwd echo head tail wc file stat date which whoami uname
-find grep rg fd ag tree diff comm cmp md5sum shasum
-mkdir touch cp mv ln tee truncate
-sed awk sort uniq cut tr paste expand
-jq yq bat
-git
+
 ```
 ls cat pwd echo head tail wc file stat date which whoami uname
 find grep rg fd ag tree diff comm cmp md5sum shasum
@@ -94,7 +88,16 @@ sed awk sort uniq cut tr paste expand
 jq yq bat
 git
 
-````
+```
+
+ls cat pwd echo head tail wc file stat date which whoami uname
+find grep rg fd ag tree diff comm cmp md5sum shasum
+mkdir touch cp mv ln tee truncate
+sed awk sort uniq cut tr paste expand
+jq yq bat
+git
+
+```
 
 ### System Prompt（harness）
 
@@ -128,7 +131,7 @@ settings.json 顶层分组：
     "systemPrompt": "始终用英文回答"
   }
 }
-````
+```
 
 工具调用始终启用（无开关）。搜索提供商与模型提供商同款多 provider 体系，可添加多个，通过 `activeSearchProviderId` 切换当前激活。
 

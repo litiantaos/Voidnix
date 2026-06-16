@@ -95,14 +95,9 @@
                   v-html="renderSearchOutput(part.output)"
                 />
                 <!-- 其他工具：等宽原样显示 -->
-                <pre
-                  v-else
-                  m="0"
-                  font="mono"
-                  text="xs"
-                  whitespace="pre-wrap"
-                  break="all"
-                >{{ part.output }}</pre>
+                <pre v-else m="0" font="mono" text="xs" whitespace="pre-wrap" break="all">{{
+                  part.output
+                }}</pre>
               </div>
             </div>
           </template>
@@ -126,8 +121,10 @@
         <BaseTextarea
           ref="textareaRef"
           v-model="inputText"
-          :placeholder="agent.isGenerating.value ? 'agent 执行中...（可预输入下一条）' : '聊点什么...'"
-          class="bg-black/5 pointer-events-auto flex-1"
+          :placeholder="
+            agent.isGenerating.value ? 'agent 执行中...（可预输入下一条）' : '聊点什么...'
+          "
+          class="bg-black/5 flex-1 pointer-events-auto"
           @submit="handleSubmit"
         />
         <BaseButton
@@ -258,7 +255,9 @@ function renderSearchOutput(raw: string): string {
       const title = escapeHtml(h.title || '(无标题)')
       const url = escapeHtml(h.url || '')
       const snippet = h.snippet?.trim()
-      const snippetHtml = snippet ? `<small class="search-snippet">${escapeHtml(snippet)}</small>` : ''
+      const snippetHtml = snippet
+        ? `<small class="search-snippet">${escapeHtml(snippet)}</small>`
+        : ''
       parts.push(
         `<li><a href="${url}" target="_blank" rel="noopener noreferrer" class="search-link">${title}</a>${snippetHtml}</li>`,
       )
