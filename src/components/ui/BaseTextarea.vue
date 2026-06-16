@@ -46,6 +46,7 @@ interface Props {
   error?: boolean
   rows?: number
   maxHeight?: number
+  submitOnEnter?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -55,6 +56,7 @@ const props = withDefaults(defineProps<Props>(), {
   error: false,
   rows: 3,
   maxHeight: 120,
+  submitOnEnter: true,
 })
 
 const emit = defineEmits<{
@@ -96,7 +98,7 @@ function onCompositionEnd() {
 function onKeydown(e: KeyboardEvent) {
   baseOnKeydown(e)
   if (e.isComposing || e.keyCode === 229) return
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if (e.key === 'Enter' && !e.shiftKey && props.submitOnEnter) {
     e.preventDefault()
     emit('submit')
   }
@@ -105,9 +107,11 @@ function onKeydown(e: KeyboardEvent) {
 function autoResize() {
   const el = textareaRef.value
   if (!el || !el.isConnected) return
-  el.style.height = 'auto'
-  const h = el.scrollHeight
-  height.value = (props.maxHeight > 0 ? Math.min(h, props.maxHeight) : h) + 'px'
+  height.value = 'auto'
+  nextTick(() => {
+    const h = el.scrollHeight
+    height.value = (props.maxHeight > 0 ? Math.min(h, props.maxHeight) : h) + 'px'
+  })
 }
 
 watch(

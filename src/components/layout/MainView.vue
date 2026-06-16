@@ -58,13 +58,13 @@
               class="flex-center inset-0 absolute hover:bg-black/20"
               @click="onTagClose"
             >
-              <span class="i-ri-close-line" text="[10px] black/60"></span>
+              <span class="i-ri-close-line" text="xs black/60"></span>
             </button>
             <span
               v-else
               key="icon"
               :class="activeModule.icon"
-              text="[10px] black/50"
+              text="xs black/50"
               class="flex-center"
               h="3.5"
               w="3.5"

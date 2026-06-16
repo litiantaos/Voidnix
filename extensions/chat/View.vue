@@ -38,7 +38,7 @@
         ref="textareaRef"
         v-model="inputText"
         placeholder="聊点什么..."
-        class="bg-[#f0f0f0] pointer-events-auto"
+        class="bg-black/5 pointer-events-auto"
         @submit="handleSubmit"
       />
     </div>

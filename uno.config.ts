@@ -45,6 +45,9 @@ export default defineConfig({
     }),
   ],
   theme: {
+    fontSize: {
+      '2xs': '10px',
+    },
     colors: {
       surface: {
         DEFAULT: '#fcfcfc',

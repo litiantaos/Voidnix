@@ -31,7 +31,7 @@
         h="5"
         items="center"
         justify="center"
-        :class="k === 'Space' ? 'text-[8px] px-2' : 'w-5'"
+        :class="k === 'Space' ? 'text-2xs px-2' : 'w-5'"
       >
         {{ k }}
       </kbd>
