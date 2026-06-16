@@ -37,19 +37,43 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **Tier 2（第三方扩展）**：运行时纯 JS，Worker 沙箱 + 声明式 UI（5 原语）。详见 [`docs/tier2-extensions.md`](docs/tier2-extensions.md)。
 
-现有扩展（12）：Tier1Extension — clipboard、screenshot、awake、zsh-autosuggestions、window-manager、finder-ext、translate、chat；插件型 — search、ip；纯前端 — calculator、settings。
+现有扩展（12）：Tier1Extension — clipboard、screenshot、awake、zsh-autosuggestions、window-manager、finder-ext、translate、agent；插件型 — search、ip；纯前端 — calculator、settings。
 
 复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)。
 
 ## 架构要点
 
-**前后端通信**：前端优先用 `src/bindings.ts`（tauri-specta 自动生成；改 Rust 结构体后 `bun run sync:extensions && cd src-tauri && cargo test --features specta export_bindings -- --nocapture` 重新生成）。流式/事件用裸 `invoke()`，Rust 用 `app.emit()`，所有 Command 须在 `configure_app!` 注册。
+**前后端通信**：前端优先用 `src/bindings.ts`（tauri-specta 自动生成；改 Rust 结构体后 `bun run sync:extensions && cd src-tauri && cargo test --features specta export_bindings -- --nocapture` 重新生成）。流式/事件用裸 `invoke()`，Rust 用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者），所有 Command 须在 `configure_app!` 注册。specta 不支持含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`），此类命令手写 TS 类型（`src/types/agent.ts`）+ 裸 `invoke()`。
 
 **模块子视图**：`open_module_subview(moduleId, subviewId, payload)` → Rust 显示主窗口 + 发 `open-module-subview` 事件 → App.vue 激活模块、调用 `onOpenSubview`。模块通过 `subviews` 声明组件，通过 `appStore` 控制切换。
 
 **窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `deactivate` + `activate_app_by_pid(prev_pid)` 还给原应用。
 
-**全局快捷键**：`src-tauri/src/core/shortcut.rs`，四槽位：`main` / `clipboard` / `translate` / `chat`。
+**全局快捷键**：`src-tauri/src/core/shortcut.rs`，四槽位：`main` / `clipboard` / `translate` / `agent`。
+
+**Agent 框架层**（`src-tauri/src/core/agent/`）：通用 tool calling loop，服务 agent 扩展（未来可复用）。
+
+- `tool_registry.rs`：`AgentTool` trait（name/schema/requires_approval/call）+ `ToolRegistry`
+- `loop_runner.rs`：主循环 `run_loop`：调 LLM（带 tools）→ 解析 tool_calls → 审批（如需）→ 执行 → 回灌 `role:tool` → 下一轮；`MAX_TURNS=10` 防失控
+- `approval.rs`：`ApprovalManager`（全局 `State`，oneshot channel），命中需审批工具时 emit `ApprovalRequired` 事件 + await `oneshot::Receiver`；前端 `agent_approve` 唤醒
+- `cancellation.rs`：`SessionRegistry`（per-session `CancellationToken`），`agent_abort` + 主窗失焦 `cancel_all`
+- `secret_scrub.rs`：gitleaks 风格正则打码（OpenAI/Anthropic/AWS/GitHub/Slack/PEM/JWT 等），送 LLM 前的兜底净化
+
+**Agent 通信协议**：Channel streaming（`tauri::ipc::Channel<AgentEvent>`）。`AgentEvent` 枚举：`TextDelta` / `ToolCallStart` / `ToolCallArgs` / `ApprovalRequired` / `ToolResult` / `Completed` / `Error`。前端不进 specta（动态 JSON 不支持），手写类型 `src/types/agent.ts` + 裸 `invoke('agent_run', { onEvent: new Channel() })`。
+
+**Agent 安全防线**（命令执行 9 层纵深防御）：
+
+1. 命令白名单（默认 `ls/cat/git/grep/...`）+ FORBIDDEN 黑名单（`osascript/sudo/sh/curl/wget/...`）
+2. 参数黑名单（`--exec/--upload-pack/-o/-C/...`）+ shell 元字符检测（`${` `$(` `` ` ``）
+3. 断路器（`rm -rf /` / `rm -rf ~` 即便 approved 也拦）
+4. `env_clear()` + 白名单 env（防父进程 API key 进子进程）
+5. cwd `canonicalize`
+6. `pre_exec` 设 rlimit（CPU 30s/AS 512MB/NOFILE 64）
+7. `tokio::time::timeout(30s)` + `kill_on_drop(true)`
+8. 输出边读边截断 1 MiB
+9. `scrub_secret` gitleaks 打码（最后一道兜底）
+
+详见 `docs/extensions/agent.md`。
 
 **搜索**：Rust 端只做数据召回（`mdfind` / app 扫描 / clipboard SQL），返回全量候选 + `use_count` 元数据；过滤排序统一在前端走 `src/utils/fuzzy.ts::scoreFields()`（基于 [pinyin-pro](https://github.com/zh-lx/pinyin-pro)，`precision: 'start'` + `continuous: true` + `v: true` 三开关锁死中文缩写/全拼/ü→v 语义）。`frequencyBoost(useCount)` 做 log 平滑的频次加权，全局排序层级：模块(+500) > 应用(+300) > 文件夹(+80) > 文件。
 
@@ -75,8 +99,10 @@ src-tauri/src/
 ├── extensions.rs       # 自动生成（configure_app! 宏，勿手改）
 ├── type_gen.rs         # 自动生成（tauri-specta，specta feature-gated）
 ├── core/               # 核心模块（shortcut / window / tier1 / ext_* / keyword_match / permission）
-├── infra/              # 基础设施（http / path / pinyin / sse）
+├── infra/              # 基础设施（http / path / pinyin / sse / tool_calls_parser）
 └── macos/              # macOS 原生桥接（panel / skylight / text_selection / click_monitor / permission / mac_utils）
+
+`core/agent/` 子目录：通用 agent 框架层（tool_registry / loop_runner / approval / cancellation / secret_scrub）。
 
 src/
 ├── components/

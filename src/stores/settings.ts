@@ -6,11 +6,19 @@ import { commands } from '@/bindings'
 import { isTauri } from '@/utils/tauri'
 import { generateRequestId } from '@/composables/useStreamOutput'
 
-export interface ChatApiConfig {
+export interface AiProviderConfig {
   id: string
   endpoint: string
   apiKey: string
   models: string[]
+}
+
+/// 搜索提供商配置（与 AiProviderConfig 同款多 provider 体系）。
+/// Phase 1 仅支持 Tavily；保留 type 字段为未来扩展 Brave/Serper 等留接口。
+export interface SearchProviderConfig {
+  id: string
+  type: 'tavily'
+  apiKey: string
 }
 
 export interface TranslateApiConfig {
@@ -91,7 +99,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const activeTranslateModelKey = ref('')
 
-  const chatConfigs = ref<ChatApiConfig[]>([
+  const aiProviders = ref<AiProviderConfig[]>([
     {
       id: generateId(),
       endpoint: '',
@@ -100,11 +108,34 @@ export const useSettingsStore = defineStore('settings', () => {
     },
   ])
 
-  const activeModelKey = ref('')
+  const activeProviderModelKey = ref('')
 
-  const activeChatConfig = computed<ChatApiConfig>(
-    () => parseActiveConfig(activeModelKey.value, chatConfigs.value, (c) => c[0])!,
+  const activeProviderConfig = computed<AiProviderConfig>(
+    () => parseActiveConfig(activeProviderModelKey.value, aiProviders.value, (c) => c[0])!,
   )
+
+  // ─── Agent 扩展配置 ────────────────────────────────────────
+  // 工具调用默认启用（无开关），仅配置搜索提供商 + 受信命令白名单
+  const searchProviders = ref<SearchProviderConfig[]>([
+    { id: generateId(), type: 'tavily', apiKey: '' },
+  ])
+  const activeSearchProviderId = ref('')
+  const activeSearchProvider = computed<SearchProviderConfig>(
+    () =>
+      searchProviders.value.find((p) => p.id === activeSearchProviderId.value) ||
+      searchProviders.value[0],
+  )
+  const agentTrustedCommands = ref<string[]>([
+    // 默认白名单（读 + 编辑常用命令），用户可在 settings 自由编辑
+    'ls', 'cat', 'pwd', 'echo', 'head', 'tail', 'wc', 'file', 'stat', 'date',
+    'which', 'whoami', 'uname', 'find', 'grep', 'rg', 'fd', 'ag', 'tree',
+    'diff', 'comm', 'cmp', 'md5sum', 'shasum',
+    'mkdir', 'touch', 'cp', 'mv', 'ln', 'tee', 'truncate',
+    'sed', 'awk', 'sort', 'uniq', 'cut', 'tr', 'paste', 'expand',
+    'jq', 'yq', 'bat',
+    'git',
+  ])
+  const agentSystemPrompt = ref('')
 
   const finderExtEnabled = ref(false)
 
@@ -170,12 +201,12 @@ export const useSettingsStore = defineStore('settings', () => {
     return { save, add, remove, update }
   }
 
-  const chatConfigManager = createConfigManager({
-    configs: chatConfigs,
-    activeKey: activeModelKey,
-    groupKey: 'chat',
+  const aiProviderConfigManager = createConfigManager({
+    configs: aiProviders,
+    activeKey: activeProviderModelKey,
+    groupKey: 'aiProviders',
     configField: 'configs',
-    activeField: 'activeModelKey',
+    activeField: 'activeProviderModelKey',
     generateId: generateRequestId,
   })
 
@@ -184,7 +215,7 @@ export const useSettingsStore = defineStore('settings', () => {
     activeKey: activeTranslateModelKey,
     groupKey: 'translate',
     configField: 'configs',
-    activeField: 'activeModelKey',
+    activeField: 'activeProviderModelKey',
     generateId: generateRequestId,
   })
 
@@ -207,7 +238,7 @@ export const useSettingsStore = defineStore('settings', () => {
       const translate = await store.get<{
         targetLang?: string
         configs?: TranslateApiConfig[]
-        activeModelKey?: string
+        activeProviderModelKey?: string
       }>('translate')
       if (translate?.targetLang) translateTargetLang.value = translate.targetLang
       if (translate?.configs?.length) {
@@ -215,14 +246,32 @@ export const useSettingsStore = defineStore('settings', () => {
         const firstYoudao = translateConfigs.value.find((c) => c.type === 'youdao')
         if (firstYoudao) firstYoudao.isDefault = true
       }
-      if (translate?.activeModelKey) activeTranslateModelKey.value = translate.activeModelKey
+      if (translate?.activeProviderModelKey)
+        activeTranslateModelKey.value = translate.activeProviderModelKey
 
-      const chat = await store.get<{
-        configs?: ChatApiConfig[]
-        activeModelKey?: string
-      }>('chat')
-      if (chat?.configs?.length) chatConfigs.value = chat.configs
-      if (chat?.activeModelKey) activeModelKey.value = chat.activeModelKey
+      const aiProvidersData = await store.get<{
+        configs?: AiProviderConfig[]
+        activeProviderModelKey?: string
+      }>('aiProviders')
+      if (aiProvidersData?.configs?.length) aiProviders.value = aiProvidersData.configs
+      if (aiProvidersData?.activeProviderModelKey)
+        activeProviderModelKey.value = aiProvidersData.activeProviderModelKey
+
+      // agent 扩展自管配置（顶层 'agent' 分组）
+      const agent = await store.get<{
+        searchProviders?: SearchProviderConfig[]
+        activeSearchProviderId?: string
+        trustedCommands?: string[]
+        systemPrompt?: string
+      }>('agent')
+      if (agent?.searchProviders?.length) {
+        searchProviders.value = agent.searchProviders
+      }
+      if (agent?.activeSearchProviderId) {
+        activeSearchProviderId.value = agent.activeSearchProviderId
+      }
+      if (agent?.trustedCommands != null) agentTrustedCommands.value = agent.trustedCommands
+      if (agent?.systemPrompt != null) agentSystemPrompt.value = agent.systemPrompt
 
       const extensions = await store.get<{
         finderExt?: boolean
@@ -335,7 +384,83 @@ export const useSettingsStore = defineStore('settings', () => {
     'set_zsh_autosuggestions_enabled',
   )
 
-  const setActiveModelKey = createSetter(activeModelKey, 'chat', 'activeModelKey')
+  const setActiveProviderModelKey = createSetter(
+    activeProviderModelKey,
+    'aiProviders',
+    'activeProviderModelKey',
+  )
+
+  // ─── Agent 扩展配置 setters ───
+  async function saveSearchProviders() {
+    if (store) {
+      const group = (await store.get<Record<string, unknown>>('agent')) || {}
+      group.searchProviders = searchProviders.value
+      group.activeSearchProviderId = activeSearchProviderId.value
+      await store.set('agent', group)
+      await store.save()
+    }
+  }
+
+  async function addSearchProvider(): Promise<string> {
+    const id = generateRequestId()
+    searchProviders.value.push({ id, type: 'tavily', apiKey: '' })
+    activeSearchProviderId.value = id
+    await saveSearchProviders()
+    return id
+  }
+
+  async function removeSearchProvider(id: string) {
+    const idx = searchProviders.value.findIndex((c) => c.id === id)
+    if (idx === -1) return
+    // 不允许删除最后一个 provider
+    if (searchProviders.value.length <= 1) return
+    searchProviders.value.splice(idx, 1)
+    if (activeSearchProviderId.value === id) {
+      activeSearchProviderId.value = searchProviders.value[0]?.id || ''
+    }
+    await saveSearchProviders()
+  }
+
+  async function updateSearchProvider(id: string, partial: Partial<SearchProviderConfig>) {
+    const config = searchProviders.value.find((c) => c.id === id)
+    if (!config) return
+    Object.assign(config, partial)
+    await saveSearchProviders()
+  }
+
+  async function setActiveSearchProviderId(val: string) {
+    activeSearchProviderId.value = val
+    await saveSearchProviders()
+  }
+
+  async function setAgentTrustedCommands(val: string[]) {
+    agentTrustedCommands.value = val
+    if (store) {
+      const group = (await store.get<Record<string, unknown>>('agent')) || {}
+      group.trustedCommands = val
+      await store.set('agent', group)
+      await store.save()
+    }
+  }
+
+  async function setAgentSystemPrompt(val: string) {
+    agentSystemPrompt.value = val
+    if (store) {
+      const group = (await store.get<Record<string, unknown>>('agent')) || {}
+      group.systemPrompt = val
+      await store.set('agent', group)
+      await store.save()
+    }
+  }
+
+  /// 把「执行并信任」的命令加入持久化白名单（去重）
+  async function trustCommand(cmd: string) {
+    const name = cmd.trim()
+    if (!name) return
+    if (agentTrustedCommands.value.includes(name)) return
+    agentTrustedCommands.value = [...agentTrustedCommands.value, name]
+    await setAgentTrustedCommands(agentTrustedCommands.value)
+  }
   const setAwakeMirrorMode = createSetter(awakeMirrorMode, 'extensions', 'awakeMirrorMode')
 
   async function setWmField(field: string, val: number | boolean) {
@@ -380,9 +505,14 @@ export const useSettingsStore = defineStore('settings', () => {
     shortcutOverrides,
     translateTargetLang,
     translateConfigs,
-    chatConfigs,
-    activeModelKey,
-    activeChatConfig,
+    aiProviders,
+    activeProviderModelKey,
+    activeProviderConfig,
+    searchProviders,
+    activeSearchProviderId,
+    activeSearchProvider,
+    agentTrustedCommands,
+    agentSystemPrompt,
     finderExtEnabled,
     awakeMirrorMode,
     zshAutosuggestionsEnabled,
@@ -396,13 +526,20 @@ export const useSettingsStore = defineStore('settings', () => {
     getShortcutOverride,
     setShortcutOverride,
     setTranslateTargetLang,
-    addChatConfig: chatConfigManager.add,
-    removeChatConfig: chatConfigManager.remove,
-    updateChatConfig: chatConfigManager.update,
+    addAiProvider: aiProviderConfigManager.add,
+    removeAiProvider: aiProviderConfigManager.remove,
+    updateAiProvider: aiProviderConfigManager.update,
     addTranslateConfig: translateConfigManager.add,
     removeTranslateConfig: translateConfigManager.remove,
     updateTranslateConfig: translateConfigManager.update,
-    setActiveModelKey,
+    setActiveProviderModelKey,
+    addSearchProvider,
+    removeSearchProvider,
+    updateSearchProvider,
+    setActiveSearchProviderId,
+    setAgentTrustedCommands,
+    setAgentSystemPrompt,
+    trustCommand,
     setFinderExtEnabled,
     setAwakeMirrorMode,
     setZshAutosuggestionsEnabled,

@@ -45,8 +45,6 @@ macro_rules! configure_app {
         crate::extensions::screenshot::ocr::save_screenshot,
         crate::extensions::screenshot::ocr::copy_screenshot_to_clipboard,
         crate::extensions::zsh_autosuggestions::set_zsh_autosuggestions_enabled,
-        crate::extensions::chat::chat_abort,
-        crate::extensions::chat::chat_stream,
         crate::extensions::translate::get_selected_text,
         crate::extensions::translate::ai_translate::translate_ai,
         crate::extensions::translate::ai_translate::translate_ai_stream,
@@ -58,6 +56,11 @@ macro_rules! configure_app {
         crate::extensions::window_manager::is_drag_snap_active,
         crate::extensions::window_manager::show_snap_panel,
         crate::extensions::window_manager::hide_snap_panel,
+        crate::extensions::agent::chat_abort,
+        crate::extensions::agent::chat_stream,
+        crate::extensions::agent::agent_run,
+        crate::extensions::agent::agent_approve,
+        crate::extensions::agent::agent_abort,
         crate::extensions::search::commands::search_apps,
         crate::extensions::search::commands::search_files,
         crate::extensions::search::commands::reveal_in_finder,
@@ -90,12 +93,12 @@ pub(crate) use configure_app;
 pub mod screenshot;
 #[path = "../../extensions/zsh-autosuggestions/native/mod.rs"]
 pub mod zsh_autosuggestions;
-#[path = "../../extensions/chat/native/mod.rs"]
-pub mod chat;
 #[path = "../../extensions/translate/native/mod.rs"]
 pub mod translate;
 #[path = "../../extensions/window-manager/native/mod.rs"]
 pub mod window_manager;
+#[path = "../../extensions/agent/native/mod.rs"]
+pub mod agent;
 #[path = "../../extensions/search/native/mod.rs"]
 pub mod search;
 #[path = "../../extensions/finder-ext/native/mod.rs"]

@@ -1,4 +1,4 @@
-use crate::infra::sse::{self, ChatMessage};
+use crate::infra::sse::{self, LlmMessage};
 
 use super::TranslateResult;
 use super::lang_utils::{
@@ -197,14 +197,8 @@ pub async fn translate_ai_stream(
     let p = prepare_ai_translate(&text, &endpoint, &api_key, &model, target_lang.as_deref(), prompt.as_ref())?;
 
     let messages = vec![
-        ChatMessage {
-            role: "system".to_string(),
-            content: p.system_content,
-        },
-        ChatMessage {
-            role: "user".to_string(),
-            content: p.rendered,
-        },
+        LlmMessage::system(p.system_content),
+        LlmMessage::user(p.rendered),
     ];
 
     sse::stream_openai_request(sse::StreamConfig {
@@ -213,10 +207,15 @@ pub async fn translate_ai_stream(
         api_key: &api_key,
         model: &model,
         messages,
+        tools: None,
+        tool_choice: None,
+        on_text_delta: None,
+        on_tool_calls_delta: None,
         chunk_event: "translate-chunk",
         done_event: "translate-done",
         request_id: &request_id,
         abort_flag: None,
     })
     .await
+    .map(|_| ())
 }

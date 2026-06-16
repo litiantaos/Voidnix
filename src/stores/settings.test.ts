@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useSettingsStore, type ChatApiConfig } from './settings'
+import { useSettingsStore, type AiProviderConfig } from './settings'
 
 describe('settings store', () => {
   beforeEach(() => {
@@ -20,25 +20,25 @@ describe('settings store', () => {
     expect(store.wmDragSnapEnabled).toBe(true)
   })
 
-  describe('activeChatConfig', () => {
+  describe('activeProviderConfig', () => {
     it('默认返回第一个配置', () => {
       const store = useSettingsStore()
-      const config = store.activeChatConfig
+      const config = store.activeProviderConfig
       expect(config).toBeDefined()
-      expect(config).toBe(store.chatConfigs[0])
+      expect(config).toBe(store.aiProviders[0])
     })
 
     it('通过 ID:: 前缀匹配指定配置', () => {
       const store = useSettingsStore()
-      const targetId = store.chatConfigs[0].id
-      store.activeModelKey = `${targetId}::`
-      expect(store.activeChatConfig.id).toBe(targetId)
+      const targetId = store.aiProviders[0].id
+      store.activeProviderModelKey = `${targetId}::`
+      expect(store.activeProviderConfig.id).toBe(targetId)
     })
 
     it('未匹配时回退到第一个', () => {
       const store = useSettingsStore()
-      store.activeModelKey = 'nonexistent::'
-      expect(store.activeChatConfig).toBe(store.chatConfigs[0])
+      store.activeProviderModelKey = 'nonexistent::'
+      expect(store.activeProviderConfig).toBe(store.aiProviders[0])
     })
   })
 
@@ -49,11 +49,11 @@ describe('settings store', () => {
     })
   })
 
-  describe('chatConfigs 默认结构', () => {
+  describe('aiProviders 默认结构', () => {
     it('初始包含一个配置', () => {
       const store = useSettingsStore()
-      expect(store.chatConfigs).toHaveLength(1)
-      const config = store.chatConfigs[0] as ChatApiConfig
+      expect(store.aiProviders).toHaveLength(1)
+      const config = store.aiProviders[0] as AiProviderConfig
       expect(config.id).toBeTruthy()
       expect(config.endpoint).toBe('')
       expect(config.apiKey).toBe('')
@@ -66,6 +66,21 @@ describe('settings store', () => {
       const store = useSettingsStore()
       expect(store.translateConfigs).toHaveLength(1)
       expect(store.translateConfigs[0].type).toBe('youdao')
+    })
+  })
+
+  describe('搜索提供商默认结构', () => {
+    it('初始包含一个 Tavily provider（未配 key）', () => {
+      const store = useSettingsStore()
+      expect(store.searchProviders).toHaveLength(1)
+      const provider = store.searchProviders[0]
+      expect(provider.type).toBe('tavily')
+      expect(provider.apiKey).toBe('')
+    })
+
+    it('activeSearchProvider 默认回退到第一个', () => {
+      const store = useSettingsStore()
+      expect(store.activeSearchProvider).toBe(store.searchProviders[0])
     })
   })
 })
