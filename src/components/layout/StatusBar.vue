@@ -98,6 +98,10 @@ const hints = computed<ShortcutHint[]>(() => {
       result.push({ keys: ['shift/cmd'], label: '多选' })
     }
 
+    if (mod.deleteHint) {
+      result.push({ keys: ['cmd', '⌫'], label: mod.deleteHint })
+    }
+
     result.push({ keys: ['esc'], label: hasQuery.value && inputActive ? '清空' : '返回' })
     return result
   }

@@ -57,7 +57,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **UI 槽位**（仅这些，不增不减）：`view`（主视图）、`searchBarAccessory`（搜索栏右侧）、`subviews`（命名子视图）。槽位组件 `Actions` 后缀，私有 UI 禁用 `Toolbar`/`Header`/`Footer`，用语义名如 `AnnotationPalette`。
 
-**状态栏**：框架层全局组件 `StatusBar`，固定于 MainView 底部（`h-6`）。左侧显示瞬时消息（`appStore.showStatus(msg, duration)`，自动淡出）或搜索结果计数；右侧显示上下文快捷键提示（根据搜索状态/模块/子视图动态变化：有输入时 `esc 清空`，无输入时 `esc 关闭/返回`；文件结果追加 `⌘↵ 访问`）。扩展通过 `copyAndHide` / `copyAndShow`（`src/utils/clipboard.ts`）自动获得「已复制」反馈，Tier 2 通过 `ctx.clipboard.write` 自动传导，无需额外调用。模块可通过 `AppModule.enterHint`（如 `'粘贴'`/`'复制'`）自定义 ↵ 动作描述，`AppModule.multiSelectHint` 显示 `⇧/⌘ 多选` 提示。
+**状态栏**：框架层全局组件 `StatusBar`，固定于 MainView 底部（`h-6`）。左侧显示瞬时消息（`appStore.showStatus(msg, duration)`，自动淡出）或搜索结果计数；右侧显示上下文快捷键提示（根据搜索状态/模块/子视图动态变化：有输入时 `esc 清空`，无输入时 `esc 关闭/返回`；文件结果追加 `⌘↵ 访问`）。扩展通过 `copyAndHide` / `copyAndShow`（`src/utils/clipboard.ts`）自动获得「已复制」反馈，Tier 2 通过 `ctx.clipboard.write` 自动传导，无需额外调用。模块可通过 `AppModule.enterHint`（如 `'粘贴'`/`'复制'`）自定义 ↵ 动作描述，`AppModule.multiSelectHint` 显示 `⇧/⌘ 多选` 提示，`AppModule.deleteHint`（如 `'删除'`）显示 `⌘⌫` 提示（仅控提示，快捷键由模块自绑）。
 
 **zsh-autosuggestions**：纯 zsh 内核补全（无 SQLite/daemon/IPC，全部 hot path 在 zsh 内存中）。改 binary 内容必须 bump `BIN_VERSION`（`mod.rs`），否则不部署。算法/数据流/分发/Ctrl+C 拦截等深度细节详见 [`docs/extensions/zsh-autosuggestions.md`](docs/extensions/zsh-autosuggestions.md)。
 
