@@ -13,36 +13,51 @@
       {{ error }}
     </div>
 
-    <!-- 结果：可编辑文本框，回车复制 -->
+    <!-- 结果 -->
     <template v-else-if="ocrText">
       <BaseTextarea
         ref="textareaRef"
         v-model="ocrText"
         :rows="4"
         :max-height="0"
+        :submit-on-enter="false"
         placeholder="识别结果"
-        @keydown.enter.exact="handleCopy"
       />
+
+      <!-- 操作栏 -->
+      <div class="action-footer" shrink="0">
+        <BaseButton icon="i-ri-file-copy-line" @click="handleCopy">复制</BaseButton>
+        <BaseButton icon="i-ri-translate-2" @click="handleTranslate">翻译</BaseButton>
+      </div>
     </template>
 
     <!-- 空状态 -->
     <BaseEmptyState
       v-else-if="!isLoading && !imageUrl"
-      icon="i-ri-scan-line"
-      title="从截屏触发 OCR"
-      description="截图后点击工具栏的 OCR 按钮"
+      icon="i-ri-qr-scan-2-line"
+      title="从截屏触发识别"
+      description="截图后点击工具栏的识别按钮，支持文字和二维码"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
+import { copyAndHide } from '@/utils/clipboard'
+import { useAppStore } from '@/stores/app'
+import { pendingText } from '@ext/translate'
 import { pendingOcrData } from './index'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 
+interface OcrResult {
+  text: string
+  qr: string[]
+}
+
+const appStore = useAppStore()
 const imageUrl = ref('')
 const ocrText = ref('')
 const isLoading = ref(false)
@@ -54,7 +69,7 @@ async function runOcr(data: NonNullable<typeof pendingOcrData.value>) {
   error.value = ''
   ocrText.value = ''
   try {
-    const text = await invoke<string>('ocr_image', {
+    const result = await invoke<OcrResult>('ocr_image', {
       selX: data.selX,
       selY: data.selY,
       selW: data.selW,
@@ -62,7 +77,11 @@ async function runOcr(data: NonNullable<typeof pendingOcrData.value>) {
       scale: data.scale,
       annotationPng: data.annotationPng,
     })
-    ocrText.value = text || '未识别到文字'
+    if (result.qr?.length) {
+      ocrText.value = result.qr.join('\n')
+    } else {
+      ocrText.value = result.text || '未识别到内容'
+    }
   } catch (e) {
     error.value = String(e)
   } finally {
@@ -82,13 +101,14 @@ watch(
   { immediate: true },
 )
 
-onMounted(() => {
-  nextTick(() => textareaRef.value?.focus())
-})
-
 async function handleCopy() {
   if (!ocrText.value.trim()) return
-  await writeText(ocrText.value)
-  // 不自动关闭窗口，用户可以继续编辑或按 Esc 关闭
+  await copyAndHide(ocrText.value)
+}
+
+function handleTranslate() {
+  if (!ocrText.value.trim()) return
+  pendingText.value = ocrText.value
+  appStore.setActiveModule('translate')
 }
 </script>

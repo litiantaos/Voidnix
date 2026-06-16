@@ -36,6 +36,7 @@ macro_rules! configure_app {
         crate::extensions::screenshot::pin::pin_global_mouse,
         crate::extensions::screenshot::scroll_capture::enter_scroll_capture,
         crate::extensions::screenshot::scroll_capture::exit_scroll_capture,
+        crate::extensions::screenshot::scroll_capture::set_scroll_toolbar_rect,
         crate::extensions::screenshot::scroll_capture::finish_scroll_capture,
         crate::extensions::screenshot::scroll_capture::save_scroll_result,
         crate::extensions::screenshot::scroll_capture::copy_scroll_result_to_clipboard,

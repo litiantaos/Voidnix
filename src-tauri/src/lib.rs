@@ -76,7 +76,6 @@ pub fn run() {
                         let _: () = objc2::msg_send![&cv, setWantsLayer: true];
                     }
                     macos::panel::convert_to_panel(raw.cast());
-                    let _: () = objc2::msg_send![ns_window, setHasShadow: false];
                     let mtm = MainThreadMarker::new().unwrap();
                     let screen = NSScreen::mainScreen(mtm).unwrap();
                     ns_window.setFrame_display(screen.frame(), true);
@@ -89,6 +88,27 @@ pub fn run() {
                     let _: () = objc2::msg_send![ns_window, setAcceptsMouseMovedEvents: true];
                     ns_window.setAlphaValue(0.0);
                     ns_window.orderFrontRegardless();
+                }
+            }
+
+            // 透明覆盖窗口禁用系统阴影：大面积透明时，系统阴影会勾勒局部可见元素
+            // （工具栏/浮窗）的轮廓，形成来历不明的框线。主窗口有完整可见内容，
+            // 保留系统阴影提供层次感。
+            #[cfg(target_os = "macos")]
+            {
+                use objc2_app_kit::NSWindow;
+                for label in ["screenshot", "snap-panel"] {
+                    let Some(window) = app.get_webview_window(label) else {
+                        continue;
+                    };
+                    if let Ok(raw) = window.ns_window() {
+                        let raw = raw.cast::<NSWindow>();
+                        unsafe {
+                            if let Some(ns_window) = raw.as_ref() {
+                                let _: () = objc2::msg_send![ns_window, setHasShadow: false];
+                            }
+                        }
+                    }
                 }
             }
 
