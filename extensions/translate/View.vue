@@ -36,7 +36,7 @@
                 text="base tx-muted"
               />
               <span v-else leading="relaxed" font="normal" wrap="break-word">
-                {{ item.translation }}<span v-if="item.loading" class="animate-pulse">▍</span>
+                {{ item.translation }}
               </span>
             </template>
           </BaseListItem>

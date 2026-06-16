@@ -14,7 +14,7 @@
       p="3"
       border="~ gray-300"
       rounded="xl"
-      bg="[#f7f7fa]"
+      bg="gray-50"
       flex
       gap="2.5"
       shadow="2xl"
@@ -49,7 +49,7 @@
           </div>
         </template>
         <template v-else>
-          <div :class="['w-full h-full grid gap-[3px]', group.gridClass]">
+          <div :class="['w-full h-full grid gap-0.5', group.gridClass]">
             <template v-for="zone in group.zones" :key="zone.layout">
               <div
                 v-if="zone.layout === 'custom'"

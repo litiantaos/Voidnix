@@ -94,9 +94,13 @@ src/
 
 ## UI 规范
 
+UnoCSS + TailwindCSS 最佳实践，遵循官方规范。
+
 只用 `@/components/ui/` 原子组件，禁止手写底层标签。主题色 `accent`；`rounded-md`（控件）/ `rounded-lg`（面板）；`h-7`；`text-sm` / `text-xs`；色阶 `text-tx-primary → secondary → subtle → muted → hint → faint`。
 
-**UnoCSS 写法规范**：原生 HTML 元素使用 Attributify 模式（如 `flex items="center" gap="2" p="4" text="sm" bg="white" rounded="lg"`），Vue 组件 props 保持 `class`。常用 Shortcuts 放在 `class` 中。
+**禁止 arbitrary 值**：class 中禁止使用 `[10px]`、`[#ff3b30]` 等方括号任意值。颜色用 Tailwind 预设色（`red-500`、`gray-50`）或主题语义色（`accent` / `tx-*` / `surface`）+ 透明度修饰（`black/5`）；尺寸/间距用预设档位（`text-xs`、`gap-0.5`）。无合适预设时在 `uno.config.ts` theme 中定义，而非内联任意值。
+
+**写法规范**：原生 HTML 元素使用 Attributify 模式（如 `flex items="center" gap="2" p="4" text="sm" bg="white" rounded="lg"`），Vue 组件 props 保持 `class`。常用 Shortcuts 放在 `class` 中。
 
 **Attributify 禁用属性**：`animate` 等与 DOM 原生属性同名的特性禁止用 Attributify（Vue `shouldSetAsProp` 对 `key in el === true` 的属性走 property 赋值而非 `setAttribute`，导致 HTML 属性不存在、CSS 选择器失效），必须用 `class="animate-spin"` 代替。
 
@@ -136,3 +140,4 @@ src/
 - Git commit：`<type>(<scope>): <中文描述>`，不写详情，不主动执行 git 操作
 - 文档不用表格，言简意赅
 - 修改代码后必须同步更新 AGENTS.md 或对应 docs/ 文档中相关描述
+- 自开发自用，极简主义、强迫症、精神洁癖，开发秉承彻底、一步到位的理念，不考虑任何兼容性或历史包袱
