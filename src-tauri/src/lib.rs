@@ -32,8 +32,12 @@ pub fn run() {
                 .register(crate::extensions::window_manager::Plugin)
                 .register(crate::extensions::finder_ext::Plugin)
                 .register(crate::extensions::translate::Plugin)
-                .register(crate::extensions::chat::Plugin);
+                .register(crate::extensions::agent::Plugin);
             crate::core::tier1::bootstrap(app, registry)?;
+
+            // Agent 框架层全局 state
+            app.manage(crate::core::agent::cancellation::SessionRegistry::default());
+            app.manage(crate::core::agent::approval::ApprovalManager::default());
 
             // icon 缓存淘汰：启动时清理过期/超量文件
             crate::infra::path::cleanup_icon_cache(400, 90);
@@ -48,6 +52,9 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             crate::macos::text_selection::init_ax_timeout();
+
+            // Agent session 由用户主动 agent_abort 控制；
+            // 不在主窗失焦时 cancel_all（panel 失焦频繁，会误中断审批弹窗）
 
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {

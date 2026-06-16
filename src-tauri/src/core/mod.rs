@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod ext_commands;
 pub mod ext_loader;
 pub mod ext_manifest;

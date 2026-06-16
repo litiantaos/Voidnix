@@ -12,6 +12,7 @@ checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
 name = "Voidnix"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "block2",
  "clap",
@@ -29,6 +30,7 @@ dependencies = [
  "plist",
  "regex",
  "reqwest",
+ "rlimit",
  "rusqlite",
  "serde",
  "serde_json",
@@ -46,6 +48,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-specta",
  "tokio",
+ "tokio-util",
  "toml 0.8.2",
  "urlencoding",
  "zip 8.6.0",
@@ -3746,6 +3749,15 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rlimit"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7043b63bd0cd1aaa628e476b80e6d4023a3b50eb32789f2728908107bd0c793a"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
