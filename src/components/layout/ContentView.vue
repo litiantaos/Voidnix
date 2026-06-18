@@ -38,6 +38,8 @@
             :selected-index="currentSelectedIndex"
             :multi-select="isMultiSelect"
             :selected-ids="selectedIds"
+            :keyboard-active="!!appStore.activeModuleId"
+            :composing="appStore.isComposing"
             @update:selected-ids="selectedIds = $event"
             :group-field="!module ? groupField : undefined"
             :group-title="!module ? groupTitle : undefined"
