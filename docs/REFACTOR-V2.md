@@ -72,7 +72,7 @@ bun run check:extensions → 16 extensions, check passed
 
 - [x] storage.rs TempHandle ✅（register/unregister/cleanup_all/cleanup_by_prefix）
 - [x] platform/pasteboard 扩展原语 ✅（string_for_type/data_for_type/has_type）
-- [ ] finder-ext IPC 改 Darwin notification（消灭 cmd_*.json）
+- [ ] finder-ext IPC 改 Darwin notification（消灭 cmd\_\*.json）
 - [ ] native init() 局部注册（sync-extensions 进一步简化）
 - [ ] build.rs 扫描化（当前 2 个 .mm 硬编码合理）
 - [ ] clipboard monitor 用 platform/pasteboard（monitor 逻辑特化，可选）
