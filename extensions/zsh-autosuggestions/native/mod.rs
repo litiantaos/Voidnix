@@ -3,7 +3,7 @@
 //! 职责：分发 binary、写 .zshrc 行、on/off 开关。
 //! 不参与 hot path（zsh 启动后 binary 仅在后台 rebuild 时被调用）。
 
-use crate::runtime::registry::Tier1Extension;
+use crate::runtime::registry::Extension;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Manager};
@@ -240,7 +240,7 @@ pub async fn set_zsh_autosuggestions_enabled(app: AppHandle, enabled: bool) -> R
 
 pub struct Plugin;
 
-impl Tier1Extension for Plugin {
+impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "zsh-autosuggestions"
     }

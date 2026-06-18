@@ -1,4 +1,4 @@
-use crate::runtime::registry::Tier1Extension;
+use crate::runtime::registry::Extension;
 use serde::{Deserialize, Serialize};
 
 mod window_snap;
@@ -6,7 +6,7 @@ mod window_snap;
 /// Window manager 扩展。
 pub struct Plugin;
 
-impl Tier1Extension for Plugin {
+impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "window-manager"
     }

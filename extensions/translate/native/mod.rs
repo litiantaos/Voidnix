@@ -2,7 +2,7 @@ pub mod ai_translate;
 pub mod youdao;
 mod lang_utils;
 
-use crate::runtime::registry::Tier1Extension;
+use crate::runtime::registry::Extension;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tauri::AppHandle;
@@ -54,7 +54,7 @@ pub async fn get_selected_text() -> Result<String, String> {
 /// Translate 扩展。
 pub struct Plugin;
 
-impl Tier1Extension for Plugin {
+impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "translate"
     }
