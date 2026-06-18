@@ -35,6 +35,7 @@ import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
+import { config as clipboardConfig } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
@@ -65,7 +66,7 @@ const maxDaysOptions = [
 const handleMaxDaysChange = async (val: string | number) => {
   const n = val as number
   if (!isNaN(n)) {
-    await settings.setClipboardMaxDays(n)
+    clipboardConfig.maxDays = n
   }
 }
 
@@ -102,7 +103,7 @@ const items = computed<SettingItem[]>(() => [
     type: 'select',
     group: '通用',
     options: maxDaysOptions,
-    value: settings.clipboardMaxDays,
+    value: clipboardConfig.maxDays,
     update: handleMaxDaysChange,
   },
   {
