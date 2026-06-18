@@ -4,8 +4,17 @@ mod lang_utils;
 
 use crate::runtime::registry::Extension;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::AppHandle;
+
+/// 划词翻译快捷键触发时捕获的选中文本缓存。
+static SELECTED_TEXT: Mutex<String> = Mutex::new(String::new());
+
+#[tauri::command]
+pub fn get_selected_text_cached() -> String {
+    SELECTED_TEXT.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TranslateResult {
@@ -65,7 +74,7 @@ impl Extension for Plugin {
             use tauri::Emitter;
             crate::runtime::shortcut::register_shortcut_hook("translate", Box::new(|app, ctx| {
                 if ctx.window_hidden {
-                    if let Ok(mut selected) = crate::runtime::shortcut::SELECTED_TEXT.lock() {
+                    if let Ok(mut selected) = crate::extensions::translate::SELECTED_TEXT.lock() {
                         *selected = String::new();
                     }
 
@@ -89,7 +98,7 @@ impl Extension for Plugin {
                         } else {
                             crate::platform::selection::poll_clipboard(snap)
                         };
-                        if let Ok(mut selected) = crate::runtime::shortcut::SELECTED_TEXT.lock() {
+                        if let Ok(mut selected) = crate::extensions::translate::SELECTED_TEXT.lock() {
                             *selected = text.clone();
                         }
                         let _ = app_clone.emit("translate-text-ready", text);

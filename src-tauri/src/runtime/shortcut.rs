@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::Emitter;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-pub(crate) static SELECTED_TEXT: Mutex<String> = Mutex::new(String::new());
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(false);
 static LAST_SHOW_MS: AtomicU64 = AtomicU64::new(0);
 
@@ -87,11 +86,6 @@ pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
     let _ = app.clone().run_on_main_thread(move || {
         crate::runtime::window::hide_main(&app);
     });
-}
-
-#[tauri::command]
-pub fn get_selected_text_cached() -> String {
-    SELECTED_TEXT.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 // ============================================================================
