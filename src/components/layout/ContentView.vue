@@ -51,51 +51,10 @@
               <BaseListItem
                 :ref="setRef"
                 :selected="selected || multiSelected"
-                :icon-wrapper-class="getIconWrapperClass(item)"
+                :icon-wrapper-class="item.data?.icon && !item.icon?.startsWith('i-') && item.data?.kind !== 'module' ? 'bg-transparent' : undefined"
               >
                 <template #icon>
-                  <div
-                    v-if="isIconFont(item) && !isModuleItem(item)"
-                    h="6"
-                    w="6"
-                    class="flex-center"
-                  >
-                    <i :class="[getIcon(item), 'text-xl text-black/50']" />
-                  </div>
-                  <img
-                    v-else-if="isImageIcon(item) && !isModuleItem(item)"
-                    :src="getIconSrc(item)"
-                    h="[115%]"
-                    max-w="[115%]"
-                    w="[115%]"
-                    object="contain"
-                    :class="{ rounded: item.data?.iconStyle === 'rounded' }"
-                    :alt="item.title"
-                  />
-                  <div
-                    v-else-if="isModuleItem(item)"
-                    text="sm accent"
-                    rounded="md"
-                    bg="accent/10"
-                    h="full"
-                    w="full"
-                    class="flex-center"
-                  >
-                    <i :class="getIcon(item) || 'i-ri-apps-2-line'" />
-                  </div>
-                  <div
-                    v-else-if="isFileOrFolder(item)"
-                    rounded="md"
-                    bg="black/4"
-                    h="full"
-                    w="full"
-                    class="flex-center"
-                  >
-                    <i :class="[getFileIcon(item).icon, getFileIcon(item).color]" class="text-sm" />
-                  </div>
-                  <span v-else text="sm black/30" font="medium">
-                    {{ item.title[0]?.toUpperCase() }}
-                  </span>
+                  <ResultIcon :item="item" :module-icon="module?.icon" />
                 </template>
                 <template #title>
                   <div :class="item.data?.isHighlight ? 'text-accent font-medium' : ''">
@@ -135,8 +94,8 @@ import type { AppModule, ModuleSearchItem, SearchResult } from '@/types/module'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
+import ResultIcon from '@/components/layout/ResultIcon.vue'
 import { getParentPath, formatPathParts } from '@/utils/format'
-import { getFileIcon } from '@/utils/icons'
 
 const props = defineProps<{
   module?: AppModule | null
@@ -293,17 +252,6 @@ const handleUpdateSelectedIndex = (i: number) => {
     internalSelectedIndex.value = i
   }
 }
-
-const getIcon = (item: SearchResult) => item.icon || item.data?.icon || props.module?.icon
-const isIconFont = (item: SearchResult) => getIcon(item)?.startsWith('i-')
-const isImageIcon = (item: SearchResult) => getIcon(item) && !isIconFont(item)
-const isModuleItem = (item: SearchResult) => item.data?.kind === 'module'
 const isFileOrFolder = (item: SearchResult) =>
   item.data?.kind === 'file' || item.data?.kind === 'folder'
-const getIconWrapperClass = (item: SearchResult) =>
-  isImageIcon(item) && !isModuleItem(item) ? 'bg-transparent' : undefined
-const getIconSrc = (item: SearchResult) => {
-  const icon = getIcon(item)
-  return icon?.startsWith('data:') ? icon : 'data:image/png;base64,' + icon
-}
 </script>
