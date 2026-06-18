@@ -30,36 +30,6 @@ use crate::runtime::llm::parser::FinalizedToolCall;
 
 use super::secret_scrub::scrub_secret;
 
-/// 单次 agent run 的最多工具调用轮次（防失控）。
-const MAX_TURNS: usize = 10;
-
-/// 默认 harness：描述 agent 角色、工具使用规则、安全约束。
-/// 用户自定义 system_prompt（如有）会追加到此之后。
-const DEFAULT_SYSTEM_PROMPT: &str = r#"你是 Voidnix 内置的 AI Agent，运行在用户的 macOS 上。你的职责是帮助用户完成日常任务：回答问题、查找信息、操作文件、执行命令。
-
-# 工具使用规则
-
-你有两个工具可用：
-- `web_search(query)`: 联网搜索。当用户问事实性/时事性问题、或需要外部知识时使用。不要对能从上下文推断答案的问题使用。
-- `run_command(cmd, args)`: 在用户 macOS 上执行 shell 命令（不经过 shell，参数数组传递）。可用于浏览文件、查询系统信息、编辑文件、git 操作等。
-
-工具调用原则：
-- 简单问题直接回答，不要为了"用工具"而用工具
-- 复杂任务可以连续多次调用工具（每次拿到结果后判断是否需要下一步）
-- 工具结果可能被净化（secret 替换为 [REDACTED]），这是正常的安全防护
-
-# 安全约束
-
-- 不要尝试执行破坏性操作（如 `rm -rf /`、覆盖系统文件），这些会被硬拦
-- 不要读取或外泄用户敏感数据（API key、SSH key、密码等），输出会被自动打码
-- 危险命令需要用户审批，被拒后换方案而不是反复尝试
-
-# 输出风格
-
-- 简洁直接，避免冗长铺垫
-- 代码/命令用 markdown 代码块包裹
-- 中文为主（除非用户用英文提问）"#;
-
 /// Agent loop 的输入配置。
 pub struct LoopInput {
     pub app: tauri::AppHandle,
@@ -67,8 +37,12 @@ pub struct LoopInput {
     pub api_key: String,
     pub model: String,
     pub messages: Vec<LlmMessage>,
-    /// 用户自定义 system prompt（None = 仅用默认 harness；Some = 追加到默认之后）。
+    /// 默认 system prompt（由扩展传入，非框架硬编码）。
+    pub default_system_prompt: String,
+    /// 用户自定义 system prompt（None = 仅用默认；Some = 追加到默认之后）。
     pub system_prompt: Option<String>,
+    /// 单次 agent run 的最多工具调用轮次（防失控）。
+    pub max_turns: usize,
     pub tools_schema: Vec<serde_json::Value>,
     pub tool_registry: Arc<ToolRegistry>,
     pub channel: Channel<AgentEvent>,
@@ -91,7 +65,7 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
     // 仅当用户消息里没有自己的 system 消息时注入（避免重复）
     let has_system = messages.first().map(|m| m.role == "system").unwrap_or(false);
     if !has_system {
-        let mut sys = DEFAULT_SYSTEM_PROMPT.to_string();
+        let mut sys = input.default_system_prompt.clone();
         if let Some(user_prompt) = &input.system_prompt {
             if !user_prompt.trim().is_empty() {
                 sys.push_str("\n\n# 用户自定义指令\n\n");
@@ -101,7 +75,7 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
         messages.insert(0, LlmMessage::system(sys));
     }
 
-    while turn < MAX_TURNS {
+    while turn < input.max_turns {
         turn += 1;
 
         // 每轮开头检查 cancel
@@ -172,7 +146,7 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
 
     // 超过 MAX_TURNS
     let _ = input.channel.send(AgentEvent::Error {
-        message: format!("已达到最大工具调用轮次限制（{} 次）", MAX_TURNS),
+        message: format!("已达到最大工具调用轮次限制（{} 次）", input.max_turns),
     });
     Ok(())
 }
