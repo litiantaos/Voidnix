@@ -10,6 +10,7 @@ import { ref, computed } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { useSettingsStore } from '@/stores/settings'
 import { generateRequestId } from '@/utils/id'
+import { config as agentConfig } from "./config"
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 
 export type AgentStatus = 'ready' | 'streaming' | 'awaiting_approval' | 'error'
@@ -86,13 +87,13 @@ export function useAgentChat() {
     status.value = 'streaming'
     errorMessage.value = ''
 
-    const agentConfig = {
+    const runConfig = {
       searchProvider: {
         type: settings.activeSearchProvider.type,
         apiKey: settings.activeSearchProvider.apiKey,
       },
-      trustedCommands: settings.agentTrustedCommands,
-      systemPrompt: settings.agentSystemPrompt || undefined,
+      trustedCommands: agentConfig.trustedCommands,
+      systemPrompt: agentConfig.systemPrompt || undefined,
     }
 
     try {
@@ -102,7 +103,7 @@ export function useAgentChat() {
         apiKey: config.apiKey,
         model,
         sessionId: newSessionId,
-        config: agentConfig,
+        config: runConfig,
         onEvent: channel,
       })
     } catch (e) {
@@ -233,7 +234,7 @@ export function useAgentChat() {
       })
       // 持久化「执行并信任」
       if (approved && alwaysApprove && toolName) {
-        await settings.trustCommand(toolName)
+        agentConfig.trustedCommands = [...agentConfig.trustedCommands, toolName]
       }
     } catch (e) {
       errorMessage.value = e instanceof Error ? e.message : String(e)

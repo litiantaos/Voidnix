@@ -47,7 +47,7 @@
         >
           <template #trailing>
             <BaseSelect
-              :model-value="settings.translateTargetLang"
+              :model-value="translateConfig.targetLang"
               :options="targetLangOptions"
               @update:model-value="(val: string | number) => handleTargetLangChange(String(val))"
             />
@@ -191,6 +191,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
+import { config as translateConfig } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -225,7 +226,7 @@ const targetLangOptions = [
 ]
 
 const handleTargetLangChange = async (val: string) => {
-  await settings.setTranslateTargetLang(val)
+  translateConfig.targetLang = val
 }
 
 function providerLabel(config: TranslateApiConfig): string {

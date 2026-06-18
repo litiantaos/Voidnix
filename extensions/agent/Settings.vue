@@ -60,7 +60,7 @@
           v-else-if="item.type === 'whitelist'"
           :ref="setRef"
           title="命令白名单"
-          :subtitle="`${settings.agentTrustedCommands.length} 个命令免审批`"
+          :subtitle="`${agentConfig.trustedCommands.length} 个命令免审批`"
           :selected="selected"
         />
 
@@ -69,7 +69,7 @@
           v-else
           :ref="setRef"
           title="系统提示词"
-          :subtitle="settings.agentSystemPrompt ? '已配置' : '默认 harness'"
+          :subtitle="agentConfig.systemPrompt ? '已配置' : '默认 harness'"
           :selected="selected"
         />
       </template>
@@ -235,6 +235,7 @@ import {
   type AiProviderConfig,
   type SearchProviderConfig,
 } from '@/stores/settings'
+import { config as agentConfig } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -453,7 +454,7 @@ const showWhitelistDialog = ref(false)
 const whitelistText = ref('')
 
 function openWhitelistDialog() {
-  whitelistText.value = settings.agentTrustedCommands.join('\n')
+  whitelistText.value = agentConfig.trustedCommands.join('\n')
   showWhitelistDialog.value = true
 }
 
@@ -462,7 +463,7 @@ async function saveWhitelist() {
     .split('\n')
     .map((s) => s.trim())
     .filter(Boolean)
-  await settings.setAgentTrustedCommands(list)
+  agentConfig.trustedCommands = list
   showWhitelistDialog.value = false
 }
 
@@ -471,12 +472,12 @@ const showSystemPromptDialog = ref(false)
 const systemPromptText = ref('')
 
 function openSystemPromptDialog() {
-  systemPromptText.value = settings.agentSystemPrompt
+  systemPromptText.value = agentConfig.systemPrompt
   showSystemPromptDialog.value = true
 }
 
 async function saveSystemPrompt() {
-  await settings.setAgentSystemPrompt(systemPromptText.value.trim())
+  agentConfig.systemPrompt = systemPromptText.value.trim()
   showSystemPromptDialog.value = false
 }
 </script>
