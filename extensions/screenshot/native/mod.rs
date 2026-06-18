@@ -1,4 +1,4 @@
-use crate::runtime::registry::Tier1Extension;
+use crate::runtime::registry::Extension;
 use tauri::AppHandle;
 
 #[cfg(target_os = "macos")]
@@ -60,7 +60,7 @@ pub async fn open_module_subview(
 /// OCR/截长图/钉图等子能力，以及全局快捷键钩子。
 pub struct Plugin;
 
-impl Tier1Extension for Plugin {
+impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "screenshot"
     }

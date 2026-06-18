@@ -3,7 +3,7 @@ use crate::extensions::agent::engine::cancellation::SessionRegistry;
 use crate::extensions::agent::engine::loop_runner::{run_loop, LoopInput};
 use crate::extensions::agent::engine::tool_registry::ToolRegistry;
 use crate::extensions::agent::engine::AgentEvent;
-use crate::runtime::registry::Tier1Extension;
+use crate::runtime::registry::Extension;
 use crate::runtime::llm::sse::{self, LlmMessage};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -166,7 +166,7 @@ pub async fn agent_abort(
 /// Agent 扩展。
 pub struct Plugin;
 
-impl Tier1Extension for Plugin {
+impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "agent"
     }

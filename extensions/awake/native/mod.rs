@@ -1,4 +1,4 @@
-use crate::runtime::registry::Tier1Extension;
+use crate::runtime::registry::Extension;
 use std::process::{Command, Stdio, Child};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -129,7 +129,7 @@ pub async fn set_awake_mode(state: State<'_, AwakeState>, mirror: bool) -> Resul
 /// Awake 扩展。
 pub struct Plugin;
 
-impl Tier1Extension for Plugin {
+impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "awake"
     }

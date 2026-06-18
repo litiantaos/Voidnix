@@ -1,4 +1,4 @@
-use crate::runtime::registry::Tier1Extension;
+use crate::runtime::registry::Extension;
 use tauri::{AppHandle, Manager};
 
 pub mod commands;
@@ -12,7 +12,7 @@ pub mod monitor;
 /// 通过 NSPasteboard 轮询监听剪贴板变化并落盘。
 pub struct Plugin;
 
-impl Tier1Extension for Plugin {
+impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "clipboard"
     }

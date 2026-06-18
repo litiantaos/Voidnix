@@ -1,4 +1,4 @@
-use crate::runtime::registry::Tier1Extension;
+use crate::runtime::registry::Extension;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -85,7 +85,7 @@ fn command_dir(app: &AppHandle) -> PathBuf {
 /// Finder 扩展。
 pub struct Plugin;
 
-impl Tier1Extension for Plugin {
+impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "finder-ext"
     }

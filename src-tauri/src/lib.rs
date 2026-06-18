@@ -22,7 +22,7 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            let registry = crate::runtime::registry::Tier1Registry::new()
+            let registry = crate::runtime::registry::ExtensionRegistry::new()
                 .register(crate::extensions::clipboard::Plugin)
                 .register(crate::extensions::screenshot::Plugin)
                 .register(crate::extensions::awake::Plugin)
