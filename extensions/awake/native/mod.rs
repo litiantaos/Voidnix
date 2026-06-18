@@ -13,6 +13,15 @@ static MIRROR_MODE: AtomicBool = AtomicBool::new(true);
 
 const AWAKE_BIN: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/awake_display"));
 
+/// 返回 awake binary 存放路径（app_data_dir/extensions/awake/，非 /tmp）。
+fn awake_bin_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let ext_dir = data_dir.join("extensions").join("awake");
+    std::fs::create_dir_all(&ext_dir).map_err(|e| e.to_string())?;
+    Ok(ext_dir.join("Display Wakelock"))
+}
+
 #[tauri::command]
 pub async fn toggle_awake(app: tauri::AppHandle, state: State<'_, AwakeState>, enable: bool) -> Result<bool, String> {
     let mut process_guard = state.process.lock().map_err(|e| e.to_string())?;
@@ -22,9 +31,7 @@ pub async fn toggle_awake(app: tauri::AppHandle, state: State<'_, AwakeState>, e
             return Ok(true);
         }
 
-        let temp_dir = std::env::temp_dir().join("com.litiantao.voidnix");
-        let _ = std::fs::create_dir_all(&temp_dir);
-        let bin_path = temp_dir.join("Display Wakelock");
+        let bin_path = awake_bin_path(&app)?;
 
         std::fs::write(&bin_path, AWAKE_BIN).map_err(|e| e.to_string())?;
 
@@ -99,7 +106,7 @@ pub async fn is_awake_enabled(state: State<'_, AwakeState>) -> Result<bool, Stri
 }
 
 #[tauri::command]
-pub async fn set_awake_mode(state: State<'_, AwakeState>, mirror: bool) -> Result<bool, String> {
+pub async fn set_awake_mode(app: tauri::AppHandle, state: State<'_, AwakeState>, mirror: bool) -> Result<bool, String> {
     MIRROR_MODE.store(mirror, Ordering::Relaxed);
 
     let mut process_guard = state.process.lock().map_err(|e| e.to_string())?;
@@ -109,8 +116,7 @@ pub async fn set_awake_mode(state: State<'_, AwakeState>, mirror: bool) -> Resul
         let _ = child.wait();
 
         let mode_arg = if mirror { "--mirror" } else { "--extend" };
-        let temp_dir = std::env::temp_dir().join("com.litiantao.voidnix");
-        let bin_path = temp_dir.join("Display Wakelock");
+        let bin_path = awake_bin_path(&app)?;
 
         let new_child = Command::new(&bin_path)
             .arg(mode_arg)
