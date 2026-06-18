@@ -144,7 +144,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { useScroll } from '@/utils/events'
+import { useScroll } from '@/composables/events'
 import { getModule } from '@/core/module-registry'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'

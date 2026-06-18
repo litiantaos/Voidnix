@@ -115,7 +115,7 @@ import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAppStore } from '@/stores/app'
-import { onKeyStroke } from '@/utils/events'
+import { onKeyStroke } from '@/composables/events'
 import { isComposing as isComposingCheck } from '@/utils/dom'
 
 const appStore = useAppStore()
