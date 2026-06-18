@@ -25,7 +25,7 @@ use tokio_util::sync::CancellationToken;
 use crate::extensions::agent::engine::approval::{ApprovalManager, Decision};
 use crate::extensions::agent::engine::tool_registry::ToolRegistry;
 use crate::extensions::agent::engine::AgentEvent;
-use crate::runtime::llm::sse::{self, LlmMessage, LlmToolCall, StreamConfig};
+use crate::runtime::llm::{self, LlmMessage, LlmToolCall, StreamConfig};
 use crate::runtime::llm::parser::FinalizedToolCall;
 
 use super::secret_scrub::scrub_secret;
@@ -116,11 +116,11 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
         };
 
         // 安全校验
-        let safe_endpoint = sse::validate_ai_request(&input.endpoint, &input.model, &input.api_key)?;
-        let trimmed = sse::trim_conversation(&messages);
+        let safe_endpoint = llm::validate_ai_request(&input.endpoint, &input.model, &input.api_key)?;
+        let trimmed = llm::trim_conversation(&messages);
         let tools_slice = input.tools_schema.clone();
 
-        let outcome = sse::stream_openai_request(StreamConfig {
+        let outcome = llm::stream_openai_request(StreamConfig {
             app: &input.app,
             endpoint: &safe_endpoint,
             api_key: &input.api_key,

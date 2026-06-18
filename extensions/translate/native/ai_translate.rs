@@ -1,4 +1,4 @@
-use crate::runtime::llm::sse::{self, LlmMessage};
+use crate::runtime::llm::{self, LlmMessage};
 
 use super::TranslateResult;
 use super::lang_utils::{
@@ -73,7 +73,7 @@ fn prepare_ai_translate(
         return Err("文本不能为空".to_string());
     }
 
-    let safe_endpoint = sse::validate_ai_request(endpoint, model, api_key)?;
+    let safe_endpoint = llm::validate_ai_request(endpoint, model, api_key)?;
 
     let to_lang_code = smart_target_lang(text, target_lang.unwrap_or("zh"));
     let from_lang_name = detect_source_lang_name(text);
@@ -163,7 +163,7 @@ pub async fn translate_ai(
         return Err("翻译返回为空".to_string());
     }
 
-    let engine_label = sse::parse_scheme_host(&p.safe_endpoint)
+    let engine_label = llm::parse_scheme_host(&p.safe_endpoint)
         .map(|(_, host)| {
             let parts: Vec<&str> = host.split('.').collect();
             if parts.len() >= 2 {
@@ -200,7 +200,7 @@ pub async fn translate_ai_stream(
         LlmMessage::user(p.rendered),
     ];
 
-    sse::stream_openai_request(sse::StreamConfig {
+    llm::stream_openai_request(llm::StreamConfig {
         app: &app,
         endpoint: &p.safe_endpoint,
         api_key: &api_key,
