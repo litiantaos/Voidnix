@@ -32,18 +32,6 @@ pub fn set_finder_ext_enabled(app: tauri::AppHandle, enabled: bool) {
 const MAX_COMMAND_SIZE: u64 = 1_048_576;
 
 /// System path prefixes that are always rejected regardless of other checks.
-const BLOCKED_PREFIXES: &[&str] = &[
-    "/System",
-    "/private/etc",
-    "/private/var/db",
-    "/usr/bin",
-    "/usr/sbin",
-    "/usr/lib",
-    "/usr/libexec",
-    "/bin",
-    "/sbin",
-];
-
 struct CommandHandler {
     handle: AppHandle,
 }
@@ -227,30 +215,9 @@ fn process_command(path: &Path, handle: &AppHandle) {
 }
 
 /// Validate a path from the extension. Rejects:
-/// - empty or null-byte paths
-/// - paths that don't exist (can't canonicalize)
-/// - known system prefixes (BLOCKED_PREFIXES)
-///
-/// Allows /Volumes, external drives, network mounts, etc.
+/// 委托至 platform::path_guard 统一路径校验。
 fn validate_path(path: &Path) -> bool {
-    if path.as_os_str().is_empty() {
-        return false;
-    }
-    if path.as_os_str().as_encoded_bytes().contains(&0) {
-        return false;
-    }
-    let resolved = match path.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-    let s = resolved.to_string_lossy();
-    for prefix in BLOCKED_PREFIXES {
-        if s.starts_with(prefix) {
-            log::warn!("Rejected blocked path: {:?}", resolved);
-            return false;
-        }
-    }
-    true
+    crate::platform::path_guard::validate(path)
 }
 
 fn handle_copy_path(handle: &AppHandle, paths: &[PathBuf], target: &str) {
