@@ -46,3 +46,26 @@ pub fn inject_copy(pid: i32) {
 pub fn inject_paste(pid: i32) {
     post_key(KEY_V, FLAG_CMD, pid);
 }
+
+/// 全局注入按键（发送到系统事件 tap，影响当前焦点应用）。
+pub fn post_key_global(key_code: u16, flags: u64) {
+    use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    let Ok(src) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) else {
+        return;
+    };
+    if let Ok(dn) = CGEvent::new_keyboard_event(src.clone(), key_code, true) {
+        dn.set_flags(CGEventFlags::from_bits_retain(flags));
+        dn.post(CGEventTapLocation::HID);
+        std::thread::sleep(Duration::from_millis(20));
+        if let Ok(up) = CGEvent::new_keyboard_event(src, key_code, false) {
+            up.set_flags(CGEventFlags::from_bits_retain(flags));
+            up.post(CGEventTapLocation::HID);
+        }
+    }
+}
+
+/// 全局注入 Cmd+V（粘贴到当前焦点应用）。
+pub fn paste_global() {
+    post_key_global(KEY_V, FLAG_CMD);
+}
