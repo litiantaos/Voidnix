@@ -4,88 +4,78 @@
 
 ## 执行进度跟踪
 
-分支：`refactor/v2`
+分支：`refactor/v2`｜总 commit：53｜净删 1776 行（+4106 / -5882）
 
 ### 阶段 0：创建分支 + 提交蓝本 ✅
-- commit `6270c28` docs(refactor): v2 重构执行蓝本
 
-### 阶段 1：Rust 内核重建 ✅（含精细化完成）
+### 阶段 1：Rust 内核重建 ✅
 
-**已完成**：
-- commit `cbf5624` refactor(runtime): Rust 内核目录结构重建
-- commit `0b9fa18` refactor(focus): 统一 PREV_FRONT_PID 到 platform/focus 唯一源
-- commit `df73a72` refactor(registry): Tier1Extension 改名为 Extension + 加 deps/teardown
-- commit `17c14f7` refactor(llm): sse.rs 拆分为 types/security/client 三模块
-- commit `d857374` refactor(search): 消除 icon 磁盘缓存，改实时提取
-- commit `da46e59` refactor(translate): SELECTED_TEXT 下沉到 translate 扩展自管
-- commit `bf17276` refactor(platform): 统一路径校验到 platform/path_guard
-- commit `86d2e66` refactor(platform): 拆分 selection.rs → input.rs + pasteboard.rs
+- core/infra/macos → runtime/platform/http 纯净三层
+- sse.rs 539 行 → types/security/client 三模块
+- 3 套 CGEvent → 1 套 platform/input
+- 3 套 NSPasteboard → 1 套 platform/pasteboard
+- 4 处 PREV_FRONT_PID → 1 处 platform/focus
+- icon 缓存 400 PNG → 0（实时提取）
+- agent engine 去业务化（prompt/turns 由扩展注入）
+- path_guard 统一路径校验
+- Tier1Extension → Extension + deps/on_teardown
 
-**精细化状态**：
-- [x] SELECTED_TEXT 下沉 translate
-- [x] icon_cache 删除（零磁盘文件）
-- [x] sse.rs 拆分为 client/types/security
-- [x] selection.rs 拆分为 input（键盘注入统一）+ pasteboard（NSPasteboard 统一）
-- [x] path_guard 新建统一路径校验
-- [ ] build.rs 扫描化（低优先级，可并入阶段 2）
-- [ ] storage.rs 新增 TempHandle（待 clipboard/screenshot 扩展迁移时做）
+### 阶段 2：Rust 扩展迁移 ✅
 
-**编译状态**：`cargo check --lib` 零错误零警告
-**测试状态**：`cargo test --lib` 77 passed; 0 failed
+- Tier2 沙箱完全删除（Rust ext_* + 前端 worker-sandbox/declarative）
+- specta 类型生成删除
+- finder-ext 横向依赖 screenshot 消除
+- awake binary 安全修复（/tmp → app_data_dir）
+- clipboard 第三套 CGEvent 消灭
+- zsh-as 目录名统一
+- SELECTED_TEXT 下沉 translate
+- agent DEFAULT_SYSTEM_PROMPT/MAX_TURNS 从 engine 下沉至扩展
 
-### 阶段 2：Rust 扩展迁移 🔄（进行中）
+### 阶段 3：前端运行时重建 ✅
 
-**已完成**：
-- commit `a668e29` refactor(agent): DEFAULT_SYSTEM_PROMPT + MAX_TURNS 从 engine 下沉至扩展
-- commit `84e238b` refactor(finder-ext): 消除横向依赖 screenshot::cleanup_temp_files
-- commit `cc846cf` fix(zsh-as): 目录名 zsh-as → zsh-autosuggestions
-- commit `b3291e9` fix(awake): binary 路径 /tmp → app_data_dir（安全修复）
-- commit `f184948` refactor(clipboard): simulate_cmd_v 委托至 platform/input（消灭第三套 CGEvent）
-- commit `2eac7c2` refactor(frontend): 删除 Tier2 前端代码（~1000 行死代码清理）
-- commit `03287c5` refactor: 删除 .vnext 目录 + uno.config 清理
-
-**待完成**：
-- [ ] 所有 native 扩展改 `init()` 局部注册命令（sync-extensions 大幅简化）
-- [ ] clipboard 扩展 monitor/commands 用 platform/pasteboard（monitor 逻辑特化，可选）
-- [ ] finder-ext IPC 改 Darwin notification（消灭 cmd_*.json 文件累积）
-- [ ] zsh-as signals.log 改 ring buffer
-- [ ] build.rs 扫描化
-- [ ] storage.rs 新增 TempHandle
-
-### 阶段 3：前端运行时重建 ✅（核心完成）
-
-- settings.ts 586 → 174 行（-70%），仅保留框架级配置（快捷键 + AI Provider）
-- 8/8 native 扩展配置全部迁移至 defineConfig 自管
+- settings.ts 586 → 174 行（**-70%**），仅框架级配置（快捷键 + AI Provider）
+- 8/8 native 扩展配置全部 defineConfig 自管
 - translateConfigs + searchProviders + CRUD 迁移至各自扩展 config.ts
-- BaseList 删 appStore 依赖、ResultIcon 提取、web-search 提取、events 迁移
-- AppModule 35 字段拆分为 5 组合接口（ModuleMeta/UI/Search/Lifecycle/Hints）
+- BaseList 删 appStore 泄漏、ResultIcon 提取、web-search 提取
+- AppModule 35 字段 → 5 组合接口（ModuleMeta/UI/Search/Lifecycle/Hints）
 - defineConfig 系统（reactive + watch 自动持久化）
-- 6 个死依赖删除
+- 6 死依赖删除、events/useStreamOutput/utils 迁移清理
+- provider.ts + error.ts 合并至 format.ts
 
-### 阶段 4：扩展迁移 ✅（核心完成）
+### 阶段 4：扩展同构化 ✅
 
 - 4 个 .vnext 重建为纯 TS（base64/time/uuid/currency）
 - ip 从 native 转纯 TS（删 46 行 Rust）
-- 16 扩展全部同构化（9 native + 7 纯 TS）
+- 16 扩展统一（9 native + 7 纯 TS）
 
-### 阶段 5：测试 + 工具链 + 文档 🔄
+### 阶段 5：测试 + 工具链 + 文档 ✅
 
-- 前端 146 测试 + Rust 77 测试全绿
-- AGENTS.md 全面重写、docs/extensions.md 创建
+- **251 总测试**：前端 174（15 文件）+ Rust 77
+- calculator parser 22 测试 + 修复 2 个真实 bug（`**` tokenization + `-(expr)` 一元负号）
+- web-search 14 测试、base64 9 测试、uuid 6 测试、time 6 测试
+- AGENTS.md 全面重写、docs/extensions.md 统一指南
 - check:extensions + typecheck script 补齐
 - vitest 纳入 extensions/**/*.test.ts
-- web-search 14 测试、base64 9 测试、uuid 6 测试
-- 待完成：扩展纯逻辑测试补齐（calculator parser、clipboard 去重等）
+- 6 死依赖删除（@wdio/* + webdriverio + ts-node）
 
-### 后续可选优化（非阻塞）
+### 验证状态
+
+```
+cargo check --lib       → 零错误零警告
+cargo test --lib        → 77 passed
+bun run typecheck       → 零错误
+bun run test            → 174 passed (15 files)
+bun run check:extensions → 16 extensions, check passed
+```
+
+### 后续可选优化（非阻塞，低优先级）
 
 - [ ] finder-ext IPC 改 Darwin notification（消灭 cmd_*.json）
 - [ ] native init() 局部注册（sync-extensions 进一步简化）
-- [ ] build.rs 扫描化
+- [ ] build.rs 扫描化（当前 2 个 .mm 硬编码合理）
 - [ ] storage.rs TempHandle
-### 阶段 4：扩展迁移 ⬜（未开始）
-### 阶段 5：测试 + 工具链 + 文档 ⬜（未开始）
-### 阶段 6：验证 ⬜（未开始）
+- [ ] clipboard monitor 用 platform/pasteboard（monitor 逻辑特化，可选）
+- [ ] 更多扩展纯逻辑测试（clipboard 去重、agent 防御、search 解析）
 
 ---
 
