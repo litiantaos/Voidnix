@@ -54,20 +54,17 @@
 
 ### 阶段 3：前端运行时重建 🔄（进行中）
 
-**已完成**：
-- commit `7012ac5` chore(deps): 删除 6 个死依赖 + 补 check:extensions/typecheck script
-- commit `ba7d09b` refactor(ui): BaseList 删除 useAppStore 依赖，改 prop 驱动
-- commit `9138a64` refactor(composables): events.ts 从 utils/ 迁移至 composables/
-- commit `e32492d` refactor(utils): generateRequestId 从 composable 迁移至 utils/id
-- commit `4f81bf9` docs: AGENTS.md 全面重写 + 删除 tier 文档 + 统一 extensions.md
-- commit `16b0d80` refactor(layout): 提取 ResultIcon 组件，精简 ContentView
-- commit `01ee0e5` refactor(search): 提取 web 搜索逻辑至 utils/web-search.ts
-- commit `cb14255` feat(runtime): 新增 useExtensionConfig 配置系统基础设施
-- 4 扩展迁移至 defineConfig：awake/screenshot/window-manager/clipboard（含 Rust monitor 同步）
+**已完成（本轮新增）**：
+- commit `cb14255` feat(runtime): defineConfig 配置系统基础设施
+- commit `50fe06b`~`710750f` 6 扩展迁移 defineConfig：awake/screenshot/window-manager/clipboard/zsh-as/finder-ext
+- commit `2b5600a` refactor(settings): 删除死代码 namespace<T> 函数
+- clipboard Rust monitor 同步迁移至 extensions/clipboard/config.json
+- window-manager config watch 自动同步 toggleDragSnap
+- zsh-as + finder-ext config watch 自动同步 Rust 命令
 
 **待完成（核心）**：
-- [ ] stores/settings.ts（586 行）清理已迁移的配置项
-- [ ] 剩余扩展迁移 defineConfig：translate/agent/finder-ext/zsh-as
+- [ ] stores/settings.ts 清理已迁移的 6 个扩展配置项（声明/setter/load/return 共 ~20 处）
+- [ ] translate + agent 迁移 defineConfig（与 AI provider 基础设施耦合，较复杂）
 - [ ] AppModule 接口拆 5 组合接口
 
 ### 阶段 4：扩展迁移 🔄（进行中）
