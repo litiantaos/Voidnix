@@ -17,7 +17,7 @@
 
 ## 数据存储
 
-无持久化。临时文件落 `$TMPDIR/voidnix*`（picker.jpg 预览、ocr/clip/pin/scroll 中间 PNG），`cleanup_temp_files()` 启动时清残留。设置走全局 `useSettingsStore`（`screenshotSavePath`）。
+无持久化。临时文件落 `$TMPDIR/voidnix*`（picker.jpg 预览、ocr/clip/pin/scroll 中间 PNG），`cleanup_temp_files()` 启动时清残留（委托至 `runtime::storage::cleanup_temps_by_prefix`）。配置通过 `extensions/screenshot/config.ts`（defineConfig 自管 `savePath`）。
 
 ## 滚动截屏拼接算法
 

@@ -13,6 +13,6 @@
 
 `mdfind "kMDItemContentType == 'com.apple.application-bundle' ..."` 扫 `/Applications`、`/System/Applications`、`~/Applications`；`scan_apps_from_dir`（递归 .app，深度 5）兜底。元数据优先 `mdls`，回退 `Info.plist`。
 
-## 图标缓存
+## 图标
 
-`~/Library/Caches/<bundle-id>/extensions/search/icons/`，文件名 `{hash(path+mtime)}.png`（应用更新自动失效）。启动时 `cleanup_icon_cache(400, 90)`：先删 90 天过期，再按 mtime 裁到 400 个。
+实时提取（`NSWorkspace.iconForFile`），无磁盘缓存。系统自带 NSCache 加速，实测 <1ms/应用。启动时并行预热常用应用图标。

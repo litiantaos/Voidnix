@@ -70,13 +70,14 @@ bun run check:extensions → 16 extensions, check passed
 
 ### 后续可选优化（非阻塞，低优先级）
 
-- [x] storage.rs TempHandle ✅（register/unregister/cleanup_all/cleanup_by_prefix）
+- [x] storage.rs TempHandle ✅
 - [x] platform/pasteboard 扩展原语 ✅（string_for_type/data_for_type/has_type）
-- [ ] finder-ext IPC 改 Darwin notification（消灭 cmd\_\*.json）
+- [x] clipboard monitor 部分迁移 platform/pasteboard ✅（change_count/marker/text 委托）
+- [x] utils 合并（provider.ts + error.ts → format.ts）✅
+- [x] 所有文档全面更新 ✅（AGENTS.md + extensions.md + 6 个扩展文档）
+- [ ] finder-ext IPC 改 Darwin notification（消灭 cmd_*.json）
 - [ ] native init() 局部注册（sync-extensions 进一步简化）
 - [ ] build.rs 扫描化（当前 2 个 .mm 硬编码合理）
-- [ ] clipboard monitor 用 platform/pasteboard（monitor 逻辑特化，可选）
-- [ ] 更多扩展纯逻辑测试（clipboard 去重、agent 防御、search 解析）
 
 ---
 
