@@ -1,11 +1,11 @@
 //! NSPasteboard 统一接口。
 //!
-//! 替代原 text_selection + clipboard 扩展各自实现的 NSPasteboard 操作。
-//! Phase 2 将让 clipboard 扩展的 monitor/commands 委托至此。
+//! 所有 NSPasteboard 操作的唯一入口。clipboard 扩展的 monitor/commands 均委托至此。
 
 #![allow(dead_code)]
 
 use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+use objc2_foundation::NSString;
 
 /// 读取剪贴板文本。
 pub fn read_text() -> Option<String> {
@@ -14,6 +14,31 @@ pub fn read_text() -> Option<String> {
             .stringForType(NSPasteboardTypeString)
             .map(|s| s.to_string())
     }
+}
+
+/// 按类型名读取字符串值。
+pub fn string_for_type(type_name: &str) -> Option<String> {
+    let ns_type = NSString::from_str(type_name);
+    NSPasteboard::generalPasteboard()
+        .stringForType(&ns_type)
+        .map(|s| s.to_string())
+}
+
+/// 按类型名读取原始数据。
+pub fn data_for_type(type_name: &str) -> Option<Vec<u8>> {
+    let ns_type = NSString::from_str(type_name);
+    NSPasteboard::generalPasteboard()
+        .dataForType(&ns_type)
+        .map(|d| d.to_vec())
+}
+
+/// 检查剪贴板是否包含指定类型。
+pub fn has_type(type_name: &str) -> bool {
+    let ns_type = NSString::from_str(type_name);
+    NSPasteboard::generalPasteboard()
+        .types()
+        .map(|types| types.containsObject(&ns_type))
+        .unwrap_or(false)
 }
 
 /// 获取剪贴板 changeCount（用于轮询检测变化）。
