@@ -205,7 +205,7 @@ pub fn start_monitor(app_handle: AppHandle) {
             }
 
             use tauri_plugin_store::StoreExt;
-            let store = app_handle.store(crate::infra::path::SETTINGS_STORE_PATH);
+            let store = app_handle.store(crate::runtime::storage::SETTINGS_STORE_PATH);
             let mut max_days: i32 = 30;
 
             if let Ok(s) = store {

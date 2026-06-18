@@ -1,4 +1,4 @@
-use crate::core::tier1::Tier1Extension;
+use crate::runtime::registry::Tier1Extension;
 use serde::{Deserialize, Serialize};
 
 mod window_snap;
@@ -14,7 +14,6 @@ impl Tier1Extension for Plugin {
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct ScreenInfo {
     pub x: f64,
     pub y: f64,
@@ -354,7 +353,7 @@ pub mod platform {
         let fallback_pid = if snap_pid > 0 {
             snap_pid
         } else {
-            crate::core::shortcut::PREV_FRONT_PID
+            crate::runtime::shortcut::PREV_FRONT_PID
                 .load(std::sync::atomic::Ordering::SeqCst)
         };
         let prev_pid = prev_pid.filter(|&p| p > 0).unwrap_or(fallback_pid);
@@ -516,13 +515,11 @@ mod platform {
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub fn get_screen_info() -> Vec<ScreenInfo> {
     platform::do_get_screens()
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn set_frontmost_window_layout(
     app: tauri::AppHandle,
     layout: String,
@@ -540,13 +537,11 @@ pub async fn set_frontmost_window_layout(
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub fn check_window_manager_accessibility() -> bool {
     platform::do_check_accessibility()
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn toggle_drag_snap(
     app: tauri::AppHandle,
     enabled: bool,
@@ -569,13 +564,11 @@ pub async fn toggle_drag_snap(
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub fn is_drag_snap_active() -> bool {
     platform::do_is_drag_snap_active()
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
     let (tx, rx) = std::sync::mpsc::channel::<()>();
@@ -608,7 +601,6 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
     let (tx, rx) = std::sync::mpsc::channel::<()>();
@@ -628,9 +620,9 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
             let pid = window_snap::take_snap_prev_pid();
-            crate::macos::mac_utils::deactivate_app();
+            crate::platform::focus::deactivate_app();
             if pid > 0 {
-                crate::macos::mac_utils::activate_app_by_pid(pid);
+                crate::platform::focus::activate_app_by_pid(pid);
             }
         }
         let _ = tx.send(());

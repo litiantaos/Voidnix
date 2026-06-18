@@ -1,16 +1,17 @@
-use crate::core::agent::approval::{ApprovalManager, Decision};
-use crate::core::agent::cancellation::SessionRegistry;
-use crate::core::agent::loop_runner::{run_loop, LoopInput};
-use crate::core::agent::tool_registry::ToolRegistry;
-use crate::core::agent::AgentEvent;
-use crate::core::tier1::Tier1Extension;
-use crate::infra::sse::{self, LlmMessage};
+use crate::extensions::agent::engine::approval::{ApprovalManager, Decision};
+use crate::extensions::agent::engine::cancellation::SessionRegistry;
+use crate::extensions::agent::engine::loop_runner::{run_loop, LoopInput};
+use crate::extensions::agent::engine::tool_registry::ToolRegistry;
+use crate::extensions::agent::engine::AgentEvent;
+use crate::runtime::registry::Tier1Extension;
+use crate::runtime::llm::sse::{self, LlmMessage};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
 use tauri::ipc::Channel;
 use tokio_util::sync::CancellationToken;
 
+pub mod engine;
 mod tools;
 
 // ──────────────────────────────────────────────────────────────

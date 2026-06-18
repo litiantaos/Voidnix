@@ -3,7 +3,7 @@
 //! 职责：分发 binary、写 .zshrc 行、on/off 开关。
 //! 不参与 hot path（zsh 启动后 binary 仅在后台 rebuild 时被调用）。
 
-use crate::core::tier1::Tier1Extension;
+use crate::runtime::registry::Tier1Extension;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Manager};

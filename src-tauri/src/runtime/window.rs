@@ -12,18 +12,18 @@ static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
 /// 菜单栏 / Dock 高亮全程不变,视觉上像浮层从未离开过当前应用。
 pub fn show_main(app: &tauri::AppHandle) {
     use tauri::Manager;
-    crate::core::shortcut::set_window_visible(true);
+    crate::runtime::shortcut::set_window_visible(true);
 
     #[cfg(target_os = "macos")]
     {
-        let pid = crate::macos::mac_utils::current_frontmost_pid().unwrap_or(0);
+        let pid = crate::platform::focus::current_frontmost_pid().unwrap_or(0);
         PREV_FRONT_PID.store(pid, Ordering::SeqCst);
     }
 
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
         {
-            crate::macos::skylight::move_webview_window_to_active_space(&window);
+            crate::platform::skylight::move_webview_window_to_active_space(&window);
             use objc2_app_kit::NSWindow;
             if let Ok(raw) = window.ns_window() {
                 unsafe {
@@ -36,7 +36,7 @@ pub fn show_main(app: &tauri::AppHandle) {
         let _ = window.show();
     }
     make_main_window_key(app);
-    crate::macos::click_monitor::add(app);
+    crate::platform::click_monitor::add(app);
 }
 
 /// 隐藏主窗口。
@@ -47,7 +47,7 @@ pub fn show_main(app: &tauri::AppHandle) {
 pub fn hide_main(app: &tauri::AppHandle) {
     use tauri::Manager;
 
-    crate::core::shortcut::set_window_visible(false);
+    crate::runtime::shortcut::set_window_visible(false);
 
     #[cfg(target_os = "macos")]
     if let Some(window) = app.get_webview_window("main") {
@@ -64,7 +64,7 @@ pub fn hide_main(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
-    crate::macos::click_monitor::remove();
+    crate::platform::click_monitor::remove();
 
     // panel 偷走 system key 后,原 app 虽仍是 frontmost,但 first responder
     // 已丢失。`activate_app_by_pid` 在已 frontmost 的 app 上会被 macOS 跳过,
@@ -72,10 +72,10 @@ pub fn hide_main(app: &tauri::AppHandle) {
     // 原 app 才能完整恢复 first responder(光标回到原输入框)。
     #[cfg(target_os = "macos")]
     {
-        crate::macos::mac_utils::deactivate_app();
+        crate::platform::focus::deactivate_app();
         let pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
         if pid > 0 {
-            crate::macos::mac_utils::activate_app_by_pid(pid);
+            crate::platform::focus::activate_app_by_pid(pid);
         }
     }
 }
@@ -137,13 +137,13 @@ pub async fn pick_directory(app: tauri::AppHandle) -> Result<String, String> {
                 let _: () = objc2::msg_send![panel, setCanCreateDirectories: true];
 
                 // panel 运行期间暂停 click-outside 检测，防止点击 panel 触发窗口隐藏
-                crate::macos::click_monitor::suppress(true);
+                crate::platform::click_monitor::suppress(true);
 
                 // 作为独立窗口运行（不附着父窗口，避免 sheet 遮罩）
                 // NSModalResponseOK = 1
                 let response: isize = objc2::msg_send![panel, runModal];
 
-                crate::macos::click_monitor::suppress(false);
+                crate::platform::click_monitor::suppress(false);
                 make_main_window_key(&app_clone);
 
                 if response == 1 {

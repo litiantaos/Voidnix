@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::core::agent::tool_registry::{AgentTool, ToolResult};
+use crate::extensions::agent::engine::tool_registry::{AgentTool, ToolResult};
 
 const MAX_RESULTS: usize = 5;
 
@@ -82,7 +82,7 @@ impl AgentTool for WebSearchTool {
             );
         }
 
-        let client = crate::infra::http::client();
+        let client = crate::http::client();
         match search_tavily(client, &self.api_key, query).await {
             Ok(outcome) => ToolResult::ok(serde_json::to_string(&outcome).unwrap_or_default()),
             Err(e) => ToolResult::err(format!("Tavily search failed: {}", e)),

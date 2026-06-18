@@ -193,7 +193,7 @@ mod mouse_tracker {
                     let on_space: bool = objc2::msg_send![ns, isOnActiveSpace];
                     if ns.alphaValue() > 0.5 && !ns.isKeyWindow() && on_space {
                         let _: () = objc2::msg_send![ns, makeKeyAndOrderFront: std::ptr::null::<AnyObject>()];
-                        crate::macos::mac_utils::activate_app();
+                        crate::platform::focus::activate_app();
                     }
                 }
             }
@@ -414,7 +414,7 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
         .unwrap_or(0);
     PREV_FRONT_PID.store(prev_pid, Ordering::SeqCst);
 
-    crate::core::window::hide_main(app);
+    crate::runtime::window::hide_main(app);
 
     let window = app
         .get_webview_window("screenshot")
@@ -450,7 +450,7 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
 
         let window_number: objc2_foundation::NSInteger =
             objc2::msg_send![ns_window, windowNumber];
-        let _ = crate::macos::skylight::move_window_to_active_space(
+        let _ = crate::platform::skylight::move_window_to_active_space(
             window_number as i64,
             ns_window_ptr,
         );
@@ -464,7 +464,7 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
             makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()
         ];
 
-        crate::macos::mac_utils::activate_app();
+        crate::platform::focus::activate_app();
 
         let mouse_loc = NSEvent::mouseLocation();
         let mouse_x = mouse_loc.x;
@@ -625,6 +625,6 @@ pub fn reactivate_screenshot_window(app: &tauri::AppHandle) {
             makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()
         ];
     }
-    crate::macos::mac_utils::activate_app();
+    crate::platform::focus::activate_app();
     let _ = window.eval("window.dispatchEvent(new Event('focus'))");
 }

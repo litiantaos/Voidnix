@@ -170,7 +170,7 @@ mod inner {
         // 记录原前台应用 PID,layout 命令需要据此定位要操作的窗口。
         // SnapPanel 不调 makeKeyWindow(只接收鼠标 hover/click),也不 activate
         // NSApp —— 原前台 app 全程是 frontmost + key,菜单栏 / 输入焦点不动。
-        let pid = crate::macos::mac_utils::current_frontmost_pid().unwrap_or(0);
+        let pid = crate::platform::focus::current_frontmost_pid().unwrap_or(0);
         PREV_FRONT_PID.store(pid, Ordering::SeqCst);
 
         let target = compute_panel_rect(screen);
@@ -203,9 +203,9 @@ mod inner {
         // deactivate self → activate 原 app,触发系统重新评估 key window,
         // 让输入框光标无缝回到原应用。
         let pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
-        crate::macos::mac_utils::deactivate_app();
+        crate::platform::focus::deactivate_app();
         if pid > 0 {
-            crate::macos::mac_utils::activate_app_by_pid(pid);
+            crate::platform::focus::activate_app_by_pid(pid);
         }
     }
 

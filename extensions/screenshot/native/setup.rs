@@ -81,7 +81,7 @@ pub fn schedule_jpeg_prewarm(app: &AppHandle) {
 
 pub fn register_shortcut_hook() {
     use std::sync::atomic::Ordering;
-    crate::core::shortcut::register_shortcut_hook(
+    crate::runtime::shortcut::register_shortcut_hook(
         "screenshot",
         Box::new(|app, _ctx| {
             if super::session::IS_IN_SCREENSHOT_SESSION.swap(true, Ordering::SeqCst) {

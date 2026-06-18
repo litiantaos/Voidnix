@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
 
-use crate::core::agent::tool_registry::{AgentTool, ToolResult};
+use crate::extensions::agent::engine::tool_registry::{AgentTool, ToolResult};
 
 const MAX_WALL_SECS: u64 = 30;
 const MAX_OUTPUT_BYTES: usize = 1024 * 1024; // 1 MiB

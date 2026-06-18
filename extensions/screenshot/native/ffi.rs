@@ -2,7 +2,6 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct WindowRect {
     pub x: f64,
     pub y: f64,
@@ -12,7 +11,6 @@ pub struct WindowRect {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct TextRegion {
     pub x: f64,
     pub y: f64,
@@ -21,14 +19,12 @@ pub struct TextRegion {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct OcrResult {
     pub text: String,
     pub qr: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct ScreenshotData {
     pub data_url: String,
     pub width: u32,

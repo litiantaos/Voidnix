@@ -62,10 +62,9 @@ pub fn register_shortcut_hook(id: &str, hook: ShortcutHook) {
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub fn is_app_active() -> bool {
     #[cfg(target_os = "macos")]
-    return crate::macos::mac_utils::is_app_active();
+    return crate::platform::focus::is_app_active();
     #[cfg(not(target_os = "macos"))]
     true
 }
@@ -87,12 +86,11 @@ pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
         }
     }
     let _ = app.clone().run_on_main_thread(move || {
-        crate::core::window::hide_main(&app);
+        crate::runtime::window::hide_main(&app);
     });
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub fn get_selected_text_cached() -> String {
     SELECTED_TEXT.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
@@ -201,7 +199,7 @@ pub async fn register_global_shortcut(
                     }
 
                     if window_hidden {
-                        crate::core::window::show_main(&app_handle);
+                        crate::runtime::window::show_main(&app_handle);
                     }
                 });
             },

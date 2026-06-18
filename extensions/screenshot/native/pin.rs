@@ -156,7 +156,7 @@ fn create_pin_webview(
         }
     }
 
-    crate::macos::mac_utils::activate_app();
+    crate::platform::focus::activate_app();
 
     Ok(())
 }
@@ -169,8 +169,8 @@ pub async fn restore_pin_focus(window: tauri::WebviewWindow) {
         // 先隐藏窗口，确保其不再是 key window
         let _ = window.hide();
         // 再 deactivate 触发系统重新评估 key window，恢复到原应用
-        crate::macos::mac_utils::deactivate_app();
-        crate::macos::mac_utils::activate_app_by_pid(pid);
+        crate::platform::focus::deactivate_app();
+        crate::platform::focus::activate_app_by_pid(pid);
         PIN_PREV_PID.store(0, Ordering::SeqCst);
     }
 }

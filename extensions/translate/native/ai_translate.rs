@@ -1,4 +1,4 @@
-use crate::infra::sse::{self, LlmMessage};
+use crate::runtime::llm::sse::{self, LlmMessage};
 
 use super::TranslateResult;
 use super::lang_utils::{
@@ -92,7 +92,6 @@ fn prepare_ai_translate(
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn translate_ai(
     text: String,
     endpoint: String,
@@ -123,7 +122,7 @@ pub async fn translate_ai(
         "stream": false
     });
 
-    let response = crate::infra::http::client()
+    let response = crate::http::client()
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key.trim()))
         .header("Content-Type", "application/json")

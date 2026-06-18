@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct SearchResult {
     pub id: String,
     pub title: String,

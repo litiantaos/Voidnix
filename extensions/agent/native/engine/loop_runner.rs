@@ -22,11 +22,11 @@ use tauri::ipc::Channel;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 
-use crate::core::agent::approval::{ApprovalManager, Decision};
-use crate::core::agent::tool_registry::ToolRegistry;
-use crate::core::agent::AgentEvent;
-use crate::infra::sse::{self, LlmMessage, LlmToolCall, StreamConfig};
-use crate::infra::tool_calls_parser::FinalizedToolCall;
+use crate::extensions::agent::engine::approval::{ApprovalManager, Decision};
+use crate::extensions::agent::engine::tool_registry::ToolRegistry;
+use crate::extensions::agent::engine::AgentEvent;
+use crate::runtime::llm::sse::{self, LlmMessage, LlmToolCall, StreamConfig};
+use crate::runtime::llm::parser::FinalizedToolCall;
 
 use super::secret_scrub::scrub_secret;
 

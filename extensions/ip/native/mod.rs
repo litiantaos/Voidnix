@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct IpInfo {
     pub ip: Option<String>,
     pub success: Option<bool>,
@@ -15,14 +14,13 @@ pub struct IpInfo {
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn fetch_ip_info(ip: Option<String>) -> Result<IpInfo, String> {
     let url = match ip {
         Some(ip_addr) if !ip_addr.trim().is_empty() => format!("https://ipwhois.app/json/{}?lang=zh-CN", ip_addr.trim()),
         _ => "https://ipwhois.app/json/?lang=zh-CN".to_string(),
     };
 
-    let response = crate::infra::http::client()
+    let response = crate::http::client()
         .get(&url)
         .header("User-Agent", "Launcher/1.0")
         .send()

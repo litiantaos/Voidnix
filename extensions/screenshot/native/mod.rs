@@ -1,4 +1,4 @@
-use crate::core::tier1::Tier1Extension;
+use crate::runtime::registry::Tier1Extension;
 use tauri::AppHandle;
 
 #[cfg(target_os = "macos")]
@@ -46,7 +46,7 @@ pub async fn open_module_subview(
 
     let app_handle = app.clone();
     app.run_on_main_thread(move || {
-        crate::core::window::show_main(&app_handle);
+        crate::runtime::window::show_main(&app_handle);
         let _ = app_handle.emit("open-module-subview", event_payload);
     })
     .map_err(|e| e.to_string())?;
