@@ -63,7 +63,6 @@ macro_rules! configure_app {
         crate::extensions::finder_ext::quit_app,
         crate::extensions::finder_ext::check_finder_ext_authorized,
         crate::extensions::finder_ext::open_extensions_prefs,
-        crate::extensions::ip::fetch_ip_info,
         crate::extensions::awake::toggle_awake,
         crate::extensions::awake::is_awake_enabled,
         crate::extensions::awake::set_awake_mode,
@@ -78,7 +77,6 @@ macro_rules! configure_app {
         .plugin(crate::runtime::shortcut::init())
         .plugin(crate::runtime::window::init())
         .plugin(crate::extensions::search::init())
-        .plugin(crate::extensions::ip::init())
     };
 }
 pub(crate) use configure_app;
@@ -97,8 +95,6 @@ pub mod agent;
 pub mod search;
 #[path = "../../extensions/finder-ext/native/mod.rs"]
 pub mod finder_ext;
-#[path = "../../extensions/ip/native/mod.rs"]
-pub mod ip;
 #[path = "../../extensions/awake/native/mod.rs"]
 pub mod awake;
 #[path = "../../extensions/clipboard/native/mod.rs"]
