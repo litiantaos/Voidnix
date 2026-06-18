@@ -1,37 +1,4 @@
 import { defineConfig, presetAttributify, presetIcons, presetWind4 } from 'unocss'
-import { readdirSync, readFileSync, existsSync } from 'node:fs'
-import { resolve, join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-function collectVnextIcons(): string[] {
-  const root = dirname(fileURLToPath(import.meta.url))
-  const extDir = resolve(root, 'extensions')
-  if (!existsSync(extDir)) return []
-  const icons = new Set<string>()
-  for (const entry of readdirSync(extDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.endsWith('.vnext')) continue
-    const dir = join(extDir, entry.name)
-    const manifestPath = join(dir, 'manifest.toml')
-    if (existsSync(manifestPath)) {
-      try {
-        const content = readFileSync(manifestPath, 'utf-8')
-        const match = content.match(/icon\s*=\s*"([^"]+)"/)
-        if (match?.[1]) icons.add(match[1])
-      } catch {}
-    }
-    for (const file of ['index.js', 'index.ts']) {
-      const fp = join(dir, file)
-      if (!existsSync(fp)) continue
-      try {
-        const content = readFileSync(fp, 'utf-8')
-        for (const m of content.matchAll(/['"`](i-ri-[a-z0-9-]+)['"`]/g)) {
-          icons.add(m[1])
-        }
-      } catch {}
-    }
-  }
-  return Array.from(icons)
-}
 
 export default defineConfig({
   presets: [
@@ -89,5 +56,4 @@ export default defineConfig({
       ],
     },
   },
-  safelist: collectVnextIcons(),
 })
