@@ -26,7 +26,7 @@
             </BaseButton>
             <BaseSelect
               v-else-if="item.id === 'mode'"
-              :model-value="isMirrorMode ? 'mirror' : 'extend'"
+              :model-value="awakeConfig.mirrorMode ? 'mirror' : 'extend'"
               :options="modeOptions"
               @update:model-value="onModeChange"
             />
@@ -41,23 +41,20 @@
 import { ref, onMounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useAppStore } from '@/stores/app'
-import { useSettingsStore } from '@/stores/settings'
+import { config as awakeConfig } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 
 const isEnabled = ref(false)
-const isMirrorMode = ref(true)
 const selectedIndex = ref(0)
 const appStore = useAppStore()
-const settings = useSettingsStore()
 
 const checkStatus = async () => {
   try {
     isEnabled.value = await invoke('is_awake_enabled')
-    isMirrorMode.value = settings.awakeMirrorMode
-    await invoke('set_awake_mode', { mirror: isMirrorMode.value })
+    await invoke('set_awake_mode', { mirror: awakeConfig.mirrorMode })
   } catch (e) {
     console.error('Failed to check awake status:', e)
   }
@@ -80,12 +77,10 @@ const modeOptions = [
 
 const onModeChange = async (value: string | number) => {
   const mirror = value === 'mirror'
-  isMirrorMode.value = mirror
   try {
     await invoke('set_awake_mode', { mirror })
-    await settings.setAwakeMirrorMode(mirror)
+    awakeConfig.mirrorMode = mirror
   } catch (e) {
-    isMirrorMode.value = !mirror
     console.error('Failed to set awake mode:', e)
   }
 }
