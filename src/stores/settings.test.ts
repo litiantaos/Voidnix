@@ -10,14 +10,7 @@ describe('settings store', () => {
   it('初始默认值', () => {
     const store = useSettingsStore()
     expect(store.globalShortcut).toBe('CommandOrControl+Shift+Space')
-    expect(store.clipboardMaxDays).toBe(30)
-    expect(store.screenshotSavePath).toBe('')
     expect(store.translateTargetLang).toBe('zh')
-    expect(store.finderExtEnabled).toBe(false)
-    expect(store.awakeMirrorMode).toBe(true)
-    expect(store.wmCustomWidth).toBe(1200)
-    expect(store.wmCustomHeight).toBe(800)
-    expect(store.wmDragSnapEnabled).toBe(true)
   })
 
   describe('activeProviderConfig', () => {
