@@ -80,20 +80,12 @@ impl Extension for Plugin {
     }
 }
 
-/// 清理上次会话遗留的临时文件（启动时调用）。
+/// 清理上次会话遗留的临时文件（启动时调用，委托至 runtime::storage）。
 fn cleanup_temp_files() {
     let temp_dir = std::env::temp_dir();
-    if let Ok(entries) = std::fs::read_dir(&temp_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if name.starts_with("voidnix_") && (name.ends_with(".png") || name.ends_with(".jpg")) {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
-    }
+    crate::runtime::storage::cleanup_temps_by_prefix(&temp_dir, "voidnix_", &[".png", ".jpg"]);
+    // 兼容：清理旧版 awake binary（已迁移至 app_data_dir）
     let awake_dir = temp_dir.join("com.litiantao.voidnix");
-    let awake_bin = awake_dir.join("Display Wakelock");
-    let _ = std::fs::remove_file(&awake_bin);
+    let _ = std::fs::remove_file(awake_dir.join("Display Wakelock"));
     let _ = std::fs::remove_dir(&awake_dir);
 }
