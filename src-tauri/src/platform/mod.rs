@@ -1,9 +1,12 @@
 pub mod click_monitor;
 #[cfg(target_os = "macos")]
 pub mod focus;
+#[cfg(target_os = "macos")]
+pub mod input;
 pub mod path_guard;
 #[cfg(target_os = "macos")]
 pub mod panel;
+pub mod pasteboard;
 pub mod permission;
 #[cfg(target_os = "macos")]
 pub mod selection;

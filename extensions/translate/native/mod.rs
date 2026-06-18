@@ -82,10 +82,10 @@ impl Extension for Plugin {
                     let target_pid = ctx.front_pid.filter(|&p| p != self_pid);
 
                     let ax_text = crate::platform::selection::try_ax();
-                    let snap = crate::platform::selection::snapshot_clipboard();
+                    let snap = crate::platform::pasteboard::snapshot();
                     if ax_text.is_none() {
                         if let Some(pid) = target_pid {
-                            crate::platform::selection::inject_copy(pid);
+                            crate::platform::input::inject_copy(pid);
                         }
                     }
 

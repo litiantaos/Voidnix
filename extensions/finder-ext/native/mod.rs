@@ -283,7 +283,7 @@ fn handle_toggle_hidden() {
 
         const KEY_PERIOD: u16 = 0x2F;
         const MASK_CMD_SHIFT: u64 = (1 << 20) | (1 << 17);
-        crate::platform::selection::post_key_to_pid(pid, KEY_PERIOD, MASK_CMD_SHIFT);
+        crate::platform::input::post_key(KEY_PERIOD, MASK_CMD_SHIFT, pid);
     }
 }
 
@@ -364,7 +364,7 @@ fn reveal_and_rename(path: &Path) {
             let pid = finder.processIdentifier();
             // Return (0x24) 触发 Finder 对选中文件进入重命名模式
             const KEY_RETURN: u16 = 0x24;
-            crate::platform::selection::post_key_to_pid(pid, KEY_RETURN, 0);
+            crate::platform::input::post_key(KEY_RETURN, 0, pid);
         }
     }
 }
