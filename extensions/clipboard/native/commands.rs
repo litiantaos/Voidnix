@@ -275,46 +275,5 @@ fn simulate_cmd_v() {
         }
     }
 
-    #[link(name = "CoreGraphics", kind = "framework")]
-    extern "C" {
-        fn CGEventSourceCreate(stateID: i32) -> *mut std::ffi::c_void;
-        fn CGEventCreateKeyboardEvent(
-            source: *mut std::ffi::c_void,
-            keycode: u16,
-            keydown: bool,
-        ) -> *mut std::ffi::c_void;
-        fn CGEventSetFlags(event: *mut std::ffi::c_void, flags: u64);
-        fn CGEventPost(tapLocation: u32, event: *mut std::ffi::c_void);
-        fn CFRelease(cf: *mut std::ffi::c_void);
-    }
-
-    const K_CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE: i32 = 1;
-    const K_CG_HID_EVENT_TAP: u32 = 0;
-    const K_CG_EVENT_FLAG_MASK_COMMAND: u64 = 0x00100000;
-    const KEY_V: u16 = 0x09;
-
-    unsafe {
-        let source = CGEventSourceCreate(K_CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE);
-        if source.is_null() {
-            return;
-        }
-
-        let v_down = CGEventCreateKeyboardEvent(source, KEY_V, true);
-        if !v_down.is_null() {
-            CGEventSetFlags(v_down, K_CG_EVENT_FLAG_MASK_COMMAND);
-            CGEventPost(K_CG_HID_EVENT_TAP, v_down);
-            CFRelease(v_down);
-        }
-
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        let v_up = CGEventCreateKeyboardEvent(source, KEY_V, false);
-        if !v_up.is_null() {
-            CGEventSetFlags(v_up, K_CG_EVENT_FLAG_MASK_COMMAND);
-            CGEventPost(K_CG_HID_EVENT_TAP, v_up);
-            CFRelease(v_up);
-        }
-
-        CFRelease(source);
-    }
+    crate::platform::input::paste_global();
 }
