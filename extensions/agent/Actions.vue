@@ -15,7 +15,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { providerLabelFromUrl } from '@/utils/provider'
+import { providerLabelFromUrl } from '@/utils/format'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useAgentChat } from './agent'

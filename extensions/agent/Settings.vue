@@ -241,7 +241,7 @@ import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
-import { providerLabelFromUrl } from '@/utils/provider'
+import { providerLabelFromUrl } from '@/utils/format'
 import { useSettingsInput } from '@/composables/useSettingsInput'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 

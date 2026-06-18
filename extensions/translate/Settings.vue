@@ -199,7 +199,7 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
-import { providerLabelFromUrl } from '@/utils/provider'
+import { providerLabelFromUrl } from '@/utils/format'
 import { useSettingsInput } from '@/composables/useSettingsInput'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 

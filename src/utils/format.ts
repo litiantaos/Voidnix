@@ -22,3 +22,18 @@ export function formatPathParts(path: unknown): { head: string; tail: string } {
     tail: displayPath.substring(lastSlashIndex + 1),
   }
 }
+
+export function toErrorMessage(e: unknown, fallback = '未知错误'): string {
+  return e instanceof Error ? e.message || fallback : fallback
+}
+
+export function providerLabelFromUrl(url: string, fallback: string): string {
+  if (!url) return fallback
+  try {
+    const parts = new URL(url).hostname.split('.')
+    if (parts.length >= 2) return parts[parts.length - 2].toUpperCase()
+    return parts[0].toUpperCase()
+  } catch {
+    return fallback
+  }
+}

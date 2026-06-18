@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getParentPath, formatPathParts } from './format'
+import { getParentPath, formatPathParts, toErrorMessage, providerLabelFromUrl } from './format'
 
 describe('getParentPath', () => {
   it('正常路径返回父目录', () => {
@@ -47,5 +47,43 @@ describe('formatPathParts', () => {
     expect(formatPathParts('')).toEqual({ head: '', tail: '' })
     expect(formatPathParts(null)).toEqual({ head: '', tail: '' })
     expect(formatPathParts(undefined)).toEqual({ head: '', tail: '' })
+  })
+})
+
+describe('toErrorMessage', () => {
+  it('Error 对象提取 message', () => {
+    expect(toErrorMessage(new Error('test'))).toBe('test')
+  })
+
+  it('非 Error 用 fallback', () => {
+    expect(toErrorMessage('string')).toBe('未知错误')
+    expect(toErrorMessage(42)).toBe('未知错误')
+  })
+
+  it('空 Error.message 用 fallback', () => {
+    expect(toErrorMessage(new Error(''))).toBe('未知错误')
+  })
+
+  it('自定义 fallback', () => {
+    expect(toErrorMessage(null, 'custom')).toBe('custom')
+  })
+})
+
+describe('providerLabelFromUrl', () => {
+  it('从 URL 提取域名主体', () => {
+    expect(providerLabelFromUrl('https://api.openai.com/v1', 'AI')).toBe('OPENAI')
+    expect(providerLabelFromUrl('https://api.tencentyun.com/', 'AI')).toBe('TENCENTYUN')
+  })
+
+  it('空 URL 返回 fallback', () => {
+    expect(providerLabelFromUrl('', 'Fallback')).toBe('Fallback')
+  })
+
+  it('无效 URL 返回 fallback', () => {
+    expect(providerLabelFromUrl('not-a-url', 'Fallback')).toBe('Fallback')
+  })
+
+  it('单段域名取首段', () => {
+    expect(providerLabelFromUrl('https://localhost/v1', 'AI')).toBe('LOCALHOST')
   })
 })
