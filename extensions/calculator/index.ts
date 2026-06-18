@@ -55,7 +55,11 @@ const mod: AppModule = {
     if (!query.trim()) return []
 
     const withExponent = query.replace(/\^/g, '**')
-    if (withExponent.trim() && /^[0-9+\-*/().%\s]*$/.test(withExponent) && /[+\-*/]/.test(withExponent)) {
+    if (
+      withExponent.trim() &&
+      /^[0-9+\-*/().%\s]*$/.test(withExponent) &&
+      /[+\-*/]/.test(withExponent)
+    ) {
       try {
         const result = evaluateMath(query)
         if (result !== null) {

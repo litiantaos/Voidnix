@@ -54,7 +54,6 @@ import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { useSettingsInput } from '@/composables/useSettingsInput'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 
-
 const appStore = useAppStore()
 useSettingsInput()
 

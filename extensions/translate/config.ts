@@ -34,7 +34,16 @@ export const config = defineConfig('translate', {
 /// CRUD helpers（defineConfig reactive 数组变更自动持久化）
 export function addTranslateConfig(): string {
   const id = generateRequestId()
-  config.configs.push({ id, type: 'ai', appKey: '', appSecret: '', endpoint: '', apiKey: '', models: [], prompt: '' })
+  config.configs.push({
+    id,
+    type: 'ai',
+    appKey: '',
+    appSecret: '',
+    endpoint: '',
+    apiKey: '',
+    models: [],
+    prompt: '',
+  })
   return id
 }
 

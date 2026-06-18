@@ -14,10 +14,7 @@
         :selected="selected"
       >
         <template #trailing>
-          <BaseButton
-            :variant="zshConfig.enabled ? 'primary' : 'default'"
-            @click.stop="toggle"
-          >
+          <BaseButton :variant="zshConfig.enabled ? 'primary' : 'default'" @click.stop="toggle">
             {{ zshConfig.enabled ? '已开启' : '已关闭' }}
           </BaseButton>
         </template>

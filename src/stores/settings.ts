@@ -149,12 +149,19 @@ export const useSettingsStore = defineStore('settings', () => {
   async function setShortcutOverride(id: string, value: string) {
     shortcutOverrides.value = { ...shortcutOverrides.value, [id]: value }
     if (store) {
-      await store.set('shortcuts', { global: globalShortcut.value, overrides: shortcutOverrides.value })
+      await store.set('shortcuts', {
+        global: globalShortcut.value,
+        overrides: shortcutOverrides.value,
+      })
       await store.save()
     }
   }
 
-  const setActiveProviderModelKey = createSetter(activeProviderModelKey, 'aiProviders', 'activeProviderModelKey')
+  const setActiveProviderModelKey = createSetter(
+    activeProviderModelKey,
+    'aiProviders',
+    'activeProviderModelKey',
+  )
 
   return {
     globalShortcut,
