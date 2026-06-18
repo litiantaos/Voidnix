@@ -20,6 +20,7 @@ pub fn icon_cache_dir() -> PathBuf {
 
 /// 清理 icon 缓存：先按年龄删除超 `max_age_days` 天未修改的文件，再按数量淘汰超过
 /// `max_count` 个的最旧文件。启动时调用一次，避免缓存无限增长。
+#[allow(dead_code)]
 pub fn cleanup_icon_cache(max_count: usize, max_age_days: u64) {
     let dir = icon_cache_dir();
     let entries = match fs::read_dir(&dir) {
