@@ -1,10 +1,3 @@
-use std::sync::atomic::{AtomicI32, Ordering};
-
-/// 显示主窗口前的前台应用 PID。
-/// 隐藏时显式 activate 该 app,把系统级 key window 状态(及 first responder)
-/// 还给它的窗口 —— macOS 不会自动跨进程恢复 key,必须主动调。
-static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
-
 /// 显示主窗口。
 ///
 /// NonactivatingPanel + LSUIElement 组合下,通过 orderFrontRegardless +
@@ -15,10 +8,7 @@ pub fn show_main(app: &tauri::AppHandle) {
     crate::runtime::shortcut::set_window_visible(true);
 
     #[cfg(target_os = "macos")]
-    {
-        let pid = crate::platform::focus::current_frontmost_pid().unwrap_or(0);
-        PREV_FRONT_PID.store(pid, Ordering::SeqCst);
-    }
+    crate::platform::focus::capture_frontmost();
 
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
@@ -67,17 +57,10 @@ pub fn hide_main(app: &tauri::AppHandle) {
     crate::platform::click_monitor::remove();
 
     // panel 偷走 system key 后,原 app 虽仍是 frontmost,但 first responder
-    // 已丢失。`activate_app_by_pid` 在已 frontmost 的 app 上会被 macOS 跳过,
-    // 必须先 `NSApp.deactivate()` 触发系统重新评估 key window,再 activate
-    // 原 app 才能完整恢复 first responder(光标回到原输入框)。
+    // 已丢失。restore_captured 先 deactivate 触发系统重新评估 key window,
+    // 再 activate 原 app 完整恢复 first responder(光标回到原输入框)。
     #[cfg(target_os = "macos")]
-    {
-        crate::platform::focus::deactivate_app();
-        let pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
-        if pid > 0 {
-            crate::platform::focus::activate_app_by_pid(pid);
-        }
-    }
+    crate::platform::focus::restore_captured();
 }
 
 /// 将主窗口设为 key window。

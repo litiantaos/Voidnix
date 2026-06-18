@@ -1,14 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{LazyLock, Mutex, mpsc};
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::Emitter;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 pub(crate) static SELECTED_TEXT: Mutex<String> = Mutex::new(String::new());
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(false);
 static LAST_SHOW_MS: AtomicU64 = AtomicU64::new(0);
-pub(crate) static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -183,11 +182,8 @@ pub async fn register_global_shortcut(
                     let ctx = ShortcutContext { window_hidden, front_pid };
 
                     if window_hidden {
-                        let self_pid = std::process::id() as i32;
-                        PREV_FRONT_PID.store(
-                            front_pid.filter(|&p| p != self_pid).unwrap_or(0),
-                            Ordering::SeqCst,
-                        );
+                        #[cfg(target_os = "macos")]
+                        crate::platform::focus::capture_frontmost();
                     }
 
                     if let Ok(hooks) = SHORTCUT_HOOKS.lock() {

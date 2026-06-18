@@ -1,5 +1,9 @@
+use std::sync::atomic::{AtomicI32, Ordering};
 use objc2_app_kit::{NSApp, NSApplicationActivationOptions, NSWorkspace};
 use objc2_foundation::MainThreadMarker;
+
+/// 前台 PID 唯一源：显示主窗口前记录原前台 app PID，隐藏时恢复。
+static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
 
 pub fn activate_app() {
     if let Some(mtm) = MainThreadMarker::new() {
@@ -55,5 +59,26 @@ pub fn activate_app_by_pid(pid: i32) {
     {
         #[allow(deprecated)]
         target.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
+    }
+}
+
+/// 记录当前前台 app PID（排除自身），存入唯一源。
+pub fn capture_frontmost() -> i32 {
+    let pid = current_frontmost_pid().unwrap_or(0);
+    PREV_FRONT_PID.store(pid, Ordering::SeqCst);
+    pid
+}
+
+/// 读取唯一源中的 PID（不消费）。
+pub fn captured_pid() -> i32 {
+    PREV_FRONT_PID.load(Ordering::SeqCst)
+}
+
+/// 从唯一源恢复前台 app：先 deactivate self，再 activate 原 app。
+pub fn restore_captured() {
+    deactivate_app();
+    let pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
+    if pid > 0 {
+        activate_app_by_pid(pid);
     }
 }

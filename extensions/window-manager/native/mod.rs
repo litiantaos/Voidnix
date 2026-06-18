@@ -353,8 +353,7 @@ pub mod platform {
         let fallback_pid = if snap_pid > 0 {
             snap_pid
         } else {
-            crate::runtime::shortcut::PREV_FRONT_PID
-                .load(std::sync::atomic::Ordering::SeqCst)
+            crate::platform::focus::captured_pid()
         };
         let prev_pid = prev_pid.filter(|&p| p > 0).unwrap_or(fallback_pid);
         let cg_pid = find_topmost_window_pid();
