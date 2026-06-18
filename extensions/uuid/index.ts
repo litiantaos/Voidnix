@@ -1,20 +1,7 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
 import { copyAndHide } from '@/utils/clipboard'
-
-function uuidv4(): string {
-  return crypto.randomUUID()
-}
-
-function nanoId(size = 21): string {
-  const chars = 'Useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
-  const bytes = crypto.getRandomValues(new Uint8Array(size))
-  let id = ''
-  for (let i = 0; i < size; i++) {
-    id += chars[bytes[i] % chars.length]
-  }
-  return id
-}
+import { uuidv4, nanoId } from './logic'
 
 const module: AppModule = {
   id: 'uuid',
