@@ -66,6 +66,9 @@ impl Extension for Plugin {
     }
 
     fn on_setup(&self, _app: &AppHandle) -> tauri::Result<()> {
+        // 清理上次会话遗留的临时文件
+        cleanup_temp_files();
+
         #[cfg(target_os = "macos")]
         {
             setup::configure_overlay_window(_app);
@@ -77,7 +80,8 @@ impl Extension for Plugin {
     }
 }
 
-pub(crate) fn cleanup_temp_files() {
+/// 清理上次会话遗留的临时文件（启动时调用）。
+fn cleanup_temp_files() {
     let temp_dir = std::env::temp_dir();
     if let Ok(entries) = std::fs::read_dir(&temp_dir) {
         for entry in entries.flatten() {
