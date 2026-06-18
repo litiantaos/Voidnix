@@ -40,17 +40,25 @@
 - commit `84e238b` refactor(finder-ext): 消除横向依赖 screenshot::cleanup_temp_files
 - commit `cc846cf` fix(zsh-as): 目录名 zsh-as → zsh-autosuggestions（统一约定）
 - commit `b3291e9` fix(awake): binary 路径 /tmp → app_data_dir（安全修复）
+- commit `f184948` refactor(clipboard): simulate_cmd_v 委托至 platform/input（消灭第三套 CGEvent）
+- commit `2eac7c2` refactor(frontend): 删除 Tier2 前端代码（~1000 行死代码清理）
+- commit `03287c5` refactor: 删除 .vnext 目录 + uno.config 清理
 
 **待完成**：
 - [ ] 所有 native 扩展改 `init()` 局部注册命令（sync-extensions 大幅简化）
-- [ ] clipboard 扩展用 platform/pasteboard（消灭独立 NSPasteboard 实现）
-- [ ] clipboard 扩展 simulate_cmd_v 用 platform/input（消灭第三套 CGEvent）
+- [ ] clipboard 扩展 monitor/commands 用 platform/pasteboard（消灭独立 NSPasteboard 实现）
 - [ ] finder-ext IPC 改 Darwin notification（消灭 cmd_*.json 文件累积）
 - [ ] zsh-as signals.log 改 ring buffer
 - [ ] build.rs 扫描化
 - [ ] storage.rs 新增 TempHandle
 
 ### 阶段 3：前端运行时重建 ⬜（未开始）
+
+Tier2 前端已清理（worker-sandbox/tier2-registry/declarative 全删除）。剩余核心工作：
+- [ ] stores/settings.ts（586 行）拆分 → 扩展自管 config
+- [ ] BaseList 删 appStore 依赖（改 prop 驱动）
+- [ ] useSearchCommand 拆分
+- [ ] AppModule 接口拆 5 组合接口
 ### 阶段 4：扩展迁移 ⬜（未开始）
 ### 阶段 5：测试 + 工具链 + 文档 ⬜（未开始）
 ### 阶段 6：验证 ⬜（未开始）
