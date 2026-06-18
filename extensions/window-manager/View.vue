@@ -17,10 +17,10 @@
         >
           <template #trailing>
             <BaseButton
-              :variant="settings.wmDragSnapEnabled ? 'primary' : 'default'"
-              @click.stop="settings.setWmDragSnapEnabled(!settings.wmDragSnapEnabled)"
+              :variant="wmConfig.dragSnapEnabled ? 'primary' : 'default'"
+              @click.stop="(wmConfig.dragSnapEnabled = !wmConfig.dragSnapEnabled)"
             >
-              {{ settings.wmDragSnapEnabled ? '已开启' : '已关闭' }}
+              {{ wmConfig.dragSnapEnabled ? '已开启' : '已关闭' }}
             </BaseButton>
           </template>
         </BaseListItem>
@@ -59,20 +59,20 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
+import { config as wmConfig } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 
-const settings = useSettingsStore()
+
 const settingsSelectedIndex = ref(0)
 
 const widthInputRef = ref<InstanceType<typeof BaseInput>>()
 const heightInputRef = ref<InstanceType<typeof BaseInput>>()
 
-const draftWidth = ref(String(settings.wmCustomWidth))
-const draftHeight = ref(String(settings.wmCustomHeight))
+const draftWidth = ref(String(wmConfig.customWidth))
+const draftHeight = ref(String(wmConfig.customHeight))
 const focusedField = ref<'width' | 'height' | null>(null)
 const cancelOnBlur = ref(false)
 
@@ -97,26 +97,26 @@ const settingsItems: SettingsItem[] = [
 
 function onFocus(field: 'width' | 'height') {
   focusedField.value = field
-  if (field === 'width') draftWidth.value = String(settings.wmCustomWidth)
-  else draftHeight.value = String(settings.wmCustomHeight)
+  if (field === 'width') draftWidth.value = String(wmConfig.customWidth)
+  else draftHeight.value = String(wmConfig.customHeight)
 }
 
 function onBlur(field: 'width' | 'height') {
   focusedField.value = null
   if (cancelOnBlur.value) {
     cancelOnBlur.value = false
-    draftWidth.value = String(settings.wmCustomWidth)
-    draftHeight.value = String(settings.wmCustomHeight)
+    draftWidth.value = String(wmConfig.customWidth)
+    draftHeight.value = String(wmConfig.customHeight)
     return
   }
   if (field === 'width') {
     const n = parseInt(draftWidth.value, 10)
-    if (n > 0) settings.setWmCustomWidth(n)
-    draftWidth.value = String(settings.wmCustomWidth)
+    if (n > 0) (wmConfig.customWidth = n)
+    draftWidth.value = String(wmConfig.customWidth)
   } else {
     const n = parseInt(draftHeight.value, 10)
-    if (n > 0) settings.setWmCustomHeight(n)
-    draftHeight.value = String(settings.wmCustomHeight)
+    if (n > 0) (wmConfig.customHeight = n)
+    draftHeight.value = String(wmConfig.customHeight)
   }
 }
 
@@ -125,8 +125,8 @@ function onInputKeydown(e: KeyboardEvent, field: 'width' | 'height') {
     e.preventDefault()
     e.stopImmediatePropagation()
     cancelOnBlur.value = true
-    if (field === 'width') draftWidth.value = String(settings.wmCustomWidth)
-    else draftHeight.value = String(settings.wmCustomHeight)
+    if (field === 'width') draftWidth.value = String(wmConfig.customWidth)
+    else draftHeight.value = String(wmConfig.customHeight)
     ;(e.target as HTMLInputElement).blur()
     document.getElementById('main-search-input')?.focus()
   } else if (e.key === 'Enter') {
