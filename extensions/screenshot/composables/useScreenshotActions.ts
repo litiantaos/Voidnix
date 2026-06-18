@@ -1,7 +1,7 @@
 import type { Ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import type { Sel, Shape } from './useTypes'
-import { useSettingsStore } from '@/stores/settings'
+import { config as screenshotConfig } from '../config'
 
 export function useScreenshotActions(options: {
   sel: Ref<Sel>
@@ -32,8 +32,8 @@ export function useScreenshotActions(options: {
 
   async function doSave() {
     const ann = await getAnnotationPng()
-    const settings = useSettingsStore()
-    const savePath = settings.screenshotSavePath || '~/Downloads'
+    
+    const savePath = screenshotConfig.savePath || '~/Downloads'
     const path = savePath.startsWith('~/')
       ? savePath.replace('~', await invoke<string>('get_home_dir').catch(() => ''))
       : savePath
@@ -121,8 +121,8 @@ export function useScreenshotActions(options: {
       doCancel()
       return
     }
-    const settings = useSettingsStore()
-    const savePath = settings.screenshotSavePath || '~/Downloads'
+    
+    const savePath = screenshotConfig.savePath || '~/Downloads'
     const path = savePath.startsWith('~/')
       ? savePath.replace('~', await invoke<string>('get_home_dir').catch(() => ''))
       : savePath

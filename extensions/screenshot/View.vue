@@ -30,7 +30,7 @@
           v-else-if="item.type === 'savePath'"
           :ref="setRef"
           title="截图保存位置"
-          :subtitle="savePathDisplay(settings.screenshotSavePath)"
+          :subtitle="savePathDisplay(screenshotConfig.savePath)"
           :selected="selected"
         >
           <template #trailing>
@@ -45,7 +45,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { useSettingsStore } from '@/stores/settings'
+import { config as screenshotConfig } from './config'
 import { useAppStore } from '@/stores/app'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
@@ -54,7 +54,7 @@ import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { useSettingsInput } from '@/composables/useSettingsInput'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 
-const settings = useSettingsStore()
+
 const appStore = useAppStore()
 useSettingsInput()
 
@@ -71,7 +71,7 @@ async function pickSavePath() {
   try {
     const selected = await invoke<string>('pick_directory')
     if (selected) {
-      await settings.setScreenshotSavePath(selected)
+      await (screenshotConfig.savePath = selected)
     }
   } finally {
     setTimeout(() => {
