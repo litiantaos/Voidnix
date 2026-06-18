@@ -9,6 +9,8 @@
     "build": "bun run sync:extensions && bun run lint && vue-tsc --noEmit && vite build",
     "lint": "prettier --write . && eslint . --fix",
     "sync:extensions": "bun run scripts/sync-extensions.ts",
+    "check:extensions": "bun run scripts/sync-extensions.ts -- --check",
+    "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
@@ -38,21 +40,15 @@
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/eslint-config-typescript": "^14.8.0",
     "@vue/test-utils": "^2.4.11",
-    "@wdio/cli": "^9.28.0",
-    "@wdio/local-runner": "^9.28.0",
-    "@wdio/mocha-framework": "^9.28.0",
-    "@wdio/spec-reporter": "^9.28.0",
     "eslint": "^10.5.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.9.2",
     "happy-dom": "^20.10.3",
     "prettier": "^3.8.4",
-    "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
     "unocss": "^66.7.2",
     "vite": "^8.0.16",
     "vitest": "^4.1.8",
-    "vue-tsc": "^3.3.4",
-    "webdriverio": "^9.28.0"
+    "vue-tsc": "^3.3.4"
   }
 }
