@@ -233,9 +233,8 @@ import { ref, computed } from 'vue'
 import {
   useSettingsStore,
   type AiProviderConfig,
-  type SearchProviderConfig,
 } from '@/stores/settings'
-import { config as agentConfig } from './config'
+import { config as agentConfig, type SearchProviderConfig, updateSearchProvider } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -396,7 +395,7 @@ const allItems = computed<ChatSettingsItem[]>(() => [
     group: '模型提供商',
     config: c,
   })),
-  ...settings.searchProviders.map((c) => ({
+  ...agentConfig.searchProviders.map((c) => ({
     type: 'searchProvider' as const,
     group: '搜索提供商',
     config: c,
@@ -431,7 +430,7 @@ function closeSearchModal() {
 
 async function saveSearchModal() {
   if (!editingSearchId.value) return
-  await settings.updateSearchProvider(editingSearchId.value, {
+  await updateSearchProvider(editingSearchId.value, {
     apiKey: searchForm.value.apiKey.trim(),
   })
   closeSearchModal()

@@ -48,8 +48,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onActivated } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
+
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
+import { config as translateConfig } from './config'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { hideWindow } from '@/utils/tauri'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -58,12 +59,11 @@ import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import type { TranslateResult } from './index'
 
-const settings = useSettingsStore()
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const selectedIndex = ref(0)
 
 const isConfigured = computed(() =>
-  settings.translateConfigs.some(
+  translateConfig.configs.some(
     (c) =>
       (c.type === 'youdao' && c.appKey && c.appSecret) ||
       (c.type === 'ai' && c.endpoint && c.apiKey),

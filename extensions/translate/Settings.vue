@@ -190,8 +190,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
-import { config as translateConfig } from './config'
+import { type TranslateApiConfig, config as translateConfig, addTranslateConfig, updateTranslateConfig, removeTranslateConfig } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -204,7 +203,6 @@ import { providerLabelFromUrl } from '@/utils/provider'
 import { useSettingsInput } from '@/composables/useSettingsInput'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 
-const settings = useSettingsStore()
 useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'translate-shortcut'
@@ -298,9 +296,9 @@ function closeConfigModal() {
 
 async function saveConfigModal() {
   if (isCreating.value) {
-    const id = await settings.addTranslateConfig()
+    const id = await addTranslateConfig()
     const models = aiForm.value.models.filter((m) => m.trim())
-    await settings.updateTranslateConfig(id, {
+    await updateTranslateConfig(id, {
       type: 'ai',
       endpoint: aiForm.value.endpoint,
       apiKey: aiForm.value.apiKey,
@@ -309,17 +307,17 @@ async function saveConfigModal() {
     })
   } else {
     if (!editingConfigId.value) return
-    const config = settings.translateConfigs.find((c) => c.id === editingConfigId.value)
+    const config = translateConfig.configs.find((c) => c.id === editingConfigId.value)
     if (!config) return
 
     if (config.type === 'youdao') {
-      await settings.updateTranslateConfig(editingConfigId.value, {
+      await updateTranslateConfig(editingConfigId.value, {
         appKey: youdaoForm.value.appKey,
         appSecret: youdaoForm.value.appSecret,
       })
     } else {
       const models = aiForm.value.models.filter((m) => m.trim())
-      await settings.updateTranslateConfig(editingConfigId.value, {
+      await updateTranslateConfig(editingConfigId.value, {
         type: 'ai',
         endpoint: aiForm.value.endpoint,
         apiKey: aiForm.value.apiKey,
@@ -344,7 +342,7 @@ function removeModel(index: number) {
 
 const canDeleteConfig = computed(() => {
   if (isCreating.value) return false
-  const config = settings.translateConfigs.find((c) => c.id === editingConfigId.value)
+  const config = translateConfig.configs.find((c) => c.id === editingConfigId.value)
   if (!config || config.isDefault) return false
   return true
 })
@@ -357,7 +355,7 @@ function deleteAndClose() {
   const id = editingConfigId.value
   if (id && canDeleteConfig.value) {
     closeConfigModal()
-    settings.removeTranslateConfig(id)
+    removeTranslateConfig(id)
   }
 }
 
@@ -384,7 +382,7 @@ type TranslateSettingsItem = ShortcutItem | LangItem | ProviderItem
 const allItems = computed<TranslateSettingsItem[]>(() => [
   { type: 'shortcut', group: '通用' },
   { type: 'lang', group: '通用' },
-  ...settings.translateConfigs.map((c) => ({
+  ...translateConfig.configs.map((c) => ({
     type: 'provider' as const,
     group: '翻译服务',
     config: c,
@@ -402,7 +400,7 @@ function onExecute(item: TranslateSettingsItem) {
 /** 当前编辑的配置类型（弹窗中判断表单布局） */
 const editingType = computed(() => {
   if (isCreating.value) return 'ai'
-  const config = settings.translateConfigs.find((c) => c.id === editingConfigId.value)
+  const config = translateConfig.configs.find((c) => c.id === editingConfigId.value)
   return config?.type || 'ai'
 })
 </script>

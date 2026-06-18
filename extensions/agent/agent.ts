@@ -10,7 +10,7 @@ import { ref, computed } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { useSettingsStore } from '@/stores/settings'
 import { generateRequestId } from '@/utils/id'
-import { config as agentConfig } from "./config"
+import { config as agentConfig, activeSearchProvider } from './config'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 
 export type AgentStatus = 'ready' | 'streaming' | 'awaiting_approval' | 'error'
@@ -89,8 +89,8 @@ export function useAgentChat() {
 
     const runConfig = {
       searchProvider: {
-        type: settings.activeSearchProvider.type,
-        apiKey: settings.activeSearchProvider.apiKey,
+        type: activeSearchProvider.value.type,
+        apiKey: activeSearchProvider.value.apiKey,
       },
       trustedCommands: agentConfig.trustedCommands,
       systemPrompt: agentConfig.systemPrompt || undefined,
