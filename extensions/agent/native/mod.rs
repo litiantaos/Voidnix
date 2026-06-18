@@ -4,7 +4,7 @@ use crate::extensions::agent::engine::loop_runner::{run_loop, LoopInput};
 use crate::extensions::agent::engine::tool_registry::ToolRegistry;
 use crate::extensions::agent::engine::AgentEvent;
 use crate::runtime::registry::Extension;
-use crate::runtime::llm::sse::{self, LlmMessage};
+use crate::runtime::llm::{self, LlmMessage};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
@@ -34,11 +34,11 @@ pub async fn chat_stream(
     model: String,
     request_id: Option<String>,
 ) -> Result<(), String> {
-    let safe_endpoint = sse::validate_ai_request(&endpoint, &model, &api_key)?;
-    let trimmed_messages = sse::trim_conversation(&messages);
+    let safe_endpoint = llm::validate_ai_request(&endpoint, &model, &api_key)?;
+    let trimmed_messages = llm::trim_conversation(&messages);
     let req_id = request_id.unwrap_or_else(|| "default".to_string());
 
-    sse::stream_openai_request(sse::StreamConfig {
+    llm::stream_openai_request(llm::StreamConfig {
         app: &app,
         endpoint: &safe_endpoint,
         api_key: &api_key,
@@ -101,7 +101,7 @@ pub async fn agent_run(
     on_event: Channel<AgentEvent>,
 ) -> Result<String, String> {
     // 安全校验
-    let safe_endpoint = sse::validate_ai_request(&endpoint, &model, &api_key)?;
+    let safe_endpoint = llm::validate_ai_request(&endpoint, &model, &api_key)?;
 
     // 构造本次的 ToolRegistry（工具始终启用）
     let tool_registry = {
