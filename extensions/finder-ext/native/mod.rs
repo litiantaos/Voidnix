@@ -371,9 +371,6 @@ fn reveal_and_rename(path: &Path) {
 
 #[tauri::command]
 pub fn quit_app(app_handle: AppHandle) {
-    // 清理临时文件
-    crate::extensions::screenshot::cleanup_temp_files();
-
     // 禁用 Finder 扩展
     FINDER_EXT_ENABLED.store(false, Ordering::Relaxed);
     let flag_path = command_dir(&app_handle).join("enabled");
