@@ -60,12 +60,37 @@
 - commit `9138a64` refactor(composables): events.ts 从 utils/ 迁移至 composables/
 - commit `e32492d` refactor(utils): generateRequestId 从 composable 迁移至 utils/id
 - commit `4f81bf9` docs: AGENTS.md 全面重写 + 删除 tier 文档 + 统一 extensions.md
+- commit `16b0d80` refactor(layout): 提取 ResultIcon 组件，精简 ContentView
+- commit `01ee0e5` refactor(search): 提取 web 搜索逻辑至 utils/web-search.ts
 
 **待完成（核心）**：
 - [ ] stores/settings.ts（586 行）拆分 → 扩展自管 config
-- [ ] useSearchCommand 拆分（407 行 → useSearchInput + useResultNavigation）
-- [ ] ContentView 图标分发抽 ResultIcon 组件
+- [ ] useSearchCommand 进一步拆分（当前 344 行，已提取 web-search）
 - [ ] AppModule 接口拆 5 组合接口
+
+### 阶段 4：扩展迁移 🔄（进行中）
+
+**已完成**：
+- commit `747ba7a` feat(extensions): 重建 4 个纯 TS 扩展（base64/time/uuid/currency）
+
+**待完成**：
+- [ ] ip 扩展转纯 TS（删 native/，46 行 Rust → TS fetch）
+- [ ] 所有扩展 config.ts 声明式 schema（defineExtensionConfig）
+- [ ] 搜索接口统一（staticItems + dynamic）
+
+### 阶段 5：测试 + 工具链 + 文档 🔄（进行中）
+
+**已完成**：
+- commit `320321b` test(web-search): 补 web-search 工具函数测试（14 用例）
+- AGENTS.md 已全面重写
+- docs/extensions.md 已创建（替代 tier1/tier2 文档）
+- check:extensions + typecheck script 已补齐
+- 6 个死依赖已删除
+- 前端 134 测试 + Rust 77 测试全绿
+
+**待完成**：
+- [ ] 扩展单元测试补齐（calculator parser、clipboard 去重、agent 防御、search 解析）
+- [ ] docs/extensions/*.md 更新（反映新架构路径）
 ### 阶段 4：扩展迁移 ⬜（未开始）
 ### 阶段 5：测试 + 工具链 + 文档 ⬜（未开始）
 ### 阶段 6：验证 ⬜（未开始）
