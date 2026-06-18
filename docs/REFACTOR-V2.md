@@ -9,35 +9,29 @@
 ### 阶段 0：创建分支 + 提交蓝本 ✅
 - commit `6270c28` docs(refactor): v2 重构执行蓝本
 
-### 阶段 1：Rust 内核重建 ✅（核心完成，精细化待续）
+### 阶段 1：Rust 内核重建 ✅（含精细化完成）
 
 **已完成**：
 - commit `cbf5624` refactor(runtime): Rust 内核目录结构重建
-  - core/infra/macos 三目录合并为 runtime/ + platform/ + http.rs
-  - core/agent/ 下沉至 extensions/agent/native/engine/
-  - 删除 Tier2 沙箱（ext_commands/ext_loader/ext_manifest）
-  - 删除 specta 类型生成（type_gen.rs + Cargo 依赖）
-  - 批量更新所有引用路径
-  - sync-extensions 简化（移除 specta/type_gen 生成）
 - commit `0b9fa18` refactor(focus): 统一 PREV_FRONT_PID 到 platform/focus 唯一源
-  - platform/focus.rs 新增 capture_frontmost/captured_pid/restore_captured
-  - runtime/shortcut.rs + window.rs 删除重复 PREV_FRONT_PID
-  - window-manager 改用 platform::focus::captured_pid()
 - commit `df73a72` refactor(registry): Tier1Extension 改名为 Extension + 加 deps/teardown
-  - trait Tier1Extension → Extension，Tier1Registry → ExtensionRegistry
-  - 新增 deps()/on_teardown()/run_teardown()
+- commit `17c14f7` refactor(llm): sse.rs 拆分为 types/security/client 三模块
+- commit `d857374` refactor(search): 消除 icon 磁盘缓存，改实时提取
+- commit `da46e59` refactor(translate): SELECTED_TEXT 下沉到 translate 扩展自管
+- commit `bf17276` refactor(platform): 统一路径校验到 platform/path_guard
+- commit `86d2e66` refactor(platform): 拆分 selection.rs → input.rs + pasteboard.rs
 
-**编译状态**：`cargo check --lib` 通过（2 个无害 warning：MAX_SSE_BUFFER + cleanup_icon_cache 待清理）
+**精细化状态**：
+- [x] SELECTED_TEXT 下沉 translate
+- [x] icon_cache 删除（零磁盘文件）
+- [x] sse.rs 拆分为 client/types/security
+- [x] selection.rs 拆分为 input（键盘注入统一）+ pasteboard（NSPasteboard 统一）
+- [x] path_guard 新建统一路径校验
+- [ ] build.rs 扫描化（低优先级，可并入阶段 2）
+- [ ] storage.rs 新增 TempHandle（待 clipboard/screenshot 扩展迁移时做）
+
+**编译状态**：`cargo check --lib` 零错误零警告
 **测试状态**：`cargo test --lib` 77 passed; 0 failed
-
-**阶段 1 待完成精细化**（可并入阶段 2 或独立 commit）：
-- [ ] runtime/shortcut.rs：SELECTED_TEXT 下沉 translate 扩展（当前 translate 还在引用 `crate::runtime::shortcut::SELECTED_TEXT`）
-- [ ] runtime/storage.rs：删除 icon_cache_dir/cleanup_icon_cache（需连同 search 扩展改实时提取）
-- [ ] runtime/storage.rs：新增 TempHandle 临时文件注册表
-- [ ] runtime/llm/sse.rs：拆分为 client.rs / types.rs / security.rs（功能不变，模块清晰化）
-- [ ] platform/selection.rs：拆分为 input.rs（键盘注入统一）+ pasteboard.rs（NSPasteboard 统一）+ translate 自管逻辑
-- [ ] platform/path_guard.rs：新建统一路径校验（合并 finder-ext BLOCKED_PREFIXES + agent canonicalize）
-- [ ] build.rs：扫描 `extensions/*/native/*.mm` 自动编译（函数化）
 
 ### 阶段 2：Rust 扩展迁移 ⬜（未开始）
 ### 阶段 3：前端运行时重建 ⬜（未开始）
