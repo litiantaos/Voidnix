@@ -36,7 +36,7 @@
 
 <script setup lang="ts" generic="T">
 import { ref, watch, nextTick, onActivated, onDeactivated } from 'vue'
-import { onKeyStroke } from '@/utils/events'
+import { onKeyStroke } from '@/composables/events'
 import { isComposing as isComposingCheck, isFormControl, wrapIndex } from '@/utils/dom'
 
 const isActive = ref(true)

@@ -1,5 +1,5 @@
 import { ref, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
-import { onKeyStroke } from '@/utils/events'
+import { onKeyStroke } from '@/composables/events'
 import { open } from '@tauri-apps/plugin-shell'
 import { invoke } from '@tauri-apps/api/core'
 import { useTauriListener } from '@/composables/useTauriListener'
