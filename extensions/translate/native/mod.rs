@@ -2,13 +2,12 @@ pub mod ai_translate;
 pub mod youdao;
 mod lang_utils;
 
-use crate::core::tier1::Tier1Extension;
+use crate::runtime::registry::Tier1Extension;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tauri::AppHandle;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct TranslateResult {
     pub source: String,
     pub translation: String,
@@ -16,7 +15,6 @@ pub struct TranslateResult {
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn get_selected_text() -> Result<String, String> {
     use std::time::Instant;
     use tokio::process::Command;
@@ -65,33 +63,33 @@ impl Tier1Extension for Plugin {
         #[cfg(target_os = "macos")]
         {
             use tauri::Emitter;
-            crate::core::shortcut::register_shortcut_hook("translate", Box::new(|app, ctx| {
+            crate::runtime::shortcut::register_shortcut_hook("translate", Box::new(|app, ctx| {
                 if ctx.window_hidden {
-                    if let Ok(mut selected) = crate::core::shortcut::SELECTED_TEXT.lock() {
+                    if let Ok(mut selected) = crate::runtime::shortcut::SELECTED_TEXT.lock() {
                         *selected = String::new();
                     }
 
                     let self_pid = std::process::id() as i32;
                     let target_pid = ctx.front_pid.filter(|&p| p != self_pid);
 
-                    let ax_text = crate::macos::text_selection::try_ax();
-                    let snap = crate::macos::text_selection::snapshot_clipboard();
+                    let ax_text = crate::platform::selection::try_ax();
+                    let snap = crate::platform::selection::snapshot_clipboard();
                     if ax_text.is_none() {
                         if let Some(pid) = target_pid {
-                            crate::macos::text_selection::inject_copy(pid);
+                            crate::platform::selection::inject_copy(pid);
                         }
                     }
 
-                    crate::core::window::show_main(app);
+                    crate::runtime::window::show_main(app);
 
                     let app_clone = app.clone();
                     std::thread::spawn(move || {
                         let text = if let Some(t) = ax_text {
                             t
                         } else {
-                            crate::macos::text_selection::poll_clipboard(snap)
+                            crate::platform::selection::poll_clipboard(snap)
                         };
-                        if let Ok(mut selected) = crate::core::shortcut::SELECTED_TEXT.lock() {
+                        if let Ok(mut selected) = crate::runtime::shortcut::SELECTED_TEXT.lock() {
                             *selected = text.clone();
                         }
                         let _ = app_clone.emit("translate-text-ready", text);

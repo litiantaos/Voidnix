@@ -4,7 +4,6 @@ use super::TranslateResult;
 use super::lang_utils::smart_target_lang;
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn translate_youdao(
     text: String,
     app_key: String,
@@ -42,7 +41,7 @@ pub async fn translate_youdao(
         ("curtime", curtime.as_str()),
     ];
 
-    let response = crate::infra::http::client()
+    let response = crate::http::client()
         .post("https://openapi.youdao.com/api")
         .form(&params)
         .send()

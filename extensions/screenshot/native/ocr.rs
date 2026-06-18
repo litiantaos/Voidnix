@@ -4,7 +4,6 @@ use super::crop::crop_with_annotation;
 use super::ffi::{decode_image_data, picker_jpeg_path, OcrResult, TextRegion};
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn ocr_image(
     sel_x: f64,
     sel_y: f64,
@@ -79,7 +78,6 @@ print(String(data: data, encoding: .utf8)!)"#,
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn detect_text_regions(scale: f64) -> Result<Vec<TextRegion>, String> {
     #[cfg(target_os = "macos")]
     {

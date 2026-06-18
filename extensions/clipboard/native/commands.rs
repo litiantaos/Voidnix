@@ -1,11 +1,10 @@
 use super::db::Database;
-use crate::core::shortcut::set_window_visible;
+use crate::runtime::shortcut::set_window_visible;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct ClipboardItem {
     pub id: String,
     pub content: String,
@@ -20,7 +19,6 @@ pub struct ClipboardItem {
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn get_clipboard_history(
     filter_favorite: Option<bool>,
     limit: Option<u32>,
@@ -85,7 +83,6 @@ pub async fn clear_clipboard_history(app: tauri::AppHandle) -> Result<(), String
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn delete_clipboard_items(
     ids: Vec<String>,
     app: tauri::AppHandle,
@@ -115,7 +112,6 @@ pub async fn delete_clipboard_items(
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn toggle_clipboard_favorite(id: String, app: tauri::AppHandle) -> Result<(), String> {
     let db = app.state::<Database>();
     let conn = db.conn();
@@ -128,7 +124,6 @@ pub async fn toggle_clipboard_favorite(id: String, app: tauri::AppHandle) -> Res
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn get_clipboard_image(
     id: String,
     app: tauri::AppHandle,
@@ -183,13 +178,12 @@ fn write_to_pasteboard(content: &str, content_type: &str) {
 }
 
 fn hide_and_paste(app: &tauri::AppHandle) {
-    crate::core::window::hide_main(app);
+    crate::runtime::window::hide_main(app);
     set_window_visible(false);
     std::thread::spawn(|| simulate_cmd_v());
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), String> {
     let item = {
         let db = app.state::<Database>();
@@ -217,7 +211,6 @@ pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), Str
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<(), String> {
     let items = {
         let db = app.state::<Database>();

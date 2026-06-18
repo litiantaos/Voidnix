@@ -1,4 +1,4 @@
-use crate::infra::tool_calls_parser::{ChoiceDelta, FinalizedToolCall, ToolCallAccumulator};
+use crate::runtime::llm::parser::{ChoiceDelta, FinalizedToolCall, ToolCallAccumulator};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
@@ -304,7 +304,7 @@ pub async fn stream_openai_request(
         body["tool_choice"] = serde_json::Value::String(choice.to_string());
     }
 
-    let response = crate::infra::http::client()
+    let response = crate::http::client()
         .post(&url)
         .header("Authorization", format!("Bearer {}", config.api_key.trim()))
         .header("Content-Type", "application/json")

@@ -5,26 +5,20 @@ macro_rules! configure_app {
     ($builder:expr) => {
         $builder
             .invoke_handler(tauri::generate_handler![
-        crate::core::permission::check_screen_recording_permission,
-        crate::core::permission::check_accessibility_permission,
-        crate::core::permission::request_accessibility_permission,
-        crate::core::permission::check_full_disk_access_permission,
-        crate::core::permission::open_privacy_settings,
-        crate::core::shortcut::start_shortcut_recording,
-        crate::core::shortcut::stop_shortcut_recording,
-        crate::core::shortcut::is_app_active,
-        crate::core::shortcut::hide_window,
-        crate::core::shortcut::get_selected_text_cached,
-        crate::core::shortcut::register_global_shortcut,
-        crate::core::window::set_main_window_size,
-        crate::core::window::get_home_dir,
-        crate::core::window::pick_directory,
-        crate::core::ext_commands::ext_list,
-        crate::core::ext_commands::ext_install,
-        crate::core::ext_commands::ext_uninstall,
-        crate::core::ext_commands::ext_entry_content,
-        crate::core::ext_commands::ext_readme,
-        crate::core::ext_commands::ext_rescan,
+        crate::runtime::permission::check_screen_recording_permission,
+        crate::runtime::permission::check_accessibility_permission,
+        crate::runtime::permission::request_accessibility_permission,
+        crate::runtime::permission::check_full_disk_access_permission,
+        crate::runtime::permission::open_privacy_settings,
+        crate::runtime::shortcut::start_shortcut_recording,
+        crate::runtime::shortcut::stop_shortcut_recording,
+        crate::runtime::shortcut::is_app_active,
+        crate::runtime::shortcut::hide_window,
+        crate::runtime::shortcut::get_selected_text_cached,
+        crate::runtime::shortcut::register_global_shortcut,
+        crate::runtime::window::set_main_window_size,
+        crate::runtime::window::get_home_dir,
+        crate::runtime::window::pick_directory,
         crate::extensions::screenshot::open_module_subview,
         crate::extensions::screenshot::session::capture_screen,
         crate::extensions::screenshot::session::enter_screenshot_mode,
@@ -81,8 +75,8 @@ macro_rules! configure_app {
         crate::extensions::clipboard::commands::paste_clipboard_item,
         crate::extensions::clipboard::commands::paste_clipboard_items,
             ])
-        .plugin(crate::core::shortcut::init())
-        .plugin(crate::core::window::init())
+        .plugin(crate::runtime::shortcut::init())
+        .plugin(crate::runtime::window::init())
         .plugin(crate::extensions::search::init())
         .plugin(crate::extensions::ip::init())
     };

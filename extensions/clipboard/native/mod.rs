@@ -1,4 +1,4 @@
-use crate::core::tier1::Tier1Extension;
+use crate::runtime::registry::Tier1Extension;
 use tauri::{AppHandle, Manager};
 
 pub mod commands;

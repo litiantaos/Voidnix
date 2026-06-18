@@ -7,7 +7,6 @@ use super::types::{SearchResult, SEARCH_SESSION};
 
 /// 返回全量应用列表（带 use_count + last_used），由前端做拼音匹配与排序。
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn search_apps() -> Result<Vec<SearchResult>, String> {
     let apps = get_cached_apps().await;
     let session_deltas = SEARCH_SESSION
@@ -50,7 +49,6 @@ struct FileEntry {
 /// 用 mdfind 拉候选，通过 kMDItemContentType 判断文件/文件夹类型，
 /// 返回带元数据的原始列表，由前端打分排序。
 #[tauri::command]
-#[cfg_attr(feature = "specta", specta::specta)]
 pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
     if query.trim().is_empty() {
         return Ok(vec![]);
