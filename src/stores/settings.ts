@@ -61,7 +61,6 @@ export const useSettingsStore = defineStore('settings', () => {
   )
 
   // ─── translate 扩展配置 ────────────────────────────────────
-  const translateTargetLang = ref('zh')
   const translateConfigs = ref<TranslateApiConfig[]>([
     {
       id: generateId(),
@@ -87,14 +86,6 @@ export const useSettingsStore = defineStore('settings', () => {
       searchProviders.value.find((p) => p.id === activeSearchProviderId.value) ||
       searchProviders.value[0],
   )
-  const agentTrustedCommands = ref<string[]>([
-    'ls', 'cat', 'pwd', 'echo', 'head', 'tail', 'wc', 'file', 'stat', 'date',
-    'which', 'whoami', 'uname', 'find', 'grep', 'rg', 'fd', 'ag', 'tree', 'diff',
-    'comm', 'cmp', 'md5sum', 'shasum', 'mkdir', 'touch', 'cp', 'mv', 'ln', 'tee',
-    'truncate', 'sed', 'awk', 'sort', 'uniq', 'cut', 'tr', 'paste', 'expand',
-    'jq', 'yq', 'bat', 'git',
-  ])
-  const agentSystemPrompt = ref('')
 
   // ─── 持久化工具 ────────────────────────────────────────────
 
@@ -183,11 +174,9 @@ export const useSettingsStore = defineStore('settings', () => {
       if (shortcuts?.overrides) shortcutOverrides.value = shortcuts.overrides
 
       const translate = await store.get<{
-        targetLang?: string
         configs?: TranslateApiConfig[]
         activeProviderModelKey?: string
       }>('translate')
-      if (translate?.targetLang) translateTargetLang.value = translate.targetLang
       if (translate?.configs?.length) {
         translateConfigs.value = translate.configs
         const firstYoudao = translateConfigs.value.find((c) => c.type === 'youdao')
@@ -207,13 +196,9 @@ export const useSettingsStore = defineStore('settings', () => {
       const agent = await store.get<{
         searchProviders?: SearchProviderConfig[]
         activeSearchProviderId?: string
-        trustedCommands?: string[]
-        systemPrompt?: string
       }>('agent')
       if (agent?.searchProviders?.length) searchProviders.value = agent.searchProviders
       if (agent?.activeSearchProviderId) activeSearchProviderId.value = agent.activeSearchProviderId
-      if (agent?.trustedCommands != null) agentTrustedCommands.value = agent.trustedCommands
-      if (agent?.systemPrompt != null) agentSystemPrompt.value = agent.systemPrompt
     } catch (e) {
       console.warn('Failed to load config/settings.json, using defaults:', e)
       try {
@@ -240,7 +225,6 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  const setTranslateTargetLang = createSetter(translateTargetLang, 'translate', 'targetLang')
   const setActiveProviderModelKey = createSetter(activeProviderModelKey, 'aiProviders', 'activeProviderModelKey')
 
   async function saveSearchProviders() {
@@ -284,38 +268,9 @@ export const useSettingsStore = defineStore('settings', () => {
     await saveSearchProviders()
   }
 
-  async function setAgentTrustedCommands(val: string[]) {
-    agentTrustedCommands.value = val
-    if (store) {
-      const group = (await store.get<Record<string, unknown>>('agent')) || {}
-      group.trustedCommands = val
-      await store.set('agent', group)
-      await store.save()
-    }
-  }
-
-  async function setAgentSystemPrompt(val: string) {
-    agentSystemPrompt.value = val
-    if (store) {
-      const group = (await store.get<Record<string, unknown>>('agent')) || {}
-      group.systemPrompt = val
-      await store.set('agent', group)
-      await store.save()
-    }
-  }
-
-  async function trustCommand(cmd: string) {
-    const name = cmd.trim()
-    if (!name) return
-    if (agentTrustedCommands.value.includes(name)) return
-    agentTrustedCommands.value = [...agentTrustedCommands.value, name]
-    await setAgentTrustedCommands(agentTrustedCommands.value)
-  }
-
   return {
     globalShortcut,
     shortcutOverrides,
-    translateTargetLang,
     translateConfigs,
     aiProviders,
     activeProviderModelKey,
@@ -323,13 +278,10 @@ export const useSettingsStore = defineStore('settings', () => {
     searchProviders,
     activeSearchProviderId,
     activeSearchProvider,
-    agentTrustedCommands,
-    agentSystemPrompt,
     loadSettings,
     setGlobalShortcut,
     getShortcutOverride,
     setShortcutOverride,
-    setTranslateTargetLang,
     addAiProvider: aiProviderConfigManager.add,
     removeAiProvider: aiProviderConfigManager.remove,
     updateAiProvider: aiProviderConfigManager.update,
@@ -341,8 +293,5 @@ export const useSettingsStore = defineStore('settings', () => {
     removeSearchProvider,
     updateSearchProvider,
     setActiveSearchProviderId,
-    setAgentTrustedCommands,
-    setAgentSystemPrompt,
-    trustCommand,
   }
 })

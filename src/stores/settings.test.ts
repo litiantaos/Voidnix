@@ -10,7 +10,6 @@ describe('settings store', () => {
   it('初始默认值', () => {
     const store = useSettingsStore()
     expect(store.globalShortcut).toBe('CommandOrControl+Shift+Space')
-    expect(store.translateTargetLang).toBe('zh')
   })
 
   describe('activeProviderConfig', () => {
