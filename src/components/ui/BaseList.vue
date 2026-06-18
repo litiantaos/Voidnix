@@ -37,10 +37,7 @@
 <script setup lang="ts" generic="T">
 import { ref, watch, nextTick, onActivated, onDeactivated } from 'vue'
 import { onKeyStroke } from '@/utils/events'
-import { useAppStore } from '@/stores/app'
 import { isComposing as isComposingCheck, isFormControl, wrapIndex } from '@/utils/dom'
-
-const appStore = useAppStore()
 
 const isActive = ref(true)
 onActivated(() => {
@@ -59,11 +56,17 @@ const props = withDefaults(
     multiSelect?: boolean
     selectedIds?: Set<string>
     idField?: string
+    /** 是否激活键盘导航（由父组件根据模块状态控制） */
+    keyboardActive?: boolean
+    /** IME 输入法合成状态（由父组件传入） */
+    composing?: boolean
   }>(),
   {
     selectedIndex: 0,
     multiSelect: false,
     idField: 'id',
+    keyboardActive: true,
+    composing: false,
   },
 )
 
@@ -152,8 +155,8 @@ function onItemDblClick(index: number) {
 // ── Keyboard ──
 onKeyStroke(['ArrowDown', 'ArrowUp'], (e) => {
   if (!isActive.value) return
-  if (!appStore.activeModuleId) return
-  if (appStore.isComposing || isComposingCheck(e)) return
+  if (!props.keyboardActive) return
+  if (props.composing || isComposingCheck(e)) return
   if (
     isFormControl(document.activeElement, { settingsControl: true }) &&
     (document.activeElement as Element).id !== 'main-search-input'
@@ -204,7 +207,7 @@ onKeyStroke(['ArrowDown', 'ArrowUp'], (e) => {
 if (props.multiSelect) {
   onKeyStroke('a', (e) => {
     if (!isActive.value) return
-    if (!appStore.activeModuleId) return
+    if (!props.keyboardActive) return
     if (!(e.metaKey || e.ctrlKey)) return
     e.preventDefault()
     const ids = new Set(props.items.map((item) => getId(item)))
@@ -213,7 +216,7 @@ if (props.multiSelect) {
 
   onKeyStroke('Escape', (e) => {
     if (!isActive.value) return
-    if (!appStore.activeModuleId) return
+    if (!props.keyboardActive) return
     if ((props.selectedIds?.size ?? 0) === 0) return
     e.preventDefault()
     emitIds(new Set())
@@ -222,8 +225,8 @@ if (props.multiSelect) {
 
 onKeyStroke('Enter', (e) => {
   if (!isActive.value) return
-  if (!appStore.activeModuleId) return
-  if (appStore.isComposing || isComposingCheck(e)) return
+  if (!props.keyboardActive) return
+  if (props.composing || isComposingCheck(e)) return
   if (
     isFormControl(document.activeElement, { settingsControl: true }) &&
     (document.activeElement as Element).id !== 'main-search-input'
