@@ -16,7 +16,7 @@ mod signals;
 
 #[derive(Parser)]
 #[command(
-    name = "zsh-as",
+    name = "zsh-autosuggestions",
     version,
     about = "Voidnix zsh frecency autosuggestions"
 )]

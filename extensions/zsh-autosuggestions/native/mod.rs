@@ -30,7 +30,7 @@ fn ext_dir(app: &AppHandle) -> PathBuf {
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("extensions")
-        .join("zsh-as");
+        .join("zsh-autosuggestions");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -324,8 +324,8 @@ mod tests {
     #[test]
     fn build_zshrc_line_format() {
         let bin = std::path::Path::new("/App/V.app/Contents/MacOS/zsh-autosuggestions");
-        let cache = std::path::Path::new("/u/Lib/x/extensions/zsh-as/index.cache");
-        let signals = std::path::Path::new("/u/Lib/x/extensions/zsh-as/signals.log");
+        let cache = std::path::Path::new("/u/Lib/x/extensions/zsh-autosuggestions/index.cache");
+        let signals = std::path::Path::new("/u/Lib/x/extensions/zsh-autosuggestions/signals.log");
         let line = build_zshrc_line(bin, cache, signals);
         assert!(line.starts_with("export ZSH_AS_BIN="));
         assert!(line.contains("ZSH_AS_CACHE="));
