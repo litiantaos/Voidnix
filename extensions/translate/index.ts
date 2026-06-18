@@ -1,3 +1,4 @@
+import { config as translateConfig } from './config'
 import { ref } from 'vue'
 import { registerModule } from '@/core/module-registry'
 import { asyncView } from '@/core/async-view'
@@ -145,7 +146,7 @@ export async function translateText(text: string) {
 
   const settings = useSettingsStore()
   const configs = settings.translateConfigs
-  const targetLang = settings.translateTargetLang
+  const targetLang = translateConfig.targetLang
   const promises: Promise<void>[] = []
 
   const placeholder: TranslateResult[] = []
@@ -307,7 +308,7 @@ const mod: AppModule = {
 
     const settings = useSettingsStore()
     const configs = settings.translateConfigs
-    const targetLang = settings.translateTargetLang
+    const targetLang = translateConfig.targetLang
     const results: SearchResult[] = []
     const promises: Promise<void>[] = []
 
