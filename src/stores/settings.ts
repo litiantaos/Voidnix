@@ -35,29 +35,6 @@ export interface TranslateApiConfig {
 
 const generateId = generateRequestId
 
-/// 扩展命名空间读取工具：扩展声明自己的配置 schema 后，通过此函数读取。
-///
-/// @example
-/// interface ClipboardSettings { maxDays: number }
-/// const { data, set } = await namespace<ClipboardSettings>('clipboard', { maxDays: 30 })
-export async function namespace<T extends Record<string, unknown>>(
-  key: string,
-  defaults: T,
-): Promise<{ data: T; set: (update: Partial<T>) => Promise<void> }> {
-  const store = await load('config/settings.json', { autoSave: false, defaults: {} })
-  const loaded = ((await store.get<Record<string, T>>(key)) || {}) as T
-  const data = { ...defaults, ...loaded } as T
-
-  async function set(update: Partial<T>) {
-    const merged = { ...data, ...update }
-    Object.assign(data, update)
-    await store.set(key, merged)
-    await store.save()
-  }
-
-  return { data, set }
-}
-
 export const useSettingsStore = defineStore('settings', () => {
   let store: Store | null = null
 
