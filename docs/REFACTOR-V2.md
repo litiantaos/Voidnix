@@ -62,19 +62,21 @@
 - commit `4f81bf9` docs: AGENTS.md 全面重写 + 删除 tier 文档 + 统一 extensions.md
 - commit `16b0d80` refactor(layout): 提取 ResultIcon 组件，精简 ContentView
 - commit `01ee0e5` refactor(search): 提取 web 搜索逻辑至 utils/web-search.ts
+- commit `cb14255` feat(runtime): 新增 useExtensionConfig 配置系统基础设施
+- 4 扩展迁移至 defineConfig：awake/screenshot/window-manager/clipboard（含 Rust monitor 同步）
 
 **待完成（核心）**：
-- [ ] stores/settings.ts（586 行）拆分 → 扩展自管 config
-- [ ] useSearchCommand 进一步拆分（当前 344 行，已提取 web-search）
+- [ ] stores/settings.ts（586 行）清理已迁移的配置项
+- [ ] 剩余扩展迁移 defineConfig：translate/agent/finder-ext/zsh-as
 - [ ] AppModule 接口拆 5 组合接口
 
 ### 阶段 4：扩展迁移 🔄（进行中）
 
 **已完成**：
 - commit `747ba7a` feat(extensions): 重建 4 个纯 TS 扩展（base64/time/uuid/currency）
+- commit `ba67bf0` refactor(ip): 从 native 转为纯 TS 扩展（删 46 行 Rust）
 
 **待完成**：
-- [ ] ip 扩展转纯 TS（删 native/，46 行 Rust → TS fetch）
 - [ ] 所有扩展 config.ts 声明式 schema（defineExtensionConfig）
 - [ ] 搜索接口统一（staticItems + dynamic）
 
