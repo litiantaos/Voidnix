@@ -24,7 +24,7 @@ bun run typecheck            # vue-tsc 严格类型检查
 Co-location：`*.test.ts` 同目录；Rust `#[cfg(test)]` 内联。
 
 ```bash
-bun run test                       # 前端（Vitest + happy-dom）
+bun run test                       # 前端（Vitest + happy-dom，src/ + extensions/）
 bun run test:watch                 # 前端监听
 bun run test:e2e                   # E2E（Playwright）
 cd src-tauri && cargo test --lib   # Rust
@@ -34,13 +34,15 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 ## 开发扩展
 
-所有扩展同构：`extensions/<id>/index.ts`（`registerModule`）+ 可选 `native/mod.rs`（Rust 后端）。
+所有扩展同构：`extensions/<id>/index.ts`（`registerModule`）+ 可选 `config.ts`（`defineConfig`）+ 可选 `native/mod.rs`（Rust 后端）。
 
-含 native/ 的扩展（10 个）：clipboard、screenshot、awake、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、ip
+含 native/ 的扩展（9 个）：clipboard、screenshot、awake、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search
 
-纯 TS 扩展（2 个）：calculator、settings
+纯 TS 扩展（7 个）：calculator、settings、ip、base64、time、uuid、currency
 
 **Rust 端注册**：双注册——`configure_app!` 宏（编译期命令注册，sync-extensions 自动扫描 `#[tauri::command]`）+ `Extension` trait（运行时 `on_setup`/`on_teardown` 钩子，在 `lib.rs` 的 `ExtensionRegistry` 注册）。
+
+**扩展配置**：每个扩展通过 `config.ts` 的 `defineConfig('extId', { ...defaults })` 自管配置，`reactive()` + `watch()` 自动持久化至 `extensions/<id>/config.json`。框架级配置（全局快捷键 + AI Provider）在 `stores/settings.ts`。
 
 复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)。
 
@@ -48,13 +50,13 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **前后端通信**：前端用裸 `invoke()` + 手写类型（`src/bindings.ts` 提供命令名常量）。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。所有 Command 须在 `configure_app!` 注册（sync-extensions 自动扫描）。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
 
-**模块子视图**：`open_module_subview(moduleId, subviewId, payload)` → Rust 显示主窗口 + 发 `open-module-subview` 事件 → App.vue 激活模块、调用 `onOpenSubview`。
+**模块接口**：`AppModule` 拆分为 5 组合接口——`ModuleMeta`（元数据）、`ModuleUI`（视图槽位）、`ModuleSearch`（搜索能力）、`ModuleLifecycle`（生命周期钩子）、`ModuleHints`（状态栏提示）。扩展按需组合。
 
 **窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。
 
 **全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。
 
-**Agent 引擎**（`extensions/agent/native/engine/`）：tool calling loop，服务 agent 扩展。prompt/max_turns 由扩展 config 注入（非框架硬编码）。
+**Agent 引擎**（`extensions/agent/native/engine/`）：tool calling loop，服务 agent 扩展。prompt/max_turns/trustedCommands 由扩展 config 注入（非框架硬编码）。
 
 - `loop_runner.rs`：主循环 `run_loop`：调 LLM → 解析 tool_calls → 审批 → 执行 → 回灌 → 下一轮
 - `approval.rs`：`ApprovalManager`（全局 State，oneshot channel）
@@ -74,7 +76,9 @@ SearchResult { id, title, module; description?; icon?; score?; shortcut?; data?:
 
 **UI 槽位**：`view`（主视图）、`searchBarAccessory`（搜索栏右侧）、`subviews`（命名子视图）。槽位组件 `Actions` 后缀。
 
-**状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide` / `copyAndShow`（`src/utils/clipboard.ts`）自动获得「已复制」反馈。模块可通过 `AppModule.enterHint` / `multiSelectHint` / `deleteHint` 自定义快捷键提示。
+**状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide` / `copyAndShow`（`src/utils/clipboard.ts`）自动获得「已复制」反馈。模块可通过 `ModuleHints.enterHint` / `multiSelectHint` / `deleteHint` 自定义快捷键提示。
+
+**LLM 基础设施**（`runtime/llm/`）：agent + translate 扩展共享。`types.rs`（LlmMessage）、`security.rs`（SSRF 防护 + 消息安全 + secret_scrub）、`client.rs`（StreamConfig/stream_openai_request）、`parser.rs`（tool_calls 解析）。
 
 ## 目录结构
 
@@ -84,32 +88,34 @@ src-tauri/src/
 ├── extensions.rs       # 自动生成（configure_app! 宏，勿手改）
 ├── http.rs             # 全局 HTTP 客户端
 ├── runtime/            # 运行时核心
-│   ├── constants.rs    # 语义常量（搜索权重等）
+│   ├── constants.rs    # 语义常量
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
-│   ├── storage.rs      # 存储路径常量
+│   ├── storage.rs      # TempHandle 临时文件管理
 │   ├── permission.rs   # 系统权限薄壳
-│   ├── registry.rs     # Extension trait + ExtensionRegistry
+│   ├── registry.rs     # Extension trait + ExtensionRegistry（并行 bootstrap）
 │   └── llm/            # LLM 基础设施（types / security / client / parser）
 └── platform/           # macOS 原生桥
     ├── panel.rs        # NSPanel 转换
     ├── skylight.rs     # Space 迁移（私有 API）
     ├── focus.rs        # 焦点管理（PREV_FRONT_PID 唯一源）
-    ├── input.rs        # CGEvent 键盘注入（统一）
-    ├── pasteboard.rs   # NSPasteboard 操作（统一）
-    ├── selection.rs    # AX 选中文本提取
+    ├── input.rs        # CGEvent 键盘注入（统一 post_key/inject_copy/paste_global）
+    ├── pasteboard.rs   # NSPasteboard 统一（read_text/string_for_type/data_for_type/has_type/snapshot/restore）
+    ├── selection.rs    # AX 选中文本提取 + poll_clipboard
     ├── click_monitor.rs
     ├── permission.rs
     └── path_guard.rs   # 统一路径校验
 
 src/
+├── runtime/
+│   └── storage.ts      # defineConfig + defineExtensionConfig（扩展自管配置）
 ├── components/
 │   ├── ui/             # 原子组件（只用这些，禁止手写底层标签）
-│   └── layout/         # MainView / ContentView / StatusBar
+│   └── layout/         # MainView / ContentView / StatusBar / ResultIcon
 ├── composables/
 ├── core/               # module-registry / module-helpers / async-view
-├── stores/             # app / settings / update
-├── types/              # module / agent
+├── stores/             # app / settings（仅框架级）/ update
+├── types/              # module（5 组合接口）/ agent
 └── utils/
 ```
 
@@ -135,13 +141,20 @@ UnoCSS + TailwindCSS 最佳实践，遵循官方规范。
 
 ```
 ~/Library/Application Support/com.litiantao.voidnix/
-├── config/settings.json              # 全局配置
+├── config/settings.json              # 框架级配置（快捷键 + AI Provider）
 └── extensions/
     ├── clipboard/clipboard.db        # 剪贴板历史（SQLite WAL）
+    ├── clipboard/config.json         # clipboard 扩展配置（defineConfig）
     ├── calculator/calc_history.json  # 计算器历史
     ├── finder-ext/commands/          # Finder 扩展 IPC
     ├── zsh-autosuggestions/          # zsh 补全（bin/ index.cache signals.log enabled）
-    └── awake/                        # awake binary（app_data_dir，非 /tmp）
+    ├── awake/                        # awake binary + config.json
+    ├── screenshot/config.json        # screenshot 扩展配置
+    ├── window-manager/config.json    # window-manager 扩展配置
+    ├── translate/config.json         # translate 扩展配置
+    ├── agent/config.json             # agent 扩展配置
+    ├── zsh-autosuggestions/config.json
+    └── finder-ext/config.json
 ```
 
 icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litiantao.voidnix.dev` 同构。

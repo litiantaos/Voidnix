@@ -18,7 +18,7 @@ frecency（`(count+1)^0.7 * exp(-dt/half_life)` + K=10 归一，半衰期默认 
 
 ## 文件布局
 
-`~/Library/Application Support/<bundle-id>/extensions/zsh-as/`：
+`~/Library/Application Support/<bundle-id>/extensions/zsh-autosuggestions/`：
 
 - `index.cache` —— sourceable zsh：`typeset -ga _zsh_as_sorted`（按 score 降序）+ `_ZSH_AS_IDX_VERSION`（zsh 端 source 后校验 `==1`，不匹配则视为格式错误）
 - `signals.log` —— append-only TSV：`<exit>\t<state>\t<cmd>`（3 字段；state：0=无 suggestion 互动，1=accepted，2=rejected；仅 `exit!=0 || state!=0` 时 append 控制体积；rebuild 入口 rotate+compact：>1MB 或含无效行时保留最后 10000 有效行 atomic 写回）
@@ -40,7 +40,7 @@ zsh precmd 用 `zstat +mtime` 检测 cache 变化，变化才重新 source（sou
 
 ## 分发
 
-binary 随主程序 `[[bin]] zsh-autosuggestions` 编译，打入 `.app/Contents/MacOS/`（Tauri 自动打包 `[[bin]]` target）。`on_setup` 用**版本号比对**（编译期常量 `BIN_VERSION` 写入 `bin_version` 文件）从 .app 复制到 `extensions/zsh-as/bin/`，已部署版本匹配才跳过；并幂等刷新 .zshrc 行。**改 binary 内容必须 bump `BIN_VERSION`（`mod.rs`），否则不部署——init.zsh 经 `include_str!` 嵌入 binary，改 init.zsh 也算改 binary。** .zshrc 行：`export ZSH_AS_BIN=... ZSH_AS_CACHE=... ZSH_AS_SIGNALS=...; eval "$("$ZSH_AS_BIN" init)"`（行尾 marker `# voidnix zsh-autosuggestions` 用于精确 remove）。.zshrc 写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.cache` + `signals.log`（保留 binary 避免反复复制），`set_zsh_autosuggestions_enabled` 返回 `Result`，失败时前端 revert 状态并 `showStatus` 提示。
+binary 随主程序 `[[bin]] zsh-autosuggestions` 编译，打入 `.app/Contents/MacOS/`（Tauri 自动打包 `[[bin]]` target）。`on_setup` 用**版本号比对**（编译期常量 `BIN_VERSION` 写入 `bin_version` 文件）从 .app 复制到 `extensions/zsh-autosuggestions/bin/`，已部署版本匹配才跳过；并幂等刷新 .zshrc 行。**改 binary 内容必须 bump `BIN_VERSION`（`mod.rs`），否则不部署——init.zsh 经 `include_str!` 嵌入 binary，改 init.zsh 也算改 binary。** .zshrc 行：`export ZSH_AS_BIN=... ZSH_AS_CACHE=... ZSH_AS_SIGNALS=...; eval "$("$ZSH_AS_BIN" init)"`（行尾 marker `# voidnix zsh-autosuggestions` 用于精确 remove）。.zshrc 写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.cache` + `signals.log`（保留 binary 避免反复复制），`set_zsh_autosuggestions_enabled` 返回 `Result`，失败时前端 revert 状态并 `showStatus` 提示。
 
 ## history 路径解析
 
