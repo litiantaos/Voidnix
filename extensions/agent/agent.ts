@@ -9,7 +9,7 @@
 import { ref, computed } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { useSettingsStore } from '@/stores/settings'
-import { generateRequestId } from '@/composables/useStreamOutput'
+import { generateRequestId } from '@/utils/id'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 
 export type AgentStatus = 'ready' | 'streaming' | 'awaiting_approval' | 'error'

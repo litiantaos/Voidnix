@@ -10,7 +10,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
 import { toErrorMessage } from '@/utils/error'
 import { providerLabelFromUrl } from '@/utils/provider'
-import { generateRequestId } from '@/composables/useStreamOutput'
+import { generateRequestId } from '@/utils/id'
 import { commands, type TranslateResult as BindingsTranslateResult } from '@/bindings'
 
 const TranslateView = asyncView(() => import('./View.vue'))

@@ -4,7 +4,7 @@ import { Store, load } from '@tauri-apps/plugin-store'
 import { invoke } from '@tauri-apps/api/core'
 import { commands } from '@/bindings'
 import { isTauri } from '@/utils/tauri'
-import { generateRequestId } from '@/composables/useStreamOutput'
+import { generateRequestId } from '@/utils/id'
 
 export interface AiProviderConfig {
   id: string
