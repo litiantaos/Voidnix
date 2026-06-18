@@ -15,10 +15,10 @@
       >
         <template #trailing>
           <BaseButton
-            :variant="settings.zshAutosuggestionsEnabled ? 'primary' : 'default'"
+            :variant="zshConfig.enabled ? 'primary' : 'default'"
             @click.stop="toggle"
           >
-            {{ settings.zshAutosuggestionsEnabled ? '已开启' : '已关闭' }}
+            {{ zshConfig.enabled ? '已开启' : '已关闭' }}
           </BaseButton>
         </template>
       </BaseListItem>
@@ -28,21 +28,19 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
+import { config as zshConfig } from './config'
 import { useAppStore } from '@/stores/app'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 
-const settings = useSettingsStore()
 const appStore = useAppStore()
 const selectedIndex = ref(0)
 const items = [{ group: '通用' }]
 
-const toggle = async () => {
-  const newVal = !settings.zshAutosuggestionsEnabled
+const toggle = () => {
   try {
-    await settings.setZshAutosuggestionsEnabled(newVal)
+    zshConfig.enabled = !zshConfig.enabled
   } catch (e) {
     appStore.showStatus(`开关失败：${e ?? '未知错误'}`, 4000)
   }

@@ -17,10 +17,10 @@
         >
           <template #trailing>
             <BaseButton
-              :variant="settings.finderExtEnabled ? 'primary' : 'default'"
+              :variant="finderConfig.enabled ? 'primary' : 'default'"
               @click.stop="toggle"
             >
-              {{ settings.finderExtEnabled ? '已开启' : '已关闭' }}
+              {{ finderConfig.enabled ? '已开启' : '已关闭' }}
             </BaseButton>
           </template>
         </BaseListItem>
@@ -39,13 +39,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { useSettingsStore } from '@/stores/settings'
+import { config as finderConfig } from './config'
 import { useAppStore } from '@/stores/app'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 
-const settings = useSettingsStore()
 const appStore = useAppStore()
 
 const authorized = ref<boolean | null>(null)
@@ -61,9 +60,9 @@ async function checkAuthorized() {
 checkAuthorized()
 
 const toggle = async () => {
-  const newVal = !settings.finderExtEnabled
+  const newVal = !finderConfig.enabled
   try {
-    await settings.setFinderExtEnabled(newVal)
+    finderConfig.enabled = newVal
   } catch (e) {
     appStore.showStatus(`开关失败：${e ?? '未知错误'}`, 4000)
     return
