@@ -33,7 +33,23 @@
 **编译状态**：`cargo check --lib` 零错误零警告
 **测试状态**：`cargo test --lib` 77 passed; 0 failed
 
-### 阶段 2：Rust 扩展迁移 ⬜（未开始）
+### 阶段 2：Rust 扩展迁移 🔄（进行中）
+
+**已完成**：
+- commit `a668e29` refactor(agent): DEFAULT_SYSTEM_PROMPT + MAX_TURNS 从 engine 下沉至扩展
+- commit `84e238b` refactor(finder-ext): 消除横向依赖 screenshot::cleanup_temp_files
+- commit `cc846cf` fix(zsh-as): 目录名 zsh-as → zsh-autosuggestions（统一约定）
+- commit `b3291e9` fix(awake): binary 路径 /tmp → app_data_dir（安全修复）
+
+**待完成**：
+- [ ] 所有 native 扩展改 `init()` 局部注册命令（sync-extensions 大幅简化）
+- [ ] clipboard 扩展用 platform/pasteboard（消灭独立 NSPasteboard 实现）
+- [ ] clipboard 扩展 simulate_cmd_v 用 platform/input（消灭第三套 CGEvent）
+- [ ] finder-ext IPC 改 Darwin notification（消灭 cmd_*.json 文件累积）
+- [ ] zsh-as signals.log 改 ring buffer
+- [ ] build.rs 扫描化
+- [ ] storage.rs 新增 TempHandle
+
 ### 阶段 3：前端运行时重建 ⬜（未开始）
 ### 阶段 4：扩展迁移 ⬜（未开始）
 ### 阶段 5：测试 + 工具链 + 文档 ⬜（未开始）
