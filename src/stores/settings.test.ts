@@ -52,27 +52,4 @@ describe('settings store', () => {
       expect(config.models).toEqual([])
     })
   })
-
-  describe('translateConfigs 默认结构', () => {
-    it('初始包含一个有道配置', () => {
-      const store = useSettingsStore()
-      expect(store.translateConfigs).toHaveLength(1)
-      expect(store.translateConfigs[0].type).toBe('youdao')
-    })
-  })
-
-  describe('搜索提供商默认结构', () => {
-    it('初始包含一个 Tavily provider（未配 key）', () => {
-      const store = useSettingsStore()
-      expect(store.searchProviders).toHaveLength(1)
-      const provider = store.searchProviders[0]
-      expect(provider.type).toBe('tavily')
-      expect(provider.apiKey).toBe('')
-    })
-
-    it('activeSearchProvider 默认回退到第一个', () => {
-      const store = useSettingsStore()
-      expect(store.activeSearchProvider).toBe(store.searchProviders[0])
-    })
-  })
 })

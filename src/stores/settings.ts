@@ -10,26 +10,10 @@ export interface AiProviderConfig {
   models: string[]
 }
 
-export interface SearchProviderConfig {
-  id: string
-  type: 'tavily'
-  apiKey: string
-}
-
-export interface TranslateApiConfig {
-  id: string
-  type: 'youdao' | 'ai'
-  isDefault?: boolean
-  appKey: string
-  appSecret: string
-  endpoint: string
-  apiKey: string
-  models: string[]
-  prompt: string
-}
-
 const generateId = generateRequestId
 
+/// 框架级配置 store：仅管理全局快捷键 + AI Provider 基础设施。
+/// 扩展自管配置一律走 defineConfig（extensions/<id>/config.json）。
 export const useSettingsStore = defineStore('settings', () => {
   let store: Store | null = null
 
@@ -58,33 +42,6 @@ export const useSettingsStore = defineStore('settings', () => {
   const activeProviderModelKey = ref('')
   const activeProviderConfig = computed<AiProviderConfig>(
     () => parseActiveConfig(activeProviderModelKey.value, aiProviders.value, (c) => c[0])!,
-  )
-
-  // ─── translate 扩展配置 ────────────────────────────────────
-  const translateConfigs = ref<TranslateApiConfig[]>([
-    {
-      id: generateId(),
-      type: 'youdao',
-      isDefault: true,
-      appKey: '',
-      appSecret: '',
-      endpoint: '',
-      apiKey: '',
-      models: [],
-      prompt: '',
-    },
-  ])
-  const activeTranslateModelKey = ref('')
-
-  // ─── agent 扩展配置 ────────────────────────────────────────
-  const searchProviders = ref<SearchProviderConfig[]>([
-    { id: generateId(), type: 'tavily', apiKey: '' },
-  ])
-  const activeSearchProviderId = ref('')
-  const activeSearchProvider = computed<SearchProviderConfig>(
-    () =>
-      searchProviders.value.find((p) => p.id === activeSearchProviderId.value) ||
-      searchProviders.value[0],
   )
 
   // ─── 持久化工具 ────────────────────────────────────────────
@@ -152,15 +109,6 @@ export const useSettingsStore = defineStore('settings', () => {
     generateId: generateRequestId,
   })
 
-  const translateConfigManager = createConfigManager({
-    configs: translateConfigs,
-    activeKey: activeTranslateModelKey,
-    groupKey: 'translate',
-    configField: 'configs',
-    activeField: 'activeProviderModelKey',
-    generateId: generateRequestId,
-  })
-
   // ─── 加载 ──────────────────────────────────────────────────
 
   async function loadSettings() {
@@ -173,18 +121,6 @@ export const useSettingsStore = defineStore('settings', () => {
       if (shortcuts?.global) globalShortcut.value = shortcuts.global
       if (shortcuts?.overrides) shortcutOverrides.value = shortcuts.overrides
 
-      const translate = await store.get<{
-        configs?: TranslateApiConfig[]
-        activeProviderModelKey?: string
-      }>('translate')
-      if (translate?.configs?.length) {
-        translateConfigs.value = translate.configs
-        const firstYoudao = translateConfigs.value.find((c) => c.type === 'youdao')
-        if (firstYoudao) firstYoudao.isDefault = true
-      }
-      if (translate?.activeProviderModelKey)
-        activeTranslateModelKey.value = translate.activeProviderModelKey
-
       const aiProvidersData = await store.get<{
         configs?: AiProviderConfig[]
         activeProviderModelKey?: string
@@ -192,13 +128,6 @@ export const useSettingsStore = defineStore('settings', () => {
       if (aiProvidersData?.configs?.length) aiProviders.value = aiProvidersData.configs
       if (aiProvidersData?.activeProviderModelKey)
         activeProviderModelKey.value = aiProvidersData.activeProviderModelKey
-
-      const agent = await store.get<{
-        searchProviders?: SearchProviderConfig[]
-        activeSearchProviderId?: string
-      }>('agent')
-      if (agent?.searchProviders?.length) searchProviders.value = agent.searchProviders
-      if (agent?.activeSearchProviderId) activeSearchProviderId.value = agent.activeSearchProviderId
     } catch (e) {
       console.warn('Failed to load config/settings.json, using defaults:', e)
       try {
@@ -227,57 +156,12 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const setActiveProviderModelKey = createSetter(activeProviderModelKey, 'aiProviders', 'activeProviderModelKey')
 
-  async function saveSearchProviders() {
-    if (store) {
-      const group = (await store.get<Record<string, unknown>>('agent')) || {}
-      group.searchProviders = searchProviders.value
-      group.activeSearchProviderId = activeSearchProviderId.value
-      await store.set('agent', group)
-      await store.save()
-    }
-  }
-
-  async function addSearchProvider(): Promise<string> {
-    const id = generateRequestId()
-    searchProviders.value.push({ id, type: 'tavily', apiKey: '' })
-    activeSearchProviderId.value = id
-    await saveSearchProviders()
-    return id
-  }
-
-  async function removeSearchProvider(id: string) {
-    const idx = searchProviders.value.findIndex((c) => c.id === id)
-    if (idx === -1) return
-    if (searchProviders.value.length <= 1) return
-    searchProviders.value.splice(idx, 1)
-    if (activeSearchProviderId.value === id) {
-      activeSearchProviderId.value = searchProviders.value[0]?.id || ''
-    }
-    await saveSearchProviders()
-  }
-
-  async function updateSearchProvider(id: string, partial: Partial<SearchProviderConfig>) {
-    const config = searchProviders.value.find((c) => c.id === id)
-    if (!config) return
-    Object.assign(config, partial)
-    await saveSearchProviders()
-  }
-
-  async function setActiveSearchProviderId(val: string) {
-    activeSearchProviderId.value = val
-    await saveSearchProviders()
-  }
-
   return {
     globalShortcut,
     shortcutOverrides,
-    translateConfigs,
     aiProviders,
     activeProviderModelKey,
     activeProviderConfig,
-    searchProviders,
-    activeSearchProviderId,
-    activeSearchProvider,
     loadSettings,
     setGlobalShortcut,
     getShortcutOverride,
@@ -285,13 +169,6 @@ export const useSettingsStore = defineStore('settings', () => {
     addAiProvider: aiProviderConfigManager.add,
     removeAiProvider: aiProviderConfigManager.remove,
     updateAiProvider: aiProviderConfigManager.update,
-    addTranslateConfig: translateConfigManager.add,
-    removeTranslateConfig: translateConfigManager.remove,
-    updateTranslateConfig: translateConfigManager.update,
     setActiveProviderModelKey,
-    addSearchProvider,
-    removeSearchProvider,
-    updateSearchProvider,
-    setActiveSearchProviderId,
   }
 })

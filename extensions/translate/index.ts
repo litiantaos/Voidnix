@@ -8,7 +8,7 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { invoke } from '@tauri-apps/api/core'
 import { hideWindow } from '@/utils/tauri'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { useSettingsStore, type TranslateApiConfig } from '@/stores/settings'
+import { type TranslateApiConfig } from './config'
 import { toErrorMessage } from '@/utils/error'
 import { providerLabelFromUrl } from '@/utils/provider'
 import { generateRequestId } from '@/utils/id'
@@ -144,8 +144,7 @@ export async function translateText(text: string) {
 
   await initStreamListeners()
 
-  const settings = useSettingsStore()
-  const configs = settings.translateConfigs
+  const configs = translateConfig.configs
   const targetLang = translateConfig.targetLang
   const promises: Promise<void>[] = []
 
@@ -306,8 +305,7 @@ const mod: AppModule = {
   onModuleSearch: async (query) => {
     if (!query.trim()) return []
 
-    const settings = useSettingsStore()
-    const configs = settings.translateConfigs
+    const configs = translateConfig.configs
     const targetLang = translateConfig.targetLang
     const results: SearchResult[] = []
     const promises: Promise<void>[] = []
