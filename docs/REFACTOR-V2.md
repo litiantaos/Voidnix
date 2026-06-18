@@ -52,44 +52,37 @@
 - [ ] build.rs 扫描化
 - [ ] storage.rs 新增 TempHandle
 
-### 阶段 3：前端运行时重建 🔄（进行中）
+### 阶段 3：前端运行时重建 ✅（核心完成）
 
-**已完成（本轮新增）**：
-- commit `cb14255` feat(runtime): defineConfig 配置系统基础设施
-- commit `50fe06b`~`710750f` 6 扩展迁移 defineConfig：awake/screenshot/window-manager/clipboard/zsh-as/finder-ext
-- commit `2b5600a` refactor(settings): 删除死代码 namespace<T> 函数
-- clipboard Rust monitor 同步迁移至 extensions/clipboard/config.json
-- window-manager config watch 自动同步 toggleDragSnap
-- zsh-as + finder-ext config watch 自动同步 Rust 命令
+- settings.ts 586 → 174 行（-70%），仅保留框架级配置（快捷键 + AI Provider）
+- 8/8 native 扩展配置全部迁移至 defineConfig 自管
+- translateConfigs + searchProviders + CRUD 迁移至各自扩展 config.ts
+- BaseList 删 appStore 依赖、ResultIcon 提取、web-search 提取、events 迁移
+- AppModule 35 字段拆分为 5 组合接口（ModuleMeta/UI/Search/Lifecycle/Hints）
+- defineConfig 系统（reactive + watch 自动持久化）
+- 6 个死依赖删除
 
-**待完成（核心）**：
-- [ ] stores/settings.ts 清理已迁移的 6 个扩展配置项（声明/setter/load/return 共 ~20 处）
-- [ ] translate + agent 迁移 defineConfig（与 AI provider 基础设施耦合，较复杂）
-- [ ] AppModule 接口拆 5 组合接口
+### 阶段 4：扩展迁移 ✅（核心完成）
 
-### 阶段 4：扩展迁移 🔄（进行中）
+- 4 个 .vnext 重建为纯 TS（base64/time/uuid/currency）
+- ip 从 native 转纯 TS（删 46 行 Rust）
+- 16 扩展全部同构化（9 native + 7 纯 TS）
 
-**已完成**：
-- commit `747ba7a` feat(extensions): 重建 4 个纯 TS 扩展（base64/time/uuid/currency）
-- commit `ba67bf0` refactor(ip): 从 native 转为纯 TS 扩展（删 46 行 Rust）
+### 阶段 5：测试 + 工具链 + 文档 🔄
 
-**待完成**：
-- [ ] 所有扩展 config.ts 声明式 schema（defineExtensionConfig）
-- [ ] 搜索接口统一（staticItems + dynamic）
+- 前端 146 测试 + Rust 77 测试全绿
+- AGENTS.md 全面重写、docs/extensions.md 创建
+- check:extensions + typecheck script 补齐
+- vitest 纳入 extensions/**/*.test.ts
+- web-search 14 测试、base64 9 测试、uuid 6 测试
+- 待完成：扩展纯逻辑测试补齐（calculator parser、clipboard 去重等）
 
-### 阶段 5：测试 + 工具链 + 文档 🔄（进行中）
+### 后续可选优化（非阻塞）
 
-**已完成**：
-- commit `320321b` test(web-search): 补 web-search 工具函数测试（14 用例）
-- AGENTS.md 已全面重写
-- docs/extensions.md 已创建（替代 tier1/tier2 文档）
-- check:extensions + typecheck script 已补齐
-- 6 个死依赖已删除
-- 前端 134 测试 + Rust 77 测试全绿
-
-**待完成**：
-- [ ] 扩展单元测试补齐（calculator parser、clipboard 去重、agent 防御、search 解析）
-- [ ] docs/extensions/*.md 更新（反映新架构路径）
+- [ ] finder-ext IPC 改 Darwin notification（消灭 cmd_*.json）
+- [ ] native init() 局部注册（sync-extensions 进一步简化）
+- [ ] build.rs 扫描化
+- [ ] storage.rs TempHandle
 ### 阶段 4：扩展迁移 ⬜（未开始）
 ### 阶段 5：测试 + 工具链 + 文档 ⬜（未开始）
 ### 阶段 6：验证 ⬜（未开始）
