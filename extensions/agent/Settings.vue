@@ -230,10 +230,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import {
-  useSettingsStore,
-  type AiProviderConfig,
-} from '@/stores/settings'
+import { useSettingsStore, type AiProviderConfig } from '@/stores/settings'
 import { config as agentConfig, type SearchProviderConfig, updateSearchProvider } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'

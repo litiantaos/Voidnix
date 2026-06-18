@@ -18,7 +18,7 @@
           <template #trailing>
             <BaseButton
               :variant="wmConfig.dragSnapEnabled ? 'primary' : 'default'"
-              @click.stop="(wmConfig.dragSnapEnabled = !wmConfig.dragSnapEnabled)"
+              @click.stop="wmConfig.dragSnapEnabled = !wmConfig.dragSnapEnabled"
             >
               {{ wmConfig.dragSnapEnabled ? '已开启' : '已关闭' }}
             </BaseButton>
@@ -65,7 +65,6 @@ import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 
-
 const settingsSelectedIndex = ref(0)
 
 const widthInputRef = ref<InstanceType<typeof BaseInput>>()
@@ -111,11 +110,11 @@ function onBlur(field: 'width' | 'height') {
   }
   if (field === 'width') {
     const n = parseInt(draftWidth.value, 10)
-    if (n > 0) (wmConfig.customWidth = n)
+    if (n > 0) wmConfig.customWidth = n
     draftWidth.value = String(wmConfig.customWidth)
   } else {
     const n = parseInt(draftHeight.value, 10)
-    if (n > 0) (wmConfig.customHeight = n)
+    if (n > 0) wmConfig.customHeight = n
     draftHeight.value = String(wmConfig.customHeight)
   }
 }

@@ -190,7 +190,13 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { type TranslateApiConfig, config as translateConfig, addTranslateConfig, updateTranslateConfig, removeTranslateConfig } from './config'
+import {
+  type TranslateApiConfig,
+  config as translateConfig,
+  addTranslateConfig,
+  updateTranslateConfig,
+  removeTranslateConfig,
+} from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'

@@ -40,15 +40,23 @@ const module: AppModule = {
     if (!trimmed) return []
 
     // 解析 "100 USD" / "100usd" / "100美元" 格式
-    const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*([A-Za-z]{3}|美元|人民币|欧元|日元|英镑|港币|韩元|台币)$/)
+    const match = trimmed.match(
+      /^(\d+(?:\.\d+)?)\s*([A-Za-z]{3}|美元|人民币|欧元|日元|英镑|港币|韩元|台币)$/,
+    )
     if (!match) return []
 
     const amount = parseFloat(match[1])
     const currencyMap: Record<string, string> = {
-      美元: 'USD', 人民币: 'CNY', 欧元: 'EUR', 日元: 'JPY',
-      英镑: 'GBP', 港币: 'HKD', 韩元: 'KRW', 台币: 'TWD',
+      美元: 'USD',
+      人民币: 'CNY',
+      欧元: 'EUR',
+      日元: 'JPY',
+      英镑: 'GBP',
+      港币: 'HKD',
+      韩元: 'KRW',
+      台币: 'TWD',
     }
-    const fromCurrency = (currencyMap[match[2]] || match[2].toUpperCase())
+    const fromCurrency = currencyMap[match[2]] || match[2].toUpperCase()
 
     const rates = await fetchRates()
     if (!rates || !rates[fromCurrency]) return []

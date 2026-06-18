@@ -22,7 +22,7 @@
 
 ### 阶段 2：Rust 扩展迁移 ✅
 
-- Tier2 沙箱完全删除（Rust ext_* + 前端 worker-sandbox/declarative）
+- Tier2 沙箱完全删除（Rust ext\_\* + 前端 worker-sandbox/declarative）
 - specta 类型生成删除
 - finder-ext 横向依赖 screenshot 消除
 - awake binary 安全修复（/tmp → app_data_dir）
@@ -55,8 +55,8 @@
 - web-search 14 测试、base64 9 测试、uuid 6 测试、time 6 测试
 - AGENTS.md 全面重写、docs/extensions.md 统一指南
 - check:extensions + typecheck script 补齐
-- vitest 纳入 extensions/**/*.test.ts
-- 6 死依赖删除（@wdio/* + webdriverio + ts-node）
+- vitest 纳入 extensions/\*_/_.test.ts
+- 6 死依赖删除（@wdio/\* + webdriverio + ts-node）
 
 ### 验证状态
 
@@ -70,10 +70,11 @@ bun run check:extensions → 16 extensions, check passed
 
 ### 后续可选优化（非阻塞，低优先级）
 
+- [x] storage.rs TempHandle ✅（register/unregister/cleanup_all/cleanup_by_prefix）
+- [x] platform/pasteboard 扩展原语 ✅（string_for_type/data_for_type/has_type）
 - [ ] finder-ext IPC 改 Darwin notification（消灭 cmd_*.json）
 - [ ] native init() 局部注册（sync-extensions 进一步简化）
 - [ ] build.rs 扫描化（当前 2 个 .mm 硬编码合理）
-- [ ] storage.rs TempHandle
 - [ ] clipboard monitor 用 platform/pasteboard（monitor 逻辑特化，可选）
 - [ ] 更多扩展纯逻辑测试（clipboard 去重、agent 防御、search 解析）
 
@@ -394,15 +395,15 @@ interface ExtensionMeta {
 }
 
 interface ModuleHints {
-  enter?: string         // ↵ 动作描述（如「粘贴」「复制」）
-  multiSelect?: string   // 多选提示（如「⇧/⌘ 多选」）
-  delete?: string        // 删除提示（如「删除」）
+  enter?: string // ↵ 动作描述（如「粘贴」「复制」）
+  multiSelect?: string // 多选提示（如「⇧/⌘ 多选」）
+  delete?: string // 删除提示（如「删除」）
 }
 
 interface ExtContext {
   app: AppHandle
   config: ConfigAccess
-  service: (id: string) => (...args: any[]) => any   // 服务查找
+  service: (id: string) => (...args: any[]) => any // 服务查找
 }
 ```
 
@@ -418,7 +419,7 @@ interface SearchProvider {
 }
 
 interface SearchContext {
-  signal: AbortSignal    // 查询取消（新查询覆盖旧查询时 abort）
+  signal: AbortSignal // 查询取消（新查询覆盖旧查询时 abort）
 }
 
 interface SearchResult {
@@ -429,7 +430,7 @@ interface SearchResult {
   icon?: string
   score?: number
   shortcut?: string
-  data?: SearchData      // 类型安全的携带数据
+  data?: SearchData // 类型安全的携带数据
 }
 
 interface SearchData {
@@ -491,15 +492,15 @@ interface SearchReranker {
 }
 
 interface ServiceDeclaration {
-  id: string                  // 如 'clipboard.write'、'screenshot.cleanup'
-  version: string             // semver，如 '1.0'
+  id: string // 如 'clipboard.write'、'screenshot.cleanup'
+  version: string // semver，如 '1.0'
   handler: (...args: any[]) => any | Promise<any>
 }
 
 interface ShortcutSlot {
-  id: string                  // 槽位标识，如 'window-manager.toggle-snap'
-  label: string               // 设置面板显示
-  default?: string            // 默认快捷键
+  id: string // 槽位标识，如 'window-manager.toggle-snap'
+  label: string // 设置面板显示
+  default?: string // 默认快捷键
 }
 ```
 
@@ -523,6 +524,7 @@ await write('text')
 ```
 
 **规则**：
+
 - 框架在 bootstrap 后（所有 setup 完成）才开放 `ctx.service()` 调用。
 - setup 阶段禁用 service 调用（防循环依赖）。
 - 未声明的 service id 抛错。
@@ -535,7 +537,7 @@ await write('text')
 type BuiltinFieldType = 'number' | 'toggle' | 'string' | 'select' | 'slider' | 'keybind' | 'text'
 
 interface ConfigFieldBase {
-  type: BuiltinFieldType | string    // string 为自定义类型（需 contributes.configFieldTypes 注册）
+  type: BuiltinFieldType | string // string 为自定义类型（需 contributes.configFieldTypes 注册）
   default: unknown
   label: string
   description?: string
@@ -558,7 +560,15 @@ interface SelectField extends ConfigFieldBase {
 
 // ... 其他内置类型
 
-type ConfigField = NumberField | SelectField | ToggleField | StringField | SliderField | KeybindField | TextField | CustomField
+type ConfigField =
+  | NumberField
+  | SelectField
+  | ToggleField
+  | StringField
+  | SliderField
+  | KeybindField
+  | TextField
+  | CustomField
 
 type ConfigSchema = Record<string, ConfigField>
 ```
@@ -587,7 +597,7 @@ const { maxDays, enabled } = useConfig('clipboard')
 // src/runtime/search-engine.ts
 
 class SearchEngine {
-  private staticCache = new Map<string, SearchResult[]>()  // extId → staticItems
+  private staticCache = new Map<string, SearchResult[]>() // extId → staticItems
   private filters: SearchFilter[] = []
   private rerankers: SearchReranker[] = []
   private currentController?: AbortController
@@ -719,6 +729,7 @@ pub fn init() -> TauriPlugin<Wry> {
 ```
 
 `sync-extensions.ts` 简化为 < 50 行：仅扫描 `extensions/*/native/mod.rs` 的 `pub fn init()` 签名，生成：
+
 - `extensions.rs`：`.plugin(clipboard::init())` 链 + `#[path]` mod 声明
 - `commands.ts`：命令名常量（从扩展手动声明的 `pub const COMMANDS: &[&str]` 提取，或扩展文档注释）
 
@@ -738,7 +749,13 @@ export const SEARCH = {
   WEIGHTS: { prefix: 1000, contains: 600, decay: 0.85, logBase: 2, logMul: 50, cap: 320 },
   GROUP_BOOST: { module: 500, application: 300, folder: 80, file: 0 },
   GROUP_ORDER: ['module', 'application', 'folder', 'file', 'clipboard'] as const,
-  GROUP_TITLES: { module: '操作', application: '应用', folder: '文件夹', file: '文件', clipboard: '剪贴板' },
+  GROUP_TITLES: {
+    module: '操作',
+    application: '应用',
+    folder: '文件夹',
+    file: '文件',
+    clipboard: '剪贴板',
+  },
 } as const
 
 export const LIMITS = {
@@ -769,27 +786,114 @@ export const LIMITS = {
 ```ts
 // extensions/agent/config.ts
 export default defineExtensionConfig({
-  trustedCommands: { type: 'agent.command-list', default: [
-    'ls', 'cat', 'git', 'grep', 'find', 'rg', 'fd', 'echo', 'pwd',
-    'wc', 'head', 'tail', 'sort', 'uniq', 'diff', 'tree', 'file',
-    'which', 'whereis', 'stat', 'du', 'df', 'ps', 'top', 'kill',
-    'mkdir', 'touch', 'cp', 'mv', 'ln', 'chmod', 'chown',
-    'git status', 'git log', 'git diff', 'git branch', 'git show',
-    'cargo build', 'cargo test', 'cargo check', 'cargo run',
-    'npm list', 'bun run', 'pnpm list',
-    'hostname', 'whoami', 'date', 'uptime', 'env',
-  ], label: '可信命令（无需审批）', order: 0 },
-  forbiddenCommands: { type: 'agent.command-list', default: [
-    'osascript', 'sudo', 'sh', 'bash', 'zsh', 'curl', 'wget', 'nc', 'ssh', 'scp',
-  ], label: '禁止命令（即便 approved 也拦）', order: 1 },
-  blockedArgs: { type: 'agent.command-list', default: [
-    '--exec', '--upload-pack', '-o', '-C', '--init',
-  ], label: '禁止参数', order: 2 },
-  maxCpuSeconds: { type: 'number', default: 30, label: 'CPU 上限（秒）', min: 1, max: 300, order: 3 },
-  maxMemoryMb: { type: 'number', default: 512, label: '内存上限（MB）', min: 64, max: 4096, order: 4 },
-  maxOpenFiles: { type: 'number', default: 64, label: '文件描述符上限', min: 8, max: 1024, order: 5 },
-  executionTimeout: { type: 'number', default: 30, label: '执行超时（秒）', min: 1, max: 300, order: 6 },
-  maxOutputBytes: { type: 'number', default: 1048576, label: '输出截断（字节）', min: 1024, max: 10485760, order: 7 },
+  trustedCommands: {
+    type: 'agent.command-list',
+    default: [
+      'ls',
+      'cat',
+      'git',
+      'grep',
+      'find',
+      'rg',
+      'fd',
+      'echo',
+      'pwd',
+      'wc',
+      'head',
+      'tail',
+      'sort',
+      'uniq',
+      'diff',
+      'tree',
+      'file',
+      'which',
+      'whereis',
+      'stat',
+      'du',
+      'df',
+      'ps',
+      'top',
+      'kill',
+      'mkdir',
+      'touch',
+      'cp',
+      'mv',
+      'ln',
+      'chmod',
+      'chown',
+      'git status',
+      'git log',
+      'git diff',
+      'git branch',
+      'git show',
+      'cargo build',
+      'cargo test',
+      'cargo check',
+      'cargo run',
+      'npm list',
+      'bun run',
+      'pnpm list',
+      'hostname',
+      'whoami',
+      'date',
+      'uptime',
+      'env',
+    ],
+    label: '可信命令（无需审批）',
+    order: 0,
+  },
+  forbiddenCommands: {
+    type: 'agent.command-list',
+    default: ['osascript', 'sudo', 'sh', 'bash', 'zsh', 'curl', 'wget', 'nc', 'ssh', 'scp'],
+    label: '禁止命令（即便 approved 也拦）',
+    order: 1,
+  },
+  blockedArgs: {
+    type: 'agent.command-list',
+    default: ['--exec', '--upload-pack', '-o', '-C', '--init'],
+    label: '禁止参数',
+    order: 2,
+  },
+  maxCpuSeconds: {
+    type: 'number',
+    default: 30,
+    label: 'CPU 上限（秒）',
+    min: 1,
+    max: 300,
+    order: 3,
+  },
+  maxMemoryMb: {
+    type: 'number',
+    default: 512,
+    label: '内存上限（MB）',
+    min: 64,
+    max: 4096,
+    order: 4,
+  },
+  maxOpenFiles: {
+    type: 'number',
+    default: 64,
+    label: '文件描述符上限',
+    min: 8,
+    max: 1024,
+    order: 5,
+  },
+  executionTimeout: {
+    type: 'number',
+    default: 30,
+    label: '执行超时（秒）',
+    min: 1,
+    max: 300,
+    order: 6,
+  },
+  maxOutputBytes: {
+    type: 'number',
+    default: 1048576,
+    label: '输出截断（字节）',
+    min: 1024,
+    max: 10485760,
+    order: 7,
+  },
   maxTurns: { type: 'number', default: 10, label: '最大对话轮次', min: 1, max: 50, order: 8 },
   systemPrompt: { type: 'text', default: '', label: '系统提示词（空则用默认）', order: 9 },
 })
@@ -803,29 +907,29 @@ export default defineExtensionConfig({
 
 ### 含 native/（10 个，需系统级能力）
 
-| 扩展 | 迁移要点 |
-|---|---|
-| clipboard | config 自管（maxDays/enabled）；monitor 用 platform/pasteboard；CGEvent 模拟 ⌘V 用 platform/input；命令局部注册 init() |
-| screenshot | config 自管（savePath）；temp 文件走 TempHandle；CGEvent 用 platform/input；scroll_capture/session/pin 保留 |
-| awake | config 自管；**binary 路径 /tmp → app_data_dir**（安全修复）；TrayIconBuilder 保留 |
-| zsh-autosuggestions | **目录名 zsh-as → zsh-autosuggestions**（统一约定）；signals.log 改 ring buffer；include_bytes! binary 保留 |
-| window-manager | config 自管（customWidth/customHeight/dragSnapEnabled）；PREV_FRONT_PID 走 platform/focus；AX FFI 自管 |
-| finder-ext | **删横向调 screenshot**（走 service 或 TempHandle）；**IPC 改 Darwin notification + 共享内存**（零文件）；路径校验走 platform/path_guard |
-| translate | config 自管（configs/targetLang）；自管 SELECTED_TEXT State（不泄漏框架）；text_selection 工具下沉扩展内 |
-| agent | **接收 core/agent/ 下沉为 native/engine/**（loop_runner/approval/cancellation/secret_scrub/tool_registry）；9 层防御读 config；prompt/turns 由 config 注入 |
-| search | **删 icon cache.rs，改 NSWorkspace.icon 实时提取**（零磁盘文件）；icon_cache_dir/cleanup 下沉后删除；init() 局部注册；search 改 staticItems + dynamic |
-| ip | **转纯 TS**（46 行 Rust → TS fetch，删 native/） |
+| 扩展                | 迁移要点                                                                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| clipboard           | config 自管（maxDays/enabled）；monitor 用 platform/pasteboard；CGEvent 模拟 ⌘V 用 platform/input；命令局部注册 init()                                     |
+| screenshot          | config 自管（savePath）；temp 文件走 TempHandle；CGEvent 用 platform/input；scroll_capture/session/pin 保留                                                |
+| awake               | config 自管；**binary 路径 /tmp → app_data_dir**（安全修复）；TrayIconBuilder 保留                                                                         |
+| zsh-autosuggestions | **目录名 zsh-as → zsh-autosuggestions**（统一约定）；signals.log 改 ring buffer；include_bytes! binary 保留                                                |
+| window-manager      | config 自管（customWidth/customHeight/dragSnapEnabled）；PREV_FRONT_PID 走 platform/focus；AX FFI 自管                                                     |
+| finder-ext          | **删横向调 screenshot**（走 service 或 TempHandle）；**IPC 改 Darwin notification + 共享内存**（零文件）；路径校验走 platform/path_guard                   |
+| translate           | config 自管（configs/targetLang）；自管 SELECTED_TEXT State（不泄漏框架）；text_selection 工具下沉扩展内                                                   |
+| agent               | **接收 core/agent/ 下沉为 native/engine/**（loop_runner/approval/cancellation/secret_scrub/tool_registry）；9 层防御读 config；prompt/turns 由 config 注入 |
+| search              | **删 icon cache.rs，改 NSWorkspace.icon 实时提取**（零磁盘文件）；icon_cache_dir/cleanup 下沉后删除；init() 局部注册；search 改 staticItems + dynamic      |
+| ip                  | **转纯 TS**（46 行 Rust → TS fetch，删 native/）                                                                                                           |
 
 ### 纯 TS（6 个，无 native/）
 
-| 扩展 | 迁移要点 |
-|---|---|
-| calculator | config 自管 history（走 storage）；search 走 dynamic（即时计算）；补 parser 单元测试 |
-| settings | **改为纯渲染器**：扫描 config-registry，对每扩展 schema 渲染 ConfigField；零硬编码聚合 |
-| base64 | **从 .vnext 转 TS**；search 走 staticItems（编码/解码选项）+ dynamic（结果） |
-| time | **从 .vnext 转 TS**；search 走 staticItems（格式选项）+ dynamic（结果） |
-| currency | **从 .vnext 转 TS**；HTTP 走统一 http 命令；search 走 dynamic |
-| uuid | **从 .vnext 转 TS**；search 走 staticItems（UUID/NanoID 选项）+ dynamic（结果） |
+| 扩展       | 迁移要点                                                                               |
+| ---------- | -------------------------------------------------------------------------------------- |
+| calculator | config 自管 history（走 storage）；search 走 dynamic（即时计算）；补 parser 单元测试   |
+| settings   | **改为纯渲染器**：扫描 config-registry，对每扩展 schema 渲染 ConfigField；零硬编码聚合 |
+| base64     | **从 .vnext 转 TS**；search 走 staticItems（编码/解码选项）+ dynamic（结果）           |
+| time       | **从 .vnext 转 TS**；search 走 staticItems（格式选项）+ dynamic（结果）                |
+| currency   | **从 .vnext 转 TS**；HTTP 走统一 http 命令；search 走 dynamic                          |
+| uuid       | **从 .vnext 转 TS**；search 走 staticItems（UUID/NanoID 选项）+ dynamic（结果）        |
 
 ---
 
@@ -879,13 +983,13 @@ export default defineExtensionConfig({
 
 ## 8. 文件生产最小化
 
-| 原生产 | 新方案 | 收益 |
-|---|---|---|
-| `search/icons/` 400 PNG | **完全不缓存**，NSWorkspace.icon 实时提取（系统自带缓存） | 删 ~400 文件 + cleanup 逻辑 + icon_cache_dir 代码 |
-| `finder-ext/commands/cmd_*.json` | **Darwin notification + 共享内存** | 零文件累积 |
-| `zsh-as/signals.log` 无限增长 | **ring buffer + 启动 truncate** | 有上限 |
-| screenshot/agent 临时文件 | **TempHandle 统一注册 + 退出/定期清理** | 无残留 |
-| `.gitignore` | 补全 `test-results/`、`proptest-regressions/`、`.DS_Store` | 仓库零垃圾入库 |
+| 原生产                           | 新方案                                                     | 收益                                              |
+| -------------------------------- | ---------------------------------------------------------- | ------------------------------------------------- |
+| `search/icons/` 400 PNG          | **完全不缓存**，NSWorkspace.icon 实时提取（系统自带缓存）  | 删 ~400 文件 + cleanup 逻辑 + icon_cache_dir 代码 |
+| `finder-ext/commands/cmd_*.json` | **Darwin notification + 共享内存**                         | 零文件累积                                        |
+| `zsh-as/signals.log` 无限增长    | **ring buffer + 启动 truncate**                            | 有上限                                            |
+| screenshot/agent 临时文件        | **TempHandle 统一注册 + 退出/定期清理**                    | 无残留                                            |
+| `.gitignore`                     | 补全 `test-results/`、`proptest-regressions/`、`.DS_Store` | 仓库零垃圾入库                                    |
 
 保留：`.claude/`、`CLAUDE.md`、`.mcp.json`（开发工具）；`.prettierignore` + `.prettierrc`（标准配置）；clipboard SQLite WAL（性能保证）。
 
@@ -1187,13 +1291,15 @@ export default defineExtension({
     dynamic: (query: string) => {
       if (!query) return []
       const encoded = base64Encode(query)
-      return [{
-        id: 'base64-result',
-        title: encoded,
-        module: 'base64',
-        description: 'Base64 编码结果',
-        data: { action: 'encode', result: encoded },
-      }]
+      return [
+        {
+          id: 'base64-result',
+          title: encoded,
+          module: 'base64',
+          description: 'Base64 编码结果',
+          data: { action: 'encode', result: encoded },
+        },
+      ]
     },
   },
 
@@ -1247,7 +1353,7 @@ function scanInitFunctions() {
   const extensions = []
   for (const dir of readdirSync(EXT_DIR)) {
     const modPath = new URL(`${dir}/native/mod.rs`, EXT_DIR)
-    if (!existsSync(modPath)) continue  // 纯 TS 扩展无 native
+    if (!existsSync(modPath)) continue // 纯 TS 扩展无 native
     const src = readFileSync(modPath, 'utf8')
     if (/pub fn init\(\)/.test(src)) {
       extensions.push(dir)
@@ -1257,8 +1363,12 @@ function scanInitFunctions() {
 }
 
 function buildExtensionsRs(exts: string[]) {
-  const pluginChain = exts.map((e) => `.plugin(crate::extensions::${e.replace(/-/g, '_')}::init())`).join('\n')
-  const modDecls = exts.map((e) => `#[path = "../../extensions/${e}/native/mod.rs"]\npub mod ${e.replace(/-/g, '_')};`).join('\n')
+  const pluginChain = exts
+    .map((e) => `.plugin(crate::extensions::${e.replace(/-/g, '_')}::init())`)
+    .join('\n')
+  const modDecls = exts
+    .map((e) => `#[path = "../../extensions/${e}/native/mod.rs"]\npub mod ${e.replace(/-/g, '_')};`)
+    .join('\n')
   return `// AUTO-GENERATED by sync-extensions.ts. DO NOT EDIT.
 macro_rules! configure_app {
     ($builder:expr) => {

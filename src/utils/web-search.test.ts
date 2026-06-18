@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { parseWebSearchQuery, buildSearchUrl, buildWebSearchResult, buildOpenUrlResult } from './web-search'
+import {
+  parseWebSearchQuery,
+  buildSearchUrl,
+  buildWebSearchResult,
+  buildOpenUrlResult,
+} from './web-search'
 
 describe('parseWebSearchQuery', () => {
   it('parses //google query', () => {

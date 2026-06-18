@@ -51,7 +51,11 @@
               <BaseListItem
                 :ref="setRef"
                 :selected="selected || multiSelected"
-                :icon-wrapper-class="item.data?.icon && !item.icon?.startsWith('i-') && item.data?.kind !== 'module' ? 'bg-transparent' : undefined"
+                :icon-wrapper-class="
+                  item.data?.icon && !item.icon?.startsWith('i-') && item.data?.kind !== 'module'
+                    ? 'bg-transparent'
+                    : undefined
+                "
               >
                 <template #icon>
                   <ResultIcon :item="item" :module-icon="module?.icon" />

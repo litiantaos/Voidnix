@@ -32,7 +32,7 @@ export function useScreenshotActions(options: {
 
   async function doSave() {
     const ann = await getAnnotationPng()
-    
+
     const savePath = screenshotConfig.savePath || '~/Downloads'
     const path = savePath.startsWith('~/')
       ? savePath.replace('~', await invoke<string>('get_home_dir').catch(() => ''))
@@ -121,7 +121,7 @@ export function useScreenshotActions(options: {
       doCancel()
       return
     }
-    
+
     const savePath = screenshotConfig.savePath || '~/Downloads'
     const path = savePath.startsWith('~/')
       ? savePath.replace('~', await invoke<string>('get_home_dir').catch(() => ''))

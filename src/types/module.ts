@@ -103,4 +103,5 @@ export interface ModuleHints {
 }
 
 /// 扩展模块接口 = 元数据 + UI 槽位 + 搜索能力 + 生命周期 + 状态栏提示
-export interface AppModule extends ModuleMeta, ModuleUI, ModuleSearch, ModuleLifecycle, ModuleHints {}
+export interface AppModule
+  extends ModuleMeta, ModuleUI, ModuleSearch, ModuleLifecycle, ModuleHints {}

@@ -1,10 +1,5 @@
 <template>
-  <div
-    v-if="isIconFont && !isModuleItem"
-    h="6"
-    w="6"
-    class="flex-center"
-  >
+  <div v-if="isIconFont && !isModuleItem" h="6" w="6" class="flex-center">
     <i :class="[icon, 'text-xl text-black/50']" />
   </div>
   <img
@@ -28,14 +23,7 @@
   >
     <i :class="icon || 'i-ri-apps-2-line'" />
   </div>
-  <div
-    v-else-if="isFileOrFolder"
-    rounded="md"
-    bg="black/4"
-    h="full"
-    w="full"
-    class="flex-center"
-  >
+  <div v-else-if="isFileOrFolder" rounded="md" bg="black/4" h="full" w="full" class="flex-center">
     <i :class="[fileIcon.icon, fileIcon.color]" class="text-sm" />
   </div>
   <span v-else text="sm black/30" font="medium">
