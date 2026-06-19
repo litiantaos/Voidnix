@@ -48,7 +48,7 @@ pub async fn chat_stream(
     request_id: Option<String>,
 ) -> Result<(), String> {
     let safe_endpoint = llm::validate_ai_request(&endpoint, &model, &api_key)?;
-    let trimmed_messages = llm::trim_conversation(&messages);
+    let trimmed_messages = engine::trim::trim_conversation(&messages);
     let req_id = request_id.unwrap_or_else(|| "default".to_string());
 
     llm::stream_openai_request(llm::StreamConfig {
