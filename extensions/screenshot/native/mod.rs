@@ -85,10 +85,10 @@ pub async fn open_module_subview(
 ///
 /// 拥有覆盖屏幕的全屏 `screenshot` 窗口、ScreenCaptureKit 截图会话、
 /// OCR/截长图/钉图等子能力，以及全局快捷键钩子。
-pub struct Plugin;
+pub struct ScreenshotExtension;
 
 #[async_trait::async_trait]
-impl Extension for Plugin {
+impl Extension for ScreenshotExtension {
     fn id(&self) -> &'static str {
         "screenshot"
     }

@@ -74,10 +74,10 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 }
 
 /// Translate 扩展。
-pub struct Plugin;
+pub struct TranslateExtension;
 
 #[async_trait::async_trait]
-impl Extension for Plugin {
+impl Extension for TranslateExtension {
     fn id(&self) -> &'static str {
         "translate"
     }

@@ -144,10 +144,10 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 }
 
 /// Awake 扩展。
-pub struct Plugin;
+pub struct AwakeExtension;
 
 #[async_trait::async_trait]
-impl Extension for Plugin {
+impl Extension for AwakeExtension {
     fn id(&self) -> &'static str {
         "awake"
     }
