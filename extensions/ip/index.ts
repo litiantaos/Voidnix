@@ -1,6 +1,7 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import type { ProviderResult } from '@/runtime/types'
 import { copyAndHide } from '@/utils/clipboard'
+import { isValidIpLike } from './logic'
 
 interface IpInfo {
   ip?: string
@@ -12,15 +13,6 @@ interface IpInfo {
   isp?: string
   org?: string
   asn?: string
-}
-
-const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/
-const IPV6_RE = /^[\da-fA-F:]+$/
-
-function isValidIpLike(s: string): boolean {
-  if (IPV4_RE.test(s)) return true
-  if (s.includes(':') && IPV6_RE.test(s) && s.length >= 2) return true
-  return false
 }
 
 async function fetchIpInfo(ip: string | null): Promise<IpInfo> {

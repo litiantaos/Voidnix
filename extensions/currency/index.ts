@@ -1,13 +1,14 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import type { ProviderResult } from '@/runtime/types'
 import { copyAndHide } from '@/utils/clipboard'
+import { CURRENCIES, parseCurrencyInput, convertCurrency, isRatesCacheFresh } from './logic'
 
 let ratesCache: Record<string, number> | null = null
 let ratesTime = 0
 
 async function fetchRates(): Promise<Record<string, number> | null> {
   const now = Date.now()
-  if (ratesCache && now - ratesTime < 10 * 60 * 1000) return ratesCache
+  if (ratesCache && isRatesCacheFresh(ratesTime, now)) return ratesCache
 
   try {
     const res = await fetch('https://open.er-api.com/v6/latest/USD')
@@ -23,8 +24,6 @@ async function fetchRates(): Promise<Record<string, number> | null> {
   return ratesCache
 }
 
-const CURRENCIES = ['CNY', 'USD', 'EUR', 'JPY', 'GBP', 'HKD', 'KRW', 'TWD']
-
 export default defineExtension({
   meta: {
     id: 'currency',
@@ -39,36 +38,19 @@ export default defineExtension({
 
   search: {
     dynamic: async (query): Promise<ProviderResult[]> => {
-      const trimmed = query.trim()
-      if (!trimmed) return []
+      const parsed = parseCurrencyInput(query)
+      if (!parsed) return []
 
-      const match = trimmed.match(
-        /^(\d+(?:\.\d+)?)\s*([A-Za-z]{3}|美元|人民币|欧元|日元|英镑|港币|韩元|台币)$/,
-      )
-      if (!match) return []
-
-      const amount = parseFloat(match[1])
-      const currencyMap: Record<string, string> = {
-        美元: 'USD',
-        人民币: 'CNY',
-        欧元: 'EUR',
-        日元: 'JPY',
-        英镑: 'GBP',
-        港币: 'HKD',
-        韩元: 'KRW',
-        台币: 'TWD',
-      }
-      const fromCurrency = currencyMap[match[2]] || match[2].toUpperCase()
+      const { amount, fromCurrency } = parsed
 
       const rates = await fetchRates()
       if (!rates || !rates[fromCurrency]) return []
 
-      const usdAmount = amount / rates[fromCurrency]
       const results: ProviderResult[] = []
 
       for (const toCurrency of CURRENCIES) {
         if (toCurrency === fromCurrency) continue
-        const converted = usdAmount * rates[toCurrency]
+        const converted = convertCurrency(amount, fromCurrency, toCurrency, rates)
         results.push({
           id: `currency-${toCurrency}`,
           title: `${converted.toFixed(2)} ${toCurrency}`,
