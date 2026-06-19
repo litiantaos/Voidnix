@@ -12,3 +12,5 @@ pub mod permission;
 pub mod selection;
 #[cfg(target_os = "macos")]
 pub mod skylight;
+#[cfg(target_os = "macos")]
+pub mod window;

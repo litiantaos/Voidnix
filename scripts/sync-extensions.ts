@@ -41,7 +41,7 @@ const FRAMEWORK_COMMANDS = [
   'crate::runtime::shortcut::register_global_shortcut',
   'crate::runtime::window::get_home_dir',
   'crate::runtime::window::pick_directory',
-  'crate::platform::pasteboard::pasteboard_write_text',
+  'crate::runtime::pasteboard::pasteboard_write_text',
 ]
 
 function scanInitExtensions(): string[] {

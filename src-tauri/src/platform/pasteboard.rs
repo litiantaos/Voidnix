@@ -1,6 +1,6 @@
 //! NSPasteboard 统一接口。
 //!
-//! 所有 NSPasteboard 操作的唯一入口。clipboard 扩展的 monitor/commands 均委托至此。
+//! 所有 NSPasteboard 操作的唯一入口；monitor/commands 等上层均委托至此。
 
 #![allow(dead_code)]
 
@@ -41,7 +41,7 @@ pub fn clear() {
     NSPasteboard::generalPasteboard().clearContents();
 }
 
-/// 写入纯文本（清空 + 写 public.utf8-plain-text）。供前端 pasteboard_write_text 与 finder-ext 消费。
+/// 写入纯文本（清空 + 写 public.utf8-plain-text）。上层命令薄壳在 runtime::pasteboard。
 pub fn write_text(s: &str) {
     clear();
     set_string(s);
@@ -69,17 +69,11 @@ pub fn set_png(bytes: &[u8]) {
     NSPasteboard::generalPasteboard().setData_forType(Some(&d), unsafe { NSPasteboardTypePNG });
 }
 
-/// 写自定义 UTI 类型字符串（不清空，供 clipboard marker 等自定义类型）。
+/// 写自定义 UTI 类型字符串（不清空，供写入自定义标记类型用于自识别）。
 pub fn set_custom(s: &str, type_uti: &str) {
     let ns = NSString::from_str(s);
     let ty = NSString::from_str(type_uti);
     NSPasteboard::generalPasteboard().setString_forType(&ns, &ty);
-}
-
-/// 框架命令：前端 invoke('pasteboard_write_text')。替代 tauri-plugin-clipboard-manager。
-#[tauri::command]
-pub fn pasteboard_write_text(text: String) {
-    write_text(&text);
 }
 
 /// 按类型名读取字符串值。

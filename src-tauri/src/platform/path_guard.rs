@@ -1,15 +1,15 @@
 use std::path::Path;
 
-/// 系统致命路径前缀（finder-ext 路径校验基线）。
+/// 系统致命路径前缀（路径校验基线）。
 const SYSTEM_CRITICAL: &[&str] = &["/System", "/usr/bin", "/bin", "/sbin"];
 
-/// 验证路径安全性（finder-ext 单消费者）。
+/// 验证路径安全性。
 ///
 /// 拒绝：空路径、null 字节、无法 canonicalize 的路径、系统致命路径前缀。
 /// canonicalize 同时解析符号链接——符号链接指向系统路径会被解析后拦截。
 /// 允许 /Volumes、外接磁盘、网络挂载、/Library（用户主动操作应尊重）等。
 ///
-/// 注：agent 命令执行有自己的命令级安全模型（native/policy.rs ExecPolicy），
+/// 注：命令执行类场景有自己的命令级安全模型（如 native/policy.rs ExecPolicy），
 ///     不经此路径校验——路径是命令参数动态构造，无法预校验。
 pub fn validate(path: &Path) -> bool {
     if path.as_os_str().is_empty() {

@@ -166,10 +166,7 @@ pub async fn register_global_shortcut(
                     let window_hidden = !was_visible;
 
                     #[cfg(target_os = "macos")]
-                    let front_pid: Option<i32> = {
-                        let ws = objc2_app_kit::NSWorkspace::sharedWorkspace();
-                        ws.frontmostApplication().map(|a| a.processIdentifier())
-                    };
+                    let front_pid: Option<i32> = crate::platform::focus::current_frontmost_pid();
                     #[cfg(not(target_os = "macos"))]
                     let front_pid: Option<i32> = None;
 

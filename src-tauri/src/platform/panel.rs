@@ -34,18 +34,18 @@ extern "C" {
 fn ensure_panel_class() -> *mut c_void {
     let PanelClass(ptr) = *PANEL_CLASS.get_or_init(|| {
         unsafe {
-        let name = b"VoidnixMainPanel\0".as_ptr() as *const c_void;
+        let name = c"VoidnixMainPanel".as_ptr() as *const c_void;
         let existing = objc_getClass(name);
         if !existing.is_null() {
             return PanelClass(existing);
         }
 
-        let superclass = objc_getClass(b"NSPanel\0".as_ptr() as *const c_void);
+        let superclass = objc_getClass(c"NSPanel".as_ptr() as *const c_void);
         let cls = objc_allocateClassPair(superclass, name, 0);
         assert!(!cls.is_null(), "objc_allocateClassPair failed");
 
-        let sel = sel_registerName(b"canBecomeKeyWindow\0".as_ptr() as *const c_void);
-        let types = b"c@:\0".as_ptr() as *const c_void;
+        let sel = sel_registerName(c"canBecomeKeyWindow".as_ptr() as *const c_void);
+        let types = c"c@:".as_ptr() as *const c_void;
         let imp = can_become_key as *const c_void;
         class_addMethod(cls, sel, imp, types);
 
@@ -60,9 +60,9 @@ fn ensure_panel_class() -> *mut c_void {
 ///
 /// 这是「轻浮层」体感的基底:panel makeKey 时不抢 NSApp active,
 /// 原应用菜单栏 / Dock 不动。但 panel 仍会偷走系统级 key window /
-/// first responder —— 关闭时由调用方(`core::window::hide_main`、
-/// `window_snap::hide_panel_impl`)走 `deactivate_app + activate_app_by_pid`
-/// 把焦点还给原应用窗口。两步缺一不可。
+/// first responder —— 关闭时由调用方（runtime::window::hide_main）走
+/// `restore_captured`（deactivate_app + activate_app_by_pid）把焦点还给原应用
+/// 窗口。两步缺一不可。
 pub fn convert_to_panel(ns_window: *mut AnyObject) {
     if ns_window.is_null() {
         return;

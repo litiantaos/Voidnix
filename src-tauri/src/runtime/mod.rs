@@ -1,4 +1,5 @@
 pub mod llm;
+pub mod pasteboard;
 pub mod permission;
 pub mod registry;
 pub mod shortcut;
