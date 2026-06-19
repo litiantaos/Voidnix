@@ -35,6 +35,7 @@ import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { config as clipboardConfig } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
@@ -81,7 +82,7 @@ const handleClearHistory = async () => {
 
   if (confirmed) {
     try {
-      await invoke('clear_clipboard_history')
+      await invoke(CMD.clearClipboardHistory)
     } catch (e) {
       console.error('Failed to clear clipboard history:', e)
     }

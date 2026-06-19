@@ -93,7 +93,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { commands } from '@/bindings'
+import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 
 interface SnapData {
   w: number
@@ -150,7 +151,12 @@ const groups: GroupDef[] = [
 
 async function onZone(layout: string) {
   try {
-    await commands.setFrontmostWindowLayout(layout, snapData.value.w, snapData.value.h, null)
+    await invoke(CMD.setFrontmostWindowLayout, {
+      layout,
+      customWidth: snapData.value.w,
+      customHeight: snapData.value.h,
+      prevPid: null,
+    })
   } catch (e) {
     console.warn('[window-manager] 布局执行失败:', e)
   }
@@ -167,7 +173,7 @@ function handleSnapMouse() {
 async function handleShow() {
   const data = (window as unknown as { __snapPanelData?: SnapData }).__snapPanelData
   if (data) snapData.value = data
-  await commands.showSnapPanel()
+  await invoke(CMD.showSnapPanel)
   requestAnimationFrame(() => panel.value?.classList.add('show'))
 }
 
@@ -175,7 +181,7 @@ function handleHide() {
   if (!panel.value) return
   hoveredLayout.value = null
   const el = panel.value
-  el.addEventListener('transitionend', () => commands.hideSnapPanel().catch(() => {}), {
+  el.addEventListener('transitionend', () => invoke(CMD.hideSnapPanel).catch(() => {}), {
     once: true,
   })
   el.classList.remove('show')

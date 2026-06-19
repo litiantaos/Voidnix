@@ -2,14 +2,14 @@ import { ref, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
 import { onKeyStroke } from '@/composables/events'
 import { open } from '@tauri-apps/plugin-shell'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { useTauriListener } from '@/composables/useTauriListener'
-import { searchAll, executeResult } from '@/core/module-registry'
-import { getVisibleModules, moduleToSearchResult } from '@/core/module-helpers'
+import { searchEngine } from '@/runtime/search-engine'
+import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 import { scoreFields } from '@/utils/fuzzy'
 import { useAppStore } from '@/stores/app'
-import type { SearchResult } from '@/types/module'
+import type { SearchResult, Extension } from '@/runtime/types'
 import { isTauri, hideWindow } from '@/utils/tauri'
-import type { AppModule } from '@/types/module'
 import {
   parseWebSearchQuery,
   buildWebSearchResult,
@@ -21,7 +21,7 @@ interface Options {
   searchInput: Ref<HTMLInputElement | undefined>
   results: Ref<SearchResult[]>
   selectedIndex: Ref<number>
-  activeModule: ComputedRef<AppModule | null>
+  activeModule: ComputedRef<Extension | null>
   restore: (key: string) => void
   reset: () => void
 }
@@ -56,8 +56,28 @@ export function useSearchCommand(opts: Options) {
 
   // --- helpers ---
 
+  /** 扩展 → 模块入口结果（回车走框架内置激活，§2.2 执行分派） */
+  function extToModuleResult(ext: Extension, score = 1000): SearchResult {
+    return {
+      id: `module-${ext.meta.id}`,
+      title: ext.meta.name,
+      description: ext.meta.description,
+      icon: ext.meta.icon,
+      module: ext.meta.id,
+      score,
+      data: { kind: 'module', moduleId: ext.meta.id },
+    }
+  }
+
+  /** 可见扩展（非 hidden），按 order 排序 */
+  function getVisibleExtensions(): Extension[] {
+    return getAllExtensions()
+      .filter((e) => !e.meta.hidden)
+      .sort((a, b) => a.meta.order - b.meta.order)
+  }
+
   function buildModuleResults(): SearchResult[] {
-    return getVisibleModules().map((m) => moduleToSearchResult(m, 1000))
+    return getVisibleExtensions().map((e) => extToModuleResult(e, 1000))
   }
 
   async function loadDefaultResults() {
@@ -65,7 +85,7 @@ export function useSearchCommand(opts: Options) {
     const searchId = ++currentSearchId
     isLoading.value = true
     try {
-      const defaultResults = await searchAll('')
+      const defaultResults = await searchEngine.search('')
       if (searchId === currentSearchId) {
         results.value = defaultResults
         selectedIndex.value = 0
@@ -90,7 +110,9 @@ export function useSearchCommand(opts: Options) {
       clearSearch()
       return
     }
-    await executeResult(result)
+    // 扩展私有回车动作（result.module = 产出扩展 id，框架注入）
+    const ext = getExtension(result.module)
+    await ext?.onExecute?.(result)
     appStore.setActiveModule(null)
     hideWindow()
   }
@@ -130,16 +152,18 @@ export function useSearchCommand(opts: Options) {
         return
       }
 
-      const modules = getVisibleModules()
-      const matchedModules = modules
-        .map((m) => ({
-          module: m,
-          score: scoreFields([m.name, m.id, m.description, ...m.keywords], keyword),
+      const matchedExts = getVisibleExtensions()
+        .map((ext) => ({
+          ext,
+          score: scoreFields(
+            [ext.meta.name, ext.meta.id, ext.meta.description, ...(ext.meta.keywords ?? [])],
+            keyword,
+          ),
         }))
         .filter((item) => item.score > 0)
         .sort((a, b) => b.score - a.score)
 
-      results.value = matchedModules.map(({ module: m, score }) => moduleToSearchResult(m, score))
+      results.value = matchedExts.map(({ ext, score }) => extToModuleResult(ext, score))
 
       if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
       return
@@ -152,33 +176,11 @@ export function useSearchCommand(opts: Options) {
     if (query.trim()) {
       searchTimeout = setTimeout(async () => {
         try {
-          let batchTimer: ReturnType<typeof setTimeout> | null = null
-          let batched: SearchResult[] = []
-
-          const applyResults = (newResults: SearchResult[]) => {
-            if (searchId !== currentSearchId) return
-            results.value = newResults
+          const finalResults = await searchEngine.search(query)
+          if (searchId === currentSearchId) {
+            results.value = finalResults
             selectedIndex.value = 0
           }
-
-          const flush = () => {
-            batchTimer = null
-            applyResults(batched)
-          }
-
-          const onUpdate = (r: SearchResult[]) => {
-            if (searchId !== currentSearchId) return
-            batched = r
-            if (batchTimer) clearTimeout(batchTimer)
-            batchTimer = setTimeout(flush, 30)
-          }
-
-          const finalResults = await searchAll(query, onUpdate)
-          if (batchTimer) {
-            clearTimeout(batchTimer)
-            batchTimer = null
-          }
-          applyResults(finalResults)
         } catch {
           if (searchId === currentSearchId) {
             results.value = []
@@ -227,24 +229,14 @@ export function useSearchCommand(opts: Options) {
           return
         }
         if (appStore.activeModuleId) {
-          if (activeModule.value?.disableSearchInput) return
-          if (activeModule.value?.useSearchInput && activeModule.value?.onSearchInput) {
-            const query = appStore.searchQuery.trim()
-            if (query) {
-              e.preventDefault()
-              activeModule.value.onSearchInput(query)
-              if (!activeModule.value.keepSearchInput) {
-                clearSearch()
-              }
-            }
-          }
+          // 模块模式下 Enter 由各 View / BaseList 自行处理（useSearchCommand 不介入）
           return
         }
         if (e.metaKey && results.value.length > 0) {
           const result = results.value[selectedIndex.value]
           if (result?.data?.path) {
             e.preventDefault()
-            invoke('reveal_in_finder', { path: result.data.path })
+            invoke(CMD.revealInFinder, { path: result.data.path })
             hideWindow()
             return
           }

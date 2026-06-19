@@ -2,12 +2,13 @@
 ///
 /// 设计：
 /// - 维护 `messages: Ref<AgentMessage[]>`（UI 状态层，parts 数组）
-/// - sendMessage() 通过 `invoke('agent_run', { onEvent: Channel })` 启动
+/// - sendMessage() 通过 `invoke(CMD.agentRun, { onEvent: Channel })` 启动
 /// - Channel.onmessage 处理增量事件，更新 messages
 /// - 用户审批通过 approve()/abort() 控制
 
 import { ref, computed } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { useSettingsStore } from '@/stores/settings'
 import { generateRequestId } from '@/utils/id'
 import { config as agentConfig, activeSearchProvider } from './config'
@@ -105,7 +106,7 @@ export function useAgentChat() {
     }
 
     try {
-      await invoke('agent_run', {
+      await invoke(CMD.agentRun, {
         messages: llmMessages,
         endpoint: config.endpoint,
         apiKey: config.apiKey,
@@ -235,7 +236,7 @@ export function useAgentChat() {
     status.value = 'streaming'
 
     try {
-      await invoke('agent_approve', {
+      await invoke(CMD.agentApprove, {
         approvalId,
         approved,
         alwaysApprove,
@@ -255,7 +256,7 @@ export function useAgentChat() {
   async function abort() {
     if (!sessionId.value) return
     try {
-      await invoke('agent_abort', { sessionId: sessionId.value })
+      await invoke(CMD.agentAbort, { sessionId: sessionId.value })
     } catch {
       /* ignore */
     }

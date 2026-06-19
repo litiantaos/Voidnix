@@ -78,7 +78,7 @@ describe('buildWebSearchResult', () => {
   it('builds google result', () => {
     const result = buildWebSearchResult({ type: 'search', engine: 'google', keyword: 'test' })
     expect(result.title).toBe('Google 搜索')
-    expect(result.data?.kind).toBe('web-search')
+    expect(result.data?.kind).toBe('web')
   })
 
   it('builds bing result', () => {
@@ -92,6 +92,6 @@ describe('buildOpenUrlResult', () => {
     const result = buildOpenUrlResult('https://example.com')
     expect(result.title).toBe('打开链接')
     expect(result.description).toBe('https://example.com')
-    expect(result.data?.kind).toBe('open-url')
+    expect(result.data?.kind).toBe('web')
   })
 })

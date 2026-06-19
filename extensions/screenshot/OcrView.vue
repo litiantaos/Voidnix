@@ -44,6 +44,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { copyAndHide } from '@/utils/clipboard'
 import { useAppStore } from '@/stores/app'
 import { pendingText } from '@ext/translate'
@@ -69,7 +70,7 @@ async function runOcr(data: NonNullable<typeof pendingOcrData.value>) {
   error.value = ''
   ocrText.value = ''
   try {
-    const result = await invoke<OcrResult>('ocr_image', {
+    const result = await invoke<OcrResult>(CMD.ocrImage, {
       selX: data.selX,
       selY: data.selY,
       selW: data.selW,

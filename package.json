@@ -10,6 +10,7 @@
     "lint": "prettier --write . && eslint . --fix",
     "sync:extensions": "bun run scripts/sync-extensions.ts",
     "check:extensions": "bun run scripts/sync-extensions.ts -- --check",
+    "check:commands": "bun run scripts/check-commands.ts",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -14,7 +14,7 @@
         <KeepAlive v-if="resolvedView" :max="10">
           <component
             :is="resolvedView"
-            :key="`${props.module?.id ?? 'main'}-${appStore.activeSubview ?? 'view'}`"
+            :key="`${props.module?.meta.id ?? 'main'}-${appStore.activeSubview ?? 'view'}`"
           />
         </KeepAlive>
 
@@ -26,10 +26,10 @@
             v-else-if="currentResults.length === 0"
             :title="
               module
-                ? module.placeholder || `在 ${module.name} 中无结果`
+                ? module.placeholder || `在 ${module.meta.name} 中无结果`
                 : '搜索应用或文件，输入 / 搜索扩展'
             "
-            :icon="module ? module.icon : 'i-ri-search-line'"
+            :icon="module ? module.meta.icon : 'i-ri-search-line'"
           />
 
           <BaseList
@@ -58,7 +58,7 @@
                 "
               >
                 <template #icon>
-                  <ResultIcon :item="item" :module-icon="module?.icon" />
+                  <ResultIcon :item="item" :module-icon="module?.meta.icon" />
                 </template>
                 <template #title>
                   <div :class="item.data?.isHighlight ? 'text-accent font-medium' : ''">
@@ -89,12 +89,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { hideWindow } from '@/utils/tauri'
-import { scoreFields } from '@/utils/fuzzy'
-import type { AppModule, ModuleSearchItem, SearchResult } from '@/types/module'
+import type { Extension, SearchResult } from '@/runtime/types'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -102,7 +102,7 @@ import ResultIcon from '@/components/layout/ResultIcon.vue'
 import { getParentPath, formatPathParts } from '@/utils/format'
 
 const props = defineProps<{
-  module?: AppModule | null
+  module?: Extension | null
   results?: SearchResult[]
   initialLoading?: boolean
   selectedIndex?: number
@@ -134,67 +134,36 @@ const currentSelectedIndex = computed(() => props.selectedIndex ?? internalSelec
 
 /**
  * 将布局决策逻辑收拢到一处。
- * subview 模式：使用模块声明的命名子视图，占满整个内容区。
- * view 模式：使用模块声明的 view。
+ * subview 模式：使用扩展声明的命名子视图，占满整个内容区。
+ * mainView 模式：使用扩展声明的主视图。
  */
 const resolvedView = computed(() => {
   const subviewId = appStore.activeSubview
   if (subviewId && props.module?.subviews?.[subviewId]) {
-    return props.module.subviews[subviewId]
+    return props.module.subviews[subviewId]()
   }
-  return props.module?.view
+  return props.module?.mainView?.()
 })
 
 const scrollContainer = ref<HTMLElement>()
 defineExpose({ scrollContainer })
 
-function itemToSearchResult(item: ModuleSearchItem): SearchResult {
-  return {
-    id: item.id,
-    title: item.title,
-    description: item.subtitle,
-    icon: item.icon,
-    module: props.module?.id ?? '',
-    score: 100,
-    data: { kind: 'module', ...item },
-  }
-}
-
-const filteredItems = computed(() => internalResults.value.map((r) => r.data as ModuleSearchItem))
-provide('filteredItems', filteredItems)
-
 const doSearch = async (query: string) => {
   if (props.results !== undefined) return
-
-  if (props.module?.searchItems) {
-    const items = props.module.searchItems()
-    if (!query.trim()) {
-      internalResults.value = items.map(itemToSearchResult)
-    } else {
-      internalResults.value = items
-        .map((item) => ({
-          item,
-          score: scoreFields([item.title, item.subtitle ?? '', ...item.keywords], query),
-        }))
-        .filter((entry) => entry.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .map(({ item }) => itemToSearchResult(item))
-    }
-    internalLoading.value = false
-    return
-  }
-
-  if (!props.module?.onModuleSearch) return
+  // mainView/subview 模式：扩展自管列表（clipboard/translate/agent 等），跳过框架搜索
+  if (resolvedView.value) return
+  if (!props.module?.search) return
 
   internalLoading.value = true
   try {
-    const res = await props.module.onModuleSearch(query)
-    internalResults.value = res
+    const res = await props.module.search.dynamic(query, { signal: new AbortController().signal })
+    // 框架注入 module（与 searchEngine 一致：dynamic 产出扩展 meta.id）
+    internalResults.value = res.map((r) => ({ ...r, module: props.module!.meta.id }))
     if (internalSelectedIndex.value >= res.length) {
       internalSelectedIndex.value = 0
     }
   } catch (e) {
-    console.error(`[ContentView] ${props.module.id} search error:`, e)
+    console.error(`[ContentView] ${props.module.meta.id} search error:`, e)
     internalResults.value = []
   } finally {
     internalLoading.value = false
@@ -210,7 +179,7 @@ watch(
 )
 
 watch(
-  () => props.module?.id,
+  () => props.module?.meta.id,
   (newId, oldId) => {
     if (newId && newId !== oldId) {
       clearTimeout(debounceTimer)
@@ -244,7 +213,7 @@ const handleExecute = async (result: SearchResult) => {
 
 const handleReveal = async (result: SearchResult) => {
   if (result.data?.path) {
-    await invoke('reveal_in_finder', { path: result.data.path })
+    await invoke(CMD.revealInFinder, { path: result.data.path })
     hideWindow()
   }
 }

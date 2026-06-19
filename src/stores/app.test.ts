@@ -1,16 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAppStore } from './app'
-import { registerModule } from '@/core/module-registry'
-import type { AppModule } from '@/types/module'
-
-const mockModule: AppModule = {
-  id: 'test-mod',
-  name: 'Test',
-  description: '',
-  icon: 'i-ri-test',
-  keywords: [],
-}
 
 describe('app store', () => {
   beforeEach(() => {
@@ -28,49 +18,21 @@ describe('app store', () => {
   describe('setActiveModule', () => {
     it('切换模块并重置 subview', () => {
       const store = useAppStore()
-      registerModule(mockModule)
       store.openSubview('settings')
       expect(store.activeSubview).toBe('settings')
 
-      store.setActiveModule('test-mod')
-      expect(store.activeModuleId).toBe('test-mod')
+      store.setActiveModule('clipboard')
+      expect(store.activeModuleId).toBe('clipboard')
       expect(store.activeSubview).toBeNull()
     })
 
-    it('调用 onActivate / onDeactivate 生命周期', () => {
-      const activated: string[] = []
-      const deactivated: string[] = []
-      registerModule({
-        ...mockModule,
-        id: 'mod-a',
-        onActivate: () => {
-          activated.push('a')
-        },
-        onDeactivate: () => {
-          deactivated.push('a')
-        },
-      })
-      registerModule({
-        ...mockModule,
-        id: 'mod-b',
-        onActivate: () => {
-          activated.push('b')
-        },
-        onDeactivate: () => {
-          deactivated.push('b')
-        },
-      })
-
+    it('退出模块回到全局模式', () => {
       const store = useAppStore()
-      store.setActiveModule('mod-a')
-      expect(activated).toEqual(['a'])
-
-      store.setActiveModule('mod-b')
-      expect(deactivated).toEqual(['a'])
-      expect(activated).toEqual(['a', 'b'])
+      store.setActiveModule('clipboard')
+      expect(store.activeModuleId).toBe('clipboard')
 
       store.setActiveModule(null)
-      expect(deactivated).toEqual(['a', 'b'])
+      expect(store.activeModuleId).toBeNull()
     })
   })
 

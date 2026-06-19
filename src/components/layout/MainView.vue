@@ -63,7 +63,7 @@
             <span
               v-else
               key="icon"
-              :class="activeModule.icon"
+              :class="activeModule.meta.icon"
               text="xs black/50"
               class="flex-center"
               h="3.5"
@@ -73,7 +73,7 @@
             ></span>
           </Transition>
         </span>
-        <span>{{ activeModule.name }}</span>
+        <span>{{ activeModule.meta.name }}</span>
       </div>
 
       <input
@@ -90,7 +90,7 @@
           activeModule
             ? activeModule.disableSearchInput
               ? ''
-              : activeModule.placeholder || `在 ${activeModule.name} 中搜索`
+              : activeModule.placeholder || `在 ${activeModule.meta.name} 中搜索`
             : '搜索应用或文件，输入 / 搜索扩展'
         "
         @input="onInput"
@@ -107,7 +107,7 @@
         items="center"
         overflow="hidden"
       >
-        <component :is="activeModule.searchBarAccessory" />
+        <component :is="activeModule.searchBarAccessory()" />
       </div>
 
       <!-- 更新提示按钮 -->
@@ -145,10 +145,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useScroll } from '@/composables/events'
-import { getModule } from '@/core/module-registry'
+import { getExtension } from '@/runtime/extension-registry'
+import { SEARCH } from '@/runtime/constants'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
-import type { SearchResult } from '@/types/module'
+import type { SearchResult } from '@/runtime/types'
 import ContentView from '@/components/layout/ContentView.vue'
 import StatusBar from '@/components/layout/StatusBar.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -175,27 +176,18 @@ const { save, restore, reset } = useScrollPosition(scrollTop)
 
 const activeModule = computed(() => {
   const id = appStore.activeModuleId
-  return (id ? getModule(id) : null) ?? null
+  return (id ? getExtension(id) : null) ?? null
 })
 
-// 分组逻辑：按 kind 分组，file/folder 合并为"文件"
-const GROUP_TITLES: Record<string, string> = {
-  application: '应用',
-  module: '扩展',
-  clipboard: '剪贴板',
-  'web-search': '快捷操作',
-  'open-url': '快捷操作',
-  file: '文件',
-  folder: '文件',
-}
-
+// 分组逻辑：按 kind 分组，file/folder 合并为"文件"；标题读 constants 单一源
 const groupField = (item: SearchResult) => {
   const kind = item.data?.kind as string | undefined
   if (kind === 'file' || kind === 'folder') return 'file'
   return kind || 'other'
 }
 
-const groupTitle = (group: string) => GROUP_TITLES[group] || group
+const groupTitle = (group: string) =>
+  SEARCH.GROUP_TITLES[group as keyof typeof SEARCH.GROUP_TITLES] || group
 
 const { onInput, handleExecute, handleTagClose, isLoading } = useSearchCommand({
   searchInput,
@@ -222,7 +214,7 @@ watch(
 // 进入模块时重置滚动位置，覆盖快捷键、open-module 事件等所有进入路径
 // 从主列表进入时保存其滚动位置，goBackToToolList 调用 restore('tools') 恢复
 watch(
-  () => activeModule.value?.id,
+  () => activeModule.value?.meta.id,
   (newId, oldId) => {
     if (newId && newId !== oldId) {
       if (!oldId) save('tools')

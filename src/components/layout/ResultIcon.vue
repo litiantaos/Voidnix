@@ -33,7 +33,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { SearchResult } from '@/types/module'
+import type { SearchResult } from '@/runtime/types'
 import { getFileIcon } from '@/utils/icons'
 
 const props = defineProps<{
@@ -41,7 +41,9 @@ const props = defineProps<{
   moduleIcon?: string
 }>()
 
-const icon = computed(() => props.item.icon || props.item.data?.icon || props.moduleIcon)
+const icon = computed(
+  () => props.item.icon || (props.item.data?.icon as string | undefined) || props.moduleIcon,
+)
 const isIconFont = computed(() => icon.value?.startsWith('i-'))
 const isImageIcon = computed(() => icon.value && !isIconFont.value)
 const isModuleItem = computed(() => props.item.data?.kind === 'module')

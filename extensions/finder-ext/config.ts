@@ -1,5 +1,6 @@
 import { watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { defineConfig } from '@/runtime/storage'
 
 /// finder-ext 扩展自管配置。
@@ -11,6 +12,6 @@ export const config = defineConfig('finder-ext', {
 watch(
   () => config.enabled,
   (enabled) => {
-    invoke('set_finder_ext_enabled', { enabled }).catch(() => {})
+    invoke(CMD.setFinderExtEnabled, { enabled }).catch(() => {})
   },
 )

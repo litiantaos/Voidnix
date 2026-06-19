@@ -45,6 +45,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { config as screenshotConfig } from './config'
 import { useAppStore } from '@/stores/app'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -68,7 +69,7 @@ async function pickSavePath() {
   // NSOpenPanel 运行期间抑制失焦隐藏
   appStore.suppressBlur = true
   try {
-    const selected = await invoke<string>('pick_directory')
+    const selected = await invoke<string>(CMD.pickDirectory)
     if (selected) {
       await (screenshotConfig.savePath = selected)
     }

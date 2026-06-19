@@ -52,17 +52,17 @@ class SearchEngine {
     results = dedupe(results)
 
     // 3. 分组排序
-    results = this.groupAndSort(results, query)
-
-    return results
+    //    模块模式：保留扩展返回顺序（clipboard 时间序、calculator 即时结果优先等），
+    //    仅去重不过滤不限流——模块内容是扩展自治的 UX。
+    //    全局模式：groupAndSort（分组 + 零分过滤 + 组内限流）。
+    if (this.activeModule) return results
+    return this.groupAndSort(results, query)
   }
 
   /** 全局模式：并行调用所有扩展 dynamic；模块模式：只调 activeModule dynamic。 */
   private async searchDynamic(query: string, signal: AbortSignal): Promise<SearchResult[]> {
     const exts = getAllExtensions().filter((e) => e.search)
-    const targets = this.activeModule
-      ? exts.filter((e) => e.meta.id === this.activeModule)
-      : exts
+    const targets = this.activeModule ? exts.filter((e) => e.meta.id === this.activeModule) : exts
 
     const settled = await Promise.all(
       targets.map(async (ext) => {
@@ -109,14 +109,19 @@ class SearchEngine {
       }))
   }
 
-  /** 管道：分组 → 组内 finalScore 降序 → 组间 GROUP_ORDER → 组内限流。 */
+  /** 管道：分组 → 组内 finalScore 降序 → 组间 GROUP_ORDER → 组内限流。
+   *  全局模式专用（模块模式见 search() 直接返回）。 */
   private groupAndSort(items: SearchResult[], query: string): SearchResult[] {
     // 先算 finalScore = scoreFields(title[,description], query) + boost
-    const scored = items.map((item) => {
-      const fuzzy = scoreFields([item.title, item.description], query)
-      const finalScore = fuzzy + (item.boost ?? 0)
-      return { ...item, score: finalScore }
-    })
+    const scored = items
+      .map((item) => {
+        const fuzzy = scoreFields([item.title, item.description], query)
+        const finalScore = fuzzy + (item.boost ?? 0)
+        return { item, finalScore }
+      })
+      // 全局模式过滤零分（避免 calculator history 等无关项污染全局结果）
+      .filter((x) => x.finalScore > 0)
+      .map((x) => ({ ...x.item, score: x.finalScore }))
 
     // 分组
     const groups = new Map<string, SearchResult[]>()

@@ -1,4 +1,4 @@
-import type { SearchResult } from '@/types/module'
+import type { SearchResult } from '@/runtime/types'
 
 export interface WebSearchQuery {
   type: 'search' | 'url'
@@ -43,8 +43,7 @@ export function buildWebSearchResult(parsed: WebSearchQuery): SearchResult {
     description: desc,
     icon: 'i-ri-earth-line',
     module: 'system',
-    score: -1,
-    data: { kind: 'web-search', engine: parsed.engine, keyword: parsed.keyword },
+    data: { kind: 'web', engine: parsed.engine, keyword: parsed.keyword },
   }
 }
 
@@ -56,8 +55,7 @@ export function buildOpenUrlResult(url: string): SearchResult {
     description: url,
     icon: 'i-ri-links-line',
     module: 'system',
-    score: -1,
-    data: { kind: 'open-url', url },
+    data: { kind: 'web', url },
   }
 }
 

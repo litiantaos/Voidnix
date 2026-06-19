@@ -1,35 +1,27 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { SearchResult as BindingsSearchResult } from '@/bindings'
-import type { SearchResult } from '@/types/module'
+import { CMD } from '@/commands'
+
+/** Rust search_apps/search_files 返回的原始结构（serde 形状，手写） */
+export interface RawSearchResult {
+  id: string
+  title: string
+  path: string
+  kind: string
+  icon: string | null
+  last_used: string | null
+  score: number | null
+  use_count: number | null
+  parent: string | null
+}
 
 export function hideWindow(auto = false) {
   if (auto) {
-    invoke('hide_window', { auto: true }).catch(() => {})
+    invoke(CMD.hideWindow, { auto: true }).catch(() => {})
   } else {
-    invoke('hide_window').catch(() => {})
+    invoke(CMD.hideWindow).catch(() => {})
   }
 }
 
 export const isTauri =
   typeof window !== 'undefined' &&
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ !== undefined
-
-export function toSearchResults(items: BindingsSearchResult[], moduleId: string): SearchResult[] {
-  return items.map((item) => {
-    return {
-      id: item.id,
-      title: item.title,
-      description: item.path,
-      module: moduleId,
-      score: item.score ?? 0,
-      data: {
-        path: item.path,
-        kind: item.kind,
-        icon: item.icon ?? null,
-        useCount: item.use_count ?? 0,
-        parent: item.parent ?? null,
-        lastUsed: item.last_used ?? null,
-      },
-    }
-  })
-}

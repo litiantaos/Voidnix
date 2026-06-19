@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { getModule } from '@/core/module-registry'
+import { searchEngine } from '@/runtime/search-engine'
 
 export interface ConfirmOptions {
   title: string
@@ -54,14 +54,11 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function setActiveModule(id: string | null) {
-    const oldMod = activeModuleId.value ? getModule(activeModuleId.value) : null
-    const newMod = id ? getModule(id) : null
-
     activeModuleId.value = id
     activeSubview.value = null
-
-    if (oldMod?.onDeactivate) oldMod.onDeactivate()
-    if (newMod?.onActivate) newMod.onActivate()
+    // 模式切换：激活模块时 searchEngine 只调该模块 dynamic；null 恢复全局聚合。
+    // 模块 onActivate/onDeactivate 由各 View 的 onActivated/onDeactivated（KeepAlive）承接。
+    searchEngine.setActiveModule(id ?? undefined)
   }
 
   function setSearchQuery(query: string) {

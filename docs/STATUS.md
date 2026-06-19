@@ -48,43 +48,42 @@
 - ✅ 扩展结构体统一命名 XxxExtension
 - ✅ tauri-plugin-clipboard-manager 依赖删除（前端 utils 迁 platform/pasteboard::write_text）；tauri-plugin-store 保留
 
-### 阶段 3：前端运行时重建 🟡
+### 阶段 3：前端运行时重建 ✅
 
-当前实现走简化路线：`registerModule` + `AppModule` 5 组合接口 + `defineConfig` 自管配置。**阶段 3 基础已落地（5 runtime 文件，纯增量、零破坏）；defineExtension 能力槽体系 + 消费者重连属阶段 4**。
+`src/core/` 已删除，框架消费者全量重连 `src/runtime/`（stores/app、App.vue、MainView、ContentView、StatusBar、useSearchCommand、main.ts）。
 
-- 🟡 `src/runtime/` 5 文件齐备
+- ✅ `src/runtime/` 5 文件齐备
   - ✅ `types.ts`：Extension/SearchProvider/SearchResult（9 能力槽 + 3 承载字段 disableSearchInput/listOptions/onOpenSubview）
   - ✅ `constants.ts`：SEARCH.WEIGHTS/GROUP_ORDER/GROUP_TITLES/KEYWORD_MODULE_BOOST + LIMITS（单一源）
   - ✅ `storage.ts`：defineConfig + store 实例缓存（B1）；删死代码 defineExtensionConfig/ConfigField/ConfigSchema
   - ✅ `extension-registry.ts`：defineExtension + getAllExtensions + getExtension
-  - ✅ `search-engine.ts`：dynamic 单通道 + keyword 合流 + dedupe + groupAndSort（finalScore = fuzzy + boost）
+  - ✅ `search-engine.ts`：dynamic 单通道 + keyword 合流 + dedupe + groupAndSort（finalScore = fuzzy + boost；模块模式 bypass 保留扩展序，全局模式零分过滤）
 - ✅ `utils/fuzzy.ts` 权重读 constants（WEIGHTS.prefix/contains/pinyinBase/decay/logBase/logMul/cap）
-- ⬜ composables 拆分（useAppLifecycle/useSearchInput/useResultNavigation）— 与阶段 4 重连合并
-- ⬜ `MainView.vue` GROUP_TITLES 读 constants — 与 kind 分类变更（web-search→web）合并至阶段 4
+- ✅ `MainView.vue` GROUP_TITLES 读 constants（单一源）
 - ✅ settings.ts 586 → 181 行（扩展配置下沉 defineConfig）
-- ✅ AppModule 35 字段 → 5 组合接口
-- ✅ defineConfig 系统（reactive + watch 自动持久化）
-- ✅ 8/9 native 扩展配置自管（search 无 config.ts）
-- 🟡 `src/core/` 仍存在（module-registry/module-helpers/async-view），阶段 4 删除
+- ✅ `src/core/` 已删除（module-registry/module-helpers/async-view + module-registry.test）
+- ✅ `src/types/module.ts` 已删除（SearchResult 统一到 runtime/types）
+- ⬜ composables 拆分（useAppLifecycle/useSearchInput/useResultNavigation）— 纯重构延后（零行为变更）
 - 🟡 `stores/settings.ts` 保留（181 行，框架级快捷键+AI Provider）
 
-### 阶段 4：扩展同构化 🟡
+### 阶段 4：扩展同构化 ✅
 
 - ✅ 4 个 .vnext 重建为纯 TS（base64/time/uuid/currency）
 - ✅ ip 从 native 转纯 TS（删 46 行 Rust）
-- 🟡 「同构」当前仅指目录形态，**接口仍用 `registerModule` 而非 `defineExtension`**（一次性迁移见下方「阶段 4 复杂度备忘」）
-- 🟡 扩展配置保持 defineConfig 形态；agent 已补 `BOUNDS` const（阶段 2 步骤 9）
+- ✅ 16/16 扩展 `registerModule` → `defineExtension`（9 能力槽，一次性迁移无 adapter）
+- ✅ kind 合并 `web-search/open-url → web`；组间序 `application → file → module → clipboard → web`
+- ✅ search 两 hidden 模块合并为单 dynamic（frequency/recency 加权填 `boost`）
+- ✅ clipboard `onActivate` 移入 View 的 `onActivated`（KeepAlive）
+- ✅ 扩展配置保持 defineConfig 形态；agent `BOUNDS` const（UI 镜像）
+- ✅ `bindings.ts` → `commands.ts` 替换（见阶段 5）；`toSearchResults` 删除
 
-#### 阶段 4 复杂度备忘（深入审查消费者后发现，供下次会话）
+#### 本次迁移决策（透明记录）
 
-一次性迁移触及面比 STATUS 原列更广，关键风险点：
-
-1. **ContentView 架构变更**：当前 ContentView 内部做模块搜索（`searchItems`/`onModuleSearch`/`itemToSearchResult`/`doSearch`）。蓝本统一到 searchEngine 处理全局+模块模式 → ContentView 须移除整个内部搜索逻辑，变纯渲染器（results 全由 MainView 从 searchEngine 传入）。
-2. **settings 的 `filteredItems` 注入链**：ContentView:163 provide filteredItems 给 settings View。ContentView 变纯渲染器后此链断，需 settings 的 dynamic 自管过滤 + View 直接消费。
-3. **useSearchCommand 重连**：tool-list(`/`)、web-search(`//`)、键盘导航、executeResult 分派。web-search 的 kind 从 `web-search/open-url` → `web`（蓝本合并）。
-4. **增量显示丢失**：当前 `searchAll(query, onUpdate)` 边到边显；蓝本 `searchEngine.search` 返回 final（无 onUpdate）。慢搜索（mdfind 文件）UX 回退，可接受但需知。
-5. **测试断裂**：`module-registry.test.ts`（10+ 用例）+ `app.test.ts` 的 onActivate/onDeactivate 用例随 core/ 删除 + store 改造失效，需重写为 searchEngine/extension-registry 测试。
-6. **承载字段**：蓝本精简 Extension 省略的字段中，`disableSearchInput`（translate/agent）、`listOptions.multiSelect`（clipboard）、`onOpenSubview`（screenshot）有活消费者，已在 `runtime/types.ts` 承载（注释标注）；`onActivate`/`onDeactivate` 仅 clipboard 1 消费者，迁移时移入 View 的 Vue onActivated/onDeactivated；`useSearchInput`/`onSearchInput`/`keepSearchInput` 零定义方=死代码，删。
+1. **ContentView 双模式保留**：未做成蓝本理想的"纯渲染器"，但已切到 `extension.search.dynamic` 接口 + mainView 跳过框架搜索——降低风险、行为一致。纯渲染器理想态留待 composables 拆分时一并完成。
+2. **search-engine 补强**：模块模式 bypass groupAndSort（保留扩展返回序，如 clipboard 时间序），全局模式过滤零分（避免 calculator history 等无关项污染）——与旧 module-registry 行为对齐。
+3. **settings 跨扩展 settingsView 扫描延后**：保留 subviews 式设置入口（clipboard/translate/agent 的 `subviews{settings}`），当前 UX 不变；`settingsView` 槽已定义在 types.ts 但未消费。SettingsView 自过滤（去 filteredItems 注入链）。
+4. **translate 删除 vestigial onModuleSearch/onExecute**：View 自管 `translateText` 流式结果，标准列表从不展示 translate 结果，故旧 onModuleSearch/onExecute 为死代码。
+5. **composables 拆分延后**：`useAppLifecycle`/`useSearchInput`/`useResultNavigation` 为纯重构零行为变更，待系统稳定后做。
 
 ### 阶段 5：测试 + 工具链 + 文档 🟡
 
@@ -93,10 +92,11 @@
 - ✅ 6 死依赖删除（@wdio/\* + webdriverio + ts-node）
 - ✅ `.gitignore` 补全 test-results/ / proptest-regressions/ / .DS_Store
 - ✅ `src-tauri/tests/` 空目录删除
-- 🟡 **测试覆盖**：前端 174 用例（15 文件）；Rust 77 个；但 **12/16 扩展无 `*.test.ts`**（仅 base64/calculator/time/uuid 有），前端 runtime/ 新机制零测试
-- ⬜ AGENTS.md 描述与实现存在偏差——改为每阶段完成增量更新（见下方「AGENTS.md 待同步高优项」）
-- ⬜ 语义常量未集中：`module-registry.ts:33-37`（超时+上限）/`module-registry.ts:59-67`（GROUP_ORDER 优先级）/MainView.vue:182-190 GROUP_TITLES 仍硬编码
-- ⬜ **`check:commands` CI 未实现（已提升为阻塞项）**
+- ✅ **`check:commands` CI 已实现**（`scripts/check-commands.ts`：Rust `#[tauri::command]` ↔ `src/commands.ts` 双向差集；已抓到 `translate_ai_stream` 漂移 + `#[allow]` 属性隔断边界）
+- ✅ `bindings.ts` → `commands.ts` 替换完成（69 命令常量，43 处裸 invoke 全迁移，零裸 `invoke('xxx')`）
+- ✅ 语义常量集中（GROUP_ORDER/GROUP_TITLES/LIMITS 全在 `runtime/constants.ts` 单一源）
+- 🟡 **测试覆盖**：前端 165 用例（14 文件）；Rust 77 个；但 **12/16 扩展无 `*.test.ts`**（仅 base64/calculator/time/uuid 有），前端 runtime/ 新机制零测试
+- ⬜ AGENTS.md 与代码对齐（本次已增量更新见下方）
 
 ### 阶段 6：验证 ⬜
 
@@ -106,29 +106,22 @@
 cargo check --lib        → 零错误零警告
 cargo test --lib         → 93 passed
 bun run typecheck        → 零错误
-bun run test             → 174 passed (15 files)
+bun run test             → 165 passed (14 files)
+bun run check:commands   → 69 commands in sync
 bun run check:extensions → 9 extensions, check passed
+bun run lint             → 零错误
 ```
 
 ## 未达标项速查
 
-对照下方「验收清单」。**阶段 1/2（Rust 后端 + Rust 扩展迁移）已全部 ✅**。剩余集中在前端（阶段 3/4）与测试/工具链（阶段 5）。
-
-**阶段 3/4 前端运行时（基础已落地，消费者重连未启动）**
-
-- ✅ `src/runtime/` 5 文件齐备（types/constants/storage/extension-registry/search-engine）
-- ⬜ 消费者仍用旧 `src/core/`（module-registry/module-helpers/async-view）：stores/app、App.vue、MainView、ContentView、StatusBar、useSearchCommand 全部 getModule/registerModule/searchAll
-- ⬜ 16/16 扩展用 `registerModule`，0/16 用 `defineExtension`（阶段 4 一次性迁移）
-- ⬜ SearchProvider dynamic 单通道未接入（search-engine 已实现但未 wired；旧 searchAll 仍在用）
-- ⬜ composables 拆分未启动；MainView GROUP_TITLES 仍硬编码（与 kind 合并至阶段 4）
-- ⬜ `bindings.ts` → `commands.ts` 替换、`check:commands` CI（阶段 5）
+**阶段 1/2/3/4 已全部 ✅**。剩余集中在测试/工具链收尾（阶段 5）与验证（阶段 6）。
 
 **阶段 5 测试/工具链**
 
 - 12/16 扩展无 `*.test.ts`（仅 base64/calculator/time/uuid 有）
-- 前端 runtime/ 新机制零测试
-- `check:commands` CI 未实现（已提升为阻塞项）
-- AGENTS.md 与代码对齐——增量更新
+- 前端 runtime/ 新机制（search-engine/extension-registry）零测试
+- `check:extensions` 未增 windowViews 漂移校验（v1.5 A4）
+- composables 拆分（useAppLifecycle/useSearchInput/useResultNavigation）— 纯重构延后
 
 **已知偏差（记录待议）**
 
@@ -136,15 +129,13 @@ bun run check:extensions → 9 extensions, check passed
 - `scripts/sync-extensions.ts` 66 行（目标 <50）：含 `--check` 模式（CI 漂移校验，必要）。
 - screenshot `ffi.rs:129` picker.jpg：固定路径复用 scratch（每次覆写、不累积），不适配 TempHandle Drop 语义，保留；启动 sweep 不覆盖（前缀不符），单文件残留可接受。
 - platform/pasteboard 未实现 read_image/write_image（NSImage 级）：零消费者（clipboard 用 PNG 字节级 read_png/set_png），按 YAGNI 跳过。
-- `utils/clipboard.ts` 仍含 useAppStore 依赖：7 个 copyAndShow/copyAndHide 调用者，解耦 ripple 大，留阶段 3/4 处理。
+- `utils/clipboard.ts` 仍含 useAppStore 依赖：copyAndShow/copyAndHide 调用 showStatus 反馈，解耦 ripple 大，保留。
+- ContentView 未做蓝本理想的"纯渲染器"：保留双模式但已切 dynamic 接口（见阶段 4 决策 #1）。
+- settings 跨扩展 settingsView 扫描延后：保留 subviews 式设置入口（见阶段 4 决策 #3）。
 
-## AGENTS.md 待同步高优项
+## AGENTS.md 同步状态
 
-阶段 1/2 的 AGENTS.md 描述已增量对齐（命令注册边界、registry 并行、pasteboard 统一、policy.rs、TempHandle RAII、LLM 溶解）。剩余待同步项集中在阶段 3/4 落地后：
-
-- 前端 `src/runtime/` 5 文件、`defineExtension` 能力槽、SearchEngine 等描述（当前 AGENTS.md 仍描述 `registerModule`/`AppModule`）
-- `bindings.ts` → `commands.ts` 替换、`check:commands` CI
-- composables 拆分（useAppLifecycle/useSearchInput/useResultNavigation）
+阶段 1/2/3/4 的 AGENTS.md 描述已全部增量对齐：命令注册边界、registry 并行、pasteboard 统一、policy.rs、TempHandle RAII、LLM 溶解、前端 `src/runtime/` 5 文件、`defineExtension` 能力槽、SearchEngine、`commands.ts` + `check:commands` CI。剩余待同步项（composables 拆分、settingsView 扫描）随对应阶段落地再更。
 
 ## 阶段实施步骤
 
@@ -321,26 +312,27 @@ _收尾（依赖全部扩展迁移完成）_
 
 ### 前端
 
-- ⬜ `src/core/` 不存在 — 当前仍有 module-registry/module-helpers/async-view（settings.ts 保留）
-- ⬜ `src/runtime/` 5 文件齐备 — 当前仅 storage.ts
-- ⬜ 16 扩展用 `defineExtension`（9 能力槽，一次性迁移无 adapter） — 当前 16/16 用 registerModule
-- ⬜ composables 拆分（useAppLifecycle/useSearchInput/useResultNavigation）
-- ⬜ `sync-extensions.ts` < 50 行、无 COMMAND_REGEX — 当前 249 行
-- ⬜ 零硬编码可调参数（集中 constants） — module-registry.ts + MainView.vue GROUP_TITLES 仍硬编码
-- ⬜ `bindings.ts` 替换为 `commands.ts`，零裸 `invoke('xxx')` — 当前 23/68 覆盖、约 40 个裸 invoke
+- ✅ `src/core/` 不存在（module-registry/module-helpers/async-view 全删）
+- ✅ `src/runtime/` 5 文件齐备（types/constants/storage/extension-registry/search-engine）
+- ✅ 16 扩展用 `defineExtension`（9 能力槽，一次性迁移无 adapter）
+- ⬜ composables 拆分（useAppLifecycle/useSearchInput/useResultNavigation）— 纯重构延后
+- ✅ `sync-extensions.ts` 66 行、无 COMMAND_REGEX（含 --check 模式，必要）
+- ✅ 零硬编码可调参数（GROUP_ORDER/GROUP_TITLES/LIMITS 集中 `runtime/constants.ts`）
+- ✅ `bindings.ts` 替换为 `commands.ts`，零裸 `invoke('xxx')`（69 命令常量，check:commands CI 守护）
 
 ### 扩展
 
-- ⬜ 每扩展 `index.ts` 用 `defineExtension`（9 能力槽，无 contributes） — 当前 16/16 用 registerModule
+- ✅ 每扩展 `index.ts` 用 `defineExtension`（9 能力槽，无 contributes）
 - ✅ 每扩展 `config.ts` 保持 `defineConfig` 形态 — 8/9 native 扩展配置自管（search 无 config.ts）
 - ⬜ 每扩展 `*.test.ts` 存在 — 仅 base64/calculator/time/uuid 4 个
-- ⬜ agent 9 层防御双层安全（`BOUNDS` const floor/cap + forbidden 并集） — 当前底层全 const 硬编码
-- ⬜ screenshot temp 走 TempHandle 注册 — 当前直接用 std::env::temp_dir()（6 处）
+- ✅ agent 9 层防御双层安全（`BOUNDS` const floor/cap + forbidden 并集，policy.rs 权威源）
+- ✅ screenshot temp 走 TempHandle 注册
 
 ### 工具链与文档
 
-- ⬜ `check:commands` CI（命令名漂移检测，阻塞项） — 未实现
-- ⬜ AGENTS.md 与代码对齐 — 改为每阶段增量更新（见上方待同步项）
+- ✅ `check:commands` CI（命令名漂移检测，阻塞项）— 69 命令 in sync
+- ⬜ `check:extensions` 增 windowViews 漂移校验（v1.5 A4）— 未实现
+- 🟴 AGENTS.md 与代码对齐 — 本次已增量更新（defineExtension/commands.ts/runtime 消费者）
 
 ### 性能
 

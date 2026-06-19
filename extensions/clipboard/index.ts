@@ -1,18 +1,30 @@
 import { ref, shallowRef } from 'vue'
-import { registerModule } from '@/core/module-registry'
-import { asyncView } from '@/core/async-view'
-import { makeToggleHandler } from '@/core/module-helpers'
-import type { AppModule } from '@/types/module'
-import { commands, type ClipboardItem } from '@/bindings'
+import { defineExtension } from '@/runtime/extension-registry'
+import { defineAsyncComponent } from 'vue'
+import { makeToggleHandler } from '@/utils/module-toggle'
+import type { ProviderResult } from '@/runtime/types'
+import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { listen } from '@tauri-apps/api/event'
 import { scoreFields } from '@/utils/fuzzy'
 
-const ClipboardView = asyncView(() => import('./View.vue'))
-const ClipboardSettings = asyncView(() => import('./Settings.vue'))
-const ClipboardActions = asyncView(() => import('./Actions.vue'))
+const ClipboardView = defineAsyncComponent(() => import('./View.vue'))
+const ClipboardSettings = defineAsyncComponent(() => import('./Settings.vue'))
+const ClipboardActions = defineAsyncComponent(() => import('./Actions.vue'))
 
-export type { ClipboardItem }
+export interface ClipboardItem {
+  id: string
+  content: string
+  content_type: string
+  source_app: string
+  created_at: string
+  is_favorite: boolean
+  score: number
+  file_size: number | null
+  image_width: number | null
+  image_height: number | null
+}
 
 export const history = shallowRef<ClipboardItem[]>([])
 export const activeTab = ref<'all' | 'favorites'>('all')
@@ -57,7 +69,11 @@ export async function fetchClipboardHistory(query: string = '', filterFavorite: 
   const version = ++fetchVersion
   loading.value = true
   try {
-    const res = await commands.getClipboardHistory(filterFavorite || null, null, true)
+    const res = await invoke<ClipboardItem[]>(CMD.getClipboardHistory, {
+      filterFavorite: filterFavorite || null,
+      limit: null,
+      previewOnly: true,
+    })
     if (version === fetchVersion) {
       tabCache.set(tab, res)
       history.value = filterByQuery(res, query)
@@ -75,21 +91,22 @@ export function invalidateCache() {
   tabCache.clear()
 }
 
-const mod: AppModule = {
-  id: 'clipboard',
-  name: '剪贴板',
-  description: '剪贴板历史管理',
-  icon: 'i-ri-clipboard-line',
-  keywords: ['clipboard', 'copy', 'paste', 'history', '剪贴板', '历史', '复制', '粘贴'],
-  shortcut: '⌘⇧C',
+export default defineExtension({
+  meta: {
+    id: 'clipboard',
+    name: '剪贴板',
+    description: '剪贴板历史管理',
+    icon: 'i-ri-clipboard-line',
+    keywords: ['clipboard', 'copy', 'paste', 'history', '剪贴板', '历史', '复制', '粘贴'],
+    order: 1,
+  },
+
   placeholder: '搜索剪贴板记录',
-  order: 1,
-  view: ClipboardView,
-  searchBarAccessory: ClipboardActions,
-  subviews: { settings: ClipboardSettings },
-  enterHint: '粘贴',
-  multiSelectHint: true,
-  deleteHint: '删除',
+  mainView: () => ClipboardView,
+  searchBarAccessory: () => ClipboardActions,
+  subviews: { settings: () => ClipboardSettings },
+  hints: { enter: '粘贴', multiSelect: 'true', delete: '删除' },
+  listOptions: { multiSelect: true },
   globalShortcuts: [
     {
       id: 'clipboard',
@@ -97,7 +114,8 @@ const mod: AppModule = {
       onExecute: makeToggleHandler('clipboard'),
     },
   ],
-  onInit: async () => {
+
+  setup: async () => {
     await fetchClipboardHistory('', false)
     await listen('clipboard-updated', () => {
       const appStore = useAppStore()
@@ -105,65 +123,64 @@ const mod: AppModule = {
       fetchClipboardHistory(appStore.searchQuery, activeTab.value === 'favorites')
     })
   },
-  onActivate: async () => {
-    activeTab.value = 'all'
-    invalidateCache()
-    await fetchClipboardHistory('', false)
-  },
-  onSearch: async (query) => {
-    if (!query.trim()) return []
 
-    try {
-      const raw = await commands.getClipboardHistory(null, null, null)
-      const items = filterByQuery(raw, query)
-      return items.map((item) => {
-        let title = item.content
-        if (item.content_type === 'image') {
-          title = '[图片]'
-        } else if (item.content_type === 'file') {
-          title = '[文件] ' + item.content.split('/').pop()
-        } else {
-          title = item.content.substring(0, 500).replace(/\r?\n/g, ' ')
-        }
+  search: {
+    dynamic: async (query): Promise<ProviderResult[]> => {
+      if (!query.trim()) return []
 
-        return {
-          id: `clipboard-${item.id}`,
-          title: title,
-          description: `${item.source_app} • ${item.created_at}`,
-          module: 'clipboard',
-          icon:
-            item.content_type === 'image'
-              ? 'i-ri-image-line'
-              : item.content_type === 'file'
-                ? 'i-ri-file-line'
-                : 'i-ri-file-text-line',
-          score: item.score > 0 ? item.score : 500,
-          data: {
-            kind: 'clipboard',
-            iconStyle: 'rounded',
-            id: item.id,
+      try {
+        const raw = await invoke<ClipboardItem[]>(CMD.getClipboardHistory, {
+          filterFavorite: null,
+          limit: null,
+          previewOnly: null,
+        })
+        const items = filterByQuery(raw, query)
+        return items.map((item) => {
+          let title = item.content
+          if (item.content_type === 'image') {
+            title = '[图片]'
+          } else if (item.content_type === 'file') {
+            title = '[文件] ' + item.content.split('/').pop()
+          } else {
+            title = item.content.substring(0, 500).replace(/\r?\n/g, ' ')
+          }
+
+          return {
+            id: `clipboard-${item.id}`,
+            title: title,
+            description: `${item.source_app} • ${item.created_at}`,
             icon:
               item.content_type === 'image'
-                ? item.content.replace('data:image/png;base64,', '')
-                : undefined,
-          },
-        }
-      })
-    } catch {
-      return []
-    }
+                ? 'i-ri-image-line'
+                : item.content_type === 'file'
+                  ? 'i-ri-file-line'
+                  : 'i-ri-file-text-line',
+            data: {
+              kind: 'clipboard' as const,
+              iconStyle: 'rounded',
+              id: item.id,
+              icon:
+                item.content_type === 'image'
+                  ? item.content.replace('data:image/png;base64,', '')
+                  : undefined,
+            },
+          }
+        })
+      } catch {
+        return []
+      }
+    },
   },
+
   onExecute: async (result) => {
     const id = (result.data?.id as string) || result.id
     if (id) {
       try {
-        await commands.pasteClipboardItem(id)
+        await invoke(CMD.pasteClipboardItem, { id })
         invalidateCache()
       } catch (e) {
         console.error('Failed to paste clipboard item:', e)
       }
     }
   },
-}
-
-registerModule(mod)
+})

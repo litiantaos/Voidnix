@@ -1,12 +1,11 @@
 import { ref } from 'vue'
-import { registerModule } from '@/core/module-registry'
-import { asyncView } from '@/core/async-view'
-import type { AppModule } from '@/types/module'
+import { defineExtension } from '@/runtime/extension-registry'
+import { defineAsyncComponent } from 'vue'
 
-const ScreenshotView = asyncView(() => import('./View.vue'))
-const ScreenshotWindow = asyncView(() => import('./windows/Host.vue'))
-const PinWindow = asyncView(() => import('./windows/PinWindow.vue'))
-const ScreenshotOcr = asyncView(() => import('./OcrView.vue'))
+const ScreenshotView = defineAsyncComponent(() => import('./View.vue'))
+const ScreenshotWindow = defineAsyncComponent(() => import('./windows/Host.vue'))
+const PinWindow = defineAsyncComponent(() => import('./windows/PinWindow.vue'))
+const ScreenshotOcr = defineAsyncComponent(() => import('./OcrView.vue'))
 
 // OCR 待识别数据（由截屏标注界面通过 open_module_subview 触发时注入）
 export const pendingOcrData = ref<{
@@ -19,31 +18,34 @@ export const pendingOcrData = ref<{
   previewPng: string
 } | null>(null)
 
-const mod: AppModule = {
-  id: 'screenshot',
-  name: '截屏',
-  description: '区域截屏、标注、OCR 与二维码识别',
-  icon: 'i-ri-screenshot-line',
-  keywords: [
-    'screenshot',
-    '截屏',
-    '截图',
-    'jietu',
-    'ocr',
-    '识别',
-    '文字识别',
-    'shibie',
-    'qr',
-    '二维码',
-    'erweima',
-    'barcode',
-  ],
-  order: 9,
-  view: ScreenshotView,
-  subviews: { ocr: ScreenshotOcr },
+export default defineExtension({
+  meta: {
+    id: 'screenshot',
+    name: '截屏',
+    description: '区域截屏、标注、OCR 与二维码识别',
+    icon: 'i-ri-screenshot-line',
+    keywords: [
+      'screenshot',
+      '截屏',
+      '截图',
+      'jietu',
+      'ocr',
+      '识别',
+      '文字识别',
+      'shibie',
+      'qr',
+      '二维码',
+      'erweima',
+      'barcode',
+    ],
+    order: 9,
+  },
+
+  mainView: () => ScreenshotView,
+  subviews: { ocr: () => ScreenshotOcr },
   windowViews: {
-    screenshot: ScreenshotWindow,
-    'pin-': PinWindow,
+    screenshot: () => ScreenshotWindow,
+    'pin-': () => PinWindow,
   },
   globalShortcuts: [
     {
@@ -75,7 +77,6 @@ const mod: AppModule = {
       previewPng: d.previewPng ?? '',
     }
   },
-  onSearch: async () => [],
   onExecute: async (result) => {
     if (result.data?.openSubview) {
       const { useAppStore } = await import('@/stores/app')
@@ -85,6 +86,4 @@ const mod: AppModule = {
       appStore.openSubview('ocr')
     }
   },
-}
-
-registerModule(mod)
+})

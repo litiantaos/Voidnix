@@ -1,25 +1,29 @@
 import { config as translateConfig } from './config'
 import { ref } from 'vue'
-import { registerModule } from '@/core/module-registry'
-import { asyncView } from '@/core/async-view'
-import { makeToggleHandler } from '@/core/module-helpers'
-import type { AppModule, SearchResult } from '@/types/module'
-import { writeText } from '@/utils/clipboard'
+import { defineExtension } from '@/runtime/extension-registry'
+import { defineAsyncComponent } from 'vue'
+import { makeToggleHandler } from '@/utils/module-toggle'
 import { invoke } from '@tauri-apps/api/core'
-import { hideWindow } from '@/utils/tauri'
+import { CMD } from '@/commands'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { type TranslateApiConfig } from './config'
 import { toErrorMessage } from '@/utils/format'
 import { providerLabelFromUrl } from '@/utils/format'
 import { generateRequestId } from '@/utils/id'
-import { commands, type TranslateResult as BindingsTranslateResult } from '@/bindings'
 
-const TranslateView = asyncView(() => import('./View.vue'))
-const TranslateSettings = asyncView(() => import('./Settings.vue'))
-const TranslateActions = asyncView(() => import('./Actions.vue'))
+const TranslateView = defineAsyncComponent(() => import('./View.vue'))
+const TranslateSettings = defineAsyncComponent(() => import('./Settings.vue'))
+const TranslateActions = defineAsyncComponent(() => import('./Actions.vue'))
 
-/** 前端扩展类型：在 bindings 的 TranslateResult 基础上增加 loading 状态 */
-export type TranslateResult = BindingsTranslateResult & { loading?: boolean }
+/** Rust translate_ai/translate_youdao 返回结构 */
+interface TranslateBaseResult {
+  source: string
+  translation: string
+  engine: string
+}
+
+/** 前端扩展类型：在基础结果上增加 loading 状态 */
+export type TranslateResult = TranslateBaseResult & { loading?: boolean }
 
 export const translateResults = ref<TranslateResult[]>([])
 export const isTranslating = ref(false)
@@ -160,8 +164,12 @@ export async function translateText(text: string) {
       placeholder.push({ source: text, translation: '', engine, loading: true })
       youdaoIndexMap.set(requestId, i)
       promises.push(
-        commands
-          .translateYoudao(text, config.appKey, config.appSecret, targetLang)
+        invoke<TranslateBaseResult>(CMD.translateYoudao, {
+          text,
+          appKey: config.appKey,
+          appSecret: config.appSecret,
+          targetLang,
+        })
           .then((result) => {
             const idx = youdaoIndexMap.get(requestId)
             if (idx !== undefined && translateResults.value[idx]) {
@@ -197,7 +205,7 @@ export async function translateText(text: string) {
         const requestId = generateRequestId()
         streamIndexMap.set(requestId, i)
         promises.push(
-          invoke<void>('translate_ai_stream', {
+          invoke<void>(CMD.translateAiStream, {
             text,
             endpoint: config.endpoint,
             apiKey: config.apiKey,
@@ -231,7 +239,7 @@ export async function translateText(text: string) {
 
 export async function getSelectedText(): Promise<string> {
   try {
-    const text = await commands.getSelectedText()
+    const text = await invoke<string>(CMD.getSelectedText)
     return text
   } catch (e) {
     console.error('Failed to get selected text:', e)
@@ -253,12 +261,12 @@ async function waitForSelectedText(): Promise<string> {
       if (translateReadyResolver !== resolve) return
       translateReadyResolver = null
       try {
-        const cached = await invoke<string>('get_selected_text_cached')
+        const cached = await invoke<string>(CMD.getSelectedTextCached)
         if (cached.trim()) {
           resolve(cached)
           return
         }
-        const fallback = await invoke<string>('get_selected_text')
+        const fallback = await invoke<string>(CMD.getSelectedText)
         resolve(fallback || '')
       } catch {
         resolve('')
@@ -267,18 +275,21 @@ async function waitForSelectedText(): Promise<string> {
   })
 }
 
-const mod: AppModule = {
-  id: 'translate',
-  name: '翻译',
-  description: '选词翻译',
-  icon: 'i-ri-translate-2',
-  keywords: ['translate', '翻译', '翻譯', 'fanyi', 'youdao', '有道'],
-  order: 8,
+export default defineExtension({
+  meta: {
+    id: 'translate',
+    name: '翻译',
+    description: '选词翻译',
+    icon: 'i-ri-translate-2',
+    keywords: ['translate', '翻译', '翻譯', 'fanyi', 'youdao', '有道'],
+    order: 8,
+  },
+
   disableSearchInput: true,
-  view: TranslateView,
-  searchBarAccessory: TranslateActions,
-  subviews: { settings: TranslateSettings },
-  onInit: async () => {
+  mainView: () => TranslateView,
+  searchBarAccessory: () => TranslateActions,
+  subviews: { settings: () => TranslateSettings },
+  setup: async () => {
     unlistenReady = await listen<string>('translate-text-ready', (e) => {
       if (translateReadyResolver) {
         translateReadyResolver(e.payload || '')
@@ -301,112 +312,4 @@ const mod: AppModule = {
       }),
     },
   ],
-  onSearch: async () => [],
-  onModuleSearch: async (query) => {
-    if (!query.trim()) return []
-
-    const configs = translateConfig.configs
-    const targetLang = translateConfig.targetLang
-    const results: SearchResult[] = []
-    const promises: Promise<void>[] = []
-
-    for (const config of configs) {
-      if (config.type === 'youdao') {
-        if (!config.appKey || !config.appSecret) continue
-        promises.push(
-          commands
-            .translateYoudao(query, config.appKey, config.appSecret, targetLang)
-            .then((result) => {
-              results.push({
-                id: `youdao-${Date.now()}`,
-                title: result.translation,
-                description: `有道翻译 • ${result.source}`,
-                module: 'translate',
-                icon: 'i-ri-translate-2',
-                score: 100,
-                data: { isHighlight: true, translation: result.translation },
-              })
-            })
-            .catch((e) => {
-              const msg = toErrorMessage(e)
-              results.push({
-                id: `youdao-error-${Date.now()}`,
-                title: msg,
-                description: '有道翻译',
-                module: 'translate',
-                icon: 'i-ri-error-warning-line',
-                score: 100,
-              })
-            }),
-        )
-      } else if (config.type === 'ai') {
-        if (!config.endpoint || !config.apiKey) continue
-        const activeModels = config.models.filter((m) => m.trim())
-        for (const model of activeModels) {
-          promises.push(
-            commands
-              .translateAi(
-                query,
-                config.endpoint,
-                config.apiKey,
-                model,
-                targetLang,
-                config.prompt ?? null,
-              )
-              .then((result) => {
-                const label =
-                  activeModels.length > 1 ? `${result.engine} · ${model.trim()}` : result.engine
-                results.push({
-                  id: `ai-${Date.now()}`,
-                  title: result.translation,
-                  description: `${label} • ${result.source}`,
-                  module: 'translate',
-                  icon: 'i-ri-translate-2',
-                  score: 100,
-                  data: { isHighlight: true, translation: result.translation },
-                })
-              })
-              .catch((e) => {
-                const msg = toErrorMessage(e)
-                results.push({
-                  id: `ai-error-${Date.now()}`,
-                  title: msg,
-                  description: activeModels.length > 1 ? `翻译 · ${model.trim()}` : '翻译',
-                  module: 'translate',
-                  icon: 'i-ri-error-warning-line',
-                  score: 100,
-                })
-              }),
-          )
-        }
-      }
-    }
-
-    await Promise.all(promises)
-
-    if (results.length === 0) {
-      results.push({
-        id: 'no-config',
-        title: '请先配置翻译 API',
-        description: '在设置中配置有道翻译或翻译服务',
-        module: 'translate',
-        icon: 'i-ri-settings-3-line',
-        score: 0,
-      })
-    }
-
-    return results
-  },
-  onExecute: async (result) => {
-    if (result.data?.translation) {
-      try {
-        await writeText(result.data.translation as string)
-        hideWindow()
-      } catch (e) {
-        console.error('Failed to copy translation:', e)
-      }
-    }
-  },
-}
-
-registerModule(mod)
+})
