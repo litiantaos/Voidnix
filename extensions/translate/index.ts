@@ -6,10 +6,9 @@ import { makeToggleHandler } from '@/utils/module-toggle'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { type TranslateApiConfig } from './config'
 import { toErrorMessage } from '@/utils/format'
-import { providerLabelFromUrl } from '@/utils/format'
 import { generateRequestId } from '@/utils/id'
+import { cleanStreamResult, engineLabel } from './logic'
 
 const TranslateView = defineAsyncComponent(() => import('./View.vue'))
 const TranslateSettings = defineAsyncComponent(() => import('./Settings.vue'))
@@ -37,50 +36,6 @@ let unlistenReady: UnlistenFn | null = null
 let streamInitializing = false
 
 const streamIndexMap = new Map<string, number>()
-
-const PREAMBLE_PATTERNS = [
-  /here\s*(?:is|'s)\s*the\s*translation/i,
-  /the\s*translation\s*is/i,
-  /translated\s*text/i,
-  /translation\s*(?:result|:)/i,
-  /^[\s\S]*?(?:以下是翻译|翻译结果|翻译如下|翻译[：:])/,
-]
-
-function cleanStreamResult(raw: string): string {
-  let s = raw.trim()
-
-  if (s.startsWith('```') && s.endsWith('```')) {
-    s = s
-      .slice(3, -3)
-      .replace(/^[a-z0-9+]+\n?/i, '')
-      .trim()
-  }
-
-  for (const open of ['"', '\u{201C}', '\u{300C}', '\u{300E}']) {
-    const close =
-      open === '"'
-        ? '"'
-        : open === '\u{201C}'
-          ? '\u{201D}'
-          : open === '\u{300C}'
-            ? '\u{300D}'
-            : '\u{300F}'
-    if (s.startsWith(open) && s.endsWith(close) && s.length > 1) {
-      s = s.slice(1, -1).trim()
-    }
-  }
-
-  for (const pat of PREAMBLE_PATTERNS) {
-    const m = s.match(pat)
-    if (m && m.index !== undefined) {
-      const rest = s.slice(m.index + m[0].length).replace(/^[\s：:]+/, '')
-      if (rest) s = rest
-      break
-    }
-  }
-
-  return s
-}
 
 async function initStreamListeners() {
   if (unlistenChunk || streamInitializing) return
@@ -129,11 +84,6 @@ export function destroyStreamListeners() {
   unlistenReady?.()
   unlistenReady = null
   streamInitializing = false
-}
-
-function engineLabel(config: TranslateApiConfig): string {
-  if (config.type === 'youdao') return '有道翻译'
-  return providerLabelFromUrl(config.endpoint, '翻译')
 }
 
 export async function translateText(text: string) {

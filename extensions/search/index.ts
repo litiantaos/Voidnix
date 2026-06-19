@@ -1,10 +1,11 @@
 import { defineExtension } from '@/runtime/extension-registry'
-import type { ProviderResult, SearchResultKind } from '@/runtime/types'
+import type { ProviderResult } from '@/runtime/types'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { isTauri, type RawSearchResult } from '@/utils/tauri'
 import { frequencyBoost } from '@/utils/fuzzy'
 import { listen } from '@tauri-apps/api/event'
+import { recencyScore, toResult } from './logic'
 
 const MIN_FILE_QUERY_LEN = 2
 
@@ -16,36 +17,6 @@ listen('app-cache-updated', () => {
   appListCache = null
   iconsPending = false
 }).catch(() => {})
-
-function recencyScore(lastUsed: string | null): number {
-  if (!lastUsed) return 0
-  const hours = (Date.now() - new Date(lastUsed).getTime()) / 3600000
-  if (hours < 0) return 300
-  if (hours < 1) return 300
-  if (hours < 24) return 200
-  if (hours < 168) return 100
-  if (hours < 720) return 50
-  return 0
-}
-
-/** Rust search_apps/search_files 原始项 → ProviderResult（kind 透传，module 由框架注入） */
-function toResult(raw: RawSearchResult, boost: number): ProviderResult {
-  return {
-    id: raw.id,
-    title: raw.title,
-    description: raw.path,
-    icon: raw.icon ?? undefined,
-    boost,
-    data: {
-      kind: (raw.kind as SearchResultKind) ?? 'file',
-      path: raw.path,
-      icon: raw.icon ?? null,
-      useCount: raw.use_count ?? 0,
-      parent: raw.parent ?? null,
-      lastUsed: raw.last_used ?? null,
-    },
-  }
-}
 
 async function getAppList(): Promise<ProviderResult[]> {
   if (appListCache && !iconsPending) return appListCache

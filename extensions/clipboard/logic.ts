@@ -1,0 +1,21 @@
+import { scoreFields } from '@/utils/fuzzy'
+import type { ClipboardItem } from './index'
+
+/** 提取用于匹配/索引的文本（图片/文件给语义占位，便于按类型搜索）。 */
+export function matchText(item: ClipboardItem): string {
+  if (item.content_type === 'image') return '图片 image'
+  if (item.content_type === 'file') return `文件 file ${item.content}`
+  return item.content
+}
+
+/** 按 query 模糊过滤 + 打分排序（score > 0 保留），空 query 原样返回。
+ *  返回新数组（每项 score 字段已回填），不修改入参。 */
+export function filterByQuery(items: ClipboardItem[], query: string): ClipboardItem[] {
+  const q = query.trim()
+  if (!q) return items
+  return items
+    .map((it) => ({ it, score: scoreFields([matchText(it)], q) }))
+    .filter((e) => e.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(({ it, score }) => ({ ...it, score }))
+}

@@ -13,6 +13,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { generateRequestId } from '@/utils/id'
 import { config as agentConfig, activeSearchProvider } from './config'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
+import { toLlmMessages } from './logic'
 
 export type AgentStatus = 'ready' | 'streaming' | 'awaiting_approval' | 'error'
 
@@ -295,39 +296,4 @@ export function useAgentChat() {
     abort,
     newConversation,
   }
-}
-
-/// AgentMessage[] → LlmMessage[]（送 Rust 的 OpenAI 协议格式）
-function toLlmMessages(messages: AgentMessage[]): LlmMessage[] {
-  const result: LlmMessage[] = []
-  for (const msg of messages) {
-    if (msg.streaming) continue // 跳过未完成的 streaming 消息
-    if (msg.role === 'user') {
-      const text = msg.parts
-        .filter((p): p is Extract<AgentPart, { type: 'text' }> => p.type === 'text')
-        .map((p) => p.text)
-        .join('')
-      if (text) result.push({ role: 'user', content: text })
-    } else if (msg.role === 'assistant') {
-      const textParts = msg.parts
-        .filter((p): p is Extract<AgentPart, { type: 'text' }> => p.type === 'text')
-        .map((p) => p.text)
-        .join('')
-      const toolCalls = msg.parts
-        .filter((p): p is Extract<AgentPart, { type: 'toolCall' }> => p.type === 'toolCall')
-        .map((p) => ({
-          id: p.id,
-          type: 'function' as const,
-          function: { name: p.name, arguments: JSON.stringify(p.args ?? {}) },
-        }))
-      if (textParts || toolCalls.length > 0) {
-        const entry: LlmMessage = { role: 'assistant' }
-        if (textParts) entry.content = textParts
-        if (toolCalls.length > 0) entry.toolCalls = toolCalls
-        result.push(entry)
-      }
-    }
-    // tool role 在 history 里不出现（tool result 在 assistant 的 toolCall part 上）
-  }
-  return result
 }

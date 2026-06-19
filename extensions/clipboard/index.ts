@@ -7,7 +7,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { listen } from '@tauri-apps/api/event'
-import { scoreFields } from '@/utils/fuzzy'
+import { filterByQuery } from './logic'
 
 const ClipboardView = defineAsyncComponent(() => import('./View.vue'))
 const ClipboardSettings = defineAsyncComponent(() => import('./Settings.vue'))
@@ -39,22 +39,6 @@ export function registerDeleteHandler(fn: () => void) {
 }
 export function triggerDelete() {
   _deleteHandler?.()
-}
-
-function matchText(item: ClipboardItem): string {
-  if (item.content_type === 'image') return '图片 image'
-  if (item.content_type === 'file') return `文件 file ${item.content}`
-  return item.content
-}
-
-function filterByQuery(items: ClipboardItem[], query: string): ClipboardItem[] {
-  const q = query.trim()
-  if (!q) return items
-  return items
-    .map((it) => ({ it, score: scoreFields([matchText(it)], q) }))
-    .filter((e) => e.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map(({ it, score }) => ({ ...it, score }))
 }
 
 export async function fetchClipboardHistory(query: string = '', filterFavorite: boolean = false) {
