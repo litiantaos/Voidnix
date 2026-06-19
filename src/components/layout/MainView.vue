@@ -156,7 +156,8 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 
 import { useScrollPosition } from '@/composables/useScrollPosition'
-import { useSearchCommand } from '@/composables/useSearchCommand'
+import { useSearchInput } from '@/composables/useSearchInput'
+import { useResultNavigation } from '@/composables/useResultNavigation'
 import { getFocusableElements, cycleFocus } from '@/utils/dom'
 
 const isDev = import.meta.env.DEV
@@ -189,13 +190,23 @@ const groupField = (item: SearchResult) => {
 const groupTitle = (group: string) =>
   SEARCH.GROUP_TITLES[group as keyof typeof SEARCH.GROUP_TITLES] || group
 
-const { onInput, handleExecute, handleTagClose, isLoading } = useSearchCommand({
+const { onInput, handleTagClose, isLoading, clearSearch, loadDefaultResults, goBackToToolList } =
+  useSearchInput({
+    searchInput,
+    results,
+    selectedIndex,
+    activeModule,
+    restore,
+    reset,
+  })
+const { handleExecute } = useResultNavigation({
   searchInput,
   results,
   selectedIndex,
   activeModule,
-  restore,
-  reset,
+  clearSearch,
+  loadDefaultResults,
+  goBackToToolList,
 })
 
 // 进入模块子视图时释放搜索栏焦点，让键盘事件能到达子视图内容
