@@ -40,7 +40,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 纯 TS 扩展（7 个）：calculator、settings、ip、base64、time、uuid、currency
 
-**Rust 端注册**：双注册——`configure_app!` 宏（编译期命令注册，sync-extensions 自动扫描 `#[tauri::command]`）+ `Extension` trait（运行时 `on_setup`/`on_teardown` 钩子，在 `lib.rs` 的 `ExtensionRegistry` 注册）。
+**Rust 端注册**：双注册——`init() -> TauriPlugin<Wry>`（编译期，各扩展 `native/mod.rs` 内 `invoke_handler(generate_handler![...])` 局部注册命令 + plugin `.setup` 管理命令执行 State）+ `Extension` trait（运行时 `setup`/`teardown` 异步钩子，并行 bootstrap via `join_all`，在 `lib.rs` 的 `ExtensionRegistry` 注册）。框架命令（permission/shortcut/window/pasteboard 共 14 个）在 `lib.rs` 手写 `generate_handler!`，不参与 sync-extensions 扫描。`configure_app!` 宏仅 `.plugin()` 链，零 `generate_handler!`。
 
 **扩展配置**：每个扩展通过 `config.ts` 的 `defineConfig('extId', { ...defaults })` 自管配置，`reactive()` + `watch()` 自动持久化至 `extensions/<id>/config.json`。框架级配置（全局快捷键 + AI Provider）在 `stores/settings.ts`。
 
@@ -48,7 +48,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 ## 架构要点
 
-**前后端通信**：前端用裸 `invoke()` + 手写类型（`src/bindings.ts` 提供命令名常量）。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。所有 Command 须在 `configure_app!` 注册（sync-extensions 自动扫描）。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
+**前后端通信**：前端用裸 `invoke()` + 手写类型（`src/bindings.ts` 提供命令名常量）。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。扩展 Command 在各 `init()` 局部注册；框架 Command 在 `lib.rs` 手写 `generate_handler!`。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
 
 **模块接口**：`AppModule` 拆分为 5 组合接口——`ModuleMeta`（元数据）、`ModuleUI`（视图槽位）、`ModuleSearch`（搜索能力）、`ModuleLifecycle`（生命周期钩子）、`ModuleHints`（状态栏提示）。扩展按需组合。
 
@@ -56,15 +56,16 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。
 
-**Agent 引擎**（`extensions/agent/native/engine/`）：tool calling loop，服务 agent 扩展。prompt/max_turns/trustedCommands 由扩展 config 注入（非框架硬编码）。
+**Agent 引擎**（`extensions/agent/native/engine/`）：tool calling loop，服务 agent 扩展。prompt/max_turns/trustedCommands/forbiddenCommands/blockedArgs/资源上限由扩展 config 注入（非框架硬编码）。
 
 - `loop_runner.rs`：主循环 `run_loop`：调 LLM → 解析 tool_calls → 审批 → 执行 → 回灌 → 下一轮
 - `approval.rs`：`ApprovalManager`（全局 State，oneshot channel）
 - `cancellation.rs`：`SessionRegistry`（per-session CancellationToken）
+- `trim.rs`：历史消息裁剪（下沉自 runtime/llm）
 - `secret_scrub.rs`：gitleaks 风格正则打码
 - `tool_registry.rs`：`AgentTool` trait + `ToolRegistry`
 
-Agent 安全防线（命令执行 9 层纵深防御）详见 `docs/extensions/agent.md`。
+Agent 安全防线（命令执行 9 层纵深防御）：`extensions/agent/native/policy.rs` 是 floor/cap 权威源（FORBIDDEN_FLOOR 31 项 / DENIED_ARG_FLOOR 15 项 / 资源上限 clamp），`agent_run` 入口强制 clamp/并集（不信任前端传值）；TS 端 `config.ts` 的 `BOUNDS` 仅 UI 镜像。详见 `docs/extensions/agent.md`。
 
 **搜索**：Rust 端只做数据召回，过滤排序统一在前端走 `src/utils/fuzzy.ts::scoreFields()`（基于 [pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义）。
 
@@ -78,20 +79,20 @@ SearchResult { id, title, module; description?; icon?; score?; shortcut?; data?:
 
 **状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide` / `copyAndShow`（`src/utils/clipboard.ts`）自动获得「已复制」反馈。模块可通过 `ModuleHints.enterHint` / `multiSelectHint` / `deleteHint` 自定义快捷键提示。
 
-**LLM 基础设施**（`runtime/llm/`）：agent + translate 扩展共享。`types.rs`（LlmMessage）、`security.rs`（SSRF 防护 + 消息安全 + secret_scrub）、`client.rs`（StreamConfig/stream_openai_request）、`parser.rs`（tool_calls 解析）。
+**LLM 基础设施**（`runtime/llm/`）：agent + translate 扩展共享。`types.rs`（LlmMessage）、`client.rs`（StreamConfig/stream_openai_request + SSRF 防护 validate_ai_request + 消息截断 + 请求管道常量）、`parser.rs`（tool_calls 解析）。
 
 ## 目录结构
 
 ```
 src-tauri/src/
 ├── lib.rs / main.rs    # 入口
-├── extensions.rs       # 自动生成（configure_app! 宏，勿手改）
+├── extensions.rs       # 自动生成（仅 .plugin() 链 + mod 声明，零 generate_handler!）
 ├── http.rs             # 全局 HTTP 客户端
 ├── runtime/            # 运行时核心
 │   ├── constants.rs    # 空壳（目标删除，见 RV §3.1；语义常量仅前端 constants.ts）
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
-│   ├── storage.rs      # TempHandle 临时文件管理（扁平函数，目标 RAII struct 见 RV §2.7）
+│   ├── storage.rs      # TempHandle RAII 临时文件管理（Drop 自动清理 + 全局注册表）
 │   ├── permission.rs   # 系统权限薄壳
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（并行 bootstrap）
 │   └── llm/            # LLM 基础设施（types / security / client / parser）
@@ -100,7 +101,7 @@ src-tauri/src/
     ├── skylight.rs     # Space 迁移（私有 API）
     ├── focus.rs        # 焦点管理（PREV_FRONT_PID 唯一源）
     ├── input.rs        # CGEvent 键盘注入（统一 post_key/inject_copy/paste_global）
-    ├── pasteboard.rs   # NSPasteboard 统一（read_text/string_for_type/data_for_type/has_type/snapshot/restore）
+    ├── pasteboard.rs   # NSPasteboard 统一（read_text/read_file_url/read_png/write_text/clear/set_string/set_file_url/set_png/set_custom/snapshot/restore + pasteboard_write_text 命令）
     ├── selection.rs    # AX 选中文本提取 + poll_clipboard
     ├── click_monitor.rs
     ├── permission.rs
