@@ -12,7 +12,7 @@ bun install                  # 安装依赖
 bun run tauri:dev            # 开发模式（sync → lint → 启动）
 ./deploy.sh                  # 打包部署
 bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions.rs）
-bun run check:extensions     # CI 校验（extensions.rs 是否已同步）
+bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移，见 RV §2.2 A4）
 bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
 bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
 bun run typecheck            # vue-tsc 严格类型检查
@@ -43,7 +43,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **前端扩展注册**：`index.ts` 顶层 `export default defineExtension({ meta, search?, mainView?, ... })`，由 `main.ts` 的 `import.meta.glob(['@ext/*/index.ts'], { eager: true })` 自动扫描注册。扩展 `setup()` 钩子在 Vue 挂载后由 `main.ts` 并行触发。
 
-**Rust 端注册**：双注册——`init() -> TauriPlugin<Wry>`（编译期，各扩展 `native/mod.rs` 内 `invoke_handler(generate_handler![...])` 局部注册命令 + plugin `.setup` 管理命令执行 State）+ `Extension` trait（运行时 `setup`/`teardown` 异步钩子，并行 bootstrap via `join_all`，在 `lib.rs` 的 `ExtensionRegistry` 注册）。框架命令（permission/shortcut/window 共 14 个）在 `lib.rs` 手写 `generate_handler!`，不参与 sync-extensions 扫描。`configure_app!` 宏仅 `.plugin()` 链，零 `generate_handler!`。
+**Rust 端注册**：双注册——`init() -> TauriPlugin<Wry>`（编译期，各扩展 `native/mod.rs` 内 `invoke_handler(generate_handler![...])` 局部注册命令 + plugin `.setup` 管理命令执行 State）+ `Extension` trait（运行时 `setup`/`teardown` 异步钩子，并行 bootstrap via `join_all`，在 `lib.rs` 的 `ExtensionRegistry` 注册）。框架命令（permission 5 + shortcut 5 + window 3 = 13，另含 `pasteboard_write_text` 1，共 14 个）在 `lib.rs` 手写 `generate_handler!`，不参与 sync-extensions 扫描。`configure_app!` 宏仅 `.plugin()` 链，零 `generate_handler!`。`check:extensions` 另校验 `windowViews` 漂移：声明该槽的扩展每个 key 须存在于 `tauri.conf.json` `windows[].label`，以 `-`/`*` 结尾的 key 视为动态窗口前缀（如 `pin-` 匹配运行时创建的 `pin-<id>`）。
 
 **扩展配置**：每个扩展通过 `config.ts` 的 `defineConfig('extId', { ...defaults })` 自管配置，`reactive()` + `watch()` 自动持久化至 `extensions/<id>/config.json`。框架级配置（全局快捷键 + AI Provider）在 `stores/settings.ts`。
 
@@ -90,7 +90,7 @@ SearchResult { id, title, module; description?; icon?; shortcut?; boost?; score?
 
 ```
 src-tauri/src/
-├── lib.rs / main.rs    # 入口
+├── lib.rs / main.rs    # 入口（lib.rs setup 内含启动埋点，debug 构建打印 `[boot]` 各阶段耗时 + <100ms 判定）
 ├── extensions.rs       # 自动生成（仅 .plugin() 链 + mod 声明，零 generate_handler!）
 ├── http.rs             # 全局 HTTP 客户端
 ├── runtime/            # 运行时核心
@@ -125,6 +125,11 @@ src/
 │   ├── ui/             # 原子组件（只用这些，禁止手写底层标签）
 │   └── layout/         # MainView / ContentView / StatusBar / ResultIcon
 ├── composables/
+│   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键注册/失焦隐藏/模块事件，抽自 App.vue）
+│   ├── useSearchInput.ts      # 搜索输入（防抖 + web 搜索// + 工具列表/ + 默认结果）
+│   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派
+│   ├── useFloating.ts / useScrollPosition.ts / useTauriListener.ts  # 通用工具
+│   └── events.ts / useInputControl.ts / useShortcutConfig.ts / useSettingsInput.ts
 ├── stores/             # app / settings（仅框架级）/ update
 ├── types/              # agent（手写 LLM/Agent 类型）
 └── utils/
