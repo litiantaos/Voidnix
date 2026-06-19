@@ -5,14 +5,23 @@ macOS 效率启动器。Tauri 2 + Rust + Vue 3。统一扩展架构：
 - **框架**（`src-tauri/src/runtime/` + `platform/`）：运行时核心 + macOS 原生桥，零业务语义
 - **扩展**（`extensions/<name>/`）：全部一等公民，是否含 `native/` 子目录区分实现方式（Rust vs 纯 TS），不构成分类
 
+## 原则
+
+- 追求极致的结构清晰、优雅、轻量、高性能、低占用
+- 极简主义、强迫症、精神洁癖；第一性推导、一步到位，不考虑兼容性与历史包袱
+- **两层正交**：`runtime/`（平台无关的调度与生命周期核心）与 `platform/`（macOS 原语、无业务语义）严格分离——换 `platform` 实现即可跨平台，不混称「内核」
+- **机制最少化**：新增机制（接口字段/扩展点/生命周期钩子）前先回答「现有机制能否覆盖」。优先扩展已有机制参数，而非新增并列机制
+- **扩展自治**：扩展 = 元数据 + 能力供给 + 生命周期，声明供给什么能力框架按需消费（未供给即不支持，零默认值）；每个扩展目录是自治单元，零跨扩展 import、零框架业务泄漏
+
 ## 开发命令
 
 ```bash
 bun install                  # 安装依赖
-bun run tauri:dev            # 开发模式（sync → lint → 启动）
+bun run tauri:dev            # 开发模式（编译 zsh binary → sync → lint → 启动）
+bun run build:zsh-bin        # 单独编译 zsh-autosuggestions binary（产物 target/debug/）
 ./deploy.sh                  # 打包部署
 bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions.rs）
-bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移，见 RV §2.2 A4）
+bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移）
 bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
 bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
 bun run typecheck            # vue-tsc 严格类型检查
@@ -35,17 +44,10 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 ## 开发扩展
 
-所有扩展同构：`extensions/<id>/index.ts`（`defineExtension`）+ 可选 `config.ts`（`defineConfig`）+ 可选 `native/mod.rs`（Rust 后端）。
+所有扩展同构（`extensions/<id>/index.ts` + 可选 `config.ts` + 可选 `native/`），详见 [docs/extensions.md](docs/extensions.md)。
 
-含 native/ 的扩展（9 个）：clipboard、screenshot、awake、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search
-
-纯 TS 扩展（7 个）：calculator、settings、ip、base64、time、uuid、currency
-
-**前端扩展注册**：`index.ts` 顶层 `export default defineExtension({ meta, search?, mainView?, ... })`，由 `main.ts` 的 `import.meta.glob(['@ext/*/index.ts'], { eager: true })` 自动扫描注册。扩展 `setup()` 钩子在 Vue 挂载后由 `main.ts` 并行触发。
-
-**Rust 端注册**：双注册——`init() -> TauriPlugin<Wry>`（编译期，各扩展 `native/mod.rs` 的 `plugin::Builder::new().build()`，**无 invoke_handler**）+ `Extension` trait（运行时 `setup` 异步钩子，并行 bootstrap via `join_all`，在 `lib.rs` 的 `ExtensionRegistry` 注册）。**所有 `#[tauri::command]`（框架 13 + 扩展 53 = 66）在 `configure_app!` 宏的单一 `generate_handler!` 全局注册**（`sync-extensions` 扫描扩展 `#[tauri::command]` + 框架常量生成，写入 `extensions.rs`）；前端用裸名 `invoke('cmd')`。Tauri 2 插件命令需 `plugin:name|cmd` 格式，裸名只路由全局 `invoke_handler`，故扩展命令不能放插件 `invoke_handler`、必须全局注册（RV §2.8 v1.9）。`check:extensions` 另校验 `windowViews` 漂移：声明该槽的扩展每个 key 须存在于 `tauri.conf.json` `windows[].label`，以 `-`/`*` 结尾的 key 视为动态窗口前缀（如 `pin-` 匹配运行时创建的 `pin-<id>`）。
-
-**扩展配置**：每个扩展通过 `config.ts` 的 `defineConfig('extId', { ...defaults })` 自管配置，`reactive()` + `watch()` 自动持久化至 `extensions/<id>/config.json`。框架级配置（全局快捷键 + AI Provider）在 `stores/settings.ts`。
+含 native/（9）：clipboard、screenshot、awake、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search
+纯 TS（7）：calculator、settings、ip、base64、time、uuid、currency
 
 复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)。
 
@@ -53,9 +55,9 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **前后端通信**：前端命令名常量集中 `src/commands.ts`（`CMD.xxx`），**禁止裸 `invoke('xxx')`**，统一走 `invoke<T>(CMD.xxx, {...})` + 手写类型（`types/` 与各扩展）。`scripts/check-commands.ts` CI 对 Rust `#[tauri::command]` 名集合 ↔ `commands.ts` 常量作双向差集校验。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。扩展 Command 与框架 Command 统一在 `configure_app!` 的 `generate_handler!` 全局注册（sync-extensions 扫描生成，前端裸名 invoke）。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
 
-**扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta`（元数据）+ 能力槽（按需声明，均有真实消费者）。9 能力槽：`search`（SearchProvider.dynamic 单通道）、`onExecute`、`mainView`、`searchBarAccessory`、`subviews`、`settingsView`、`windowViews`、`globalShortcuts`、`hints`；另含 `placeholder`、`setup` 生命周期。3 承载字段（`disableSearchInput`/`listOptions`/`onOpenSubview`）过渡期保留。
+**扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta` + 9 能力槽（按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
 
-**搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + keyword 合流 + dedupe + groupAndSort。模块模式（激活扩展）只调该扩展 dynamic 且 bypass groupAndSort（保留扩展返回序）；全局模式聚合所有扩展 dynamic，按 `finalScore = fuzzy(title,query) + boost` 过滤零分 + 分组限流。`SearchResult.module` 框架自动注入（扩展禁填），`boost` 扩展可选填组内优先级。
+**搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + keyword 合流 + dedupe + groupAndSort。全局模式聚合所有扩展按 `finalScore = fuzzy + boost` 过滤排序；模块模式只调激活扩展且保留原序。`SearchContext.moduleMode` 区分两种模式（网络型扩展据此在全局空 query 跳过网络）。搜索集成细节详见 [docs/extensions.md](docs/extensions.md)。
 
 **窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。
 
@@ -72,15 +74,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 Agent 安全防线（命令执行 9 层纵深防御）：`extensions/agent/native/policy.rs` 是 floor/cap 权威源（FORBIDDEN_FLOOR 31 项 / DENIED_ARG_FLOOR 15 项 / 资源上限 clamp），`agent_run` 入口强制 clamp/并集（不信任前端传值）；TS 端 `config.ts` 的 `BOUNDS` 仅 UI 镜像。详见 `docs/extensions/agent.md`。
 
-**搜索打分**：过滤排序在前端走 `src/utils/fuzzy.ts::scoreFields()`（基于 [pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。
-
-```typescript
-SearchResult { id, title, module; description?; icon?; shortcut?; boost?; score?; data?: { kind, moduleId?, path?, ... } }
-```
-
-`kind` 严格枚举：`application` | `folder` | `file` | `module` | `clipboard` | `web`。组间序（`GROUP_ORDER`）：`application` > `file`（folder 同组）> `module` > `clipboard` > `web`
-
-**UI 槽位**：`mainView`（主视图）、`searchBarAccessory`（搜索栏右侧）、`subviews`（命名子视图，screenshot{ocr}）、`settingsView`（设置片段）、`windowViews`（独立窗口视图）。槽位值为 `() => Component`（惰性求值）。组件 `Actions` 后缀。
+**搜索打分**：`src/utils/fuzzy.ts::scoreFields()`（[pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。`kind` 枚举 `application | folder | file | module | clipboard | web`（folder/file 同组），组间序 `GROUP_ORDER`：`application > file > module > clipboard > web`。
 
 **状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide`（`stores/app.ts`，app 行为：写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈。扩展可通过 `hints.enter` / `hints.multiSelect` / `hints.delete` 自定义快捷键提示。
 
@@ -92,14 +86,14 @@ SearchResult { id, title, module; description?; icon?; shortcut?; boost?; score?
 src-tauri/src/
 ├── lib.rs / main.rs    # 入口（lib.rs setup 内含启动埋点，debug 构建打印 `[boot]` 各阶段耗时 + <100ms 判定）
 ├── extensions.rs       # 自动生成（configure_app! 含 .plugin() 链 + 全局 generate_handler! + mod 声明）
-├── http.rs             # 全局 HTTP 客户端
+├── http.rs             # 全局 HTTP 客户端 + http_get 命令（绕过 webview UA/Referer 反爬与 CORS，ip/currency 等纯 TS 扩展消费）
 ├── runtime/            # 运行时核心
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
 │   ├── storage.rs      # TempHandle RAII 临时文件管理（Drop 自动清理）
 │   ├── permission.rs   # 系统权限薄壳
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（并行 bootstrap）
-│   └── llm/            # LLM 基础设施（types / client / parser；security 溶解入 client，见 RV §1.1）
+│   └── llm/            # LLM 基础设施（types / client / parser；security 溶解入 client）
 └── platform/           # macOS 原生桥
     ├── panel.rs        # NSPanel 转换
     ├── skylight.rs     # Space 迁移（私有 API）
@@ -183,4 +177,3 @@ icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litia
 - Git commit：`<type>(<scope>): <中文描述>`，不写详情，不主动执行 git 操作
 - 文档不用表格，言简意赅
 - 修改代码后必须同步更新 AGENTS.md 或对应 docs/ 文档中相关描述
-- 自开发自用，极简主义、强迫症、精神洁癖，开发秉承彻底、一步到位的理念，不考虑任何兼容性或历史包袱
