@@ -227,10 +227,9 @@ fn process_command(path: &Path, handle: &AppHandle) {
     }
 }
 
-/// Validate a path from the extension. Rejects:
-/// 委托至 platform::path_guard 统一路径校验。
+/// 委托至 platform::path_guard 统一路径校验（finder-ext = 用户主动操作 → Interactive）。
 fn validate_path(path: &Path) -> bool {
-    crate::platform::path_guard::validate(path)
+    crate::platform::path_guard::validate(path, crate::platform::path_guard::Policy::Interactive)
 }
 
 fn handle_copy_path(handle: &AppHandle, paths: &[PathBuf], target: &str) {
