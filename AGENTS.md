@@ -88,10 +88,10 @@ src-tauri/src/
 ├── extensions.rs       # 自动生成（configure_app! 宏，勿手改）
 ├── http.rs             # 全局 HTTP 客户端
 ├── runtime/            # 运行时核心
-│   ├── constants.rs    # 语义常量
+│   ├── constants.rs    # 空壳（目标删除，见 RV §3.1；语义常量仅前端 constants.ts）
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
-│   ├── storage.rs      # TempHandle 临时文件管理
+│   ├── storage.rs      # TempHandle 临时文件管理（扁平函数，目标 RAII struct 见 RV §2.7）
 │   ├── permission.rs   # 系统权限薄壳
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（并行 bootstrap）
 │   └── llm/            # LLM 基础设施（types / security / client / parser）
