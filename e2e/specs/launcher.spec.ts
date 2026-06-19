@@ -13,11 +13,14 @@ test.describe('Voidnix 启动器', () => {
     await expect(input).toHaveValue('测试')
   })
 
-  test('无搜索结果时显示空状态提示', async ({ page }) => {
+  test('搜索结果按 kind 归组（base64 编码归「操作」组，B3）', async ({ page }) => {
     const input = page.locator('#main-search-input')
-    await input.fill('xyz-nonexistent-app')
+    await input.fill('hello')
     await page.waitForTimeout(300)
-    await expect(page.getByText(/搜索应用或文件|无结果/).first()).toBeVisible({ timeout: 5000 })
+    // base64 扩展对任意输入产出编码结果（kind=module → 「操作」组）
+    await expect(page.getByText('操作')).toBeVisible({ timeout: 5000 })
+    // base64 编码结果可见（验证搜索→渲染管道）
+    await expect(page.getByText(/aGVsbG8=/)).toBeVisible({ timeout: 5000 })
   })
 
   test('清空搜索框', async ({ page }) => {
