@@ -1,19 +1,9 @@
 import { match } from 'pinyin-pro'
+import { SEARCH } from '@/runtime/constants'
 
-/**
- * 统一前端模糊匹配。
- *
- * 同时覆盖：
- * - 中文原文 / 拼音全拼 / 拼音首字母（pinyin-pro，多音字 + ü→v 自动处理）
- * - 英文/数字子串（lowercase includes）
- *
- * 不同字段独立打分取最大；返回 0 表示不匹配。
- */
-
-const SUBSTRING_PREFIX = 1000
-const SUBSTRING_CONTAIN = 600
-const PINYIN_BASE = 400
-const FIELD_DECAY = 0.85
+const { prefix: SUBSTRING_PREFIX, contains: SUBSTRING_CONTAIN } = SEARCH.WEIGHTS
+const PINYIN_BASE = SEARCH.WEIGHTS.pinyinBase
+const FIELD_DECAY = SEARCH.WEIGHTS.decay
 
 function substringScore(text: string, query: string): number {
   if (!text || !query) return 0
@@ -71,9 +61,10 @@ export function scoreFields(fields: (string | undefined | null)[], query: string
 
 /**
  * 使用频率加权（log 平滑，避免高频应用永远霸榜）。
- * useCount=0→0；1→~50；10→~170；100→~280；上限 320。
+ * useCount=0→0；1→~50；10→~170；100→~280；上限 cap（constants.WEIGHTS.cap）。
  */
 export function frequencyBoost(useCount: number): number {
   if (!useCount || useCount <= 0) return 0
-  return Math.min(Math.round(Math.log2(useCount + 1) * 50), 320)
+  const { logBase, logMul, cap } = SEARCH.WEIGHTS
+  return Math.min(Math.round(Math.log(useCount + 1) / Math.log(logBase) * logMul), cap)
 }
