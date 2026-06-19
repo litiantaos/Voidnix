@@ -20,10 +20,10 @@
 
         <!-- Standard list -->
         <template v-if="!resolvedView">
-          <BaseEmptyState v-if="currentLoading && currentResults.length === 0" :loading="true" />
+          <BaseEmptyState v-if="props.loading && props.results.length === 0" :loading="true" />
 
           <BaseEmptyState
-            v-else-if="currentResults.length === 0"
+            v-else-if="props.results.length === 0"
             :title="
               module
                 ? module.placeholder || `在 ${module.meta.name} 中无结果`
@@ -34,16 +34,16 @@
 
           <BaseList
             v-else
-            :items="currentResults"
-            :selected-index="currentSelectedIndex"
+            :items="props.results"
+            :selected-index="props.selectedIndex"
             :multi-select="isMultiSelect"
             :selected-ids="selectedIds"
             :keyboard-active="!!appStore.activeModuleId"
             :composing="appStore.isComposing"
             @update:selected-ids="selectedIds = $event"
-            :group-field="!module ? groupField : undefined"
-            :group-title="!module ? groupTitle : undefined"
-            @update:selected-index="handleUpdateSelectedIndex"
+            :group-field="!module ? props.groupField : undefined"
+            :group-title="!module ? props.groupTitle : undefined"
+            @update:selected-index="(i: number) => emit('update:selectedIndex', i)"
             @execute="handleExecute"
             @reveal="handleReveal"
           >
@@ -89,11 +89,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { hideWindow } from '@/utils/tauri'
+import { getExtension } from '@/runtime/extension-registry'
 import type { Extension, SearchResult } from '@/runtime/types'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
@@ -103,9 +104,9 @@ import { getParentPath, formatPathParts } from '@/utils/format'
 
 const props = defineProps<{
   module?: Extension | null
-  results?: SearchResult[]
-  initialLoading?: boolean
-  selectedIndex?: number
+  results: SearchResult[]
+  loading?: boolean
+  selectedIndex: number
   groupField?: (item: SearchResult) => string
   groupTitle?: (group: string) => string
   onExecute?: (result: SearchResult) => void
@@ -117,30 +118,26 @@ const emit = defineEmits<{
 
 const appStore = useAppStore()
 
-const internalResults = ref<SearchResult[]>([])
-const internalLoading = ref(false)
-const internalSelectedIndex = ref(0)
 const selectedIds = ref(new Set<string>())
-let debounceTimer: ReturnType<typeof setTimeout>
-
 const isMultiSelect = computed(() => !!props.module?.listOptions?.multiSelect)
 
-const currentResults = computed(() => props.results ?? internalResults.value)
-const currentLoading = computed(() => {
-  if (props.initialLoading) return true
-  return props.results !== undefined ? false : internalLoading.value
-})
-const currentSelectedIndex = computed(() => props.selectedIndex ?? internalSelectedIndex.value)
-
 /**
- * 将布局决策逻辑收拢到一处。
- * subview 模式：使用扩展声明的命名子视图，占满整个内容区。
+ * 纯渲染器：布局决策收拢至此，搜索编排由 useSearchInput 统一承担（结果经 props 注入）。
+ * subview 模式优先级：
+ *   1. 当前模块的私有命名子视图（screenshot{ocr}）
+ *   2. 跨扩展 settingsView 导航（settings 枢纽钻入目标扩展的 settingsView，§2.2 N3）
  * mainView 模式：使用扩展声明的主视图。
  */
 const resolvedView = computed(() => {
   const subviewId = appStore.activeSubview
-  if (subviewId && props.module?.subviews?.[subviewId]) {
-    return props.module.subviews[subviewId]()
+  if (subviewId) {
+    if (props.module?.subviews?.[subviewId]) {
+      return props.module.subviews[subviewId]()
+    }
+    const target = getExtension(subviewId)
+    if (target?.settingsView) {
+      return target.settingsView()
+    }
   }
   return props.module?.mainView?.()
 })
@@ -148,60 +145,10 @@ const resolvedView = computed(() => {
 const scrollContainer = ref<HTMLElement>()
 defineExpose({ scrollContainer })
 
-const doSearch = async (query: string) => {
-  if (props.results !== undefined) return
-  // mainView/subview 模式：扩展自管列表（clipboard/translate/agent 等），跳过框架搜索
-  if (resolvedView.value) return
-  if (!props.module?.search) return
-
-  internalLoading.value = true
-  try {
-    const res = await props.module.search.dynamic(query, { signal: new AbortController().signal })
-    // 框架注入 module（与 searchEngine 一致：dynamic 产出扩展 meta.id）
-    internalResults.value = res.map((r) => ({ ...r, module: props.module!.meta.id }))
-    if (internalSelectedIndex.value >= res.length) {
-      internalSelectedIndex.value = 0
-    }
-  } catch (e) {
-    console.error(`[ContentView] ${props.module.meta.id} search error:`, e)
-    internalResults.value = []
-  } finally {
-    internalLoading.value = false
-  }
-}
-
-watch(
-  () => appStore.searchQuery,
-  (newQuery) => {
-    clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(() => doSearch(newQuery), 100)
-  },
-)
-
-watch(
-  () => props.module?.meta.id,
-  (newId, oldId) => {
-    if (newId && newId !== oldId) {
-      clearTimeout(debounceTimer)
-      internalResults.value = []
-      internalSelectedIndex.value = 0
-      selectedIds.value = new Set()
-      doSearch(appStore.searchQuery)
-    }
-  },
-)
-
-onMounted(() => {
-  doSearch(appStore.searchQuery)
-})
-onUnmounted(() => {
-  clearTimeout(debounceTimer)
-})
-
 const handleExecute = async (result: SearchResult) => {
   const multiResults =
     isMultiSelect.value && selectedIds.value.size > 0
-      ? currentResults.value.filter((r) => selectedIds.value.has(r.id))
+      ? props.results.filter((r) => selectedIds.value.has(r.id))
       : undefined
   if (multiResults) selectedIds.value = new Set()
   if (props.onExecute) {
@@ -218,13 +165,6 @@ const handleReveal = async (result: SearchResult) => {
   }
 }
 
-const handleUpdateSelectedIndex = (i: number) => {
-  if (props.results !== undefined) {
-    emit('update:selectedIndex', i)
-  } else {
-    internalSelectedIndex.value = i
-  }
-}
 const isFileOrFolder = (item: SearchResult) =>
   item.data?.kind === 'file' || item.data?.kind === 'folder'
 </script>

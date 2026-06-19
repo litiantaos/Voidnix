@@ -7,23 +7,17 @@
     @update:model-value="handleModelChange"
   />
   <BaseButton icon="i-ri-add-line" @click="handleNewConversation" />
-  <BaseButton
-    :icon="appStore.activeSubview === 'settings' ? 'i-ri-settings-3-fill' : 'i-ri-settings-3-line'"
-    @click="appStore.toggleSubview('settings')"
-  />
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { providerLabelFromUrl } from '@/utils/format'
 import { useSettingsStore } from '@/stores/settings'
-import { useAppStore } from '@/stores/app'
 import { useAgentChat } from './agent'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 
 const settings = useSettingsStore()
-const appStore = useAppStore()
 const agent = useAgentChat()
 
 const modelOptions = computed(() => {

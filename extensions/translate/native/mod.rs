@@ -99,7 +99,7 @@ impl Extension for TranslateExtension {
                     let snap = crate::platform::pasteboard::snapshot();
                     if ax_text.is_none() {
                         if let Some(pid) = target_pid {
-                            crate::platform::input::inject_copy(pid);
+                            crate::platform::input::post_combo("cmd+c", Some(pid));
                         }
                     }
 

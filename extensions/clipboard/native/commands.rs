@@ -268,5 +268,5 @@ fn simulate_cmd_v() {
         }
     }
 
-    crate::platform::input::paste_global();
+    crate::platform::input::post_combo("cmd+v", None);
 }

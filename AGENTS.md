@@ -94,18 +94,17 @@ src-tauri/src/
 ├── extensions.rs       # 自动生成（仅 .plugin() 链 + mod 声明，零 generate_handler!）
 ├── http.rs             # 全局 HTTP 客户端
 ├── runtime/            # 运行时核心
-│   ├── constants.rs    # 空壳（目标删除，见 RV §3.1；语义常量仅前端 constants.ts）
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
 │   ├── storage.rs      # TempHandle RAII 临时文件管理（Drop 自动清理 + 全局注册表）
 │   ├── permission.rs   # 系统权限薄壳
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（并行 bootstrap）
-│   └── llm/            # LLM 基础设施（types / security / client / parser）
+│   └── llm/            # LLM 基础设施（types / client / parser；security 溶解入 client，见 RV §1.1）
 └── platform/           # macOS 原生桥
     ├── panel.rs        # NSPanel 转换
     ├── skylight.rs     # Space 迁移（私有 API）
     ├── focus.rs        # 焦点管理（PREV_FRONT_PID 唯一源）
-    ├── input.rs        # CGEvent 键盘注入（统一 post_key/inject_copy/paste_global）
+    ├── input.rs        # CGEvent 键盘注入（post_key 原语 + post_combo 字符串糖；Modifier 枚举 + Option pid）
     ├── pasteboard.rs   # NSPasteboard 统一（read_text/read_file_url/read_png/write_text/clear/set_string/set_file_url/set_png/set_custom/snapshot/restore + pasteboard_write_text 命令）
     ├── selection.rs    # AX 选中文本提取 + poll_clipboard
     ├── click_monitor.rs
@@ -126,7 +125,7 @@ src/
 │   └── layout/         # MainView / ContentView / StatusBar / ResultIcon
 ├── composables/
 │   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键注册/失焦隐藏/模块事件，抽自 App.vue）
-│   ├── useSearchInput.ts      # 搜索输入（防抖 + web 搜索// + 工具列表/ + 默认结果）
+│   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型模块 dynamic + web 搜索// + 工具列表/ + 默认结果）
 │   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派
 │   ├── useFloating.ts / useScrollPosition.ts / useTauriListener.ts  # 通用工具
 │   └── events.ts / useInputControl.ts / useShortcutConfig.ts / useSettingsInput.ts

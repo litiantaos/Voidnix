@@ -15,7 +15,7 @@ const ZSHRC_LINE_SUFFIX: &str = "# voidnix zsh-autosuggestions";
 
 /// binary 分发版本号。改 binary 内容（含 init.zsh，经 `include_str!` 嵌入）
 /// 必须 bump 此数字，否则 install_bin 版本比对判定「无需更新」不部署。
-const BIN_VERSION: u32 = 2;
+const BIN_VERSION: u32 = 3;
 
 /// 串行化 on_setup / set_enabled 路径，避免 torn write。
 static SETUP_LOCK: Mutex<()> = Mutex::new(());

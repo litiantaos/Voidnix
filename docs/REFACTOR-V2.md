@@ -70,6 +70,11 @@
 - **v1.6（N5）**：§2.1 teardown「反向顺序」改「并行执行」——setup 零跨扩展依赖故反向无意义。
 - **v1.6（N6）**：§3.1 keywordSearchAll 的 +500 模块加权进 `constants.SEARCH.KEYWORD_MODULE_BOOST`（原 module-helpers.ts:45 魔数）。
 - **v1.6（N7/N8/N9/N10）**：§7/§2.4 + STATUS 阶段 2 补执行前置——block_on 探针（防嵌套 panic）、串行 baseline 埋点、命令注册原子化（防重复注册 panic）、defineConfig 异步加载竞态文档化。
+- **v1.7**：§1.1 lib.rs 行数目标语义化——撤回「<50 行」量化目标，改语义目标「零扩展专属配置」（14 框架命令 generate_handler! + pre-bootstrap + ExtensionRegistry::bootstrap + 启动埋点，均框架自管、不可压缩）。理由：行数目标已被现实两度超越（71→89），行数非真实质量度量，「零扩展专属配置」才是；同步修正 §1.1 注释「13 命令」→「14 命令」（permission 5 + shortcut 5 + window 3 + pasteboard 1）。
+- **v1.7**：§4/STATUS agent engine 文件数措辞精确化——「6 文件齐全」改「6 模块（loop_runner/approval/cancellation/secret_scrub/tool_registry/trim）+ mod.rs」。
+- **v1.7**：§2.6/§1.1 platform/input 落地统一 API——`post_key(key_code, &[Modifier], Option<pid>)` 原语（Modifier 枚举替代裸 `flags: u64`，`Option<pid>` 统一目标进程/全局注入）+ `post_combo(combo, Option<pid>)` 字符串糖（"cmd+c"/"cmd+shift+."）；删除 inject*copy/inject_paste/post_key_global/paste_global/FLAG*\* 与 `#![allow(dead_code)]`；`post_keystroke` 零消费者按 §0.3 YAGNI 延后。
+- **v1.7**：§2.2 settingsView 跨扩展契约落地（导航枢纽形态）——clipboard/agent/translate `subviews:{settings}` magic key → `settingsView` 槽；settings 扩展 mainView 扫描各扩展 settingsView 聚合「扩展配置」入口、钻入全屏（ContentView `resolvedView` 增 `getExtension(id).settingsView` 回退）；移除 3 扩展模块内 ⚙️，translate searchBarAccessory 仅含 ⚙️ 故整体移除（searchBarAccessory 消费者 3→2：clipboard/agent）；`subviews` 收窄为 screenshot{ocr}（契合 N3 目标）。
+- **v1.7**：§1.2 ContentView 收敛为纯渲染器——剥离搜索编排（doSearch/internalResults/searchQuery-watch），仅渲染 props 注入的 `results`/`loading`/`selectedIndex` + resolvedView；搜索型模块（无 mainView、有 search：base64/calculator/currency/ip/time/uuid）的 `module.search.dynamic` 上移 useSearchInput（onInput 模块分支 + 进入模块 watch 触发初始 dynamic）；execute 分派保留双路（全局走 useResultNavigation 退出+隐藏；模块内走 module.onExecute 不退出）。
 
 ---
 
@@ -80,7 +85,7 @@
 ```
 src-tauri/src/
 ├── main.rs                    # 入口（~6 行，不变）
-├── lib.rs                     # 装配清单（<50 行：框架 generate_handler! 13 命令 + pre-bootstrap 共享初始化 + ExtensionRegistry::bootstrap）
+├── lib.rs                     # 装配清单（框架自管：generate_handler! 14 命令 + pre-bootstrap 共享初始化 + ExtensionRegistry::bootstrap + 启动埋点；零扩展专属配置。v1.7 撤回「<50 行」量化目标，改语义目标）
 ├── build.rs                   # 保持显式编译（每个 .mm 编译参数不同，不扫描化：YAGNI）
 ├── extensions.rs              # 自动生成（仅 .plugin() 链 + mod 声明，<40 行，零 generate_handler!）
 │
@@ -103,7 +108,7 @@ src-tauri/src/
 │   ├── skylight.rs            # Space 迁移（不变）
 │   ├── focus.rs               # 焦点管理（PREV_FRONT_PID 唯一源）
 │   ├── click_monitor.rs       # 点击监听
-│   ├── input.rs               # 键盘注入（统一 post_key/post_combo/post_keystroke）
+│   ├── input.rs               # 键盘注入（post_key 原语 + post_combo 字符串糖；post_keystroke 零消费者延后）
 │   ├── pasteboard.rs          # NSPasteboard 无状态原语全集
 │   ├── permission.rs          # 权限检测实现
 │   ├── path_guard.rs          # 路径校验原语 validate(path, policy)，policy 区分 finder-ext/agent 信任级
@@ -160,7 +165,7 @@ src/
 │   ├── ui/                    # 原子组件（BaseList 删 appStore 依赖，改 keyboardActive prop）
 │   └── layout/
 │       ├── MainView.vue       # 删 GROUP_TITLES（合并到 constants）
-│       ├── ContentView.vue    # 精简（图标分发抽 ResultIcon）
+│       ├── ContentView.vue    # 纯渲染器（results/loading 经 props 注入，搜索编排由 useSearchInput 统一承担）
 │       ├── StatusBar.vue
 │       └── ResultIcon.vue     # 抽自 ContentView 图标分发
 │
@@ -266,7 +271,7 @@ interface Extension {
   search?: SearchProvider
   onExecute?: (result: SearchResult) => void | Promise<void> // 搜索结果回车动作（扩展私有；模块入口结果走框架内置激活，见下方「执行分派」）
   mainView?: () => Component // 9 扩展：clipboard/screenshot/agent/translate/window-manager/settings/awake/zsh-as/finder-ext
-  searchBarAccessory?: () => Component // 3 扩展：clipboard/agent/translate
+  searchBarAccessory?: () => Component // 2 扩展：clipboard/agent（translate 原 ⚙️ 随 settingsView 集中化移除，v1.7）
   subviews?: Record<string, () => Component> // 1 扩展：screenshot{ocr}（扩展私有命名子视图，自消费）
   settingsView?: () => Component // 3 扩展：clipboard/agent/translate（**跨扩展契约**：settings 扩展 mainView 扫描消费，渲染各扩展配置子视图）
   windowViews?: Record<string, () => Component> // 2 扩展：screenshot{screenshot,pin-*}/window-manager{snap-panel}
@@ -479,9 +484,9 @@ platform 层只暴露**无状态原语**。snapshot/restore 作为不可变快�
 // platform/input.rs（统一三套 CGEvent 注入）
 pub enum Modifier { Cmd, Shift, Opt, Ctrl }   // 不含 Fn：macOS 上 Fn 是硬件键非修饰键
 
-pub fn post_key(key_code: u16, modifiers: &[Modifier], pid: Option<i32>)
-pub fn post_combo(combo: &str, pid: Option<i32>)         // "cmd+c"、"cmd+v"、"cmd+shift+."
-pub fn post_keystroke(string: &str, pid: Option<i32>)    // 输入字符串
+pub fn post_key(key_code: u16, modifiers: &[Modifier], pid: Option<i32>)  // 原语；pid=None 全局注入
+pub fn post_combo(combo: &str, pid: Option<i32>)         // 字符串糖："cmd+c"、"cmd+v"、"cmd+shift+."、"return"
+// post_keystroke(string, pid)：零消费者，按 §0.3 YAGNI 延后——出现真实「输入字符串」需求再加
 
 // platform/pasteboard.rs（无状态原语全集 + snapshot/restore 不可变快照）
 //   注：read_text/string_for_type/data_for_type/has_type/change_count/snapshot/restore 已实现；

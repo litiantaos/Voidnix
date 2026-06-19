@@ -22,7 +22,7 @@
 - ✅ NSPasteboard 全部走 platform/pasteboard（含 write_text/clear/set_string/set_file_url/set_png/set_custom 原语全集，见阶段 2 步骤 16）
 - ✅ PREV_FRONT_PID 唯一源 platform/focus（window_snap/session 重复已删，见阶段 2 步骤 11）
 - ✅ icon 缓存 400 PNG → 0（实时提取，磁盘零文件）
-- ✅ agent engine 下沉 `extensions/agent/native/engine/`（6 文件齐全）
+- ✅ agent engine 下沉 `extensions/agent/native/engine/`（6 模块 + mod.rs）
 - ✅ path_guard policy 化（Interactive/Automated，见阶段 2 步骤 10）
 
 ### 阶段 2：Rust 扩展迁移 ✅
@@ -31,17 +31,17 @@
 - ✅ finder-ext 横向依赖 screenshot 消除（全仓零跨扩展 import）
 - ✅ awake binary 安全修复（/tmp → app_data_dir）
 - ✅ clipboard 第三套 CGEvent 消灭
-- ✅ zsh-as 目录名统一（注：内部仍用 `_zsh_as_*` / `ZSH_AS_BIN` 命名 100+ 处，待同步）
+- ✅ zsh-as 目录名 + 内部命名统一（`_zsh_as_*`/`_ZSH_AS_*` → `_zsh_autosuggestions_*`/`_ZSH_AUTOSUGGESTIONS_`；外部 `ZSH_AS_BIN/CACHE/SIGNALS` env var 契约保留；冷启动 IIFE 改 load-first-rebuild-on-failure 修复旧缓存名称漂移；BIN_VERSION 2→3）
 - ✅ SELECTED_TEXT 下沉 translate（框架层零引用）
 - ✅ search icon 磁盘 cache 完全删除（仅内存 CachedApp.icon_cache，实时 NSWorkspace.icon 提取）
-- ✅ core/agent/ 全目录下沉 `extensions/agent/native/engine/`（6 文件齐全）
+- ✅ core/agent/ 全目录下沉 `extensions/agent/native/engine/`（6 模块 + mod.rs）
 - ✅ agent DEFAULT_SYSTEM_PROMPT/MAX_TURNS 已 config 化（policy.rs 权威源，§3.4）
 - ✅ specta 依赖已删；bindings.ts 待阶段 4 删除（随 commands.ts 替换）
 - ✅ agent 9 层防御双层安全（policy.rs floor/cap + BOUNDS UI 镜像 + agent_run 入口 clamp）
 - ✅ screenshot temp 走 TempHandle（ocr×2/scroll 单函数 + pin 窗口注册表；picker.jpg 为复用 scratch 保留）
 - ✅ TempHandle RAII struct（Drop 自动清理 + 全局注册表 + cleanup_all_temps）
 - ✅ finder-ext IPC「处理完即删 + 启动清空」
-- ✅ lib.rs 71 行（setup 闭包零专属配置；13+1 框架命令 + 9 扩展 registry）
+- ✅ lib.rs 89 行（setup 闭包零专属配置；14 框架命令 + 9 扩展 registry + 启动埋点）
 - ✅ runtime/registry.rs 并行 bootstrap（async setup + join_all + block_on 探针）
 - ✅ search 统一 Extension trait（纳入 registry bootstrap）
 - ✅ 命令注册边界清晰：扩展命令在各 init() 局部注册、框架 14 命令在 lib.rs 手写、extensions.rs 零 generate_handler!
@@ -79,9 +79,9 @@
 
 #### 本次迁移决策（透明记录）
 
-1. **ContentView 双模式保留**：未做成蓝本理想的"纯渲染器"，但已切到 `extension.search.dynamic` 接口 + mainView 跳过框架搜索——降低风险、行为一致。纯渲染器理想态留待 composables 拆分时一并完成。
+1. ~~**ContentView 双模式保留**~~：**已落地（纯渲染器）**。ContentView 剥离搜索编排（doSearch/internalResults/watch），仅渲染 props 注入的 `results`/`loading`/`selectedIndex` + resolvedView（mainView/subview/settingsView）；搜索型模块（base64/calculator/currency/ip/time/uuid，无 mainView 有 search）的 `module.search.dynamic` 上移至 useSearchInput（onInput 模块分支 + 进入模块 watch 触发初始 dynamic）；execute 分派保留（模块内 onExecute 不退出模块，与 useResultNavigation 全局退出+隐藏区分）。
 2. **search-engine 补强**：模块模式 bypass groupAndSort（保留扩展返回序，如 clipboard 时间序），全局模式过滤零分（避免 calculator history 等无关项污染）——与旧 module-registry 行为对齐。
-3. **settings 跨扩展 settingsView 扫描延后**：保留 subviews 式设置入口（clipboard/translate/agent 的 `subviews{settings}`），当前 UX 不变；`settingsView` 槽已定义在 types.ts 但未消费。SettingsView 自过滤（去 filteredItems 注入链）。
+3. ~~**settings 跨扩展 settingsView 扫描延后**~~：**已落地（导航枢纽形态）**。clipboard/translate/agent `subviews{settings}` → `settingsView` 槽；settings 扩展 mainView 扫描 settingsView 聚合「扩展配置」入口，回车钻入目标扩展 settingsView 全屏（ContentView `resolvedView` 增 `getExtension(id).settingsView` 回退，复用 activeSubview 导航）；移除 3 扩展模块内 ⚙️（translate searchBarAccessory 仅含 ⚙️ 故整体移除，searchBarAccessory 消费者 3→2：clipboard/agent）；`subviews` 收窄为 screenshot{ocr}。
 4. **translate 删除 vestigial onModuleSearch/onExecute**：View 自管 `translateText` 流式结果，标准列表从不展示 translate 结果，故旧 onModuleSearch/onExecute 为死代码。
 5. ~~**composables 拆分延后**~~：已完成（见阶段 3）。`useAppLifecycle`/`useSearchInput`/`useResultNavigation` 纯重构零行为变更已落地。
 
@@ -133,13 +133,10 @@ bun run lint             → 零错误
 
 **已知偏差（记录待议）**
 
-- `lib.rs` 71 行（目标 <50）：setup 闭包已零专属配置，剩余为 14 框架命令 generate_handler + 9 扩展 registry 注册（均框架自管、不可压缩）。实质目标达成。
 - `scripts/sync-extensions.ts` 含 windowViews 校验后增长（目标 <50 已破）：`--check` 模式 + A4 校验必要，行数让位于功能完整性。
 - screenshot `ffi.rs:129` picker.jpg：固定路径复用 scratch（每次覆写、不累积），不适配 TempHandle Drop 语义，保留；启动 sweep 不覆盖（前缀不符），单文件残留可接受。
 - platform/pasteboard 未实现 read_image/write_image（NSImage 级）：零消费者（clipboard 用 PNG 字节级 read_png/set_png），按 YAGNI 跳过。
 - `utils/clipboard.ts` 仍含 useAppStore 依赖：copyAndShow/copyAndHide 调用 showStatus 反馈，解耦 ripple 大，保留。
-- ContentView 未做蓝本理想的"纯渲染器"：保留双模式但已切 dynamic 接口（见阶段 4 决策 #1）。
-- settings 跨扩展 settingsView 扫描延后：保留 subviews 式设置入口（见阶段 4 决策 #3）。
 
 ## AGENTS.md 同步状态
 
@@ -159,7 +156,7 @@ bun run lint             → 零错误
 8. 创建 `runtime/shortcut.rs`（快捷键 + 录制，删 SELECTED_TEXT/PREV_FRONT_PID 泄漏）
 9. 创建 `runtime/permission.rs`（薄壳，合并原 core/permission + 部分 macos/permission）
 10. 创建 `platform/focus.rs`（统一 PREV_FRONT_PID 唯一源，合并 mac_utils）
-11. 创建 `platform/input.rs`（统一 post_key/inject_copy/simulate_cmd_v 三套）
+11. 创建 `platform/input.rs`（统一 post_key/post_combo，替代 post_key_to_pid/inject_copy/simulate_cmd_v 三套）
 12. 创建 `platform/pasteboard.rs`（无状态原语全集 + snapshot/restore 不可变快照：read_text/write_text/read_image/write_image/string_for_type/data_for_type/has_type/change_count/snapshot/restore；snapshot/restore **留 platform**，不上移 runtime，见 RV §2.6）
 13. 创建 `platform/path_guard.rs`（统一路径校验，合并 finder-ext + agent）
 14. 移动 `macos/{panel,skylight,click_monitor,permission}.rs` → `platform/`
@@ -197,7 +194,7 @@ _框架层业务残留清理_
 11. 删除重复 `PREV_FRONT_PID`：`window_snap.rs:67` + `session.rs:330` 两处
 12. `runtime/storage.rs`：TempHandle 改 RAII struct（含 Drop 自动清理，见 RV §2.7）
 13. screenshot temp 文件改走 TempHandle 注册（ocr.rs:28,214 / scroll_capture.rs:1035 / ffi.rs:129 / pin.rs:40 / mod.rs:85 共 6 处）
-14. `lib.rs` 瘦身到 <50 行，5 处专属配置下沉（仅保留框架级 `generate_handler!`）：
+14. `lib.rs` 瘦身，5 处专属配置下沉（仅保留框架级 `generate_handler!`；v1.7 撤回 `<50 行` 量化目标，改语义目标「零扩展专属配置」）：
     - **L37-38 agent SessionRegistry+ApprovalManager** → agent setup 内 `app.manage()`
     - **L43-44 translate init_ax_timeout** → translate setup 内
     - **L46-62 main 窗口 panel 转换 + 圆角** → `runtime/window.rs::configure_main_window()`
@@ -262,7 +259,7 @@ _含 native 扩展（9 个，前端迁移；Rust 端改造已在阶段 2 完成�
 11. zsh-autosuggestions：defineExtension
 12. window-manager：defineExtension（含 windowViews + globalShortcuts）
 13. finder-ext：defineExtension
-14. translate：defineExtension（含 searchBarAccessory + globalShortcuts）
+14. translate：defineExtension（含 globalShortcuts；searchBarAccessory 后随 settingsView 集中化移除，见决策 #3）
 15. agent：defineExtension；config.ts 加 `BOUNDS` const（安全底线 UI 镜像）
 16. search：defineExtension（search 改 dynamic）
 
@@ -305,7 +302,7 @@ _收尾（依赖全部扩展迁移完成）_
 - ✅ 全仓零重复 `PREV_FRONT_PID` — platform/focus 唯一源（pin 的 PIN_PREV_PID 为独立生命周期保留）
 - ✅ 全仓零 `SELECTED_TEXT`（框架层）、零重复 CGEvent 实现
 - ✅ icon 零磁盘文件（实时提取）
-- ✅ `lib.rs` 71 行、setup 闭包零专属配置（仅框架级 generate_handler + pre-bootstrap + configure_main_window）
+- ✅ `lib.rs` 89 行、setup 闭包零专属配置（仅框架级 generate_handler + pre-bootstrap + configure_main_window + 启动埋点；v1.7 撤回 <50 行量化目标，改语义目标）
 - ✅ `runtime/llm/` = client.rs + parser.rs + types.rs（security 溶解入 client；trim_conversation 下沉 agent engine）
 - ✅ `runtime/registry.rs` Extension trait 并行 bootstrap（`join_all`）+ async setup/teardown
 - ✅ `tauri-plugin-clipboard-manager` 依赖删除

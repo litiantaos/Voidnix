@@ -2,7 +2,7 @@
 
 剪贴板历史。NSPasteboard 500ms 轮询（`changeCount` 对比），文本/图片/文件持久化到 SQLite；支持收藏、一键粘贴（写入 + 模拟 Cmd+V）。
 
-monitor 的 change_count / marker 检查 / 文本读取已委托至 `platform::pasteboard`，file URL + PNG 数据仍直接访问 NSPasteboard（需 extern static 类型常量）。Cmd+V 模拟通过 `platform::input::paste_global()`。
+monitor 的 change_count / marker 检查 / 文本读取已委托至 `platform::pasteboard`，file URL + PNG 数据仍直接访问 NSPasteboard（需 extern static 类型常量）。Cmd+V 模拟通过 `platform::input::post_combo("cmd+v", None)`。
 
 ## 配置
 

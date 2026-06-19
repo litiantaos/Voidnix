@@ -19,7 +19,7 @@ export default defineExtension({
   disableSearchInput: true,
   mainView: () => AgentView,
   searchBarAccessory: () => AgentActions,
-  subviews: { settings: () => AgentSettings },
+  settingsView: () => AgentSettings,
   globalShortcuts: [
     {
       id: 'agent',
