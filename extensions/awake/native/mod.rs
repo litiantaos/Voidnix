@@ -132,6 +132,17 @@ pub async fn set_awake_mode(app: tauri::AppHandle, state: State<'_, AwakeState>,
     Ok(mirror)
 }
 
+/// 命令注册（局部 invoke_handler，§2.8）。
+pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::<tauri::Wry>::new("awake")
+        .invoke_handler(tauri::generate_handler![
+            toggle_awake,
+            is_awake_enabled,
+            set_awake_mode,
+        ])
+        .build()
+}
+
 /// Awake 扩展。
 pub struct Plugin;
 

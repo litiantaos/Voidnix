@@ -149,8 +149,3 @@ pub async fn pick_directory(app: tauri::AppHandle) -> Result<String, String> {
 
     rx.recv().map_err(|e| e.to_string())
 }
-
-
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("window").build()
-}

@@ -60,6 +60,19 @@ pub async fn get_selected_text() -> Result<String, String> {
     Ok(String::new())
 }
 
+/// 命令注册（局部 invoke_handler，§2.8）。
+pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::<tauri::Wry>::new("translate")
+        .invoke_handler(tauri::generate_handler![
+            get_selected_text_cached,
+            get_selected_text,
+            ai_translate::translate_ai,
+            ai_translate::translate_ai_stream,
+            youdao::translate_youdao,
+        ])
+        .build()
+}
+
 /// Translate 扩展。
 pub struct Plugin;
 

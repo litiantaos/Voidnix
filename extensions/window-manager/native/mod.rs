@@ -6,6 +6,21 @@ mod window_snap;
 /// Window manager 扩展。
 pub struct Plugin;
 
+/// 命令注册（局部 invoke_handler，§2.8）。
+pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::<tauri::Wry>::new("window-manager")
+        .invoke_handler(tauri::generate_handler![
+            get_screen_info,
+            set_frontmost_window_layout,
+            check_window_manager_accessibility,
+            toggle_drag_snap,
+            is_drag_snap_active,
+            show_snap_panel,
+            hide_snap_panel,
+        ])
+        .build()
+}
+
 impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "window-manager"
