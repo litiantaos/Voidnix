@@ -276,7 +276,7 @@ pub mod platform {
         Some(unsafe { CFNumber::wrap_under_get_rule(*v as *mut _) })
     }
 
-    fn cf_lookup_dict<'a>(dict: &'a CFDictionary<*const c_void, *const c_void>, key: &CFString) -> Option<CFDictionary<*const c_void, *const c_void>> {
+    fn cf_lookup_dict(dict: &CFDictionary<*const c_void, *const c_void>, key: &CFString) -> Option<CFDictionary<*const c_void, *const c_void>> {
         let ptr = key.as_concrete_TypeRef() as *const c_void;
         let v = dict.find(ptr)?;
         if v.is_null() { return None; }

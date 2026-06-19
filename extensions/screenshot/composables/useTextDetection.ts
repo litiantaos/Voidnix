@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import type { TextRegion } from './useTypes'
 
 /// 懒触发的文本区域检测：首次调用时启动 Vision 后端，结果缓存于内存。
@@ -15,7 +16,7 @@ export function useTextDetection(options: { dpr: Ref<number> }) {
     isDetecting.value = true
     detectError.value = null
     try {
-      const regions = await invoke<TextRegion[]>('detect_text_regions', {
+      const regions = await invoke<TextRegion[]>(CMD.detectTextRegions, {
         scale: options.dpr.value,
       })
       textRegions.value = regions

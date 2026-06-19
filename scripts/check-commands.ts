@@ -80,8 +80,52 @@ const frontend = collectFrontendCommands()
 const onlyRust = [...rust].filter((n) => !frontend.has(n)).sort()
 const onlyFrontend = [...frontend].filter((n) => !rust.has(n)).sort()
 
-if (onlyRust.length === 0 && onlyFrontend.length === 0) {
-  console.log(`[check:commands] ✓ ${rust.size} commands in sync.`)
+// --- 裸 invoke('xxx') 检测：禁止绕过 commands.ts 常量直字符串调用 ---
+// AGENTS.md：禁止裸 invoke('xxx')，统一走 CMD.xxx 通道。
+const BARE_INVOKE_RE = /(?<![.\w$])invoke(?:<[^>]*>)?\(\s*['"]([a-z_][a-z0-9_]*)['"]/g
+const SCAN_ROOTS = [join(ROOT, 'src'), join(ROOT, 'extensions')]
+
+function walkTsVue(dir: string, out: string[]) {
+  let entries: string[]
+  try {
+    entries = readdirSync(dir)
+  } catch {
+    return
+  }
+  for (const name of entries) {
+    const full = join(dir, name)
+    let st
+    try {
+      st = statSync(full)
+    } catch {
+      continue
+    }
+    if (st.isDirectory()) walkTsVue(full, out)
+    else if (full.endsWith('.ts') || full.endsWith('.vue')) out.push(full)
+  }
+}
+
+function collectBareInvokes(): { file: string; name: string }[] {
+  const files: string[] = []
+  for (const d of SCAN_ROOTS) walkTsVue(d, files)
+  const hits: { file: string; name: string }[] = []
+  for (const f of files) {
+    if (f === COMMANDS_TS) continue // 常量定义文件，注释含 invoke('xxx') 示例
+    if (f.endsWith('.test.ts')) continue
+    const src = readFileSync(f, 'utf8')
+    let m: RegExpExecArray | null
+    BARE_INVOKE_RE.lastIndex = 0
+    while ((m = BARE_INVOKE_RE.exec(src)) !== null) {
+      hits.push({ file: f, name: m[1] })
+    }
+  }
+  return hits
+}
+
+const bareInvokes = collectBareInvokes()
+
+if (onlyRust.length === 0 && onlyFrontend.length === 0 && bareInvokes.length === 0) {
+  console.log(`[check:commands] ✓ ${rust.size} commands in sync, no bare invoke.`)
   process.exit(0)
 }
 
@@ -93,7 +137,11 @@ if (onlyRust.length) {
   console.error(`[check:commands] ✗ Rust 有 #[tauri::command] 而前端 commands.ts 未登记：`)
   for (const n of onlyRust) console.error(`    - ${n}`)
 }
-console.error(
-  `[check:commands] 共 ${onlyFrontend.length + onlyRust.length} 处不一致。请同步 src/commands.ts。`,
-)
+if (bareInvokes.length) {
+  console.error(`[check:commands] ✗ 检测到裸 invoke('xxx')，须改用 CMD.xxx 常量：`)
+  for (const h of bareInvokes)
+    console.error(`    ! ${h.name}  ←  ${h.file.replace(ROOT + '/', '')}`)
+}
+const total = onlyFrontend.length + onlyRust.length + bareInvokes.length
+console.error(`[check:commands] 共 ${total} 处不一致。请同步 src/commands.ts。`)
 process.exit(1)

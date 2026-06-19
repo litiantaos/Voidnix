@@ -287,10 +287,10 @@ async fn read_with_cap(
     cap: usize,
 ) -> std::io::Result<ReadOutcome> {
     let mut stdout = child.stdout.take().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::Other, "stdout pipe missing")
+        std::io::Error::other("stdout pipe missing")
     })?;
     let mut stderr = child.stderr.take().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::Other, "stderr pipe missing")
+        std::io::Error::other("stderr pipe missing")
     })?;
 
     // 并发读 stdout + stderr，避免管道阻塞；各自带 cap
@@ -300,9 +300,9 @@ async fn read_with_cap(
 
     let (stdout_result, stderr_result) = tokio::join!(stdout_task, stderr_task);
     let (stdout_bytes, stdout_truncated) = stdout_result
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("panic: {}", e)))??;
+        .map_err(|e| std::io::Error::other(format!("panic: {}", e)))??;
     let (stderr_bytes, stderr_truncated) = stderr_result
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("panic: {}", e)))??;
+        .map_err(|e| std::io::Error::other(format!("panic: {}", e)))??;
 
     // 等进程退出拿 exit code
     let exit_code = match child.wait().await {
@@ -360,8 +360,7 @@ fn minimal_env(_cwd: &Path) -> Vec<(&'static str, String)> {
 unsafe fn apply_rlimits(cpu: u64, mem_mb: u64, nofile: u64) -> std::io::Result<()> {
     use rlimit::{setrlimit, Resource};
     let cpu_hard = cpu.saturating_mul(2);
-    setrlimit(Resource::CPU, cpu, cpu_hard)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    setrlimit(Resource::CPU, cpu, cpu_hard).map_err(std::io::Error::other)?;
     // macOS 不支持 AS，用 DATA 限制（数据段）
     #[cfg(target_os = "macos")]
     {
@@ -375,12 +374,10 @@ unsafe fn apply_rlimits(cpu: u64, mem_mb: u64, nofile: u64) -> std::io::Result<(
     {
         let as_soft = mem_mb * 1024 * 1024;
         let as_hard = as_soft.saturating_mul(2);
-        setrlimit(Resource::AS, as_soft, as_hard)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        setrlimit(Resource::AS, as_soft, as_hard).map_err(std::io::Error::other)?;
     }
     let nofile_hard = nofile.saturating_mul(4);
-    setrlimit(Resource::NOFILE, nofile, nofile_hard)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    setrlimit(Resource::NOFILE, nofile, nofile_hard).map_err(std::io::Error::other)?;
     Ok(())
 }
 

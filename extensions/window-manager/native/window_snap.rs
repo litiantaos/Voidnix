@@ -278,7 +278,7 @@ mod inner {
         let visible = STATE.lock().unwrap().visible;
 
         if visible {
-            let in_area = screen.as_ref().map_or(false, |s| {
+            let in_area = screen.as_ref().is_some_and(|s| {
                 is_in_trigger_zone(mx, my, s) || is_in_panel_area(mx, my, s)
             });
             if in_area {

@@ -55,7 +55,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **前后端通信**：前端命令名常量集中 `src/commands.ts`（`CMD.xxx`），**禁止裸 `invoke('xxx')`**，统一走 `invoke<T>(CMD.xxx, {...})` + 手写类型（`types/` 与各扩展）。`scripts/check-commands.ts` CI 对 Rust `#[tauri::command]` 名集合 ↔ `commands.ts` 常量作双向差集校验。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。扩展 Command 与框架 Command 统一在 `configure_app!` 的 `generate_handler!` 全局注册（sync-extensions 扫描生成，前端裸名 invoke）。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
 
-**扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta` + 9 能力槽（按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
+**扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta` + 10 能力槽（按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
 
 **搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + keyword 合流 + dedupe + groupAndSort。全局模式聚合所有扩展按 `finalScore = fuzzy + boost` 过滤排序；模块模式只调激活扩展且保留原序。`SearchContext.moduleMode` 区分两种模式（网络型扩展据此在全局空 query 跳过网络）。搜索集成细节详见 [docs/extensions.md](docs/extensions.md)。
 
@@ -78,6 +78,8 @@ Agent 安全防线（命令执行 9 层纵深防御）：`extensions/agent/nativ
 
 **状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide`（`stores/app.ts`，app 行为：写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈。扩展可通过 `hints.enter` / `hints.multiSelect` / `hints.delete` 自定义快捷键提示。
 
+**模块视图加载**（切换性能）：模块 View（mainView/settingsView/subviews/searchBarAccessory）静态 import 进主 bundle（用户高频、固定集合，首次进入零卡顿）；仅**独立窗口**（screenshot 标注 host/pin、window-manager snap 面板，`windowViews`）保留 `defineAsyncComponent` 真按需——不截图/不分屏不加载，省稳态占用（gzip ~20KB）。`ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问模块，切换走 activate/deactivate 而非重挂载。
+
 **LLM 基础设施**（`runtime/llm/`）：agent + translate 扩展共享。`types.rs`（LlmMessage）、`client.rs`（StreamConfig/stream_openai_request + SSRF 防护 validate_ai_request + 消息截断 + 请求管道常量）、`parser.rs`（tool_calls 解析）。
 
 ## 目录结构
@@ -93,23 +95,25 @@ src-tauri/src/
 │   ├── storage.rs      # TempHandle RAII 临时文件管理（Drop 自动清理）
 │   ├── permission.rs   # 系统权限薄壳
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（并行 bootstrap）
+│   ├── pasteboard.rs   # 框架命令薄壳（pasteboard_write_text；原语在 platform/pasteboard）
 │   └── llm/            # LLM 基础设施（types / client / parser；security 溶解入 client）
 └── platform/           # macOS 原生桥
     ├── panel.rs        # NSPanel 转换
     ├── skylight.rs     # Space 迁移（私有 API）
     ├── focus.rs        # 焦点管理（PREV_FRONT_PID 唯一源）
     ├── input.rs        # CGEvent 键盘注入（post_key 原语 + post_combo 字符串糖；Modifier 枚举 + Option pid）
-    ├── pasteboard.rs   # NSPasteboard 统一（read_text/read_file_url/read_png/write_text/clear/set_string/set_file_url/set_png/set_custom/snapshot/restore + pasteboard_write_text 命令）
+    ├── pasteboard.rs   # NSPasteboard 原语统一（read_text/read_file_url/read_png/write_text/clear/set_string/set_file_url/set_png/set_custom/snapshot/restore）
     ├── selection.rs    # AX 选中文本提取 + poll_clipboard
     ├── click_monitor.rs
     ├── permission.rs
+    ├── window.rs       # 主窗口原生操作（NSWindow show/hide/key + 圆角 + NSOpenPanel）
     └── path_guard.rs   # 统一路径校验
 
 src/
 ├── main.ts             # 入口（import.meta.glob eager 扫描扩展 + 并行 setup）
 ├── commands.ts         # 命令名常量（CMD.xxx，禁止裸 invoke）
 ├── runtime/            # 前端运行时（5 文件）
-│   ├── types.ts        # Extension / SearchProvider / SearchResult（9 能力槽）
+│   ├── types.ts        # Extension / SearchProvider / SearchResult（10 能力槽）
 │   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS/GROUP_ORDER/GROUP_TITLES/KEYWORD_MODULE_BOOST + LIMITS）
 │   ├── storage.ts      # defineConfig（reactive + watch 自动持久化 + store 实例缓存）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension

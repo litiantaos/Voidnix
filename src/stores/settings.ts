@@ -35,7 +35,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const globalShortcut = ref('CommandOrControl+Shift+Space')
   const shortcutOverrides = ref<Record<string, string>>({})
 
-  // ─── AI Provider 基础设施（translate + agent 共享）─────────
+  // ─── AI Provider 基础设施（agent 消费；Rust runtime/llm 为 agent+translate 共享）───
   const aiProviders = ref<AiProviderConfig[]>([
     { id: generateId(), endpoint: '', apiKey: '', models: [] },
   ])
