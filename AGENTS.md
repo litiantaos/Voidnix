@@ -43,7 +43,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **前端扩展注册**：`index.ts` 顶层 `export default defineExtension({ meta, search?, mainView?, ... })`，由 `main.ts` 的 `import.meta.glob(['@ext/*/index.ts'], { eager: true })` 自动扫描注册。扩展 `setup()` 钩子在 Vue 挂载后由 `main.ts` 并行触发。
 
-**Rust 端注册**：双注册——`init() -> TauriPlugin<Wry>`（编译期，各扩展 `native/mod.rs` 内 `invoke_handler(generate_handler![...])` 局部注册命令 + plugin `.setup` 管理命令执行 State）+ `Extension` trait（运行时 `setup` 异步钩子，并行 bootstrap via `join_all`，在 `lib.rs` 的 `ExtensionRegistry` 注册）。框架命令（permission 5 + shortcut 5 + window 2 = 12，另含 `pasteboard_write_text` 1，共 13 个）在 `lib.rs` 手写 `generate_handler!`，不参与 sync-extensions 扫描。`configure_app!` 宏仅 `.plugin()` 链，零 `generate_handler!`。`check:extensions` 另校验 `windowViews` 漂移：声明该槽的扩展每个 key 须存在于 `tauri.conf.json` `windows[].label`，以 `-`/`*` 结尾的 key 视为动态窗口前缀（如 `pin-` 匹配运行时创建的 `pin-<id>`）。
+**Rust 端注册**：双注册——`init() -> TauriPlugin<Wry>`（编译期，各扩展 `native/mod.rs` 的 `plugin::Builder::new().build()`，**无 invoke_handler**）+ `Extension` trait（运行时 `setup` 异步钩子，并行 bootstrap via `join_all`，在 `lib.rs` 的 `ExtensionRegistry` 注册）。**所有 `#[tauri::command]`（框架 13 + 扩展 53 = 66）在 `configure_app!` 宏的单一 `generate_handler!` 全局注册**（`sync-extensions` 扫描扩展 `#[tauri::command]` + 框架常量生成，写入 `extensions.rs`）；前端用裸名 `invoke('cmd')`。Tauri 2 插件命令需 `plugin:name|cmd` 格式，裸名只路由全局 `invoke_handler`，故扩展命令不能放插件 `invoke_handler`、必须全局注册（RV §2.8 v1.9）。`check:extensions` 另校验 `windowViews` 漂移：声明该槽的扩展每个 key 须存在于 `tauri.conf.json` `windows[].label`，以 `-`/`*` 结尾的 key 视为动态窗口前缀（如 `pin-` 匹配运行时创建的 `pin-<id>`）。
 
 **扩展配置**：每个扩展通过 `config.ts` 的 `defineConfig('extId', { ...defaults })` 自管配置，`reactive()` + `watch()` 自动持久化至 `extensions/<id>/config.json`。框架级配置（全局快捷键 + AI Provider）在 `stores/settings.ts`。
 
@@ -51,7 +51,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 ## 架构要点
 
-**前后端通信**：前端命令名常量集中 `src/commands.ts`（`CMD.xxx`），**禁止裸 `invoke('xxx')`**，统一走 `invoke<T>(CMD.xxx, {...})` + 手写类型（`types/` 与各扩展）。`scripts/check-commands.ts` CI 对 Rust `#[tauri::command]` 名集合 ↔ `commands.ts` 常量作双向差集校验。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。扩展 Command 在各 `init()` 局部注册；框架 Command 在 `lib.rs` 手写 `generate_handler!`。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
+**前后端通信**：前端命令名常量集中 `src/commands.ts`（`CMD.xxx`），**禁止裸 `invoke('xxx')`**，统一走 `invoke<T>(CMD.xxx, {...})` + 手写类型（`types/` 与各扩展）。`scripts/check-commands.ts` CI 对 Rust `#[tauri::command]` 名集合 ↔ `commands.ts` 常量作双向差集校验。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。扩展 Command 与框架 Command 统一在 `configure_app!` 的 `generate_handler!` 全局注册（sync-extensions 扫描生成，前端裸名 invoke）。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
 
 **扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta`（元数据）+ 能力槽（按需声明，均有真实消费者）。9 能力槽：`search`（SearchProvider.dynamic 单通道）、`onExecute`、`mainView`、`searchBarAccessory`、`subviews`、`settingsView`、`windowViews`、`globalShortcuts`、`hints`；另含 `placeholder`、`setup` 生命周期。3 承载字段（`disableSearchInput`/`listOptions`/`onOpenSubview`）过渡期保留。
 
@@ -91,7 +91,7 @@ SearchResult { id, title, module; description?; icon?; shortcut?; boost?; score?
 ```
 src-tauri/src/
 ├── lib.rs / main.rs    # 入口（lib.rs setup 内含启动埋点，debug 构建打印 `[boot]` 各阶段耗时 + <100ms 判定）
-├── extensions.rs       # 自动生成（仅 .plugin() 链 + mod 声明，零 generate_handler!）
+├── extensions.rs       # 自动生成（configure_app! 含 .plugin() 链 + 全局 generate_handler! + mod 声明）
 ├── http.rs             # 全局 HTTP 客户端
 ├── runtime/            # 运行时核心
 │   ├── window.rs       # 主窗口 show/hide

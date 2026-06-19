@@ -16,11 +16,6 @@ mod tools;
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("agent")
-        .invoke_handler(tauri::generate_handler![
-            agent_run,
-            agent_approve,
-            agent_abort,
-        ])
         .build()
 }
 

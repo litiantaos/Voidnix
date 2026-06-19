@@ -41,10 +41,10 @@
 - ✅ screenshot temp 走 TempHandle（ocr×2/scroll 单函数 + pin 窗口注册表；picker.jpg 为复用 scratch 保留）
 - ✅ TempHandle RAII struct（Drop 自动清理）
 - ✅ finder-ext IPC「处理完即删 + 启动清空」
-- ✅ lib.rs 88 行（setup 闭包零专属配置；13 框架命令 + 9 扩展 registry + 启动埋点）
+- ✅ lib.rs 72 行（setup 闭包零专属配置；configure_app! 全局注册 66 命令 + 9 扩展 registry + 启动埋点）
 - ✅ runtime/registry.rs 并行 bootstrap（async setup + join_all + block_on 探针）
 - ✅ search 统一 Extension trait（纳入 registry bootstrap）
-- ✅ 命令注册边界清晰：扩展命令在各 init() 局部注册、框架 13 命令在 lib.rs 手写、extensions.rs 零 generate_handler!
+- ✅ 命令注册边界清晰：所有 #[tauri::command]（框架 13 + 扩展 53）在 configure_app! 单一 generate_handler! 全局注册（sync-extensions 扫描生成），前端裸名 invoke；各 init() 无 invoke_handler（v2.0 修正 Tauri 2 插件命令路由）
 - ✅ 扩展结构体统一命名 XxxExtension
 - ✅ tauri-plugin-clipboard-manager 依赖删除（前端 utils 迁 platform/pasteboard::write_text）；tauri-plugin-store 保留
 
@@ -97,7 +97,7 @@
 - ✅ 语义常量集中（GROUP_ORDER/GROUP_TITLES/LIMITS 全在 `runtime/constants.ts` 单一源）
 - ✅ **`check:extensions` 增 windowViews 漂移校验（v1.5 A4）**：声明 windowViews 槽的扩展每个 key 须在 `tauri.conf.json` `windows[].label` 中，`-`/`*` 结尾视为动态前缀
 - ✅ **测试覆盖**：前端 224 用例（22 文件）；Rust 91 个；10/16 扩展有 `*.test.ts`（base64/calculator/time/uuid/ip/currency/search/clipboard/translate/agent，高价值逻辑抽 `logic.ts`），前端 runtime/ 3 文件齐测（search-engine/extension-registry/storage）；薄 wiring 6 扩展（screenshot/awake/zsh-as/window-manager/finder-ext/settings）无测试
-- ✅ AGENTS.md 与代码对齐（composables 结构、13 命令措辞、windowViews 前缀约定已同步）
+- ✅ AGENTS.md 与代码对齐（composables 结构、命令全局注册措辞、windowViews 前缀约定已同步）
 
 ### 阶段 6：验证 🟡
 
@@ -151,7 +151,7 @@ bun run lint             → 零错误
 
 ## AGENTS.md 同步状态
 
-阶段 1-5 的 AGENTS.md 描述已全部增量对齐：命令注册边界（13 命令措辞修正）、registry 并行、pasteboard 统一、policy.rs、TempHandle RAII、LLM 溶解、前端 `src/runtime/` 5 文件、`defineExtension` 能力槽、SearchEngine、`commands.ts` + `check:commands`/`check:extensions`（windowViews A4）CI、composables 拆分后结构。
+阶段 1-5 的 AGENTS.md 描述已全部增量对齐：命令注册边界（命令全局注册，v2.0 修正）、registry 并行、pasteboard 统一、policy.rs、TempHandle RAII、LLM 溶解、前端 `src/runtime/` 5 文件、`defineExtension` 能力槽、SearchEngine、`commands.ts` + `check:commands`/`check:extensions`（windowViews A4）CI、composables 拆分后结构。
 
 ## 阶段实施步骤
 
@@ -313,7 +313,7 @@ _收尾（依赖全部扩展迁移完成）_
 - ✅ 全仓零重复 `PREV_FRONT_PID` — platform/focus 唯一源（pin 的 PIN_PREV_PID 为独立生命周期保留）
 - ✅ 全仓零 `SELECTED_TEXT`（框架层）、零重复 CGEvent 实现
 - ✅ icon 零磁盘文件（实时提取）
-- ✅ `lib.rs` 89 行、setup 闭包零专属配置（仅框架级 generate_handler + pre-bootstrap + configure_main_window + 启动埋点；v1.7 撤回 <50 行量化目标，改语义目标）
+- ✅ `lib.rs` 72 行、setup 闭包零专属配置（configure_app! 提供全局 generate_handler + pre-bootstrap + configure_main_window + 启动埋点）
 - ✅ `runtime/llm/` = client.rs + parser.rs + types.rs（security 溶解入 client；trim_conversation 下沉 agent engine）
 - ✅ `runtime/registry.rs` Extension trait 并行 bootstrap（`join_all`）+ async setup
 - ✅ `tauri-plugin-clipboard-manager` 依赖删除
@@ -323,7 +323,7 @@ _收尾（依赖全部扩展迁移完成）_
 - ✅ `TempHandle` RAII struct（Drop 自动清理）
 - ✅ clipboard monitor/commands 完整迁移 platform/pasteboard
 - ✅ search 扩展统一 Extension trait
-- ✅ 命令注册边界清晰：扩展命令在各 `init()` 局部注册、框架 13 命令在 `lib.rs` 手写、`extensions.rs` 零 `generate_handler!`
+- ✅ 命令注册边界清晰：所有 `#[tauri::command]`（框架 13 + 扩展 53）在 `configure_app!` 单一 `generate_handler!` 全局注册（sync-extensions 扫描生成），前端裸名 invoke；各 `init()` 无 invoke_handler（v2.0 修正）
 - ✅ `build.rs` 保持显式编译（不扫描化）
 
 ### 前端
@@ -348,7 +348,7 @@ _收尾（依赖全部扩展迁移完成）_
 
 - ✅ `check:commands` CI（命令名漂移检测，阻塞项）— 69 命令 in sync
 - ✅ `check:extensions` windowViews 漂移校验（v1.5 A4）— 已实现（`-`/`*` 结尾 key 视为动态前缀）
-- ✅ AGENTS.md 与代码对齐 — composables 结构 / 13 命令措辞 / windowViews 前缀约定已同步
+- ✅ AGENTS.md 与代码对齐 — composables 结构 / 命令全局注册措辞 / windowViews 前缀约定已同步
 
 ### 性能
 

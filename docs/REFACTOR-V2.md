@@ -77,6 +77,7 @@
 - **v1.7**：§1.2 ContentView 收敛为纯渲染器——剥离搜索编排（doSearch/internalResults/searchQuery-watch），仅渲染 props 注入的 `results`/`loading`/`selectedIndex` + resolvedView；搜索型模块（无 mainView、有 search：base64/calculator/currency/ip/time/uuid）的 `module.search.dynamic` 上移 useSearchInput（onInput 模块分支 + 进入模块 watch 触发初始 dynamic）；execute 分派保留双路（全局走 useResultNavigation 退出+隐藏；模块内走 module.onExecute 不退出）。
 - **v1.8**：§1.2 utils→stores 分层收口——`copyAndHide`/`makeToggleHandler`（原误放 `utils/`，含 useAppStore 反向依赖）下沉 `stores/app.ts` 顶层导出（app 行为归位，utils 层零 stores 依赖）；`copyAndShow` 零消费者死代码删除；`utils/clipboard.ts` 收敛为仅 `writeText` 纯原语；删 `utils/module-toggle.ts`。撤回 v1.2「clipboard.ts 返回 label 调用方 showStatus」原案（copyAndHide 含 hide+timer 异步逻辑，拆解致 6 调用点重复，整体下沉更优）。
 - **v1.9（死代码清理）**：全面审查后按 §0.3 YAGNI 删减零消费者预设——①§1.1/§2.8 框架命令 14→13：删 `set_main_window_size`（RV v1.1 称「多扩展消费」实测零消费者，window::\* 3→2，supersede v1.1/v1.7 相关保留决策）；②§2.1 Extension trait 删 `teardown` 方法 + registry `run_teardown`（9 扩展零覆写、退出零调用，supersede v1.6 N5「teardown 并行」）；③§2.6 path_guard 删 `Policy` enum + `Automated` 变体（agent 用自己的 ExecPolicy 命令级沙箱不经 path_guard，退化为 finder-ext 单消费者单参数 `validate(path)`，supersede 原 Policy 化双信任级设计）；④§2.7 TempHandle 简化——删 `cleanup_all_temps` + `TEMP_FILES` 全局注册表（唯一读者 cleanup_all_temps 已删，注册表沦为只写不读；TempHandle 简化为纯 Drop guard，异常退出兜底由启动 `cleanup_temps_by_prefix` 扫 /tmp 承担）；⑤§2.8 删 `chat_stream`/`chat_abort` 双端命令（旧 SSE 事件路径，现网走 `agent_run` Channel，作者已标「D 阶段废弃」）；⑥死依赖清理：Cargo 删 `pinyin`/`toml`/`zip`（Rust 端零 use）、npm 删 `@pinia/testing`/`@types/dompurify`（零 import）；⑦死类型/死方法清理：删 `src/types/ext-manifest.ts` 整文件 + `agent.ts` 5 个过期 invoke interface、`search-engine.ts` 2 零消费 re-export、`commands.ts` CommandName、stores `toggleSubview`/`clearStatus`/`ConfirmOptions.showFooter`/`update.available`、agent engine 监控方法（cancellation 3/tool_registry 2/approval 1）+ `StreamOutcome.finish_reason` 字段、screenshot/search 两个零消费 `pub use` glob re-export。保留项：`scroll_capture.rs` ScrollSession.scale（IPC 协议参数 + retina 语义锚点）、agent `SearchProviderConfig.r#type`/`Decision.always_approve`（serde 协议占位字段）。
+- **v2.0（命令注册架构修正，关键 bug）**：§2.8 重大修正——撤回「扩展命令在各 init() 局部 `invoke_handler` 注册」设计。根因：**Tauri 2 的 IPC 路由中，插件命令（`plugin::Builder::invoke_handler`）前端必须用 `plugin:<name>|<cmd>` 格式调用**，裸名 `invoke('cmd')` 只路由全局 `app.invoke_handler`。v1.9 把扩展命令移入插件 invoke_handler 后，前端裸名调用全部 `Command not found`（`search_apps`/`get_clipboard_history` 等），搜索与剪贴板功能失效。修正：**所有 `#[tauri::command]`（框架 13 + 扩展 53 = 66）统一在 `configure_app!` 宏的单一 `generate_handler!` 全局注册**（`sync-extensions` 扫描扩展 `#[tauri::command]` + 按文件路径推断模块 + 框架常量生成 `extensions.rs`）；各 `init()` 改为 `plugin::Builder::new().build()`（无 invoke_handler）；`lib.rs` 删除手写 `invoke_handler`（由 `configure_app!` 提供）。前端裸名 `invoke` 不变。supersede v1.9「命令在各 init() 局部注册」及所有相关 §2.8 描述。
 
 ---
 
@@ -87,9 +88,9 @@
 ```
 src-tauri/src/
 ├── main.rs                    # 入口（~6 行，不变）
-├── lib.rs                     # 装配清单（框架自管：generate_handler! 13 命令 + pre-bootstrap 共享初始化 + ExtensionRegistry::bootstrap + 启动埋点；零扩展专属配置。v1.7 撤回「<50 行」量化目标，改语义目标）
+├── lib.rs                     # 装配清单（框架自管：configure_app!(builder) 提供插件链 + 全局 generate_handler! + pre-bootstrap + ExtensionRegistry::bootstrap + 启动埋点；零扩展专属配置）
 ├── build.rs                   # 保持显式编译（每个 .mm 编译参数不同，不扫描化：YAGNI）
-├── extensions.rs              # 自动生成（仅 .plugin() 链 + mod 声明，<40 行，零 generate_handler!）
+├── extensions.rs              # 自动生成（configure_app! 含 .plugin() 链 + 单一 generate_handler!（框架+扩展命令）+ mod 声明）
 │
 ├── runtime/                   # 运行时核心（平台无关）
 │   ├── mod.rs
@@ -615,27 +616,34 @@ impl crate::runtime::registry::Extension for ClipboardExtension {
 }
 ```
 
-`sync-extensions.ts` 简化为 < 50 行：扫描 `extensions/*/native/mod.rs` 的 `pub fn init()` 签名，生成 `extensions.rs`（`.plugin()` 链 + `#[path]` mod 声明）。
+`sync-extensions.ts`：扫描 `extensions/*/native/mod.rs` 的 `pub fn init()` 签名（→ `.plugin()` 链）+ 扩展 native/ 下所有 `#[tauri::command]`（按文件路径推断全局模块路径），合并框架命令常量，生成 `extensions.rs`（`configure_app!` 含 `.plugin()` 链 + 单一 `generate_handler!` + `#[path]` mod 声明）。
 
-**框架命令 vs 扩展命令的注册边界**：命令分两类，注册位置不同——
+**命令全局注册（v2.0 修正，关键）**：所有 `#[tauri::command]`（框架 13 + 扩展 53 = 66）**统一在 `configure_app!` 宏的单一 `generate_handler!` 全局注册**。根因：Tauri 2 的 IPC 路由中，**插件命令（`plugin::Builder::invoke_handler`）前端必须用 `plugin:<name>|<cmd>` 格式调用**，裸名 `invoke('cmd')` 只路由全局 `app.invoke_handler`。若扩展命令放插件 invoke_handler，前端裸名调用全部 not found。故扩展命令必须全局注册，前端裸名 `invoke` 不变。
 
-- **扩展命令**（~55 个）：归各自扩展，在 `init()` 的 `invoke_handler(generate_handler![...])` 内局部注册。`extensions.rs`（自动生成）**零 `generate_handler!`**，只有 `.plugin()` 链（9 扩展 init()）+ `#[path]` mod 声明。
-- **框架命令**（13 个：`runtime::permission::*` 5 + `runtime::shortcut::*` 5 + `runtime::window::*` 2 + `platform::pasteboard::pasteboard_write_text` 1）：不归任何扩展，是框架自身能力（权限检测/全局快捷键/主窗口/剪贴板写入）。在 `lib.rs` 保留一个**固定的、手写的** `generate_handler!`——框架自管，与扩展增减无关，不参与 sync-extensions 扫描，零漂移。
+- 各扩展 `init()` = `plugin::Builder::new("name").build()`（**无 invoke_handler**），仅占 plugin name + 生命周期钩子（.setup/.on_event 等）。
+- `lib.rs` **不手写 `invoke_handler`**（由 `configure_app!` 提供），仅 `.setup()` + `.run()`。
+- 框架命令（permission/shortcut/window/pasteboard）作为 `sync-extensions.ts` 的固定常量，与扩展扫描命令合并到同一 `generate_handler!`。
 
-**shortcut/window 不需 plugin 形态**：当前 `runtime::shortcut::init()` / `runtime::window::init()` 是纯空 Builder（无 invoke_handler、无 setup，仅占 plugin name）。命令下沉后（框架 13 命令迁 lib.rs `generate_handler!`）**直接删除这两个空 plugin**——框架命令不需 TauriPlugin 包装，`generate_handler!` 即完成注册。删除后 `extensions.rs` 的 `.plugin()` 链**只含 9 个扩展**（search 统一化后也走 init()，见 §4）。
+**shortcut/window 不需 plugin 形态**：框架命令直接进 `configure_app!` 的 `generate_handler!`，不需 TauriPlugin 包装。`extensions.rs` 的 `.plugin()` 链只含 9 个扩展（各自 `init()` 仅空 Builder + 生命周期钩子）。
 
-边界判据与存储结构同构：框架命令之于 `lib.rs`，等同框架配置之于 `config/settings.json`、框架 UI 之于 `components/layout/`——框架自管项驻框架层。`check:commands` 扫描**全仓** `#[tauri::command]`（框架 + 扩展）与前端 `commands.ts` 常量集合作差集，两者都覆盖。
+边界判据：`check:commands` 扫描**全仓** `#[tauri::command]`（框架 + 扩展）与前端 `commands.ts` 常量集合作差集，两者都覆盖。
 
 ```rust
-// lib.rs（框架自管：固定 13 命令，手写，不参与 sync-extensions 扫描）
-.invoke_handler(tauri::generate_handler![
-    crate::runtime::permission::check_accessibility_permission,
-    crate::runtime::permission::request_accessibility_permission,
-    // ... runtime::permission::* (5) + runtime::shortcut::* (5) + runtime::window::* (2) + platform::pasteboard::pasteboard_write_text (1)
-])
+// extensions.rs（自动生成）：configure_app! 含 .plugin() 链 + 单一全局 generate_handler!
+macro_rules! configure_app {
+    ($builder:expr) => {
+        $builder
+        .plugin(crate::extensions::search::init())
+        // ... 9 扩展 .plugin() 链
+        .invoke_handler(tauri::generate_handler![
+            // 框架 13 命令（固定常量）+ 扩展 53 命令（sync-extensions 扫描 #[tauri::command]）
+        ])
+    };
+}
+// lib.rs：configure_app!(builder) 提供插件链 + invoke_handler；lib.rs 仅 .setup().run()
 ```
 
-> **「零正则」精确含义**：无 `COMMAND_REGEX`（不再扫 `#[tauri::command]` 汇总扩展命令到顶层 `generate_handler!`）；保留 `init()` 签名检测的正则（`/pub fn init\(\)/`，必要）。
+> **「正则」精确含义**（v2.0 修正）：`sync-extensions` 扫描 `#[tauri::command]`（生成全局命令列表）+ `pub fn init()` 签名（生成 .plugin() 链）——两个正则均必要。撤回 v1.9「零正则」目标（v1.9 的「扩展命令在 init() 局部注册」设计因 Tauri 2 路由规则失效，见 §0.4 v2.0）。
 
 **specta 决策：删除，但诚实面对信息损失**
 

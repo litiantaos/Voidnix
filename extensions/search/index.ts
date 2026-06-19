@@ -20,7 +20,10 @@ listen('app-cache-updated', () => {
 
 async function getAppList(): Promise<ProviderResult[]> {
   if (appListCache && !iconsPending) return appListCache
-  const raw = await invoke<RawSearchResult[]>(CMD.searchApps).catch(() => [])
+  const raw = await invoke<RawSearchResult[]>(CMD.searchApps).catch((e) => {
+    console.error('[search] search_apps invoke failed:', e)
+    return []
+  })
   const items = raw.map((r) =>
     toResult(r, frequencyBoost(r.use_count ?? 0) + recencyScore(r.last_used) + 1),
   )

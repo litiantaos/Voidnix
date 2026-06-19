@@ -72,12 +72,6 @@ fn command_dir(app: &AppHandle) -> PathBuf {
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("finder-ext")
-        .invoke_handler(tauri::generate_handler![
-            set_finder_ext_enabled,
-            quit_app,
-            check_finder_ext_authorized,
-            open_extensions_prefs,
-        ])
         .build()
 }
 

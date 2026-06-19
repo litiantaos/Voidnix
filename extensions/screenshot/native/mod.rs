@@ -16,27 +16,6 @@ pub use session::{capture_screen, reactivate_screenshot_window};
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("screenshot")
-        .invoke_handler(tauri::generate_handler![
-            open_module_subview,
-            session::capture_screen,
-            session::enter_screenshot_mode,
-            session::screenshot_overlay_ready,
-            session::exit_screenshot_mode,
-            pin::pin_image,
-            pin::restore_pin_focus,
-            pin::set_pin_window_opacity,
-            pin::pin_global_mouse,
-            scroll_capture::enter_scroll_capture,
-            scroll_capture::exit_scroll_capture,
-            scroll_capture::set_scroll_toolbar_rect,
-            scroll_capture::finish_scroll_capture,
-            scroll_capture::save_scroll_result,
-            scroll_capture::copy_scroll_result_to_clipboard,
-            ocr::ocr_image,
-            ocr::detect_text_regions,
-            ocr::save_screenshot,
-            ocr::copy_screenshot_to_clipboard,
-        ])
         .build()
 }
 
