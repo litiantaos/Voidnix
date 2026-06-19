@@ -205,9 +205,9 @@ async function handleDelete() {
 
 onActivated(() => {
   registerDeleteHandler(handleDelete)
-  // 模块激活时刷新：重置到「全部」标签并重新拉取（原 module.onActivate 逻辑）
+  // 重置到「全部」标签并重新过滤展示。不 invalidateCache：setup 注册的
+  // clipboard-updated 监听器已实时保活缓存，进入时重查 DB 属冗余（命中缓存分支同步过滤）。
   activeTab.value = 'all'
-  invalidateCache()
   fetchClipboardHistory('', false)
 })
 onDeactivated(() => registerDeleteHandler(() => {}))

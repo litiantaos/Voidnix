@@ -11,7 +11,9 @@
       class="hide-scrollbar overflow-y-auto"
     >
       <div flex="~ 1 col">
-        <KeepAlive v-if="resolvedView" :max="10">
+        <!-- max 覆盖全部视图 key（9 模块 mainView + screenshot{ocr} 子视图 + settings 钻入的扩展 settingsView），
+             驱逐会导致模块 View 重挂载（重渲染列表/消息）→ 切换卡顿，故留充裕余量 -->
+        <KeepAlive v-if="resolvedView" :max="24">
           <component
             :is="resolvedView"
             :key="`${props.module?.meta.id ?? 'main'}-${appStore.activeSubview ?? 'view'}`"

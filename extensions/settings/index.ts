@@ -1,7 +1,5 @@
 import { defineExtension } from '@/runtime/extension-registry'
-import { defineAsyncComponent } from 'vue'
-
-const SettingsView = defineAsyncComponent(() => import('./View.vue'))
+import SettingsView from './View.vue'
 
 export default defineExtension({
   meta: {

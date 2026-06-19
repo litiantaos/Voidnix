@@ -1,11 +1,12 @@
 import { ref } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
 import { defineAsyncComponent } from 'vue'
+import ScreenshotView from './View.vue'
+import ScreenshotOcr from './OcrView.vue'
 
-const ScreenshotView = defineAsyncComponent(() => import('./View.vue'))
+// 独立窗口（截图标注 host / pin）真按需：低频重逻辑，不触发截图/pin 不加载，省稳态内存
 const ScreenshotWindow = defineAsyncComponent(() => import('./windows/Host.vue'))
 const PinWindow = defineAsyncComponent(() => import('./windows/PinWindow.vue'))
-const ScreenshotOcr = defineAsyncComponent(() => import('./OcrView.vue'))
 
 // OCR 待识别数据（由截屏标注界面通过 open_module_subview 触发时注入）
 export const pendingOcrData = ref<{
