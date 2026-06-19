@@ -118,7 +118,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn parallel_setup_runs_all() {
+    async fn register_holds_extensions_with_async_setup() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
         let counter = Arc::new(AtomicUsize::new(0));
@@ -137,9 +137,9 @@ mod tests {
             }
         }
 
-        // join_all 在无真实 AppHandle 的情况下无法直接驱动 setup（setup 形参需句柄），
-        // 故此处仅校验 registry 结构与计数；并行 join_all 的运行期正确性由 lib.rs
-        // 启动埋点 + tauri:dev 冒烟保证（§7 N7/N8）。
+        // registry 能持有带 async setup 的扩展。join_all 真实并行驱动需 AppHandle，
+        // 此处无法注入；并行 join_all 的运行期正确性由 lib.rs 启动埋点 + tauri:dev
+        // 冒烟保证（§7 N7/N8）。
         let reg = ExtensionRegistry::new()
             .register(CountingExt { c: counter.clone() })
             .register(CountingExt { c: counter.clone() })

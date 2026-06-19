@@ -96,6 +96,7 @@ pub struct SearchProviderConfig {
 /// 立即返回 session_id；后续事件通过 on_event Channel 推送。
 /// 用户审批通过 agent_approve；中断通过 agent_abort。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri 命令 IPC 契约决定参数数（state 注入 + 前端参数）
 pub async fn agent_run(
     app: tauri::AppHandle,
     sessions: tauri::State<'_, SessionRegistry>,

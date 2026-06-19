@@ -38,19 +38,20 @@ export default defineExtension({
 
 ### 能力槽（按需声明，均有真实消费者）
 
-| 槽                   | 用途                                                                                     | 消费者                                   |
-| -------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `search`             | SearchProvider.dynamic 单通道召回                                                        | 见下「搜索集成」                         |
-| `onExecute`          | 搜索结果回车动作（扩展私有）                                                             | —                                        |
-| `mainView`           | 主视图组件                                                                               | 9 扩展                                   |
-| `searchBarAccessory` | 搜索栏右侧配件                                                                           | 2：clipboard/agent                       |
-| `subviews`           | 扩展私有命名子视图                                                                       | 1：screenshot{ocr}                       |
-| `settingsView`       | 设置片段（**跨扩展契约**：settings 扩展 mainView 扫描聚合）                              | 3：clipboard/agent/translate             |
-| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀） | 2：screenshot/window-manager             |
-| `globalShortcuts`    | 全局快捷键绑定                                                                           | 4：clipboard/screenshot/agent/translate  |
-| `hints`              | 键盘提示（enter/multiSelect/delete）                                                     | enter 3：clipboard/ip/calculator；余各 1 |
+| 槽                   | 用途                                                                                     | 消费者                                               |
+| -------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `search`             | SearchProvider.dynamic 单通道召回                                                        | 见下「搜索集成」                                     |
+| `onExecute`          | 搜索结果回车动作（扩展私有）                                                             | —                                                    |
+| `mainView`           | 主视图组件                                                                               | 9 扩展                                               |
+| `searchBarAccessory` | 搜索栏右侧配件                                                                           | 2：clipboard/agent                                   |
+| `subviews`           | 扩展私有命名子视图                                                                       | 1：screenshot{ocr}                                   |
+| `settingsView`       | 设置片段（**跨扩展契约**：settings 扩展 mainView 扫描聚合）                              | 3：clipboard/agent/translate                         |
+| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀） | 2：screenshot/window-manager                         |
+| `globalShortcuts`    | 全局快捷键绑定                                                                           | 4：clipboard/screenshot/agent/translate              |
+| `hints`              | 键盘提示（enter/multiSelect/delete）                                                     | enter 3：clipboard/ip/calculator；余各 1             |
+| `placeholder`        | 搜索框占位提示（激活模块时显示）                                                         | 7：clipboard/currency/uuid/ip/time/base64/calculator |
 
-生命周期：`setup?(app)`（启动钩子）、`placeholder?`（搜索框占位）。3 承载字段过渡期保留：`disableSearchInput`（模块自管输入）、`listOptions.multiSelect`、`onOpenSubview`。
+生命周期：`setup?()`（启动钩子，无参）。3 承载字段过渡期保留：`disableSearchInput`（模块自管输入）、`listOptions.multiSelect`、`onOpenSubview`。
 
 ## 搜索集成
 
@@ -68,7 +69,7 @@ interface SearchContext {
 ```
 
 - **全局模式**（searchEngine）：并行调用所有扩展 dynamic，合流 keyword 模块入口 + dedupe + groupAndSort。
-- **模块模式**（runModuleSearch）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序。
+- **模块模式**（runModuleSearch）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序。dynamic 返回 Promise（异步网络/IPC）时进入即清空旧结果 + 显示 loading 占位（「先进去再加载」），返回 `ProviderResult[]`（同步）则即时填充无闪烁。
 - `moduleMode` 区分调用场景：**全局空 query 时网络型扩展（ip/currency）应跳过网络请求返回 `[]`**，避免拖慢默认列表；模块内空 query 正常执行。
 - 半静态内容（如 base64 选项）用模块级缓存自管，走 dynamic 返回。
 
@@ -168,10 +169,11 @@ impl Extension for ClipboardExtension {
 - `runtime::shortcut`：快捷键注册 + 录制 + `register_shortcut_hook`（扩展钩子）
 - `runtime::storage`：`TempHandle` RAII（new / Drop 自动清理 + `cleanup_temps_by_prefix` 启动扫残留）
 - `runtime::permission`：系统权限薄壳
-- `runtime::llm`：LLM 基础设施（`stream_openai_request` / `validate_ai_request` / `LlmMessage` / `trim_conversation`），agent + translate 共享
+- `runtime::llm`：LLM 基础设施（`stream_openai_request` / `validate_ai_request` / `LlmMessage`），agent + translate 共享（`trim_conversation` 在 agent engine 内）
+- `runtime::pasteboard`：框架命令薄壳（`pasteboard_write_text`；原语在 `platform::pasteboard`）
 - `platform::focus`：焦点管理（`capture_frontmost` / `restore_captured` / `captured_pid`，PREV_FRONT_PID 唯一源）
 - `platform::input`：键盘注入（`post_key(key_code, &[Modifier], Option<pid>)` 原语 / `post_combo` 字符串糖）
-- `platform::pasteboard`：NSPasteboard 统一（read_text / string_for_type / data_for_type / has_type / change_count / snapshot / restore + `pasteboard_write_text` 命令）
+- `platform::pasteboard`：NSPasteboard 原语（read_text / string_for_type / data_for_type / has_type / change_count / snapshot / restore）
 - `platform::selection`：AX 选中文本提取（`try_ax` / `poll_clipboard` / `init_ax_timeout`）
 - `platform::path_guard`：路径安全校验（`validate(path)`，canonicalize + 拦系统致命前缀）
 - `http::client()`：全局 reqwest 客户端

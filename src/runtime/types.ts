@@ -89,7 +89,6 @@ export interface Extension {
   // ── 生命周期 ──
   /** 启动钩子（前端运行时初始化时调用）。 */
   setup?(): void | Promise<void>
-  teardown?(): void
 
   // ── 能力槽（均有真实消费者，§2.2）──
   search?: SearchProvider

@@ -65,17 +65,17 @@ pub async fn pin_image(
         let app_clone = app.clone();
         app.run_on_main_thread(move || {
             let cg_ptr = cg_addr as *mut std::ffi::c_void;
-            let r = create_pin_webview(
-                &app_clone,
-                &label,
-                &path_str,
-                win_w,
-                win_h,
-                win_x,
-                win_y,
-                cg_ptr,
+            let spec = PinWebviewSpec {
+                label: &label,
+                image_path: &path_str,
+                width: win_w,
+                height: win_h,
+                pos_x: win_x,
+                pos_y: win_y,
+                cg_image: cg_ptr,
                 centered,
-            );
+            };
+            let r = create_pin_webview(&app_clone, &spec);
             let _ = tx.send(r);
         })
         .map_err(|e| e.to_string())?;
@@ -96,27 +96,29 @@ pub async fn pin_image(
 }
 
 #[cfg(target_os = "macos")]
-fn create_pin_webview(
-    app: &tauri::AppHandle,
-    label: &str,
-    image_path: &str,
+struct PinWebviewSpec<'a> {
+    label: &'a str,
+    image_path: &'a str,
     width: f64,
     height: f64,
     pos_x: f64,
     pos_y: f64,
     cg_image: *mut std::ffi::c_void,
     centered: bool,
-) -> Result<(), String> {
+}
+
+#[cfg(target_os = "macos")]
+fn create_pin_webview(app: &tauri::AppHandle, spec: &PinWebviewSpec) -> Result<(), String> {
     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-    let url_path = format!("/?img={}&pin=1", urlencoding::encode(image_path));
+    let url_path = format!("/?img={}&pin=1", urlencoding::encode(spec.image_path));
     let url = WebviewUrl::App(url_path.into());
 
-    let builder = WebviewWindowBuilder::new(app, label, url)
+    let builder = WebviewWindowBuilder::new(app, spec.label, url)
         .title("")
-        .inner_size(width, height)
-        .position(pos_x, pos_y)
+        .inner_size(spec.width, spec.height)
+        .position(spec.pos_x, spec.pos_y)
         .min_inner_size(PIN_MIN_SIZE, PIN_MIN_SIZE)
         .resizable(true)
         .decorations(false)
@@ -130,7 +132,7 @@ fn create_pin_webview(
     let window = builder.build().map_err(|e| e.to_string())?;
 
     // 窗口销毁时移除 PIN_TEMPS 条目 → Drop TempHandle → 删除临时 PNG（§2.7）
-    let label_for_destroy = label.to_string();
+    let label_for_destroy = spec.label.to_string();
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
             if let Ok(mut map) = PIN_TEMPS.lock() {
@@ -149,8 +151,8 @@ fn create_pin_webview(
                     | NSWindowCollectionBehavior::Stationary;
                 ns.setCollectionBehavior(behavior);
                 // 居中模式下窗口尺寸 ≠ 图片尺寸，不锁宽高比，避免后续 resize 还原成图片比例
-                if !centered {
-                    ns.setContentAspectRatio(objc2_foundation::NSSize::new(width, height));
+                if !spec.centered {
+                    ns.setContentAspectRatio(objc2_foundation::NSSize::new(spec.width, spec.height));
                 }
                 if let Some(content_view) = ns.contentView() {
                     let _: () = objc2::msg_send![&content_view, setWantsLayer: true];
@@ -163,14 +165,14 @@ fn create_pin_webview(
                 }
 
                 let ns_window_void = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
-                if !cg_image.is_null() {
+                if !spec.cg_image.is_null() {
                     voidnix_screenshot_install_background_layer(ns_window_void);
-                    if centered {
-                        voidnix_screenshot_set_background_centered(ns_window_void, cg_image);
+                    if spec.centered {
+                        voidnix_screenshot_set_background_centered(ns_window_void, spec.cg_image);
                     } else {
-                        voidnix_screenshot_set_background(ns_window_void, cg_image);
+                        voidnix_screenshot_set_background(ns_window_void, spec.cg_image);
                     }
-                    CGImageRelease(cg_image);
+                    CGImageRelease(spec.cg_image);
                 }
 
                 let _: () = objc2::msg_send![

@@ -173,7 +173,7 @@ fn write_to_pasteboard(content: &str, content_type: &str) {
 fn hide_and_paste(app: &tauri::AppHandle) {
     crate::runtime::window::hide_main(app);
     set_window_visible(false);
-    std::thread::spawn(|| simulate_cmd_v());
+    std::thread::spawn(simulate_cmd_v);
 }
 
 #[tauri::command]

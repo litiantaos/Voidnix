@@ -2,16 +2,16 @@ import { reactive, watch } from 'vue'
 import { load, type Store } from '@tauri-apps/plugin-store'
 
 // store 实例缓存（§2.4 v1.5 B1）：避免每次防抖保存重新 load()。
-// 模块级 Map<extId, Store>，首次加载后复用。
-const storeCache = new Map<string, Store>()
+// 缓存 Promise<Store> 而非 Store，并发 getStore 共享同一 in-flight load，避免重复加载。
+const storeCache = new Map<string, Promise<Store>>()
 
-async function getStore(extId: string): Promise<Store> {
-  let store = storeCache.get(extId)
-  if (!store) {
-    store = await load(`extensions/${extId}/config.json`)
-    storeCache.set(extId, store)
+function getStore(extId: string): Promise<Store> {
+  let promise = storeCache.get(extId)
+  if (!promise) {
+    promise = load(`extensions/${extId}/config.json`)
+    storeCache.set(extId, promise)
   }
-  return store
+  return promise
 }
 
 /// 创建响应式扩展配置对象，自动从磁盘加载 + 变更自动持久化。
@@ -30,15 +30,17 @@ export function defineConfig<T extends Record<string, unknown>>(extId: string, d
 
   // 异步从磁盘加载已保存的值
   getStore(extId)
-    .then(async (store) => {
-      for (const key in defaults) {
-        const saved = await store.get<unknown>(key)
-        if (saved !== null && saved !== undefined) {
-          // biome-ignore lint: dynamic key assignment
-          ;(config as Record<string, unknown>)[key] = saved
-        }
-      }
-    })
+    .then((store) =>
+      Promise.all(
+        Object.keys(defaults).map(async (key) => {
+          const saved = await store.get<unknown>(key)
+          if (saved !== null && saved !== undefined) {
+            // biome-ignore lint: dynamic key assignment
+            ;(config as Record<string, unknown>)[key] = saved
+          }
+        }),
+      ),
+    )
     .catch((e) => console.error(`[config:${extId}] load failed:`, e))
 
   // 变更自动持久化（deep watch + 防抖 300ms）

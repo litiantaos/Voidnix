@@ -43,7 +43,7 @@ pub fn clean_translation(raw: &str) -> String {
     for pat in PREAMBLE_PATTERNS {
         if lower.starts_with(pat) {
             let remaining = &s[pat.len()..];
-            let trimmed = remaining.trim_start_matches(|c: char| c == ':' || c =='\u{ff1a}' || c == ' ' || c == '\n');
+            let trimmed = remaining.trim_start_matches([':', '\u{ff1a}', ' ', '\n']);
             if !trimmed.is_empty() {
                 s = trimmed.to_string();
             }

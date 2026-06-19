@@ -7,11 +7,14 @@ use super::ffi::{
 };
 
 #[cfg(target_os = "macos")]
+type CompletionCallback = Box<dyn FnOnce() + Send + 'static>;
+
+#[cfg(target_os = "macos")]
 pub(super) fn fade_window_layer_opacity(
     ns_window_addr: usize,
     target: f32,
     duration: f64,
-    completion: Option<Box<dyn FnOnce() + Send + 'static>>,
+    completion: Option<CompletionCallback>,
 ) {
     use objc2::runtime::AnyObject;
     use objc2_foundation::NSString;
@@ -55,7 +58,7 @@ pub(super) fn fade_window_layer_opacity(
 
         match completion {
             Some(cb) => {
-                let slot: Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>> =
+                let slot: Arc<Mutex<Option<CompletionCallback>>> =
                     Arc::new(Mutex::new(Some(cb)));
                 let slot_clone = Arc::clone(&slot);
                 let done = block2::RcBlock::new(move || {
