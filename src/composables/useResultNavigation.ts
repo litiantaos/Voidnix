@@ -1,0 +1,151 @@
+import { type Ref, type ComputedRef } from 'vue'
+import { onKeyStroke } from '@/composables/events'
+import { open } from '@tauri-apps/plugin-shell'
+import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
+import { getExtension } from '@/runtime/extension-registry'
+import { useAppStore } from '@/stores/app'
+import type { Extension, SearchResult } from '@/runtime/types'
+import { hideWindow } from '@/utils/tauri'
+import { buildSearchUrl, parseWebSearchQuery } from '@/utils/web-search'
+
+interface ResultNavOptions {
+  searchInput: Ref<HTMLInputElement | undefined>
+  results: Ref<SearchResult[]>
+  selectedIndex: Ref<number>
+  activeModule: ComputedRef<Extension | null>
+  clearSearch: (value?: string) => void
+  loadDefaultResults: () => Promise<void>
+  goBackToToolList: () => void
+}
+
+/// 结果键盘导航：ArrowUp/Down 移动、Enter 执行分派、Escape 退出/清空。
+/// 搜索状态由 useSearchInput 持有，通过 opts 注入（clearSearch/loadDefaultResults 等）。
+export function useResultNavigation(opts: ResultNavOptions) {
+  const appStore = useAppStore()
+  const { searchInput, results, selectedIndex, clearSearch, loadDefaultResults, goBackToToolList } =
+    opts
+
+  // --- execute ---
+
+  async function handleExecute(result: SearchResult, _index?: number, e?: KeyboardEvent) {
+    if (e) e.preventDefault()
+    if (result.data?.kind === 'module' && result.data.moduleId) {
+      appStore.setActiveModule(result.data.moduleId as string)
+      clearSearch()
+      return
+    }
+    // 扩展私有回车动作（result.module = 产出扩展 id，框架注入）
+    const ext = getExtension(result.module)
+    await ext?.onExecute?.(result)
+    appStore.setActiveModule(null)
+    hideWindow()
+  }
+
+  // --- keyboard ---
+
+  function onKeydown(e: KeyboardEvent) {
+    if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
+
+    switch (e.key) {
+      case 'ArrowDown':
+        if (appStore.activeModuleId) return
+        e.preventDefault()
+        if (results.value.length > 0) {
+          selectedIndex.value =
+            selectedIndex.value >= results.value.length - 1 ? 0 : selectedIndex.value + 1
+        }
+        break
+      case 'ArrowUp':
+        if (appStore.activeModuleId) return
+        e.preventDefault()
+        if (results.value.length > 0) {
+          selectedIndex.value =
+            selectedIndex.value <= 0 ? results.value.length - 1 : selectedIndex.value - 1
+        }
+        break
+      case 'Enter':
+        if (!appStore.activeModuleId && appStore.searchQuery.startsWith('//')) {
+          const parsed = parseWebSearchQuery(appStore.searchQuery)
+          if (parsed.type === 'url' || parsed.keyword) {
+            e.preventDefault()
+            open(buildSearchUrl(parsed)).catch(() => {})
+            clearSearch()
+            loadDefaultResults().finally(() => {
+              hideWindow()
+            })
+          }
+          return
+        }
+        if (appStore.activeModuleId) {
+          // 模块模式下 Enter 由各 View / BaseList 自行处理（不介入）
+          return
+        }
+        if (e.metaKey && results.value.length > 0) {
+          const result = results.value[selectedIndex.value]
+          if (result?.data?.path) {
+            e.preventDefault()
+            invoke(CMD.revealInFinder, { path: result.data.path })
+            hideWindow()
+            return
+          }
+        }
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        if (results.value.length > 0) {
+          handleExecute(results.value[selectedIndex.value])
+        }
+        break
+
+      case 'Escape': {
+        if (appStore.isDialogOpen) return
+
+        const el = document.activeElement
+        const isFormControl =
+          el?.tagName === 'SELECT' ||
+          el?.tagName === 'INPUT' ||
+          el?.tagName === 'TEXTAREA' ||
+          el?.hasAttribute('contenteditable') ||
+          el?.hasAttribute('data-settings-control')
+
+        if (isFormControl) {
+          if (el === searchInput.value) {
+            // allow standard behavior to proceed
+          } else {
+            if (el instanceof HTMLElement) el.blur()
+            e.preventDefault()
+            return
+          }
+        }
+
+        if (appStore.activeSubview) {
+          e.preventDefault()
+          appStore.closeSubview()
+          return
+        }
+        e.preventDefault()
+        if (appStore.activeModuleId) {
+          if (appStore.searchQuery) {
+            clearSearch()
+          } else {
+            goBackToToolList()
+          }
+        } else if (appStore.searchQuery) {
+          clearSearch()
+          loadDefaultResults()
+          searchInput.value?.focus()
+        } else {
+          hideWindow()
+        }
+        break
+      }
+    }
+  }
+
+  onKeyStroke(['ArrowDown', 'ArrowUp', 'Enter', 'Escape'], onKeydown)
+
+  return {
+    onKeydown,
+    handleExecute,
+  }
+}

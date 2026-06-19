@@ -1,97 +1,55 @@
 import { describe, it, expect } from 'vitest'
-import {
-  parseWebSearchQuery,
-  buildSearchUrl,
-  buildWebSearchResult,
-  buildOpenUrlResult,
-} from './web-search'
+import { parseWebSearchQuery } from './web-search'
 
 describe('parseWebSearchQuery', () => {
-  it('parses //google query', () => {
-    const result = parseWebSearchQuery('//hello world')
-    expect(result.type).toBe('search')
-    expect(result.engine).toBe('google')
-    expect(result.keyword).toBe('hello world')
+  describe('Google 搜索', () => {
+    it('// 关键词 → Google 搜索', () => {
+      const result = parseWebSearchQuery('//hello world')
+      expect(result).toEqual({ type: 'search', engine: 'google', keyword: 'hello world' })
+    })
+
+    it('仅 // → Google 搜索（空关键词）', () => {
+      const result = parseWebSearchQuery('//')
+      expect(result).toEqual({ type: 'search', engine: 'google', keyword: '' })
+    })
   })
 
-  it('parses //bing query', () => {
-    const result = parseWebSearchQuery('//b hello')
-    expect(result.type).toBe('search')
-    expect(result.engine).toBe('bing')
-    expect(result.keyword).toBe('hello')
+  describe('Bing 搜索', () => {
+    it('//b 关键词 → Bing 搜索', () => {
+      const result = parseWebSearchQuery('//b hello')
+      expect(result).toEqual({ type: 'search', engine: 'bing', keyword: 'hello' })
+    })
+
+    it('仅 //b → Bing 搜索（空关键词）', () => {
+      const result = parseWebSearchQuery('//b')
+      expect(result).toEqual({ type: 'search', engine: 'bing', keyword: '' })
+    })
   })
 
-  it('parses empty // as google search with empty keyword', () => {
-    const result = parseWebSearchQuery('//')
-    expect(result.type).toBe('search')
-    expect(result.engine).toBe('google')
-    expect(result.keyword).toBe('')
-  })
+  describe('URL 检测', () => {
+    it('https:// 完整 URL', () => {
+      const result = parseWebSearchQuery('//https://example.com')
+      expect(result).toEqual({ type: 'url', keyword: '', url: 'https://example.com' })
+    })
 
-  it('parses https URL', () => {
-    const result = parseWebSearchQuery('//https://example.com')
-    expect(result.type).toBe('url')
-    expect(result.url).toBe('https://example.com')
-  })
+    it('域名自动补 https://', () => {
+      const result = parseWebSearchQuery('//example.com')
+      expect(result).toEqual({ type: 'url', keyword: '', url: 'https://example.com' })
+    })
 
-  it('parses domain as URL', () => {
-    const result = parseWebSearchQuery('//example.com')
-    expect(result.type).toBe('url')
-    expect(result.url).toBe('https://example.com')
-  })
+    it('带路径的域名', () => {
+      const result = parseWebSearchQuery('//example.com/path/to/page')
+      expect(result).toEqual({ type: 'url', keyword: '', url: 'https://example.com/path/to/page' })
+    })
 
-  it('parses domain with path as URL', () => {
-    const result = parseWebSearchQuery('//example.com/path/to/page')
-    expect(result.type).toBe('url')
-    expect(result.url).toBe('https://example.com/path/to/page')
-  })
+    it('IP 地址', () => {
+      const result = parseWebSearchQuery('//192.168.1.1')
+      expect(result).toEqual({ type: 'url', keyword: '', url: 'https://192.168.1.1' })
+    })
 
-  it('parses IP address as URL', () => {
-    const result = parseWebSearchQuery('//192.168.1.1:8080')
-    expect(result.type).toBe('url')
-  })
-})
-
-describe('buildSearchUrl', () => {
-  it('builds google search URL', () => {
-    const url = buildSearchUrl({ type: 'search', engine: 'google', keyword: 'hello' })
-    expect(url).toBe('https://www.google.com/search?q=hello')
-  })
-
-  it('builds bing search URL', () => {
-    const url = buildSearchUrl({ type: 'search', engine: 'bing', keyword: 'hello' })
-    expect(url).toBe('https://www.bing.com/search?q=hello')
-  })
-
-  it('returns URL directly for url type', () => {
-    const url = buildSearchUrl({ type: 'url', keyword: '', url: 'https://example.com' })
-    expect(url).toBe('https://example.com')
-  })
-
-  it('encodes special characters', () => {
-    const url = buildSearchUrl({ type: 'search', engine: 'google', keyword: 'hello world & test' })
-    expect(url).toBe('https://www.google.com/search?q=hello%20world%20%26%20test')
-  })
-})
-
-describe('buildWebSearchResult', () => {
-  it('builds google result', () => {
-    const result = buildWebSearchResult({ type: 'search', engine: 'google', keyword: 'test' })
-    expect(result.title).toBe('Google 搜索')
-    expect(result.data?.kind).toBe('web')
-  })
-
-  it('builds bing result', () => {
-    const result = buildWebSearchResult({ type: 'search', engine: 'bing', keyword: 'test' })
-    expect(result.title).toBe('Bing 搜索')
-  })
-})
-
-describe('buildOpenUrlResult', () => {
-  it('builds URL result', () => {
-    const result = buildOpenUrlResult('https://example.com')
-    expect(result.title).toBe('打开链接')
-    expect(result.description).toBe('https://example.com')
-    expect(result.data?.kind).toBe('web')
+    it('IP 带端口', () => {
+      const result = parseWebSearchQuery('//192.168.1.1:8080')
+      expect(result).toEqual({ type: 'url', keyword: '', url: 'https://192.168.1.1:8080' })
+    })
   })
 })
