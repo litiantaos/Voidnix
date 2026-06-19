@@ -241,7 +241,6 @@ pub async fn set_zsh_autosuggestions_enabled(app: AppHandle, enabled: bool) -> R
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("zsh-autosuggestions")
-        .invoke_handler(tauri::generate_handler![set_zsh_autosuggestions_enabled])
         .build()
 }
 

@@ -12,12 +12,6 @@ use crate::runtime::registry::Extension;
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("search")
-        .invoke_handler(tauri::generate_handler![
-            commands::search_apps,
-            commands::search_files,
-            commands::reveal_in_finder,
-            commands::launch_app,
-        ])
         .build()
 }
 
