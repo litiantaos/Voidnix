@@ -220,8 +220,20 @@ async fn process_tool_call(input: &mut LoopInput, messages: &mut Vec<LlmMessage>
         return;
     }
 
-    // 执行工具
-    let result = tool.call(call.arguments.clone()).await;
+    // 执行工具（取消感知：abort 时 drop future，run_command 的 kill_on_drop 终结子进程）
+    let result = select! {
+        r = tool.call(call.arguments.clone()) => r,
+        _ = input.cancel.cancelled() => {
+            let msg = "工具调用已被用户中断".to_string();
+            let _ = input.channel.send(AgentEvent::ToolResult {
+                id: call.id.clone(),
+                ok: false,
+                output: msg.clone(),
+            });
+            messages.push(LlmMessage::tool_result(&call.id, msg));
+            return;
+        }
+    };
 
     // 净化输出（防 secret 泄露给 LLM）
     let scrubbed = scrub_secret(&result.output).into_owned();
