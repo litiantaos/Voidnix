@@ -84,10 +84,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sender_drop_on_cancel_resolves_to_channel_closed() {
+    async fn resolve_after_receiver_dropped_returns_true_and_cleans_up() {
+        // 模拟 session abort：loop_runner 持有的 receiver 被 drop，sender 仍留在 map 中。
+        // 前端 resolve 应安全完成：移除 sender、send 失败被静默吞掉、返回 true（id 曾存在），
+        // 且后续 resolve 返回 false（map 已清理，避免泄漏）。
         let mgr = ApprovalManager::default();
-        let (_id, rx) = ("call_x".to_string(), mgr.create("call_x".to_string()));
-        drop(rx); // 模拟 loop_runner 退出
-        // sender 还在 map 里，但 resolve 会 send 失败（receiver 已 drop），应不 panic
+        let rx = mgr.create("call_x".to_string());
+        drop(rx);
+        assert!(mgr.resolve("call_x", Decision::rejected()));
+        assert!(!mgr.resolve("call_x", Decision::rejected()));
     }
 }

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, refactor/v2]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Rust 依赖
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装前端依赖
+        run: bun install
+
+      - name: 扩展同步产物校验（extensions.rs + windowViews 漂移）
+        run: bun run check:extensions
+
+      - name: 命令名双向差集 + 裸 invoke 检测
+        run: bun run check:commands
+
+      - name: agent 安全底线 Rust↔TS 一致校验
+        run: bun run check:agent-bounds
+
+      - name: 代码风格检查（Prettier + ESLint）
+        run: bun run lint:check
+
+      - name: 类型检查（vue-tsc 严格模式）
+        run: bun run typecheck
+
+      - name: 前端单元测试（Vitest）
+        run: bun run test
+
+      - name: Rust 单元测试
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib

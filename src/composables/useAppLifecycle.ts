@@ -46,10 +46,11 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
     }
   }
 
-  let unlistenFocus: (() => void) | null = null
-  let unlistenShortcut: (() => void) | null = null
-  let unlistenOpenModule: (() => void) | null = null
-  let unlistenClickOutside: (() => void) | null = null
+  // 统一管理事件订阅的清理函数，避免新增监听时漏接 unlisten（曾导致 open-module-subview 泄漏）
+  const unlistenList: Array<() => void> = []
+  const track = (fn: () => void): void => {
+    unlistenList.push(fn)
+  }
   let allGlobalShortcuts: {
     id: string
     default?: string
@@ -79,9 +80,11 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
 
     if (isTauri) {
       setTimeout(async () => {
-        const hasUpdate = await updateStore.check()
-        if (hasUpdate) {
-          await updateStore.download()
+        try {
+          const hasUpdate = await updateStore.check()
+          if (hasUpdate) await updateStore.download()
+        } catch (e) {
+          console.error('Update check failed:', e)
         }
       }, 3000)
     }
@@ -114,7 +117,7 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
         { deep: true },
       )
 
-      unlistenShortcut = await listen<{ id: string; wasVisible: boolean }>(
+      const unlistenShortcut = await listen<{ id: string; wasVisible: boolean }>(
         'shortcut-pressed',
         async (event) => {
           if (appStore.shortcutRecording) return
@@ -141,8 +144,9 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
           }
         },
       )
+      track(unlistenShortcut)
 
-      unlistenOpenModule = await listen<string>('open-module', (event) => {
+      const unlistenOpenModule = await listen<string>('open-module', (event) => {
         markSkip()
         const moduleId = event.payload
         if (moduleId) {
@@ -150,46 +154,53 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
           appStore.setSearchQuery('')
         }
       })
+      track(unlistenOpenModule)
 
-      unlistenClickOutside = await listen('click-outside', () => {
+      const unlistenClickOutside = await listen('click-outside', () => {
         hideWindow(true)
       })
+      track(unlistenClickOutside)
 
       // 通用模块子视图事件：任何模块都可以通过 Rust `open_module_subview` 触发
-      await listen<{ moduleId: string; subviewId: string; payload: unknown }>(
-        'open-module-subview',
-        (e) => {
-          markSkip()
-          const { moduleId, subviewId, payload } = e.payload
-          appStore.setActiveModule(moduleId)
-          appStore.setSearchQuery('')
-          appStore.openSubview(subviewId)
-          const ext = getExtension(moduleId)
-          if (ext?.onOpenSubview) {
-            ext.onOpenSubview(subviewId, payload)
+      const unlistenSubview = await listen<{
+        moduleId: string
+        subviewId: string
+        payload: unknown
+      }>('open-module-subview', (e) => {
+        markSkip()
+        const { moduleId, subviewId, payload } = e.payload
+        appStore.setActiveModule(moduleId)
+        appStore.setSearchQuery('')
+        appStore.openSubview(subviewId)
+        const ext = getExtension(moduleId)
+        if (ext?.onOpenSubview) {
+          ext.onOpenSubview(subviewId, payload)
+        }
+      })
+      track(unlistenSubview)
+
+      const unlistenFocus = await win!.onFocusChanged(
+        ({ payload: focused }: { payload: boolean }) => {
+          if (focused) {
+            window.dispatchEvent(new CustomEvent('window-focused'))
+          } else if (
+            Date.now() - lastShortcutTime > 200 &&
+            Date.now() - appStore.lastDialogCloseTime > 300 &&
+            !appStore.isDialogOpen &&
+            !appStore.suppressBlur
+          ) {
+            invoke<boolean>(CMD.isAppActive)
+              .then((active) => {
+                if (active) return
+                hideWindow(true)
+              })
+              .catch(() => {
+                hideWindow(true)
+              })
           }
         },
       )
-
-      unlistenFocus = await win!.onFocusChanged(({ payload: focused }: { payload: boolean }) => {
-        if (focused) {
-          window.dispatchEvent(new CustomEvent('window-focused'))
-        } else if (
-          Date.now() - lastShortcutTime > 200 &&
-          Date.now() - appStore.lastDialogCloseTime > 300 &&
-          !appStore.isDialogOpen &&
-          !appStore.suppressBlur
-        ) {
-          invoke<boolean>(CMD.isAppActive)
-            .then((active) => {
-              if (active) return
-              hideWindow(true)
-            })
-            .catch(() => {
-              hideWindow(true)
-            })
-        }
-      })
+      track(unlistenFocus)
     }
 
     document.addEventListener('keydown', onLocalShortcut)
@@ -200,10 +211,14 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
 
     document.removeEventListener('keydown', onLocalShortcut)
     if (isTauri) {
-      if (unlistenFocus) unlistenFocus()
-      if (unlistenShortcut) unlistenShortcut()
-      if (unlistenOpenModule) unlistenOpenModule()
-      if (unlistenClickOutside) unlistenClickOutside()
+      unlistenList.forEach((fn) => {
+        try {
+          fn()
+        } catch (e) {
+          console.error('unlisten failed:', e)
+        }
+      })
+      unlistenList.length = 0
 
       await invoke(CMD.registerGlobalShortcut, {
         id: 'main',

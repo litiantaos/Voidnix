@@ -133,10 +133,10 @@ pub fn start_monitor(app_handle: AppHandle) {
             let db = app_handle.state::<Database>();
             let conn = db.conn();
 
-            let mut top_stmt = conn
+            let last_content: Option<String> = conn
                 .prepare("SELECT content FROM clipboard_history ORDER BY created_at DESC LIMIT 1")
-                .unwrap();
-            let last_content: Option<String> = top_stmt.query_row([], |row| row.get(0)).ok();
+                .ok()
+                .and_then(|mut stmt| stmt.query_row([], |row| row.get(0)).ok());
 
             if let Some(last) = last_content {
                 if last == snap.content {
@@ -144,13 +144,13 @@ pub fn start_monitor(app_handle: AppHandle) {
                 }
             }
 
-            let mut stmt = conn
+            let existing_items: Vec<bool> = conn
                 .prepare("SELECT is_favorite FROM clipboard_history WHERE content = ?1")
-                .unwrap();
-
-            let existing_items: Vec<bool> = stmt
-                .query_map(rusqlite::params![snap.content], |row| row.get(0))
-                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                .map(|mut stmt| {
+                    stmt.query_map(rusqlite::params![snap.content], |row| row.get(0))
+                        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                        .unwrap_or_default()
+                })
                 .unwrap_or_default();
 
             let is_favorite = existing_items.iter().any(|&fav| fav);

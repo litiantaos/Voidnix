@@ -11,6 +11,16 @@ export interface SearchData {
   /** 模块入口结果专用：kind==='module' 时必填，框架内置激活此模块（§2.2 执行分派）。 */
   moduleId?: string
   path?: string
+  // ── 跨扩展高频共享字段（显式声明以获得类型安全；扩展私有字段走下方索引签名）──
+  /** 复制值（currency/ip 等 onExecute 复制的内容）。 */
+  value?: string
+  /** 结果图标覆盖（ResultIcon 消费）。 */
+  icon?: string
+  /** 高亮显示（ip 等首项强调）。 */
+  isHighlight?: boolean
+  /** 图标样式类（web 搜索等）。 */
+  iconStyle?: string
+  /** 扩展私有字段兜底。 */
   [key: string]: unknown
 }
 
@@ -94,26 +104,26 @@ export interface Extension {
   search?: SearchProvider
   /** 搜索结果回车动作（扩展私有；模块入口结果走框架内置激活，见下方「执行分派」）。 */
   onExecute?(result: SearchResult, selectedResults?: SearchResult[]): void | Promise<void>
-  /** 主视图（9 扩展）。 */
+  /** 主视图。 */
   mainView?: () => Component
-  /** 搜索栏右侧附属区域（2 扩展：clipboard/agent；translate ⚙️ 随 settingsView 集中化移除，v1.7）。 */
+  /** 搜索栏右侧附属区域。 */
   searchBarAccessory?: () => Component
-  /** 扩展私有命名子视图（screenshot{ocr}）。 */
+  /** 扩展私有命名子视图（如 screenshot 的 ocr）。 */
   subviews?: Record<string, () => Component>
-  /** 设置片段（3 扩展；跨扩展契约：settings 扩展 mainView 扫描消费）。 */
+  /** 设置片段（跨扩展契约：settings 扩展 mainView 扫描消费）。 */
   settingsView?: () => Component
-  /** 独立窗口视图（screenshot{screenshot,pin-*}/window-manager{snap-panel}）。 */
+  /** 独立窗口视图（如 screenshot 的标注/pin、window-manager 的 snap-panel）。 */
   windowViews?: Record<string, () => Component>
   globalShortcuts?: ShortcutBinding[]
   hints?: ModuleHints
-  /** 搜索框占位提示（激活模块时显示）；7 扩展。 */
+  /** 搜索框占位提示（激活模块时显示）。 */
   placeholder?: string
 
-  // ── 以下为现网活跃消费者承载字段（蓝本精简模型省略，过渡期保留）──
-  /** 模块自管输入、禁用主搜索框（translate/agent）。 */
+  // ── 行为槽（与能力槽同等地位的扩展行为契约）──
+  /** 模块自管输入、禁用主搜索框。 */
   disableSearchInput?: boolean
-  /** 标准列表行为（clipboard 多选）。 */
+  /** 标准列表行为（如多选）。 */
   listOptions?: { multiSelect?: boolean }
-  /** 子视图打开回调（screenshot OCR payload 转交）。 */
+  /** 子视图打开回调（如 OCR payload 转交）。 */
   onOpenSubview?(subviewId: string, payload: unknown): void | Promise<void>
 }

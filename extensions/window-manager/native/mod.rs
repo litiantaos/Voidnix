@@ -33,16 +33,18 @@ fn configure_snap_panel(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("snap-panel") else {
         return;
     };
-    let raw = window.ns_window().unwrap().cast::<SnapNSWindow>();
+    let Ok(raw) = window.ns_window() else { return };
+    let raw = raw.cast::<SnapNSWindow>();
+    let Some(mtm) = MainThreadMarker::new() else { return };
     unsafe {
-        let ns_window = raw.as_ref().unwrap();
+        let Some(ns_window) = raw.as_ref() else { return };
         if let Some(cv) = ns_window.contentView() {
             let _: () = objc2::msg_send![&cv, setWantsLayer: true];
         }
         crate::platform::panel::convert_to_panel(raw.cast());
-        let mtm = MainThreadMarker::new().unwrap();
-        let screen = NSScreen::mainScreen(mtm).unwrap();
-        ns_window.setFrame_display(screen.frame(), true);
+        if let Some(screen) = NSScreen::mainScreen(mtm) {
+            ns_window.setFrame_display(screen.frame(), true);
+        }
         ns_window.setLevel(objc2_app_kit::NSStatusWindowLevel + 1);
         let behavior = NSWindowCollectionBehavior::FullScreenAuxiliary
             | NSWindowCollectionBehavior::Transient
@@ -618,20 +620,22 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
         if let Some(w) = app_clone.get_webview_window("snap-panel") {
             if let Ok(raw) = w.ns_window() {
                 unsafe {
-                    let ns = raw.cast::<objc2_app_kit::NSWindow>().as_ref().unwrap();
                     use objc2_foundation::MainThreadMarker;
-                    let mtm = MainThreadMarker::new().unwrap();
-                    if let Some(screen) = objc2_app_kit::NSScreen::mainScreen(mtm) {
-                        ns.setFrame_display(screen.frame(), true);
+                    if let Some(ns) = raw.cast::<objc2_app_kit::NSWindow>().as_ref() {
+                        if let Some(mtm) = MainThreadMarker::new() {
+                            if let Some(screen) = objc2_app_kit::NSScreen::mainScreen(mtm) {
+                                ns.setFrame_display(screen.frame(), true);
+                            }
+                        }
+                        ns.setAlphaValue(1.0);
+                        // panel 已是 NonactivatingPanel：makeKey 只让面板接收事件，
+                        // 不会把 Voidnix 拉成前台 app，前台应用焦点保持不变；
+                        // 同时避免首次点击被「激活点击」吞掉。
+                        let _: () = objc2::msg_send![
+                            ns,
+                            makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()
+                        ];
                     }
-                    ns.setAlphaValue(1.0);
-                    // panel 已是 NonactivatingPanel：makeKey 只让面板接收事件，
-                    // 不会把 Voidnix 拉成前台 app，前台应用焦点保持不变；
-                    // 同时避免首次点击被「激活点击」吞掉。
-                    let _: () = objc2::msg_send![
-                        ns,
-                        makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()
-                    ];
                 }
             }
         }
@@ -650,9 +654,10 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
         if let Some(w) = app_clone.get_webview_window("snap-panel") {
             if let Ok(raw) = w.ns_window() {
                 unsafe {
-                    let ns = raw.cast::<objc2_app_kit::NSWindow>().as_ref().unwrap();
-                    ns.setIgnoresMouseEvents(true);
-                    ns.setAlphaValue(0.0);
+                    if let Some(ns) = raw.cast::<objc2_app_kit::NSWindow>().as_ref() {
+                        ns.setIgnoresMouseEvents(true);
+                        ns.setAlphaValue(0.0);
+                    }
                 }
             }
         }

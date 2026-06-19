@@ -22,7 +22,7 @@ pub fn run() {
             let boot_start = std::time::Instant::now();
 
             // pre-bootstrap：框架级共享资源（串行，bootstrap 之前）。AX timeout 多扩展共享，
-            // 不可下沉扩展 setup（并行 bootstrap 无法保证时序，§2.1）。
+            // 不可下沉扩展 setup（concurrent bootstrap 无法保证时序，§2.1）。
             #[cfg(target_os = "macos")]
             {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -52,15 +52,17 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             crate::runtime::window::configure_main_window(app.handle());
 
-            // 启动埋点（§0.2/§7 N8）：量化 pre-bootstrap(串行) + bootstrap(join_all 并行) 耗时，
+            // 启动埋点（§0.2/§7 N8）：量化 pre-bootstrap(串行) + bootstrap(join_all concurrent) 耗时，
             // 验证 Rust bootstrap <100ms 目标。debug 构建打印，release 静默。
+            // 注：block_on(join_all) 为单线程上的并发交错（cooperative），非多核并行；
+            // 多数 setup 内部 spawn_blocking 委托，实际差异不大。
             if cfg!(debug_assertions) {
                 let pre = t_pre.as_secs_f64() * 1000.0;
                 let build = (t_build - t_pre).as_secs_f64() * 1000.0;
                 let boot = (t_boot - t_build).as_secs_f64() * 1000.0;
                 let total = t_boot.as_secs_f64() * 1000.0;
                 eprintln!(
-                    "[boot] pre-bootstrap={pre:.1}ms build-registry={build:.1}ms bootstrap(parallel)={boot:.1}ms rust-total={total:.1}ms (target <100ms bootstrap: {})",
+                    "[boot] pre-bootstrap={pre:.1}ms build-registry={build:.1}ms bootstrap(concurrent)={boot:.1}ms rust-total={total:.1}ms (target <100ms bootstrap: {})",
                     if boot < 100.0 { "PASS" } else { "OVER" }
                 );
             }

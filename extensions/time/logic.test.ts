@@ -1,35 +1,61 @@
 import { describe, it, expect } from 'vitest'
+import { pad, toLocalIso, parseTimestamp } from './logic'
 
-describe('time conversion logic', () => {
-  it('Unix 秒时间戳 → 日期', () => {
-    const ts = 1700000000
-    const date = new Date(ts * 1000)
-    expect(date.getFullYear()).toBe(2023)
+describe('pad', () => {
+  it('单位数前补 0', () => {
+    expect(pad(0)).toBe('00')
+    expect(pad(5)).toBe('05')
+    expect(pad(9)).toBe('09')
   })
 
-  it('Unix 毫秒时间戳 → 日期', () => {
-    const ts = 1700000000000
-    const date = new Date(ts)
-    expect(date.getFullYear()).toBe(2023)
+  it('双位数原样返回', () => {
+    expect(pad(10)).toBe('10')
+    expect(pad(59)).toBe('59')
+  })
+})
+
+describe('toLocalIso', () => {
+  it('生成本地 ISO 字符串（含时区偏移）', () => {
+    const iso = toLocalIso(new Date(0))
+    expect(iso).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
   })
 
-  it('日期字符串 → Unix 时间戳', () => {
-    const date = new Date('2024-01-01T00:00:00Z')
-    const ts = Math.floor(date.getTime() / 1000)
-    expect(ts).toBe(1704067200)
+  it('日期分量取自给定 Date', () => {
+    const iso = toLocalIso(new Date('2024-06-20T12:00:00Z'))
+    expect(iso.startsWith('2024-')).toBe(true)
+  })
+})
+
+describe('parseTimestamp', () => {
+  it('空输入返回 null', () => {
+    expect(parseTimestamp('')).toBeNull()
+    expect(parseTimestamp('   ')).toBeNull()
   })
 
-  it('当前时间戳', () => {
-    const now = Math.floor(Date.now() / 1000)
-    expect(now).toBeGreaterThan(1700000000)
-    expect(typeof now).toBe('number')
+  it('10 位秒时间戳 → isMs=false，ts 归一为毫秒', () => {
+    expect(parseTimestamp('1700000000')).toEqual({ ts: 1700000000000, isMs: false })
   })
 
-  it('10 位数字识别为秒时间戳', () => {
-    expect(/^\d{10}$/.test('1700000000')).toBe(true)
+  it('13 位毫秒时间戳 → isMs=true', () => {
+    expect(parseTimestamp('1700000000000')).toEqual({ ts: 1700000000000, isMs: true })
   })
 
-  it('13 位数字识别为毫秒时间戳', () => {
-    expect(/^\d{13}$/.test('1700000000000')).toBe(true)
+  it('ISO 日期字符串 → isMs=true', () => {
+    expect(parseTimestamp('2024-01-01T00:00:00Z')).toEqual({ ts: 1704067200000, isMs: true })
+  })
+
+  it('日期字符串（无时间）→ isMs=true', () => {
+    expect(parseTimestamp('2024-01-01')).toEqual({ ts: 1704067200000, isMs: true })
+  })
+
+  it('无效输入返回 null', () => {
+    expect(parseTimestamp('hello')).toBeNull()
+    expect(parseTimestamp('not-a-date')).toBeNull()
+  })
+
+  it('边界：位数非 10/13 的纯数字按日期解析失败 → null', () => {
+    expect(parseTimestamp('123456789')).toBeNull()
+    expect(parseTimestamp('12345678901')).toBeNull()
+    expect(parseTimestamp('12345678901234')).toBeNull()
   })
 })

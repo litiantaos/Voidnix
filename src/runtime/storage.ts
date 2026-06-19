@@ -10,6 +10,8 @@ function getStore(extId: string): Promise<Store> {
   if (!promise) {
     promise = load(`extensions/${extId}/config.json`)
     storeCache.set(extId, promise)
+    // 失败时清缓存：避免单次 IO 抖动演变为永久故障（rejected Promise 被缓存）
+    promise.catch(() => storeCache.delete(extId))
   }
   return promise
 }
@@ -29,14 +31,21 @@ export function defineConfig<T extends Record<string, unknown>>(extId: string, d
   const config = reactive({ ...defaults }) as T
 
   // 异步从磁盘加载已保存的值
+  // 竞态保护：backfill 的 store.get 是异步的，返回前用户可能已改某 key。
+  // 写入前检查"当前值是否仍为 default"——若已非 default 说明用户已改，跳过覆盖。
   getStore(extId)
     .then((store) =>
       Promise.all(
         Object.keys(defaults).map(async (key) => {
           const saved = await store.get<unknown>(key)
           if (saved !== null && saved !== undefined) {
-            // biome-ignore lint: dynamic key assignment
-            ;(config as Record<string, unknown>)[key] = saved
+            const cur = (config as Record<string, unknown>)[key]
+            const def = (defaults as Record<string, unknown>)[key]
+            // 仅当当前值仍为 default（用户尚未触碰此 key）才回填磁盘值
+            if (cur === def) {
+              // biome-ignore lint: dynamic key assignment
+              ;(config as Record<string, unknown>)[key] = saved
+            }
           }
         }),
       ),

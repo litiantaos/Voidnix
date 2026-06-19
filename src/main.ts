@@ -13,6 +13,13 @@ app.use(createPinia())
 app.mount('#app')
 
 // 异步执行扩展 setup 钩子（不阻塞 Vue 挂载与全局快捷键注册）
-Promise.all(getAllExtensions().map((e) => e.setup?.())).catch((e) => {
-  console.error('Extension setup failed:', e)
-})
+// 每个扩展独立 try/catch：单个故障不拖垮其他扩展的初始化（扩展自治）
+Promise.all(
+  getAllExtensions().map(async (e) => {
+    try {
+      await e.setup?.()
+    } catch (err) {
+      console.error(`[setup:${e.meta.id}] failed:`, err)
+    }
+  }),
+)

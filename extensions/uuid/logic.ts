@@ -3,7 +3,7 @@ export function uuidv4(): string {
 }
 
 export function nanoId(size = 21): string {
-  const chars = 'Useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
+  const chars = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
   const bytes = crypto.getRandomValues(new Uint8Array(size))
   let id = ''
   for (let i = 0; i < size; i++) {

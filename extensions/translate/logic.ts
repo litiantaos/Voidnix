@@ -6,7 +6,8 @@ const PREAMBLE_PATTERNS = [
   /the\s*translation\s*is/i,
   /translated\s*text/i,
   /translation\s*(?:result|:)/i,
-  /^[\s\S]*?(?:以下是翻译|翻译结果|翻译如下|翻译[：:])/,
+  // 仅匹配行首的中文 preamble，避免 [\s\S]*? 通配误删前导用户内容
+  /^(?:以下是翻译|翻译结果|翻译如下|翻译)[:：]?\s*/,
 ]
 
 /** 清理 LLM 翻译流式结果：去代码块围栏 / 智能引号配对 / 前导文本（"以下是翻译:"等）。 */
