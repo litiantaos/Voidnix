@@ -109,7 +109,8 @@ import {
   registerDeleteHandler,
   triggerDelete,
 } from './index'
-import { commands } from '@/bindings'
+import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -150,9 +151,9 @@ async function handleExecute() {
   if (ids.length === 0) return
   try {
     if (ids.length > 1) {
-      await commands.pasteClipboardItems(ids)
+      await invoke(CMD.pasteClipboardItems, { ids })
     } else {
-      await commands.pasteClipboardItem(ids[0])
+      await invoke(CMD.pasteClipboardItem, { id: ids[0] })
     }
     invalidateCache()
   } catch (e) {
@@ -162,7 +163,7 @@ async function handleExecute() {
 
 const toggleFavorite = async (id: string) => {
   try {
-    await commands.toggleClipboardFavorite(id)
+    await invoke(CMD.toggleClipboardFavorite, { id })
     history.value = history.value.map((i) =>
       i.id === id ? { ...i, is_favorite: !i.is_favorite } : i,
     )
@@ -193,7 +194,7 @@ async function handleDelete() {
   if (!confirmed) return
 
   try {
-    await commands.deleteClipboardItems(ids)
+    await invoke(CMD.deleteClipboardItems, { ids })
     selectedIds.value = new Set()
     invalidateCache()
     await fetchClipboardHistory(appStore.searchQuery, activeTab.value === 'favorites')
@@ -202,7 +203,13 @@ async function handleDelete() {
   }
 }
 
-onActivated(() => registerDeleteHandler(handleDelete))
+onActivated(() => {
+  registerDeleteHandler(handleDelete)
+  // 模块激活时刷新：重置到「全部」标签并重新拉取（原 module.onActivate 逻辑）
+  activeTab.value = 'all'
+  invalidateCache()
+  fetchClipboardHistory('', false)
+})
 onDeactivated(() => registerDeleteHandler(() => {}))
 
 onKeyStroke('Backspace', (e) => {
@@ -225,7 +232,7 @@ const observer = new IntersectionObserver(
       const id = (entry.target as HTMLElement).dataset.imageId
       if (id && !imageCache.has(id) && !pendingImages.has(id)) {
         pendingImages.add(id)
-        commands.getClipboardImage(id).then((data) => {
+        invoke<string | null>(CMD.getClipboardImage, { id }).then((data) => {
           if (data) imageCache.set(id, data)
           pendingImages.delete(id)
         })

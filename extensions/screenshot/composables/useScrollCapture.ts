@@ -1,5 +1,6 @@
 import { ref, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { Sel } from './useTypes'
 
@@ -55,7 +56,7 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
     })
 
     try {
-      await invoke('enter_scroll_capture', {
+      await invoke(CMD.enterScrollCapture, {
         selX: sel.x,
         selY: sel.y,
         selW: sel.w,
@@ -85,7 +86,7 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
     if (!isActive.value) return ''
     isFinishing.value = true
     try {
-      const dataUrl = await invoke<string>('finish_scroll_capture')
+      const dataUrl = await invoke<string>(CMD.finishScrollCapture)
       result.value = dataUrl
       isActive.value = false
       if (unlistenFrame) {
@@ -113,7 +114,7 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
   async function cancel() {
     if (!isActive.value && !isFinishing.value) return
     try {
-      await invoke('exit_scroll_capture')
+      await invoke(CMD.exitScrollCapture)
     } catch (e) {
       console.error('[scroll-capture] exit failed:', e)
     }
@@ -137,7 +138,7 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
   onUnmounted(() => {
     if (isActive.value) {
       // 兜底：组件销毁时强制结束滚动会话
-      invoke('exit_scroll_capture').catch(() => {})
+      invoke(CMD.exitScrollCapture).catch(() => {})
     }
     if (unlistenFrame) {
       unlistenFrame()

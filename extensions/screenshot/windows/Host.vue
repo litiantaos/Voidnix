@@ -10,6 +10,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import ScreenshotOverlay from './Operation.vue'
 
 interface WindowRect {
@@ -37,7 +38,7 @@ const sessionKey = ref(0)
 let unmountTimer: ReturnType<typeof setTimeout> | null = null
 
 async function onScreenshotClose(noRestoreFocus = false) {
-  await invoke('exit_screenshot_mode', { noRestoreFocus }).catch(() => {})
+  await invoke(CMD.exitScreenshotMode, { noRestoreFocus }).catch(() => {})
   // exit_impl 启动 0.15s 的 fade-out 后立即返回；这里延迟卸载 overlay，
   // 让 Vue UI 与 CALayer 背景一起淡出，避免视觉断层。
   if (unmountTimer) clearTimeout(unmountTimer)

@@ -24,6 +24,7 @@
 import { onMounted, onUnmounted, watch, shallowRef, onErrorCaptured, type Component } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { listen } from '@tauri-apps/api/event'
 import MainView from '@/components/layout/MainView.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -31,7 +32,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { isTauri, hideWindow } from '@/utils/tauri'
-import { getAllModules, getModule } from '@/core/module-registry'
+import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 
 let win: ReturnType<typeof getCurrentWindow> | null = null
 if (isTauri) {
@@ -46,11 +47,11 @@ let allGlobalShortcuts: {
   onExecute: (wasVisible: boolean) => void
 }[] = []
 if (win?.label) {
-  for (const mod of getAllModules()) {
-    if (mod.windowViews) {
-      for (const [prefix, viewComp] of Object.entries(mod.windowViews)) {
+  for (const ext of getAllExtensions()) {
+    if (ext.windowViews) {
+      for (const [prefix, viewFn] of Object.entries(ext.windowViews)) {
         if (win.label.startsWith(prefix)) {
-          activeWindowView.value = viewComp
+          activeWindowView.value = viewFn()
           break
         }
       }
@@ -107,7 +108,7 @@ async function setupGlobalShortcut(id: string, shortcut: string) {
   if (!isTauri) return
 
   try {
-    await invoke('register_global_shortcut', { id, shortcut })
+    await invoke(CMD.registerGlobalShortcut, { id, shortcut })
     appStore.clearShortcutError(id)
   } catch (e) {
     const msg = String(e)
@@ -139,8 +140,8 @@ onMounted(async () => {
   if (isTauri) {
     await setupGlobalShortcut('main', settings.globalShortcut)
 
-    allGlobalShortcuts = getAllModules()
-      .flatMap((m) => m.globalShortcuts || [])
+    allGlobalShortcuts = getAllExtensions()
+      .flatMap((e) => e.globalShortcuts || [])
       .filter((s) => s.id !== 'main')
 
     for (const sc of allGlobalShortcuts) {
@@ -178,10 +179,10 @@ onMounted(async () => {
             return
           }
         } else {
-          // Dynamic shortcut resolution via modules
-          for (const mod of getAllModules()) {
-            if (mod.globalShortcuts) {
-              const sc = mod.globalShortcuts.find((s) => s.id === shortcutId)
+          // Dynamic shortcut resolution via extensions
+          for (const ext of getAllExtensions()) {
+            if (ext.globalShortcuts) {
+              const sc = ext.globalShortcuts.find((s) => s.id === shortcutId)
               if (sc) {
                 sc.onExecute(wasVisible)
                 return
@@ -214,9 +215,9 @@ onMounted(async () => {
         appStore.setActiveModule(moduleId)
         appStore.setSearchQuery('')
         appStore.openSubview(subviewId)
-        const mod = getModule(moduleId)
-        if (mod?.onOpenSubview) {
-          mod.onOpenSubview(subviewId, payload)
+        const ext = getExtension(moduleId)
+        if (ext?.onOpenSubview) {
+          ext.onOpenSubview(subviewId, payload)
         }
       },
     )
@@ -230,7 +231,7 @@ onMounted(async () => {
         !appStore.isDialogOpen &&
         !appStore.suppressBlur
       ) {
-        invoke<boolean>('is_app_active')
+        invoke<boolean>(CMD.isAppActive)
           .then((active) => {
             if (active) return
             hideWindow(true)
@@ -257,13 +258,13 @@ onUnmounted(async () => {
     if (unlistenOpenModule) unlistenOpenModule()
     if (unlistenClickOutside) unlistenClickOutside()
 
-    await invoke('register_global_shortcut', {
+    await invoke(CMD.registerGlobalShortcut, {
       id: 'main',
       shortcut: '',
     }).catch(() => {})
 
     for (const sc of allGlobalShortcuts) {
-      await invoke('register_global_shortcut', {
+      await invoke(CMD.registerGlobalShortcut, {
         id: sc.id,
         shortcut: '',
       }).catch(() => {})

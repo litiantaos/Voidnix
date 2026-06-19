@@ -55,8 +55,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { getModule } from '@/core/module-registry'
-import type { SearchResult } from '@/types/module'
+import { getExtension } from '@/runtime/extension-registry'
+import type { SearchResult } from '@/runtime/types'
 
 interface ShortcutHint {
   keys: string[]
@@ -73,7 +73,7 @@ const appStore = useAppStore()
 
 const activeModule = computed(() => {
   const id = appStore.activeModuleId
-  return id ? getModule(id) : null
+  return id ? (getExtension(id) ?? null) : null
 })
 
 const hasQuery = computed(() => appStore.searchQuery.trim().length > 0)
@@ -90,16 +90,16 @@ const hints = computed<ShortcutHint[]>(() => {
     const result: ShortcutHint[] = []
     const inputActive = !mod.disableSearchInput
 
-    if (inputActive && mod.enterHint) {
-      result.push({ keys: ['enter'], label: mod.enterHint })
+    if (inputActive && mod.hints?.enter) {
+      result.push({ keys: ['enter'], label: mod.hints.enter })
     }
 
-    if (mod.multiSelectHint) {
+    if (mod.hints?.multiSelect) {
       result.push({ keys: ['shift/cmd'], label: '多选' })
     }
 
-    if (mod.deleteHint) {
-      result.push({ keys: ['cmd', '⌫'], label: mod.deleteHint })
+    if (mod.hints?.delete) {
+      result.push({ keys: ['cmd', '⌫'], label: mod.hints.delete })
     }
 
     result.push({ keys: ['esc'], label: hasQuery.value && inputActive ? '清空' : '返回' })

@@ -1,4 +1,4 @@
-import type { SearchResult } from '@/types/module'
+import type { SearchResult } from '@/runtime/types'
 
 export function getFileIcon(result: SearchResult): { icon: string; color: string } {
   if (result.data?.kind === 'folder') {

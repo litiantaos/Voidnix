@@ -39,6 +39,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { config as finderConfig } from './config'
 import { useAppStore } from '@/stores/app'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -51,7 +52,7 @@ const authorized = ref<boolean | null>(null)
 
 async function checkAuthorized() {
   try {
-    authorized.value = await invoke<boolean>('check_finder_ext_authorized')
+    authorized.value = await invoke<boolean>(CMD.checkFinderExtAuthorized)
   } catch {
     authorized.value = false
   }
@@ -69,7 +70,7 @@ const toggle = async () => {
   }
   if (newVal && !authorized.value) {
     try {
-      await invoke('open_extensions_prefs')
+      await invoke(CMD.openExtensionsPrefs)
     } catch (e) {
       console.error('Failed to open extensions prefs:', e)
     }

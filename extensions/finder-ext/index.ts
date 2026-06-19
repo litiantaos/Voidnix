@@ -1,20 +1,17 @@
-import { registerModule } from '@/core/module-registry'
-import { asyncView } from '@/core/async-view'
-import type { AppModule } from '@/types/module'
+import { defineExtension } from '@/runtime/extension-registry'
+import { defineAsyncComponent } from 'vue'
 
-const FinderExtView = asyncView(() => import('./View.vue'))
+const FinderExtView = defineAsyncComponent(() => import('./View.vue'))
 
-const keywords = ['finder', '访达', '右键', '菜单', '扩展', 'extension']
+export default defineExtension({
+  meta: {
+    id: 'finder-ext',
+    name: '访达右键菜单',
+    description: '访达右键快捷操作',
+    icon: 'i-ri-folder-add-line',
+    keywords: ['finder', '访达', '右键', '菜单', '扩展', 'extension'],
+    order: 60,
+  },
 
-const mod: AppModule = {
-  id: 'finder-ext',
-  name: '访达右键菜单',
-  description: '访达右键快捷操作',
-  icon: 'i-ri-folder-add-line',
-  keywords,
-  order: 60,
-  view: FinderExtView,
-  onSearch: async () => [],
-}
-
-registerModule(mod)
+  mainView: () => FinderExtView,
+})

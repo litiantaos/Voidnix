@@ -40,6 +40,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { config as awakeConfig } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -53,8 +54,8 @@ const appStore = useAppStore()
 
 const checkStatus = async () => {
   try {
-    isEnabled.value = await invoke('is_awake_enabled')
-    await invoke('set_awake_mode', { mirror: awakeConfig.mirrorMode })
+    isEnabled.value = await invoke<boolean>(CMD.isAwakeEnabled)
+    await invoke(CMD.setAwakeMode, { mirror: awakeConfig.mirrorMode })
   } catch (e) {
     console.error('Failed to check awake status:', e)
   }
@@ -63,7 +64,7 @@ const checkStatus = async () => {
 const toggleAwake = async () => {
   try {
     const newState = !isEnabled.value
-    await invoke('toggle_awake', { enable: newState })
+    await invoke(CMD.toggleAwake, { enable: newState })
     isEnabled.value = newState
   } catch (e) {
     console.error('Failed to toggle awake mode:', e)
@@ -78,7 +79,7 @@ const modeOptions = [
 const onModeChange = async (value: string | number) => {
   const mirror = value === 'mirror'
   try {
-    await invoke('set_awake_mode', { mirror })
+    await invoke(CMD.setAwakeMode, { mirror })
     awakeConfig.mirrorMode = mirror
   } catch (e) {
     console.error('Failed to set awake mode:', e)

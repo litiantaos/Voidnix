@@ -1,7 +1,7 @@
 /// Agent 扩展的前端类型定义。
 ///
 /// 与 Rust 端 `AgentEvent` 枚举对齐（手写，不进 specta —— 动态 JSON 不支持）。
-/// 调用方式：`invoke('agent_run', { ... })` 裸 invoke，不通过 bindings.ts。
+/// 调用方式：`invoke(CMD.agentRun, { ... })`，命令名常量见 src/commands.ts。
 
 import type { Channel } from '@tauri-apps/api/core'
 

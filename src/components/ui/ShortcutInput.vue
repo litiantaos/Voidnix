@@ -45,6 +45,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { useTauriListener } from '@/composables/useTauriListener'
 import { useAppStore } from '@/stores/app'
 
@@ -116,7 +117,7 @@ async function startRecording() {
 
   if (props.shortcutId) {
     try {
-      await invoke('start_shortcut_recording', {
+      await invoke(CMD.startShortcutRecording, {
         id: props.shortcutId,
       })
     } catch (e) {
@@ -133,7 +134,7 @@ async function stopRecording() {
   appStore.setShortcutRecording(false)
 
   if (props.shortcutId) {
-    invoke('stop_shortcut_recording', {
+    invoke(CMD.stopShortcutRecording, {
       id: props.shortcutId,
     }).catch((e) => {
       console.error('Failed to stop shortcut recording:', e)

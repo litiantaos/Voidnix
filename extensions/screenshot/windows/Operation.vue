@@ -397,6 +397,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import AnnotationPalette from './AnnotationPalette.vue'
 import ScrollPreview from './ScrollPreview.vue'
 import type { ScreenshotData, Phase } from '../composables/useTypes'
@@ -710,7 +711,7 @@ function setCrossPosition(cx: number, cy: number) {
 onMounted(() => {
   // @mousedown 等监听已挂在 DOM 上，通知 Rust 解锁窗口鼠标事件并启动淡入。
   // 早于这一刻的点击会因 ignoresMouseEvents=true 击穿到底下应用，不会被吞。
-  invoke('screenshot_overlay_ready').catch(() => {})
+  invoke(CMD.screenshotOverlayReady).catch(() => {})
 
   if (rootEl.value) {
     rootEl.value.style.setProperty('--cross-x', `${props.initialScreenshot.mouse_x}px`)

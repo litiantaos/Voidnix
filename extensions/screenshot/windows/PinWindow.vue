@@ -67,6 +67,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getCurrentWindow, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSlider from '@/components/ui/BaseSlider.vue'
 
@@ -128,7 +129,7 @@ async function checkHover() {
   if (!win || isDragging) return
   try {
     const [mp, pos, size] = await Promise.all([
-      invoke<[number, number]>('pin_global_mouse'),
+      invoke<[number, number]>(CMD.pinGlobalMouse),
       win.outerPosition() as Promise<PhysicalPosition>,
       win.outerSize() as Promise<PhysicalSize>,
     ])
@@ -191,14 +192,14 @@ function onDocMouseUp() {
 }
 
 async function onOpacityChange() {
-  await invoke('set_pin_window_opacity', {
+  await invoke(CMD.setPinWindowOpacity, {
     opacity: opacity.value / 100,
   }).catch(() => {})
 }
 
 async function handleClose() {
   if (!win) return
-  await invoke('restore_pin_focus', { window: win }).catch(() => {})
+  await invoke(CMD.restorePinFocus, { window: win }).catch(() => {})
   await win.close()
 }
 </script>

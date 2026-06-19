@@ -1,5 +1,6 @@
 import { watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { defineConfig } from '@/runtime/storage'
 
 /// zsh-autosuggestions 扩展自管配置。
@@ -11,6 +12,6 @@ export const config = defineConfig('zsh-autosuggestions', {
 watch(
   () => config.enabled,
   (enabled) => {
-    invoke('set_zsh_autosuggestions_enabled', { enabled }).catch(() => {})
+    invoke(CMD.setZshAutosuggestionsEnabled, { enabled }).catch(() => {})
   },
 )

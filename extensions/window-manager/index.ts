@@ -1,22 +1,21 @@
-import { registerModule } from '@/core/module-registry'
-import { asyncView } from '@/core/async-view'
-import type { AppModule } from '@/types/module'
+import { defineExtension } from '@/runtime/extension-registry'
+import { defineAsyncComponent } from 'vue'
 
-const WindowManagerView = asyncView(() => import('./View.vue'))
-const SnapPanelWindow = asyncView(() => import('./windows/SnapPanel.vue'))
+const WindowManagerView = defineAsyncComponent(() => import('./View.vue'))
+const SnapPanelWindow = defineAsyncComponent(() => import('./windows/SnapPanel.vue'))
 
-const mod: AppModule = {
-  id: 'window-manager',
-  name: '窗口管理',
-  description: '窗口布局与分屏',
-  icon: 'i-ri-layout-grid-line',
-  keywords: ['window', 'manager', 'layout', 'snap', 'tile', '窗口', '布局', '管理', '分屏'],
-  order: 10,
-  view: WindowManagerView,
-  windowViews: {
-    'snap-panel': SnapPanelWindow,
+export default defineExtension({
+  meta: {
+    id: 'window-manager',
+    name: '窗口管理',
+    description: '窗口布局与分屏',
+    icon: 'i-ri-layout-grid-line',
+    keywords: ['window', 'manager', 'layout', 'snap', 'tile', '窗口', '布局', '管理', '分屏'],
+    order: 10,
   },
-  onSearch: async () => [],
-}
 
-registerModule(mod)
+  mainView: () => WindowManagerView,
+  windowViews: {
+    'snap-panel': () => SnapPanelWindow,
+  },
+})

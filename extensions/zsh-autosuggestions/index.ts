@@ -1,20 +1,17 @@
-import { registerModule } from '@/core/module-registry'
-import { asyncView } from '@/core/async-view'
-import type { AppModule } from '@/types/module'
+import { defineExtension } from '@/runtime/extension-registry'
+import { defineAsyncComponent } from 'vue'
 
-const View = asyncView(() => import('./View.vue'))
+const View = defineAsyncComponent(() => import('./View.vue'))
 
-const keywords = ['zsh', 'autosuggestions', '终端', '命令', '补全', '预测', 'shell', '历史']
+export default defineExtension({
+  meta: {
+    id: 'zsh-autosuggestions',
+    name: '终端自动建议',
+    description: 'zsh 命令行智能补全',
+    icon: 'i-ri-terminal-box-line',
+    keywords: ['zsh', 'autosuggestions', '终端', '命令', '补全', '预测', 'shell', '历史'],
+    order: 80,
+  },
 
-const mod: AppModule = {
-  id: 'zsh-autosuggestions',
-  name: '终端自动建议',
-  description: 'zsh 命令行智能补全',
-  icon: 'i-ri-terminal-box-line',
-  keywords,
-  order: 80,
-  view: View,
-  onSearch: async () => [],
-}
-
-registerModule(mod)
+  mainView: () => View,
+})

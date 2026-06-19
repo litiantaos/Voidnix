@@ -236,7 +236,12 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useSettingsStore, type AiProviderConfig } from '@/stores/settings'
-import { config as agentConfig, BOUNDS, type SearchProviderConfig, updateSearchProvider } from './config'
+import {
+  config as agentConfig,
+  BOUNDS,
+  type SearchProviderConfig,
+  updateSearchProvider,
+} from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'

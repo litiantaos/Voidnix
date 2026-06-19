@@ -1,5 +1,6 @@
 import type { Ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import type { Sel, Shape } from './useTypes'
 import { config as screenshotConfig } from '../config'
 
@@ -19,7 +20,7 @@ export function useScreenshotActions(options: {
 
   async function doCopy() {
     const ann = await getAnnotationPng()
-    await invoke('copy_screenshot_to_clipboard', {
+    await invoke(CMD.copyScreenshotToClipboard, {
       selX: options.sel.value.x,
       selY: options.sel.value.y,
       selW: options.sel.value.w,
@@ -35,9 +36,9 @@ export function useScreenshotActions(options: {
 
     const savePath = screenshotConfig.savePath || '~/Downloads'
     const path = savePath.startsWith('~/')
-      ? savePath.replace('~', await invoke<string>('get_home_dir').catch(() => ''))
+      ? savePath.replace('~', await invoke<string>(CMD.getHomeDir).catch(() => ''))
       : savePath
-    await invoke('save_screenshot', {
+    await invoke(CMD.saveScreenshot, {
       selX: options.sel.value.x,
       selY: options.sel.value.y,
       selW: options.sel.value.w,
@@ -70,7 +71,7 @@ export function useScreenshotActions(options: {
       previewPng = canvas.toDataURL('image/png')
     }
 
-    await invoke('open_module_subview', {
+    await invoke(CMD.openModuleSubview, {
       moduleId: 'screenshot',
       subviewId: 'ocr',
       payload: {
@@ -92,7 +93,7 @@ export function useScreenshotActions(options: {
     // 这里不 await，立刻 doCancel(true) 让截屏窗口先开始 fade out，
     // 钉图窗口在 fade 期间出现，整体观感更连贯。
     // noRestoreFocus=true：exit_impl 不重新激活上一个 app，焦点能留在钉图窗口。
-    invoke('pin_image', {
+    invoke(CMD.pinImage, {
       selX: options.sel.value.x,
       selY: options.sel.value.y,
       selW: options.sel.value.w,
@@ -111,7 +112,7 @@ export function useScreenshotActions(options: {
       doCancel()
       return
     }
-    await invoke('copy_scroll_result_to_clipboard', { resultDataUrl: dataUrl })
+    await invoke(CMD.copyScrollResultToClipboard, { resultDataUrl: dataUrl })
     doCancel()
   }
 
@@ -124,9 +125,9 @@ export function useScreenshotActions(options: {
 
     const savePath = screenshotConfig.savePath || '~/Downloads'
     const path = savePath.startsWith('~/')
-      ? savePath.replace('~', await invoke<string>('get_home_dir').catch(() => ''))
+      ? savePath.replace('~', await invoke<string>(CMD.getHomeDir).catch(() => ''))
       : savePath
-    await invoke('save_scroll_result', { resultDataUrl: dataUrl, path })
+    await invoke(CMD.saveScrollResult, { resultDataUrl: dataUrl, path })
     doCancel()
   }
 

@@ -1,15 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { getFileIcon } from './icons'
-import type { SearchResult } from '@/types/module'
+import type { SearchResult } from '@/runtime/types'
 
 function makeResult(
-  overrides: Partial<SearchResult> & { data?: Record<string, unknown> },
+  overrides: Omit<Partial<SearchResult>, 'data'> & { data?: Record<string, unknown> },
 ): SearchResult {
+  const { data, ...rest } = overrides
   return {
     id: 'test',
-    title: overrides.title ?? 'file',
+    title: rest.title ?? 'file',
     module: 'test',
-    ...overrides,
+    ...rest,
+    data: { kind: 'file', ...data },
   } as SearchResult
 }
 

@@ -31,8 +31,8 @@ export const config = defineConfig('clipboard', {
 })
 
 // 使用：响应式读写，变更自动持久化（300ms 防抖）
-config.maxDays     // → 30
-config.maxDays = 60  // 自动写盘
+config.maxDays // → 30
+config.maxDays = 60 // 自动写盘
 ```
 
 含 Rust 命令同步的配置（如开关类）：
@@ -45,9 +45,12 @@ import { defineConfig } from '@/runtime/storage'
 
 export const config = defineConfig('finder-ext', { enabled: false })
 
-watch(() => config.enabled, (enabled) => {
-  invoke('set_finder_ext_enabled', { enabled }).catch(() => {})
-})
+watch(
+  () => config.enabled,
+  (enabled) => {
+    invoke('set_finder_ext_enabled', { enabled }).catch(() => {})
+  },
+)
 ```
 
 框架级配置（全局快捷键、AI Provider）在 `stores/settings.ts`，不在此系统。

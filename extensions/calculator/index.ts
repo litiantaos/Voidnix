@@ -1,5 +1,5 @@
-import { registerModule } from '@/core/module-registry'
-import type { AppModule, SearchResult } from '@/types/module'
+import { defineExtension } from '@/runtime/extension-registry'
+import type { ProviderResult } from '@/runtime/types'
 import { load } from '@tauri-apps/plugin-store'
 import { writeText } from '@/utils/clipboard'
 import { hideWindow } from '@/utils/tauri'
@@ -8,7 +8,7 @@ import { evaluateMath } from './logic'
 let historyCache: { expr: string; result: string }[] = []
 let historyLoaded = false
 
-const loadHistory = async () => {
+async function loadHistory() {
   if (historyLoaded) return
   try {
     const store = await load('extensions/calculator/calc_history.json')
@@ -22,7 +22,7 @@ const loadHistory = async () => {
   }
 }
 
-const saveHistory = async (expr: string, result: string) => {
+async function saveHistory(expr: string, result: string) {
   try {
     if (historyCache.length > 0 && historyCache[0].expr === expr) {
       return
@@ -39,83 +39,62 @@ const saveHistory = async (expr: string, result: string) => {
   }
 }
 
-const mod: AppModule = {
-  id: 'calculator',
-  name: '计算器',
-  description: '数学表达式计算',
-  icon: 'i-ri-calculator-line',
-  keywords: ['calc', 'calculator', 'math', '计算器', '数学'],
+export default defineExtension({
+  meta: {
+    id: 'calculator',
+    name: '计算器',
+    description: '数学表达式计算',
+    icon: 'i-ri-calculator-line',
+    keywords: ['calc', 'calculator', 'math', '计算器', '数学'],
+    order: 2,
+  },
+
   placeholder: '输入数学表达式',
-  order: 2,
-  enterHint: '复制',
-  onInit: async () => {
+  hints: { enter: '复制' },
+
+  setup: async () => {
     await loadHistory()
   },
-  onSearch: async (query) => {
-    if (!query.trim()) return []
 
-    const withExponent = query.replace(/\^/g, '**')
-    if (
-      withExponent.trim() &&
-      /^[0-9+\-*/().%\s]*$/.test(withExponent) &&
-      /[+\-*/]/.test(withExponent)
-    ) {
-      try {
-        const result = evaluateMath(query)
-        if (result !== null) {
-          return [
-            {
-              id: 'calc-quick',
-              title: `= ${result}`,
-              description: `计算: ${query}`,
-              module: 'calculator',
-              icon: 'i-ri-calculator-line',
-              score: 2000,
-              data: { kind: 'module', expr: query, value: result },
+  search: {
+    dynamic: async (query): Promise<ProviderResult[]> => {
+      await loadHistory()
+      const results: ProviderResult[] = []
+      const trimmed = query.trim()
+
+      if (trimmed) {
+        const res = evaluateMath(trimmed)
+        if (res !== null) {
+          results.push({
+            id: 'current',
+            title: `= ${res}`,
+            description: trimmed,
+            icon: 'i-ri-calculator-line',
+            data: {
+              kind: 'module',
+              isHighlight: true,
+              isHistory: false,
+              expr: trimmed,
+              value: res,
             },
-          ]
+          })
         }
-      } catch {}
-    }
-    return []
-  },
-  onModuleSearch: async (query) => {
-    await loadHistory()
-    const results: SearchResult[] = []
-    const trimmed = query.trim()
-
-    if (trimmed) {
-      const res = evaluateMath(trimmed)
-      if (res !== null) {
-        results.push({
-          id: 'current',
-          title: `= ${res}`,
-          description: trimmed,
-          module: 'calculator',
-          icon: 'i-ri-calculator-line',
-          data: {
-            isHighlight: true,
-            isHistory: false,
-            expr: trimmed,
-            value: res,
-          },
-        })
       }
-    }
 
-    historyCache.forEach((h, idx) => {
-      results.push({
-        id: `history-${idx}`,
-        title: `= ${h.result}`,
-        description: h.expr,
-        module: 'calculator',
-        icon: 'i-ri-history-line',
-        data: { isHistory: true, expr: h.expr, value: h.result },
+      historyCache.forEach((h, idx) => {
+        results.push({
+          id: `history-${idx}`,
+          title: `= ${h.result}`,
+          description: h.expr,
+          icon: 'i-ri-history-line',
+          data: { kind: 'module', isHistory: true, expr: h.expr, value: h.result },
+        })
       })
-    })
 
-    return results
+      return results
+    },
   },
+
   onExecute: async (result) => {
     try {
       if (result.data && !result.data.isHistory && result.data.expr && result.data.value) {
@@ -128,6 +107,4 @@ const mod: AppModule = {
       console.error('Failed to execute calc item:', e)
     }
   },
-}
-
-registerModule(mod)
+})

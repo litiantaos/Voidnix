@@ -33,30 +33,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, inject, type ComputedRef } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { getVersion } from '@tauri-apps/api/app'
 import { open } from '@tauri-apps/plugin-shell'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { isTauri } from '@/utils/tauri'
+import { scoreFields } from '@/utils/fuzzy'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { useSettingsInput, type SettingItem } from '@/composables/useSettingsInput'
-import type { ModuleSearchItem } from '@/types/module'
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
 const { handleExecute } = useSettingsInput()
 
-const filteredItems = inject<ComputedRef<ModuleSearchItem[]>>(
-  'filteredItems',
-  computed(() => []),
-)
 const query = computed(() => appStore.searchQuery.toLowerCase().trim())
 const appVersion = ref('')
 
@@ -67,9 +64,9 @@ const permFullDiskAccess = ref<boolean | null>(null)
 async function refreshPermissions() {
   if (!isTauri) return
   try {
-    permScreenRecording.value = await invoke<boolean>('check_screen_recording_permission')
-    permAccessibility.value = await invoke<boolean>('check_accessibility_permission')
-    permFullDiskAccess.value = await invoke<boolean>('check_full_disk_access_permission')
+    permScreenRecording.value = await invoke<boolean>(CMD.checkScreenRecordingPermission)
+    permAccessibility.value = await invoke<boolean>(CMD.checkAccessibilityPermission)
+    permFullDiskAccess.value = await invoke<boolean>(CMD.checkFullDiskAccessPermission)
   } catch {}
 }
 
@@ -96,7 +93,7 @@ const handleQuitApp = async () => {
     kind: 'warning',
   })
   if (confirmed) {
-    await invoke('quit_app')
+    await invoke(CMD.quitApp)
   }
 }
 
@@ -140,13 +137,13 @@ function permStatus(granted: boolean | null): string {
 
 async function handleRequestAccessibility() {
   if (!isTauri) return
-  const granted = await invoke<boolean>('request_accessibility_permission')
+  const granted = await invoke<boolean>(CMD.requestAccessibilityPermission)
   permAccessibility.value = granted
 }
 
 async function handleOpenPrivacy(kind: string) {
   if (!isTauri) return
-  await invoke('open_privacy_settings', { kind })
+  await invoke(CMD.openPrivacySettings, { kind })
   setTimeout(refreshPermissions, 1000)
 }
 
@@ -245,12 +242,13 @@ const allSettingsItems = computed<SettingItem[]>(() => {
 })
 
 const visibleItems = computed<SettingItem[]>(() => {
-  if (!query.value) return allSettingsItems.value
-
-  const itemMap = new Map(allSettingsItems.value.map((item) => [item.id, item]))
-  return filteredItems.value
-    .map((fi) => itemMap.get(fi.id))
-    .filter((item): item is SettingItem => item !== undefined)
+  const q = query.value
+  if (!q) return allSettingsItems.value
+  return allSettingsItems.value
+    .map((item) => ({ item, score: scoreFields([item.title, item.subtitle ?? ''], q) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.item)
 })
 
 const selectedIndex = ref(0)

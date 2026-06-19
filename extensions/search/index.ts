@@ -1,44 +1,21 @@
-import { registerModule } from '@/core/module-registry'
-import type { AppModule, SearchResult } from '@/types/module'
+import { defineExtension } from '@/runtime/extension-registry'
+import type { ProviderResult, SearchResultKind } from '@/runtime/types'
 import { invoke } from '@tauri-apps/api/core'
-import { commands } from '@/bindings'
-import { isTauri, toSearchResults } from '@/utils/tauri'
-import { scoreFields, frequencyBoost } from '@/utils/fuzzy'
+import { CMD } from '@/commands'
+import { isTauri, type RawSearchResult } from '@/utils/tauri'
+import { frequencyBoost } from '@/utils/fuzzy'
 import { listen } from '@tauri-apps/api/event'
 
-const APP_BOOST = 300
-const FILE_HIT_BASE = 0
 const MIN_FILE_QUERY_LEN = 2
 
 // ── 应用前端缓存 ──
-let appListCache: SearchResult[] | null = null
+let appListCache: ProviderResult[] | null = null
 let iconsPending = false
 
 listen('app-cache-updated', () => {
   appListCache = null
   iconsPending = false
 }).catch(() => {})
-
-async function getAppList(): Promise<SearchResult[]> {
-  if (appListCache && !iconsPending) return appListCache
-  const raw = await commands.searchApps().catch(() => [])
-  const items = toSearchResults(raw, 'search-apps')
-  appListCache = items
-  iconsPending = items.some((item) => item.data?.kind === 'application' && !item.data?.icon)
-  return items
-}
-
-function scoreApp(item: SearchResult, query: string): number {
-  const useCount = (item.data?.useCount as number) ?? 0
-  if (!query.trim()) {
-    const freq = frequencyBoost(useCount)
-    const recency = recencyScore(item.data?.lastUsed as string | null)
-    return freq + recency + 1
-  }
-  const match = scoreFields([item.title], query)
-  if (match <= 0) return 0
-  return match + frequencyBoost(useCount)
-}
 
 function recencyScore(lastUsed: string | null): number {
   if (!lastUsed) return 0
@@ -51,85 +28,86 @@ function recencyScore(lastUsed: string | null): number {
   return 0
 }
 
-function scoreFile(item: SearchResult, query: string): number {
-  const useCount = (item.data?.useCount as number) ?? 0
-  const parent = (item.data?.parent as string | null) ?? undefined
-  const isFolder = item.data?.kind === 'folder'
-  const match = scoreFields([item.title, parent], query)
-  if (match <= 0) return 0
-  return FILE_HIT_BASE + match + frequencyBoost(useCount) + (isFolder ? 80 : 0)
+/** Rust search_apps/search_files 原始项 → ProviderResult（kind 透传，module 由框架注入） */
+function toResult(raw: RawSearchResult, boost: number): ProviderResult {
+  return {
+    id: raw.id,
+    title: raw.title,
+    description: raw.path,
+    icon: raw.icon ?? undefined,
+    boost,
+    data: {
+      kind: (raw.kind as SearchResultKind) ?? 'file',
+      path: raw.path,
+      icon: raw.icon ?? null,
+      useCount: raw.use_count ?? 0,
+      parent: raw.parent ?? null,
+      lastUsed: raw.last_used ?? null,
+    },
+  }
 }
 
-const searchApps: AppModule = {
-  id: 'search-apps',
-  name: '应用搜索',
-  description: '搜索并启动 macOS 应用',
-  icon: 'i-ri-apps-2-line',
-  keywords: ['app', 'launch', '应用', '启动', '打开', 'open'],
-  order: 99,
-  hidden: true,
-  onSearch: async (query) => {
-    if (!isTauri) return []
-    try {
-      const items = await getAppList()
-      const scored = items
-        .map((it) => ({ it, score: scoreApp(it, query) }))
-        .filter((e) => e.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, query.trim() ? 30 : 50)
-        .map(({ it, score }, i) => ({
-          ...it,
-          score: score + APP_BOOST + (50 - i),
-        }))
-      return scored
-    } catch (e) {
-      console.error('[search-apps-module] search error:', e)
-      return []
-    }
+async function getAppList(): Promise<ProviderResult[]> {
+  if (appListCache && !iconsPending) return appListCache
+  const raw = await invoke<RawSearchResult[]>(CMD.searchApps).catch(() => [])
+  const items = raw.map((r) =>
+    toResult(r, frequencyBoost(r.use_count ?? 0) + recencyScore(r.last_used) + 1),
+  )
+  appListCache = items
+  iconsPending = items.some((item) => item.data?.kind === 'application' && !item.data?.icon)
+  return items
+}
+
+export default defineExtension({
+  meta: {
+    id: 'search',
+    name: '搜索',
+    description: '应用与文件搜索',
+    icon: 'i-ri-search-line',
+    hidden: true,
+    order: 999,
   },
+
+  search: {
+    dynamic: async (query): Promise<ProviderResult[]> => {
+      if (!isTauri) return []
+      const results: ProviderResult[] = []
+
+      // 应用搜索（空查询也返回，作为默认启动屏）
+      try {
+        const apps = await getAppList()
+        if (!query.trim()) {
+          results.push(...apps)
+        } else {
+          results.push(...apps.filter((a) => a.title.toLowerCase().includes(query.toLowerCase())))
+        }
+      } catch (e) {
+        console.error('[search] apps error:', e)
+      }
+
+      // 文件搜索（需 ≥2 字符，mdfind 慢且短查询噪声大）
+      const trimmed = query.trim()
+      if (trimmed.length >= MIN_FILE_QUERY_LEN) {
+        try {
+          const raw = await invoke<RawSearchResult[]>(CMD.searchFiles, { query }).catch(() => [])
+          for (const r of raw) {
+            const isFolder = r.kind === 'folder'
+            results.push(toResult(r, frequencyBoost(r.use_count ?? 0) + (isFolder ? 80 : 0)))
+          }
+        } catch (e) {
+          console.error('[search] files error:', e)
+        }
+      }
+
+      return results
+    },
+  },
+
   onExecute: async (result) => {
     if (!isTauri) return
     const path = result.data?.path
     if (path) {
-      await invoke('launch_app', { path })
+      await invoke(CMD.launchApp, { path })
     }
   },
-}
-
-const searchFiles: AppModule = {
-  id: 'search-files',
-  name: '文件搜索',
-  description: '搜索本地文件与文件夹',
-  icon: 'i-ri-file-search-line',
-  keywords: ['search', 'file', 'folder', '搜索', '查找', '文件', '文件夹'],
-  order: 99,
-  hidden: true,
-  onSearch: async (query) => {
-    if (!isTauri || !query.trim()) return []
-    // 短查询跳过文件搜索（mdfind 返回结果过多且速度慢）
-    if (query.trim().length < MIN_FILE_QUERY_LEN) return []
-    try {
-      const raw = await commands.searchFiles(query).catch(() => [])
-      const items = toSearchResults(raw, 'search-files')
-      return items
-        .map((it) => ({ it, score: scoreFile(it, query) }))
-        .filter((e) => e.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 50)
-        .map(({ it, score }) => ({ ...it, score }))
-    } catch (e) {
-      console.error('[search-files-module] error:', e)
-      return []
-    }
-  },
-  onExecute: async (result) => {
-    if (!isTauri) return
-    const path = result.data?.path
-    if (path) {
-      await invoke('launch_app', { path })
-    }
-  },
-}
-
-registerModule(searchApps)
-registerModule(searchFiles)
+})

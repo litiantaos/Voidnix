@@ -13,6 +13,7 @@ bun run tauri:dev            # 开发模式（sync → lint → 启动）
 ./deploy.sh                  # 打包部署
 bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions.rs）
 bun run check:extensions     # CI 校验（extensions.rs 是否已同步）
+bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
 bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
 bun run typecheck            # vue-tsc 严格类型检查
 ```
@@ -34,13 +35,15 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 ## 开发扩展
 
-所有扩展同构：`extensions/<id>/index.ts`（`registerModule`）+ 可选 `config.ts`（`defineConfig`）+ 可选 `native/mod.rs`（Rust 后端）。
+所有扩展同构：`extensions/<id>/index.ts`（`defineExtension`）+ 可选 `config.ts`（`defineConfig`）+ 可选 `native/mod.rs`（Rust 后端）。
 
 含 native/ 的扩展（9 个）：clipboard、screenshot、awake、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search
 
 纯 TS 扩展（7 个）：calculator、settings、ip、base64、time、uuid、currency
 
-**Rust 端注册**：双注册——`init() -> TauriPlugin<Wry>`（编译期，各扩展 `native/mod.rs` 内 `invoke_handler(generate_handler![...])` 局部注册命令 + plugin `.setup` 管理命令执行 State）+ `Extension` trait（运行时 `setup`/`teardown` 异步钩子，并行 bootstrap via `join_all`，在 `lib.rs` 的 `ExtensionRegistry` 注册）。框架命令（permission/shortcut/window/pasteboard 共 14 个）在 `lib.rs` 手写 `generate_handler!`，不参与 sync-extensions 扫描。`configure_app!` 宏仅 `.plugin()` 链，零 `generate_handler!`。
+**前端扩展注册**：`index.ts` 顶层 `export default defineExtension({ meta, search?, mainView?, ... })`，由 `main.ts` 的 `import.meta.glob(['@ext/*/index.ts'], { eager: true })` 自动扫描注册。扩展 `setup()` 钩子在 Vue 挂载后由 `main.ts` 并行触发。
+
+**Rust 端注册**：双注册——`init() -> TauriPlugin<Wry>`（编译期，各扩展 `native/mod.rs` 内 `invoke_handler(generate_handler![...])` 局部注册命令 + plugin `.setup` 管理命令执行 State）+ `Extension` trait（运行时 `setup`/`teardown` 异步钩子，并行 bootstrap via `join_all`，在 `lib.rs` 的 `ExtensionRegistry` 注册）。框架命令（permission/shortcut/window 共 14 个）在 `lib.rs` 手写 `generate_handler!`，不参与 sync-extensions 扫描。`configure_app!` 宏仅 `.plugin()` 链，零 `generate_handler!`。
 
 **扩展配置**：每个扩展通过 `config.ts` 的 `defineConfig('extId', { ...defaults })` 自管配置，`reactive()` + `watch()` 自动持久化至 `extensions/<id>/config.json`。框架级配置（全局快捷键 + AI Provider）在 `stores/settings.ts`。
 
@@ -48,9 +51,11 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 ## 架构要点
 
-**前后端通信**：前端用裸 `invoke()` + 手写类型（`src/bindings.ts` 提供命令名常量）。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。扩展 Command 在各 `init()` 局部注册；框架 Command 在 `lib.rs` 手写 `generate_handler!`。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
+**前后端通信**：前端命令名常量集中 `src/commands.ts`（`CMD.xxx`），**禁止裸 `invoke('xxx')`**，统一走 `invoke<T>(CMD.xxx, {...})` + 手写类型（`types/` 与各扩展）。`scripts/check-commands.ts` CI 对 Rust `#[tauri::command]` 名集合 ↔ `commands.ts` 常量作双向差集校验。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。扩展 Command 在各 `init()` 局部注册；框架 Command 在 `lib.rs` 手写 `generate_handler!`。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
 
-**模块接口**：`AppModule` 拆分为 5 组合接口——`ModuleMeta`（元数据）、`ModuleUI`（视图槽位）、`ModuleSearch`（搜索能力）、`ModuleLifecycle`（生命周期钩子）、`ModuleHints`（状态栏提示）。扩展按需组合。
+**扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta`（元数据）+ 能力槽（按需声明，均有真实消费者）。9 能力槽：`search`（SearchProvider.dynamic 单通道）、`onExecute`、`mainView`、`searchBarAccessory`、`subviews`、`settingsView`、`windowViews`、`globalShortcuts`、`hints`；另含 `placeholder`、`setup`/`teardown` 生命周期。3 承载字段（`disableSearchInput`/`listOptions`/`onOpenSubview`）过渡期保留。
+
+**搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + keyword 合流 + dedupe + groupAndSort。模块模式（激活扩展）只调该扩展 dynamic 且 bypass groupAndSort（保留扩展返回序）；全局模式聚合所有扩展 dynamic，按 `finalScore = fuzzy(title,query) + boost` 过滤零分 + 分组限流。`SearchResult.module` 框架自动注入（扩展禁填），`boost` 扩展可选填组内优先级。
 
 **窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。
 
@@ -67,17 +72,17 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 Agent 安全防线（命令执行 9 层纵深防御）：`extensions/agent/native/policy.rs` 是 floor/cap 权威源（FORBIDDEN_FLOOR 31 项 / DENIED_ARG_FLOOR 15 项 / 资源上限 clamp），`agent_run` 入口强制 clamp/并集（不信任前端传值）；TS 端 `config.ts` 的 `BOUNDS` 仅 UI 镜像。详见 `docs/extensions/agent.md`。
 
-**搜索**：Rust 端只做数据召回，过滤排序统一在前端走 `src/utils/fuzzy.ts::scoreFields()`（基于 [pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义）。
+**搜索打分**：过滤排序在前端走 `src/utils/fuzzy.ts::scoreFields()`（基于 [pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。
 
 ```typescript
-SearchResult { id, title, module; description?; icon?; score?; shortcut?; data?: { path?, kind?, icon?, ... } }
+SearchResult { id, title, module; description?; icon?; shortcut?; boost?; score?; data?: { kind, moduleId?, path?, ... } }
 ```
 
-`kind` 权重：`application` > `folder`/`file` > `module` > `clipboard`
+`kind` 严格枚举：`application` | `folder` | `file` | `module` | `clipboard` | `web`。组间序（`GROUP_ORDER`）：`application` > `file`（folder 同组）> `module` > `clipboard` > `web`
 
-**UI 槽位**：`view`（主视图）、`searchBarAccessory`（搜索栏右侧）、`subviews`（命名子视图）。槽位组件 `Actions` 后缀。
+**UI 槽位**：`mainView`（主视图）、`searchBarAccessory`（搜索栏右侧）、`subviews`（命名子视图，screenshot{ocr}）、`settingsView`（设置片段）、`windowViews`（独立窗口视图）。槽位值为 `() => Component`（惰性求值）。组件 `Actions` 后缀。
 
-**状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide` / `copyAndShow`（`src/utils/clipboard.ts`）自动获得「已复制」反馈。模块可通过 `ModuleHints.enterHint` / `multiSelectHint` / `deleteHint` 自定义快捷键提示。
+**状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide` / `copyAndShow`（`src/utils/clipboard.ts`）自动获得「已复制」反馈。扩展可通过 `hints.enter` / `hints.multiSelect` / `hints.delete` 自定义快捷键提示。
 
 **LLM 基础设施**（`runtime/llm/`）：agent + translate 扩展共享。`types.rs`（LlmMessage）、`client.rs`（StreamConfig/stream_openai_request + SSRF 防护 validate_ai_request + 消息截断 + 请求管道常量）、`parser.rs`（tool_calls 解析）。
 
@@ -108,15 +113,20 @@ src-tauri/src/
     └── path_guard.rs   # 统一路径校验
 
 src/
-├── runtime/
-│   └── storage.ts      # defineConfig + defineExtensionConfig（扩展自管配置）
+├── main.ts             # 入口（import.meta.glob eager 扫描扩展 + 并行 setup）
+├── commands.ts         # 命令名常量（CMD.xxx，禁止裸 invoke）
+├── runtime/            # 前端运行时（5 文件）
+│   ├── types.ts        # Extension / SearchProvider / SearchResult（9 能力槽）
+│   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS/GROUP_ORDER/GROUP_TITLES/KEYWORD_MODULE_BOOST + LIMITS）
+│   ├── storage.ts      # defineConfig（reactive + watch 自动持久化 + store 实例缓存）
+│   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
+│   └── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
 ├── components/
 │   ├── ui/             # 原子组件（只用这些，禁止手写底层标签）
 │   └── layout/         # MainView / ContentView / StatusBar / ResultIcon
 ├── composables/
-├── core/               # module-registry / module-helpers / async-view
 ├── stores/             # app / settings（仅框架级）/ update
-├── types/              # module（5 组合接口）/ agent
+├── types/              # agent（手写 LLM/Agent 类型）
 └── utils/
 ```
 

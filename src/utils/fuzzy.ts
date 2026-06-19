@@ -66,5 +66,5 @@ export function scoreFields(fields: (string | undefined | null)[], query: string
 export function frequencyBoost(useCount: number): number {
   if (!useCount || useCount <= 0) return 0
   const { logBase, logMul, cap } = SEARCH.WEIGHTS
-  return Math.min(Math.round(Math.log(useCount + 1) / Math.log(logBase) * logMul), cap)
+  return Math.min(Math.round((Math.log(useCount + 1) / Math.log(logBase)) * logMul), cap)
 }

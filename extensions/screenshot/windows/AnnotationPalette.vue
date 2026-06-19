@@ -174,6 +174,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSlider from '@/components/ui/BaseSlider.vue'
 
@@ -277,7 +278,7 @@ async function reportToolbarRect() {
   if (!el) return
   const rect = el.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return
-  invoke('set_scroll_toolbar_rect', {
+  invoke(CMD.setScrollToolbarRect, {
     x: rect.left,
     y: rect.top,
     w: rect.width,
@@ -286,7 +287,7 @@ async function reportToolbarRect() {
 }
 
 function clearToolbarRect() {
-  invoke('set_scroll_toolbar_rect', { x: 0, y: 0, w: 0, h: 0 }).catch(() => {})
+  invoke(CMD.setScrollToolbarRect, { x: 0, y: 0, w: 0, h: 0 }).catch(() => {})
 }
 
 onMounted(() => {
