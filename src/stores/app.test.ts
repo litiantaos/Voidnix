@@ -97,16 +97,6 @@ describe('app store', () => {
       store.closeSubview()
       expect(store.activeSubview).toBeNull()
     })
-
-    it('toggleSubview 切换子视图', () => {
-      const store = useAppStore()
-      store.toggleSubview('config')
-      expect(store.activeSubview).toBe('config')
-      store.toggleSubview('config')
-      expect(store.activeSubview).toBeNull()
-      store.toggleSubview('other')
-      expect(store.activeSubview).toBe('other')
-    })
   })
 
   describe('快捷键录制', () => {
@@ -148,13 +138,6 @@ describe('app store', () => {
       vi.advanceTimersByTime(1000)
       expect(store.statusMessage).toBe('')
       vi.useRealTimers()
-    })
-
-    it('clearStatus 立即清除', () => {
-      const store = useAppStore()
-      store.showStatus('已复制', 0)
-      store.clearStatus()
-      expect(store.statusMessage).toBe('')
     })
 
     it('连续 showStatus 替换前一条', () => {

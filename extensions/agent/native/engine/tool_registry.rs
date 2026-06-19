@@ -69,17 +69,6 @@ impl ToolRegistry {
     pub fn find(&self, name: &str) -> Option<Arc<dyn AgentTool>> {
         self.tools.get(name).cloned()
     }
-
-    /// 已注册工具数（监控用）。
-    #[allow(dead_code)]
-    pub fn len(&self) -> usize {
-        self.tools.len()
-    }
-
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.tools.is_empty()
-    }
 }
 
 #[cfg(test)]
@@ -111,7 +100,6 @@ mod tests {
     #[test]
     fn register_and_find() {
         let reg = ToolRegistry::new().register(EchoTool);
-        assert_eq!(reg.len(), 1);
         assert!(reg.find("echo").is_some());
         assert!(reg.find("missing").is_none());
     }

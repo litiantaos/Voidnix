@@ -57,12 +57,6 @@ impl ApprovalManager {
             false
         }
     }
-
-    /// 当前 pending 数量（监控用）。
-    #[allow(dead_code)]
-    pub fn pending_count(&self) -> usize {
-        self.pending.lock().unwrap().len()
-    }
 }
 
 #[cfg(test)]
@@ -73,10 +67,11 @@ mod tests {
     async fn create_and_resolve() {
         let mgr = ApprovalManager::default();
         let rx = mgr.create("call_abc".to_string());
-        assert_eq!(mgr.pending_count(), 1);
 
-        mgr.resolve("call_abc", Decision { approved: true, always_approve: false });
-        assert_eq!(mgr.pending_count(), 0);
+        let ok = mgr.resolve("call_abc", Decision { approved: true, always_approve: false });
+        assert!(ok);
+        // 重复 resolve 已移除的 id 返回 false
+        assert!(!mgr.resolve("call_abc", Decision::rejected()));
 
         let decision = rx.await.unwrap();
         assert!(decision.approved);

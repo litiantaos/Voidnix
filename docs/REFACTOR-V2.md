@@ -76,6 +76,7 @@
 - **v1.7**：§2.2 settingsView 跨扩展契约落地（导航枢纽形态）——clipboard/agent/translate `subviews:{settings}` magic key → `settingsView` 槽；settings 扩展 mainView 扫描各扩展 settingsView 聚合「扩展配置」入口、钻入全屏（ContentView `resolvedView` 增 `getExtension(id).settingsView` 回退）；移除 3 扩展模块内 ⚙️，translate searchBarAccessory 仅含 ⚙️ 故整体移除（searchBarAccessory 消费者 3→2：clipboard/agent）；`subviews` 收窄为 screenshot{ocr}（契合 N3 目标）。
 - **v1.7**：§1.2 ContentView 收敛为纯渲染器——剥离搜索编排（doSearch/internalResults/searchQuery-watch），仅渲染 props 注入的 `results`/`loading`/`selectedIndex` + resolvedView；搜索型模块（无 mainView、有 search：base64/calculator/currency/ip/time/uuid）的 `module.search.dynamic` 上移 useSearchInput（onInput 模块分支 + 进入模块 watch 触发初始 dynamic）；execute 分派保留双路（全局走 useResultNavigation 退出+隐藏；模块内走 module.onExecute 不退出）。
 - **v1.8**：§1.2 utils→stores 分层收口——`copyAndHide`/`makeToggleHandler`（原误放 `utils/`，含 useAppStore 反向依赖）下沉 `stores/app.ts` 顶层导出（app 行为归位，utils 层零 stores 依赖）；`copyAndShow` 零消费者死代码删除；`utils/clipboard.ts` 收敛为仅 `writeText` 纯原语；删 `utils/module-toggle.ts`。撤回 v1.2「clipboard.ts 返回 label 调用方 showStatus」原案（copyAndHide 含 hide+timer 异步逻辑，拆解致 6 调用点重复，整体下沉更优）。
+- **v1.9（死代码清理）**：全面审查后按 §0.3 YAGNI 删减零消费者预设——①§1.1/§2.8 框架命令 14→13：删 `set_main_window_size`（RV v1.1 称「多扩展消费」实测零消费者，window::\* 3→2，supersede v1.1/v1.7 相关保留决策）；②§2.1 Extension trait 删 `teardown` 方法 + registry `run_teardown`（9 扩展零覆写、退出零调用，supersede v1.6 N5「teardown 并行」）；③§2.6 path_guard 删 `Policy` enum + `Automated` 变体（agent 用自己的 ExecPolicy 命令级沙箱不经 path_guard，退化为 finder-ext 单消费者单参数 `validate(path)`，supersede 原 Policy 化双信任级设计）；④§2.7 TempHandle 简化——删 `cleanup_all_temps` + `TEMP_FILES` 全局注册表（唯一读者 cleanup_all_temps 已删，注册表沦为只写不读；TempHandle 简化为纯 Drop guard，异常退出兜底由启动 `cleanup_temps_by_prefix` 扫 /tmp 承担）；⑤§2.8 删 `chat_stream`/`chat_abort` 双端命令（旧 SSE 事件路径，现网走 `agent_run` Channel，作者已标「D 阶段废弃」）；⑥死依赖清理：Cargo 删 `pinyin`/`toml`/`zip`（Rust 端零 use）、npm 删 `@pinia/testing`/`@types/dompurify`（零 import）；⑦死类型/死方法清理：删 `src/types/ext-manifest.ts` 整文件 + `agent.ts` 5 个过期 invoke interface、`search-engine.ts` 2 零消费 re-export、`commands.ts` CommandName、stores `toggleSubview`/`clearStatus`/`ConfirmOptions.showFooter`/`update.available`、agent engine 监控方法（cancellation 3/tool_registry 2/approval 1）+ `StreamOutcome.finish_reason` 字段、screenshot/search 两个零消费 `pub use` glob re-export。保留项：`scroll_capture.rs` ScrollSession.scale（IPC 协议参数 + retina 语义锚点）、agent `SearchProviderConfig.r#type`/`Decision.always_approve`（serde 协议占位字段）。
 
 ---
 
@@ -86,13 +87,13 @@
 ```
 src-tauri/src/
 ├── main.rs                    # 入口（~6 行，不变）
-├── lib.rs                     # 装配清单（框架自管：generate_handler! 14 命令 + pre-bootstrap 共享初始化 + ExtensionRegistry::bootstrap + 启动埋点；零扩展专属配置。v1.7 撤回「<50 行」量化目标，改语义目标）
+├── lib.rs                     # 装配清单（框架自管：generate_handler! 13 命令 + pre-bootstrap 共享初始化 + ExtensionRegistry::bootstrap + 启动埋点；零扩展专属配置。v1.7 撤回「<50 行」量化目标，改语义目标）
 ├── build.rs                   # 保持显式编译（每个 .mm 编译参数不同，不扫描化：YAGNI）
 ├── extensions.rs              # 自动生成（仅 .plugin() 链 + mod 声明，<40 行，零 generate_handler!）
 │
 ├── runtime/                   # 运行时核心（平台无关）
 │   ├── mod.rs
-│   ├── window.rs              # 主窗口 show/hide/move + panel 转换/圆角配置（main 窗口原语集中）+ 框架级路径/对话框命令（set_main_window_size/pick_directory/get_home_dir，§2.8 的 window::* 3 框架命令）
+│   ├── window.rs              # 主窗口 show/hide/move + panel 转换/圆角配置（main 窗口原语集中）+ 框架级路径/对话框命令（pick_directory/get_home_dir，§2.8 的 window::* 2 框架命令）
 │   ├── shortcut.rs            # 快捷键 + 录制（零业务语义泄漏）
 │   ├── storage.rs             # TempHandle RAII 注册表（扩展临时文件统一清理，§2.7）
 │   ├── permission.rs          # 系统权限薄壳
@@ -222,9 +223,6 @@ pub trait Extension: Send + Sync + 'static {
 
     /// 启动钩子（并行执行）
     async fn setup(&self, _app: &AppHandle) -> tauri::Result<()> { Ok(()) }
-
-    /// 清理钩子（退出时并行执行，与 setup 对称；setup 零跨扩展依赖故无序约束，v1.6 N5）
-    async fn teardown(&self, _app: &AppHandle) {}
 }
 ```
 
@@ -513,14 +511,11 @@ pub fn restore_frontmost(pid: i32)                        // 还给原 app
 pub fn activate_app(pid: i32)
 pub fn deactivate_self()
 
-// platform/path_guard.rs（policy 化：不同调用方信任级不同）
-pub enum Policy {
-    Interactive,   // finder-ext：用户主动右键操作，尊重用户选择，仅拦系统致命路径
-    Automated,     // agent：AI 自动执行，严格黑名单 + 符号链接解析 + canonicalize
-}
-pub fn validate(path: &Path, policy: Policy) -> Result<PathBuf>
-//   Interactive：canonicalize + 拦 ["/System", "/usr/bin", "/bin", "/sbin"]
-//   Automated：在 Interactive 基础上 + 拦 ["/Library", "/opt/homebrew"] + 拒绝符号链接逃逸
+// platform/path_guard.rs（finder-ext 单消费者；agent 用自己的 ExecPolicy 命令级沙箱，不经此校验）
+//   v1.9：原 Policy::{Interactive, Automated} 双信任级设计，因 agent 不采用而退化为单参数。
+pub fn validate(path: &Path) -> bool
+//   canonicalize（解析符号链接）+ 拦 ["/System", "/usr/bin", "/bin", "/sbin"]
+//   允许 /Library（用户主动操作应尊重）、/Volumes、外接磁盘等
 ```
 
 **为何 policy 化**：统一 BLOCKED_PREFIXES 对 finder-ext（用户主动选 /Library 路径应尊重）过度限制，对 agent（AI 想碰 /usr/bin 应拦）又欠保护。信任级是调用方的固有属性，校验必须感知它。
@@ -532,31 +527,29 @@ pub fn validate(path: &Path, policy: Policy) -> Result<PathBuf>
 **TempHandle 归属判据**：当前唯一消费者是 screenshot（6 处 temp_dir），但 TempHandle 是**通用基础设施**（非业务逻辑），任何需要临时文件的扩展都可消费——与 agent engine（agent 专属业务逻辑，单消费者下沉）不同。判据：通用基础设施按"潜在多消费者"留框架层，业务逻辑按"实际消费者数"判归属。
 
 ```rust
-// runtime/storage.rs（仅 TempHandle RAII guard + 退出兜底）
+// runtime/storage.rs（仅 TempHandle RAII guard；v1.9 简化为纯 Drop，删全局注册表 + cleanup_all_temps）
 pub struct TempHandle { path: PathBuf }
 
 impl TempHandle {
-    /// 创建 guard：注册路径到全局表，Drop 时自动注销 + 删除文件。
-    /// screenshot 持有 guard 于窗口 State，pin 窗口关闭时 Drop 自动清理。
-    pub fn new(path: PathBuf) -> Self { /* register 到全局表 */ }
+    /// 创建 guard。screenshot 持有 guard 于窗口 State，pin 窗口关闭时 Drop 自动清理。
+    pub fn new(path: PathBuf) -> Self { Self { path } }
 }
 
 impl Drop for TempHandle {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);   // 异步 detach 见下方「Drop 行为」
-        // 从全局表注销
     }
 }
 
-/// 应用退出时阻塞清理所有残留（兜底异常退出，Drop 已清理的正常情况空转）
-pub fn cleanup_all_temps()
+/// 启动时扫 /tmp 清理指定前缀残留（兜底异常退出，Drop 在进程被 kill 时不执行）
+pub fn cleanup_temps_by_prefix(tmp_dir: &Path, prefix: &str, extensions: &[&str])
 ```
 
 **Drop 行为**：
 
-- `TempHandle` 实现 `Drop`：`new()` 时注册路径到全局表，Drop 时自动从全局表移除 + 删除文件。
+- `TempHandle` 实现 `Drop`：离开作用域时同步删除文件（v1.9 简化：不再维护全局注册表，原 `cleanup_all_temps` 唯一读者已删）。
 - **同步约束**：Drop 在 tokio runtime 内同步执行，**不能 await**。大文件 IO（截图、命令输出）用 `tokio::task::spawn_blocking` 包装后 **detach**（fire-and-forget，丢弃 JoinHandle）——Drop 内不阻塞等待 spawn_blocking 完成，避免 runtime 死锁。
-- **应用退出**：`cleanup_all_temps()` 阻塞完成（确保所有临时文件清理后再退出），最坏情况 100ms 超时强制返回。与 Drop 的 detach 路径独立——退出时走阻塞清理，运行时 Drop 走异步 detach。
+- **异常退出兜底**：进程被 kill -9 时 Drop 不执行，由启动时 `cleanup_temps_by_prefix` 扫 /tmp `voidnix*` 前缀清理残留。
 - **定期清理**：screenshot on_setup 内启动定时任务（每小时扫一次 `voidnix*` 前缀），兜底异常退出残留。
 
 **配置持久化（前端管，非 Rust 端职责）**：
@@ -627,7 +620,7 @@ impl crate::runtime::registry::Extension for ClipboardExtension {
 **框架命令 vs 扩展命令的注册边界**：命令分两类，注册位置不同——
 
 - **扩展命令**（~55 个）：归各自扩展，在 `init()` 的 `invoke_handler(generate_handler![...])` 内局部注册。`extensions.rs`（自动生成）**零 `generate_handler!`**，只有 `.plugin()` 链（9 扩展 init()）+ `#[path]` mod 声明。
-- **框架命令**（13 个：`runtime::permission::*` 5 + `runtime::shortcut::*` 5 + `runtime::window::*` 3）：不归任何扩展，是框架自身能力（权限检测/全局快捷键/主窗口）。在 `lib.rs` 保留一个**固定的、手写的** `generate_handler!`——框架自管，与扩展增减无关，不参与 sync-extensions 扫描，零漂移。
+- **框架命令**（13 个：`runtime::permission::*` 5 + `runtime::shortcut::*` 5 + `runtime::window::*` 2 + `platform::pasteboard::pasteboard_write_text` 1）：不归任何扩展，是框架自身能力（权限检测/全局快捷键/主窗口/剪贴板写入）。在 `lib.rs` 保留一个**固定的、手写的** `generate_handler!`——框架自管，与扩展增减无关，不参与 sync-extensions 扫描，零漂移。
 
 **shortcut/window 不需 plugin 形态**：当前 `runtime::shortcut::init()` / `runtime::window::init()` 是纯空 Builder（无 invoke_handler、无 setup，仅占 plugin name）。命令下沉后（框架 13 命令迁 lib.rs `generate_handler!`）**直接删除这两个空 plugin**——框架命令不需 TauriPlugin 包装，`generate_handler!` 即完成注册。删除后 `extensions.rs` 的 `.plugin()` 链**只含 9 个扩展**（search 统一化后也走 init()，见 §4）。
 
@@ -638,7 +631,7 @@ impl crate::runtime::registry::Extension for ClipboardExtension {
 .invoke_handler(tauri::generate_handler![
     crate::runtime::permission::check_accessibility_permission,
     crate::runtime::permission::request_accessibility_permission,
-    // ... runtime::permission::* (5) + runtime::shortcut::* (5) + runtime::window::* (3)
+    // ... runtime::permission::* (5) + runtime::shortcut::* (5) + runtime::window::* (2) + platform::pasteboard::pasteboard_write_text (1)
 ])
 ```
 

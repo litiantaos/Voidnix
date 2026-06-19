@@ -3,9 +3,7 @@
 /// 与 Rust 端 `AgentEvent` 枚举对齐（手写，不进 specta —— 动态 JSON 不支持）。
 /// 调用方式：`invoke(CMD.agentRun, { ... })`，命令名常量见 src/commands.ts。
 
-import type { Channel } from '@tauri-apps/api/core'
-
-// ─── Agent 扩展推给前端的事件（Channel<T> 中的 T）────────────
+// ─── Agent 扩展推给前端的事件（通过 Channel<AgentEvent> 推送，Tauri ipc::Channel）────
 export type AgentEvent =
   | { type: 'textDelta'; text: string }
   | { type: 'toolCallStart'; id: string; name: string }
@@ -52,34 +50,5 @@ export interface LlmMessage {
 }
 
 // ─── invoke 参数类型 ────────────────────────────────────────
-export interface SearchProviderConfig {
-  type: 'tavily'
-  apiKey: string
-}
-
-export interface AgentRunConfig {
-  searchProvider: SearchProviderConfig
-  trustedCommands: string[]
-  systemPrompt?: string
-}
-
-export interface AgentRunArgs {
-  messages: LlmMessage[]
-  endpoint: string
-  apiKey: string
-  model: string
-  sessionId: string
-  config: AgentRunConfig
-  onEvent: Channel<AgentEvent>
-}
-
-export interface AgentApproveArgs {
-  /// 即 tool_call.id（前端 part 路由用的同一 id）
-  approvalId: string
-  approved: boolean
-  alwaysApprove: boolean
-}
-
-export interface AgentAbortArgs {
-  sessionId: string
-}
+// 注：invoke 参数在各调用点内联构造（agent 扩展自带 SearchProviderConfig），
+//     无需集中 interface；Rust 端签名漂移由 check:commands CI + PR review 守护。

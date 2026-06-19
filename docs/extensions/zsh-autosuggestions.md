@@ -40,7 +40,7 @@ zsh precmd 用 `zstat +mtime` 检测 cache 变化，变化才重新 source（sou
 
 ## 分发
 
-binary 随主程序 `[[bin]] zsh-autosuggestions` 编译，打入 `.app/Contents/MacOS/`（Tauri 自动打包 `[[bin]]` target）。`on_setup` 用**版本号比对**（编译期常量 `BIN_VERSION` 写入 `bin_version` 文件）从 .app 复制到 `extensions/zsh-autosuggestions/bin/`，已部署版本匹配才跳过；并幂等刷新 .zshrc 行。**改 binary 内容必须 bump `BIN_VERSION`（`mod.rs`），否则不部署——init.zsh 经 `include_str!` 嵌入 binary，改 init.zsh 也算改 binary。** .zshrc 行：`export ZSH_AS_BIN=... ZSH_AS_CACHE=... ZSH_AS_SIGNALS=...; eval "$("$ZSH_AS_BIN" init)"`（行尾 marker `# voidnix zsh-autosuggestions` 用于精确 remove）。.zshrc 写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.cache` + `signals.log`（保留 binary 避免反复复制），`set_zsh_autosuggestions_enabled` 返回 `Result`，失败时前端 revert 状态并 `showStatus` 提示。
+binary 随主程序 `[[bin]] zsh-autosuggestions` 编译，打入 `.app/Contents/MacOS/`（Tauri 自动打包 `[[bin]]` target）。`setup` 用**版本号比对**（编译期常量 `BIN_VERSION` 写入 `bin_version` 文件）从 .app 复制到 `extensions/zsh-autosuggestions/bin/`，已部署版本匹配才跳过；并幂等刷新 .zshrc 行。**改 binary 内容必须 bump `BIN_VERSION`（`mod.rs`），否则不部署——init.zsh 经 `include_str!` 嵌入 binary，改 init.zsh 也算改 binary。** .zshrc 行：`export ZSH_AS_BIN=... ZSH_AS_CACHE=... ZSH_AS_SIGNALS=...; eval "$("$ZSH_AS_BIN" init)"`（行尾 marker `# voidnix zsh-autosuggestions` 用于精确 remove）。.zshrc 写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.cache` + `signals.log`（保留 binary 避免反复复制），`set_zsh_autosuggestions_enabled` 返回 `Result`，失败时前端 revert 状态并 `showStatus` 提示。
 
 ## history 路径解析
 
@@ -48,7 +48,7 @@ zsh 端 `_zsh_as_histfile` 统一解析 rebuild 目标 history：优先 `$HISTFI
 
 ## 并发
 
-`SETUP_LOCK` 串行化 `on_setup` / `set_zsh_autosuggestions_enabled` 路径，poison 时也恢复。
+`SETUP_LOCK` 串行化 `setup` / `set_zsh_autosuggestions_enabled` 路径，poison 时也恢复。
 
 ## Ctrl+C 拦截
 

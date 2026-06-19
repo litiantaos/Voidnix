@@ -17,7 +17,7 @@ const ZSHRC_LINE_SUFFIX: &str = "# voidnix zsh-autosuggestions";
 /// 必须 bump 此数字，否则 install_bin 版本比对判定「无需更新」不部署。
 const BIN_VERSION: u32 = 3;
 
-/// 串行化 on_setup / set_enabled 路径，避免 torn write。
+/// 串行化 setup / set_enabled 路径，避免 torn write。
 static SETUP_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock() -> MutexGuard<'static, ()> {
@@ -262,7 +262,7 @@ impl Extension for ZshAutosuggestionsExtension {
         // 幂等刷新 .zshrc 行：升级后若行格式变化，已启用用户自动更新。
         // 启动阶段错误不阻塞（log 即可），用户主动 toggle 才反馈错误。
         if let Err(e) = write_zshrc_line(app) {
-            log::warn!("zsh-as: on_setup write_zshrc_line: {e}");
+            log::warn!("zsh-as: setup write_zshrc_line: {e}");
         }
         Ok(())
     }

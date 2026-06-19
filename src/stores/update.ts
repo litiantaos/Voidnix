@@ -10,7 +10,6 @@ export interface UpdateInfo {
 }
 
 export const useUpdateStore = defineStore('update', () => {
-  const available = ref(false)
   const downloading = ref(false)
   const downloaded = ref(false)
   const checking = ref(false)
@@ -35,7 +34,6 @@ export const useUpdateStore = defineStore('update', () => {
           newVersion: update.version,
           body: update.body ?? null,
         }
-        available.value = true
         return true
       }
       return false
@@ -85,7 +83,6 @@ export const useUpdateStore = defineStore('update', () => {
   }
 
   function reset() {
-    available.value = false
     downloading.value = false
     downloaded.value = false
     checking.value = false
@@ -96,7 +93,6 @@ export const useUpdateStore = defineStore('update', () => {
   }
 
   return {
-    available,
     downloading,
     downloaded,
     checking,
