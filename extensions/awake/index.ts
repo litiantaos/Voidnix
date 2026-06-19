@@ -1,7 +1,5 @@
 import { defineExtension } from '@/runtime/extension-registry'
-import { defineAsyncComponent } from 'vue'
-
-const AwakeView = defineAsyncComponent(() => import('./View.vue'))
+import AwakeView from './View.vue'
 
 export default defineExtension({
   meta: {

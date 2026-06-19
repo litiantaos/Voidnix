@@ -1,7 +1,8 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import { defineAsyncComponent } from 'vue'
+import WindowManagerView from './View.vue'
 
-const WindowManagerView = defineAsyncComponent(() => import('./View.vue'))
+// snap 面板独立窗口真按需：分屏拖拽时才加载
 const SnapPanelWindow = defineAsyncComponent(() => import('./windows/SnapPanel.vue'))
 
 export default defineExtension({

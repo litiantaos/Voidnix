@@ -1,7 +1,6 @@
 import { config as translateConfig } from './config'
 import { ref } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
-import { defineAsyncComponent } from 'vue'
 import { makeToggleHandler } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
@@ -10,8 +9,7 @@ import { toErrorMessage } from '@/utils/format'
 import { generateRequestId } from '@/utils/id'
 import { cleanStreamResult, engineLabel } from './logic'
 import TranslateSettings from './Settings.vue'
-
-const TranslateView = defineAsyncComponent(() => import('./View.vue'))
+import TranslateView from './View.vue'
 
 /** Rust translate_ai/translate_youdao 返回结构 */
 interface TranslateBaseResult {

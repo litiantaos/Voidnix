@@ -1,6 +1,5 @@
 import { ref, shallowRef } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
-import { defineAsyncComponent } from 'vue'
 import { makeToggleHandler } from '@/stores/app'
 import type { ProviderResult } from '@/runtime/types'
 import { invoke } from '@tauri-apps/api/core'
@@ -9,9 +8,8 @@ import { useAppStore } from '@/stores/app'
 import { listen } from '@tauri-apps/api/event'
 import { filterByQuery } from './logic'
 import ClipboardSettings from './Settings.vue'
-
-const ClipboardView = defineAsyncComponent(() => import('./View.vue'))
-const ClipboardActions = defineAsyncComponent(() => import('./Actions.vue'))
+import ClipboardView from './View.vue'
+import ClipboardActions from './Actions.vue'
 
 export interface ClipboardItem {
   id: string

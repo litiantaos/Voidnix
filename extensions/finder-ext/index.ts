@@ -1,7 +1,5 @@
 import { defineExtension } from '@/runtime/extension-registry'
-import { defineAsyncComponent } from 'vue'
-
-const FinderExtView = defineAsyncComponent(() => import('./View.vue'))
+import FinderExtView from './View.vue'
 
 export default defineExtension({
   meta: {
