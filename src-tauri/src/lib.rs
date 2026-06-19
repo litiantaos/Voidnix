@@ -47,6 +47,12 @@ pub fn run() {
                 .register(crate::extensions::finder_ext::Plugin)
                 .register(crate::extensions::translate::Plugin)
                 .register(crate::extensions::agent::Plugin);
+
+            // block_on 探针（§7 N7）：确认 setup 同步闭包内可安全 block_on
+            //（非 tokio worker 嵌套）。若 panic 则 bootstrap 的 join_all 同样会 panic，
+            // 需改 std::thread 方案。运行 `tauri:dev` 即可冒烟验证。
+            tauri::async_runtime::block_on(async {});
+
             crate::runtime::registry::bootstrap(app, registry)?;
 
             // Agent 框架层全局 state

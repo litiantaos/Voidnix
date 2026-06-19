@@ -87,12 +87,13 @@ pub async fn open_module_subview(
 /// OCR/截长图/钉图等子能力，以及全局快捷键钩子。
 pub struct Plugin;
 
+#[async_trait::async_trait]
 impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "screenshot"
     }
 
-    fn on_setup(&self, _app: &AppHandle) -> tauri::Result<()> {
+    async fn setup(&self, _app: &AppHandle) -> tauri::Result<()> {
         // 清理上次会话遗留的临时文件
         cleanup_temp_files();
 
