@@ -1,24 +1,17 @@
 import { reactive, watch } from 'vue'
-import { load } from '@tauri-apps/plugin-store'
+import { load, type Store } from '@tauri-apps/plugin-store'
 
-/// 扩展配置 schema 字段定义（供 settings 面板自动渲染）。
-export interface ConfigField {
-  type: 'number' | 'toggle' | 'string' | 'select' | 'text' | 'keybind'
-  default: unknown
-  label: string
-  description?: string
-  min?: number
-  max?: number
-  step?: number
-  options?: Array<{ value: string; label: string }>
-  order?: number
-}
+// store 实例缓存（§2.4 v1.5 B1）：避免每次防抖保存重新 load()。
+// 模块级 Map<extId, Store>，首次加载后复用。
+const storeCache = new Map<string, Store>()
 
-export type ConfigSchema = Record<string, ConfigField>
-
-/// 声明扩展配置 schema（供 settings 面板自动渲染 + 类型推导）。
-export function defineExtensionConfig<T extends ConfigSchema>(schema: T): T {
-  return schema
+async function getStore(extId: string): Promise<Store> {
+  let store = storeCache.get(extId)
+  if (!store) {
+    store = await load(`extensions/${extId}/config.json`)
+    storeCache.set(extId, store)
+  }
+  return store
 }
 
 /// 创建响应式扩展配置对象，自动从磁盘加载 + 变更自动持久化。
@@ -29,11 +22,14 @@ export function defineExtensionConfig<T extends ConfigSchema>(schema: T): T {
 /// config.maxDays     // → 30（响应式读取）
 /// config.maxDays = 60  // 自动持久化到 extensions/clipboard/config.json
 /// ```
+///
+/// 加载语义（v1.6 N10）：load() 异步，扩展 setup / 早期命令可能读到 defaults
+/// （磁盘值尚未回填）。安全参数由 Rust clamp 兜底，UI 可能短暂显示 defaults。
 export function defineConfig<T extends Record<string, unknown>>(extId: string, defaults: T): T {
   const config = reactive({ ...defaults }) as T
 
   // 异步从磁盘加载已保存的值
-  load(`extensions/${extId}/config.json`)
+  getStore(extId)
     .then(async (store) => {
       for (const key in defaults) {
         const saved = await store.get<unknown>(key)
@@ -45,7 +41,7 @@ export function defineConfig<T extends Record<string, unknown>>(extId: string, d
     })
     .catch((e) => console.error(`[config:${extId}] load failed:`, e))
 
-  // 变更自动持久化（deep watch + 防抖）
+  // 变更自动持久化（deep watch + 防抖 300ms）
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   watch(
     config,
@@ -53,7 +49,7 @@ export function defineConfig<T extends Record<string, unknown>>(extId: string, d
       if (saveTimer) clearTimeout(saveTimer)
       saveTimer = setTimeout(async () => {
         try {
-          const store = await load(`extensions/${extId}/config.json`)
+          const store = await getStore(extId)
           for (const key in defaults) {
             await store.set(key, config[key])
           }
