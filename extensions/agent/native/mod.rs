@@ -12,6 +12,7 @@ use tauri::ipc::Channel;
 use tokio_util::sync::CancellationToken;
 
 pub mod engine;
+mod policy;
 mod tools;
 
 /// 命令注册（局部 invoke_handler，§2.8）。
@@ -74,7 +75,7 @@ pub async fn chat_stream(
 // Agent 路径：agent_run / agent_approve / agent_abort
 // ──────────────────────────────────────────────────────────────
 
-/// Agent 配置（前端 invoke 时随调用传入）。
+/// Agent 配置（前端 invoke 时随调用传入）。安全项由 Rust 端 clamp/并集兜底（§3.4）。
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRunConfig {
@@ -82,11 +83,28 @@ pub struct AgentRunConfig {
     pub search_provider: SearchProviderConfig,
     /// 用户自定义白名单命令（追加到默认白名单，免审批）。
     pub trusted_commands: Vec<String>,
+    /// 用户自定义硬禁命令（与 FORBIDDEN_FLOOR 取并集，用户只能加严）。
+    #[serde(default)]
+    pub forbidden_commands: Vec<String>,
+    /// 用户自定义危险参数前缀（与 DENIED_ARG_FLOOR 取并集）。
+    #[serde(default)]
+    pub blocked_args: Vec<String>,
     /// 用户自定义 system prompt（追加到默认 harness 之后）。
     pub system_prompt: Option<String>,
-    /// 单次对话最大轮次（None = 用默认值）。
+    /// 单次对话最大轮次（None = 用默认值；Rust 端 clamp [1,50]）。
     #[serde(default)]
     pub max_turns: Option<usize>,
+    /// 资源上限（None = 用默认值；Rust 端 clamp 到 policy floor/cap）。
+    #[serde(default)]
+    pub max_cpu_seconds: Option<u64>,
+    #[serde(default)]
+    pub max_memory_mb: Option<u64>,
+    #[serde(default)]
+    pub max_open_files: Option<u64>,
+    #[serde(default)]
+    pub execution_timeout: Option<u64>,
+    #[serde(default)]
+    pub max_output_bytes: Option<usize>,
 }
 
 /// 默认 system prompt（agent 扩展自管，非框架硬编码）。
@@ -148,11 +166,27 @@ pub async fn agent_run(
     // 安全校验
     let safe_endpoint = llm::validate_ai_request(&endpoint, &model, &api_key)?;
 
+    // 安全底线 clamp/并集（§3.4）：agent_run 入口集中处理，不信任前端传值
+    let exec_policy = policy::ExecPolicy::resolve(
+        config.trusted_commands.clone(),
+        config.forbidden_commands.clone(),
+        config.blocked_args.clone(),
+        config.max_cpu_seconds.unwrap_or(policy::DEFAULT_MAX_CPU_SECS),
+        config.max_memory_mb.unwrap_or(policy::DEFAULT_MAX_MEMORY_MB),
+        config.max_open_files.unwrap_or(policy::DEFAULT_MAX_OPEN_FILES),
+        config.execution_timeout.unwrap_or(policy::DEFAULT_EXECUTION_TIMEOUT_SECS),
+        config.max_output_bytes.unwrap_or(policy::DEFAULT_MAX_OUTPUT_BYTES),
+    );
+    let max_turns = config
+        .max_turns
+        .unwrap_or(DEFAULT_MAX_TURNS)
+        .clamp(policy::MAX_TURNS.0, policy::MAX_TURNS.1);
+
     // 构造本次的 ToolRegistry（工具始终启用）
     let tool_registry = {
         let reg = ToolRegistry::new()
             .register(tools::web_search::WebSearchTool::new(config.search_provider.clone()))
-            .register(tools::run_command::RunCommandTool::new(config.trusted_commands));
+            .register(tools::run_command::RunCommandTool::new(exec_policy));
         Arc::new(reg)
     };
 
@@ -170,7 +204,7 @@ pub async fn agent_run(
         messages,
         default_system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
         system_prompt: config.system_prompt,
-        max_turns: config.max_turns.unwrap_or(DEFAULT_MAX_TURNS),
+        max_turns,
         tools_schema,
         tool_registry,
         channel: on_event,

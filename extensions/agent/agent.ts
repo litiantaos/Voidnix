@@ -93,6 +93,14 @@ export function useAgentChat() {
         apiKey: activeSearchProvider.value.apiKey,
       },
       trustedCommands: agentConfig.trustedCommands,
+      forbiddenCommands: agentConfig.forbiddenCommands,
+      blockedArgs: agentConfig.blockedArgs,
+      maxCpuSeconds: agentConfig.maxCpuSeconds,
+      maxMemoryMb: agentConfig.maxMemoryMb,
+      maxOpenFiles: agentConfig.maxOpenFiles,
+      executionTimeout: agentConfig.executionTimeout,
+      maxOutputBytes: agentConfig.maxOutputBytes,
+      maxTurns: agentConfig.maxTurns,
       systemPrompt: agentConfig.systemPrompt || undefined,
     }
 

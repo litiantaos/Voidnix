@@ -18,81 +18,44 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 use crate::extensions::agent::engine::tool_registry::{AgentTool, ToolResult};
-
-const MAX_WALL_SECS: u64 = 30;
-const MAX_OUTPUT_BYTES: usize = 1024 * 1024; // 1 MiB
-
-/// 用户自定义白名单（前端传入，完整覆盖；settings 默认值已含常用读+编辑命令）。
-/// 空时表示用户未配置任何白名单 → 所有命令都需审批。
-const EMPTY_ALLOWED: &[&str] = &[];
-
-/// 硬禁命令（即便 approval 通过也拒绝）。
-/// macOS 上这些命令可以控制其他 app / 提权 / 系统配置 / 触网外发。
-const FORBIDDEN_PROGRAMS: &[&str] = &[
-    // 任何 shell → 放弃 L1 防御
-    "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh",
-    // macOS 特权 / 系统控制
-    "osascript", "sudo", "open", "launchctl", "defaults", "networksetup", "scutil",
-    "killall", "kill", "pkill",
-    // 触网（走专门的 web_search 工具）
-    "curl", "wget", "nc", "socat", "telnet", "ssh",
-    // 提权或逃逸
-    "su", "doas", "expect",
-    // 数据持久化（走应用 API）
-    "sqlite3",
-    // 进程管理
-    "ps", "top", "htop",
-];
-
-/// 危险选项前缀黑名单（即便命令在 ALLOWED 内也拦截）。
-/// 这些选项在多个程序里有「执行子命令 / 输出到任意路径 / 改变行为」的能力。
-const DENIED_ARG_PREFIXES: &[&str] = &[
-    "--exec", "--exec-file", "--exec-rm",
-    "--upload-pack",
-    "--use-compress-program",
-    "--config", "-C", // git -C 改 cwd；curl --config 读配置
-    "--output", "-o", "-O", // curl/wget 写文件
-    "--write-out",
-    "--eval", "-e", // node/bash eval
-    "--init-file", "--rcfile",
-];
+use crate::extensions::agent::policy::ExecPolicy;
 
 pub struct RunCommandTool {
-    /// 用户编辑的完整白名单（settings 默认已含常用读+编辑命令；用户可自由编辑）。
-    trusted: Vec<String>,
+    /// 解析后的执行策略（trusted + forbidden 并集 + denied 并集 + clamp 后的数值上限）。
+    policy: ExecPolicy,
 }
 
 impl RunCommandTool {
-    pub fn new(trusted: Vec<String>) -> Self {
-        Self { trusted }
+    pub fn new(policy: ExecPolicy) -> Self {
+        Self { policy }
     }
 
     fn is_allowed_program(&self, name: &str) -> bool {
-        self.trusted.iter().any(|t| t == name) || EMPTY_ALLOWED.contains(&name)
+        self.policy.trusted.iter().any(|t| t == name)
     }
 
     fn is_forbidden(&self, name: &str) -> bool {
-        FORBIDDEN_PROGRAMS.contains(&name)
+        self.policy.forbidden.iter().any(|f| f == name)
     }
 
-    fn has_denied_arg(args: &[String]) -> Option<&'static str> {
+    fn has_denied_arg(&self, args: &[String]) -> Option<String> {
         for arg in args {
             // 选项前缀大小写敏感（`-C` 与 `-c` 在 Unix 是不同选项）
-            for denied in DENIED_ARG_PREFIXES {
+            for denied in &self.policy.denied_args {
                 // 形如 `--exec=foo` 或 `-ofoo`，前缀匹配即拒
-                if arg.starts_with(denied) {
-                    return Some(denied);
+                if arg.starts_with(denied.as_str()) {
+                    return Some(denied.clone());
                 }
             }
             // 保守拒绝 shell 元字符（即使不经 shell，也提示用户可能误用）
             if arg.contains("${") || arg.contains("$(") || arg.contains('`') {
-                return Some("shell-substitution");
+                return Some("shell-substitution".into());
             }
         }
         None
     }
 
-    /// 断路器：即便 approved 也必拦的命令模式。
+    /// 断路器：即便 approved 也必拦的命令模式（不可 config 化、不可放宽，§3.4 L4）。
     fn is_circuit_breaker_hit(cmd: &str, args: &[String]) -> bool {
         // rm -rf / | rm -rf ~ | rm -rf /*
         if cmd == "rm" {
@@ -127,7 +90,7 @@ impl AgentTool for RunCommandTool {
             "type": "function",
             "function": {
                 "name": "run_command",
-                "description": "Run a shell command on the user's macOS system. The command runs in the user's home directory with minimal environment (no inherited API keys). Output is truncated to 1 MiB and execution time limited to 30 seconds. Prefer read-only commands (ls, cat, grep, git status) for inspection.",
+                "description": "Run a shell command on the user's macOS system. The command runs in the user's home directory with minimal environment (no inherited API keys). Execution time and output size are limited (see user config). Prefer read-only commands (ls, cat, grep, git status) for inspection.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -163,7 +126,7 @@ impl AgentTool for RunCommandTool {
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().filter_map(|a| a.as_str().map(String::from)).collect())
                 .unwrap_or_default();
-            if Self::has_denied_arg(&args_arr).is_none() {
+            if self.has_denied_arg(&args_arr).is_none() {
                 return false;
             }
         }
@@ -210,7 +173,7 @@ impl AgentTool for RunCommandTool {
         }
 
         // ── 关 4：参数黑名单 ──
-        if let Some(denied) = Self::has_denied_arg(&cmd_args) {
+        if let Some(denied) = self.has_denied_arg(&cmd_args) {
             return ToolResult::err(format!("argument prefix '{}' is blocked", denied));
         }
 
@@ -241,9 +204,12 @@ impl AgentTool for RunCommandTool {
             command.env(k, v);
         }
 
-        // rlimit（仅 Unix）：在 fork 后、exec 前设置
+        // rlimit（仅 Unix）：在 fork 后、exec 前设置（数值已 clamp，§3.4）
+        let cpu = self.policy.max_cpu_secs;
+        let mem_mb = self.policy.max_memory_mb;
+        let nofile = self.policy.max_open_files;
         unsafe {
-            command.pre_exec(|| apply_rlimits());
+            command.pre_exec(move || apply_rlimits(cpu, mem_mb, nofile));
         }
 
         // ── spawn ──
@@ -259,8 +225,8 @@ impl AgentTool for RunCommandTool {
 
         // ── 关 9：超时 + 截断读 + kill + reap ──
         let timeout_result = tokio::time::timeout(
-            std::time::Duration::from_secs(MAX_WALL_SECS),
-            read_with_cap(&mut child, MAX_OUTPUT_BYTES),
+            std::time::Duration::from_secs(self.policy.execution_timeout_secs),
+            read_with_cap(&mut child, self.policy.max_output_bytes),
         )
         .await;
 
@@ -270,7 +236,7 @@ impl AgentTool for RunCommandTool {
                 let _ = child.wait().await;
                 ToolResult::err(format!(
                     "command timed out after {}s and was killed",
-                    MAX_WALL_SECS
+                    self.policy.execution_timeout_secs
                 ))
             }
             Ok(Err(e)) => {
@@ -291,7 +257,7 @@ impl AgentTool for RunCommandTool {
                     output.push_str(&stderr);
                 }
                 if truncated {
-                    output.push_str("\n[output truncated at 1 MiB]");
+                    output.push_str(&format!("\n[output truncated at {} bytes]", self.policy.max_output_bytes));
                 }
                 if exit_code != 0 {
                     output.push_str(&format!("\n[exit code: {}]", exit_code));
@@ -391,23 +357,29 @@ fn minimal_env(_cwd: &Path) -> Vec<(&'static str, String)> {
     ]
 }
 
-unsafe fn apply_rlimits() -> std::io::Result<()> {
+unsafe fn apply_rlimits(cpu: u64, mem_mb: u64, nofile: u64) -> std::io::Result<()> {
     use rlimit::{setrlimit, Resource};
-    setrlimit(Resource::CPU, 30, 60)
+    let cpu_hard = cpu.saturating_mul(2);
+    setrlimit(Resource::CPU, cpu, cpu_hard)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     // macOS 不支持 AS，用 DATA 限制（数据段）
     #[cfg(target_os = "macos")]
     {
-        if setrlimit(Resource::DATA, 512 * 1024 * 1024, 1024 * 1024 * 1024).is_err() {
+        let data_soft = mem_mb * 1024 * 1024;
+        let data_hard = data_soft.saturating_mul(2);
+        if setrlimit(Resource::DATA, data_soft, data_hard).is_err() {
             // macOS DATA 也可能失败，忽略（不致命）
         }
     }
     #[cfg(not(target_os = "macos"))]
     {
-        setrlimit(Resource::AS, 512 * 1024 * 1024, 1024 * 1024 * 1024)
+        let as_soft = mem_mb * 1024 * 1024;
+        let as_hard = as_soft.saturating_mul(2);
+        setrlimit(Resource::AS, as_soft, as_hard)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     }
-    setrlimit(Resource::NOFILE, 64, 256)
+    let nofile_hard = nofile.saturating_mul(4);
+    setrlimit(Resource::NOFILE, nofile, nofile_hard)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     Ok(())
 }
@@ -417,7 +389,13 @@ mod tests {
     use super::*;
 
     fn tool() -> RunCommandTool {
-        RunCommandTool::new(vec![])
+        RunCommandTool::new(crate::extensions::agent::policy::ExecPolicy::default_with_trusted(vec![]))
+    }
+
+    fn tool_with_trusted(trusted: Vec<&str>) -> RunCommandTool {
+        RunCommandTool::new(crate::extensions::agent::policy::ExecPolicy::default_with_trusted(
+            trusted.into_iter().map(String::from).collect(),
+        ))
     }
 
     #[test]
@@ -448,7 +426,7 @@ mod tests {
     #[test]
     fn trusted_programs_are_the_whitelist() {
         // 用户提供的 trusted 列表 = 完整白名单
-        let t = RunCommandTool::new(vec!["ls".into(), "git".into(), "make".into()]);
+        let t = tool_with_trusted(vec!["ls", "git", "make"]);
         assert!(t.is_allowed_program("ls"));
         assert!(t.is_allowed_program("git"));
         assert!(t.is_allowed_program("make"));
@@ -457,17 +435,19 @@ mod tests {
 
     #[test]
     fn denied_arg_prefix_detection() {
-        assert!(RunCommandTool::has_denied_arg(&["--exec=foo".into()]).is_some());
-        assert!(RunCommandTool::has_denied_arg(&["--upload-pack".into()]).is_some());
-        assert!(RunCommandTool::has_denied_arg(&["-o".into(), "/etc/passwd".into()]).is_some());
-        assert!(RunCommandTool::has_denied_arg(&["normal".into(), "args".into()]).is_none());
+        let t = tool();
+        assert!(t.has_denied_arg(&["--exec=foo".into()]).is_some());
+        assert!(t.has_denied_arg(&["--upload-pack".into()]).is_some());
+        assert!(t.has_denied_arg(&["-o".into(), "/etc/passwd".into()]).is_some());
+        assert!(t.has_denied_arg(&["normal".into(), "args".into()]).is_none());
     }
 
     #[test]
     fn shell_substitution_in_args_detected() {
-        assert!(RunCommandTool::has_denied_arg(&["$(rm -rf /)".into()]).is_some());
-        assert!(RunCommandTool::has_denied_arg(&["${HOME}".into()]).is_some());
-        assert!(RunCommandTool::has_denied_arg(&["`whoami`".into()]).is_some());
+        let t = tool();
+        assert!(t.has_denied_arg(&["$(rm -rf /)".into()]).is_some());
+        assert!(t.has_denied_arg(&["${HOME}".into()]).is_some());
+        assert!(t.has_denied_arg(&["`whoami`".into()]).is_some());
     }
 
     #[test]
@@ -480,6 +460,16 @@ mod tests {
     }
 
     #[test]
+    fn user_forbidden_extends_floor() {
+        // 用户自定义 forbidden 与底线并集
+        let mut policy = crate::extensions::agent::policy::ExecPolicy::default_with_trusted(vec![]);
+        policy.forbidden.push("my_danger".into());
+        let t = RunCommandTool::new(policy);
+        assert!(t.is_forbidden("my_danger"));
+        assert!(t.is_forbidden("sudo")); // 底线仍在
+    }
+
+    #[test]
     fn requires_approval_for_unknown_command() {
         let t = tool();
         let args = serde_json::json!({"cmd": "make", "args": []});
@@ -488,14 +478,14 @@ mod tests {
 
     #[test]
     fn no_approval_for_whitelisted_command() {
-        let t = RunCommandTool::new(vec!["ls".into()]);
+        let t = tool_with_trusted(vec!["ls"]);
         let args = serde_json::json!({"cmd": "ls", "args": ["-la"]});
         assert!(!t.requires_approval(&args));
     }
 
     #[test]
     fn approval_required_when_whitelisted_has_denied_arg() {
-        let t = tool();
+        let t = tool_with_trusted(vec!["git"]);
         // git 在白名单，但 -C 是 denied prefix
         let args = serde_json::json!({"cmd": "git", "args": ["-C", "/tmp"]});
         assert!(t.requires_approval(&args));

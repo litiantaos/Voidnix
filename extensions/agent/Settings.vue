@@ -198,6 +198,11 @@
         <p text="xs tx-subtle" m="t-1">
           列在此处的命令直接执行无需审批。点击审批弹窗的「执行并信任」也会自动追加。
         </p>
+        <!-- trusted ∩ forbidden floor 冲突警告（B2）：被底线覆盖，加进 trusted 无效 -->
+        <p v-if="conflictTrusted.length" text="xs text-red-500" m="t-1">
+          以下命令在硬禁底线中，加进白名单无效（Rust 端并集兜底）：
+          {{ conflictTrusted.join('、') }}
+        </p>
       </div>
     </BaseDialog>
 
@@ -231,7 +236,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useSettingsStore, type AiProviderConfig } from '@/stores/settings'
-import { config as agentConfig, type SearchProviderConfig, updateSearchProvider } from './config'
+import { config as agentConfig, BOUNDS, type SearchProviderConfig, updateSearchProvider } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -453,6 +458,15 @@ function openWhitelistDialog() {
   whitelistText.value = agentConfig.trustedCommands.join('\n')
   showWhitelistDialog.value = true
 }
+
+// trusted ∩ forbidden floor 冲突（B2）：编辑中的白名单与硬禁底线交集
+const conflictTrusted = computed(() => {
+  const floor: readonly string[] = BOUNDS.forbiddenCommands.floor
+  return whitelistText.value
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s && floor.includes(s))
+})
 
 async function saveWhitelist() {
   const list = whitelistText.value
