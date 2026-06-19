@@ -21,11 +21,52 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .build()
 }
 
+#[async_trait::async_trait]
 impl Extension for WindowManagerExtension {
     fn id(&self) -> &'static str {
         "window-manager"
     }
+
+    async fn setup(&self, app: &tauri::AppHandle) -> tauri::Result<()> {
+        configure_snap_panel(app);
+        Ok(())
+    }
 }
+
+/// snap-panel 窗口配置：透明覆盖层 + 跨 Space + 禁阴影（§2.8，下沉自 lib.rs）。
+#[cfg(target_os = "macos")]
+fn configure_snap_panel(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    use objc2_app_kit::{NSScreen, NSWindow as SnapNSWindow, NSWindowCollectionBehavior};
+    use objc2_foundation::MainThreadMarker;
+    let Some(window) = app.get_webview_window("snap-panel") else {
+        return;
+    };
+    let raw = window.ns_window().unwrap().cast::<SnapNSWindow>();
+    unsafe {
+        let ns_window = raw.as_ref().unwrap();
+        if let Some(cv) = ns_window.contentView() {
+            let _: () = objc2::msg_send![&cv, setWantsLayer: true];
+        }
+        crate::platform::panel::convert_to_panel(raw.cast());
+        let mtm = MainThreadMarker::new().unwrap();
+        let screen = NSScreen::mainScreen(mtm).unwrap();
+        ns_window.setFrame_display(screen.frame(), true);
+        ns_window.setLevel(objc2_app_kit::NSStatusWindowLevel + 1);
+        let behavior = NSWindowCollectionBehavior::FullScreenAuxiliary
+            | NSWindowCollectionBehavior::Transient
+            | NSWindowCollectionBehavior::CanJoinAllSpaces;
+        ns_window.setCollectionBehavior(behavior);
+        ns_window.setIgnoresMouseEvents(true);
+        let _: () = objc2::msg_send![ns_window, setAcceptsMouseMovedEvents: true];
+        ns_window.setAlphaValue(0.0);
+        ns_window.orderFrontRegardless();
+        let _: () = objc2::msg_send![ns_window, setHasShadow: false];
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn configure_snap_panel(_app: &tauri::AppHandle) {}
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

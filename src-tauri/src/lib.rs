@@ -3,8 +3,6 @@ mod platform;
 mod runtime;
 mod extensions;
 
-use tauri::Manager;
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -38,6 +36,14 @@ pub fn run() {
             crate::runtime::window::pick_directory,
         ])
         .setup(|app| {
+            // pre-bootstrap：框架级共享资源（串行，bootstrap 之前）。AX timeout 多扩展共享，
+            // 不可下沉扩展 setup（并行 bootstrap 无法保证时序，§2.1）。
+            #[cfg(target_os = "macos")]
+            {
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                crate::platform::selection::init_ax_timeout();
+            }
+
             let registry = crate::runtime::registry::ExtensionRegistry::new()
                 .register(crate::extensions::clipboard::ClipboardExtension)
                 .register(crate::extensions::screenshot::ScreenshotExtension)
@@ -49,86 +55,14 @@ pub fn run() {
                 .register(crate::extensions::agent::AgentExtension)
                 .register(crate::extensions::search::SearchExtension);
 
-            // block_on 探针（§7 N7）：确认 setup 同步闭包内可安全 block_on
-            //（非 tokio worker 嵌套）。若 panic 则 bootstrap 的 join_all 同样会 panic，
-            // 需改 std::thread 方案。运行 `tauri:dev` 即可冒烟验证。
+            // block_on 探针（§7 N7）：确认 setup 同步闭包内可安全 block_on（非 tokio worker 嵌套）。
             tauri::async_runtime::block_on(async {});
 
             crate::runtime::registry::bootstrap(app, registry)?;
 
-            // Agent 框架层全局 state
-            app.manage(crate::extensions::agent::engine::cancellation::SessionRegistry::default());
-            app.manage(crate::extensions::agent::engine::approval::ApprovalManager::default());
-
+            // 框架级主窗口配置（panel 转换 + 圆角）；扩展窗口配置由各扩展 setup 自管（§2.8）
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-
-            #[cfg(target_os = "macos")]
-            crate::platform::selection::init_ax_timeout();
-
-            // 主窗口：圆角 + panel 转换
-            #[cfg(target_os = "macos")]
-            if let Some(window) = app.get_webview_window("main") {
-                use objc2_app_kit::NSWindow;
-                let raw = window.ns_window().unwrap().cast::<NSWindow>();
-                let ns_window = unsafe { raw.as_ref().unwrap() };
-                if let Some(content_view) = ns_window.contentView() {
-                    let _: () = unsafe { objc2::msg_send![&content_view, setWantsLayer: true] };
-                    let layer: *mut objc2::runtime::AnyObject =
-                        unsafe { objc2::msg_send![&content_view, layer] };
-                    if !layer.is_null() {
-                        let _: () = unsafe { objc2::msg_send![layer, setCornerRadius: 16.0_f64] };
-                        let _: () = unsafe { objc2::msg_send![layer, setMasksToBounds: true] };
-                    }
-                }
-                crate::platform::panel::convert_to_panel(raw.cast());
-            }
-
-            // snap-panel 窗口：透明覆盖层 + 跨 Space
-            #[cfg(target_os = "macos")]
-            if let Some(window) = app.get_webview_window("snap-panel") {
-                use objc2_app_kit::{NSScreen, NSWindow as SnapNSWindow, NSWindowCollectionBehavior};
-                use objc2_foundation::MainThreadMarker;
-                let raw = window.ns_window().unwrap().cast::<SnapNSWindow>();
-                unsafe {
-                    let ns_window = raw.as_ref().unwrap();
-                    if let Some(cv) = ns_window.contentView() {
-                        let _: () = objc2::msg_send![&cv, setWantsLayer: true];
-                    }
-                    crate::platform::panel::convert_to_panel(raw.cast());
-                    let mtm = MainThreadMarker::new().unwrap();
-                    let screen = NSScreen::mainScreen(mtm).unwrap();
-                    ns_window.setFrame_display(screen.frame(), true);
-                    ns_window.setLevel(objc2_app_kit::NSStatusWindowLevel + 1);
-                    let behavior = NSWindowCollectionBehavior::FullScreenAuxiliary
-                        | NSWindowCollectionBehavior::Transient
-                        | NSWindowCollectionBehavior::CanJoinAllSpaces;
-                    ns_window.setCollectionBehavior(behavior);
-                    ns_window.setIgnoresMouseEvents(true);
-                    let _: () = objc2::msg_send![ns_window, setAcceptsMouseMovedEvents: true];
-                    ns_window.setAlphaValue(0.0);
-                    ns_window.orderFrontRegardless();
-                }
-            }
-
-            // 透明覆盖窗口禁用系统阴影
-            #[cfg(target_os = "macos")]
-            {
-                use objc2_app_kit::NSWindow;
-                for label in ["screenshot", "snap-panel"] {
-                    let Some(window) = app.get_webview_window(label) else {
-                        continue;
-                    };
-                    if let Ok(raw) = window.ns_window() {
-                        let raw = raw.cast::<NSWindow>();
-                        unsafe {
-                            if let Some(ns_window) = raw.as_ref() {
-                                let _: () = objc2::msg_send![ns_window, setHasShadow: false];
-                            }
-                        }
-                    }
-                }
-            }
+            crate::runtime::window::configure_main_window(app.handle());
 
             Ok(())
         })

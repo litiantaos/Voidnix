@@ -75,6 +75,32 @@ pub fn make_main_window_key(app: &tauri::AppHandle) {
     }
 }
 
+/// 主窗口框架级配置：content view 圆角 + panel 转换（§2.8）。
+/// 在 lib.rs setup 内 bootstrap 之后调用一次。
+#[cfg(target_os = "macos")]
+pub fn configure_main_window(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    use objc2_app_kit::NSWindow;
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let raw = window.ns_window().unwrap().cast::<NSWindow>();
+    let ns_window = unsafe { raw.as_ref().unwrap() };
+    if let Some(content_view) = ns_window.contentView() {
+        let _: () = unsafe { objc2::msg_send![&content_view, setWantsLayer: true] };
+        let layer: *mut objc2::runtime::AnyObject =
+            unsafe { objc2::msg_send![&content_view, layer] };
+        if !layer.is_null() {
+            let _: () = unsafe { objc2::msg_send![layer, setCornerRadius: 16.0_f64] };
+            let _: () = unsafe { objc2::msg_send![layer, setMasksToBounds: true] };
+        }
+    }
+    crate::platform::panel::convert_to_panel(raw.cast());
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn configure_main_window(_app: &tauri::AppHandle) {}
+
 #[tauri::command]
 pub fn set_main_window_size(
     app: tauri::AppHandle,
