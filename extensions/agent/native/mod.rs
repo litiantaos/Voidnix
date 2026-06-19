@@ -213,8 +213,17 @@ pub async fn agent_abort(
 /// Agent 扩展。
 pub struct AgentExtension;
 
+#[async_trait::async_trait]
 impl Extension for AgentExtension {
     fn id(&self) -> &'static str {
         "agent"
+    }
+
+    async fn setup(&self, app: &tauri::AppHandle) -> tauri::Result<()> {
+        use tauri::Manager;
+        // 扩展级共享 State（agent_run / agent_approve / agent_abort 命令消费）
+        app.manage(engine::cancellation::SessionRegistry::default());
+        app.manage(engine::approval::ApprovalManager::default());
+        Ok(())
     }
 }
