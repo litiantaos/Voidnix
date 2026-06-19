@@ -1,6 +1,6 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import type { ProviderResult } from '@/runtime/types'
-import { copyAndHide } from '@/utils/clipboard'
+import { copyAndHide } from '@/stores/app'
 import { CURRENCIES, parseCurrencyInput, convertCurrency, isRatesCacheFresh } from './logic'
 
 let ratesCache: Record<string, number> | null = null

@@ -45,7 +45,7 @@
 import { ref, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
-import { copyAndHide } from '@/utils/clipboard'
+import { copyAndHide } from '@/stores/app'
 import { useAppStore } from '@/stores/app'
 import { pendingText } from '@ext/translate'
 import { pendingOcrData } from './index'

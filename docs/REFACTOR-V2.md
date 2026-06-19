@@ -75,6 +75,7 @@
 - **v1.7**：§2.6/§1.1 platform/input 落地统一 API——`post_key(key_code, &[Modifier], Option<pid>)` 原语（Modifier 枚举替代裸 `flags: u64`，`Option<pid>` 统一目标进程/全局注入）+ `post_combo(combo, Option<pid>)` 字符串糖（"cmd+c"/"cmd+shift+."）；删除 inject*copy/inject_paste/post_key_global/paste_global/FLAG*\* 与 `#![allow(dead_code)]`；`post_keystroke` 零消费者按 §0.3 YAGNI 延后。
 - **v1.7**：§2.2 settingsView 跨扩展契约落地（导航枢纽形态）——clipboard/agent/translate `subviews:{settings}` magic key → `settingsView` 槽；settings 扩展 mainView 扫描各扩展 settingsView 聚合「扩展配置」入口、钻入全屏（ContentView `resolvedView` 增 `getExtension(id).settingsView` 回退）；移除 3 扩展模块内 ⚙️，translate searchBarAccessory 仅含 ⚙️ 故整体移除（searchBarAccessory 消费者 3→2：clipboard/agent）；`subviews` 收窄为 screenshot{ocr}（契合 N3 目标）。
 - **v1.7**：§1.2 ContentView 收敛为纯渲染器——剥离搜索编排（doSearch/internalResults/searchQuery-watch），仅渲染 props 注入的 `results`/`loading`/`selectedIndex` + resolvedView；搜索型模块（无 mainView、有 search：base64/calculator/currency/ip/time/uuid）的 `module.search.dynamic` 上移 useSearchInput（onInput 模块分支 + 进入模块 watch 触发初始 dynamic）；execute 分派保留双路（全局走 useResultNavigation 退出+隐藏；模块内走 module.onExecute 不退出）。
+- **v1.8**：§1.2 utils→stores 分层收口——`copyAndHide`/`makeToggleHandler`（原误放 `utils/`，含 useAppStore 反向依赖）下沉 `stores/app.ts` 顶层导出（app 行为归位，utils 层零 stores 依赖）；`copyAndShow` 零消费者死代码删除；`utils/clipboard.ts` 收敛为仅 `writeText` 纯原语；删 `utils/module-toggle.ts`。撤回 v1.2「clipboard.ts 返回 label 调用方 showStatus」原案（copyAndHide 含 hide+timer 异步逻辑，拆解致 6 调用点重复，整体下沉更优）。
 
 ---
 
@@ -145,7 +146,7 @@ src/
 │   └── types.ts               # Extension/SearchProvider 类型
 │
 ├── stores/                    # 3 个（settings.ts 保留）
-│   ├── app.ts                 # UI 状态（activeModule/searchQuery/dialog/subview/shortcut 录制/statusMessage）
+│   ├── app.ts                 # UI 状态（activeModule/searchQuery/dialog/subview/shortcut 录制/statusMessage）+ app 行为顶层导出（copyAndHide/makeToggleHandler，v1.8）
 │   ├── settings.ts            # 框架级配置（快捷键 + AI Provider；181 行）
 │   └── update.ts              # 应用更新
 │
@@ -176,7 +177,7 @@ src/
 └── utils/
     ├── fuzzy.ts               # 不变（设计优秀，权重读 constants）
     ├── icons.ts               # 文件扩展名 → 图标 + 颜色映射
-    ├── clipboard.ts           # 删 useAppStore 依赖（返回 label，调用方 showStatus）
+    ├── clipboard.ts           # 仅 writeText 纯原语（零 stores 依赖；copyAndHide/makeToggleHandler 下沉 stores/app.ts，v1.8）
     ├── format.ts              # 合并 provider.ts + error.ts
     ├── dom.ts
     ├── tauri.ts               # 删 toSearchResults（统一类型）
@@ -288,6 +289,7 @@ interface ExtensionMeta {
   icon: string
   order: number
   keywords?: string[]
+  description?: string // 进 keywordSearchAll 评分字段（search-engine.ts 消费）
   hidden?: boolean
 }
 
@@ -977,7 +979,7 @@ impl crate::runtime::registry::Extension for ClipboardExtension {
 ```ts
 import { defineExtension } from '@/runtime/extension-registry'
 import type { SearchResult } from '@/runtime/types'
-import { copyAndShow } from '@/utils/clipboard'
+import { copyAndHide } from '@/stores/app'
 import { base64Encode, base64Decode } from './utils'
 import View from './View.vue'
 
@@ -1037,9 +1039,10 @@ export default defineExtension({
 
   // 结果回车动作走 onExecute 槽（扩展私有）
   // 注：禁止 navigator.clipboard（panel 策略下不抢 NSApp active，行为不稳定），
-  //     统一走 @/utils/clipboard 的 copyAndShow/copyAndHide（内部调 Rust platform/pasteboard::write_text）
+  //     统一走 stores/app.ts 的 copyAndHide（app 行为：写剪贴板 + showStatus + 延迟隐藏窗口，
+  //     内部调 Rust platform/pasteboard::write_text）
   onExecute: (r) => {
-    if (r.data?.result) copyAndShow(r.data.result)
+    if (r.data?.result) copyAndHide(r.data.result)
   },
 })
 ```

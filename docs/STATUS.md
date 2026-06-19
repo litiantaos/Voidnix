@@ -136,7 +136,7 @@ bun run lint             → 零错误
 - `scripts/sync-extensions.ts` 含 windowViews 校验后增长（目标 <50 已破）：`--check` 模式 + A4 校验必要，行数让位于功能完整性。
 - screenshot `ffi.rs:129` picker.jpg：固定路径复用 scratch（每次覆写、不累积），不适配 TempHandle Drop 语义，保留；启动 sweep 不覆盖（前缀不符），单文件残留可接受。
 - platform/pasteboard 未实现 read_image/write_image（NSImage 级）：零消费者（clipboard 用 PNG 字节级 read_png/set_png），按 YAGNI 跳过。
-- `utils/clipboard.ts` 仍含 useAppStore 依赖：copyAndShow/copyAndHide 调用 showStatus 反馈，解耦 ripple 大，保留。
+- `utils/clipboard.ts` useAppStore 依赖已收口：copyAndShow 死代码删除；copyAndHide/makeToggleHandler 下沉 `stores/app.ts`（app 行为归位，utils 层零 stores 依赖，见 RV §1.2 v1.8）。
 
 ## AGENTS.md 同步状态
 
