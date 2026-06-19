@@ -1,6 +1,6 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import type { ProviderResult } from '@/runtime/types'
-import { copyAndHide } from '@/utils/clipboard'
+import { copyAndHide } from '@/stores/app'
 import { uuidv4, nanoId } from './logic'
 
 export default defineExtension({

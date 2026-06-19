@@ -1,7 +1,7 @@
 import { ref, shallowRef } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
 import { defineAsyncComponent } from 'vue'
-import { makeToggleHandler } from '@/utils/module-toggle'
+import { makeToggleHandler } from '@/stores/app'
 import type { ProviderResult } from '@/runtime/types'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'

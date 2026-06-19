@@ -82,7 +82,7 @@ SearchResult { id, title, module; description?; icon?; shortcut?; boost?; score?
 
 **UI 槽位**：`mainView`（主视图）、`searchBarAccessory`（搜索栏右侧）、`subviews`（命名子视图，screenshot{ocr}）、`settingsView`（设置片段）、`windowViews`（独立窗口视图）。槽位值为 `() => Component`（惰性求值）。组件 `Actions` 后缀。
 
-**状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide` / `copyAndShow`（`src/utils/clipboard.ts`）自动获得「已复制」反馈。扩展可通过 `hints.enter` / `hints.multiSelect` / `hints.delete` 自定义快捷键提示。
+**状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide`（`stores/app.ts`，app 行为：写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈。扩展可通过 `hints.enter` / `hints.multiSelect` / `hints.delete` 自定义快捷键提示。
 
 **LLM 基础设施**（`runtime/llm/`）：agent + translate 扩展共享。`types.rs`（LlmMessage）、`client.rs`（StreamConfig/stream_openai_request + SSRF 防护 validate_ai_request + 消息截断 + 请求管道常量）、`parser.rs`（tool_calls 解析）。
 

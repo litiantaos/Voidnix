@@ -94,7 +94,7 @@ export interface Extension {
   onExecute?(result: SearchResult, selectedResults?: SearchResult[]): void | Promise<void>
   /** 主视图（9 扩展）。 */
   mainView?: () => Component
-  /** 搜索栏右侧附属区域（3 扩展）。 */
+  /** 搜索栏右侧附属区域（2 扩展：clipboard/agent；translate ⚙️ 随 settingsView 集中化移除，v1.7）。 */
   searchBarAccessory?: () => Component
   /** 扩展私有命名子视图（screenshot{ocr}）。 */
   subviews?: Record<string, () => Component>
