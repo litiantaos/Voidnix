@@ -118,8 +118,6 @@ fn truncate_message(content: &str) -> String {
 /// 本轮流式的最终结局（无工具调用时 tool_calls 为空）。
 #[derive(Debug)]
 pub struct StreamOutcome {
-    #[allow(dead_code)]
-    pub finish_reason: String,
     pub full_text: String,
     pub tool_calls: Vec<FinalizedToolCall>,
 }
@@ -216,7 +214,6 @@ pub async fn stream_openai_request(
             if flag.swap(false, Ordering::SeqCst) {
                 emit_done(config.app, config.done_event, config.request_id);
                 return Ok(StreamOutcome {
-                    finish_reason: "aborted".into(),
                     full_text,
                     tool_calls: Vec::new(),
                 });
@@ -232,7 +229,6 @@ pub async fn stream_openai_request(
             log::error!("SSE buffer exceeded {} bytes, dropping connection.", MAX_SSE_BUFFER);
             emit_done(config.app, config.done_event, config.request_id);
             return Ok(StreamOutcome {
-                finish_reason: "buffer_overflow".into(),
                 full_text,
                 tool_calls: Vec::new(),
             });
@@ -334,7 +330,7 @@ fn finalize_stream(
     } else {
         Vec::new()
     };
-    StreamOutcome { finish_reason, full_text, tool_calls }
+    StreamOutcome { full_text, tool_calls }
 }
 
 fn emit_done(app: &tauri::AppHandle, done_event: &str, request_id: &str) {

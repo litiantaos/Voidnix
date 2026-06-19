@@ -12,7 +12,6 @@ export interface ConfirmOptions {
   okLabel?: string
   cancelLabel?: string
   showCancel?: boolean
-  showFooter?: boolean
 }
 
 export const useAppStore = defineStore('app', () => {
@@ -44,14 +43,6 @@ export const useAppStore = defineStore('app', () => {
         statusMessage.value = ''
         statusTimer = null
       }, duration)
-    }
-  }
-
-  function clearStatus() {
-    statusMessage.value = ''
-    if (statusTimer) {
-      clearTimeout(statusTimer)
-      statusTimer = null
     }
   }
 
@@ -96,10 +87,6 @@ export const useAppStore = defineStore('app', () => {
     activeSubview.value = null
   }
 
-  function toggleSubview(subviewId: string) {
-    activeSubview.value = activeSubview.value === subviewId ? null : subviewId
-  }
-
   function setShortcutRecording(value: boolean) {
     shortcutRecording.value = value
   }
@@ -131,7 +118,6 @@ export const useAppStore = defineStore('app', () => {
     activeSubview,
     openSubview,
     closeSubview,
-    toggleSubview,
     shortcutRecording,
     setShortcutRecording,
     shortcutErrors,
@@ -139,7 +125,6 @@ export const useAppStore = defineStore('app', () => {
     clearShortcutError,
     statusMessage,
     showStatus,
-    clearStatus,
   }
 })
 

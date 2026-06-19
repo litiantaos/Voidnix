@@ -7,7 +7,6 @@ export const CMD = {
   isAppActive: 'is_app_active',
   getHomeDir: 'get_home_dir',
   pickDirectory: 'pick_directory',
-  setMainWindowSize: 'set_main_window_size',
   openModuleSubview: 'open_module_subview',
   quitApp: 'quit_app',
   revealInFinder: 'reveal_in_finder',
@@ -87,13 +86,9 @@ export const CMD = {
   agentRun: 'agent_run',
   agentApprove: 'agent_approve',
   agentAbort: 'agent_abort',
-  chatStream: 'chat_stream',
-  chatAbort: 'chat_abort',
 
   // —— search ——
   searchApps: 'search_apps',
   searchFiles: 'search_files',
   launchApp: 'launch_app',
 } as const
-
-export type CommandName = (typeof CMD)[keyof typeof CMD]

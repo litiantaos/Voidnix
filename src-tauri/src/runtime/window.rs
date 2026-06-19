@@ -101,21 +101,6 @@ pub fn configure_main_window(app: &tauri::AppHandle) {
 #[cfg(not(target_os = "macos"))]
 pub fn configure_main_window(_app: &tauri::AppHandle) {}
 
-#[tauri::command]
-pub fn set_main_window_size(
-    app: tauri::AppHandle,
-    width: f64,
-    height: f64,
-) -> Result<(), String> {
-    use tauri::Manager;
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_size(tauri::LogicalSize::new(width, height));
-        Ok(())
-    } else {
-        Err("Main window not found".into())
-    }
-}
-
 /// 返回当前用户的 home 目录路径。
 #[tauri::command]
 pub fn get_home_dir() -> String {

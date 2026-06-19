@@ -3,9 +3,6 @@ use tauri::AppHandle;
 
 #[cfg(target_os = "macos")]
 mod ffi;
-#[allow(unused_imports)]
-#[cfg(target_os = "macos")]
-pub use ffi::*;
 
 mod crop;
 pub mod ocr;

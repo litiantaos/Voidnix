@@ -226,9 +226,9 @@ fn process_command(path: &Path, handle: &AppHandle) {
     }
 }
 
-/// 委托至 platform::path_guard 统一路径校验（finder-ext = 用户主动操作 → Interactive）。
+/// 委托至 platform::path_guard 统一路径校验（拦系统致命路径）。
 fn validate_path(path: &Path) -> bool {
-    crate::platform::path_guard::validate(path, crate::platform::path_guard::Policy::Interactive)
+    crate::platform::path_guard::validate(path)
 }
 
 fn handle_copy_path(_handle: &AppHandle, paths: &[PathBuf], target: &str) {

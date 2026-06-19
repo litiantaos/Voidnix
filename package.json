@@ -31,10 +31,8 @@
   },
   "devDependencies": {
     "@iconify-json/ri": "^1.2.10",
-    "@pinia/testing": "^1.0.3",
     "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2.11.2",
-    "@types/dompurify": "^3.2.0",
     "@types/node": "^25.9.3",
     "@unocss/eslint-plugin": "^66.7.2",
     "@vitejs/plugin-vue": "^6.0.7",

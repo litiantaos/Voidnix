@@ -162,7 +162,3 @@ function dedupe(items: SearchResult[]): SearchResult[] {
 }
 
 export const searchEngine = new SearchEngine()
-
-export type { SearchResult }
-// 重新导出 ProviderResult 便于扩展 import
-export type { ProviderResult } from './types'

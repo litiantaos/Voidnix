@@ -2,7 +2,6 @@
 //!
 //! 每个 agent_run 创建一个 session_id（前端传入），注册到这里。
 //! abort 命令按 session_id 查找并触发 CancellationToken。
-//! 关窗/hide 时 `cancel_all` 一次性中止所有 session。
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -56,30 +55,6 @@ impl SessionRegistry {
             false
         }
     }
-
-    /// 取消所有会话（关窗/hide 时调用）。
-    #[allow(dead_code)]
-    pub fn cancel_all(&self) {
-        let mut sessions = self.sessions.lock().unwrap();
-        for (_, mut session) in sessions.drain() {
-            session.token.cancel();
-            if let Some(handle) = session.handle.take() {
-                handle.abort();
-            }
-        }
-    }
-
-    /// 当前活跃会话数（监控用）。
-    #[allow(dead_code)]
-    pub fn active_count(&self) -> usize {
-        self.sessions.lock().unwrap().len()
-    }
-
-    /// 检查会话是否仍活跃（用于 loop_runner 自检）。
-    #[allow(dead_code)]
-    pub fn is_active(&self, session_id: &str) -> bool {
-        self.sessions.lock().unwrap().contains_key(session_id)
-    }
 }
 
 #[cfg(test)]
@@ -90,30 +65,17 @@ mod tests {
     fn register_and_cancel() {
         let reg = SessionRegistry::default();
         let token = reg.register("s1".to_string(), CancellationToken::new());
-        assert_eq!(reg.active_count(), 1);
-        assert!(reg.is_active("s1"));
         assert!(!token.is_cancelled());
 
         assert!(reg.cancel("s1"));
         assert!(token.is_cancelled());
-        assert_eq!(reg.active_count(), 0);
-        assert!(!reg.is_active("s1"));
+        // 重复 cancel 已移除的 session 返回 false
+        assert!(!reg.cancel("s1"));
     }
 
     #[test]
     fn cancel_unknown_session_returns_false() {
         let reg = SessionRegistry::default();
         assert!(!reg.cancel("missing"));
-    }
-
-    #[test]
-    fn cancel_all_clears_sessions() {
-        let reg = SessionRegistry::default();
-        let t1 = reg.register("s1".to_string(), CancellationToken::new());
-        let t2 = reg.register("s2".to_string(), CancellationToken::new());
-        reg.cancel_all();
-        assert!(t1.is_cancelled());
-        assert!(t2.is_cancelled());
-        assert_eq!(reg.active_count(), 0);
     }
 }

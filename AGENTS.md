@@ -43,7 +43,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **前端扩展注册**：`index.ts` 顶层 `export default defineExtension({ meta, search?, mainView?, ... })`，由 `main.ts` 的 `import.meta.glob(['@ext/*/index.ts'], { eager: true })` 自动扫描注册。扩展 `setup()` 钩子在 Vue 挂载后由 `main.ts` 并行触发。
 
-**Rust 端注册**：双注册——`init() -> TauriPlugin<Wry>`（编译期，各扩展 `native/mod.rs` 内 `invoke_handler(generate_handler![...])` 局部注册命令 + plugin `.setup` 管理命令执行 State）+ `Extension` trait（运行时 `setup`/`teardown` 异步钩子，并行 bootstrap via `join_all`，在 `lib.rs` 的 `ExtensionRegistry` 注册）。框架命令（permission 5 + shortcut 5 + window 3 = 13，另含 `pasteboard_write_text` 1，共 14 个）在 `lib.rs` 手写 `generate_handler!`，不参与 sync-extensions 扫描。`configure_app!` 宏仅 `.plugin()` 链，零 `generate_handler!`。`check:extensions` 另校验 `windowViews` 漂移：声明该槽的扩展每个 key 须存在于 `tauri.conf.json` `windows[].label`，以 `-`/`*` 结尾的 key 视为动态窗口前缀（如 `pin-` 匹配运行时创建的 `pin-<id>`）。
+**Rust 端注册**：双注册——`init() -> TauriPlugin<Wry>`（编译期，各扩展 `native/mod.rs` 内 `invoke_handler(generate_handler![...])` 局部注册命令 + plugin `.setup` 管理命令执行 State）+ `Extension` trait（运行时 `setup` 异步钩子，并行 bootstrap via `join_all`，在 `lib.rs` 的 `ExtensionRegistry` 注册）。框架命令（permission 5 + shortcut 5 + window 2 = 12，另含 `pasteboard_write_text` 1，共 13 个）在 `lib.rs` 手写 `generate_handler!`，不参与 sync-extensions 扫描。`configure_app!` 宏仅 `.plugin()` 链，零 `generate_handler!`。`check:extensions` 另校验 `windowViews` 漂移：声明该槽的扩展每个 key 须存在于 `tauri.conf.json` `windows[].label`，以 `-`/`*` 结尾的 key 视为动态窗口前缀（如 `pin-` 匹配运行时创建的 `pin-<id>`）。
 
 **扩展配置**：每个扩展通过 `config.ts` 的 `defineConfig('extId', { ...defaults })` 自管配置，`reactive()` + `watch()` 自动持久化至 `extensions/<id>/config.json`。框架级配置（全局快捷键 + AI Provider）在 `stores/settings.ts`。
 
@@ -53,7 +53,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **前后端通信**：前端命令名常量集中 `src/commands.ts`（`CMD.xxx`），**禁止裸 `invoke('xxx')`**，统一走 `invoke<T>(CMD.xxx, {...})` + 手写类型（`types/` 与各扩展）。`scripts/check-commands.ts` CI 对 Rust `#[tauri::command]` 名集合 ↔ `commands.ts` 常量作双向差集校验。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。扩展 Command 在各 `init()` 局部注册；框架 Command 在 `lib.rs` 手写 `generate_handler!`。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
 
-**扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta`（元数据）+ 能力槽（按需声明，均有真实消费者）。9 能力槽：`search`（SearchProvider.dynamic 单通道）、`onExecute`、`mainView`、`searchBarAccessory`、`subviews`、`settingsView`、`windowViews`、`globalShortcuts`、`hints`；另含 `placeholder`、`setup`/`teardown` 生命周期。3 承载字段（`disableSearchInput`/`listOptions`/`onOpenSubview`）过渡期保留。
+**扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta`（元数据）+ 能力槽（按需声明，均有真实消费者）。9 能力槽：`search`（SearchProvider.dynamic 单通道）、`onExecute`、`mainView`、`searchBarAccessory`、`subviews`、`settingsView`、`windowViews`、`globalShortcuts`、`hints`；另含 `placeholder`、`setup` 生命周期。3 承载字段（`disableSearchInput`/`listOptions`/`onOpenSubview`）过渡期保留。
 
 **搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + keyword 合流 + dedupe + groupAndSort。模块模式（激活扩展）只调该扩展 dynamic 且 bypass groupAndSort（保留扩展返回序）；全局模式聚合所有扩展 dynamic，按 `finalScore = fuzzy(title,query) + boost` 过滤零分 + 分组限流。`SearchResult.module` 框架自动注入（扩展禁填），`boost` 扩展可选填组内优先级。
 
@@ -96,7 +96,7 @@ src-tauri/src/
 ├── runtime/            # 运行时核心
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
-│   ├── storage.rs      # TempHandle RAII 临时文件管理（Drop 自动清理 + 全局注册表）
+│   ├── storage.rs      # TempHandle RAII 临时文件管理（Drop 自动清理）
 │   ├── permission.rs   # 系统权限薄壳
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（并行 bootstrap）
 │   └── llm/            # LLM 基础设施（types / client / parser；security 溶解入 client，见 RV §1.1）

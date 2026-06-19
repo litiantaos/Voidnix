@@ -39,12 +39,12 @@
 - ✅ specta 依赖已删；bindings.ts 待阶段 4 删除（随 commands.ts 替换）
 - ✅ agent 9 层防御双层安全（policy.rs floor/cap + BOUNDS UI 镜像 + agent_run 入口 clamp）
 - ✅ screenshot temp 走 TempHandle（ocr×2/scroll 单函数 + pin 窗口注册表；picker.jpg 为复用 scratch 保留）
-- ✅ TempHandle RAII struct（Drop 自动清理 + 全局注册表 + cleanup_all_temps）
+- ✅ TempHandle RAII struct（Drop 自动清理）
 - ✅ finder-ext IPC「处理完即删 + 启动清空」
-- ✅ lib.rs 89 行（setup 闭包零专属配置；14 框架命令 + 9 扩展 registry + 启动埋点）
+- ✅ lib.rs 88 行（setup 闭包零专属配置；13 框架命令 + 9 扩展 registry + 启动埋点）
 - ✅ runtime/registry.rs 并行 bootstrap（async setup + join_all + block_on 探针）
 - ✅ search 统一 Extension trait（纳入 registry bootstrap）
-- ✅ 命令注册边界清晰：扩展命令在各 init() 局部注册、框架 14 命令在 lib.rs 手写、extensions.rs 零 generate_handler!
+- ✅ 命令注册边界清晰：扩展命令在各 init() 局部注册、框架 13 命令在 lib.rs 手写、extensions.rs 零 generate_handler!
 - ✅ 扩展结构体统一命名 XxxExtension
 - ✅ tauri-plugin-clipboard-manager 依赖删除（前端 utils 迁 platform/pasteboard::write_text）；tauri-plugin-store 保留
 
@@ -96,8 +96,8 @@
 - ✅ `bindings.ts` → `commands.ts` 替换完成（69 命令常量，43 处裸 invoke 全迁移，零裸 `invoke('xxx')`）
 - ✅ 语义常量集中（GROUP_ORDER/GROUP_TITLES/LIMITS 全在 `runtime/constants.ts` 单一源）
 - ✅ **`check:extensions` 增 windowViews 漂移校验（v1.5 A4）**：声明 windowViews 槽的扩展每个 key 须在 `tauri.conf.json` `windows[].label` 中，`-`/`*` 结尾视为动态前缀
-- ✅ **测试覆盖**：前端 226 用例（22 文件）；Rust 93 个；10/16 扩展有 `*.test.ts`（base64/calculator/time/uuid/ip/currency/search/clipboard/translate/agent，高价值逻辑抽 `logic.ts`），前端 runtime/ 3 文件齐测（search-engine/extension-registry/storage）；薄 wiring 6 扩展（screenshot/awake/zsh-as/window-manager/finder-ext/settings）无测试
-- ✅ AGENTS.md 与代码对齐（composables 结构、14 命令措辞、windowViews 前缀约定已同步）
+- ✅ **测试覆盖**：前端 224 用例（22 文件）；Rust 91 个；10/16 扩展有 `*.test.ts`（base64/calculator/time/uuid/ip/currency/search/clipboard/translate/agent，高价值逻辑抽 `logic.ts`），前端 runtime/ 3 文件齐测（search-engine/extension-registry/storage）；薄 wiring 6 扩展（screenshot/awake/zsh-as/window-manager/finder-ext/settings）无测试
+- ✅ AGENTS.md 与代码对齐（composables 结构、13 命令措辞、windowViews 前缀约定已同步）
 
 ### 阶段 6：验证 🟡
 
@@ -111,11 +111,11 @@
 
 ```
 cargo check --lib        → 零错误零警告
-cargo test --lib         → 93 passed
+cargo test --lib         → 91 passed
 bun run typecheck        → 零错误
 bun run test             → 226 passed (22 files)
 bun run test:e2e         → 8 passed
-bun run check:commands   → 69 commands in sync
+bun run check:commands   → 66 commands in sync
 bun run check:extensions → 9 extensions, check passed（含 windowViews A4）
 bun run lint             → 零错误
 ```
@@ -136,11 +136,22 @@ bun run lint             → 零错误
 - `scripts/sync-extensions.ts` 含 windowViews 校验后增长（目标 <50 已破）：`--check` 模式 + A4 校验必要，行数让位于功能完整性。
 - screenshot `ffi.rs:129` picker.jpg：固定路径复用 scratch（每次覆写、不累积），不适配 TempHandle Drop 语义，保留；启动 sweep 不覆盖（前缀不符），单文件残留可接受。
 - platform/pasteboard 未实现 read_image/write_image（NSImage 级）：零消费者（clipboard 用 PNG 字节级 read_png/set_png），按 YAGNI 跳过。
-- `utils/clipboard.ts` useAppStore 依赖已收口：copyAndShow 死代码删除；copyAndHide/makeToggleHandler 下沉 `stores/app.ts`（app 行为归位，utils 层零 stores 依赖，见 RV §1.2 v1.8）。
+- screenshot `scroll_capture.rs` ScrollSession.scale：Tauri 命令 `enter_scroll_capture` 的 IPC 参数（前端传入），retina 缩放语义锚点；当前恒 1.0 且内部未读取，保留作协议字段（删除涉及 IPC 契约 + 6 处改动，风险/收益不佳）。
+- agent engine 协议字段 `SearchProviderConfig.r#type` / `Decision.always_approve`：serde 反序列化占位（前端序列化传入、Rust 不读业务），保留。
+
+**死代码清理（已落地）**
+
+- 删 3 Cargo 死依赖（pinyin/toml/zip）+ 2 npm 死依赖（@pinia/testing/@types/dompurify）
+- 删 `src/types/ext-manifest.ts` 整文件（早期 Manifest.toml 架构遗留）+ `src/types/agent.ts` 5 个过期 invoke 参数 interface
+- 删 `search-engine.ts` 2 个零消费 re-export、`commands.ts` CommandName 类型、`dom.ts` FOCUSABLE_SELECTOR 降模块私有
+- 删 `stores/app.ts` toggleSubview/clearStatus/ConfirmOptions.showFooter + `stores/update.ts` available ref（均仅测试消费）+ 同步测试
+- 删 agent engine 监控死方法（cancellation cancel_all/active_count/is_active、tool_registry len/is_empty、approval pending_count）+ `client.rs` StreamOutcome.finish_reason 字段
+- 删 screenshot/search mod.rs 两个零消费 `pub use` glob re-export（修正 setup.rs 用显式 `super::ffi::` 路径）
+- P2 架构裁决：path_guard 删 Policy enum（agent 不用 path_guard，退化为 finder-ext 单消费者单参数 validate）；registry 删 teardown trait 方法 + run_teardown（零扩展覆写、零调用）；storage.rs 删 cleanup_all_temps + TEMP_FILES 全局表（TempHandle 简化为纯 Drop guard）；删双端死命令 chat_stream/chat_abort（旧路径，走 agent_run）+ set_main_window_size（零消费者，框架命令 14→13）
 
 ## AGENTS.md 同步状态
 
-阶段 1-5 的 AGENTS.md 描述已全部增量对齐：命令注册边界（14 命令措辞修正）、registry 并行、pasteboard 统一、policy.rs、TempHandle RAII、LLM 溶解、前端 `src/runtime/` 5 文件、`defineExtension` 能力槽、SearchEngine、`commands.ts` + `check:commands`/`check:extensions`（windowViews A4）CI、composables 拆分后结构。
+阶段 1-5 的 AGENTS.md 描述已全部增量对齐：命令注册边界（13 命令措辞修正）、registry 并行、pasteboard 统一、policy.rs、TempHandle RAII、LLM 溶解、前端 `src/runtime/` 5 文件、`defineExtension` 能力槽、SearchEngine、`commands.ts` + `check:commands`/`check:extensions`（windowViews A4）CI、composables 拆分后结构。
 
 ## 阶段实施步骤
 
@@ -304,7 +315,7 @@ _收尾（依赖全部扩展迁移完成）_
 - ✅ icon 零磁盘文件（实时提取）
 - ✅ `lib.rs` 89 行、setup 闭包零专属配置（仅框架级 generate_handler + pre-bootstrap + configure_main_window + 启动埋点；v1.7 撤回 <50 行量化目标，改语义目标）
 - ✅ `runtime/llm/` = client.rs + parser.rs + types.rs（security 溶解入 client；trim_conversation 下沉 agent engine）
-- ✅ `runtime/registry.rs` Extension trait 并行 bootstrap（`join_all`）+ async setup/teardown
+- ✅ `runtime/registry.rs` Extension trait 并行 bootstrap（`join_all`）+ async setup
 - ✅ `tauri-plugin-clipboard-manager` 依赖删除
 - ✅ `tauri-plugin-store` 保留（defineConfig + settings.json 持久化后端，非冗余，见 RV §2.7 v1.2）
 - ✅ `path_guard` policy 化（Interactive/Automated）
@@ -312,7 +323,7 @@ _收尾（依赖全部扩展迁移完成）_
 - ✅ `TempHandle` RAII struct（Drop 自动清理）
 - ✅ clipboard monitor/commands 完整迁移 platform/pasteboard
 - ✅ search 扩展统一 Extension trait
-- ✅ 命令注册边界清晰：扩展命令在各 `init()` 局部注册、框架 14 命令在 `lib.rs` 手写、`extensions.rs` 零 `generate_handler!`
+- ✅ 命令注册边界清晰：扩展命令在各 `init()` 局部注册、框架 13 命令在 `lib.rs` 手写、`extensions.rs` 零 `generate_handler!`
 - ✅ `build.rs` 保持显式编译（不扫描化）
 
 ### 前端
@@ -337,7 +348,7 @@ _收尾（依赖全部扩展迁移完成）_
 
 - ✅ `check:commands` CI（命令名漂移检测，阻塞项）— 69 命令 in sync
 - ✅ `check:extensions` windowViews 漂移校验（v1.5 A4）— 已实现（`-`/`*` 结尾 key 视为动态前缀）
-- ✅ AGENTS.md 与代码对齐 — composables 结构 / 14 命令措辞 / windowViews 前缀约定已同步
+- ✅ AGENTS.md 与代码对齐 — composables 结构 / 13 命令措辞 / windowViews 前缀约定已同步
 
 ### 性能
 

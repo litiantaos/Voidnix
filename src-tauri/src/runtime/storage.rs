@@ -1,28 +1,21 @@
 // 临时文件管理（§2.7）。
 //
-// TempHandle：RAII guard，new 时注册路径到全局表，Drop 时自动删除 + 注销。
+// TempHandle：RAII guard，Drop 时自动删除文件。
 // screenshot 等扩展持有 guard 于窗口 State / 函数作用域，离开作用域即清理。
-// cleanup_all_temps：应用退出兜底；cleanup_temps_by_prefix：启动时扫 /tmp 残留。
+// cleanup_temps_by_prefix：启动时扫 /tmp 兜底异常退出残留。
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-
-/// 临时文件注册表（全局单例）。
-static TEMP_FILES: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
 /// RAII 临时文件 guard（§2.7）。
 ///
-/// `new` 注册路径到全局表；`Drop` 自动删除文件 + 注销。
-/// 大文件 IO 的 Drop 同步执行（截图 PNG 通常 <几 MB，remove 很快）；
+/// `Drop` 自动删除文件。大文件 IO 的 Drop 同步执行（截图 PNG 通常 <几 MB，remove 很快）；
 /// 真正阻塞的大文件场景由调用方自行 `spawn_blocking` detach。
 pub struct TempHandle {
     path: PathBuf,
 }
 
 impl TempHandle {
-    /// 创建 guard：注册路径到全局表。
     pub fn new(path: PathBuf) -> Self {
-        register(&path);
         Self { path }
     }
 }
@@ -30,31 +23,6 @@ impl TempHandle {
 impl Drop for TempHandle {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
-        unregister(&self.path);
-    }
-}
-
-fn register(path: &Path) {
-    if let Ok(mut files) = TEMP_FILES.lock() {
-        if !files.iter().any(|p| p == path) {
-            files.push(path.to_path_buf());
-        }
-    }
-}
-
-fn unregister(path: &Path) {
-    if let Ok(mut files) = TEMP_FILES.lock() {
-        files.retain(|p| p != path);
-    }
-}
-
-/// 清理所有已注册的临时文件（应用退出兜底；Drop 已清理的正常情况空转）。
-#[allow(dead_code)]
-pub fn cleanup_all_temps() {
-    if let Ok(mut files) = TEMP_FILES.lock() {
-        for path in files.drain(..) {
-            let _ = std::fs::remove_file(&path);
-        }
     }
 }
 

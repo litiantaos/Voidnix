@@ -1,6 +1,4 @@
 mod types;
-#[allow(unused_imports)]
-pub use types::SearchResult;
 
 mod icon;
 mod app_discovery;

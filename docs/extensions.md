@@ -60,7 +60,7 @@ watch(
 ### 双注册
 
 1. **编译期**：`#[tauri::command]` 函数 + `pub fn init() -> TauriPlugin`（sync-extensions 自动扫描，生成 `extensions.rs` 的 `configure_app!` 宏）
-2. **运行时**：`Extension` trait（`runtime/registry.rs`），在 `lib.rs` 的 `ExtensionRegistry` 注册，提供 `on_setup`/`on_teardown` 生命周期钩子
+2. **运行时**：`Extension` trait（`runtime/registry.rs`），在 `lib.rs` 的 `ExtensionRegistry` 注册，提供 `setup` 生命周期钩子（并行 bootstrap）
 
 ### Extension trait
 
@@ -68,7 +68,7 @@ watch(
 impl Extension for Plugin {
     fn id(&self) -> &'static str { "clipboard" }
 
-    fn on_setup(&self, app: &AppHandle) -> tauri::Result<()> {
+    async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
         // 启动监听器、初始化数据库、预热缓存等
         Ok(())
     }
@@ -84,7 +84,7 @@ impl Extension for Plugin {
 
 - `runtime::window::show_main` / `hide_main`：主窗口控制
 - `runtime::shortcut::register_shortcut_hook`：快捷键钩子
-- `runtime::storage`：TempHandle 临时文件管理（register_temp / cleanup_all_temps / cleanup_temps_by_prefix）
+- `runtime::storage`：TempHandle RAII 临时文件管理（new / Drop 自动清理 + cleanup_temps_by_prefix 启动扫残留）
 - `platform::focus`：焦点管理（capture_frontmost / restore_captured / captured_pid）
 - `platform::input`：键盘注入（post_key 原语 / post_combo 字符串糖；Modifier 枚举 + Option pid）
 - `platform::pasteboard`：NSPasteboard 统一（read_text / string_for_type / data_for_type / has_type / change_count / snapshot / restore）

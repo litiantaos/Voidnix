@@ -76,7 +76,7 @@ pub fn schedule_jpeg_prewarm(app: &AppHandle) {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(500));
         let _ = app_handle.run_on_main_thread(|| {
-            super::prewarm_jpeg_encoder();
+            super::ffi::prewarm_jpeg_encoder();
         });
     });
 }

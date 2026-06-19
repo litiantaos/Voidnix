@@ -9,7 +9,6 @@ describe('update store', () => {
 
   it('初始状态', () => {
     const store = useUpdateStore()
-    expect(store.available).toBe(false)
     expect(store.downloading).toBe(false)
     expect(store.downloaded).toBe(false)
     expect(store.checking).toBe(false)
@@ -28,7 +27,6 @@ describe('update store', () => {
 
   it('reset 恢复全部初始状态', () => {
     const store = useUpdateStore()
-    store.available = true
     store.downloading = true
     store.info = { currentVersion: '1.0', newVersion: '2.0', body: null }
     store.dialogVisible = true
@@ -36,7 +34,6 @@ describe('update store', () => {
 
     store.reset()
 
-    expect(store.available).toBe(false)
     expect(store.downloading).toBe(false)
     expect(store.downloaded).toBe(false)
     expect(store.checking).toBe(false)

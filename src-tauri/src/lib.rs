@@ -30,7 +30,6 @@ pub fn run() {
             crate::runtime::shortcut::is_app_active,
             crate::runtime::shortcut::hide_window,
             crate::runtime::shortcut::register_global_shortcut,
-            crate::runtime::window::set_main_window_size,
             crate::runtime::window::get_home_dir,
             crate::runtime::window::pick_directory,
             crate::platform::pasteboard::pasteboard_write_text,

@@ -6,8 +6,6 @@ use crate::extensions::agent::engine::AgentEvent;
 use crate::runtime::registry::Extension;
 use crate::runtime::llm::{self, LlmMessage};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::LazyLock;
 use tauri::ipc::Channel;
 use tokio_util::sync::CancellationToken;
 
@@ -19,56 +17,11 @@ mod tools;
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("agent")
         .invoke_handler(tauri::generate_handler![
-            chat_abort,
-            chat_stream,
             agent_run,
             agent_approve,
             agent_abort,
         ])
         .build()
-}
-
-// ──────────────────────────────────────────────────────────────
-// 旧 chat_stream 路径（保留兼容，D 阶段统一废弃）
-// ──────────────────────────────────────────────────────────────
-
-static ABORT_FLAG: LazyLock<AtomicBool> = LazyLock::new(|| AtomicBool::new(false));
-
-#[tauri::command]
-pub fn chat_abort() {
-    ABORT_FLAG.store(true, Ordering::SeqCst);
-}
-
-#[tauri::command]
-pub async fn chat_stream(
-    app: tauri::AppHandle,
-    messages: Vec<LlmMessage>,
-    endpoint: String,
-    api_key: String,
-    model: String,
-    request_id: Option<String>,
-) -> Result<(), String> {
-    let safe_endpoint = llm::validate_ai_request(&endpoint, &model, &api_key)?;
-    let trimmed_messages = engine::trim::trim_conversation(&messages);
-    let req_id = request_id.unwrap_or_else(|| "default".to_string());
-
-    llm::stream_openai_request(llm::StreamConfig {
-        app: &app,
-        endpoint: &safe_endpoint,
-        api_key: &api_key,
-        model: &model,
-        messages: trimmed_messages,
-        tools: None,
-        tool_choice: None,
-        on_text_delta: None,
-        on_tool_calls_delta: None,
-        chunk_event: "chat-chunk",
-        done_event: "chat-done",
-        request_id: &req_id,
-        abort_flag: Some(&ABORT_FLAG),
-    })
-    .await
-    .map(|_| ())
 }
 
 // ──────────────────────────────────────────────────────────────

@@ -3,11 +3,11 @@ use tauri::AppHandle;
 /// 扩展 trait：所有扩展（native / pure）统一的运行时生命周期契约。
 ///
 /// - 命令注册在各扩展 `init()` 局部 `invoke_handler`（§2.8）
-/// - 本 trait 负责运行时生命周期钩子：setup 并行执行、teardown 并行执行
+/// - 本 trait 负责运行时生命周期钩子：setup 并行执行
 ///
 /// **并行 bootstrap**（§2.1）：setup 无跨扩展依赖，全仓零跨扩展 import，
-/// 故 join_all 并行；teardown 同理并行（v1.6 N5）。setup 内禁止依赖其它扩展
-/// setup 的产物、禁止初始化框架级共享资源（此类放 lib.rs pre-bootstrap 串行）。
+/// 故 join_all 并行。setup 内禁止依赖其它扩展 setup 的产物、禁止初始化
+/// 框架级共享资源（此类放 lib.rs pre-bootstrap 串行）。
 #[async_trait::async_trait]
 pub trait Extension: Send + Sync + 'static {
     /// 扩展 ID，应与 `extensions/<id>/` 目录名一致。
@@ -17,10 +17,6 @@ pub trait Extension: Send + Sync + 'static {
     async fn setup(&self, _app: &AppHandle) -> tauri::Result<()> {
         Ok(())
     }
-
-    /// 清理钩子（退出时并行执行）。
-    #[allow(dead_code)]
-    async fn teardown(&self, _app: &AppHandle) {}
 }
 
 /// 扩展注册中心
@@ -38,11 +34,6 @@ impl ExtensionRegistry {
     pub fn register<E: Extension>(mut self, ext: E) -> Self {
         self.extensions.push(Box::new(ext));
         self
-    }
-
-    #[allow(dead_code)]
-    pub async fn run_teardown(&self, app: &AppHandle) {
-        futures_util::future::join_all(self.extensions.iter().map(|e| e.teardown(app))).await;
     }
 }
 
