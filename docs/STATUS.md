@@ -50,25 +50,41 @@
 
 ### 阶段 3：前端运行时重建 🟡
 
-当前实现走简化路线：`registerModule` + `AppModule` 5 组合接口 + `defineConfig` 自管配置。**未实现 RV §2 的 `defineExtension` 能力槽体系**。
+当前实现走简化路线：`registerModule` + `AppModule` 5 组合接口 + `defineConfig` 自管配置。**阶段 3 基础已落地（5 runtime 文件，纯增量、零破坏）；defineExtension 能力槽体系 + 消费者重连属阶段 4**。
 
-- ⬜ `src/runtime/` 目标 5 文件（types/constants/storage/extension-registry/search-engine）— 当前仅 `storage.ts`
-- ⬜ `defineExtension` + 9 能力槽（search/onExecute/mainView/searchBarAccessory/subviews/settingsView/windowViews/globalShortcuts/hints）— 16/16 扩展仍用 `registerModule`（**一次性全量迁移，不留 adapter**，见 RV 阶段 4 策略）
-- ⬜ SearchEngine 单通道管道（RV §2.5）— 仍是 module-registry 的 onSearch 单通道
-- ⬜ composables 拆分（useAppLifecycle/useSearchInput/useResultNavigation）
+- 🟡 `src/runtime/` 5 文件齐备
+  - ✅ `types.ts`：Extension/SearchProvider/SearchResult（9 能力槽 + 3 承载字段 disableSearchInput/listOptions/onOpenSubview）
+  - ✅ `constants.ts`：SEARCH.WEIGHTS/GROUP_ORDER/GROUP_TITLES/KEYWORD_MODULE_BOOST + LIMITS（单一源）
+  - ✅ `storage.ts`：defineConfig + store 实例缓存（B1）；删死代码 defineExtensionConfig/ConfigField/ConfigSchema
+  - ✅ `extension-registry.ts`：defineExtension + getAllExtensions + getExtension
+  - ✅ `search-engine.ts`：dynamic 单通道 + keyword 合流 + dedupe + groupAndSort（finalScore = fuzzy + boost）
+- ✅ `utils/fuzzy.ts` 权重读 constants（WEIGHTS.prefix/contains/pinyinBase/decay/logBase/logMul/cap）
+- ⬜ composables 拆分（useAppLifecycle/useSearchInput/useResultNavigation）— 与阶段 4 重连合并
+- ⬜ `MainView.vue` GROUP_TITLES 读 constants — 与 kind 分类变更（web-search→web）合并至阶段 4
 - ✅ settings.ts 586 → 181 行（扩展配置下沉 defineConfig）
 - ✅ AppModule 35 字段 → 5 组合接口
 - ✅ defineConfig 系统（reactive + watch 自动持久化）
 - ✅ 8/9 native 扩展配置自管（search 无 config.ts）
-- 🟡 `src/core/` 仍存在（module-registry/module-helpers/async-view），目标删除
-- 🟡 `stores/settings.ts` 保留（181 行，已是框架级快捷键+AI Provider，不再删除）
+- 🟡 `src/core/` 仍存在（module-registry/module-helpers/async-view），阶段 4 删除
+- 🟡 `stores/settings.ts` 保留（181 行，框架级快捷键+AI Provider）
 
 ### 阶段 4：扩展同构化 🟡
 
 - ✅ 4 个 .vnext 重建为纯 TS（base64/time/uuid/currency）
 - ✅ ip 从 native 转纯 TS（删 46 行 Rust）
-- 🟡 「同构」当前仅指目录形态，**接口仍用 `registerModule` 而非 `defineExtension`**（一次性迁移见 RV 阶段 4）
-- 🟡 扩展配置保持 defineConfig 形态；仅 agent 安全项需补 `BOUNDS` const（见 RV §3.4）
+- 🟡 「同构」当前仅指目录形态，**接口仍用 `registerModule` 而非 `defineExtension`**（一次性迁移见下方「阶段 4 复杂度备忘」）
+- 🟡 扩展配置保持 defineConfig 形态；agent 已补 `BOUNDS` const（阶段 2 步骤 9）
+
+#### 阶段 4 复杂度备忘（深入审查消费者后发现，供下次会话）
+
+一次性迁移触及面比 STATUS 原列更广，关键风险点：
+
+1. **ContentView 架构变更**：当前 ContentView 内部做模块搜索（`searchItems`/`onModuleSearch`/`itemToSearchResult`/`doSearch`）。蓝本统一到 searchEngine 处理全局+模块模式 → ContentView 须移除整个内部搜索逻辑，变纯渲染器（results 全由 MainView 从 searchEngine 传入）。
+2. **settings 的 `filteredItems` 注入链**：ContentView:163 provide filteredItems 给 settings View。ContentView 变纯渲染器后此链断，需 settings 的 dynamic 自管过滤 + View 直接消费。
+3. **useSearchCommand 重连**：tool-list(`/`)、web-search(`//`)、键盘导航、executeResult 分派。web-search 的 kind 从 `web-search/open-url` → `web`（蓝本合并）。
+4. **增量显示丢失**：当前 `searchAll(query, onUpdate)` 边到边显；蓝本 `searchEngine.search` 返回 final（无 onUpdate）。慢搜索（mdfind 文件）UX 回退，可接受但需知。
+5. **测试断裂**：`module-registry.test.ts`（10+ 用例）+ `app.test.ts` 的 onActivate/onDeactivate 用例随 core/ 删除 + store 改造失效，需重写为 searchEngine/extension-registry 测试。
+6. **承载字段**：蓝本精简 Extension 省略的字段中，`disableSearchInput`（translate/agent）、`listOptions.multiSelect`（clipboard）、`onOpenSubview`（screenshot）有活消费者，已在 `runtime/types.ts` 承载（注释标注）；`onActivate`/`onDeactivate` 仅 clipboard 1 消费者，迁移时移入 View 的 Vue onActivated/onDeactivated；`useSearchInput`/`onSearchInput`/`keepSearchInput` 零定义方=死代码，删。
 
 ### 阶段 5：测试 + 工具链 + 文档 🟡
 
@@ -98,12 +114,14 @@ bun run check:extensions → 9 extensions, check passed
 
 对照下方「验收清单」。**阶段 1/2（Rust 后端 + Rust 扩展迁移）已全部 ✅**。剩余集中在前端（阶段 3/4）与测试/工具链（阶段 5）。
 
-**阶段 3 前端运行时（核心未启动）**
+**阶段 3/4 前端运行时（基础已落地，消费者重连未启动）**
 
-- `src/runtime/` 仅 storage.ts 1 文件（目标 5 文件：types/constants/extension-registry/search-engine/storage）
-- `src/core/` 仍存在（module-registry/module-helpers/async-view），承担核心运行时职责
-- 16/16 扩展用 `registerModule`，0/16 用 `defineExtension`
-- SearchProvider dynamic 单通道、composables 拆分、constants 集中、bindings→commands 全未启动
+- ✅ `src/runtime/` 5 文件齐备（types/constants/storage/extension-registry/search-engine）
+- ⬜ 消费者仍用旧 `src/core/`（module-registry/module-helpers/async-view）：stores/app、App.vue、MainView、ContentView、StatusBar、useSearchCommand 全部 getModule/registerModule/searchAll
+- ⬜ 16/16 扩展用 `registerModule`，0/16 用 `defineExtension`（阶段 4 一次性迁移）
+- ⬜ SearchProvider dynamic 单通道未接入（search-engine 已实现但未 wired；旧 searchAll 仍在用）
+- ⬜ composables 拆分未启动；MainView GROUP_TITLES 仍硬编码（与 kind 合并至阶段 4）
+- ⬜ `bindings.ts` → `commands.ts` 替换、`check:commands` CI（阶段 5）
 
 **阶段 5 测试/工具链**
 
