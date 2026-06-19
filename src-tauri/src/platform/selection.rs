@@ -1,7 +1,7 @@
 //! macOS 选中文本提取（AX 系统级 API）。
 //!
 //! 与 platform::input（键盘注入）+ platform::pasteboard（剪贴板操作）配合使用。
-//! translate 扩展的划词取词流程：try_ax → 失败则 input::post_combo("cmd+c") → poll_clipboard。
+//! 划词取词流程：try_ax → 失败则 input::post_combo("cmd+c") → poll_clipboard。
 
 use std::ffi::{c_void, CStr, CString};
 use std::time::{Duration, Instant};
@@ -122,7 +122,7 @@ mod ax {
 
 // ── 公开 API ──────────────────────────────────────────
 
-/// 初始化 AX 超时设置（translate 扩展 setup 时调用）。
+/// 初始化 AX 超时设置（setup 阶段调用一次）。
 #[cfg(target_os = "macos")]
 pub fn init_ax_timeout() {
     ax::init_timeout();

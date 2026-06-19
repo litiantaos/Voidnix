@@ -28,7 +28,7 @@ macro_rules! configure_app {
             crate::runtime::shortcut::register_global_shortcut,
             crate::runtime::window::get_home_dir,
             crate::runtime::window::pick_directory,
-            crate::platform::pasteboard::pasteboard_write_text,
+            crate::runtime::pasteboard::pasteboard_write_text,
             crate::extensions::agent::agent_abort,
             crate::extensions::agent::agent_approve,
             crate::extensions::agent::agent_run,
