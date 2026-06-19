@@ -9,6 +9,9 @@ pub mod commands;
 
 pub use cache::{init_app_watcher, prewarm_cache, set_app_handle};
 
+use crate::runtime::registry::Extension;
+
+/// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("search")
         .invoke_handler(tauri::generate_handler![
@@ -17,11 +20,22 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             commands::reveal_in_finder,
             commands::launch_app,
         ])
-        .setup(|app, _api| {
-            crate::extensions::search::set_app_handle(app.clone());
-            crate::extensions::search::init_app_watcher();
-            tauri::async_runtime::spawn(crate::extensions::search::prewarm_cache());
-            Ok(())
-        })
         .build()
+}
+
+/// Search 扩展。统一走 registry bootstrap（不再绕过，§4）。
+pub struct SearchExtension;
+
+#[async_trait::async_trait]
+impl Extension for SearchExtension {
+    fn id(&self) -> &'static str {
+        "search"
+    }
+
+    async fn setup(&self, app: &tauri::AppHandle) -> tauri::Result<()> {
+        set_app_handle(app.clone());
+        init_app_watcher();
+        tauri::async_runtime::spawn(prewarm_cache());
+        Ok(())
+    }
 }

@@ -25,10 +25,10 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 ///
 /// 拥有自己的 SQLite 数据库（`<app_data>/extensions/clipboard/clipboard.db`），
 /// 通过 NSPasteboard 轮询监听剪贴板变化并落盘。
-pub struct Plugin;
+pub struct ClipboardExtension;
 
 #[async_trait::async_trait]
-impl Extension for Plugin {
+impl Extension for ClipboardExtension {
     fn id(&self) -> &'static str {
         "clipboard"
     }

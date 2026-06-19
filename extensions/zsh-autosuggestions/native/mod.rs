@@ -245,10 +245,10 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .build()
 }
 
-pub struct Plugin;
+pub struct ZshAutosuggestionsExtension;
 
 #[async_trait::async_trait]
-impl Extension for Plugin {
+impl Extension for ZshAutosuggestionsExtension {
     fn id(&self) -> &'static str {
         "zsh-autosuggestions"
     }

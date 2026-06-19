@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 mod window_snap;
 
 /// Window manager 扩展。
-pub struct Plugin;
+pub struct WindowManagerExtension;
 
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
@@ -21,7 +21,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .build()
 }
 
-impl Extension for Plugin {
+impl Extension for WindowManagerExtension {
     fn id(&self) -> &'static str {
         "window-manager"
     }

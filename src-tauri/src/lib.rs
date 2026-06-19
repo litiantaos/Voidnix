@@ -39,14 +39,15 @@ pub fn run() {
         ])
         .setup(|app| {
             let registry = crate::runtime::registry::ExtensionRegistry::new()
-                .register(crate::extensions::clipboard::Plugin)
-                .register(crate::extensions::screenshot::Plugin)
-                .register(crate::extensions::awake::Plugin)
-                .register(crate::extensions::zsh_autosuggestions::Plugin)
-                .register(crate::extensions::window_manager::Plugin)
-                .register(crate::extensions::finder_ext::Plugin)
-                .register(crate::extensions::translate::Plugin)
-                .register(crate::extensions::agent::Plugin);
+                .register(crate::extensions::clipboard::ClipboardExtension)
+                .register(crate::extensions::screenshot::ScreenshotExtension)
+                .register(crate::extensions::awake::AwakeExtension)
+                .register(crate::extensions::zsh_autosuggestions::ZshAutosuggestionsExtension)
+                .register(crate::extensions::window_manager::WindowManagerExtension)
+                .register(crate::extensions::finder_ext::FinderExtExtension)
+                .register(crate::extensions::translate::TranslateExtension)
+                .register(crate::extensions::agent::AgentExtension)
+                .register(crate::extensions::search::SearchExtension);
 
             // block_on 探针（§7 N7）：确认 setup 同步闭包内可安全 block_on
             //（非 tokio worker 嵌套）。若 panic 则 bootstrap 的 join_all 同样会 panic，

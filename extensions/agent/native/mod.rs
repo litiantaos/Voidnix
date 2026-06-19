@@ -211,9 +211,9 @@ pub async fn agent_abort(
 }
 
 /// Agent 扩展。
-pub struct Plugin;
+pub struct AgentExtension;
 
-impl Extension for Plugin {
+impl Extension for AgentExtension {
     fn id(&self) -> &'static str {
         "agent"
     }
