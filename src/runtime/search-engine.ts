@@ -61,13 +61,14 @@ class SearchEngine {
 
   /** 全局模式：并行调用所有扩展 dynamic；模块模式：只调 activeModule dynamic。 */
   private async searchDynamic(query: string, signal: AbortSignal): Promise<SearchResult[]> {
+    const moduleMode = !!this.activeModule
     const exts = getAllExtensions().filter((e) => e.search)
     const targets = this.activeModule ? exts.filter((e) => e.meta.id === this.activeModule) : exts
 
     const settled = await Promise.all(
       targets.map(async (ext) => {
         try {
-          const raw = await ext.search!.dynamic(query, { signal, moduleMode: false })
+          const raw = await ext.search!.dynamic(query, { signal, moduleMode })
           // 框架注入 module = 产出扩展 meta.id（扩展禁填，§2.3 v1.6 N4）
           return raw.map((r) => ({ ...r, module: ext.meta.id }) as SearchResult)
         } catch (e) {

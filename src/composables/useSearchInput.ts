@@ -25,6 +25,8 @@ export function useSearchInput(opts: SearchInputOptions) {
 
   let searchTimeout: ReturnType<typeof setTimeout> | null = null
   let currentSearchId = 0
+  // 模块模式 dynamic 的可取消句柄：新查询/离开模块时 abort 旧的，避免孤儿网络/IPC 请求
+  let moduleAbort: AbortController | undefined
   // 进入模块前保存主列表选中位置，goBackToToolList 恢复（与 scroll save/restore 同构）
   let savedToolIndex = 0
 
@@ -36,6 +38,7 @@ export function useSearchInput(opts: SearchInputOptions) {
   }
 
   function goBackToToolList() {
+    moduleAbort?.abort()
     appStore.setActiveModule(null)
     clearSearch('/')
     results.value = buildModuleResults()
@@ -98,22 +101,42 @@ export function useSearchInput(opts: SearchInputOptions) {
   }
 
   /** 搜索型模块（无 mainView、有 search）：调 module.search.dynamic，结果灌入共享 results。
-   *  框架注入 module = 扩展 meta.id（与 searchEngine 一致）。 */
+   *  框架注入 module = 扩展 meta.id（与 searchEngine 一致）。
+   *  每次 abort 上一次请求，避免连打时孤儿网络/IPC 查询堆积。
+   *  异步 dynamic（ip/currency 网络）：进入即清空旧结果 + loading 占位，让用户看到「已进入模块、
+   *  数据加载中」，而非残留工具列表等到网络返回才切换（先进去再加载）。
+   *  同步 dynamic（time/uuid/base64）：即时填充，无 loading 闪烁。 */
   async function runModuleSearch(mod: Extension, query: string) {
     if (!mod.search) return
+    moduleAbort?.abort()
+    moduleAbort = new AbortController()
+    const signal = moduleAbort.signal
     const searchId = ++currentSearchId
+
+    const pending = mod.search.dynamic(query, { signal, moduleMode: true })
+
+    // 同步 dynamic：即时填充，不闪 loading
+    if (!(pending instanceof Promise)) {
+      if (searchId === currentSearchId) {
+        results.value = pending.map((r) => ({ ...r, module: mod.meta.id }))
+        selectedIndex.value = 0
+      }
+      return
+    }
+
+    // 异步 dynamic：await 前同步清空 + loading（watch pre-flush，ContentView 渲染前生效）
+    results.value = []
+    selectedIndex.value = 0
     isLoading.value = true
     try {
-      const res = await mod.search.dynamic(query, {
-        signal: new AbortController().signal,
-        moduleMode: true,
-      })
-      if (searchId === currentSearchId) {
+      const res = await pending
+      if (searchId === currentSearchId && !signal.aborted) {
         results.value = res.map((r) => ({ ...r, module: mod.meta.id }))
         selectedIndex.value = 0
       }
-    } catch {
-      if (searchId === currentSearchId) {
+    } catch (e) {
+      // abort 触发的 AbortError 是正常路径，静默；其余错误清空
+      if (searchId === currentSearchId && (e as Error)?.name !== 'AbortError') {
         results.value = []
         selectedIndex.value = 0
       }
@@ -236,6 +259,7 @@ export function useSearchInput(opts: SearchInputOptions) {
   })
 
   onUnmounted(() => {
+    moduleAbort?.abort()
     window.removeEventListener('window-focused', focusHandler)
   })
 
