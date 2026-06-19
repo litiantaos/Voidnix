@@ -1,33 +1,55 @@
-// 存储相关常量与工具。
-// 扩展配置路径约定：extensions/<id>/config.json（由前端 defineConfig 管理）。
-// TempHandle：扩展注册临时文件，框架统一清理。
-
-#![allow(dead_code)]
+// 临时文件管理（§2.7）。
+//
+// TempHandle：RAII guard，new 时注册路径到全局表，Drop 时自动删除 + 注销。
+// screenshot 等扩展持有 guard 于窗口 State / 函数作用域，离开作用域即清理。
+// cleanup_all_temps：应用退出兜底；cleanup_temps_by_prefix：启动时扫 /tmp 残留。
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 /// 临时文件注册表（全局单例）。
-/// 扩展注册临时文件路径，框架退出时统一清理。
 static TEMP_FILES: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
-/// 注册一个临时文件路径，框架退出时自动清理。
-pub fn register_temp(path: PathBuf) {
+/// RAII 临时文件 guard（§2.7）。
+///
+/// `new` 注册路径到全局表；`Drop` 自动删除文件 + 注销。
+/// 大文件 IO 的 Drop 同步执行（截图 PNG 通常 <几 MB，remove 很快）；
+/// 真正阻塞的大文件场景由调用方自行 `spawn_blocking` detach。
+pub struct TempHandle {
+    path: PathBuf,
+}
+
+impl TempHandle {
+    /// 创建 guard：注册路径到全局表。
+    pub fn new(path: PathBuf) -> Self {
+        register(&path);
+        Self { path }
+    }
+}
+
+impl Drop for TempHandle {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+        unregister(&self.path);
+    }
+}
+
+fn register(path: &Path) {
     if let Ok(mut files) = TEMP_FILES.lock() {
-        if !files.contains(&path) {
-            files.push(path);
+        if !files.iter().any(|p| p == path) {
+            files.push(path.to_path_buf());
         }
     }
 }
 
-/// 注销一个临时文件（扩展自行删除后调用）。
-pub fn unregister_temp(path: &Path) {
+fn unregister(path: &Path) {
     if let Ok(mut files) = TEMP_FILES.lock() {
         files.retain(|p| p != path);
     }
 }
 
-/// 清理所有已注册的临时文件。框架 teardown 或定期维护时调用。
+/// 清理所有已注册的临时文件（应用退出兜底；Drop 已清理的正常情况空转）。
+#[allow(dead_code)]
 pub fn cleanup_all_temps() {
     if let Ok(mut files) = TEMP_FILES.lock() {
         for path in files.drain(..) {
@@ -36,7 +58,7 @@ pub fn cleanup_all_temps() {
     }
 }
 
-/// 清理指定前缀的临时文件（兼容旧版 screenshot 直接扫 /tmp 的方式）。
+/// 清理指定前缀的临时文件（启动时扫 /tmp 兜底异常退出残留）。
 pub fn cleanup_temps_by_prefix(tmp_dir: &Path, prefix: &str, extensions: &[&str]) {
     if let Ok(entries) = std::fs::read_dir(tmp_dir) {
         for entry in entries.flatten() {
@@ -46,5 +68,52 @@ pub fn cleanup_temps_by_prefix(tmp_dir: &Path, prefix: &str, extensions: &[&str]
                 let _ = std::fs::remove_file(entry.path());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn temp_handle_drops_file() {
+        let dir = std::env::temp_dir().join(format!("voidnix-th-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.txt");
+        std::fs::write(&f, b"x").unwrap();
+        assert!(f.exists());
+        {
+            let _h = TempHandle::new(f.clone());
+            assert!(f.exists(), "file should exist while handle alive");
+        }
+        assert!(!f.exists(), "file should be removed after drop");
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn temp_handle_survives_scope_until_drop() {
+        let dir = std::env::temp_dir().join(format!("voidnix-th2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("b.txt");
+        std::fs::write(&f, b"x").unwrap();
+        let h = TempHandle::new(f.clone());
+        assert!(f.exists());
+        std::mem::drop(h);
+        assert!(!f.exists());
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn cleanup_temps_by_prefix_matches() {
+        let dir = std::env::temp_dir().join(format!("voidnix-th3-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("voidnix_x.png"), b"x").unwrap();
+        std::fs::write(dir.join("voidnix_y.jpg"), b"x").unwrap();
+        std::fs::write(dir.join("other.txt"), b"x").unwrap();
+        cleanup_temps_by_prefix(&dir, "voidnix_", &[".png", ".jpg"]);
+        assert!(!dir.join("voidnix_x.png").exists());
+        assert!(!dir.join("voidnix_y.jpg").exists());
+        assert!(dir.join("other.txt").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

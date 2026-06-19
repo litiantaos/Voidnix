@@ -5,7 +5,9 @@ use super::ffi::{
     voidnix_screenshot_set_background_centered, CGImageRelease,
 };
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::Mutex;
 
 // 关闭按钮 28 + 上下/左右各 8 边距 = 44
 const PIN_MIN_SIZE: f64 = 44.0;
@@ -13,6 +15,11 @@ const PIN_MIN_SIZE: f64 = 44.0;
 // pin 窗口关闭时需要恢复焦点的目标 PID
 // 由 screenshot exit_impl 写入，pin 创建时读取
 pub(super) static PIN_PREV_PID: AtomicI32 = AtomicI32::new(0);
+
+/// pin 窗口临时文件 guard 注册表：label → TempHandle。
+/// 窗口创建成功后插入，WindowEvent::Destroyed 时移除（Drop 自动删文件，§2.7）。
+static PIN_TEMPS: std::sync::LazyLock<Mutex<HashMap<String, crate::runtime::storage::TempHandle>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[tauri::command]
 pub async fn pin_image(
@@ -39,6 +46,8 @@ pub async fn pin_image(
             .as_millis();
         let path = std::env::temp_dir().join(format!("voidnix_pin_{}.png", ts));
         std::fs::write(&path, &png).map_err(|e| e.to_string())?;
+        // TempHandle：窗口创建失败时 Drop 清理；成功后转入 PIN_TEMPS，窗口 destroy 时清理（§2.7）
+        let pin_handle = crate::runtime::storage::TempHandle::new(path.clone());
 
         let cg_addr = png_bytes_to_cgimage(&png) as usize;
 
@@ -50,6 +59,7 @@ pub async fn pin_image(
         let win_x = sel_x - (win_w - sel_w) / 2.0;
         let win_y = sel_y - (win_h - sel_h) / 2.0;
         let label = format!("pin-{}", ts);
+        let label_key = label.clone();
 
         let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
         let app_clone = app.clone();
@@ -70,6 +80,11 @@ pub async fn pin_image(
         })
         .map_err(|e| e.to_string())?;
         rx.recv().map_err(|e| e.to_string())??;
+
+        // 窗口创建成功，转移 handle 到注册表（WindowEvent::Destroyed 时移除 → Drop 删文件）
+        if let Ok(mut map) = PIN_TEMPS.lock() {
+            map.insert(label_key, pin_handle);
+        }
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -113,6 +128,16 @@ fn create_pin_webview(
         .accept_first_mouse(true);
 
     let window = builder.build().map_err(|e| e.to_string())?;
+
+    // 窗口销毁时移除 PIN_TEMPS 条目 → Drop TempHandle → 删除临时 PNG（§2.7）
+    let label_for_destroy = label.to_string();
+    window.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            if let Ok(mut map) = PIN_TEMPS.lock() {
+                map.remove(&label_for_destroy);
+            }
+        }
+    });
 
     if let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) {
         unsafe {
