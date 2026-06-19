@@ -14,12 +14,12 @@ export const SEARCH = {
   },
   // 组间定序严格锁死（§2.5）；不设组级 GROUP_BOOST（GROUP_ORDER 已定组间序）。
   // 扩展用 per-item boost（SearchResult.boost）调整组内优先级。
-  // 顺序按使用频率第一性推导：启动应用 / 查找文件最高频，操作类工具次之，剪贴板辅助，web 垫底。
+  // 顺序按使用频率第一性推导：启动应用 / 查找文件最高频，扩展工具次之，剪贴板辅助，web 垫底。
   GROUP_ORDER: ['application', 'file', 'module', 'clipboard', 'web'] as const,
   GROUP_TITLES: {
     application: '应用',
     file: '文件', // file 与 folder 共用（同组，仅 kind 值区分）
-    module: '操作',
+    module: '扩展',
     clipboard: '剪贴板',
     web: '快捷操作',
   },

@@ -25,6 +25,8 @@ export function useSearchInput(opts: SearchInputOptions) {
 
   let searchTimeout: ReturnType<typeof setTimeout> | null = null
   let currentSearchId = 0
+  // 进入模块前保存主列表选中位置，goBackToToolList 恢复（与 scroll save/restore 同构）
+  let savedToolIndex = 0
 
   const isLoading = ref(false)
 
@@ -37,6 +39,7 @@ export function useSearchInput(opts: SearchInputOptions) {
     appStore.setActiveModule(null)
     clearSearch('/')
     results.value = buildModuleResults()
+    selectedIndex.value = savedToolIndex
     if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
     restore('tools')
   }
@@ -101,7 +104,10 @@ export function useSearchInput(opts: SearchInputOptions) {
     const searchId = ++currentSearchId
     isLoading.value = true
     try {
-      const res = await mod.search.dynamic(query, { signal: new AbortController().signal })
+      const res = await mod.search.dynamic(query, {
+        signal: new AbortController().signal,
+        moduleMode: true,
+      })
       if (searchId === currentSearchId) {
         results.value = res.map((r) => ({ ...r, module: mod.meta.id }))
         selectedIndex.value = 0
@@ -238,6 +244,7 @@ export function useSearchInput(opts: SearchInputOptions) {
     () => activeModule.value?.meta.id,
     (newId, oldId) => {
       if (!newId || newId === oldId) return
+      savedToolIndex = selectedIndex.value
       const mod = activeModule.value
       if (!mod || mod.mainView || !mod.search) return
       runModuleSearch(mod, appStore.searchQuery)

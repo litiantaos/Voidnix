@@ -211,12 +211,17 @@ const { handleExecute } = useResultNavigation({
 
 // 进入模块子视图时释放搜索栏焦点，让键盘事件能到达子视图内容
 // 注意：必须先把焦点转移到容器，否则窗口会因失焦而自动隐藏
+// 滚动位置：进入 subview 时保存当前（module 列表）滚动 + subview 从顶开始；
+//          返回时恢复 module 列表滚动（与 tools 列表 save/restore 同构）
 watch(
   () => appStore.activeSubview,
   (val) => {
     if (val) {
+      save('subview')
+      reset()
       contentViewRef.value?.scrollContainer?.focus()
     } else {
+      restore('subview')
       nextTick(() => searchInput.value?.focus())
     }
   },

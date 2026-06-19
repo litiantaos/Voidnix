@@ -140,7 +140,11 @@ function onInputKeydown(e: KeyboardEvent, field: 'width' | 'height') {
   }
 }
 
-function onSettingsExecute() {}
+function onSettingsExecute(item: SettingsItem) {
+  if (item.type === 'toggle') {
+    wmConfig.dragSnapEnabled = !wmConfig.dragSnapEnabled
+  }
+}
 </script>
 
 <style scoped>

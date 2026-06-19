@@ -15,6 +15,7 @@ macro_rules! configure_app {
         .plugin(crate::extensions::window_manager::init())
         .plugin(crate::extensions::zsh_autosuggestions::init())
             .invoke_handler(tauri::generate_handler![
+            crate::http::http_get,
             crate::runtime::permission::check_screen_recording_permission,
             crate::runtime::permission::check_accessibility_permission,
             crate::runtime::permission::request_accessibility_permission,

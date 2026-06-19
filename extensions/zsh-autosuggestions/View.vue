@@ -25,6 +25,8 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { config as zshConfig } from './config'
 import { useAppStore } from '@/stores/app'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -35,11 +37,13 @@ const appStore = useAppStore()
 const selectedIndex = ref(0)
 const items = [{ group: '通用' }]
 
-const toggle = () => {
+const toggle = async () => {
+  const next = !zshConfig.enabled
   try {
-    zshConfig.enabled = !zshConfig.enabled
+    await invoke(CMD.setZshAutosuggestionsEnabled, { enabled: next })
+    zshConfig.enabled = next
   } catch (e) {
-    appStore.showStatus(`开关失败：${e ?? '未知错误'}`, 4000)
+    appStore.showStatus(`启用失败：${String(e ?? '未知错误')}`, 4000)
   }
 }
 </script>

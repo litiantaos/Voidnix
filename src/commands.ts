@@ -7,6 +7,7 @@ export const CMD = {
   isAppActive: 'is_app_active',
   getHomeDir: 'get_home_dir',
   pickDirectory: 'pick_directory',
+  httpGet: 'http_get',
   openModuleSubview: 'open_module_subview',
   quitApp: 'quit_app',
   revealInFinder: 'reveal_in_finder',

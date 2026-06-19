@@ -1,6 +1,8 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import type { ProviderResult } from '@/runtime/types'
 import { copyAndHide } from '@/stores/app'
+import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { isValidIpLike } from './logic'
 
 interface IpInfo {
@@ -16,12 +18,12 @@ interface IpInfo {
 }
 
 async function fetchIpInfo(ip: string | null): Promise<IpInfo> {
+  // 走框架 Rust http_get：绕过 webview 的 UA/Referer 反爬（ipwhois.app 对 WebKit+localhost 返回 403）与 CORS
   const url = ip
     ? `https://ipwhois.app/json/${ip}?lang=zh-CN`
     : 'https://ipwhois.app/json/?lang=zh-CN'
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
+  const text = await invoke<string>(CMD.httpGet, { url })
+  return JSON.parse(text) as IpInfo
 }
 
 export default defineExtension({
@@ -38,8 +40,11 @@ export default defineExtension({
   hints: { enter: '复制' },
 
   search: {
-    dynamic: async (query): Promise<ProviderResult[]> => {
+    dynamic: async (query, ctx): Promise<ProviderResult[]> => {
       const trimmed = query.trim()
+      // 全局默认列表（moduleMode=false）空 query 不触发网络请求（避免拖慢主列表）；
+      // 模块内空 query 正常查询本机 IP
+      if (!trimmed && !ctx?.moduleMode) return []
       if (trimmed && !isValidIpLike(trimmed)) return []
       try {
         const data = await fetchIpInfo(trimmed || null)

@@ -9,9 +9,9 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { toErrorMessage } from '@/utils/format'
 import { generateRequestId } from '@/utils/id'
 import { cleanStreamResult, engineLabel } from './logic'
+import TranslateSettings from './Settings.vue'
 
 const TranslateView = defineAsyncComponent(() => import('./View.vue'))
-const TranslateSettings = defineAsyncComponent(() => import('./Settings.vue'))
 
 /** Rust translate_ai/translate_youdao 返回结构 */
 interface TranslateBaseResult {
