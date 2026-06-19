@@ -24,4 +24,4 @@ AI Provider 基础设施（endpoint/apiKey/models 共享）在框架级 `stores/
 - `native/youdao.rs`：有道翻译（SHA256 签名）
 - `native/lang_utils.rs`：中英检测 + smart_target_lang
 
-划词取词流程：快捷键触发 → `platform::selection::try_ax()`（AX 直取）→ 失败则 `platform::input::inject_copy(pid)` → `platform::selection::poll_clipboard(snap)`（轮询 + `platform::pasteboard` 快照恢复）。
+划词取词流程：快捷键触发 → `platform::selection::try_ax()`（AX 直取）→ 失败则 `platform::input::post_combo("cmd+c", Some(pid))` → `platform::selection::poll_clipboard(snap)`（轮询 + `platform::pasteboard` 快照恢复）。

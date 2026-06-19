@@ -122,12 +122,12 @@
     <ContentView
       ref="contentViewRef"
       :module="activeModule"
-      :results="activeModule ? undefined : results"
-      :initial-loading="!activeModule && isLoading && results.length === 0"
-      :selected-index="activeModule ? undefined : selectedIndex"
+      :results="results"
+      :loading="isLoading"
+      :selected-index="selectedIndex"
       :on-execute="activeModule ? undefined : handleExecute"
-      :group-field="!activeModule ? groupField : undefined"
-      :group-title="!activeModule ? groupTitle : undefined"
+      :group-field="groupField"
+      :group-title="groupTitle"
       @update:selected-index="(i: number) => (selectedIndex = i)"
     />
 

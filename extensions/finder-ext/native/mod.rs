@@ -290,9 +290,7 @@ fn handle_toggle_hidden() {
             std::thread::sleep(Duration::from_millis(200));
         }
 
-        const KEY_PERIOD: u16 = 0x2F;
-        const MASK_CMD_SHIFT: u64 = (1 << 20) | (1 << 17);
-        crate::platform::input::post_key(KEY_PERIOD, MASK_CMD_SHIFT, pid);
+        crate::platform::input::post_combo("cmd+shift+.", Some(pid));
     }
 }
 
@@ -371,9 +369,8 @@ fn reveal_and_rename(path: &Path) {
         });
         if let Some(finder) = finder {
             let pid = finder.processIdentifier();
-            // Return (0x24) 触发 Finder 对选中文件进入重命名模式
-            const KEY_RETURN: u16 = 0x24;
-            crate::platform::input::post_key(KEY_RETURN, 0, pid);
+            // Return 触发 Finder 对选中文件进入重命名模式
+            crate::platform::input::post_combo("return", Some(pid));
         }
     }
 }

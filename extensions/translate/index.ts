@@ -12,7 +12,6 @@ import { cleanStreamResult, engineLabel } from './logic'
 
 const TranslateView = defineAsyncComponent(() => import('./View.vue'))
 const TranslateSettings = defineAsyncComponent(() => import('./Settings.vue'))
-const TranslateActions = defineAsyncComponent(() => import('./Actions.vue'))
 
 /** Rust translate_ai/translate_youdao 返回结构 */
 interface TranslateBaseResult {
@@ -237,8 +236,7 @@ export default defineExtension({
 
   disableSearchInput: true,
   mainView: () => TranslateView,
-  searchBarAccessory: () => TranslateActions,
-  subviews: { settings: () => TranslateSettings },
+  settingsView: () => TranslateSettings,
   setup: async () => {
     unlistenReady = await listen<string>('translate-text-ready', (e) => {
       if (translateReadyResolver) {

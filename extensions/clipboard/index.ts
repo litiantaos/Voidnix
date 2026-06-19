@@ -88,7 +88,7 @@ export default defineExtension({
   placeholder: '搜索剪贴板记录',
   mainView: () => ClipboardView,
   searchBarAccessory: () => ClipboardActions,
-  subviews: { settings: () => ClipboardSettings },
+  settingsView: () => ClipboardSettings,
   hints: { enter: '粘贴', multiSelect: 'true', delete: '删除' },
   listOptions: { multiSelect: true },
   globalShortcuts: [

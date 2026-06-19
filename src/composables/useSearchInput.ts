@@ -1,4 +1,4 @@
-import { ref, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
+import { ref, watch, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
 import { useTauriListener } from '@/composables/useTauriListener'
 import { searchEngine } from '@/runtime/search-engine'
 import { getAllExtensions } from '@/runtime/extension-registry'
@@ -94,6 +94,30 @@ export function useSearchInput(opts: SearchInputOptions) {
     }
   }
 
+  /** 搜索型模块（无 mainView、有 search）：调 module.search.dynamic，结果灌入共享 results。
+   *  框架注入 module = 扩展 meta.id（与 searchEngine 一致）。 */
+  async function runModuleSearch(mod: Extension, query: string) {
+    if (!mod.search) return
+    const searchId = ++currentSearchId
+    isLoading.value = true
+    try {
+      const res = await mod.search.dynamic(query, { signal: new AbortController().signal })
+      if (searchId === currentSearchId) {
+        results.value = res.map((r) => ({ ...r, module: mod.meta.id }))
+        selectedIndex.value = 0
+      }
+    } catch {
+      if (searchId === currentSearchId) {
+        results.value = []
+        selectedIndex.value = 0
+      }
+    } finally {
+      if (searchId === currentSearchId) {
+        isLoading.value = false
+      }
+    }
+  }
+
   // --- input ---
 
   async function onInput(e: Event) {
@@ -148,7 +172,15 @@ export function useSearchInput(opts: SearchInputOptions) {
 
     const searchId = ++currentSearchId
 
-    if (appStore.activeModuleId) return
+    if (appStore.activeModuleId) {
+      // 搜索型模块（无 mainView、有 search）：标准列表走 module.search.dynamic
+      // mainView 模块自管列表（resolvedView），无 search 的模块无标准列表 → 均跳过
+      const mod = activeModule.value
+      if (!mod || mod.mainView || !mod.search) return
+      if (searchTimeout) clearTimeout(searchTimeout)
+      searchTimeout = setTimeout(() => runModuleSearch(mod, query), 100)
+      return
+    }
 
     if (query.trim()) {
       searchTimeout = setTimeout(async () => {
@@ -200,6 +232,17 @@ export function useSearchInput(opts: SearchInputOptions) {
   onUnmounted(() => {
     window.removeEventListener('window-focused', focusHandler)
   })
+
+  // 进入搜索型模块（无 mainView、有 search）：触发初始 dynamic 装填结果
+  watch(
+    () => activeModule.value?.meta.id,
+    (newId, oldId) => {
+      if (!newId || newId === oldId) return
+      const mod = activeModule.value
+      if (!mod || mod.mainView || !mod.search) return
+      runModuleSearch(mod, appStore.searchQuery)
+    },
+  )
 
   return {
     isLoading,

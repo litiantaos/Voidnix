@@ -86,7 +86,7 @@ impl Extension for Plugin {
 - `runtime::shortcut::register_shortcut_hook`：快捷键钩子
 - `runtime::storage`：TempHandle 临时文件管理（register_temp / cleanup_all_temps / cleanup_temps_by_prefix）
 - `platform::focus`：焦点管理（capture_frontmost / restore_captured / captured_pid）
-- `platform::input`：键盘注入（post_key / inject_copy / paste_global / post_key_global）
+- `platform::input`：键盘注入（post_key 原语 / post_combo 字符串糖；Modifier 枚举 + Option pid）
 - `platform::pasteboard`：NSPasteboard 统一（read_text / string_for_type / data_for_type / has_type / change_count / snapshot / restore）
 - `platform::selection`：AX 选中文本提取（try_ax / poll_clipboard / init_ax_timeout）
 - `platform::path_guard`：路径安全校验

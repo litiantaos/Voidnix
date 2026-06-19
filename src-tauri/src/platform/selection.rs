@@ -1,7 +1,7 @@
 //! macOS 选中文本提取（AX 系统级 API）。
 //!
 //! 与 platform::input（键盘注入）+ platform::pasteboard（剪贴板操作）配合使用。
-//! translate 扩展的划词取词流程：try_ax → 失败则 inject_copy → poll_clipboard。
+//! translate 扩展的划词取词流程：try_ax → 失败则 input::post_combo("cmd+c") → poll_clipboard。
 
 use std::ffi::{c_void, CStr, CString};
 use std::time::{Duration, Instant};
@@ -134,9 +134,9 @@ pub fn try_ax() -> Option<String> {
     ax::get_selected_text()
 }
 
-/// Layer 2：在后台线程轮询剪贴板变化（配合 input::inject_copy 使用）。
+/// Layer 2：在后台线程轮询剪贴板变化（配合 input::post_combo("cmd+c") 使用）。
 ///
-/// 流程：inject_copy 后调用此函数 → 等待 changeCount 变化 → 读取文本 → 恢复原剪贴板。
+/// 流程：post_combo("cmd+c") 注入复制后调用此函数 → 等待 changeCount 变化 → 读取文本 → 恢复原剪贴板。
 #[cfg(target_os = "macos")]
 pub fn poll_clipboard(snap: pasteboard::PasteboardSnapshot) -> String {
     let start = Instant::now();
