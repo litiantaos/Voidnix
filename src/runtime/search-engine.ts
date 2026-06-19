@@ -67,7 +67,7 @@ class SearchEngine {
     const settled = await Promise.all(
       targets.map(async (ext) => {
         try {
-          const raw = await ext.search!.dynamic(query, { signal })
+          const raw = await ext.search!.dynamic(query, { signal, moduleMode: false })
           // 框架注入 module = 产出扩展 meta.id（扩展禁填，§2.3 v1.6 N4）
           return raw.map((r) => ({ ...r, module: ext.meta.id }) as SearchResult)
         } catch (e) {

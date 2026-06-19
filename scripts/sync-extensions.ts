@@ -28,6 +28,7 @@ const rustName = (id: string) => id.replace(/-/g, '_')
 
 // 框架命令固定列表（lib.rs 自管，不扫描）。扩展命令由 scanExtensionCommands 扫描。
 const FRAMEWORK_COMMANDS = [
+  'crate::http::http_get',
   'crate::runtime::permission::check_screen_recording_permission',
   'crate::runtime::permission::check_accessibility_permission',
   'crate::runtime::permission::request_accessibility_permission',

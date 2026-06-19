@@ -1,17 +1,7 @@
-import { watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
-import { CMD } from '@/commands'
 import { defineConfig } from '@/runtime/storage'
 
 /// zsh-autosuggestions 扩展自管配置。
+/// enabled 切换由 View.vue toggle 显式 invoke（含错误反馈），不在 watch 中静默同步。
 export const config = defineConfig('zsh-autosuggestions', {
   enabled: false,
 })
-
-/// enabled 变更时同步到 Rust 端（安装/卸载 zsh 集成）。
-watch(
-  () => config.enabled,
-  (enabled) => {
-    invoke(CMD.setZshAutosuggestionsEnabled, { enabled }).catch(() => {})
-  },
-)

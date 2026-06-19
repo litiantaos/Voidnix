@@ -1,9 +1,9 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import { defineAsyncComponent } from 'vue'
 import { makeToggleHandler } from '@/stores/app'
+import AgentSettings from './Settings.vue'
 
 const AgentView = defineAsyncComponent(() => import('./View.vue'))
-const AgentSettings = defineAsyncComponent(() => import('./Settings.vue'))
 const AgentActions = defineAsyncComponent(() => import('./Actions.vue'))
 
 export default defineExtension({

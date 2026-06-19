@@ -8,9 +8,9 @@ import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { listen } from '@tauri-apps/api/event'
 import { filterByQuery } from './logic'
+import ClipboardSettings from './Settings.vue'
 
 const ClipboardView = defineAsyncComponent(() => import('./View.vue'))
-const ClipboardSettings = defineAsyncComponent(() => import('./Settings.vue'))
 const ClipboardActions = defineAsyncComponent(() => import('./Actions.vue'))
 
 export interface ClipboardItem {
