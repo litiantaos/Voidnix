@@ -148,32 +148,25 @@ pub async fn get_clipboard_image(
 }
 
 fn write_to_pasteboard(content: &str, content_type: &str) {
-    use objc2_app_kit::{
-        NSPasteboard, NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSPasteboardTypeString,
-    };
-    use objc2_foundation::{NSData, NSString};
+    use crate::platform::pasteboard;
 
-    unsafe {
-        let pb = NSPasteboard::generalPasteboard();
-        pb.clearContents();
+    // 委托至 platform::pasteboard（不再直访 NSPasteboard，无 unsafe）
+    pasteboard::clear();
 
-        let marker = NSString::from_str("com.litiantao.voidnix.clipboard");
-        pb.setString_forType(&NSString::from_str(""), &marker);
+    // marker：clipboard 自身写入标记，monitor 据此跳过记录
+    pasteboard::set_custom("", "com.litiantao.voidnix.clipboard");
 
-        if content_type == "text" {
-            let ns_string = NSString::from_str(content);
-            pb.setString_forType(&ns_string, NSPasteboardTypeString);
-        } else if content_type == "file" {
-            let ns_string = NSString::from_str(content);
-            pb.setString_forType(&ns_string, NSPasteboardTypeFileURL);
-        } else if content_type == "image" {
+    match content_type {
+        "text" => pasteboard::set_string(content),
+        "file" => pasteboard::set_file_url(content),
+        "image" => {
             if let Some(base64_str) = content.strip_prefix("data:image/png;base64,") {
                 if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(base64_str) {
-                    let ns_data = NSData::with_bytes(&decoded);
-                    pb.setData_forType(Some(&ns_data), NSPasteboardTypePNG);
+                    pasteboard::set_png(&decoded);
                 }
             }
         }
+        _ => {}
     }
 }
 

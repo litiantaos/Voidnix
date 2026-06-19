@@ -51,7 +51,7 @@ import { ref, computed, watch, nextTick, onMounted, onActivated } from 'vue'
 
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
 import { config as translateConfig } from './config'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
+import { writeText } from '@/utils/clipboard'
 import { hideWindow } from '@/utils/tauri'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'

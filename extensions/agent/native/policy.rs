@@ -74,6 +74,7 @@ pub struct ExecPolicy {
 
 impl ExecPolicy {
     /// 默认策略（全部用户默认值 + 底线并集；测试与无 config fallback 用）。
+    #[cfg(test)]
     pub fn default_with_trusted(trusted: Vec<String>) -> Self {
         Self::resolve(
             trusted,

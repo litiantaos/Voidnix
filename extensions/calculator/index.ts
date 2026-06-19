@@ -1,7 +1,7 @@
 import { registerModule } from '@/core/module-registry'
 import type { AppModule, SearchResult } from '@/types/module'
 import { load } from '@tauri-apps/plugin-store'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
+import { writeText } from '@/utils/clipboard'
 import { hideWindow } from '@/utils/tauri'
 import { evaluateMath } from './logic'
 

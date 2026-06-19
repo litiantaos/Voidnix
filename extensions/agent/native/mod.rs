@@ -133,9 +133,6 @@ const DEFAULT_SYSTEM_PROMPT: &str = r#"你是 Voidnix 内置的 AI Agent，运�
 - 代码/命令用 markdown 代码块包裹
 - 中文为主（除非用户用英文提问）"#;
 
-/// 默认最大轮次。
-const DEFAULT_MAX_TURNS: usize = 10;
-
 #[derive(serde::Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchProviderConfig {
@@ -179,7 +176,7 @@ pub async fn agent_run(
     );
     let max_turns = config
         .max_turns
-        .unwrap_or(DEFAULT_MAX_TURNS)
+        .unwrap_or(policy::DEFAULT_MAX_TURNS)
         .clamp(policy::MAX_TURNS.0, policy::MAX_TURNS.1);
 
     // 构造本次的 ToolRegistry（工具始终启用）

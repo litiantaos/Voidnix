@@ -34,6 +34,7 @@ pub fn run() {
             crate::runtime::window::set_main_window_size,
             crate::runtime::window::get_home_dir,
             crate::runtime::window::pick_directory,
+            crate::platform::pasteboard::pasteboard_write_text,
         ])
         .setup(|app| {
             // pre-bootstrap：框架级共享资源（串行，bootstrap 之前）。AX timeout 多扩展共享，
