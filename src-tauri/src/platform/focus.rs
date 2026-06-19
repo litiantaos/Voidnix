@@ -69,9 +69,20 @@ pub fn capture_frontmost() -> i32 {
     pid
 }
 
+/// 存入显式 PID 到唯一源（调用方已持有 pid，避免重复查询 frontmost）。
+pub fn capture_pid(pid: i32) {
+    PREV_FRONT_PID.store(pid, Ordering::SeqCst);
+}
+
 /// 读取唯一源中的 PID（不消费）。
 pub fn captured_pid() -> i32 {
     PREV_FRONT_PID.load(Ordering::SeqCst)
+}
+
+/// 取出并清零唯一源（不 activate）。
+/// 供需自行控制 activate 时机的调用方；常规还原请用 `restore_captured`。
+pub fn take_captured_pid() -> i32 {
+    PREV_FRONT_PID.swap(0, Ordering::SeqCst)
 }
 
 /// 从唯一源恢复前台 app：先 deactivate self，再 activate 原 app。

@@ -363,13 +363,8 @@ pub mod platform {
     }
 
     fn set_layout_on_main_thread(layout: &str, custom_width: f64, custom_height: f64, prev_pid: Option<i32>) -> Result<(), String> {
-        // 优先级:显式传入 > snap-panel 自己记录的 > 主窗口路径上记录的
-        let snap_pid = super::window_snap::snap_prev_pid();
-        let fallback_pid = if snap_pid > 0 {
-            snap_pid
-        } else {
-            crate::platform::focus::captured_pid()
-        };
+        // 优先级:显式传入 > focus 唯一源记录的（snap-panel show 时 capture，§7）
+        let fallback_pid = crate::platform::focus::captured_pid();
         let prev_pid = prev_pid.filter(|&p| p > 0).unwrap_or(fallback_pid);
         let cg_pid = find_topmost_window_pid();
 
@@ -630,14 +625,10 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
             }
         }
         // 用户点击触发的 layout 路径:panel 已 makeKey 偷走 system key,
-        // 隐藏后需 deactivate + activate 原 app,把 first responder 还回去。
+        // 隐藏后需 deactivate + activate 原 app,把 first responder 还回去（§7 唯一源）。
         #[cfg(target_os = "macos")]
         {
-            let pid = window_snap::take_snap_prev_pid();
-            crate::platform::focus::deactivate_app();
-            if pid > 0 {
-                crate::platform::focus::activate_app_by_pid(pid);
-            }
+            crate::platform::focus::restore_captured();
         }
         let _ = tx.send(());
     }).map_err(|e| e.to_string())?;

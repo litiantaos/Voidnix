@@ -11,7 +11,7 @@
 #[cfg(target_os = "macos")]
 mod inner {
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use objc2::runtime::AnyObject;
     use objc2::ClassType;
@@ -63,8 +63,6 @@ mod inner {
     static APP: Mutex<Option<AppHandle>> = Mutex::new(None);
     static MONITOR: Mutex<Option<MonitorHandles>> = Mutex::new(None);
     static HIDE_TIMER: Mutex<Option<SendTimer>> = Mutex::new(None);
-    /// 面板显示前的前台应用 PID，隐藏时还原 key window 给该应用。
-    static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
 
     struct SnapState {
         custom_width: f64,
@@ -170,8 +168,8 @@ mod inner {
         // 记录原前台应用 PID,layout 命令需要据此定位要操作的窗口。
         // SnapPanel 不调 makeKeyWindow(只接收鼠标 hover/click),也不 activate
         // NSApp —— 原前台 app 全程是 frontmost + key,菜单栏 / 输入焦点不动。
-        let pid = crate::platform::focus::current_frontmost_pid().unwrap_or(0);
-        PREV_FRONT_PID.store(pid, Ordering::SeqCst);
+        // PID 存入 platform::focus 唯一源（§7）。
+        crate::platform::focus::capture_frontmost();
 
         let target = compute_panel_rect(screen);
         unsafe {
@@ -199,14 +197,9 @@ mod inner {
         STATE.lock().unwrap().visible = false;
 
         // 用户点击 SnapPanel 时,panel 会被 AppKit 自动 makeKey 偷走 system key,
-        // 原 app 的 first responder 随之丢失。这里沿用主窗口的恢复策略:
-        // deactivate self → activate 原 app,触发系统重新评估 key window,
-        // 让输入框光标无缝回到原应用。
-        let pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
-        crate::platform::focus::deactivate_app();
-        if pid > 0 {
-            crate::platform::focus::activate_app_by_pid(pid);
-        }
+        // 原 app 的 first responder 随之丢失。沿用主窗口的恢复策略（§7 唯一源）：
+        // deactivate self → activate 原 app。
+        crate::platform::focus::restore_captured();
     }
 
     // ── Hide timer ────────────────────────────────────────────────────────
@@ -391,16 +384,6 @@ mod inner {
             hide_panel_impl(app);
         }
     }
-
-    /// 返回面板显示前记录的前台应用 PID（供 layout 命令定位目标窗口）。
-    pub fn snap_prev_pid() -> i32 {
-        PREV_FRONT_PID.load(Ordering::SeqCst)
-    }
-
-    /// 取出并清零暂存的 PID（用于隐藏路径还原焦点，避免重复 activate）。
-    pub fn take_snap_prev_pid() -> i32 {
-        PREV_FRONT_PID.swap(0, Ordering::SeqCst)
-    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -410,8 +393,6 @@ mod inner {
     pub fn stop() {}
     pub fn is_running() -> bool { false }
     pub fn hide_panel(_app: &AppHandle) {}
-    pub fn snap_prev_pid() -> i32 { 0 }
-    pub fn take_snap_prev_pid() -> i32 { 0 }
 }
 
 pub fn start_drag_monitor(app: tauri::AppHandle, custom_width: f64, custom_height: f64) {
@@ -428,12 +409,4 @@ pub fn is_drag_monitor_running() -> bool {
 
 pub fn hide_panel(app: &tauri::AppHandle) {
     inner::hide_panel(app);
-}
-
-pub fn snap_prev_pid() -> i32 {
-    inner::snap_prev_pid()
-}
-
-pub fn take_snap_prev_pid() -> i32 {
-    inner::take_snap_prev_pid()
 }

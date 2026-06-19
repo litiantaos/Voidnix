@@ -9,6 +9,7 @@ pub enum Policy {
     /// finder-ext：用户主动操作，仅拦系统致命路径。
     Interactive,
     /// agent：AI 自动执行，在 Interactive 基础上加严 + canonicalize 防符号链接逃逸。
+    #[allow(dead_code)]
     Automated,
 }
 
