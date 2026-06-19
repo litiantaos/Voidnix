@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::Ordering;
 
 use super::ffi::{
     get_cg_image, picker_jpeg_path, prepare_picker_jpeg, store_cg_image,
@@ -327,9 +327,6 @@ fn enumerate_visible_windows() -> Vec<WindowRect> {
 }
 
 #[cfg(target_os = "macos")]
-pub(super) static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
-
-#[cfg(target_os = "macos")]
 static SCREENSHOT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[cfg(target_os = "macos")]
@@ -399,22 +396,21 @@ pub fn enter_screenshot_mode_sync(_app: &tauri::AppHandle, _data: ScreenshotData
 #[cfg(target_os = "macos")]
 fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), String> {
     use objc2_app_kit::{
-        NSEvent, NSScreen, NSWindow, NSWindowAnimationBehavior, NSWorkspace,
+        NSEvent, NSScreen, NSWindow, NSWindowAnimationBehavior,
     };
     use objc2_foundation::MainThreadMarker;
     use tauri::Manager;
 
     SCREENSHOT_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-    let self_pid = std::process::id() as i32;
-    let prev_pid = NSWorkspace::sharedWorkspace()
-        .frontmostApplication()
-        .map(|a| a.processIdentifier())
-        .filter(|&p| p != self_pid)
-        .unwrap_or(0);
-    PREV_FRONT_PID.store(prev_pid, Ordering::SeqCst);
+    // 先取原前台 pid（必须在 hide_main 前读取才是"截图前的应用"）。
+    // hide_main 会 clear focus 唯一源（restore_captured swap），故在 hide_main
+    // 之后回填到唯一源（§7）。
+    let prev_pid = crate::platform::focus::current_frontmost_pid().unwrap_or(0);
 
     crate::runtime::window::hide_main(app);
+
+    crate::platform::focus::capture_pid(prev_pid);
 
     let window = app
         .get_webview_window("screenshot")
@@ -574,7 +570,7 @@ fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), Strin
         }
     })));
 
-    let prev_pid = PREV_FRONT_PID.load(Ordering::SeqCst);
+    let prev_pid = crate::platform::focus::take_captured_pid();
     // 始终保存 prev_pid 给 pin 窗口使用（即使 noRestoreFocus=true）
     #[cfg(target_os = "macos")]
     {
