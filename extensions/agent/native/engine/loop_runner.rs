@@ -91,7 +91,7 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
 
         // 安全校验
         let safe_endpoint = llm::validate_ai_request(&input.endpoint, &input.model, &input.api_key)?;
-        let trimmed = llm::trim_conversation(&messages);
+        let trimmed = super::trim::trim_conversation(&messages);
         let tools_slice = input.tools_schema.clone();
 
         let outcome = llm::stream_openai_request(StreamConfig {

@@ -1,10 +1,119 @@
 use crate::runtime::llm::parser::{ChoiceDelta, FinalizedToolCall, ToolCallAccumulator};
-use crate::runtime::llm::security::{truncate_message, MAX_SSE_BUFFER};
 use crate::runtime::llm::types::LlmMessage;
 use futures_util::StreamExt;
 use serde::Deserialize;
 use std::sync::atomic::Ordering;
 use tauri::Emitter;
+
+// ── 请求管道常量（agent + translate 共享，§1.1 溶解自 security.rs）────
+/// SSE 缓冲上限（1 MiB），防止无界 buffer 增长
+const MAX_SSE_BUFFER: usize = 1_048_576;
+/// 单条消息内容上限（32 KiB）
+const MAX_MESSAGE_CONTENT_LEN: usize = 32_768;
+
+// ── SSRF 防护（请求管道校验，§1.1 溶解自 security.rs）────────────────
+/// 手动解析 URL 提取 scheme + host，不依赖 url crate
+pub fn parse_scheme_host(raw: &str) -> Option<(&str, &str)> {
+    let s = raw.trim();
+    let scheme_end = s.find("://")?;
+    let scheme = &s[..scheme_end];
+    let rest = &s[scheme_end + 3..];
+    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let host_port = &rest[..host_end];
+    let host = host_port.split(':').next()?;
+    if scheme.is_empty() || host.is_empty() {
+        return None;
+    }
+    Some((scheme, host))
+}
+
+const BLOCKED_HOST_PREFIXES: &[&str] = &[
+    "127.", "10.", "192.168.",
+    "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.",
+    "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
+    "172.30.", "172.31.", "169.254.", "0.",
+];
+
+const BLOCKED_HOST_EXACT: &[&str] = &[
+    "0.0.0.0",
+    "metadata.google.internal",
+    "metadata.tencentyun.com",
+];
+
+/// 验证 endpoint 安全性，返回 (scheme, safe_endpoint)
+fn validate_endpoint(endpoint: &str) -> Result<(String, String), String> {
+    let trimmed = endpoint.trim();
+    let (scheme, host) = parse_scheme_host(trimmed)
+        .ok_or_else(|| format!("Invalid endpoint URL: '{}'", trimmed))?;
+
+    let host_lower = host.to_lowercase();
+    let is_localhost = host_lower == "localhost"
+        || host_lower == "127.0.0.1"
+        || host_lower == "::1"
+        || host_lower == "[::1]";
+
+    if scheme != "https" && !is_localhost {
+        return Err(
+            "HTTP is not allowed for remote endpoints. Use HTTPS or localhost for development."
+                .into(),
+        );
+    }
+
+    for exact in BLOCKED_HOST_EXACT {
+        if host_lower == *exact {
+            return Err(format!("Endpoint '{}' is blocked for security reasons.", host));
+        }
+    }
+
+    if host_lower.starts_with("fc") || host_lower.starts_with("fd") || host_lower.starts_with("fe80") {
+        return Err(format!(
+            "Private/internal IPv6 network endpoints are not allowed: '{}'.",
+            host
+        ));
+    }
+
+    if host_lower.starts_with("::ffff:") || host_lower.starts_with("[::ffff:") {
+        return Err(format!("IPv4-mapped IPv6 addresses are not allowed: '{}'.", host));
+    }
+
+    for prefix in BLOCKED_HOST_PREFIXES {
+        if host_lower.starts_with(prefix) {
+            return Err(format!(
+                "Private/internal network endpoints are not allowed: '{}'.",
+                host
+            ));
+        }
+    }
+
+    if host.contains('@') {
+        return Err("Endpoint URL must not contain credentials.".into());
+    }
+
+    Ok((scheme.to_string(), trimmed.to_string()))
+}
+
+/// 校验 AI 请求 endpoint/model/api_key，返回 safe endpoint。
+pub fn validate_ai_request(endpoint: &str, model: &str, api_key: &str) -> Result<String, String> {
+    let (_scheme, safe_endpoint) = validate_endpoint(endpoint)?;
+    if model.trim().is_empty() {
+        return Err("模型名称不能为空".into());
+    }
+    if api_key.trim().is_empty() {
+        return Err("API Key 不能为空".into());
+    }
+    Ok(safe_endpoint)
+}
+
+/// 单条消息内容截断（请求管道，§1.1）
+fn truncate_message(content: &str) -> String {
+    if content.len() <= MAX_MESSAGE_CONTENT_LEN {
+        content.to_string()
+    } else {
+        let mut truncated: String = content.chars().take(MAX_MESSAGE_CONTENT_LEN).collect();
+        truncated.push_str("\n\n[消息过长，已截断]");
+        truncated
+    }
+}
 
 /// 本轮流式的最终结局（无工具调用时 tool_calls 为空）。
 #[derive(Debug)]
@@ -236,4 +345,41 @@ fn emit_done(app: &tauri::AppHandle, done_event: &str, request_id: &str) {
         done_event,
         serde_json::json!({ "requestId": request_id }),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_endpoint_rejects_private_network() {
+        assert!(validate_endpoint("https://192.168.1.1/v1").is_err());
+        assert!(validate_endpoint("https://10.0.0.1/v1").is_err());
+        assert!(validate_endpoint("https://metadata.google.internal/v1").is_err());
+    }
+
+    #[test]
+    fn validate_endpoint_accepts_https() {
+        assert!(validate_endpoint("https://api.openai.com/v1").is_ok());
+    }
+
+    #[test]
+    fn validate_endpoint_rejects_remote_http() {
+        assert!(validate_endpoint("http://api.openai.com/v1").is_err());
+    }
+
+    #[test]
+    fn validate_endpoint_accepts_localhost_http() {
+        assert!(validate_endpoint("http://localhost:8080/v1").is_ok());
+    }
+
+    #[test]
+    fn truncate_message_respects_limit() {
+        let short = "hi";
+        assert_eq!(truncate_message(short), "hi");
+        let long = "a".repeat(MAX_MESSAGE_CONTENT_LEN + 100);
+        let t = truncate_message(&long);
+        assert!(t.ends_with("[消息过长，已截断]"));
+        assert!(t.len() < long.len());
+    }
 }

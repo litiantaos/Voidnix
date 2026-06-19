@@ -11,6 +11,7 @@ pub mod cancellation;
 pub mod loop_runner;
 pub mod secret_scrub;
 pub mod tool_registry;
+pub mod trim;
 
 use serde::Serialize;
 
