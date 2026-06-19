@@ -209,9 +209,3 @@ pub async fn register_global_shortcut(
 
     rx.recv().map_err(|e| e.to_string())?
 }
-
-
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("shortcut")
-        .build()
-}

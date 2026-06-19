@@ -14,6 +14,19 @@ use tokio_util::sync::CancellationToken;
 pub mod engine;
 mod tools;
 
+/// 命令注册（局部 invoke_handler，§2.8）。
+pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::<tauri::Wry>::new("agent")
+        .invoke_handler(tauri::generate_handler![
+            chat_abort,
+            chat_stream,
+            agent_run,
+            agent_approve,
+            agent_abort,
+        ])
+        .build()
+}
+
 // ──────────────────────────────────────────────────────────────
 // 旧 chat_stream 路径（保留兼容，D 阶段统一废弃）
 // ──────────────────────────────────────────────────────────────

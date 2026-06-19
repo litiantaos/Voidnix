@@ -21,6 +21,22 @@ pub fn run() {
     let builder = extensions::configure_app!(builder);
 
     builder
+        .invoke_handler(tauri::generate_handler![
+            // 框架命令（permission / shortcut / window），手写、不参与 sync-extensions 扫描（§2.8）
+            crate::runtime::permission::check_screen_recording_permission,
+            crate::runtime::permission::check_accessibility_permission,
+            crate::runtime::permission::request_accessibility_permission,
+            crate::runtime::permission::check_full_disk_access_permission,
+            crate::runtime::permission::open_privacy_settings,
+            crate::runtime::shortcut::start_shortcut_recording,
+            crate::runtime::shortcut::stop_shortcut_recording,
+            crate::runtime::shortcut::is_app_active,
+            crate::runtime::shortcut::hide_window,
+            crate::runtime::shortcut::register_global_shortcut,
+            crate::runtime::window::set_main_window_size,
+            crate::runtime::window::get_home_dir,
+            crate::runtime::window::pick_directory,
+        ])
         .setup(|app| {
             let registry = crate::runtime::registry::ExtensionRegistry::new()
                 .register(crate::extensions::clipboard::Plugin)

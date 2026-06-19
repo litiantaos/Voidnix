@@ -11,6 +11,12 @@ pub use cache::{init_app_watcher, prewarm_cache, set_app_handle};
 
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("search")
+        .invoke_handler(tauri::generate_handler![
+            commands::search_apps,
+            commands::search_files,
+            commands::reveal_in_finder,
+            commands::launch_app,
+        ])
         .setup(|app, _api| {
             crate::extensions::search::set_app_handle(app.clone());
             crate::extensions::search::init_app_watcher();
