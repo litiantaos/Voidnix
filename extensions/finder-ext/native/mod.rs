@@ -9,7 +9,6 @@ use std::time::Duration;
 use notify::{Event, EventKind, RecursiveMode, Watcher, recommended_watcher};
 use tauri::AppHandle;
 use tauri::Manager;
-use tauri_plugin_clipboard_manager::ClipboardExt;
 
 /// Guards whether the watcher should process incoming commands.
 /// Set to false when the user disables the extension in settings.
@@ -232,7 +231,7 @@ fn validate_path(path: &Path) -> bool {
     crate::platform::path_guard::validate(path, crate::platform::path_guard::Policy::Interactive)
 }
 
-fn handle_copy_path(handle: &AppHandle, paths: &[PathBuf], target: &str) {
+fn handle_copy_path(_handle: &AppHandle, paths: &[PathBuf], target: &str) {
     let lines: Vec<String> = if !paths.is_empty() {
         paths.iter().map(|p| p.to_string_lossy().to_string()).collect()
     } else if !target.is_empty() {
@@ -241,9 +240,7 @@ fn handle_copy_path(handle: &AppHandle, paths: &[PathBuf], target: &str) {
         return;
     };
     let text = lines.join("\n");
-    if let Err(e) = handle.clipboard().write_text(text) {
-        log::error!("Clipboard write failed: {}", e);
-    }
+    crate::platform::pasteboard::write_text(&text);
 }
 
 fn handle_open_terminal(_handle: &AppHandle, paths: &[PathBuf], target: &str) {

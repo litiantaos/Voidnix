@@ -1,6 +1,5 @@
 use super::db::Database;
 use base64::{engine::general_purpose::STANDARD as base64, Engine as _};
-use std::ffi::c_void;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -23,10 +22,7 @@ pub fn start_monitor(app_handle: AppHandle) {
             let (tx, rx) = std::sync::mpsc::channel::<(isize, Option<ClipboardSnapshot>)>();
 
             let _ = app_handle.run_on_main_thread(move || {
-                use objc2::msg_send;
-                use objc2_app_kit::{
-                    NSPasteboard, NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSWorkspace,
-                };
+                use objc2_app_kit::NSWorkspace;
                 use crate::platform::pasteboard;
 
                 let change_count = pasteboard::change_count();
@@ -51,54 +47,48 @@ pub fn start_monitor(app_handle: AppHandle) {
                     let mut image_width: Option<i32> = None;
                     let mut image_height: Option<i32> = None;
 
-                    // file URL / PNG 仍需直接 NSPasteboard 访问（需 extern static 类型常量）
-                    unsafe {
-                        let pb = NSPasteboard::generalPasteboard();
+                    // file URL / PNG 走 platform::pasteboard（不再直访 NSPasteboard）
+                    if let Some(s) = pasteboard::read_file_url() {
+                        content = s;
+                        content_type = "file".to_string();
+                        let path = content.strip_prefix("file://").unwrap_or(&content);
+                        let decoded_path = percent_decode(path);
+                        if let Ok(meta) = std::fs::metadata(&decoded_path) {
+                            file_size = Some(meta.len().min(i32::MAX as u64) as i32);
+                        }
+                    } else if let Some(text) = pasteboard::read_text() {
+                        let text = text.trim().to_string();
+                        if text.is_empty() {
+                            return None;
+                        }
 
-                        if let Some(s) = pb.stringForType(NSPasteboardTypeFileURL) {
-                            content = s.to_string();
-                            content_type = "file".to_string();
-                            let path = content.strip_prefix("file://").unwrap_or(&content);
-                            let decoded_path = percent_decode(path);
-                            if let Ok(meta) = std::fs::metadata(&decoded_path) {
-                                file_size = Some(meta.len().min(i32::MAX as u64) as i32);
-                            }
-                        } else if let Some(text) = crate::platform::pasteboard::read_text() {
-                            let text = text.trim().to_string();
-                            if text.is_empty() {
-                                return None;
-                            }
+                        let is_all_emoji = text.chars().all(|c| {
+                            let cp = c as u32;
+                            (0x1F300..=0x1FAFF).contains(&cp)
+                                || (0x2600..=0x27BF).contains(&cp)
+                                || (0xFE00..=0xFE0F).contains(&cp)
+                        });
 
-                            let is_all_emoji = text.chars().all(|c| {
-                                let cp = c as u32;
-                                (0x1F300..=0x1FAFF).contains(&cp)
-                                    || (0x2600..=0x27BF).contains(&cp)
-                                    || (0xFE00..=0xFE0F).contains(&cp)
-                            });
+                        if is_all_emoji {
+                            return None;
+                        }
 
-                            if is_all_emoji {
-                                return None;
+                        content = text;
+                        content_type = "text".to_string();
+                    } else if let Some(slice) = pasteboard::read_png() {
+                        let len = slice.len();
+                        if len > 0 {
+                            file_size = Some((len as u64).min(i32::MAX as u64) as i32);
+                            if len >= 24 && slice[0..4] == [0x89, 0x50, 0x4E, 0x47] {
+                                image_width = Some(u32::from_be_bytes(
+                                    slice[16..20].try_into().unwrap(),
+                                ) as i32);
+                                image_height = Some(u32::from_be_bytes(
+                                    slice[20..24].try_into().unwrap(),
+                                ) as i32);
                             }
-
-                            content = text;
-                            content_type = "text".to_string();
-                        } else if let Some(d) = pb.dataForType(NSPasteboardTypePNG) {
-                            let ptr: *const c_void = msg_send![&d, bytes];
-                            let len: usize = msg_send![&d, length];
-                            if len > 0 && !ptr.is_null() {
-                                let slice = std::slice::from_raw_parts(ptr as *const u8, len);
-                                file_size = Some((len as u64).min(i32::MAX as u64) as i32);
-                                if len >= 24 && slice[0..4] == [0x89, 0x50, 0x4E, 0x47] {
-                                    image_width = Some(u32::from_be_bytes(
-                                        slice[16..20].try_into().unwrap(),
-                                    ) as i32);
-                                    image_height = Some(u32::from_be_bytes(
-                                        slice[20..24].try_into().unwrap(),
-                                    ) as i32);
-                                }
-                                content = format!("data:image/png;base64,{}", base64.encode(slice));
-                                content_type = "image".to_string();
-                            }
+                            content = format!("data:image/png;base64,{}", base64.encode(&slice));
+                            content_type = "image".to_string();
                         }
                     }
 

@@ -4,8 +4,10 @@
 
 #![allow(dead_code)]
 
-use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-use objc2_foundation::NSString;
+use objc2_app_kit::{
+    NSPasteboard, NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSPasteboardTypeString,
+};
+use objc2_foundation::{NSData, NSString};
 
 /// 读取剪贴板文本。
 pub fn read_text() -> Option<String> {
@@ -14,6 +16,70 @@ pub fn read_text() -> Option<String> {
             .stringForType(NSPasteboardTypeString)
             .map(|s| s.to_string())
     }
+}
+
+/// 读取文件 URL（NSPasteboardTypeFileURL）。
+pub fn read_file_url() -> Option<String> {
+    unsafe {
+        NSPasteboard::generalPasteboard()
+            .stringForType(NSPasteboardTypeFileURL)
+            .map(|s| s.to_string())
+    }
+}
+
+/// 读取 PNG 原始字节（NSPasteboardTypePNG）。
+pub fn read_png() -> Option<Vec<u8>> {
+    unsafe {
+        NSPasteboard::generalPasteboard()
+            .dataForType(NSPasteboardTypePNG)
+            .map(|d| d.to_vec())
+    }
+}
+
+/// 清空剪贴板。
+pub fn clear() {
+    NSPasteboard::generalPasteboard().clearContents();
+}
+
+/// 写入纯文本（清空 + 写 public.utf8-plain-text）。供前端 pasteboard_write_text 与 finder-ext 消费。
+pub fn write_text(s: &str) {
+    clear();
+    set_string(s);
+}
+
+/// 写 NSPasteboardTypeString（不清空）。
+pub fn set_string(s: &str) {
+    unsafe {
+        let ns = NSString::from_str(s);
+        NSPasteboard::generalPasteboard().setString_forType(&ns, NSPasteboardTypeString);
+    }
+}
+
+/// 写 NSPasteboardTypeFileURL（不清空）。
+pub fn set_file_url(s: &str) {
+    unsafe {
+        let ns = NSString::from_str(s);
+        NSPasteboard::generalPasteboard().setString_forType(&ns, NSPasteboardTypeFileURL);
+    }
+}
+
+/// 写 NSPasteboardTypePNG（不清空）。
+pub fn set_png(bytes: &[u8]) {
+    let d = NSData::with_bytes(bytes);
+    NSPasteboard::generalPasteboard().setData_forType(Some(&d), unsafe { NSPasteboardTypePNG });
+}
+
+/// 写自定义 UTI 类型字符串（不清空，供 clipboard marker 等自定义类型）。
+pub fn set_custom(s: &str, type_uti: &str) {
+    let ns = NSString::from_str(s);
+    let ty = NSString::from_str(type_uti);
+    NSPasteboard::generalPasteboard().setString_forType(&ns, &ty);
+}
+
+/// 框架命令：前端 invoke('pasteboard_write_text')。替代 tauri-plugin-clipboard-manager。
+#[tauri::command]
+pub fn pasteboard_write_text(text: String) {
+    write_text(&text);
 }
 
 /// 按类型名读取字符串值。

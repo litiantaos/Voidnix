@@ -1,5 +1,5 @@
 import { nextTick, type Ref } from 'vue'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
+import { writeText } from '@/utils/clipboard'
 import type { Sel, Shape, Tool, Phase, WindowRect, BlurMode } from './useTypes'
 import { DRAG_THRESHOLD } from './useTypes'
 
