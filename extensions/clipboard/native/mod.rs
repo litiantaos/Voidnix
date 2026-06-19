@@ -27,12 +27,13 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 /// 通过 NSPasteboard 轮询监听剪贴板变化并落盘。
 pub struct Plugin;
 
+#[async_trait::async_trait]
 impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "clipboard"
     }
 
-    fn on_setup(&self, app: &AppHandle) -> tauri::Result<()> {
+    async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
         let db = db::Database::new(db::clipboard_db_path(app));
         app.manage(db);
 

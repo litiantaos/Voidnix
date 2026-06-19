@@ -146,12 +146,13 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 /// Awake 扩展。
 pub struct Plugin;
 
+#[async_trait::async_trait]
 impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "awake"
     }
 
-    fn on_setup(&self, app: &AppHandle) -> tauri::Result<()> {
+    async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
         use tauri::Manager;
         app.manage(AwakeState {
             process: std::sync::Mutex::new(None),

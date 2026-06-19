@@ -247,12 +247,13 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 
 pub struct Plugin;
 
+#[async_trait::async_trait]
 impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "zsh-autosuggestions"
     }
 
-    fn on_setup(&self, app: &AppHandle) -> tauri::Result<()> {
+    async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
         let _guard = lock();
         if !enabled_flag(app).exists() {
             return Ok(());

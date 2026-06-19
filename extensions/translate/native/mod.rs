@@ -76,12 +76,13 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 /// Translate 扩展。
 pub struct Plugin;
 
+#[async_trait::async_trait]
 impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "translate"
     }
 
-    fn on_setup(&self, _app: &AppHandle) -> tauri::Result<()> {
+    async fn setup(&self, _app: &AppHandle) -> tauri::Result<()> {
         #[cfg(target_os = "macos")]
         {
             use tauri::Emitter;

@@ -85,12 +85,13 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 /// Finder 扩展。
 pub struct Plugin;
 
+#[async_trait::async_trait]
 impl Extension for Plugin {
     fn id(&self) -> &'static str {
         "finder-ext"
     }
 
-    fn on_setup(&self, app_handle: &AppHandle) -> tauri::Result<()> {
+    async fn setup(&self, app_handle: &AppHandle) -> tauri::Result<()> {
         init_finder_ext(app_handle.clone());
         Ok(())
     }
