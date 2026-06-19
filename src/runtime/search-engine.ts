@@ -59,7 +59,8 @@ class SearchEngine {
     return this.groupAndSort(results, query)
   }
 
-  /** 全局模式：并行调用所有扩展 dynamic；模块模式：只调 activeModule dynamic。 */
+  /** 全局模式：并行调用所有扩展 dynamic；模块模式：只调 activeModule dynamic。
+   *  每个扩展 dynamic 受 LIMITS.searchTimeoutMs 超时保护，慢扩展不拖住全局 Promise.all。 */
   private async searchDynamic(query: string, signal: AbortSignal): Promise<SearchResult[]> {
     const moduleMode = !!this.activeModule
     const exts = getAllExtensions().filter((e) => e.search)
@@ -68,12 +69,13 @@ class SearchEngine {
     const settled = await Promise.all(
       targets.map(async (ext) => {
         try {
-          const raw = await ext.search!.dynamic(query, { signal, moduleMode })
+          const raw = await this.raceWithTimeout(ext.search!.dynamic(query, { signal, moduleMode }))
           // 框架注入 module = 产出扩展 meta.id（扩展禁填，§2.3 v1.6 N4）
           return raw.map((r) => ({ ...r, module: ext.meta.id }) as SearchResult)
         } catch (e) {
-          // abort 触发的 AbortError 是正常路径，静默；其余打日志
-          if ((e as Error)?.name !== 'AbortError') {
+          // abort 触发的 AbortError 与超时是正常/降级路径，静默；其余打日志
+          const name = (e as Error)?.name
+          if (name !== 'AbortError' && name !== 'SearchTimeoutError') {
             console.error(`[search] extension '${ext.meta.id}' dynamic failed:`, e)
           }
           return []
@@ -81,6 +83,27 @@ class SearchEngine {
       }),
     )
     return settled.flat()
+  }
+
+  /** 为单个扩展 dynamic 套超时保护：超时抛 SearchTimeoutError（被调用方 catch 为降级 []）。
+   *  dynamic 可同步返回数组或异步返回 Promise，Promise.resolve 统一包装。 */
+  private async raceWithTimeout<T>(v: T | Promise<T>): Promise<T> {
+    const p = Promise.resolve(v)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        p,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(Object.assign(new Error('search timeout'), { name: 'SearchTimeoutError' })),
+            LIMITS.searchTimeoutMs,
+          )
+        }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
   }
 
   /** 框架内置：扫描 meta.keywords 产出模块入口结果（§2.5）。 */

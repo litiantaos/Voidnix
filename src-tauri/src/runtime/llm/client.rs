@@ -11,81 +11,29 @@ const MAX_SSE_BUFFER: usize = 1_048_576;
 /// 单条消息内容上限（32 KiB）
 const MAX_MESSAGE_CONTENT_LEN: usize = 32_768;
 
-// ── SSRF 防护（请求管道校验，§1.1 溶解自 security.rs）────────────────
-/// 手动解析 URL 提取 scheme + host，不依赖 url crate
-pub fn parse_scheme_host(raw: &str) -> Option<(&str, &str)> {
-    let s = raw.trim();
-    let scheme_end = s.find("://")?;
-    let scheme = &s[..scheme_end];
-    let rest = &s[scheme_end + 3..];
-    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let host_port = &rest[..host_end];
-    let host = host_port.split(':').next()?;
-    if scheme.is_empty() || host.is_empty() {
-        return None;
-    }
-    Some((scheme, host))
-}
+// ── SSRF 防护：scheme/host 解析与私网判断复用 crate::http 共享原语（单一真相源）──
 
-const BLOCKED_HOST_PREFIXES: &[&str] = &[
-    "127.", "10.", "192.168.",
-    "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.",
-    "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
-    "172.30.", "172.31.", "169.254.", "0.",
-];
-
-const BLOCKED_HOST_EXACT: &[&str] = &[
-    "0.0.0.0",
-    "metadata.google.internal",
-    "metadata.tencentyun.com",
-];
-
-/// 验证 endpoint 安全性，返回 (scheme, safe_endpoint)
+/// 验证 endpoint 安全性，返回 (scheme, safe_endpoint)。
+/// 远程 endpoint 必须 https（localhost 开发允许 http）；拒绝私网/保留地址。
 fn validate_endpoint(endpoint: &str) -> Result<(String, String), String> {
     let trimmed = endpoint.trim();
-    let (scheme, host) = parse_scheme_host(trimmed)
+    let (scheme, host) = crate::http::parse_scheme_host(trimmed)
         .ok_or_else(|| format!("Invalid endpoint URL: '{}'", trimmed))?;
 
-    let host_lower = host.to_lowercase();
-    let is_localhost = host_lower == "localhost"
-        || host_lower == "127.0.0.1"
-        || host_lower == "::1"
-        || host_lower == "[::1]";
-
-    if scheme != "https" && !is_localhost {
+    let local = crate::http::is_localhost(host);
+    if scheme != "https" && !local {
         return Err(
             "HTTP is not allowed for remote endpoints. Use HTTPS or localhost for development."
                 .into(),
         );
     }
-
-    for exact in BLOCKED_HOST_EXACT {
-        if host_lower == *exact {
-            return Err(format!("Endpoint '{}' is blocked for security reasons.", host));
-        }
-    }
-
-    if host_lower.starts_with("fc") || host_lower.starts_with("fd") || host_lower.starts_with("fe80") {
+    if crate::http::is_private_or_reserved(host) {
         return Err(format!(
-            "Private/internal IPv6 network endpoints are not allowed: '{}'.",
+            "Private/internal network endpoints are not allowed: '{}'.",
             host
         ));
     }
-
-    if host_lower.starts_with("::ffff:") || host_lower.starts_with("[::ffff:") {
-        return Err(format!("IPv4-mapped IPv6 addresses are not allowed: '{}'.", host));
-    }
-
-    for prefix in BLOCKED_HOST_PREFIXES {
-        if host_lower.starts_with(prefix) {
-            return Err(format!(
-                "Private/internal network endpoints are not allowed: '{}'.",
-                host
-            ));
-        }
-    }
-
-    if host.contains('@') {
+    if crate::http::url_has_userinfo(endpoint) {
         return Err("Endpoint URL must not contain credentials.".into());
     }
 
@@ -102,6 +50,90 @@ pub fn validate_ai_request(endpoint: &str, model: &str, api_key: &str) -> Result
         return Err("API Key 不能为空".into());
     }
     Ok(safe_endpoint)
+}
+
+/// LlmMessage → OpenAI 协议 JSON（snake_case key，agent_run 入参的 camelCase 由 types.rs rename 处理）。
+/// stream_openai_request 与 openai_request_once 共享，保证请求体一致。
+fn messages_to_json(messages: &[LlmMessage]) -> Vec<serde_json::Value> {
+    messages
+        .iter()
+        .map(|m| {
+            let mut obj = serde_json::json!({ "role": m.role });
+            if let Some(c) = &m.content {
+                obj["content"] = serde_json::Value::String(truncate_message(c));
+            }
+            if let Some(tc) = &m.tool_calls {
+                obj["tool_calls"] = serde_json::to_value(tc).unwrap_or(serde_json::Value::Null);
+            }
+            if let Some(id) = &m.tool_call_id {
+                obj["tool_call_id"] = serde_json::Value::String(id.clone());
+            }
+            obj
+        })
+        .collect()
+}
+
+/// HTTP 错误状态码 → 用户友好消息（stream / non-stream 共享）。
+fn map_api_error(status: reqwest::StatusCode) -> String {
+    log::error!("API HTTP error: {}", status);
+    match status.as_u16() {
+        401 => "Authentication failed. Please check your API key.".into(),
+        403 => "Access denied. Your API key may not have permission.".into(),
+        429 => "Rate limited. Please wait and try again.".into(),
+        500.. => "API server error. Please try again later.".into(),
+        _ => format!("API returned HTTP {}", status),
+    }
+}
+
+/// 非流式 OpenAI 兼容请求：translate_ai 等无需流式的消费者使用。
+/// 复用 validate / messages_to_json / map_api_error 共享管道，消除双轨实现。
+pub async fn openai_request_once(
+    endpoint: &str,
+    api_key: &str,
+    model: &str,
+    messages: Vec<LlmMessage>,
+) -> Result<String, String> {
+    let safe_endpoint = validate_ai_request(endpoint, model, api_key)?;
+    let url = format!("{}/chat/completions", safe_endpoint.trim_end_matches('/'));
+
+    let body = serde_json::json!({
+        "model": model.trim(),
+        "messages": messages_to_json(&messages),
+        "stream": false
+    });
+
+    let response = crate::http::client()
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key.trim()))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            log::error!("Request network error: {}", e);
+            "Failed to connect to API. Check your endpoint and network.".to_string()
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let _ = response.text().await;
+        return Err(map_api_error(status));
+    }
+
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("JSON parse error: {}", e))?;
+
+    let content = json
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("");
+    Ok(content.to_string())
 }
 
 /// 单条消息内容截断（请求管道，§1.1）
@@ -145,23 +177,7 @@ pub async fn stream_openai_request(
 ) -> Result<StreamOutcome, String> {
     let url = format!("{}/chat/completions", config.endpoint.trim_end_matches('/'));
 
-    let messages_json: Vec<serde_json::Value> = config
-        .messages
-        .iter()
-        .map(|m| {
-            let mut obj = serde_json::json!({ "role": m.role });
-            if let Some(c) = &m.content {
-                obj["content"] = serde_json::Value::String(truncate_message(c));
-            }
-            if let Some(tc) = &m.tool_calls {
-                obj["tool_calls"] = serde_json::to_value(tc).unwrap_or(serde_json::Value::Null);
-            }
-            if let Some(id) = &m.tool_call_id {
-                obj["tool_call_id"] = serde_json::Value::String(id.clone());
-            }
-            obj
-        })
-        .collect();
+    let messages_json = messages_to_json(&config.messages);
 
     let mut body = serde_json::json!({
         "model": config.model.trim(),
@@ -191,13 +207,7 @@ pub async fn stream_openai_request(
         let status = response.status();
         let body_text = response.text().await.unwrap_or_default();
         log::error!("API HTTP {}: {}", status, body_text);
-        return Err(match status.as_u16() {
-            401 => "Authentication failed. Please check your API key.".to_string(),
-            403 => "Access denied. Your API key may not have permission.".to_string(),
-            429 => "Rate limited. Please wait and try again.".to_string(),
-            500.. => "API server error. Please try again later.".to_string(),
-            _ => format!("API returned HTTP {}", status),
-        });
+        return Err(map_api_error(status));
     }
 
     let mut stream = response.bytes_stream();
@@ -234,8 +244,7 @@ pub async fn stream_openai_request(
             });
         }
 
-        buffer.push_str(&text);
-        buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
+        buffer.push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
 
         while let Some(event_end) = buffer.find("\n\n") {
             let event_data = buffer[..event_end].to_string();
@@ -328,6 +337,16 @@ fn finalize_stream(
             }
         }
     } else {
+        // finish_reason 非 tool_calls 但 accumulator 有未完成的 tool_calls 分片时提示
+        // （LLM 异常输出 tool_calls 却以 stop 结束的边缘情况）
+        let lenient = acc.finalize_lenient();
+        if !lenient.is_empty() {
+            log::warn!(
+                "discarded {} tool_calls with unexpected finish_reason='{}'",
+                lenient.len(),
+                finish_reason
+            );
+        }
         Vec::new()
     };
     StreamOutcome { full_text, tool_calls }

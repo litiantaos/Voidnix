@@ -13,14 +13,18 @@ test.describe('Voidnix 启动器', () => {
     await expect(input).toHaveValue('测试')
   })
 
-  test('搜索结果按 kind 归组（base64 编码归「操作」组，B3）', async ({ page }) => {
+  test('base64 结果归入「扩展」组（module kind 归组渲染，B3）', async ({ page }) => {
     const input = page.locator('#main-search-input')
     await input.fill('hello')
     await page.waitForTimeout(300)
-    // base64 扩展对任意输入产出编码结果（kind=module → 「操作」组）
-    await expect(page.getByText('操作')).toBeVisible({ timeout: 5000 })
-    // base64 编码结果可见（验证搜索→渲染管道）
+
+    const headers = page.locator('.group-header')
+    // base64 扩展对任意输入产出编码结果，kind=module → 归入「扩展」组，组头渲染
+    await expect(headers.filter({ hasText: '扩展' })).toBeVisible({ timeout: 5000 })
+    // base64 编码串可见（验证搜索→分组→渲染管道）
     await expect(page.getByText(/aGVsbG8=/)).toBeVisible({ timeout: 5000 })
+    // 纯浏览器 E2E 无原生应用索引，「hello」不命中应用组（强化归组隔离）
+    await expect(headers.filter({ hasText: '应用' })).toHaveCount(0)
   })
 
   test('清空搜索框', async ({ page }) => {

@@ -34,6 +34,16 @@ fn main() {
     // 追踪 extensions 目录变更，确保 #[path] 引用的外部文件修改后触发重新编译
     println!("cargo:rerun-if-changed=../extensions");
 
+    // 确保 tauri.conf.json bundle.resources 声明的 zsh binary 路径在编译期存在。
+    // debug 编译（cargo test/check）不走 beforeBuildCommand，target/release/ 下无 binary，
+    // 此处创建空占位让 tauri_build 的 resources 校验通过；release 链路由 beforeBuildCommand
+    // 预先 `cargo build --release --bin zsh-autosuggestions` 产出真实 binary 覆盖占位。
+    let zsh_bin = Path::new("target/release/zsh-autosuggestions");
+    if !zsh_bin.exists() {
+        let _ = std::fs::create_dir_all("target/release");
+        let _ = std::fs::write(zsh_bin, "");
+    }
+
     // 仅在 macOS 目标上编译原生桥接静态库
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "macos" {

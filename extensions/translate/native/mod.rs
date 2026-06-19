@@ -26,30 +26,25 @@ pub struct TranslateResult {
 #[tauri::command]
 pub async fn get_selected_text() -> Result<String, String> {
     use std::time::Instant;
-    use tokio::process::Command;
 
-    let text = Command::new("pbpaste")
-        .output()
-        .await
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default();
-
-    if !text.trim().is_empty() {
-        return Ok(text.trim().to_string());
+    // 优先读当前剪贴板（划词翻译快捷键触发前，cmd+c 已写入）
+    if let Some(text) = crate::platform::pasteboard::read_text() {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
     }
 
+    // 轮询等待 cmd+c 写入（最多 300ms）
     let start = Instant::now();
     loop {
         tokio::time::sleep(Duration::from_millis(20)).await;
 
-        let text = Command::new("pbpaste")
-            .output()
-            .await
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            .unwrap_or_default();
-
-        if !text.trim().is_empty() {
-            return Ok(text.trim().to_string());
+        if let Some(text) = crate::platform::pasteboard::read_text() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return Ok(trimmed.to_string());
+            }
         }
 
         if start.elapsed() > Duration::from_millis(300) {

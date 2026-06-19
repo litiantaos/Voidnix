@@ -16,22 +16,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: 安装前端依赖
-        run: bun install
-
-      - name: Lint
-        run: bun run lint
-
-      - name: 前端构建（含类型检查）
-        run: bun run build
-
-      - name: 验证扩展同步产物
-        run: bun run check:extensions
-
-      - name: Rust 编译检查
-        run: cd src-tauri && cargo check
-
-      - name: 安装 Rust
+      - name: 安装 Rust 工具链
         uses: dtolnay/rust-toolchain@stable
 
       - name: 缓存 Rust 依赖
@@ -39,7 +24,31 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: 构建并打包
+      - name: 安装前端依赖
+        run: bun install
+
+      - name: 扩展同步产物校验
+        run: bun run check:extensions
+
+      - name: 命令名双向差集校验
+        run: bun run check:commands
+
+      - name: agent 安全底线一致校验
+        run: bun run check:agent-bounds
+
+      - name: 代码风格检查
+        run: bun run lint:check
+
+      - name: 类型检查
+        run: bun run typecheck
+
+      - name: 前端单元测试
+        run: bun run test
+
+      - name: Rust 单元测试
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+
+      - name: 构建并打包（zsh binary 经 bundle.resources 自动嵌入）
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,22 +1,7 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import type { ProviderResult } from '@/runtime/types'
 import { copyAndHide } from '@/stores/app'
-
-function pad(n: number): string {
-  return n < 10 ? '0' + n : String(n)
-}
-
-/** 本地 ISO 风格字符串（带时区偏移，如 2026-06-19T17:40+08:00）。 */
-function toLocalIso(date: Date): string {
-  const off = -date.getTimezoneOffset()
-  const sign = off >= 0 ? '+' : '-'
-  const absOff = Math.abs(off)
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
-    `${sign}${pad(Math.floor(absOff / 60))}:${pad(absOff % 60)}`
-  )
-}
+import { toLocalIso, parseTimestamp } from './logic'
 
 export default defineExtension({
   meta: {
@@ -56,18 +41,14 @@ export default defineExtension({
 
       let date: Date | null = null
       let sourceDesc = ''
-      if (/^\d{10}$/.test(trimmed)) {
-        date = new Date(parseInt(trimmed, 10) * 1000)
-        sourceDesc = `Unix 秒 ${trimmed}`
-      } else if (/^\d{13}$/.test(trimmed)) {
-        date = new Date(parseInt(trimmed, 10))
-        sourceDesc = `Unix 毫秒 ${trimmed}`
-      } else {
-        const d = new Date(trimmed)
-        if (!isNaN(d.getTime())) {
-          date = d
-          sourceDesc = trimmed
-        }
+      const parsed = parseTimestamp(trimmed)
+      if (parsed) {
+        date = new Date(parsed.ts)
+        sourceDesc = /^\d{10}$/.test(trimmed)
+          ? `Unix 秒 ${trimmed}`
+          : /^\d{13}$/.test(trimmed)
+            ? `Unix 毫秒 ${trimmed}`
+            : trimmed
       }
 
       if (date) {

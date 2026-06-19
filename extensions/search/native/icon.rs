@@ -139,6 +139,8 @@ fn convert_icns_to_png(icon_path: &std::path::Path, app_path: &str) -> Option<St
         "voidnix-icon-{}.png",
         icon_path.file_stem()?.to_str()?
     ));
+    // TempHandle 包裹：Drop 自动删文件，覆盖 sips 失败 / NSImage 处理异常 / 提前 return 等所有路径
+    let _tmp_guard = crate::runtime::storage::TempHandle::new(tmp_path.clone());
     let output = std::process::Command::new("sips")
         .arg("-s")
         .arg("format")
@@ -153,12 +155,9 @@ fn convert_icns_to_png(icon_path: &std::path::Path, app_path: &str) -> Option<St
         unsafe {
             let tmp_ns = NSString::from_str(tmp_path.to_str()?);
             if let Some(image) = NSImage::initWithContentsOfFile(NSImage::alloc(), &tmp_ns) {
-                let result = nsimage_to_png_base64(&image, true);
-                let _ = std::fs::remove_file(&tmp_path);
-                return result;
+                return nsimage_to_png_base64(&image, true);
             }
         }
-        let _ = std::fs::remove_file(&tmp_path);
     }
 
     None

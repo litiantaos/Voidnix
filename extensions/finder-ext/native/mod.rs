@@ -253,6 +253,8 @@ fn handle_open_terminal(_handle: &AppHandle, paths: &[PathBuf], target: &str) {
         return;
     };
 
+    // 固定使用 Terminal.app。已知限制：不尊重用户偏好的 iTerm2/Warp/Alacritty 等。
+    // 未来可读 com.apple.LaunchServices 默认终端 bundle id 或扩展 config 增加配置项。
     let _ = Command::new("open")
         .args(["-b", "com.apple.Terminal", dir.to_string_lossy().as_ref()])
         .spawn();

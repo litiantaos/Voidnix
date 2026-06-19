@@ -1,6 +1,8 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import type { ProviderResult } from '@/runtime/types'
 import { copyAndHide } from '@/stores/app'
+import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { CURRENCIES, parseCurrencyInput, convertCurrency, isRatesCacheFresh } from './logic'
 
 let ratesCache: Record<string, number> | null = null
@@ -11,9 +13,9 @@ async function fetchRates(): Promise<Record<string, number> | null> {
   if (ratesCache && isRatesCacheFresh(ratesTime, now)) return ratesCache
 
   try {
-    const res = await fetch('https://open.er-api.com/v6/latest/USD')
-    if (!res.ok) return ratesCache
-    const data = await res.json()
+    // 走框架 Rust http_get：绕过 webview UA/Referer 反爬与 CORS（与 ip 扩展一致）
+    const text = await invoke<string>(CMD.httpGet, { url: 'https://open.er-api.com/v6/latest/USD' })
+    const data = JSON.parse(text) as { rates?: Record<string, number> }
     if (data?.rates) {
       ratesCache = data.rates
       ratesTime = now

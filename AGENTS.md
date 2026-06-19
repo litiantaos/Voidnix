@@ -23,6 +23,7 @@ bun run build:zsh-bin        # 单独编译 zsh-autosuggestions binary（产物 
 bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions.rs）
 bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移）
 bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
+bun run check:agent-bounds   # CI 校验（agent policy.rs ↔ config.ts BOUNDS 双向一致）
 bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
 bun run typecheck            # vue-tsc 严格类型检查
 ```
@@ -55,7 +56,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 
 **前后端通信**：前端命令名常量集中 `src/commands.ts`（`CMD.xxx`），**禁止裸 `invoke('xxx')`**，统一走 `invoke<T>(CMD.xxx, {...})` + 手写类型（`types/` 与各扩展）。`scripts/check-commands.ts` CI 对 Rust `#[tauri::command]` 名集合 ↔ `commands.ts` 常量作双向差集校验。流式/事件用 `app.emit()` 或 `tauri::ipc::Channel<T>`（agent 用后者）。扩展 Command 与框架 Command 统一在 `configure_app!` 的 `generate_handler!` 全局注册（sync-extensions 扫描生成，前端裸名 invoke）。含动态 JSON 的 Command（如 agent_run 的 `Channel<AgentEvent>`）手写 TS 类型（`src/types/agent.ts`）。
 
-**扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta` + 10 能力槽（按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
+**扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta` + 13 槽（10 能力槽 + 3 行为槽，按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
 
 **搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + keyword 合流 + dedupe + groupAndSort。全局模式聚合所有扩展按 `finalScore = fuzzy + boost` 过滤排序；模块模式只调激活扩展且保留原序。`SearchContext.moduleMode` 区分两种模式（网络型扩展据此在全局空 query 跳过网络）。搜索集成细节详见 [docs/extensions.md](docs/extensions.md)。
 
@@ -88,13 +89,13 @@ Agent 安全防线（命令执行 9 层纵深防御）：`extensions/agent/nativ
 src-tauri/src/
 ├── lib.rs / main.rs    # 入口（lib.rs setup 内含启动埋点，debug 构建打印 `[boot]` 各阶段耗时 + <100ms 判定）
 ├── extensions.rs       # 自动生成（configure_app! 含 .plugin() 链 + 全局 generate_handler! + mod 声明）
-├── http.rs             # 全局 HTTP 客户端 + http_get 命令（绕过 webview UA/Referer 反爬与 CORS，ip/currency 等纯 TS 扩展消费）
+├── http.rs             # 全局 HTTP 客户端 + http_get 命令（浏览器 UA 伪装 + SSRF 防护 + 重定向限制 + 共享 parse_scheme_host/is_blocked_host 原语；ip/currency 等纯 TS 扩展消费）
 ├── runtime/            # 运行时核心
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
 │   ├── storage.rs      # TempHandle RAII 临时文件管理（Drop 自动清理）
 │   ├── permission.rs   # 系统权限薄壳
-│   ├── registry.rs     # Extension trait + ExtensionRegistry（并行 bootstrap）
+│   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap，join_all 单线程并发交错）
 │   ├── pasteboard.rs   # 框架命令薄壳（pasteboard_write_text；原语在 platform/pasteboard）
 │   └── llm/            # LLM 基础设施（types / client / parser；security 溶解入 client）
 └── platform/           # macOS 原生桥
@@ -113,7 +114,7 @@ src/
 ├── main.ts             # 入口（import.meta.glob eager 扫描扩展 + 并行 setup）
 ├── commands.ts         # 命令名常量（CMD.xxx，禁止裸 invoke）
 ├── runtime/            # 前端运行时（5 文件）
-│   ├── types.ts        # Extension / SearchProvider / SearchResult（10 能力槽）
+│   ├── types.ts        # Extension / SearchProvider / SearchResult（13 槽：10 能力 + 3 行为）
 │   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS/GROUP_ORDER/GROUP_TITLES/KEYWORD_MODULE_BOOST + LIMITS）
 │   ├── storage.ts      # defineConfig（reactive + watch 自动持久化 + store 实例缓存）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
@@ -156,18 +157,15 @@ UnoCSS + TailwindCSS 最佳实践，遵循官方规范。
 ~/Library/Application Support/com.litiantao.voidnix/
 ├── config/settings.json              # 框架级配置（快捷键 + AI Provider）
 └── extensions/
-    ├── clipboard/clipboard.db        # 剪贴板历史（SQLite WAL）
-    ├── clipboard/config.json         # clipboard 扩展配置（defineConfig）
-    ├── calculator/calc_history.json  # 计算器历史
-    ├── finder-ext/commands/          # Finder 扩展 IPC
-    ├── zsh-autosuggestions/          # zsh 补全（bin/ index.cache signals.log enabled）
-    ├── awake/                        # awake binary + config.json
+    ├── clipboard/{clipboard.db, config.json}   # 剪贴板历史（SQLite WAL）+ 配置
+    ├── calculator/calc_history.json  # 计算器历史（plugin-store 直读）
+    ├── finder-ext/{commands/, config.json}     # Finder 扩展 IPC 目录 + 配置
+    ├── zsh-autosuggestions/{bin/, index.cache, signals.log, enabled, bin_version, config.json}  # zsh 补全
+    ├── awake/{Display Wakelock, config.json}   # awake binary + 配置
     ├── screenshot/config.json        # screenshot 扩展配置
     ├── window-manager/config.json    # window-manager 扩展配置
     ├── translate/config.json         # translate 扩展配置
-    ├── agent/config.json             # agent 扩展配置
-    ├── zsh-autosuggestions/config.json
-    └── finder-ext/config.json
+    └── agent/config.json             # agent 扩展配置
 ```
 
 icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litiantao.voidnix.dev` 同构。

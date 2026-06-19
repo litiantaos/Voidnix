@@ -26,24 +26,6 @@ const COMMAND_ATTR = /^#\[\s*tauri::command/
 const FN_NAME = /(?:pub\s+)?(?:async\s+)?fn\s+(\w+)/
 const rustName = (id: string) => id.replace(/-/g, '_')
 
-// 框架命令固定列表（lib.rs 自管，不扫描）。扩展命令由 scanExtensionCommands 扫描。
-const FRAMEWORK_COMMANDS = [
-  'crate::http::http_get',
-  'crate::runtime::permission::check_screen_recording_permission',
-  'crate::runtime::permission::check_accessibility_permission',
-  'crate::runtime::permission::request_accessibility_permission',
-  'crate::runtime::permission::check_full_disk_access_permission',
-  'crate::runtime::permission::open_privacy_settings',
-  'crate::runtime::shortcut::start_shortcut_recording',
-  'crate::runtime::shortcut::stop_shortcut_recording',
-  'crate::runtime::shortcut::is_app_active',
-  'crate::runtime::shortcut::hide_window',
-  'crate::runtime::shortcut::register_global_shortcut',
-  'crate::runtime::window::get_home_dir',
-  'crate::runtime::window::pick_directory',
-  'crate::runtime::pasteboard::pasteboard_write_text',
-]
-
 function scanInitExtensions(): string[] {
   const ids: string[] = []
   for (const dir of readdirSync(EXT_DIR)) {
@@ -55,8 +37,8 @@ function scanInitExtensions(): string[] {
   return ids.sort()
 }
 
-/** 递归收集 .rs 文件（排除 src/ 等 binary 目录）。 */
-function walkRs(dir: string, out: string[] = [], skip = ['src']): string[] {
+/** 递归收集 .rs 文件。skip 匹配文件/目录名（跳过自动生成 / binary 入口等）。 */
+function walkRs(dir: string, out: string[] = [], skip: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     if (skip.includes(name)) continue
     const full = join(dir, name)
@@ -76,7 +58,7 @@ function relToModule(rel: string): string {
   return parts.join('::')
 }
 
-/** 扫描文件内 #[tauri::command] fn 名（逐行，跳过中间属性）。 */
+/** 扫描文件内 #[tauri::command] fn 名（逐行，跳过中间属性与 doc 注释）。 */
 function scanCommandsInFile(src: string): string[] {
   const cmds: string[] = []
   const lines = src.split('\n')
@@ -84,7 +66,11 @@ function scanCommandsInFile(src: string): string[] {
   while (i < lines.length) {
     if (COMMAND_ATTR.test(lines[i].trim())) {
       let j = i + 1
-      while (j < lines.length && (/^\s*#\[/.test(lines[j]) || lines[j].trim() === '')) j++
+      while (
+        j < lines.length &&
+        (/^\s*#\[/.test(lines[j]) || lines[j].trim() === '' || lines[j].trim().startsWith('///'))
+      )
+        j++
       const m = lines[j]?.match(FN_NAME)
       if (m) cmds.push(m[1])
       i = j + 1
@@ -95,12 +81,31 @@ function scanCommandsInFile(src: string): string[] {
   return cmds
 }
 
+/** 扫描 src-tauri/src/ 下框架级 #[tauri::command]，按文件路径推断全局模块路径。
+ * 取代硬编码 FRAMEWORK_COMMANDS：新增框架命令自动进 generate_handler!，无需手动维护清单。 */
+function scanFrameworkCommands(): string[] {
+  const srcDir = join(ROOT, 'src-tauri', 'src')
+  // 排除自动生成产物（extensions.rs，会递归引用自身）与 binary 入口（main.rs）
+  const skip = ['extensions.rs', 'main.rs']
+  const cmds: string[] = []
+  for (const file of walkRs(srcDir, [], skip)) {
+    const src = readFileSync(file, 'utf8')
+    const fns = scanCommandsInFile(src)
+    if (fns.length === 0) continue
+    const modPath = relToModule(relative(srcDir, file))
+    const prefix = modPath ? `crate::${modPath}::` : 'crate::'
+    for (const fn of fns) cmds.push(`${prefix}${fn}`)
+  }
+  return cmds.sort()
+}
+
 /** 扫描各扩展 native/ 下 #[tauri::command]，按文件路径推断全局模块路径。 */
 function scanExtensionCommands(ids: string[]): string[] {
   const cmds: string[] = []
   for (const id of ids) {
     const nativeDir = join(EXT_DIR, id, 'native')
-    for (const file of walkRs(nativeDir)) {
+    // skip ['src']：排除 zsh-autosuggestions/native/src/（独立 binary，clap #[command] 非 tauri 命令）
+    for (const file of walkRs(nativeDir, [], ['src'])) {
       const src = readFileSync(file, 'utf8')
       const modPath = relToModule(relative(nativeDir, file))
       const prefix = modPath ? `${modPath}::` : ''
@@ -112,11 +117,11 @@ function scanExtensionCommands(ids: string[]): string[] {
   return cmds.sort()
 }
 
-function buildExtensionsRs(ids: string[], extCmds: string[]): string {
+function buildExtensionsRs(ids: string[], frameworkCmds: string[], extCmds: string[]): string {
   const pluginChain = ids
     .map((id) => `        .plugin(crate::extensions::${rustName(id)}::init())`)
     .join('\n')
-  const allCmds = [...FRAMEWORK_COMMANDS, ...extCmds]
+  const allCmds = [...frameworkCmds, ...extCmds]
   const cmdList = allCmds.map((c) => `            ${c},`).join('\n')
   const modDecls = ids
     .map((id) => `#[path = "../../extensions/${id}/native/mod.rs"]\npub mod ${rustName(id)};`)
@@ -142,7 +147,8 @@ ${modDecls}
 
 const ids = scanInitExtensions()
 const extCmds = scanExtensionCommands(ids)
-const content = buildExtensionsRs(ids, extCmds)
+const frameworkCmds = scanFrameworkCommands()
+const content = buildExtensionsRs(ids, frameworkCmds, extCmds)
 
 // windowViews 漂移校验（v1.5 A4）：始终运行（sync 与 --check 模式均校验）
 const wvError = checkWindowViews()
@@ -160,12 +166,12 @@ if (process.argv.includes('--check')) {
     process.exit(1)
   }
   console.log(
-    `[sync-extensions] Check passed (${ids.length} extensions, ${FRAMEWORK_COMMANDS.length + extCmds.length} commands).`,
+    `[sync-extensions] Check passed (${ids.length} extensions, ${frameworkCmds.length + extCmds.length} commands).`,
   )
 } else {
   writeFileSync(OUT_FILE, content)
   console.log(
-    `[sync-extensions] Synced ${ids.length} extensions, ${FRAMEWORK_COMMANDS.length + extCmds.length} commands (${extCmds.length} extension + ${FRAMEWORK_COMMANDS.length} framework)`,
+    `[sync-extensions] Synced ${ids.length} extensions, ${frameworkCmds.length + extCmds.length} commands (${extCmds.length} extension + ${frameworkCmds.length} framework, auto-discovered)`,
   )
 }
 

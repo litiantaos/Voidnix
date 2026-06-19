@@ -40,10 +40,23 @@ fn installed_bin(app: &AppHandle) -> PathBuf {
 }
 
 fn source_bin() -> Option<PathBuf> {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join(BIN_NAME)))
-        .filter(|p| p.exists())
+    let exe = std::env::current_exe().ok()?;
+    // 优先 MacOS/（deploy.sh cp 模式 + 开发模式 current_exe 在 target/debug/）
+    if let Some(mac_os) = exe.parent() {
+        let p = mac_os.join(BIN_NAME);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    // 兜底 Resources/（tauri bundle.resources 模式，CI 分发链路）
+    // .app/Contents/MacOS/Voidnix → .app/Contents/Resources/
+    if let Some(resources) = exe.parent().and_then(|d| d.parent()).map(|d| d.join("Resources")) {
+        let p = resources.join(BIN_NAME);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
 }
 
 fn cache_path(app: &AppHandle) -> PathBuf {
@@ -95,6 +108,16 @@ fn install_bin_to(
     }
     match std::fs::copy(source, dest) {
         Ok(_) => {
+            // 确保可执行权限（防御：源文件经过 bundle.resources 等链路可能丢失可执行位）
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = std::fs::metadata(dest) {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(0o755);
+                    let _ = std::fs::set_permissions(dest, perms);
+                }
+            }
             // 写版本号标志（失败不阻断：下次仍会因版本不匹配重新复制）。
             let _ = std::fs::write(version_path, BIN_VERSION.to_string());
             true

@@ -66,10 +66,10 @@ describe('toResult', () => {
     expect(r.data?.kind).toBe('folder')
   })
 
-  it('icon null → data.icon null + 顶层 icon undefined', () => {
+  it('icon null → data.icon undefined + 顶层 icon undefined', () => {
     const r = toResult({ ...baseRaw, icon: null }, 0)
     expect(r.icon).toBeUndefined()
-    expect(r.data?.icon).toBeNull()
+    expect(r.data?.icon).toBeUndefined()
   })
 
   it('null 字段回退默认值', () => {

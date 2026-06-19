@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
-import { defineExtension, getAllExtensions, getExtension } from './extension-registry'
+import { describe, it, expect, afterEach } from 'vitest'
+import {
+  defineExtension,
+  getAllExtensions,
+  getExtension,
+  _resetForTest,
+} from './extension-registry'
 import type { Extension } from './types'
 
 function makeExt(id: string): Extension {
@@ -8,11 +13,13 @@ function makeExt(id: string): Extension {
   })
 }
 
+afterEach(() => _resetForTest())
+
 describe('extension-registry', () => {
   it('defineExtension 注册并返回原对象', () => {
     const ext = makeExt('reg-return')
     expect(ext.meta.id).toBe('reg-return')
-    expect(getAllExtensions()).toContain(ext)
+    expect(getAllExtensions()).toEqual([ext])
   })
 
   it('getExtension 按 id 查找', () => {
@@ -22,11 +29,10 @@ describe('extension-registry', () => {
   })
 
   it('getAllExtensions 保持注册顺序', () => {
-    const before = getAllExtensions().length
     makeExt('reg-order-a')
     makeExt('reg-order-b')
     const all = getAllExtensions()
-    expect(all.length).toBe(before + 2)
+    expect(all.length).toBe(2)
     const ia = all.findIndex((e) => e.meta.id === 'reg-order-a')
     const ib = all.findIndex((e) => e.meta.id === 'reg-order-b')
     expect(ia).toBeLessThan(ib)

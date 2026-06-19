@@ -36,6 +36,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const shortcutOverrides = ref<Record<string, string>>({})
 
   // ─── AI Provider 基础设施（agent 消费；Rust runtime/llm 为 agent+translate 共享）───
+  // 不变量：aiProviders 始终 ≥1 项（removeAiProvider 删空时补默认项），
+  // activeProviderConfig 的非空断言依赖此不变量。
   const aiProviders = ref<AiProviderConfig[]>([
     { id: generateId(), endpoint: '', apiKey: '', models: [] },
   ])
@@ -86,8 +88,12 @@ export const useSettingsStore = defineStore('settings', () => {
       const idx = opts.configs.value.findIndex((c) => c.id === id)
       if (idx === -1) return
       opts.configs.value.splice(idx, 1)
+      // 删空时补默认项，维持「configs ≥1」不变量（activeProviderConfig 非空断言依赖）
+      if (opts.configs.value.length === 0) {
+        opts.configs.value.push({ id: opts.generateId() } as T)
+      }
       if (opts.activeKey.value.startsWith(`${id}::`)) {
-        opts.activeKey.value = opts.configs.value.length > 0 ? `${opts.configs.value[0].id}::` : ''
+        opts.activeKey.value = `${opts.configs.value[0].id}::`
       }
       await save()
     }
@@ -130,11 +136,8 @@ export const useSettingsStore = defineStore('settings', () => {
         activeProviderModelKey.value = aiProvidersData.activeProviderModelKey
     } catch (e) {
       console.warn('Failed to load config/settings.json, using defaults:', e)
-      try {
-        store = await Store.load('config/settings.json', { autoSave: false, defaults: {} })
-      } catch (innerErr) {
-        console.warn('Also failed to load Store:', innerErr)
-      }
+      // load 失败时以 defaults 运行（store=null，写入操作自动跳过持久化）
+      store = null
     }
   }
 

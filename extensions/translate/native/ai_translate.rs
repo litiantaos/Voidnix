@@ -102,62 +102,13 @@ pub async fn translate_ai(
 ) -> Result<TranslateResult, String> {
     let p = prepare_ai_translate(&text, &endpoint, &api_key, &model, target_lang.as_deref(), prompt.as_ref())?;
 
-    let url = format!(
-        "{}/chat/completions",
-        p.safe_endpoint.trim_end_matches('/')
-    );
-
-    let body = serde_json::json!({
-        "model": model.trim(),
-        "messages": [
-            {
-                "role": "system",
-                "content": p.system_content
-            },
-            {
-                "role": "user",
-                "content": p.rendered
-            }
-        ],
-        "stream": false
-    });
-
-    let response = crate::http::client()
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key.trim()))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("网络错误: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let _body_text = response.text().await.unwrap_or_default();
-        return Err(match status.as_u16() {
-            401 => "认证失败，请检查 API Key".to_string(),
-            403 => "访问被拒绝，API Key 可能没有权限".to_string(),
-            429 => "请求过于频繁，请稍后重试".to_string(),
-            500.. => "AI 服务端错误，请稍后重试".to_string(),
-            _ => format!("AI 翻译错误: HTTP {}", status),
-        });
-    }
-
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("JSON 解析错误: {}", e))?;
-
-    let translation = clean_translation(
-        json
-            .get("choices")
-            .and_then(|c| c.as_array())
-            .and_then(|arr| arr.first())
-            .and_then(|choice| choice.get("message"))
-            .and_then(|m| m.get("content"))
-            .and_then(|c| c.as_str())
-            .unwrap_or(""),
-    );
+    // 复用 runtime/llm 共享非流式管道（validate + messages_to_json + map_api_error）
+    let messages = vec![
+        LlmMessage::system(p.system_content),
+        LlmMessage::user(p.rendered),
+    ];
+    let raw = llm::openai_request_once(&endpoint, &api_key, &model, messages).await?;
+    let translation = clean_translation(&raw);
 
     if translation.is_empty() {
         return Err("翻译返回为空".to_string());

@@ -10,8 +10,8 @@ use objc2_app_kit::NSWindow;
 /// orderFrontRegardless —— 让窗口前置显示但不激活 NSApp。
 pub fn bring_to_front(window: &tauri::WebviewWindow) {
     if let Ok(raw) = window.ns_window() {
-        unsafe {
-            let ns_window = raw.cast::<NSWindow>().as_ref().unwrap();
+        let raw = raw.cast::<NSWindow>();
+        if let Some(ns_window) = unsafe { raw.as_ref() } {
             ns_window.orderFrontRegardless();
         }
     }
@@ -20,8 +20,8 @@ pub fn bring_to_front(window: &tauri::WebviewWindow) {
 /// resignKeyWindow + orderOut —— 隐藏窗口并释放 key window 状态。
 pub fn hide_native(window: &tauri::WebviewWindow) {
     if let Ok(raw) = window.ns_window() {
-        unsafe {
-            let ns_window = raw.cast::<NSWindow>().as_ref().unwrap();
+        let raw = raw.cast::<NSWindow>();
+        if let Some(ns_window) = unsafe { raw.as_ref() } {
             ns_window.resignKeyWindow();
             ns_window.orderOut(None);
         }
@@ -30,16 +30,20 @@ pub fn hide_native(window: &tauri::WebviewWindow) {
 
 /// makeKeyWindow —— 取得键盘焦点（配合 orderFrontRegardless）。
 pub fn make_key_window(window: &tauri::WebviewWindow) {
-    let raw = window.ns_window().unwrap().cast::<NSWindow>();
-    let ns_window = unsafe { raw.as_ref().unwrap() };
-    ns_window.makeKeyWindow();
+    if let Ok(ptr) = window.ns_window() {
+        let raw = ptr.cast::<NSWindow>();
+        if let Some(ns_window) = unsafe { raw.as_ref() } {
+            ns_window.makeKeyWindow();
+        }
+    }
 }
 
 /// 主窗口框架级样式：content view 圆角（CALayer）+ NonactivatingPanel 转换（§2.8）。
-/// 在 lib.rs setup 内 bootstrap 之后调用一次。
+/// 在 lib.rs setup 内 bootstrap 之后调用一次。失败静默跳过（不阻断启动）。
 pub fn apply_main_window_style(window: &tauri::WebviewWindow) {
-    let raw = window.ns_window().unwrap().cast::<NSWindow>();
-    let ns_window = unsafe { raw.as_ref().unwrap() };
+    let Ok(ptr) = window.ns_window() else { return };
+    let raw = ptr.cast::<NSWindow>();
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else { return };
     if let Some(content_view) = ns_window.contentView() {
         let _: () = unsafe { objc2::msg_send![&content_view, setWantsLayer: true] };
         let layer: *mut objc2::runtime::AnyObject =

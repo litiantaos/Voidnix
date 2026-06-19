@@ -22,6 +22,11 @@ fn now_ms() -> u64 {
 // 吸收。RECORDING_IDS 仅作前端调试/将来扩展用途，判断是否处于录制态以
 // IS_RECORDING_ANY 为准（原子操作，回调热路径无需加锁）。
 
+// unwrap 策略说明：本模块多处 `.lock().unwrap()`。release profile 配置 panic=abort，
+// 线程 panic 即进程退出，Mutex poison 来不及产生（poison 需要持锁线程 panic 后存活），
+// 故 unwrap 不会因 poison 触发。debug 构建下风险极低（仅持锁时 panic 才 poison，
+// 而本模块持锁区间均为简单 HashMap 操作，无 panic 点）。统一保留 unwrap 保持简洁。
+
 static RECORDING_IDS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 static IS_RECORDING_ANY: AtomicBool = AtomicBool::new(false);

@@ -25,17 +25,17 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.40", features = ["bundled"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process"] }
+tokio-util = "0.7"
 base64 = "0.22"
 log = "0.4"
 dirs = "6"
 clap = { version = "4", features = ["derive"] }
 regex = "1"
 reqwest = { version = "0.13.3", features = ["json", "rustls", "stream", "form"] }
-plist = "1"
-block2 = "0.6"
-objc2 = "0.6.4"
-objc2-foundation = { version = "0.3.2", features = ["NSString", "NSGeometry", "NSData", "NSDictionary", "NSArray", "NSEnumerator"] }
-objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSWindow", "NSEvent", "NSScreen", "NSImage", "NSGraphicsContext", "NSBitmapImageRep", "NSImageRep", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSRunningApplication"] }
+futures-util = "0.3"
+async-trait = "0.1"
+sha2 = "0.11"
+urlencoding = "2"
 
 
 [dev-dependencies]
@@ -46,13 +46,12 @@ core-graphics = { version = "0.25", features = ["elcapitan"] }
 core-foundation = "0.10"
 libc = "0.2"
 notify = "8.2.0"
-urlencoding = "2"
-
-sha2 = "0.11"
-futures-util = "0.3"
 rlimit = "0.10"
-tokio-util = "0.7"
-async-trait = "0.1"
+plist = "1"
+block2 = "0.6"
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", features = ["NSString", "NSGeometry", "NSData", "NSDictionary", "NSArray", "NSEnumerator"] }
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSWindow", "NSEvent", "NSScreen", "NSImage", "NSGraphicsContext", "NSBitmapImageRep", "NSImageRep", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSRunningApplication"] }
 
 [profile.release]
 strip = true

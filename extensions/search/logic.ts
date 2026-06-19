@@ -25,7 +25,7 @@ export function toResult(raw: RawSearchResult, boost: number): ProviderResult {
     data: {
       kind: (raw.kind as SearchResultKind) ?? 'file',
       path: raw.path,
-      icon: raw.icon ?? null,
+      icon: raw.icon ?? undefined,
       useCount: raw.use_count ?? 0,
       parent: raw.parent ?? null,
       lastUsed: raw.last_used ?? null,
