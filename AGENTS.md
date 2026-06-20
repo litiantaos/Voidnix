@@ -7,8 +7,8 @@ macOS 效率启动器。Tauri 2 + Rust + Vue 3。统一扩展架构：
 
 ## 原则
 
-- 追求极致的结构清晰、优雅、轻量、高性能、低占用
-- 极简主义、强迫症、精神洁癖；第一性推导、一步到位，不考虑兼容性与历史包袱
+- 追求极致的结构清晰、代码统一、优雅、轻量、高性能、低占用
+- 极简主义、强迫症、精神洁癖、第一性推导、一步到位，摒弃历史包袱与旧版兼容
 - **两层正交**：`runtime/`（平台无关的调度与生命周期核心）与 `platform/`（macOS 原语、无业务语义）严格分离——换 `platform` 实现即可跨平台，不混称「内核」
 - **机制最少化**：新增机制（接口字段/扩展点/生命周期钩子）前先回答「现有机制能否覆盖」。优先扩展已有机制参数，而非新增并列机制
 - **扩展自治**：扩展 = 元数据 + 能力供给 + 生命周期，声明供给什么能力框架按需消费（未供给即不支持，零默认值）；每个扩展目录是自治单元，零跨扩展 import、零框架业务泄漏
@@ -28,7 +28,15 @@ bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
 bun run typecheck            # vue-tsc 严格类型检查
 ```
 
-内部命令（tauri.conf.json 自动调用）：`bun run dev`（Vite）、`bun run build`（sync → lint → typecheck → vite build）
+Rust 端代码质量：
+
+```bash
+cargo fmt --manifest-path src-tauri/Cargo.toml --check    # 格式检查（CI 门禁）
+cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings   # lint（CI 门禁）
+```
+
+内部命令（tauri.conf.json 自动调用）：`bun run dev`（Vite）、`bun run build`（sync → lint → typecheck → vite build）。
+`tauri:dev` 前置 `sync:extensions + check:commands + check:agent-bounds + lint`，命令名/安全边界漂移在 dev 即暴露。
 
 ## 自动化测试
 
@@ -41,7 +49,19 @@ bun run test:e2e                   # E2E（Playwright）
 cd src-tauri && cargo test --lib   # Rust
 ```
 
-E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需人工验证。
+E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run test:e2e`）。原生窗口行为（快捷键/焦点/隐藏）仍需人工验证。
+
+## CI 门禁
+
+`.github/workflows/ci.yml` 在 push（main/refactor/v2）与任意 PR 触发，依次执行：
+
+1. 前端 lint:check（Prettier + ESLint）
+2. Rust `cargo fmt --check`
+3. `bun run typecheck`（vue-tsc 严格）
+4. Rust `cargo clippy --lib -- -D warnings`
+5. 漂移校验三件套：`check:extensions` / `check:commands` / `check:agent-bounds`
+6. 单测：`bun run test`（Vitest）+ `cargo test --lib`
+7. E2E：`bun run test:e2e`（Playwright，含浏览器安装）
 
 ## 开发扩展
 
@@ -73,7 +93,7 @@ E2E 对 Vite dev server。原生窗口行为（快捷键/焦点/隐藏）仍需�
 - `secret_scrub.rs`：gitleaks 风格正则打码
 - `tool_registry.rs`：`AgentTool` trait + `ToolRegistry`
 
-Agent 安全防线（命令执行 9 层纵深防御）：`extensions/agent/native/policy.rs` 是 floor/cap 权威源（FORBIDDEN_FLOOR 31 项 / DENIED_ARG_FLOOR 15 项 / 资源上限 clamp），`agent_run` 入口强制 clamp/并集（不信任前端传值）；TS 端 `config.ts` 的 `BOUNDS` 仅 UI 镜像。详见 `docs/extensions/agent.md`。
+Agent 安全防线（命令执行 9 层纵深防御）：`extensions/agent/native/policy.rs` 是 floor/cap 权威源（FORBIDDEN_FLOOR 31 项 / DENIED_ARG_FLOOR 19 项 / TRUSTED_DENYLIST 11 项强制剔除 / 资源上限 clamp），`agent_run` 入口强制 clamp/并集/剔除（不信任前端传值——老用户 config.json 已落盘的 find/awk/... 也会被剔除）；TS 端 `config.ts` 的 `BOUNDS` 仅 UI 镜像。详见 `docs/extensions/agent.md`。
 
 **搜索打分**：`src/utils/fuzzy.ts::scoreFields()`（[pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。`kind` 枚举 `application | folder | file | module | clipboard | web`（folder/file 同组），组间序 `GROUP_ORDER`：`application > file > module > clipboard > web`。
 
@@ -116,7 +136,7 @@ src/
 ├── runtime/            # 前端运行时（5 文件）
 │   ├── types.ts        # Extension / SearchProvider / SearchResult（13 槽：10 能力 + 3 行为）
 │   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS/GROUP_ORDER/GROUP_TITLES/KEYWORD_MODULE_BOOST + LIMITS）
-│   ├── storage.ts      # defineConfig（reactive + watch 自动持久化 + store 实例缓存）
+│   ├── storage.ts      # defineConfig（structuredClone 深克隆 default + reactive + watch 自动持久化 + 深度相等 race 保护 + store 实例缓存）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
 │   └── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
 ├── components/
@@ -137,17 +157,17 @@ src/
 
 ## UI 规范
 
-UnoCSS + TailwindCSS 最佳实践，遵循官方规范。
+- **总体要求**：UnoCSS + TailwindCSS 最佳实践，遵循官方规范。
 
-只用 `@/components/ui/` 原子组件，禁止手写底层标签。主题色 `accent`；`rounded-md`（控件）/ `rounded-lg`（面板）；`h-7`；`text-sm` / `text-xs`；色阶 `text-tx-primary → secondary → subtle → muted → hint → faint`。
+- **原子组件**：只用 `@/components/ui/` 原子组件，禁止手写底层标签。主题色 `accent`；`rounded-md`（控件）/ `rounded-lg`（面板）；`h-7`；`text-sm` / `text-xs`；色阶 `text-tx-primary → secondary → subtle → muted → hint → faint`。
 
-**禁止 arbitrary 值**：class 中禁止使用 `[10px]`、`[#ff3b30]` 等方括号任意值。颜色用 Tailwind 预设色或主题语义色 + 透明度修饰；尺寸/间距用预设档位。无合适预设时在 `uno.config.ts` theme 中定义。
+- **慎用 arbitrary 值**：class 中务必使用 Tailwind 预设值或 Uno 主题值，非必要禁止使用 `[10px]`、`[#ff3b30]` 等方括号任意值，除非是单一特殊场景。无合适预设时在 `uno.config.ts` theme 中定义。
 
-**写法规范**：原生 HTML 元素使用 Attributify 模式，Vue 组件 props 保持 `class`。
+- **写法规范**：原生 HTML 元素使用 Attributify 模式，Vue 组件 props 保持 `class`。
 
-**Attributify 禁用属性**：`animate` 等与 DOM 原生属性同名的特性禁止用 Attributify，必须用 `class="animate-spin"`。
+- **Attributify 禁用属性**：`animate` 等与 DOM 原生属性同名的特性禁止用 Attributify，必须用 `class="animate-spin"`。
 
-**Shortcuts**：`ui-ctrl`、`ui-disabled`、`ui-active`、`flex-center`、`flex-col-full`、`flex-col-full-pb`、`form-label`、`input-base`、`action-footer`、`form-field`、`group-header`、`overlay-abs`
+- **Shortcuts**：`ui-ctrl`、`ui-disabled`、`ui-active`、`flex-center`、`flex-col-full`、`flex-col-full-pb`、`form-label`、`input-base`、`action-footer`、`form-field`、`group-header`、`overlay-abs`
 
 ## 存储结构
 
@@ -172,10 +192,9 @@ icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litia
 
 ## 约定
 
+- 环境：`isTauri()` 判断环境，非 Tauri 跳过原生调用
 - TypeScript 严格模式：`noUnusedLocals` + `noUnusedParameters`
-- `isTauri()` 判断环境，非 Tauri 跳过原生调用
-- 注释和回复用中文
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`
 - Git commit：`<type>(<scope>): <中文描述>`，不写详情，不主动执行 git 操作
-- 文档不用表格，言简意赅
-- 修改代码后必须同步更新 AGENTS.md 或对应 docs/ 文档中相关描述
+- 语言：注释和回复用中文
+- 文档：不用表格，言简意赅，修改代码后必须同步更新 AGENTS.md 或对应 docs/ 文档中相关描述

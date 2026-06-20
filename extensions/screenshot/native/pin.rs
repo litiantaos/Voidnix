@@ -1,8 +1,7 @@
 use super::crop::crop_with_annotation;
 use super::ffi::{
-    decode_image_data, png_bytes_to_cgimage,
-    voidnix_screenshot_install_background_layer, voidnix_screenshot_set_background,
-    voidnix_screenshot_set_background_centered, CGImageRelease,
+    decode_image_data, png_bytes_to_cgimage, voidnix_screenshot_install_background_layer,
+    voidnix_screenshot_set_background, voidnix_screenshot_set_background_centered, CGImageRelease,
 };
 
 use std::collections::HashMap;
@@ -152,7 +151,10 @@ fn create_pin_webview(app: &tauri::AppHandle, spec: &PinWebviewSpec) -> Result<(
                 ns.setCollectionBehavior(behavior);
                 // 居中模式下窗口尺寸 ≠ 图片尺寸，不锁宽高比，避免后续 resize 还原成图片比例
                 if !spec.centered {
-                    ns.setContentAspectRatio(objc2_foundation::NSSize::new(spec.width, spec.height));
+                    ns.setContentAspectRatio(objc2_foundation::NSSize::new(
+                        spec.width,
+                        spec.height,
+                    ));
                 }
                 if let Some(content_view) = ns.contentView() {
                     let _: () = objc2::msg_send![&content_view, setWantsLayer: true];

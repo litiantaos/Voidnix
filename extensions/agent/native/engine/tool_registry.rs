@@ -16,11 +16,17 @@ pub struct ToolResult {
 
 impl ToolResult {
     pub fn ok<S: Into<String>>(output: S) -> Self {
-        Self { ok: true, output: output.into() }
+        Self {
+            ok: true,
+            output: output.into(),
+        }
     }
 
     pub fn err<S: Into<String>>(output: S) -> Self {
-        Self { ok: false, output: output.into() }
+        Self {
+            ok: false,
+            output: output.into(),
+        }
     }
 }
 

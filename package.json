@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "tauri:dev": "cargo build --manifest-path src-tauri/Cargo.toml --bin zsh-autosuggestions && bun run sync:extensions && bun run lint && tauri dev --config src-tauri/tauri.dev.conf.json",
+    "tauri:dev": "cargo build --manifest-path src-tauri/Cargo.toml --bin zsh-autosuggestions && bun run sync:extensions && bun run check:commands && bun run check:agent-bounds && bun run lint && tauri dev --config src-tauri/tauri.dev.conf.json",
     "build:zsh-bin": "cargo build --manifest-path src-tauri/Cargo.toml --bin zsh-autosuggestions",
     "prebuild:zsh": "cargo build --release --manifest-path src-tauri/Cargo.toml --bin zsh-autosuggestions",
     "dev": "vite",

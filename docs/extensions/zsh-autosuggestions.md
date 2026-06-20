@@ -45,9 +45,14 @@ zsh precmd 用 `zstat +mtime` 检测 cache 变化，变化才重新 source（sou
 binary 是独立 `[[bin]]` target（`Cargo.toml` 声明，path 指向 `native/src/main.rs`）。**Tauri 不自动打包额外 `[[bin]]`**，需手动编译 + 嵌入：
 
 - **dev**：`package.json` 的 `tauri:dev` 前置 `cargo build --manifest-path src-tauri/Cargo.toml --bin zsh-autosuggestions`，产物在 `target/debug/zsh-autosuggestions`。
-- **release**：`deploy.sh` 先 `cargo build --release --bin zsh-autosuggestions`，tauri build 后 `cp` 到 `Voidnix.app/Contents/MacOS/`。
+- **release**：`deploy.sh` 调 `bun run tauri build`（内部 `prebuild:zsh` 先 `cargo build --release --bin zsh-autosuggestions`），binary 经 `tauri.conf.json` 的 `bundle.resources` 自动嵌入 `Voidnix.app/Contents/Resources/zsh-autosuggestions`。
 
-`source_bin()` 按 `current_exe().parent().join("zsh-autosuggestions")` 定位（dev = target/debug/，release = .app/Contents/MacOS/）。`setup` 用**版本号比对**（编译期常量 `BIN_VERSION` 写入 `bin_version` 文件）从主程序旁复制到 `extensions/zsh-autosuggestions/bin/`，已部署版本匹配才跳过；并幂等刷新 .zshrc 行。**改 binary 内容（含 init.zsh，经 `include_str!` 嵌入）必须 bump `BIN_VERSION`（`mod.rs`），否则不部署。**
+`source_bin()` 双路径定位（P3-8 同步）：
+
+1. 优先 `current_exe().parent().join("zsh-autosuggestions")`（dev = `target/debug/`）
+2. 兜底 `current_exe().parent().parent().join("Resources").join(...)`（release = `.app/Contents/Resources/`）
+
+`setup` 用**版本号比对**（编译期常量 `BIN_VERSION` 写入 `bin_version` 文件）从主程序旁复制到 `extensions/zsh-autosuggestions/bin/`，已部署版本匹配才跳过；并幂等刷新 .zshrc 行。**改 binary 内容（含 init.zsh，经 `include_str!` 嵌入）必须 bump `BIN_VERSION`（`mod.rs`），否则不部署。**
 
 .zshrc 行：`export ZSH_AS_BIN=... ZSH_AS_CACHE=... ZSH_AS_SIGNALS=...; eval "$("$ZSH_AS_BIN" init)"`（行尾 marker `# voidnix zsh-autosuggestions` 用于精确 remove）。.zshrc 写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.cache` + `signals.log`（保留 binary 避免反复复制）。
 

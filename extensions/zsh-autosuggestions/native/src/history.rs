@@ -107,7 +107,8 @@ fn make_history(content: &str) -> std::path::PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let path = std::env::temp_dir().join(format!("zsh-as-hist-test-{}-{id}.tmp", std::process::id()));
+    let path =
+        std::env::temp_dir().join(format!("zsh-as-hist-test-{}-{id}.tmp", std::process::id()));
     std::fs::write(&path, content).unwrap();
     path
 }
@@ -149,7 +150,10 @@ mod tests {
         let p = make_history("ls\ngit status\n");
         let stats = parse(&p);
         assert_eq!(stats.len(), 2);
-        assert!(stats.get("ls").unwrap().last_used > 0, "fallback ts from mtime");
+        assert!(
+            stats.get("ls").unwrap().last_used > 0,
+            "fallback ts from mtime"
+        );
         assert!(stats.get("git status").unwrap().last_used > 0);
     }
 
@@ -201,8 +205,8 @@ mod tests {
 
     #[test]
     fn is_extended_history_missing_file() {
-        assert!(!is_extended_history(
-            std::path::Path::new("/nonexistent/zsh-as-ext-hist-test")
-        ));
+        assert!(!is_extended_history(std::path::Path::new(
+            "/nonexistent/zsh-as-ext-hist-test"
+        )));
     }
 }

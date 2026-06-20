@@ -8,8 +8,7 @@ pub struct WindowManagerExtension;
 
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("window-manager")
-        .build()
+    tauri::plugin::Builder::<tauri::Wry>::new("window-manager").build()
 }
 
 #[async_trait::async_trait]
@@ -27,17 +26,21 @@ impl Extension for WindowManagerExtension {
 /// snap-panel 窗口配置：透明覆盖层 + 跨 Space + 禁阴影（§2.8，下沉自 lib.rs）。
 #[cfg(target_os = "macos")]
 fn configure_snap_panel(app: &tauri::AppHandle) {
-    use tauri::Manager;
     use objc2_app_kit::{NSScreen, NSWindow as SnapNSWindow, NSWindowCollectionBehavior};
     use objc2_foundation::MainThreadMarker;
+    use tauri::Manager;
     let Some(window) = app.get_webview_window("snap-panel") else {
         return;
     };
     let Ok(raw) = window.ns_window() else { return };
     let raw = raw.cast::<SnapNSWindow>();
-    let Some(mtm) = MainThreadMarker::new() else { return };
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
     unsafe {
-        let Some(ns_window) = raw.as_ref() else { return };
+        let Some(ns_window) = raw.as_ref() else {
+            return;
+        };
         if let Some(cv) = ns_window.contentView() {
             let _: () = objc2::msg_send![&cv, setWantsLayer: true];
         }
@@ -60,7 +63,6 @@ fn configure_snap_panel(app: &tauri::AppHandle) {
 
 #[cfg(not(target_os = "macos"))]
 fn configure_snap_panel(_app: &tauri::AppHandle) {}
-
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ScreenInfo {
@@ -106,15 +108,8 @@ pub mod platform {
             attribute: *mut c_void,
             value: *mut c_void,
         ) -> AXError;
-        fn AXValueCreate(
-            the_type: u32,
-            value_ptr: *const c_void,
-        ) -> *mut c_void;
-        fn AXValueGetValue(
-            value: *mut c_void,
-            the_type: u32,
-            value_ptr: *mut c_void,
-        ) -> bool;
+        fn AXValueCreate(the_type: u32, value_ptr: *const c_void) -> *mut c_void;
+        fn AXValueGetValue(value: *mut c_void, the_type: u32, value_ptr: *mut c_void) -> bool;
         pub fn CFRelease(cf: *mut c_void);
         pub fn CFRetain(cf: *mut c_void) -> *mut c_void;
         fn CFStringCreateWithCString(
@@ -136,13 +131,21 @@ pub mod platform {
         let Ok(c) = std::ffi::CString::new(s) else {
             return std::ptr::null_mut();
         };
-        unsafe { CFStringCreateWithCString(std::ptr::null_mut(), c.as_ptr(), K_CF_STRING_ENCODING_UTF8) }
+        unsafe {
+            CFStringCreateWithCString(std::ptr::null_mut(), c.as_ptr(), K_CF_STRING_ENCODING_UTF8)
+        }
     }
 
     #[repr(C)]
-    struct CGPoint { x: f64, y: f64 }
+    struct CGPoint {
+        x: f64,
+        y: f64,
+    }
     #[repr(C)]
-    struct CGSize { width: f64, height: f64 }
+    struct CGSize {
+        width: f64,
+        height: f64,
+    }
 
     pub unsafe fn make_ax_value_point(x: f64, y: f64) -> *mut c_void {
         // AXValue 不是 ObjC 类，必须走 C API AXValueCreate
@@ -151,13 +154,20 @@ pub mod platform {
     }
 
     pub unsafe fn make_ax_value_size(w: f64, h: f64) -> *mut c_void {
-        let sz = CGSize { width: w, height: h };
+        let sz = CGSize {
+            width: w,
+            height: h,
+        };
         AXValueCreate(K_AX_VALUE_CGSIZE, &sz as *const CGSize as *const c_void)
     }
 
     pub unsafe fn ax_value_to_point(val: *mut c_void) -> Option<(f64, f64)> {
         let mut pt = CGPoint { x: 0.0, y: 0.0 };
-        if AXValueGetValue(val, K_AX_VALUE_CGPOINT, &mut pt as *mut CGPoint as *mut c_void) {
+        if AXValueGetValue(
+            val,
+            K_AX_VALUE_CGPOINT,
+            &mut pt as *mut CGPoint as *mut c_void,
+        ) {
             Some((pt.x, pt.y))
         } else {
             None
@@ -165,8 +175,15 @@ pub mod platform {
     }
 
     pub unsafe fn ax_value_to_size(val: *mut c_void) -> Option<(f64, f64)> {
-        let mut sz = CGSize { width: 0.0, height: 0.0 };
-        if AXValueGetValue(val, K_AX_VALUE_CGSIZE, &mut sz as *mut CGSize as *mut c_void) {
+        let mut sz = CGSize {
+            width: 0.0,
+            height: 0.0,
+        };
+        if AXValueGetValue(
+            val,
+            K_AX_VALUE_CGSIZE,
+            &mut sz as *mut CGSize as *mut c_void,
+        ) {
             Some((sz.width, sz.height))
         } else {
             None
@@ -178,12 +195,18 @@ pub mod platform {
         let mut val: *mut c_void = std::ptr::null_mut();
         let err = AXUIElementCopyAttributeValue(element, key, &mut val);
         CFRelease(key);
-        if err == AX_ERROR_SUCCESS && !val.is_null() { Some(val) } else { None }
+        if err == AX_ERROR_SUCCESS && !val.is_null() {
+            Some(val)
+        } else {
+            None
+        }
     }
 
     pub unsafe fn set_ax_position(win_ref: *mut c_void, px: f64, py: f64) {
         let pos_val = make_ax_value_point(px, py);
-        if pos_val.is_null() { return; }
+        if pos_val.is_null() {
+            return;
+        }
         let pos_key = cf_str("AXPosition");
         AXUIElementSetAttributeValue(win_ref, pos_key, pos_val);
         CFRelease(pos_key);
@@ -192,7 +215,9 @@ pub mod platform {
 
     pub unsafe fn set_ax_size(win_ref: *mut c_void, pw: f64, ph: f64) {
         let size_val = make_ax_value_size(pw, ph);
-        if size_val.is_null() { return; }
+        if size_val.is_null() {
+            return;
+        }
         let size_key = cf_str("AXSize");
         AXUIElementSetAttributeValue(win_ref, size_key, size_val);
         CFRelease(size_key);
@@ -220,12 +245,22 @@ pub mod platform {
             "custom" => {
                 let clamped_w = cw.clamp(100.0, w);
                 let clamped_h = ch.clamp(100.0, h);
-                (x + (w - clamped_w) / 2.0, y + (h - clamped_h) / 2.0, clamped_w, clamped_h)
+                (
+                    x + (w - clamped_w) / 2.0,
+                    y + (h - clamped_h) / 2.0,
+                    clamped_w,
+                    clamped_h,
+                )
             }
             _ => {
                 let clamped_w = cw.clamp(100.0, w);
                 let clamped_h = ch.clamp(100.0, h);
-                (x + (w - clamped_w) / 2.0, y + (h - clamped_h) / 2.0, clamped_w, clamped_h)
+                (
+                    x + (w - clamped_w) / 2.0,
+                    y + (h - clamped_h) / 2.0,
+                    clamped_w,
+                    clamped_h,
+                )
             }
         }
     }
@@ -233,9 +268,15 @@ pub mod platform {
     pub fn do_get_screens() -> Vec<ScreenInfo> {
         let mtm = match MainThreadMarker::new() {
             Some(m) => m,
-            None => return vec![ScreenInfo {
-                x: 0.0, y: 0.0, width: 1440.0, height: 900.0, is_main: true,
-            }],
+            None => {
+                return vec![ScreenInfo {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1440.0,
+                    height: 900.0,
+                    is_main: true,
+                }]
+            }
         };
 
         let screens = NSScreen::screens(mtm);
@@ -271,17 +312,27 @@ pub mod platform {
         result
     }
 
-    fn cf_lookup_num(dict: &CFDictionary<*const c_void, *const c_void>, key: &CFString) -> Option<CFNumber> {
+    fn cf_lookup_num(
+        dict: &CFDictionary<*const c_void, *const c_void>,
+        key: &CFString,
+    ) -> Option<CFNumber> {
         let ptr = key.as_concrete_TypeRef() as *const c_void;
         let v = dict.find(ptr)?;
-        if v.is_null() { return None; }
+        if v.is_null() {
+            return None;
+        }
         Some(unsafe { CFNumber::wrap_under_get_rule(*v as *mut _) })
     }
 
-    fn cf_lookup_dict(dict: &CFDictionary<*const c_void, *const c_void>, key: &CFString) -> Option<CFDictionary<*const c_void, *const c_void>> {
+    fn cf_lookup_dict(
+        dict: &CFDictionary<*const c_void, *const c_void>,
+        key: &CFString,
+    ) -> Option<CFDictionary<*const c_void, *const c_void>> {
         let ptr = key.as_concrete_TypeRef() as *const c_void;
         let v = dict.find(ptr)?;
-        if v.is_null() { return None; }
+        if v.is_null() {
+            return None;
+        }
         Some(unsafe { CFDictionary::wrap_under_get_rule(*v as *const _) })
     }
 
@@ -292,7 +343,9 @@ pub mod platform {
                 0,
             )
         };
-        if raw.is_null() { return None; }
+        if raw.is_null() {
+            return None;
+        }
 
         let array: CFArray<CFDictionary<*const c_void, *const c_void>> =
             unsafe { CFArray::wrap_under_create_rule(raw) };
@@ -309,21 +362,36 @@ pub mod platform {
             let Some(dict) = array.get(i) else { continue };
 
             let layer = cf_lookup_num(&dict, &key_layer)
-                .and_then(|n| n.to_i64()).unwrap_or(-1);
-            if layer != 0 { continue; }
+                .and_then(|n| n.to_i64())
+                .unwrap_or(-1);
+            if layer != 0 {
+                continue;
+            }
 
             let pid = cf_lookup_num(&dict, &key_pid)
-                .and_then(|n| n.to_i64()).unwrap_or(0);
-            if pid == self_pid || pid == 0 { continue; }
+                .and_then(|n| n.to_i64())
+                .unwrap_or(0);
+            if pid == self_pid || pid == 0 {
+                continue;
+            }
 
             let alpha = cf_lookup_num(&dict, &key_alpha)
-                .and_then(|n| n.to_f64()).unwrap_or(1.0);
-            if alpha < 0.05 { continue; }
+                .and_then(|n| n.to_f64())
+                .unwrap_or(1.0);
+            if alpha < 0.05 {
+                continue;
+            }
 
             if let Some(bd) = cf_lookup_dict(&dict, &key_bounds) {
-                let w = cf_lookup_num(&bd, &key_w).and_then(|n| n.to_f64()).unwrap_or(0.0);
-                let h = cf_lookup_num(&bd, &key_h).and_then(|n| n.to_f64()).unwrap_or(0.0);
-                if w < 40.0 || h < 40.0 { continue; }
+                let w = cf_lookup_num(&bd, &key_w)
+                    .and_then(|n| n.to_f64())
+                    .unwrap_or(0.0);
+                let h = cf_lookup_num(&bd, &key_h)
+                    .and_then(|n| n.to_f64())
+                    .unwrap_or(0.0);
+                if w < 40.0 || h < 40.0 {
+                    continue;
+                }
             } else {
                 continue;
             }
@@ -340,8 +408,7 @@ pub mod platform {
             .or_else(|| ax_copy_attr(ax_app, "AXFocusedWindow"))
             .or_else(|| {
                 let arr = ax_copy_attr(ax_app, "AXWindows")?;
-                let cf_arr: CFArray<*const c_void> =
-                    CFArray::wrap_under_get_rule(arr as *mut _);
+                let cf_arr: CFArray<*const c_void> = CFArray::wrap_under_get_rule(arr as *mut _);
                 let first = cf_arr.get(0).filter(|w| !w.is_null())?;
                 let win_ptr = *first as *mut c_void;
                 CFRetain(win_ptr);
@@ -357,9 +424,13 @@ pub mod platform {
             .args(["-p", &pid.to_string(), "-o", "comm="])
             .output()
             .ok()?;
-        if !output.status.success() { return None; }
+        if !output.status.success() {
+            return None;
+        }
         let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if raw.is_empty() { return None; }
+        if raw.is_empty() {
+            return None;
+        }
         Some(raw.rsplit('/').next().unwrap_or(&raw).to_string())
     }
 
@@ -396,24 +467,32 @@ pub mod platform {
         }
     }
 
-    fn set_layout_on_main_thread(layout: &str, custom_width: f64, custom_height: f64, prev_pid: Option<i32>) -> Result<(), String> {
+    fn set_layout_on_main_thread(
+        layout: &str,
+        custom_width: f64,
+        custom_height: f64,
+        prev_pid: Option<i32>,
+    ) -> Result<(), String> {
         // 优先级:显式传入 > focus 唯一源记录的（snap-panel show 时 capture，§7）
         let fallback_pid = crate::platform::focus::captured_pid();
         let prev_pid = prev_pid.filter(|&p| p > 0).unwrap_or(fallback_pid);
         let cg_pid = find_topmost_window_pid();
 
-        let primary_pid = if prev_pid > 0 { prev_pid }
-            else { cg_pid.ok_or("无法确定目标窗口")? };
+        let primary_pid = if prev_pid > 0 {
+            prev_pid
+        } else {
+            cg_pid.ok_or("无法确定目标窗口")?
+        };
 
         if unsafe { AXIsProcessTrusted() } {
-            let win_ref = unsafe { try_get_window_for_pid(primary_pid) }
-                .or_else(|| {
-                    let fb = cg_pid.filter(|&p| p != primary_pid)?;
-                    unsafe { try_get_window_for_pid(fb) }
-                });
+            let win_ref = unsafe { try_get_window_for_pid(primary_pid) }.or_else(|| {
+                let fb = cg_pid.filter(|&p| p != primary_pid)?;
+                unsafe { try_get_window_for_pid(fb) }
+            });
 
             if let Some(win_ref) = win_ref {
-                let result = unsafe { apply_ax_layout(win_ref, layout, custom_width, custom_height) };
+                let result =
+                    unsafe { apply_ax_layout(win_ref, layout, custom_width, custom_height) };
                 unsafe { CFRelease(win_ref) };
                 return result;
             }
@@ -424,9 +503,17 @@ pub mod platform {
             .ok_or("无法获取前台窗口")?;
 
         let screens = do_get_screens();
-        let screen = screens.iter().find(|s| s.is_main).cloned().unwrap_or(ScreenInfo {
-            x: 0.0, y: 0.0, width: 1440.0, height: 900.0, is_main: true,
-        });
+        let screen = screens
+            .iter()
+            .find(|s| s.is_main)
+            .cloned()
+            .unwrap_or(ScreenInfo {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 900.0,
+                is_main: true,
+            });
 
         if layout == "center" {
             return applescript_center_window(&app_name, &screen);
@@ -477,29 +564,42 @@ pub mod platform {
         let current_pos = {
             let pos = ax_copy_attr(win_ref, "AXPosition");
             let result = pos.as_ref().and_then(|v| ax_value_to_point(*v));
-            if let Some(v) = pos { CFRelease(v); }
+            if let Some(v) = pos {
+                CFRelease(v);
+            }
             result
         };
 
         let screens = do_get_screens();
         let target_screen = if let Some((cx, cy)) = current_pos {
-            screens.iter().find(|s| {
-                cx >= s.x && cx <= s.x + s.width && cy >= s.y && cy <= s.y + s.height
-            }).cloned()
+            screens
+                .iter()
+                .find(|s| cx >= s.x && cx <= s.x + s.width && cy >= s.y && cy <= s.y + s.height)
+                .cloned()
         } else {
             None
         };
         let screen = target_screen.unwrap_or_else(|| {
-            screens.iter().find(|s| s.is_main).cloned().unwrap_or(ScreenInfo {
-                x: 0.0, y: 0.0, width: 1440.0, height: 900.0, is_main: true,
-            })
+            screens
+                .iter()
+                .find(|s| s.is_main)
+                .cloned()
+                .unwrap_or(ScreenInfo {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1440.0,
+                    height: 900.0,
+                    is_main: true,
+                })
         });
 
         if layout == "center" {
             let current_size = {
                 let sz = ax_copy_attr(win_ref, "AXSize");
                 let result = sz.as_ref().and_then(|v| ax_value_to_size(*v));
-                if let Some(v) = sz { CFRelease(v); }
+                if let Some(v) = sz {
+                    CFRelease(v);
+                }
                 result
             };
             let (cw, ch) = current_size.unwrap_or((800.0, 600.0));
@@ -515,7 +615,13 @@ pub mod platform {
         Ok(())
     }
 
-    pub fn do_set_layout(app: &tauri::AppHandle, layout: &str, custom_width: f64, custom_height: f64, prev_pid: Option<i32>) -> Result<(), String> {
+    pub fn do_set_layout(
+        app: &tauri::AppHandle,
+        layout: &str,
+        custom_width: f64,
+        custom_height: f64,
+        prev_pid: Option<i32>,
+    ) -> Result<(), String> {
         let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
         let layout = layout.to_string();
         let app = app.clone();
@@ -524,7 +630,8 @@ pub mod platform {
             let result = set_layout_on_main_thread(&layout, custom_width, custom_height, prev_pid);
             super::window_snap::hide_panel(&app_clone);
             let _ = tx.send(result);
-        }).map_err(|e| e.to_string())?;
+        })
+        .map_err(|e| e.to_string())?;
         rx.recv().map_err(|e| e.to_string())?
     }
 
@@ -532,7 +639,12 @@ pub mod platform {
         unsafe { AXIsProcessTrusted() }
     }
 
-    pub fn do_toggle_drag_snap(app: &tauri::AppHandle, enabled: bool, custom_width: f64, custom_height: f64) {
+    pub fn do_toggle_drag_snap(
+        app: &tauri::AppHandle,
+        enabled: bool,
+        custom_width: f64,
+        custom_height: f64,
+    ) {
         if enabled {
             super::window_snap::start_drag_monitor(app.clone(), custom_width, custom_height);
         } else {
@@ -548,13 +660,25 @@ pub mod platform {
 #[cfg(not(target_os = "macos"))]
 mod platform {
     use super::*;
-    pub fn do_get_screens() -> Vec<ScreenInfo> { vec![] }
-    pub fn do_set_layout(_: &tauri::AppHandle, _: &str, _: f64, _: f64, _: Option<i32>) -> Result<(), String> {
+    pub fn do_get_screens() -> Vec<ScreenInfo> {
+        vec![]
+    }
+    pub fn do_set_layout(
+        _: &tauri::AppHandle,
+        _: &str,
+        _: f64,
+        _: f64,
+        _: Option<i32>,
+    ) -> Result<(), String> {
         Err("仅支持 macOS".to_string())
     }
-    pub fn do_check_accessibility() -> bool { false }
+    pub fn do_check_accessibility() -> bool {
+        false
+    }
     pub fn do_toggle_drag_snap(_: &tauri::AppHandle, _: bool, _: f64, _: f64) {}
-    pub fn do_is_drag_snap_active() -> bool { false }
+    pub fn do_is_drag_snap_active() -> bool {
+        false
+    }
 }
 
 #[tauri::command]
@@ -601,7 +725,8 @@ pub async fn toggle_drag_snap(
             custom_height.unwrap_or(600.0),
         );
         let _ = tx.send(());
-    }).map_err(|e| e.to_string())?;
+    })
+    .map_err(|e| e.to_string())?;
     rx.recv().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -640,7 +765,8 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
             }
         }
         let _ = tx.send(());
-    }).map_err(|e| e.to_string())?;
+    })
+    .map_err(|e| e.to_string())?;
     rx.recv().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -668,8 +794,8 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
             crate::platform::focus::restore_captured();
         }
         let _ = tx.send(());
-    }).map_err(|e| e.to_string())?;
+    })
+    .map_err(|e| e.to_string())?;
     rx.recv().map_err(|e| e.to_string())?;
     Ok(())
 }
-

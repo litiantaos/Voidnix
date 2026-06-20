@@ -1,6 +1,6 @@
-use std::sync::atomic::{AtomicI32, Ordering};
 use objc2_app_kit::{NSApp, NSApplicationActivationOptions, NSWorkspace};
 use objc2_foundation::MainThreadMarker;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 /// 前台 PID 唯一源：显示主窗口前记录原前台 app PID，隐藏时恢复。
 static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
@@ -44,13 +44,19 @@ pub fn current_frontmost_pid() -> Option<i32> {
     let ws = NSWorkspace::sharedWorkspace();
     let pid = ws.frontmostApplication().map(|a| a.processIdentifier())?;
     let self_pid = std::process::id() as i32;
-    if pid == self_pid { None } else { Some(pid) }
+    if pid == self_pid {
+        None
+    } else {
+        Some(pid)
+    }
 }
 
 /// 把 key window 状态/前台 app 切换回指定 PID 进程，
 /// 用于 Voidnix 隐藏时把焦点（含输入法 first responder）原样交还给原应用。
 pub fn activate_app_by_pid(pid: i32) {
-    if pid <= 0 { return; }
+    if pid <= 0 {
+        return;
+    }
     let ws = NSWorkspace::sharedWorkspace();
     if let Some(target) = ws
         .runningApplications()

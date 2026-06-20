@@ -170,14 +170,14 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         entries
     });
 
-    let entries =
-        match tokio::time::timeout(std::time::Duration::from_secs(3), read_entries).await {
-            Ok(Ok(entries)) => entries,
-            _ => {
-                let _ = child.kill();
-                return Err("Search timed out".to_string());
-            }
-        };
+    let entries = match tokio::time::timeout(std::time::Duration::from_secs(3), read_entries).await
+    {
+        Ok(Ok(entries)) => entries,
+        _ => {
+            let _ = child.kill();
+            return Err("Search timed out".to_string());
+        }
+    };
 
     let _ = child.kill();
 
@@ -237,10 +237,7 @@ pub async fn reveal_in_finder(path: String) -> Result<(), String> {
         use objc2_foundation::NSString;
         let ns_path = NSString::from_str(&path);
         let ws = NSWorkspace::sharedWorkspace();
-        let _ = ws.selectFile_inFileViewerRootedAtPath(
-            Some(&ns_path),
-            &NSString::from_str(""),
-        );
+        let _ = ws.selectFile_inFileViewerRootedAtPath(Some(&ns_path), &NSString::from_str(""));
     }
 
     Ok(())

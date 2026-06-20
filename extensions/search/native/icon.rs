@@ -178,7 +178,10 @@ unsafe fn nsimage_to_png_base64(image: &NSImage, add_padding: bool) -> Option<St
         let padding = 64.0 * 0.15;
         let icon_size = 64.0 - padding * 2.0;
         (
-            NSRect::new(NSPoint::new(padding, padding), NSSize::new(icon_size, icon_size)),
+            NSRect::new(
+                NSPoint::new(padding, padding),
+                NSSize::new(icon_size, icon_size),
+            ),
             NSRect::new(NSPoint::new(0.0, 0.0), image.size()),
         )
     } else {
@@ -202,7 +205,8 @@ unsafe fn nsimage_to_png_base64(image: &NSImage, add_padding: bool) -> Option<St
     let bitmap_rep = NSBitmapImageRep::initWithData(NSBitmapImageRep::alloc(), &tiff_data)?;
 
     let empty_dict = NSDictionary::<NSString, AnyObject>::new();
-    let png_data = bitmap_rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &empty_dict)?;
+    let png_data =
+        bitmap_rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &empty_dict)?;
 
     let bytes = png_data.to_vec();
     Some(base64::Engine::encode(

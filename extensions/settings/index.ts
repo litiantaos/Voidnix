@@ -8,7 +8,7 @@ export default defineExtension({
     description: '应用设置',
     icon: 'i-ri-settings-3-line',
     keywords: ['settings', 'config', '快捷键', '设置', '配置'],
-    order: 999,
+    order: 998,
   },
 
   mainView: () => SettingsView,

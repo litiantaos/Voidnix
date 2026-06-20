@@ -11,6 +11,7 @@
           : '',
       variantClasses[variant],
       disabled ? 'ui-disabled' : '',
+      active ? 'ui-active' : '',
     ]"
   >
     <i v-if="icon" :class="[icon, 'text-sm']" />
@@ -25,11 +26,14 @@ interface Props {
   variant?: 'default' | 'primary' | 'outline' | 'ghost' | 'danger'
   disabled?: boolean
   icon?: string
+  /** H9：显式 active 状态（焦点环视觉提示，避免作为 fallthrough attr 污染 DOM） */
+  active?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   variant: 'default',
   disabled: false,
+  active: false,
 })
 
 const slots = useSlots()

@@ -95,5 +95,8 @@ pub async fn pick_directory(app: tauri::AppHandle) -> Result<String, String> {
     })
     .map_err(|e| e.to_string())?;
 
-    rx.recv().map_err(|e| e.to_string())
+    // M-rs4：recv_timeout 兜底（NSOpenPanel 是模态对话框，理论秒级返回；
+    // 用户长时间不操作时主线程闭包也不应永久阻塞 invoke）
+    rx.recv_timeout(std::time::Duration::from_secs(60))
+        .map_err(|e| e.to_string())
 }

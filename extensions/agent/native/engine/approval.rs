@@ -7,9 +7,9 @@
 //! - 前端调 `agent_approve` command → ApprovalManager::resolve
 //! - session abort 时 loop_runner 通过 select 退出，pending sender 被 drop
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::collections::HashMap;
 use tokio::sync::oneshot;
 
 /// 审批决定（前端传给 `agent_approve` command）。
@@ -25,7 +25,10 @@ pub struct Decision {
 
 impl Decision {
     pub fn rejected() -> Self {
-        Self { approved: false, always_approve: false }
+        Self {
+            approved: false,
+            always_approve: false,
+        }
     }
 }
 
@@ -43,14 +46,23 @@ impl ApprovalManager {
     /// loop_runner 拿到 receiver 后在 select! 里 await。
     pub fn create(&self, tool_call_id: String) -> oneshot::Receiver<Decision> {
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().unwrap().insert(tool_call_id, tx);
+        // P4-rs1：毒锁恢复（与 shortcut.rs / cancellation.rs 一致）
+        self.pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(tool_call_id, tx);
         rx
     }
 
     /// 前端审批完成后调用，唤醒 pending 的 loop_runner。
     /// 返回 false 表示 id 不存在（已超时或 session 已 abort）。
     pub fn resolve(&self, tool_call_id: &str, decision: Decision) -> bool {
-        if let Some(tx) = self.pending.lock().unwrap().remove(tool_call_id) {
+        if let Some(tx) = self
+            .pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(tool_call_id)
+        {
             let _ = tx.send(decision);
             true
         } else {
@@ -68,7 +80,13 @@ mod tests {
         let mgr = ApprovalManager::default();
         let rx = mgr.create("call_abc".to_string());
 
-        let ok = mgr.resolve("call_abc", Decision { approved: true, always_approve: false });
+        let ok = mgr.resolve(
+            "call_abc",
+            Decision {
+                approved: true,
+                always_approve: false,
+            },
+        );
         assert!(ok);
         // 重复 resolve 已移除的 id 返回 false
         assert!(!mgr.resolve("call_abc", Decision::rejected()));

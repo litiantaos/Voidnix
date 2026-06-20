@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::{LazyLock, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, LazyLock, Mutex, MutexGuard};
 use tauri::Emitter;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -22,10 +22,11 @@ fn now_ms() -> u64 {
 // 吸收。RECORDING_IDS 仅作前端调试/将来扩展用途，判断是否处于录制态以
 // IS_RECORDING_ANY 为准（原子操作，回调热路径无需加锁）。
 
-// unwrap 策略说明：本模块多处 `.lock().unwrap()`。release profile 配置 panic=abort，
-// 线程 panic 即进程退出，Mutex poison 来不及产生（poison 需要持锁线程 panic 后存活），
-// 故 unwrap 不会因 poison 触发。debug 构建下风险极低（仅持锁时 panic 才 poison，
-// 而本模块持锁区间均为简单 HashMap 操作，无 panic 点）。统一保留 unwrap 保持简洁。
+// M-rs5：统一 Mutex 毒锁恢复辅助——debug 构建下持锁 panic 会毒锁，
+// 后续访问连锁 panic。Release（panic=abort）下不会毒，但保持一致风格 + 防 debug 卡死。
+fn lock_or_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 static RECORDING_IDS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
@@ -35,7 +36,8 @@ static IS_RECORDING_ANY: AtomicBool = AtomicBool::new(false);
 pub fn start_shortcut_recording(id: String) {
     if let Ok(mut set) = RECORDING_IDS.lock() {
         set.insert(id);
-        IS_RECORDING_ANY.store(!set.is_empty(), Ordering::SeqCst);
+        // M-rs5：可见性 flag 用 Release（store）保证后续 Acquire load 见到最新值
+        IS_RECORDING_ANY.store(!set.is_empty(), Ordering::Release);
     }
 }
 
@@ -43,7 +45,7 @@ pub fn start_shortcut_recording(id: String) {
 pub fn stop_shortcut_recording(id: String) {
     if let Ok(mut set) = RECORDING_IDS.lock() {
         set.remove(&id);
-        IS_RECORDING_ANY.store(!set.is_empty(), Ordering::SeqCst);
+        IS_RECORDING_ANY.store(!set.is_empty(), Ordering::Release);
     }
 }
 
@@ -61,29 +63,45 @@ static SHORTCUT_HOOKS: LazyLock<Mutex<HashMap<String, ShortcutHook>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub fn register_shortcut_hook(id: &str, hook: ShortcutHook) {
-    SHORTCUT_HOOKS.lock().unwrap().insert(id.to_string(), hook);
+    lock_or_recover(&SHORTCUT_HOOKS).insert(id.to_string(), hook);
 }
 
 #[tauri::command]
-pub fn is_app_active() -> bool {
+pub async fn is_app_active(app: tauri::AppHandle) -> bool {
+    // H4：MainThreadMarker::new() 仅主线程返 Some；Tauri 命令默认在 worker 线程执行，
+    // 直接调会恒返 false → 前端误判窗口失焦而隐藏。改走 run_on_main_thread 同步取值。
     #[cfg(target_os = "macos")]
-    return crate::platform::focus::is_app_active();
+    {
+        let (tx, rx) = mpsc::channel::<bool>();
+        let _ = app.run_on_main_thread(move || {
+            let active = crate::platform::focus::is_app_active();
+            let _ = tx.send(active);
+        });
+        // M-rs4：recv_timeout 兜底——主线程闭包 panic（debug 构建下 panic=abort 不触发毒锁
+        // 但 closure 可能因 FFI 异常 abort）时不发 channel，避免命令永久挂起
+        rx.recv_timeout(std::time::Duration::from_secs(3))
+            .unwrap_or(false)
+    }
     #[cfg(not(target_os = "macos"))]
-    true
+    {
+        let _ = app;
+        true
+    }
 }
 
 /// 供窗口模块读写窗口可见状态。
 pub(crate) fn set_window_visible(v: bool) {
-    WINDOW_VISIBLE.store(v, Ordering::SeqCst);
+    WINDOW_VISIBLE.store(v, Ordering::Release);
     if v {
-        LAST_SHOW_MS.store(now_ms(), Ordering::SeqCst);
+        LAST_SHOW_MS.store(now_ms(), Ordering::Release);
     }
 }
 
 #[tauri::command]
 pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
     if auto.unwrap_or(false) {
-        let elapsed = now_ms().saturating_sub(LAST_SHOW_MS.load(Ordering::SeqCst));
+        // M-rs5：时间戳单调读用 Acquire；防抖计算本身容忍时钟精度
+        let elapsed = now_ms().saturating_sub(LAST_SHOW_MS.load(Ordering::Acquire));
         if elapsed < 500 {
             return;
         }
@@ -115,7 +133,7 @@ pub async fn register_global_shortcut(
 
     app.run_on_main_thread(move || {
         // 先 unregister 该 id 上一次注册的快捷键（如果有）
-        if let Some(old_sc) = REGISTERED_BY_ID.lock().unwrap().remove(&id) {
+        if let Some(old_sc) = lock_or_recover(&REGISTERED_BY_ID).remove(&id) {
             let _ = app_clone.global_shortcut().unregister(old_sc);
         }
 
@@ -136,70 +154,75 @@ pub async fn register_global_shortcut(
         let shortcut_id = id.clone();
         let shortcut_str = shortcut.clone();
 
-        let result = app_clone.global_shortcut().on_shortcut(
-            new_sc,
-            move |app, _shortcut, event| {
-                if event.state() != ShortcutState::Pressed {
-                    return;
-                }
+        let result =
+            app_clone
+                .global_shortcut()
+                .on_shortcut(new_sc, move |app, _shortcut, event| {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
 
-                // 录制模态：任何 ShortcutInput 处于录制态，统一抑制默认
-                // 行为并把按键字符串转发给前端，由当前录制中的输入框吸收。
-                if IS_RECORDING_ANY.load(Ordering::SeqCst) {
+                    // 录制模态：任何 ShortcutInput 处于录制态，统一抑制默认
+                    // 行为并把按键字符串转发给前端，由当前录制中的输入框吸收。
+                    // M-rs5：回调热路径 Acquire load，比 SeqCst 轻量
+                    if IS_RECORDING_ANY.load(Ordering::Acquire) {
+                        let _ = app.emit(
+                            "shortcut-recording-captured",
+                            serde_json::json!({
+                                "shortcut": shortcut_str.clone(),
+                            }),
+                        );
+                        return;
+                    }
+
+                    let was_visible = WINDOW_VISIBLE.load(Ordering::Acquire);
                     let _ = app.emit(
-                        "shortcut-recording-captured",
+                        "shortcut-pressed",
                         serde_json::json!({
-                            "shortcut": shortcut_str.clone(),
+                            "id": shortcut_id,
+                            "wasVisible": was_visible,
                         }),
                     );
-                    return;
-                }
 
-                let was_visible = WINDOW_VISIBLE.load(Ordering::SeqCst);
-                let _ = app.emit(
-                    "shortcut-pressed",
-                    serde_json::json!({
-                        "id": shortcut_id,
-                        "wasVisible": was_visible,
-                    }),
-                );
+                    let app_handle = app.clone();
+                    let id_for_check = shortcut_id.clone();
 
-                let app_handle = app.clone();
-                let id_for_check = shortcut_id.clone();
+                    let _ = app.run_on_main_thread(move || {
+                        let window_hidden = !was_visible;
 
-                let _ = app.run_on_main_thread(move || {
-                    let window_hidden = !was_visible;
-
-                    #[cfg(target_os = "macos")]
-                    let front_pid: Option<i32> = crate::platform::focus::current_frontmost_pid();
-                    #[cfg(not(target_os = "macos"))]
-                    let front_pid: Option<i32> = None;
-
-                    let ctx = ShortcutContext { window_hidden, front_pid };
-
-                    if window_hidden {
                         #[cfg(target_os = "macos")]
-                        crate::platform::focus::capture_frontmost();
-                    }
+                        let front_pid: Option<i32> =
+                            crate::platform::focus::current_frontmost_pid();
+                        #[cfg(not(target_os = "macos"))]
+                        let front_pid: Option<i32> = None;
 
-                    if let Ok(hooks) = SHORTCUT_HOOKS.lock() {
-                        if let Some(hook) = hooks.get(&id_for_check) {
-                            if hook(&app_handle, &ctx) {
-                                return;
+                        let ctx = ShortcutContext {
+                            window_hidden,
+                            front_pid,
+                        };
+
+                        if window_hidden {
+                            #[cfg(target_os = "macos")]
+                            crate::platform::focus::capture_frontmost();
+                        }
+
+                        if let Ok(hooks) = SHORTCUT_HOOKS.lock() {
+                            if let Some(hook) = hooks.get(&id_for_check) {
+                                if hook(&app_handle, &ctx) {
+                                    return;
+                                }
                             }
                         }
-                    }
 
-                    if window_hidden {
-                        crate::runtime::window::show_main(&app_handle);
-                    }
+                        if window_hidden {
+                            crate::runtime::window::show_main(&app_handle);
+                        }
+                    });
                 });
-            },
-        );
 
         match result {
             Ok(_) => {
-                REGISTERED_BY_ID.lock().unwrap().insert(id, new_sc);
+                lock_or_recover(&REGISTERED_BY_ID).insert(id, new_sc);
                 let _ = tx.send(Ok(()));
             }
             Err(e) => {
@@ -209,5 +232,7 @@ pub async fn register_global_shortcut(
     })
     .map_err(|e| e.to_string())?;
 
-    rx.recv().map_err(|e| e.to_string())?
+    // M-rs4：recv_timeout 兜底，避免主线程闭包异常时永久阻塞前端 invoke
+    rx.recv_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| e.to_string())?
 }

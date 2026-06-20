@@ -39,9 +39,7 @@ pub fn request_accessibility() -> bool {
     let key = CFString::new("AXTrustedCheckOptionPrompt");
     let val = CFBoolean::true_value();
     let dict: CFDictionary<CFString, CFBoolean> = CFDictionary::from_CFType_pairs(&[(key, val)]);
-    unsafe {
-        AXIsProcessTrustedWithOptions(dict.as_concrete_TypeRef() as *mut c_void)
-    }
+    unsafe { AXIsProcessTrustedWithOptions(dict.as_concrete_TypeRef() as *mut c_void) }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -73,9 +71,15 @@ pub fn check_full_disk_access() -> bool {
 pub fn open_privacy_settings(kind: &str) {
     use std::process::Command;
     let url = match kind {
-        "accessibility" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-        "screen_recording" => "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-        "full_disk_access" => "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+        "accessibility" => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        }
+        "screen_recording" => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        }
+        "full_disk_access" => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+        }
         _ => {
             let _ = Command::new("open")
                 .args(["-b", "com.apple.systempreferences"])

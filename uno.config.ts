@@ -15,6 +15,14 @@ export default defineConfig({
     fontSize: {
       '2xs': '10px',
     },
+    // H10：消除 arbitrary 值——为 ResultIcon 的 115% 与 BaseSelect 的 80vw 提供命名档位
+    size: {
+      '115pct': '115%',
+    },
+    maxWidth: {
+      '115pct': '115%',
+      '80vw': '80vw',
+    },
     colors: {
       surface: {
         DEFAULT: '#fcfcfc',

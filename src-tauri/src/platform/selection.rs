@@ -19,10 +19,24 @@ mod ax {
     const K_AX_ERROR_SUCCESS: AXError = 0;
     const K_CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
 
+    /// M-rs3：缓存 system-wide AXUIElement。
+    /// AXUIElementSetMessagingTimeout 是 per-element 设置（非进程级全局），
+    /// 故 init_timeout 创建-设-释放后 timeout 即失效。改为进程生命期缓存 element，
+    /// 让所有 get_selected_text 复用同一已设 timeout 的句柄。
+    struct SystemWideAx(AXUIElementRef);
+    // SAFETY: AXUIElementRef 是 Apple AX API 的不可变句柄，跨线程读取安全
+    unsafe impl Send for SystemWideAx {}
+    unsafe impl Sync for SystemWideAx {}
+
+    static SYSTEM_WIDE: std::sync::OnceLock<SystemWideAx> = std::sync::OnceLock::new();
+
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
         fn AXUIElementCreateSystemWide() -> AXUIElementRef;
-        fn AXUIElementSetMessagingTimeout(element: AXUIElementRef, timeout_in_seconds: f32) -> AXError;
+        fn AXUIElementSetMessagingTimeout(
+            element: AXUIElementRef,
+            timeout_in_seconds: f32,
+        ) -> AXError;
         fn AXUIElementCopyAttributeValue(
             element: AXUIElementRef,
             attribute: *mut c_void,
@@ -40,24 +54,40 @@ mod ax {
             bufferSize: isize,
             encoding: u32,
         ) -> bool;
-        fn CFStringCreateWithCString(alloc: *mut c_void, c_str: *const i8, encoding: u32) -> *mut c_void;
+        fn CFStringCreateWithCString(
+            alloc: *mut c_void,
+            c_str: *const i8,
+            encoding: u32,
+        ) -> *mut c_void;
+    }
+
+    /// 取（首次创建并设 timeout）缓存的 system-wide element。
+    /// 返回的 AXUIElementRef 进程生命期常驻，无需调用方释放。
+    fn system_wide() -> AXUIElementRef {
+        SYSTEM_WIDE
+            .get_or_init(|| {
+                // SAFETY: AXUIElementCreateSystemWide 无副作用依赖，可跨线程调用
+                let sys = unsafe { AXUIElementCreateSystemWide() };
+                if !sys.is_null() {
+                    unsafe { AXUIElementSetMessagingTimeout(sys, 0.05) };
+                }
+                SystemWideAx(sys)
+            })
+            .0
     }
 
     pub fn init_timeout() {
-        unsafe {
-            let sys = AXUIElementCreateSystemWide();
-            if !sys.is_null() {
-                AXUIElementSetMessagingTimeout(sys, 0.05);
-                CFRelease(sys);
-            }
-        }
+        // M-rs3：触发 system_wide 初始化（首次调用设 timeout 并缓存 element）
+        system_wide();
     }
 
     fn cf_str(s: &str) -> *mut c_void {
         let Ok(c) = CString::new(s) else {
             return std::ptr::null_mut();
         };
-        unsafe { CFStringCreateWithCString(std::ptr::null_mut(), c.as_ptr(), K_CF_STRING_ENCODING_UTF8) }
+        unsafe {
+            CFStringCreateWithCString(std::ptr::null_mut(), c.as_ptr(), K_CF_STRING_ENCODING_UTF8)
+        }
     }
 
     fn cf_to_string(cf: *mut c_void) -> Option<String> {
@@ -98,14 +128,13 @@ mod ax {
         if !unsafe { AXIsProcessTrustedWithOptions(std::ptr::null_mut()) } {
             return None;
         }
+        let sys = system_wide();
+        if sys.is_null() {
+            return None;
+        }
         unsafe {
-            let sys = AXUIElementCreateSystemWide();
-            if sys.is_null() {
-                return None;
-            }
-            let focused = copy_attr(sys, "AXFocusedUIElement");
-            CFRelease(sys);
-            let focused = focused?;
+            // M-rs3：复用缓存 system-wide element（已设 timeout），不再每次创建+释放
+            let focused = copy_attr(sys, "AXFocusedUIElement")?;
             let selected = copy_attr(focused, "AXSelectedText");
             CFRelease(focused);
             let selected = selected?;

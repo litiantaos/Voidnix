@@ -1,9 +1,9 @@
 use crate::runtime::registry::Extension;
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{State, Emitter, AppHandle};
-use tauri::tray::{TrayIconBuilder, MouseButton, TrayIconEvent};
+use std::sync::Mutex;
+use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, State};
 
 /// 托管 awake 子进程：Drop 时自动 kill+wait，覆盖 app 正常退出/状态释放场景。
 /// panic=abort 下 Drop 不跑，由 awake binary 检测 stdin 关闭自行退出兜底。
@@ -35,7 +35,11 @@ fn awake_bin_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> 
 }
 
 #[tauri::command]
-pub async fn toggle_awake(app: tauri::AppHandle, state: State<'_, AwakeState>, enable: bool) -> Result<bool, String> {
+pub async fn toggle_awake(
+    app: tauri::AppHandle,
+    state: State<'_, AwakeState>,
+    enable: bool,
+) -> Result<bool, String> {
     let mut process_guard = state.process.lock().map_err(|e| e.to_string())?;
 
     if enable {
@@ -50,12 +54,18 @@ pub async fn toggle_awake(app: tauri::AppHandle, state: State<'_, AwakeState>, e
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&bin_path).map_err(|e| e.to_string())?.permissions();
+            let mut perms = std::fs::metadata(&bin_path)
+                .map_err(|e| e.to_string())?
+                .permissions();
             perms.set_mode(0o755);
             std::fs::set_permissions(&bin_path, perms).map_err(|e| e.to_string())?;
         }
 
-        let mode_arg = if MIRROR_MODE.load(Ordering::Relaxed) { "--mirror" } else { "--extend" };
+        let mode_arg = if MIRROR_MODE.load(Ordering::Relaxed) {
+            "--mirror"
+        } else {
+            "--extend"
+        };
         let child = Command::new(&bin_path)
             .arg(mode_arg)
             .stdin(Stdio::piped())
@@ -124,7 +134,11 @@ pub async fn is_awake_enabled(state: State<'_, AwakeState>) -> Result<bool, Stri
 }
 
 #[tauri::command]
-pub async fn set_awake_mode(app: tauri::AppHandle, state: State<'_, AwakeState>, mirror: bool) -> Result<bool, String> {
+pub async fn set_awake_mode(
+    app: tauri::AppHandle,
+    state: State<'_, AwakeState>,
+    mirror: bool,
+) -> Result<bool, String> {
     MIRROR_MODE.store(mirror, Ordering::Relaxed);
 
     let mut process_guard = state.process.lock().map_err(|e| e.to_string())?;
@@ -157,8 +171,7 @@ pub async fn set_awake_mode(app: tauri::AppHandle, state: State<'_, AwakeState>,
 
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("awake")
-        .build()
+    tauri::plugin::Builder::<tauri::Wry>::new("awake").build()
 }
 
 /// Awake 扩展。
@@ -175,6 +188,12 @@ impl Extension for AwakeExtension {
         app.manage(AwakeState {
             process: std::sync::Mutex::new(None),
         });
+        // H12：清理旧版 awake binary（曾落 temp_dir，已迁移至 app_data_dir）。
+        // 自身的向后兼容由自己负责，避免泄漏到 screenshot 等其它扩展。
+        let temp_dir = std::env::temp_dir();
+        let legacy_dir = temp_dir.join("com.litiantao.voidnix");
+        let _ = std::fs::remove_file(legacy_dir.join("Display Wakelock"));
+        let _ = std::fs::remove_dir(&legacy_dir);
         Ok(())
     }
 }

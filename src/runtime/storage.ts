@@ -16,6 +16,21 @@ function getStore(extId: string): Promise<Store> {
   return promise
 }
 
+/// 原始类型用 ===；引用类型（对象/数组）走 JSON 序列化深度相等比较。
+/// 用于 race 保护：判断磁盘 load 完成时当前值是否仍是 default（用户尚未触碰此 key）。
+function isStillDefault(cur: unknown, def: unknown): boolean {
+  if (Object.is(cur, def)) return true
+  // 引用型：结构相同视为 default（用户尚未结构变更）
+  if (typeof cur !== typeof def) return false
+  if (cur === null || def === null) return cur === def
+  if (typeof cur !== 'object') return false
+  try {
+    return JSON.stringify(cur) === JSON.stringify(def)
+  } catch {
+    return false
+  }
+}
+
 /// 创建响应式扩展配置对象，自动从磁盘加载 + 变更自动持久化。
 ///
 /// 用法：
@@ -27,8 +42,11 @@ function getStore(extId: string): Promise<Store> {
 ///
 /// 加载语义（v1.6 N10）：load() 异步，扩展 setup / 早期命令可能读到 defaults
 /// （磁盘值尚未回填）。安全参数由 Rust clamp 兜底，UI 可能短暂显示 defaults。
+///
+/// 深克隆（C7）：defaults 用 structuredClone 深拷贝，避免嵌套对象/数组引用共享——
+/// 否则 config.xxx.push(...) 会污染 defaults.xxx，破坏 race 保护与后续 defineConfig 纯净度。
 export function defineConfig<T extends Record<string, unknown>>(extId: string, defaults: T): T {
-  const config = reactive({ ...defaults }) as T
+  const config = reactive(structuredClone(defaults)) as T
 
   // 异步从磁盘加载已保存的值
   // 竞态保护：backfill 的 store.get 是异步的，返回前用户可能已改某 key。
@@ -42,7 +60,8 @@ export function defineConfig<T extends Record<string, unknown>>(extId: string, d
             const cur = (config as Record<string, unknown>)[key]
             const def = (defaults as Record<string, unknown>)[key]
             // 仅当当前值仍为 default（用户尚未触碰此 key）才回填磁盘值
-            if (cur === def) {
+            // 引用型走深度相等（C7）：避免 `cur === def` 对引用永远 true 失效保护
+            if (isStillDefault(cur, def)) {
               // biome-ignore lint: dynamic key assignment
               ;(config as Record<string, unknown>)[key] = saved
             }

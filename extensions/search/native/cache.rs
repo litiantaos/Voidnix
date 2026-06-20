@@ -1,13 +1,13 @@
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use tauri::Emitter;
 use tokio::sync::Mutex;
 
 use super::app_discovery::collect_apps_with_metadata;
 use super::icon::get_app_icon;
-use super::types::{APP_CACHE, APP_HANDLE, CachedApp, SEARCH_SESSION};
+use super::types::{CachedApp, APP_CACHE, APP_HANDLE, SEARCH_SESSION};
 
 static INIT_GUARD: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
 
@@ -72,10 +72,7 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
 
         let mut cache = APP_CACHE.write().await;
         *cache = Some(Arc::new(apps_with_icons));
-        log::info!(
-            "Background icon loading complete for {} apps",
-            app_count
-        );
+        log::info!("Background icon loading complete for {} apps", app_count);
 
         if let Some(app) = APP_HANDLE.get() {
             let _ = app.emit("app-cache-updated", ());
@@ -136,10 +133,7 @@ pub fn init_app_watcher() {
         });
 
         if let Ok(mut watcher) = watcher_res {
-            let _ = watcher.watch(
-                Path::new("/Applications"),
-                RecursiveMode::NonRecursive,
-            );
+            let _ = watcher.watch(Path::new("/Applications"), RecursiveMode::NonRecursive);
             let _ = watcher.watch(
                 Path::new("/System/Applications"),
                 RecursiveMode::NonRecursive,

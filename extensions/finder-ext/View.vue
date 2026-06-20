@@ -62,12 +62,14 @@ checkAuthorized()
 
 const toggle = async () => {
   const newVal = !finderConfig.enabled
+  // H11：显式 invoke 同步 Rust 状态；成功才回写 config，失败给用户反馈
   try {
-    finderConfig.enabled = newVal
+    await invoke(CMD.setFinderExtEnabled, { enabled: newVal })
   } catch (e) {
     appStore.showStatus(`开关失败：${e ?? '未知错误'}`, 4000)
     return
   }
+  finderConfig.enabled = newVal
   if (newVal && !authorized.value) {
     try {
       await invoke(CMD.openExtensionsPrefs)

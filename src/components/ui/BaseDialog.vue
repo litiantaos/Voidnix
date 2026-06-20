@@ -130,12 +130,15 @@ const focusIndex = ref(1)
 
 const visible = ref(true)
 let closing = false
+let closeTimer: ReturnType<typeof setTimeout> | null = null
 
 function close(reason?: CloseReason) {
   if (closing) return
   closing = true
   visible.value = false
-  setTimeout(() => {
+  // M-fe2：保存 timer handle，onUnmounted 清理避免组件在过渡期内被父级 v-if 干掉后仍 emit
+  closeTimer = setTimeout(() => {
+    closeTimer = null
     if (reason === undefined) emit('confirm')
     else emit('cancel', reason)
   }, 200)
@@ -223,6 +226,11 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  // M-fe2：组件提前销毁时清 timer，避免已卸载组件继续 emit
+  if (closeTimer) {
+    clearTimeout(closeTimer)
+    closeTimer = null
+  }
   if (previousFocusEl && typeof previousFocusEl.focus === 'function') {
     previousFocusEl.focus()
   }

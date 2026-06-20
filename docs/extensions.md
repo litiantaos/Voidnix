@@ -53,6 +53,15 @@ export default defineExtension({
 
 生命周期：`setup?()`（启动钩子，无参）。3 承载字段过渡期保留：`disableSearchInput`（模块自管输入）、`listOptions.multiSelect`、`onOpenSubview`。
 
+### 跨扩展通信
+
+禁止扩展之间直 import 内部状态（如 `import { x } from '@ext/other'`）。需要跨扩展投递数据时走 Tauri 事件总线：发送方 `emit('ext-<event>', payload)`，接收方在 `setup()` 内 `listen('ext-<event>', ...)`。约定事件名前缀以目标扩展 id 开头（如 `translate-pending-text`），避免冲突。screenshot OCR → translate 待翻译文本即此模式。
+
+### UI 规约补充
+
+- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=1 / calculator=2 / ip=5 / translate=8 / agent=9 / screenshot=11 / window-manager=12 / awake=50 / finder-ext=60 / zsh-autosuggestions=80 / base64=100 / uuid=110 / time=120 / currency=130；hidden 扩展 settings=998 / search=999。
+- **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
+
 ## 搜索集成
 
 ### SearchProvider（单通道）

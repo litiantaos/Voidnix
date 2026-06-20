@@ -119,7 +119,11 @@ pub(super) fn get_cg_image() -> *mut std::ffi::c_void {
 }
 
 pub(super) fn decode_image_data(s: &str) -> Result<Vec<u8>, String> {
-    let b64 = if let Some(p) = s.find(',') { &s[p + 1..] } else { s };
+    let b64 = if let Some(p) = s.find(',') {
+        &s[p + 1..]
+    } else {
+        s
+    };
     base64::engine::general_purpose::STANDARD
         .decode(b64)
         .map_err(|e| e.to_string())

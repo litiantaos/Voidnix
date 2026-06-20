@@ -44,11 +44,10 @@ extern "C" {
 /// SLSRemoveWindowsFromSpaces 恢复（避免窗口残留在多个 Space 上）。
 ///
 /// 调用方必须在主线程执行。返回原 Space ID 列表。
-pub fn move_window_to_active_space(
-    window_number: i64,
-    _ns_window_ptr: *mut c_void,
-) -> Vec<u64> {
-    if window_number <= 0 { return Vec::new(); }
+pub fn move_window_to_active_space(window_number: i64) -> Vec<u64> {
+    if window_number <= 0 {
+        return Vec::new();
+    }
 
     let cid = unsafe { SLSMainConnectionID() };
     let Some(active_sid) = current_active_space_id(cid) else {
@@ -60,15 +59,21 @@ pub fn move_window_to_active_space(
 
     // 记录窗口当前 Space 列表（selector 7 = AllSpaces）
     let prev_spaces = {
+        // SAFETY: SLSCopySpacesForWindows 是 SkyLight 私有 API；
+        // cid 来自 SLSMainConnectionID（进程唯一连接，常驻）；
+        // wid_array 是合法 CFArrayRef，所有权通过 as_concrete_TypeRef 借用（不释放）
         let raw = unsafe { SLSCopySpacesForWindows(cid, 7, wid_array.as_concrete_TypeRef()) };
         if raw.is_null() {
             Vec::new()
         } else {
+            // SAFETY: raw 由 Create 规则返回，wrap_under_create_rule 接管所有权
             let arr: CFArray<CFNumber> = unsafe { CFArray::wrap_under_create_rule(raw) };
             let mut v = Vec::with_capacity(arr.len() as usize);
             for i in 0..arr.len() {
                 if let Some(n) = arr.get(i) {
-                    if let Some(x) = n.to_i64() { v.push(x as u64); }
+                    if let Some(x) = n.to_i64() {
+                        v.push(x as u64);
+                    }
                 }
             }
             v
@@ -78,17 +83,34 @@ pub fn move_window_to_active_space(
     // 把窗口附加到目标 Space
     let sid_num = CFNumber::from(active_sid as i64);
     let sid_array = CFArray::from_CFTypes(&[sid_num]);
+    // SAFETY: 同上，cid + wid_array + sid_array 均合法 SkyLight 入参
     unsafe {
-        SLSAddWindowsToSpaces(cid, wid_array.as_concrete_TypeRef(), sid_array.as_concrete_TypeRef());
+        SLSAddWindowsToSpaces(
+            cid,
+            wid_array.as_concrete_TypeRef(),
+            sid_array.as_concrete_TypeRef(),
+        );
     }
 
     // 从原 Space 移除（避免残留）。如果原 Space 与目标相同则跳过。
-    let to_remove: Vec<u64> = prev_spaces.iter().copied().filter(|s| *s != active_sid).collect();
+    let to_remove: Vec<u64> = prev_spaces
+        .iter()
+        .copied()
+        .filter(|s| *s != active_sid)
+        .collect();
     if !to_remove.is_empty() {
-        let nums: Vec<CFNumber> = to_remove.iter().map(|&s| CFNumber::from(s as i64)).collect();
+        let nums: Vec<CFNumber> = to_remove
+            .iter()
+            .map(|&s| CFNumber::from(s as i64))
+            .collect();
         let arr = CFArray::from_CFTypes(&nums);
+        // SAFETY: 同上
         unsafe {
-            SLSRemoveWindowsFromSpaces(cid, wid_array.as_concrete_TypeRef(), arr.as_concrete_TypeRef());
+            SLSRemoveWindowsFromSpaces(
+                cid,
+                wid_array.as_concrete_TypeRef(),
+                arr.as_concrete_TypeRef(),
+            );
         }
     }
 
@@ -101,14 +123,17 @@ pub fn move_window_to_active_space(
 pub fn move_webview_window_to_active_space(window: &tauri::WebviewWindow) -> Vec<u64> {
     use objc2_app_kit::NSWindow;
 
-    let Ok(raw) = window.ns_window() else { return Vec::new() };
-    let ns_window_ptr = raw.cast::<NSWindow>() as *mut c_void;
-
-    let window_number: objc2_foundation::NSInteger = unsafe {
-        objc2::msg_send![raw.cast::<NSWindow>().as_ref().unwrap(), windowNumber]
+    let Ok(raw) = window.ns_window() else {
+        return Vec::new();
     };
-
-    move_window_to_active_space(window_number as i64, ns_window_ptr)
+    // M-rs2：raw 来自 ns_window()，正常情况下非空但 API 返回 *mut c_void 不保证；
+    // 解引用前 null 检查，避免 panic=abort 进程退出
+    let Some(ns_window) = (unsafe { raw.cast::<NSWindow>().as_ref() }) else {
+        return Vec::new();
+    };
+    let window_number: objc2_foundation::NSInteger =
+        unsafe { objc2::msg_send![ns_window, windowNumber] };
+    move_window_to_active_space(window_number as i64)
 }
 
 /// 枚举 SLSCopyManagedDisplaySpaces，找到 `Current Space` 字段对应的 sid。
@@ -146,10 +171,7 @@ fn current_active_space_id(cid: i32) -> Option<u64> {
 }
 
 /// 从 CFDictionary 按 CFString key 查 CFType 值。
-fn lookup(
-    dict: &CFDictionary<*const c_void, *const c_void>,
-    key: &CFString,
-) -> Option<CFType> {
+fn lookup(dict: &CFDictionary<*const c_void, *const c_void>, key: &CFString) -> Option<CFType> {
     let key_ptr = key.as_concrete_TypeRef() as *const c_void;
     let value = dict.find(key_ptr)?;
     if value.is_null() {

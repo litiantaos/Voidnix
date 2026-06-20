@@ -46,20 +46,14 @@
             leave-from-class="opacity-100 scale-100"
             leave-to-class="opacity-0 scale-75"
           >
-            <button
+            <BaseButton
               v-if="isTagHovered"
               key="close"
-              rounded="full"
-              bg="black/10"
-              flex
-              h="3.5"
-              w="3.5"
-              transition="colors"
-              class="flex-center inset-0 absolute hover:bg-black/20"
+              variant="ghost"
+              class="rounded-full bg-black/10 flex-center inset-0 absolute !p-0 hover:bg-black/20 !h-3.5 !w-3.5"
+              icon="i-ri-close-line text-xs text-black/60"
               @click="onTagClose"
-            >
-              <span class="i-ri-close-line" text="xs black/60"></span>
-            </button>
+            />
             <span
               v-else
               key="icon"

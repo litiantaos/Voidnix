@@ -8,8 +8,7 @@ pub mod monitor;
 
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("clipboard")
-        .build()
+    tauri::plugin::Builder::<tauri::Wry>::new("clipboard").build()
 }
 
 /// Clipboard 扩展。

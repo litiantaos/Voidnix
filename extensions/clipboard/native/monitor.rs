@@ -12,6 +12,73 @@ struct ClipboardSnapshot {
     source_app: String,
 }
 
+/// M-cb1：已知密码管理器源 app 名（不区分大小写匹配）。
+/// 这些 app 复制密码时未必设置 org.nspasteboard.ConcealedType marker，
+/// 故按源 app 名兜底过滤，避免明文密码入库。
+const PASSWORD_MANAGER_APPS: &[&str] = &[
+    "1password",
+    "1password 7",
+    "1password 8",
+    "bitwarden",
+    "keepassxc",
+    "keepassx",
+    "dashlane",
+    "lastpass",
+    "enpass",
+    "keeper",
+    "robiform",
+    "nordpass",
+];
+
+/// 启发式判定：内容本身像 secret（独立长 token / password= 赋值等）。
+/// 保守策略——只拦截明显的 secret 形态，避免误伤正常代码/长串。
+fn looks_like_secret(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    // 明显赋值形式：password= / passwd= / pwd= / secret= / token= / api_key=
+    let lower = trimmed.to_ascii_lowercase();
+    for prefix in [
+        "password:",
+        "password=",
+        "passwd:",
+        "passwd=",
+        "pwd:",
+        "pwd=",
+        "secret:",
+        "secret=",
+        "token:",
+        "token=",
+        "api_key:",
+        "api_key=",
+    ] {
+        if lower.starts_with(prefix) && trimmed.len() > prefix.len() + 3 {
+            return true;
+        }
+    }
+    // 私钥 PEM 头
+    if trimmed.contains("-----BEGIN ") && trimmed.contains("PRIVATE KEY-----") {
+        return true;
+    }
+    // 长 base64-ish / hex 串（≥40 字符，仅含 [A-Za-z0-9+/=]）— 接近通用 secret 形态
+    if trimmed.len() >= 40
+        && trimmed
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+    {
+        return true;
+    }
+    false
+}
+
+fn is_password_manager(app_name: &str) -> bool {
+    let lower = app_name.to_ascii_lowercase();
+    PASSWORD_MANAGER_APPS
+        .iter()
+        .any(|&name| lower == name || lower.contains(name))
+}
+
 pub fn start_monitor(app_handle: AppHandle) {
     std::thread::spawn(move || {
         let mut last_change_count: isize = 0;
@@ -22,8 +89,8 @@ pub fn start_monitor(app_handle: AppHandle) {
             let (tx, rx) = std::sync::mpsc::channel::<(isize, Option<ClipboardSnapshot>)>();
 
             let _ = app_handle.run_on_main_thread(move || {
-                use objc2_app_kit::NSWorkspace;
                 use crate::platform::pasteboard;
+                use objc2_app_kit::NSWorkspace;
 
                 let change_count = pasteboard::change_count();
 
@@ -80,12 +147,12 @@ pub fn start_monitor(app_handle: AppHandle) {
                         if len > 0 {
                             file_size = Some((len as u64).min(i32::MAX as u64) as i32);
                             if len >= 24 && slice[0..4] == [0x89, 0x50, 0x4E, 0x47] {
-                                image_width = Some(u32::from_be_bytes(
-                                    slice[16..20].try_into().unwrap(),
-                                ) as i32);
-                                image_height = Some(u32::from_be_bytes(
-                                    slice[20..24].try_into().unwrap(),
-                                ) as i32);
+                                image_width =
+                                    Some(u32::from_be_bytes(slice[16..20].try_into().unwrap())
+                                        as i32);
+                                image_height =
+                                    Some(u32::from_be_bytes(slice[20..24].try_into().unwrap())
+                                        as i32);
                             }
                             content = format!("data:image/png;base64,{}", base64.encode(&slice));
                             content_type = "image".to_string();
@@ -102,6 +169,14 @@ pub fn start_monitor(app_handle: AppHandle) {
                         if let Some(name) = app.localizedName() {
                             source_app = name.to_string();
                         }
+                    }
+
+                    // M-cb1：密码管理器源 / 内容像 secret → 不入库（明文密码不入 SQLite）
+                    // ConcealedType marker 是第一道防线，此处为兜底（部分密码管理器不设 marker）
+                    if content_type == "text"
+                        && (is_password_manager(&source_app) || looks_like_secret(&content))
+                    {
+                        return None;
                     }
 
                     Some(ClipboardSnapshot {
@@ -223,10 +298,9 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(
-                std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""),
-                16,
-            ) {
+            if let Ok(byte) =
+                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+            {
                 result.push(byte);
                 i += 3;
                 continue;

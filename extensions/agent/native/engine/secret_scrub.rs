@@ -13,8 +13,9 @@ fn patterns() -> &'static Vec<Regex> {
     static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
     PATTERNS.get_or_init(|| {
         vec![
-            // 私钥 PEM 块
+            // 私钥 PEM 块（含 OpenSSH / PPK 头）
             Regex::new(r"(?s)-----BEGIN [A-Z ]*?PRIVATE KEY-----.*?-----END [A-Z ]*?PRIVATE KEY-----").unwrap(),
+            Regex::new(r"(?s)-----BEGIN PGP PRIVATE KEY BLOCK-----.*?-----END PGP PRIVATE KEY BLOCK-----").unwrap(),
             // OpenAI（旧格式 sk-...T3BlbkFJ...）
             Regex::new(r"sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{16}").unwrap(),
             // OpenAI 新格式 sk-proj-...
@@ -37,8 +38,23 @@ fn patterns() -> &'static Vec<Regex> {
             Regex::new(r"eyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+").unwrap(),
             // Bearer token（headers 中的）
             Regex::new(r"(?i)bearer\s+[A-Za-z0-9_\-\.=]{20,}").unwrap(),
-            // 通用 Authorization header
+            // 通用 Authorization / X-API-Key header
             Regex::new(r"(?i)(?:authorization|x-api-key)\s*[:=]\s*[A-Za-z0-9_\-\.=]{16,}").unwrap(),
+            // H14 扩充：GitLab PAT
+            Regex::new(r"glpat-[A-Za-z0-9_\-]{20,}").unwrap(),
+            // Twilio API Key / SID
+            Regex::new(r"(?i)twilio[_-]?(?:api[_-]?key|auth[_-]?token)\s*[=:]\s*[A-Za-z0-9]{32}").unwrap(),
+            // SendGrid
+            Regex::new(r"SG\.[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{32,}").unwrap(),
+            // Discord bot / webhook token
+            Regex::new(r"(?:discord\.com/api/webhooks/|bot token)\s*[A-Za-z0-9_\-]{20,}").unwrap(),
+            // Linear / Notion（integration token）
+            Regex::new(r"(?:lin_api_|secret_)[A-Za-z0-9_\-]{20,}").unwrap(),
+            // 通用 PASSWORD / SECRET / TOKEN / API_KEY 赋值（env / config 文件常见）
+            // 注：raw string 内不宜用 \" 字符类（会被解析为 \ + 终止符）；只覆盖单引号/无引号
+            Regex::new(r"(?i)(?:password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*'?[A-Za-z0-9/_+=!@#$%*{-}]{12,}'?").unwrap(),
+            // 私有 registry token（npm/yarn _authToken）
+            Regex::new(r"(?i)_authToken\s*=\s*[A-Za-z0-9_\-]{16,}").unwrap(),
         ]
     })
 }
@@ -102,7 +118,8 @@ mod tests {
 
     #[test]
     fn redacts_pem_private_key() {
-        let s = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----";
+        let s =
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----";
         let scrubbed = scrub_secret(s);
         assert!(scrubbed.contains("[REDACTED]"));
         assert!(!scrubbed.contains("BEGIN RSA"));
@@ -127,5 +144,46 @@ mod tests {
         let s = "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and sk-abcd1234abcd1234abcdT3BlbkFJabcd1234abcd1234";
         let scrubbed = scrub_secret(s);
         assert!(scrubbed.matches("[REDACTED]").count() >= 2);
+    }
+
+    #[test]
+    fn redacts_gitlab_pat() {
+        // H14：GitLab PAT
+        let s = "gitlab_token=glpat-abcdefghijklmnopqrst";
+        let scrubbed = scrub_secret(s);
+        assert!(!scrubbed.contains("glpat-"));
+    }
+
+    #[test]
+    fn redacts_sendgrid() {
+        // H14：SendGrid API Key（格式 SG.<id>.<secret>）
+        let s = "SG.abcdefghijklmnop.apikeyabcdefghijklmnopqrst1234567890abcd";
+        let scrubbed = scrub_secret(s);
+        assert!(!scrubbed.contains("SG.abcdefghijklmnop"));
+    }
+
+    #[test]
+    fn redacts_generic_password_assignment() {
+        // H14：通用 PASSWORD= 赋值
+        let s = "DB_PASSWORD=supersecretvalue123";
+        let scrubbed = scrub_secret(s);
+        assert!(!scrubbed.contains("supersecretvalue123"));
+    }
+
+    #[test]
+    fn redacts_npm_authtoken() {
+        // H14：npm _authToken
+        let s = "//registry.npmjs.org/:_authToken=npm_deadbeefcafef00d1234";
+        let scrubbed = scrub_secret(s);
+        assert!(!scrubbed.contains("npm_deadbeef"));
+    }
+
+    #[test]
+    fn normal_code_not_false_positive() {
+        // H14：正常代码片段不应误伤
+        let s = "const api_key = config.getKey();\nfunction password() { return hash; }";
+        let scrubbed = scrub_secret(s);
+        // 短串 + 函数调用形式不应触发（无 = : 后跟 12+ 字符的赋值）
+        assert_eq!(scrubbed, s);
     }
 }

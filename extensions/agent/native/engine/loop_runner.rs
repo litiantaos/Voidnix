@@ -25,10 +25,13 @@ use tokio_util::sync::CancellationToken;
 use crate::extensions::agent::engine::approval::{ApprovalManager, Decision};
 use crate::extensions::agent::engine::tool_registry::ToolRegistry;
 use crate::extensions::agent::engine::AgentEvent;
-use crate::runtime::llm::{self, LlmMessage, LlmToolCall, StreamConfig};
 use crate::runtime::llm::parser::FinalizedToolCall;
+use crate::runtime::llm::{self, LlmMessage, LlmToolCall, StreamConfig};
 
 use super::secret_scrub::scrub_secret;
+
+/// 审批超时上限（H13）：用户离开/不响应时避免 loop 永久阻塞、session 残留。
+const APPROVAL_TIMEOUT_SECS: u64 = 300;
 
 /// Agent loop 的输入配置。
 pub struct LoopInput {
@@ -63,7 +66,10 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
 
     // 注入 system prompt：默认 harness + 用户自定义（如有）
     // 仅当用户消息里没有自己的 system 消息时注入（避免重复）
-    let has_system = messages.first().map(|m| m.role == "system").unwrap_or(false);
+    let has_system = messages
+        .first()
+        .map(|m| m.role == "system")
+        .unwrap_or(false);
     if !has_system {
         let mut sys = input.default_system_prompt.clone();
         if let Some(user_prompt) = &input.system_prompt {
@@ -86,11 +92,14 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
         // 准备本轮 stream：text delta 通过 callback 推到前端
         let channel_for_text = input.channel.clone();
         let mut on_text = move |delta: &str| {
-            let _ = channel_for_text.send(AgentEvent::TextDelta { text: delta.to_string() });
+            let _ = channel_for_text.send(AgentEvent::TextDelta {
+                text: delta.to_string(),
+            });
         };
 
         // 安全校验
-        let safe_endpoint = llm::validate_ai_request(&input.endpoint, &input.model, &input.api_key)?;
+        let safe_endpoint =
+            llm::validate_ai_request(&input.endpoint, &input.model, &input.api_key)?;
         let trimmed = super::trim::trim_conversation(&messages);
         let tools_slice = input.tools_schema.clone();
 
@@ -127,10 +136,15 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
         }
 
         // 有 tool_calls：先把 assistant 消息（含 tool_calls）塞进历史
-        let tool_calls_llm: Vec<LlmToolCall> = outcome.tool_calls.iter().map(LlmToolCall::from).collect();
+        let tool_calls_llm: Vec<LlmToolCall> =
+            outcome.tool_calls.iter().map(LlmToolCall::from).collect();
         messages.push(LlmMessage {
             role: "assistant".into(),
-            content: if outcome.full_text.is_empty() { None } else { Some(outcome.full_text) },
+            content: if outcome.full_text.is_empty() {
+                None
+            } else {
+                Some(outcome.full_text)
+            },
             tool_calls: Some(tool_calls_llm),
             tool_call_id: None,
         });
@@ -152,7 +166,18 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
 }
 
 /// 处理单个 tool_call：审批 → 执行 → 回灌结果。
-async fn process_tool_call(input: &mut LoopInput, messages: &mut Vec<LlmMessage>, call: &FinalizedToolCall) {
+async fn process_tool_call(
+    input: &mut LoopInput,
+    messages: &mut Vec<LlmMessage>,
+    call: &FinalizedToolCall,
+) {
+    // H14：args 经 scrub_secret 后再 emit 给前端，避免 LLM 在 ApprovalRequired / ToolCallArgs
+    // 中复述用户 secret（UI v-html 渲染 / 审批弹窗展示）。call.arguments 是 LLM 构造的 JSON，
+    // secret 不应出现于此；若出现则可能是 prompt injection 复述，打码更安全。
+    let scrubbed_args = scrub_secret(&call.arguments.to_string()).into_owned();
+    let scrubbed_args_value: serde_json::Value =
+        serde_json::from_str(&scrubbed_args).unwrap_or(serde_json::Value::Null);
+
     // emit 工具调用开始事件
     let _ = input.channel.send(AgentEvent::ToolCallStart {
         id: call.id.clone(),
@@ -160,7 +185,7 @@ async fn process_tool_call(input: &mut LoopInput, messages: &mut Vec<LlmMessage>
     });
     let _ = input.channel.send(AgentEvent::ToolCallArgs {
         id: call.id.clone(),
-        args: call.arguments.clone(),
+        args: scrubbed_args_value.clone(),
     });
 
     // 查找工具
@@ -183,14 +208,26 @@ async fn process_tool_call(input: &mut LoopInput, messages: &mut Vec<LlmMessage>
         let _ = input.channel.send(AgentEvent::ApprovalRequired {
             id: call.id.clone(),
             tool_name: call.name.clone(),
-            args: call.arguments.clone(),
+            args: scrubbed_args_value.clone(),
         });
-        // 等用户决定，同时监听 cancel
+        // 等用户决定，同时监听 cancel + 超时（H13：避免用户不响应导致 loop 永久阻塞）
         let decision = select! {
             d = rx => d.unwrap_or(Decision::rejected()),
             _ = input.cancel.cancelled() => {
                 // 用户取消（abort），告诉模型工具被中断
                 let msg = "工具调用已被用户中断".to_string();
+                let _ = input.channel.send(AgentEvent::ToolResult {
+                    id: call.id.clone(),
+                    ok: false,
+                    output: msg.clone(),
+                });
+                messages.push(LlmMessage::tool_result(&call.id, msg));
+                return;
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(APPROVAL_TIMEOUT_SECS)) => {
+                // 超时自动拒绝：避免用户离开后 loop 永久阻塞、session 残留
+                input.approval.resolve(&call.id, Decision::rejected());
+                let msg = format!("审批超时（{} 秒未响应），已自动拒绝", APPROVAL_TIMEOUT_SECS);
                 let _ = input.channel.send(AgentEvent::ToolResult {
                     id: call.id.clone(),
                     ok: false,

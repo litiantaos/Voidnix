@@ -12,6 +12,7 @@ export default defineConfig({
     command: 'bun run dev',
     port: 1420,
     reuseExistingServer: true,
-    timeout: 15000,
+    // CI 冷启动 + Vite 首次构建可能较慢，给充足窗口（本地 reuseExistingServer 不受影响）
+    timeout: 60000,
   },
 })

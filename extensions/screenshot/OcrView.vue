@@ -44,10 +44,10 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { emit } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { copyAndHide } from '@/stores/app'
 import { useAppStore } from '@/stores/app'
-import { pendingText } from '@ext/translate'
 import { pendingOcrData } from './index'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
@@ -107,9 +107,11 @@ async function handleCopy() {
   await copyAndHide(ocrText.value)
 }
 
-function handleTranslate() {
+async function handleTranslate() {
   if (!ocrText.value.trim()) return
-  pendingText.value = ocrText.value
+  // 跨扩展通信走事件总线（C9）：screenshot 不再直依赖 translate 内部状态。
+  // translate 扩展 setup 监听 'translate-pending-text'，写入自身 pendingText。
+  await emit('translate-pending-text', ocrText.value)
   appStore.setActiveModule('translate')
 }
 </script>
