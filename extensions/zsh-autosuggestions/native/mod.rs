@@ -13,9 +13,10 @@ const BIN_NAME: &str = "zsh-autosuggestions";
 /// .zshrc 行尾 marker，用于精确识别"我们写的行"。
 const ZSHRC_LINE_SUFFIX: &str = "# voidnix zsh-autosuggestions";
 
-/// binary 分发版本号。改 binary 内容（含 init.zsh，经 `include_str!` 嵌入）
-/// 必须 bump 此数字，否则 install_bin 版本比对判定「无需更新」不部署。
-const BIN_VERSION: u32 = 3;
+/// binary 分发版本号。install_bin 比对此常量与 `bin_version` 文件，相等即跳过复制。
+/// **每改 binary 内容（`native/src/*.rs` 或 `include_str!` 嵌入的 `init.zsh`）
+/// 必须 bump**——开发期迭代亦然，共用版本号会导致改动不部署。
+const BIN_VERSION: u32 = 6;
 
 /// 串行化 setup / set_enabled 路径，避免 torn write。
 static SETUP_LOCK: Mutex<()> = Mutex::new(());

@@ -70,6 +70,16 @@ ZSH_AS_CLEAR_WIDGETS=(
   copy-earlier-word
 )
 
+# 换行执行类 widget：accept-line 直接换行，清空 POSTDISPLAY 变量不擦除
+# 屏幕字符 → 建议灰字滞留。走 line_submit action 在 original widget 前强制
+# 重绘擦除残留，与 Ctrl+C 表现一致。
+typeset -ga ZSH_AS_LINE_SUBMIT_WIDGETS
+ZSH_AS_LINE_SUBMIT_WIDGETS=(
+  accept-line
+  accept-and-hold
+  accept-line-and-down-history
+)
+
 typeset -ga ZSH_AS_IGNORE_WIDGETS
 ZSH_AS_IGNORE_WIDGETS=(
   orig-\*
@@ -244,6 +254,25 @@ _zsh_autosuggestions_modify() {
       _zsh_autosuggestions_fetch
     fi
   fi
+
+  return $retval
+}
+
+_zsh_autosuggestions_line_submit() {
+  local -i retval had_suggestion=$#POSTDISPLAY
+
+  POSTDISPLAY=
+  _ZSH_AUTOSUGGESTIONS_ALTERNATIVES=()
+  _ZSH_AUTOSUGGESTIONS_ALT_INDEX=1
+  _ZSH_AUTOSUGGESTIONS_CURRENT_SUGGESTION=""
+
+  # 清空 POSTDISPLAY 变量不等于擦除屏幕显示：accept-line 换行时已渲染的
+  # 建议字符不会被擦除而滞留。original widget 前强制重绘，与 Ctrl+C 一致。
+  # 仅作用于换行类 widget，回车后立即进入新 ZLE 周期，重绘无副作用。
+  (( had_suggestion )) && zle -R
+
+  _zsh_autosuggestions_invoke_original_widget $@
+  retval=$?
 
   return $retval
 }
@@ -449,6 +478,8 @@ _zsh_autosuggestions_bind_widgets() {
   for widget in ${${(f)"$(builtin zle -la)"}:#${(j:|:)~ignore_widgets}}; do
     if [[ -n ${ZSH_AS_CLEAR_WIDGETS[(r)$widget]} ]]; then
       _zsh_autosuggestions_bind_widget $widget clear
+    elif [[ -n ${ZSH_AS_LINE_SUBMIT_WIDGETS[(r)$widget]} ]]; then
+      _zsh_autosuggestions_bind_widget $widget line_submit
     elif [[ -n ${ZSH_AS_ACCEPT_WIDGETS[(r)$widget]} ]]; then
       _zsh_autosuggestions_bind_widget $widget accept
     elif [[ -n ${ZSH_AS_PARTIAL_ACCEPT_WIDGETS[(r)$widget]} ]]; then
@@ -461,7 +492,7 @@ _zsh_autosuggestions_bind_widgets() {
 
 () {
   local action
-  for action in $_ZSH_AUTOSUGGESTIONS_BUILTIN_ACTIONS modify partial_accept; do
+  for action in $_ZSH_AUTOSUGGESTIONS_BUILTIN_ACTIONS modify partial_accept line_submit; do
     eval "_zsh_autosuggestions_widget_$action() {
       local -i retval
       _zsh_autosuggestions_highlight_reset

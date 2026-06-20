@@ -52,7 +52,9 @@ binary 是独立 `[[bin]]` target（`Cargo.toml` 声明，path 指向 `native/sr
 1. 优先 `current_exe().parent().join("zsh-autosuggestions")`（dev = `target/debug/`）
 2. 兜底 `current_exe().parent().parent().join("Resources").join(...)`（release = `.app/Contents/Resources/`）
 
-`setup` 用**版本号比对**（编译期常量 `BIN_VERSION` 写入 `bin_version` 文件）从主程序旁复制到 `extensions/zsh-autosuggestions/bin/`，已部署版本匹配才跳过；并幂等刷新 .zshrc 行。**改 binary 内容（含 init.zsh，经 `include_str!` 嵌入）必须 bump `BIN_VERSION`（`mod.rs`），否则不部署。**
+**版本号部署**：`install_bin` 比较 `bin_version` 文件与编译期常量 `BIN_VERSION`（`mod.rs`），相等即跳过复制。**每改 binary 内容（`native/src/*.rs` 或 `include_str!` 嵌入的 `init.zsh`）必须 bump `BIN_VERSION`——开发期迭代亦然**：同一版本号只在首次部署时复制产物，共用版本号会导致改动不部署。`bin_version` 与 binary 同目录，缺失视为 0。手动改 init.zsh 后立即生效可重启 `tauri:dev`，或手动复制 `src-tauri/target/debug/zsh-autosuggestions` + 写 `bin_version`。
+
+`setup` 并幂等刷新 .zshrc 行。
 
 .zshrc 行：`export ZSH_AS_BIN=... ZSH_AS_CACHE=... ZSH_AS_SIGNALS=...; eval "$("$ZSH_AS_BIN" init)"`（行尾 marker `# voidnix zsh-autosuggestions` 用于精确 remove）。.zshrc 写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.cache` + `signals.log`（保留 binary 避免反复复制）。
 
@@ -69,3 +71,5 @@ zsh 端 `_zsh_autosuggestions_histfile` 统一解析 rebuild 目标 history：�
 ## Ctrl+C 拦截
 
 Ctrl+C（SIGINT）不走任何 ZLE widget，POSTDISPLAY 会残留在重绘的新行；且 POSTDISPLAY 是 ZLE 特殊变量，TRAPINT（非 widget 上下文）中只读无法修改。解决方案：`zle-line-init` 时 `stty intr undef` 让 `^C` 作为普通按键进入 ZLE，绑定 `zsh-as-ctrl-c` widget（清空 POSTDISPLAY/高亮/状态 + `zle .send-break` 中断当前行）；`zle-line-finish` / `zshexit` 恢复 `stty intr '^C'` 保证命令执行期间 `^C` 走 SIGINT。
+
+同理，回车（`accept-line`）走 line_submit action（`ZSH_AS_LINE_SUBMIT_WIDGETS`，含 accept-line / accept-and-hold / accept-line-and-down-history）：清空 POSTDISPLAY 变量不等于擦除屏幕字符——accept-line 直接换行会让建议灰字滞留。line_submit 在调用 original widget 前若原 POSTDISPLAY 非空则 `zle -R` 强制重绘擦除残留（仅作用于换行类 widget，回车后立即进入新 ZLE 周期，重绘无副作用；不影响 modify 通用路径的 suggestion 渲染），使「不接受建议直接回车」与「Ctrl+C」屏幕表现一致。
