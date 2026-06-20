@@ -16,8 +16,8 @@ mod ax {
 
     type AXUIElementRef = *mut c_void;
     type AXError = i32;
-    const K_AX_ERROR_SUCCESS: AXError = 0;
-    const K_CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
+    const AX_ERROR_SUCCESS: AXError = 0;
+    const CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
 
     /// M-rs3：缓存 system-wide AXUIElement。
     /// AXUIElementSetMessagingTimeout 是 per-element 设置（非进程级全局），
@@ -86,7 +86,7 @@ mod ax {
             return std::ptr::null_mut();
         };
         unsafe {
-            CFStringCreateWithCString(std::ptr::null_mut(), c.as_ptr(), K_CF_STRING_ENCODING_UTF8)
+            CFStringCreateWithCString(std::ptr::null_mut(), c.as_ptr(), CF_STRING_ENCODING_UTF8)
         }
     }
 
@@ -96,9 +96,9 @@ mod ax {
         }
         unsafe {
             let len = CFStringGetLength(cf);
-            let max = CFStringGetMaximumSizeForEncoding(len, K_CF_STRING_ENCODING_UTF8) + 1;
+            let max = CFStringGetMaximumSizeForEncoding(len, CF_STRING_ENCODING_UTF8) + 1;
             let mut buf = vec![0u8; max as usize];
-            if CFStringGetCString(cf, buf.as_mut_ptr(), max, K_CF_STRING_ENCODING_UTF8) {
+            if CFStringGetCString(cf, buf.as_mut_ptr(), max, CF_STRING_ENCODING_UTF8) {
                 CStr::from_ptr(buf.as_ptr() as *const i8)
                     .to_str()
                     .ok()
@@ -117,7 +117,7 @@ mod ax {
         let mut val: *mut c_void = std::ptr::null_mut();
         let err = AXUIElementCopyAttributeValue(element, key, &mut val);
         CFRelease(key);
-        if err == K_AX_ERROR_SUCCESS && !val.is_null() {
+        if err == AX_ERROR_SUCCESS && !val.is_null() {
             Some(val)
         } else {
             None

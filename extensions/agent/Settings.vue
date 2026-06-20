@@ -116,11 +116,10 @@
             placeholder="sk-..."
           >
             <template #suffix>
-              <button
-                class="i-ri-eye-line hover:text-black/60"
-                text="black/35"
-                shrink="0"
-                :class="{ 'i-ri-eye-off-line': passwordVisible }"
+              <BaseButton
+                variant="ghost"
+                :icon="passwordVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
+                class="!text-tx-hint !px-1 !shrink-0 !h-auto"
                 @click.stop="passwordVisible = !passwordVisible"
               />
             </template>
@@ -176,11 +175,10 @@
             placeholder="tvly-..."
           >
             <template #suffix>
-              <button
-                class="i-ri-eye-line hover:text-black/60"
-                text="black/35"
-                shrink="0"
-                :class="{ 'i-ri-eye-off-line': searchKeyVisible }"
+              <BaseButton
+                variant="ghost"
+                :icon="searchKeyVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
+                class="!text-tx-hint !px-1 !shrink-0 !h-auto"
                 @click.stop="searchKeyVisible = !searchKeyVisible"
               />
             </template>

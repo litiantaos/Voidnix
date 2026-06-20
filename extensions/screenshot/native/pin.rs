@@ -78,7 +78,8 @@ pub async fn pin_image(
             let _ = tx.send(r);
         })
         .map_err(|e| e.to_string())?;
-        rx.recv().map_err(|e| e.to_string())??;
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .map_err(|e| e.to_string())??;
 
         // 窗口创建成功，转移 handle 到注册表（WindowEvent::Destroyed 时移除 → Drop 删文件）
         if let Ok(mut map) = PIN_TEMPS.lock() {
@@ -141,6 +142,10 @@ fn create_pin_webview(app: &tauri::AppHandle, spec: &PinWebviewSpec) -> Result<(
     });
 
     if let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) {
+        // SAFETY: ns 经 as_ref Some 分支非空校验；setHidesOnDeactivate:/setLevel:/
+        // setCollectionBehavior/setContentAspectRatio/contentView/layer/setCornerRadius:/
+        // setMasksToBounds:/makeKeyAndOrderFront: 均为 NSWindow/CALayer 标准选择子；
+        // cg_image null 检查后传给 FFI（install_background_layer/set_background 自管所有权）
         unsafe {
             if let Some(ns) = raw.as_ref() {
                 let _: () = objc2::msg_send![ns, setHidesOnDeactivate: false];
@@ -218,6 +223,7 @@ pub async fn set_pin_window_opacity(
         app_handle
             .run_on_main_thread(move || {
                 if let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) {
+                    // SAFETY: ns 经 as_ref Some 分支非空校验；setAlphaValue 为 NSWindow 标准方法
                     unsafe {
                         if let Some(ns) = raw.as_ref() {
                             ns.setAlphaValue(opacity_val);
@@ -243,6 +249,8 @@ pub fn pin_global_mouse() -> (f64, f64) {
     {
         let mut x = 0.0f64;
         let mut y = 0.0f64;
+        // SAFETY: voidnix_screenshot_get_mouse_location 写入 &mut f64（栈变量），
+        // screen_height=0.0 表示由 FFI 内部解析屏幕高度；纯输出参数无所有权
         unsafe {
             super::ffi::voidnix_screenshot_get_mouse_location(&mut x, &mut y, 0.0);
         }

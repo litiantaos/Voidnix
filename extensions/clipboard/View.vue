@@ -62,7 +62,7 @@
               alt="剪贴板图片"
             />
             <div v-else rounded="md" bg="black/5" flex h="32" w="48" class="flex-center">
-              <div class="i-ri-image-line text-2xl text-black/20"></div>
+              <div class="i-ri-image-line text-2xl text-tx-faint"></div>
             </div>
           </div>
           <div v-else truncate>
@@ -88,7 +88,7 @@
           <BaseButton
             variant="ghost"
             :icon="
-              item.is_favorite ? 'i-ri-star-fill text-yellow-400' : 'i-ri-star-line text-tx-subtle'
+              item.is_favorite ? 'i-ri-star-fill text-amber-400' : 'i-ri-star-line text-tx-subtle'
             "
             @click.stop="toggleFavorite(item.id)"
           />

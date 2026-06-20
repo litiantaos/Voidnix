@@ -196,21 +196,21 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'tool', t: Tool): void
-  (e: 'color', c: string): void
-  (e: 'line-width', n: number): void
-  (e: 'font-size', n: number): void
-  (e: 'blur-amount', n: number): void
-  (e: 'blur-mode', m: BlurMode): void
-  (e: 'ocr'): void
-  (e: 'pin'): void
-  (e: 'copy'): void
-  (e: 'save'): void
-  (e: 'cancel'): void
-  (e: 'scroll-start'): void
-  (e: 'scroll-finish'): void
-  (e: 'scroll-save'): void
-  (e: 'scroll-cancel'): void
+  tool: [t: Tool]
+  color: [c: string]
+  'line-width': [n: number]
+  'font-size': [n: number]
+  'blur-amount': [n: number]
+  'blur-mode': [m: BlurMode]
+  ocr: []
+  pin: []
+  copy: []
+  save: []
+  cancel: []
+  'scroll-start': []
+  'scroll-finish': []
+  'scroll-save': []
+  'scroll-cancel': []
 }>()
 
 const showColors = ref(false)
@@ -361,8 +361,8 @@ defineExpose({ reportToolbarRect })
 .palette-popup-enter-active,
 .palette-popup-leave-active {
   transition:
-    opacity 0.2s,
-    transform 0.2s;
+    opacity 0.2s cubic-bezier(0, 0, 0.2, 1),
+    transform 0.2s cubic-bezier(0, 0, 0.2, 1);
 }
 .palette-popup-enter-from,
 .palette-popup-leave-to {

@@ -50,12 +50,12 @@ print(String(data: data, encoding: .utf8)!)"#,
         let out = Command::new("swift")
             .args(["-e", &script])
             .output()
-            .map_err(|e| format!("swift 失败: {}", e))?;
+            .map_err(|e| format!("swift 失败: {e}"))?;
         // tmp 由 _tmp_handle Drop 清理
         if out.status.success() {
             let json = String::from_utf8_lossy(&out.stdout).trim().to_string();
             let parsed: serde_json::Value =
-                serde_json::from_str(&json).map_err(|e| format!("解析识别结果失败: {}", e))?;
+                serde_json::from_str(&json).map_err(|e| format!("解析识别结果失败: {e}"))?;
             Ok(OcrResult {
                 text: parsed
                     .get("text")
@@ -119,7 +119,7 @@ for obs in (req.results ?? []) {{
         let out = Command::new("swift")
             .args(["-e", &script])
             .output()
-            .map_err(|e| format!("swift 失败: {}", e))?;
+            .map_err(|e| format!("swift 失败: {e}"))?;
         if !out.status.success() {
             return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
         }

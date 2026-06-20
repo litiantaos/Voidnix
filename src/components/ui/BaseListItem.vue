@@ -7,10 +7,7 @@
     flex
     gap="3"
     select="none"
-    :class="[
-      selected ? 'ui-active' : 'bg-transparent',
-      multilineTitle ? 'items-start' : 'items-center',
-    ]"
+    :class="[selected ? 'ui-active' : 'ui-hover', multilineTitle ? 'items-start' : 'items-center']"
     role="option"
     :aria-selected="selected"
     @click="emit('click', $event)"

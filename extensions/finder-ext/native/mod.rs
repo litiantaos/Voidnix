@@ -174,7 +174,7 @@ fn process_command(path: &Path, handle: &AppHandle) {
     let cmd: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => {
-            log::error!("Invalid command JSON: {}", e);
+            log::error!("Invalid command JSON: {e}");
             return;
         }
     };

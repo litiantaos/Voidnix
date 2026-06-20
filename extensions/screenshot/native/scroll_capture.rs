@@ -48,6 +48,10 @@ pub fn cg_image_to_bgra8(cg: *mut std::ffi::c_void) -> Option<(usize, usize, Vec
     if cg.is_null() {
         return None;
     }
+    // SAFETY: cg 已 null 检查；CGImageGetWidth/Height/ColorSpaceCreateDeviceRGB/
+    // CGBitmapContextCreate/DrawImage/Release 均为 CoreGraphics C API。buf.as_mut_ptr()
+    // 指向有效缓冲区（vec![0; row_bytes*h]），w/h 非 0 已校验；ctx null 检查后释放。
+    // bitmap_info = kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big 合法
     unsafe {
         extern "C" {
             fn CGImageGetWidth(image: *mut std::ffi::c_void) -> usize;
@@ -113,12 +117,14 @@ pub fn capture_below_overlay(
     sel_h: f64,
     _overlay_window_id: u32,
 ) -> Option<(usize, usize, Vec<u8>)> {
+    // SAFETY: ns_addr 从 SESSION 读取（非 0 已校验）；voidnix_screenshot_capture_region
+    // 写入 out_image（栈指针），null 检查后交 cg_image_to_bgra8 解码，CGImageRelease 配平
     unsafe {
         extern "C" {
             fn CGImageRelease(image: *mut std::ffi::c_void);
         }
         let ns_addr = {
-            let g = SESSION.lock().unwrap();
+            let g = SESSION.lock().unwrap_or_else(|e| e.into_inner());
             g.as_ref().map(|s| s.ns_window_addr).unwrap_or(0)
         };
         if ns_addr == 0 {
@@ -166,6 +172,10 @@ fn encode_image_with_cg(
     if buf.len() != width * height * 4 {
         return Err("buffer 大小不匹配".to_string());
     }
+    // SAFETY: buf.len() == width*height*4 已校验；CGColorSpaceCreateDeviceRGB/
+    // CGDataProviderCreateWithData/CGImageCreate/CGImageDestination*/CF* 均为 CoreGraphics/
+    // CoreFoundation C API。所有 Create 返回值均 null 检查，CFRelease/CGImageRelease 配平；
+    // from_raw_parts(bytes, len) 在 out_data release 前拷贝（CFData 缓冲区有效）
     unsafe {
         extern "C" {
             fn CGColorSpaceCreateDeviceRGB() -> *mut std::ffi::c_void;
@@ -568,7 +578,7 @@ pub fn capture_loop(app: tauri::AppHandle) {
 
     while IS_RUNNING.load(Ordering::SeqCst) {
         let (sel_x, sel_y, sel_w, sel_h, overlay_id, cur_ignoring) = {
-            let guard = SESSION.lock().unwrap();
+            let guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
             match guard.as_ref() {
                 Some(s) => (
                     s.sel_x,
@@ -588,7 +598,7 @@ pub fn capture_loop(app: tauri::AppHandle) {
 
         let frame = capture_below_overlay(sel_x, sel_y, sel_w, sel_h, overlay_id);
         if let Some((fw, fh, fbuf)) = frame {
-            let mut guard = SESSION.lock().unwrap();
+            let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(session) = guard.as_mut() {
                 if session.pw == 0 {
                     session.pw = fw;
@@ -657,7 +667,7 @@ mod mouse_monitor {
     unsafe fn check_and_toggle() {
         let (mx, my) = cur_loc();
         let snapshot = {
-            let g = SESSION.lock().unwrap();
+            let g = SESSION.lock().unwrap_or_else(|e| e.into_inner());
             g.as_ref().map(|s| {
                 (
                     s.sel_x,
@@ -681,7 +691,7 @@ mod mouse_monitor {
         if in_hole != currently_ignoring {
             let ptr = ns_addr as *mut std::ffi::c_void;
             voidnix_screenshot_set_ignores_mouse(ptr, if in_hole { 1 } else { 0 });
-            let mut g = SESSION.lock().unwrap();
+            let mut g = SESSION.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(s) = g.as_mut() {
                 s.ignoring_mouse = in_hole;
             }
@@ -692,7 +702,7 @@ mod mouse_monitor {
         use objc2::ClassType;
         use objc2_app_kit::NSEvent;
         {
-            let g = GLOBAL_MONITOR.lock().unwrap();
+            let g = GLOBAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner());
             if !g.0.is_null() {
                 return;
             }
@@ -707,30 +717,37 @@ mod mouse_monitor {
             | (1u64 << 3)
             | (1u64 << 4);
         {
+            // SAFETY (closure body): check_and_toggle 为 unsafe fn，内部所有指针操作
+            // 经 SESSION 快照读取 + ns_addr 非 0 保障；闭包在 NSEvent 回调线程执行
             let blk = block2::RcBlock::new(move |_event: *mut AnyObject| unsafe {
                 check_and_toggle();
             });
+            // SAFETY: mask 为标准 NSEvent 位掩码；block 经 RcBlock 持有，&*block 取引用；
+            // addGlobalMonitorForEventsMatchingMask: 返回 monitor，null 检查后
+            // retain + forget block（生命周期随 monitor，stop 时 removeMonitor+release）
             unsafe {
                 let m: *mut AnyObject = objc2::msg_send![NSEvent::class(), addGlobalMonitorForEventsMatchingMask: mask, handler: &*blk];
                 if !m.is_null() {
                     let _: () = objc2::msg_send![m, retain];
-                    *GLOBAL_MONITOR.lock().unwrap() = SendObj(m);
+                    *GLOBAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner()) = SendObj(m);
                     std::mem::forget(blk);
                 }
             }
         }
         {
             let blk = block2::RcBlock::new(move |event: *mut AnyObject| -> *mut AnyObject {
+                // SAFETY: check_and_toggle 为 unsafe fn，同 global 闭包契约
                 unsafe {
                     check_and_toggle();
                 }
                 event
             });
+            // SAFETY: 同 global monitor 契约；local monitor 返回 event（透传）
             unsafe {
                 let m: *mut AnyObject = objc2::msg_send![NSEvent::class(), addLocalMonitorForEventsMatchingMask: mask, handler: &*blk];
                 if !m.is_null() {
                     let _: () = objc2::msg_send![m, retain];
-                    *LOCAL_MONITOR.lock().unwrap() = SendObj(m);
+                    *LOCAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner()) = SendObj(m);
                     std::mem::forget(blk);
                 }
             }
@@ -741,8 +758,10 @@ mod mouse_monitor {
         use objc2::ClassType;
         use objc2_app_kit::NSEvent;
         for slot in [&GLOBAL_MONITOR, &LOCAL_MONITOR] {
-            let mut g = slot.lock().unwrap();
+            let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
             if !g.0.is_null() {
+                // SAFETY: g.0 非 null（已检查）；removeMonitor + release 与 start 的
+                // retain + forget 配对（monitor 注销 + 引用计数归零）
                 unsafe {
                     let _: () = objc2::msg_send![NSEvent::class(), removeMonitor: g.0];
                     let _: () = objc2::msg_send![g.0, release];
@@ -787,6 +806,9 @@ pub async fn enter_scroll_capture(
                     .cast::<NSWindow>();
                 let ptr = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
                 let ns_addr = ptr as usize;
+                // SAFETY: ptr 来自 window.ns_window() Ok 分支（合法 NSWindow 指针）；
+                // voidnix_screenshot_* 为 FFI 薄壳，install_scroll_mask 返回 bool 失败检查，
+                // window_number 返回值 >0 校验；均在主线程 run_on_main_thread 闭包内执行
                 unsafe {
                     if !voidnix_screenshot_install_scroll_mask(ptr, sel_x, sel_y, sel_w, sel_h) {
                         return Err("装载滚动遮罩失败".to_string());
@@ -802,11 +824,16 @@ pub async fn enter_scroll_capture(
             let _ = tx.send(r);
         })
         .map_err(|e| e.to_string())?;
-        let (overlay_window_id, ns_window_addr) = rx.recv().map_err(|e| e.to_string())??;
+        let (overlay_window_id, ns_window_addr) = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .map_err(|e| e.to_string())??;
 
         {
-            let mut guard = SESSION.lock().unwrap();
-            let pending_tb = PENDING_TOOLBAR.lock().unwrap().take();
+            let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+            let pending_tb = PENDING_TOOLBAR
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
             *guard = Some(ScrollSession {
                 sel_x,
                 sel_y,
@@ -832,11 +859,14 @@ pub async fn enter_scroll_capture(
         let (tx2, rx2) = std::sync::mpsc::channel::<()>();
         app.run_on_main_thread(move || {
             start_mouse_monitor();
+            // SAFETY: get_mouse_location 写入栈 &mut f64；set_ignores_mouse 的 ptr 来自
+            // SESSION.ns_window_addr（enter 时由 install_scroll_mask 路径写入合法 NSWindow 地址）；
+            // SESSION 锁内只读快照，drop 后重新锁写状态
             unsafe {
                 let mut mx: f64 = 0.0;
                 let mut my: f64 = 0.0;
                 voidnix_screenshot_get_mouse_location(&mut mx, &mut my, 0.0);
-                let g = SESSION.lock().unwrap();
+                let g = SESSION.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(s) = g.as_ref() {
                     let in_hole = mx >= s.sel_x
                         && mx <= s.sel_x + s.sel_w
@@ -846,7 +876,7 @@ pub async fn enter_scroll_capture(
                         let ptr = s.ns_window_addr as *mut std::ffi::c_void;
                         voidnix_screenshot_set_ignores_mouse(ptr, 1);
                         drop(g);
-                        let mut g2 = SESSION.lock().unwrap();
+                        let mut g2 = SESSION.lock().unwrap_or_else(|e| e.into_inner());
                         if let Some(s2) = g2.as_mut() {
                             s2.ignoring_mouse = true;
                         }
@@ -877,7 +907,7 @@ pub async fn exit_scroll_capture(app: tauri::AppHandle) -> Result<(), String> {
         IS_RUNNING.store(false, Ordering::SeqCst);
         std::thread::sleep(std::time::Duration::from_millis(50));
         {
-            let mut guard = SESSION.lock().unwrap();
+            let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
             *guard = None;
         }
 
@@ -896,6 +926,9 @@ pub async fn exit_scroll_capture(app: tauri::AppHandle) -> Result<(), String> {
                     .map_err(|e| e.to_string())?
                     .cast::<NSWindow>();
                 let ptr = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
+                // SAFETY: ptr 来自 window.ns_window() Ok 分支（合法 NSWindow 指针）；
+                // voidnix_screenshot_clear_background/remove_scroll_mask/set_sharing
+                // 为 FFI 薄壳（纯副作用，无返回值/资源需调用方释放）；主线程执行
                 unsafe {
                     // 先清空背景层内容再恢复可见，避免 remove_scroll_mask 把初始截图
                     // CALayer 重新显示出来，与刚看到的滚动画面跳变造成闪烁。
@@ -909,7 +942,8 @@ pub async fn exit_scroll_capture(app: tauri::AppHandle) -> Result<(), String> {
             let _ = tx.send(r);
         })
         .map_err(|e| e.to_string())?;
-        rx.recv().map_err(|e| e.to_string())??;
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .map_err(|e| e.to_string())??;
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
@@ -926,11 +960,11 @@ pub async fn set_scroll_toolbar_rect(x: f64, y: f64, w: f64, h: f64) -> Result<(
     } else {
         Some((x, y, w, h))
     };
-    let mut guard = SESSION.lock().unwrap();
+    let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(s) = guard.as_mut() {
         s.toolbar_rect = rect;
     } else {
-        *PENDING_TOOLBAR.lock().unwrap() = rect;
+        *PENDING_TOOLBAR.lock().unwrap_or_else(|e| e.into_inner()) = rect;
     }
     Ok(())
 }
@@ -943,7 +977,7 @@ pub async fn finish_scroll_capture(app: tauri::AppHandle) -> Result<String, Stri
         std::thread::sleep(std::time::Duration::from_millis(50));
 
         let session = {
-            let mut guard = SESSION.lock().unwrap();
+            let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
             guard.take()
         };
         let session = session.ok_or("无滚动截屏会话".to_string())?;
@@ -966,6 +1000,9 @@ pub async fn finish_scroll_capture(app: tauri::AppHandle) -> Result<String, Stri
                     .map_err(|e| e.to_string())?
                     .cast::<NSWindow>();
                 let ptr = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
+                // SAFETY: ptr 来自 window.ns_window() Ok 分支（合法 NSWindow 指针）；
+                // voidnix_screenshot_clear_background/remove_scroll_mask/set_sharing
+                // 为 FFI 薄壳（纯副作用，无返回值/资源需调用方释放）；主线程执行
                 unsafe {
                     // 先清空背景层内容再恢复可见，避免 remove_scroll_mask 把初始截图
                     // CALayer 重新显示出来，与刚看到的滚动画面跳变造成闪烁。
@@ -979,7 +1016,8 @@ pub async fn finish_scroll_capture(app: tauri::AppHandle) -> Result<String, Stri
             let _ = tx.send(r);
         })
         .map_err(|e| e.to_string())?;
-        rx.recv().map_err(|e| e.to_string())??;
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .map_err(|e| e.to_string())??;
 
         let png = encode_png(&session.buf, session.pw, session.total_rows)?;
         use base64::Engine;

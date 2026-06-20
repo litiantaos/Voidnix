@@ -109,7 +109,7 @@ fn main() {
                 fail_penalty,
                 limit,
             ) {
-                eprintln!("rebuild: {}", e);
+                eprintln!("rebuild: {e}");
                 std::process::exit(1);
             }
         }
@@ -155,7 +155,7 @@ fn run_rebuild(
     // tmp 名带 pid：多 shell 并发 rebuild 时不会共享同一 tmp 产生写覆盖竞态。
     let tmp = out.with_extension(format!("tmp.{}", std::process::id()));
     std::fs::write(&tmp, content).map_err(|e| format!("write {}: {}", tmp.display(), e))?;
-    std::fs::rename(&tmp, out).map_err(|e| format!("rename: {}", e))?;
+    std::fs::rename(&tmp, out).map_err(|e| format!("rename: {e}"))?;
 
     println!(
         "rebuild: {} commands (history: {})",

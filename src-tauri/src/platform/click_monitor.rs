@@ -35,7 +35,7 @@ mod inner {
         use objc2_app_kit::NSEvent;
 
         {
-            let guard = MONITOR.lock().unwrap();
+            let guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
             if guard.is_some() {
                 return;
             }
@@ -104,7 +104,7 @@ mod inner {
             let monitor: *mut AnyObject = objc2::msg_send![NSEvent::class(), addGlobalMonitorForEventsMatchingMask: mask, handler: &*block];
             if !monitor.is_null() {
                 let _: () = objc2::msg_send![monitor, retain];
-                let mut guard = MONITOR.lock().unwrap();
+                let mut guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
                 // RcBlock 与 monitor 配对存储：remove 时 monitor release + RcBlock drop 同步释放
                 *guard = Some(MonitorEntry {
                     monitor,
@@ -118,7 +118,7 @@ mod inner {
         use objc2::ClassType;
         use objc2_app_kit::NSEvent;
 
-        let mut guard = MONITOR.lock().unwrap();
+        let mut guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = guard.take() {
             // SAFETY: monitor 在 add 中 retain 过一次，此处 removeMonitor + release 配对。
             // entry drop 时 RcBlock drop 释放 Rust 侧引用。

@@ -25,7 +25,7 @@
             <div
               class="snap-zone"
               rounded
-              bg="black/7"
+              bg="black/8"
               inset="0"
               absolute
               :class="{ 'snap-hover': hoveredLayout === group.zones[0].layout }"
@@ -35,7 +35,7 @@
             <div
               class="snap-zone"
               rounded
-              bg="black/7"
+              bg="black/8"
               h="40%"
               w="40%"
               left="30%"
@@ -56,7 +56,7 @@
                 class="snap-zone custom-zone flex-center"
                 text="black/25"
                 rounded
-                bg="black/7"
+                bg="black/8"
                 :class="{ 'snap-hover': hoveredLayout === zone.layout }"
                 :data-layout="zone.layout"
                 @click="onZone(zone.layout)"
@@ -78,7 +78,7 @@
                 v-else
                 class="snap-zone"
                 rounded
-                bg="black/7"
+                bg="black/8"
                 :class="{ 'snap-hover': hoveredLayout === zone.layout }"
                 :data-layout="zone.layout"
                 @click="onZone(zone.layout)"
@@ -202,7 +202,7 @@ onUnmounted(() => {
 })
 </script>
 
-<style>
+<style scoped>
 .panel {
   opacity: 0;
   transform: scale(0.8);

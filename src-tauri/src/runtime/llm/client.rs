@@ -83,7 +83,7 @@ pub async fn openai_request_once(
         .send()
         .await
         .map_err(|e| {
-            log::error!("Request network error: {}", e);
+            log::error!("Request network error: {e}");
             "Failed to connect to API. Check your endpoint and network.".to_string()
         })?;
 
@@ -96,7 +96,7 @@ pub async fn openai_request_once(
     let json: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| format!("JSON parse error: {}", e))?;
+        .map_err(|e| format!("JSON parse error: {e}"))?;
 
     let content = json
         .get("choices")
@@ -172,7 +172,7 @@ pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOut
         .send()
         .await
         .map_err(|e| {
-            log::error!("Stream request network error: {}", e);
+            log::error!("Stream request network error: {e}");
             "Failed to connect to API. Check your endpoint and network.".to_string()
         })?;
 
@@ -203,7 +203,7 @@ pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOut
             }
         }
         let chunk = item.map_err(|e| {
-            log::error!("Stream read error: {}", e);
+            log::error!("Stream read error: {e}");
             "Stream connection interrupted.".to_string()
         })?;
         let text = String::from_utf8_lossy(&chunk);

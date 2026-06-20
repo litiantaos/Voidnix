@@ -208,8 +208,8 @@ async function handleClose() {
 .bar-enter-active,
 .bar-leave-active {
   transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
+    opacity 0.15s cubic-bezier(0, 0, 0.2, 1),
+    transform 0.15s cubic-bezier(0, 0, 0.2, 1);
 }
 .bar-enter-from,
 .bar-leave-to {
