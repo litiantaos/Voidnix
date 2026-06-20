@@ -5,9 +5,9 @@
   <img
     v-else-if="isImageIcon && !isModuleItem"
     :src="iconSrc"
-    h="115pct"
-    max-w="115pct"
-    w="115pct"
+    h="[115%]"
+    max-w="[115%]"
+    w="[115%]"
     object="contain"
     :class="{ rounded: item.data?.iconStyle === 'rounded' }"
     :alt="item.title"

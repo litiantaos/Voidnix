@@ -25,7 +25,7 @@
       />
 
       <!-- 操作栏 -->
-      <div class="action-footer" shrink="0">
+      <div class="pt-3 border-t border-tx-faint/20 flex gap-2" shrink="0">
         <BaseButton icon="i-ri-file-copy-line" @click="handleCopy">复制</BaseButton>
         <BaseButton icon="i-ri-translate-2" @click="handleTranslate">翻译</BaseButton>
       </div>
