@@ -1,9 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{mpsc, LazyLock, Mutex, MutexGuard};
+use std::sync::{mpsc, LazyLock, Mutex};
 use tauri::Emitter;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+use crate::runtime::lock_or_recover;
 
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(false);
 static LAST_SHOW_MS: AtomicU64 = AtomicU64::new(0);
@@ -21,12 +23,6 @@ fn now_ms() -> u64 {
 // 快捷键回调都应抑制默认行为，把按下的键位转发回前端由当前录制中的输入框
 // 吸收。RECORDING_IDS 仅作前端调试/将来扩展用途，判断是否处于录制态以
 // IS_RECORDING_ANY 为准（原子操作，回调热路径无需加锁）。
-
-// M-rs5：统一 Mutex 毒锁恢复辅助——debug 构建下持锁 panic 会毒锁，
-// 后续访问连锁 panic。Release（panic=abort）下不会毒，但保持一致风格 + 防 debug 卡死。
-fn lock_or_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 static RECORDING_IDS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));

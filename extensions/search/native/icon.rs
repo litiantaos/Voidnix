@@ -58,6 +58,9 @@ fn extract_icon_via_workspace(app_path: &str, after_ls_register: bool) -> Option
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
 
+    // SAFETY: NSString/NSWorkspace/iconForFile: 均为标准选择子；
+    // path_str 由 NSString::from_str 构造（合法 Retained<NSString>）；
+    // 返回的 icon 为 Retained（ARC 托管），nsimage_to_png_base64 只读消费
     unsafe {
         let path_str = NSString::from_str(app_path);
         let workspace = NSWorkspace::sharedWorkspace();
@@ -123,6 +126,8 @@ fn find_icns_in_resources(
 fn convert_icns_to_png(icon_path: &std::path::Path, app_path: &str) -> Option<String> {
     let icon_path_str = icon_path.to_str()?;
 
+    // SAFETY: path_ns 由 NSString::from_str 构造；initWithContentsOfFile: 为 NSImage 标准
+    // 选择子，返回 Option（Some 时合法 Retained）；nsimage_to_png_base64 只读消费 image
     unsafe {
         let path_ns = NSString::from_str(icon_path_str);
         if let Some(image) = NSImage::initWithContentsOfFile(NSImage::alloc(), &path_ns) {
@@ -152,6 +157,8 @@ fn convert_icns_to_png(icon_path: &std::path::Path, app_path: &str) -> Option<St
         .ok()?;
 
     if output.status.success() {
+        // SAFETY: tmp_ns 由 NSString::from_str 构造；initWithContentsOfFile: 返回 Option；
+        // nsimage_to_png_base64 只读消费 image（Retained 托管）
         unsafe {
             let tmp_ns = NSString::from_str(tmp_path.to_str()?);
             if let Some(image) = NSImage::initWithContentsOfFile(NSImage::alloc(), &tmp_ns) {

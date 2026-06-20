@@ -257,6 +257,7 @@ fn simulate_cmd_v() {
         fn AXIsProcessTrusted() -> bool;
     }
 
+    // SAFETY: AXIsProcessTrusted 是 Accessibility C API，无参数，仅查询当前进程可信状态
     unsafe {
         if !AXIsProcessTrusted() {
             log::warn!("Accessibility permissions not granted! CGEventPost will silently fail.");

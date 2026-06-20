@@ -20,6 +20,10 @@ pub(super) fn fade_window_layer_opacity(
     use objc2_foundation::NSString;
     use std::sync::{Arc, Mutex};
 
+    // SAFETY: nsw = ns_window_addr 转 AnyObject 裸指针（调用方传入合法 NSWindow 地址）；
+    // 所有 msg_send 为 NSView/CALayer/CABasicAnimation/NSNumber/CATransaction 标准选择子，
+    // 参数类型匹配；contentView/layer/anim 返回值均 null 检查；completion 回调经
+    // RcBlock 持有，CATransaction setCompletionBlock: retain 后随 commit 触发
     unsafe {
         let nsw = ns_window_addr as *mut AnyObject;
         let content_view: *mut AnyObject = objc2::msg_send![nsw, contentView];
@@ -60,7 +64,7 @@ pub(super) fn fade_window_layer_opacity(
                 let slot: Arc<Mutex<Option<CompletionCallback>>> = Arc::new(Mutex::new(Some(cb)));
                 let slot_clone = Arc::clone(&slot);
                 let done = block2::RcBlock::new(move || {
-                    if let Some(f) = slot_clone.lock().unwrap().take() {
+                    if let Some(f) = slot_clone.lock().unwrap_or_else(|e| e.into_inner()).take() {
                         f();
                     }
                 });
@@ -79,6 +83,8 @@ pub(super) fn fade_window_layer_opacity(
 #[cfg(target_os = "macos")]
 pub(super) fn set_window_layer_opacity(ns_window_addr: usize, opacity: f32) {
     use objc2::runtime::AnyObject;
+    // SAFETY: nsw = ns_window_addr 转 AnyObject 裸指针（调用方传入合法 NSWindow 地址）；
+    // contentView/layer null 检查；CATransaction 禁用隐式动画后 setOpacity: 立即生效
     unsafe {
         let nsw = ns_window_addr as *mut AnyObject;
         let content_view: *mut AnyObject = objc2::msg_send![nsw, contentView];
@@ -116,7 +122,7 @@ mod mouse_tracker {
         use objc2_app_kit::{NSEvent, NSScreen};
         use objc2_foundation::MainThreadMarker;
         {
-            let g = GLOBAL_MONITOR.lock().unwrap();
+            let g = GLOBAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner());
             if !g.0.is_null() {
                 return;
             }
@@ -136,11 +142,14 @@ mod mouse_tracker {
             let blk = block2::RcBlock::new(move |_event: *mut AnyObject| {
                 emit_mouse(&app, screen_h);
             });
+            // SAFETY: mask 为标准 NSEvent 位掩码；block 经 RcBlock 持有，&*block 取引用；
+            // addGlobalMonitorForEventsMatchingMask: 返回 monitor 对象，null 检查后
+            // retain + forget block（生命周期随 monitor，stop 时 removeMonitor+release）
             unsafe {
                 let m: *mut AnyObject = objc2::msg_send![NSEvent::class(), addGlobalMonitorForEventsMatchingMask: mask, handler: &*blk];
                 if !m.is_null() {
                     let _: () = objc2::msg_send![m, retain];
-                    *GLOBAL_MONITOR.lock().unwrap() = SendObj(m);
+                    *GLOBAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner()) = SendObj(m);
                     std::mem::forget(blk);
                 }
             }
@@ -151,11 +160,12 @@ mod mouse_tracker {
                 emit_mouse(&app, screen_h);
                 event
             });
+            // SAFETY: 同上 global monitor 契约；local monitor 额外返回 event（透传）
             unsafe {
                 let m: *mut AnyObject = objc2::msg_send![NSEvent::class(), addLocalMonitorForEventsMatchingMask: mask, handler: &*blk];
                 if !m.is_null() {
                     let _: () = objc2::msg_send![m, retain];
-                    *LOCAL_MONITOR.lock().unwrap() = SendObj(m);
+                    *LOCAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner()) = SendObj(m);
                     std::mem::forget(blk);
                 }
             }
@@ -166,8 +176,10 @@ mod mouse_tracker {
         use objc2::ClassType;
         use objc2_app_kit::NSEvent;
         for slot in [&GLOBAL_MONITOR, &LOCAL_MONITOR] {
-            let mut g = slot.lock().unwrap();
+            let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
             if !g.0.is_null() {
+                // SAFETY: g.0 非 null（已检查）；removeMonitor + release 与 start 的
+                // retain + forget 配对（monitor 注销 + 引用计数归零）
                 unsafe {
                     let _: () = objc2::msg_send![NSEvent::class(), removeMonitor: g.0];
                     let _: () = objc2::msg_send![g.0, release];
@@ -190,6 +202,8 @@ mod mouse_tracker {
             cx, cy
         ));
         if let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) {
+            // SAFETY: ns 经 as_ref Some 分支非空校验；isOnActiveSpace/alphaValue/isKeyWindow/
+            // makeKeyAndOrderFront: 均为 NSWindow 标准选择子，参数类型匹配
             unsafe {
                 if let Some(ns) = raw.as_ref() {
                     let on_space: bool = objc2::msg_send![ns, isOnActiveSpace];
@@ -226,8 +240,8 @@ fn enumerate_visible_windows() -> Vec<WindowRect> {
     use std::ffi::c_void;
 
     type CGWindowListOption = u32;
-    const KCG_WINDOW_LIST_OPTION_ON_SCREEN_ONLY: CGWindowListOption = 1 << 0;
-    const KCG_WINDOW_LIST_EXCLUDE_DESKTOP_ELEMENTS: CGWindowListOption = 1 << 4;
+    const CG_WINDOW_LIST_OPTION_ON_SCREEN_ONLY: CGWindowListOption = 1 << 0;
+    const CG_WINDOW_LIST_EXCLUDE_DESKTOP_ELEMENTS: CGWindowListOption = 1 << 4;
     type CGWindowID = u32;
     extern "C" {
         fn CGWindowListCopyWindowInfo(
@@ -236,9 +250,12 @@ fn enumerate_visible_windows() -> Vec<WindowRect> {
         ) -> CFArrayRef;
     }
 
+    // SAFETY: CGWindowListCopyWindowInfo 为 CoreGraphics C API，option 为合法位掩码，
+    // relativeToWindow=0（无相对窗口）；返回 Create 规则 CFArray，null 检查后由
+    // wrap_under_create_rule 接管所有权
     let raw = unsafe {
         CGWindowListCopyWindowInfo(
-            KCG_WINDOW_LIST_OPTION_ON_SCREEN_ONLY | KCG_WINDOW_LIST_EXCLUDE_DESKTOP_ELEMENTS,
+            CG_WINDOW_LIST_OPTION_ON_SCREEN_ONLY | CG_WINDOW_LIST_EXCLUDE_DESKTOP_ELEMENTS,
             0,
         )
     };
@@ -246,6 +263,8 @@ fn enumerate_visible_windows() -> Vec<WindowRect> {
         return Vec::new();
     }
     let array: CFArray<CFDictionary<*const c_void, *const c_void>> =
+        // SAFETY: raw 由 CGWindowListCopyWindowInfo 返回（Create 规则，已 null 检查），
+        // wrap_under_create_rule 接管所有权
         unsafe { CFArray::wrap_under_create_rule(raw) };
 
     let self_pid = std::process::id() as i64;
@@ -264,6 +283,7 @@ fn enumerate_visible_windows() -> Vec<WindowRect> {
             if v.is_null() {
                 return None;
             }
+            // SAFETY: *v 已非空校验；wrap_under_get_rule 遵循 CF Get 规则（不获取所有权）
             Some(unsafe { CFType::wrap_under_get_rule(*v as _) })
         };
 
@@ -353,6 +373,9 @@ pub fn capture_screen() -> Result<ScreenshotData, String> {
 
     #[cfg(target_os = "macos")]
     {
+        // SAFETY: cg_image 是 CGDisplay::image() 返回的 CGImageRef（Retained）；
+        // transmute_copy 把 CGImageRef 按位拷贝为裸指针（CGImageRef 本身是指针，
+        // 拷贝指针值不涉及所有权），store_cg_image 内部 Retain 接管
         let raw: *mut std::ffi::c_void = unsafe { std::mem::transmute_copy(&cg_image) };
         store_cg_image(raw);
     }
@@ -381,7 +404,8 @@ pub async fn enter_screenshot_mode(
         let _ = tx.send(enter_impl(&app_c, &data));
     })
     .map_err(|e| e.to_string())?;
-    rx.recv().map_err(|e| e.to_string())?
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .map_err(|e| e.to_string())?
 }
 
 #[cfg(target_os = "macos")]
@@ -415,6 +439,9 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
         .ns_window()
         .map_err(|e| e.to_string())?
         .cast::<NSWindow>();
+    // SAFETY: ns_window 经 as_ref().ok_or 非空校验；MainThreadMarker 校验主线程；
+    // setFrame_display:setAnimationBehavior:setIgnoresMouseEvents:makeKeyAndOrderFront:/
+    // windowNumber 均为 NSWindow/NSScreen 标准选择子；cg_image_ptr null 检查后传 FFI
     unsafe {
         let ns_window: &NSWindow = raw.as_ref().ok_or("NSWindow 为空")?;
         let mtm = MainThreadMarker::new().ok_or("不在主线程")?;
@@ -487,7 +514,8 @@ pub async fn screenshot_overlay_ready(app: tauri::AppHandle) -> Result<(), Strin
         let _ = tx.send(overlay_ready_impl(&app_c));
     })
     .map_err(|e| e.to_string())?;
-    rx.recv().map_err(|e| e.to_string())?
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .map_err(|e| e.to_string())?
 }
 
 #[cfg(target_os = "macos")]
@@ -522,7 +550,8 @@ pub async fn exit_screenshot_mode(
         let _ = tx.send(exit_impl(&app_c, no_restore_focus.unwrap_or(false)));
     })
     .map_err(|e| e.to_string())?;
-    rx.recv().map_err(|e| e.to_string())?
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .map_err(|e| e.to_string())?
 }
 
 #[cfg(target_os = "macos")]
@@ -544,6 +573,8 @@ fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), Strin
         .cast::<NSWindow>();
     let session_gen = SCREENSHOT_GEN.load(std::sync::atomic::Ordering::SeqCst);
     let ns_window_addr = raw.cast::<NSWindow>() as usize;
+    // SAFETY: ns_window 经 as_ref().ok_or 非空校验；setAnimationBehavior/
+    // setIgnoresMouseEvents:/resignKeyWindow 均为 NSWindow 标准选择子
     unsafe {
         let ns_window: &NSWindow = raw.as_ref().ok_or("NSWindow 为空")?;
         ns_window.setAnimationBehavior(NSWindowAnimationBehavior::None);
@@ -557,6 +588,9 @@ fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), Strin
         0.15,
         Some(Box::new(move || {
             if SCREENSHOT_GEN.load(std::sync::atomic::Ordering::SeqCst) == session_gen {
+                // SAFETY: ns_window_addr 由调用方传入合法 NSWindow 地址；session_gen 校验
+                // 确认窗口未被重新进入（避免操作过期窗口）；clear_background 为 FFI 薄壳，
+                // setAlphaValue: 为 NSWindow 标准选择子
                 unsafe {
                     let ptr = ns_window_addr as *mut std::ffi::c_void;
                     voidnix_screenshot_clear_background(ptr);
@@ -602,16 +636,20 @@ pub fn reactivate_screenshot_window(app: &tauri::AppHandle) {
     let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) else {
         return;
     };
+    // SAFETY: raw 来自 ns_window() Ok 分支；as_ref 返回 Option 经 let Some 解构非空校验
     let Some(ns_window) = (unsafe { raw.as_ref() }) else {
         return;
     };
     if ns_window.alphaValue() < 0.5 {
         return;
     }
+    // SAFETY: isOnActiveSpace 为 NSWindow 标准选择子（返回 bool）
     let is_on_active_space: bool = unsafe { objc2::msg_send![ns_window, isOnActiveSpace] };
     if !is_on_active_space {
         return;
     }
+    // SAFETY: ns_window 已上方非空校验；makeKeyAndOrderFront: 为 NSWindow 标准选择子，
+    // 参数为 null（nil sender）
     unsafe {
         let _: () = objc2::msg_send![
             ns_window,

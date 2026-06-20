@@ -40,7 +40,7 @@ import BaseButton from './BaseButton.vue'
 import { useUpdateStore } from '@/stores/update'
 import { isTauri } from '@/utils/tauri'
 
-const emit = defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{ close: [] }>()
 
 const updateStore = useUpdateStore()
 const installing = ref(false)

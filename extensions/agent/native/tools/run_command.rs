@@ -270,7 +270,7 @@ impl AgentTool for RunCommandTool {
         };
         let real_cwd = match cwd.canonicalize() {
             Ok(p) => p,
-            Err(e) => return ToolResult::err(format!("canonicalize cwd failed: {}", e)),
+            Err(e) => return ToolResult::err(format!("canonicalize cwd failed: {e}")),
         };
 
         // ── 关 6-8：构造 Command（env_clear + kill_on_drop + rlimit）──
@@ -303,7 +303,7 @@ impl AgentTool for RunCommandTool {
                 if e.kind() == std::io::ErrorKind::NotFound {
                     return ToolResult::err(format!("command not found: {}", program));
                 }
-                return ToolResult::err(format!("spawn failed: {}", e));
+                return ToolResult::err(format!("spawn failed: {e}"));
             }
         };
 
@@ -326,7 +326,7 @@ impl AgentTool for RunCommandTool {
             Ok(Err(e)) => {
                 let _ = child.kill().await;
                 let _ = child.wait().await;
-                ToolResult::err(format!("read failed: {}", e))
+                ToolResult::err(format!("read failed: {e}"))
             }
             Ok(Ok(ReadOutcome {
                 stdout,
@@ -394,9 +394,9 @@ async fn read_with_cap(
 
     let (stdout_result, stderr_result) = tokio::join!(stdout_task, stderr_task);
     let (stdout_bytes, stdout_truncated) =
-        stdout_result.map_err(|e| std::io::Error::other(format!("panic: {}", e)))??;
+        stdout_result.map_err(|e| std::io::Error::other(format!("panic: {e}")))??;
     let (stderr_bytes, stderr_truncated) =
-        stderr_result.map_err(|e| std::io::Error::other(format!("panic: {}", e)))??;
+        stderr_result.map_err(|e| std::io::Error::other(format!("panic: {e}")))??;
 
     // 等进程退出拿 exit code
     let exit_code = match child.wait().await {

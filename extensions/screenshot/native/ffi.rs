@@ -102,12 +102,14 @@ static CURRENT_CG_IMAGE: std::sync::Mutex<SendCgImage> =
 
 #[cfg(target_os = "macos")]
 pub(super) fn store_cg_image(raw: *mut std::ffi::c_void) {
-    let mut guard = CURRENT_CG_IMAGE.lock().unwrap();
+    let mut guard = CURRENT_CG_IMAGE.lock().unwrap_or_else(|e| e.into_inner());
     let old = guard.0;
     if !old.is_null() {
+        // SAFETY: old 已非空校验；CGImageRelease 遵循 CG ownership（替换前释放旧引用）
         unsafe { CGImageRelease(old) };
     }
     if !raw.is_null() {
+        // SAFETY: raw 已非空校验；CGImageRetain +1 引用计数，由 CURRENT_CG_IMAGE 持有
         unsafe { CGImageRetain(raw) };
     }
     guard.0 = raw;
@@ -115,7 +117,7 @@ pub(super) fn store_cg_image(raw: *mut std::ffi::c_void) {
 
 #[cfg(target_os = "macos")]
 pub(super) fn get_cg_image() -> *mut std::ffi::c_void {
-    CURRENT_CG_IMAGE.lock().unwrap().0
+    CURRENT_CG_IMAGE.lock().unwrap_or_else(|e| e.into_inner()).0
 }
 
 pub(super) fn decode_image_data(s: &str) -> Result<Vec<u8>, String> {
@@ -146,10 +148,10 @@ pub(super) fn prepare_picker_jpeg(raw: *mut std::ffi::c_void) {
                 let _ = std::fs::create_dir_all(parent);
             }
             if let Err(e) = std::fs::write(path, &data) {
-                eprintln!("[shot] prepare_picker_jpeg write error: {}", e);
+                eprintln!("[shot] prepare_picker_jpeg write error: {e}");
             }
         }
-        Err(e) => eprintln!("[shot] prepare_picker_jpeg encode error: {}", e),
+        Err(e) => eprintln!("[shot] prepare_picker_jpeg encode error: {e}"),
     }
 }
 
@@ -159,6 +161,9 @@ pub(super) fn cg_image_ptr_to_jpeg(raw: *mut std::ffi::c_void) -> Result<Vec<u8>
     if raw.is_null() {
         return Err("CGImage 为空".to_string());
     }
+    // SAFETY: raw 已 null 检查；alloc/initWithCGImage:/representationUsingType:properties:/
+    // release 均为 NSBitmapImageRep/NSNumber/NSDictionary 标准选择子，参数类型匹配；
+    // ns_data 释放前先 length/bytes 拷贝出数据（NSData 字节缓冲区在 release 前有效）
     unsafe {
         let cls = objc2::class!(NSBitmapImageRep);
         let rep: *mut AnyObject = objc2::msg_send![cls, alloc];
@@ -194,6 +199,8 @@ pub(super) fn png_bytes_to_cgimage(png: &[u8]) -> *mut std::ffi::c_void {
     if png.is_empty() {
         return std::ptr::null_mut();
     }
+    // SAFETY: png 非空（已检查）；dataWithBytes:length:/imageRepWithData:/CGImage 均
+    // 为 NSData/NSBitmapImageRep 标准选择子；返回的 cg 经 CGImageRetain +1（调用方释放）
     unsafe {
         let cls_data = objc2::class!(NSData);
         let ns_data: *mut AnyObject = objc2::msg_send![
@@ -220,6 +227,8 @@ pub(super) fn png_bytes_to_cgimage(png: &[u8]) -> *mut std::ffi::c_void {
 #[cfg(target_os = "macos")]
 pub fn prewarm_jpeg_encoder() {
     use objc2::runtime::AnyObject;
+    // SAFETY: 仅为预热编码器：alloc + initWithBitmapDataPlanes:(1×1 空位图) +
+    // representationUsingType: 一次后 release；参数类型匹配，rep null 检查后操作
     unsafe {
         let cls = objc2::class!(NSBitmapImageRep);
         let rep: *mut AnyObject = objc2::msg_send![cls, alloc];

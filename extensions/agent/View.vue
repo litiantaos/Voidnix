@@ -52,7 +52,7 @@
             <div
               v-else-if="part.type === 'toolCall'"
               rounded="md"
-              bg="black/[0.03]"
+              bg="black/4"
               p="2.5"
               text="xs"
               flex="~ col"
@@ -153,7 +153,7 @@
         <p font="bold">{{ agent.pendingApproval.value.toolName }}</p>
         <pre
           p="2"
-          bg="black/[0.03]"
+          bg="black/4"
           rounded="md"
           text="xs"
           font="mono"

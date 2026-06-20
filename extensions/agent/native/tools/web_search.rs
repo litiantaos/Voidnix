@@ -87,7 +87,7 @@ impl AgentTool for WebSearchTool {
         let client = crate::http::client();
         match search_tavily(client, &self.api_key, query).await {
             Ok(outcome) => ToolResult::ok(serde_json::to_string(&outcome).unwrap_or_default()),
-            Err(e) => ToolResult::err(format!("Tavily search failed: {}", e)),
+            Err(e) => ToolResult::err(format!("Tavily search failed: {e}")),
         }
     }
 }
@@ -138,11 +138,11 @@ async fn search_tavily(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("network: {}", e))?;
+        .map_err(|e| format!("network: {e}"))?;
 
     match resp.status().as_u16() {
         200 => {
-            let parsed: TavilyResp = resp.json().await.map_err(|e| format!("decode: {}", e))?;
+            let parsed: TavilyResp = resp.json().await.map_err(|e| format!("decode: {e}"))?;
             let hits = parsed
                 .results
                 .into_iter()

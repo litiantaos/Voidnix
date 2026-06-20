@@ -46,13 +46,13 @@ pub async fn translate_youdao(
         .form(&params)
         .send()
         .await
-        .map_err(|e| format!("Network error: {}", e))?;
+        .map_err(|e| format!("Network error: {e}"))?;
 
     if response.status().is_success() {
         let json: serde_json::Value = response
             .json()
             .await
-            .map_err(|e| format!("JSON parsing error: {}", e))?;
+            .map_err(|e| format!("JSON parsing error: {e}"))?;
 
         let translation = json
             .get("translation")

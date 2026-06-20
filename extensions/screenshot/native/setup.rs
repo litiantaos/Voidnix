@@ -22,6 +22,10 @@ pub fn configure_overlay_window(app: &AppHandle) {
         return;
     };
     let raw = raw.cast::<NSWindow>();
+    // SAFETY: ns_window 经 as_ref().unwrap()（raw 来自 ns_window() Ok 分支，非空）；
+    // 所有调用均为 NSWindow 标准方法（setAnimationBehavior/setLevel:setCollectionBehavior/
+    // setFrame_display:setAlphaValue:setIgnoresMouseEvents:setHasShadow:/orderFrontRegardless）；
+    // MainThreadMarker::new().unwrap() 校验主线程
     unsafe {
         let ns_window = raw.as_ref().unwrap();
         ns_window.setAnimationBehavior(NSWindowAnimationBehavior::None);
@@ -55,8 +59,13 @@ pub fn install_reactivate_observer(app: &AppHandle) {
     let center = NSNotificationCenter::defaultCenter();
     let name: Retained<NSString> = NSString::from_str("NSApplicationDidBecomeActiveNotification");
     let name_ref: &NSNotificationName =
+        // SAFETY: NSString 与 NSNotificationName 内存布局一致（NSNotificationName 是
+        // NSString 的 type alias），transmute 仅重解释引用类型，不涉及所有权转移
         unsafe { std::mem::transmute::<&NSString, &NSNotificationName>(&name) };
 
+    // SAFETY: addObserverForName:object:queue:usingBlock: 是 NSNotificationCenter 标准选择子；
+    // name_ref 来自上方 transmute（合法 &NSNotificationName），object/queue 传 None；
+    // block 经 RcBlock 持有（observer 由 defaultCenter retain，进程生命周期常驻）
     unsafe {
         center.addObserverForName_object_queue_usingBlock(
             Some(name_ref),
@@ -101,7 +110,7 @@ pub fn register_shortcut_hook() {
                     }
                     Err(e) => {
                         super::session::IS_IN_SCREENSHOT_SESSION.store(false, Ordering::SeqCst);
-                        eprintln!("截图失败: {}", e);
+                        eprintln!("截图失败: {e}");
                     }
                 }
             });

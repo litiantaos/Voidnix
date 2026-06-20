@@ -22,68 +22,82 @@
 
         <!-- Standard list -->
         <template v-if="!resolvedView">
-          <BaseEmptyState v-if="props.loading && props.results.length === 0" :loading="true" />
-
-          <BaseEmptyState
-            v-else-if="props.results.length === 0"
-            :title="
-              module
-                ? module.placeholder || `在 ${module.meta.name} 中无结果`
-                : '搜索应用或文件，输入 / 搜索扩展'
-            "
-            :icon="module ? module.meta.icon : 'i-ri-search-line'"
-          />
-
-          <BaseList
-            v-else
-            :items="props.results"
-            :selected-index="props.selectedIndex"
-            :multi-select="isMultiSelect"
-            :selected-ids="selectedIds"
-            :keyboard-active="!!appStore.activeModuleId"
-            :composing="appStore.isComposing"
-            @update:selected-ids="selectedIds = $event"
-            :group-field="!module ? props.groupField : undefined"
-            :group-title="!module ? props.groupTitle : undefined"
-            @update:selected-index="(i: number) => emit('update:selectedIndex', i)"
-            @execute="handleExecute"
-            @reveal="handleReveal"
+          <Transition
+            mode="out-in"
+            enter-active-class="transition duration-fast ease-out"
+            enter-from-class="opacity-0"
+            leave-active-class="transition duration-fast ease-in"
+            leave-to-class="opacity-0"
           >
-            <template #item="{ item, selected, multiSelected, setRef }">
-              <BaseListItem
-                :ref="setRef"
-                :selected="selected || multiSelected"
-                :icon-wrapper-class="
-                  item.data?.icon && !item.icon?.startsWith('i-') && item.data?.kind !== 'module'
-                    ? 'bg-transparent'
-                    : undefined
-                "
-              >
-                <template #icon>
-                  <ResultIcon :item="item" :module-icon="module?.meta.icon" />
-                </template>
-                <template #title>
-                  <div :class="item.data?.isHighlight ? 'text-accent font-medium' : ''">
-                    {{ item.title }}
-                  </div>
-                </template>
-                <template #subtitle>
-                  <span v-if="item.description" truncate>{{ item.description }}</span>
-                  <template v-else-if="item.data?.path && isFileOrFolder(item)">
-                    <span
-                      class="flex-[0_1_auto] min-w-0 truncate"
-                      :title="getParentPath(item.data.path)"
-                    >
-                      {{ formatPathParts(getParentPath(item.data.path)).head }}
-                    </span>
-                    <span flex="none" whitespace="nowrap">
-                      {{ formatPathParts(getParentPath(item.data.path)).tail }}
-                    </span>
+            <BaseEmptyState
+              v-if="props.loading && props.results.length === 0"
+              :key="'loading'"
+              :loading="true"
+            />
+
+            <BaseEmptyState
+              v-else-if="props.results.length === 0"
+              :key="'empty'"
+              :title="
+                module
+                  ? module.placeholder || `在 ${module.meta.name} 中无结果`
+                  : '搜索应用或文件，输入 / 搜索扩展'
+              "
+              :icon="module ? module.meta.icon : 'i-ri-search-line'"
+            />
+
+            <BaseList
+              v-else
+              :key="'list'"
+              :items="props.results"
+              :selected-index="props.selectedIndex"
+              :multi-select="isMultiSelect"
+              :selected-ids="selectedIds"
+              :keyboard-active="!!appStore.activeModuleId"
+              :composing="appStore.isComposing"
+              @update:selected-ids="selectedIds = $event"
+              :group-field="!module ? props.groupField : undefined"
+              :group-title="!module ? props.groupTitle : undefined"
+              @update:selected-index="(i: number) => emit('update:selectedIndex', i)"
+              @execute="handleExecute"
+              @reveal="handleReveal"
+            >
+              <template #item="{ item, selected, multiSelected, setRef }">
+                <BaseListItem
+                  :ref="setRef"
+                  :selected="selected || multiSelected"
+                  :icon-wrapper-class="
+                    item.data?.icon && !item.icon?.startsWith('i-') && item.data?.kind !== 'module'
+                      ? 'bg-transparent'
+                      : undefined
+                  "
+                >
+                  <template #icon>
+                    <ResultIcon :item="item" :module-icon="module?.meta.icon" />
                   </template>
-                </template>
-              </BaseListItem>
-            </template>
-          </BaseList>
+                  <template #title>
+                    <div :class="item.data?.isHighlight ? 'text-accent font-medium' : ''">
+                      {{ item.title }}
+                    </div>
+                  </template>
+                  <template #subtitle>
+                    <span v-if="item.description" truncate>{{ item.description }}</span>
+                    <template v-else-if="item.data?.path && isFileOrFolder(item)">
+                      <span
+                        class="flex-[0_1_auto] min-w-0 truncate"
+                        :title="getParentPath(item.data.path)"
+                      >
+                        {{ formatPathParts(getParentPath(item.data.path)).head }}
+                      </span>
+                      <span flex="none" whitespace="nowrap">
+                        {{ formatPathParts(getParentPath(item.data.path)).tail }}
+                      </span>
+                    </template>
+                  </template>
+                </BaseListItem>
+              </template>
+            </BaseList>
+          </Transition>
         </template>
       </div>
     </div>

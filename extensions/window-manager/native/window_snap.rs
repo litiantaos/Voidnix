@@ -141,6 +141,8 @@ mod inner {
     // ── 鼠标位置 ──────────────────────────────────────────────────────────
 
     fn get_mouse_location() -> (f64, f64) {
+        // SAFETY: mouseLocation 是 NSEvent 类方法（无参数），返回当前全局鼠标坐标；
+        // 在主线程调用（本函数由 main-thread monitor 回调链触发）
         unsafe {
             let loc: NSPoint = objc2::msg_send![NSEvent::class(), mouseLocation];
             (loc.x, loc.y)
@@ -162,7 +164,7 @@ mod inner {
             Err(_) => return,
         };
 
-        let state = STATE.lock().unwrap();
+        let state = STATE.lock().unwrap_or_else(|e| e.into_inner());
         let cw = state.custom_width;
         let ch = state.custom_height;
         drop(state);
@@ -174,6 +176,8 @@ mod inner {
         crate::platform::focus::capture_frontmost();
 
         let target = compute_panel_rect(screen);
+        // SAFETY: ns_window 经 as_ref().unwrap()（raw 来自 ns_window() Ok 分支，非空）；
+        // setFrame_display:setAlphaValue:setIgnoresMouseEvents: 均为 NSWindow 标准方法
         unsafe {
             let ns_window = raw.cast::<NSWindow>().as_ref().unwrap();
             ns_window.setFrame_display(target, true);
@@ -186,7 +190,7 @@ mod inner {
             cw as i32, ch as i32
         ));
 
-        let mut state = STATE.lock().unwrap();
+        let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
         state.visible = true;
     }
 
@@ -198,7 +202,7 @@ mod inner {
         };
         let _ = window.eval("window.dispatchEvent(new CustomEvent('__snap_panel_hide'))");
 
-        STATE.lock().unwrap().visible = false;
+        STATE.lock().unwrap_or_else(|e| e.into_inner()).visible = false;
 
         // 用户点击 SnapPanel 时,panel 会被 AppKit 自动 makeKey 偷走 system key,
         // 原 app 的 first responder 随之丢失。沿用主窗口的恢复策略（§7 唯一源）：
@@ -212,7 +216,7 @@ mod inner {
         _timer: *mut std::ffi::c_void,
         _info: *mut std::ffi::c_void,
     ) {
-        let app_opt = APP.lock().unwrap().clone();
+        let app_opt = APP.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let Some(app) = app_opt else { return };
         let app_clone = app.clone();
         let _ = app.run_on_main_thread(move || {
@@ -221,10 +225,14 @@ mod inner {
     }
 
     fn schedule_hide_timer() {
-        let mut guard = HIDE_TIMER.lock().unwrap();
+        let mut guard = HIDE_TIMER.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_some() {
             return;
         }
+        // SAFETY: CFRunLoopTimerCreate/Create 系列为 CoreFoundation C API；
+        // callout = hide_timer_callback（unsafe extern "C" fn，签名匹配）；
+        // context 传 null。timer null 检查后 CFRunLoopAddTimer 加入当前 runloop
+        // （本函数在主线程调用），所有权转入 SendTimer 由 cancel 时 CFRelease
         unsafe {
             let now = CFAbsoluteTimeGetCurrent();
             let timer = CFRunLoopTimerCreate(
@@ -246,8 +254,10 @@ mod inner {
     }
 
     fn cancel_hide_timer() {
-        let mut guard = HIDE_TIMER.lock().unwrap();
+        let mut guard = HIDE_TIMER.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(st) = guard.take() {
+            // SAFETY: st.0 是已创建的 CFRunLoopTimer（start 时 null 检查通过），
+            // 同一 runloop + common modes 配对 Remove；CFRelease 释放 timer 所有权
             unsafe {
                 let rl = CFRunLoopGetCurrent();
                 CFRunLoopRemoveTimer(rl, st.0, kCFRunLoopCommonModes);
@@ -259,7 +269,7 @@ mod inner {
     // ── 鼠标事件 ──────────────────────────────────────────────────────────
 
     fn forward_mouse_to_snap_panel(mx: f64, my: f64) {
-        let app_opt = APP.lock().unwrap().clone();
+        let app_opt = APP.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let Some(app) = app_opt else { return };
         let Some(window) = get_snap_window(&app) else {
             return;
@@ -267,6 +277,8 @@ mod inner {
         let Ok(raw) = window.ns_window() else { return };
         let local_x;
         let local_y;
+        // SAFETY: ns_window 经 as_ref().unwrap()（raw 来自 ns_window() Ok 分支，非空）；
+        // frame 为 NSWindow 只读属性，返回栈上 NSRect（copy 语义）
         unsafe {
             let ns_window = raw.cast::<NSWindow>().as_ref().unwrap();
             let frame = ns_window.frame();
@@ -287,7 +299,7 @@ mod inner {
         let (mx, my) = get_mouse_location();
         let screen = find_screen_for_point(mx, my);
 
-        let visible = STATE.lock().unwrap().visible;
+        let visible = STATE.lock().unwrap_or_else(|e| e.into_inner()).visible;
 
         if visible {
             let in_area = screen
@@ -302,7 +314,7 @@ mod inner {
         } else {
             if let Some(screen) = screen {
                 if is_in_trigger_zone(mx, my, &screen) {
-                    let app_opt = APP.lock().unwrap().clone();
+                    let app_opt = APP.lock().unwrap_or_else(|e| e.into_inner()).clone();
                     if let Some(app) = app_opt {
                         show_panel(&app, &screen);
                     }
@@ -316,18 +328,18 @@ mod inner {
     pub fn start(app: AppHandle, custom_width: f64, custom_height: f64) {
         // 始终同步最新尺寸,避免设置变更后旧值被锁死(monitor 已存在则只更新尺寸)
         {
-            let mut state = STATE.lock().unwrap();
+            let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
             state.custom_width = custom_width;
             state.custom_height = custom_height;
         }
         {
-            let guard = MONITOR.lock().unwrap();
+            let guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
             if guard.is_some() {
                 return;
             }
         }
         ENABLED.store(true, Ordering::SeqCst);
-        *APP.lock().unwrap() = Some(app);
+        *APP.lock().unwrap_or_else(|e| e.into_inner()) = Some(app);
 
         let moved_block = block2::RcBlock::new(move |_event: *mut AnyObject| {
             on_mouse_moved();
@@ -339,6 +351,10 @@ mod inner {
                 event
             });
 
+        // SAFETY: mask = 1u64<<5（NSEventMaskMouseMoved）为标准位掩码；
+        // block 经 RcBlock 持有，&*block 取引用符合 block2 调用约定；
+        // addGlobalMonitor/addLocalMonitor 返回 monitor 对象，null 检查后 forget
+        // block（生命周期由 monitor 持有），stop 时 removeMonitor+release 配对
         unsafe {
             let global_moved: *mut AnyObject = objc2::msg_send![
                 NSEvent::class(),
@@ -352,7 +368,7 @@ mod inner {
             ];
 
             if !global_moved.is_null() && !local_moved.is_null() {
-                let mut guard = MONITOR.lock().unwrap();
+                let mut guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
                 *guard = Some(MonitorHandles(global_moved, local_moved));
                 std::mem::forget(moved_block);
                 std::mem::forget(local_moved_block);
@@ -371,8 +387,10 @@ mod inner {
         ENABLED.store(false, Ordering::SeqCst);
         cancel_hide_timer();
 
-        let mut guard = MONITOR.lock().unwrap();
+        let mut guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(mh) = guard.take() {
+            // SAFETY: mh.0/mh.1 是 start 时注册的 global/local monitor（非空已检查）；
+            // removeMonitor 注销 + release 释放（与 start 的 forget 配对）
             unsafe {
                 let _: () = objc2::msg_send![NSEvent::class(), removeMonitor: mh.0];
                 let _: () = objc2::msg_send![mh.0, release];
@@ -381,12 +399,12 @@ mod inner {
             }
         }
 
-        let app_opt = APP.lock().unwrap().take();
+        let app_opt = APP.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(app) = app_opt {
             hide_panel_impl(&app);
         }
 
-        let mut state = STATE.lock().unwrap();
+        let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
         state.visible = false;
     }
 
@@ -395,7 +413,7 @@ mod inner {
     }
 
     pub fn hide_panel(app: &AppHandle) {
-        if STATE.lock().unwrap().visible {
+        if STATE.lock().unwrap_or_else(|e| e.into_inner()).visible {
             hide_panel_impl(app);
         }
     }

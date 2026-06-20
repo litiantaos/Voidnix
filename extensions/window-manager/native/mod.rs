@@ -37,6 +37,11 @@ fn configure_snap_panel(app: &tauri::AppHandle) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
+    // SAFETY: raw 来自 window.ns_window()（上方 Ok 分支保证句柄有效）；ns_window 经
+    // as_ref Some 分支二次非空校验。所有 msg_send 均为 NSWindow/NSView 标准选择子
+    // （setWantsLayer:/setLevel:/setCollectionBehavior/setAlphaValue/orderFrontRegardless/
+    // setHasShadow:），参数类型匹配。convert_to_panel 内部自管 null 检查。
+    // MainThreadMarker 已校验主线程。
     unsafe {
         let Some(ns_window) = raw.as_ref() else {
             return;
@@ -88,8 +93,8 @@ pub mod platform {
     pub type AXUIElementRef = *mut c_void;
     type AXError = i32;
     pub const AX_ERROR_SUCCESS: AXError = 0;
-    pub const K_AX_VALUE_CGPOINT: u32 = 1;
-    pub const K_AX_VALUE_CGSIZE: u32 = 2;
+    pub const AX_VALUE_CGPOINT: u32 = 1;
+    pub const AX_VALUE_CGSIZE: u32 = 2;
 
     type CGWindowListOption = u32;
     type CGWindowID = u32;
@@ -123,16 +128,19 @@ pub mod platform {
         ) -> CFArrayRef;
     }
 
-    const K_CG_WINDOW_LIST_ON_SCREEN_ONLY: CGWindowListOption = 1 << 0;
-    const K_CG_WINDOW_LIST_EXCLUDE_DESKTOP: CGWindowListOption = 1 << 4;
-    const K_CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
+    const CG_WINDOW_LIST_ON_SCREEN_ONLY: CGWindowListOption = 1 << 0;
+    const CG_WINDOW_LIST_EXCLUDE_DESKTOP: CGWindowListOption = 1 << 4;
+    const CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
 
     pub fn cf_str(s: &str) -> *mut c_void {
         let Ok(c) = std::ffi::CString::new(s) else {
             return std::ptr::null_mut();
         };
+        // SAFETY: CFStringCreateWithCString：c 来自 CString::new（NUL 结尾合法），
+        // allocator 传 null（使用默认 kCFAllocatorDefault），UTF8 编码常量正确。
+        // 返回 Create 规则所有权（调用方 release，本函数返回裸指针由调用方管理）。
         unsafe {
-            CFStringCreateWithCString(std::ptr::null_mut(), c.as_ptr(), K_CF_STRING_ENCODING_UTF8)
+            CFStringCreateWithCString(std::ptr::null_mut(), c.as_ptr(), CF_STRING_ENCODING_UTF8)
         }
     }
 
@@ -150,7 +158,7 @@ pub mod platform {
     pub unsafe fn make_ax_value_point(x: f64, y: f64) -> *mut c_void {
         // AXValue 不是 ObjC 类，必须走 C API AXValueCreate
         let pt = CGPoint { x, y };
-        AXValueCreate(K_AX_VALUE_CGPOINT, &pt as *const CGPoint as *const c_void)
+        AXValueCreate(AX_VALUE_CGPOINT, &pt as *const CGPoint as *const c_void)
     }
 
     pub unsafe fn make_ax_value_size(w: f64, h: f64) -> *mut c_void {
@@ -158,14 +166,14 @@ pub mod platform {
             width: w,
             height: h,
         };
-        AXValueCreate(K_AX_VALUE_CGSIZE, &sz as *const CGSize as *const c_void)
+        AXValueCreate(AX_VALUE_CGSIZE, &sz as *const CGSize as *const c_void)
     }
 
     pub unsafe fn ax_value_to_point(val: *mut c_void) -> Option<(f64, f64)> {
         let mut pt = CGPoint { x: 0.0, y: 0.0 };
         if AXValueGetValue(
             val,
-            K_AX_VALUE_CGPOINT,
+            AX_VALUE_CGPOINT,
             &mut pt as *mut CGPoint as *mut c_void,
         ) {
             Some((pt.x, pt.y))
@@ -179,11 +187,7 @@ pub mod platform {
             width: 0.0,
             height: 0.0,
         };
-        if AXValueGetValue(
-            val,
-            K_AX_VALUE_CGSIZE,
-            &mut sz as *mut CGSize as *mut c_void,
-        ) {
+        if AXValueGetValue(val, AX_VALUE_CGSIZE, &mut sz as *mut CGSize as *mut c_void) {
             Some((sz.width, sz.height))
         } else {
             None
@@ -321,6 +325,7 @@ pub mod platform {
         if v.is_null() {
             return None;
         }
+        // SAFETY: *v 已上方非空校验；wrap_under_get_rule 遵循 CF Get 规则（不获取所有权）
         Some(unsafe { CFNumber::wrap_under_get_rule(*v as *mut _) })
     }
 
@@ -333,13 +338,17 @@ pub mod platform {
         if v.is_null() {
             return None;
         }
+        // SAFETY: *v 已上方非空校验；wrap_under_get_rule 遵循 CF Get 规则（不获取所有权）
         Some(unsafe { CFDictionary::wrap_under_get_rule(*v as *const _) })
     }
 
     pub fn find_topmost_window_pid() -> Option<i32> {
+        // SAFETY: CGWindowListCopyWindowInfo 是 CoreGraphics C API，option/relativeToWindow
+        // 参数为合法位掩码与 0（无相对窗口）；返回 Create 规则 CFArray，下方 null 检查后
+        // 由 wrap_under_create_rule 接管所有权。
         let raw = unsafe {
             CGWindowListCopyWindowInfo(
-                K_CG_WINDOW_LIST_ON_SCREEN_ONLY | K_CG_WINDOW_LIST_EXCLUDE_DESKTOP,
+                CG_WINDOW_LIST_ON_SCREEN_ONLY | CG_WINDOW_LIST_EXCLUDE_DESKTOP,
                 0,
             )
         };
@@ -348,6 +357,8 @@ pub mod platform {
         }
 
         let array: CFArray<CFDictionary<*const c_void, *const c_void>> =
+            // SAFETY: raw 由 CGWindowListCopyWindowInfo 返回（Create 规则，已 null 检查），
+            // wrap_under_create_rule 接管所有权，array 释放时自动 CFRelease。
             unsafe { CFArray::wrap_under_create_rule(raw) };
 
         let self_pid = std::process::id() as i64;
@@ -458,7 +469,7 @@ pub mod platform {
             .arg("-e")
             .arg(&script)
             .output()
-            .map_err(|e| format!("osascript 执行失败: {}", e))?;
+            .map_err(|e| format!("osascript 执行失败: {e}"))?;
         if output.status.success() {
             Ok(())
         } else {
@@ -484,15 +495,24 @@ pub mod platform {
             cg_pid.ok_or("无法确定目标窗口")?
         };
 
+        // SAFETY: AXIsProcessTrusted 是 Accessibility C API，无参数，仅查询当前进程可信状态
         if unsafe { AXIsProcessTrusted() } {
+            // SAFETY: primary_pid > 0（上方过滤）；try_get_window_for_pid 为 unsafe fn，
+            // 内部 AXUIElementCreateApplication/AXUIElementCopyAttributeValue 均 null-safe
+            // 且对返回值 CFRelease 配平
             let win_ref = unsafe { try_get_window_for_pid(primary_pid) }.or_else(|| {
                 let fb = cg_pid.filter(|&p| p != primary_pid)?;
+                // SAFETY: fb > 0（cg_pid 为 i32 pid）；同 try_get_window_for_pid 契约
                 unsafe { try_get_window_for_pid(fb) }
             });
 
             if let Some(win_ref) = win_ref {
                 let result =
+                    // SAFETY: win_ref 非 null（Some 分支）；apply_ax_layout 为 unsafe fn，
+                    // 所有 AX 读写均经 ax_copy_attr/set_ax_* 封装（内部 null 检查 + CFRelease 配平）
                     unsafe { apply_ax_layout(win_ref, layout, custom_width, custom_height) };
+                // SAFETY: win_ref 由 AXUIElementCreateApplication + CFRetain 创建（+1 retain），
+                // 此处 release 配平，避免泄漏
                 unsafe { CFRelease(win_ref) };
                 return result;
             }
@@ -533,7 +553,7 @@ pub mod platform {
             .arg("-e")
             .arg(&get_size)
             .output()
-            .map_err(|e| format!("osascript 执行失败: {}", e))?;
+            .map_err(|e| format!("osascript 执行失败: {e}"))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("无法获取窗口尺寸: {}", stderr.trim()));
@@ -632,10 +652,12 @@ pub mod platform {
             let _ = tx.send(result);
         })
         .map_err(|e| e.to_string())?;
-        rx.recv().map_err(|e| e.to_string())?
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .map_err(|e| e.to_string())?
     }
 
     pub fn do_check_accessibility() -> bool {
+        // SAFETY: AXIsProcessTrusted 是 Accessibility C API，无参数，仅查询当前进程可信状态
         unsafe { AXIsProcessTrusted() }
     }
 
@@ -727,7 +749,8 @@ pub async fn toggle_drag_snap(
         let _ = tx.send(());
     })
     .map_err(|e| e.to_string())?;
-    rx.recv().map_err(|e| e.to_string())?;
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -744,6 +767,8 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
     app.run_on_main_thread(move || {
         if let Some(w) = app_clone.get_webview_window("snap-panel") {
             if let Ok(raw) = w.ns_window() {
+                // SAFETY: ns 经 as_ref Some 分支非空校验；setFrame_display/setAlphaValue/
+                // makeKeyAndOrderFront: 均为 NSWindow 标准选择子，MainThreadMarker 校验主线程
                 unsafe {
                     use objc2_foundation::MainThreadMarker;
                     if let Some(ns) = raw.cast::<objc2_app_kit::NSWindow>().as_ref() {
@@ -767,7 +792,8 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
         let _ = tx.send(());
     })
     .map_err(|e| e.to_string())?;
-    rx.recv().map_err(|e| e.to_string())?;
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -779,6 +805,8 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
     app.run_on_main_thread(move || {
         if let Some(w) = app_clone.get_webview_window("snap-panel") {
             if let Ok(raw) = w.ns_window() {
+                // SAFETY: ns 经 as_ref Some 分支非空校验；setIgnoresMouseEvents/setAlphaValue
+                // 均为 NSWindow 标准方法，参数类型匹配
                 unsafe {
                     if let Some(ns) = raw.cast::<objc2_app_kit::NSWindow>().as_ref() {
                         ns.setIgnoresMouseEvents(true);
@@ -796,6 +824,7 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
         let _ = tx.send(());
     })
     .map_err(|e| e.to_string())?;
-    rx.recv().map_err(|e| e.to_string())?;
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .map_err(|e| e.to_string())?;
     Ok(())
 }

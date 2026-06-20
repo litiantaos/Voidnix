@@ -48,7 +48,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: number): void
+  'update:modelValue': [value: number]
 }>()
 
 function onInput(e: Event) {

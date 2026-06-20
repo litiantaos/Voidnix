@@ -112,8 +112,8 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  (e: 'confirm'): void
-  (e: 'cancel', reason: CloseReason): void
+  confirm: []
+  cancel: [reason: CloseReason]
 }>()
 
 const resolvedShowFooter = computed(() => {

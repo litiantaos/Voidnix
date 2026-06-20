@@ -6,7 +6,7 @@
     </div>
 
     <!-- 识别中 -->
-    <BaseEmptyState v-if="isLoading" icon="i-ri-loader-4-line" title="识别中..." loading />
+    <BaseEmptyState v-if="isLoading" icon="i-ri-loader-4-line" title="识别中…" loading />
 
     <!-- 错误 -->
     <div v-else-if="error" text="sm red-500" p="3" rounded="md" bg="red-50">

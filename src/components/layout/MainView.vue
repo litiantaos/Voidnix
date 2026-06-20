@@ -23,52 +23,59 @@
       @keydown="onSearchBarKeydown"
     >
       <!-- 扩展标签 -->
-      <div
-        v-if="activeModule"
-        text="xs black/70"
-        p="x-3"
-        rounded="md"
-        bg="black/5"
-        flex="~ none"
-        gap="1.5"
-        h="7"
-        select="none"
-        items="center"
-        @mouseenter="isTagHovered = true"
-        @mouseleave="isTagHovered = false"
+      <Transition
+        enter-active-class="transition duration-fast ease-out"
+        enter-from-class="opacity-0 scale-95"
+        leave-active-class="transition duration-fast ease-in"
+        leave-to-class="opacity-0 scale-95"
       >
-        <span shrink="0" h="3.5" w="3.5" relative>
-          <Transition
-            enter-active-class="transition duration-150 ease-out"
-            enter-from-class="opacity-0 scale-75"
-            enter-to-class="opacity-100 scale-100"
-            leave-active-class="transition duration-100 ease-in"
-            leave-from-class="opacity-100 scale-100"
-            leave-to-class="opacity-0 scale-75"
-          >
-            <BaseButton
-              v-if="isTagHovered"
-              key="close"
-              variant="ghost"
-              class="rounded-full bg-black/10 flex-center inset-0 absolute !p-0 hover:bg-black/20 !h-3.5 !w-3.5"
-              icon="i-ri-close-line text-xs text-black/60"
-              @click="onTagClose"
-            />
-            <span
-              v-else
-              key="icon"
-              :class="activeModule.meta.icon"
-              text="xs black/50"
-              class="flex-center"
-              h="3.5"
-              w="3.5"
-              inset="0"
-              absolute
-            ></span>
-          </Transition>
-        </span>
-        <span>{{ activeModule.meta.name }}</span>
-      </div>
+        <div
+          v-if="activeModule"
+          text="xs tx-secondary"
+          p="x-3"
+          rounded="md"
+          bg="black/5"
+          flex="~ none"
+          gap="1.5"
+          h="7"
+          select="none"
+          items="center"
+          @mouseenter="isTagHovered = true"
+          @mouseleave="isTagHovered = false"
+        >
+          <span shrink="0" h="3.5" w="3.5" relative>
+            <Transition
+              enter-active-class="transition duration-150 ease-out"
+              enter-from-class="opacity-0 scale-75"
+              enter-to-class="opacity-100 scale-100"
+              leave-active-class="transition duration-100 ease-in"
+              leave-from-class="opacity-100 scale-100"
+              leave-to-class="opacity-0 scale-75"
+            >
+              <BaseButton
+                v-if="isTagHovered"
+                key="close"
+                variant="ghost"
+                class="rounded-full bg-black/10 flex-center inset-0 absolute !p-0 hover:bg-black/10 !h-3.5 !w-3.5"
+                icon="i-ri-close-line text-xs text-tx-subtle"
+                @click="onTagClose"
+              />
+              <span
+                v-else
+                key="icon"
+                :class="activeModule.meta.icon"
+                text="xs black/50"
+                class="flex-center"
+                h="3.5"
+                w="3.5"
+                inset="0"
+                absolute
+              ></span>
+            </Transition>
+          </span>
+          <span>{{ activeModule.meta.name }}</span>
+        </div>
+      </Transition>
 
       <input
         ref="searchInput"
@@ -79,7 +86,7 @@
         outline="none"
         bg="transparent"
         flex="1"
-        :class="'disabled:text-black/85 placeholder:text-black/25 disabled:opacity-100'"
+        :class="'disabled:text-tx-primary placeholder:text-tx-hint disabled:opacity-100'"
         :placeholder="
           activeModule
             ? activeModule.disableSearchInput

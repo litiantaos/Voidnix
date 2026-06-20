@@ -416,7 +416,7 @@ import { useScrollCapture } from '../composables/useScrollCapture'
 import { wrapText } from '../composables/wrapText'
 
 const props = defineProps<{ initialScreenshot: ScreenshotData }>()
-const emit = defineEmits<{ (e: 'close', noRestoreFocus?: boolean): void }>()
+const emit = defineEmits<{ close: [noRestoreFocus?: boolean] }>()
 
 const rootEl = ref<HTMLElement>()
 const annotateCanvas = ref<HTMLCanvasElement>()

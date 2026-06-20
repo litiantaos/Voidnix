@@ -33,11 +33,16 @@ pub(super) fn crop_with_annotation(
             height: sel_h * scale,
         },
     };
+    // SAFETY: raw 已上方 null 检查；CGImageCreateWithImageInRect 为 CoreGraphics C API，
+    // rect 为合法 CGRect（坐标已 scale 缩放），返回 Create 规则 CGImageRef（caller release）
     let cropped = unsafe { CGImageCreateWithImageInRect(raw, rect) };
     if cropped.is_null() {
         return Err("CGImageCreateWithImageInRect 失败".to_string());
     }
 
+    // SAFETY: cropped 已 null 检查；alloc/initWithBitmapDataPlanes:/setSize:/drawInRect:/
+    // representationUsingType:/release 均为 NSBitmapImageRep/NSImage/NSGraphicsContext/
+    // NSDictionary 标准选择子，参数类型匹配；ns_data 释放前 length/bytes 拷贝出数据
     let result = unsafe {
         let pw = (sel_w * scale) as isize;
         let ph = (sel_h * scale) as isize;

@@ -16,7 +16,7 @@
     <BaseEmptyState
       v-if="isTranslating && translateResults.length === 0"
       icon="i-ri-loader-4-line"
-      title="翻译中..."
+      title="翻译中…"
       loading
     />
 

@@ -86,7 +86,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 
     let mut child = command
         .spawn()
-        .map_err(|e| format!("mdfind spawn failed: {}", e))?;
+        .map_err(|e| format!("mdfind spawn failed: {e}"))?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
 
     const MAX_ENTRIES: usize = 100;
@@ -256,7 +256,7 @@ pub async fn launch_app(path: String) -> Result<(), String> {
     tokio::process::Command::new("open")
         .arg(&path)
         .spawn()
-        .map_err(|e| format!("Failed to launch: {}", e))?;
+        .map_err(|e| format!("Failed to launch: {e}"))?;
 
     SEARCH_SESSION.increment_use_count(&path);
 
