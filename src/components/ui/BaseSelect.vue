@@ -48,7 +48,7 @@
           p="1"
           rounded="lg"
           bg="white"
-          max-w="80vw"
+          max-w="[80vw]"
           select="none"
           shadow="lg"
           role="listbox"
