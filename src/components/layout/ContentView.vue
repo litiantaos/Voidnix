@@ -24,9 +24,9 @@
         <template v-if="!resolvedView">
           <Transition
             mode="out-in"
-            enter-active-class="transition duration-fast ease-out"
+            enter-active-class="transition duration-100 ease-out"
             enter-from-class="opacity-0"
-            leave-active-class="transition duration-fast ease-in"
+            leave-active-class="transition duration-100 ease-in"
             leave-to-class="opacity-0"
           >
             <BaseEmptyState

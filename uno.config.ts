@@ -30,12 +30,7 @@ export default defineConfig({
       },
     },
 
-    // ── 动画 timing（全仓 duration / easing 单一源）──
-    transitionDuration: {
-      fast: '100ms',
-      normal: '150ms',
-      slow: '200ms',
-    },
+    // ── 动画 easing（全仓单一源；duration 用内置数值 duration-100/150/200）──
     transitionTimingFunction: {
       out: 'cubic-bezier(0, 0, 0.2, 1)', // 进场 / hover
       in: 'cubic-bezier(0.4, 0, 1, 1)', // 离场
@@ -45,7 +40,7 @@ export default defineConfig({
   shortcuts: {
     // ── 控件状态 ──
     'ui-ctrl':
-      'h-7 px-3 rounded-md outline-none border-none text-xs font-medium bg-black/4 text-tx-primary transition-colors duration-fast ease-out focus-within:ring-1 focus-within:ring-inset focus-within:ring-accent/40 select-none',
+      'h-7 px-3 rounded-md outline-none border-none text-xs font-medium bg-black/4 text-tx-primary transition-colors duration-150 ease-out focus-within:ring-1 focus-within:ring-inset focus-within:ring-accent/40 select-none',
     'ui-disabled': 'opacity-50 cursor-not-allowed',
     'ui-active': 'bg-black/5',
 
