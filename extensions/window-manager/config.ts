@@ -11,6 +11,7 @@ export const config = defineConfig('window-manager', {
 })
 
 /// 配置变更时同步拖拽 snap 状态到 Rust 端。
+/// immediate: true —— 启动时用已持久化配置首次同步，否则 drag monitor 不启动（用户须手动关开一次才生效）。
 watch(
   config,
   (val) => {
@@ -23,5 +24,5 @@ watch(
       console.error('[window-manager] toggleDragSnap failed:', e)
     })
   },
-  { deep: true },
+  { deep: true, immediate: true },
 )
