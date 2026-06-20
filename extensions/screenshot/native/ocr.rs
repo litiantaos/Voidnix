@@ -54,10 +54,14 @@ print(String(data: data, encoding: .utf8)!)"#,
         // tmp 由 _tmp_handle Drop 清理
         if out.status.success() {
             let json = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            let parsed: serde_json::Value = serde_json::from_str(&json)
-                .map_err(|e| format!("解析识别结果失败: {}", e))?;
+            let parsed: serde_json::Value =
+                serde_json::from_str(&json).map_err(|e| format!("解析识别结果失败: {}", e))?;
             Ok(OcrResult {
-                text: parsed.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                text: parsed
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 qr: parsed
                     .get("qr")
                     .and_then(|v| v.as_array())
@@ -181,6 +185,20 @@ pub async fn save_screenshot(
         };
         if let Some(parent) = file_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        // 路径安全校验（C6）：拒绝写入系统致命路径（/System、/usr/bin、/bin、/sbin）。
+        // path_guard::validate 要求路径存在（canonicalize），优先校验 file_path；
+        // 若 file_path 不存在（新建文件），校验其 parent（已在上方 create_dir_all 后存在）。
+        let guard_ok = if file_path.exists() {
+            crate::platform::path_guard::validate(&file_path)
+        } else {
+            file_path
+                .parent()
+                .map(crate::platform::path_guard::validate)
+                .unwrap_or(false)
+        };
+        if !guard_ok {
+            return Err(format!("目标路径被安全策略拒绝：{}", file_path.display()));
         }
         std::fs::write(&file_path, png).map_err(|e| e.to_string())?;
         Ok(file_path.to_string_lossy().to_string())

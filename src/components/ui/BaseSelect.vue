@@ -48,7 +48,7 @@
           p="1"
           rounded="lg"
           bg="white"
-          max-w="[80vw]"
+          max-w="80vw"
           select="none"
           shadow="lg"
           role="listbox"
@@ -234,9 +234,10 @@ const onKeyDown = (e: KeyboardEvent) => {
 }
 
 const onClickOutside = (e: MouseEvent) => {
+  // H8：多实例并存时全局 querySelector 只返回首个匹配，导致误关；
+  // 改用组件本地 dropdownRef 精确判定当前实例的下拉是否被点击
   if (isOpen.value && selectRef.value && !selectRef.value.contains(e.target as Node)) {
-    const dropdown = document.querySelector('[data-select-dropdown]')
-    if (!dropdown?.contains(e.target as Node)) {
+    if (!dropdownRef.value?.contains(e.target as Node)) {
       isOpen.value = false
     }
   }

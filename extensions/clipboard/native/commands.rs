@@ -83,10 +83,7 @@ pub async fn clear_clipboard_history(app: tauri::AppHandle) -> Result<(), String
 }
 
 #[tauri::command]
-pub async fn delete_clipboard_items(
-    ids: Vec<String>,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn delete_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<(), String> {
     if ids.is_empty() {
         return Ok(());
     }
@@ -136,9 +133,7 @@ pub async fn get_clipboard_image(
         .map_err(|e| e.to_string())?;
 
     let result: Option<(String, String)> = stmt
-        .query_row(rusqlite::params![id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
+        .query_row(rusqlite::params![id], |row| Ok((row.get(0)?, row.get(1)?)))
         .ok();
 
     match result {

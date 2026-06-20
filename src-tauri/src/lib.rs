@@ -1,7 +1,7 @@
+mod extensions;
 mod http;
 mod platform;
 mod runtime;
-mod extensions;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

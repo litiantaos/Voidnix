@@ -3,8 +3,8 @@ use crate::extensions::agent::engine::cancellation::SessionRegistry;
 use crate::extensions::agent::engine::loop_runner::{run_loop, LoopInput};
 use crate::extensions::agent::engine::tool_registry::ToolRegistry;
 use crate::extensions::agent::engine::AgentEvent;
-use crate::runtime::registry::Extension;
 use crate::runtime::llm::{self, LlmMessage};
+use crate::runtime::registry::Extension;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tokio_util::sync::CancellationToken;
@@ -15,8 +15,7 @@ mod tools;
 
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("agent")
-        .build()
+    tauri::plugin::Builder::<tauri::Wry>::new("agent").build()
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -117,11 +116,21 @@ pub async fn agent_run(
         config.trusted_commands.clone(),
         config.forbidden_commands.clone(),
         config.blocked_args.clone(),
-        config.max_cpu_seconds.unwrap_or(policy::DEFAULT_MAX_CPU_SECS),
-        config.max_memory_mb.unwrap_or(policy::DEFAULT_MAX_MEMORY_MB),
-        config.max_open_files.unwrap_or(policy::DEFAULT_MAX_OPEN_FILES),
-        config.execution_timeout.unwrap_or(policy::DEFAULT_EXECUTION_TIMEOUT_SECS),
-        config.max_output_bytes.unwrap_or(policy::DEFAULT_MAX_OUTPUT_BYTES),
+        config
+            .max_cpu_seconds
+            .unwrap_or(policy::DEFAULT_MAX_CPU_SECS),
+        config
+            .max_memory_mb
+            .unwrap_or(policy::DEFAULT_MAX_MEMORY_MB),
+        config
+            .max_open_files
+            .unwrap_or(policy::DEFAULT_MAX_OPEN_FILES),
+        config
+            .execution_timeout
+            .unwrap_or(policy::DEFAULT_EXECUTION_TIMEOUT_SECS),
+        config
+            .max_output_bytes
+            .unwrap_or(policy::DEFAULT_MAX_OUTPUT_BYTES),
     );
     let max_turns = config
         .max_turns
@@ -131,7 +140,9 @@ pub async fn agent_run(
     // 构造本次的 ToolRegistry（工具始终启用）
     let tool_registry = {
         let reg = ToolRegistry::new()
-            .register(tools::web_search::WebSearchTool::new(config.search_provider.clone()))
+            .register(tools::web_search::WebSearchTool::new(
+                config.search_provider.clone(),
+            ))
             .register(tools::run_command::RunCommandTool::new(exec_policy));
         Arc::new(reg)
     };
@@ -177,7 +188,10 @@ pub async fn agent_approve(
     approved: bool,
     always_approve: bool,
 ) -> Result<bool, String> {
-    let decision = Decision { approved, always_approve };
+    let decision = Decision {
+        approved,
+        always_approve,
+    };
     Ok(approval.resolve(&approval_id, decision))
 }
 

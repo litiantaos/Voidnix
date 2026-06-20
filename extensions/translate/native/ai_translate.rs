@@ -1,10 +1,10 @@
 use crate::runtime::llm::{self, LlmMessage};
 
-use super::TranslateResult;
 use super::lang_utils::{
     build_system_prompt, detect_source_lang_name, lang_code_to_name, render_prompt,
     resolve_template, smart_target_lang, DEFAULT_TRANSLATE_PROMPT,
 };
+use super::TranslateResult;
 
 static PREAMBLE_PATTERNS: &[&str] = &[
     "here is the translation",
@@ -100,7 +100,14 @@ pub async fn translate_ai(
     target_lang: Option<String>,
     prompt: Option<String>,
 ) -> Result<TranslateResult, String> {
-    let p = prepare_ai_translate(&text, &endpoint, &api_key, &model, target_lang.as_deref(), prompt.as_ref())?;
+    let p = prepare_ai_translate(
+        &text,
+        &endpoint,
+        &api_key,
+        &model,
+        target_lang.as_deref(),
+        prompt.as_ref(),
+    )?;
 
     // 复用 runtime/llm 共享非流式管道（validate + messages_to_json + map_api_error）
     let messages = vec![
@@ -144,7 +151,14 @@ pub async fn translate_ai_stream(
     prompt: Option<String>,
     request_id: String,
 ) -> Result<(), String> {
-    let p = prepare_ai_translate(&text, &endpoint, &api_key, &model, target_lang.as_deref(), prompt.as_ref())?;
+    let p = prepare_ai_translate(
+        &text,
+        &endpoint,
+        &api_key,
+        &model,
+        target_lang.as_deref(),
+        prompt.as_ref(),
+    )?;
 
     let messages = vec![
         LlmMessage::system(p.system_content),

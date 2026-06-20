@@ -33,25 +33,31 @@ extern "C" {
 
 fn ensure_panel_class() -> *mut c_void {
     let PanelClass(ptr) = *PANEL_CLASS.get_or_init(|| {
+        // SAFETY: 调用 objc runtime C API。所有传入的指针（name、superclass）
+        // 来自字面 c 字符串或 objc_getClass 返回的注册常量，生命周期与进程一致。
+        // can_become_key 是 extern "C" fn，转 *const c_void 作 IMP 安全。
+        // 整个块只动一次（OnceLock 保护），并发安全。
         unsafe {
-        let name = c"VoidnixMainPanel".as_ptr() as *const c_void;
-        let existing = objc_getClass(name);
-        if !existing.is_null() {
-            return PanelClass(existing);
+            let name = c"VoidnixMainPanel".as_ptr() as *const c_void;
+            let existing = objc_getClass(name);
+            if !existing.is_null() {
+                return PanelClass(existing);
+            }
+
+            let superclass = objc_getClass(c"NSPanel".as_ptr() as *const c_void);
+            let cls = objc_allocateClassPair(superclass, name, 0);
+            assert!(!cls.is_null(), "objc_allocateClassPair failed");
+
+            let sel = sel_registerName(c"canBecomeKeyWindow".as_ptr() as *const c_void);
+            let types = c"c@:".as_ptr() as *const c_void;
+            let imp = can_become_key as *const c_void;
+            // M-rs6：检查 class_addMethod 返回值（-1 失败 / 0 已存在 / 1 成功）
+            let added = class_addMethod(cls, sel, imp, types);
+            debug_assert!(added >= 0, "class_addMethod failed: {added}");
+
+            objc_registerClassPair(cls);
+            PanelClass(cls)
         }
-
-        let superclass = objc_getClass(c"NSPanel".as_ptr() as *const c_void);
-        let cls = objc_allocateClassPair(superclass, name, 0);
-        assert!(!cls.is_null(), "objc_allocateClassPair failed");
-
-        let sel = sel_registerName(c"canBecomeKeyWindow".as_ptr() as *const c_void);
-        let types = c"c@:".as_ptr() as *const c_void;
-        let imp = can_become_key as *const c_void;
-        class_addMethod(cls, sel, imp, types);
-
-        objc_registerClassPair(cls);
-        PanelClass(cls)
-    }
     });
     ptr
 }
@@ -70,6 +76,10 @@ pub fn convert_to_panel(ns_window: *mut AnyObject) {
 
     let panel_class = ensure_panel_class();
 
+    // SAFETY: ns_window 由调用方保证非空（上方 null check）；panel_class 来自
+    // ensure_panel_class 的注册类（进程常驻）；msg_send 选择子（styleMask /
+    // setStyleMask: / setBecomesKeyOnlyIfNeeded: / setHidesOnDeactivate:）
+    // 均为 NSWindow 标准选择子，签名与传入参数类型匹配。
     unsafe {
         object_setClass(ns_window as *mut c_void, panel_class);
 

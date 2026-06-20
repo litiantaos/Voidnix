@@ -78,11 +78,7 @@ fn build_screenshot_overlay(out_dir: &str) {
 
     let _ = std::fs::remove_file(&lib_path);
     let ar = Command::new("ar")
-        .args([
-            "rcs",
-            lib_path.to_str().unwrap(),
-            mm_obj.to_str().unwrap(),
-        ])
+        .args(["rcs", lib_path.to_str().unwrap(), mm_obj.to_str().unwrap()])
         .status()
         .expect("failed to invoke ar for libscreenshot_overlay.a");
     assert!(ar.success(), "ar failed to archive libscreenshot_overlay.a");

@@ -31,7 +31,9 @@ pub struct WebSearchTool {
 
 impl WebSearchTool {
     pub fn new(provider: crate::extensions::agent::SearchProviderConfig) -> Self {
-        Self { api_key: provider.api_key }
+        Self {
+            api_key: provider.api_key,
+        }
     }
 }
 
@@ -140,10 +142,7 @@ async fn search_tavily(
 
     match resp.status().as_u16() {
         200 => {
-            let parsed: TavilyResp = resp
-                .json()
-                .await
-                .map_err(|e| format!("decode: {}", e))?;
+            let parsed: TavilyResp = resp.json().await.map_err(|e| format!("decode: {}", e))?;
             let hits = parsed
                 .results
                 .into_iter()
@@ -154,7 +153,10 @@ async fn search_tavily(
                     snippet: truncate(&i.content, 280),
                 })
                 .collect();
-            Ok(SearchOutcome { answer: parsed.answer, hits })
+            Ok(SearchOutcome {
+                answer: parsed.answer,
+                hits,
+            })
         }
         401 => Err("Tavily key invalid".into()),
         429 | 432 | 433 => Err("Tavily rate/plan limit reached".into()),

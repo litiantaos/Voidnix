@@ -2,13 +2,13 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::Emitter;
 
+use super::ffi::decode_image_data;
 use super::ffi::{
     voidnix_screenshot_capture_region, voidnix_screenshot_clear_background,
     voidnix_screenshot_get_mouse_location, voidnix_screenshot_install_scroll_mask,
     voidnix_screenshot_remove_scroll_mask, voidnix_screenshot_set_ignores_mouse,
     voidnix_screenshot_set_sharing, voidnix_screenshot_window_number,
 };
-use super::ffi::decode_image_data;
 
 pub struct ScrollSession {
     pub sel_x: f64,
@@ -419,12 +419,7 @@ pub enum ScrollDir {
     Backward,
 }
 
-fn update_static_mask(
-    session: &mut ScrollSession,
-    prev_sigs: &[u64],
-    new_sigs: &[u64],
-    k: usize,
-) {
+fn update_static_mask(session: &mut ScrollSession, prev_sigs: &[u64], new_sigs: &[u64], k: usize) {
     if k == 0 {
         return;
     }
@@ -496,7 +491,9 @@ pub fn append_frame(session: &mut ScrollSession, new_frame: Vec<u8>) -> (usize, 
         ScrollDir::Forward => {
             if k > 0 {
                 let start = (h - k) * rb;
-                session.buf.extend_from_slice(&new_frame[start..start + k * rb]);
+                session
+                    .buf
+                    .extend_from_slice(&new_frame[start..start + k * rb]);
                 session.total_rows += k;
                 new_rows = k;
                 changed = true;
@@ -661,24 +658,25 @@ mod mouse_monitor {
         let (mx, my) = cur_loc();
         let snapshot = {
             let g = SESSION.lock().unwrap();
-            g.as_ref().map(|s| (
-                s.sel_x,
-                s.sel_y,
-                s.sel_w,
-                s.sel_h,
-                s.ns_window_addr,
-                s.ignoring_mouse,
-                s.toolbar_rect,
-            ))
+            g.as_ref().map(|s| {
+                (
+                    s.sel_x,
+                    s.sel_y,
+                    s.sel_w,
+                    s.sel_h,
+                    s.ns_window_addr,
+                    s.ignoring_mouse,
+                    s.toolbar_rect,
+                )
+            })
         };
         let Some((sx, sy, sw, sh, ns_addr, currently_ignoring, toolbar_rect)) = snapshot else {
             return;
         };
         let in_sel = mx >= sx && mx <= sx + sw && my >= sy && my <= sy + sh;
         // 工具栏区域不穿透(即使落在选区内,也保留接收点击)
-        let in_toolbar = toolbar_rect.is_some_and(|(tx, ty, tw, th)| {
-            mx >= tx && mx <= tx + tw && my >= ty && my <= ty + th
-        });
+        let in_toolbar = toolbar_rect
+            .is_some_and(|(tx, ty, tw, th)| mx >= tx && mx <= tx + tw && my >= ty && my <= ty + th);
         let in_hole = in_sel && !in_toolbar;
         if in_hole != currently_ignoring {
             let ptr = ns_addr as *mut std::ffi::c_void;
@@ -709,10 +707,8 @@ mod mouse_monitor {
             | (1u64 << 3)
             | (1u64 << 4);
         {
-            let blk = block2::RcBlock::new(move |_event: *mut AnyObject| {
-                unsafe {
-                    check_and_toggle();
-                }
+            let blk = block2::RcBlock::new(move |_event: *mut AnyObject| unsafe {
+                check_and_toggle();
             });
             unsafe {
                 let m: *mut AnyObject = objc2::msg_send![NSEvent::class(), addGlobalMonitorForEventsMatchingMask: mask, handler: &*blk];
@@ -924,13 +920,12 @@ pub async fn exit_scroll_capture(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn set_scroll_toolbar_rect(
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-) -> Result<(), String> {
-    let rect = if w <= 0.0 || h <= 0.0 { None } else { Some((x, y, w, h)) };
+pub async fn set_scroll_toolbar_rect(x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+    let rect = if w <= 0.0 || h <= 0.0 {
+        None
+    } else {
+        Some((x, y, w, h))
+    };
     let mut guard = SESSION.lock().unwrap();
     if let Some(s) = guard.as_mut() {
         s.toolbar_rect = rect;
@@ -999,10 +994,7 @@ pub async fn finish_scroll_capture(app: tauri::AppHandle) -> Result<String, Stri
 }
 
 #[tauri::command]
-pub async fn save_scroll_result(
-    result_data_url: String,
-    path: String,
-) -> Result<String, String> {
+pub async fn save_scroll_result(result_data_url: String, path: String) -> Result<String, String> {
     let png = decode_image_data(&result_data_url)?;
     let file_path = {
         let p = std::path::Path::new(&path);
@@ -1144,11 +1136,7 @@ mod tests {
         let new_sigs = row_signatures(&new, W, H);
         update_static_mask(&mut session, &prev_sigs, &new_sigs, 8);
         for r in 0..fixed {
-            assert!(
-                session.static_mask[r],
-                "顶部行 {} 应标记为固定",
-                r
-            );
+            assert!(session.static_mask[r], "顶部行 {} 应标记为固定", r);
         }
     }
 
@@ -1164,11 +1152,7 @@ mod tests {
         let new_sigs = row_signatures(&new, W, H);
         update_static_mask(&mut session, &prev_sigs, &new_sigs, 8);
         let detected = (H - fb..H).filter(|&r| session.static_mask[r]).count();
-        assert_eq!(
-            detected, fb,
-            "底部固定区应全部被标记, 实际 {}",
-            detected
-        );
+        assert_eq!(detected, fb, "底部固定区应全部被标记, 实际 {}", detected);
     }
 
     #[test]

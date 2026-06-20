@@ -55,8 +55,12 @@ pub struct FinalizedToolCall {
 
 #[derive(Debug)]
 pub enum FinalizeError {
-    MissingId { index: u32 },
-    MissingName { index: u32 },
+    MissingId {
+        index: u32,
+    },
+    MissingName {
+        index: u32,
+    },
     BadJson {
         index: u32,
         #[allow(dead_code)]
@@ -71,7 +75,11 @@ impl std::fmt::Display for FinalizeError {
             Self::MissingId { index } => write!(f, "tool_call[{}] missing id", index),
             Self::MissingName { index } => write!(f, "tool_call[{}] missing function.name", index),
             Self::BadJson { index, err, .. } => {
-                write!(f, "tool_call[{}] arguments JSON parse failed: {}", index, err)
+                write!(
+                    f,
+                    "tool_call[{}] arguments JSON parse failed: {}",
+                    index, err
+                )
             }
         }
     }
@@ -137,8 +145,12 @@ impl ToolCallAccumulator {
     pub fn finalize(&self) -> Result<Vec<FinalizedToolCall>, FinalizeError> {
         let mut out = Vec::with_capacity(self.calls.len());
         for (index, (id, name, args)) in &self.calls {
-            let id = id.clone().ok_or(FinalizeError::MissingId { index: *index })?;
-            let name = name.clone().ok_or(FinalizeError::MissingName { index: *index })?;
+            let id = id
+                .clone()
+                .ok_or(FinalizeError::MissingId { index: *index })?;
+            let name = name
+                .clone()
+                .ok_or(FinalizeError::MissingName { index: *index })?;
             let parsed = if args.trim().is_empty() {
                 serde_json::Value::Object(serde_json::Map::new())
             } else {
@@ -148,7 +160,11 @@ impl ToolCallAccumulator {
                     err: e,
                 })?
             };
-            out.push(FinalizedToolCall { id, name, arguments: parsed });
+            out.push(FinalizedToolCall {
+                id,
+                name,
+                arguments: parsed,
+            });
         }
         Ok(out)
     }
@@ -166,7 +182,11 @@ impl ToolCallAccumulator {
             } else {
                 serde_json::from_str(args).unwrap_or(serde_json::Value::Null)
             };
-            out.push(FinalizedToolCall { id, name, arguments: parsed });
+            out.push(FinalizedToolCall {
+                id,
+                name,
+                arguments: parsed,
+            });
         }
         out
     }

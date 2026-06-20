@@ -167,7 +167,11 @@ mod tests {
              0\t1\tls\n",
         );
         apply(&mut stats, &p);
-        assert_eq!(stats.get("ls").unwrap().accept_count, 1, "only last line valid");
+        assert_eq!(
+            stats.get("ls").unwrap().accept_count,
+            1,
+            "only last line valid"
+        );
     }
 
     #[test]

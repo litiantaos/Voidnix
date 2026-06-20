@@ -111,10 +111,12 @@ export default defineExtension({
       if (!query.trim()) return []
 
       try {
+        // M-cb2：全局搜索走 previewOnly=true，避免大图全量载入内存（每张可达数 MB）
+        // 图片返回空 content + icon class；详情在 clipboard 模块 View 内按需加载
         const raw = await invoke<ClipboardItem[]>(CMD.getClipboardHistory, {
           filterFavorite: null,
           limit: null,
-          previewOnly: null,
+          previewOnly: true,
         })
         const items = filterByQuery(raw, query)
         return items.map((item) => {
@@ -141,10 +143,6 @@ export default defineExtension({
               kind: 'clipboard' as const,
               iconStyle: 'rounded',
               id: item.id,
-              icon:
-                item.content_type === 'image'
-                  ? item.content.replace('data:image/png;base64,', '')
-                  : undefined,
             },
           }
         })

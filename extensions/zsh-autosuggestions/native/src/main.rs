@@ -80,9 +80,7 @@ fn parse_fail_penalty(s: &str) -> Result<f64, String> {
 }
 
 fn parse_limit(s: &str) -> Result<usize, String> {
-    let v: usize = s
-        .parse()
-        .map_err(|_| format!("limit: 无效正整数 '{s}'"))?;
+    let v: usize = s.parse().map_err(|_| format!("limit: 无效正整数 '{s}'"))?;
     if v == 0 {
         return Err("limit 必须为正整数".into());
     }

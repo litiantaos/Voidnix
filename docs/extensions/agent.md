@@ -52,9 +52,9 @@ Tavily 搜索（专为 AI 设计，返回含 `answer` 字段的结构化 JSON）
 
 纵深防御 9 层：
 
-1. 命令白名单（用户在 config 编辑；默认含 ls/cat/grep/sed/awk/cp/mv/git 等读+编辑命令）
+1. 命令白名单（用户在 config 编辑；默认仅只读集合 ls/cat/grep/rg/fd/wc/file/stat/diff/jq/bat 等；执行器/写操作工具 find/awk/sed/git/cp/mv/ln/tee/truncate/touch/mkdir 即便用户加入 trusted 也会被 `TRUSTED_DENYLIST` 强制剔除）
 2. FORBIDDEN 硬禁（`osascript/sudo/sh/curl/wget/...`，不可被白名单覆盖）
-3. 参数黑名单（`--exec/--upload-pack/-o/-C/...`）+ shell 元字符检测
+3. 参数黑名单（`--exec`/`-exec`/`-execdir`/`-ok`/`-okdir`/`--upload-pack`/`-o`/`-C`/...）+ shell 元字符检测
 4. 断路器（`rm -rf /` / `rm -rf ~` 即便 approved 也拦）
 5. `env_clear()` + 白名单 env（防父进程 API key 进子进程）
 6. cwd `canonicalize`
@@ -97,18 +97,20 @@ AI Provider 基础设施（endpoint/apiKey/models）在框架级 `stores/setting
 ```
 extensions/agent/
 ├── index.ts               # module 注册（id 'agent'）
-├── config.ts              # defineConfig（trustedCommands/systemPrompt/searchProviders）
+├── config.ts              # defineConfig（trustedCommands/systemPrompt/searchProviders + BOUNDS UI 镜像）
 ├── agent.ts               # useAgentChat composable（前端状态机）
 ├── View.vue               # part 渲染 + Approval 弹窗
 ├── Settings.vue           # Provider + Agent 配置
 ├── Actions.vue            # 模型切换 + 新会话
 └── native/
     ├── mod.rs             # agent_run / agent_approve / agent_abort + Extension impl
+    ├── policy.rs          # floor/cap/TRUSTED_DENYLIST 权威源（FORBIDDEN_FLOOR 31 / DENIED_ARG_FLOOR 19）
     ├── engine/            # agent 引擎（从框架层下沉）
     │   ├── mod.rs         # AgentEvent 枚举
     │   ├── loop_runner.rs # 主循环（max_turns/default_prompt 由 LoopInput 注入）
     │   ├── approval.rs    # ApprovalManager（oneshot channel）
     │   ├── cancellation.rs # SessionRegistry（CancellationToken）
+    │   ├── trim.rs        # 历史消息裁剪
     │   ├── secret_scrub.rs # gitleaks 正则打码
     │   └── tool_registry.rs # AgentTool trait + ToolRegistry
     └── tools/
@@ -118,5 +120,5 @@ extensions/agent/
 
 ## 测试
 
-- Rust 单元测试：`cargo test --lib`（含 run_command 15 个防御测试 + approval 3 个 + LLM security 10 个）
+- Rust 单元测试：`cargo test --lib`（含 run_command 17 个防御测试 + approval 3 个 + policy 5 个 + LLM security 5 个）
 - 前端测试：`bun run test`

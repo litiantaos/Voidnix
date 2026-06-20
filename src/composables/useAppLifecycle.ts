@@ -1,4 +1,11 @@
-import { onMounted, onUnmounted, watch, type Component, type ShallowRef } from 'vue'
+import {
+  onMounted,
+  onUnmounted,
+  watch,
+  type Component,
+  type ShallowRef,
+  type WatchStopHandle,
+} from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { listen } from '@tauri-apps/api/event'
@@ -51,6 +58,9 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
   const track = (fn: () => void): void => {
     unlistenList.push(fn)
   }
+  // M-fe1：watch stop handle + update 检查 timer 一并纳入清理，避免 HMR/测试场景累积
+  const watchStops: WatchStopHandle[] = []
+  let updateTimer: ReturnType<typeof setTimeout> | null = null
   let allGlobalShortcuts: {
     id: string
     default?: string
@@ -79,7 +89,7 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
     }
 
     if (isTauri) {
-      setTimeout(async () => {
+      updateTimer = setTimeout(async () => {
         try {
           const hasUpdate = await updateStore.check()
           if (hasUpdate) await updateStore.download()
@@ -100,21 +110,25 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
         await setupGlobalShortcut(sc.id, effectiveShortcut(sc.id, sc.default))
       }
 
-      watch(
-        () => settings.globalShortcut,
-        async (newVal) => {
-          await setupGlobalShortcut('main', newVal)
-        },
+      watchStops.push(
+        watch(
+          () => settings.globalShortcut,
+          async (newVal) => {
+            await setupGlobalShortcut('main', newVal)
+          },
+        ),
       )
 
-      watch(
-        () => settings.shortcutOverrides,
-        async () => {
-          for (const sc of allGlobalShortcuts) {
-            await setupGlobalShortcut(sc.id, effectiveShortcut(sc.id, sc.default))
-          }
-        },
-        { deep: true },
+      watchStops.push(
+        watch(
+          () => settings.shortcutOverrides,
+          async () => {
+            for (const sc of allGlobalShortcuts) {
+              await setupGlobalShortcut(sc.id, effectiveShortcut(sc.id, sc.default))
+            }
+          },
+          { deep: true },
+        ),
       )
 
       const unlistenShortcut = await listen<{ id: string; wasVisible: boolean }>(
@@ -206,10 +220,17 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
     document.addEventListener('keydown', onLocalShortcut)
   })
 
-  onUnmounted(async () => {
+  onUnmounted(() => {
     if (activeWindowView.value) return
 
     document.removeEventListener('keydown', onLocalShortcut)
+    // M-fe1：清理 watch + timer，与 unlisten 一并回收
+    watchStops.forEach((stop) => stop())
+    watchStops.length = 0
+    if (updateTimer) {
+      clearTimeout(updateTimer)
+      updateTimer = null
+    }
     if (isTauri) {
       unlistenList.forEach((fn) => {
         try {
@@ -220,13 +241,14 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
       })
       unlistenList.length = 0
 
-      await invoke(CMD.registerGlobalShortcut, {
+      // 同步触发注销（fire-and-forget）：Tauri app 退出前会等待当前 task tick
+      void invoke(CMD.registerGlobalShortcut, {
         id: 'main',
         shortcut: '',
       }).catch(() => {})
 
       for (const sc of allGlobalShortcuts) {
-        await invoke(CMD.registerGlobalShortcut, {
+        void invoke(CMD.registerGlobalShortcut, {
           id: sc.id,
           shortcut: '',
         }).catch(() => {})

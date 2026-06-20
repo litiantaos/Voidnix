@@ -5,10 +5,15 @@ import type { Extension } from './types'
 
 const extensions: Extension[] = []
 
-/** 声明一个扩展并注册到注册中心。返回原对象便于 `export default defineExtension({...})`。 */
+/** 声明一个扩展并注册到注册中心。返回原对象便于 `export default defineExtension({...})`。
+ *
+ * P4-fe1：重复 id 改为抛错（旧实现仅 warn + 重复 push，导致搜索/快捷键路由歧义）。
+ * 开发期暴露配置错误比静默容忍更符合「强迫症」原则。 */
 export function defineExtension(ext: Extension): Extension {
   if (extensions.some((e) => e.meta.id === ext.meta.id)) {
-    console.warn(`[defineExtension] duplicate extension id '${ext.meta.id}', already registered`)
+    throw new Error(
+      `[defineExtension] duplicate extension id '${ext.meta.id}' — check extensions/*/index.ts`,
+    )
   }
   extensions.push(ext)
   return ext

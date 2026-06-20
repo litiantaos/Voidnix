@@ -39,7 +39,7 @@ export default defineExtension({
       'erweima',
       'barcode',
     ],
-    order: 9,
+    order: 11,
   },
 
   mainView: () => ScreenshotView,

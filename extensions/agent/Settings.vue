@@ -1,5 +1,19 @@
 <template>
   <div class="flex-col-full-pb">
+    <!-- M-ag2：BOUNDS 数值项越界警告（用户手改 config.json 时提示；Rust 端 clamp 兜底） -->
+    <div
+      v-if="outOfBoundsItems.length"
+      p="x-3 y-2"
+      m="b-2"
+      rounded="md"
+      bg="red-50"
+      text="xs red-500"
+    >
+      <div font="medium">以下配置超出安全边界，Rust 端会自动 clamp：</div>
+      <div v-for="it in outOfBoundsItems" :key="it.key" m="t-0.5">
+        · {{ it.label }}：当前 {{ it.value }}（允许 {{ it.floor }}–{{ it.cap }}）
+      </div>
+    </div>
     <BaseList
       :items="allItems"
       v-model:selected-index="selectedIndex"
@@ -189,11 +203,12 @@
     >
       <div class="form-field">
         <span class="form-label">免审批命令（每行一个，basename 形式如 `git`）</span>
-        <textarea
+        <BaseTextarea
           v-model="whitelistText"
-          rows="10"
+          :rows="10"
+          :max-height="0"
+          :submit-on-enter="false"
           placeholder="ls&#10;cat&#10;git"
-          class="text-xs font-mono p-2 outline-none border border-tx-faint/20 rounded-md bg-black/[0.03] w-full resize-none focus:border-accent/50"
         />
         <p text="xs tx-subtle" m="t-1">
           列在此处的命令直接执行无需审批。点击审批弹窗的「执行并信任」也会自动追加。
@@ -219,11 +234,12 @@
     >
       <div class="form-field">
         <span class="form-label">追加到默认 harness 之后（用户自定义指令）</span>
-        <textarea
+        <BaseTextarea
           v-model="systemPromptText"
-          rows="8"
+          :rows="8"
+          :max-height="0"
+          :submit-on-enter="false"
           placeholder="例如：始终用英文回答；优先使用 ripgrep 而非 grep；当前工作目录是 ~/Projects/myapp，使用 pnpm 而非 npm"
-          class="text-xs p-2 outline-none border border-tx-faint/20 rounded-md bg-black/[0.03] w-full resize-none focus:border-accent/50"
         />
         <p text="xs tx-subtle" m="t-1">
           留空使用纯默认 harness（描述工具规则、安全约束、输出风格）。
@@ -246,6 +262,7 @@ import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { providerLabelFromUrl } from '@/utils/format'
@@ -471,6 +488,61 @@ const conflictTrusted = computed(() => {
     .split('\n')
     .map((s) => s.trim())
     .filter((s) => s && floor.includes(s))
+})
+
+// M-ag2：BOUNDS 数值项越界检测（消费 BOUNDS.max* tuple，用于 UI 警告；Rust 端 clamp 兜底）
+const outOfBoundsItems = computed(() => {
+  const checks: Array<{
+    key: string
+    label: string
+    value: number
+    floor: number
+    cap: number
+  }> = [
+    {
+      key: 'maxTurns',
+      label: '最大轮次',
+      value: agentConfig.maxTurns,
+      floor: BOUNDS.maxTurns.floor,
+      cap: BOUNDS.maxTurns.cap,
+    },
+    {
+      key: 'maxCpuSeconds',
+      label: 'CPU 上限',
+      value: agentConfig.maxCpuSeconds,
+      floor: BOUNDS.maxCpuSeconds.floor,
+      cap: BOUNDS.maxCpuSeconds.cap,
+    },
+    {
+      key: 'maxMemoryMb',
+      label: '内存上限',
+      value: agentConfig.maxMemoryMb,
+      floor: BOUNDS.maxMemoryMb.floor,
+      cap: BOUNDS.maxMemoryMb.cap,
+    },
+    {
+      key: 'maxOpenFiles',
+      label: '文件描述符',
+      value: agentConfig.maxOpenFiles,
+      floor: BOUNDS.maxOpenFiles.floor,
+      cap: BOUNDS.maxOpenFiles.cap,
+    },
+    {
+      key: 'executionTimeout',
+      label: '执行超时',
+      value: agentConfig.executionTimeout,
+      floor: BOUNDS.executionTimeout.floor,
+      cap: BOUNDS.executionTimeout.cap,
+    },
+    {
+      key: 'maxOutputBytes',
+      label: '输出上限',
+      value: agentConfig.maxOutputBytes,
+      floor: BOUNDS.maxOutputBytes.floor,
+      cap: BOUNDS.maxOutputBytes.cap,
+    },
+  ]
+  return checks.filter((c) => c.value < c.floor || c.value > c.cap)
 })
 
 async function saveWhitelist() {

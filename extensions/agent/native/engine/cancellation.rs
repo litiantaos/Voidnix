@@ -19,6 +19,7 @@ struct Session {
 /// 全局 session 注册器（作为 Tauri State 注入）。
 ///
 /// 内部用 `Arc<Mutex<...>>` 共享，SessionRegistry 本身实现 Clone（cheap clone）。
+/// P4-rs1：lock 失败时 unwrap_or_else 恢复（与 shortcut.rs lock_or_recover 一致）。
 #[derive(Clone, Default)]
 pub struct SessionRegistry {
     sessions: Arc<Mutex<HashMap<String, Session>>>,
@@ -28,24 +29,40 @@ impl SessionRegistry {
     /// 注册一个新会话，返回 token 的 clone 供 loop_runner 使用。
     pub fn register(&self, session_id: String, token: CancellationToken) -> CancellationToken {
         let token_clone = token.clone();
-        self.sessions.lock().unwrap().insert(
-            session_id,
-            Session { handle: None, token },
-        );
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(
+                session_id,
+                Session {
+                    handle: None,
+                    token,
+                },
+            );
         token_clone
     }
 
     /// 在 register 之后调用，存入 task handle。
     /// 用于 abort 时强制终止 task。
     pub fn set_handle(&self, session_id: &str, handle: JoinHandle<()>) {
-        if let Some(s) = self.sessions.lock().unwrap().get_mut(session_id) {
+        if let Some(s) = self
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_mut(session_id)
+        {
             s.handle = Some(handle);
         }
     }
 
     /// 取消并移除一个会话（用户点 abort 或会话自然结束时调用）。
     pub fn cancel(&self, session_id: &str) -> bool {
-        if let Some(mut session) = self.sessions.lock().unwrap().remove(session_id) {
+        if let Some(mut session) = self
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(session_id)
+        {
             session.token.cancel();
             if let Some(handle) = session.handle.take() {
                 handle.abort();

@@ -23,8 +23,9 @@ export function isFormControl(
   const tag = el.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
   if (el.hasAttribute('contenteditable')) return true
+  // P4-fe3：统一走 data attr（BaseSelect 已设 data-settings-control），
+  // 不再耦合具体 class 名（旧 el.classList.contains('custom-select') 脆弱）
   if (extraChecks?.settingsControl && el.hasAttribute('data-settings-control')) return true
-  if (extraChecks?.settingsControl && el.classList.contains('custom-select')) return true
   return false
 }
 

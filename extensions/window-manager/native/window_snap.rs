@@ -10,8 +10,8 @@
 
 #[cfg(target_os = "macos")]
 mod inner {
-    use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
 
     use objc2::runtime::AnyObject;
     use objc2::ClassType;
@@ -82,8 +82,12 @@ mod inner {
     const PANEL_TOP_GAP: f64 = 8.0;
     const HIDE_DELAY_SEC: f64 = 0.4;
 
-    fn panel_width() -> f64 { 344.0 }
-    fn panel_height() -> f64 { 80.0 }
+    fn panel_width() -> f64 {
+        344.0
+    }
+    fn panel_height() -> f64 {
+        80.0
+    }
 
     // ── 屏幕工具 ──────────────────────────────────────────────────────────
 
@@ -94,9 +98,7 @@ mod inner {
         let screens = objc2_app_kit::NSScreen::screens(mtm);
         for s in screens.iter() {
             let frame = s.frame();
-            if (frame.origin.x - screen.x).abs() < 1.0
-                && (frame.origin.y - screen.y).abs() < 1.0
-            {
+            if (frame.origin.x - screen.x).abs() < 1.0 && (frame.origin.y - screen.y).abs() < 1.0 {
                 let visible = s.visibleFrame();
                 let frame_top = frame.origin.y + frame.size.height;
                 let visible_top = visible.origin.y + visible.size.height;
@@ -125,9 +127,7 @@ mod inner {
     fn is_in_trigger_zone(mx: f64, my: f64, screen: &ScreenInfo) -> bool {
         let screen_top = screen.y + screen.height;
         let center_x = screen.x + screen.width / 2.0;
-        my >= screen_top - TRIGGER_ZONE_HEIGHT
-            && mx >= center_x - 100.0
-            && mx <= center_x + 100.0
+        my >= screen_top - TRIGGER_ZONE_HEIGHT && mx >= center_x - 100.0 && mx <= center_x + 100.0
     }
 
     fn is_in_panel_area(mx: f64, my: f64, screen: &ScreenInfo) -> bool {
@@ -154,7 +154,9 @@ mod inner {
     }
 
     fn show_panel(app: &AppHandle, screen: &ScreenInfo) {
-        let Some(window) = get_snap_window(app) else { return };
+        let Some(window) = get_snap_window(app) else {
+            return;
+        };
         let raw = match window.ns_window() {
             Ok(r) => r,
             Err(_) => return,
@@ -191,7 +193,9 @@ mod inner {
     fn hide_panel_impl(app: &AppHandle) {
         cancel_hide_timer();
 
-        let Some(window) = get_snap_window(app) else { return };
+        let Some(window) = get_snap_window(app) else {
+            return;
+        };
         let _ = window.eval("window.dispatchEvent(new CustomEvent('__snap_panel_hide'))");
 
         STATE.lock().unwrap().visible = false;
@@ -218,7 +222,9 @@ mod inner {
 
     fn schedule_hide_timer() {
         let mut guard = HIDE_TIMER.lock().unwrap();
-        if guard.is_some() { return; }
+        if guard.is_some() {
+            return;
+        }
         unsafe {
             let now = CFAbsoluteTimeGetCurrent();
             let timer = CFRunLoopTimerCreate(
@@ -230,7 +236,9 @@ mod inner {
                 hide_timer_callback,
                 std::ptr::null_mut(),
             );
-            if timer.is_null() { return; }
+            if timer.is_null() {
+                return;
+            }
             let rl = CFRunLoopGetCurrent();
             CFRunLoopAddTimer(rl, timer, kCFRunLoopCommonModes);
             *guard = Some(SendTimer(timer));
@@ -253,7 +261,9 @@ mod inner {
     fn forward_mouse_to_snap_panel(mx: f64, my: f64) {
         let app_opt = APP.lock().unwrap().clone();
         let Some(app) = app_opt else { return };
-        let Some(window) = get_snap_window(&app) else { return };
+        let Some(window) = get_snap_window(&app) else {
+            return;
+        };
         let Ok(raw) = window.ns_window() else { return };
         let local_x;
         let local_y;
@@ -270,7 +280,9 @@ mod inner {
     }
 
     fn on_mouse_moved() {
-        if !ENABLED.load(Ordering::SeqCst) { return; }
+        if !ENABLED.load(Ordering::SeqCst) {
+            return;
+        }
 
         let (mx, my) = get_mouse_location();
         let screen = find_screen_for_point(mx, my);
@@ -278,9 +290,9 @@ mod inner {
         let visible = STATE.lock().unwrap().visible;
 
         if visible {
-            let in_area = screen.as_ref().is_some_and(|s| {
-                is_in_trigger_zone(mx, my, s) || is_in_panel_area(mx, my, s)
-            });
+            let in_area = screen
+                .as_ref()
+                .is_some_and(|s| is_in_trigger_zone(mx, my, s) || is_in_panel_area(mx, my, s));
             if in_area {
                 cancel_hide_timer();
                 forward_mouse_to_snap_panel(mx, my);
@@ -310,7 +322,9 @@ mod inner {
         }
         {
             let guard = MONITOR.lock().unwrap();
-            if guard.is_some() { return; }
+            if guard.is_some() {
+                return;
+            }
         }
         ENABLED.store(true, Ordering::SeqCst);
         *APP.lock().unwrap() = Some(app);
@@ -319,10 +333,11 @@ mod inner {
             on_mouse_moved();
         });
 
-        let local_moved_block = block2::RcBlock::new(move |event: *mut AnyObject| -> *mut AnyObject {
-            on_mouse_moved();
-            event
-        });
+        let local_moved_block =
+            block2::RcBlock::new(move |event: *mut AnyObject| -> *mut AnyObject {
+                on_mouse_moved();
+                event
+            });
 
         unsafe {
             let global_moved: *mut AnyObject = objc2::msg_send![
@@ -391,7 +406,9 @@ mod inner {
     use tauri::AppHandle;
     pub fn start(_app: AppHandle, _cw: f64, _ch: f64) {}
     pub fn stop() {}
-    pub fn is_running() -> bool { false }
+    pub fn is_running() -> bool {
+        false
+    }
     pub fn hide_panel(_app: &AppHandle) {}
 }
 

@@ -19,14 +19,14 @@
         {{ updateStore.info.body }}
       </p>
 
-      <button
-        text="xs accent/80 left"
-        transition="colors"
-        class="hover:text-accent"
+      <BaseButton
+        variant="ghost"
+        icon="i-ri-external-link-line"
+        class="!text-xs !text-accent/80 !justify-start hover:!text-accent"
         @click="openReleases"
       >
-        查看完整更新说明 →
-      </button>
+        查看完整更新说明
+      </BaseButton>
     </div>
   </BaseDialog>
 </template>
@@ -36,6 +36,7 @@ import { ref } from 'vue'
 import { open } from '@tauri-apps/plugin-shell'
 import { relaunch } from '@tauri-apps/plugin-process'
 import BaseDialog from './BaseDialog.vue'
+import BaseButton from './BaseButton.vue'
 import { useUpdateStore } from '@/stores/update'
 import { isTauri } from '@/utils/tauri'
 
@@ -46,7 +47,7 @@ const installing = ref(false)
 
 async function openReleases() {
   if (isTauri) {
-    await open('https://github.com/litiantaos/Voidnix/releases')
+    await open('https://github.com/litiantao/Voidnix/releases')
   }
 }
 

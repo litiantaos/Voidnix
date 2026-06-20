@@ -49,31 +49,47 @@ impl Default for ExtensionRegistry {
 /// **block_on 安全性**（§7 N7）：Tauri setup 闭包在主线程同步执行，不在 tokio
 /// worker 上下文内，故 `tauri::async_runtime::block_on` 非嵌套调用、不会 panic。
 /// lib.rs pre-bootstrap 处的 block_on 探针为运行期 canary。
-pub fn bootstrap(app: &mut tauri::App<tauri::Wry>, registry: ExtensionRegistry) -> tauri::Result<()> {
+pub fn bootstrap(
+    app: &mut tauri::App<tauri::Wry>,
+    registry: ExtensionRegistry,
+) -> tauri::Result<()> {
     use tauri::Manager;
     let handle = app.handle().clone();
     let count = registry.extensions.len();
     let start = std::time::Instant::now();
 
     let setup_result = tauri::async_runtime::block_on(async {
-        let results = futures_util::future::join_all(
-            registry.extensions.iter().map(|e| e.setup(&handle)),
-        )
-        .await;
+        let results =
+            futures_util::future::join_all(registry.extensions.iter().map(|e| e.setup(&handle)))
+                .await;
         for (idx, r) in results.into_iter().enumerate() {
             if let Err(e) = r {
-                eprintln!("[ext] '{}' setup failed: {e}", registry.extensions[idx].id());
+                eprintln!(
+                    "[ext] '{}' setup failed: {e}",
+                    registry.extensions[idx].id()
+                );
                 return Err(e);
             }
         }
         Ok(())
     });
 
-    eprintln!(
-        "[bootstrap] {} extensions setup in {:?}",
-        count,
-        start.elapsed()
-    );
+    // P4-rs2：setup 失败时不打印成功耗时（避免误导），改打印失败耗时
+    match &setup_result {
+        Ok(()) => {
+            eprintln!(
+                "[bootstrap] {} extensions setup in {:?}",
+                count,
+                start.elapsed()
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "[bootstrap] extensions setup FAILED after {:?}",
+                start.elapsed()
+            );
+        }
+    }
     app.manage(registry);
     setup_result
 }

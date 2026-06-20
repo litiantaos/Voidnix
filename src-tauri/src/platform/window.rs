@@ -43,7 +43,9 @@ pub fn make_key_window(window: &tauri::WebviewWindow) {
 pub fn apply_main_window_style(window: &tauri::WebviewWindow) {
     let Ok(ptr) = window.ns_window() else { return };
     let raw = ptr.cast::<NSWindow>();
-    let Some(ns_window) = (unsafe { raw.as_ref() }) else { return };
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
+        return;
+    };
     if let Some(content_view) = ns_window.contentView() {
         let _: () = unsafe { objc2::msg_send![&content_view, setWantsLayer: true] };
         let layer: *mut objc2::runtime::AnyObject =
@@ -90,6 +92,11 @@ pub fn pick_directory_modal(app: &tauri::AppHandle) -> String {
             if count > 0 {
                 let url: *mut AnyObject = objc2::msg_send![urls, objectAtIndex: 0usize];
                 let path: *mut NSString = objc2::msg_send![url, path];
+                // M-rs1：path 来自 NSURL.path，对正常 file URL 非空；
+                // 但 url 为 nil 或异常路径时可能返 null，解引用前必须检查
+                if path.is_null() {
+                    return String::new();
+                }
                 return (*path).to_string();
             }
         }

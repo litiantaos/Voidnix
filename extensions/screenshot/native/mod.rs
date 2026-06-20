@@ -15,8 +15,7 @@ pub use session::{capture_screen, reactivate_screenshot_window};
 
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("screenshot")
-        .build()
+    tauri::plugin::Builder::<tauri::Wry>::new("screenshot").build()
 }
 
 #[cfg(target_os = "macos")]
@@ -88,8 +87,4 @@ impl Extension for ScreenshotExtension {
 fn cleanup_temp_files() {
     let temp_dir = std::env::temp_dir();
     crate::runtime::storage::cleanup_temps_by_prefix(&temp_dir, "voidnix_", &[".png", ".jpg"]);
-    // 兼容：清理旧版 awake binary（已迁移至 app_data_dir）
-    let awake_dir = temp_dir.join("com.litiantao.voidnix");
-    let _ = std::fs::remove_file(awake_dir.join("Display Wakelock"));
-    let _ = std::fs::remove_dir(&awake_dir);
 }

@@ -30,6 +30,7 @@ export const inputText = ref('')
 let unlistenChunk: UnlistenFn | null = null
 let unlistenDone: UnlistenFn | null = null
 let unlistenReady: UnlistenFn | null = null
+let unlistenPendingText: UnlistenFn | null = null
 let streamInitializing = false
 
 const streamIndexMap = new Map<string, number>()
@@ -80,6 +81,8 @@ export function destroyStreamListeners() {
   unlistenDone = null
   unlistenReady?.()
   unlistenReady = null
+  unlistenPendingText?.()
+  unlistenPendingText = null
   streamInitializing = false
 }
 
@@ -241,6 +244,11 @@ export default defineExtension({
         translateReadyResolver(e.payload || '')
         translateReadyResolver = null
       }
+    })
+    // 跨扩展通信（C9）：screenshot OCR 等通过事件总线投递待翻译文本，
+    // 避免扩展之间直 import 内部状态。
+    unlistenPendingText = await listen<string>('translate-pending-text', (e) => {
+      pendingText.value = e.payload || ''
     })
     await initStreamListeners()
   },

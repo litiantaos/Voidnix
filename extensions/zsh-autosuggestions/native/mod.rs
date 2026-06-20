@@ -41,16 +41,20 @@ fn installed_bin(app: &AppHandle) -> PathBuf {
 
 fn source_bin() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    // 优先 MacOS/（deploy.sh cp 模式 + 开发模式 current_exe 在 target/debug/）
+    // 优先 MacOS/（开发模式 current_exe 在 target/debug/）
     if let Some(mac_os) = exe.parent() {
         let p = mac_os.join(BIN_NAME);
         if p.exists() {
             return Some(p);
         }
     }
-    // 兜底 Resources/（tauri bundle.resources 模式，CI 分发链路）
+    // 兜底 Resources/（tauri bundle.resources 模式，release 分发链路）
     // .app/Contents/MacOS/Voidnix → .app/Contents/Resources/
-    if let Some(resources) = exe.parent().and_then(|d| d.parent()).map(|d| d.join("Resources")) {
+    if let Some(resources) = exe
+        .parent()
+        .and_then(|d| d.parent())
+        .map(|d| d.join("Resources"))
+    {
         let p = resources.join(BIN_NAME);
         if p.exists() {
             return Some(p);
@@ -200,7 +204,11 @@ fn quote_shell(s: &str) -> String {
 }
 
 /// 生成写入 .zshrc 的单行（export 三变量 + eval init + marker）。
-fn build_zshrc_line(bin: &std::path::Path, cache: &std::path::Path, signals: &std::path::Path) -> String {
+fn build_zshrc_line(
+    bin: &std::path::Path,
+    cache: &std::path::Path,
+    signals: &std::path::Path,
+) -> String {
     format!(
         "export ZSH_AS_BIN={} ZSH_AS_CACHE={} ZSH_AS_SIGNALS={}; eval \"$( \"$ZSH_AS_BIN\" init )\" {}",
         quote_shell(&bin.display().to_string()),
@@ -263,8 +271,7 @@ pub async fn set_zsh_autosuggestions_enabled(app: AppHandle, enabled: bool) -> R
 
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("zsh-autosuggestions")
-        .build()
+    tauri::plugin::Builder::<tauri::Wry>::new("zsh-autosuggestions").build()
 }
 
 pub struct ZshAutosuggestionsExtension;
@@ -299,7 +306,8 @@ mod tests {
 
     fn tmp_dir(label: &str) -> std::path::PathBuf {
         let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("zsh-as-mod-{label}-{}-{id}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("zsh-as-mod-{label}-{}-{id}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -473,7 +481,10 @@ mod tests {
         assert!(install_bin_to(&src, &dest, &ver), "absent → copy");
         assert!(dest.exists());
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "SRC");
-        assert_eq!(std::fs::read_to_string(&ver).unwrap(), BIN_VERSION.to_string());
+        assert_eq!(
+            std::fs::read_to_string(&ver).unwrap(),
+            BIN_VERSION.to_string()
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

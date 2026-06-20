@@ -2,8 +2,8 @@ use std::sync::atomic::Ordering;
 
 use super::ffi::{
     get_cg_image, picker_jpeg_path, prepare_picker_jpeg, store_cg_image,
-    ScreenshotData, WindowRect, voidnix_screenshot_clear_background,
-    voidnix_screenshot_set_background,
+    voidnix_screenshot_clear_background, voidnix_screenshot_set_background, ScreenshotData,
+    WindowRect,
 };
 
 #[cfg(target_os = "macos")]
@@ -41,8 +41,7 @@ pub(super) fn fade_window_layer_opacity(
         let from_opacity: f32 = objc2::msg_send![layer, opacity];
         let cls_anim = objc2::class!(CABasicAnimation);
         let key_path = NSString::from_str("opacity");
-        let anim: *mut AnyObject =
-            objc2::msg_send![cls_anim, animationWithKeyPath: &*key_path];
+        let anim: *mut AnyObject = objc2::msg_send![cls_anim, animationWithKeyPath: &*key_path];
 
         let cls_num = objc2::class!(NSNumber);
         let from_val: *mut AnyObject = objc2::msg_send![cls_num, numberWithFloat: from_opacity];
@@ -58,8 +57,7 @@ pub(super) fn fade_window_layer_opacity(
 
         match completion {
             Some(cb) => {
-                let slot: Arc<Mutex<Option<CompletionCallback>>> =
-                    Arc::new(Mutex::new(Some(cb)));
+                let slot: Arc<Mutex<Option<CompletionCallback>>> = Arc::new(Mutex::new(Some(cb)));
                 let slot_clone = Arc::clone(&slot);
                 let done = block2::RcBlock::new(move || {
                     if let Some(f) = slot_clone.lock().unwrap().take() {
@@ -102,8 +100,8 @@ pub(super) fn set_window_layer_opacity(ns_window_addr: usize, opacity: f32) {
 
 #[cfg(target_os = "macos")]
 mod mouse_tracker {
-    use std::sync::Mutex;
     use objc2::runtime::AnyObject;
+    use std::sync::Mutex;
     use tauri::Manager;
 
     struct SendObj(*mut AnyObject);
@@ -135,8 +133,9 @@ mod mouse_tracker {
         let mask: u64 = (1u64 << 5) | (1u64 << 6) | (1u64 << 7) | (1u64 << 27);
         {
             let app = app.clone();
-            let blk =
-                block2::RcBlock::new(move |_event: *mut AnyObject| { emit_mouse(&app, screen_h); });
+            let blk = block2::RcBlock::new(move |_event: *mut AnyObject| {
+                emit_mouse(&app, screen_h);
+            });
             unsafe {
                 let m: *mut AnyObject = objc2::msg_send![NSEvent::class(), addGlobalMonitorForEventsMatchingMask: mask, handler: &*blk];
                 if !m.is_null() {
@@ -345,16 +344,12 @@ pub fn capture_screen() -> Result<ScreenshotData, String> {
     let lw = bounds.size.width as u32;
     let lh = bounds.size.height as u32;
 
-    let cg_image = display.image().ok_or(
-        "CGDisplayCreateImage 失败：请在「系统设置 → 隐私与安全性 → 屏幕录制」中授权",
-    )?;
+    let cg_image = display
+        .image()
+        .ok_or("CGDisplayCreateImage 失败：请在「系统设置 → 隐私与安全性 → 屏幕录制」中授权")?;
 
     let pw = cg_image.width() as u32;
-    let scale = if lw > 0 {
-        pw as f64 / lw as f64
-    } else {
-        1.0
-    };
+    let scale = if lw > 0 { pw as f64 / lw as f64 } else { 1.0 };
 
     #[cfg(target_os = "macos")]
     {
@@ -398,9 +393,7 @@ pub fn enter_screenshot_mode_sync(_app: &tauri::AppHandle, _data: ScreenshotData
 
 #[cfg(target_os = "macos")]
 fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), String> {
-    use objc2_app_kit::{
-        NSEvent, NSScreen, NSWindow, NSWindowAnimationBehavior,
-    };
+    use objc2_app_kit::{NSEvent, NSScreen, NSWindow, NSWindowAnimationBehavior};
     use objc2_foundation::MainThreadMarker;
     use tauri::Manager;
 
@@ -447,12 +440,8 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
             prepare_picker_jpeg(cg_image_ptr);
         }
 
-        let window_number: objc2_foundation::NSInteger =
-            objc2::msg_send![ns_window, windowNumber];
-        let _ = crate::platform::skylight::move_window_to_active_space(
-            window_number as i64,
-            ns_window_ptr,
-        );
+        let window_number: objc2_foundation::NSInteger = objc2::msg_send![ns_window, windowNumber];
+        let _ = crate::platform::skylight::move_window_to_active_space(window_number as i64);
 
         let ns_window_addr = raw.cast::<NSWindow>() as usize;
         set_window_layer_opacity(ns_window_addr, 0.0);
@@ -562,16 +551,21 @@ fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), Strin
         let _: () = objc2::msg_send![ns_window, resignKeyWindow];
     }
 
-    fade_window_layer_opacity(ns_window_addr, 0.0, 0.15, Some(Box::new(move || {
-        if SCREENSHOT_GEN.load(std::sync::atomic::Ordering::SeqCst) == session_gen {
-            unsafe {
-                let ptr = ns_window_addr as *mut std::ffi::c_void;
-                voidnix_screenshot_clear_background(ptr);
-                let nsw = ns_window_addr as *mut objc2::runtime::AnyObject;
-                let _: () = objc2::msg_send![nsw, setAlphaValue: 0.0_f64];
+    fade_window_layer_opacity(
+        ns_window_addr,
+        0.0,
+        0.15,
+        Some(Box::new(move || {
+            if SCREENSHOT_GEN.load(std::sync::atomic::Ordering::SeqCst) == session_gen {
+                unsafe {
+                    let ptr = ns_window_addr as *mut std::ffi::c_void;
+                    voidnix_screenshot_clear_background(ptr);
+                    let nsw = ns_window_addr as *mut objc2::runtime::AnyObject;
+                    let _: () = objc2::msg_send![nsw, setAlphaValue: 0.0_f64];
+                }
             }
-        }
-    })));
+        })),
+    );
 
     let prev_pid = crate::platform::focus::take_captured_pid();
     // 始终保存 prev_pid 给 pin 窗口使用（即使 noRestoreFocus=true）

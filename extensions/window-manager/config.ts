@@ -16,9 +16,12 @@ watch(
   (val) => {
     invoke(CMD.toggleDragSnap, {
       enabled: val.dragSnapEnabled,
-      width: val.customWidth,
-      height: val.customHeight,
-    }).catch(() => {})
+      customWidth: val.customWidth,
+      customHeight: val.customHeight,
+    }).catch((e: unknown) => {
+      // 不静默吞错：失败时记录便于排查（UI 与 Rust 状态可能短暂不一致）
+      console.error('[window-manager] toggleDragSnap failed:', e)
+    })
   },
   { deep: true },
 )

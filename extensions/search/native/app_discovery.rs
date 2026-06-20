@@ -23,10 +23,7 @@ pub(super) fn get_app_metadata(app_path: &str) -> (String, Option<String>, u32) 
                 if let Some(val) = line.split('=').nth(1) {
                     let cleaned = val.trim().trim_matches('"').to_string();
                     name = if cleaned.ends_with(".app") {
-                        cleaned
-                            .strip_suffix(".app")
-                            .unwrap_or(&cleaned)
-                            .to_string()
+                        cleaned.strip_suffix(".app").unwrap_or(&cleaned).to_string()
                     } else {
                         cleaned
                     };
@@ -62,9 +59,7 @@ pub(super) fn get_app_metadata(app_path: &str) -> (String, Option<String>, u32) 
 }
 
 fn get_app_name_from_plist(app_path: &str) -> Option<String> {
-    let plist_path = Path::new(app_path)
-        .join("Contents")
-        .join("Info.plist");
+    let plist_path = Path::new(app_path).join("Contents").join("Info.plist");
     let dict = plist::Value::from_file(&plist_path)
         .ok()?
         .into_dictionary()?;
@@ -92,10 +87,7 @@ fn scan_apps_from_dir_depth(dir: &Path, depth: u32) -> Vec<String> {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path
-                .extension()
-                .is_some_and(|ext| ext == "app")
-            {
+            if path.extension().is_some_and(|ext| ext == "app") {
                 if let Some(path_str) = path.to_str() {
                     apps.push(path_str.to_string());
                 }
@@ -107,36 +99,33 @@ fn scan_apps_from_dir_depth(dir: &Path, depth: u32) -> Vec<String> {
     apps
 }
 
-pub(super) fn parse_mdfind_attr_output(
-    stdout: &str,
-) -> Vec<(String, String, Option<String>, u32)> {
+pub(super) fn parse_mdfind_attr_output(stdout: &str) -> Vec<(String, String, Option<String>, u32)> {
     let mut results: Vec<(String, String, Option<String>, u32)> = Vec::new();
     let mut current_path: Option<String> = None;
     let mut current_name = String::new();
     let mut current_last_used: Option<String> = None;
     let mut current_use_count: u32 = 0;
 
-    let mut flush =
-        |path: &mut Option<String>,
-         name: &mut String,
-         last_used: &mut Option<String>,
-         use_count: &mut u32| {
-            if let Some(p) = path.take() {
-                if name.is_empty() || name == "(null)" {
-                    *name = std::path::Path::new(&p)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("Unknown")
-                        .to_string();
-                }
-                results.push((
-                    p,
-                    std::mem::take(name),
-                    last_used.take(),
-                    std::mem::take(use_count),
-                ));
+    let mut flush = |path: &mut Option<String>,
+                     name: &mut String,
+                     last_used: &mut Option<String>,
+                     use_count: &mut u32| {
+        if let Some(p) = path.take() {
+            if name.is_empty() || name == "(null)" {
+                *name = std::path::Path::new(&p)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string();
             }
-        };
+            results.push((
+                p,
+                std::mem::take(name),
+                last_used.take(),
+                std::mem::take(use_count),
+            ));
+        }
+    };
 
     for line in stdout.lines() {
         let trimmed = line.trim();
@@ -167,10 +156,7 @@ pub(super) fn parse_mdfind_attr_output(
                     if let Some(val) = part.split('=').nth(1) {
                         let cleaned = val.trim().trim_matches('"').to_string();
                         current_name = if cleaned.ends_with(".app") {
-                            cleaned
-                                .strip_suffix(".app")
-                                .unwrap_or(&cleaned)
-                                .to_string()
+                            cleaned.strip_suffix(".app").unwrap_or(&cleaned).to_string()
                         } else {
                             cleaned
                         };
@@ -194,10 +180,7 @@ pub(super) fn parse_mdfind_attr_output(
             if let Some(val) = trimmed.split('=').nth(1) {
                 let cleaned = val.trim().trim_matches('"').to_string();
                 current_name = if cleaned.ends_with(".app") {
-                    cleaned
-                        .strip_suffix(".app")
-                        .unwrap_or(&cleaned)
-                        .to_string()
+                    cleaned.strip_suffix(".app").unwrap_or(&cleaned).to_string()
                 } else {
                     cleaned
                 };
@@ -275,10 +258,7 @@ pub(super) fn collect_apps_with_metadata() -> Vec<(String, String, Option<String
 
     for path in fs_apps {
         if !existing.contains(&path) {
-            log::info!(
-                "Found app via filesystem scan (not in mdfind): {}",
-                path
-            );
+            log::info!("Found app via filesystem scan (not in mdfind): {}", path);
             let (name, last_used, use_count) = get_app_metadata(&path);
             results.push((path, name, last_used, use_count));
         }
@@ -292,4 +272,3 @@ pub(super) fn collect_apps_with_metadata() -> Vec<(String, String, Option<String
 
     results
 }
-

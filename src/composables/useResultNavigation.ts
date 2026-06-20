@@ -93,7 +93,10 @@ export function useResultNavigation(opts: ResultNavOptions) {
         e.preventDefault()
         e.stopImmediatePropagation()
         if (results.value.length > 0) {
-          handleExecute(results.value[selectedIndex.value])
+          // H7：selectedIndex 可能因竞态（多选删除、模块动态返回较短结果）越界
+          const result = results.value[selectedIndex.value]
+          if (!result) return
+          handleExecute(result)
         }
         break
 

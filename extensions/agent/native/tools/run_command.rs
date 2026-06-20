@@ -31,11 +31,15 @@ impl RunCommandTool {
     }
 
     fn is_allowed_program(&self, name: &str) -> bool {
-        self.policy.trusted.iter().any(|t| t == name)
+        // H2：程序名大小写不敏感（macOS APFS 大小写不敏感，Curl 解析到 curl）
+        let lower = name.to_ascii_lowercase();
+        self.policy.trusted.iter().any(|t| t == &lower)
     }
 
     fn is_forbidden(&self, name: &str) -> bool {
-        self.policy.forbidden.iter().any(|f| f == name)
+        // H2：程序名大小写不敏感（FORBIDDEN_FLOOR 全小写）
+        let lower = name.to_ascii_lowercase();
+        self.policy.forbidden.iter().any(|f| f == &lower)
     }
 
     fn has_denied_arg(&self, args: &[String]) -> Option<String> {
@@ -56,23 +60,99 @@ impl RunCommandTool {
     }
 
     /// 断路器：即便 approved 也必拦的命令模式（不可 config 化、不可放宽，§3.4 L4）。
+    ///
+    /// H1：改用 POSIX getopt 风格结构化解析，覆盖旧字符串拼接法的所有绕过：
+    /// 拆分选项（`-r -f` / `-rf` / `-irf` / `--recursive` / `--force`）+
+    /// `--` 分隔符识别 + 每个 positional 规范化（`~` 展开、尾部 `/` 剥离）后
+    /// 判定是否为根 / 家目录 / 通配根。
     fn is_circuit_breaker_hit(cmd: &str, args: &[String]) -> bool {
-        // rm -rf / | rm -rf ~ | rm -rf /*
-        if cmd == "rm" {
-            let combined = args.join(" ");
-            if combined.contains("-rf") || combined.contains("-fr") {
-                let target = combined
-                    .replace("-rf", "")
-                    .replace("-fr", "")
-                    .replace("--recursive", "")
-                    .replace("--force", "")
-                    .trim()
-                    .to_string();
-                if target == "/" || target == "/*" || target.starts_with("~/") && target.len() <= 3
-                    || target == "~"
-                {
-                    return true;
+        // H2：程序名大小写不敏感
+        if !cmd.eq_ignore_ascii_case("rm") {
+            return false;
+        }
+        let mut recursive = false;
+        let mut force = false;
+        let mut positionals: Vec<&str> = Vec::new();
+        let mut after_dd = false; // 遇到 `--` 后，余下都是 positional
+        for arg in args {
+            if after_dd {
+                positionals.push(arg);
+                continue;
+            }
+            if arg == "--" {
+                after_dd = true;
+                continue;
+            }
+            if let Some(long) = arg.strip_prefix("--") {
+                // 长选项：`--recursive` / `--force` / `--no-preserve-root` 等
+                // 处理 `--opt=value` 形式
+                let name = long.split('=').next().unwrap_or(long);
+                if name == "recursive" {
+                    recursive = true;
+                } else if name == "force" {
+                    force = true;
                 }
+                continue;
+            }
+            if let Some(cluster) = arg.strip_prefix('-') {
+                // 短选项簇：`-rf` → ['r', 'f']；`-irf` → ['i', 'r', 'f']
+                for ch in cluster.chars() {
+                    match ch {
+                        'r' | 'R' => recursive = true,
+                        'f' => force = true,
+                        _ => {}
+                    }
+                }
+                continue;
+            }
+            // 非选项：positional operand
+            positionals.push(arg);
+        }
+        if !recursive || !force {
+            return false;
+        }
+        // 任意 positional 是根 / 家目录 / 通配根 → 拦
+        let home = std::env::var("HOME").unwrap_or_default();
+        for p in &positionals {
+            let s = p.trim();
+            // 展开 `~` → HOME 后判定（HOME 已是绝对路径，is_destructive_target 能匹配）
+            let expanded: String;
+            let check: &str = if s.starts_with('~') && (s.len() == 1 || s.as_bytes()[1] == b'/') {
+                expanded = if s.len() == 1 {
+                    home.clone()
+                } else {
+                    format!("{}{}", home, &s[1..])
+                };
+                &expanded
+            } else {
+                s
+            };
+            if Self::is_destructive_target(check, &home) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 判定单个目标是否为「不可删除的根路径」（已规范化）。
+    fn is_destructive_target(p: &str, home: &str) -> bool {
+        let trimmed = p.trim_end_matches('/');
+        if trimmed.is_empty() {
+            // 原串全是 `/`（如 `/`、`//`）
+            return p.starts_with('/');
+        }
+        match trimmed {
+            "/" | "/*" => return true,
+            _ => {}
+        }
+        if !home.is_empty() {
+            // 家目录本身（`~` / `/Users/foo`），不含子目录
+            if trimmed == home {
+                return true;
+            }
+            // `~/*` 类通配家目录
+            if trimmed == format!("{}/*", home) {
+                return true;
             }
         }
         false
@@ -124,7 +204,11 @@ impl AgentTool for RunCommandTool {
             let args_arr: Vec<String> = args
                 .get("args")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|a| a.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|a| a.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             if self.has_denied_arg(&args_arr).is_none() {
                 return false;
@@ -244,7 +328,12 @@ impl AgentTool for RunCommandTool {
                 let _ = child.wait().await;
                 ToolResult::err(format!("read failed: {}", e))
             }
-            Ok(Ok(ReadOutcome { stdout, stderr, truncated, exit_code })) => {
+            Ok(Ok(ReadOutcome {
+                stdout,
+                stderr,
+                truncated,
+                exit_code,
+            })) => {
                 // child.wait() 已在 read_with_cap 内完成（reap）
                 let mut output = String::new();
                 if !stdout.is_empty() {
@@ -257,7 +346,10 @@ impl AgentTool for RunCommandTool {
                     output.push_str(&stderr);
                 }
                 if truncated {
-                    output.push_str(&format!("\n[output truncated at {} bytes]", self.policy.max_output_bytes));
+                    output.push_str(&format!(
+                        "\n[output truncated at {} bytes]",
+                        self.policy.max_output_bytes
+                    ));
                 }
                 if exit_code != 0 {
                     output.push_str(&format!("\n[exit code: {}]", exit_code));
@@ -286,12 +378,14 @@ async fn read_with_cap(
     child: &mut tokio::process::Child,
     cap: usize,
 ) -> std::io::Result<ReadOutcome> {
-    let mut stdout = child.stdout.take().ok_or_else(|| {
-        std::io::Error::other("stdout pipe missing")
-    })?;
-    let mut stderr = child.stderr.take().ok_or_else(|| {
-        std::io::Error::other("stderr pipe missing")
-    })?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| std::io::Error::other("stdout pipe missing"))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| std::io::Error::other("stderr pipe missing"))?;
 
     // 并发读 stdout + stderr，避免管道阻塞；各自带 cap
     let cap_clone = cap;
@@ -299,10 +393,10 @@ async fn read_with_cap(
     let stderr_task = tokio::spawn(async move { read_one_stream(&mut stderr, cap_clone).await });
 
     let (stdout_result, stderr_result) = tokio::join!(stdout_task, stderr_task);
-    let (stdout_bytes, stdout_truncated) = stdout_result
-        .map_err(|e| std::io::Error::other(format!("panic: {}", e)))??;
-    let (stderr_bytes, stderr_truncated) = stderr_result
-        .map_err(|e| std::io::Error::other(format!("panic: {}", e)))??;
+    let (stdout_bytes, stdout_truncated) =
+        stdout_result.map_err(|e| std::io::Error::other(format!("panic: {}", e)))??;
+    let (stderr_bytes, stderr_truncated) =
+        stderr_result.map_err(|e| std::io::Error::other(format!("panic: {}", e)))??;
 
     // 等进程退出拿 exit code
     let exit_code = match child.wait().await {
@@ -347,12 +441,18 @@ async fn read_one_stream<R: tokio::io::AsyncRead + Unpin>(
 
 fn minimal_env(_cwd: &Path) -> Vec<(&'static str, String)> {
     vec![
-        ("PATH", "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin".into()),
+        (
+            "PATH",
+            "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin".into(),
+        ),
         ("HOME", std::env::var("HOME").unwrap_or_default()),
         ("USER", std::env::var("USER").unwrap_or_default()),
         ("LANG", "en_US.UTF-8".into()),
         ("LC_ALL", "en_US.UTF-8".into()),
-        ("TMPDIR", std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".into())),
+        (
+            "TMPDIR",
+            std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".into()),
+        ),
         // 故意不设 SHELL / *_API_KEY / DYLD_* / GIT_*
     ]
 }
@@ -386,13 +486,17 @@ mod tests {
     use super::*;
 
     fn tool() -> RunCommandTool {
-        RunCommandTool::new(crate::extensions::agent::policy::ExecPolicy::default_with_trusted(vec![]))
+        RunCommandTool::new(
+            crate::extensions::agent::policy::ExecPolicy::default_with_trusted(vec![]),
+        )
     }
 
     fn tool_with_trusted(trusted: Vec<&str>) -> RunCommandTool {
-        RunCommandTool::new(crate::extensions::agent::policy::ExecPolicy::default_with_trusted(
-            trusted.into_iter().map(String::from).collect(),
-        ))
+        RunCommandTool::new(
+            crate::extensions::agent::policy::ExecPolicy::default_with_trusted(
+                trusted.into_iter().map(String::from).collect(),
+            ),
+        )
     }
 
     #[test]
@@ -413,6 +517,16 @@ mod tests {
     }
 
     #[test]
+    fn forbidden_case_insensitive() {
+        // H2：macOS APFS 大小写不敏感，Curl/Sudo/Bash 应同等拦截
+        let t = tool();
+        assert!(t.is_forbidden("Curl"));
+        assert!(t.is_forbidden("SUDO"));
+        assert!(t.is_forbidden("Bash"));
+        assert!(t.is_forbidden("OSAScript"));
+    }
+
+    #[test]
     fn empty_whitelist_means_all_need_approval() {
         // tool() 用空 trusted，没有白名单 → 所有命令都需要审批
         let t = tool();
@@ -423,9 +537,10 @@ mod tests {
     #[test]
     fn trusted_programs_are_the_whitelist() {
         // 用户提供的 trusted 列表 = 完整白名单
-        let t = tool_with_trusted(vec!["ls", "git", "make"]);
+        // 注：C5 后 find/awk/sed/git/cp/mv/... 即便用户加入 trusted 也会被 TRUSTED_DENYLIST 强制剔除
+        let t = tool_with_trusted(vec!["ls", "rg", "make"]);
         assert!(t.is_allowed_program("ls"));
-        assert!(t.is_allowed_program("git"));
+        assert!(t.is_allowed_program("rg"));
         assert!(t.is_allowed_program("make"));
         assert!(!t.is_allowed_program("rm"));
     }
@@ -435,8 +550,17 @@ mod tests {
         let t = tool();
         assert!(t.has_denied_arg(&["--exec=foo".into()]).is_some());
         assert!(t.has_denied_arg(&["--upload-pack".into()]).is_some());
-        assert!(t.has_denied_arg(&["-o".into(), "/etc/passwd".into()]).is_some());
-        assert!(t.has_denied_arg(&["normal".into(), "args".into()]).is_none());
+        assert!(t
+            .has_denied_arg(&["-o".into(), "/etc/passwd".into()])
+            .is_some());
+        // C4：find 单连字符 exec 谓词族
+        assert!(t.has_denied_arg(&["-exec".into(), "rm".into()]).is_some());
+        assert!(t.has_denied_arg(&["-execdir".into()]).is_some());
+        assert!(t.has_denied_arg(&["-ok".into()]).is_some());
+        assert!(t.has_denied_arg(&["-okdir".into()]).is_some());
+        assert!(t
+            .has_denied_arg(&["normal".into(), "args".into()])
+            .is_none());
     }
 
     #[test]
@@ -449,11 +573,106 @@ mod tests {
 
     #[test]
     fn circuit_breaker_rm_rf_root() {
-        assert!(RunCommandTool::is_circuit_breaker_hit("rm", &["-rf".into(), "/".into()]));
-        assert!(RunCommandTool::is_circuit_breaker_hit("rm", &["-rf".into(), "~".into()]));
-        assert!(RunCommandTool::is_circuit_breaker_hit("rm", &["-rf".into(), "/*".into()]));
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-rf".into(), "/".into()]
+        ));
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-rf".into(), "~".into()]
+        ));
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-rf".into(), "/*".into()]
+        ));
         // 单独的 -rf 但目标是具体目录不拦
-        assert!(!RunCommandTool::is_circuit_breaker_hit("rm", &["-rf".into(), "/tmp/test".into()]));
+        assert!(!RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-rf".into(), "/tmp/test".into()]
+        ));
+    }
+
+    #[test]
+    fn circuit_breaker_case_insensitive_program() {
+        // H2：大小写变体同样拦截（macOS APFS 大小写不敏感）
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "RM",
+            &["-rf".into(), "/".into()]
+        ));
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "Rm",
+            &["-rf".into(), "~".into()]
+        ));
+    }
+
+    #[test]
+    fn circuit_breaker_split_short_flags() {
+        // H1：拆分选项 `-r -f /` 旧字符串拼接法漏判
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-r".into(), "-f".into(), "/".into()]
+        ));
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-f".into(), "-r".into(), "/".into()]
+        ));
+    }
+
+    #[test]
+    fn circuit_breaker_long_options() {
+        // H1：长选项 `--recursive --force`
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["--recursive".into(), "--force".into(), "/".into()]
+        ));
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["--force".into(), "--recursive".into(), "~".into()]
+        ));
+    }
+
+    #[test]
+    fn circuit_breaker_combined_cluster_with_extra() {
+        // H1：组合标志带额外字母 `-irf`（interactive + recursive + force）
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-irf".into(), "/".into()]
+        ));
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-fri".into(), "/".into()]
+        ));
+    }
+
+    #[test]
+    fn circuit_breaker_dd_separator_and_home_glob() {
+        // H1：`--` 分隔符 + 通配家目录 `~/*`
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-rf".into(), "--".into(), "/".into()]
+        ));
+        assert!(RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-rf".into(), "~/*".into()]
+        ));
+        // 子目录不拦（家目录树内的合法删除）
+        assert!(!RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-rf".into(), "~/Documents".into()]
+        ));
+    }
+
+    #[test]
+    fn circuit_breaker_only_r_without_f_passes() {
+        // 只有 -r 没 -f → 不拦（rm -r / 需要审批但不是断路器）
+        assert!(!RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-r".into(), "/".into()]
+        ));
+        assert!(!RunCommandTool::is_circuit_breaker_hit(
+            "rm",
+            &["-f".into(), "/".into()]
+        ));
     }
 
     #[test]
@@ -482,9 +701,10 @@ mod tests {
 
     #[test]
     fn approval_required_when_whitelisted_has_denied_arg() {
-        let t = tool_with_trusted(vec!["git"]);
-        // git 在白名单，但 -C 是 denied prefix
-        let args = serde_json::json!({"cmd": "git", "args": ["-C", "/tmp"]});
+        // 注：C5 后 git/find/... 被 TRUSTED_DENYLIST 剔除，故用 ls + denied arg 演示
+        let t = tool_with_trusted(vec!["ls"]);
+        // ls 在白名单，但 --upload-pack 是 denied prefix
+        let args = serde_json::json!({"cmd": "ls", "args": ["--upload-pack"]});
         assert!(t.requires_approval(&args));
     }
 
@@ -499,7 +719,9 @@ mod tests {
     #[tokio::test]
     async fn rejects_forbidden_program() {
         let t = tool();
-        let result = t.call(serde_json::json!({"cmd": "sudo", "args": ["ls"]})).await;
+        let result = t
+            .call(serde_json::json!({"cmd": "sudo", "args": ["ls"]}))
+            .await;
         assert!(!result.ok);
         assert!(result.output.contains("forbidden"));
     }
@@ -517,7 +739,9 @@ mod tests {
     #[tokio::test]
     async fn runs_simple_command() {
         let t = tool();
-        let result = t.call(serde_json::json!({"cmd": "echo", "args": ["hello"]})).await;
+        let result = t
+            .call(serde_json::json!({"cmd": "echo", "args": ["hello"]}))
+            .await;
         assert!(result.ok, "got: {}", result.output);
         assert!(result.output.contains("hello"));
     }
@@ -527,15 +751,16 @@ mod tests {
         // 设置一个测试 env，验证子进程不继承
         std::env::set_var("VOIDNIX_TEST_SECRET", "leak-me-if-you-can");
         let t = tool();
-        let result = t
-            .call(serde_json::json!({"cmd": "env", "args": []}))
-            .await;
+        let result = t.call(serde_json::json!({"cmd": "env", "args": []})).await;
         // env 不在白名单，会走 approval 拒绝路径，但这是测试直接调 call
         // 实际上 env 不在白名单也不在 forbidden，所以会执行（生产中走 approval）
         // 我们关注的是：输出中不应含 VOIDNIX_TEST_SECRET
         // 但 env 不在白名单 → 直接调 call 也会执行（call 内部不做审批检查）
         if result.ok {
-            assert!(!result.output.contains("VOIDNIX_TEST_SECRET"), "secret leaked!");
+            assert!(
+                !result.output.contains("VOIDNIX_TEST_SECRET"),
+                "secret leaked!"
+            );
             assert!(!result.output.contains("leak-me-if-you-can"));
         }
     }

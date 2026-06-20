@@ -25,30 +25,80 @@ pub const DEFAULT_MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 /// 硬禁命令底线（31 项）。用户 forbidden_commands 与此取并集——用户只能加严。
 pub const FORBIDDEN_FLOOR: &[&str] = &[
     // shell（任何 shell → 放弃 L1「不经 shell」防御）
-    "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh",
+    "sh",
+    "bash",
+    "zsh",
+    "dash",
+    "ksh",
+    "fish",
+    "csh",
+    "tcsh",
     // macOS 特权 / 系统控制
-    "osascript", "sudo", "open", "launchctl", "defaults", "networksetup", "scutil",
+    "osascript",
+    "sudo",
+    "open",
+    "launchctl",
+    "defaults",
+    "networksetup",
+    "scutil",
     // 进程管理（kill/ps/top 等侦察/控制）
-    "killall", "kill", "pkill",
+    "killall",
+    "kill",
+    "pkill",
     // 触网（走专用 web_search 工具）
-    "curl", "wget", "nc", "socat", "telnet", "ssh",
+    "curl",
+    "wget",
+    "nc",
+    "socat",
+    "telnet",
+    "ssh",
     // 提权 / 逃逸
-    "su", "doas", "expect",
+    "su",
+    "doas",
+    "expect",
     // 数据持久化（走应用 API，防止直改 sqlite）
     "sqlite3",
     // 侦察
-    "ps", "top", "htop",
+    "ps",
+    "top",
+    "htop",
 ];
 
-/// 危险选项前缀底线（15 项）。用户 blocked_args 与此取并集——用户只能加严。
+/// 危险选项前缀底线（19 项）。用户 blocked_args 与此取并集——用户只能加严。
 pub const DENIED_ARG_FLOOR: &[&str] = &[
-    "--exec", "--exec-file", "--exec-rm",
+    "--exec",
+    "--exec-file",
+    "--exec-rm",
+    // find 单连字符 exec 谓词族：find 本身是执行器，`-exec` 直接 fork 任意命令，
+    // 等价 shell。补齐 -exec/-execdir/-ok/-okdir 防 find 免审批穿透（C4）。
+    "-exec",
+    "-execdir",
+    "-ok",
+    "-okdir",
     "--upload-pack",
     "--use-compress-program",
-    "--config", "-C",                       // git -C 改 cwd / curl --config 读配置
-    "--output", "-o", "-O", "--write-out", // curl/wget 写文件
-    "--eval", "-e",                         // node/bash eval
-    "--init-file", "--rcfile",
+    "--config",
+    "-C", // git -C 改 cwd / curl --config 读配置
+    "--output",
+    "-o",
+    "-O",
+    "--write-out", // curl/wget 写文件
+    "--eval",
+    "-e", // node/bash eval
+    "--init-file",
+    "--rcfile",
+];
+
+/// trusted 强制剔除名单（C5）。
+/// 这些工具自身即执行器或写操作工具，即便用户加入 trusted 也强制剔除——
+/// 默认零写权限、零执行器。理由：
+/// - find/awk/sed：图灵完备，`-exec`/`system()`/`e` 命令可 fork 任意进程
+/// - git：`-c core.editor=...`、hooks 等可执行任意命令
+/// - cp/mv/ln/tee/truncate/touch/mkdir：直接破坏文件系统（如 cp /dev/null ~/.ssh/authorized_keys）
+///
+/// 用户仍可执行（走审批），仅无法免审批。
+pub const TRUSTED_DENYLIST: &[&str] = &[
+    "find", "awk", "sed", "git", "cp", "mv", "ln", "tee", "truncate", "touch", "mkdir",
 ];
 
 fn clamp_u64(v: u64, (floor, cap): (u64, u64)) -> u64 {
@@ -113,6 +163,13 @@ impl ExecPolicy {
                 denied.push((*d).to_string());
             }
         }
+        // trusted：强制剔除 TRUSTED_DENYLIST 中的执行器/写操作工具（C5）。
+        // 不信任前端传值——老用户 config.json 可能已落盘旧默认值（含 find/awk/...），
+        // 入口剔除保证安全底线不依赖磁盘状态。
+        let trusted: Vec<String> = trusted
+            .into_iter()
+            .filter(|t| !TRUSTED_DENYLIST.contains(&t.as_str()))
+            .collect();
         Self {
             trusted,
             forbidden,
@@ -133,7 +190,16 @@ mod tests {
     #[test]
     fn resolve_unions_forbidden_floor() {
         // 用户自定义 + 底线并集
-        let p = ExecPolicy::resolve(vec![], vec!["my_danger".into()], vec![], 30, 512, 64, 30, 1024);
+        let p = ExecPolicy::resolve(
+            vec![],
+            vec!["my_danger".into()],
+            vec![],
+            30,
+            512,
+            64,
+            30,
+            1024,
+        );
         assert!(p.forbidden.contains(&"my_danger".to_string()));
         assert!(p.forbidden.contains(&"sudo".to_string())); // 底线仍在
         assert!(p.forbidden.contains(&"sh".to_string()));
@@ -153,22 +219,90 @@ mod tests {
     #[test]
     fn resolve_dedups_floor() {
         // 用户把底线项再写一遍 → 不重复
-        let p = ExecPolicy::resolve(vec![], vec!["sudo".into()], vec!["--exec".into()], 30, 512, 64, 30, 1024);
-        assert_eq!(p.forbidden.iter().filter(|x| x.as_str() == "sudo").count(), 1);
-        assert_eq!(p.denied_args.iter().filter(|x| x.as_str() == "--exec").count(), 1);
+        let p = ExecPolicy::resolve(
+            vec![],
+            vec!["sudo".into()],
+            vec!["--exec".into()],
+            30,
+            512,
+            64,
+            30,
+            1024,
+        );
+        assert_eq!(
+            p.forbidden.iter().filter(|x| x.as_str() == "sudo").count(),
+            1
+        );
+        assert_eq!(
+            p.denied_args
+                .iter()
+                .filter(|x| x.as_str() == "--exec")
+                .count(),
+            1
+        );
     }
 
     #[test]
     fn floor_superset_of_original_hardcoded() {
-        // 不变量：底线 ⊇ 现网原硬编码（31 forbidden + 15 denied）
+        // 不变量：底线 ⊇ 现网原硬编码（31 forbidden + 19 denied）
         assert_eq!(FORBIDDEN_FLOOR.len(), 31);
-        assert_eq!(DENIED_ARG_FLOOR.len(), 15);
+        assert_eq!(DENIED_ARG_FLOOR.len(), 19);
         // 抽查关键项
-        for must in ["sh", "bash", "sudo", "osascript", "curl", "sqlite3", "ps", "top", "kill"] {
+        for must in [
+            "sh",
+            "bash",
+            "sudo",
+            "osascript",
+            "curl",
+            "sqlite3",
+            "ps",
+            "top",
+            "kill",
+        ] {
             assert!(FORBIDDEN_FLOOR.contains(&must), "missing {must}");
         }
-        for must in ["--exec", "--upload-pack", "-C", "-o", "-e", "--rcfile"] {
+        for must in [
+            "--exec",
+            "--upload-pack",
+            "-C",
+            "-o",
+            "-e",
+            "--rcfile",
+            // C4：find exec 谓词族
+            "-exec",
+            "-execdir",
+            "-ok",
+            "-okdir",
+        ] {
             assert!(DENIED_ARG_FLOOR.contains(&must), "missing {must}");
         }
+    }
+
+    #[test]
+    fn resolve_filters_trusted_denylist() {
+        // C5：用户 trusted 含执行器/写操作工具 → resolve 后强制剔除
+        let p = ExecPolicy::resolve(
+            vec![
+                "ls".into(),
+                "find".into(),
+                "awk".into(),
+                "git".into(),
+                "cp".into(),
+                "cat".into(),
+            ],
+            vec![],
+            vec![],
+            30,
+            512,
+            64,
+            30,
+            1024,
+        );
+        assert!(p.trusted.contains(&"ls".to_string()));
+        assert!(p.trusted.contains(&"cat".to_string()));
+        assert!(!p.trusted.iter().any(|t| t == "find"));
+        assert!(!p.trusted.iter().any(|t| t == "awk"));
+        assert!(!p.trusted.iter().any(|t| t == "git"));
+        assert!(!p.trusted.iter().any(|t| t == "cp"));
     }
 }

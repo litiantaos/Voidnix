@@ -31,7 +31,19 @@ const TUPLE_FIELDS = [
 
 const ARRAY_FIELDS = [
   { rust: 'FORBIDDEN_FLOOR', ts: 'forbiddenCommands', expect: 31 },
-  { rust: 'DENIED_ARG_FLOOR', ts: 'blockedArgs', expect: 15 },
+  { rust: 'DENIED_ARG_FLOOR', ts: 'blockedArgs', expect: 19 },
+] as const
+
+// P4-sc1：DEFAULT_* 默认值比对（policy.rs fallback ↔ config.ts 初始值）
+// Rust 端 None 时 fallback 到 DEFAULT_*；TS 端 defineConfig 的初始值须与之对齐，
+// 否则 UI 显示与 Rust fallback 不一致（非安全问题，Rust clamp 兜底）。
+const DEFAULT_FIELDS = [
+  { rust: 'DEFAULT_MAX_TURNS', ts: 'maxTurns' },
+  { rust: 'DEFAULT_MAX_CPU_SECS', ts: 'maxCpuSeconds' },
+  { rust: 'DEFAULT_MAX_MEMORY_MB', ts: 'maxMemoryMb' },
+  { rust: 'DEFAULT_MAX_OPEN_FILES', ts: 'maxOpenFiles' },
+  { rust: 'DEFAULT_EXECUTION_TIMEOUT_SECS', ts: 'executionTimeout' },
+  { rust: 'DEFAULT_MAX_OUTPUT_BYTES', ts: 'maxOutputBytes' },
 ] as const
 
 function fail(msg: string): never {
@@ -93,6 +105,27 @@ function parseTsArray(field: string): string[] {
   return out
 }
 
+// --- P4-sc1：DEFAULT_* 默认值解析 ---
+// Rust：`pub const NAME: TYPE = VALUE;`（VALUE 可能是 `1024 * 1024` 形式）
+function parseRustDefault(name: string): number {
+  const re = new RegExp(`${name}:\\s*(?:usize|u64)\\s*=\\s*([0-9_\\s*]+);`)
+  const m = rustSrc.match(re)
+  if (!m) fail(`policy.rs 未找到 const ${name} 默认值声明`)
+  // 支持 `1024 * 1024` 形式：提取所有数字并相乘
+  const nums = m[1].match(/\d[\d_]*/g)
+  if (!nums || nums.length === 0) fail(`policy.rs ${name} 默认值解析失败：${m[1]}`)
+  return nums.reduce((acc, n) => acc * Number(n.replace(/_/g, '')), 1)
+}
+
+// TS：`field: VALUE,`（在 config defineConfig 对象内，非 BOUNDS 内）
+function parseTsDefault(field: string): number {
+  // 排除 BOUNDS 块内的同名字段（BOUNDS 用 { floor, cap } 结构，值是对象）
+  const re = new RegExp(`^\\s*${field}:\\s*(\\d[\\d_]*)\\s*,`, 'm')
+  const m = tsSrc.match(re)
+  if (!m) fail(`config.ts 未找到 ${field} 默认值（defineConfig 内）`)
+  return Number(m[1].replace(/_/g, ''))
+}
+
 // --- 比对 ---
 const diffs: string[] = []
 
@@ -118,10 +151,20 @@ for (const { rust, ts, expect } of ARRAY_FIELDS) {
   if (onlyTs.length) diffs.push(`${ts}.floor  仅 TS 有：[${onlyTs.join(', ')}]`)
 }
 
+// P4-sc1：DEFAULT_* 默认值逐项比对
+for (const { rust, ts } of DEFAULT_FIELDS) {
+  const rVal = parseRustDefault(rust)
+  const tVal = parseTsDefault(ts)
+  if (rVal !== tVal) diffs.push(`${ts} default  Rust=${rVal}  TS=${tVal}`)
+}
+
 if (diffs.length === 0) {
   const tuples = TUPLE_FIELDS.length
+  const defaults = DEFAULT_FIELDS.length
   const arrays = ARRAY_FIELDS.reduce((n, f) => n + parseRustArray(f.rust).length, 0)
-  console.log(`${TAG} ✓ BOUNDS 与 policy.rs 一致（${tuples} tuple + ${arrays} 数组项）。`)
+  console.log(
+    `${TAG} ✓ BOUNDS 与 policy.rs 一致（${tuples} tuple + ${arrays} 数组项 + ${defaults} 默认值）。`,
+  )
   process.exit(0)
 }
 

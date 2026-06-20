@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use notify::{Event, EventKind, RecursiveMode, Watcher, recommended_watcher};
+use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
 use tauri::AppHandle;
 use tauri::Manager;
 
@@ -71,8 +71,7 @@ fn command_dir(app: &AppHandle) -> PathBuf {
 
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("finder-ext")
-        .build()
+    tauri::plugin::Builder::<tauri::Wry>::new("finder-ext").build()
 }
 
 /// Finder 扩展。
@@ -126,7 +125,9 @@ fn init_finder_ext(app_handle: AppHandle) {
         let watch_dir = cmd_dir.clone();
         let flag = shutdown_flag;
         move || {
-            let handler = CommandHandler { handle: app_handle.clone() };
+            let handler = CommandHandler {
+                handle: app_handle.clone(),
+            };
             let mut watcher = match recommended_watcher(handler) {
                 Ok(w) => w,
                 Err(e) => {
@@ -182,12 +183,18 @@ fn process_command(path: &Path, handle: &AppHandle) {
     // Reject obviously-bogus inputs before we do anything expensive.
     // The IPC file is an append-only trust boundary; cap everything.
     if action.len() > 64 {
-        log::warn!("finder_ext: action too long ({} bytes), dropping", action.len());
+        log::warn!(
+            "finder_ext: action too long ({} bytes), dropping",
+            action.len()
+        );
         return;
     }
     let target = cmd.get("target").and_then(|v| v.as_str()).unwrap_or("");
     if target.len() > 4096 {
-        log::warn!("finder_ext: target too long ({} bytes), dropping", target.len());
+        log::warn!(
+            "finder_ext: target too long ({} bytes), dropping",
+            target.len()
+        );
         return;
     }
     const MAX_PATHS: usize = 256;
@@ -209,7 +216,12 @@ fn process_command(path: &Path, handle: &AppHandle) {
         .filter(|p| validate_path(p))
         .collect();
 
-    log::info!("Finder ext: action={} paths={} target.len={}", action, paths.len(), target.len());
+    log::info!(
+        "Finder ext: action={} paths={} target.len={}",
+        action,
+        paths.len(),
+        target.len()
+    );
 
     match action {
         "copy_path" => handle_copy_path(handle, &paths, target),
@@ -227,7 +239,10 @@ fn validate_path(path: &Path) -> bool {
 
 fn handle_copy_path(_handle: &AppHandle, paths: &[PathBuf], target: &str) {
     let lines: Vec<String> = if !paths.is_empty() {
-        paths.iter().map(|p| p.to_string_lossy().to_string()).collect()
+        paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect()
     } else if !target.is_empty() {
         vec![target.to_string()]
     } else {
@@ -239,15 +254,26 @@ fn handle_copy_path(_handle: &AppHandle, paths: &[PathBuf], target: &str) {
 
 fn handle_open_terminal(_handle: &AppHandle, paths: &[PathBuf], target: &str) {
     let dir = if let Some(p) = paths.first() {
-        if p.is_dir() { p.clone() } else {
-            p.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+        if p.is_dir() {
+            p.clone()
+        } else {
+            p.parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."))
         }
     } else if !target.is_empty() {
         let pb = Path::new(target);
-        if !validate_path(pb) { return; }
+        if !validate_path(pb) {
+            return;
+        }
         let resolved = pb.canonicalize().unwrap_or_else(|_| pb.to_path_buf());
-        if resolved.is_dir() { resolved } else {
-            resolved.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+        if resolved.is_dir() {
+            resolved
+        } else {
+            resolved
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."))
         }
     } else {
         return;
@@ -275,9 +301,7 @@ fn handle_toggle_hidden() {
         let Some(finder) = finder else { return };
         let pid = finder.processIdentifier();
 
-        let frontmost_pid = ws
-            .frontmostApplication()
-            .map(|a| a.processIdentifier());
+        let frontmost_pid = ws.frontmostApplication().map(|a| a.processIdentifier());
 
         if frontmost_pid != Some(pid) {
             #[allow(deprecated)]
@@ -295,9 +319,13 @@ fn handle_new_file(target: &str) {
         dirs::desktop_dir().unwrap_or_else(|| PathBuf::from("."))
     } else {
         let pb = Path::new(target);
-        if !validate_path(pb) { return; }
+        if !validate_path(pb) {
+            return;
+        }
         let resolved = pb.canonicalize().unwrap_or_else(|_| pb.to_path_buf());
-        if !resolved.is_dir() { return; }
+        if !resolved.is_dir() {
+            return;
+        }
         resolved
     };
 
@@ -396,7 +424,13 @@ pub fn quit_app(app_handle: AppHandle) {
 #[tauri::command]
 pub fn check_finder_ext_authorized() -> bool {
     let output = Command::new("pluginkit")
-        .args(["-m", "-p", "com.apple.FinderSync", "-i", "com.litiantao.voidnix.FinderExt"])
+        .args([
+            "-m",
+            "-p",
+            "com.apple.FinderSync",
+            "-i",
+            "com.litiantao.voidnix.FinderExt",
+        ])
         .output();
     match output {
         Ok(out) => {
@@ -426,6 +460,7 @@ pub fn open_extensions_prefs() {
         }
     }
     // Last resort: open System Settings root
-    let _ = Command::new("open").args(["-b", "com.apple.systempreferences"]).spawn();
+    let _ = Command::new("open")
+        .args(["-b", "com.apple.systempreferences"])
+        .spawn();
 }
-

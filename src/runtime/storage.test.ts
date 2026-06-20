@@ -81,4 +81,33 @@ describe('defineConfig', () => {
     // 两次保存后仍只 load 一次（复用缓存 store）
     expect(loadMock).toHaveBeenCalledTimes(1)
   })
+
+  it('对象/数组 default 深克隆：mutation 不污染 defaults（C7）', async () => {
+    storeGet.mockResolvedValue(null)
+    const defaults = { items: ['a'], opts: { flag: false } }
+    const config = defineConfig('cfg-clone', defaults)
+    await vi.waitFor(() => expect(loadMock).toHaveBeenCalled())
+
+    // mutate config 不应影响外部 defaults
+    config.items.push('b')
+    config.opts.flag = true
+    expect(defaults.items).toEqual(['a'])
+    expect(defaults.opts).toEqual({ flag: false })
+    // config 自身变更生效
+    expect(config.items).toEqual(['a', 'b'])
+    expect(config.opts.flag).toBe(true)
+  })
+
+  it('引用型 default 的 race 保护：用户已 mutate 则不回填磁盘值（C7）', async () => {
+    // 磁盘有 saved items = ['old']，但用户在 load 完成前已 push 新项
+    storeGet.mockImplementation((key: string) => Promise.resolve(key === 'items' ? ['old'] : null))
+    const config = defineConfig('cfg-race-ref', { items: ['default'] })
+    // 同步 mutate（在 backfill 到达前）
+    config.items.push('user')
+    // backfill 到达：因 isStillDefault 深度比较发现已非 default，跳过覆盖
+    await vi.waitFor(() => expect(storeGet).toHaveBeenCalled())
+    // 给 microtask 一点时间确保 backfill 已执行
+    await new Promise((r) => setTimeout(r, 10))
+    expect(config.items).toEqual(['default', 'user'])
+  })
 })

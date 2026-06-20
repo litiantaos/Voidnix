@@ -1,7 +1,7 @@
 use sha2::Digest;
 
-use super::TranslateResult;
 use super::lang_utils::smart_target_lang;
+use super::TranslateResult;
 
 #[tauri::command]
 pub async fn translate_youdao(

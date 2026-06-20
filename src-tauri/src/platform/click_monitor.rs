@@ -6,16 +6,23 @@
 
 #[cfg(target_os = "macos")]
 mod inner {
-    use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use objc2::runtime::AnyObject;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
     use tauri::{Emitter, Manager};
 
-    struct SendObj(*mut AnyObject);
-    unsafe impl Send for SendObj {}
-    unsafe impl Sync for SendObj {}
+    /// 配对持有 monitor 对象 + 其 handler block（H5）。
+    /// 旧实现 `mem::forget(block)` 让 RcBox 泄漏；改为配对存储，remove 时 drop RcBlock，
+    /// 让其 Drop 释放 Rust 侧引用，与 NSEvent 的 retain/release 平衡。
+    struct MonitorEntry {
+        monitor: *mut AnyObject,
+        #[allow(dead_code)]
+        block: Option<block2::RcBlock<dyn Fn(*mut AnyObject)>>,
+    }
+    unsafe impl Send for MonitorEntry {}
+    unsafe impl Sync for MonitorEntry {}
 
-    static MONITOR: Mutex<SendObj> = Mutex::new(SendObj(std::ptr::null_mut()));
+    static MONITOR: Mutex<Option<MonitorEntry>> = Mutex::new(None);
     /// 为 true 时跳过 click-outside 发送（原生对话框弹出期间使用）
     static SUPPRESSED: AtomicBool = AtomicBool::new(false);
 
@@ -29,60 +36,80 @@ mod inner {
 
         {
             let guard = MONITOR.lock().unwrap();
-            if !guard.0.is_null() { return; }
+            if guard.is_some() {
+                return;
+            }
         }
 
         let app_handle = app.clone();
 
-        let block = block2::RcBlock::new(move |_event: *mut AnyObject| {
-            if SUPPRESSED.load(Ordering::SeqCst) { return; }
-            unsafe {
-                let app = match app_handle.get_webview_window("main") {
-                    Some(w) => w,
-                    None => return,
-                };
-                if !app.is_visible().unwrap_or(false) { return; }
+        // RcBlock 必须以 trait 对象形式持有，以便存入 MonitorEntry 跨 fn 边界。
+        let block: block2::RcBlock<dyn Fn(*mut AnyObject)> =
+            block2::RcBlock::new(move |_event: *mut AnyObject| {
+                if SUPPRESSED.load(Ordering::SeqCst) {
+                    return;
+                }
+                unsafe {
+                    let app = match app_handle.get_webview_window("main") {
+                        Some(w) => w,
+                        None => return,
+                    };
+                    if !app.is_visible().unwrap_or(false) {
+                        return;
+                    }
 
-                let loc: objc2_foundation::NSPoint = objc2::msg_send![NSEvent::class(), mouseLocation];
-                let click_x = loc.x;
-                let click_y_bottom = loc.y; // NSEvent.mouseLocation 已是屏幕坐标（左下原点）
+                    let loc: objc2_foundation::NSPoint =
+                        objc2::msg_send![NSEvent::class(), mouseLocation];
+                    let click_x = loc.x;
+                    let click_y_bottom = loc.y; // NSEvent.mouseLocation 已是屏幕坐标（左下原点）
 
-                if let (Ok(pos), Ok(size)) = (app.outer_position(), app.outer_size()) {
-                    let scale = app.scale_factor().unwrap_or(1.0);
-                    let wx = pos.x as f64 / scale;
-                    let wy = pos.y as f64 / scale;
-                    let ww = size.width as f64 / scale;
-                    let wh = size.height as f64 / scale;
+                    if let (Ok(pos), Ok(size)) = (app.outer_position(), app.outer_size()) {
+                        let scale = app.scale_factor().unwrap_or(1.0);
+                        let wx = pos.x as f64 / scale;
+                        let wy = pos.y as f64 / scale;
+                        let ww = size.width as f64 / scale;
+                        let wh = size.height as f64 / scale;
 
-                    let main_screen: *mut AnyObject =
-                        objc2::msg_send![objc2::class!(NSScreen), mainScreen];
-                    if main_screen.is_null() { return; }
-                    let frame: objc2_foundation::NSRect =
-                        objc2::msg_send![main_screen, frame];
-                    let screen_h = frame.size.height;
+                        let main_screen: *mut AnyObject =
+                            objc2::msg_send![objc2::class!(NSScreen), mainScreen];
+                        if main_screen.is_null() {
+                            return;
+                        }
+                        let frame: objc2_foundation::NSRect = objc2::msg_send![main_screen, frame];
+                        let screen_h = frame.size.height;
 
-                    // mouseLocation 是 macOS 屏幕坐标（左下原点），
-                    // Tauri outer_position 是物理像素（左上原点），需转换
-                    let click_y = screen_h - click_y_bottom;
-                    let inside = click_x >= wx && click_x <= wx + ww
-                        && click_y >= wy && click_y <= wy + wh;
+                        // mouseLocation 是 macOS 屏幕坐标（左下原点），
+                        // Tauri outer_position 是物理像素（左上原点），需转换
+                        let click_y = screen_h - click_y_bottom;
+                        let inside = click_x >= wx
+                            && click_x <= wx + ww
+                            && click_y >= wy
+                            && click_y <= wy + wh;
 
-                    if !inside {
-                        let _ = app_handle.emit("click-outside", ());
+                        if !inside {
+                            let _ = app_handle.emit("click-outside", ());
+                        }
                     }
                 }
-            }
-        });
+            });
 
+        // SAFETY:
+        // - mask = NSEventMaskLeftMouseDown (1 << 1) 是 macOS 标准位掩码
+        // - block 经 RcBox 持有，&*block 取引用符合 block2 调用约定
+        // - NSEvent addGlobalMonitorForEventsMatchingMask:handler: 保留返回的 monitor 对象
+        //   （我们额外 retain 一次以便 remove 时配对 release）
+        // - 主线程执行：本函数由 show_main → run_on_main_thread 调度
         unsafe {
             let mask = 1u64 << 1; // NSEventMaskLeftMouseDown
-            let monitor: *mut AnyObject =
-                objc2::msg_send![NSEvent::class(), addGlobalMonitorForEventsMatchingMask: mask, handler: &*block];
+            let monitor: *mut AnyObject = objc2::msg_send![NSEvent::class(), addGlobalMonitorForEventsMatchingMask: mask, handler: &*block];
             if !monitor.is_null() {
                 let _: () = objc2::msg_send![monitor, retain];
                 let mut guard = MONITOR.lock().unwrap();
-                *guard = SendObj(monitor);
-                std::mem::forget(block);
+                // RcBlock 与 monitor 配对存储：remove 时 monitor release + RcBlock drop 同步释放
+                *guard = Some(MonitorEntry {
+                    monitor,
+                    block: Some(block),
+                });
             }
         }
     }
@@ -92,13 +119,14 @@ mod inner {
         use objc2_app_kit::NSEvent;
 
         let mut guard = MONITOR.lock().unwrap();
-        let monitor = guard.0;
-        if !monitor.is_null() {
+        if let Some(entry) = guard.take() {
+            // SAFETY: monitor 在 add 中 retain 过一次，此处 removeMonitor + release 配对。
+            // entry drop 时 RcBlock drop 释放 Rust 侧引用。
             unsafe {
-                let _: () = objc2::msg_send![NSEvent::class(), removeMonitor: monitor];
-                let _: () = objc2::msg_send![monitor, release];
+                let _: () = objc2::msg_send![NSEvent::class(), removeMonitor: entry.monitor];
+                let _: () = objc2::msg_send![entry.monitor, release];
             }
-            *guard = SendObj(std::ptr::null_mut());
+            // entry drop → RcBlock drop → Rust 侧引用释放（与 NSEvent 的 retain 平衡）
         }
     }
 }
