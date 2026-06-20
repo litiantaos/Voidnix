@@ -24,9 +24,9 @@
     >
       <!-- 扩展标签 -->
       <Transition
-        enter-active-class="transition duration-fast ease-out"
+        enter-active-class="transition duration-100 ease-out"
         enter-from-class="opacity-0 scale-95"
-        leave-active-class="transition duration-fast ease-in"
+        leave-active-class="transition duration-100 ease-in"
         leave-to-class="opacity-0 scale-95"
       >
         <div
