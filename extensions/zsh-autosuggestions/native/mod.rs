@@ -34,16 +34,31 @@ fn installed_bin(app: &AppHandle) -> PathBuf {
     ext_dir(app).join("bin").join(BIN_NAME)
 }
 
+/// binary 非空判定：存在且大小 > 0（不校验可执行位，由 install_bin_to 复制后 set_mode 兜底）。
+/// 防御 cargo build 失败/中断留下的 0 字节占位文件——若不校验，
+/// 复制空 binary 到 ext dir 后 zsh `eval "$($BIN init)"` 输出为空，
+/// 补全静默失效，且 bin.version 匹配后永远不会自动修复。
+fn is_non_empty_binary(path: &std::path::Path) -> bool {
+    std::fs::metadata(path)
+        .map(|m| m.is_file() && m.len() > 0)
+        .unwrap_or(false)
+}
+
 fn source_bin() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    // 优先 MacOS/（开发模式 current_exe 在 target/debug/）
-    if let Some(mac_os) = exe.parent() {
-        let p = mac_os.join(BIN_NAME);
-        if p.exists() {
+    // 开发模式：独立 crate 自己的 target 目录（与 Voidnix 隔离）。
+    // 共享 target 目录时 Voidnix 的 cargo build 会截断 binary（rustc 链接器行为），
+    // 独立 target 彻底避免此问题。CARGO_MANIFEST_DIR 编译时求值为 src-tauri/ 绝对路径。
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    if let Some(project_root) = manifest_dir.parent() {
+        let p = project_root
+            .join("extensions/zsh-autosuggestions/native/target/debug")
+            .join(BIN_NAME);
+        if is_non_empty_binary(&p) {
             return Some(p);
         }
     }
-    // 兜底 Resources/（tauri bundle.resources 模式，release 分发链路）
+    // release 模式：Resources/（tauri bundle.resources 打包）
     // .app/Contents/MacOS/Voidnix → .app/Contents/Resources/
     if let Some(resources) = exe
         .parent()
@@ -51,7 +66,7 @@ fn source_bin() -> Option<PathBuf> {
         .map(|d| d.join("Resources"))
     {
         let p = resources.join(BIN_NAME);
-        if p.exists() {
+        if is_non_empty_binary(&p) {
             return Some(p);
         }
     }
@@ -66,8 +81,17 @@ fn signals_path(app: &AppHandle) -> PathBuf {
     ext_dir(app).join("signals.log")
 }
 
-fn enabled_flag(app: &AppHandle) -> PathBuf {
-    ext_dir(app).join("enabled")
+/// .zshrc 中是否已有 marker 行（= 是否已启用）。
+/// 以 .zshrc 行为启用判据：行存在 = 用户 shell 会 source init = 补全生效，
+/// 是启用的真实物理标志，无需额外镜像文件。
+fn is_zshrc_enabled() -> bool {
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    let content = std::fs::read_to_string(home.join(".zshrc")).unwrap_or_default();
+    content
+        .lines()
+        .any(|l| l.trim_end().ends_with(ZSHRC_LINE_SUFFIX))
 }
 
 /// 记录已部署 binary 版本号的标志文件，与 binary 同目录。
@@ -87,7 +111,9 @@ fn read_version_at(path: &std::path::Path) -> u32 {
 fn install_bin(app: &AppHandle) -> bool {
     let dest = installed_bin(app);
     let Some(source) = source_bin() else {
-        return dest.exists();
+        // source 不可用（编译失败留空文件等）：dest 有效才认为可用。
+        // 仅 exists() 不够——0 字节的 dest 同样无效。
+        return is_non_empty_binary(&dest);
     };
     install_bin_to(&source, &dest, &version_file(app))
 }
@@ -98,7 +124,9 @@ fn install_bin_to(
     dest: &std::path::Path,
     version_path: &std::path::Path,
 ) -> bool {
-    if dest.exists() && read_version_at(version_path) == BIN_VERSION {
+    // 版本匹配 + dest 有效才跳过。dest 为 0 字节占位时强制重复制，
+    // 修复 disable→enable 后 binary 损坏无法自愈的问题。
+    if is_non_empty_binary(dest) && read_version_at(version_path) == BIN_VERSION {
         return true;
     }
 
@@ -246,11 +274,8 @@ pub async fn set_zsh_autosuggestions_enabled(app: AppHandle, enabled: bool) -> R
             if !install_bin(&app) {
                 return Err("binary 部署失败".into());
             }
-            std::fs::write(enabled_flag(&app), b"1")
-                .map_err(|e| format!("写 enabled 标志失败: {e}"))?;
             write_zshrc_line(&app)?;
         } else {
-            let _ = std::fs::remove_file(enabled_flag(&app));
             // 清理运行时数据（可重建），保留 binary 避免反复复制
             let _ = std::fs::remove_file(cache_path(&app));
             let _ = std::fs::remove_file(signals_path(&app));
@@ -283,7 +308,8 @@ impl Extension for ZshAutosuggestionsExtension {
 
     async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
         let _guard = lock();
-        if !enabled_flag(app).exists() {
+        // 以 .zshrc marker 行为启用判据（行存在 = 上次 enable 写入且未被 disable 移除）
+        if !is_zshrc_enabled() {
             return Ok(());
         }
         install_bin(app);
@@ -484,6 +510,24 @@ mod tests {
             std::fs::read_to_string(&ver).unwrap(),
             BIN_VERSION.to_string()
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn install_recopies_when_dest_empty_placeholder() {
+        // cargo build 失败/中断可能留下 0 字节占位；版本号匹配也必须重复制，
+        // 否则 disable→enable 后空 binary 永远无法自愈。
+        let dir = tmp_dir("install-empty");
+        let src = dir.join("src.bin");
+        let dest = dir.join("dest.bin");
+        let ver = dir.join("bin.version");
+        std::fs::write(&src, b"FRESH").unwrap();
+        std::fs::write(&dest, b"").unwrap(); // 0 字节占位
+        std::fs::write(&ver, BIN_VERSION.to_string()).unwrap();
+
+        assert!(install_bin_to(&src, &dest, &ver), "empty dest → recopy");
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "FRESH");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

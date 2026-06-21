@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "tauri:dev": "cargo build --manifest-path src-tauri/Cargo.toml --bin zsh-autosuggestions && bun run sync:extensions && bun run check:commands && bun run check:agent-bounds && bun run check:wm-bounds && bun run lint && tauri dev --config src-tauri/tauri.dev.conf.json",
-    "build:zsh-bin": "cargo build --manifest-path src-tauri/Cargo.toml --bin zsh-autosuggestions",
-    "prebuild:zsh": "cargo build --release --manifest-path src-tauri/Cargo.toml --bin zsh-autosuggestions",
+    "tauri:dev": "cargo build --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml && bun run sync:extensions && bun run check:commands && bun run check:agent-bounds && bun run check:wm-bounds && bun run lint && tauri dev --config src-tauri/tauri.dev.conf.json",
+    "build:zsh-bin": "cargo build --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml",
+    "prebuild:zsh": "CARGO_TARGET_DIR=$PWD/src-tauri/target cargo build --release --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml",
     "dev": "vite",
     "build": "bun run check:extensions && bun run check:commands && bun run check:agent-bounds && bun run check:wm-bounds && bun run lint && vue-tsc --noEmit && vite build",
     "lint": "prettier --write . && eslint . --fix",

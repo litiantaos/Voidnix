@@ -19,7 +19,7 @@ dist
 
 # Rust
 **/*.rs.bk
-src-tauri/target/
+**/target/
 src-tauri/gen/
 src-tauri/proptest-regressions/
 # 根目录无 Cargo.toml，仅 src-tauri/Cargo.lock 受跟踪
