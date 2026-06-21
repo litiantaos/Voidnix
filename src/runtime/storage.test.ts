@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
 
-// 模拟 @tauri-apps/plugin-store 的 Store 接口（get/set/save/clear/onChange）
+// 模拟 @tauri-apps/plugin-store 的 Store 接口（get/set/save/onChange）
 const storeGet = vi.fn()
 const storeSet = vi.fn()
 const storeSave = vi.fn()
-const storeClear = vi.fn()
 const onChangeCb = { fn: null as ((key: string, value: unknown) => void) | null }
 const storeOnChange = vi.fn().mockImplementation((cb: (key: string, value: unknown) => void) => {
   onChangeCb.fn = cb
@@ -20,7 +19,6 @@ vi.mock('@tauri-apps/plugin-store', () => ({
       get: storeGet,
       set: storeSet,
       save: storeSave,
-      clear: storeClear,
       onChange: storeOnChange,
     })
   },
@@ -36,7 +34,6 @@ describe('defineConfig', () => {
     storeGet.mockReset()
     storeSet.mockReset()
     storeSave.mockReset()
-    storeClear.mockReset()
     storeOnChange.mockClear()
     onChangeCb.fn = null
     loadMock.mockReset()
@@ -163,28 +160,6 @@ describe('defineConfig', () => {
     // race 保护：磁盘值与 default 深度相等（顺序无关）→ 不覆盖（保持 default 引用）
     // 但因为深度相等，结果一致
     expect(config.opts).toEqual({ a: 1, b: 2 })
-  })
-
-  // ─── 新增：version mismatch 清磁盘（P2） ──────────────────
-
-  it('version mismatch：清磁盘并写入新 version', async () => {
-    // 磁盘 __version__ = 1，代码声明 version = 2
-    storeGet.mockImplementation((key: string) => Promise.resolve(key === '__version__' ? 1 : null))
-    const config = defineConfig('cfg-version', { maxDays: 30 }, { version: 2 })
-    await vi.waitFor(() => expect(storeClear).toHaveBeenCalled())
-    expect(storeSet).toHaveBeenCalledWith('__version__', 2)
-    expect(config.maxDays).toBe(30) // 用 defaults
-  })
-
-  it('version 匹配：正常回填磁盘值', async () => {
-    storeGet.mockImplementation((key: string) => {
-      if (key === '__version__') return Promise.resolve(2)
-      if (key === 'maxDays') return Promise.resolve(99)
-      return Promise.resolve(null)
-    })
-    const config = defineConfig('cfg-version-ok', { maxDays: 30 }, { version: 2 })
-    await vi.waitFor(() => expect(config.maxDays).toBe(99))
-    expect(storeClear).not.toHaveBeenCalled()
   })
 
   // ─── 新增：跨窗口 onChange 同步（P18） ─────────────────────

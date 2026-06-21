@@ -85,9 +85,9 @@ agent 配置通过 `defineConfig` 自管，持久化至 `extensions/agent/config
 defineConfig('extensions/agent/config', {
   trustedCommands: ['ls', 'cat', 'pwd', 'echo', ...],
   systemPrompt: '',
-  searchProviders: [{ id: '...', type: 'tavily', apiKey: '' }],
-  activeSearchProviderId: '',
-}, { version: 1 })
+  searchProvider: { type: 'tavily', apiKey: '' },
+  // 安全底线项（forbiddenCommands/blockedArgs/max*）+ BOUNDS 镜像
+})
 ```
 
 AI Provider 基础设施（endpoint/apiKey/models）在框架级 `stores/settings.ts`，translate + agent 共享。

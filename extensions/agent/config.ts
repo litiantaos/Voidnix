@@ -1,9 +1,6 @@
-import { computed } from 'vue'
 import { defineConfig } from '@/runtime/storage'
-import { generateRequestId } from '@/utils/id'
 
 export interface SearchProviderConfig {
-  id: string
   type: 'tavily'
   apiKey: string
 }
@@ -54,10 +51,10 @@ export const config = defineConfig('extensions/agent/config', {
   maxOutputBytes: 1048576,
   maxTurns: 10,
   systemPrompt: '',
-  searchProviders: [
-    { id: generateRequestId(), type: 'tavily', apiKey: '' },
-  ] as SearchProviderConfig[],
-  activeSearchProviderId: '',
+  searchProvider: {
+    type: 'tavily',
+    apiKey: '',
+  } as SearchProviderConfig,
 })
 
 /// 安全底线 UI 镜像（权威在 native/policy.rs，⚠️ 须手动同步）。
@@ -131,30 +128,7 @@ export const BOUNDS = {
   },
 } as const
 
-/// 当前激活的搜索提供商（回退到第一个）。
-export const activeSearchProvider = computed(
-  () =>
-    config.searchProviders.find((p) => p.id === config.activeSearchProviderId) ||
-    config.searchProviders[0],
-)
-
-export function addSearchProvider(): string {
-  const id = generateRequestId()
-  config.searchProviders.push({ id, type: 'tavily', apiKey: '' })
-  config.activeSearchProviderId = id
-  return id
-}
-
-export function removeSearchProvider(id: string) {
-  const idx = config.searchProviders.findIndex((c) => c.id === id)
-  if (idx === -1 || config.searchProviders.length <= 1) return
-  config.searchProviders.splice(idx, 1)
-  if (config.activeSearchProviderId === id) {
-    config.activeSearchProviderId = config.searchProviders[0]?.id || ''
-  }
-}
-
-export function updateSearchProvider(id: string, partial: Partial<SearchProviderConfig>) {
-  const p = config.searchProviders.find((c) => c.id === id)
-  if (p) Object.assign(p, partial)
+/// 更新搜索提供商配置（单对象，直接 Object.assign）。
+export function updateSearchProvider(partial: Partial<SearchProviderConfig>) {
+  Object.assign(config.searchProvider, partial)
 }

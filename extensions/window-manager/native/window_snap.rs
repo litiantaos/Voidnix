@@ -71,8 +71,8 @@ mod inner {
     }
 
     static STATE: Mutex<SnapState> = Mutex::new(SnapState {
-        custom_width: 800.0,
-        custom_height: 600.0,
+        custom_width: 1200.0,
+        custom_height: 800.0,
         visible: false,
     });
 
@@ -325,13 +325,15 @@ mod inner {
 
     // ── Monitor 生命周期 ─────────────────────────────────────────────────
 
-    pub fn start(app: AppHandle, custom_width: f64, custom_height: f64) {
-        // 始终同步最新尺寸,避免设置变更后旧值被锁死(monitor 已存在则只更新尺寸)
-        {
-            let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
-            state.custom_width = custom_width;
-            state.custom_height = custom_height;
-        }
+    /// 仅更新 STATE 尺寸，不启停 monitor（参数推送型，由 set_snap_size 命令消费）。
+    pub fn set_size(custom_width: f64, custom_height: f64) {
+        let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        state.custom_width = custom_width;
+        state.custom_height = custom_height;
+    }
+
+    pub fn start(app: AppHandle) {
+        // 尺寸由 set_size 预先推入 STATE，panel 渲染时直接读取
         {
             let guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
             if guard.is_some() {
@@ -408,10 +410,6 @@ mod inner {
         state.visible = false;
     }
 
-    pub fn is_running() -> bool {
-        ENABLED.load(Ordering::SeqCst)
-    }
-
     pub fn hide_panel(app: &AppHandle) {
         if STATE.lock().unwrap_or_else(|e| e.into_inner()).visible {
             hide_panel_impl(app);
@@ -422,7 +420,8 @@ mod inner {
 #[cfg(not(target_os = "macos"))]
 mod inner {
     use tauri::AppHandle;
-    pub fn start(_app: AppHandle, _cw: f64, _ch: f64) {}
+    pub fn set_size(_cw: f64, _ch: f64) {}
+    pub fn start(_app: AppHandle) {}
     pub fn stop() {}
     pub fn is_running() -> bool {
         false
@@ -430,16 +429,16 @@ mod inner {
     pub fn hide_panel(_app: &AppHandle) {}
 }
 
-pub fn start_drag_monitor(app: tauri::AppHandle, custom_width: f64, custom_height: f64) {
-    inner::start(app, custom_width, custom_height);
+pub fn set_snap_size(custom_width: f64, custom_height: f64) {
+    inner::set_size(custom_width, custom_height);
+}
+
+pub fn start_drag_monitor(app: tauri::AppHandle) {
+    inner::start(app);
 }
 
 pub fn stop_drag_monitor() {
     inner::stop();
-}
-
-pub fn is_drag_monitor_running() -> bool {
-    inner::is_running()
 }
 
 pub fn hide_panel(app: &tauri::AppHandle) {

@@ -10,6 +10,7 @@ import { generateRequestId } from '@/utils/id'
 import { cleanStreamResult, engineLabel } from './logic'
 import TranslateSettings from './Settings.vue'
 import TranslateView from './View.vue'
+import TranslateActions from './Actions.vue'
 
 /** Rust translate_ai/translate_youdao 返回结构 */
 interface TranslateBaseResult {
@@ -237,7 +238,8 @@ export default defineExtension({
 
   disableSearchInput: true,
   mainView: () => TranslateView,
-  settingsView: () => TranslateSettings,
+  searchBarAccessory: () => TranslateActions,
+  subviews: { config: () => TranslateSettings },
   setup: async () => {
     unlistenReady = await listen<string>('translate-text-ready', (e) => {
       if (translateReadyResolver) {

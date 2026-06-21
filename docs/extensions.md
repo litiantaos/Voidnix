@@ -9,7 +9,7 @@ extensions/<id>/
 ├── index.ts               # 前端注册（export default defineExtension({...})）
 ├── config.ts              # defineConfig 自管配置（可选）
 ├── View.vue               # 主视图（若声明 mainView）
-├── Settings.vue           # 设置片段（若声明 settingsView）
+├── Settings.vue           # 配置子视图（若声明 subviews.config）
 ├── Actions.vue            # 搜索栏配件（若声明 searchBarAccessory，命名约定 Actions 后缀）
 ├── logic.ts               # 纯逻辑提取（可选，便于测试）
 ├── *.test.ts              # 测试（co-location）
@@ -38,18 +38,17 @@ export default defineExtension({
 
 ### 能力槽（按需声明，均有真实消费者）
 
-| 槽                   | 用途                                                                                                                                           | 消费者                                                                                      |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `search`             | SearchProvider.dynamic 单通道召回                                                                                                              | 见下「搜索集成」                                                                            |
-| `onExecute`          | 搜索结果回车动作（扩展私有）                                                                                                                   | —                                                                                           |
-| `mainView`           | 主视图组件                                                                                                                                     | 9 扩展                                                                                      |
-| `searchBarAccessory` | 搜索栏右侧配件                                                                                                                                 | 2：clipboard/agent                                                                          |
-| `subviews`           | 扩展私有命名子视图                                                                                                                             | 1：screenshot{ocr}                                                                          |
-| `settingsView`       | 设置片段（**跨扩展契约**：settings 扩展 mainView 扫描聚合）。`mainView` 兼任配置的扩展可声明 settingsView 别名复用同组件，浮出于 settings 枢纽 | 8：clipboard/agent/translate/awake/finder-ext/window-manager/zsh-autosuggestions/screenshot |
-| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀）                                                       | 2：screenshot/window-manager                                                                |
-| `globalShortcuts`    | 全局快捷键绑定                                                                                                                                 | 4：clipboard/screenshot/agent/translate                                                     |
-| `hints`              | 键盘提示（enter/multiSelect/delete）                                                                                                           | enter 3：clipboard/ip/calculator；余各 1                                                    |
-| `placeholder`        | 搜索框占位提示（激活模块时显示）                                                                                                               | 7：clipboard/currency/uuid/ip/time/base64/calculator                                        |
+| 槽                   | 用途                                                                                     | 消费者                                                                  |
+| -------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `search`             | SearchProvider.dynamic 单通道召回                                                        | 见下「搜索集成」                                                        |
+| `onExecute`          | 搜索结果回车动作（扩展私有）                                                             | —                                                                       |
+| `mainView`           | 主视图组件                                                                               | 9 扩展                                                                  |
+| `searchBarAccessory` | 搜索栏右侧配件                                                                           | 3：clipboard/agent/translate                                            |
+| `subviews`           | 扩展私有命名子视图                                                                       | 4：screenshot{ocr}、clipboard{config}、agent{config}、translate{config} |
+| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀） | 2：screenshot/window-manager                                            |
+| `globalShortcuts`    | 全局快捷键绑定                                                                           | 4：clipboard/screenshot/agent/translate                                 |
+| `hints`              | 键盘提示（enter/multiSelect/delete）                                                     | enter 3：clipboard/ip/calculator；余各 1                                |
+| `placeholder`        | 搜索框占位提示（激活模块时显示）                                                         | 7：clipboard/currency/uuid/ip/time/base64/calculator                    |
 
 生命周期：`setup?()`（启动钩子，无参）。3 承载字段过渡期保留：`disableSearchInput`（模块自管输入）、`listOptions.multiSelect`、`onOpenSubview`。
 
@@ -115,7 +114,7 @@ interface SearchContext {
 ```typescript
 import { defineConfig } from '@/runtime/storage'
 
-export const config = defineConfig('extensions/clipboard/config', { maxDays: 30 }, { version: 1 })
+export const config = defineConfig('extensions/clipboard/config', { maxDays: 30 })
 
 // 响应式读写，变更自动持久化至 extensions/clipboard/config.json（300ms 防抖）
 config.maxDays // → 30
@@ -123,16 +122,32 @@ config.maxDays = 60 // 自动写盘
 ```
 
 - 第一参数为完整 plugin-store path（不含 `.json` 后缀），扩展用 `extensions/<id>/config`，框架级用 `config/settings`。
-- `version` 可选：磁盘 `__version__` 不匹配时清空用 defaults（自开发自用，无迁移）。
 - backfill 类型守卫：磁盘值类型与 default 不符则丢弃；`isStillDefault` 走递归 deepEqual（顺序无关）。
 - 启动期 `isLoading` 抑制 watch 冗余写；退出 `onCloseRequested` flush 防抖窗口内变更。
 - 跨窗口同步：订阅 plugin-store `onChange`，其他窗口 set 自动同步本地 reactive。
+- schema 变更：自开发自用不维护迁移，改 schema 时手动删磁盘 config.json 即可。
 - store 实例缓存（模块级 `Map<storePath, Store>`），watch 回调复用，禁止每次保存重新 `load()`。
 - 加载异步竞态：`load()` 异步，扩展 setup 早期可能读 defaults。安全参数由 Rust clamp 兜底。
 - 安全底线（agent 专属）：plain `BOUNDS` const 表达 floor/cap，**权威在 Rust `native/policy.rs`**，TS 仅 UI 镜像，详见 [agent.md](./extensions/agent.md)。
-- 含 Rust 命令同步的配置（如开关类）：在 `View.vue` toggle 中显式 `invoke` + 错误反馈（成功才更新 config），勿用 `watch` 静默 invoke 吞错。`watch(immediate: true)` 推参样板见 `extensions/window-manager/config.ts` 与 `extensions/clipboard/config.ts`。
+- 含 Rust 命令同步的配置按**数据位置**分两类同步规约：
+  - **Config 字段型**（数值/字符串/枚举/boolean，持久化在 `config.json`）：在 `config.ts` 用 `watch(..., { immediate: true })` 同步，View.vue 仅改 config 不显式 invoke，失败仅 `console.error`。`immediate: true` 确保启动期磁盘回填后自动同步持久化值（避免「上次开启 → 重启丢失」回归）。样板：`window-manager/config.ts`（`enabled` / `customWidth` / `customHeight`）、`awake/config.ts`（`displayMode`）、`clipboard/config.ts`（`maxDays`）。
+  - **Rust 状态型**（无 config 字段，状态权威在 Rust 端）：在 `View.vue` 显式 `invoke` + 错误反馈（`showStatus error`），成功才更新 UI 局部状态。样板：`awake/View.vue::toggleAwake`（子进程开关，状态查 `is_awake_enabled`）。
 
 框架级配置（全局快捷键、AI Provider）在 `stores/settings.ts`，同样走 `defineConfig`（`config/settings` storePath）。
+
+### 配置字段命名规范
+
+同类配置必须统一命名与参数，禁止各扩展自创风格：
+
+- **扩展整体启用**：`enabled: boolean`（默认 `false`，需用户主动启用）
+- **特定功能启用**：`<feature>Enabled: boolean`
+- **枚举型**：字符串字面量联合（如 `displayMode: 'mirror' | 'extend'`），不用 boolean 伪装模式枚举
+- **单对象 vs 数组**：唯一实体用单对象（`searchProvider: {...}`），多实体并发执行用数组（`configs: [...]`）；数组禁止 `isDefault` 标记或独立的 `activeXxxId` 字段——若需单选激活才加 `activeXxxId`
+- **Rust 同步命令**：`set_<ext>_<field>` 模板（boolean 启用型统一 `set_X_enabled`）
+- **Rust 查询命令**：`is_<ext>_enabled`（仅 Rust 状态型需要；config 字段型前端自有真理，勿加查询命令）
+- **Boolean 参数**：统一 `enabled`（过去分词，形容词性），禁止 `enable`（动词原形）或领域词
+
+数值型配置的 floor/cap 表达为 TS `BOUNDS` const + Rust const 双源，CI 强制约束（`check:agent-bounds` / `check:wm-bounds`）。
 
 ## Rust 扩展（含 native/）
 

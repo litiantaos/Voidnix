@@ -32,7 +32,6 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
@@ -43,19 +42,17 @@ import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { useSettingsInput, type SettingItem } from '@/composables/useSettingsInput'
+import { useShortcutConfig } from '@/composables/useShortcutConfig'
 
-const settings = useSettingsStore()
 const appStore = useAppStore()
 const { handleExecute } = useSettingsInput()
 
-const clipboardShortcutValue = computed({
-  get: () => settings.getShortcutOverride('clipboard') || 'CommandOrControl+Shift+C',
-  set: (val: string) => settings.setShortcutOverride('clipboard', val),
-})
+const { value: clipboardShortcutValue, update } = useShortcutConfig(
+  'clipboard',
+  'CommandOrControl+Shift+C',
+)
 
-const handleClipboardShortcutChange = async (val: string | number) => {
-  await settings.setShortcutOverride('clipboard', val as string)
-}
+const handleClipboardShortcutChange = (val: string | number) => update(String(val))
 
 const maxDaysOptions = [
   { label: '15 天', value: 15 },

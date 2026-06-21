@@ -108,10 +108,8 @@ export interface Extension {
   mainView?: () => Component
   /** 搜索栏右侧附属区域。 */
   searchBarAccessory?: () => Component
-  /** 扩展私有命名子视图（如 screenshot 的 ocr）。 */
+  /** 扩展私有命名子视图（如 screenshot 的 ocr、各扩展的 config）。 */
   subviews?: Record<string, () => Component>
-  /** 设置片段（跨扩展契约：settings 扩展 mainView 扫描消费）。 */
-  settingsView?: () => Component
   /** 独立窗口视图（如 screenshot 的标注/pin、window-manager 的 snap-panel）。 */
   windowViews?: Record<string, () => Component>
   globalShortcuts?: ShortcutBinding[]

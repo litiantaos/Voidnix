@@ -9,7 +9,7 @@
     <template #item="{ selected, setRef }">
       <BaseListItem
         :ref="setRef"
-        title="启用终端自动建议"
+        title="启用扩展功能"
         subtitle="Tab 切换备选，→ 接受，Ctrl+X 开关，Ctrl+C 清空"
         :selected="selected"
       >

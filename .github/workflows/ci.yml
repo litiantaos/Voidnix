@@ -56,6 +56,9 @@ jobs:
       - name: agent 安全底线 Rust↔TS 一致校验
         run: bun run check:agent-bounds
 
+      - name: window-manager 尺寸边界 Rust↔TS 一致校验
+        run: bun run check:wm-bounds
+
       # ── 单元测试 ──
       - name: 前端单元测试（Vitest）
         run: bun run test

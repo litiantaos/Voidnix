@@ -11,16 +11,16 @@
         <BaseListItem
           v-if="item.type === 'toggle'"
           :ref="setRef"
-          title="布局面板"
+          title="启用扩展功能"
           subtitle="鼠标移至屏幕顶部中心激活"
           :selected="selected"
         >
           <template #trailing>
             <BaseButton
-              :variant="wmConfig.dragSnapEnabled ? 'primary' : 'default'"
-              @click.stop="wmConfig.dragSnapEnabled = !wmConfig.dragSnapEnabled"
+              :variant="wmConfig.enabled ? 'primary' : 'default'"
+              @click.stop="wmConfig.enabled = !wmConfig.enabled"
             >
-              {{ wmConfig.dragSnapEnabled ? '已开启' : '已关闭' }}
+              {{ wmConfig.enabled ? '已开启' : '已关闭' }}
             </BaseButton>
           </template>
         </BaseListItem>
@@ -59,7 +59,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { config as wmConfig } from './config'
+import { config as wmConfig, BOUNDS } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -90,7 +90,7 @@ interface InputItem {
 type SettingsItem = ToggleItem | InputItem
 
 const settingsItems: SettingsItem[] = [
-  { type: 'toggle', id: 'wm-drag-snap', group: '通用' },
+  { type: 'toggle', id: 'wm-enabled', group: '通用' },
   { type: 'input', id: 'wm-custom-size', group: '通用' },
 ]
 
@@ -110,11 +110,16 @@ function onBlur(field: 'width' | 'height') {
   }
   if (field === 'width') {
     const n = parseInt(draftWidth.value, 10)
-    if (n > 0) wmConfig.customWidth = n
+    if (n > 0)
+      wmConfig.customWidth = Math.max(BOUNDS.customWidth.floor, Math.min(BOUNDS.customWidth.cap, n))
     draftWidth.value = String(wmConfig.customWidth)
   } else {
     const n = parseInt(draftHeight.value, 10)
-    if (n > 0) wmConfig.customHeight = n
+    if (n > 0)
+      wmConfig.customHeight = Math.max(
+        BOUNDS.customHeight.floor,
+        Math.min(BOUNDS.customHeight.cap, n),
+      )
     draftHeight.value = String(wmConfig.customHeight)
   }
 }
@@ -142,7 +147,7 @@ function onInputKeydown(e: KeyboardEvent, field: 'width' | 'height') {
 
 function onSettingsExecute(item: SettingsItem) {
   if (item.type === 'toggle') {
-    wmConfig.dragSnapEnabled = !wmConfig.dragSnapEnabled
+    wmConfig.enabled = !wmConfig.enabled
   }
 }
 </script>

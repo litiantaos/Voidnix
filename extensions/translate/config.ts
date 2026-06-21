@@ -4,7 +4,6 @@ import { generateRequestId } from '@/utils/id'
 export interface TranslateApiConfig {
   id: string
   type: 'youdao' | 'ai'
-  isDefault?: boolean
   appKey: string
   appSecret: string
   endpoint: string
@@ -14,13 +13,13 @@ export interface TranslateApiConfig {
 }
 
 /// translate 扩展自管配置（持久化至 extensions/translate/config.json）。
+/// configs 为多引擎并发集合（translateText 遍历每项独立翻译），无「激活」概念。
 export const config = defineConfig('extensions/translate/config', {
   targetLang: 'zh',
   configs: [
     {
       id: generateRequestId(),
       type: 'youdao',
-      isDefault: true,
       appKey: '',
       appSecret: '',
       endpoint: '',
@@ -53,6 +52,8 @@ export function updateTranslateConfig(id: string, partial: Partial<TranslateApiC
 }
 
 export function removeTranslateConfig(id: string) {
+  if (config.configs.length <= 1) return
   const idx = config.configs.findIndex((c) => c.id === id)
-  if (idx !== -1 && !config.configs[idx].isDefault) config.configs.splice(idx, 1)
+  if (idx === -1) return
+  config.configs.splice(idx, 1)
 }

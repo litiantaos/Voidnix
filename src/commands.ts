@@ -58,14 +58,14 @@ export const CMD = {
   getScreenInfo: 'get_screen_info',
 
   // —— awake ——
-  toggleAwake: 'toggle_awake',
-  setAwakeMode: 'set_awake_mode',
+  setAwakeEnabled: 'set_awake_enabled',
+  setAwakeDisplayMode: 'set_awake_display_mode',
   isAwakeEnabled: 'is_awake_enabled',
 
   // —— window-manager ——
   setFrontmostWindowLayout: 'set_frontmost_window_layout',
-  toggleDragSnap: 'toggle_drag_snap',
-  isDragSnapActive: 'is_drag_snap_active',
+  setWindowManagerEnabled: 'set_window_manager_enabled',
+  setSnapSize: 'set_snap_size',
   showSnapPanel: 'show_snap_panel',
   hideSnapPanel: 'hide_snap_panel',
   checkWindowManagerAccessibility: 'check_window_manager_accessibility',

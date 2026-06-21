@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 
 mod window_snap;
 
+/// 自定义尺寸 floor/cap（权威源，⚠️ TS config.ts BOUNDS 须手动同步，
+/// check:wm-bounds CI 强制约束）。
+const WIDTH_BOUNDS: (f64, f64) = (200.0, 4096.0);
+const HEIGHT_BOUNDS: (f64, f64) = (200.0, 4096.0);
+
 /// Window manager 扩展。
 pub struct WindowManagerExtension;
 
@@ -247,8 +252,8 @@ pub mod platform {
             "bottom" => (x, y + hh, w, hh),
             "bottom-right" => (x + hw, y + hh, hw, hh),
             "custom" => {
-                let clamped_w = cw.clamp(100.0, w);
-                let clamped_h = ch.clamp(100.0, h);
+                let clamped_w = cw.clamp(WIDTH_BOUNDS.0, WIDTH_BOUNDS.1.min(w));
+                let clamped_h = ch.clamp(HEIGHT_BOUNDS.0, HEIGHT_BOUNDS.1.min(h));
                 (
                     x + (w - clamped_w) / 2.0,
                     y + (h - clamped_h) / 2.0,
@@ -257,8 +262,8 @@ pub mod platform {
                 )
             }
             _ => {
-                let clamped_w = cw.clamp(100.0, w);
-                let clamped_h = ch.clamp(100.0, h);
+                let clamped_w = cw.clamp(WIDTH_BOUNDS.0, WIDTH_BOUNDS.1.min(w));
+                let clamped_h = ch.clamp(HEIGHT_BOUNDS.0, HEIGHT_BOUNDS.1.min(h));
                 (
                     x + (w - clamped_w) / 2.0,
                     y + (h - clamped_h) / 2.0,
@@ -622,7 +627,7 @@ pub mod platform {
                 }
                 result
             };
-            let (cw, ch) = current_size.unwrap_or((800.0, 600.0));
+            let (cw, ch) = current_size.unwrap_or((1200.0, 800.0));
             let px = screen.x + (screen.width - cw) / 2.0;
             let py = screen.y + (screen.height - ch) / 2.0;
             set_ax_position(win_ref, px, py);
@@ -661,21 +666,16 @@ pub mod platform {
         unsafe { AXIsProcessTrusted() }
     }
 
-    pub fn do_toggle_drag_snap(
-        app: &tauri::AppHandle,
-        enabled: bool,
-        custom_width: f64,
-        custom_height: f64,
-    ) {
+    pub fn do_set_window_manager_enabled(app: &tauri::AppHandle, enabled: bool) {
         if enabled {
-            super::window_snap::start_drag_monitor(app.clone(), custom_width, custom_height);
+            super::window_snap::start_drag_monitor(app.clone());
         } else {
             super::window_snap::stop_drag_monitor();
         }
     }
 
-    pub fn do_is_drag_snap_active() -> bool {
-        super::window_snap::is_drag_monitor_running()
+    pub fn do_set_snap_size(width: f64, height: f64) {
+        super::window_snap::set_snap_size(width, height);
     }
 }
 
@@ -697,10 +697,8 @@ mod platform {
     pub fn do_check_accessibility() -> bool {
         false
     }
-    pub fn do_toggle_drag_snap(_: &tauri::AppHandle, _: bool, _: f64, _: f64) {}
-    pub fn do_is_drag_snap_active() -> bool {
-        false
-    }
+    pub fn do_set_window_manager_enabled(_: &tauri::AppHandle, _: bool) {}
+    pub fn do_set_snap_size(_: f64, _: f64) {}
 }
 
 #[tauri::command]
@@ -719,8 +717,8 @@ pub async fn set_frontmost_window_layout(
     platform::do_set_layout(
         &app,
         &layout,
-        custom_width.unwrap_or(800.0),
-        custom_height.unwrap_or(600.0),
+        custom_width.unwrap_or(1200.0),
+        custom_height.unwrap_or(800.0),
         prev_pid,
     )
 }
@@ -731,21 +729,14 @@ pub fn check_window_manager_accessibility() -> bool {
 }
 
 #[tauri::command]
-pub async fn toggle_drag_snap(
+pub async fn set_window_manager_enabled(
     app: tauri::AppHandle,
     enabled: bool,
-    custom_width: Option<f64>,
-    custom_height: Option<f64>,
 ) -> Result<(), String> {
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     let app_clone = app.clone();
     app.run_on_main_thread(move || {
-        platform::do_toggle_drag_snap(
-            &app_clone,
-            enabled,
-            custom_width.unwrap_or(800.0),
-            custom_height.unwrap_or(600.0),
-        );
+        platform::do_set_window_manager_enabled(&app_clone, enabled);
         let _ = tx.send(());
     })
     .map_err(|e| e.to_string())?;
@@ -755,8 +746,8 @@ pub async fn toggle_drag_snap(
 }
 
 #[tauri::command]
-pub fn is_drag_snap_active() -> bool {
-    platform::do_is_drag_snap_active()
+pub fn set_snap_size(width: f64, height: f64) {
+    platform::do_set_snap_size(width, height);
 }
 
 #[tauri::command]

@@ -417,20 +417,21 @@ const allItems = computed<ChatSettingsItem[]>(() => [
     group: '模型提供商',
     config: c,
   })),
-  ...agentConfig.searchProviders.map((c) => ({
-    type: 'searchProvider' as const,
-    group: '搜索提供商',
-    config: c,
-  })),
+  ...[
+    {
+      type: 'searchProvider' as const,
+      group: '搜索提供商',
+      config: agentConfig.searchProvider,
+    },
+  ],
   { type: 'whitelist', group: 'Agent 配置' },
   { type: 'systemPrompt', group: 'Agent 配置' },
 ])
 
 const selectedIndex = ref(0)
 
-// ─── 搜索提供商编辑（默认固定一项 Tavily，不可新增/删除）───
+// ─── 搜索提供商编辑（固定 Tavily 单项，不可新增/删除）───
 const showSearchDialog = ref(false)
-const editingSearchId = ref('')
 const searchKeyVisible = ref(false)
 const searchForm = ref<{ apiKey: string }>({ apiKey: '' })
 
@@ -439,7 +440,6 @@ function searchProviderLabel(_c: SearchProviderConfig): string {
 }
 
 function openSearchModal(config: SearchProviderConfig) {
-  editingSearchId.value = config.id
   searchForm.value = { apiKey: config.apiKey }
   searchKeyVisible.value = false
   showSearchDialog.value = true
@@ -447,14 +447,10 @@ function openSearchModal(config: SearchProviderConfig) {
 
 function closeSearchModal() {
   showSearchDialog.value = false
-  editingSearchId.value = ''
 }
 
 async function saveSearchModal() {
-  if (!editingSearchId.value) return
-  await updateSearchProvider(editingSearchId.value, {
-    apiKey: searchForm.value.apiKey.trim(),
-  })
+  await updateSearchProvider({ apiKey: searchForm.value.apiKey.trim() })
   closeSearchModal()
 }
 

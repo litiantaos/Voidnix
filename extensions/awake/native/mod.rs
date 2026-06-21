@@ -32,14 +32,14 @@ fn awake_bin_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> 
 }
 
 #[tauri::command]
-pub async fn toggle_awake(
+pub async fn set_awake_enabled(
     app: tauri::AppHandle,
     state: State<'_, AwakeState>,
-    enable: bool,
+    enabled: bool,
 ) -> Result<bool, String> {
     let mut process_guard = state.process.lock().map_err(|e| e.to_string())?;
 
-    if enable {
+    if enabled {
         if process_guard.is_some() {
             return Ok(true);
         }
@@ -131,11 +131,12 @@ pub async fn is_awake_enabled(state: State<'_, AwakeState>) -> Result<bool, Stri
 }
 
 #[tauri::command]
-pub async fn set_awake_mode(
+pub async fn set_awake_display_mode(
     app: tauri::AppHandle,
     state: State<'_, AwakeState>,
-    mirror: bool,
-) -> Result<bool, String> {
+    mode: String,
+) -> Result<(), String> {
+    let mirror = mode == "mirror";
     MIRROR_MODE.store(mirror, Ordering::Relaxed);
 
     let mut process_guard = state.process.lock().map_err(|e| e.to_string())?;
@@ -163,7 +164,7 @@ pub async fn set_awake_mode(
         *guard = Some(ManagedChild(Some(new_child)));
     }
 
-    Ok(mirror)
+    Ok(())
 }
 
 /// 命令注册（局部 invoke_handler，§2.8）。

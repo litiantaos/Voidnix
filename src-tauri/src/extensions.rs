@@ -33,8 +33,8 @@ macro_rules! configure_app {
                 crate::extensions::agent::agent_approve,
                 crate::extensions::agent::agent_run,
                 crate::extensions::awake::is_awake_enabled,
-                crate::extensions::awake::set_awake_mode,
-                crate::extensions::awake::toggle_awake,
+                crate::extensions::awake::set_awake_display_mode,
+                crate::extensions::awake::set_awake_enabled,
                 crate::extensions::clipboard::commands::clear_clipboard_history,
                 crate::extensions::clipboard::commands::delete_clipboard_items,
                 crate::extensions::clipboard::commands::get_clipboard_history,
@@ -78,10 +78,10 @@ macro_rules! configure_app {
                 crate::extensions::window_manager::check_window_manager_accessibility,
                 crate::extensions::window_manager::get_screen_info,
                 crate::extensions::window_manager::hide_snap_panel,
-                crate::extensions::window_manager::is_drag_snap_active,
                 crate::extensions::window_manager::set_frontmost_window_layout,
+                crate::extensions::window_manager::set_snap_size,
+                crate::extensions::window_manager::set_window_manager_enabled,
                 crate::extensions::window_manager::show_snap_panel,
-                crate::extensions::window_manager::toggle_drag_snap,
                 crate::extensions::zsh_autosuggestions::set_zsh_autosuggestions_enabled,
             ])
     };

@@ -48,7 +48,6 @@ import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { useSettingsInput, type SettingItem } from '@/composables/useSettingsInput'
-import { getAllExtensions } from '@/runtime/extension-registry'
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
@@ -201,22 +200,6 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     value: '',
     action: handleQuitApp,
   })
-
-  // 扩展配置入口：扫描声明 settingsView 的扩展（§2.2 N3 跨扩展契约，settings 枢纽聚合）
-  for (const ext of getAllExtensions()) {
-    if (ext.settingsView) {
-      items.push({
-        id: `ext-settings-${ext.meta.id}`,
-        title: ext.meta.name,
-        subtitle: ext.meta.description,
-        type: 'button',
-        icon: ext.meta.icon,
-        group: '扩展配置',
-        value: '',
-        action: () => appStore.openSubview(ext.meta.id),
-      })
-    }
-  }
 
   items.push({
     id: 'perm-screen-recording',
