@@ -119,10 +119,10 @@ function scanExtensionCommands(ids: string[]): string[] {
 
 function buildExtensionsRs(ids: string[], frameworkCmds: string[], extCmds: string[]): string {
   const pluginChain = ids
-    .map((id) => `        .plugin(crate::extensions::${rustName(id)}::init())`)
+    .map((id) => `            .plugin(crate::extensions::${rustName(id)}::init())`)
     .join('\n')
   const allCmds = [...frameworkCmds, ...extCmds]
-  const cmdList = allCmds.map((c) => `            ${c},`).join('\n')
+  const cmdList = allCmds.map((c) => `                ${c},`).join('\n')
   const modDecls = ids
     .map((id) => `#[path = "../../extensions/${id}/native/mod.rs"]\npub mod ${rustName(id)};`)
     .join('\n\n')

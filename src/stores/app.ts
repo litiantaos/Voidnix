@@ -14,6 +14,13 @@ export interface ConfirmOptions {
   showCancel?: boolean
 }
 
+export type StatusKind = 'success' | 'error'
+
+export interface StatusOptions {
+  duration?: number
+  kind?: StatusKind
+}
+
 export const useAppStore = defineStore('app', () => {
   const activeModuleId = ref<string | null>(null)
   const searchQuery = ref('')
@@ -33,14 +40,18 @@ export const useAppStore = defineStore('app', () => {
 
   // 状态栏瞬时消息
   const statusMessage = ref('')
+  const statusKind = ref<StatusKind>('success')
   let statusTimer: ReturnType<typeof setTimeout> | null = null
 
-  function showStatus(msg: string, duration = 2000) {
+  function showStatus(msg: string, opts?: StatusOptions) {
+    const { duration = 2000, kind = 'success' } = opts ?? {}
     statusMessage.value = msg
+    statusKind.value = kind
     if (statusTimer) clearTimeout(statusTimer)
     if (duration > 0) {
       statusTimer = setTimeout(() => {
         statusMessage.value = ''
+        statusKind.value = 'success'
         statusTimer = null
       }, duration)
     }
@@ -124,6 +135,7 @@ export const useAppStore = defineStore('app', () => {
     setShortcutError,
     clearShortcutError,
     statusMessage,
+    statusKind,
     showStatus,
   }
 })
@@ -140,7 +152,7 @@ export async function copyAndHide(value: string, label = '已复制') {
     hideTimer = null
   }
   await writeText(value)
-  useAppStore().showStatus(label, 800)
+  useAppStore().showStatus(label, { duration: 800 })
   hideTimer = setTimeout(() => {
     hideTimer = null
     hideWindow()

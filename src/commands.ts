@@ -34,6 +34,7 @@ export const CMD = {
   getClipboardImage: 'get_clipboard_image',
   clearClipboardHistory: 'clear_clipboard_history',
   pasteboardWriteText: 'pasteboard_write_text',
+  setClipboardMaxDays: 'set_clipboard_max_days',
 
   // —— screenshot ——
   captureScreen: 'capture_screen',

@@ -256,15 +256,8 @@ pub fn start_monitor(app_handle: AppHandle) {
                 );
             }
 
-            use tauri_plugin_store::StoreExt;
-            let store = app_handle.store("extensions/clipboard/config.json");
-            let mut max_days: i32 = 30;
-
-            if let Ok(s) = store {
-                if let Some(n) = s.get("maxDays").and_then(|v| v.as_i64()) {
-                    max_days = n as i32;
-                }
-            }
+            // 由前端 config.ts invoke 推入的扩展自管参数（替代 Rust 直读 config.json）
+            let max_days: i32 = crate::extensions::clipboard::load_max_days();
 
             const MAX_ROWS: i64 = 5000;
 
@@ -288,6 +281,9 @@ pub fn start_monitor(app_handle: AppHandle) {
             }
 
             let _ = app_handle.emit("clipboard-updated", ());
+
+            // 写入计数 + WAL checkpoint（防止 clipboard.db-wal 无限增长）
+            db.maybe_checkpoint(&conn);
         }
     });
 }

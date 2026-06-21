@@ -14,7 +14,7 @@ export interface TranslateApiConfig {
 }
 
 /// translate 扩展自管配置（持久化至 extensions/translate/config.json）。
-export const config = defineConfig('translate', {
+export const config = defineConfig('extensions/translate/config', {
   targetLang: 'zh',
   configs: [
     {

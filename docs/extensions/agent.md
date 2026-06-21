@@ -82,12 +82,12 @@ agent 配置通过 `defineConfig` 自管，持久化至 `extensions/agent/config
 
 ```typescript
 // extensions/agent/config.ts
-defineConfig('agent', {
+defineConfig('extensions/agent/config', {
   trustedCommands: ['ls', 'cat', 'pwd', 'echo', ...],
   systemPrompt: '',
   searchProviders: [{ id: '...', type: 'tavily', apiKey: '' }],
   activeSearchProviderId: '',
-})
+}, { version: 1 })
 ```
 
 AI Provider 基础设施（endpoint/apiKey/models）在框架级 `stores/settings.ts`，translate + agent 共享。

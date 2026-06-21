@@ -1046,10 +1046,7 @@ pub async fn save_scroll_result(result_data_url: String, path: String) -> Result
             p.to_path_buf()
         }
     };
-    if let Some(parent) = file_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&file_path, png).map_err(|e| e.to_string())?;
+    crate::runtime::storage::save_png_safely(&file_path, &png)?;
     Ok(file_path.to_string_lossy().to_string())
 }
 

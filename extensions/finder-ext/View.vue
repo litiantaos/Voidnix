@@ -66,7 +66,7 @@ const toggle = async () => {
   try {
     await invoke(CMD.setFinderExtEnabled, { enabled: newVal })
   } catch (e) {
-    appStore.showStatus(`开关失败：${e ?? '未知错误'}`, 4000)
+    appStore.showStatus(`开关失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
     return
   }
   finderConfig.enabled = newVal

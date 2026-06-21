@@ -29,7 +29,7 @@ struct Cli {
 enum Commands {
     /// 输出 zsh 集成脚本（直接 include_str，无模板替换，路径走环境变量）
     Init,
-    /// 从 .zsh_history + signals.log 重建 index.cache
+    /// 从 .zsh_history + signals.log 重建 index.zsh
     Rebuild {
         #[arg(long)]
         out: PathBuf,

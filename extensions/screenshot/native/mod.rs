@@ -69,8 +69,8 @@ impl Extension for ScreenshotExtension {
     }
 
     async fn setup(&self, _app: &AppHandle) -> tauri::Result<()> {
-        // 清理上次会话遗留的临时文件
-        cleanup_temp_files();
+        // /tmp 残留清理由 lib.rs setup 统一调 runtime::storage::cleanup_all_voidnix_temps()
+        // （覆盖 screenshot + search 等所有扩展的 voidnix_* / voidnix-icon-* 残留）
 
         #[cfg(target_os = "macos")]
         {
@@ -81,10 +81,4 @@ impl Extension for ScreenshotExtension {
         }
         Ok(())
     }
-}
-
-/// 清理上次会话遗留的临时文件（启动时调用，委托至 runtime::storage）。
-fn cleanup_temp_files() {
-    let temp_dir = std::env::temp_dir();
-    crate::runtime::storage::cleanup_temps_by_prefix(&temp_dir, "voidnix_", &[".png", ".jpg"]);
 }

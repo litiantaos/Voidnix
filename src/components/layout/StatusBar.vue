@@ -19,7 +19,13 @@
         leave-to-class="opacity-0"
       >
         <div v-if="appStore.statusMessage" key="msg" flex gap="1" items="center">
-          <i class="i-ri-check-line" text="accent" />
+          <i
+            :class="
+              appStore.statusKind === 'error'
+                ? 'i-ri-error-warning-line text-red-500'
+                : 'i-ri-check-line text-accent'
+            "
+          />
           <span text="tx-muted">{{ appStore.statusMessage }}</span>
         </div>
         <span v-else-if="isSearchMode && isLoading" key="loading" text="tx-hint">正在搜索…</span>

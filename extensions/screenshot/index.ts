@@ -43,6 +43,7 @@ export default defineExtension({
   },
 
   mainView: () => ScreenshotView,
+  settingsView: () => ScreenshotView, // settings 枢纽浮出（mainView 兼任配置，复用同组件）
   subviews: { ocr: () => ScreenshotOcr },
   windowViews: {
     screenshot: () => ScreenshotWindow,

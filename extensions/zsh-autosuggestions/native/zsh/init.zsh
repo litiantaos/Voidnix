@@ -7,7 +7,7 @@
 #
 # 路径全部从环境变量读（由 .zshrc 行注入）：
 #   ZSH_AS_BIN      binary 路径
-#   ZSH_AS_CACHE    index.cache 路径
+#   ZSH_AS_CACHE    index.zsh 路径
 #   ZSH_AS_SIGNALS  signals.log 路径
 
 #--------------------------------------------------------------------#

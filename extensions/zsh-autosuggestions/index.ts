@@ -12,4 +12,5 @@ export default defineExtension({
   },
 
   mainView: () => View,
+  settingsView: () => View, // settings 枢纽浮出（mainView 兼任配置，复用同组件）
 })

@@ -126,14 +126,15 @@ describe('app store', () => {
   describe('状态栏消息', () => {
     it('showStatus 设置消息', () => {
       const store = useAppStore()
-      store.showStatus('已复制', 0)
+      store.showStatus('已复制', { duration: 0 })
       expect(store.statusMessage).toBe('已复制')
+      expect(store.statusKind).toBe('success')
     })
 
     it('showStatus duration 后自动清除', () => {
       vi.useFakeTimers()
       const store = useAppStore()
-      store.showStatus('已复制', 1000)
+      store.showStatus('已复制', { duration: 1000 })
       expect(store.statusMessage).toBe('已复制')
       vi.advanceTimersByTime(1000)
       expect(store.statusMessage).toBe('')
@@ -143,12 +144,19 @@ describe('app store', () => {
     it('连续 showStatus 替换前一条', () => {
       vi.useFakeTimers()
       const store = useAppStore()
-      store.showStatus('第一条', 5000)
-      store.showStatus('第二条', 5000)
+      store.showStatus('第一条', { duration: 5000 })
+      store.showStatus('第二条', { duration: 5000 })
       expect(store.statusMessage).toBe('第二条')
       vi.advanceTimersByTime(5000)
       expect(store.statusMessage).toBe('')
       vi.useRealTimers()
+    })
+
+    it('showStatus kind: error 切换错误语义', () => {
+      const store = useAppStore()
+      store.showStatus('启用失败', { duration: 0, kind: 'error' })
+      expect(store.statusMessage).toBe('启用失败')
+      expect(store.statusKind).toBe('error')
     })
   })
 })

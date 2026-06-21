@@ -58,15 +58,11 @@ impl notify::EventHandler for CommandHandler {
 
 /// IPC directory shared between the sandboxed extension and this main app.
 fn command_dir(app: &AppHandle) -> PathBuf {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("extensions")
-        .join("finder-ext")
-        .join("commands");
-    let _ = fs::create_dir_all(&dir);
-    dir
+    let dir = crate::runtime::storage::ext_data_dir(app, "finder-ext")
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let cmd_dir = dir.join("commands");
+    let _ = fs::create_dir_all(&cmd_dir);
+    cmd_dir
 }
 
 /// 命令注册（局部 invoke_handler，§2.8）。

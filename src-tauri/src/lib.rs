@@ -21,6 +21,9 @@ pub fn run() {
         .setup(|app| {
             let boot_start = std::time::Instant::now();
 
+            // 启动期统一清理 /tmp 残留（覆盖 voidnix_*、voidnix-icon-*、voidnix/picker.jpg）
+            crate::runtime::storage::cleanup_all_voidnix_temps();
+
             // pre-bootstrap：框架级共享资源（串行，bootstrap 之前）。AX timeout 多扩展共享，
             // 不可下沉扩展 setup（concurrent bootstrap 无法保证时序，§2.1）。
             #[cfg(target_os = "macos")]

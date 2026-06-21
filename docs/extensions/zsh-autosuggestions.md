@@ -4,14 +4,14 @@
 
 ## 数据流
 
-zsh 启动 → `source index.cache`（<5ms，零解析，版本校验）→ 按键纯内存前缀匹配（sorted 数组扫描，前 N 命中即停）→ precmd 钩子 `print >> signals.log`（零 spawn，条件 append）+ stale 检测（`$HISTFILE -nt $ZSH_AS_CACHE`）触发后台 `zsh-as rebuild`。三个路径完全解耦。
+zsh 启动 → `source index.zsh`（<5ms，零解析，版本校验）→ 按键纯内存前缀匹配（sorted 数组扫描，前 N 命中即停）→ precmd 钩子 `print >> signals.log`（零 spawn，条件 append）+ stale 检测（`$HISTFILE -nt $ZSH_AS_CACHE`）触发后台 `zsh-as rebuild`。三个路径完全解耦。
 
 > **命名约定**：zsh 内部函数/变量统一 `_zsh_autosuggestions_*`（函数）与 `_ZSH_AUTOSUGGESTIONS_*`（全局变量）；`ZSH_AS_BIN/CACHE/SIGNALS` 是 .zshrc 注入的**环境变量契约**（外部接口，保留短名）；widget 名 `zsh-as-*`（保留）。
 
 ## binary 命令（3 个）
 
 - `init`（输出 zsh 集成脚本，无模板替换，`include_str!` 嵌入）
-- `rebuild`（读 .zsh_history + signals.log → 先 rotate+compact signals → 写 index.cache，atomic rename）
+- `rebuild`（读 .zsh_history + signals.log → 先 rotate+compact signals → 写 index.zsh，atomic rename）
 - `stats`（诊断，支持 `--half-life-days` / `--fail-penalty` 覆盖默认参数；未检测到 extended_history 时提示 `setopt EXTENDED_HISTORY`）
 
 ## 保留算法
@@ -22,11 +22,11 @@ frecency（`(count+1)^0.7 * exp(-dt/half_life)` + K=10 归一，半衰期默认 
 
 `~/Library/Application Support/<bundle-id>/extensions/zsh-autosuggestions/`：
 
-- `index.cache` —— sourceable zsh：`typeset -ga _zsh_autosuggestions_sorted`（按 score 降序）+ `typeset -gi _ZSH_AUTOSUGGESTIONS_IDX_VERSION`（zsh 端 source 后校验 `==1`，不匹配则视为格式错误）
+- `index.zsh` —— sourceable zsh：`typeset -ga _zsh_autosuggestions_sorted`（按 score 降序）+ `typeset -gi _ZSH_AUTOSUGGESTIONS_IDX_VERSION`（zsh 端 source 后校验 `==1`，不匹配则视为格式错误）
 - `signals.log` —— append-only TSV：`<exit>\t<state>\t<cmd>`（3 字段；state：0=无 suggestion 互动，1=accepted，2=rejected；仅 `exit!=0 || state!=0` 时 append 控制体积；rebuild 入口 rotate+compact：>1MB 或含无效行时保留最后 10000 有效行 atomic 写回）
 - `enabled` —— on/off 标志位
 - `bin/zsh-autosuggestions` —— binary（版本号比对复制，见「分发」）
-- `bin_version` —— 已部署 binary 版本号（与 binary 同目录）
+- `bin.version` —— 已部署 binary 版本号（与 binary 同目录）
 
 ## history 解析
 
@@ -52,11 +52,11 @@ binary 是独立 `[[bin]]` target（`Cargo.toml` 声明，path 指向 `native/sr
 1. 优先 `current_exe().parent().join("zsh-autosuggestions")`（dev = `target/debug/`）
 2. 兜底 `current_exe().parent().parent().join("Resources").join(...)`（release = `.app/Contents/Resources/`）
 
-**版本号部署**：`install_bin` 比较 `bin_version` 文件与编译期常量 `BIN_VERSION`（`mod.rs`），相等即跳过复制。**每改 binary 内容（`native/src/*.rs` 或 `include_str!` 嵌入的 `init.zsh`）必须 bump `BIN_VERSION`——开发期迭代亦然**：同一版本号只在首次部署时复制产物，共用版本号会导致改动不部署。`bin_version` 与 binary 同目录，缺失视为 0。手动改 init.zsh 后立即生效可重启 `tauri:dev`，或手动复制 `src-tauri/target/debug/zsh-autosuggestions` + 写 `bin_version`。
+**版本号部署**：`install_bin` 比较 `bin.version` 文件与编译期常量 `BIN_VERSION`（`mod.rs`），相等即跳过复制。**每改 binary 内容（`native/src/*.rs` 或 `include_str!` 嵌入的 `init.zsh`）必须 bump `BIN_VERSION`——开发期迭代亦然**：同一版本号只在首次部署时复制产物，共用版本号会导致改动不部署。`bin.version` 与 binary 同目录，缺失视为 0。手动改 init.zsh 后立即生效可重启 `tauri:dev`，或手动复制 `src-tauri/target/debug/zsh-autosuggestions` + 写 `bin.version`。
 
 `setup` 并幂等刷新 .zshrc 行。
 
-.zshrc 行：`export ZSH_AS_BIN=... ZSH_AS_CACHE=... ZSH_AS_SIGNALS=...; eval "$("$ZSH_AS_BIN" init)"`（行尾 marker `# voidnix zsh-autosuggestions` 用于精确 remove）。.zshrc 写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.cache` + `signals.log`（保留 binary 避免反复复制）。
+.zshrc 行：`export ZSH_AS_BIN=... ZSH_AS_CACHE=... ZSH_AS_SIGNALS=...; eval "$("$ZSH_AS_BIN" init)"`（行尾 marker `# voidnix zsh-autosuggestions` 用于精确 remove）。.zshrc 写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.zsh` + `signals.log` + `.zshrc.voidnix-bak`（保留 binary 避免反复复制）。
 
 `View.vue` toggle **显式 invoke** `set_zsh_autosuggestions_enabled`，成功才更新 `config.enabled`，失败 `showStatus` 提示（避免 config 与 `enabled_flag` 不一致）。
 

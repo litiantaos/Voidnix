@@ -27,11 +27,8 @@ const AWAKE_BIN: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/awake_display
 
 /// 返回 awake binary 存放路径（app_data_dir/extensions/awake/，非 /tmp）。
 fn awake_bin_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    use tauri::Manager;
-    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let ext_dir = data_dir.join("extensions").join("awake");
-    std::fs::create_dir_all(&ext_dir).map_err(|e| e.to_string())?;
-    Ok(ext_dir.join("Display Wakelock"))
+    let dir = crate::runtime::storage::ext_data_dir(app, "awake")?;
+    Ok(dir.join("Display Wakelock"))
 }
 
 #[tauri::command]
