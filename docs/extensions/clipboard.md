@@ -9,10 +9,10 @@ monitor 的 change_count / marker 检查 / 文本读取已委托至 `platform::p
 `extensions/clipboard/config.ts`（defineConfig 自管）：
 
 ```typescript
-defineConfig('clipboard', { maxDays: 30 })
+defineConfig('extensions/clipboard/config', { maxDays: 30 }, { version: 1 })
 ```
 
-Rust monitor 从 `extensions/clipboard/config.json` 读取 `maxDays`（非旧路径 `config/settings.json`）。
+`maxDays` 通过 `watch(immediate: true) → invoke(set_clipboard_max_days)` 推入 Rust 全局 `AtomicI32`（替代 Rust 直读 config.json，对齐 window-manager 样板）。
 
 ## 数据存储
 
@@ -23,6 +23,8 @@ Rust monitor 从 `extensions/clipboard/config.json` 读取 `maxDays`（非旧路
 - `file_size` / `image_width` / `image_height`（迁移列）
 
 索引 `idx_clipboard_created_at`。图片 base64 内联存储，不外部落盘。
+
+**WAL 增长控制**：每次 INSERT 后 `Database::maybe_checkpoint(&conn)` 累计计数，达 200 触发 `PRAGMA wal_checkpoint(TRUNCATE)`，防止 `clipboard.db-wal` 长期累积。
 
 ## 约束
 

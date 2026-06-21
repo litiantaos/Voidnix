@@ -7,7 +7,7 @@ macOS 效率启动器。Tauri 2 + Rust + Vue 3。统一扩展架构：
 
 ## 原则
 
-- 追求极致的结构清晰、代码统一、优雅、轻量、高性能、低占用
+- 自开发自用，追求极致的结构清晰、代码统一、优雅、轻量、高性能、低占用
 - 极简主义、强迫症、精神洁癖、第一性推导、一步到位，摒弃历史包袱与旧版兼容
 - **两层正交**：`runtime/`（平台无关的调度与生命周期核心）与 `platform/`（macOS 原语、无业务语义）严格分离——换 `platform` 实现即可跨平台，不混称「内核」
 - **机制最少化**：新增机制（接口字段/扩展点/生命周期钩子）前先回答「现有机制能否覆盖」。优先扩展已有机制参数，而非新增并列机制
@@ -97,7 +97,7 @@ Agent 安全防线（命令执行 9 层纵深防御）：`extensions/agent/nativ
 
 **搜索打分**：`src/utils/fuzzy.ts::scoreFields()`（[pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。`kind` 枚举 `application | folder | file | module | clipboard | web`（folder/file 同组），组间序 `GROUP_ORDER`：`application > file > module > clipboard > web`。
 
-**状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide`（`stores/app.ts`，app 行为：写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈。扩展可通过 `hints.enter` / `hints.multiSelect` / `hints.delete` 自定义快捷键提示。
+**状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide`（`stores/app.ts`，app 行为：写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈。`showStatus(msg, opts?)` 支持 `kind: 'success' | 'error'`（默认 success），StatusBar 按 kind 切图标/颜色（对勾 accent / 警告 red-500），错误反馈必须传 `kind: 'error'` 避免绿色对勾的语义错位。扩展可通过 `hints.enter` / `hints.multiSelect` / `hints.delete` 自定义快捷键提示。
 
 **模块视图加载**（切换性能）：模块 View（mainView/settingsView/subviews/searchBarAccessory）静态 import 进主 bundle（用户高频、固定集合，首次进入零卡顿）；仅**独立窗口**（screenshot 标注 host/pin、window-manager snap 面板，`windowViews`）保留 `defineAsyncComponent` 真按需——不截图/不分屏不加载，省稳态占用（gzip ~20KB）。`ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问模块，切换走 activate/deactivate 而非重挂载。
 
@@ -113,7 +113,7 @@ src-tauri/src/
 ├── runtime/            # 运行时核心
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
-│   ├── storage.rs      # TempHandle RAII 临时文件管理（Drop 自动清理）
+│   ├── storage.rs      # TempHandle RAII + cleanup_all_voidnix_temps（启动期统一扫 /tmp 残留）+ ext_data_dir 统一扩展数据目录 + save_png_safely（path_guard + write 共用）
 │   ├── permission.rs   # 系统权限薄壳
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap，join_all 单线程并发交错）
 │   ├── pasteboard.rs   # 框架命令薄壳（pasteboard_write_text；原语在 platform/pasteboard）
@@ -136,7 +136,7 @@ src/
 ├── runtime/            # 前端运行时（5 文件）
 │   ├── types.ts        # Extension / SearchProvider / SearchResult（13 槽：10 能力 + 3 行为）
 │   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS/GROUP_ORDER/GROUP_TITLES/KEYWORD_MODULE_BOOST + LIMITS）
-│   ├── storage.ts      # defineConfig（structuredClone 深克隆 default + reactive + watch 自动持久化 + 深度相等 race 保护 + store 实例缓存）
+│   ├── storage.ts      # defineConfig（storePath + defaults + options{version,validate}；reactive + watch 自动持久化 + 递归 deepEqual race 保护 + 类型守卫 + isLoading 抑制 + 退出 flush + 跨窗口 onChange 同步 + store 实例缓存）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
 │   └── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
 ├── components/
@@ -175,12 +175,12 @@ src/
 
 ```
 ~/Library/Application Support/com.litiantao.voidnix/
-├── config/settings.json              # 框架级配置（快捷键 + AI Provider）
+├── config/settings.json              # 框架级配置（快捷键 + AI Provider，defineConfig 扁平 schema + version）
 └── extensions/
-    ├── clipboard/{clipboard.db, config.json}   # 剪贴板历史（SQLite WAL）+ 配置
-    ├── calculator/calc_history.json  # 计算器历史（plugin-store 直读）
+    ├── clipboard/{clipboard.db, clipboard.db-wal, config.json}   # 剪贴板历史（SQLite WAL，写入计数达 200 触发 wal_checkpoint(TRUNCATE)）+ 配置
+    ├── calculator/config.json        # 计算器历史（history key，10 条上限；走 defineConfig）
     ├── finder-ext/{commands/, config.json}     # Finder 扩展 IPC 目录 + 配置
-    ├── zsh-autosuggestions/{bin/, index.cache, signals.log, enabled, bin_version, config.json}  # zsh 补全
+    ├── zsh-autosuggestions/{bin/, index.zsh, signals.log, enabled, bin.version, config.json}  # zsh 补全
     ├── awake/{Display Wakelock, config.json}   # awake binary + 配置
     ├── screenshot/config.json        # screenshot 扩展配置
     ├── window-manager/config.json    # window-manager 扩展配置
@@ -189,6 +189,8 @@ src/
 ```
 
 icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litiantao.voidnix.dev` 同构。
+
+所有 config.json 均走 `defineConfig`（`src/runtime/storage.ts`）：reactive + watch + 300ms 防抖 + 深克隆 + race 保护 + 类型守卫 + version mismatch 清磁盘 + 跨窗口 onChange 同步 + 退出 flush。
 
 ## 约定
 

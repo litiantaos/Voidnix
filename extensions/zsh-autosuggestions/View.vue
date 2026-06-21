@@ -43,7 +43,7 @@ const toggle = async () => {
     await invoke(CMD.setZshAutosuggestionsEnabled, { enabled: next })
     zshConfig.enabled = next
   } catch (e) {
-    appStore.showStatus(`启用失败：${String(e ?? '未知错误')}`, 4000)
+    appStore.showStatus(`启用失败：${String(e ?? '未知错误')}`, { duration: 4000, kind: 'error' })
   }
 }
 </script>

@@ -4,7 +4,7 @@ import { CMD } from '@/commands'
 import { defineConfig } from '@/runtime/storage'
 
 /// window-manager 扩展自管配置（持久化至 extensions/window-manager/config.json）。
-export const config = defineConfig('window-manager', {
+export const config = defineConfig('extensions/window-manager/config', {
   customWidth: 1200,
   customHeight: 800,
   dragSnapEnabled: true,

@@ -17,7 +17,7 @@
 
 ## 数据存储
 
-无持久化。临时文件落 `$TMPDIR/voidnix*`（picker.jpg 预览、ocr/clip/pin/scroll 中间 PNG），`cleanup_temp_files()` 启动时清残留（委托至 `runtime::storage::cleanup_temps_by_prefix`）。配置通过 `extensions/screenshot/config.ts`（defineConfig 自管 `savePath`）。
+无持久化。临时文件落 `$TMPDIR/voidnix*`（picker.jpg 预览、ocr/clip/pin/scroll 中间 PNG、voidnix-icon- 图标缓存），由 `runtime::storage::cleanup_all_voidnix_temps()` 在 `lib.rs` setup 启动期统一清理（覆盖 `voidnix_*` / `voidnix-icon-*` / `voidnix/picker.jpg` 三个前缀族）。`save_png_safely()` 提供 create_dir_all + path_guard + write 统一接口，供 save_screenshot / save_scroll_result 共用。配置通过 `extensions/screenshot/config.ts`（defineConfig 自管 `savePath`）。
 
 ## 滚动截屏拼接算法
 

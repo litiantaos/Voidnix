@@ -7,10 +7,10 @@
 `extensions/translate/config.ts`（defineConfig 自管）：
 
 ```typescript
-defineConfig('translate', {
+defineConfig('extensions/translate/config', {
   targetLang: 'zh',
   configs: [{ id, type: 'youdao', isDefault: true, ... }] as TranslateApiConfig[],
-})
+}, { version: 1 })
 ```
 
 CRUD helpers：`addTranslateConfig()` / `updateTranslateConfig(id, partial)` / `removeTranslateConfig(id)`。

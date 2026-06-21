@@ -82,11 +82,7 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
     // 独立窗口视图：跳过主窗口初始化（设置/更新/快捷键）
     if (activeWindowView.value) return
 
-    try {
-      await settings.loadSettings()
-    } catch (e) {
-      console.error('Settings load error:', e)
-    }
+    // settings store 走 defineConfig，启动时自动异步加载（无需显式 loadSettings）
 
     if (isTauri) {
       updateTimer = setTimeout(async () => {

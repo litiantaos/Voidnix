@@ -183,24 +183,7 @@ pub async fn save_screenshot(
                 p.to_path_buf()
             }
         };
-        if let Some(parent) = file_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        // 路径安全校验（C6）：拒绝写入系统致命路径（/System、/usr/bin、/bin、/sbin）。
-        // path_guard::validate 要求路径存在（canonicalize），优先校验 file_path；
-        // 若 file_path 不存在（新建文件），校验其 parent（已在上方 create_dir_all 后存在）。
-        let guard_ok = if file_path.exists() {
-            crate::platform::path_guard::validate(&file_path)
-        } else {
-            file_path
-                .parent()
-                .map(crate::platform::path_guard::validate)
-                .unwrap_or(false)
-        };
-        if !guard_ok {
-            return Err(format!("目标路径被安全策略拒绝：{}", file_path.display()));
-        }
-        std::fs::write(&file_path, png).map_err(|e| e.to_string())?;
+        crate::runtime::storage::save_png_safely(&file_path, &png)?;
         Ok(file_path.to_string_lossy().to_string())
     }
     #[cfg(not(target_os = "macos"))]

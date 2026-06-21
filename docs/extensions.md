@@ -38,18 +38,18 @@ export default defineExtension({
 
 ### 能力槽（按需声明，均有真实消费者）
 
-| 槽                   | 用途                                                                                     | 消费者                                               |
-| -------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `search`             | SearchProvider.dynamic 单通道召回                                                        | 见下「搜索集成」                                     |
-| `onExecute`          | 搜索结果回车动作（扩展私有）                                                             | —                                                    |
-| `mainView`           | 主视图组件                                                                               | 9 扩展                                               |
-| `searchBarAccessory` | 搜索栏右侧配件                                                                           | 2：clipboard/agent                                   |
-| `subviews`           | 扩展私有命名子视图                                                                       | 1：screenshot{ocr}                                   |
-| `settingsView`       | 设置片段（**跨扩展契约**：settings 扩展 mainView 扫描聚合）                              | 3：clipboard/agent/translate                         |
-| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀） | 2：screenshot/window-manager                         |
-| `globalShortcuts`    | 全局快捷键绑定                                                                           | 4：clipboard/screenshot/agent/translate              |
-| `hints`              | 键盘提示（enter/multiSelect/delete）                                                     | enter 3：clipboard/ip/calculator；余各 1             |
-| `placeholder`        | 搜索框占位提示（激活模块时显示）                                                         | 7：clipboard/currency/uuid/ip/time/base64/calculator |
+| 槽                   | 用途                                                                                                                                           | 消费者                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `search`             | SearchProvider.dynamic 单通道召回                                                                                                              | 见下「搜索集成」                                                                            |
+| `onExecute`          | 搜索结果回车动作（扩展私有）                                                                                                                   | —                                                                                           |
+| `mainView`           | 主视图组件                                                                                                                                     | 9 扩展                                                                                      |
+| `searchBarAccessory` | 搜索栏右侧配件                                                                                                                                 | 2：clipboard/agent                                                                          |
+| `subviews`           | 扩展私有命名子视图                                                                                                                             | 1：screenshot{ocr}                                                                          |
+| `settingsView`       | 设置片段（**跨扩展契约**：settings 扩展 mainView 扫描聚合）。`mainView` 兼任配置的扩展可声明 settingsView 别名复用同组件，浮出于 settings 枢纽 | 8：clipboard/agent/translate/awake/finder-ext/window-manager/zsh-autosuggestions/screenshot |
+| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀）                                                       | 2：screenshot/window-manager                                                                |
+| `globalShortcuts`    | 全局快捷键绑定                                                                                                                                 | 4：clipboard/screenshot/agent/translate                                                     |
+| `hints`              | 键盘提示（enter/multiSelect/delete）                                                                                                           | enter 3：clipboard/ip/calculator；余各 1                                                    |
+| `placeholder`        | 搜索框占位提示（激活模块时显示）                                                                                                               | 7：clipboard/currency/uuid/ip/time/base64/calculator                                        |
 
 生命周期：`setup?()`（启动钩子，无参）。3 承载字段过渡期保留：`disableSearchInput`（模块自管输入）、`listOptions.multiSelect`、`onOpenSubview`。
 
@@ -115,19 +115,24 @@ interface SearchContext {
 ```typescript
 import { defineConfig } from '@/runtime/storage'
 
-export const config = defineConfig('clipboard', { maxDays: 30 })
+export const config = defineConfig('extensions/clipboard/config', { maxDays: 30 }, { version: 1 })
 
-// 响应式读写，变更自动持久化至 extensions/<id>/config.json（300ms 防抖）
+// 响应式读写，变更自动持久化至 extensions/clipboard/config.json（300ms 防抖）
 config.maxDays // → 30
 config.maxDays = 60 // 自动写盘
 ```
 
-- store 实例缓存（模块级 `Map<extId, Store>`），watch 回调复用，禁止每次保存重新 `load()`。
+- 第一参数为完整 plugin-store path（不含 `.json` 后缀），扩展用 `extensions/<id>/config`，框架级用 `config/settings`。
+- `version` 可选：磁盘 `__version__` 不匹配时清空用 defaults（自开发自用，无迁移）。
+- backfill 类型守卫：磁盘值类型与 default 不符则丢弃；`isStillDefault` 走递归 deepEqual（顺序无关）。
+- 启动期 `isLoading` 抑制 watch 冗余写；退出 `onCloseRequested` flush 防抖窗口内变更。
+- 跨窗口同步：订阅 plugin-store `onChange`，其他窗口 set 自动同步本地 reactive。
+- store 实例缓存（模块级 `Map<storePath, Store>`），watch 回调复用，禁止每次保存重新 `load()`。
 - 加载异步竞态：`load()` 异步，扩展 setup 早期可能读 defaults。安全参数由 Rust clamp 兜底。
 - 安全底线（agent 专属）：plain `BOUNDS` const 表达 floor/cap，**权威在 Rust `native/policy.rs`**，TS 仅 UI 镜像，详见 [agent.md](./extensions/agent.md)。
-- 含 Rust 命令同步的配置（如开关类）：在 `View.vue` toggle 中显式 `invoke` + 错误反馈（成功才更新 config），勿用 `watch` 静默 invoke 吞错。
+- 含 Rust 命令同步的配置（如开关类）：在 `View.vue` toggle 中显式 `invoke` + 错误反馈（成功才更新 config），勿用 `watch` 静默 invoke 吞错。`watch(immediate: true)` 推参样板见 `extensions/window-manager/config.ts` 与 `extensions/clipboard/config.ts`。
 
-框架级配置（全局快捷键、AI Provider）在 `stores/settings.ts`，不在此系统。
+框架级配置（全局快捷键、AI Provider）在 `stores/settings.ts`，同样走 `defineConfig`（`config/settings` storePath）。
 
 ## Rust 扩展（含 native/）
 
@@ -176,7 +181,7 @@ impl Extension for ClipboardExtension {
 
 - `runtime::window`：主窗口 show/hide/move + panel 转换 + `pick_directory` / `get_home_dir`
 - `runtime::shortcut`：快捷键注册 + 录制 + `register_shortcut_hook`（扩展钩子）
-- `runtime::storage`：`TempHandle` RAII（new / Drop 自动清理 + `cleanup_temps_by_prefix` 启动扫残留）
+- `runtime::storage`：`TempHandle` RAII（new / Drop 自动清理）+ `cleanup_all_voidnix_temps`（lib.rs setup 启动期统一扫 `voidnix_*` / `voidnix-icon-*` / `voidnix/picker.jpg`）+ `ext_data_dir(app, id)`（统一扩展数据目录，替代各 native/ 重复的 `app_data_dir().unwrap_or_else().join(...)` 模式）+ `save_png_safely`（create_dir_all + path_guard + write 共用）
 - `runtime::permission`：系统权限薄壳
 - `runtime::llm`：LLM 基础设施（`stream_openai_request` / `validate_ai_request` / `LlmMessage`），agent + translate 共享（`trim_conversation` 在 agent engine 内）
 - `runtime::pasteboard`：框架命令薄壳（`pasteboard_write_text`；原语在 `platform::pasteboard`）

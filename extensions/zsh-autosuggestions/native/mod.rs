@@ -6,7 +6,7 @@
 use crate::runtime::registry::Extension;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 const BIN_NAME: &str = "zsh-autosuggestions";
 
@@ -26,14 +26,8 @@ fn lock() -> MutexGuard<'static, ()> {
 }
 
 fn ext_dir(app: &AppHandle) -> PathBuf {
-    let dir = app
-        .path()
-        .app_data_dir()
+    crate::runtime::storage::ext_data_dir(app, "zsh-autosuggestions")
         .unwrap_or_else(|_| PathBuf::from("."))
-        .join("extensions")
-        .join("zsh-autosuggestions");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
 }
 
 fn installed_bin(app: &AppHandle) -> PathBuf {
@@ -65,7 +59,7 @@ fn source_bin() -> Option<PathBuf> {
 }
 
 fn cache_path(app: &AppHandle) -> PathBuf {
-    ext_dir(app).join("index.cache")
+    ext_dir(app).join("index.zsh")
 }
 
 fn signals_path(app: &AppHandle) -> PathBuf {
@@ -78,7 +72,7 @@ fn enabled_flag(app: &AppHandle) -> PathBuf {
 
 /// 记录已部署 binary 版本号的标志文件，与 binary 同目录。
 fn version_file(app: &AppHandle) -> PathBuf {
-    ext_dir(app).join("bin_version")
+    ext_dir(app).join("bin.version")
 }
 
 /// 读取版本号文件并解析。缺失/损坏返回 0（视为需要升级）。
@@ -261,6 +255,10 @@ pub async fn set_zsh_autosuggestions_enabled(app: AppHandle, enabled: bool) -> R
             let _ = std::fs::remove_file(cache_path(&app));
             let _ = std::fs::remove_file(signals_path(&app));
             remove_zshrc_line()?;
+            // 清理 .zshrc 备份文件（disable 后不再需要，避免残留）
+            if let Some(home) = dirs::home_dir() {
+                let _ = std::fs::remove_file(home.join(".zshrc.voidnix-bak"));
+            }
         }
 
         log::info!("zsh-as enabled={}", enabled);
@@ -363,7 +361,7 @@ mod tests {
     #[test]
     fn build_zshrc_line_format() {
         let bin = std::path::Path::new("/App/V.app/Contents/MacOS/zsh-autosuggestions");
-        let cache = std::path::Path::new("/u/Lib/x/extensions/zsh-autosuggestions/index.cache");
+        let cache = std::path::Path::new("/u/Lib/x/extensions/zsh-autosuggestions/index.zsh");
         let signals = std::path::Path::new("/u/Lib/x/extensions/zsh-autosuggestions/signals.log");
         let line = build_zshrc_line(bin, cache, signals);
         assert!(line.starts_with("export ZSH_AS_BIN="));
@@ -435,7 +433,7 @@ mod tests {
         let dir = tmp_dir("install-match");
         let src = dir.join("src.bin");
         let dest = dir.join("dest.bin");
-        let ver = dir.join("bin_version");
+        let ver = dir.join("bin.version");
         std::fs::write(&src, b"SRC-V1").unwrap();
         std::fs::write(&dest, b"OLD-DIFFERENT-CONTENT").unwrap();
         std::fs::write(&ver, BIN_VERSION.to_string()).unwrap();
@@ -455,7 +453,7 @@ mod tests {
         let dir = tmp_dir("install-mismatch");
         let src = dir.join("src.bin");
         let dest = dir.join("dest.bin");
-        let ver = dir.join("bin_version");
+        let ver = dir.join("bin.version");
         std::fs::write(&src, b"SRC-NEW").unwrap();
         std::fs::write(&dest, b"OLD").unwrap();
         std::fs::write(&ver, "0").unwrap(); // 旧版本（含缺失文件情形）
@@ -476,7 +474,7 @@ mod tests {
         let dir = tmp_dir("install-new");
         let src = dir.join("src.bin");
         let dest = dir.join("nested").join("dest.bin");
-        let ver = dir.join("bin_version");
+        let ver = dir.join("bin.version");
         std::fs::write(&src, b"SRC").unwrap();
 
         assert!(install_bin_to(&src, &dest, &ver), "absent → copy");

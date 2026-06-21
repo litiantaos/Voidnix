@@ -9,7 +9,7 @@ export interface SearchProviderConfig {
 }
 
 /// agent 扩展自管配置（持久化至 extensions/agent/config.json）。
-export const config = defineConfig('agent', {
+export const config = defineConfig('extensions/agent/config', {
   trustedCommands: [
     'ls',
     'cat',
