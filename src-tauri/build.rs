@@ -31,13 +31,16 @@ fn main() {
 
     println!("cargo:rerun-if-changed=../extensions/awake/native/awake_display.mm");
     println!("cargo:rerun-if-changed=build.rs");
-    // 追踪 extensions 目录变更，确保 #[path] 引用的外部文件修改后触发重新编译
-    println!("cargo:rerun-if-changed=../extensions");
+    // cargo 1.46+ 自动追踪 #[path] 引用的文件（extensions.rs 中已声明），
+    // 无需 rerun-if-changed=../extensions——那会导致修改任意扩展文件都重跑 build.rs，
+    // 连带 zsh-autosuggestions binary target 被重链接覆盖。
+    // 仅补充 cargo 不自动追踪的 include_bytes!/include_str! 引用：
+    println!("cargo:rerun-if-changed=../public/bar-icon-fill.png");
 
-    // 确保 tauri.conf.json bundle.resources 声明的 zsh binary 路径在编译期存在。
-    // debug 编译（cargo test/check）不走 beforeBuildCommand，target/release/ 下无 binary，
-    // 此处创建空占位让 tauri_build 的 resources 校验通过；release 链路由 beforeBuildCommand
-    // 预先 `cargo build --release --bin zsh-autosuggestions` 产出真实 binary 覆盖占位。
+    // tauri_build::build() 在编译期校验 tauri.conf.json 的 bundle.resources 文件存在。
+    // debug 编译（cargo test/check/tauri dev）不走 beforeBuildCommand，release binary 不存在，
+    // 此处创建空占位让校验通过；release 链路由 beforeBuildCommand 编译真实 binary 覆盖。
+    // is_non_empty_binary（mod.rs）确保空占位不会被 install_bin 误部署。
     let zsh_bin = Path::new("target/release/zsh-autosuggestions");
     if !zsh_bin.exists() {
         let _ = std::fs::create_dir_all("target/release");

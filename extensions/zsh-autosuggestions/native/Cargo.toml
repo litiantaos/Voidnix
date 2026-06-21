@@ -1,0 +1,19 @@
+[package]
+name = "zsh-autosuggestions-bin"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "zsh-autosuggestions"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"

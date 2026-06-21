@@ -37,14 +37,18 @@ jobs:
         run: bun run lint:check
 
       - name: Rust 代码风格检查（rustfmt）
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --check
+          cargo fmt --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml --check
 
       # ── 类型 + 静态分析 ──
       - name: 类型检查（vue-tsc 严格模式）
         run: bun run typecheck
 
       - name: Rust clippy（-D warnings）
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings
+        run: |
+          cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings
+          cargo clippy --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml -- -D warnings
 
       # ── 漂移校验三件套 ──
       - name: 扩展同步产物校验（extensions.rs + windowViews 漂移）

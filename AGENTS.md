@@ -34,6 +34,8 @@ Rust 端代码质量：
 ```bash
 cargo fmt --manifest-path src-tauri/Cargo.toml --check    # 格式检查（CI 门禁）
 cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings   # lint（CI 门禁）
+# zsh binary 是独立 crate（与 Voidnix package 分离 + 独立 target 目录，避免 Voidnix 编译截断 binary）
+cargo clippy --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml -- -D warnings
 ```
 
 内部命令（tauri.conf.json 自动调用）：`bun run dev`（Vite）、`bun run build`（sync → lint → typecheck → vite build）。
@@ -181,7 +183,7 @@ src/
     ├── clipboard/{clipboard.db, clipboard.db-wal, config.json}   # 剪贴板历史（SQLite WAL，写入计数达 200 触发 wal_checkpoint(TRUNCATE)）+ 配置
     ├── calculator/config.json        # 计算器历史（history key，10 条上限；走 defineConfig）
     ├── finder-ext/{commands/, config.json}     # Finder 扩展 IPC 目录 + 配置
-    ├── zsh-autosuggestions/{bin/, index.zsh, signals.log, enabled, bin.version, config.json}  # zsh 补全
+    ├── zsh-autosuggestions/{bin/, index.zsh, signals.log, bin.version, config.json}  # zsh 补全
     ├── awake/{Display Wakelock, config.json}   # awake binary + 配置
     ├── screenshot/config.json        # screenshot 扩展配置
     ├── window-manager/config.json    # window-manager 扩展配置
