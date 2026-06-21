@@ -116,6 +116,8 @@ export interface Extension {
   hints?: ModuleHints
   /** 搜索框占位提示（激活模块时显示）。 */
   placeholder?: string
+  /** 模块激活时主窗口高度（px，逻辑像素）。框架 clamp 到 [WINDOW.MIN_HEIGHT, WINDOW.MAX_HEIGHT]；未声明走默认高度。 */
+  windowHeight?: number
 
   // ── 行为槽（与能力槽同等地位的扩展行为契约）──
   /** 模块自管输入、禁用主搜索框。 */

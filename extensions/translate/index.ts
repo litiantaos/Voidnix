@@ -240,6 +240,7 @@ export default defineExtension({
   mainView: () => TranslateView,
   searchBarAccessory: () => TranslateActions,
   subviews: { config: () => TranslateSettings },
+  windowHeight: 560,
   setup: async () => {
     unlistenReady = await listen<string>('translate-text-ready', (e) => {
       if (translateReadyResolver) {
