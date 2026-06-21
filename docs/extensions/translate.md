@@ -9,13 +9,15 @@
 ```typescript
 defineConfig('extensions/translate/config', {
   targetLang: 'zh',
-  configs: [{ id, type: 'youdao', ... }] as TranslateApiConfig[],
+  configs: [{ id, type: 'youdao', appKey: '', appSecret: '' }] as TranslateApiConfig[],
 })
 ```
 
-configs 为多引擎并发集合（`translateText` 遍历每项独立翻译并排展示），无「激活」概念。CRUD helpers：`addTranslateConfig()` / `updateTranslateConfig(id, partial)` / `removeTranslateConfig(id)`（保底保留 1 项）。
+`TranslateApiConfig` 为判别联合（`YoudaoConfig | AiConfig`），`type` 是创建时确定的不可变 discriminator，不同引擎只保存各自所需字段（youdao: appKey/appSecret；ai: endpoint/apiKey/models/prompt），避免互补字段空值平铺。
 
-AI Provider 基础设施（endpoint/apiKey/models 共享）在框架级 `stores/settings.ts`。
+configs 为多引擎并发集合（`translateText` 遍历每项独立翻译并排展示），无「激活」概念。CRUD helpers：`addTranslateConfig()`（默认新增 ai 型）/ `updateTranslateConfig(id, partial)`（partial 不含 id/type）/ `removeTranslateConfig(id)`（保底保留 1 项）。
+
+AI 型引擎的后端实现复用框架级 `runtime::llm` 基础设施（与 agent 扩展共享 `stream_openai_request` 管道），但 provider 配置由 translate 自管（与 `stores/settings.ts` 的框架级 `aiProviders` 互不复用）。
 
 ## 后端
 

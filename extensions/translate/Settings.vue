@@ -300,7 +300,6 @@ async function saveConfigModal() {
     const id = await addTranslateConfig()
     const models = aiForm.value.models.filter((m) => m.trim())
     await updateTranslateConfig(id, {
-      type: 'ai',
       endpoint: aiForm.value.endpoint,
       apiKey: aiForm.value.apiKey,
       models,
@@ -319,7 +318,6 @@ async function saveConfigModal() {
     } else {
       const models = aiForm.value.models.filter((m) => m.trim())
       await updateTranslateConfig(editingConfigId.value, {
-        type: 'ai',
         endpoint: aiForm.value.endpoint,
         apiKey: aiForm.value.apiKey,
         models,
