@@ -50,7 +50,7 @@ jobs:
           cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings
           cargo clippy --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml -- -D warnings
 
-      # ── 漂移校验三件套 ──
+      # ── 漂移校验四件套 ──
       - name: 扩展同步产物校验（extensions.rs + windowViews 漂移）
         run: bun run check:extensions
 

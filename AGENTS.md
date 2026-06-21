@@ -17,16 +17,20 @@ macOS 效率启动器。Tauri 2 + Rust + Vue 3。统一扩展架构：
 
 ```bash
 bun install                  # 安装依赖
-bun run tauri:dev            # 开发模式（编译 zsh binary → sync → lint → 启动）
-bun run build:zsh-bin        # 单独编译 zsh-autosuggestions binary（产物 target/debug/）
+bun run dev                  # 仅启动 Vite dev server（前端独立调试，非 Tauri）
+bun run tauri:dev            # 开发模式（build:zsh-bin → sync:extensions → check:drift → 启动）
+bun run build                # 生产构建（check:drift → lint → typecheck → vite build）
 ./deploy.sh                  # 打包部署
+bun run build:zsh-bin        # 单独编译 zsh-autosuggestions binary（产物 target/debug/）
+bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
+bun run lint:check           # 只读校验（CI 用，不写）
+bun run typecheck            # vue-tsc 严格类型检查
 bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions.rs）
+bun run check:drift          # 漂移校验聚合（= check:extensions + commands + agent-bounds + wm-bounds）
 bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移）
 bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
 bun run check:agent-bounds   # CI 校验（agent policy.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:wm-bounds      # CI 校验（window-manager mod.rs ↔ config.ts BOUNDS 双向一致）
-bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
-bun run typecheck            # vue-tsc 严格类型检查
 ```
 
 Rust 端代码质量：
@@ -38,8 +42,8 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings   # lint�
 cargo clippy --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml -- -D warnings
 ```
 
-内部命令（tauri.conf.json 自动调用）：`bun run dev`（Vite）、`bun run build`（sync → lint → typecheck → vite build）。
-`bun run tauri:dev` 前置 `sync:extensions + check:commands + check:agent-bounds + check:wm-bounds + lint`，命令名/安全边界漂移在 dev 即暴露。
+内部命令（tauri.conf.json 自动调用）：`bun run dev`（Vite）、`bun run build`（check:drift → lint → typecheck → vite build）。
+`bun run tauri:dev` 前置 `build:zsh-bin + sync:extensions + check:drift`，命令名/安全边界漂移在 dev 即暴露（风格校验由 CI `lint:check` 门禁，dev 不写盘）。
 
 ## 自动化测试
 
