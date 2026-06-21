@@ -44,8 +44,8 @@ zsh precmd 用 `zstat +mtime` 检测 cache 变化，变化才重新 source（sou
 
 binary 是独立 `[[bin]]` target（`Cargo.toml` 声明，path 指向 `native/src/main.rs`）。**Tauri 不自动打包额外 `[[bin]]`**，需手动编译 + 嵌入：
 
-- **dev**：`package.json` 的 `tauri:dev` 前置 `cargo build --manifest-path src-tauri/Cargo.toml --bin zsh-autosuggestions`，产物在 `target/debug/zsh-autosuggestions`。
-- **release**：`deploy.sh` 调 `bun run tauri build`（内部 `prebuild:zsh` 先 `cargo build --release --bin zsh-autosuggestions`），binary 经 `tauri.conf.json` 的 `bundle.resources` 自动嵌入 `Voidnix.app/Contents/Resources/zsh-autosuggestions`。
+- **dev**：`package.json` 的 `tauri:dev` 前置 `build:zsh-bin`（`cargo build --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml`），产物在 `extensions/zsh-autosuggestions/native/target/debug/zsh-autosuggestions`。
+- **release**：`deploy.sh` 调 `bun run tauri build`（内部 `prebuild:zsh` 先 `cargo build --release --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml`，`CARGO_TARGET_DIR` 指向 `src-tauri/target`），binary 经 `tauri.conf.json` 的 `bundle.resources` 自动嵌入 `Voidnix.app/Contents/Resources/zsh-autosuggestions`。
 
 `source_bin()` 双路径定位（P3-8 同步）：
 
