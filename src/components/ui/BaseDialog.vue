@@ -35,7 +35,7 @@
           :aria-describedby="message ? descId : undefined"
           tabindex="-1"
         >
-          <div text="sm tx-primary" font="bold" p="5">
+          <div text="sm tx-primary" font="bold" p="5" select="none">
             <slot name="header">
               <h3 :id="titleId">
                 {{ title }}

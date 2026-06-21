@@ -18,7 +18,7 @@ export default defineExtension({
   mainView: () => AgentView,
   searchBarAccessory: () => AgentActions,
   subviews: { config: () => AgentSettings },
-  windowHeight: 680,
+  windowHeight: 720,
   globalShortcuts: [
     {
       id: 'agent',

@@ -40,10 +40,8 @@ pub struct LoopInput {
     pub api_key: String,
     pub model: String,
     pub messages: Vec<LlmMessage>,
-    /// 默认 system prompt（由扩展传入，非框架硬编码）。
-    pub default_system_prompt: String,
-    /// 用户自定义 system prompt（None = 仅用默认；Some = 追加到默认之后）。
-    pub system_prompt: Option<String>,
+    /// system prompt（前端 config 直传，空串则不注入 system 消息）。
+    pub system_prompt: String,
     /// 单次 agent run 的最多工具调用轮次（防失控）。
     pub max_turns: usize,
     pub tools_schema: Vec<serde_json::Value>,
@@ -64,21 +62,17 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
     let mut messages = std::mem::take(&mut input.messages);
     let mut turn = 0;
 
-    // 注入 system prompt：默认 harness + 用户自定义（如有）
+    // 注入 system prompt（前端 config 直传，空串跳过）
     // 仅当用户消息里没有自己的 system 消息时注入（避免重复）
     let has_system = messages
         .first()
         .map(|m| m.role == "system")
         .unwrap_or(false);
     if !has_system {
-        let mut sys = input.default_system_prompt.clone();
-        if let Some(user_prompt) = &input.system_prompt {
-            if !user_prompt.trim().is_empty() {
-                sys.push_str("\n\n# 用户自定义指令\n\n");
-                sys.push_str(user_prompt.trim());
-            }
+        let sys = input.system_prompt.trim();
+        if !sys.is_empty() {
+            messages.insert(0, LlmMessage::system(sys.to_string()));
         }
-        messages.insert(0, LlmMessage::system(sys));
     }
 
     while turn < input.max_turns {
