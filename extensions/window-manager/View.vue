@@ -12,7 +12,7 @@
           v-if="item.type === 'toggle'"
           :ref="setRef"
           title="启用扩展功能"
-          subtitle="鼠标移至屏幕顶部中心激活"
+          subtitle="鼠标移至屏幕顶部中心激活悬浮面板"
           :selected="selected"
         >
           <template #trailing>
@@ -159,7 +159,6 @@ function onSettingsExecute(item: SettingsItem) {
   margin: 0;
 }
 .no-number-spin :deep(input[type='number']) {
-  -moz-appearance: textfield;
   text-align: center;
 }
 </style>

@@ -32,7 +32,7 @@ export default defineExtension({
       results.push({
         id: 'nanoid',
         title: nano,
-        description: 'NanoID（长度 21）',
+        description: 'NanoID',
         icon: 'i-ri-shield-keyhole-line',
         data: { kind: 'module', value: nano },
       })
