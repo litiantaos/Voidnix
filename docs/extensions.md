@@ -38,17 +38,18 @@ export default defineExtension({
 
 ### 能力槽（按需声明，均有真实消费者）
 
-| 槽                   | 用途                                                                                     | 消费者                                                                  |
-| -------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `search`             | SearchProvider.dynamic 单通道召回                                                        | 见下「搜索集成」                                                        |
-| `onExecute`          | 搜索结果回车动作（扩展私有）                                                             | —                                                                       |
-| `mainView`           | 主视图组件                                                                               | 9 扩展                                                                  |
-| `searchBarAccessory` | 搜索栏右侧配件                                                                           | 3：clipboard/agent/translate                                            |
-| `subviews`           | 扩展私有命名子视图                                                                       | 4：screenshot{ocr}、clipboard{config}、agent{config}、translate{config} |
-| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀） | 2：screenshot/window-manager                                            |
-| `globalShortcuts`    | 全局快捷键绑定                                                                           | 4：clipboard/screenshot/agent/translate                                 |
-| `hints`              | 键盘提示（enter/multiSelect/delete）                                                     | enter 3：clipboard/ip/calculator；余各 1                                |
-| `placeholder`        | 搜索框占位提示（激活模块时显示）                                                         | 7：clipboard/currency/uuid/ip/time/base64/calculator                    |
+| 槽                   | 用途                                                                                      | 消费者                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `search`             | SearchProvider.dynamic 单通道召回                                                         | 见下「搜索集成」                                                        |
+| `onExecute`          | 搜索结果回车动作（扩展私有）                                                              | —                                                                       |
+| `mainView`           | 主视图组件                                                                                | 9 扩展                                                                  |
+| `searchBarAccessory` | 搜索栏右侧配件                                                                            | 3：clipboard/agent/translate                                            |
+| `subviews`           | 扩展私有命名子视图                                                                        | 4：screenshot{ocr}、clipboard{config}、agent{config}、translate{config} |
+| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀）  | 2：screenshot/window-manager                                            |
+| `globalShortcuts`    | 全局快捷键绑定                                                                            | 4：clipboard/screenshot/agent/translate                                 |
+| `hints`              | 键盘提示（enter/multiSelect/delete）                                                      | enter 3：clipboard/ip/calculator；余各 1                                |
+| `placeholder`        | 搜索框占位提示（激活模块时显示）                                                          | 7：clipboard/currency/uuid/ip/time/base64/calculator                    |
+| `windowHeight`       | 模块激活时主窗口高度（px，逻辑像素；框架 clamp `[WINDOW.MIN_HEIGHT, WINDOW.MAX_HEIGHT]`） | 2：agent/translate                                                      |
 
 生命周期：`setup?()`（启动钩子，无参）。3 承载字段过渡期保留：`disableSearchInput`（模块自管输入）、`listOptions.multiSelect`、`onOpenSubview`。
 

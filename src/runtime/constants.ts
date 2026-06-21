@@ -32,3 +32,12 @@ export const LIMITS = {
   maxFileResults: 50, // file 组限流（含 folder；单组计数，无跨组共享）
   searchTimeoutMs: 3000,
 } as const
+
+// 主窗口尺寸（不可配置；与 tauri.conf.json 主窗口 width/height 一致）。
+// 扩展通过 Extension.windowHeight 声明模块激活时的高度，框架 clamp 到 [MIN, MAX]。
+export const WINDOW = {
+  WIDTH: 720,
+  DEFAULT_HEIGHT: 480,
+  MIN_HEIGHT: 360,
+  MAX_HEIGHT: 820, // 留余量给菜单栏/Dock
+} as const
