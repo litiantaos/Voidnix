@@ -23,18 +23,14 @@ interface SettingsSchema {
 /// 扩展自管配置一律走 defineConfig（extensions/<id>/config.json）。
 /// 本 store 亦走 defineConfig，统一持久化机制（config/settings.json）。
 export const useSettingsStore = defineStore('settings', () => {
-  const config = defineConfig<SettingsSchema>(
-    'config/settings',
-    {
-      globalShortcut: 'CommandOrControl+Shift+Space',
-      shortcutOverrides: {},
-      // 不变量：aiProviders 始终 ≥1 项（removeAiProvider 删空时补默认项），
-      // activeProviderConfig 的非空断言依赖此不变量。
-      aiProviders: [{ id: generateId(), endpoint: '', apiKey: '', models: [] }],
-      activeProviderModelKey: '',
-    },
-    { version: 1 },
-  )
+  const config = defineConfig<SettingsSchema>('config/settings', {
+    globalShortcut: 'CommandOrControl+Shift+Space',
+    shortcutOverrides: {},
+    // 不变量：aiProviders 始终 ≥1 项（removeAiProvider 删空时补默认项），
+    // activeProviderConfig 的非空断言依赖此不变量。
+    aiProviders: [{ id: generateId(), endpoint: '', apiKey: '', models: [] }],
+    activeProviderModelKey: '',
+  })
 
   function parseActiveConfig<T>(
     key: string,

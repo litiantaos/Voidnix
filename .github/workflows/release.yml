@@ -36,6 +36,9 @@ jobs:
       - name: agent 安全底线一致校验
         run: bun run check:agent-bounds
 
+      - name: window-manager 尺寸边界一致校验
+        run: bun run check:wm-bounds
+
       - name: 代码风格检查
         run: bun run lint:check
 

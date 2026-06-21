@@ -343,9 +343,7 @@ function removeModel(index: number) {
 
 const canDeleteConfig = computed(() => {
   if (isCreating.value) return false
-  const config = translateConfig.configs.find((c) => c.id === editingConfigId.value)
-  if (!config || config.isDefault) return false
-  return true
+  return translateConfig.configs.length > 1
 })
 
 function deleteAndClose() {

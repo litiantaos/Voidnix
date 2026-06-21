@@ -24,6 +24,7 @@ bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions
 bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移）
 bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
 bun run check:agent-bounds   # CI 校验（agent policy.rs ↔ config.ts BOUNDS 双向一致）
+bun run check:wm-bounds      # CI 校验（window-manager mod.rs ↔ config.ts BOUNDS 双向一致）
 bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
 bun run typecheck            # vue-tsc 严格类型检查
 ```
@@ -36,7 +37,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings   # lint�
 ```
 
 内部命令（tauri.conf.json 自动调用）：`bun run dev`（Vite）、`bun run build`（sync → lint → typecheck → vite build）。
-`tauri:dev` 前置 `sync:extensions + check:commands + check:agent-bounds + lint`，命令名/安全边界漂移在 dev 即暴露。
+`bun run tauri:dev` 前置 `sync:extensions + check:commands + check:agent-bounds + check:wm-bounds + lint`，命令名/安全边界漂移在 dev 即暴露。
 
 ## 自动化测试
 
@@ -59,7 +60,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 2. Rust `cargo fmt --check`
 3. `bun run typecheck`（vue-tsc 严格）
 4. Rust `cargo clippy --lib -- -D warnings`
-5. 漂移校验三件套：`check:extensions` / `check:commands` / `check:agent-bounds`
+5. 漂移校验四件套：`check:extensions` / `check:commands` / `check:agent-bounds` / `check:wm-bounds`
 6. 单测：`bun run test`（Vitest）+ `cargo test --lib`
 7. E2E：`bun run test:e2e`（Playwright，含浏览器安装）
 
@@ -99,7 +100,7 @@ Agent 安全防线（命令执行 9 层纵深防御）：`extensions/agent/nativ
 
 **状态栏**：框架层全局组件 `StatusBar`。扩展通过 `copyAndHide`（`stores/app.ts`，app 行为：写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈。`showStatus(msg, opts?)` 支持 `kind: 'success' | 'error'`（默认 success），StatusBar 按 kind 切图标/颜色（对勾 accent / 警告 red-500），错误反馈必须传 `kind: 'error'` 避免绿色对勾的语义错位。扩展可通过 `hints.enter` / `hints.multiSelect` / `hints.delete` 自定义快捷键提示。
 
-**模块视图加载**（切换性能）：模块 View（mainView/settingsView/subviews/searchBarAccessory）静态 import 进主 bundle（用户高频、固定集合，首次进入零卡顿）；仅**独立窗口**（screenshot 标注 host/pin、window-manager snap 面板，`windowViews`）保留 `defineAsyncComponent` 真按需——不截图/不分屏不加载，省稳态占用（gzip ~20KB）。`ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问模块，切换走 activate/deactivate 而非重挂载。
+**模块视图加载**（切换性能）：模块 View（mainView/subviews/searchBarAccessory）静态 import 进主 bundle（用户高频、固定集合，首次进入零卡顿）；仅**独立窗口**（screenshot 标注 host/pin、window-manager snap 面板，`windowViews`）保留 `defineAsyncComponent` 真按需——不截图/不分屏不加载，省稳态占用（gzip ~20KB）。`ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问模块，切换走 activate/deactivate 而非重挂载。
 
 **LLM 基础设施**（`runtime/llm/`）：agent + translate 扩展共享。`types.rs`（LlmMessage）、`client.rs`（StreamConfig/stream_openai_request + SSRF 防护 validate_ai_request + 消息截断 + 请求管道常量）、`parser.rs`（tool_calls 解析）。
 
@@ -134,9 +135,9 @@ src/
 ├── main.ts             # 入口（import.meta.glob eager 扫描扩展 + 并行 setup）
 ├── commands.ts         # 命令名常量（CMD.xxx，禁止裸 invoke）
 ├── runtime/            # 前端运行时（5 文件）
-│   ├── types.ts        # Extension / SearchProvider / SearchResult（13 槽：10 能力 + 3 行为）
+│   ├── types.ts        # Extension / SearchProvider / SearchResult（12 槽：9 能力 + 3 行为）
 │   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS/GROUP_ORDER/GROUP_TITLES/KEYWORD_MODULE_BOOST + LIMITS）
-│   ├── storage.ts      # defineConfig（storePath + defaults + options{version,validate}；reactive + watch 自动持久化 + 递归 deepEqual race 保护 + 类型守卫 + isLoading 抑制 + 退出 flush + 跨窗口 onChange 同步 + store 实例缓存）
+│   ├── storage.ts      # defineConfig（storePath + defaults；reactive + watch 自动持久化 + 递归 deepEqual race 保护 + 类型守卫 + isLoading 抑制 + 退出 flush + 跨窗口 onChange 同步 + store 实例缓存）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
 │   └── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
 ├── components/
@@ -175,7 +176,7 @@ src/
 
 ```
 ~/Library/Application Support/com.litiantao.voidnix/
-├── config/settings.json              # 框架级配置（快捷键 + AI Provider，defineConfig 扁平 schema + version）
+├── config/settings.json              # 框架级配置（快捷键 + AI Provider，defineConfig 扁平 schema）
 └── extensions/
     ├── clipboard/{clipboard.db, clipboard.db-wal, config.json}   # 剪贴板历史（SQLite WAL，写入计数达 200 触发 wal_checkpoint(TRUNCATE)）+ 配置
     ├── calculator/config.json        # 计算器历史（history key，10 条上限；走 defineConfig）
@@ -190,7 +191,7 @@ src/
 
 icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litiantao.voidnix.dev` 同构。
 
-所有 config.json 均走 `defineConfig`（`src/runtime/storage.ts`）：reactive + watch + 300ms 防抖 + 深克隆 + race 保护 + 类型守卫 + version mismatch 清磁盘 + 跨窗口 onChange 同步 + 退出 flush。
+所有 config.json 均走 `defineConfig`（`src/runtime/storage.ts`）：reactive + watch + 300ms 防抖 + 深克隆 + race 保护 + 类型守卫 + 跨窗口 onChange 同步 + 退出 flush。schema 变更时手动删磁盘 config.json 即可（自开发自用，不维护迁移）。
 
 ## 约定
 

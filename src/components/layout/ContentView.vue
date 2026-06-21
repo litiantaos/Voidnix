@@ -11,7 +11,7 @@
       class="hide-scrollbar overflow-y-auto"
     >
       <div flex="~ 1 col">
-        <!-- max 覆盖全部视图 key（9 模块 mainView + screenshot{ocr} 子视图 + settings 钻入的扩展 settingsView），
+        <!-- max 覆盖全部视图 key（9 模块 mainView + screenshot{ocr} + 各扩展{config} 子视图），
              驱逐会导致模块 View 重挂载（重渲染列表/消息）→ 切换卡顿，故留充裕余量 -->
         <KeepAlive v-if="resolvedView" :max="24">
           <component
@@ -110,7 +110,6 @@ import { useAppStore } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { hideWindow } from '@/utils/tauri'
-import { getExtension } from '@/runtime/extension-registry'
 import type { Extension, SearchResult } from '@/runtime/types'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
@@ -139,21 +138,13 @@ const isMultiSelect = computed(() => !!props.module?.listOptions?.multiSelect)
 
 /**
  * 纯渲染器：布局决策收拢至此，搜索编排由 useSearchInput 统一承担（结果经 props 注入）。
- * subview 模式优先级：
- *   1. 当前模块的私有命名子视图（screenshot{ocr}）
- *   2. 跨扩展 settingsView 导航（settings 枢纽钻入目标扩展的 settingsView，§2.2 N3）
+ * subview 模式：当前模块的私有命名子视图（screenshot{ocr}、各扩展{config}）。
  * mainView 模式：使用扩展声明的主视图。
  */
 const resolvedView = computed(() => {
   const subviewId = appStore.activeSubview
-  if (subviewId) {
-    if (props.module?.subviews?.[subviewId]) {
-      return props.module.subviews[subviewId]()
-    }
-    const target = getExtension(subviewId)
-    if (target?.settingsView) {
-      return target.settingsView()
-    }
+  if (subviewId && props.module?.subviews?.[subviewId]) {
+    return props.module.subviews[subviewId]()
   }
   return props.module?.mainView?.()
 })

@@ -11,7 +11,7 @@ import { invoke, Channel } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useSettingsStore } from '@/stores/settings'
 import { generateRequestId } from '@/utils/id'
-import { config as agentConfig, activeSearchProvider } from './config'
+import { config as agentConfig } from './config'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 import { toLlmMessages } from './logic'
 
@@ -91,8 +91,8 @@ export function useAgentChat() {
 
     const runConfig = {
       searchProvider: {
-        type: activeSearchProvider.value.type,
-        apiKey: activeSearchProvider.value.apiKey,
+        type: agentConfig.searchProvider.type,
+        apiKey: agentConfig.searchProvider.apiKey,
       },
       trustedCommands: agentConfig.trustedCommands,
       forbiddenCommands: agentConfig.forbiddenCommands,

@@ -7,7 +7,7 @@ export default defineExtension({
   meta: {
     id: 'time',
     name: '时间戳',
-    description: 'Unix 时间戳 ↔ 日期转换',
+    description: 'Unix 时间戳与转换',
     icon: 'i-ri-time-line',
     order: 120,
     keywords: ['时间', '时间戳', 'timestamp', 'date', 'unix', 'epoch'],

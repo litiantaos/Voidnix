@@ -9,11 +9,11 @@
 ```typescript
 defineConfig('extensions/translate/config', {
   targetLang: 'zh',
-  configs: [{ id, type: 'youdao', isDefault: true, ... }] as TranslateApiConfig[],
-}, { version: 1 })
+  configs: [{ id, type: 'youdao', ... }] as TranslateApiConfig[],
+})
 ```
 
-CRUD helpers：`addTranslateConfig()` / `updateTranslateConfig(id, partial)` / `removeTranslateConfig(id)`。
+configs 为多引擎并发集合（`translateText` 遍历每项独立翻译并排展示），无「激活」概念。CRUD helpers：`addTranslateConfig()` / `updateTranslateConfig(id, partial)` / `removeTranslateConfig(id)`（保底保留 1 项）。
 
 AI Provider 基础设施（endpoint/apiKey/models 共享）在框架级 `stores/settings.ts`。
 

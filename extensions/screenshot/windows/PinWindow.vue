@@ -194,7 +194,7 @@ function onDocMouseUp() {
 async function onOpacityChange() {
   await invoke(CMD.setPinWindowOpacity, {
     opacity: opacity.value / 100,
-  }).catch(() => {})
+  }).catch((e: unknown) => console.error('[screenshot] set opacity failed:', e))
 }
 
 async function handleClose() {

@@ -26,7 +26,7 @@
             </BaseButton>
             <BaseSelect
               v-else-if="item.id === 'mode'"
-              :model-value="awakeConfig.mirrorMode ? 'mirror' : 'extend'"
+              :model-value="awakeConfig.displayMode"
               :options="modeOptions"
               @update:model-value="onModeChange"
             />
@@ -55,19 +55,18 @@ const appStore = useAppStore()
 const checkStatus = async () => {
   try {
     isEnabled.value = await invoke<boolean>(CMD.isAwakeEnabled)
-    await invoke(CMD.setAwakeMode, { mirror: awakeConfig.mirrorMode })
   } catch (e) {
     console.error('Failed to check awake status:', e)
   }
 }
 
 const toggleAwake = async () => {
+  const newState = !isEnabled.value
   try {
-    const newState = !isEnabled.value
-    await invoke(CMD.toggleAwake, { enable: newState })
+    await invoke(CMD.setAwakeEnabled, { enabled: newState })
     isEnabled.value = newState
   } catch (e) {
-    console.error('Failed to toggle awake mode:', e)
+    appStore.showStatus(`切换失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
   }
 }
 
@@ -76,14 +75,8 @@ const modeOptions = [
   { label: '扩展', value: 'extend' },
 ]
 
-const onModeChange = async (value: string | number) => {
-  const mirror = value === 'mirror'
-  try {
-    await invoke(CMD.setAwakeMode, { mirror })
-    awakeConfig.mirrorMode = mirror
-  } catch (e) {
-    console.error('Failed to set awake mode:', e)
-  }
+const onModeChange = (value: string | number) => {
+  awakeConfig.displayMode = value as typeof awakeConfig.displayMode
 }
 
 onMounted(() => {
@@ -93,7 +86,7 @@ onMounted(() => {
 const items = computed(() => [
   {
     id: 'awake',
-    title: '保持系统唤醒',
+    title: '启用扩展功能',
     subtitle: '通过虚拟外接显示器触发 Clamshell Mode，需接入电源',
     groupId: 'power',
     groupTitle: '显示器',

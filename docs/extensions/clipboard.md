@@ -9,7 +9,7 @@ monitor 的 change_count / marker 检查 / 文本读取已委托至 `platform::p
 `extensions/clipboard/config.ts`（defineConfig 自管）：
 
 ```typescript
-defineConfig('extensions/clipboard/config', { maxDays: 30 }, { version: 1 })
+defineConfig('extensions/clipboard/config', { maxDays: 30 })
 ```
 
 `maxDays` 通过 `watch(immediate: true) → invoke(set_clipboard_max_days)` 推入 Rust 全局 `AtomicI32`（替代 Rust 直读 config.json，对齐 window-manager 样板）。
