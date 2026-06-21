@@ -71,10 +71,10 @@ Tavily 搜索（专为 AI 设计，返回含 `answer` 字段的结构化 JSON）
 
 ### System Prompt
 
-每次 agent_run 注入 system message（messages[0]），由两部分组成：
+`config.systemPrompt` 即 system message 本体（不再区分「默认 harness + 用户追加」）。
 
-1. **默认 harness**（`agent/native/mod.rs::DEFAULT_SYSTEM_PROMPT`，扩展自管）：描述 agent 角色、工具使用规则、安全约束、输出风格
-2. **用户自定义**（可选）：在 config 配置，追加为「用户自定义指令」段
+- 默认值在 `config.ts` 的 `defineConfig` 内（描述 agent 角色、工具规则、安全约束、输出风格），用户可全量改写。
+- `agent_run` 收到后直接注入 `messages[0]`（空串跳过）；Rust 端不内置默认提示词。
 
 ## 配置
 
@@ -84,7 +84,7 @@ agent 配置通过 `defineConfig` 自管，持久化至 `extensions/agent/config
 // extensions/agent/config.ts
 defineConfig('extensions/agent/config', {
   trustedCommands: ['ls', 'cat', 'pwd', 'echo', ...],
-  systemPrompt: '',
+  systemPrompt: '你是 Voidnix 内置的 AI Agent…',
   searchProvider: { type: 'tavily', apiKey: '' },
   // 安全底线项（forbiddenCommands/blockedArgs/max*）+ BOUNDS 镜像
 })
@@ -107,7 +107,7 @@ extensions/agent/
     ├── policy.rs          # floor/cap/TRUSTED_DENYLIST 权威源（FORBIDDEN_FLOOR 31 / DENIED_ARG_FLOOR 19）
     ├── engine/            # agent 引擎（从框架层下沉）
     │   ├── mod.rs         # AgentEvent 枚举
-    │   ├── loop_runner.rs # 主循环（max_turns/default_prompt 由 LoopInput 注入）
+    │   ├── loop_runner.rs # 主循环（max_turns/system_prompt 由 LoopInput 注入）
     │   ├── approval.rs    # ApprovalManager（oneshot channel）
     │   ├── cancellation.rs # SessionRegistry（CancellationToken）
     │   ├── trim.rs        # 历史消息裁剪

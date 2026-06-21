@@ -3,7 +3,7 @@
     data-settings-control
     tabindex="0"
     :class="[
-      'ui-ctrl h-auto! text-sm! flex items-start gap-2',
+      'ui-ctrl h-auto! text-sm! flex items-start gap-2 !px-0',
       error ? 'border-red-400' : '',
       disabled ? 'ui-disabled bg-black/2' : '',
     ]"
@@ -17,13 +17,12 @@
       :rows="rows"
       class="input-base placeholder:text-tx-hint"
       text="tx-primary"
-      p="y-2"
+      p="x-3 y-2"
       resize="none"
-      overflow="y-hidden"
-      :class="{ 'overflow-y-auto': maxHeight > 0 }"
+      :class="autoResize && maxHeight <= 0 ? 'overflow-y-hidden' : 'overflow-y-auto'"
       :style="{
         maxHeight: maxHeight > 0 ? maxHeight + 'px' : undefined,
-        height,
+        height: autoResize ? height : undefined,
       }"
       @input="onInput"
       @keydown="onKeydown"
@@ -47,6 +46,8 @@ interface Props {
   rows?: number
   maxHeight?: number
   submitOnEnter?: boolean
+  /** 是否随内容自动撑高（默认 true）。false 时由 rows 决定高度，超出滚动。 */
+  autoResize?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -57,6 +58,7 @@ const props = withDefaults(defineProps<Props>(), {
   rows: 3,
   maxHeight: 120,
   submitOnEnter: true,
+  autoResize: true,
 })
 
 const emit = defineEmits<{
@@ -84,7 +86,7 @@ const height = ref<string>()
 
 function onInput(e: Event) {
   baseOnInput(e)
-  nextTick(() => autoResize())
+  if (props.autoResize) nextTick(() => growToFit())
 }
 
 function onCompositionStart() {
@@ -104,7 +106,7 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-function autoResize() {
+function growToFit() {
   const el = textareaRef.value
   if (!el || !el.isConnected) return
   height.value = 'auto'
@@ -117,16 +119,16 @@ function autoResize() {
 watch(
   () => props.modelValue,
   () => {
-    nextTick(() => autoResize())
+    if (props.autoResize) nextTick(() => growToFit())
   },
 )
 
 onMounted(() => {
-  nextTick(() => autoResize())
+  if (props.autoResize) nextTick(() => growToFit())
 })
 
 onActivated(() => {
-  nextTick(() => autoResize())
+  if (props.autoResize) nextTick(() => growToFit())
 })
 
 defineExpose({ focus, blur, textareaRef })

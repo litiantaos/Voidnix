@@ -48,57 +48,26 @@
               v-html="renderMarkdown(part.text)"
             />
 
-            <!-- 工具调用 part -->
+            <!-- 工具调用 part：状态图标 + 工具名 + 参数明细 + 状态 -->
             <div
               v-else-if="part.type === 'toolCall'"
               rounded="md"
               bg="black/4"
               p="2.5"
               text="xs"
-              flex="~ col"
-              gap="1"
+              flex
+              items="center"
+              gap="1.5"
             >
-              <div flex items="center" gap="1.5">
-                <span shrink="0" :class="toolStateIcon(part.state)" />
-                <span font="medium" text="tx-secondary">{{ part.name }}</span>
-                <span text="tx-faint">·</span>
-                <span :class="toolStateTextClass(part.state)">
-                  {{ toolStateLabel(part.state) }}
-                </span>
-              </div>
-
-              <!-- 参数（streaming/running/awaiting 时显示）-->
-              <pre
-                v-if="
-                  part.args !== undefined &&
-                  ['streaming', 'running', 'awaiting_approval'].includes(part.state)
-                "
-                m="0"
-                text="tx-subtle"
-                font="mono"
-                whitespace="pre-wrap"
-                break="all"
-                >{{ formatArgs(part.args) }}</pre
-              >
-
-              <!-- 结果（done/failed 时显示）-->
-              <div
-                v-if="part.output && ['done', 'failed'].includes(part.state)"
-                :class="part.state === 'failed' ? 'text-red-600' : 'text-tx-subtle'"
-                max-h="60"
-                overflow="auto"
-              >
-                <!-- web_search 结果用结构化 HTML 渲染（snippet 已转义）-->
-                <div
-                  v-if="part.name === 'web_search' && part.ok"
-                  class="search-results-container"
-                  v-html="renderSearchOutput(part.output)"
-                />
-                <!-- 其他工具：等宽原样显示 -->
-                <pre v-else m="0" font="mono" text="xs" whitespace="pre-wrap" break="all">{{
-                  part.output
-                }}</pre>
-              </div>
+              <span shrink="0" :class="toolStateIcon(part.state)" />
+              <span shrink="0" text="tx-faint">{{ part.name }}</span>
+              <span shrink-1 min-w="0" font="mono" text="tx-secondary" truncate>{{
+                toolDetail(part)
+              }}</span>
+              <span shrink="0" text="tx-faint">·</span>
+              <span shrink="0" :class="toolStateTextClass(part.state)">
+                {{ toolStateLabel(part.state) }}
+              </span>
             </div>
           </template>
         </div>
@@ -121,17 +90,9 @@
         <BaseTextarea
           ref="textareaRef"
           v-model="inputText"
-          :placeholder="
-            agent.isGenerating.value ? 'agent 执行中...（可预输入下一条）' : '聊点什么...'
-          "
-          class="bg-black/5 flex-1 pointer-events-auto"
+          :placeholder="agent.isGenerating.value ? '执行中，Ctrl+C 中止' : '聊点什么...'"
+          class="flex-1 pointer-events-auto !bg-[#f2f2f2]"
           @submit="handleSubmit"
-        />
-        <BaseButton
-          v-if="agent.isGenerating.value"
-          icon="i-ri-stop-circle-line"
-          class="text-red-500 pointer-events-auto"
-          @click="agent.abort()"
         />
       </div>
     </div>
@@ -149,7 +110,7 @@
       @cancel="handleApprove(false, false)"
     >
       <div flex="~ col" gap="2">
-        <p text="sm">agent 想执行工具：</p>
+        <p text="sm">Agent 想执行工具：</p>
         <p font="bold">{{ agent.pendingApproval.value.toolName }}</p>
         <pre
           p="2"
@@ -174,7 +135,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted } from 'vue'
+import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -226,64 +187,26 @@ function formatArgs(args: unknown): string {
   }
 }
 
-/// 把 web_search 的 JSON 输出转成 HTML（snippet 转义，避免误渲染 markdown）
-/// 链接加 target + 拦截 click 由系统浏览器打开（不在 webview 内导航）
-function renderSearchOutput(raw: string): string {
-  interface SearchHit {
-    title: string
-    url: string
-    snippet: string
+/// 工具参数明细：run_command → cmd args…，web_search → query，其余空串。
+function toolDetail(part: Extract<AgentPart, { type: 'toolCall' }>): string {
+  if (!part.args || typeof part.args !== 'object') return ''
+  const obj = part.args as Record<string, unknown>
+  if (part.name === 'run_command') {
+    const cmd = typeof obj.cmd === 'string' ? obj.cmd : ''
+    const argsArr = Array.isArray(obj.args)
+      ? obj.args.filter((a): a is string => typeof a === 'string')
+      : []
+    return [cmd, ...argsArr].filter(Boolean).join(' ')
   }
-  interface SearchOutcome {
-    answer?: string | null
-    hits?: SearchHit[]
+  if (part.name === 'web_search') {
+    return typeof obj.query === 'string' ? obj.query.trim() : ''
   }
-  let data: SearchOutcome
-  try {
-    data = JSON.parse(raw)
-  } catch {
-    return `<pre>${escapeHtml(raw)}</pre>`
-  }
-
-  const parts: string[] = []
-  if (data.answer) {
-    parts.push(`<blockquote>${escapeHtml(data.answer.trim())}</blockquote>`)
-  }
-  if (data.hits?.length) {
-    parts.push('<ol class="search-results">')
-    for (const h of data.hits) {
-      const title = escapeHtml(h.title || '(无标题)')
-      const url = escapeHtml(h.url || '')
-      const snippet = h.snippet?.trim()
-      const snippetHtml = snippet
-        ? `<small class="search-snippet">${escapeHtml(snippet)}</small>`
-        : ''
-      parts.push(
-        `<li><a href="${url}" target="_blank" rel="noopener noreferrer" class="search-link">${title}</a>${snippetHtml}</li>`,
-      )
-    }
-    parts.push('</ol>')
-  } else if (!data.answer) {
-    parts.push('<p><em>无搜索结果</em></p>')
-  }
-  return DOMPurify.sanitize(parts.join(''), {
-    ADD_ATTR: ['target', 'rel'],
-  })
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+  return ''
 }
 
 function toolStateIcon(state: string): string {
   switch (state) {
     case 'streaming':
-    case 'running':
       return 'i-ri-loader-4-line animate-spin text-accent'
     case 'done':
       return 'i-ri-checkbox-circle-line text-green-600'
@@ -313,8 +236,6 @@ function toolStateLabel(state: string): string {
   switch (state) {
     case 'streaming':
       return '解析参数'
-    case 'running':
-      return '执行中'
     case 'awaiting_approval':
       return '等待审批'
     case 'done':
@@ -358,9 +279,29 @@ async function onContentClick(e: MouseEvent) {
 }
 
 onMounted(() => nextTick(() => textareaRef.value?.focus()))
+
+/// Ctrl+C 中止当前 agent run（macOS 复制是 Cmd+C，Ctrl+C 不冲突）
+function onKeydown(e: KeyboardEvent) {
+  if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
+    if (agent.isGenerating.value) {
+      e.preventDefault()
+      agent.abort()
+    }
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <style scoped>
+/* markdown 渲染：紧凑型，针对窄聊天面板调过间距；颜色走主题 token */
+
+.markdown-body {
+  overflow-wrap: break-word;
+}
+
+/* 标题：层级压缩，适合窄面板 */
 .markdown-body :deep(h1),
 .markdown-body :deep(h2),
 .markdown-body :deep(h3),
@@ -368,93 +309,122 @@ onMounted(() => nextTick(() => textareaRef.value?.focus()))
 .markdown-body :deep(h5),
 .markdown-body :deep(h6) {
   font-weight: 600;
-  margin-top: 1em;
-  margin-bottom: 0.5em;
+  line-height: 1.3;
+  margin: 1.1em 0 0.45em;
 }
-
 .markdown-body :deep(h1) {
-  font-size: 1.5em;
+  font-size: 1.2em;
 }
 .markdown-body :deep(h2) {
-  font-size: 1.3em;
-}
-.markdown-body :deep(h3) {
   font-size: 1.1em;
 }
-.markdown-body :deep(p) {
-  margin-bottom: 0.75em;
+.markdown-body :deep(h3) {
+  font-size: 1.05em;
 }
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) {
+  font-size: 1em;
+}
+
+/* 块级统一底间距 + 末元素清零 */
+.markdown-body :deep(p),
+.markdown-body :deep(ul),
+.markdown-body :deep(ol),
+.markdown-body :deep(pre),
+.markdown-body :deep(blockquote),
+.markdown-body :deep(table) {
+  margin: 0 0 0.6em;
+}
+.markdown-body :deep(:last-child) {
+  margin-bottom: 0;
+}
+
+/* 列表 */
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) {
-  padding-left: 1.5em;
-  margin-bottom: 0.75em;
+  padding-left: 1.4em;
 }
 .markdown-body :deep(li) {
-  margin-bottom: 0.25em;
+  margin: 0.15em 0;
 }
-.markdown-body :deep(code) {
-  background: rgba(0, 0, 0, 0.06);
-  padding: 0.15em 0.4em;
+.markdown-body :deep(li > ul),
+.markdown-body :deep(li > ol) {
+  margin: 0.15em 0;
+}
+
+/* 行内代码（不含 pre 内）*/
+.markdown-body :deep(:not(pre) > code) {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.875em;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 0.12em 0.38em;
   border-radius: 4px;
-  font-size: 0.9em;
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  word-break: break-all;
 }
+
+/* 代码块 */
 .markdown-body :deep(pre) {
-  background: rgba(0, 0, 0, 0.06);
-  padding: 1em;
-  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 0.7em 0.85em;
+  border-radius: 8px;
   overflow-x: auto;
-  margin-bottom: 0.75em;
+  font-size: 0.875em;
+  line-height: 1.6;
 }
 .markdown-body :deep(pre code) {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   background: none;
   padding: 0;
-  font-size: 0.85em;
+  border-radius: 0;
+  font-size: inherit;
+  word-break: normal;
 }
+
+/* 引用块：accent 色左边框 */
 .markdown-body :deep(blockquote) {
-  border-left: 3px solid rgba(0, 0, 0, 0.1);
-  padding-left: 1em;
-  color: rgba(0, 0, 0, 0.6);
-  margin-bottom: 0.75em;
+  border-left: 3px solid var(--color-accent);
+  padding-left: 0.85em;
+  color: var(--color-tx-secondary);
 }
+
+/* 表格（gfm）*/
+.markdown-body :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.95em;
+}
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 0.35em 0.6em;
+  text-align: left;
+}
+.markdown-body :deep(th) {
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+/* 水平线 / 图片 / 强调 */
+.markdown-body :deep(hr) {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  margin: 1em 0;
+}
+.markdown-body :deep(img) {
+  max-width: 100%;
+  border-radius: 6px;
+}
+.markdown-body :deep(strong) {
+  font-weight: 600;
+}
+
+/* 链接 */
 .markdown-body :deep(a) {
   color: var(--color-accent);
   text-decoration: none;
 }
 .markdown-body :deep(a:hover) {
   text-decoration: underline;
-}
-.markdown-body :deep(*:last-child) {
-  margin-bottom: 0;
-}
-
-/* 搜索结果容器 */
-.search-results-container :deep(ol) {
-  margin: 0;
-  padding-left: 1.5em;
-}
-.search-results-container :deep(li) {
-  margin-bottom: 0.4em;
-  line-height: 1.4;
-}
-.search-results-container :deep(.search-link) {
-  color: var(--color-accent);
-  text-decoration: none;
-  font-weight: 500;
-}
-.search-results-container :deep(.search-link:hover) {
-  text-decoration: underline;
-}
-.search-results-container :deep(.search-snippet) {
-  display: block;
-  color: rgba(0, 0, 0, 0.5);
-  font-size: 0.95em;
-  margin-top: 0.15em;
-}
-.search-results-container :deep(blockquote) {
-  border-left: 3px solid var(--color-accent);
-  padding-left: 0.75em;
-  margin: 0 0 0.5em;
-  color: rgba(0, 0, 0, 0.7);
 }
 </style>

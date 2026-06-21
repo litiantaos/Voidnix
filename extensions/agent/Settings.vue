@@ -1,19 +1,5 @@
 <template>
   <div class="flex-col-full-pb">
-    <!-- M-ag2：BOUNDS 数值项越界警告（用户手改 config.json 时提示；Rust 端 clamp 兜底） -->
-    <div
-      v-if="outOfBoundsItems.length"
-      p="x-3 y-2"
-      m="b-2"
-      rounded="md"
-      bg="red-50"
-      text="xs red-500"
-    >
-      <div font="medium">以下配置超出安全边界，Rust 端会自动 clamp：</div>
-      <div v-for="it in outOfBoundsItems" :key="it.key" m="t-0.5">
-        · {{ it.label }}：当前 {{ it.value }}（允许 {{ it.floor }}–{{ it.cap }}）
-      </div>
-    </div>
     <BaseList
       :items="allItems"
       v-model:selected-index="selectedIndex"
@@ -74,25 +60,18 @@
           v-else-if="item.type === 'whitelist'"
           :ref="setRef"
           title="命令白名单"
-          :subtitle="`${agentConfig.trustedCommands.length} 个命令免审批`"
           :selected="selected"
         />
 
         <!-- 系统提示词 -->
-        <BaseListItem
-          v-else
-          :ref="setRef"
-          title="系统提示词"
-          :subtitle="agentConfig.systemPrompt ? '已配置' : '默认 harness'"
-          :selected="selected"
-        />
+        <BaseListItem v-else :ref="setRef" title="系统提示词" :selected="selected" />
       </template>
     </BaseList>
 
     <!-- 编辑弹窗 -->
     <BaseDialog
       v-if="showConfigModal"
-      :title="isCreating ? '添加提供商' : '编辑提供商'"
+      :title="isCreating ? '添加模型提供商' : '编辑模型提供商'"
       variant="form"
       size="md"
       show-footer
@@ -158,7 +137,7 @@
     <!-- 搜索提供商编辑弹窗 -->
     <BaseDialog
       v-if="showSearchDialog"
-      title="搜索提供商"
+      title="编辑搜索提供商"
       variant="form"
       size="md"
       show-footer
@@ -183,7 +162,6 @@
               />
             </template>
           </BaseInput>
-          <p text="xs tx-subtle" m="t-1">免费注册：tavily.com，1000 次/月，无需信用卡。</p>
         </div>
       </div>
     </BaseDialog>
@@ -200,21 +178,17 @@
       @cancel="showWhitelistDialog = false"
     >
       <div class="form-field">
-        <span class="form-label">免审批命令（每行一个，basename 形式如 `git`）</span>
         <BaseTextarea
           v-model="whitelistText"
           :rows="10"
           :max-height="0"
+          :auto-resize="false"
           :submit-on-enter="false"
+          font="mono"
           placeholder="ls&#10;cat&#10;git"
         />
         <p text="xs tx-subtle" m="t-1">
-          列在此处的命令直接执行无需审批。点击审批弹窗的「执行并信任」也会自动追加。
-        </p>
-        <!-- trusted ∩ forbidden floor 冲突警告（B2）：被底线覆盖，加进 trusted 无效 -->
-        <p v-if="conflictTrusted.length" text="xs text-red-500" m="t-1">
-          以下命令在硬禁底线中，加进白名单无效（Rust 端并集兜底）：
-          {{ conflictTrusted.join('、') }}
+          白名单命令直接执行无需审批。点击审批弹窗的「执行并信任」也会自动追加。
         </p>
       </div>
     </BaseDialog>
@@ -231,17 +205,14 @@
       @cancel="showSystemPromptDialog = false"
     >
       <div class="form-field">
-        <span class="form-label">追加到默认 harness 之后（用户自定义指令）</span>
         <BaseTextarea
           v-model="systemPromptText"
-          :rows="8"
+          :rows="12"
           :max-height="0"
+          :auto-resize="false"
           :submit-on-enter="false"
-          placeholder="例如：始终用英文回答；优先使用 ripgrep 而非 grep；当前工作目录是 ~/Projects/myapp，使用 pnpm 而非 npm"
+          placeholder="定义 Agent 角色、能力边界、工具使用规则、安全约束与输出风格"
         />
-        <p text="xs tx-subtle" m="t-1">
-          留空使用纯默认 harness（描述工具规则、安全约束、输出风格）。
-        </p>
       </div>
     </BaseDialog>
   </div>
@@ -250,12 +221,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useSettingsStore, type AiProviderConfig } from '@/stores/settings'
-import {
-  config as agentConfig,
-  BOUNDS,
-  type SearchProviderConfig,
-  updateSearchProvider,
-} from './config'
+import { config as agentConfig, type SearchProviderConfig, updateSearchProvider } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -474,70 +440,6 @@ function openWhitelistDialog() {
   whitelistText.value = agentConfig.trustedCommands.join('\n')
   showWhitelistDialog.value = true
 }
-
-// trusted ∩ forbidden floor 冲突（B2）：编辑中的白名单与硬禁底线交集
-const conflictTrusted = computed(() => {
-  const floor: readonly string[] = BOUNDS.forbiddenCommands.floor
-  return whitelistText.value
-    .split('\n')
-    .map((s) => s.trim())
-    .filter((s) => s && floor.includes(s))
-})
-
-// M-ag2：BOUNDS 数值项越界检测（消费 BOUNDS.max* tuple，用于 UI 警告；Rust 端 clamp 兜底）
-const outOfBoundsItems = computed(() => {
-  const checks: Array<{
-    key: string
-    label: string
-    value: number
-    floor: number
-    cap: number
-  }> = [
-    {
-      key: 'maxTurns',
-      label: '最大轮次',
-      value: agentConfig.maxTurns,
-      floor: BOUNDS.maxTurns.floor,
-      cap: BOUNDS.maxTurns.cap,
-    },
-    {
-      key: 'maxCpuSeconds',
-      label: 'CPU 上限',
-      value: agentConfig.maxCpuSeconds,
-      floor: BOUNDS.maxCpuSeconds.floor,
-      cap: BOUNDS.maxCpuSeconds.cap,
-    },
-    {
-      key: 'maxMemoryMb',
-      label: '内存上限',
-      value: agentConfig.maxMemoryMb,
-      floor: BOUNDS.maxMemoryMb.floor,
-      cap: BOUNDS.maxMemoryMb.cap,
-    },
-    {
-      key: 'maxOpenFiles',
-      label: '文件描述符',
-      value: agentConfig.maxOpenFiles,
-      floor: BOUNDS.maxOpenFiles.floor,
-      cap: BOUNDS.maxOpenFiles.cap,
-    },
-    {
-      key: 'executionTimeout',
-      label: '执行超时',
-      value: agentConfig.executionTimeout,
-      floor: BOUNDS.executionTimeout.floor,
-      cap: BOUNDS.executionTimeout.cap,
-    },
-    {
-      key: 'maxOutputBytes',
-      label: '输出上限',
-      value: agentConfig.maxOutputBytes,
-      floor: BOUNDS.maxOutputBytes.floor,
-      cap: BOUNDS.maxOutputBytes.cap,
-    },
-  ]
-  return checks.filter((c) => c.value < c.floor || c.value > c.cap)
-})
 
 async function saveWhitelist() {
   const list = whitelistText.value

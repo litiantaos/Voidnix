@@ -30,11 +30,7 @@ export type AgentPart =
       name: string
       args?: unknown
       /** 工具执行状态 */
-      state: 'streaming' | 'awaiting_approval' | 'running' | 'done' | 'failed'
-      output?: string
-      ok?: boolean
-      /** 待审批 ID（state=awaiting_approval 时有） */
-      approvalId?: string
+      state: 'streaming' | 'awaiting_approval' | 'done' | 'failed'
     }
 
 // ─── LLM 协议层消息（Rust `LlmMessage` 的前端映射）────────────

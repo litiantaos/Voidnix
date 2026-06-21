@@ -103,7 +103,7 @@ export function useAgentChat() {
       executionTimeout: agentConfig.executionTimeout,
       maxOutputBytes: agentConfig.maxOutputBytes,
       maxTurns: agentConfig.maxTurns,
-      systemPrompt: agentConfig.systemPrompt || undefined,
+      systemPrompt: agentConfig.systemPrompt,
     }
 
     try {
@@ -182,8 +182,6 @@ export function useAgentChat() {
       case 'toolResult': {
         const part = findToolPart(msg, event.id)
         if (part) {
-          part.output = event.output
-          part.ok = event.ok
           part.state = event.ok ? 'done' : 'failed'
         }
         if (status.value === 'awaiting_approval') status.value = 'streaming'
