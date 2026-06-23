@@ -16,24 +16,29 @@ export default defineExtension({
   placeholder: '输入文本进行 Base64 编解码',
 
   search: {
-    dynamic: (query): ProviderResult[] => {
+    dynamic: (query, ctx): ProviderResult[] => {
       const trimmed = query.trim()
       if (!trimmed) return []
 
       const results: ProviderResult[] = []
+      const moduleMode = !!ctx?.moduleMode
 
-      const encoded = encodeBase64(trimmed)
-      if (encoded) {
-        results.push({
-          id: 'base64-encode',
-          title: encoded,
-          description: 'Base64 编码',
-          icon: 'i-ri-code-s-slash-line',
-          boost: 1000,
-          data: { kind: 'module', value: encoded },
-        })
+      // 编码：任意文本均可，全局模式过宽（"100 usd" 也会编码）→ 仅模块内提供
+      if (moduleMode) {
+        const encoded = encodeBase64(trimmed)
+        if (encoded) {
+          results.push({
+            id: 'base64-encode',
+            title: encoded,
+            description: 'Base64 编码',
+            icon: 'i-ri-code-s-slash-line',
+            boost: 1000,
+            data: { kind: 'module', value: encoded },
+          })
+        }
       }
 
+      // 解码：合法 base64 格式才返回（格式特征明确，全局也安全）
       if (/^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length % 4 === 0) {
         const decoded = decodeBase64(trimmed)
         if (decoded) {

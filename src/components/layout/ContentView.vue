@@ -68,7 +68,9 @@
                   </div>
                 </template>
                 <template #subtitle>
-                  <span v-if="item.description" truncate>{{ item.description }}</span>
+                  <span v-if="item.description" class="flex-1 min-w-0 truncate">{{
+                    item.description
+                  }}</span>
                   <template v-else-if="item.data?.path && isFileOrFolder(item)">
                     <span
                       class="flex-[0_1_auto] min-w-0 truncate"
@@ -80,6 +82,9 @@
                       {{ formatPathParts(getParentPath(item.data.path)).tail }}
                     </span>
                   </template>
+                  <span v-if="item.source" text="tx-hint" flex="none" whitespace="nowrap" ml="1">{{
+                    item.source
+                  }}</span>
                 </template>
               </BaseListItem>
             </template>

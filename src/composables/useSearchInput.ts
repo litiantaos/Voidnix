@@ -101,7 +101,6 @@ export function useSearchInput(opts: SearchInputOptions) {
   }
 
   /** 搜索型模块（无 mainView、有 search）：调 module.search.dynamic，结果灌入共享 results。
-   *  框架注入 module = 扩展 meta.id（与 searchEngine 一致）。
    *  每次 abort 上一次请求，避免连打时孤儿网络/IPC 查询堆积。
    *  异步 dynamic（ip/currency 网络）：进入即清空旧结果 + loading 占位，让用户看到「已进入模块、
    *  数据加载中」，而非残留工具列表等到网络返回才切换（先进去再加载）。
@@ -145,6 +144,13 @@ export function useSearchInput(opts: SearchInputOptions) {
         isLoading.value = false
       }
     }
+  }
+
+  /** 用当前 searchQuery 重新调模块 dynamic 装填结果（ESC/tag 清空后回到模块默认列表）。 */
+  function refreshModule() {
+    const mod = activeModule.value
+    if (!mod || mod.mainView || !mod.search) return
+    runModuleSearch(mod, appStore.searchQuery)
   }
 
   // --- input ---
@@ -236,7 +242,11 @@ export function useSearchInput(opts: SearchInputOptions) {
   const handleTagClose = () => {
     if (appStore.searchQuery) {
       clearSearch()
-      loadDefaultResults()
+      if (appStore.activeModuleId) {
+        refreshModule()
+      } else {
+        loadDefaultResults()
+      }
     } else if (appStore.activeModuleId) {
       goBackToToolList()
     }
@@ -282,5 +292,6 @@ export function useSearchInput(opts: SearchInputOptions) {
     loadDefaultResults,
     goBackToToolList,
     handleTagClose,
+    refreshModule,
   }
 }

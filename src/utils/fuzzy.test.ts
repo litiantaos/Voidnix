@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { scoreFields, frequencyBoost } from './fuzzy'
+import { scoreFields, frequencyBoost, keywordMatch } from './fuzzy'
 
 describe('scoreFields', () => {
   it('空 query 返回 0', () => {
@@ -71,6 +71,42 @@ describe('scoreFields', () => {
       const s2 = scoreFields(['xxx', 'hello'], 'hel')
       expect(s1).toBeGreaterThan(s2)
     })
+  })
+})
+
+describe('keywordMatch', () => {
+  it('空 query 或空 keywords 返回 0', () => {
+    expect(keywordMatch(['usd'], '')).toBe(0)
+    expect(keywordMatch([], 'usd')).toBe(0)
+    expect(keywordMatch([null, undefined], 'usd')).toBe(0)
+  })
+
+  it('正向匹配：query 是 keyword 子串', () => {
+    expect(keywordMatch(['usd', 'cny'], 'usd')).toBeGreaterThan(0)
+    expect(keywordMatch(['currency exchange'], 'currency')).toBeGreaterThan(0)
+  })
+
+  it('反向匹配：keyword 是 query 子串（多词 query）', () => {
+    // scoreFields 对此返回 0（query 比 keyword 长），keywordMatch 反向降权命中
+    expect(keywordMatch(['usd'], '100 usd')).toBeGreaterThan(0)
+    expect(keywordMatch(['汇率'], '美元汇率')).toBeGreaterThan(0)
+    expect(keywordMatch(['ip'], 'ip 查询')).toBeGreaterThan(0)
+  })
+
+  it('反向匹配降权 0.5（弱于正向精确匹配）', () => {
+    const exact = keywordMatch(['usd'], 'usd')
+    const reverse = keywordMatch(['usd'], '100 usd')
+    expect(exact).toBeGreaterThan(reverse)
+  })
+
+  it('拼音匹配中文 keyword', () => {
+    expect(keywordMatch(['汇率'], 'hl')).toBeGreaterThan(0)
+    expect(keywordMatch(['计算'], 'js')).toBeGreaterThan(0)
+  })
+
+  it('无任何命中返回 0', () => {
+    expect(keywordMatch(['usd'], 'xyz')).toBe(0)
+    expect(keywordMatch(['汇率'], 'abc')).toBe(0)
   })
 })
 

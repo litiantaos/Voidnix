@@ -60,6 +60,28 @@ export function scoreFields(fields: (string | undefined | null)[], query: string
 }
 
 /**
+ * keyword 双向匹配（keywordSearchAll 专用，§2.5）。
+ * scoreFields 的 substringScore 只查「query 是 field 子串」，对 keyword 场景有缺陷：
+ * keyword 通常很短（"usd"/"汇率"），多词 query（"100 usd"/"美元汇率"）比 keyword 长 → 永远 0 分。
+ * 此处补全反向：keyword 是 query 子串时也命中（降权 0.5，弱信号），覆盖「query 包含关键词」语义。
+ */
+export function keywordMatch(keywords: (string | undefined | null)[], query: string): number {
+  const q = query.trim()
+  if (!q) return 0
+  let best = 0
+  for (const k of keywords) {
+    if (!k) continue
+    const forward = substringScore(k, q)
+    const reverse = substringScore(q, k) * 0.5
+    const py = pinyinScore(k, q)
+    if (forward > best) best = forward
+    if (reverse > best) best = reverse
+    if (py > best) best = py
+  }
+  return Math.round(best)
+}
+
+/**
  * 使用频率加权（log 平滑，避免高频应用永远霸榜）。
  * useCount=0→0；1→~50；10→~170；100→~280；上限 cap（constants.WEIGHTS.cap）。
  */
