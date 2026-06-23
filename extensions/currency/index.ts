@@ -3,7 +3,18 @@ import type { ProviderResult } from '@/runtime/types'
 import { copyAndHide } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
-import { CURRENCIES, parseCurrencyInput, convertCurrency, isRatesCacheFresh } from './logic'
+import {
+  CURRENCIES,
+  parseCurrencyInput,
+  convertCurrency,
+  isRatesCacheFresh,
+  formatWithChineseUnit,
+  CURRENCY_CODE_TO_NAME,
+} from './logic'
+
+/** 换算结果 title 为纯数值、与 query 无 fuzzy 命中；
+ *  全局 groupAndSort 零分过滤会丢弃，boost 保证其出现并优先于模块入口（KEYWORD_MODULE_BOOST=500）。 */
+const DYNAMIC_BOOST = 1000
 
 let ratesCache: Record<string, number> | null = null
 let ratesTime = 0
@@ -36,7 +47,7 @@ export default defineExtension({
     keywords: ['汇率', '货币', 'currency', 'exchange', 'usd', 'cny', 'eur', 'jpy'],
   },
 
-  placeholder: '输入金额和货币代码，如 100 USD 或 100 美元',
+  placeholder: '输入金额和货币代码，如 100 USD、1万美元、3亿日元，默认查询 1 USD',
 
   search: {
     dynamic: async (query, ctx): Promise<ProviderResult[]> => {
@@ -54,10 +65,11 @@ export default defineExtension({
         if (!rates[base]) return []
         return CURRENCIES.filter((c) => c !== base).map((to) => {
           const v = convertCurrency(1, base, to, rates)
+          const cnName = CURRENCY_CODE_TO_NAME[to]
           return {
             id: `ref-${base}-${to}`,
-            title: `${v.toFixed(4)} ${to}`,
-            description: `1 ${base} → ${to}（参考汇率）`,
+            title: v.toFixed(4),
+            description: `${cnName ? cnName + ' ' : ''}${to}`,
             icon: 'i-ri-exchange-cny-line',
             data: { kind: 'module', value: v.toFixed(4) },
           }
@@ -72,14 +84,22 @@ export default defineExtension({
 
       const results: ProviderResult[] = []
 
-      for (const toCurrency of CURRENCIES) {
-        if (toCurrency === fromCurrency) continue
+      // 全局模式只返回主换算（第一个非源货币，通常 CNY），避免多条刷屏；
+      // 模块模式返回全部目标货币
+      const primary = CURRENCIES.find((c) => c !== fromCurrency) ?? 'CNY'
+      const targets = ctx?.moduleMode ? CURRENCIES.filter((c) => c !== fromCurrency) : [primary]
+
+      for (const toCurrency of targets) {
         const converted = convertCurrency(amount, fromCurrency, toCurrency, rates)
+        const cnName = CURRENCY_CODE_TO_NAME[toCurrency]
+        // 仅在结果被量词格式化时（≥1万）附加，未格式化时与 title 重复不显示
+        const suffix = Math.abs(converted) >= 1e4 ? ` · ${formatWithChineseUnit(converted)}` : ''
         results.push({
           id: `currency-${toCurrency}`,
-          title: `${converted.toFixed(2)} ${toCurrency}`,
-          description: `${amount} ${fromCurrency} → ${toCurrency}`,
+          title: converted.toFixed(2),
+          description: `${cnName ? cnName + ' ' : ''}${toCurrency}${suffix}`,
           icon: 'i-ri-exchange-cny-line',
+          boost: DYNAMIC_BOOST,
           data: { kind: 'module', value: converted.toFixed(2) },
         })
       }

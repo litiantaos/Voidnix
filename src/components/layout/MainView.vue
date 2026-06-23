@@ -185,15 +185,22 @@ const groupField = (item: SearchResult) => {
 const groupTitle = (group: string) =>
   SEARCH.GROUP_TITLES[group as keyof typeof SEARCH.GROUP_TITLES] || group
 
-const { onInput, handleTagClose, isLoading, clearSearch, loadDefaultResults, goBackToToolList } =
-  useSearchInput({
-    searchInput,
-    results,
-    selectedIndex,
-    activeModule,
-    restore,
-    reset,
-  })
+const {
+  onInput,
+  handleTagClose,
+  isLoading,
+  clearSearch,
+  loadDefaultResults,
+  goBackToToolList,
+  refreshModule,
+} = useSearchInput({
+  searchInput,
+  results,
+  selectedIndex,
+  activeModule,
+  restore,
+  reset,
+})
 const { handleExecute } = useResultNavigation({
   searchInput,
   results,
@@ -202,6 +209,7 @@ const { handleExecute } = useResultNavigation({
   clearSearch,
   loadDefaultResults,
   goBackToToolList,
+  refreshModule,
 })
 
 useWindowHeight(activeModule)

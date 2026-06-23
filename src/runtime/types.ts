@@ -38,10 +38,12 @@ export interface SearchResult {
   boost?: number
   /** 仅框架填，扩展禁止填。 */
   score?: number
+  /** 框架注入：全局模式 dynamic 工具型结果（kind=module）的来源扩展显示名，UI 右侧标注。扩展禁填。 */
+  source?: string
 }
 
 /** 扩展 dynamic 返回的原始结果（不含 module，框架注入 producing 扩展 id，§2.3 v1.6 N4）。 */
-export type ProviderResult = Omit<SearchResult, 'module'>
+export type ProviderResult = Omit<SearchResult, 'module' | 'source'>
 
 // ─── 搜索能力（§2.3 单通道）──────────────────────────────────────────
 

@@ -77,7 +77,7 @@ interface SearchContext {
 }
 ```
 
-- **全局模式**（searchEngine）：并行调用所有扩展 dynamic，合流 keyword 模块入口 + dedupe + groupAndSort。
+- **全局模式**（searchEngine）：并行调用所有扩展 dynamic，合流 keyword 模块入口（`keywordMatch` 双向匹配：正向子串 + 反向降权 0.5 + 拼音，覆盖多词 query 含关键词场景；**dynamic 已产出结果的扩展抑制其入口**——即时答案优先，如「100 usd」已返回换算值不再重复显示该扩展入口，dynamic 返空/失败时入口保留作降级）+ dedupe + groupAndSort。
 - **模块模式**（runModuleSearch）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序。dynamic 返回 Promise（异步网络/IPC）时进入即清空旧结果 + 显示 loading 占位（「先进去再加载」），返回 `ProviderResult[]`（同步）则即时填充无闪烁。
 - `moduleMode` 区分调用场景：**全局空 query 时网络型扩展（ip/currency）应跳过网络请求返回 `[]`**，避免拖慢默认列表；模块内空 query 正常执行。
 - 半静态内容（如 base64 选项）用模块级缓存自管，走 dynamic 返回。
@@ -92,12 +92,13 @@ interface SearchContext {
   description?, icon?, shortcut?, boost?,
   data: { kind, moduleId?, path?, ... }
   score?: number              // 仅框架填，扩展禁止填
+  source?: string             // 框架注入（扩展禁填）：全局模式 kind=module 结果的来源扩展显示名
 }
 ```
 
 - `kind` 严格枚举：`application | folder | file | module | clipboard | web`（folder/file 同组）。扩展须正确设置，否则分组错乱。
 - `boost?`：扩展可选组内优先级提示（默认 0），`finalScore = fuzzy(title,query) + boost`。调整相关性**只能**通过 boost（score 框架独占）。
-- 扩展返回 `ProviderResult`（Omit module），框架注入 module。
+- 扩展返回 `ProviderResult`（Omit module/source），框架注入 module 与 source（全局模式 + kind=module 时自动注入来源扩展显示名，UI 右侧标注）。
 
 ### 执行分派（框架内置契约）
 

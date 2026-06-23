@@ -48,6 +48,29 @@ describe('SearchEngine', () => {
     expect(out[0].module).toBe('inj')
   })
 
+  it('全局模式 kind=module 结果注入 source（扩展显示名）；应用/文件等不注入', async () => {
+    registry.push(
+      makeSearchExt('src', () => [
+        result('tool', 'aa tool', 'module'), // 工具型 → 注入 source
+        result('app', 'aa app', 'application'), // 应用 → 不注入
+        result('file', 'aa file', 'file'), // 文件 → 不注入
+      ]),
+    )
+    // makeSearchExt 的 name 默认 = id；此处验证 source 值
+    const out = await searchEngine.search('aa')
+    const tool = out.find((r) => r.id === 'tool')
+    const app = out.find((r) => r.id === 'app')
+    expect(tool?.source).toBe('src')
+    expect(app?.source).toBeUndefined()
+  })
+
+  it('模块模式不注入 source（结果都来自当前模块，无需标注）', async () => {
+    searchEngine.setActiveModule('modsrc')
+    registry.push(makeSearchExt('modsrc', () => [result('a', 'alpha', 'module')]))
+    const out = await searchEngine.search('alpha')
+    expect(out[0].source).toBeUndefined()
+  })
+
   it('去重：同 <module>:<id> 组合键保留首个', async () => {
     searchEngine.setActiveModule('dedup')
     registry.push(
@@ -138,6 +161,25 @@ describe('SearchEngine', () => {
     registry.push(makeSearchExt('kwmod', () => [], ['encode']))
     const out = await searchEngine.search('encode')
     expect(out.find((r) => r.data?.kind === 'module')).toBeUndefined()
+  })
+
+  it('keyword 反向匹配：多词 query 含 keyword 时产出模块入口', async () => {
+    // scoreFields 单向子串对此返回 0（query「100 usd」比 keyword「usd」长）
+    registry.push(makeSearchExt('kwrev', () => [], ['usd', '汇率']))
+    const out = await searchEngine.search('100 usd')
+    const entry = out.find((r) => r.data?.kind === 'module' && r.data.moduleId === 'kwrev')
+    expect(entry).toBeDefined()
+  })
+
+  it('keyword 入口抑制：dynamic 已产出结果的扩展不再显示模块入口（即时答案优先）', async () => {
+    // 「100 usd」同时命中 dynamic（返回换算值）与 keyword（usd 反向命中）；
+    // 预期仅保留 dynamic 即时答案，抑制该扩展的 module-kwsup 入口
+    registry.push(
+      makeSearchExt('kwsup', () => [result('ans', '717.00', 'module', 1000)], ['usd', '汇率']),
+    )
+    const out = await searchEngine.search('100 usd')
+    expect(out.find((r) => r.id === 'ans')).toBeDefined()
+    expect(out.find((r) => r.id === 'module-kwsup')).toBeUndefined()
   })
 
   it('新查询 abort 旧查询的 signal', async () => {

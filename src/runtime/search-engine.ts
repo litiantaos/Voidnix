@@ -1,6 +1,6 @@
 import { getAllExtensions } from './extension-registry'
 import { SEARCH, LIMITS } from './constants'
-import { scoreFields } from '@/utils/fuzzy'
+import { scoreFields, keywordMatch } from '@/utils/fuzzy'
 import type { SearchResult, SearchResultKind } from './types'
 
 // kind → group 映射：file/folder 同属 'file' 组（v1.5 合并）；其余 kind 即组名。
@@ -41,9 +41,15 @@ class SearchEngine {
     // 1. dynamic 并行召回（框架按产出扩展 meta.id 注入 module）
     let results = await this.searchDynamic(query, controller.signal)
 
-    // 1.5 keyword 合流（全局模式 only，模块模式禁用——已在某模块内不展示其他模块入口）
+    // 1.5 keyword 合流（全局模式 only，模块模式禁用——已在某模块内不展示其他模块入口）。
+    //    抑制 dynamic 已产出结果的扩展入口：即时答案优先（如「100 usd」已返回换算值，
+    //    不再重复显示该扩展的模块入口）；dynamic 返空/失败时入口保留作降级。
     if (!this.activeModule && query.trim()) {
-      results = [...results, ...this.keywordSearchAll(query)]
+      const dynamicModules = new Set(results.map((r) => r.module))
+      results = [
+        ...results,
+        ...this.keywordSearchAll(query).filter((r) => !dynamicModules.has(r.module)),
+      ]
     }
 
     if (controller.signal.aborted) return []
@@ -70,8 +76,16 @@ class SearchEngine {
       targets.map(async (ext) => {
         try {
           const raw = await this.raceWithTimeout(ext.search!.dynamic(query, { signal, moduleMode }))
-          // 框架注入 module = 产出扩展 meta.id（扩展禁填，§2.3 v1.6 N4）
-          return raw.map((r) => ({ ...r, module: ext.meta.id }) as SearchResult)
+          // 框架注入 module = 产出扩展 meta.id（扩展禁填，§2.3 v1.6 N4）；
+          // 全局模式 + 工具型结果（kind=module）注入 source = 扩展显示名（UI 标注来源，应用/文件等原生结果不注入）
+          return raw.map(
+            (r) =>
+              ({
+                ...r,
+                module: ext.meta.id,
+                ...(!moduleMode && r.data?.kind === 'module' ? { source: ext.meta.name } : {}),
+              }) as SearchResult,
+          )
         } catch (e) {
           // abort 触发的 AbortError 与超时是正常/降级路径，静默；其余打日志
           const name = (e as Error)?.name
@@ -106,16 +120,18 @@ class SearchEngine {
     }
   }
 
-  /** 框架内置：扫描 meta.keywords 产出模块入口结果（§2.5）。 */
+  /** 框架内置：扫描 meta.keywords 产出模块入口结果（§2.5）。
+   *  keywords 用双向匹配（keywordMatch：正向 + 反向降权 + 拼音），覆盖多词 query 含关键词场景；
+   *  name/description 用 scoreFields 单向子串（query 在 field 中）。 */
   private keywordSearchAll(query: string): SearchResult[] {
     const q = query.trim()
     if (!q) return []
     return getAllExtensions()
       .filter((e) => (e.meta.keywords?.length ?? 0) > 0)
       .map((ext) => {
-        const score = scoreFields(
-          [ext.meta.name, ext.meta.description, ...(ext.meta.keywords ?? [])],
-          q,
+        const score = Math.max(
+          scoreFields([ext.meta.name, ext.meta.description], q),
+          keywordMatch(ext.meta.keywords ?? [], q),
         )
         return { ext, score }
       })
