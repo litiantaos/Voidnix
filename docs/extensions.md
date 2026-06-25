@@ -18,7 +18,7 @@ extensions/<id>/
     └── ...                # 子模块（commands.rs / engine/ 等）
 ```
 
-16 个扩展：含 native/ 的 9 个（clipboard、screenshot、awake、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search），纯 TS 的 7 个（calculator、settings、ip、base64、time、uuid、currency）。
+17 个扩展：含 native/ 的 10 个（clipboard、screenshot、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search），纯 TS 的 7 个（calculator、settings、ip、base64、time、uuid、currency）。
 
 ## 前端注册
 
@@ -59,7 +59,7 @@ export default defineExtension({
 
 ### UI 规约补充
 
-- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=1 / calculator=2 / ip=5 / translate=8 / agent=9 / screenshot=11 / window-manager=12 / awake=50 / finder-ext=60 / zsh-autosuggestions=80 / base64=100 / uuid=110 / time=120 / currency=130；hidden 扩展 settings=998 / search=999。
+- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=1 / calculator=2 / ip=5 / translate=8 / agent=9 / screenshot=11 / window-manager=12 / awake=50 / clean-mode=55 / finder-ext=60 / zsh-autosuggestions=80 / base64=100 / uuid=110 / time=120 / currency=130；hidden 扩展 settings=998 / search=999。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
 
 ## 搜索集成
