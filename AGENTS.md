@@ -87,7 +87,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 **搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + keyword 合流 + dedupe + groupAndSort。全局模式聚合所有扩展按 `finalScore = fuzzy + boost` 过滤排序；模块模式只调激活扩展且保留原序。`SearchContext.moduleMode` 区分两种模式（网络型扩展据此在全局空 query 跳过网络）。搜索集成细节详见 [docs/extensions.md](docs/extensions.md)。
 
-**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。
+**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。窗口高度双机制：静态模块走 `useWindowHeight`（读 `Extension.windowHeight` 声明值 clamp `[MIN_HEIGHT, MAX_HEIGHT]`，setSize），内容可变子视图走 `useAutoWindowHeight`（双层 `rootRef` h-full 撑满父量 chrome + `contentRef` 自然高量真实内容高 + ResizeObserver 监听，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`；chrome 首测缓存规避内容撑开后 clientHeight 失真；屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口；高度变化以 rAF easeOutCubic 插值动画过渡——Tauri setSize 瞬时需自行补间；底部将出屏（含 40px 间距）则同步上移保证完整可见，退出还原 `resolveModuleHeight`）。
 
 **全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。
 
@@ -153,6 +153,8 @@ src/
 │   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键注册/失焦隐藏/模块事件，抽自 App.vue）
 │   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型模块 dynamic + web 搜索// + 工具列表/ + 默认结果）
 │   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派
+│   ├── useWindowHeight.ts     # 模块声明固定 windowHeight → setSize（静态）
+│   ├── useAutoWindowHeight.ts # 子视图内容自适应高度 → 双层 root/content + ResizeObserver，上限屏 90%（动态，OCR/翻译用）
 │   ├── useFloating.ts / useScrollPosition.ts / useTauriListener.ts  # 通用工具
 │   └── events.ts / useInputControl.ts / useShortcutConfig.ts / useSettingsInput.ts
 ├── stores/             # app / settings（仅框架级）/ update

@@ -17,8 +17,8 @@ export function useInputControl<T extends HTMLInputElement | HTMLTextAreaElement
     options.emit('keydown', e)
   }
 
-  function focus() {
-    elRef.value?.focus()
+  function focus(options?: FocusOptions) {
+    elRef.value?.focus(options)
   }
 
   function blur() {

@@ -49,7 +49,9 @@ export default defineExtension({
 | `globalShortcuts`    | 全局快捷键绑定                                                                            | 4：clipboard/screenshot/agent/translate                                 |
 | `hints`              | 键盘提示（enter/multiSelect/delete）                                                      | enter 3：clipboard/ip/calculator；余各 1                                |
 | `placeholder`        | 搜索框占位提示（激活模块时显示）                                                          | 7：clipboard/currency/uuid/ip/time/base64/calculator                    |
-| `windowHeight`       | 模块激活时主窗口高度（px，逻辑像素；框架 clamp `[WINDOW.MIN_HEIGHT, WINDOW.MAX_HEIGHT]`） | 2：agent/translate                                                      |
+| `windowHeight`       | 模块激活时主窗口高度（px，逻辑像素；框架 clamp `[WINDOW.MIN_HEIGHT, WINDOW.MAX_HEIGHT]`） | 1：agent                                                                |
+
+内容高度可变的视图（OCR / 翻译结果）不声明 `windowHeight`，改在 View 内调 `useAutoWindowHeight({ rootRef, contentRef })`：双层结构（root `h-full` 撑满父量 chrome + content 自然高量真实内容高 + ResizeObserver），窗口高度 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`。
 
 生命周期：`setup?()`（启动钩子，无参）。3 承载字段过渡期保留：`disableSearchInput`（模块自管输入）、`listOptions.multiSelect`、`onOpenSubview`。
 
