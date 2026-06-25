@@ -55,7 +55,17 @@ mod inner {
 
     // ── 静态状态 ──────────────────────────────────────────────────────────
 
-    struct MonitorHandles(*mut AnyObject, *mut AnyObject);
+    /// 配对持有 monitor 对象 + 其 handler block（H5，同 click_monitor.rs）。
+    /// 旧实现 `mem::forget(block)` 让 RcBlock 泄漏且 monitor 未 retain 导致悬垂指针；
+    /// 改为配对存储 + 显式 retain，remove 时 drop RcBlock + release monitor。
+    struct MonitorHandles {
+        global_monitor: *mut AnyObject,
+        #[allow(dead_code)]
+        global_block: block2::RcBlock<dyn Fn(*mut AnyObject)>,
+        local_monitor: *mut AnyObject,
+        #[allow(dead_code)]
+        local_block: block2::RcBlock<dyn Fn(*mut AnyObject) -> *mut AnyObject>,
+    }
     unsafe impl Send for MonitorHandles {}
     unsafe impl Sync for MonitorHandles {}
 
@@ -343,11 +353,12 @@ mod inner {
         ENABLED.store(true, Ordering::SeqCst);
         *APP.lock().unwrap_or_else(|e| e.into_inner()) = Some(app);
 
-        let moved_block = block2::RcBlock::new(move |_event: *mut AnyObject| {
-            on_mouse_moved();
-        });
+        let moved_block: block2::RcBlock<dyn Fn(*mut AnyObject)> =
+            block2::RcBlock::new(move |_event: *mut AnyObject| {
+                on_mouse_moved();
+            });
 
-        let local_moved_block =
+        let local_moved_block: block2::RcBlock<dyn Fn(*mut AnyObject) -> *mut AnyObject> =
             block2::RcBlock::new(move |event: *mut AnyObject| -> *mut AnyObject {
                 on_mouse_moved();
                 event
@@ -355,8 +366,9 @@ mod inner {
 
         // SAFETY: mask = 1u64<<5（NSEventMaskMouseMoved）为标准位掩码；
         // block 经 RcBlock 持有，&*block 取引用符合 block2 调用约定；
-        // addGlobalMonitor/addLocalMonitor 返回 monitor 对象，null 检查后 forget
-        // block（生命周期由 monitor 持有），stop 时 removeMonitor+release 配对
+        // addGlobalMonitor/addLocalMonitor 返回 autoreleased monitor 对象，
+        // 显式 retain 一次（与 stop 的 release 配对），RcBlock 配对存储不 forget
+        // （同 click_monitor.rs H5）。
         unsafe {
             let global_moved: *mut AnyObject = objc2::msg_send![
                 NSEvent::class(),
@@ -370,10 +382,15 @@ mod inner {
             ];
 
             if !global_moved.is_null() && !local_moved.is_null() {
+                let _: () = objc2::msg_send![global_moved, retain];
+                let _: () = objc2::msg_send![local_moved, retain];
                 let mut guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
-                *guard = Some(MonitorHandles(global_moved, local_moved));
-                std::mem::forget(moved_block);
-                std::mem::forget(local_moved_block);
+                *guard = Some(MonitorHandles {
+                    global_monitor: global_moved,
+                    global_block: moved_block,
+                    local_monitor: local_moved,
+                    local_block: local_moved_block,
+                });
             } else {
                 if !global_moved.is_null() {
                     let _: () = objc2::msg_send![NSEvent::class(), removeMonitor: global_moved];
@@ -391,23 +408,25 @@ mod inner {
 
         let mut guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(mh) = guard.take() {
-            // SAFETY: mh.0/mh.1 是 start 时注册的 global/local monitor（非空已检查）；
-            // removeMonitor 注销 + release 释放（与 start 的 forget 配对）
+            // SAFETY: monitor 在 start 中 retain 过一次，此处 removeMonitor + release 配对。
+            // mh drop 时 RcBlock drop 释放 Rust 侧引用（与 NSEvent 的 retain 平衡）。
             unsafe {
-                let _: () = objc2::msg_send![NSEvent::class(), removeMonitor: mh.0];
-                let _: () = objc2::msg_send![mh.0, release];
-                let _: () = objc2::msg_send![NSEvent::class(), removeMonitor: mh.1];
-                let _: () = objc2::msg_send![mh.1, release];
+                let _: () = objc2::msg_send![NSEvent::class(), removeMonitor: mh.global_monitor];
+                let _: () = objc2::msg_send![mh.global_monitor, release];
+                let _: () = objc2::msg_send![NSEvent::class(), removeMonitor: mh.local_monitor];
+                let _: () = objc2::msg_send![mh.local_monitor, release];
             }
         }
 
         let app_opt = APP.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(app) = app_opt {
-            hide_panel_impl(&app);
+            // 仅当 snap-panel 当前可见时才隐藏 + restore focus。
+            // 用户在主窗口设置界面点开关关闭时 panel 并未显示，无条件 hide_panel_impl
+            // 会触发 restore_captured() → deactivate self → 主窗口失焦隐藏（回归）。
+            hide_panel(&app);
         }
 
-        let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
-        state.visible = false;
+        STATE.lock().unwrap_or_else(|e| e.into_inner()).visible = false;
     }
 
     pub fn hide_panel(app: &AppHandle) {
