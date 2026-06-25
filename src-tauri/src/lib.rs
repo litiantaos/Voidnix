@@ -37,6 +37,7 @@ pub fn run() {
                 .register(crate::extensions::clipboard::ClipboardExtension)
                 .register(crate::extensions::screenshot::ScreenshotExtension)
                 .register(crate::extensions::awake::AwakeExtension)
+                .register(crate::extensions::clean_mode::CleanModeExtension)
                 .register(crate::extensions::zsh_autosuggestions::ZshAutosuggestionsExtension)
                 .register(crate::extensions::window_manager::WindowManagerExtension)
                 .register(crate::extensions::finder_ext::FinderExtExtension)

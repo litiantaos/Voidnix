@@ -74,10 +74,10 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 所有扩展同构（`extensions/<id>/index.ts` + 可选 `config.ts` + 可选 `native/`），详见 [docs/extensions.md](docs/extensions.md)。
 
-含 native/（9）：clipboard、screenshot、awake、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search
+含 native/（10）：clipboard、screenshot、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search
 纯 TS（7）：calculator、settings、ip、base64、time、uuid、currency
 
-复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)。
+复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[clean-mode](docs/extensions/clean-mode.md)。
 
 ## 架构要点
 

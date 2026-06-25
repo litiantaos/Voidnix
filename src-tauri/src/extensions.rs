@@ -7,6 +7,7 @@ macro_rules! configure_app {
         $builder
             .plugin(crate::extensions::agent::init())
             .plugin(crate::extensions::awake::init())
+            .plugin(crate::extensions::clean_mode::init())
             .plugin(crate::extensions::clipboard::init())
             .plugin(crate::extensions::finder_ext::init())
             .plugin(crate::extensions::screenshot::init())
@@ -35,6 +36,8 @@ macro_rules! configure_app {
                 crate::extensions::awake::is_awake_enabled,
                 crate::extensions::awake::set_awake_display_mode,
                 crate::extensions::awake::set_awake_enabled,
+                crate::extensions::clean_mode::is_clean_mode_enabled,
+                crate::extensions::clean_mode::set_clean_mode_enabled,
                 crate::extensions::clipboard::commands::clear_clipboard_history,
                 crate::extensions::clipboard::commands::delete_clipboard_items,
                 crate::extensions::clipboard::commands::get_clipboard_history,
@@ -93,6 +96,9 @@ pub mod agent;
 
 #[path = "../../extensions/awake/native/mod.rs"]
 pub mod awake;
+
+#[path = "../../extensions/clean-mode/native/mod.rs"]
+pub mod clean_mode;
 
 #[path = "../../extensions/clipboard/native/mod.rs"]
 pub mod clipboard;

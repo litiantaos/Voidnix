@@ -62,6 +62,10 @@ export const CMD = {
   setAwakeDisplayMode: 'set_awake_display_mode',
   isAwakeEnabled: 'is_awake_enabled',
 
+  // —— clean-mode ——
+  setCleanModeEnabled: 'set_clean_mode_enabled',
+  isCleanModeEnabled: 'is_clean_mode_enabled',
+
   // —— window-manager ——
   setFrontmostWindowLayout: 'set_frontmost_window_layout',
   setWindowManagerEnabled: 'set_window_manager_enabled',
