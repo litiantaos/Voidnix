@@ -10,6 +10,7 @@ macro_rules! configure_app {
             .plugin(crate::extensions::clean_mode::init())
             .plugin(crate::extensions::clipboard::init())
             .plugin(crate::extensions::finder_ext::init())
+            .plugin(crate::extensions::proxy::init())
             .plugin(crate::extensions::screenshot::init())
             .plugin(crate::extensions::search::init())
             .plugin(crate::extensions::translate::init())
@@ -49,6 +50,18 @@ macro_rules! configure_app {
                 crate::extensions::finder_ext::open_extensions_prefs,
                 crate::extensions::finder_ext::quit_app,
                 crate::extensions::finder_ext::set_finder_ext_enabled,
+                crate::extensions::proxy::is_proxy_enabled,
+                crate::extensions::proxy::proxy_core_status,
+                crate::extensions::proxy::proxy_enable_tun,
+                crate::extensions::proxy::proxy_ensure_core,
+                crate::extensions::proxy::proxy_get_proxies,
+                crate::extensions::proxy::proxy_remove_subscription,
+                crate::extensions::proxy::proxy_select_proxy,
+                crate::extensions::proxy::proxy_set_mode,
+                crate::extensions::proxy::proxy_set_system_proxy,
+                crate::extensions::proxy::proxy_test_delay,
+                crate::extensions::proxy::proxy_update_subscription,
+                crate::extensions::proxy::set_proxy_enabled,
                 crate::extensions::screenshot::ocr::copy_screenshot_to_clipboard,
                 crate::extensions::screenshot::ocr::detect_text_regions,
                 crate::extensions::screenshot::ocr::ocr_image,
@@ -104,6 +117,9 @@ pub mod clipboard;
 
 #[path = "../../extensions/finder-ext/native/mod.rs"]
 pub mod finder_ext;
+
+#[path = "../../extensions/proxy/native/mod.rs"]
+pub mod proxy;
 
 #[path = "../../extensions/screenshot/native/mod.rs"]
 pub mod screenshot;
