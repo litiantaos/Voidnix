@@ -296,7 +296,12 @@ fn enumerate_visible_windows() -> Vec<WindowRect> {
             .and_then(|v| v.downcast::<CFNumber>())
             .and_then(|n| n.to_i64())
             .unwrap_or(-1);
-        if layer != 0 {
+        // 仅纳入普通内容窗口层级 [0, kCGMainMenuWindowLevel)：
+        // 覆盖 Normal(0)/Floating(3, Quick Look 等)/ModalPanel(8)/Utility(19)，
+        // 排除菜单栏(24)/Status(25)/PopUpMenu(101)/Overlay(102)/Help(200)/Cursor 等 chrome；
+        // Dock/桌面由 ExcludeDesktopElements 处理，自身 overlay 由 pid 排除
+        const MAIN_MENU_LEVEL: i64 = 24;
+        if !(0..MAIN_MENU_LEVEL).contains(&layer) {
             continue;
         }
 
