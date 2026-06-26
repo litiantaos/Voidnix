@@ -8,7 +8,6 @@ export type AgentEvent =
   | { type: 'textDelta'; text: string }
   | { type: 'toolCallStart'; id: string; name: string }
   | { type: 'toolCallArgs'; id: string; args: unknown }
-  | { type: 'approvalRequired'; id: string; toolName: string; args: unknown }
   | { type: 'toolResult'; id: string; ok: boolean; output: string }
   | { type: 'completed' }
   | { type: 'error'; message: string }
@@ -22,6 +21,17 @@ export interface AgentMessage {
   streaming?: boolean
 }
 
+export interface WebSearchHit {
+  title: string
+  url: string
+  snippet: string
+}
+
+export interface WebSearchResult {
+  answer?: string
+  hits: WebSearchHit[]
+}
+
 export type AgentPart =
   | { type: 'text'; text: string }
   | {
@@ -29,8 +39,12 @@ export type AgentPart =
       id: string
       name: string
       args?: unknown
+      /** 工具执行结果（toolResult 事件填充；web_search 为 JSON 字符串供 LLM） */
+      output?: string
+      /** web_search 解析后的结构化结果（UI 渲染用） */
+      parsed?: WebSearchResult
       /** 工具执行状态 */
-      state: 'streaming' | 'awaiting_approval' | 'done' | 'failed'
+      state: 'streaming' | 'running' | 'done' | 'failed'
     }
 
 // ─── LLM 协议层消息（Rust `LlmMessage` 的前端映射）────────────

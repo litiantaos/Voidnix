@@ -29,7 +29,7 @@ bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions
 bun run check:drift          # 漂移校验聚合（= check:extensions + commands + agent-bounds + wm-bounds）
 bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移）
 bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
-bun run check:agent-bounds   # CI 校验（agent policy.rs ↔ config.ts BOUNDS 双向一致）
+bun run check:agent-bounds   # CI 校验（agent 资源上限 policy.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:wm-bounds      # CI 校验（window-manager mod.rs ↔ config.ts BOUNDS 双向一致）
 ```
 
@@ -91,16 +91,15 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 **全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。默认 Option 基（`Option+Space` 呼出，`Option+C/S/T/A` 各扩展）；dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存（dev/prod 数据目录仍按 bundle id 隔离，配置默认值一致）。
 
-**Agent 引擎**（`extensions/agent/native/engine/`）：tool calling loop，服务 agent 扩展。prompt/max_turns/trustedCommands/forbiddenCommands/blockedArgs/资源上限由扩展 config 注入（非框架硬编码）。
+**Agent 引擎**（`extensions/agent/native/engine/`）：tool calling loop，服务 agent 扩展。prompt/max_turns/资源上限由扩展 config 注入（非框架硬编码）。
 
-- `loop_runner.rs`：主循环 `run_loop`：调 LLM → 解析 tool_calls → 审批 → 执行 → 回灌 → 下一轮
-- `approval.rs`：`ApprovalManager`（全局 State，oneshot channel）
+- `loop_runner.rs`：主循环 `run_loop`：调 LLM → 解析 tool_calls → 执行 → 回灌 → 下一轮
 - `cancellation.rs`：`SessionRegistry`（per-session CancellationToken）
 - `trim.rs`：历史消息裁剪（下沉自 runtime/llm）
 - `secret_scrub.rs`：gitleaks 风格正则打码
 - `tool_registry.rs`：`AgentTool` trait + `ToolRegistry`
 
-Agent 安全防线（命令执行 9 层纵深防御）：`extensions/agent/native/policy.rs` 是 floor/cap 权威源（FORBIDDEN_FLOOR 31 项 / DENIED_ARG_FLOOR 19 项 / TRUSTED_DENYLIST 11 项强制剔除 / 资源上限 clamp），`agent_run` 入口强制 clamp/并集/剔除（不信任前端传值——老用户 config.json 已落盘的 find/awk/... 也会被剔除）；TS 端 `config.ts` 的 `BOUNDS` 仅 UI 镜像。详见 `docs/extensions/agent.md`。
+Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`extensions/agent/native/policy.rs` 是资源上限 floor/cap 权威源（CPU/内存/文件描述符/超时/输出/轮次 clamp），`agent_run` 入口强制 clamp（不信任前端传值）；`run_command` 保留 `rm -rf /` 断路器兜底；TS 端 `config.ts` 的 `BOUNDS` 仅 UI 镜像。详见 `docs/extensions/agent.md`。
 
 **搜索打分**：`src/utils/fuzzy.ts::scoreFields()`（[pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。keyword 模块入口用 `keywordMatch()` 双向匹配（正向子串 + 反向子串降权 0.5 + 拼音，覆盖「100 usd」含 keyword「usd」等多词 query 场景，`keywordSearchAll` 消费）；**dynamic 已产出结果的扩展抑制其 keyword 入口**（即时答案优先，避免换算结果与模块入口同屏重复）。`kind` 枚举 `application | folder | file | module | clipboard | web`（folder/file 同组），组间序 `GROUP_ORDER`：`application > file > module > clipboard > web`。
 

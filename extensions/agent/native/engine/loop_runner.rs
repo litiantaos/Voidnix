@@ -7,7 +7,6 @@
 //!   match outcome {
 //!     Text(s)     → emit Completed, break
 //!     ToolCalls(c)→ for each call {
-//!                     if needs_approval { emit ApprovalRequired; await oneshot }
 //!                     execute tool; scrub output; emit ToolResult
 //!                     append tool message to history
 //!                   }
@@ -22,16 +21,12 @@ use tauri::ipc::Channel;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 
-use crate::extensions::agent::engine::approval::{ApprovalManager, Decision};
 use crate::extensions::agent::engine::tool_registry::ToolRegistry;
 use crate::extensions::agent::engine::AgentEvent;
 use crate::runtime::llm::parser::FinalizedToolCall;
 use crate::runtime::llm::{self, LlmMessage, LlmToolCall, StreamConfig};
 
 use super::secret_scrub::scrub_secret;
-
-/// 审批超时上限（H13）：用户离开/不响应时避免 loop 永久阻塞、session 残留。
-const APPROVAL_TIMEOUT_SECS: u64 = 300;
 
 /// Agent loop 的输入配置。
 pub struct LoopInput {
@@ -48,7 +43,6 @@ pub struct LoopInput {
     pub tool_registry: Arc<ToolRegistry>,
     pub channel: Channel<AgentEvent>,
     pub cancel: CancellationToken,
-    pub approval: ApprovalManager,
 }
 
 /// 主循环。所有错误通过 `AgentEvent::Error` 推给前端后退出。
@@ -159,14 +153,14 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
     Ok(())
 }
 
-/// 处理单个 tool_call：审批 → 执行 → 回灌结果。
+/// 处理单个 tool_call：执行 → 回灌结果。
 async fn process_tool_call(
     input: &mut LoopInput,
     messages: &mut Vec<LlmMessage>,
     call: &FinalizedToolCall,
 ) {
-    // H14：args 经 scrub_secret 后再 emit 给前端，避免 LLM 在 ApprovalRequired / ToolCallArgs
-    // 中复述用户 secret（UI v-html 渲染 / 审批弹窗展示）。call.arguments 是 LLM 构造的 JSON，
+    // H14：args 经 scrub_secret 后再 emit 给前端，避免 LLM 在 ToolCallArgs
+    // 中复述用户 secret（UI v-html 渲染）。call.arguments 是 LLM 构造的 JSON，
     // secret 不应出现于此；若出现则可能是 prompt injection 复述，打码更安全。
     let scrubbed_args = scrub_secret(&call.arguments.to_string()).into_owned();
     let scrubbed_args_value: serde_json::Value =
@@ -193,63 +187,6 @@ async fn process_tool_call(
         messages.push(LlmMessage::tool_result(&call.id, msg));
         return;
     };
-
-    // 审批检查
-    let needs_approval = tool.requires_approval(&call.arguments);
-    let approved = if needs_approval {
-        // 用 tool_call.id 作 approval 索引（前端 part 路由 + agent_approve command 都用此 id）
-        let rx = input.approval.create(call.id.clone());
-        let _ = input.channel.send(AgentEvent::ApprovalRequired {
-            id: call.id.clone(),
-            tool_name: call.name.clone(),
-            args: scrubbed_args_value.clone(),
-        });
-        // 等用户决定，同时监听 cancel + 超时（H13：避免用户不响应导致 loop 永久阻塞）
-        let decision = select! {
-            d = rx => d.unwrap_or(Decision::rejected()),
-            _ = input.cancel.cancelled() => {
-                // 用户取消（abort），告诉模型工具被中断
-                let msg = "工具调用已被用户中断".to_string();
-                let _ = input.channel.send(AgentEvent::ToolResult {
-                    id: call.id.clone(),
-                    ok: false,
-                    output: msg.clone(),
-                });
-                messages.push(LlmMessage::tool_result(&call.id, msg));
-                return;
-            }
-            _ = tokio::time::sleep(std::time::Duration::from_secs(APPROVAL_TIMEOUT_SECS)) => {
-                // 超时自动拒绝：避免用户离开后 loop 永久阻塞、session 残留
-                input.approval.resolve(&call.id, Decision::rejected());
-                let msg = format!("审批超时（{} 秒未响应），已自动拒绝", APPROVAL_TIMEOUT_SECS);
-                let _ = input.channel.send(AgentEvent::ToolResult {
-                    id: call.id.clone(),
-                    ok: false,
-                    output: msg.clone(),
-                });
-                messages.push(LlmMessage::tool_result(&call.id, msg));
-                return;
-            }
-        };
-        if !decision.approved {
-            let msg = "用户拒绝执行此工具".to_string();
-            let _ = input.channel.send(AgentEvent::ToolResult {
-                id: call.id.clone(),
-                ok: false,
-                output: msg.clone(),
-            });
-            messages.push(LlmMessage::tool_result(&call.id, msg));
-            return;
-        }
-        // always_approve 由调用方（mod.rs / settings）读取持久化，此处仅放行
-        true
-    } else {
-        true
-    };
-
-    if !approved {
-        return;
-    }
 
     // 执行工具（取消感知：abort 时 drop future，run_command 的 kill_on_drop 终结子进程）
     let result = select! {

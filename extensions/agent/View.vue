@@ -48,26 +48,63 @@
               v-html="renderMarkdown(part.text)"
             />
 
-            <!-- 工具调用 part：状态图标 + 工具名 + 参数明细 + 状态 -->
+            <!-- 工具调用 part：状态图标 + 工具名 + 参数明细 + 结果 -->
             <div
               v-else-if="part.type === 'toolCall'"
               rounded="md"
               bg="black/4"
-              p="2.5"
               text="xs"
-              flex
-              items="center"
-              gap="1.5"
+              flex="~ col"
+              overflow="hidden"
             >
-              <span shrink="0" :class="toolStateIcon(part.state)" />
-              <span shrink="0" text="tx-faint">{{ part.name }}</span>
-              <span shrink-1 min-w="0" font="mono" text="tx-secondary" truncate>{{
-                toolDetail(part)
-              }}</span>
-              <span shrink="0" text="tx-faint">·</span>
-              <span shrink="0" :class="toolStateTextClass(part.state)">
-                {{ toolStateLabel(part.state) }}
-              </span>
+              <div p="x-2.5 y-2" flex items="center" gap="1.5">
+                <span shrink="0" font="mono" text="tx-secondary" bg="black/8" rounded px="1">{{
+                  part.name
+                }}</span>
+                <span
+                  v-if="toolDetail(part)"
+                  shrink-1
+                  min-w="0"
+                  font="mono"
+                  text="tx-secondary"
+                  truncate
+                  >{{ toolDetail(part) }}</span
+                >
+                <span shrink="0" ml="auto" :class="toolStateIcon(part.state)" />
+              </div>
+              <!-- web_search 结果：可点击列表（标题 + 详情）-->
+              <div
+                v-if="part.parsed && (part.state === 'done' || part.state === 'failed')"
+                border="t black/5"
+                p="x-2.5 y-2"
+                flex="~ col"
+                gap="1"
+              >
+                <div
+                  v-for="(hit, i) in part.parsed.hits"
+                  :key="i"
+                  cursor-pointer
+                  py="1"
+                  @click="openUrl(hit.url)"
+                >
+                  <div text="tx-primary" truncate class="hover:underline">{{ hit.title }}</div>
+                  <div text="tx-subtle" truncate>{{ hit.snippet || hit.url }}</div>
+                </div>
+              </div>
+              <!-- 其他工具结果：pre -->
+              <pre
+                v-else-if="part.output && (part.state === 'done' || part.state === 'failed')"
+                border="t black/5"
+                p="x-2.5 y-2"
+                font="mono"
+                text="tx-secondary"
+                whitespace="pre-wrap"
+                break="words"
+                max-h="40"
+                overflow="auto"
+                m="0"
+                >{{ part.output }}</pre
+              >
             </div>
           </template>
         </div>
@@ -96,41 +133,6 @@
         />
       </div>
     </div>
-
-    <!-- Approval 弹窗 -->
-    <BaseDialog
-      v-if="agent.pendingApproval.value"
-      title="工具调用审批"
-      variant="confirm"
-      kind="warning"
-      size="md"
-      show-footer
-      ok-label="执行"
-      @confirm="handleApprove(true, false)"
-      @cancel="handleApprove(false, false)"
-    >
-      <div flex="~ col" gap="2">
-        <p text="sm">Agent 想执行工具：</p>
-        <p font="bold">{{ agent.pendingApproval.value.toolName }}</p>
-        <pre
-          p="2"
-          bg="black/4"
-          rounded="md"
-          text="xs"
-          font="mono"
-          whitespace="pre-wrap"
-          break="all"
-          max-h="60"
-          overflow="auto"
-          >{{ formatArgs(agent.pendingApproval.value.args) }}</pre
-        >
-      </div>
-      <template #footer-start>
-        <BaseButton class="text-green-600" @click="handleApprove(true, true)">
-          执行并信任
-        </BaseButton>
-      </template>
-    </BaseDialog>
   </div>
 </template>
 
@@ -141,8 +143,6 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAgentChat } from './agent'
 import type { AgentMessage, AgentPart } from '@/types/agent'
 
@@ -177,16 +177,6 @@ function getText(msg: AgentMessage): string {
     .join('')
 }
 
-function formatArgs(args: unknown): string {
-  if (args === undefined || args === null) return ''
-  if (typeof args === 'string') return args
-  try {
-    return JSON.stringify(args, null, 2)
-  } catch {
-    return String(args)
-  }
-}
-
 /// 工具参数明细：run_command → cmd args…，web_search → query，其余空串。
 function toolDetail(part: Extract<AgentPart, { type: 'toolCall' }>): string {
   if (!part.args || typeof part.args !== 'object') return ''
@@ -212,38 +202,10 @@ function toolStateIcon(state: string): string {
       return 'i-ri-checkbox-circle-line text-green-600'
     case 'failed':
       return 'i-ri-close-circle-line text-red-500'
-    case 'awaiting_approval':
-      return 'i-ri-question-line text-amber-600'
+    case 'running':
+      return 'i-ri-loader-4-line animate-spin text-accent'
     default:
       return 'i-ri-tools-line text-tx-muted'
-  }
-}
-
-function toolStateTextClass(state: string): string {
-  switch (state) {
-    case 'done':
-      return 'text-green-600'
-    case 'failed':
-      return 'text-red-500'
-    case 'awaiting_approval':
-      return 'text-amber-600'
-    default:
-      return 'text-tx-faint'
-  }
-}
-
-function toolStateLabel(state: string): string {
-  switch (state) {
-    case 'streaming':
-      return '解析参数'
-    case 'awaiting_approval':
-      return '等待审批'
-    case 'done':
-      return '完成'
-    case 'failed':
-      return '失败'
-    default:
-      return state
   }
 }
 
@@ -256,8 +218,15 @@ async function handleSubmit() {
   nextTick(() => textareaRef.value?.focus())
 }
 
-async function handleApprove(approved: boolean, alwaysApprove: boolean) {
-  await agent.approve(approved, alwaysApprove)
+/// 用系统浏览器打开 URL（不在 webview 内导航）
+async function openUrl(url: string) {
+  if (!url) return
+  try {
+    const { open } = await import('@tauri-apps/plugin-shell')
+    await open(url)
+  } catch (err) {
+    console.warn('Failed to open URL:', err)
+  }
 }
 
 /// 拦截 markdown-body 内的链接点击：用系统浏览器打开（不在 webview 内导航）
@@ -270,12 +239,7 @@ async function onContentClick(e: MouseEvent) {
   if (!/^https?:\/\//i.test(href)) return
   e.preventDefault()
   e.stopPropagation()
-  try {
-    const { open } = await import('@tauri-apps/plugin-shell')
-    await open(href)
-  } catch (err) {
-    console.warn('Failed to open in browser:', err)
-  }
+  await openUrl(href)
 }
 
 onMounted(() => nextTick(() => textareaRef.value?.focus()))

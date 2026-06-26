@@ -132,7 +132,7 @@ config.maxDays = 60 // 自动写盘
 - schema 变更：自开发自用不维护迁移，改 schema 时手动删磁盘 config.json 即可。
 - store 实例缓存（模块级 `Map<storePath, Store>`），watch 回调复用，禁止每次保存重新 `load()`。
 - 加载异步竞态：`load()` 异步，扩展 setup 早期可能读 defaults。安全参数由 Rust clamp 兜底。
-- 安全底线（agent 专属）：plain `BOUNDS` const 表达 floor/cap，**权威在 Rust `native/policy.rs`**，TS 仅 UI 镜像，详见 [agent.md](./extensions/agent.md)。
+- 资源上限（agent 专属）：plain `BOUNDS` const 表达 floor/cap，**权威在 Rust `native/policy.rs`**，TS 仅 UI 镜像，详见 [agent.md](./extensions/agent.md)。
 - 含 Rust 命令同步的配置按**数据位置**分两类同步规约：
   - **Config 字段型**（数值/字符串/枚举/boolean，持久化在 `config.json`）：在 `config.ts` 用 `watch(..., { immediate: true })` 同步，View.vue 仅改 config 不显式 invoke，失败仅 `console.error`。`immediate: true` 确保启动期磁盘回填后自动同步持久化值（避免「上次开启 → 重启丢失」回归）。样板：`window-manager/config.ts`（`enabled` / `customWidth` / `customHeight`）、`awake/config.ts`（`displayMode`）、`clipboard/config.ts`（`maxDays`）。
   - **Rust 状态型**（无 config 字段，状态权威在 Rust 端）：在 `View.vue` 显式 `invoke` + 错误反馈（`showStatus error`），成功才更新 UI 局部状态。样板：`awake/View.vue::toggleAwake`（子进程开关，状态查 `is_awake_enabled`）。

@@ -31,7 +31,6 @@ macro_rules! configure_app {
                 crate::runtime::window::get_home_dir,
                 crate::runtime::window::pick_directory,
                 crate::extensions::agent::agent_abort,
-                crate::extensions::agent::agent_approve,
                 crate::extensions::agent::agent_run,
                 crate::extensions::awake::is_awake_enabled,
                 crate::extensions::awake::set_awake_display_mode,

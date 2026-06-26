@@ -1,4 +1,3 @@
-use crate::extensions::agent::engine::approval::{ApprovalManager, Decision};
 use crate::extensions::agent::engine::cancellation::SessionRegistry;
 use crate::extensions::agent::engine::loop_runner::{run_loop, LoopInput};
 use crate::extensions::agent::engine::tool_registry::ToolRegistry;
@@ -19,23 +18,15 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Agent 路径：agent_run / agent_approve / agent_abort
+// Agent 路径：agent_run / agent_abort
 // ──────────────────────────────────────────────────────────────
 
-/// Agent 配置（前端 invoke 时随调用传入）。安全项由 Rust 端 clamp/并集兜底（§3.4）。
+/// Agent 配置（前端 invoke 时随调用传入）。资源上限由 Rust 端 clamp 兜底。
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRunConfig {
     /// 搜索提供商（duckduckgo / tavily）
     pub search_provider: SearchProviderConfig,
-    /// 用户自定义白名单命令（追加到默认白名单，免审批）。
-    pub trusted_commands: Vec<String>,
-    /// 用户自定义硬禁命令（与 FORBIDDEN_FLOOR 取并集，用户只能加严）。
-    #[serde(default)]
-    pub forbidden_commands: Vec<String>,
-    /// 用户自定义危险参数前缀（与 DENIED_ARG_FLOOR 取并集）。
-    #[serde(default)]
-    pub blocked_args: Vec<String>,
     /// system prompt（扩展自管，前端 config 直传，空串则不注入 system 消息）。
     #[serde(default)]
     pub system_prompt: String,
@@ -70,13 +61,12 @@ pub struct SearchProviderConfig {
 /// 启动一次 agent run。
 ///
 /// 立即返回 session_id；后续事件通过 on_event Channel 推送。
-/// 用户审批通过 agent_approve；中断通过 agent_abort。
+/// 中断通过 agent_abort。
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri 命令 IPC 契约决定参数数（state 注入 + 前端参数）
 pub async fn agent_run(
     app: tauri::AppHandle,
     sessions: tauri::State<'_, SessionRegistry>,
-    approval: tauri::State<'_, ApprovalManager>,
     messages: Vec<LlmMessage>,
     endpoint: String,
     api_key: String,
@@ -88,11 +78,8 @@ pub async fn agent_run(
     // 安全校验
     let safe_endpoint = llm::validate_ai_request(&endpoint, &model, &api_key)?;
 
-    // 安全底线 clamp/并集（§3.4）：agent_run 入口集中处理，不信任前端传值
+    // 资源上限 clamp（agent_run 入口集中处理，不信任前端传值）
     let exec_policy = policy::ExecPolicy::resolve(
-        config.trusted_commands.clone(),
-        config.forbidden_commands.clone(),
-        config.blocked_args.clone(),
         config
             .max_cpu_seconds
             .unwrap_or(policy::DEFAULT_MAX_CPU_SECS),
@@ -127,8 +114,6 @@ pub async fn agent_run(
     let tools_schema = tool_registry.collect_tools_schema();
 
     let cancel = CancellationToken::new();
-    // 共享全局 ApprovalManager（agent_approve 通过它路由）
-    let approval_clone = approval.inner().clone();
 
     let input = LoopInput {
         app: app.clone(),
@@ -142,7 +127,6 @@ pub async fn agent_run(
         tool_registry,
         channel: on_event,
         cancel: cancel.clone(),
-        approval: approval_clone,
     };
 
     sessions.register(session_id.clone(), cancel.clone());
@@ -153,22 +137,6 @@ pub async fn agent_run(
     sessions.set_handle(&session_id, handle);
 
     Ok(session_id)
-}
-
-/// 用户审批回复（通过全局 ApprovalManager 路由）。
-/// approval_id 即 tool_call.id（前端 part 用的同一 id）。
-#[tauri::command]
-pub async fn agent_approve(
-    approval: tauri::State<'_, ApprovalManager>,
-    approval_id: String,
-    approved: bool,
-    always_approve: bool,
-) -> Result<bool, String> {
-    let decision = Decision {
-        approved,
-        always_approve,
-    };
-    Ok(approval.resolve(&approval_id, decision))
 }
 
 /// 中断 agent run。
@@ -191,9 +159,8 @@ impl Extension for AgentExtension {
 
     async fn setup(&self, app: &tauri::AppHandle) -> tauri::Result<()> {
         use tauri::Manager;
-        // 扩展级共享 State（agent_run / agent_approve / agent_abort 命令消费）
+        // 扩展级共享 State（agent_run / agent_abort 命令消费）
         app.manage(engine::cancellation::SessionRegistry::default());
-        app.manage(engine::approval::ApprovalManager::default());
         Ok(())
     }
 }
