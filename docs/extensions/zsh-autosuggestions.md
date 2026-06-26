@@ -6,7 +6,7 @@
 
 zsh 启动 → `source index.zsh`（<5ms，零解析，版本校验）→ 按键纯内存前缀匹配（sorted 数组扫描，前 N 命中即停）→ precmd 钩子 `print >> signals.log`（零 spawn，条件 append）+ stale 检测（`$HISTFILE -nt $ZSH_AS_CACHE`）触发后台 `zsh-as rebuild`。三个路径完全解耦。
 
-> **命名约定**：zsh 内部函数/变量统一 `_zsh_autosuggestions_*`（函数）与 `_ZSH_AUTOSUGGESTIONS_*`（全局变量）；`ZSH_AS_BIN/CACHE/SIGNALS` 是 .zshrc 注入的**环境变量契约**（外部接口，保留短名）；widget 名 `zsh-as-*`（保留）。
+> **命名约定**：zsh 内部函数/变量统一 `_zsh_autosuggestions_*`（函数）与 `_ZSH_AUTOSUGGESTIONS_*`（全局变量）；`ZSH_AS_DIR` 是 .zshrc 注入的**环境变量契约**（外部接口），init.zsh 据此 derive `ZSH_AS_BIN/CACHE/SIGNALS`（内部保留短名）；widget 名 `zsh-as-*`（保留）。
 
 ## binary 命令（3 个）
 
@@ -56,7 +56,7 @@ binary 是独立 `[[bin]]` target（`Cargo.toml` 声明，path 指向 `native/sr
 
 `setup` 并幂等刷新 .zshrc 行。
 
-.zshrc 行：`export ZSH_AS_BIN=... ZSH_AS_CACHE=... ZSH_AS_SIGNALS=...; eval "$("$ZSH_AS_BIN" init)"`（行尾 marker `# voidnix zsh-autosuggestions` 用于精确 remove）。.zshrc 写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.zsh` + `signals.log` + `.zshrc.voidnix-bak`（保留 binary 避免反复复制）。
+.zshrc 写入两行：marker 注释行 `# voidnix zsh-autosuggestions` + `export ZSH_AS_DIR=...; eval "$("$ZSH_AS_DIR/bin/zsh-autosuggestions" init)"`，块上下各留一个空行与文件其余内容分隔。子路径（bin/cache/signals）由 init.zsh 从 `ZSH_AS_DIR` derive。摘除按 marker 行 + 紧跟 export 行 + 相邻空行整体删除（避免重复刷新累积空行）。写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.zsh` + `signals.log` + `.zshrc.voidnix-bak`（保留 binary 避免反复复制）。
 
 `View.vue` toggle **显式 invoke** `set_zsh_autosuggestions_enabled`，成功才更新 `config.enabled`，失败 `showStatus` 提示（避免 config 与 `enabled_flag` 不一致）。
 

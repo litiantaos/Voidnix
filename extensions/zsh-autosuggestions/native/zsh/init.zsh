@@ -5,18 +5,20 @@
 #   按键：纯内存前缀匹配（sorted 数组扫描，前 N 命中即停）
 #   precmd：append signal log + 检测 $HISTFILE 新于 cache 时后台 rebuild
 #
-# 路径全部从环境变量读（由 .zshrc 行注入）：
-#   ZSH_AS_BIN      binary 路径
-#   ZSH_AS_CACHE    index.zsh 路径
-#   ZSH_AS_SIGNALS  signals.log 路径
+# 路径契约：.zshrc 行注入 ZSH_AS_DIR（扩展数据目录），下方 derive 三个子路径。
+#   ZSH_AS_DIR      扩展数据目录（.zshrc 注入）
+#   ZSH_AS_BIN      binary 路径（= $ZSH_AS_DIR/bin/zsh-autosuggestions）
+#   ZSH_AS_CACHE    index.zsh 路径（= $ZSH_AS_DIR/index.zsh）
+#   ZSH_AS_SIGNALS  signals.log 路径（= $ZSH_AS_DIR/signals.log）
 
 #--------------------------------------------------------------------#
 # 1. Config & globals                                                #
 #--------------------------------------------------------------------#
 
-: ${ZSH_AS_BIN:=}
-: ${ZSH_AS_CACHE:=}
-: ${ZSH_AS_SIGNALS:=}
+: ${ZSH_AS_DIR:=}
+ZSH_AS_BIN="$ZSH_AS_DIR/bin/zsh-autosuggestions"
+ZSH_AS_CACHE="$ZSH_AS_DIR/index.zsh"
+ZSH_AS_SIGNALS="$ZSH_AS_DIR/signals.log"
 : ${ZSH_AS_HALF_LIFE_DAYS:=7}
 : ${ZSH_AS_FAIL_PENALTY:=0.8}
 : ${ZSH_AS_CYCLE_N:=5}
