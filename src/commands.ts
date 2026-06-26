@@ -96,4 +96,18 @@ export const CMD = {
   searchApps: 'search_apps',
   searchFiles: 'search_files',
   launchApp: 'launch_app',
+
+  // —— proxy ——
+  setProxyEnabled: 'set_proxy_enabled',
+  isProxyEnabled: 'is_proxy_enabled',
+  proxyCoreStatus: 'proxy_core_status',
+  proxyEnsureCore: 'proxy_ensure_core',
+  proxyUpdateSubscription: 'proxy_update_subscription',
+  proxyRemoveSubscription: 'proxy_remove_subscription',
+  proxyGetProxies: 'proxy_get_proxies',
+  proxySelectProxy: 'proxy_select_proxy',
+  proxyTestDelay: 'proxy_test_delay',
+  proxySetMode: 'proxy_set_mode',
+  proxySetSystemProxy: 'proxy_set_system_proxy',
+  proxyEnableTun: 'proxy_enable_tun',
 } as const
