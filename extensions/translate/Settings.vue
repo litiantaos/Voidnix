@@ -211,7 +211,7 @@ const LANG_ITEM_ID = 'translate-target-lang'
 
 const { value: translateShortcutValue, update: handleTranslateShortcutChange } = useShortcutConfig(
   'translate',
-  'CommandOrControl+Shift+T',
+  'Alt+T',
 )
 
 const targetLangOptions = [

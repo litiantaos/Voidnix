@@ -24,7 +24,7 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
 ## 快捷键
 
-- `Cmd+Shift+Space`：唤起/隐藏主窗口
+- `Option+Space`：唤起/隐藏主窗口
 - `Tab`：切换搜索栏操作项
 - `↑↓`：切换列表项
 - `Enter`：执行选中项

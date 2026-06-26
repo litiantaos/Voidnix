@@ -3,7 +3,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, LazyLock, Mutex};
 use tauri::Emitter;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 use crate::runtime::lock_or_recover;
 
@@ -139,13 +139,20 @@ pub async fn register_global_shortcut(
             return;
         }
 
-        let new_sc = match Shortcut::from_str(&shortcut) {
+        let mut new_sc = match Shortcut::from_str(&shortcut) {
             Ok(sc) => sc,
             Err(e) => {
                 let _ = tx.send(Err(format!("parse '{}' failed: {:?}", shortcut, e)));
                 return;
             }
         };
+
+        // dev 构建（debug）给所有快捷键叠加 Shift，与 prod（release）区分，
+        // 使 dev/prod 可并存且各响各的。配置仍只存一份（Alt 基）。
+        #[cfg(debug_assertions)]
+        {
+            new_sc.mods |= Modifiers::SHIFT;
+        }
 
         let shortcut_id = id.clone();
         let shortcut_str = shortcut.clone();

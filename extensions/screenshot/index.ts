@@ -51,7 +51,7 @@ export default defineExtension({
   globalShortcuts: [
     {
       id: 'screenshot',
-      default: 'CommandOrControl+Shift+S',
+      default: 'Alt+S',
       onExecute: () => {
         // Rust 端 hook 已在 shortcut.rs 中处理截屏全流程（capture + enter 模式），
         // 前端 onExecute 此处为占位，确保模块声明让 App.vue 能注册快捷键。
