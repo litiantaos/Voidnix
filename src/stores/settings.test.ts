@@ -41,7 +41,7 @@ describe('settings store', () => {
 
   it('初始默认值', () => {
     const store = useSettingsStore()
-    expect(store.globalShortcut).toBe('CommandOrControl+Shift+Space')
+    expect(store.globalShortcut).toBe('Alt+Space')
   })
 
   describe('activeProviderConfig', () => {

@@ -47,10 +47,7 @@ import { useShortcutConfig } from '@/composables/useShortcutConfig'
 const appStore = useAppStore()
 const { handleExecute } = useSettingsInput()
 
-const { value: clipboardShortcutValue, update } = useShortcutConfig(
-  'clipboard',
-  'CommandOrControl+Shift+C',
-)
+const { value: clipboardShortcutValue, update } = useShortcutConfig('clipboard', 'Alt+C')
 
 const handleClipboardShortcutChange = (val: string | number) => update(String(val))
 

@@ -22,7 +22,7 @@ export default defineExtension({
   globalShortcuts: [
     {
       id: 'agent',
-      default: 'CommandOrControl+Shift+A',
+      default: 'Alt+A',
       onExecute: makeToggleHandler('agent'),
     },
   ],

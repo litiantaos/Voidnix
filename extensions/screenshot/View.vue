@@ -62,7 +62,7 @@ const SHORTCUT_ITEM_ID = 'screenshot-shortcut'
 
 const { value: screenshotShortcutValue, update: handleShortcutChange } = useShortcutConfig(
   'screenshot',
-  'CommandOrControl+Shift+S',
+  'Alt+S',
 )
 
 async function pickSavePath() {

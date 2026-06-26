@@ -257,7 +257,7 @@ export default defineExtension({
   globalShortcuts: [
     {
       id: 'translate',
-      default: 'CommandOrControl+Shift+T',
+      default: 'Alt+T',
       onExecute: makeToggleHandler('translate', async () => {
         try {
           const text = await waitForSelectedText()

@@ -240,7 +240,7 @@ const SHORTCUT_ITEM_ID = 'agent-shortcut'
 
 const { value: agentShortcutValue, update: handleAgentShortcutChange } = useShortcutConfig(
   'agent',
-  'CommandOrControl+Shift+A',
+  'Alt+A',
 )
 
 interface ModalForm {

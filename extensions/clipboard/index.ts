@@ -92,7 +92,7 @@ export default defineExtension({
   globalShortcuts: [
     {
       id: 'clipboard',
-      default: 'CommandOrControl+Shift+C',
+      default: 'Alt+C',
       onExecute: makeToggleHandler('clipboard'),
     },
   ],
