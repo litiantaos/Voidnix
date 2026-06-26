@@ -7,43 +7,7 @@ export interface SearchProviderConfig {
 
 /// agent 扩展自管配置（持久化至 extensions/agent/config.json）。
 export const config = defineConfig('extensions/agent/config', {
-  trustedCommands: [
-    'ls',
-    'cat',
-    'pwd',
-    'echo',
-    'head',
-    'tail',
-    'wc',
-    'file',
-    'stat',
-    'date',
-    'which',
-    'whoami',
-    'uname',
-    'grep',
-    'rg',
-    'fd',
-    'ag',
-    'tree',
-    'diff',
-    'comm',
-    'cmp',
-    'md5sum',
-    'shasum',
-    'sort',
-    'uniq',
-    'cut',
-    'tr',
-    'paste',
-    'expand',
-    'jq',
-    'yq',
-    'bat',
-  ],
-  // 安全底线项（Rust 端强制 clamp/并集，config.json 越界无效；BOUNDS 见下方）
-  forbiddenCommands: [] as string[], // 用户补充（与 Rust FORBIDDEN_FLOOR 取并集，只能加严）
-  blockedArgs: [] as string[], // 用户补充（与 Rust DENIED_ARG_FLOOR 取并集）
+  // 资源上限（Rust 端强制 clamp，config.json 越界无效；BOUNDS 见下方）
   maxCpuSeconds: 30,
   maxMemoryMb: 512,
   maxOpenFiles: 64,
@@ -66,9 +30,8 @@ export const config = defineConfig('extensions/agent/config', {
     '',
     '# 安全约束',
     '',
-    '- 不要尝试执行破坏性操作（如 `rm -rf /`、覆盖系统文件），这些会被硬拦',
+    '- 不要执行破坏性操作（如 `rm -rf /`），这类命令会被断路器拦截',
     '- 不要读取或外泄用户敏感数据（API key、SSH key、密码等），输出会被自动打码',
-    '- 危险命令需要用户审批，被拒后换方案而不是反复尝试',
     '',
     '# 输出风格',
     '',
@@ -83,9 +46,8 @@ export const config = defineConfig('extensions/agent/config', {
   } as SearchProviderConfig,
 })
 
-/// 安全底线 UI 镜像（权威在 native/policy.rs，⚠️ 须手动同步）。
-/// 不变量：floor 必须 ⊇ Rust 端 FORBIDDEN_FLOOR / DENIED_ARG_FLOOR（迁移即取并集，禁止缩窄）。
-/// 仅用于 check:agent-bounds CI 校验（BOUNDS ↔ policy.rs 双向一致）；Rust 端并集兜底，不信任此值。
+/// 资源上限 UI 镜像（权威在 native/policy.rs，⚠️ 须手动同步）。
+/// 仅用于 check:agent-bounds CI 校验（BOUNDS ↔ policy.rs 双向一致）；Rust 端 clamp 兜底，不信任此值。
 export const BOUNDS = {
   maxTurns: { floor: 1, cap: 50 },
   maxCpuSeconds: { floor: 1, cap: 300 },
@@ -93,65 +55,6 @@ export const BOUNDS = {
   maxOpenFiles: { floor: 8, cap: 1024 },
   executionTimeout: { floor: 1, cap: 300 },
   maxOutputBytes: { floor: 1024, cap: 10485760 },
-  forbiddenCommands: {
-    floor: [
-      'sh',
-      'bash',
-      'zsh',
-      'dash',
-      'ksh',
-      'fish',
-      'csh',
-      'tcsh',
-      'osascript',
-      'sudo',
-      'open',
-      'launchctl',
-      'defaults',
-      'networksetup',
-      'scutil',
-      'killall',
-      'kill',
-      'pkill',
-      'curl',
-      'wget',
-      'nc',
-      'socat',
-      'telnet',
-      'ssh',
-      'su',
-      'doas',
-      'expect',
-      'sqlite3',
-      'ps',
-      'top',
-      'htop',
-    ],
-  },
-  blockedArgs: {
-    floor: [
-      '--exec',
-      '--exec-file',
-      '--exec-rm',
-      // C4：find 单连字符 exec 谓词族
-      '-exec',
-      '-execdir',
-      '-ok',
-      '-okdir',
-      '--upload-pack',
-      '--use-compress-program',
-      '--config',
-      '-C',
-      '--output',
-      '-o',
-      '-O',
-      '--write-out',
-      '--eval',
-      '-e',
-      '--init-file',
-      '--rcfile',
-    ],
-  },
 } as const
 
 /// 更新搜索提供商配置（单对象，直接 Object.assign）。

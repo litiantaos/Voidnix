@@ -4,7 +4,7 @@
 /// - 维护 `messages: Ref<AgentMessage[]>`（UI 状态层，parts 数组）
 /// - sendMessage() 通过 `invoke(CMD.agentRun, { onEvent: Channel })` 启动
 /// - Channel.onmessage 处理增量事件，更新 messages
-/// - 用户审批通过 approve()/abort() 控制
+/// - 用户中断通过 abort()
 
 import { ref, computed } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -13,18 +13,9 @@ import { useSettingsStore } from '@/stores/settings'
 import { generateRequestId } from '@/utils/id'
 import { config as agentConfig } from './config'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
-import { toLlmMessages } from './logic'
+import { toLlmMessages, tryParseSearch } from './logic'
 
-export type AgentStatus = 'ready' | 'streaming' | 'awaiting_approval' | 'error'
-
-export interface PendingApproval {
-  approvalId: string
-  toolCallId: string
-  toolName: string
-  args: unknown
-  /** 决策回调（resolve 后前端弹窗消失） */
-  resolve: (decision: { approved: boolean; alwaysApprove: boolean }) => void
-}
+export type AgentStatus = 'ready' | 'streaming' | 'error'
 
 const MAX_MESSAGES = 100
 
@@ -33,14 +24,11 @@ const messages = ref<AgentMessage[]>([])
 const status = ref<AgentStatus>('ready')
 const errorMessage = ref('')
 const sessionId = ref('')
-const pendingApproval = ref<PendingApproval | null>(null)
 
 export function useAgentChat() {
   const settings = useSettingsStore()
 
-  const isGenerating = computed(
-    () => status.value === 'streaming' || status.value === 'awaiting_approval',
-  )
+  const isGenerating = computed(() => status.value === 'streaming')
 
   /// 发送用户消息，启动一次 agent run
   async function sendMessage(text: string) {
@@ -94,9 +82,6 @@ export function useAgentChat() {
         type: agentConfig.searchProvider.type,
         apiKey: agentConfig.searchProvider.apiKey,
       },
-      trustedCommands: agentConfig.trustedCommands,
-      forbiddenCommands: agentConfig.forbiddenCommands,
-      blockedArgs: agentConfig.blockedArgs,
       maxCpuSeconds: agentConfig.maxCpuSeconds,
       maxMemoryMb: agentConfig.maxMemoryMb,
       maxOpenFiles: agentConfig.maxOpenFiles,
@@ -159,23 +144,8 @@ export function useAgentChat() {
         const part = findToolPart(msg, event.id)
         if (part) {
           part.args = event.args
-          // 保持 streaming 状态：等 ApprovalRequired（→ awaiting）或 ToolResult（→ done/failed）
-          // 不立即设 running，避免与审批弹窗同时出现时显示矛盾
-        }
-        break
-      }
-      case 'approvalRequired': {
-        const part = findToolPart(msg, event.id)
-        if (part) part.state = 'awaiting_approval'
-        status.value = 'awaiting_approval'
-        pendingApproval.value = {
-          approvalId: event.id,
-          toolCallId: event.id,
-          toolName: event.toolName,
-          args: event.args,
-          resolve: () => {
-            pendingApproval.value = null
-          },
+          // 参数就绪 → 进入执行中（直接执行，无审批）
+          part.state = 'running'
         }
         break
       }
@@ -183,8 +153,11 @@ export function useAgentChat() {
         const part = findToolPart(msg, event.id)
         if (part) {
           part.state = event.ok ? 'done' : 'failed'
+          part.output = event.output
+          // web_search 解析结构化结果供 UI 卡片渲染
+          part.parsed =
+            part.name === 'web_search' && event.ok ? tryParseSearch(event.output) : undefined
         }
-        if (status.value === 'awaiting_approval') status.value = 'streaming'
         break
       }
       case 'completed': {
@@ -227,30 +200,6 @@ export function useAgentChat() {
     }
   }
 
-  /// 回复审批
-  async function approve(approved: boolean, alwaysApprove: boolean) {
-    if (!pendingApproval.value) return
-    const { approvalId, toolName, resolve } = pendingApproval.value
-    pendingApproval.value = null
-    status.value = 'streaming'
-
-    try {
-      await invoke(CMD.agentApprove, {
-        approvalId,
-        approved,
-        alwaysApprove,
-      })
-      // 持久化「执行并信任」
-      if (approved && alwaysApprove && toolName) {
-        agentConfig.trustedCommands = [...agentConfig.trustedCommands, toolName]
-      }
-    } catch (e) {
-      errorMessage.value = e instanceof Error ? e.message : String(e)
-    } finally {
-      resolve({ approved, alwaysApprove })
-    }
-  }
-
   /// 中断当前 agent run
   async function abort() {
     if (!sessionId.value) return
@@ -261,7 +210,6 @@ export function useAgentChat() {
     }
     status.value = 'ready'
     sessionId.value = ''
-    pendingApproval.value = null
 
     // finalize 当前 streaming 消息
     const streamingMsg = messages.value.find((m) => m.streaming)
@@ -275,7 +223,6 @@ export function useAgentChat() {
     status.value = 'ready'
     errorMessage.value = ''
     sessionId.value = ''
-    pendingApproval.value = null
   }
 
   function trimHistory() {
@@ -288,9 +235,7 @@ export function useAgentChat() {
     status,
     isGenerating,
     errorMessage,
-    pendingApproval,
     sendMessage,
-    approve,
     abort,
     newConversation,
   }

@@ -55,14 +55,6 @@
           :selected="selected"
         />
 
-        <!-- 命令白名单 -->
-        <BaseListItem
-          v-else-if="item.type === 'whitelist'"
-          :ref="setRef"
-          title="命令白名单"
-          :selected="selected"
-        />
-
         <!-- 系统提示词 -->
         <BaseListItem v-else :ref="setRef" title="系统提示词" :selected="selected" />
       </template>
@@ -163,33 +155,6 @@
             </template>
           </BaseInput>
         </div>
-      </div>
-    </BaseDialog>
-
-    <!-- 命令白名单弹窗 -->
-    <BaseDialog
-      v-if="showWhitelistDialog"
-      title="命令白名单"
-      variant="form"
-      size="md"
-      show-footer
-      ok-label="保存"
-      @confirm="saveWhitelist"
-      @cancel="showWhitelistDialog = false"
-    >
-      <div class="form-field">
-        <BaseTextarea
-          v-model="whitelistText"
-          :rows="10"
-          :max-height="0"
-          :auto-resize="false"
-          :submit-on-enter="false"
-          font="mono"
-          placeholder="ls&#10;cat&#10;git"
-        />
-        <p text="xs tx-subtle" m="t-1">
-          白名单命令直接执行无需审批。点击审批弹窗的「执行并信任」也会自动追加。
-        </p>
       </div>
     </BaseDialog>
 
@@ -370,7 +335,7 @@ interface SearchProviderItem {
 }
 
 interface AgentBehaviorItem {
-  type: 'whitelist' | 'systemPrompt'
+  type: 'systemPrompt'
   group: string
 }
 
@@ -390,7 +355,6 @@ const allItems = computed<ChatSettingsItem[]>(() => [
       config: agentConfig.searchProvider,
     },
   ],
-  { type: 'whitelist', group: 'Agent 配置' },
   { type: 'systemPrompt', group: 'Agent 配置' },
 ])
 
@@ -425,29 +389,9 @@ function onExecute(item: ChatSettingsItem) {
     openConfigModal(item.config)
   } else if (item.type === 'searchProvider') {
     openSearchModal(item.config)
-  } else if (item.type === 'whitelist') {
-    openWhitelistDialog()
   } else if (item.type === 'systemPrompt') {
     openSystemPromptDialog()
   }
-}
-
-// ─── 命令白名单 ───
-const showWhitelistDialog = ref(false)
-const whitelistText = ref('')
-
-function openWhitelistDialog() {
-  whitelistText.value = agentConfig.trustedCommands.join('\n')
-  showWhitelistDialog.value = true
-}
-
-async function saveWhitelist() {
-  const list = whitelistText.value
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  agentConfig.trustedCommands = list
-  showWhitelistDialog.value = false
 }
 
 // ─── 系统提示词 ───

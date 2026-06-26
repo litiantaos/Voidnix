@@ -1,13 +1,12 @@
 #!/usr/bin/env bun
-// check:agent-bounds —— agent 安全底线 Rust↔TS 双向一致校验（RV §3.4）。
+// check:agent-bounds —— agent 资源上限 Rust↔TS 双向一致校验。
 // 权威源在 extensions/agent/native/policy.rs 的 const（floor/cap），config.ts 的 BOUNDS
-// 仅 UI 镜像（⚠️ 须手动同步，config.ts:74）。本脚本把人工同步变成 CI 强制约束。
+// 仅 UI 镜像（⚠️ 须手动同步）。本脚本把人工同步变成 CI 强制约束。
 //
 // 校验项（每项 Rust 与 TS 必须完全一致）：
 //   - 6 个数值 tuple（MAX_TURNS / MAX_CPU_SECS / MAX_MEMORY_MB / MAX_OPEN_FILES /
 //     EXECUTION_TIMEOUT_SECS / MAX_OUTPUT_BYTES）→ BOUNDS.<field>.{floor,cap}
-//   - 2 个命令/参数数组（FORBIDDEN_FLOOR / DENIED_ARG_FLOOR）→ BOUNDS.<field>.floor
-//     （排序后集合相等）
+//   - 6 个 DEFAULT_* 默认值（policy.rs fallback ↔ config.ts 初始值）
 //
 // 用法：bun run scripts/check-agent-bounds.ts
 import { readFileSync, existsSync } from 'node:fs'
@@ -29,12 +28,7 @@ const TUPLE_FIELDS = [
   { rust: 'MAX_OUTPUT_BYTES', ts: 'maxOutputBytes' },
 ] as const
 
-const ARRAY_FIELDS = [
-  { rust: 'FORBIDDEN_FLOOR', ts: 'forbiddenCommands', expect: 31 },
-  { rust: 'DENIED_ARG_FLOOR', ts: 'blockedArgs', expect: 19 },
-] as const
-
-// P4-sc1：DEFAULT_* 默认值比对（policy.rs fallback ↔ config.ts 初始值）
+// DEFAULT_* 默认值比对（policy.rs fallback ↔ config.ts 初始值）
 // Rust 端 None 时 fallback 到 DEFAULT_*；TS 端 defineConfig 的初始值须与之对齐，
 // 否则 UI 显示与 Rust fallback 不一致（非安全问题，Rust clamp 兜底）。
 const DEFAULT_FIELDS = [
@@ -72,18 +66,6 @@ function parseRustTuple(name: string): [number, number] {
   return [parts[0], parts[1]]
 }
 
-// array：`pub const NAME: &[&str] = &[ "a", "b" ];`
-function parseRustArray(name: string): string[] {
-  const re = new RegExp(`${name}:\\s*&\\[&str\\]\\s*=\\s*&\\[([\\s\\S]*?)\\];`)
-  const m = rustSrc.match(re)
-  if (!m) fail(`policy.rs 未找到 const ${name} 数组声明`)
-  const out: string[] = []
-  const itemRe = /"([^"]+)"/g
-  let im: RegExpExecArray | null
-  while ((im = itemRe.exec(m[1])) !== null) out.push(im[1])
-  return out
-}
-
 // --- TS 解析（BOUNDS 对象，`as const` 字面量）---
 // tuple：`field: { floor: 1, cap: 50 },`
 function parseTsTuple(field: string): [number, number] {
@@ -93,19 +75,7 @@ function parseTsTuple(field: string): [number, number] {
   return [Number(m[1]), Number(m[2])]
 }
 
-// array：`field: { floor: [ 'a', 'b' ] }`
-function parseTsArray(field: string): string[] {
-  const re = new RegExp(`${field}:\\s*\\{\\s*floor:\\s*\\[([\\s\\S]*?)\\]`)
-  const m = tsSrc.match(re)
-  if (!m) fail(`config.ts BOUNDS.${field}.floor 数组未找到`)
-  const out: string[] = []
-  const itemRe = /'([^']+)'/g
-  let im: RegExpExecArray | null
-  while ((im = itemRe.exec(m[1])) !== null) out.push(im[1])
-  return out
-}
-
-// --- P4-sc1：DEFAULT_* 默认值解析 ---
+// --- DEFAULT_* 默认值解析 ---
 // Rust：`pub const NAME: TYPE = VALUE;`（VALUE 可能是 `1024 * 1024` 形式）
 function parseRustDefault(name: string): number {
   const re = new RegExp(`${name}:\\s*(?:usize|u64)\\s*=\\s*([0-9_\\s*]+);`)
@@ -137,21 +107,7 @@ for (const { rust, ts } of TUPLE_FIELDS) {
   if (rCap !== tCap) diffs.push(`${ts}.cap    Rust=${rCap}  TS=${tCap}`)
 }
 
-// 数组：排序后双向差集
-for (const { rust, ts, expect } of ARRAY_FIELDS) {
-  const r = parseRustArray(rust)
-  const t = parseTsArray(ts)
-  const rSet = new Set(r)
-  const tSet = new Set(t)
-  const onlyRust = [...new Set(r.filter((x) => !tSet.has(x)))].sort()
-  const onlyTs = [...new Set(t.filter((x) => !rSet.has(x)))].sort()
-  if (r.length !== expect)
-    diffs.push(`${ts}.floor  Rust 项数=${r.length}（期望 ${expect}，policy.rs 注释/测试断言）`)
-  if (onlyRust.length) diffs.push(`${ts}.floor  仅 Rust 有：[${onlyRust.join(', ')}]`)
-  if (onlyTs.length) diffs.push(`${ts}.floor  仅 TS 有：[${onlyTs.join(', ')}]`)
-}
-
-// P4-sc1：DEFAULT_* 默认值逐项比对
+// DEFAULT_* 默认值逐项比对
 for (const { rust, ts } of DEFAULT_FIELDS) {
   const rVal = parseRustDefault(rust)
   const tVal = parseTsDefault(ts)
@@ -161,10 +117,7 @@ for (const { rust, ts } of DEFAULT_FIELDS) {
 if (diffs.length === 0) {
   const tuples = TUPLE_FIELDS.length
   const defaults = DEFAULT_FIELDS.length
-  const arrays = ARRAY_FIELDS.reduce((n, f) => n + parseRustArray(f.rust).length, 0)
-  console.log(
-    `${TAG} ✓ BOUNDS 与 policy.rs 一致（${tuples} tuple + ${arrays} 数组项 + ${defaults} 默认值）。`,
-  )
+  console.log(`${TAG} ✓ BOUNDS 与 policy.rs 一致（${tuples} tuple + ${defaults} 默认值）。`)
   process.exit(0)
 }
 

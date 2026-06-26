@@ -30,7 +30,7 @@ impl ToolResult {
     }
 }
 
-/// 工具 trait：name + JSON Schema + 可选审批 + 异步执行。
+/// 工具 trait：name + JSON Schema + 异步执行。
 #[async_trait]
 pub trait AgentTool: Send + Sync {
     /// 工具名（LLM 看到的 function name，唯一）
@@ -38,12 +38,6 @@ pub trait AgentTool: Send + Sync {
 
     /// OpenAI tools schema（`{type:"function", function:{name, description, parameters}}`）
     fn schema(&self) -> serde_json::Value;
-
-    /// 是否需要用户审批才能执行（可基于 args 动态判定）。
-    /// 默认 false（只读工具）。
-    fn requires_approval(&self, _args: &serde_json::Value) -> bool {
-        false
-    }
 
     /// 执行工具。args 已经过 JSON parse；返回结果（ok/err）。
     async fn call(&self, args: serde_json::Value) -> ToolResult;

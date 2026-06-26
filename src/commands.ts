@@ -90,7 +90,6 @@ export const CMD = {
 
   // —— agent ——
   agentRun: 'agent_run',
-  agentApprove: 'agent_approve',
   agentAbort: 'agent_abort',
 
   // —— search ——

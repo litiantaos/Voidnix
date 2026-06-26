@@ -1,15 +1,14 @@
-//! run_command 工具：纵深防御 9 层。
+//! run_command 工具：命令直接放行 + 断路器兜底 + 资源约束。
 //!
-//! 威胁模型覆盖（参考 Claude Code、CWE-78）：
-//! - L1 shell 元字符注入：tokio::process::Command 不经 shell，天然免疫
-//! - L2 参数注入：危险选项前缀黑名单（--exec/--upload-pack/-o/...）
-//! - L3 环境变量泄露：env_clear() + 白名单 env
-//! - L4 文件系统逃逸：cwd canonicalize（symlink 在 Phase 2 加深层检查）
-//! - L5 macOS 特权命令：osascript/sudo/open -a/launchctl/defaults 完全 deny
-//! - L6 资源耗尽：rlimit CPU/AS/NOFILE/NPROC
-//! - L7 超时无 reap：tokio::time::timeout + kill_on_drop + 显式 reap
-//! - L8 输出刷屏：边读边截断 1 MiB
-//! - L9 secret 泄露：调用方在 loop_runner 中 scrub_secret（本模块仅返回原始输出）
+//! 命令无白名单/黑名单拦截——所有命令直接执行，仅以下机制兜底：
+//! - shell 元字符注入免疫：tokio::process::Command 不经 shell
+//! - 断路器：rm -rf / 等灾难性全局操作拦截（不可放宽）
+//! - 环境变量隔离：env_clear() + 白名单 env（防父进程 API key 进子进程）
+//! - 文件系统：cwd canonicalize
+//! - 资源耗尽：rlimit CPU/DATA/NOFILE（上限由 config 注入）
+//! - 超时无 reap：tokio::time::timeout + kill_on_drop + 显式 reap
+//! - 输出刷屏：边读边截断
+//! - secret 泄露：调用方在 loop_runner 中 scrub_secret（本模块仅返回原始输出）
 
 use async_trait::async_trait;
 use std::ffi::OsStr;
@@ -21,7 +20,7 @@ use crate::extensions::agent::engine::tool_registry::{AgentTool, ToolResult};
 use crate::extensions::agent::policy::ExecPolicy;
 
 pub struct RunCommandTool {
-    /// 解析后的执行策略（trusted + forbidden 并集 + denied 并集 + clamp 后的数值上限）。
+    /// 解析后的执行策略（clamp 后的资源上限）。
     policy: ExecPolicy,
 }
 
@@ -30,36 +29,7 @@ impl RunCommandTool {
         Self { policy }
     }
 
-    fn is_allowed_program(&self, name: &str) -> bool {
-        // H2：程序名大小写不敏感（macOS APFS 大小写不敏感，Curl 解析到 curl）
-        let lower = name.to_ascii_lowercase();
-        self.policy.trusted.iter().any(|t| t == &lower)
-    }
-
-    fn is_forbidden(&self, name: &str) -> bool {
-        // H2：程序名大小写不敏感（FORBIDDEN_FLOOR 全小写）
-        let lower = name.to_ascii_lowercase();
-        self.policy.forbidden.iter().any(|f| f == &lower)
-    }
-
-    fn has_denied_arg(&self, args: &[String]) -> Option<String> {
-        for arg in args {
-            // 选项前缀大小写敏感（`-C` 与 `-c` 在 Unix 是不同选项）
-            for denied in &self.policy.denied_args {
-                // 形如 `--exec=foo` 或 `-ofoo`，前缀匹配即拒
-                if arg.starts_with(denied.as_str()) {
-                    return Some(denied.clone());
-                }
-            }
-            // 保守拒绝 shell 元字符（即使不经 shell，也提示用户可能误用）
-            if arg.contains("${") || arg.contains("$(") || arg.contains('`') {
-                return Some("shell-substitution".into());
-            }
-        }
-        None
-    }
-
-    /// 断路器：即便 approved 也必拦的命令模式（不可 config 化、不可放宽，§3.4 L4）。
+    /// 断路器：必拦的灾难性命令模式（不可 config 化、不可放宽）。
     ///
     /// H1：改用 POSIX getopt 风格结构化解析，覆盖旧字符串拼接法的所有绕过：
     /// 拆分选项（`-r -f` / `-rf` / `-irf` / `--recursive` / `--force`）+
@@ -170,18 +140,18 @@ impl AgentTool for RunCommandTool {
             "type": "function",
             "function": {
                 "name": "run_command",
-                "description": "Run a shell command on the user's macOS system. The command runs in the user's home directory with minimal environment (no inherited API keys). Execution time and output size are limited (see user config). Prefer read-only commands (ls, cat, grep, git status) for inspection.",
+                "description": "Run a shell command on the user's macOS system. Runs in the user's home directory with minimal environment (no inherited API keys). Execution time and output size are limited. Pass ONLY the program name in 'cmd' (NO arguments or spaces), put all flags/arguments in the 'args' array. Not passed through a shell. Example: cmd='git', args=['status'].",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "cmd": {
                             "type": "string",
-                            "description": "Program to execute (e.g. 'ls', 'git', 'grep')"
+                            "description": "Program name ONLY, no arguments/spaces (e.g. 'ls', 'git', 'grep', 'rg')"
                         },
                         "args": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Arguments array (not passed through shell)"
+                            "description": "Arguments and flags, e.g. [\"status\"], [\"-la\", \"/tmp\"], [\"-r\", \"foo\"]"
                         }
                     },
                     "required": ["cmd"]
@@ -190,47 +160,18 @@ impl AgentTool for RunCommandTool {
         })
     }
 
-    fn requires_approval(&self, args: &serde_json::Value) -> bool {
-        let cmd = args.get("cmd").and_then(|v| v.as_str()).unwrap_or_default();
-        let program = basename(cmd);
-
-        // 硬禁：不审批，直接拒
-        if self.is_forbidden(program) {
-            return false;
-        }
-
-        // 白名单（默认 + 用户自定义）内 + 无危险参数 → 免审批
-        if self.is_allowed_program(program) {
-            let args_arr: Vec<String> = args
-                .get("args")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|a| a.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            if self.has_denied_arg(&args_arr).is_none() {
-                return false;
-            }
-        }
-
-        // 其余（rm 等危险命令、未知命令、含危险参数）一律审批
-        true
-    }
-
     async fn call(&self, args: serde_json::Value) -> ToolResult {
-        let cmd = args
+        let raw_cmd = args
             .get("cmd")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .trim()
             .to_string();
-        if cmd.is_empty() {
+        if raw_cmd.is_empty() {
             return ToolResult::err("cmd is required");
         }
 
-        let cmd_args: Vec<String> = args
+        let input_args: Vec<String> = args
             .get("args")
             .and_then(|v| v.as_array())
             .map(|arr| {
@@ -240,28 +181,21 @@ impl AgentTool for RunCommandTool {
             })
             .unwrap_or_default();
 
-        // ── 关 1：程序名取 basename ──
+        // 宽容拆分：cmd 含空格（如 "git status"）且未单独传 args 时，拆为 program + args
+        let (cmd, cmd_args) = split_compound_cmd(&raw_cmd, &input_args);
+
+        // 程序名取 basename
         let program = basename(&cmd);
         if program.is_empty() {
             return ToolResult::err("cmd basename is empty");
         }
 
-        // ── 关 2：硬禁程序 ──
-        if self.is_forbidden(program) {
-            return ToolResult::err(format!("'{}' is forbidden for safety", program));
-        }
-
-        // ── 关 3：断路器（rm -rf / 等，即便 approved 也拦）──
+        // 断路器：rm -rf / 等灾难性全局操作拦截
         if Self::is_circuit_breaker_hit(program, &cmd_args) {
             return ToolResult::err("blocked by circuit breaker (destructive global operation)");
         }
 
-        // ── 关 4：参数黑名单 ──
-        if let Some(denied) = self.has_denied_arg(&cmd_args) {
-            return ToolResult::err(format!("argument prefix '{}' is blocked", denied));
-        }
-
-        // ── 关 5：工作目录 canonicalize ──
+        // 工作目录 canonicalize
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
         let cwd: PathBuf = if home.is_empty() {
             PathBuf::from("/tmp")
@@ -273,7 +207,7 @@ impl AgentTool for RunCommandTool {
             Err(e) => return ToolResult::err(format!("canonicalize cwd failed: {e}")),
         };
 
-        // ── 关 6-8：构造 Command（env_clear + kill_on_drop + rlimit）──
+        // 构造 Command（env_clear + kill_on_drop + rlimit）
         let mut command = Command::new(program);
         command
             .args(&cmd_args)
@@ -307,7 +241,7 @@ impl AgentTool for RunCommandTool {
             }
         };
 
-        // ── 关 9：超时 + 截断读 + kill + reap ──
+        // 超时 + 截断读 + kill + reap
         let timeout_result = tokio::time::timeout(
             std::time::Duration::from_secs(self.policy.execution_timeout_secs),
             read_with_cap(&mut child, self.policy.max_output_bytes),
@@ -365,6 +299,24 @@ fn basename(p: &str) -> &str {
         .file_name()
         .and_then(OsStr::to_str)
         .unwrap_or_default()
+}
+
+/// 宽容拆分：当 cmd 含空格（如 "git status"）且未单独传 args 时，拆为 program + args。
+/// LLM 常误把整条命令塞进 cmd；拆分后仍不经 shell，仅 program + args 传递。
+/// 已传 args 时尊重显式参数，不拆分。
+fn split_compound_cmd(cmd: &str, args: &[String]) -> (String, Vec<String>) {
+    if !args.is_empty() {
+        return (cmd.to_string(), args.to_vec());
+    }
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    match parts.len() {
+        0 => (String::new(), Vec::new()),
+        1 => (parts[0].to_string(), Vec::new()),
+        _ => (
+            parts[0].to_string(),
+            parts[1..].iter().map(|s| s.to_string()).collect(),
+        ),
+    }
 }
 
 struct ReadOutcome {
@@ -486,17 +438,7 @@ mod tests {
     use super::*;
 
     fn tool() -> RunCommandTool {
-        RunCommandTool::new(
-            crate::extensions::agent::policy::ExecPolicy::default_with_trusted(vec![]),
-        )
-    }
-
-    fn tool_with_trusted(trusted: Vec<&str>) -> RunCommandTool {
-        RunCommandTool::new(
-            crate::extensions::agent::policy::ExecPolicy::default_with_trusted(
-                trusted.into_iter().map(String::from).collect(),
-            ),
-        )
+        RunCommandTool::new(crate::extensions::agent::policy::ExecPolicy::default())
     }
 
     #[test]
@@ -507,68 +449,34 @@ mod tests {
     }
 
     #[test]
-    fn forbidden_programs_denied_without_approval() {
-        let t = tool();
-        assert!(t.is_forbidden("osascript"));
-        assert!(t.is_forbidden("sudo"));
-        assert!(t.is_forbidden("sh"));
-        assert!(t.is_forbidden("curl"));
-        assert!(!t.is_forbidden("ls"));
+    fn split_compound_cmd_splits_when_args_empty() {
+        let (prog, args) = split_compound_cmd("git status", &[]);
+        assert_eq!(prog, "git");
+        assert_eq!(args, vec!["status".to_string()]);
+
+        let (prog, args) = split_compound_cmd("echo hello world", &[]);
+        assert_eq!(prog, "echo");
+        assert_eq!(args, vec!["hello".to_string(), "world".to_string()]);
+
+        // 多空格容错
+        let (prog, args) = split_compound_cmd("  ls   -la  ", &[]);
+        assert_eq!(prog, "ls");
+        assert_eq!(args, vec!["-la".to_string()]);
     }
 
     #[test]
-    fn forbidden_case_insensitive() {
-        // H2：macOS APFS 大小写不敏感，Curl/Sudo/Bash 应同等拦截
-        let t = tool();
-        assert!(t.is_forbidden("Curl"));
-        assert!(t.is_forbidden("SUDO"));
-        assert!(t.is_forbidden("Bash"));
-        assert!(t.is_forbidden("OSAScript"));
+    fn split_compound_cmd_respects_explicit_args() {
+        // 已传 args 时不拆分（尊重显式参数）
+        let (prog, args) = split_compound_cmd("ls", &["-la".to_string()]);
+        assert_eq!(prog, "ls");
+        assert_eq!(args, vec!["-la".to_string()]);
     }
 
     #[test]
-    fn empty_whitelist_means_all_need_approval() {
-        // tool() 用空 trusted，没有白名单 → 所有命令都需要审批
-        let t = tool();
-        assert!(!t.is_allowed_program("ls"));
-        assert!(!t.is_allowed_program("git"));
-    }
-
-    #[test]
-    fn trusted_programs_are_the_whitelist() {
-        // 用户提供的 trusted 列表 = 完整白名单
-        // 注：C5 后 find/awk/sed/git/cp/mv/... 即便用户加入 trusted 也会被 TRUSTED_DENYLIST 强制剔除
-        let t = tool_with_trusted(vec!["ls", "rg", "make"]);
-        assert!(t.is_allowed_program("ls"));
-        assert!(t.is_allowed_program("rg"));
-        assert!(t.is_allowed_program("make"));
-        assert!(!t.is_allowed_program("rm"));
-    }
-
-    #[test]
-    fn denied_arg_prefix_detection() {
-        let t = tool();
-        assert!(t.has_denied_arg(&["--exec=foo".into()]).is_some());
-        assert!(t.has_denied_arg(&["--upload-pack".into()]).is_some());
-        assert!(t
-            .has_denied_arg(&["-o".into(), "/etc/passwd".into()])
-            .is_some());
-        // C4：find 单连字符 exec 谓词族
-        assert!(t.has_denied_arg(&["-exec".into(), "rm".into()]).is_some());
-        assert!(t.has_denied_arg(&["-execdir".into()]).is_some());
-        assert!(t.has_denied_arg(&["-ok".into()]).is_some());
-        assert!(t.has_denied_arg(&["-okdir".into()]).is_some());
-        assert!(t
-            .has_denied_arg(&["normal".into(), "args".into()])
-            .is_none());
-    }
-
-    #[test]
-    fn shell_substitution_in_args_detected() {
-        let t = tool();
-        assert!(t.has_denied_arg(&["$(rm -rf /)".into()]).is_some());
-        assert!(t.has_denied_arg(&["${HOME}".into()]).is_some());
-        assert!(t.has_denied_arg(&["`whoami`".into()]).is_some());
+    fn split_compound_cmd_single_word_unchanged() {
+        let (prog, args) = split_compound_cmd("ls", &[]);
+        assert_eq!(prog, "ls");
+        assert!(args.is_empty());
     }
 
     #[test]
@@ -664,7 +572,7 @@ mod tests {
 
     #[test]
     fn circuit_breaker_only_r_without_f_passes() {
-        // 只有 -r 没 -f → 不拦（rm -r / 需要审批但不是断路器）
+        // 只有 -r 没 -f → 不拦（断路器仅拦 -rf 根/家目录）
         assert!(!RunCommandTool::is_circuit_breaker_hit(
             "rm",
             &["-r".into(), "/".into()]
@@ -673,39 +581,6 @@ mod tests {
             "rm",
             &["-f".into(), "/".into()]
         ));
-    }
-
-    #[test]
-    fn user_forbidden_extends_floor() {
-        // 用户自定义 forbidden 与底线并集
-        let mut policy = crate::extensions::agent::policy::ExecPolicy::default_with_trusted(vec![]);
-        policy.forbidden.push("my_danger".into());
-        let t = RunCommandTool::new(policy);
-        assert!(t.is_forbidden("my_danger"));
-        assert!(t.is_forbidden("sudo")); // 底线仍在
-    }
-
-    #[test]
-    fn requires_approval_for_unknown_command() {
-        let t = tool();
-        let args = serde_json::json!({"cmd": "make", "args": []});
-        assert!(t.requires_approval(&args));
-    }
-
-    #[test]
-    fn no_approval_for_whitelisted_command() {
-        let t = tool_with_trusted(vec!["ls"]);
-        let args = serde_json::json!({"cmd": "ls", "args": ["-la"]});
-        assert!(!t.requires_approval(&args));
-    }
-
-    #[test]
-    fn approval_required_when_whitelisted_has_denied_arg() {
-        // 注：C5 后 git/find/... 被 TRUSTED_DENYLIST 剔除，故用 ls + denied arg 演示
-        let t = tool_with_trusted(vec!["ls"]);
-        // ls 在白名单，但 --upload-pack 是 denied prefix
-        let args = serde_json::json!({"cmd": "ls", "args": ["--upload-pack"]});
-        assert!(t.requires_approval(&args));
     }
 
     #[tokio::test]
@@ -717,13 +592,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_forbidden_program() {
+    async fn rejects_circuit_breaker_in_call() {
         let t = tool();
         let result = t
-            .call(serde_json::json!({"cmd": "sudo", "args": ["ls"]}))
+            .call(serde_json::json!({"cmd": "rm", "args": ["-rf", "/"]}))
             .await;
         assert!(!result.ok);
-        assert!(result.output.contains("forbidden"));
+        assert!(result.output.contains("circuit breaker"));
     }
 
     #[tokio::test]
@@ -752,10 +627,7 @@ mod tests {
         std::env::set_var("VOIDNIX_TEST_SECRET", "leak-me-if-you-can");
         let t = tool();
         let result = t.call(serde_json::json!({"cmd": "env", "args": []})).await;
-        // env 不在白名单，会走 approval 拒绝路径，但这是测试直接调 call
-        // 实际上 env 不在白名单也不在 forbidden，所以会执行（生产中走 approval）
-        // 我们关注的是：输出中不应含 VOIDNIX_TEST_SECRET
-        // 但 env 不在白名单 → 直接调 call 也会执行（call 内部不做审批检查）
+        // env 命令直接执行（无白名单拦截），关注输出中不应含 VOIDNIX_TEST_SECRET
         if result.ok {
             assert!(
                 !result.output.contains("VOIDNIX_TEST_SECRET"),

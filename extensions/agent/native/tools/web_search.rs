@@ -63,10 +63,6 @@ impl AgentTool for WebSearchTool {
         })
     }
 
-    fn requires_approval(&self, _args: &serde_json::Value) -> bool {
-        false
-    }
-
     async fn call(&self, args: serde_json::Value) -> ToolResult {
         let query = args
             .get("query")

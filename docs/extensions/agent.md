@@ -7,16 +7,15 @@ AI 助手扩展，整合对话、网络搜索、命令执行。
 ```
 ┌──────────────────────────────────────────────────┐
 │  Agent Loop（engine/loop_runner.rs）              │
-│  loop { call_llm → parse tool_calls → 审批 →     │
+│  loop { call_llm → parse tool_calls →            │
 │         执行 → scrub_secret → 回灌 role:tool →    │
 │         下一轮 }，max_turns 由 config 注入         │
 ├──────────────────────────────────────────────────┤
 │  Tool Registry（engine/tool_registry.rs）         │
-│  AgentTool trait: name/schema/requires_approval/  │
-│                  call                             │
+│  AgentTool trait: name/schema/call               │
 ├──────────────────┬───────────────────────────────┤
 │  web_search      │  run_command                   │
-│  (Tavily API)    │  (纵深防御 9 层)              │
+│  (Tavily API)    │  (断路器 + 资源约束)          │
 └──────────────────┴───────────────────────────────┘
 ```
 
@@ -31,7 +30,6 @@ Engine 代码在 `extensions/agent/native/engine/`（从框架层下沉，扩展
 - `TextDelta { text }`：LLM 文本增量
 - `ToolCallStart { id, name }`：工具调用开始
 - `ToolCallArgs { id, args }`：完整参数（JSON）
-- `ApprovalRequired { id, toolName, args }`：需用户审批
 - `ToolResult { id, ok, output }`：工具结果（已净化）
 - `Completed`：本轮结束
 - `Error { message }`：错误终止
@@ -50,24 +48,15 @@ Tavily 搜索（专为 AI 设计，返回含 `answer` 字段的结构化 JSON）
 
 ### run_command
 
-纵深防御 9 层：
+命令无白名单/黑名单拦截——所有命令直接放行。仅以下机制兜底：
 
-1. 命令白名单（用户在 config 编辑；默认仅只读集合 ls/cat/grep/rg/fd/wc/file/stat/diff/jq/bat 等；执行器/写操作工具 find/awk/sed/git/cp/mv/ln/tee/truncate/touch/mkdir 即便用户加入 trusted 也会被 `TRUSTED_DENYLIST` 强制剔除）
-2. FORBIDDEN 硬禁（`osascript/sudo/sh/curl/wget/...`，不可被白名单覆盖）
-3. 参数黑名单（`--exec`/`-exec`/`-execdir`/`-ok`/`-okdir`/`--upload-pack`/`-o`/`-C`/...）+ shell 元字符检测
-4. 断路器（`rm -rf /` / `rm -rf ~` 即便 approved 也拦）
-5. `env_clear()` + 白名单 env（防父进程 API key 进子进程）
-6. cwd `canonicalize`
-7. `pre_exec` 设 rlimit（CPU / 内存 / 文件描述符上限由 config 配置）
-8. `tokio::time::timeout` + `kill_on_drop(true)`（超时由 config 配置）
-9. 输出边读边截断 + `scrub_secret` gitleaks 打码（最后一道兜底）
-
-**三档审批**：
-
-- 白名单内 + 无危险参数 → 直接执行
-- FORBIDDEN 硬禁 → 直接拒
-- 未知命令 / 危险参数 → 弹 `BaseDialog`，按钮「执行 / 执行并信任 / 取消」
-- 「执行并信任」→ 追加到 `config.trustedCommands`
+1. shell 元字符注入免疫：`tokio::process::Command` 不经 shell
+2. 断路器（`rm -rf /` / `rm -rf ~` 等灾难性全局操作拦截，不可放宽）
+3. `env_clear()` + 白名单 env（防父进程 API key 进子进程）
+4. cwd `canonicalize`
+5. `pre_exec` 设 rlimit（CPU / 内存 / 文件描述符上限由 config 配置）
+6. `tokio::time::timeout` + `kill_on_drop(true)`（超时由 config 配置）
+7. 输出边读边截断 + `scrub_secret` gitleaks 打码（最后一道兜底）
 
 ### System Prompt
 
@@ -83,10 +72,9 @@ agent 配置通过 `defineConfig` 自管，持久化至 `extensions/agent/config
 ```typescript
 // extensions/agent/config.ts
 defineConfig('extensions/agent/config', {
-  trustedCommands: ['ls', 'cat', 'pwd', 'echo', ...],
-  systemPrompt: '你是 Voidnix 内置的 AI Agent…',
+  systemPrompt: '你是全能的 AI Agent…',
   searchProvider: { type: 'tavily', apiKey: '' },
-  // 安全底线项（forbiddenCommands/blockedArgs/max*）+ BOUNDS 镜像
+  // 资源上限（maxCpuSeconds/maxMemoryMb/maxOpenFiles/executionTimeout/maxOutputBytes/maxTurns）+ BOUNDS 镜像
 })
 ```
 
@@ -97,18 +85,17 @@ AI Provider 基础设施（endpoint/apiKey/models）在框架级 `stores/setting
 ```
 extensions/agent/
 ├── index.ts               # module 注册（id 'agent'）
-├── config.ts              # defineConfig（trustedCommands/systemPrompt/searchProviders + BOUNDS UI 镜像）
+├── config.ts              # defineConfig（systemPrompt/searchProvider + 资源上限 BOUNDS UI 镜像）
 ├── agent.ts               # useAgentChat composable（前端状态机）
-├── View.vue               # part 渲染 + Approval 弹窗
+├── View.vue               # part 渲染
 ├── Settings.vue           # Provider + Agent 配置
 ├── Actions.vue            # 模型切换 + 新会话
 └── native/
-    ├── mod.rs             # agent_run / agent_approve / agent_abort + Extension impl
-    ├── policy.rs          # floor/cap/TRUSTED_DENYLIST 权威源（FORBIDDEN_FLOOR 31 / DENIED_ARG_FLOOR 19）
+    ├── mod.rs             # agent_run / agent_abort + Extension impl
+    ├── policy.rs          # 资源上限 floor/cap 权威源（6 项 clamp）
     ├── engine/            # agent 引擎（从框架层下沉）
     │   ├── mod.rs         # AgentEvent 枚举
     │   ├── loop_runner.rs # 主循环（max_turns/system_prompt 由 LoopInput 注入）
-    │   ├── approval.rs    # ApprovalManager（oneshot channel）
     │   ├── cancellation.rs # SessionRegistry（CancellationToken）
     │   ├── trim.rs        # 历史消息裁剪
     │   ├── secret_scrub.rs # gitleaks 正则打码
@@ -120,5 +107,5 @@ extensions/agent/
 
 ## 测试
 
-- Rust 单元测试：`cargo test --lib`（含 run_command 17 个防御测试 + approval 3 个 + policy 5 个 + LLM security 5 个）
+- Rust 单元测试：`cargo test --lib`（含 run_command 断路器测试 + policy 资源 clamp 测试 + LLM security 测试）
 - 前端测试：`bun run test`
