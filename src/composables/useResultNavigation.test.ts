@@ -37,8 +37,7 @@ function makeWrapper(opts: {
   const searchQuery = ref('')
   const clearSearch = vi.fn()
   const loadDefaultResults = vi.fn().mockResolvedValue(undefined)
-  const goBackToToolList = vi.fn()
-  const refreshModule = vi.fn()
+  const goHome = vi.fn()
 
   const TestComp = defineComponent({
     setup() {
@@ -49,8 +48,7 @@ function makeWrapper(opts: {
         activeModule: computed(() => null),
         clearSearch,
         loadDefaultResults,
-        goBackToToolList,
-        refreshModule,
+        goHome,
       })
       return { nav }
     },
@@ -66,8 +64,7 @@ function makeWrapper(opts: {
     searchQuery,
     clearSearch,
     loadDefaultResults,
-    goBackToToolList,
-    refreshModule,
+    goHome,
   }
 }
 

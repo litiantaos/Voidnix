@@ -16,24 +16,14 @@ interface ResultNavOptions {
   activeModule: ComputedRef<Extension | null>
   clearSearch: (value?: string) => void
   loadDefaultResults: () => Promise<void>
-  goBackToToolList: () => void
-  /** 用当前 searchQuery 重新装填模块结果（ESC 清空后回到模块默认列表） */
-  refreshModule: () => void
+  goHome: () => void
 }
 
-/// 结果键盘导航：ArrowUp/Down 移动、Enter 执行分派、Escape 退出/清空。
+/// 结果键盘导航：ArrowUp/Down 移动、Enter 执行分派、Escape 返回主界面/关闭窗口。
 /// 搜索状态由 useSearchInput 持有，通过 opts 注入（clearSearch/loadDefaultResults 等）。
 export function useResultNavigation(opts: ResultNavOptions) {
   const appStore = useAppStore()
-  const {
-    searchInput,
-    results,
-    selectedIndex,
-    clearSearch,
-    loadDefaultResults,
-    goBackToToolList,
-    refreshModule,
-  } = opts
+  const { searchInput, results, selectedIndex, clearSearch, loadDefaultResults, goHome } = opts
 
   // --- execute ---
 
@@ -137,17 +127,7 @@ export function useResultNavigation(opts: ResultNavOptions) {
         }
         e.preventDefault()
         if (appStore.activeModuleId) {
-          if (appStore.searchQuery) {
-            clearSearch()
-            // clearSearch 不触发 onInput，需手动重装模块默认结果（如 currency 参考汇率）
-            refreshModule()
-          } else {
-            goBackToToolList()
-          }
-        } else if (appStore.searchQuery) {
-          clearSearch()
-          loadDefaultResults()
-          searchInput.value?.focus()
+          goHome()
         } else {
           hideWindow()
         }

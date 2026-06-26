@@ -47,6 +47,14 @@ export function useSearchInput(opts: SearchInputOptions) {
     restore('tools')
   }
 
+  /** 退出当前模块 → 回到主界面（清空 query + 默认结果）。ESC 专用。 */
+  function goHome() {
+    moduleAbort?.abort()
+    appStore.setActiveModule(null)
+    clearSearch()
+    loadDefaultResults()
+  }
+
   useTauriListener('app-cache-updated', () => {
     if (!appStore.activeModuleId && !appStore.searchQuery) {
       loadDefaultResults()
@@ -291,6 +299,7 @@ export function useSearchInput(opts: SearchInputOptions) {
     clearSearch,
     loadDefaultResults,
     goBackToToolList,
+    goHome,
     handleTagClose,
     refreshModule,
   }
