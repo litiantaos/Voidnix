@@ -38,11 +38,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
-import { config as awakeConfig } from './config'
+import { config as awakeConfig, type AwakeDisplayMode } from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -51,6 +52,8 @@ import BaseSelect from '@/components/ui/BaseSelect.vue'
 const isEnabled = ref(false)
 const selectedIndex = ref(0)
 const appStore = useAppStore()
+let unlistenEnabled: (() => void) | undefined
+let unlistenMode: (() => void) | undefined
 
 const checkStatus = async () => {
   try {
@@ -79,8 +82,20 @@ const onModeChange = (value: string | number) => {
   awakeConfig.displayMode = value as typeof awakeConfig.displayMode
 }
 
-onMounted(() => {
+onMounted(async () => {
   checkStatus()
+  // 菜单栏操作改状态后 Rust emit 同步面板显示（与 proxy-tun 同模式）
+  unlistenEnabled = await listen<boolean>('awake-enabled', (e) => {
+    isEnabled.value = e.payload
+  })
+  unlistenMode = await listen<string>('awake-mode', (e) => {
+    awakeConfig.displayMode = e.payload as AwakeDisplayMode
+  })
+})
+
+onUnmounted(() => {
+  unlistenEnabled?.()
+  unlistenMode?.()
 })
 
 const items = computed(() => [

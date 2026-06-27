@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use tauri::AppHandle;
 
 /// mihomo（Clash.Meta）核心版本与 darwin asset sha256（.gz，来自 release digest）。
@@ -17,6 +17,10 @@ const MIRROR_PREFIX: &str = "https://gh-proxy.com/";
 
 /// 内核下载进行中标记（全局，ensure_bin 期间置 true，供 status 查询）。
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
+
+/// mihomo -v 版本号提取正则（LazyLock 避免每次 core_version 回退重编译）。
+static VERSION_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"v\d+\.\d+\.\d+").expect("invalid version regex"));
 
 /// 内核状态（供前端列表「内核」项展示版本号/下载状态）。
 #[derive(Serialize)]
@@ -140,8 +144,7 @@ fn core_version(app: &AppHandle, bin: &Path) -> Option<String> {
     // fallback：跑 mihomo -v，正则提取 v1.19.27
     let out = Command::new(bin).arg("-v").output().ok()?;
     let s = String::from_utf8_lossy(&out.stdout);
-    let re = regex::Regex::new(r"v\d+\.\d+\.\d+").ok()?;
-    let m = re.find(&s)?;
+    let m = VERSION_RE.find(&s)?;
     let v = m.as_str().to_string();
     let _ = std::fs::write(&vf, &v); // 缓存，避免重复跑 mihomo -v
     Some(v)

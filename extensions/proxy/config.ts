@@ -12,10 +12,9 @@ export interface Subscription {
 
 /// proxy 扩展自管配置（持久化至 extensions/proxy/config.json）。
 /// 注意：代理核心是否运行（enabled）为 Rust 状态型（set/is_proxy_enabled），不存此；
+/// 系统代理不再独立配置——user 模式自动应用，TUN 模式无需（见 native/mod.rs）。
 /// 此处仅保存用户偏好与订阅元数据。
 export const config = defineConfig('extensions/proxy/config', {
-  /// 是否同时设置 macOS 系统代理（config 字段型，watch 同步 Rust）。
-  systemProxy: true,
   /// TUN 模式偏好（需 root 提权，Phase 7 接入）。
   tunMode: false,
   /// 规则模式：rule | global | direct。
@@ -26,8 +25,6 @@ export const config = defineConfig('extensions/proxy/config', {
   controllerPort: 9090,
   /// mihomo API bearer token（空则核心启动时随机生成并回写）。
   secret: '',
-  /// 各 selector 分组当前选中节点（groupName → nodeName）。
-  activeSelections: {} as Record<string, string>,
   /// 订阅源集合（默认一项空订阅，类似 agent 默认 provider，保证列表始终非空可编辑）。
   subscriptions: [
     { id: generateRequestId(), name: '', url: '', updatedAt: '', proxyCount: 0 },

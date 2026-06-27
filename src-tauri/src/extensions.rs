@@ -58,7 +58,7 @@ macro_rules! configure_app {
                 crate::extensions::proxy::proxy_remove_subscription,
                 crate::extensions::proxy::proxy_select_proxy,
                 crate::extensions::proxy::proxy_set_mode,
-                crate::extensions::proxy::proxy_set_system_proxy,
+                crate::extensions::proxy::proxy_sync_menu_subs,
                 crate::extensions::proxy::proxy_test_delay,
                 crate::extensions::proxy::proxy_update_subscription,
                 crate::extensions::proxy::set_proxy_enabled,

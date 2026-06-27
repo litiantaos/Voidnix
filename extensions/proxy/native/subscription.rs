@@ -1,6 +1,6 @@
 use crate::http;
 use crate::runtime::storage::ext_data_dir;
-use serde_yaml::{Mapping, Value};
+use serde_yml::{Mapping, Value};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -42,7 +42,7 @@ pub async fn fetch(url: &str) -> Result<(usize, String), String> {
 
 /// 解析 YAML 统计 proxies 数量（非法 YAML 报错）。
 fn count_proxies(yaml_text: &str) -> Result<usize, String> {
-    let val: Value = serde_yaml::from_str(yaml_text).map_err(|e| format!("非 Clash YAML: {e}"))?;
+    let val: Value = serde_yml::from_str(yaml_text).map_err(|e| format!("非 Clash YAML: {e}"))?;
     Ok(val
         .get("proxies")
         .and_then(|p| p.as_sequence())
@@ -102,7 +102,7 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
     let mut rules: Option<Value> = None;
 
     for text in texts {
-        let val: Value = match serde_yaml::from_str(text) {
+        let val: Value = match serde_yml::from_str(text) {
             Ok(v) => v,
             Err(_) => continue,
         };
@@ -180,7 +180,7 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
         root.insert(s("rules"), rules.unwrap_or_else(default_rules));
     }
 
-    serde_yaml::to_string(&root).map_err(|e| format!("序列化 config.yaml 失败: {e}"))
+    serde_yml::to_string(&root).map_err(|e| format!("序列化 config.yaml 失败: {e}"))
 }
 
 /// 无订阅自带 groups 时自动生成：手动选择 + 自动测速。
@@ -193,12 +193,12 @@ fn auto_groups(proxies: &[Value]) -> Value {
     select_proxies.extend(names.iter().cloned());
 
     let mut select = Mapping::new();
-    select.insert(s("name"), s("🚀 节点选择"));
+    select.insert(s("name"), s("节点选择"));
     select.insert(s("type"), s("select"));
     select.insert(s("proxies"), Value::Sequence(select_proxies));
 
     let mut url_test = Mapping::new();
-    url_test.insert(s("name"), s("♻️ 自动选择"));
+    url_test.insert(s("name"), s("自动选择"));
     url_test.insert(s("type"), s("url-test"));
     url_test.insert(s("url"), s("http://www.gstatic.com/generate_204"));
     url_test.insert(s("interval"), Value::from(300i64));
@@ -208,7 +208,7 @@ fn auto_groups(proxies: &[Value]) -> Value {
 }
 
 fn default_rules() -> Value {
-    Value::Sequence(vec![s("GEOIP,CN,DIRECT"), s("MATCH,🚀 节点选择")])
+    Value::Sequence(vec![s("GEOIP,CN,DIRECT"), s("MATCH,节点选择")])
 }
 
 #[cfg(test)]
@@ -243,12 +243,12 @@ mod tests {
         assert!(out.contains("mixed-port: 7890"));
         assert!(out.contains("127.0.0.1:9090"));
         // 自动生成 select / url-test 分组
-        assert!(out.contains("🚀 节点选择"));
-        assert!(out.contains("♻️ 自动选择"));
+        assert!(out.contains("节点选择"));
+        assert!(out.contains("自动选择"));
         assert!(out.contains("HK-1"));
         assert!(out.contains("US-1"));
         // 默认规则
-        assert!(out.contains("MATCH,🚀 节点选择"));
+        assert!(out.contains("MATCH,节点选择"));
     }
 
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         assert!(out.contains("PROXY"));
         assert!(out.contains("MATCH,PROXY"));
         // 不应注入自动分组（订阅自带了）
-        assert!(!out.contains("🚀 节点选择"));
+        assert!(!out.contains("节点选择"));
     }
 
     #[test]
@@ -266,7 +266,7 @@ mod tests {
         let a = "proxies:\n  - {name: DUP, type: ss}\n".to_string();
         let b = "proxies:\n  - {name: DUP, type: ss}\n  - {name: OK, type: ss}\n".to_string();
         let out = merge_yaml(&[a, b], &params()).unwrap();
-        let v: Value = serde_yaml::from_str(&out).unwrap();
+        let v: Value = serde_yml::from_str(&out).unwrap();
         let count = v
             .get("proxies")
             .and_then(|p| p.as_sequence())

@@ -58,9 +58,9 @@ export function delayColor(ms: number | null | undefined): string {
   return 'text-red-500'
 }
 
-/// 延迟 → 显示文本
+/// 延迟 → 显示文本（未测速/超时返回空串，不占位）
 export function formatDelay(ms: number | null | undefined): string {
-  if (ms == null || ms <= 0) return '-'
+  if (ms == null || ms <= 0) return ''
   return `${ms}ms`
 }
 

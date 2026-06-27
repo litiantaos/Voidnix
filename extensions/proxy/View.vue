@@ -1,6 +1,7 @@
 <template>
   <div h="full" overflow="y-auto">
     <BaseList
+      ref="baseListRef"
       :items="items"
       v-model:selected-index="selectedIndex"
       :group-field="(item: ListItem) => item.group"
@@ -11,13 +12,26 @@
         <div flex items="center">
           <span>{{ group }}</span>
           <div flex="~ 1" />
-          <BaseButton v-if="group === '订阅'" icon="i-ri-add-line" @click.stop="openCreateModal" />
           <BaseButton
-            v-else-if="group === '节点'"
-            :icon="testing ? 'i-ri-loader-4-line animate-spin' : 'i-ri-flashlight-line'"
-            :disabled="testing || nodes.length === 0"
-            @click.stop="testAll"
+            v-if="group === '订阅'"
+            icon="i-ri-add-line"
+            title="添加订阅"
+            @click.stop="openCreateModal"
           />
+          <div v-else-if="group === '节点'" flex gap="2">
+            <BaseButton
+              icon="i-ri-focus-3-line"
+              :disabled="!hasSelectedNode"
+              title="定位到选中节点"
+              @click.stop="locateSelected"
+            />
+            <BaseButton
+              :icon="testing ? 'i-ri-loader-4-line animate-spin' : 'i-ri-flashlight-line'"
+              :disabled="testing || nodes.length === 0"
+              title="全部测速"
+              @click.stop="testAll"
+            />
+          </div>
         </div>
       </template>
 
@@ -102,6 +116,23 @@
           </template>
         </BaseListItem>
 
+        <!-- 分组切换（多 selector 订阅） -->
+        <BaseListItem
+          v-else-if="item.type === 'groupSelector'"
+          :ref="setRef"
+          title="节点分组"
+          subtitle="当前显示的 selector 分组"
+          :selected="selected"
+        >
+          <template #trailing>
+            <BaseSelect
+              :model-value="activeGroupName"
+              :options="groupOptions"
+              @update:model-value="onGroupChange"
+            />
+          </template>
+        </BaseListItem>
+
         <!-- 节点项 -->
         <BaseListItem v-else-if="item.type === 'node'" :ref="setRef" :selected="selected">
           <template #title>
@@ -181,7 +212,13 @@ import {
 } from './config'
 import { toErrorMessage } from '@/utils/format'
 import { generateRequestId } from '@/utils/id'
-import { type ProxiesResponse, delayColor, formatDelay, pickMainGroup, latestDelay } from './logic'
+import {
+  type ProxiesResponse,
+  delayColor,
+  formatDelay,
+  isUserSelectorGroup,
+  latestDelay,
+} from './logic'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -201,6 +238,7 @@ type ListItem =
   | { type: 'tun'; group: '代理' }
   | { type: 'mode'; group: '代理' }
   | { type: 'subscription'; group: '订阅'; sub: Subscription }
+  | { type: 'groupSelector'; group: '节点' }
   | { type: 'node'; group: '节点'; node: NodeItem }
   | { type: 'loading'; group: '节点' }
 
@@ -217,6 +255,7 @@ const proxiesData = ref<ProxiesResponse | null>(null)
 const delayMap = ref<Record<string, number>>({})
 const testing = ref(false)
 const selectedIndex = ref(0)
+const baseListRef = ref<{ reveal: (i: number) => void } | null>(null)
 const coreStatus = ref<{ downloaded: boolean; version: string; downloading: boolean }>({
   downloaded: false,
   version: '',
@@ -225,6 +264,14 @@ const coreStatus = ref<{ downloaded: boolean; version: string; downloading: bool
 const coreProgress = ref(0)
 const downloadingCore = ref(false)
 let unlistenProgress: (() => void) | null = null
+// 托盘菜单切换 TUN 时，Rust 广播 proxy-tun → 同步 config.tunMode（Rust 不回写 plugin-store，
+// 否则下次开面板 TUN 按钮显示旧值且会发出错误翻转）。
+let unlistenTun: (() => void) | null = null
+// 菜单栏改开关/规则模式/切节点时，Rust 广播 → 同步面板（命令内含「未变跳过」守卫防 watch 回声）
+let unlistenEnabled: (() => void) | null = null
+let unlistenMode: (() => void) | null = null
+// 菜单栏切换节点后广播 → 重新拉取节点列表同步选中项
+let unlistenNode: (() => void) | null = null
 
 // 订阅编辑弹窗（agent 模型提供商模式）
 const editingId = ref('')
@@ -235,10 +282,33 @@ const editForm = ref({ name: '', url: '' })
 const deletingSub = ref<Subscription | null>(null)
 
 // ── 节点 ──
+// 全部用户可切的 selector 分组（排除 mihomo 隐式 GLOBAL）。多分组订阅时用户可在列表内切换。
+const userGroups = computed(() => {
+  if (!proxiesData.value) return [] as Array<{ name: string; all?: string[]; now?: string }>
+  return Object.values(proxiesData.value.proxies).filter(
+    (p): p is { name: string; type: string; all?: string[]; now?: string } =>
+      isUserSelectorGroup(p),
+  )
+})
+
+// 用户当前选中的分组名（空 → 回退首个 user selector，再回退 GLOBAL）
+const activeGroupName = ref('')
+
+const groupOptions = computed(() => userGroups.value.map((g) => ({ label: g.name, value: g.name })))
+
+// 当前展示的分组：用户选中 > 首个 user selector > GLOBAL
 const mainGroup = computed(() => {
   if (!proxiesData.value) return null
-  return pickMainGroup(proxiesData.value.proxies)
+  const proxies = proxiesData.value.proxies
+  const groups = userGroups.value
+  if (groups.length === 0) return proxies['GLOBAL'] ?? null
+  const chosen = activeGroupName.value ? groups.find((g) => g.name === activeGroupName.value) : null
+  return (chosen ?? groups[0] ?? null) as { name: string; all?: string[]; now?: string } | null
 })
+
+function onGroupChange(value: string | number) {
+  activeGroupName.value = String(value)
+}
 
 // 当前选中节点名（乐观更新：切换即标记，不等 loadProxies；loadProxies 完成后清空由 g.now 接管）
 const selectedNodeName = ref('')
@@ -258,6 +328,9 @@ const nodes = computed<NodeItem[]>(() => {
   })
 })
 
+/// 是否存在选中节点（定位按钮 disabled 判断）
+const hasSelectedNode = computed(() => nodes.value.some((n) => n.selected))
+
 const items = computed<ListItem[]>(() => {
   const list: ListItem[] = [
     { type: 'enabled', group: '代理' },
@@ -271,6 +344,10 @@ const items = computed<ListItem[]>(() => {
       sub: s,
     })),
   )
+  // 多 selector 分组：显示分组切换项（单分组或无分组时省略）
+  if (userGroups.value.length > 1) {
+    list.push({ type: 'groupSelector', group: '节点' })
+  }
   // 启动中且暂无节点：显示加载占位，避免节点区空白滞后
   if (toggling.value && nodes.value.length === 0) {
     list.push({ type: 'loading', group: '节点' })
@@ -334,8 +411,6 @@ const toggleEnabled = async () => {
   if (newState && !config.secret) {
     config.secret = generateRequestId()
   }
-  // 乐观更新：按钮即时切换，避免等 mihomo 启动 + wait_ready 的迟滞
-  isEnabled.value = newState
   toggling.value = true
   try {
     await invoke(CMD.setProxyEnabled, {
@@ -346,19 +421,14 @@ const toggleEnabled = async () => {
       mode: config.mode,
       tun: config.tunMode,
     })
+    // 成功后再翻转状态：切换期间按钮显示「处理中」并保持原样式，完成后才变（避免样式先于反馈）
+    isEnabled.value = newState
     if (newState) {
-      if (config.systemProxy) {
-        try {
-          await invoke(CMD.proxySetSystemProxy, { enabled: true })
-        } catch (e) {
-          appStore.showStatus(`系统代理设置失败：${errText(e)}`, { duration: 4000, kind: 'error' })
-        }
-      }
+      // 系统代理由 Rust set_proxy_enabled 按 user/TUN 模式自动应用，前端无需干预
       await loadProxies()
     }
     // 关闭代理时保留节点列表显示（仅停止 mihomo，不清空 proxiesData）
   } catch (e) {
-    isEnabled.value = !newState // 失败回滚
     appStore.showStatus(`切换失败：${errText(e)}`, { duration: 4000, kind: 'error' })
   } finally {
     toggling.value = false
@@ -370,6 +440,11 @@ async function loadProxies() {
   try {
     proxiesData.value = await invoke<ProxiesResponse>(CMD.proxyGetProxies)
     selectedNodeName.value = '' // 已拿到权威 g.now，清空乐观标记
+    // 校正分组选择：订阅变更致分组消失或未选时回退首个 user selector
+    const names = userGroups.value.map((g) => g.name)
+    if (names.length > 0 && !names.includes(activeGroupName.value)) {
+      activeGroupName.value = names[0] ?? ''
+    }
   } catch (e) {
     appStore.showStatus(`加载节点失败：${errText(e)}`, { duration: 4000, kind: 'error' })
   }
@@ -392,17 +467,31 @@ async function testAll() {
   if (testing.value || nodes.value.length === 0) return
   testing.value = true
   try {
-    const results = await Promise.all(
-      nodes.value.map((n) =>
-        invoke<number>(CMD.proxyTestDelay, { name: n.name })
-          .then((d) => [n.name, d] as const)
-          .catch(() => [n.name, 0] as const),
-      ),
-    )
-    for (const [name, d] of results) delayMap.value[name] = d
+    // 限并发（8）+ 逐个回写 delayMap：既避免百节点订阅打满 controller，
+    // 又让延迟随测随显（Promise.all 全量并发需等最慢节点才批量更新）。
+    const CONCURRENCY = 8
+    const queue = [...nodes.value]
+    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const n = queue.shift()
+        if (!n) break
+        try {
+          delayMap.value[n.name] = await invoke<number>(CMD.proxyTestDelay, { name: n.name })
+        } catch {
+          delayMap.value[n.name] = 0
+        }
+      }
+    })
+    await Promise.all(workers)
   } finally {
     testing.value = false
   }
+}
+
+/// 定位到当前选中节点：调 BaseList.reveal 平滑滚动到目标项居中
+function locateSelected() {
+  const idx = items.value.findIndex((it) => it.type === 'node' && it.node.selected)
+  if (idx >= 0) baseListRef.value?.reveal(idx)
 }
 
 async function onModeChange(value: string | number) {
@@ -546,19 +635,48 @@ onMounted(async () => {
   unlistenProgress = await listen<number>('proxy-core-progress', (e) => {
     coreProgress.value = e.payload
   })
+  unlistenTun = await listen<boolean>('proxy-tun', (e) => {
+    config.tunMode = e.payload
+  })
+  unlistenEnabled = await listen<boolean>('proxy-enabled', (e) => {
+    // 切换中由 toggleEnabled 成功后统一设值，忽略命令内提前 emit 的事件以防样式先于「处理中」反馈
+    if (toggling.value) return
+    isEnabled.value = e.payload
+  })
+  unlistenMode = await listen<string>('proxy-mode', (e) => {
+    config.mode = e.payload as typeof config.mode
+  })
+  unlistenNode = await listen<string>('proxy-node', () => {
+    // 菜单栏切节点后重拉节点列表（loadProxies 内有 isEnabled 守卫）
+    if (isEnabled.value) loadProxies()
+  })
   await loadCoreStatus()
   await checkStatus()
+  // 仅按已持久化的 enabled 状态恢复节点列表；不自动启用核心——尊重用户上一次显式关闭
+  // （下载内核 / 添加订阅这两个主动操作仍会在各自流程内自启）。
   if (isEnabled.value) {
     await loadProxies()
-  } else if (coreStatus.value.downloaded) {
-    // 内核就绪：自动启用代理核心，让节点列表直接显示（不必手动开）
-    await toggleEnabled()
   }
 })
 
 onUnmounted(() => {
   unlistenProgress?.()
+  unlistenTun?.()
+  unlistenEnabled?.()
+  unlistenMode?.()
+  unlistenNode?.()
 })
+
+// 订阅名同步到菜单栏（Rust 缓存 menu_subs 供订阅子菜单展示；订阅名变更即推送）
+watch(
+  () => config.subscriptions.map((s) => s.name).join('\n'),
+  () => {
+    invoke(CMD.proxySyncMenuSubs, {
+      names: config.subscriptions.map((s) => s.name),
+    }).catch((e: unknown) => console.error('[proxy] sync menu subs failed:', e))
+  },
+  { immediate: true },
+)
 
 // 兜底：订阅列表至少一项（磁盘旧值可能为空数组，覆盖默认项；类似 agent 默认 provider 始终存在）
 watch(

@@ -18,7 +18,7 @@ extensions/<id>/
     └── ...                # 子模块（commands.rs / engine/ 等）
 ```
 
-17 个扩展：含 native/ 的 10 个（clipboard、screenshot、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search），纯 TS 的 7 个（calculator、settings、ip、base64、time、uuid、currency）。
+18 个扩展：含 native/ 的 11 个（clipboard、screenshot、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy），纯 TS 的 7 个（calculator、settings、ip、base64、time、uuid、currency）。
 
 ## 前端注册
 
@@ -58,6 +58,16 @@ export default defineExtension({
 ### 跨扩展通信
 
 禁止扩展之间直 import 内部状态（如 `import { x } from '@ext/other'`）。需要跨扩展投递数据时走 Tauri 事件总线：发送方 `emit('ext-<event>', payload)`，接收方在 `setup()` 内 `listen('ext-<event>', ...)`。约定事件名前缀以目标扩展 id 开头（如 `translate-pending-text`），避免冲突。screenshot OCR → translate 待翻译文本即此模式。
+
+### 菜单栏贡献（Rust 侧）
+
+框架唯一菜单栏托盘图标（`runtime/menubar.rs`，`public/bar_icon.png` 模板图），左键弹聚合菜单。含 native/ 的扩展在 Rust `setup` 内 `menubar::register(MenuBarContribution)` 声明贡献段：
+
+- `title: &'static str`：分组标题（disabled 项渲染，如「保持唤醒」/「代理」）。菜单按 `title` 分组——每段贡献前插标题项，段间分隔线。
+- `build: Arc<dyn Fn(&AppHandle) -> Vec<MenuEntry>>`：返回当前菜单快照。空 `Vec` = 该扩展当前不贡献（不参与菜单、不影响图标可见性）。
+- `on_event: Arc<dyn Fn(&AppHandle, &str)>`：收到所有点击的 item id，扩展自行过滤归属项（约定 id 以扩展 id 为前缀避免碰撞，如 `proxy_toggle`）。
+
+`MenuEntry` 四态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Submenu{label,items}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。**图标可见性 = Σ 各段 `build()` 项数 > 0**（扩展全关则图标自动隐藏）。与快捷键 hook 同范式（`LazyLock<Mutex<Vec>>` + free function）。现 2 消费者：awake（保持系统唤醒：启用开关 + 显示模式二级菜单）、proxy（代理：开启/TUN 勾选 + 规则模式/订阅/节点子菜单；菜单项文案与界面 View.vue 一致，操作经命令 emit 事件回同步前端）。
 
 ### UI 规约补充
 

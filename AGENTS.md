@@ -91,6 +91,8 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 **全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。默认 Option 基（`Option+Space` 呼出，`Option+C/S/T/A` 各扩展）；dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存（dev/prod 数据目录仍按 bundle id 隔离，配置默认值一致）。
 
+**菜单栏**：`runtime/menubar.rs`，框架唯一托盘图标（`public/bar_icon.png` + `icon_as_template` 深浅色自适应），左键弹聚合菜单。扩展在 Rust `setup` 内 `menubar::register(MenuBarContribution{ title, build, on_event })` 声明贡献段：`title`（分组标题，disabled 项渲染）、`build` 闭包返回 `Vec<MenuEntry>` 快照（`Item`/`CheckItem`/`Submenu`/`Separator`）、`on_event` 闭包收点击 id 自行过滤；状态变更后调 `menubar::refresh(&app)` 触发重建。镜像 `shortcut.rs` 的 hook 范式（`LazyLock<Mutex<Vec>>` + free function，`Arc<dyn Fn>` 锁外调用防 `on_event→refresh` 重入死锁）。**菜单按扩展 `title` 分组**（每段前插 disabled 标题项，段间分隔线）。**可见性 = Σ build() 项数 > 0**（空快照 = 该扩展当前不贡献；扩展全关图标自动隐藏）。Rust 侧能力（非 TS `Extension` 槽——菜单构建依赖 Rust State，纯 TS 扩展无此需求）。现 2 消费者：awake（保持系统唤醒：启用开关 + 显示模式二级菜单）、proxy（代理：开启/TUN 勾选 + 规则模式/订阅/节点子菜单，菜单项文案与界面 View.vue 一致）。
+
 **Agent 引擎**（`extensions/agent/native/engine/`）：tool calling loop，服务 agent 扩展。prompt/max_turns/资源上限由扩展 config 注入（非框架硬编码）。
 
 - `loop_runner.rs`：主循环 `run_loop`：调 LLM → 解析 tool_calls → 执行 → 回灌 → 下一轮
@@ -119,6 +121,7 @@ src-tauri/src/
 ├── runtime/            # 运行时核心
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
+│   ├── menubar.rs      # 聚合菜单栏托盘（框架唯一图标 + 扩展贡献段注册 + 可见性 = Σ build() 项数 > 0）
 │   ├── storage.rs      # TempHandle RAII + cleanup_all_voidnix_temps（启动期统一扫 /tmp 残留）+ ext_data_dir 统一扩展数据目录 + save_png_safely（path_guard + write 共用）
 │   ├── permission.rs   # 系统权限薄壳
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap，join_all 单线程并发交错）

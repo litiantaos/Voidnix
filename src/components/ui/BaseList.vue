@@ -92,7 +92,7 @@ function setSelectedIndex(index: number) {
   emit('select', index)
 }
 
-defineExpose({ selectedIndex: localIndex, setSelectedIndex })
+defineExpose({ selectedIndex: localIndex, setSelectedIndex, reveal })
 
 // ── Refs ──
 const itemRefs = ref<HTMLElement[]>([])
@@ -261,8 +261,12 @@ onKeyStroke('Enter', (e) => {
 })
 
 // ── Scroll ──
+/// 抑制 watch 的瞬时滚动，定位时由 reveal 自行 smooth 滚动接管。
+let suppressScroll = false
+
 watch(localIndex, async (index) => {
   await nextTick()
+  if (suppressScroll) return
   const el = itemRefs.value[index]
   if (el) {
     const container = el.closest('.overflow-y-auto, .overflow-auto')
@@ -295,6 +299,30 @@ watch(localIndex, async (index) => {
     }
   }
 })
+
+/// 定位到指定项：高亮选中（同步导航索引）+ 平滑滚动居中。
+function reveal(index: number) {
+  suppressScroll = true
+  setSelectedIndex(index)
+  // watch 的瞬时滚动在本轮微任务被 suppressScroll 拦截；下一宏任务复位并 smooth 滚动
+  setTimeout(() => {
+    suppressScroll = false
+    void scrollIntoCenter(index)
+  })
+}
+
+/// 平滑滚动到指定项居中
+async function scrollIntoCenter(index: number) {
+  await nextTick()
+  const el = itemRefs.value[index]
+  if (!el) return
+  const container = el.closest('.overflow-y-auto, .overflow-auto') as HTMLElement | null
+  if (!container) return
+  const elRect = el.getBoundingClientRect()
+  const containerRect = container.getBoundingClientRect()
+  const offset = elRect.top - containerRect.top + elRect.height / 2 - containerRect.height / 2
+  container.scrollTo({ top: container.scrollTop + offset, behavior: 'smooth' })
+}
 
 function getGroupValue(item: T): string {
   if (!props.groupField) return ''
