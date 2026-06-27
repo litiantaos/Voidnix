@@ -27,8 +27,8 @@ describe('proxy logic', () => {
   })
 
   it('formatDelay renders latency', () => {
-    expect(formatDelay(null)).toBe('-')
-    expect(formatDelay(0)).toBe('-')
+    expect(formatDelay(null)).toBe('')
+    expect(formatDelay(0)).toBe('')
     expect(formatDelay(123)).toBe('123ms')
   })
 
@@ -54,7 +54,7 @@ describe('proxy group helpers', () => {
   })
 
   it('isUserSelectorGroup excludes GLOBAL', () => {
-    expect(isUserSelectorGroup(selector('🚀', ['DIRECT'], 'DIRECT'))).toBe(true)
+    expect(isUserSelectorGroup(selector('节点选择', ['DIRECT'], 'DIRECT'))).toBe(true)
     expect(isUserSelectorGroup({ ...selector('GLOBAL', ['a'], 'a') })).toBe(false)
     expect(isUserSelectorGroup(node('HK-1'))).toBe(false)
   })
@@ -62,11 +62,11 @@ describe('proxy group helpers', () => {
   it('pickMainGroup prefers user selector over GLOBAL', () => {
     const proxies = {
       GLOBAL: selector('GLOBAL', ['a'], 'a'),
-      '🚀 节点选择': selector('🚀 节点选择', ['DIRECT', 'HK-1'], 'HK-1'),
+      节点选择: selector('节点选择', ['DIRECT', 'HK-1'], 'HK-1'),
       'HK-1': node('HK-1'),
     }
     const g = pickMainGroup(proxies)
-    expect(g?.name).toBe('🚀 节点选择')
+    expect(g?.name).toBe('节点选择')
   })
 
   it('pickMainGroup falls back to GLOBAL when no user selector', () => {

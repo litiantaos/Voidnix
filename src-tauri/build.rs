@@ -35,7 +35,7 @@ fn main() {
     // 无需 rerun-if-changed=../extensions——那会导致修改任意扩展文件都重跑 build.rs，
     // 连带 zsh-autosuggestions binary target 被重链接覆盖。
     // 仅补充 cargo 不自动追踪的 include_bytes!/include_str! 引用：
-    println!("cargo:rerun-if-changed=../public/bar-icon-fill.png");
+    println!("cargo:rerun-if-changed=../public/bar_icon.png");
 
     // tauri_build::build() 在编译期校验 tauri.conf.json 的 bundle.resources 文件存在。
     // debug 编译（cargo test/check/tauri dev）不走 beforeBuildCommand，release binary 不存在，

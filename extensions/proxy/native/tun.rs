@@ -32,9 +32,11 @@ pub fn stop_root(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("读取 pid 失败: {e}"))?
         .trim()
         .to_string();
+    // pid 经 shell_quote（pidfile 在用户可写目录，防内容被篡改注入）
     let cmd = format!(
-        "kill {pid} 2>/dev/null; rm -f {}",
-        shell_quote(&pidfile.display().to_string())
+        "kill {} 2>/dev/null; rm -f {}",
+        shell_quote(&pid),
+        shell_quote(&pidfile.display().to_string()),
     );
     let script = format!("do shell script \"{cmd}\" with administrator privileges");
     run_osascript(&script)?;
