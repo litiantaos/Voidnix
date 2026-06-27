@@ -84,7 +84,7 @@ const onModeChange = (value: string | number) => {
 
 onMounted(async () => {
   checkStatus()
-  // 菜单栏操作改状态后 Rust emit 同步面板显示（与 proxy-tun 同模式）
+  // 菜单栏操作改状态后 Rust emit 同步面板显示（与 proxy-enabled 同模式）
   unlistenEnabled = await listen<boolean>('awake-enabled', (e) => {
     isEnabled.value = e.payload
   })

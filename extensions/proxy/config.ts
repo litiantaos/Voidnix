@@ -12,11 +12,8 @@ export interface Subscription {
 
 /// proxy 扩展自管配置（持久化至 extensions/proxy/config.json）。
 /// 注意：代理核心是否运行（enabled）为 Rust 状态型（set/is_proxy_enabled），不存此；
-/// 系统代理不再独立配置——user 模式自动应用，TUN 模式无需（见 native/mod.rs）。
-/// 此处仅保存用户偏好与订阅元数据。
+/// 统一 TUN 模式（root mihomo 常驻 + 热重载 active/idle），无模式开关。此处仅保存用户偏好与订阅元数据。
 export const config = defineConfig('extensions/proxy/config', {
-  /// TUN 模式偏好（需 root 提权，Phase 7 接入）。
-  tunMode: false,
   /// 规则模式：rule | global | direct。
   mode: 'rule' as 'rule' | 'global' | 'direct',
   /// 混合代理端口（HTTP/SOCKS5 共用）。

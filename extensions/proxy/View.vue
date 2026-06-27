@@ -47,29 +47,13 @@
           <template #trailing>
             <BaseButton
               v-if="coreStatus.downloaded"
-              :disabled="toggling"
               :variant="isEnabled ? 'primary' : 'default'"
               @click.stop="toggleEnabled"
             >
-              {{ toggling ? '处理中' : isEnabled ? '已开启' : '已关闭' }}
+              {{ isEnabled ? '已开启' : '已关闭' }}
             </BaseButton>
             <BaseButton v-else :disabled="downloadingCore" @click.stop="downloadCore">
               {{ downloadingCore ? (coreProgress >= 100 ? '解压中' : `${coreProgress}%`) : '下载' }}
-            </BaseButton>
-          </template>
-        </BaseListItem>
-
-        <!-- TUN 模式 -->
-        <BaseListItem
-          v-else-if="item.type === 'tun'"
-          :ref="setRef"
-          title="TUN 模式"
-          subtitle="全局透明代理，接管所有流量"
-          :selected="selected"
-        >
-          <template #trailing>
-            <BaseButton :variant="config.tunMode ? 'primary' : 'default'" @click.stop="toggleTun">
-              {{ config.tunMode ? '已开启' : '已关闭' }}
             </BaseButton>
           </template>
         </BaseListItem>
@@ -103,18 +87,6 @@
           "
           :selected="selected"
         />
-
-        <!-- 节点加载占位 -->
-        <BaseListItem
-          v-else-if="item.type === 'loading'"
-          :ref="setRef"
-          title="节点加载中…"
-          :selected="selected"
-        >
-          <template #trailing>
-            <span class="i-ri-loader-4-line text-base text-tx-muted animate-spin" />
-          </template>
-        </BaseListItem>
 
         <!-- 分组切换（多 selector 订阅） -->
         <BaseListItem
@@ -235,12 +207,10 @@ interface NodeItem {
 
 type ListItem =
   | { type: 'enabled'; group: '代理' }
-  | { type: 'tun'; group: '代理' }
   | { type: 'mode'; group: '代理' }
   | { type: 'subscription'; group: '订阅'; sub: Subscription }
   | { type: 'groupSelector'; group: '节点' }
   | { type: 'node'; group: '节点'; node: NodeItem }
-  | { type: 'loading'; group: '节点' }
 
 /// Tauri 命令错误为 Rust `Err(String)` → 前端 reject 值即字符串；
 /// toErrorMessage 仅识别 Error 实例（字符串回落"未知错误"），这里补 string 透传便于诊断。
@@ -264,9 +234,6 @@ const coreStatus = ref<{ downloaded: boolean; version: string; downloading: bool
 const coreProgress = ref(0)
 const downloadingCore = ref(false)
 let unlistenProgress: (() => void) | null = null
-// 托盘菜单切换 TUN 时，Rust 广播 proxy-tun → 同步 config.tunMode（Rust 不回写 plugin-store，
-// 否则下次开面板 TUN 按钮显示旧值且会发出错误翻转）。
-let unlistenTun: (() => void) | null = null
 // 菜单栏改开关/规则模式/切节点时，Rust 广播 → 同步面板（命令内含「未变跳过」守卫防 watch 回声）
 let unlistenEnabled: (() => void) | null = null
 let unlistenMode: (() => void) | null = null
@@ -334,7 +301,6 @@ const hasSelectedNode = computed(() => nodes.value.some((n) => n.selected))
 const items = computed<ListItem[]>(() => {
   const list: ListItem[] = [
     { type: 'enabled', group: '代理' },
-    { type: 'tun', group: '代理' },
     { type: 'mode', group: '代理' },
   ]
   list.push(
@@ -348,14 +314,7 @@ const items = computed<ListItem[]>(() => {
   if (userGroups.value.length > 1) {
     list.push({ type: 'groupSelector', group: '节点' })
   }
-  // 启动中且暂无节点：显示加载占位，避免节点区空白滞后
-  if (toggling.value && nodes.value.length === 0) {
-    list.push({ type: 'loading', group: '节点' })
-  } else {
-    list.push(
-      ...nodes.value.map((n) => ({ type: 'node' as const, group: '节点' as const, node: n })),
-    )
-  }
+  list.push(...nodes.value.map((n) => ({ type: 'node' as const, group: '节点' as const, node: n })))
   return list
 })
 
@@ -419,15 +378,13 @@ const toggleEnabled = async () => {
       controllerPort: config.controllerPort,
       secret: config.secret,
       mode: config.mode,
-      tun: config.tunMode,
     })
-    // 成功后再翻转状态：切换期间按钮显示「处理中」并保持原样式，完成后才变（避免样式先于反馈）
+    // 成功后再翻转状态（toggling 仅作防重入，首次开代理提权时主窗口已隐藏）
     isEnabled.value = newState
     if (newState) {
-      // 系统代理由 Rust set_proxy_enabled 按 user/TUN 模式自动应用，前端无需干预
       await loadProxies()
     }
-    // 关闭代理时保留节点列表显示（仅停止 mihomo，不清空 proxiesData）
+    // 关闭代理时保留节点列表显示（热重载 idle，不清空 proxiesData）
   } catch (e) {
     appStore.showStatus(`切换失败：${errText(e)}`, { duration: 4000, kind: 'error' })
   } finally {
@@ -512,7 +469,6 @@ function onExecute(item: unknown) {
   const it = item as ListItem | undefined
   if (!it) return
   if (it.type === 'enabled') toggleEnabled()
-  else if (it.type === 'tun') toggleTun()
   else if (it.type === 'node') selectNode(it.node)
   else if (it.type === 'subscription') openEditModal(it.sub)
 }
@@ -614,32 +570,12 @@ async function doRemoveSub() {
   }
 }
 
-// ── 开关 ──
-async function toggleTun() {
-  const newVal = !config.tunMode
-  config.tunMode = newVal
-  if (isEnabled.value) {
-    try {
-      await invoke(CMD.proxyEnableTun, { tun: newVal })
-    } catch (e) {
-      const msg = errText(e)
-      if (!msg.includes('未运行')) {
-        config.tunMode = !newVal
-        appStore.showStatus(`TUN 切换失败：${msg}`, { duration: 4000, kind: 'error' })
-      }
-    }
-  }
-}
-
 onMounted(async () => {
   unlistenProgress = await listen<number>('proxy-core-progress', (e) => {
     coreProgress.value = e.payload
   })
-  unlistenTun = await listen<boolean>('proxy-tun', (e) => {
-    config.tunMode = e.payload
-  })
   unlistenEnabled = await listen<boolean>('proxy-enabled', (e) => {
-    // 切换中由 toggleEnabled 成功后统一设值，忽略命令内提前 emit 的事件以防样式先于「处理中」反馈
+    // 切换中由 toggleEnabled 成功后统一设值，忽略命令内提前 emit 的事件防回声
     if (toggling.value) return
     isEnabled.value = e.payload
   })
@@ -661,7 +597,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   unlistenProgress?.()
-  unlistenTun?.()
   unlistenEnabled?.()
   unlistenMode?.()
   unlistenNode?.()

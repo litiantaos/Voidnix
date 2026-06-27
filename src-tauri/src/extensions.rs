@@ -52,7 +52,6 @@ macro_rules! configure_app {
                 crate::extensions::finder_ext::set_finder_ext_enabled,
                 crate::extensions::proxy::is_proxy_enabled,
                 crate::extensions::proxy::proxy_core_status,
-                crate::extensions::proxy::proxy_enable_tun,
                 crate::extensions::proxy::proxy_ensure_core,
                 crate::extensions::proxy::proxy_get_proxies,
                 crate::extensions::proxy::proxy_remove_subscription,

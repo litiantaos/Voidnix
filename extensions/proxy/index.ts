@@ -5,7 +5,7 @@ export default defineExtension({
   meta: {
     id: 'proxy',
     name: '代理',
-    description: '基于 mihomo 的代理客户端',
+    description: '基于 mihomo 的代理工具',
     icon: 'i-ri-signal-tower-line',
     keywords: ['proxy', '代理', 'mihomo', 'vpn', '节点', '订阅'],
     order: 7,
