@@ -232,6 +232,8 @@ watch(
     if (newId && newId !== oldId) {
       if (!oldId) save('tools')
       reset()
+    } else if (!newId && oldId) {
+      nextTick(() => searchInput.value?.focus())
     }
   },
 )
