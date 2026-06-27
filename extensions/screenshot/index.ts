@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
 import { defineAsyncComponent } from 'vue'
+import { useAppStore } from '@/stores/app'
 import ScreenshotView from './View.vue'
 import ScreenshotOcr from './OcrView.vue'
 
@@ -80,7 +81,6 @@ export default defineExtension({
   },
   onExecute: async (result) => {
     if (result.data?.openSubview) {
-      const { useAppStore } = await import('@/stores/app')
       const appStore = useAppStore()
       appStore.setActiveModule('screenshot')
       appStore.setSearchQuery('')

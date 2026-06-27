@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { isTauri } from '@/utils/tauri'
+import { getVersion } from '@tauri-apps/api/app'
 import type { Update as TauriUpdate } from '@tauri-apps/plugin-updater'
 
 export interface UpdateInfo {
@@ -25,7 +26,6 @@ export const useUpdateStore = defineStore('update', () => {
     error.value = null
     try {
       const { check: checkUpdate } = await import('@tauri-apps/plugin-updater')
-      const { getVersion } = await import('@tauri-apps/api/app')
       const update = await checkUpdate()
       if (update?.available) {
         _updater = update
