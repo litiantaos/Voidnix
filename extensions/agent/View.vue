@@ -139,6 +139,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { open } from '@tauri-apps/plugin-shell'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -222,7 +223,6 @@ async function handleSubmit() {
 async function openUrl(url: string) {
   if (!url) return
   try {
-    const { open } = await import('@tauri-apps/plugin-shell')
     await open(url)
   } catch (err) {
     console.warn('Failed to open URL:', err)

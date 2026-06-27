@@ -1,5 +1,6 @@
 import { reactive, watch } from 'vue'
 import { load, type Store } from '@tauri-apps/plugin-store'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '@/utils/tauri'
 
 // store 实例缓存：避免每次防抖保存重新 load()。
@@ -127,13 +128,9 @@ export function defineConfig<T extends object>(storePath: string, defaults: T): 
 
   // 退出 flush：防抖窗口内变更不丢失（仅 Tauri 环境）
   if (isTauri) {
-    import('@tauri-apps/api/window')
-      .then(({ getCurrentWindow }) =>
-        getCurrentWindow().onCloseRequested(async () => {
-          if (saveTimer) await flushSave()
-        }),
-      )
-      .catch(() => {})
+    getCurrentWindow().onCloseRequested(async () => {
+      if (saveTimer) await flushSave()
+    })
   }
 
   // 跨窗口同步：订阅 onChange，其他窗口改值时本地 reactive 自动同步
