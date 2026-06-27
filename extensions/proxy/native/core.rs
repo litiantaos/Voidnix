@@ -1,9 +1,9 @@
 use crate::runtime::storage::ext_data_dir;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 use tauri::AppHandle;
 
 /// mihomo（Clash.Meta）核心版本与 darwin asset sha256（.gz，来自 release digest）。
@@ -37,41 +37,9 @@ pub struct RunParams {
     pub controller_port: u16,
     pub secret: String,
     pub mode: String,
-    /// TUN 模式：true 时 config.yaml 含 tun+dns 段，且 mihomo 须以 root 启动（osascript 提权）。
+    /// 是否含 tun 段：active config（用户开启）= true，idle config（关闭直通）= false。
+    /// 统一 TUN 模式后不再暴露为用户开关，仅作 active/idle 内部标记。
     pub tun: bool,
-}
-
-/// 托管 mihomo 子进程：Drop 自动 kill+wait，覆盖 app 正常退出场景。
-/// panic=abort 下 Drop 不跑，mihomo 可能残留——首期接受，后续可加启动期 cleanup 兜底。
-pub(crate) struct ManagedChild(Option<Child>);
-
-impl ManagedChild {
-    pub(crate) fn shutdown(&mut self) {
-        if let Some(mut child) = self.0.take() {
-            drop(child.stdin.take());
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
-}
-
-impl Drop for ManagedChild {
-    fn drop(&mut self) {
-        self.shutdown();
-    }
-}
-
-/// 代理核心运行状态：持有可能在跑的 mihomo 子进程。
-pub struct ProxyCore {
-    pub process: Mutex<Option<ManagedChild>>,
-}
-
-impl ProxyCore {
-    pub fn new() -> Self {
-        Self {
-            process: Mutex::new(None),
-        }
-    }
 }
 
 /// mihomo binary 写盘路径（app_data_dir/extensions/proxy/mihomo）。
@@ -267,33 +235,4 @@ mod tests {
     fn sha256_file_placeholder() {
         // 下载逻辑需 AppHandle + 联网，不便单测；sha256 校验由常量保证。
     }
-}
-
-/// 写入 binary（确保就绪）+ 合并订阅生成 config.yaml，返回 (bin_path, run_dir)。
-/// user 模式 spawn 与 root 模式 spawn_root 共用。
-pub(crate) async fn prepare(
-    app: &AppHandle,
-    params: &RunParams,
-) -> Result<(PathBuf, PathBuf), String> {
-    let bin = ensure_bin(app).await?;
-    let yaml = super::subscription::build_run_config(app, params)?;
-    std::fs::write(run_config_path(app)?, yaml).map_err(|e| e.to_string())?;
-    let dir = ext_data_dir(app, "proxy")?;
-    Ok((bin, dir))
-}
-
-/// 启动 mihomo 子进程（user 模式）：返回 ManagedChild 由调用方存入 State。
-///
-/// -d 指定运行目录（config.yaml 所在），stderr 继承以便 dev 调试查看 mihomo 日志。
-pub async fn spawn(app: &AppHandle, params: &RunParams) -> Result<ManagedChild, String> {
-    let (bin, dir) = prepare(app, params).await?;
-    let child = Command::new(&bin)
-        .arg("-d")
-        .arg(dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|e| format!("failed to spawn mihomo: {e}"))?;
-    Ok(ManagedChild(Some(child)))
 }

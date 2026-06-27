@@ -1,7 +1,6 @@
 mod controller;
 mod core;
 mod subscription;
-mod system_proxy;
 mod tun;
 
 use crate::runtime::menubar::{MenuBarContribution, MenuEntry};
@@ -11,19 +10,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use self::core::{ProxyCore, RunParams};
+use self::core::RunParams;
 
 /// 节点子菜单项 id 前缀（点击时按前缀剥离出节点名）。
 const NODE_ITEM_PREFIX: &str = "proxy_node:";
 
-/// 代理运行状态：enabled 标志 + mihomo 子进程托管 + 最近一次启动参数（供热重启）
-/// + system_proxy_active 标记（仅当本扩展设置过系统代理时才在关闭时清除，避免误清用户其它代理）
-/// + tun_active 标记（mihomo 是否以 root 运行；一旦 root 持续 true，TUN 开关热切换不重启不提权）。
+/// 代理运行状态：enabled（流量是否被代理）+ tun_active（root mihomo 进程是否在跑，常驻）
+/// + run_params（最近一次 active 参数，供热重载/复用）。
 pub struct ProxyState {
     pub enabled: AtomicBool,
-    pub core: ProxyCore,
     pub run_params: Mutex<Option<RunParams>>,
-    pub system_proxy_active: AtomicBool,
     pub tun_active: AtomicBool,
     /// 菜单栏节点子菜单缓存（name, 是否当前选中）；由 refresh_proxy_menu 异步拉取填充。
     pub menu_nodes: Mutex<Vec<(String, bool)>>,
@@ -31,15 +27,13 @@ pub struct ProxyState {
     pub menu_subs: Mutex<Vec<String>>,
 }
 
-/// 启用/停用代理核心（启动或终止 mihomo）。
+/// 启用/停用代理（统一 TUN 模式：root mihomo 常驻 + 热重载 active/idle）。
 ///
-/// tun=true 时 mihomo 以 root 运行（osascript 提权，无 Child 句柄，tun_active 标记）；
-/// tun=false 时以当前用户运行（ManagedChild 托管），并自动设置 macOS 系统代理指向 mixed-port
-///（TUN 模式由虚拟网卡接管全部流量，无需系统代理）。
-/// run 参数（端口/secret/mode/tun）由前端 config 传入，Rust 仅消费不回读 plugin-store。
-/// 启用成功后显示菜单栏托盘（开关代理/节点切换快捷入口），停用时隐藏。
+/// 启用：`ensure_root_mihomo`（首次提权 spawn，之后幂等）+ 热重载 active config；常驻后免再提权。
+/// 停用：热重载 idle config（mode=direct + 无 tun 段）→ mihomo 撤销 utun、流量直通，进程保留。
+/// run 参数（端口/secret/mode）由前端 config 传入，Rust 仅消费不回读 plugin-store。
+/// 启用后显示菜单栏托盘（开关代理/节点切换快捷入口），停用（idle 常驻）保留精简菜单。
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri 命令 IPC 契约决定参数数（state 注入 + 前端参数）
 pub async fn set_proxy_enabled(
     app: AppHandle,
     state: State<'_, ProxyState>,
@@ -48,7 +42,6 @@ pub async fn set_proxy_enabled(
     controller_port: u16,
     secret: String,
     mode: String,
-    tun: bool,
 ) -> Result<bool, String> {
     if enabled {
         let params = RunParams {
@@ -56,17 +49,9 @@ pub async fn set_proxy_enabled(
             controller_port,
             secret,
             mode,
-            tun,
+            tun: true, // 统一 TUN 模式：active config 恒含 tun 段
         };
         start_core(&app, &state, params).await?;
-        // user 模式自动设系统代理（TUN 模式由虚拟网卡接管全部流量，无需系统代理）。
-        // best-effort：失败仅记日志不阻塞启用——用户仍可手动 curl -x 走 mixed-port。
-        if !tun {
-            match system_proxy::apply(mixed_port, true) {
-                Ok(()) => state.system_proxy_active.store(true, Ordering::Relaxed),
-                Err(e) => eprintln!("[proxy] enable 时设系统代理失败: {e}"),
-            }
-        }
         // 立即显示菜单栏图标（静态项），异步补节点子菜单
         crate::runtime::menubar::refresh(&app);
         let _ = app.emit("proxy-enabled", true);
@@ -76,65 +61,82 @@ pub async fn set_proxy_enabled(
         });
         Ok(true)
     } else {
-        stop_core(&app, &state)?;
+        stop_core(&app, &state).await?;
         crate::runtime::menubar::refresh(&app);
         let _ = app.emit("proxy-enabled", false);
         Ok(false)
     }
 }
 
-/// 启动 mihomo 核心（user 或 root 模式）。已在运行视为成功（幂等，支持重复调用）。
-/// 锁用块作用域包裹，确保 MutexGuard 不跨 await（Send 分析）。
-async fn start_core(app: &AppHandle, state: &ProxyState, params: RunParams) -> Result<(), String> {
-    {
-        let guard = state.core.process.lock().map_err(|e| e.to_string())?;
-        if guard.is_some() || state.tun_active.load(Ordering::Relaxed) {
-            return Ok(());
-        }
+/// 写 config.yaml + PUT /configs 热重载（active/idle 切换、订阅变更共用）。
+/// TUN 模式下 root mihomo 常驻，代理开关 = 热重载 active/idle config，免 spawn 免提权。
+async fn reload_config_yaml(app: &AppHandle, params: &RunParams) -> Result<(), String> {
+    let yaml = subscription::build_run_config(app, params)?;
+    let path = core::run_config_path(app)?;
+    std::fs::write(&path, yaml).map_err(|e| e.to_string())?;
+    let base = format!("http://127.0.0.1:{}", params.controller_port);
+    controller::reload_config(&base, &params.secret, &path.to_string_lossy()).await
+}
+
+/// 确保 root mihomo 进程在跑（常驻）。已常驻则幂等返回；否则 spawn_root（提权一次）
+/// 并 wait_ready（失败回滚 stop_root）。一旦启动，进程常驻到显式 stop_root 或 app
+/// 退出——代理开关与 TUN 切换均走热重载，免再提权。
+///
+/// 返回 `true` 表示本次新 spawn（提权一次），`false` 表示复用已常驻进程。
+/// 除 `tun_active` 外再用 `root_mihomo_running` 运行时兜底：防 `reconnect_root_mihomo`
+/// 尚未跑完（tun_active 仍 false）时调用方重复 spawn 致端口冲突。
+async fn ensure_root_mihomo(
+    app: &AppHandle,
+    state: &ProxyState,
+    params: &RunParams,
+) -> Result<bool, String> {
+    if state.tun_active.load(Ordering::Relaxed) || root_mihomo_running(app) {
+        state.tun_active.store(true, Ordering::Relaxed);
+        return Ok(false); // 已常驻
     }
     let base = format!("http://127.0.0.1:{}", params.controller_port);
-    if params.tun {
-        tun::spawn_root(app, &params).await?;
-        if let Err(e) = controller::wait_ready(&base, &params.secret, 8000).await {
-            let _ = tun::stop_root(app); // 失败回滚（停 root 实例）
-            return Err(e);
-        }
-        state.tun_active.store(true, Ordering::Relaxed);
-    } else {
-        let child = core::spawn(app, &params).await?;
-        {
-            let mut g = state.core.process.lock().map_err(|e| e.to_string())?;
-            *g = Some(child);
-        }
-        if let Err(e) = controller::wait_ready(&base, &params.secret, 8000).await {
-            let mut g = state.core.process.lock().map_err(|e| e.to_string())?;
-            if let Some(mut managed) = g.take() {
-                managed.shutdown(); // 失败回滚（停 child）
-            }
-            return Err(e);
-        }
+    tun::spawn_root(app, params).await?;
+    if let Err(e) = controller::wait_ready(&base, &params.secret, 8000).await {
+        let _ = tun::stop_root(app); // 失败回滚
+        return Err(e);
+    }
+    state.tun_active.store(true, Ordering::Relaxed);
+    Ok(true)
+}
+
+/// 启动代理（统一 TUN 模式）。已开启视为成功（幂等）。
+///
+/// root mihomo 常驻：未常驻时 `ensure_root_mihomo` 提权 spawn 一次（首次），之后热重载 active
+/// config 恢复代理，**免再提权**。首启由 `spawn_root→prepare` 已写 active config.yaml +
+/// `wait_ready` 就绪，故仅复用路径才需 `reload_config_yaml`，避免首启重复写盘 + 多一次 PUT。
+async fn start_core(app: &AppHandle, state: &ProxyState, params: RunParams) -> Result<(), String> {
+    if state.enabled.load(Ordering::Relaxed) {
+        return Ok(()); // 幂等：已开启
+    }
+    let freshly_spawned = ensure_root_mihomo(app, state, &params).await?;
+    if !freshly_spawned {
+        // 复用常驻进程：热重载 active config 恢复代理（免提权）
+        reload_config_yaml(app, &params).await?;
     }
     *state.run_params.lock().map_err(|e| e.to_string())? = Some(params);
     state.enabled.store(true, Ordering::Relaxed);
     Ok(())
 }
 
-/// 停止 mihomo 核心（同步：system_proxy/tun/child 三路停均为同步调用）。
-/// load 判断 → 副作用成功后再 store(false)：取消授权/失败时状态不变，用户可重试，
-/// 避免「swap 先于副作用」导致 tun_active 假清而 root 进程仍驻留。
-fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
-    // 若本扩展设置过系统代理，关闭前清除（恢复直连），避免指向已停核心导致断网。
-    // best-effort：apply 成功才清标记，失败保留 true 以便下次关闭重试。
-    if state.system_proxy_active.load(Ordering::Relaxed) && system_proxy::apply(0, false).is_ok() {
-        state.system_proxy_active.store(false, Ordering::Relaxed);
-    }
+/// 停止代理（流量切直通）。
+///
+/// root mihomo 常驻：**不 kill 进程**，热重载 idle config（mode=direct + 无 tun 段）→ mihomo
+/// 撤销 utun、流量直通（被墙不可达，符合「关闭」语义），进程保留以便下次免提权恢复。
+/// 热重载失败必须上抛：否则 enabled=false 但 mihomo 仍跑 active config（含 tun 段），流量
+/// 持续被代理、utun 未撤——与 stop_root「验证确死否则报错」的关闭可靠性保持一致语义。
+async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
     if state.tun_active.load(Ordering::Relaxed) {
-        tun::stop_root(app)?;
-        state.tun_active.store(false, Ordering::Relaxed);
-    } else {
-        let child_opt = state.core.process.lock().map_err(|e| e.to_string())?.take();
-        if let Some(mut managed) = child_opt {
-            managed.shutdown();
+        let idle = state.run_params.lock().map_err(|e| e.to_string())?.clone();
+        if let Some(mut p) = idle {
+            p.mode = "direct".into();
+            p.tun = false;
+            // 失败上抛（?）：保持 enabled=true，前端 showStatus('error') 提示用户重试
+            reload_config_yaml(app, &p).await?;
         }
     }
     state.enabled.store(false, Ordering::Relaxed);
@@ -187,9 +189,8 @@ pub async fn proxy_remove_subscription(
 
 /// 核心运行中时热重载以应用配置变更（订阅增删）。
 ///
-/// 改用 controller `PUT /configs {path}` 热重载而非进程重启：重建 config.yaml 后通知
-/// mihomo 重新加载即可，user/root 两种模式统一生效——避免 TUN 模式下进程重启会漏停
-/// root 实例 + 拉起无权限的 user 子进程（端口冲突）的死局。停用状态直接跳过。
+/// controller `PUT /configs {path}` 热重载：重建 config.yaml 后通知 mihomo 重新加载，
+/// root 进程常驻、免重启免再提权。停用状态直接跳过。
 async fn reload_if_running(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
     if !state.enabled.load(Ordering::Relaxed) {
         return Ok(());
@@ -201,14 +202,8 @@ async fn reload_if_running(app: &AppHandle, state: &ProxyState) -> Result<(), St
         .clone()
         .ok_or_else(|| "core running but no run params".to_string())?;
 
-    // 重建 config.yaml（合并 subs/*.yaml 最新订阅）
-    let yaml = subscription::build_run_config(app, &params)?;
-    let path = core::run_config_path(app)?;
-    std::fs::write(&path, yaml).map_err(|e| e.to_string())?;
-
-    // PUT /configs {path} → mihomo 原生热重载（proxies/groups/rules 全量刷新）
-    let base = format!("http://127.0.0.1:{}", params.controller_port);
-    controller::reload_config(&base, &params.secret, &path.to_string_lossy()).await?;
+    // 重建 config.yaml（合并 subs/*.yaml 最新订阅）+ PUT /configs 热重载
+    reload_config_yaml(app, &params).await?;
 
     // 节点列表可能变化，刷新聚合菜单子菜单（best-effort，不阻塞命令返回）
     let app2 = app.clone();
@@ -304,71 +299,7 @@ pub async fn proxy_set_mode(
     Ok(())
 }
 
-/// 切换 TUN 模式。
-///
-/// mihomo 已 root 运行时（tun_active）：热重载 config（改 tun 段 + PUT /configs），
-/// 不重启进程、不提权——TUN 开关切换仅首次提权一次。
-/// user 模式时：停 user mihomo + 起 root mihomo（osascript 提权一次）。
-#[tauri::command]
-pub async fn proxy_enable_tun(
-    app: AppHandle,
-    state: State<'_, ProxyState>,
-    tun: bool,
-) -> Result<bool, String> {
-    apply_tun(&app, &state, tun).await
-}
-
-/// TUN 切换核心逻辑（命令与托盘菜单共用）。
-async fn apply_tun(app: &AppHandle, state: &ProxyState, tun: bool) -> Result<bool, String> {
-    let mut params = state
-        .run_params
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or_else(|| "代理核心未运行".to_string())?;
-    if params.tun == tun {
-        return Ok(tun);
-    }
-    params.tun = tun;
-    let base = format!("http://127.0.0.1:{}", params.controller_port);
-    let secret = params.secret.clone();
-
-    if state.tun_active.load(Ordering::Relaxed) {
-        // mihomo 已 root 运行：热切换 tun（仅重写 config.yaml + PUT /configs reload），免重启免提权
-        let yaml = subscription::build_run_config(app, &params)?;
-        let path = core::run_config_path(app)?;
-        std::fs::write(&path, yaml).map_err(|e| e.to_string())?;
-        controller::reload_config(&base, &secret, &path.to_string_lossy()).await?;
-    } else {
-        // user 模式 → 切 root（提权一次）：停 user mihomo + 起 root mihomo
-        let managed_opt = state.core.process.lock().map_err(|e| e.to_string())?.take();
-        if let Some(mut managed) = managed_opt {
-            managed.shutdown();
-        }
-        tun::spawn_root(app, &params).await?;
-        controller::wait_ready(&base, &secret, 8000).await?;
-        state.tun_active.store(true, Ordering::Relaxed);
-    }
-    // 切换后同步系统代理：切到 TUN 时清除（虚拟网卡接管，系统代理冗余），
-    // 切回 user 时重设（让系统流量经 mixed-port 走 mihomo）。best-effort 不阻断切换。
-    if tun {
-        if state.system_proxy_active.load(Ordering::Relaxed)
-            && system_proxy::apply(0, false).is_ok()
-        {
-            state.system_proxy_active.store(false, Ordering::Relaxed);
-        }
-    } else if system_proxy::apply(params.mixed_port, true).is_ok() {
-        state.system_proxy_active.store(true, Ordering::Relaxed);
-    }
-    *state.run_params.lock().map_err(|e| e.to_string())? = Some(params);
-    // 广播新 TUN 状态：托盘切换时前端 config.tunMode 会与之失步（Rust 不回写 plugin-store），
-    // 由前端监听同步。命令路径（前端已先设 config）收到的是同值，无副作用。
-    let _ = app.emit("proxy-tun", tun);
-    crate::runtime::menubar::refresh(app);
-    Ok(tun)
-}
-
-// ── 聚合菜单栏贡献（代理开启后向框架统一托盘贡献：开关/TUN/面板/节点切换） ──
+// ── 聚合菜单栏贡献（代理开启后向框架统一托盘贡献：开关/规则模式/节点切换） ──
 
 /// 拉取最新节点缓存 + 重建聚合菜单（best-effort，controller 不可达时保留上次缓存）。
 async fn refresh_proxy_menu(app: &AppHandle) {
@@ -383,13 +314,18 @@ async fn refresh_proxy_menu(app: &AppHandle) {
 }
 
 /// 菜单快照：镜像界面「代理」分组（开启代理/TUN 勾选 + 规则模式二级菜单）+ 订阅 + 节点子菜单。
-/// 文案与界面 View.vue 一致；未激活返回空。
+/// 文案与界面 View.vue 一致；关闭（含 idle 常驻）返回空——菜单栏图标随之隐藏，保持干净。
 fn build_proxy(app: &AppHandle) -> Vec<MenuEntry> {
     let state = app.state::<ProxyState>();
     if !state.enabled.load(Ordering::Relaxed) {
         return vec![];
     }
-    let tun_on = state.tun_active.load(Ordering::Relaxed);
+    // active：完整菜单（开启/规则/订阅/节点）
+    let mut entries = vec![MenuEntry::CheckItem {
+        id: "proxy_toggle".into(),
+        label: "开启代理".into(),
+        checked: true,
+    }];
     let mode = crate::runtime::lock_or_recover(&state.run_params)
         .as_ref()
         .map(|p| p.mode.clone())
@@ -399,38 +335,26 @@ fn build_proxy(app: &AppHandle) -> Vec<MenuEntry> {
         "direct" => "直连",
         _ => "规则",
     };
-    let mut entries = vec![
-        MenuEntry::CheckItem {
-            id: "proxy_toggle".into(),
-            label: "开启代理".into(),
-            checked: true,
-        },
-        MenuEntry::CheckItem {
-            id: "proxy_tun".into(),
-            label: "TUN 模式".into(),
-            checked: tun_on,
-        },
-        MenuEntry::Submenu {
-            label: format!("规则模式：{mode_label}"),
-            items: vec![
-                MenuEntry::CheckItem {
-                    id: "proxy_mode_rule".into(),
-                    label: "规则".into(),
-                    checked: mode == "rule",
-                },
-                MenuEntry::CheckItem {
-                    id: "proxy_mode_global".into(),
-                    label: "全局".into(),
-                    checked: mode == "global",
-                },
-                MenuEntry::CheckItem {
-                    id: "proxy_mode_direct".into(),
-                    label: "直连".into(),
-                    checked: mode == "direct",
-                },
-            ],
-        },
-    ];
+    entries.push(MenuEntry::Submenu {
+        label: format!("规则模式：{mode_label}"),
+        items: vec![
+            MenuEntry::CheckItem {
+                id: "proxy_mode_rule".into(),
+                label: "规则".into(),
+                checked: mode == "rule",
+            },
+            MenuEntry::CheckItem {
+                id: "proxy_mode_global".into(),
+                label: "全局".into(),
+                checked: mode == "global",
+            },
+            MenuEntry::CheckItem {
+                id: "proxy_mode_direct".into(),
+                label: "直连".into(),
+                checked: mode == "direct",
+            },
+        ],
+    });
     // 订阅子菜单（订阅名由前端 proxy_sync_menu_subs 推送；点击打开面板）
     let subs = crate::runtime::lock_or_recover(&state.menu_subs).clone();
     if !subs.is_empty() {
@@ -480,24 +404,16 @@ fn build_proxy(app: &AppHandle) -> Vec<MenuEntry> {
 /// 菜单点击分派（均复用命令，内部 emit 同步前端 + refresh）。
 fn on_proxy_event(app: &AppHandle, id: &str) {
     match id {
-        // 开启代理 CheckItem（菜单仅 enabled 时显示，点击 = 关闭）
+        // 开启代理 CheckItem（菜单仅 active 显示，点击 = 关闭转 idle）
         "proxy_toggle" => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 let state = app.state::<ProxyState>();
-                if let Err(e) = stop_core(&app, &state) {
+                if let Err(e) = stop_core(&app, &state).await {
                     eprintln!("[proxy] 菜单关闭代理: {e}");
                 }
                 let _ = app.emit("proxy-enabled", false);
                 crate::runtime::menubar::refresh(&app);
-            });
-        }
-        "proxy_tun" => {
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let state = app.state::<ProxyState>();
-                let cur = state.tun_active.load(Ordering::Relaxed);
-                let _ = apply_tun(&app, &state, !cur).await; // apply_tun 内部 emit proxy-tun + refresh
             });
         }
         "proxy_mode_rule" | "proxy_mode_global" | "proxy_mode_direct" => {
@@ -584,6 +500,62 @@ fn parse_main_group(val: &Value) -> (Option<String>, Vec<(String, bool)>) {
     (group_name, nodes)
 }
 
+/// app 启动复用上次退出遗留的 root mihomo（常驻方案下进程在 app 退出后仍跑）。
+///
+/// 检测到则标记 tun_active=true（下次开代理走热重载复用，免 spawn 免提权）+ 热重载 idle
+/// config（无论退出前 active/idle，统一重置为 idle 直通，保证前端 enabled=false 与实际
+/// 流量直通一致）。读 config.json 的 controllerPort/secret 连接残留 mihomo。
+async fn reconnect_root_mihomo(app: &AppHandle) {
+    if !root_mihomo_running(app) {
+        return;
+    }
+    let state = app.state::<ProxyState>();
+    state.tun_active.store(true, Ordering::Relaxed);
+    if let Some((port, secret)) = read_controller_creds(app) {
+        let idle = RunParams {
+            mixed_port: 0,
+            controller_port: port,
+            secret,
+            mode: "direct".into(),
+            tun: false,
+        };
+        if let Err(e) = reload_config_yaml(app, &idle).await {
+            eprintln!("[proxy] 启动复用残留 mihomo、热重载 idle 失败: {e}");
+        }
+    }
+    crate::runtime::menubar::refresh(app);
+}
+
+/// 按 mihomo binary 完整路径 ps 查是否有 root 实例在跑（路径含 bundle-id 数据目录，唯一）。
+fn root_mihomo_running(app: &AppHandle) -> bool {
+    let Ok(dir) = crate::runtime::storage::ext_data_dir(app, "proxy") else {
+        return false;
+    };
+    let bin = dir.join("mihomo").display().to_string();
+    let Ok(out) = std::process::Command::new("ps")
+        .args(["-eo", "args"])
+        .output()
+    else {
+        return false;
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|l| l.contains(&bin))
+}
+
+/// 读 extensions/proxy/config.json 的 controllerPort/secret（前端 defineConfig 持久化），
+/// 供热重载 idle 连接残留 mihomo。
+fn read_controller_creds(app: &AppHandle) -> Option<(u16, String)> {
+    let path = crate::runtime::storage::ext_data_dir(app, "proxy")
+        .ok()?
+        .join("config.json");
+    let text = std::fs::read_to_string(&path).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    let port = v.get("controllerPort")?.as_u64()? as u16;
+    let secret = v.get("secret")?.as_str()?.to_string();
+    Some((port, secret))
+}
+
 /// 命令注册（局部 invoke_handler，§2.8）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("proxy").build()
@@ -601,9 +573,7 @@ impl Extension for ProxyExtension {
     async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
         app.manage(ProxyState {
             enabled: AtomicBool::new(false),
-            core: ProxyCore::new(),
             run_params: Mutex::new(None),
-            system_proxy_active: AtomicBool::new(false),
             tun_active: AtomicBool::new(false),
             menu_nodes: Mutex::new(Vec::new()),
             menu_subs: Mutex::new(Vec::new()),
@@ -612,6 +582,12 @@ impl Extension for ProxyExtension {
             title: "代理",
             build: Arc::new(build_proxy),
             on_event: Arc::new(on_proxy_event),
+        });
+        // app 启动检测上次退出遗留的 root mihomo（常驻未停），复用：标记 tun_active +
+        // 热重载 idle 重置状态（防端口冲突 + 免重提权）。best-effort，不阻塞 setup。
+        let app2 = app.clone();
+        tauri::async_runtime::spawn(async move {
+            reconnect_root_mihomo(&app2).await;
         });
         Ok(())
     }
