@@ -18,6 +18,17 @@ const MIRROR_PREFIX: &str = "https://gh-proxy.com/";
 /// 内核下载进行中标记（全局，ensure_bin 期间置 true，供 status 查询）。
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
+/// 下载进度事件 payload：received 为已收字节，total 为 None 表示 chunked（无法算百分比）。
+#[derive(Clone, Serialize)]
+pub struct CoreProgress {
+    pub received: u64,
+    pub total: Option<u64>,
+}
+
+/// 下载串行化锁（配合 ensure_bin double-check，防并发下载损坏 .gz）。
+static DOWNLOAD_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
+
 /// mihomo -v 版本号提取正则（LazyLock 避免每次 core_version 回退重编译）。
 static VERSION_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"v\d+\.\d+\.\d+").expect("invalid version regex"));
@@ -52,14 +63,20 @@ pub(crate) fn run_config_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(ext_data_dir(app, "proxy")?.join("config.yaml"))
 }
 
-/// 确保 mihomo binary 就绪：已存在则直接复用，否则下载（spawn_blocking 避免阻塞 executor）。
+/// 确保 mihomo binary 就绪：已存在则直接复用，否则下载。
 ///
 /// 不做版本强校验——避免「binary 已在但因 version 文件缺失/不匹配而强制重下」导致的网络卡死。
 /// 升级 mihomo：用户手动删除 mihomo 文件触发重下（或后续加「更新内核」入口）。
+/// 并发守卫：多调用方（双击下载/开代理 spawn）同时触发时串行化，仅一个真正下载，其余
+/// double-check 复用——防多流并发写同一 .gz 致 sha256 校验失败、binary 无法产出。
 pub async fn ensure_bin(app: &AppHandle) -> Result<PathBuf, String> {
     let bin = bin_path(app)?;
     if bin.exists() {
         return Ok(bin);
+    }
+    let _guard = DOWNLOAD_LOCK.lock().await;
+    if bin.exists() {
+        return Ok(bin); // double-check：抢锁期间已被前一个下载者写好
     }
     download_core_async(app).await?;
     Ok(bin)
@@ -119,7 +136,7 @@ fn core_version(app: &AppHandle, bin: &Path) -> Option<String> {
 }
 
 /// 下载 mihomo：reqwest 流式拉取 .gz（推送进度事件）→ sha256 校验 → gunzip 解压 → chmod。
-/// 进度通过 app.emit("proxy-core-progress", u8) 推送；gunzip 依赖系统命令（macOS 自带）。
+/// 进度通过 app.emit("proxy-core-progress", CoreProgress) 推送（received/total，chunked 时 total=None）；gunzip 依赖系统命令（macOS 自带）。
 async fn download_core_async(app: &AppHandle) -> Result<(), String> {
     let arch = if cfg!(target_arch = "aarch64") {
         "arm64"
@@ -154,8 +171,8 @@ async fn download_core_inner(
     use futures_util::StreamExt;
     use tauri::Emitter;
 
-    // 流式下载 + 进度推送
-    let resp = crate::http::client()
+    // 流式下载 + 进度推送（download_client 无整体超时，慢网络下大文件不会被中途掐断）
+    let resp = crate::http::download_client()
         .get(url)
         .send()
         .await
@@ -170,12 +187,18 @@ async fn download_core_inner(
         let chunk = chunk.map_err(|e| format!("下载读取失败: {e}"))?;
         std::io::Write::write_all(&mut file, &chunk).map_err(|e| e.to_string())?;
         received += chunk.len() as u64;
-        if let Some(t) = total {
-            let pct = (received * 100 / t).min(100) as u8;
-            let _ = app.emit("proxy-core-progress", pct);
-        }
+        let _ = app.emit("proxy-core-progress", CoreProgress { received, total });
     }
     drop(file);
+    // 字节收齐，进入 sha256 + gunzip 后处理：emit 完成信号（total 设为 received 标记下载完成，
+    // chunked 场景也借此从「下载中」切到后处理态），前端按钮转「解压中」
+    let _ = app.emit(
+        "proxy-core-progress",
+        CoreProgress {
+            received,
+            total: Some(received),
+        },
+    );
 
     // sha256 校验（sha2，防篡改 / 部分下载损坏）
     let actual = sha256_file(gz)?;
@@ -208,7 +231,6 @@ async fn download_core_inner(
 
     std::fs::write(bin.parent().unwrap().join("mihomo.version"), MIHOMO_VERSION)
         .map_err(|e| e.to_string())?;
-    let _ = app.emit("proxy-core-progress", 100u8);
     Ok(())
 }
 

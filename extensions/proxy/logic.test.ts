@@ -5,7 +5,6 @@ import {
   formatDelay,
   filterNodes,
   isUserSelectorGroup,
-  pickMainGroup,
   latestDelay,
   type ProxyEntry,
 } from './logic'
@@ -57,21 +56,6 @@ describe('proxy group helpers', () => {
     expect(isUserSelectorGroup(selector('节点选择', ['DIRECT'], 'DIRECT'))).toBe(true)
     expect(isUserSelectorGroup({ ...selector('GLOBAL', ['a'], 'a') })).toBe(false)
     expect(isUserSelectorGroup(node('HK-1'))).toBe(false)
-  })
-
-  it('pickMainGroup prefers user selector over GLOBAL', () => {
-    const proxies = {
-      GLOBAL: selector('GLOBAL', ['a'], 'a'),
-      节点选择: selector('节点选择', ['DIRECT', 'HK-1'], 'HK-1'),
-      'HK-1': node('HK-1'),
-    }
-    const g = pickMainGroup(proxies)
-    expect(g?.name).toBe('节点选择')
-  })
-
-  it('pickMainGroup falls back to GLOBAL when no user selector', () => {
-    const proxies = { GLOBAL: selector('GLOBAL', ['a'], 'a'), a: node('a') }
-    expect(pickMainGroup(proxies)?.name).toBe('GLOBAL')
   })
 
   it('latestDelay reads last history entry', () => {

@@ -117,7 +117,7 @@ Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`
 src-tauri/src/
 ├── lib.rs / main.rs    # 入口（lib.rs setup 内含启动埋点，debug 构建打印 `[boot]` 各阶段耗时 + <100ms 判定）
 ├── extensions.rs       # 自动生成（configure_app! 含 .plugin() 链 + 全局 generate_handler! + mod 声明）
-├── http.rs             # 全局 HTTP 客户端 + http_get 命令（浏览器 UA 伪装 + SSRF 防护 + 重定向限制 + 共享 parse_scheme_host/is_blocked_host 原语；ip/currency 等纯 TS 扩展消费）
+├── http.rs             # HTTP 客户端（HTTP_CLIENT 整体 120s 超时 + DOWNLOAD_CLIENT 无整体超时仅建连 30s 供流式大文件下载）+ http_get 命令（浏览器 UA 伪装 + SSRF 防护 + 重定向限制 + 共享 parse_scheme_host/is_blocked_host 原语；ip/currency 等纯 TS 扩展消费）
 ├── runtime/            # 运行时核心
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制

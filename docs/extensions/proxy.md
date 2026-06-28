@@ -17,7 +17,7 @@ mihomo 监听 `mixed-port`（HTTP+SOCKS5 共用）与 `external-controller`（RE
 
 ## mihomo binary 下载（运行时按需）
 
-不编译期嵌入（避免 Voidnix 二进制膨胀 + 可热更新），改为运行时按需下载。`core::ensure_bin`：binary 已存在即复用（不校验版本，避免无谓重下），否则 `download_core_async` reqwest 流式拉取（经国内镜像 `gh-proxy.com` 前缀，按 `content-length` 推送 `proxy-core-progress` 百分比事件）→ sha256 校验（sha2）→ `gunzip` 解压 → chmod 0o755。镜像仅代理转发，sha256 保证内容一致。代价：首次使用需联网。
+不编译期嵌入（避免 Voidnix 二进制膨胀 + 可热更新），改为运行时按需下载。`core::ensure_bin`：binary 已存在即复用（不校验版本，避免无谓重下），否则下载（并发触发时——双击/开代理 spawn——tokio Mutex + double-check 串行化，仅一个真正下载、其余抢锁后复用，防多流写同一 `mihomo.gz` 损坏致 sha256 失败、binary 无法产出），`download_core_async` 经专用 `http::download_client`（无整体超时，仅建连 30s——慢网络下 15MB gz 下载耗时不可控，全局 `HTTP_CLIENT` 的 120s 整体超时含 body 读取会中途掐断流）reqwest 流式拉取（国内镜像 `gh-proxy.com` 前缀），逐 chunk 推送 `proxy-core-progress` 事件，payload `{ received, total }`：前端按钮文案 `连接中 → N% → 解压中`（未收首字节=连接中；有 Content-Length 且未收齐=N%；字节收齐后 Rust 再 emit 一次 `total=Some(received)` 完成信号=解压中，覆盖 sha256+gunzip 后处理阶段），镜像回源 chunked（`total=None`，实测 gh-proxy 透传 content-length 不触发）时诚实回退显示已收字节。→ sha256 校验（sha2）→ `gunzip` 解压 → chmod 0o755。镜像仅代理转发，sha256 保证内容一致。代价：首次使用需联网。
 
 升级 mihomo：改 `core.rs` 的 `MIHOMO_VERSION` + `SHA256_ARM64`/`SHA256_AMD64` 常量 + 手动删除 `mihomo` 文件触发重下（binary 存在即复用，不自动按版本替换）。
 
@@ -31,9 +31,9 @@ osascript 每次提权都弹系统密码框，若「开/关代理 = spawn/kill r
 
 - **首次开代理**：`ensure_root_mihomo` spawn_root（提权 1 次）+ 热重载 active config；之后 `tun_active=true`，进程常驻
 - **关代理**：`stop_core` 不 kill，改热重载 idle config（`mode=direct + 无 tun 段`）→ mihomo 撤销 utun、流量直通（被墙不可达，符合「关闭」语义），**进程保留**
-- **再开代理**：`start_core` 检测 `tun_active=true` → 热重载 active config 恢复，**免提权**
+- **再开代理**：`start_core` 检测 `tun_active=true` → 热重载 active config 恢复，**免提权**；热重载失败（残留进程 secret 不一致——mihomo controller 的 `secret` 启动时固化、reload 不生效）时回退 `stop_root` + `spawn_root` 重启进程（用当前 secret）
 
-效果：密码从「每次开关 2 次」→「首次 1 次，之后 0 次」。代价：root mihomo 进程首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感）。app 启动时 `reconnect_root_mihomo` 检测上次遗留的 root mihomo（按 binary 路径 ps 查）并复用（标记 tun_active + 热重载 idle 重置状态），防端口冲突 + 免重提权。
+效果：密码从「每次开关 2 次」→「首次 1 次，之后 0 次」。代价：root mihomo 进程首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感）。app 启动时 `reconnect_root_mihomo` 检测上次遗留的 root mihomo（按 binary 路径 ps 查）并热重载 idle 重置状态——成功才标记 `tun_active`（复用），失败（secret 不一致等）不标记、留给开代理时回退重 spawn，防端口冲突 + 免重提权。
 
 > 历史上有过 user 模式（系统代理，仅覆盖遵守系统代理的应用）+ TUN 模式双选；因 user 模式覆盖不全（命令行/Docker/部分原生应用不走代理）非完整代理，已移除，统一为 TUN。
 

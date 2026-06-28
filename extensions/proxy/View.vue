@@ -52,8 +52,13 @@
             >
               {{ isEnabled ? '已开启' : '已关闭' }}
             </BaseButton>
-            <BaseButton v-else :disabled="downloadingCore" @click.stop="downloadCore">
-              {{ downloadingCore ? (coreProgress >= 100 ? '解压中' : `${coreProgress}%`) : '下载' }}
+            <BaseButton
+              v-else
+              :disabled="downloadingCore"
+              :class="downloadingCore ? 'tabular-nums min-w-12' : ''"
+              @click.stop="downloadCore"
+            >
+              {{ downloadingCore ? downloadText : '下载内核' }}
             </BaseButton>
           </template>
         </BaseListItem>
@@ -135,11 +140,11 @@
       <div flex="~ col" gap="4">
         <div class="form-field">
           <span class="form-label">订阅名称</span>
-          <BaseInput v-model="editForm.name" placeholder="订阅名称" />
+          <BaseInput v-model="editForm.name" placeholder="默认为订阅链接域名" />
         </div>
         <div class="form-field">
           <span class="form-label">订阅链接</span>
-          <BaseInput v-model="editForm.url" placeholder="订阅链接" />
+          <BaseInput v-model="editForm.url" placeholder="订阅 URL 或 Clash YAML URL" />
         </div>
       </div>
       <template #footer-start>
@@ -231,7 +236,9 @@ const coreStatus = ref<{ downloaded: boolean; version: string; downloading: bool
   version: '',
   downloading: false,
 })
-const coreProgress = ref(0)
+const coreProgress = ref<{ received: number; total: number | null }>({ received: 0, total: null })
+/// 首个进度事件是否到达：区分「连接中」（建连 + 等首字节）与「下载中」（chunked 已收字节）
+const progressStarted = ref(false)
 const downloadingCore = ref(false)
 let unlistenProgress: (() => void) | null = null
 // 菜单栏改开关/规则模式/切节点时，Rust 广播 → 同步面板（命令内含「未变跳过」守卫防 watch 回声）
@@ -263,12 +270,12 @@ const activeGroupName = ref('')
 
 const groupOptions = computed(() => userGroups.value.map((g) => ({ label: g.name, value: g.name })))
 
-// 当前展示的分组：用户选中 > 首个 user selector > GLOBAL
+// 当前展示的分组：用户选中 > 首个 user selector。无 selector（无订阅）返回 null——
+// 不回退 GLOBAL（其 all 仅含 DIRECT/REJECT 内置策略，非真实代理节点，展示无意义）
 const mainGroup = computed(() => {
   if (!proxiesData.value) return null
-  const proxies = proxiesData.value.proxies
   const groups = userGroups.value
-  if (groups.length === 0) return proxies['GLOBAL'] ?? null
+  if (groups.length === 0) return null
   const chosen = activeGroupName.value ? groups.find((g) => g.name === activeGroupName.value) : null
   return (chosen ?? groups[0] ?? null) as { name: string; all?: string[]; now?: string } | null
 })
@@ -339,7 +346,9 @@ async function loadCoreStatus() {
 }
 
 async function downloadCore() {
-  coreProgress.value = 0
+  if (downloadingCore.value) return // 防重入（双击）
+  coreProgress.value = { received: 0, total: null }
+  progressStarted.value = false
   downloadingCore.value = true
   try {
     await invoke(CMD.proxyEnsureCore)
@@ -361,7 +370,23 @@ const enabledSubtitle = computed(() => {
     return `内核版本：mihomo ${coreStatus.value.version}`
   }
   if (downloadingCore.value) return '正在下载内核…'
-  return '需先下载内核'
+  return '功能依赖 mihomo 内核，请先下载'
+})
+
+/// 下载按钮文本：主路径「连接中 → N% → 解压中」。
+/// - 未收首字节：连接中（建连 + 等首字节）
+/// - 有 Content-Length 且未收齐：N%（百分比分支仅在 received<total 进入，total>0 无除零）
+/// - received>=total（含 chunked 完成信号 total=Some(received)）：解压中
+/// - chunked（total=null 已收字节；实测 gh-proxy 透传 content-length 不触发，镜像异常/直连时兜底）：
+///   无法算百分比，诚实回退显示已收字节（避免假造百分比）
+const downloadText = computed(() => {
+  const { received, total } = coreProgress.value
+  if (total != null) {
+    if (received >= total) return '解压中'
+    return `${Math.floor((received * 100) / total)}%`
+  }
+  if (progressStarted.value) return `${(received / 1048576).toFixed(1)}MB`
+  return '连接中'
 })
 
 const toggleEnabled = async () => {
@@ -468,8 +493,10 @@ function onExecute(item: unknown) {
   if (appStore.isComposing) return
   const it = item as ListItem | undefined
   if (!it) return
-  if (it.type === 'enabled') toggleEnabled()
-  else if (it.type === 'node') selectNode(it.node)
+  if (it.type === 'enabled') {
+    if (coreStatus.value.downloaded) toggleEnabled()
+    else downloadCore()
+  } else if (it.type === 'node') selectNode(it.node)
   else if (it.type === 'subscription') openEditModal(it.sub)
 }
 
@@ -571,9 +598,13 @@ async function doRemoveSub() {
 }
 
 onMounted(async () => {
-  unlistenProgress = await listen<number>('proxy-core-progress', (e) => {
-    coreProgress.value = e.payload
-  })
+  unlistenProgress = await listen<{ received: number; total: number | null }>(
+    'proxy-core-progress',
+    (e) => {
+      coreProgress.value = e.payload
+      progressStarted.value = true
+    },
+  )
   unlistenEnabled = await listen<boolean>('proxy-enabled', (e) => {
     // 切换中由 toggleEnabled 成功后统一设值，忽略命令内提前 emit 的事件防回声
     if (toggling.value) return
@@ -602,12 +633,16 @@ onUnmounted(() => {
   unlistenNode?.()
 })
 
-// 订阅名同步到菜单栏（Rust 缓存 menu_subs 供订阅子菜单展示；订阅名变更即推送）
+// 订阅名同步到菜单栏（Rust 缓存 menu_subs 供订阅子菜单展示；订阅名变更即推送；过滤空名默认项）
 watch(
-  () => config.subscriptions.map((s) => s.name).join('\n'),
+  () =>
+    config.subscriptions
+      .map((s) => s.name)
+      .filter((n) => n)
+      .join('\n'),
   () => {
     invoke(CMD.proxySyncMenuSubs, {
-      names: config.subscriptions.map((s) => s.name),
+      names: config.subscriptions.map((s) => s.name).filter((n) => n),
     }).catch((e: unknown) => console.error('[proxy] sync menu subs failed:', e))
   },
   { immediate: true },
