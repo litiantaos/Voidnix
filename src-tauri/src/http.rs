@@ -3,11 +3,13 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::LazyLock;
 use std::time::Duration;
 
-static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
-    Client::builder()
-        .timeout(Duration::from_secs(120))
-        // 重定向逐跳校验：每跳回调 validate_url，外部 URL `evil.com → 302 → 169.254.169.254`
-        // 的链式绕过在跟随前被拦截。简单 `Policy::limited(3)` 只限次数、不校验目标，已被证可绕过。
+/// 构建 client：`request_timeout = None` 表示不设整体超时（流式大文件下载用，仅建连超时兜底）。
+/// 复用 SSRF 重定向逐跳校验：外部 URL `evil.com → 302 → 169.254.169.254` 的链式绕过在跟随前被拦截。
+/// 简单 `Policy::limited(3)` 只限次数、不校验目标，已被证可绕过。
+fn build_client(request_timeout: Option<Duration>) -> Client {
+    let mut builder = Client::builder()
+        // 建连超时（TCP+TLS），独立于整体 timeout：建连卡死时 30s 快速失败，不必等整体超时
+        .connect_timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(move |attempt| {
             match validate_url(attempt.url().as_str()) {
                 Ok(()) => {
@@ -21,13 +23,26 @@ static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
                 Err(reason) => attempt.error(reason),
             }
         }))
-        .pool_max_idle_per_host(10)
-        .build()
-        .expect("Failed to build HTTP client")
-});
+        .pool_max_idle_per_host(10);
+    if let Some(t) = request_timeout {
+        builder = builder.timeout(t);
+    }
+    builder.build().expect("Failed to build HTTP client")
+}
+
+static HTTP_CLIENT: LazyLock<Client> =
+    LazyLock::new(|| build_client(Some(Duration::from_secs(120))));
+
+/// 流式大文件下载 client：无整体超时（慢网络下大文件总耗时不可控，整体超时会中途掐断流），
+/// 仅建连 30s 超时。复用全局 client 的 SSRF 重定向防护。
+static DOWNLOAD_CLIENT: LazyLock<Client> = LazyLock::new(|| build_client(None));
 
 pub fn client() -> &'static Client {
     &HTTP_CLIENT
+}
+
+pub fn download_client() -> &'static Client {
+    &DOWNLOAD_CLIENT
 }
 
 // ── URL 安全校验原语（agent/translate/http_get 共享，单一真相源）────────

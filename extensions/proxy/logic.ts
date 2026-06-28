@@ -23,13 +23,6 @@ export function isUserSelectorGroup(node: ProxyEntry): boolean {
   return node.type === 'Selector' && node.name !== 'GLOBAL'
 }
 
-/// 取主选择分组：首个用户 selector，否则回退 GLOBAL。
-export function pickMainGroup(proxies: Record<string, ProxyEntry>): ProxyEntry | null {
-  const groups = Object.values(proxies).filter(isUserSelectorGroup)
-  if (groups.length > 0) return groups[0] ?? null
-  return proxies['GLOBAL'] ?? null
-}
-
 /// 节点最新延迟：优先测速缓存，回退 history 末项。
 export function latestDelay(history?: ProxyHistory[]): number {
   if (!history || history.length === 0) return 0
