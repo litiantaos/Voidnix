@@ -29,7 +29,7 @@ export const useAppStore = defineStore('app', () => {
   const isDialogOpen = ref(false)
   const dialogOptions = ref<ConfirmOptions | null>(null)
   const lastDialogCloseTime = ref(0)
-  // 原生系统对话框（如文件选择器）打开期间，抑制失焦隐藏
+  // 原生系统对话框（如文件选择器）打开期间，抑制失焦隐藏（窗口重获焦点时自动解除）
   const suppressBlur = ref(false)
   let dialogResolve: ((value: boolean) => void) | null = null
 

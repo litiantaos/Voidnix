@@ -1,6 +1,7 @@
 pub mod click_monitor;
 #[cfg(target_os = "macos")]
 pub mod focus;
+pub mod frontmost_watcher;
 #[cfg(target_os = "macos")]
 pub mod input;
 #[cfg(target_os = "macos")]

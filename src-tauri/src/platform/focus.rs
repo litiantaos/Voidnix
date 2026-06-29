@@ -1,5 +1,5 @@
 use objc2_app_kit::{NSApp, NSApplicationActivationOptions, NSWorkspace};
-use objc2_foundation::MainThreadMarker;
+use objc2_foundation::{MainThreadMarker, NSURL};
 use std::sync::atomic::{AtomicI32, Ordering};
 
 /// 前台 PID 唯一源：显示主窗口前记录原前台 app PID，隐藏时恢复。
@@ -30,13 +30,32 @@ pub fn deactivate_app() {
 ///
 /// NonactivatingPanel + LSUIElement 模式下,NSApp 始终 inactive,
 /// `isActive` 不再能反映焦点位置 —— 改用 `keyWindow` 判断：只要 NSApp
-/// 内还有 key window（主 panel、NSOpenPanel 等),就视为焦点在我们这里,
-/// 反之表示用户已切到其他应用,前端应主动 hide。
+/// 内还有 key window（主 panel、NSOpenPanel 等),就视为焦点在我们这里。
+/// panel 丢 key 后,若前台已切到系统进程（授权弹窗、keychain 对话框等），
+/// 同样视为交互流未中断,不触发 hide。
 pub fn is_app_active() -> bool {
     if let Some(mtm) = MainThreadMarker::new() {
-        return NSApp(mtm).keyWindow().is_some();
+        if NSApp(mtm).keyWindow().is_some() {
+            return true;
+        }
+        return is_system_frontmost();
     }
     false
+}
+
+/// frontmost app 是否为系统进程（bundle 路径以 `/System/` 开头）。
+/// 用于检测系统级焦点接管（授权弹窗、keychain 对话框等），全局通用。
+fn is_system_frontmost() -> bool {
+    let ws = NSWorkspace::sharedWorkspace();
+    let Some(app) = ws.frontmostApplication() else {
+        return false;
+    };
+    let Some(url) = app.bundleURL() else {
+        return false;
+    };
+    let path = NSURL::path(&url);
+    path.map(|p| p.to_string().starts_with("/System/"))
+        .unwrap_or(false)
 }
 
 /// 返回当前 frontmost app 的 PID（不含 Voidnix 自己）。
@@ -92,10 +111,18 @@ pub fn take_captured_pid() -> i32 {
 }
 
 /// 从唯一源恢复前台 app：先 deactivate self，再 activate 原 app。
+///
+/// 若当前 frontmost 已是第三方（系统授权弹窗、用户点击其他应用窗口等），
+/// 说明系统已主动转移焦点，遵循该归属不抢回 —— 否则 activate 会夺走系统弹窗焦点。
 pub fn restore_captured() {
     deactivate_app();
     let pid = PREV_FRONT_PID.swap(0, Ordering::SeqCst);
     if pid > 0 {
+        if let Some(front) = current_frontmost_pid() {
+            if front != pid {
+                return;
+            }
+        }
         activate_app_by_pid(pid);
     }
 }

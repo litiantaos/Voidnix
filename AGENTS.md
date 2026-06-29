@@ -87,7 +87,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 **搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + keyword 合流 + dedupe + groupAndSort。全局模式聚合所有扩展按 `finalScore = fuzzy + boost` 过滤排序；模块模式只调激活扩展且保留原序。`SearchContext.moduleMode` 区分两种模式（网络型扩展据此在全局空 query 跳过网络）。搜索集成细节详见 [docs/extensions.md](docs/extensions.md)。
 
-**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。窗口高度双机制：静态模块走 `useWindowHeight`（读 `Extension.windowHeight` 声明值 clamp `[MIN_HEIGHT, MAX_HEIGHT]`，setSize），内容可变子视图走 `useAutoWindowHeight`（双层 `rootRef` h-full 撑满父量 chrome + `contentRef` 自然高量真实内容高 + ResizeObserver 监听，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`；chrome 首测缓存规避内容撑开后 clientHeight 失真；屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口；高度变化以 rAF easeOutCubic 插值动画过渡——Tauri setSize 瞬时需自行补间；底部将出屏（含 40px 间距）则同步上移保证完整可见，退出还原 `resolveModuleHeight`）。
+**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。`is_app_active()` 判焦点归属：NSApp keyWindow 非空 → 焦点在我们；否则查 frontmost bundle 路径——`/System/` 开头（授权弹窗、keychain 对话框等）视为交互流未中断，抑制 blur hide。`restore_captured()` 还原前查 frontmost：第三方已接管（系统弹窗/用户切到其他 app）则不抢回。系统弹窗关闭后焦点恢复由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove）处理：frontmost 变更时若 panel 可见但丢 key，frontmost == 原前台 PID → makeKeyWindow 恢复；frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss。窗口高度双机制：静态模块走 `useWindowHeight`（读 `Extension.windowHeight` 声明值 clamp `[MIN_HEIGHT, MAX_HEIGHT]`，setSize），内容可变子视图走 `useAutoWindowHeight`（双层 `rootRef` h-full 撑满父量 chrome + `contentRef` 自然高量真实内容高 + ResizeObserver 监听，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`；chrome 首测缓存规避内容撑开后 clientHeight 失真；屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口；高度变化以 rAF easeOutCubic 插值动画过渡——Tauri setSize 瞬时需自行补间；底部将出屏（含 40px 间距）则同步上移保证完整可见，退出还原 `resolveModuleHeight`）。
 
 **全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。默认 Option 基（`Option+Space` 呼出，`Option+C/S/T/A` 各扩展）；dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存（dev/prod 数据目录仍按 bundle id 隔离，配置默认值一致）。
 
@@ -130,11 +130,12 @@ src-tauri/src/
 └── platform/           # macOS 原生桥
     ├── panel.rs        # NSPanel 转换
     ├── skylight.rs     # Space 迁移（私有 API）
-    ├── focus.rs        # 焦点管理（PREV_FRONT_PID 唯一源）
+    ├── focus.rs        # 焦点管理（PREV_FRONT_PID 唯一源 + is_app_active 系统弹窗检测 + restore_captured 第三方守卫）
     ├── input.rs        # CGEvent 键盘注入（post_key 原语 + post_combo 字符串糖；Modifier 枚举 + Option pid）
     ├── pasteboard.rs   # NSPasteboard 原语统一（read_text/read_file_url/read_png/write_text/clear/set_string/set_file_url/set_png/set_custom/snapshot/restore）
     ├── selection.rs    # AX 选中文本提取 + poll_clipboard
     ├── click_monitor.rs
+    ├── frontmost_watcher.rs  # NSWorkspace 激活通知观察器（系统弹窗关闭后恢复焦点，随 show/hide 生命周期）
     ├── permission.rs
     ├── window.rs       # 主窗口原生操作（NSWindow show/hide/key + 圆角 + NSOpenPanel）
     └── path_guard.rs   # 统一路径校验

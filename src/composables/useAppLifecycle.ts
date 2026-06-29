@@ -171,6 +171,12 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
       })
       track(unlistenClickOutside)
 
+      // 系统弹窗关闭后用户切到其他 app（frontmost ≠ 原前台 app）→ dismiss
+      const unlistenFrontmostChanged = await listen('frontmost-changed', () => {
+        hideWindow(true)
+      })
+      track(unlistenFrontmostChanged)
+
       // 通用模块子视图事件：任何模块都可以通过 Rust `open_module_subview` 触发
       const unlistenSubview = await listen<{
         moduleId: string
@@ -193,6 +199,8 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
         ({ payload: focused }: { payload: boolean }) => {
           if (focused) {
             window.dispatchEvent(new CustomEvent('window-focused'))
+            // 系统对话框（文件选择器 / 授权弹窗）返回时解除抑制
+            appStore.suppressBlur = false
           } else if (
             Date.now() - lastShortcutTime > 200 &&
             Date.now() - appStore.lastDialogCloseTime > 300 &&
