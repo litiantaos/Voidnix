@@ -186,7 +186,7 @@ src/
 
 ```
 ~/Library/Application Support/com.litiantao.voidnix/
-├── config/settings.json              # 框架级配置（快捷键 + AI Provider，defineConfig 扁平 schema）
+├── config/settings.json              # 框架级配置（全局快捷键，defineConfig 扁平 schema）
 └── extensions/
     ├── clipboard/{clipboard.db, clipboard.db-wal, config.json}   # 剪贴板历史（SQLite WAL，写入计数达 200 触发 wal_checkpoint(TRUNCATE)）+ 配置
     ├── calculator/config.json        # 计算器历史（history key，10 条上限；走 defineConfig）
@@ -196,7 +196,7 @@ src/
     ├── screenshot/config.json        # screenshot 扩展配置
     ├── window-manager/config.json    # window-manager 扩展配置
     ├── translate/config.json         # translate 扩展配置
-    ├── agent/config.json             # agent 扩展配置
+    ├── agent/config.json             # agent 扩展配置（资源上限 + systemPrompt + 搜索/AI Provider）
     └── proxy/{mihomo, mihomo.pid, mihomo.log, geoip.metadb, geosite.dat, config.yaml, subs/, config.json}  # 代理：mihomo 核心（TUN 模式 root 常驻）+ root 进程 PID + 运行日志 + Geo 数据库 + 运行配置 + 订阅 YAML + 配置
 ```
 

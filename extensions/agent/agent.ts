@@ -9,9 +9,8 @@
 import { ref, computed } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
-import { useSettingsStore } from '@/stores/settings'
 import { generateRequestId } from '@/utils/id'
-import { config as agentConfig } from './config'
+import { config as agentConfig, activeProviderConfig } from './config'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 import { toLlmMessages, tryParseSearch } from './logic'
 
@@ -26,20 +25,18 @@ const errorMessage = ref('')
 const sessionId = ref('')
 
 export function useAgentChat() {
-  const settings = useSettingsStore()
-
   const isGenerating = computed(() => status.value === 'streaming')
 
   /// 发送用户消息，启动一次 agent run
   async function sendMessage(text: string) {
     if (isGenerating.value || !text.trim()) return
 
-    const config = settings.activeProviderConfig
-    const key = settings.activeProviderModelKey
+    const provider = activeProviderConfig.value
+    const key = agentConfig.activeProviderModelKey
     const sep = key.indexOf('::')
     const model = sep !== -1 ? key.substring(sep + 2) : ''
 
-    if (!config.endpoint || !config.apiKey) {
+    if (!provider.endpoint || !provider.apiKey) {
       messages.value.push({
         id: generateRequestId(),
         role: 'assistant',
@@ -94,8 +91,8 @@ export function useAgentChat() {
     try {
       await invoke(CMD.agentRun, {
         messages: llmMessages,
-        endpoint: config.endpoint,
-        apiKey: config.apiKey,
+        endpoint: provider.endpoint,
+        apiKey: provider.apiKey,
         model,
         sessionId: newSessionId,
         config: runConfig,

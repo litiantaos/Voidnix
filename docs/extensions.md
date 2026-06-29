@@ -147,7 +147,7 @@ config.maxDays = 60 // 自动写盘
   - **Config 字段型**（数值/字符串/枚举/boolean，持久化在 `config.json`）：在 `config.ts` 用 `watch(..., { immediate: true })` 同步，View.vue 仅改 config 不显式 invoke，失败仅 `console.error`。`immediate: true` 确保启动期磁盘回填后自动同步持久化值（避免「上次开启 → 重启丢失」回归）。样板：`window-manager/config.ts`（`enabled` / `customWidth` / `customHeight`）、`awake/config.ts`（`displayMode`）、`clipboard/config.ts`（`maxDays`）。
   - **Rust 状态型**（无 config 字段，状态权威在 Rust 端）：在 `View.vue` 显式 `invoke` + 错误反馈（`showStatus error`），成功才更新 UI 局部状态。样板：`awake/View.vue::toggleAwake`（子进程开关，状态查 `is_awake_enabled`）。
 
-框架级配置（全局快捷键、AI Provider）在 `stores/settings.ts`，同样走 `defineConfig`（`config/settings` storePath）。
+框架级配置（全局快捷键）在 `stores/settings.ts`，同样走 `defineConfig`（`config/settings` storePath）。AI/搜索 provider 配置由各扩展自管（agent/translate 各自 `config.ts` 独立维护，互不复用）。
 
 ### 配置字段命名规范
 

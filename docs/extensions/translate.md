@@ -17,7 +17,7 @@ defineConfig('extensions/translate/config', {
 
 configs 为多引擎并发集合（`translateText` 遍历每项独立翻译并排展示），无「激活」概念。CRUD helpers：`addTranslateConfig()`（默认新增 ai 型）/ `updateTranslateConfig(id, partial)`（partial 不含 id/type）/ `removeTranslateConfig(id)`（保底保留 1 项）。
 
-AI 型引擎的后端实现复用框架级 `runtime::llm` 基础设施（与 agent 扩展共享 `stream_openai_request` 管道），但 provider 配置由 translate 自管（与 `stores/settings.ts` 的框架级 `aiProviders` 互不复用）。
+AI 型引擎的后端实现复用框架级 `runtime::llm` 基础设施（与 agent 扩展共享 `stream_openai_request` 管道）；provider 配置由 translate 自管（`configs: TranslateApiConfig[]`），与 agent 的 `aiProviders` 各自独立、互不复用。
 
 ## 后端
 

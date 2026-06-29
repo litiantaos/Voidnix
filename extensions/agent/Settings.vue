@@ -117,7 +117,7 @@
 
       <template #footer-start>
         <BaseButton
-          v-if="!isCreating && settings.aiProviders.length > 1"
+          v-if="!isCreating && agentConfig.aiProviders.length > 1"
           class="text-red-500 hover:text-red-600"
           @click="deleteAndClose"
         >
@@ -185,8 +185,16 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useSettingsStore, type AiProviderConfig } from '@/stores/settings'
-import { config as agentConfig, type SearchProviderConfig, updateSearchProvider } from './config'
+import {
+  config as agentConfig,
+  type AiProviderConfig,
+  type SearchProviderConfig,
+  addAiProvider,
+  removeAiProvider,
+  updateAiProvider,
+  setActiveProviderModelKey,
+  updateSearchProvider,
+} from './config'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -198,7 +206,6 @@ import { providerLabelFromUrl } from '@/utils/format'
 import { useSettingsInput } from '@/composables/useSettingsInput'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 
-const settings = useSettingsStore()
 useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'agent-shortcut'
@@ -254,36 +261,36 @@ function closeConfigModal() {
   isCreating.value = false
 }
 
-async function saveConfigModal() {
+function saveConfigModal() {
   const models = modalForm.value.models.filter((m) => m.trim())
   const endpoint = modalForm.value.endpoint.trim()
 
   if (isCreating.value) {
-    const id = await settings.addAiProvider()
-    await settings.updateAiProvider(id, {
+    const id = addAiProvider()
+    updateAiProvider(id, {
       endpoint,
       apiKey: modalForm.value.apiKey,
       models,
     })
     if (models.length > 0) {
-      await settings.setActiveProviderModelKey(`${id}::${models[0]}`)
+      setActiveProviderModelKey(`${id}::${models[0]}`)
     }
   } else {
     if (!editingConfigId.value) return
-    await settings.updateAiProvider(editingConfigId.value, {
+    updateAiProvider(editingConfigId.value, {
       endpoint,
       apiKey: modalForm.value.apiKey,
       models,
     })
     if (
       models.length > 0 &&
-      !settings.activeProviderModelKey.startsWith(`${editingConfigId.value}::`)
+      !agentConfig.activeProviderModelKey.startsWith(`${editingConfigId.value}::`)
     ) {
-      await settings.setActiveProviderModelKey(`${editingConfigId.value}::${models[0]}`)
+      setActiveProviderModelKey(`${editingConfigId.value}::${models[0]}`)
     } else if (models.length > 0) {
-      const currentModel = settings.activeProviderModelKey.split('::').slice(1).join('::')
+      const currentModel = agentConfig.activeProviderModelKey.split('::').slice(1).join('::')
       if (!models.includes(currentModel)) {
-        await settings.setActiveProviderModelKey(`${editingConfigId.value}::${models[0]}`)
+        setActiveProviderModelKey(`${editingConfigId.value}::${models[0]}`)
       }
     }
   }
@@ -307,9 +314,9 @@ function deleteAndClose() {
     return
   }
   const id = editingConfigId.value
-  if (id && settings.aiProviders.length > 1) {
+  if (id && agentConfig.aiProviders.length > 1) {
     closeConfigModal()
-    settings.removeAiProvider(id)
+    removeAiProvider(id)
   }
 }
 
@@ -343,7 +350,7 @@ type ChatSettingsItem = ShortcutItem | ProviderItem | SearchProviderItem | Agent
 
 const allItems = computed<ChatSettingsItem[]>(() => [
   { type: 'shortcut', group: '通用' },
-  ...settings.aiProviders.map((c) => ({
+  ...agentConfig.aiProviders.map((c) => ({
     type: 'provider' as const,
     group: '模型提供商',
     config: c,
