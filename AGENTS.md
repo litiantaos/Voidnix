@@ -197,7 +197,7 @@ src/
     ├── window-manager/config.json    # window-manager 扩展配置
     ├── translate/config.json         # translate 扩展配置
     ├── agent/config.json             # agent 扩展配置
-    └── proxy/{mihomo, mihomo.pid, config.yaml, subs/, config.json}  # 代理：mihomo 核心（TUN 模式 root 常驻）+ root 进程 PID + 运行配置 + 订阅 YAML + 配置
+    └── proxy/{mihomo, mihomo.pid, mihomo.log, geoip.metadb, geosite.dat, config.yaml, subs/, config.json}  # 代理：mihomo 核心（TUN 模式 root 常驻）+ root 进程 PID + 运行日志 + Geo 数据库 + 运行配置 + 订阅 YAML + 配置
 ```
 
 icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litiantao.voidnix.dev` 同构。

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tauri::AppHandle;
 
-use super::core::RunParams;
+use super::core::{RunParams, GEO_RELEASE_BASE, MIRROR_PREFIX};
 
 /// 订阅请求 UA：部分机场据此返回 Clash YAML 而非 Base64 订阅，与 mihomo 版本对齐。
 const SUB_UA: &str = "clash.meta/v1.19.27";
@@ -148,6 +148,14 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
     root.insert(s("mode"), s(&params.mode));
     root.insert(s("log-level"), s("warning"));
     root.insert(s("allow-lan"), Value::Bool(false));
+
+    // Geo 数据库镜像 URL（国内直连 GitHub 不可达，mihomo 默认 URL 下载会 EOF 失败）
+    let geo_base = format!("{MIRROR_PREFIX}{GEO_RELEASE_BASE}");
+    let mut geox = Mapping::new();
+    geox.insert(s("mmdb"), s(&format!("{geo_base}/geoip.metadb")));
+    geox.insert(s("geoip"), s(&format!("{geo_base}/geoip.dat")));
+    geox.insert(s("geosite"), s(&format!("{geo_base}/geosite.dat")));
+    root.insert(s("geox-url"), Value::Mapping(geox));
 
     // TUN 模式：劫持全局流量到虚拟网卡（须 root 运行）。配 fake-ip DNS 与 dns-hijack。
     if params.tun {

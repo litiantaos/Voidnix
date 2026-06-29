@@ -89,49 +89,55 @@ async fn spawn_and_wait(app: &AppHandle, params: &RunParams) -> Result<(), Strin
     Ok(())
 }
 
+/// restart_root + wait_ready。失败不清理（restart_root 含杀旧逻辑，下次重启自动回收）。
+async fn restart_and_wait(app: &AppHandle, params: &RunParams) -> Result<(), String> {
+    let base = format!("http://127.0.0.1:{}", params.controller_port);
+    tun::restart_root(app, params).await?;
+    controller::wait_ready(&base, &params.secret, 8000).await
+}
+
 /// 确保 root mihomo 进程在跑（常驻）。已常驻则幂等返回；否则 spawn_root（提权一次）
 /// 并 wait_ready（失败回滚 stop_root）。一旦启动，进程常驻到显式 stop_root 或 app
 /// 退出——代理开关与 TUN 切换均走热重载，免再提权。
 ///
 /// 返回 `true` 表示本次新 spawn（提权一次），`false` 表示复用已常驻进程。
-/// 除 `tun_active` 外再用 `root_mihomo_running` 运行时兜底：防 `reconnect_root_mihomo`
-/// 尚未跑完（tun_active 仍 false）时调用方重复 spawn 致端口冲突。
+///
+/// 仅信任 `tun_active=true` 的进程（reconnect 成功置 idle 或本 session spawn 的），
+/// 可安全热重载复用。`tun_active=false` 但有遗留进程（reconnect 未完成或失败）→ 状态
+/// 不可信（secret 可能不匹配、TUN 可能已激活），restart_root 单次提权杀旧+启新。
 async fn ensure_root_mihomo(
     app: &AppHandle,
     state: &ProxyState,
     params: &RunParams,
 ) -> Result<bool, String> {
-    if state.tun_active.load(Ordering::Relaxed) || root_mihomo_running(app) {
-        state.tun_active.store(true, Ordering::Relaxed);
-        return Ok(false); // 已常驻
+    if state.tun_active.load(Ordering::Relaxed) {
+        return Ok(false); // 本 session 已知状态，可热重载复用
     }
-    spawn_and_wait(app, params).await?;
+    if root_mihomo_running(app) {
+        restart_and_wait(app, params).await?;
+    } else {
+        spawn_and_wait(app, params).await?;
+    }
     state.tun_active.store(true, Ordering::Relaxed);
     Ok(true)
 }
 
 /// 启动代理（统一 TUN 模式）。已开启视为成功（幂等）。
 ///
-/// root mihomo 常驻：未常驻时 `ensure_root_mihomo` 提权 spawn 一次（首次），之后热重载 active
-/// config 恢复代理，**免再提权**。首启由 `spawn_root→prepare` 已写 active config.yaml +
-/// `wait_ready` 就绪，故仅复用路径才需 `reload_config_yaml`，避免首启重复写盘 + 多一次 PUT。
-/// 复用热重载失败（残留进程 secret 不一致等）时回退 stop + 重 spawn：mihomo controller 的
-/// `secret` 启动时固化、热重载不生效，残留进程与当前 secret 不匹配时必须重启进程。
+/// root mihomo 常驻：`ensure_root_mihomo` 确保 spawn（首次/遗留清理）或复用已知状态进程。
+/// 复用路径热重载 active config 恢复代理；热重载失败（罕见边缘情况）则 restart_and_wait
+/// 单次提权重启。
 async fn start_core(app: &AppHandle, state: &ProxyState, params: RunParams) -> Result<(), String> {
     if state.enabled.load(Ordering::Relaxed) {
         return Ok(()); // 幂等：已开启
     }
     let freshly_spawned = ensure_root_mihomo(app, state, &params).await?;
     if !freshly_spawned {
-        // 复用常驻进程：热重载 active config 恢复代理。失败（见上 secret 不一致）则 stop + 重 spawn。
-        // reload/stop 错误 eprintln 诊断（回退行为不变，spawn 失败才上抛用户可见错误）
+        // 复用常驻进程：热重载 active config 恢复代理。失败则单次提权重启。
         if let Err(reload_err) = reload_config_yaml(app, &params).await {
-            eprintln!("[proxy] 复用进程热重载失败，回退重 spawn: {reload_err}");
-            if let Err(stop_err) = tun::stop_root(app) {
-                eprintln!("[proxy] 回退前 stop_root 亦失败: {stop_err}");
-            }
+            eprintln!("[proxy] 复用进程热重载失败，回退重启: {reload_err}");
             state.tun_active.store(false, Ordering::Relaxed);
-            spawn_and_wait(app, &params).await?;
+            restart_and_wait(app, &params).await?;
             state.tun_active.store(true, Ordering::Relaxed);
         }
     }
@@ -519,27 +525,47 @@ fn parse_main_group(val: &Value) -> (Option<String>, Vec<(String, bool)>) {
 
 /// app 启动复用上次退出遗留的 root mihomo（常驻方案下进程在 app 退出后仍跑）。
 ///
-/// 检测到残留进程则尝试热重载 idle config（统一重置为 idle 直通，保证前端 enabled=false
-/// 与实际流量直通一致），成功才标记 tun_active=true（下次开代理走热重载复用）。失败（secret
-/// 不一致等）不标记——留给 `start_core` 复用分支 reload 失败时回退 stop + 重 spawn 处理。
-/// 读 config.json 的 controllerPort/secret 连接残留 mihomo。
+/// 先按 GET /version 验证 secret 是否匹配残留进程：
+/// - 匹配 → 热重载 idle config（重置为 direct 直通，保证前端 enabled=false 与实际流量直通一致），
+///   成功才标记 tun_active=true（下次开代理走热重载复用）。reload 失败属配置/瞬态，**不杀进程**
+///   （保留常驻免提权），留给开代理时 active reload 处理。idle config 复用真实 mixed_port（与
+///   `stop_core` 一致），避免 mixed-port 变更致 reload 失败。
+/// - 不匹配（401）= 进程不可控（secret 启动时固化、reload 不生效）→ `stop_root` 清理僵尸，消除
+///   不可控代理 + 开代理时的 401 回退噪音。best-effort：取消授权则保留，留给 `start_core` 回退兜底。
+/// - controller 不可达（启动中/异常）→ 无法判定，保留不动。
+///
+/// 读 config.json 的 mixedPort/controllerPort/secret 连接残留 mihomo。
 async fn reconnect_root_mihomo(app: &AppHandle) {
     if !root_mihomo_running(app) {
         return;
     }
     let state = app.state::<ProxyState>();
-    if let Some((port, secret)) = read_controller_creds(app) {
-        let idle = RunParams {
-            mixed_port: 0,
-            controller_port: port,
-            secret,
-            mode: "direct".into(),
-            tun: false,
-        };
-        match reload_config_yaml(app, &idle).await {
-            Ok(()) => state.tun_active.store(true, Ordering::Relaxed),
-            Err(e) => eprintln!("[proxy] 复用残留 mihomo、热重载 idle 失败: {e}"),
+    let Some((mixed_port, controller_port, secret)) = read_controller_creds(app) else {
+        crate::runtime::menubar::refresh(app);
+        return;
+    };
+    let base = format!("http://127.0.0.1:{controller_port}");
+    match controller::check_auth(&base, &secret).await {
+        Ok(false) => {
+            // secret 不一致 = 不可控僵尸 → 清理
+            if let Err(e) = tun::stop_root(app) {
+                eprintln!("[proxy] 清理 secret 不一致残留 mihomo 失败: {e}");
+            }
         }
+        Ok(true) => {
+            let idle = RunParams {
+                mixed_port,
+                controller_port,
+                secret,
+                mode: "direct".into(),
+                tun: false,
+            };
+            match reload_config_yaml(app, &idle).await {
+                Ok(()) => state.tun_active.store(true, Ordering::Relaxed),
+                Err(e) => eprintln!("[proxy] 复用残留 mihomo、热重载 idle 失败: {e}"),
+            }
+        }
+        Err(e) => eprintln!("[proxy] 残留 mihomo controller 不可达，跳过复用: {e}"),
     }
     crate::runtime::menubar::refresh(app);
 }
@@ -561,17 +587,18 @@ fn root_mihomo_running(app: &AppHandle) -> bool {
         .any(|l| l.contains(&bin))
 }
 
-/// 读 extensions/proxy/config.json 的 controllerPort/secret（前端 defineConfig 持久化），
+/// 读 extensions/proxy/config.json 的 mixedPort/controllerPort/secret（前端 defineConfig 持久化），
 /// 供热重载 idle 连接残留 mihomo。
-fn read_controller_creds(app: &AppHandle) -> Option<(u16, String)> {
+fn read_controller_creds(app: &AppHandle) -> Option<(u16, u16, String)> {
     let path = crate::runtime::storage::ext_data_dir(app, "proxy")
         .ok()?
         .join("config.json");
     let text = std::fs::read_to_string(&path).ok()?;
     let v: Value = serde_json::from_str(&text).ok()?;
-    let port = v.get("controllerPort")?.as_u64()? as u16;
+    let mixed_port = v.get("mixedPort")?.as_u64()? as u16;
+    let controller_port = v.get("controllerPort")?.as_u64()? as u16;
     let secret = v.get("secret")?.as_str()?.to_string();
-    Some((port, secret))
+    Some((mixed_port, controller_port, secret))
 }
 
 /// 命令注册（局部 invoke_handler，§2.8）。
@@ -601,10 +628,11 @@ impl Extension for ProxyExtension {
             build: Arc::new(build_proxy),
             on_event: Arc::new(on_proxy_event),
         });
-        // app 启动检测上次退出遗留的 root mihomo（常驻未停），复用：标记 tun_active +
-        // 热重载 idle 重置状态（防端口冲突 + 免重提权）。best-effort，不阻塞 setup。
+        // app 启动预下载 Geo 数据库（首次使用经镜像下载，后续启动即时）+ 检测遗留 root
+        // mihomo 复用。best-effort，不阻塞 setup。
         let app2 = app.clone();
         tauri::async_runtime::spawn(async move {
+            let _ = core::ensure_geo_files(&app2).await;
             reconnect_root_mihomo(&app2).await;
         });
         Ok(())
