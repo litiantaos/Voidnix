@@ -1,4 +1,13 @@
+import { computed } from 'vue'
 import { defineConfig } from '@/runtime/storage'
+import { generateRequestId } from '@/utils/id'
+
+export interface AiProviderConfig {
+  id: string
+  endpoint: string
+  apiKey: string
+  models: string[]
+}
 
 export interface SearchProviderConfig {
   type: 'tavily'
@@ -6,6 +15,7 @@ export interface SearchProviderConfig {
 }
 
 /// agent 扩展自管配置（持久化至 extensions/agent/config.json）。
+/// 含资源上限、systemPrompt、搜索提供商、AI Provider（多 provider + 激活选择）。
 export const config = defineConfig('extensions/agent/config', {
   // 资源上限（Rust 端强制 clamp，config.json 越界无效；BOUNDS 见下方）
   maxCpuSeconds: 30,
@@ -44,6 +54,12 @@ export const config = defineConfig('extensions/agent/config', {
     type: 'tavily',
     apiKey: '',
   } as SearchProviderConfig,
+  // 不变量：aiProviders 始终 ≥1 项（removeAiProvider 删空时补默认项），
+  // activeProviderConfig 的非空断言依赖此不变量。
+  aiProviders: [
+    { id: generateRequestId(), endpoint: '', apiKey: '', models: [] },
+  ] as AiProviderConfig[],
+  activeProviderModelKey: '',
 })
 
 /// 资源上限 UI 镜像（权威在 native/policy.rs，⚠️ 须手动同步）。
@@ -56,6 +72,61 @@ export const BOUNDS = {
   executionTimeout: { floor: 1, cap: 300 },
   maxOutputBytes: { floor: 1024, cap: 10485760 },
 } as const
+
+// ─── AI Provider helpers ─────────────────────────────────────
+
+function parseActiveConfig<T>(
+  key: string,
+  configs: T[],
+  matchFallback?: (configs: T[]) => T | undefined,
+): T | undefined {
+  const sep = key.indexOf('::')
+  if (sep !== -1) {
+    const id = key.substring(0, sep)
+    const found = (configs as Array<{ id: string } & T>).find((c) => c.id === id)
+    if (found) return found
+  }
+  return matchFallback?.(configs)
+}
+
+/// 当前激活的 provider（未匹配 key 时回退第一项；aiProviders ≥1 不变量保证非空）。
+export const activeProviderConfig = computed<AiProviderConfig>(
+  () => parseActiveConfig(config.activeProviderModelKey, config.aiProviders, (c) => c[0])!,
+)
+
+export function setActiveProviderModelKey(key: string) {
+  config.activeProviderModelKey = key
+}
+
+/// 新增空 provider 并切为激活。返回新 id。
+export function addAiProvider(): string {
+  const id = generateRequestId()
+  config.aiProviders.push({ id, endpoint: '', apiKey: '', models: [] })
+  config.activeProviderModelKey = `${id}::`
+  return id
+}
+
+/// 删除指定 provider；删空时补默认项维持 ≥1 不变量；激活项被删时回退第一项。
+export function removeAiProvider(id: string) {
+  const idx = config.aiProviders.findIndex((c) => c.id === id)
+  if (idx === -1) return
+  config.aiProviders.splice(idx, 1)
+  if (config.aiProviders.length === 0) {
+    config.aiProviders.push({ id: generateRequestId(), endpoint: '', apiKey: '', models: [] })
+  }
+  if (config.activeProviderModelKey.startsWith(`${id}::`)) {
+    config.activeProviderModelKey = `${config.aiProviders[0].id}::`
+  }
+}
+
+/// 部分更新指定 provider。
+export function updateAiProvider(id: string, partial: Partial<AiProviderConfig>) {
+  const target = config.aiProviders.find((c) => c.id === id)
+  if (!target) return
+  Object.assign(target, partial)
+}
+
+// ─── 搜索提供商 helpers ──────────────────────────────────────
 
 /// 更新搜索提供商配置（单对象，直接 Object.assign）。
 export function updateSearchProvider(partial: Partial<SearchProviderConfig>) {

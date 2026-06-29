@@ -74,18 +74,19 @@ agent 配置通过 `defineConfig` 自管，持久化至 `extensions/agent/config
 defineConfig('extensions/agent/config', {
   systemPrompt: '你是全能的 AI Agent…',
   searchProvider: { type: 'tavily', apiKey: '' },
+  aiProviders: [{ id, endpoint: '', apiKey: '', models: [] }], // 多 provider + activeProviderModelKey 激活选择
   // 资源上限（maxCpuSeconds/maxMemoryMb/maxOpenFiles/executionTimeout/maxOutputBytes/maxTurns）+ BOUNDS 镜像
 })
 ```
 
-AI Provider 基础设施（endpoint/apiKey/models）在框架级 `stores/settings.ts`，translate + agent 共享。
+AI Provider（endpoint/apiKey/models）由 agent 自管（与 translate 同构：各自 `config.ts` 维护独立 provider 列表，互不复用）。CRUD helpers：`addAiProvider()` / `updateAiProvider(id, partial)` / `removeAiProvider(id)`（保底 ≥1 项）/ `setActiveProviderModelKey(key)`；`activeProviderConfig` computed 解析激活项。
 
 ## 文件结构
 
 ```
 extensions/agent/
 ├── index.ts               # module 注册（id 'agent'）
-├── config.ts              # defineConfig（systemPrompt/searchProvider + 资源上限 BOUNDS UI 镜像）
+├── config.ts              # defineConfig（systemPrompt/searchProvider/aiProviders + 资源上限 BOUNDS UI 镜像 + provider CRUD/active computed）
 ├── agent.ts               # useAgentChat composable（前端状态机）
 ├── View.vue               # part 渲染
 ├── Settings.vue           # Provider + Agent 配置

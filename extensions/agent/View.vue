@@ -138,8 +138,8 @@
 
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
 import { open } from '@tauri-apps/plugin-shell'
+import { activeProviderConfig } from './config'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -160,7 +160,6 @@ const renderMarkdown = (content: unknown) => {
 
 const MAX_INPUT_LENGTH = 8192
 
-const settings = useSettingsStore()
 const agent = useAgentChat()
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const inputText = ref('')
@@ -168,7 +167,7 @@ const inputText = ref('')
 const displayMessages = computed(() => agent.messages.value)
 
 const isConfigured = computed(
-  () => settings.activeProviderConfig.endpoint && settings.activeProviderConfig.apiKey,
+  () => activeProviderConfig.value.endpoint && activeProviderConfig.value.apiKey,
 )
 
 function getText(msg: AgentMessage): string {
