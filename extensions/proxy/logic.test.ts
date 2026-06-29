@@ -3,6 +3,7 @@ import {
   modeLabel,
   delayColor,
   formatDelay,
+  DELAY_TIMEOUT,
   filterNodes,
   isUserSelectorGroup,
   latestDelay,
@@ -28,6 +29,7 @@ describe('proxy logic', () => {
   it('formatDelay renders latency', () => {
     expect(formatDelay(null)).toBe('')
     expect(formatDelay(0)).toBe('')
+    expect(formatDelay(DELAY_TIMEOUT)).toBe('超时')
     expect(formatDelay(123)).toBe('123ms')
   })
 

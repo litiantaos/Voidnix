@@ -88,16 +88,31 @@ pub async fn set_mode(base: &str, secret: &str, mode: &str) -> Result<(), String
 
 /// PUT /configs {path} → 从磁盘 config.yaml 热重载（用于 root 运行时切换 tun，免重启免提权）。
 pub async fn reload_config(base: &str, secret: &str, config_path: &str) -> Result<(), String> {
-    CONTROLLER
+    let resp = CONTROLLER
         .put(format!("{base}/configs"))
         .bearer_auth(secret)
         .json(&serde_json::json!({ "path": config_path }))
         .send()
         .await
-        .map_err(|e| format!("重载配置失败: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("重载配置错误: {e}"))?;
+        .map_err(|e| format!("重载配置失败: {e}"))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("重载配置错误: {status} {body}"));
+    }
     Ok(())
+}
+
+/// GET /version 验证 secret 是否匹配运行中的 mihomo（true=200 匹配，false=401 不匹配）。
+/// 连接失败（进程未就绪/已退出）返回 Err——调用方据此决定不清理（无法判定可控性）。
+pub async fn check_auth(base: &str, secret: &str) -> Result<bool, String> {
+    let resp = CONTROLLER
+        .get(format!("{base}/version"))
+        .bearer_auth(secret)
+        .send()
+        .await
+        .map_err(|e| format!("controller 请求失败: {e}"))?;
+    Ok(resp.status().is_success())
 }
 
 /// 轮询 GET /version 直到 controller 就绪或超时。

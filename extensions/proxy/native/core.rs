@@ -13,7 +13,10 @@ const SHA256_ARM64: &str = "3617c9d8a5a55aecfe1ebd0f55ff59f2706c8ad68fd65c6c4e5f
 const SHA256_AMD64: &str = "5392bea435a1c4b0a496571daafa977f744207cfafac18fb78a9b7d0747585c2";
 const RELEASE_BASE: &str = "https://github.com/MetaCubeX/mihomo/releases/download";
 /// 国内镜像前缀（GitHub 直连慢/不稳），镜像仅代理转发，sha256 校验保证内容一致。
-const MIRROR_PREFIX: &str = "https://gh-proxy.com/";
+pub(crate) const MIRROR_PREFIX: &str = "https://gh-proxy.com/";
+/// Geo 数据库 release 基址（geoip.metadb / geosite.dat / geoip.dat）。
+pub(crate) const GEO_RELEASE_BASE: &str =
+    "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest";
 
 /// 内核下载进行中标记（全局，ensure_bin 期间置 true，供 status 查询）。
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
@@ -80,6 +83,45 @@ pub async fn ensure_bin(app: &AppHandle) -> Result<PathBuf, String> {
     }
     download_core_async(app).await?;
     Ok(bin)
+}
+
+/// 确保 Geo 数据库文件就绪（geoip.metadb + geosite.dat）。
+///
+/// mihomo 加载含 GEOIP/GEOSITE 规则的 config 时需这些文件。缺失时 mihomo 同步下载
+/// （直连 GitHub 在国内不可达 → EOF → config 加载失败/控制器不启动 → 开代理超时）。
+/// 通过 gh-proxy 镜像预下载，已存在则跳过。下载失败不阻塞（mihomo 可用 geox-url 自行重试）。
+pub async fn ensure_geo_files(app: &AppHandle) -> Result<(), String> {
+    let dir = ext_data_dir(app, "proxy")?;
+    for name in ["geoip.metadb", "geosite.dat"] {
+        let path = dir.join(name);
+        if path.exists() {
+            continue;
+        }
+        let url = format!("{MIRROR_PREFIX}{GEO_RELEASE_BASE}/{name}");
+        if let Err(e) = download_file(&url, &path).await {
+            eprintln!("[proxy] geo 数据库 {name} 预下载失败（mihomo 将经 geox-url 自行重试）: {e}");
+        }
+    }
+    Ok(())
+}
+
+/// 通用文件下载（download_client 无整体超时，适合大文件）。
+async fn download_file(url: &str, dest: &Path) -> Result<(), String> {
+    let resp = crate::http::download_client()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("下载请求失败: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("下载响应错误: {e}"))?;
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("下载读取失败: {e}"))?;
+    if bytes.is_empty() {
+        return Err("下载内容为空".into());
+    }
+    std::fs::write(dest, &bytes).map_err(|e| e.to_string())
 }
 
 /// 查询内核状态：下载中 / 已下载（含版本号）/ 未下载。

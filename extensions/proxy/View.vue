@@ -118,8 +118,8 @@
             </span>
           </template>
           <template #trailing>
-            <span :class="delayColor(item.node.delay)" class="text-xs font-medium text-right w-10">
-              {{ formatDelay(item.node.delay) }}
+            <span :class="delayColor(item.node.delay)" class="text-xs font-medium">
+              {{ formatDelay(item.node.delay) || '\u00A0' }}
             </span>
           </template>
         </BaseListItem>
@@ -191,6 +191,7 @@ import { toErrorMessage } from '@/utils/format'
 import { generateRequestId } from '@/utils/id'
 import {
   type ProxiesResponse,
+  DELAY_TIMEOUT,
   delayColor,
   formatDelay,
   isUserSelectorGroup,
@@ -448,6 +449,8 @@ async function selectNode(node: NodeItem) {
 async function testAll() {
   if (testing.value || nodes.value.length === 0) return
   testing.value = true
+  // 清空已有测速，重新逐个测（随测随显）
+  delayMap.value = {}
   try {
     // 限并发（8）+ 逐个回写 delayMap：既避免百节点订阅打满 controller，
     // 又让延迟随测随显（Promise.all 全量并发需等最慢节点才批量更新）。
@@ -458,9 +461,10 @@ async function testAll() {
         const n = queue.shift()
         if (!n) break
         try {
-          delayMap.value[n.name] = await invoke<number>(CMD.proxyTestDelay, { name: n.name })
+          const d = await invoke<number>(CMD.proxyTestDelay, { name: n.name })
+          delayMap.value[n.name] = d > 0 ? d : DELAY_TIMEOUT
         } catch {
-          delayMap.value[n.name] = 0
+          delayMap.value[n.name] = DELAY_TIMEOUT
         }
       }
     })
@@ -565,11 +569,8 @@ async function saveSub() {
     const count = await invoke<number>(CMD.proxyUpdateSubscription, { id, url })
     updateSubscription(id, { proxyCount: count, updatedAt: new Date().toISOString() })
     appStore.showStatus(`已更新 ${count} 个节点`, { duration: 2000 })
-    if (!isEnabled.value) {
-      await toggleEnabled()
-    } else {
-      await loadProxies()
-    }
+    // 不自动开启代理（尊重用户显式关闭）；已开启时刷新节点列表应用新订阅
+    if (isEnabled.value) await loadProxies()
   } catch (e) {
     appStore.showStatus(`更新失败：${errText(e)}`, { duration: 4000, kind: 'error' })
   }

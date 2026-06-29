@@ -21,6 +21,8 @@ mihomo 监听 `mixed-port`（HTTP+SOCKS5 共用）与 `external-controller`（RE
 
 升级 mihomo：改 `core.rs` 的 `MIHOMO_VERSION` + `SHA256_ARM64`/`SHA256_AMD64` 常量 + 手动删除 `mihomo` 文件触发重下（binary 存在即复用，不自动按版本替换）。
 
+Geo 数据库（`ensure_geo_files`）：mihomo 加载含 GEOIP/GEOSITE 规则的 config 时需 `geoip.metadb` + `geosite.dat`，缺失触发同步下载（直连 GitHub 国内不可达 → EOF → config 加载失败/控制器不启动 → 开代理超时）。`spawn_root`/`restart_root` 前置 `ensure_geo_files` 经 gh-proxy 镜像预下载（已存在跳过，失败不阻塞——mihomo 经 `geox-url` 自行重试）。
+
 ## 运行模式（统一 TUN）
 
 mihomo 以 root 经 `tun::spawn_root`（`osascript do shell script "..." with administrator privileges`）后台启动——TUN 需 root 创建虚拟网卡 + auto-route，接管全部 IP 流量。无 Child 句柄，PID 记 `mihomo.pid`，停止走 `tun::stop_root`（提权：SIGTERM → 轮询 `kill -0` 确认 → SIGKILL 兜底 → 按 binary 路径扫杀孤儿 → 验证确死）。config.yaml 含 `tun`（gvisor stack + dns-hijack + auto-route）+ `dns`（fake-ip）段。
@@ -31,15 +33,17 @@ osascript 每次提权都弹系统密码框，若「开/关代理 = spawn/kill r
 
 - **首次开代理**：`ensure_root_mihomo` spawn_root（提权 1 次）+ 热重载 active config；之后 `tun_active=true`，进程常驻
 - **关代理**：`stop_core` 不 kill，改热重载 idle config（`mode=direct + 无 tun 段`）→ mihomo 撤销 utun、流量直通（被墙不可达，符合「关闭」语义），**进程保留**
-- **再开代理**：`start_core` 检测 `tun_active=true` → 热重载 active config 恢复，**免提权**；热重载失败（残留进程 secret 不一致——mihomo controller 的 `secret` 启动时固化、reload 不生效）时回退 `stop_root` + `spawn_root` 重启进程（用当前 secret）
+- **再开代理**：`start_core` 检测 `tun_active=true` → 热重载 active config 恢复，**免提权**；热重载失败（罕见边缘情况）时回退 `stop_root` + `spawn_root` 重启进程
 
-效果：密码从「每次开关 2 次」→「首次 1 次，之后 0 次」。代价：root mihomo 进程首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感）。app 启动时 `reconnect_root_mihomo` 检测上次遗留的 root mihomo（按 binary 路径 ps 查）并热重载 idle 重置状态——成功才标记 `tun_active`（复用），失败（secret 不一致等）不标记、留给开代理时回退重 spawn，防端口冲突 + 免重提权。
+效果：密码从「每次开关 2 次」→「首次 1 次，之后 0 次」。代价：root mihomo 进程首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感）。app 启动时 `reconnect_root_mihomo` 检测上次遗留的 root mihomo（按 binary 路径 ps 查）：先 `GET /version` 验 secret——匹配则热重载 idle（重置为 direct 直通，idle config 复用真实 mixed_port 与 `stop_core` 一致），成功才标记 `tun_active`（复用），reload 因配置/瞬态失败不杀进程（保留常驻免提权）；secret 不匹配（401 = 不可控）即 `stop_root` 清理僵尸。
+
+`ensure_root_mihomo` 仅信任 `tun_active=true` 的进程（reconnect 成功置 idle 或本 session spawn）可热重载复用；`tun_active=false` 但有遗留进程（reconnect 未完成或失败）→ 状态不可信（secret 可能不匹配、TUN 可能已激活导致 reload 带 tun 段被 mihomo 拒绝 400），`restart_root` 单次 osascript 提权完成杀旧+启新（SIGTERM→轮询至多 2s 确认退出→SIGKILL→sleep 1 等端口/utun 释放→spawn），避免 stop_root + spawn_root 两次密码框 + 端口释放 race。mihomo 输出重定向到 mihomo.log（启动失败可查日志）。
 
 > 历史上有过 user 模式（系统代理，仅覆盖遵守系统代理的应用）+ TUN 模式双选；因 user 模式覆盖不全（命令行/Docker/部分原生应用不走代理）非完整代理，已移除，统一为 TUN。
 
 ## 订阅合并（subscription.rs）
 
-`merge_yaml(texts, params)`（纯函数）：多订阅 proxies 按 name 去重拼接；proxy-groups/rules 取首个非空订阅，否则自动生成（`🚀 节点选择` select + `♻️ 自动选择` url-test + `MATCH,🚀 节点选择`）。订阅原文存 `subs/<id>.yaml`，`build_run_config` 启动时读取合并。
+`merge_yaml(texts, params)`（纯函数）：多订阅 proxies 按 name 去重拼接；proxy-groups/rules 取首个非空订阅，否则自动生成（`🚀 节点选择` select + `♻️ 自动选择` url-test + `MATCH,🚀 节点选择`）。config 含 `geox-url`（geoip/geosite 镜像 URL，国内直连 GitHub 不可达致 mihomo 下载 EOF）。订阅原文存 `subs/<id>.yaml`，`build_run_config` 启动时读取合并。
 
 订阅拉取走 `http::client()`（SSRF 校验 + Clash UA `clash.meta/v1.19.27`，确保机场返回 YAML 而非 Base64）。增删订阅触发 `reload_if_running`：重建 `config.yaml` 后 `PUT /configs {path}` 让 mihomo 原生热重载（root 进程常驻，免重启免再提权）。
 
@@ -71,10 +75,12 @@ osascript 每次提权都弹系统密码框，若「开/关代理 = spawn/kill r
 - `config.yaml` —— mihomo 运行配置（active/idle 切换时重写）
 - `subs/<id>.yaml` —— 各订阅原始 Clash YAML
 - `mihomo.pid` —— root 进程 PID
+- `mihomo.log` —— mihomo 运行日志（每次 spawn/restart 截断重写，启动失败可查）
+- `geoip.metadb` / `geosite.dat` —— Geo 数据库（首次使用经 gh-proxy 镜像预下载，mihomo 加载含 GEOIP/GEOSITE 规则的 config 时需此文件）
 
 ## 限制
 
 - 提权：osascript 限制无法完全免密，但 root mihomo 常驻方案将密码从「每次开关 2 次」降至「首次开代理 1 次，之后 0 次」（彻底停止/app 退出后重启需再次提权）。SMJobBless helper 可实现首次安装后全程免密，但 Rust 无成熟 XPC server 绑定 + 签名/打包工程重，未做
 - 关闭可靠性：`stop_root` 按 pidfile PID 优雅停（SIGTERM → 轮询 `kill -0` 至 3s → SIGKILL），再按 mihomo binary 完整路径（含 bundle-id 数据目录）扫杀所有残留进程（防 pidfile 脱节、多次 spawn 累积孤儿），末尾验证确死否则报错
-- 进程常驻：root mihomo 首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感；无主动停止入口，靠 app 退出 + reconnect 复用）。app 退出后进程仍跑，下次启动 `reconnect_root_mihomo` 检测复用并热重载 idle 重置状态（防端口冲突 + 状态一致）。panic=abort 下无 Drop 清理，仅崩溃场景可能残留，启动期 reconnect 兜底
+- 进程常驻：root mihomo 首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感；无主动停止入口，靠 app 退出 + reconnect 复用）。app 退出后进程仍跑，下次启动 `reconnect_root_mihomo` 先验 secret（GET /version）：匹配则热重载 idle 重置状态（防端口冲突 + 状态一致），不匹配（401）则 stop_root 清理僵尸。panic=abort 下无 Drop 清理，仅崩溃场景可能残留，启动期 reconnect 兜底
 - 无连接列表/流量统计（mihomo `/connections`/`/traffic` 未接，后续可加）
