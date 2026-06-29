@@ -46,7 +46,7 @@ rlimit = "0.10"
 plist = "1"
 block2 = "0.6"
 objc2 = "0.6.4"
-objc2-foundation = { version = "0.3.2", features = ["NSString", "NSGeometry", "NSData", "NSDictionary", "NSArray", "NSEnumerator"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString", "NSURL", "NSGeometry", "NSData", "NSDictionary", "NSArray", "NSEnumerator"] }
 objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSWindow", "NSEvent", "NSScreen", "NSImage", "NSGraphicsContext", "NSBitmapImageRep", "NSImageRep", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSRunningApplication"] }
 
 [profile.release]

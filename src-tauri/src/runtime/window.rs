@@ -21,6 +21,7 @@ pub fn show_main(app: &tauri::AppHandle) {
     }
     make_main_window_key(app);
     crate::platform::click_monitor::add(app);
+    crate::platform::frontmost_watcher::add(app);
 }
 
 /// 隐藏主窗口。
@@ -41,6 +42,7 @@ pub fn hide_main(app: &tauri::AppHandle) {
         let _ = window.hide();
     }
     crate::platform::click_monitor::remove();
+    crate::platform::frontmost_watcher::remove();
 
     // panel 偷走 system key 后,原 app 虽仍是 frontmost,但 first responder
     // 已丢失。restore_captured 先 deactivate 触发系统重新评估 key window,
