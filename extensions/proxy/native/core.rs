@@ -8,6 +8,7 @@ use tauri::AppHandle;
 
 /// mihomo（Clash.Meta）核心版本与 darwin asset sha256（.gz，来自 release digest）。
 /// 运行时按需下载，不编译期嵌入（避免二进制膨胀 + 可热更新）。
+/// 常量仅作 GitHub API 不可达时的 fallback；正常路径走 fetch_latest_asset 拿最新版本。
 const MIHOMO_VERSION: &str = "v1.19.27";
 const SHA256_ARM64: &str = "3617c9d8a5a55aecfe1ebd0f55ff59f2706c8ad68fd65c6c4e5f7cf2b74263f1";
 const SHA256_AMD64: &str = "5392bea435a1c4b0a496571daafa977f744207cfafac18fb78a9b7d0747585c2";
@@ -17,6 +18,8 @@ pub(crate) const MIRROR_PREFIX: &str = "https://gh-proxy.com/";
 /// Geo 数据库 release 基址（geoip.metadb / geosite.dat / geoip.dat）。
 pub(crate) const GEO_RELEASE_BASE: &str =
     "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest";
+/// GitHub API latest release 端点（不经镜像：gh-proxy 仅代理 release 下载，不转发 API）。
+const LATEST_API: &str = "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest";
 
 /// 内核下载进行中标记（全局，ensure_bin 期间置 true，供 status 查询）。
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
@@ -42,6 +45,22 @@ pub struct CoreStatus {
     pub downloaded: bool,
     pub version: String,
     pub downloading: bool,
+}
+
+/// mihomo release asset：版本号 + 下载 URL（已拼镜像）+ sha256（纯 hex）。
+/// 由 fetch_latest_asset 从 GitHub API 解析，或 fallback_asset 用常量拼装。
+pub(crate) struct CoreAsset {
+    pub version: String,
+    pub url: String,
+    pub sha256: String,
+}
+
+/// 更新检查结果：current 为空（未下载/版本未知）时强制 has_update=false。
+#[derive(Serialize)]
+pub struct UpdateInfo {
+    pub has_update: bool,
+    pub current: String,
+    pub latest: String,
 }
 
 /// 启动 mihomo 所需的运行参数（前端 config 传入，启动时缓存以支持热重启）。
@@ -177,14 +196,67 @@ fn core_version(app: &AppHandle, bin: &Path) -> Option<String> {
     Some(v)
 }
 
-/// 下载 mihomo：reqwest 流式拉取 .gz（推送进度事件）→ sha256 校验 → gunzip 解压 → chmod。
-/// 进度通过 app.emit("proxy-core-progress", CoreProgress) 推送（received/total，chunked 时 total=None）；gunzip 依赖系统命令（macOS 自带）。
-async fn download_core_async(app: &AppHandle) -> Result<(), String> {
-    let arch = if cfg!(target_arch = "aarch64") {
+/// 当前架构名（arm64 / amd64）。
+fn darwin_arch() -> &'static str {
+    if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
         "amd64"
-    };
+    }
+}
+
+/// 从 GitHub API 拉取 latest release，匹配当前架构 asset 元数据。
+/// 一次调用同时拿到 version（tag_name）+ download URL + sha256（asset.digest）。
+/// 失败由调用方决定是否回退常量。gh-proxy 不转发 API，此处直连 api.github.com。
+pub(crate) async fn fetch_latest_asset() -> Result<CoreAsset, String> {
+    let arch = darwin_arch();
+    let resp = crate::http::client()
+        .get(LATEST_API)
+        .header("User-Agent", "Voidnix")
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("拉取最新版本失败: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("拉取最新版本响应错误: {e}"))?;
+    let v: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析 release JSON 失败: {e}"))?;
+    let version = v
+        .get("tag_name")
+        .and_then(|t| t.as_str())
+        .ok_or("release 缺 tag_name")?
+        .to_string();
+    // 精确串等匹配，排除 go120/go122/go124 等变体 asset
+    let expected = format!("mihomo-darwin-{arch}-{version}.gz");
+    let asset = v
+        .get("assets")
+        .and_then(|a| a.as_array())
+        .and_then(|arr| {
+            arr.iter()
+                .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(expected.as_str()))
+        })
+        .ok_or_else(|| format!("release 未找到 {expected}"))?;
+    let dl = asset
+        .get("browser_download_url")
+        .and_then(|u| u.as_str())
+        .ok_or("asset 缺 browser_download_url")?;
+    let digest = asset
+        .get("digest")
+        .and_then(|d| d.as_str())
+        .ok_or("asset 缺 digest")?;
+    let sha256 = digest.strip_prefix("sha256:").unwrap_or(digest).to_string();
+    Ok(CoreAsset {
+        version,
+        url: format!("{MIRROR_PREFIX}{dl}"),
+        sha256,
+    })
+}
+
+/// GitHub API 不可达时的 fallback：用常量版本 + sha256 拼 URL（与原硬编码逻辑等价）。
+fn fallback_asset() -> CoreAsset {
+    let arch = darwin_arch();
     let sha = if arch == "arm64" {
         SHA256_ARM64
     } else {
@@ -193,12 +265,48 @@ async fn download_core_async(app: &AppHandle) -> Result<(), String> {
     let url = format!(
         "{MIRROR_PREFIX}{RELEASE_BASE}/{MIHOMO_VERSION}/mihomo-darwin-{arch}-{MIHOMO_VERSION}.gz"
     );
+    CoreAsset {
+        version: MIHOMO_VERSION.to_string(),
+        url,
+        sha256: sha.to_string(),
+    }
+}
+
+/// 检查更新：拉 latest 版本号 → 比对本地版本。API 不可达时静默降级（has_update=false）。
+pub async fn check_update(app: &AppHandle) -> UpdateInfo {
+    let latest = match fetch_latest_asset().await {
+        Ok(a) => a.version,
+        Err(e) => {
+            eprintln!("[proxy] 检查更新失败: {e}");
+            return UpdateInfo {
+                has_update: false,
+                current: String::new(),
+                latest: String::new(),
+            };
+        }
+    };
+    let current = core_status(app).version;
+    UpdateInfo {
+        has_update: !current.is_empty() && current != latest,
+        current,
+        latest,
+    }
+}
+
+/// 下载 mihomo：reqwest 流式拉取 .gz（推送进度事件）→ sha256 校验 → gunzip 解压 → chmod。
+/// 进度通过 app.emit("proxy-core-progress", CoreProgress) 推送（received/total，chunked 时 total=None）；gunzip 依赖系统命令（macOS 自带）。
+async fn download_core_async(app: &AppHandle) -> Result<(), String> {
+    let asset = fetch_latest_asset().await.unwrap_or_else(|e| {
+        eprintln!("[proxy] 拉取最新版本失败，回退常量版本: {e}");
+        fallback_asset()
+    });
     let dir = ext_data_dir(app, "proxy")?;
     let gz = dir.join("mihomo.gz");
     let bin = dir.join("mihomo");
 
     DOWNLOADING.store(true, Ordering::Relaxed);
-    let result = download_core_inner(app, &url, &gz, &bin, sha).await;
+    let result =
+        download_core_inner(app, &asset.url, &gz, &bin, &asset.sha256, &asset.version).await;
     DOWNLOADING.store(false, Ordering::Relaxed);
     result
 }
@@ -209,6 +317,7 @@ async fn download_core_inner(
     gz: &Path,
     bin: &Path,
     expected_sha: &str,
+    version: &str,
 ) -> Result<(), String> {
     use futures_util::StreamExt;
     use tauri::Emitter;
@@ -251,13 +360,15 @@ async fn download_core_inner(
         ));
     }
 
-    // gunzip 解压（macOS 自带）
+    // gunzip 解压（macOS 自带）。失败清残 bin：gunzip 可能已部分输出再失败，
+    // 残 bin 会被下次 ensure_bin 直接复用，导致用户卡在「已下载但启用失败」
     let gunzip = Command::new("gunzip")
         .arg("-f")
         .arg(gz)
         .status()
         .map_err(|e| format!("gunzip 调用失败: {e}"))?;
     if !gunzip.success() {
+        let _ = std::fs::remove_file(bin);
         return Err("gunzip 解压失败".into());
     }
 
@@ -268,11 +379,26 @@ async fn download_core_inner(
             .map_err(|e| e.to_string())?
             .permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(bin, perms).map_err(|e| e.to_string())?;
+        if let Err(e) = std::fs::set_permissions(bin, perms) {
+            let _ = std::fs::remove_file(bin);
+            return Err(e.to_string());
+        }
     }
 
-    std::fs::write(bin.parent().unwrap().join("mihomo.version"), MIHOMO_VERSION)
+    std::fs::write(bin.parent().unwrap().join("mihomo.version"), version)
         .map_err(|e| e.to_string())?;
+    // gunzip + chmod + version 全部就绪：emit ready 让前端事件驱动刷新状态，
+    // 不依赖 invoke(proxyEnsureCore) resolve 时序（sha256/gunzip 同步阻塞可能延迟 IPC 响应）
+    let _ = app.emit("proxy-core-ready", ());
+    Ok(())
+}
+
+/// 删除 mihomo binary + version 缓存。update 流程前调用，确保下次 ensure_bin 重下最新。
+/// 文件不存在视为成功（幂等）。
+pub(crate) fn remove_core_files(app: &AppHandle) -> Result<(), String> {
+    let dir = ext_data_dir(app, "proxy")?;
+    let _ = std::fs::remove_file(dir.join("mihomo"));
+    let _ = std::fs::remove_file(dir.join("mihomo.version"));
     Ok(())
 }
 

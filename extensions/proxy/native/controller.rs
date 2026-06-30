@@ -15,6 +15,8 @@ static CONTROLLER: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .expect("Failed to build mihomo controller client")
 });
 
+/// 测速探测 URL：经代理节点访问（节点在海外），用 Google generate_204 端点——全球 CDN
+/// 对等极佳，海外节点访问延迟最低最稳，亦是 mihomo/clash 默认（airport 节点常据此优化）。
 const DELAY_TEST_URL: &str = "http://www.gstatic.com/generate_204";
 const DELAY_TIMEOUT_MS: u64 = 5000;
 

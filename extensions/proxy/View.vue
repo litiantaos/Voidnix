@@ -41,25 +41,36 @@
           v-if="item.type === 'enabled'"
           :ref="setRef"
           title="开启代理"
-          :subtitle="enabledSubtitle"
           :selected="selected"
         >
+          <template #subtitle>
+            <template v-if="!coreStatus.downloaded">
+              {{ isDownloading ? '正在下载内核…' : '功能依赖 mihomo 内核，请先下载' }}
+            </template>
+            <template v-else>
+              <span truncate>内核版本：mihomo {{ coreStatus.version }}</span>
+              <span v-if="updateInfo?.hasUpdate" text="green-500" shrink="0" ml="2"
+                >有新内核 {{ updateInfo.latest
+                }}{{ isEnabled ? '，请关闭代理后更新' : '，点击下载更新' }}</span
+              >
+            </template>
+          </template>
           <template #trailing>
-            <BaseButton
-              v-if="coreStatus.downloaded"
-              :variant="isEnabled ? 'primary' : 'default'"
-              @click.stop="toggleEnabled"
-            >
-              {{ isEnabled ? '已开启' : '已关闭' }}
-            </BaseButton>
-            <BaseButton
-              v-else
-              :disabled="downloadingCore"
-              :class="downloadingCore ? 'tabular-nums min-w-12' : ''"
-              @click.stop="downloadCore"
-            >
-              {{ downloadingCore ? downloadText : '下载内核' }}
-            </BaseButton>
+            <!-- 下载/更新进行中：进度按钮（disabled） -->
+            <BaseButton v-if="isDownloading" class="min-w-12 tabular-nums" disabled>{{
+              downloadText
+            }}</BaseButton>
+            <!-- 已下载：开关 + 更新入口（仅关闭代理时显示，开启时走副标题绿色提示） -->
+            <div v-else-if="coreStatus.downloaded" flex gap="2">
+              <BaseButton :variant="isEnabled ? 'primary' : 'default'" @click.stop="toggleEnabled">
+                {{ isEnabled ? '已开启' : '已关闭' }}
+              </BaseButton>
+              <BaseButton v-if="!isEnabled && updateInfo?.hasUpdate" @click.stop="updateCore"
+                >下载更新</BaseButton
+              >
+            </div>
+            <!-- 未下载：下载入口 -->
+            <BaseButton v-else @click.stop="downloadCore">下载内核</BaseButton>
           </template>
         </BaseListItem>
 
@@ -68,7 +79,7 @@
           v-else-if="item.type === 'mode'"
           :ref="setRef"
           title="规则模式"
-          subtitle="规则按分流策略，全局代理所有流量，直连不经过代理"
+          subtitle="规则按分流策略，全局代理所有流量"
           :selected="selected"
         >
           <template #trailing>
@@ -174,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onActivated, onUnmounted, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
@@ -238,15 +249,17 @@ const coreStatus = ref<{ downloaded: boolean; version: string; downloading: bool
   downloading: false,
 })
 const coreProgress = ref<{ received: number; total: number | null }>({ received: 0, total: null })
-/// 首个进度事件是否到达：区分「连接中」（建连 + 等首字节）与「下载中」（chunked 已收字节）
+/// 首个进度事件是否到达：未收到事件时显示「下载中」，收到后显示具体进度
 const progressStarted = ref(false)
-const downloadingCore = ref(false)
+/// 内核更新检查结果（hasUpdate=true 时副标题提示 + 显示「更新」按钮）。null=未检查/API 失败
+const updateInfo = ref<{ hasUpdate: boolean; current: string; latest: string } | null>(null)
+/// 下载中状态真相源跟随 Rust DOWNLOADING 原子（重新进入界面也能正确反映）。
+const isDownloading = computed(() => coreStatus.value.downloading)
 let unlistenProgress: (() => void) | null = null
-// 菜单栏改开关/规则模式/切节点时，Rust 广播 → 同步面板（命令内含「未变跳过」守卫防 watch 回声）
+// Rust gunzip 完成（bin 可用）后 emit，事件驱动刷新状态，不依赖 invoke resolve 时序
+let unlistenReady: (() => void) | null = null
 let unlistenEnabled: (() => void) | null = null
 let unlistenMode: (() => void) | null = null
-// 菜单栏切换节点后广播 → 重新拉取节点列表同步选中项
-let unlistenNode: (() => void) | null = null
 
 // 订阅编辑弹窗（agent 模型提供商模式）
 const editingId = ref('')
@@ -347,39 +360,63 @@ async function loadCoreStatus() {
 }
 
 async function downloadCore() {
-  if (downloadingCore.value) return // 防重入（双击）
+  if (isDownloading.value) return // 防重入（双击）
+  // 乐观标记 + reset 进度，立即反映「下载中」（Rust DOWNLOADING 置位有往返延迟）
+  coreStatus.value = { ...coreStatus.value, downloading: true }
   coreProgress.value = { received: 0, total: null }
   progressStarted.value = false
-  downloadingCore.value = true
   try {
     await invoke(CMD.proxyEnsureCore)
-    downloadingCore.value = false
+    // 状态刷新主要由 proxy-core-ready 事件驱动（gunzip 完成即触发），此处兜底
     await loadCoreStatus()
-    // 内核就绪：自动启用代理核心以显示节点
-    if (coreStatus.value.downloaded && !isEnabled.value) {
-      await toggleEnabled()
-    }
   } catch (e) {
-    downloadingCore.value = false
+    await loadCoreStatus() // 拉权威状态（失败时 downloading 复位为 false）
     appStore.showStatus(`内核下载失败：${errText(e)}`, { duration: 4000, kind: 'error' })
   }
 }
 
-/// 启用代理项 subtitle：有内核显示版本，无内核提示下载
-const enabledSubtitle = computed(() => {
-  if (coreStatus.value.downloaded) {
-    return `内核版本：mihomo ${coreStatus.value.version}`
+/// 更新内核到最新版：停代理 → 删旧 binary → 重下 → 恢复。复用 progress 事件展示进度。
+async function updateCore() {
+  if (isDownloading.value) return // 防重入
+  coreStatus.value = { ...coreStatus.value, downloading: true }
+  coreProgress.value = { received: 0, total: null }
+  progressStarted.value = false
+  updateInfo.value = null
+  try {
+    await invoke(CMD.proxyUpdateCore)
+    // ready 事件驱动 loadCoreStatus；此处兜底 + 重新查更新
+    await loadCoreStatus()
+    await checkUpdate()
+    appStore.showStatus('内核已更新', { duration: 2000 })
+  } catch (e) {
+    await loadCoreStatus()
+    await checkUpdate()
+    appStore.showStatus(`内核更新失败：${errText(e)}`, { duration: 4000, kind: 'error' })
   }
-  if (downloadingCore.value) return '正在下载内核…'
-  return '功能依赖 mihomo 内核，请先下载'
-})
+}
 
-/// 下载按钮文本：主路径「连接中 → N% → 解压中」。
-/// - 未收首字节：连接中（建连 + 等首字节）
+/// 检查内核更新：已下载才查（避免未下载时无意义的版本比较）。失败静默（updateInfo 置 null）。
+async function checkUpdate() {
+  if (!coreStatus.value.downloaded) {
+    updateInfo.value = null
+    return
+  }
+  try {
+    updateInfo.value = await invoke<{
+      hasUpdate: boolean
+      current: string
+      latest: string
+    }>(CMD.proxyCheckUpdate)
+  } catch {
+    updateInfo.value = null
+  }
+}
+
+/// 下载按钮文本：下载中 → N% → 解压中。
+/// - 未收首字节（建连中 / 退出重进未收到事件）：下载中
 /// - 有 Content-Length 且未收齐：N%（百分比分支仅在 received<total 进入，total>0 无除零）
 /// - received>=total（含 chunked 完成信号 total=Some(received)）：解压中
-/// - chunked（total=null 已收字节；实测 gh-proxy 透传 content-length 不触发，镜像异常/直连时兜底）：
-///   无法算百分比，诚实回退显示已收字节（避免假造百分比）
+/// - chunked（total=null 已收字节）：无法算百分比，诚实回退显示已收字节（避免假造百分比）
 const downloadText = computed(() => {
   const { received, total } = coreProgress.value
   if (total != null) {
@@ -387,7 +424,7 @@ const downloadText = computed(() => {
     return `${Math.floor((received * 100) / total)}%`
   }
   if (progressStarted.value) return `${(received / 1048576).toFixed(1)}MB`
-  return '连接中'
+  return '下载中'
 })
 
 const toggleEnabled = async () => {
@@ -409,6 +446,7 @@ const toggleEnabled = async () => {
     isEnabled.value = newState
     if (newState) {
       await loadProxies()
+      testAll() // 开启代理后自动测速（fire-and-forget，延迟随测随显）
     }
     // 关闭代理时保留节点列表显示（热重载 idle，不清空 proxiesData）
   } catch (e) {
@@ -419,7 +457,6 @@ const toggleEnabled = async () => {
 }
 
 async function loadProxies() {
-  if (!isEnabled.value) return // 未启用时保留上次节点列表，不清空
   try {
     proxiesData.value = await invoke<ProxiesResponse>(CMD.proxyGetProxies)
     selectedNodeName.value = '' // 已拿到权威 g.now，清空乐观标记
@@ -429,7 +466,10 @@ async function loadProxies() {
       activeGroupName.value = names[0] ?? ''
     }
   } catch (e) {
-    appStore.showStatus(`加载节点失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+    // 核心未运行（从未启用 / 进程已退出）时静默；已启用下加载失败才报错
+    if (isEnabled.value) {
+      appStore.showStatus(`加载节点失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+    }
   }
 }
 
@@ -452,9 +492,10 @@ async function testAll() {
   // 清空已有测速，重新逐个测（随测随显）
   delayMap.value = {}
   try {
-    // 限并发（8）+ 逐个回写 delayMap：既避免百节点订阅打满 controller，
-    // 又让延迟随测随显（Promise.all 全量并发需等最慢节点才批量更新）。
-    const CONCURRENCY = 8
+    // 限并发（24）+ 逐个回写 delayMap：controller 本地回环扛得住，瓶颈在实际代理连接；
+    // 并发太低时差节点吃满超时会占满 worker 致好节点排队干等。随测随显（Promise.all 全量
+    // 并发需等最慢节点才批量更新）。
+    const CONCURRENCY = 24
     const queue = [...nodes.value]
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       while (queue.length > 0) {
@@ -606,6 +647,11 @@ onMounted(async () => {
       progressStarted.value = true
     },
   )
+  // gunzip 完成（bin 可用）后事件驱动刷新，绕过 invoke(proxyEnsureCore) resolve 时序
+  unlistenReady = await listen('proxy-core-ready', () => {
+    loadCoreStatus()
+    checkUpdate() // 更新/下载完成后重新查更新（更新后 hasUpdate 应为 false）
+  })
   unlistenEnabled = await listen<boolean>('proxy-enabled', (e) => {
     // 切换中由 toggleEnabled 成功后统一设值，忽略命令内提前 emit 的事件防回声
     if (toggling.value) return
@@ -614,40 +660,27 @@ onMounted(async () => {
   unlistenMode = await listen<string>('proxy-mode', (e) => {
     config.mode = e.payload as typeof config.mode
   })
-  unlistenNode = await listen<string>('proxy-node', () => {
-    // 菜单栏切节点后重拉节点列表（loadProxies 内有 isEnabled 守卫）
-    if (isEnabled.value) loadProxies()
-  })
   await loadCoreStatus()
   await checkStatus()
-  // 仅按已持久化的 enabled 状态恢复节点列表；不自动启用核心——尊重用户上一次显式关闭
-  // （下载内核 / 添加订阅这两个主动操作仍会在各自流程内自启）。
-  if (isEnabled.value) {
+  // 核心已下载即加载节点列表（idle 常驻下 controller 仍可查询；
+  // 核心未运行时 loadProxies 静默失败，不报错）
+  if (coreStatus.value.downloaded) {
     await loadProxies()
   }
 })
 
-onUnmounted(() => {
-  unlistenProgress?.()
-  unlistenEnabled?.()
-  unlistenMode?.()
-  unlistenNode?.()
+// 面板激活时（含首次挂载后）查更新：已下载才查，API 不可达静默降级。
+// 重激活也触发，让用户切回面板即可看到最新版本提示（API rate limit 60/h 够自用）。
+onActivated(() => {
+  checkUpdate()
 })
 
-// 订阅名同步到菜单栏（Rust 缓存 menu_subs 供订阅子菜单展示；订阅名变更即推送；过滤空名默认项）
-watch(
-  () =>
-    config.subscriptions
-      .map((s) => s.name)
-      .filter((n) => n)
-      .join('\n'),
-  () => {
-    invoke(CMD.proxySyncMenuSubs, {
-      names: config.subscriptions.map((s) => s.name).filter((n) => n),
-    }).catch((e: unknown) => console.error('[proxy] sync menu subs failed:', e))
-  },
-  { immediate: true },
-)
+onUnmounted(() => {
+  unlistenProgress?.()
+  unlistenReady?.()
+  unlistenEnabled?.()
+  unlistenMode?.()
+})
 
 // 兜底：订阅列表至少一项（磁盘旧值可能为空数组，覆盖默认项；类似 agent 默认 provider 始终存在）
 watch(

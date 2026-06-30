@@ -14,8 +14,8 @@ export interface Subscription {
 /// 注意：代理核心是否运行（enabled）为 Rust 状态型（set/is_proxy_enabled），不存此；
 /// 统一 TUN 模式（root mihomo 常驻 + 热重载 active/idle），无模式开关。此处仅保存用户偏好与订阅元数据。
 export const config = defineConfig('extensions/proxy/config', {
-  /// 规则模式：rule | global | direct。
-  mode: 'rule' as 'rule' | 'global' | 'direct',
+  /// 规则模式：rule | global（关闭代理走 idle direct，非用户可选）。
+  mode: 'rule' as 'rule' | 'global',
   /// 混合代理端口（HTTP/SOCKS5 共用）。
   mixedPort: 7890,
   /// mihomo external-controller 端口。
@@ -32,7 +32,6 @@ export const config = defineConfig('extensions/proxy/config', {
 export const MODE_OPTIONS = [
   { label: '规则', value: 'rule' as const },
   { label: '全局', value: 'global' as const },
-  { label: '直连', value: 'direct' as const },
 ]
 
 /// CRUD helpers（defineConfig reactive 数组变更自动持久化）
