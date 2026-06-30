@@ -109,17 +109,26 @@ pub fn stop_root(app: &AppHandle) -> Result<(), String> {
 }
 
 /// 执行 osascript，识别用户取消（-128）。
+///
+/// 调用期间暂停 click-outside 检测：`with administrator privileges` 弹出的 SecurityAgent
+/// 授权框在主窗口外，用户点击（输密码/确认）会被判为 click-outside 触发 hideWindow，
+/// 导致授权未完成窗口就关闭。
 fn run_osascript(script: &str) -> Result<(), String> {
-    let out = Command::new("osascript")
-        .args(["-e", script])
-        .output()
-        .map_err(|e| format!("osascript 调用失败: {e}"))?;
-    if out.status.success() {
-        return Ok(());
-    }
-    let err = String::from_utf8_lossy(&out.stderr);
-    if err.contains("-128") || err.contains("User canceled") || err.contains("user canceled") {
-        return Err("用户取消授权".to_string());
-    }
-    Err(err.trim().to_string())
+    crate::platform::click_monitor::suppress(true);
+    let result = (|| {
+        let out = Command::new("osascript")
+            .args(["-e", script])
+            .output()
+            .map_err(|e| format!("osascript 调用失败: {e}"))?;
+        if out.status.success() {
+            return Ok(());
+        }
+        let err = String::from_utf8_lossy(&out.stderr);
+        if err.contains("-128") || err.contains("User canceled") || err.contains("user canceled") {
+            return Err("用户取消授权".to_string());
+        }
+        Err(err.trim().to_string())
+    })();
+    crate::platform::click_monitor::suppress(false);
+    result
 }

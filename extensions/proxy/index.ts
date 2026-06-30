@@ -14,5 +14,5 @@ export default defineExtension({
   disableSearchInput: true,
   mainView: () => ProxyView,
   placeholder: '代理',
-  windowHeight: 560,
+  windowHeight: 840,
 })

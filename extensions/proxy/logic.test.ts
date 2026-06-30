@@ -14,16 +14,14 @@ describe('proxy logic', () => {
   it('modeLabel maps known modes', () => {
     expect(modeLabel('rule')).toBe('规则')
     expect(modeLabel('global')).toBe('全局')
-    expect(modeLabel('direct')).toBe('直连')
     expect(modeLabel('unknown')).toBe('unknown')
   })
 
-  it('delayColor classifies latency buckets', () => {
-    expect(delayColor(null)).toBe('text-tx-muted')
-    expect(delayColor(0)).toBe('text-tx-muted')
+  it('delayColor连通绿/超时红/未测速空', () => {
+    expect(delayColor(DELAY_TIMEOUT)).toBe('text-red-500')
     expect(delayColor(100)).toBe('text-green-500')
-    expect(delayColor(150)).toBe('text-yellow-500')
-    expect(delayColor(400)).toBe('text-red-500')
+    expect(delayColor(500)).toBe('text-green-500')
+    expect(delayColor(0)).toBe('')
   })
 
   it('formatDelay renders latency', () => {

@@ -102,11 +102,12 @@ export const CMD = {
   isProxyEnabled: 'is_proxy_enabled',
   proxyCoreStatus: 'proxy_core_status',
   proxyEnsureCore: 'proxy_ensure_core',
+  proxyCheckUpdate: 'proxy_check_update',
+  proxyUpdateCore: 'proxy_update_core',
   proxyUpdateSubscription: 'proxy_update_subscription',
   proxyRemoveSubscription: 'proxy_remove_subscription',
   proxyGetProxies: 'proxy_get_proxies',
   proxySelectProxy: 'proxy_select_proxy',
   proxyTestDelay: 'proxy_test_delay',
   proxySetMode: 'proxy_set_mode',
-  proxySyncMenuSubs: 'proxy_sync_menu_subs',
 } as const

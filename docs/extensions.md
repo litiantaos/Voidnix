@@ -67,7 +67,7 @@ export default defineExtension({
 - `build: Arc<dyn Fn(&AppHandle) -> Vec<MenuEntry>>`：返回当前菜单快照。空 `Vec` = 该扩展当前不贡献（不参与菜单、不影响图标可见性）。
 - `on_event: Arc<dyn Fn(&AppHandle, &str)>`：收到所有点击的 item id，扩展自行过滤归属项（约定 id 以扩展 id 为前缀避免碰撞，如 `proxy_toggle`）。
 
-`MenuEntry` 四态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Submenu{label,items}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。**图标可见性 = Σ 各段 `build()` 项数 > 0**（扩展全关则图标自动隐藏）。与快捷键 hook 同范式（`LazyLock<Mutex<Vec>>` + free function）。现 2 消费者：awake（保持系统唤醒：启用开关 + 显示模式二级菜单）、proxy（代理：开启/TUN 勾选 + 规则模式/订阅/节点子菜单；菜单项文案与界面 View.vue 一致，操作经命令 emit 事件回同步前端）。
+`MenuEntry` 四态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Submenu{label,items}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。**图标可见性 = Σ 各段 `build()` 项数 > 0**（扩展全关则图标自动隐藏）。与快捷键 hook 同范式（`LazyLock<Mutex<Vec>>` + free function）。现 2 消费者：awake（保持系统唤醒：打开扩展 + 启用开关 + 显示模式二级菜单）、proxy（代理：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后图标隐藏，重连走扩展面板，其余控制全部在面板）。
 
 ### UI 规约补充
 

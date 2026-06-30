@@ -36,8 +36,6 @@ export function modeLabel(mode: string): string {
       return '规则'
     case 'global':
       return '全局'
-    case 'direct':
-      return '直连'
     default:
       return mode
   }
@@ -46,12 +44,11 @@ export function modeLabel(mode: string): string {
 /// 测速超时哨兵值：测速失败/超时写入 delayMap，与「未测速」（0）区分。
 export const DELAY_TIMEOUT = -1
 
-/// 延迟（ms）→ 颜色语义类。未测速/超时返回 muted。
-export function delayColor(ms: number | null | undefined): string {
-  if (ms == null || ms === DELAY_TIMEOUT || ms <= 0) return 'text-tx-muted'
-  if (ms < 150) return 'text-green-500'
-  if (ms < 400) return 'text-yellow-500'
-  return 'text-red-500'
+/// 延迟（ms）→ 颜色语义类。连通=绿，连不通=红，未测速（0）返回空串不着色。
+export function delayColor(ms: number): string {
+  if (ms === DELAY_TIMEOUT) return 'text-red-500'
+  if (ms > 0) return 'text-green-500'
+  return ''
 }
 
 /// 延迟 → 显示文本（超时显示「超时」，未测速返回空串不占位）

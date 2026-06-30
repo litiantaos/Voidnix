@@ -12,19 +12,14 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use self::core::RunParams;
 
-/// 节点子菜单项 id 前缀（点击时按前缀剥离出节点名）。
-const NODE_ITEM_PREFIX: &str = "proxy_node:";
-
 /// 代理运行状态：enabled（流量是否被代理）+ tun_active（root mihomo 进程是否在跑，常驻）
 /// + run_params（最近一次 active 参数，供热重载/复用）。
 pub struct ProxyState {
     pub enabled: AtomicBool,
     pub run_params: Mutex<Option<RunParams>>,
     pub tun_active: AtomicBool,
-    /// 菜单栏节点子菜单缓存（name, 是否当前选中）；由 refresh_proxy_menu 异步拉取填充。
-    pub menu_nodes: Mutex<Vec<(String, bool)>>,
-    /// 菜单栏订阅子菜单缓存（订阅名列表）；由前端 proxy_sync_menu_subs 推送。
-    pub menu_subs: Mutex<Vec<String>>,
+    /// 菜单栏状态行当前节点名缓存；由 refresh_proxy_menu 异步拉取填充。
+    pub current_node: Mutex<Option<String>>,
 }
 
 /// 启用/停用代理（统一 TUN 模式：root mihomo 常驻 + 热重载 active/idle）。
@@ -32,7 +27,7 @@ pub struct ProxyState {
 /// 启用：`ensure_root_mihomo`（首次提权 spawn，之后幂等）+ 热重载 active config；常驻后免再提权。
 /// 停用：热重载 idle config（mode=direct + 无 tun 段）→ mihomo 撤销 utun、流量直通，进程保留。
 /// run 参数（端口/secret/mode）由前端 config 传入，Rust 仅消费不回读 plugin-store。
-/// 启用后显示菜单栏托盘（开关代理/节点切换快捷入口），停用（idle 常驻）保留精简菜单。
+/// 菜单栏图标常驻：状态行显示「已连接：节点」/「未连接」，控制逻辑全部在扩展面板（菜单不重复）。
 #[tauri::command]
 pub async fn set_proxy_enabled(
     app: AppHandle,
@@ -148,18 +143,27 @@ async fn start_core(app: &AppHandle, state: &ProxyState, params: RunParams) -> R
 
 /// 停止代理（流量切直通）。
 ///
-/// root mihomo 常驻：**不 kill 进程**，热重载 idle config（mode=direct + 无 tun 段）→ mihomo
-/// 撤销 utun、流量直通（被墙不可达，符合「关闭」语义），进程保留以便下次免提权恢复。
-/// 热重载失败必须上抛：否则 enabled=false 但 mihomo 仍跑 active config（含 tun 段），流量
-/// 持续被代理、utun 未撤——与 stop_root「验证确死否则报错」的关闭可靠性保持一致语义。
+/// root mihomo 常驻：优先热重载 idle config（mode=direct + 无 tun 段）→ mihomo 撤销 utun、
+/// 流量直通，进程保留以便下次免提权恢复。
+/// 热重载失败（mihomo 崩溃/controller 卡死致 127.0.0.1:9090 不可达）回退强杀：进程已退出
+/// 则直接重置状态（TUN 已由 OS 回收，免提权）；进程仍跑（卡死）则 stop_root 强杀释放 TUN，
+/// 保关闭可靠性。无论优雅还是强杀，最终 enabled=false——用户「关闭代理」意图必须达成，
+/// 不可卡死在无法关闭态。
 async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
     if state.tun_active.load(Ordering::Relaxed) {
         let idle = state.run_params.lock().map_err(|e| e.to_string())?.clone();
         if let Some(mut p) = idle {
             p.mode = "direct".into();
             p.tun = false;
-            // 失败上抛（?）：保持 enabled=true，前端 showStatus('error') 提示用户重试
-            reload_config_yaml(app, &p).await?;
+            // 优雅关闭失败：controller 不可达（进程崩溃/卡死）。
+            // 进程仍跑（卡死）→ stop_root 强杀释放 TUN；进程已退出 → 直接重置（免提权）。
+            if let Err(e) = reload_config_yaml(app, &p).await {
+                if root_mihomo_running(app) {
+                    tun::stop_root(app)?;
+                }
+                state.tun_active.store(false, Ordering::Relaxed);
+                eprintln!("[proxy] 热重载 idle 失败，回退强杀关闭: {e}");
+            }
         }
     }
     state.enabled.store(false, Ordering::Relaxed);
@@ -182,6 +186,36 @@ pub async fn proxy_core_status(app: AppHandle) -> Result<core::CoreStatus, Strin
 pub async fn proxy_ensure_core(app: AppHandle) -> Result<bool, String> {
     core::ensure_bin(&app).await?;
     Ok(true)
+}
+
+/// 检查更新：拉 GitHub API latest 版本 → 比对本地版本。API 不可达时静默 has_update=false。
+#[tauri::command]
+pub async fn proxy_check_update(app: AppHandle) -> Result<core::UpdateInfo, String> {
+    Ok(core::check_update(&app).await)
+}
+
+/// 更新内核：停代理（若在跑）→ kill root 进程 → 删旧 binary → ensure_bin 重下最新 → 恢复。
+/// 中途下载失败：文件已删，下次 ensure_bin 自动重试（前端进面板触发或开代理触发）。
+#[tauri::command]
+pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> Result<(), String> {
+    let was_enabled = state.enabled.load(Ordering::Relaxed);
+    let params = state.run_params.lock().map_err(|e| e.to_string())?.clone();
+    // 停代理 + kill root 进程（替换 binary 必须先 kill）。失败上抛：保留旧 binary 不动。
+    if state.tun_active.load(Ordering::Relaxed) {
+        tun::stop_root(&app)?;
+        state.tun_active.store(false, Ordering::Relaxed);
+    }
+    state.enabled.store(false, Ordering::Relaxed);
+    // 删旧 binary + version → ensure_bin 走 fetch_latest_asset 重下最新
+    core::remove_core_files(&app)?;
+    core::ensure_bin(&app).await?;
+    // 恢复启用状态（若之前在跑）。start_core 会重新 spawn_root + 提权
+    if was_enabled {
+        if let Some(p) = params {
+            start_core(&app, &state, p).await?;
+        }
+    }
+    Ok(())
 }
 
 /// 拉取订阅并持久化（subs/<id>.yaml），返回节点数；核心运行中则热重启以应用新配置。
@@ -257,7 +291,7 @@ pub async fn proxy_get_proxies(state: State<'_, ProxyState>) -> Result<Value, St
     controller::get_proxies(&base, &secret).await
 }
 
-/// PUT /proxies/{group} → 在 selector 分组选择节点。成功后刷新托盘子菜单选中标记。
+/// PUT /proxies/{group} → 在 selector 分组选择节点。成功后刷新菜单状态行节点名。
 #[tauri::command]
 pub async fn proxy_select_proxy(
     app: AppHandle,
@@ -279,18 +313,6 @@ pub async fn proxy_select_proxy(
 pub async fn proxy_test_delay(state: State<'_, ProxyState>, name: String) -> Result<u32, String> {
     let (base, secret) = controller_endpoint(&state)?;
     controller::test_delay(&base, &secret, &name).await
-}
-
-/// 前端推送订阅名列表 → 缓存 + 重建菜单（订阅子菜单展示订阅名，点击打开面板）。
-#[tauri::command]
-pub async fn proxy_sync_menu_subs(
-    app: AppHandle,
-    state: State<'_, ProxyState>,
-    names: Vec<String>,
-) -> Result<(), String> {
-    *crate::runtime::lock_or_recover(&state.menu_subs) = names;
-    crate::runtime::menubar::refresh(&app);
-    Ok(())
 }
 
 /// PATCH /configs → 切换规则模式。成功后回写 run_params.mode，确保后续 reload_if_running
@@ -322,205 +344,85 @@ pub async fn proxy_set_mode(
     Ok(())
 }
 
-// ── 聚合菜单栏贡献（代理开启后向框架统一托盘贡献：开关/规则模式/节点切换） ──
+// ── 聚合菜单栏贡献（打开扩展 + 连接状态行；控制逻辑全部在扩展面板，菜单不重复） ──
 
-/// 拉取最新节点缓存 + 重建聚合菜单（best-effort，controller 不可达时保留上次缓存）。
+/// 拉取当前选中节点名刷新菜单状态行（best-effort，controller 不可达时保留上次缓存）。
 async fn refresh_proxy_menu(app: &AppHandle) {
     let state = app.state::<ProxyState>();
     if let Ok((base, secret)) = controller_endpoint(&state) {
         if let Ok(val) = controller::get_proxies(&base, &secret).await {
-            let (_, nodes) = parse_main_group(&val);
-            *crate::runtime::lock_or_recover(&state.menu_nodes) = nodes;
+            *crate::runtime::lock_or_recover(&state.current_node) = parse_current_node(&val);
         }
     }
     crate::runtime::menubar::refresh(app);
 }
 
-/// 菜单快照：镜像界面「代理」分组（开启代理/TUN 勾选 + 规则模式二级菜单）+ 订阅 + 节点子菜单。
-/// 文案与界面 View.vue 一致；关闭（含 idle 常驻）返回空——菜单栏图标随之隐藏，保持干净。
+/// 菜单快照：打开扩展（打开面板）+ 连接状态（CheckItem 可点断开）。
+/// 仅已连接时贡献——断开后图标隐藏（保持菜单栏干净），重连走扩展面板。
+/// 开关/模式/订阅/节点切换/测速等完整控制仍在扩展面板。
 fn build_proxy(app: &AppHandle) -> Vec<MenuEntry> {
     let state = app.state::<ProxyState>();
     if !state.enabled.load(Ordering::Relaxed) {
         return vec![];
     }
-    // active：完整菜单（开启/规则/订阅/节点）
-    let mut entries = vec![MenuEntry::CheckItem {
-        id: "proxy_toggle".into(),
-        label: "开启代理".into(),
-        checked: true,
-    }];
-    let mode = crate::runtime::lock_or_recover(&state.run_params)
-        .as_ref()
-        .map(|p| p.mode.clone())
-        .unwrap_or_else(|| "rule".to_string());
-    let mode_label = match mode.as_str() {
-        "global" => "全局",
-        "direct" => "直连",
-        _ => "规则",
+    let label = match crate::runtime::lock_or_recover(&state.current_node)
+        .clone()
+        .filter(|n| !n.is_empty())
+    {
+        Some(n) => format!("已连接：{n}"),
+        None => "已连接".to_string(),
     };
-    entries.push(MenuEntry::Submenu {
-        label: format!("规则模式：{mode_label}"),
-        items: vec![
-            MenuEntry::CheckItem {
-                id: "proxy_mode_rule".into(),
-                label: "规则".into(),
-                checked: mode == "rule",
-            },
-            MenuEntry::CheckItem {
-                id: "proxy_mode_global".into(),
-                label: "全局".into(),
-                checked: mode == "global",
-            },
-            MenuEntry::CheckItem {
-                id: "proxy_mode_direct".into(),
-                label: "直连".into(),
-                checked: mode == "direct",
-            },
-        ],
-    });
-    // 订阅子菜单（订阅名由前端 proxy_sync_menu_subs 推送；点击打开面板）
-    let subs = crate::runtime::lock_or_recover(&state.menu_subs).clone();
-    if !subs.is_empty() {
-        // 单订阅且名非空 → 显示订阅名；否则显示数量
-        let label = match subs.as_slice() {
-            [only] if !only.is_empty() => format!("订阅：{only}"),
-            _ => format!("订阅（{}）", subs.len()),
-        };
-        entries.push(MenuEntry::Submenu {
+    vec![
+        MenuEntry::Item {
+            id: "proxy_open".into(),
+            label: "打开扩展".into(),
+            enabled: true,
+        },
+        MenuEntry::CheckItem {
+            id: "proxy_toggle".into(),
             label,
-            items: subs
-                .iter()
-                .map(|s| MenuEntry::Item {
-                    id: format!("proxy_sub:{s}"),
-                    label: s.clone(),
-                    enabled: true,
-                })
-                .collect(),
-        });
-    }
-    // 节点子菜单（缓存由 refresh_proxy_menu 异步拉取填充；父项带当前选中节点名）
-    let nodes = crate::runtime::lock_or_recover(&state.menu_nodes).clone();
-    if !nodes.is_empty() {
-        let current = nodes
-            .iter()
-            .find(|(_, checked)| *checked)
-            .map(|(n, _)| n.as_str());
-        let label = match current {
-            Some(n) => format!("节点：{n}"),
-            None => "节点".to_string(),
-        };
-        entries.push(MenuEntry::Submenu {
-            label,
-            items: nodes
-                .iter()
-                .map(|(name, checked)| MenuEntry::CheckItem {
-                    id: format!("{NODE_ITEM_PREFIX}{name}"),
-                    label: name.clone(),
-                    checked: *checked,
-                })
-                .collect(),
-        });
-    }
-    entries
+            checked: true,
+        },
+    ]
 }
 
-/// 菜单点击分派（均复用命令，内部 emit 同步前端 + refresh）。
+/// 菜单点击分派：打开扩展（打开面板）/ 连接状态（断开代理 → 图标隐藏）。
 fn on_proxy_event(app: &AppHandle, id: &str) {
     match id {
-        // 开启代理 CheckItem（菜单仅 active 显示，点击 = 关闭转 idle）
-        "proxy_toggle" => {
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let state = app.state::<ProxyState>();
-                if let Err(e) = stop_core(&app, &state).await {
-                    eprintln!("[proxy] 菜单关闭代理: {e}");
-                }
-                let _ = app.emit("proxy-enabled", false);
-                crate::runtime::menubar::refresh(&app);
-            });
-        }
-        "proxy_mode_rule" | "proxy_mode_global" | "proxy_mode_direct" => {
-            let mode = if id == "proxy_mode_rule" {
-                "rule"
-            } else if id == "proxy_mode_global" {
-                "global"
-            } else {
-                "direct"
-            }
-            .to_string();
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let state = app.state::<ProxyState>();
-                let _ = proxy_set_mode(app.clone(), state, mode).await;
-            });
-        }
-        other if other.starts_with("proxy_sub:") => {
-            // 订阅项点击 → 打开代理面板（show_main 触 NSWindow 须主线程）
+        "proxy_open" => {
             let app2 = app.clone();
             let _ = app.run_on_main_thread(move || {
                 crate::runtime::window::show_main(&app2);
                 let _ = app2.emit("open-module", "proxy");
             });
         }
-        other if other.starts_with(NODE_ITEM_PREFIX) => {
-            let name = other[NODE_ITEM_PREFIX.len()..].to_string();
+        "proxy_toggle" => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 let state = app.state::<ProxyState>();
-                let Ok((base, secret)) = controller_endpoint(&state) else {
+                if let Err(e) = stop_core(&app, &state).await {
+                    eprintln!("[proxy] 菜单关闭代理失败: {e}");
                     return;
-                };
-                // 取当前主分组名（订阅变更后分组名可能变，实时查不缓存）
-                let proxies = controller::get_proxies(&base, &secret)
-                    .await
-                    .unwrap_or(Value::Null);
-                if let Some(group) = parse_main_group(&proxies).0 {
-                    let _ = controller::select_proxy(&base, &secret, &group, &name).await;
                 }
-                refresh_proxy_menu(&app).await; // 更新菜单选中标记
-                let _ = app.emit("proxy-node", &name); // 通知面板刷新节点选中
+                let _ = app.emit("proxy-enabled", false);
+                crate::runtime::menubar::refresh(&app);
             });
         }
         _ => {}
     }
 }
 
-/// 解析 /proxies 响应取主分组（首个非 GLOBAL 的 Selector）及其节点列表：无 selector
-/// （无订阅）返回 (None, [])——不回退 GLOBAL（其 all 仅含 DIRECT/REJECT 内置策略，非真实
-/// 代理节点）。返回 (分组名, [(节点名, 是否当前选中)])。镜像 logic.ts pickMainGroup 语义。
-fn parse_main_group(val: &Value) -> (Option<String>, Vec<(String, bool)>) {
-    let Some(proxies) = val.get("proxies").and_then(|p| p.as_object()) else {
-        return (None, Vec::new());
-    };
+/// 解析 /proxies 响应取主分组（首个非 GLOBAL 的 Selector）的当前选中节点名（`now`）。
+/// 无 selector（无订阅）返回 None。镜像 logic.ts pickMainGroup 语义。
+fn parse_current_node(val: &Value) -> Option<String> {
+    let proxies = val.get("proxies").and_then(|p| p.as_object())?;
     let main = proxies
         .iter()
         .find(|(k, e)| {
             e.get("type").and_then(|t| t.as_str()) == Some("Selector") && k.as_str() != "GLOBAL"
         })
-        .map(|(_, v)| v);
-    let Some(g) = main else {
-        return (None, Vec::new());
-    };
-    let group_name = g.get("name").and_then(|n| n.as_str()).map(String::from);
-    let now = g
-        .get("now")
-        .and_then(|n| n.as_str())
-        .unwrap_or("")
-        .to_string();
-    let nodes = g
-        .get("all")
-        .and_then(|a| a.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|n| n.as_str().map(String::from))
-                .map(|name| {
-                    let selected = name == now;
-                    (name, selected)
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    (group_name, nodes)
+        .map(|(_, v)| v)?;
+    main.get("now").and_then(|n| n.as_str()).map(String::from)
 }
 
 /// app 启动复用上次退出遗留的 root mihomo（常驻方案下进程在 app 退出后仍跑）。
@@ -587,18 +489,31 @@ fn root_mihomo_running(app: &AppHandle) -> bool {
         .any(|l| l.contains(&bin))
 }
 
-/// 读 extensions/proxy/config.json 的 mixedPort/controllerPort/secret（前端 defineConfig 持久化），
-/// 供热重载 idle 连接残留 mihomo。
-fn read_controller_creds(app: &AppHandle) -> Option<(u16, u16, String)> {
+/// 读 extensions/proxy/config.json 构造 RunParams（mode 缺省 rule，tun 恒 true）。
+/// `read_controller_creds` 委托此函数；前端 defineConfig 持久化的参数由此读回。
+fn read_run_params(app: &AppHandle) -> Option<RunParams> {
     let path = crate::runtime::storage::ext_data_dir(app, "proxy")
         .ok()?
         .join("config.json");
     let text = std::fs::read_to_string(&path).ok()?;
     let v: Value = serde_json::from_str(&text).ok()?;
-    let mixed_port = v.get("mixedPort")?.as_u64()? as u16;
-    let controller_port = v.get("controllerPort")?.as_u64()? as u16;
-    let secret = v.get("secret")?.as_str()?.to_string();
-    Some((mixed_port, controller_port, secret))
+    Some(RunParams {
+        mixed_port: v.get("mixedPort")?.as_u64()? as u16,
+        controller_port: v.get("controllerPort")?.as_u64()? as u16,
+        secret: v.get("secret")?.as_str()?.to_string(),
+        mode: v
+            .get("mode")
+            .and_then(|m| m.as_str())
+            .unwrap_or("rule")
+            .to_string(),
+        tun: true,
+    })
+}
+
+/// 读 config.json 的 controller 凭据（mixedPort/controllerPort/secret），供热重载 idle 连接残留 mihomo。
+fn read_controller_creds(app: &AppHandle) -> Option<(u16, u16, String)> {
+    let p = read_run_params(app)?;
+    Some((p.mixed_port, p.controller_port, p.secret))
 }
 
 /// 命令注册（局部 invoke_handler，§2.8）。
@@ -620,8 +535,7 @@ impl Extension for ProxyExtension {
             enabled: AtomicBool::new(false),
             run_params: Mutex::new(None),
             tun_active: AtomicBool::new(false),
-            menu_nodes: Mutex::new(Vec::new()),
-            menu_subs: Mutex::new(Vec::new()),
+            current_node: Mutex::new(None),
         });
         crate::runtime::menubar::register(MenuBarContribution {
             title: "代理",
