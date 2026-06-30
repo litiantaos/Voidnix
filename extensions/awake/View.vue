@@ -101,7 +101,7 @@ onUnmounted(() => {
 const items = computed(() => [
   {
     id: 'awake',
-    title: '启用扩展功能',
+    title: '启用唤醒',
     subtitle: '通过虚拟外接显示器触发 Clamshell Mode，需接入电源',
     groupId: 'power',
     groupTitle: '显示器',

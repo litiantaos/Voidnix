@@ -74,12 +74,12 @@
         ref="searchInput"
         id="main-search-input"
         :value="appStore.searchQuery"
-        :disabled="activeModule?.disableSearchInput"
+        :readonly="activeModule?.disableSearchInput"
         text="base black/85"
         outline="none"
         bg="transparent"
         flex="1"
-        :class="'disabled:text-tx-primary placeholder:text-tx-hint disabled:opacity-100'"
+        :class="'placeholder:text-tx-hint'"
         :placeholder="
           activeModule
             ? activeModule.disableSearchInput
@@ -232,6 +232,10 @@ watch(
     if (newId && newId !== oldId) {
       if (!oldId) save('tools')
       reset()
+      // disableSearchInput 模块用 readonly（始终可聚焦）而非 disabled，
+      // 离开时 focus 不受 disabled→enabled 同帧缓存影响；
+      // 进入时主动 blur 避免残留光标（与原 disabled 行为一致）
+      if (getExtension(newId)?.disableSearchInput) searchInput.value?.blur()
     } else if (!newId && oldId) {
       nextTick(() => searchInput.value?.focus())
     }

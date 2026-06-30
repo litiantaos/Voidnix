@@ -11,7 +11,7 @@
         <BaseListItem
           v-if="item.type === 'toggle'"
           :ref="setRef"
-          title="启用扩展功能"
+          title="启用窗口管理"
           subtitle="鼠标移至屏幕顶部中心激活悬浮面板"
           :selected="selected"
         >
