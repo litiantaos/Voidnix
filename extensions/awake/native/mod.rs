@@ -184,7 +184,7 @@ impl Extension for AwakeExtension {
 }
 
 /// 菜单快照：保持唤醒激活时贡献两项（启用开关 CheckItem + 显示模式二级菜单），未激活返回空。
-/// 文案与界面 View.vue 保持一致（启用扩展功能 / 显示模式 / 镜像 / 扩展）。
+/// 文案与界面 View.vue 保持一致（启用唤醒 / 显示模式 / 镜像 / 扩展）。
 fn build_awake(app: &AppHandle) -> Vec<MenuEntry> {
     let state = app.state::<AwakeState>();
     let active = crate::runtime::lock_or_recover(&state.process).is_some();
@@ -193,9 +193,14 @@ fn build_awake(app: &AppHandle) -> Vec<MenuEntry> {
     }
     let mirror = MIRROR_MODE.load(Ordering::Relaxed);
     vec![
+        MenuEntry::Item {
+            id: "awake_open".into(),
+            label: "打开扩展".into(),
+            enabled: true,
+        },
         MenuEntry::CheckItem {
             id: "awake_toggle".into(),
-            label: "启用扩展功能".into(),
+            label: "启用唤醒".into(),
             checked: true,
         },
         MenuEntry::Submenu {
@@ -216,9 +221,17 @@ fn build_awake(app: &AppHandle) -> Vec<MenuEntry> {
     ]
 }
 
-/// 菜单点击：启用开关 → 关闭；显示模式子项 → 切到对应模式。均复用命令（内部 refresh + emit 同步前端）。
+/// 菜单点击：打开扩展 → show_main + emit；启用开关 → 关闭；显示模式子项 → 切到对应模式。
+/// 均复用命令（内部 refresh + emit 同步前端）。
 fn on_awake_event(app: &AppHandle, id: &str) {
     match id {
+        "awake_open" => {
+            let app2 = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                crate::runtime::window::show_main(&app2);
+                let _ = app2.emit("open-module", "awake");
+            });
+        }
         "awake_toggle" => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {

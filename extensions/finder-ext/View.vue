@@ -11,7 +11,7 @@
         <BaseListItem
           v-if="item.type === 'toggle'"
           :ref="setRef"
-          title="启用扩展功能"
+          title="启用访达右键菜单"
           :subtitle="authorized === false ? '开启后将引导你到系统设置中启用扩展' : undefined"
           :selected="selected"
         >
