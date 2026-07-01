@@ -24,6 +24,7 @@ describe('app store', () => {
       store.setActiveModule('clipboard')
       expect(store.activeModuleId).toBe('clipboard')
       expect(store.activeSubview).toBeNull()
+      expect(store.subviewExternal).toBe(false)
     })
 
     it('退出模块回到全局模式', () => {
@@ -89,6 +90,14 @@ describe('app store', () => {
       const store = useAppStore()
       store.openSubview('config')
       expect(store.activeSubview).toBe('config')
+      expect(store.subviewExternal).toBe(false)
+    })
+
+    it('openSubview external=true 标记外部打开', () => {
+      const store = useAppStore()
+      store.openSubview('ocr', true)
+      expect(store.activeSubview).toBe('ocr')
+      expect(store.subviewExternal).toBe(true)
     })
 
     it('closeSubview 清除当前子视图', () => {
@@ -96,6 +105,14 @@ describe('app store', () => {
       store.openSubview('config')
       store.closeSubview()
       expect(store.activeSubview).toBeNull()
+      expect(store.subviewExternal).toBe(false)
+    })
+
+    it('closeSubview 清除 external 标记', () => {
+      const store = useAppStore()
+      store.openSubview('ocr', true)
+      store.closeSubview()
+      expect(store.subviewExternal).toBe(false)
     })
   })
 

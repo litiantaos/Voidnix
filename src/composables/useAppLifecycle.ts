@@ -187,7 +187,7 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
         const { moduleId, subviewId, payload } = e.payload
         appStore.setActiveModule(moduleId)
         appStore.setSearchQuery('')
-        appStore.openSubview(subviewId)
+        appStore.openSubview(subviewId, true)
         const ext = getExtension(moduleId)
         if (ext?.onOpenSubview) {
           ext.onOpenSubview(subviewId, payload)

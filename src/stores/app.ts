@@ -34,6 +34,9 @@ export const useAppStore = defineStore('app', () => {
   let dialogResolve: ((value: boolean) => void) | null = null
 
   const activeSubview = ref<string | null>(null)
+  // 子视图是否经由外部事件（open-module-subview）打开：外部打开时 ESC 直接回主界面，
+  // 内部打开（从模块 mainView 进入 config 等）ESC 返回 mainView。
+  const subviewExternal = ref(false)
   const shortcutRecording = ref(false)
 
   const shortcutErrors = ref<Record<string, string>>({})
@@ -60,6 +63,7 @@ export const useAppStore = defineStore('app', () => {
   function setActiveModule(id: string | null) {
     activeModuleId.value = id
     activeSubview.value = null
+    subviewExternal.value = false
     // 模式切换：激活模块时 searchEngine 只调该模块 dynamic；null 恢复全局聚合。
     // 模块 onActivate/onDeactivate 由各 View 的 onActivated/onDeactivated（KeepAlive）承接。
     searchEngine.setActiveModule(id ?? undefined)
@@ -90,12 +94,14 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  function openSubview(subviewId: string) {
+  function openSubview(subviewId: string, external = false) {
     activeSubview.value = subviewId
+    subviewExternal.value = external
   }
 
   function closeSubview() {
     activeSubview.value = null
+    subviewExternal.value = false
   }
 
   function setShortcutRecording(value: boolean) {
@@ -127,6 +133,7 @@ export const useAppStore = defineStore('app', () => {
     showConfirm,
     resolveConfirm,
     activeSubview,
+    subviewExternal,
     openSubview,
     closeSubview,
     shortcutRecording,
