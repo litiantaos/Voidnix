@@ -49,6 +49,7 @@ export default defineExtension({
     screenshot: () => ScreenshotWindow,
     'pin-': () => PinWindow,
   },
+  disableSearchInput: true,
   globalShortcuts: [
     {
       id: 'screenshot',

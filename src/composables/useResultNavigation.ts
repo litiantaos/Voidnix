@@ -122,7 +122,11 @@ export function useResultNavigation(opts: ResultNavOptions) {
 
         if (appStore.activeSubview) {
           e.preventDefault()
-          appStore.closeSubview()
+          if (appStore.subviewExternal) {
+            goHome()
+          } else {
+            appStore.closeSubview()
+          }
           return
         }
         e.preventDefault()
