@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // check:wm-bounds —— window-manager 自定义尺寸 floor/cap Rust↔TS 双向一致校验。
 // 权威源在 extensions/window-manager/native/mod.rs 的 const（WIDTH_BOUNDS / HEIGHT_BOUNDS），
-// config.ts 的 BOUNDS 仅 UI 镜像（⚠️ 须手动同步）。本脚本把人工同步变成 CI 强制约束。
+// config.ts 的 BOUNDS 仅 UI 镜像（须手动同步）。本脚本把人工同步变成 CI 强制约束。
 //
 // 校验项（每项 Rust 与 TS 必须完全一致）：
 //   - 2 个数值 tuple（WIDTH_BOUNDS / HEIGHT_BOUNDS）→ BOUNDS.<field>.{floor,cap}

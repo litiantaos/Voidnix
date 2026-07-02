@@ -45,7 +45,7 @@ osascript 每次提权都弹系统密码框，若「开/关代理 = spawn/kill r
 
 ## 订阅合并（subscription.rs）
 
-`merge_yaml(texts, params)`（纯函数）：多订阅 proxies 按 name 去重拼接；proxy-groups/rules 取首个非空订阅，否则自动生成（`🚀 节点选择` select + `♻️ 自动选择` url-test + `MATCH,🚀 节点选择`）。config 含 `geox-url`（geoip/geosite 镜像 URL，国内直连 GitHub 不可达致 mihomo 下载 EOF）。订阅原文存 `subs/<id>.yaml`，`build_run_config` 启动时读取合并。
+`merge_yaml(texts, params)`（纯函数）：多订阅 proxies 按 name 去重拼接；proxy-groups/rules 取首个非空订阅，否则自动生成（`节点选择` select + `自动选择` url-test + `MATCH,节点选择`）。config 含 `geox-url`（geoip/geosite 镜像 URL，国内直连 GitHub 不可达致 mihomo 下载 EOF）。订阅原文存 `subs/<id>.yaml`，`build_run_config` 启动时读取合并。
 
 订阅拉取走 `http::client()`（SSRF 校验 + Clash UA `clash.meta/v1.19.27`，确保机场返回 YAML 而非 Base64）。增删订阅触发 `reload_if_running`：重建 `config.yaml` 后 `PUT /configs {path}` 让 mihomo 原生热重载（root 进程常驻，免重启免再提权）。
 

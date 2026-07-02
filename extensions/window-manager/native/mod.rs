@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 mod window_snap;
 
-/// 自定义尺寸 floor/cap（权威源，⚠️ TS config.ts BOUNDS 须手动同步，
+/// 自定义尺寸 floor/cap（权威源，TS config.ts BOUNDS 须手动同步，
 /// check:wm-bounds CI 强制约束）。
 const WIDTH_BOUNDS: (f64, f64) = (200.0, 4096.0);
 const HEIGHT_BOUNDS: (f64, f64) = (200.0, 4096.0);

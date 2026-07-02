@@ -211,5 +211,5 @@ icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litia
 - TypeScript 严格模式：`noUnusedLocals` + `noUnusedParameters`
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`
 - Git commit：`<type>(<scope>): <中文描述>`，描述力求最简，不写详情，不主动执行 git 操作
-- 语言：注释和回复用中文
+- 语言：注释和回复用中文，禁止在任何地方使用 emoji
 - 文档：不用表格，言简意赅，修改代码后必须同步更新 AGENTS.md 或对应 docs/ 文档中相关描述
