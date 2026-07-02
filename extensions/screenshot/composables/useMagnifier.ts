@@ -1,12 +1,14 @@
 import { ref, computed, type Ref } from 'vue'
-import type { ScreenshotData } from './useTypes'
-import { MAGNIFIER_SIZE, MAGNIFIER_ZOOM, MAGNIFIER_OFFSET } from './useTypes'
+import type { ScreenshotData, Sel } from './useTypes'
+import { MAGNIFIER_SIZE, MAGNIFIER_ZOOM, MAGNIFIER_OFFSET, handleAbsolutePos } from './useTypes'
 
 export function useMagnifier(options: {
   initialScreenshot: ScreenshotData
   screenW: Ref<number>
   screenH: Ref<number>
   dpr: Ref<number>
+  sel: Ref<Sel>
+  hoveredHandle: Ref<string | null>
 }) {
   const magnifierCanvas = ref<HTMLCanvasElement>()
   const pickedColor = ref('#000000')
@@ -16,10 +18,16 @@ export function useMagnifier(options: {
 
   const magnifierStyle = computed(() => {
     const totalH = MAGNIFIER_SIZE + 20
-    let left = crossX.value - MAGNIFIER_SIZE - MAGNIFIER_OFFSET
-    let top = crossY.value + MAGNIFIER_OFFSET
-    if (left < 0) left = crossX.value + MAGNIFIER_OFFSET
-    if (top + totalH > options.screenH.value) top = crossY.value - totalH - MAGNIFIER_OFFSET
+    // hover 控制点时锚定控制点几何位置（放大窗固定不随鼠标微动）；否则跟随鼠标
+    const hid = options.hoveredHandle.value
+    const { x: ax, y: ay } = hid
+      ? handleAbsolutePos(hid, options.sel.value)
+      : { x: crossX.value, y: crossY.value }
+    // 默认左下角方位（与 select 一致），仅边界 clamp 时翻转
+    let left = ax - MAGNIFIER_SIZE - MAGNIFIER_OFFSET
+    let top = ay + MAGNIFIER_OFFSET
+    if (left < 0) left = ax + MAGNIFIER_OFFSET
+    if (top + totalH > options.screenH.value) top = ay - totalH - MAGNIFIER_OFFSET
     return { left: `${left}px`, top: `${top}px`, width: `${MAGNIFIER_SIZE}px` }
   })
 

@@ -29,28 +29,29 @@
     </template>
     <div v-else bg="black/45" pointer-events="none" inset="0" fixed />
 
-    <!-- 十字线 -->
-    <template v-if="showCrosshair">
-      <div
-        bg="accent/80"
-        class="overlay-abs"
-        style="left: 0; right: 0; height: 1px; top: var(--cross-y)"
-      />
-      <div
-        bg="accent/80"
-        class="overlay-abs"
-        style="top: 0; bottom: 0; width: 1px; left: var(--cross-x)"
-      />
-    </template>
+    <!-- 十字线：1px 线 transform 居中在坐标点，消除线右/下偏 0.5px。
+         select 阶段双轴；resize 边中控制点（n/s/e/w）仅显与边平齐的单轴，角控制点双轴 -->
+    <div
+      v-if="showCrossH"
+      bg="accent/80"
+      class="overlay-abs"
+      style="left: 0; right: 0; height: 1px; top: var(--cross-y); transform: translateY(-0.5px)"
+    />
+    <div
+      v-if="showCrossV"
+      bg="accent/80"
+      class="overlay-abs"
+      style="top: 0; bottom: 0; width: 1px; left: var(--cross-x); transform: translateX(-0.5px)"
+    />
 
     <!-- 放大镜 -->
     <div
-      v-if="showCrosshair"
+      v-if="showMagnifier"
       border="~ black/20"
       rounded="lg"
       class="overlay-abs"
       shadow="xl"
-      z="50"
+      z="60"
       overflow="hidden"
       :style="magnifierStyle"
     >
@@ -74,6 +75,7 @@
               right: 0,
               height: '1px',
               top: `${MAGNIFIER_SIZE / 2}px`,
+              transform: 'translateY(-0.5px)',
             }"
           />
           <div
@@ -84,6 +86,7 @@
               bottom: 0,
               width: '1px',
               left: `${MAGNIFIER_SIZE / 2}px`,
+              transform: 'translateX(-0.5px)',
             }"
           />
         </div>
@@ -106,7 +109,7 @@
 
     <!-- 窗口高亮 -->
     <template v-if="!hasSelection && phase === 'select' && hoverWindow">
-      <div border="~ accent" class="overlay-abs" :style="hoverWindowStyle">
+      <div class="overlay-abs" :style="[hoverWindowStyle, edgeOutline]">
         <div
           text="xs tx-primary"
           p="x-1.5 y-0.5"
@@ -124,7 +127,7 @@
 
     <!-- 选区边框 + 8个控制点 -->
     <template v-if="hasSelection && phase !== 'scroll'">
-      <div border="~ accent" class="overlay-abs" :style="selectionStyle">
+      <div class="overlay-abs" :style="[selectionStyle, edgeOutline]">
         <div
           text="xs tx-primary"
           p="x-1.5 y-0.5"
@@ -148,14 +151,16 @@
           pointer-events="auto"
           absolute
           :style="h.style"
-          @mousedown.stop="startSelResize(h.id, $event)"
+          @mouseenter="onHandleEnter(h.id)"
+          @mouseleave="hoveredHandle = null"
+          @mousedown.stop="onSelResizeStart(h.id, $event)"
         />
       </div>
     </template>
 
     <!-- 滚动截屏阶段：仅显示选区边框 -->
     <template v-if="hasSelection && phase === 'scroll'">
-      <div border="~ accent" class="overlay-abs" :style="selectionStyle" />
+      <div class="overlay-abs" :style="[selectionStyle, edgeOutline]" />
     </template>
 
     <!-- 标注 canvas -->
@@ -401,7 +406,7 @@ import { CMD } from '@/commands'
 import AnnotationPalette from './AnnotationPalette.vue'
 import ScrollPreview from './ScrollPreview.vue'
 import type { ScreenshotData, Phase } from '../composables/useTypes'
-import { MAGNIFIER_SIZE } from '../composables/useTypes'
+import { MAGNIFIER_SIZE, handleAbsolutePos } from '../composables/useTypes'
 import { useSelection } from '../composables/useSelection'
 import { useAnnotation } from '../composables/useAnnotation'
 import { useTextInput } from '../composables/useTextInput'
@@ -428,7 +433,23 @@ const screenH = ref(props.initialScreenshot.height)
 const dpr = ref(props.initialScreenshot.scale)
 const windows = ref(props.initialScreenshot.windows ?? [])
 const phase = ref<Phase>('select')
-const showCrosshair = computed(() => phase.value === 'select' || !!selection.selResizeHandle.value)
+const hoveredHandle = ref<string | null>(null)
+// 十字线分轴显示：select 阶段双轴；resize 时仅显与拖动边平齐的轴——
+// n/s（水平边）显水平线，e/w（垂直边）显垂直线，角控制点双轴
+const showCrossH = computed(() => {
+  if (phase.value === 'select') return true
+  const h = selection.selResizeHandle.value
+  return !!h && (h.includes('n') || h.includes('s'))
+})
+const showCrossV = computed(() => {
+  if (phase.value === 'select') return true
+  const h = selection.selResizeHandle.value
+  return !!h && (h.includes('e') || h.includes('w'))
+})
+// 放大窗额外覆盖「hover 控制点」：悬浮时只出放大窗，不出十字线
+const showMagnifier = computed(
+  () => phase.value === 'select' || !!selection.selResizeHandle.value || !!hoveredHandle.value,
+)
 
 // ── 组合 composables ──────────────────────────────────────
 const selection = useSelection({ screenW, screenH, windows })
@@ -438,6 +459,8 @@ const magnifier = useMagnifier({
   screenW,
   screenH,
   dpr,
+  sel: selection.sel,
+  hoveredHandle,
 })
 const textDetection = useTextDetection({ dpr })
 
@@ -498,6 +521,7 @@ const maskStyles = useMaskStyles({
   hoverWindow: selection.hoverWindow,
   screenW,
   screenH,
+  phase,
   selResizeHandle: selection.selResizeHandle,
   draggingShapeHandle: shapeHandlesComposable.draggingShapeHandle,
   selectedShape: annotation.selectedShape,
@@ -569,7 +593,8 @@ let onScrollCancelRef: () => Promise<void> | void = () => {}
 let onScrollFinishRef: () => Promise<void> | void = () => {}
 
 // ── 从 composables 解构模板需要的属性和方法 ──────────────────
-const { sel, hasSelection, hoverWindow, selResizeHandle, startSelResize } = selection
+const { sel, hasSelection, hoverWindow, selResizeHandle, startSelResize, applySelResize } =
+  selection
 const {
   activeTool,
   annotColor,
@@ -596,6 +621,7 @@ function setMagnifierCanvas(el: unknown) {
 const { shapeHandles, startShapeHandleDrag } = shapeHandlesComposable
 const {
   selectionStyle,
+  edgeOutline,
   hoverWindowStyle,
   hoverMaskTop,
   hoverMaskBottom,
@@ -612,6 +638,45 @@ const {
 } = maskStyles
 const { onMouseDown, onMouseMove, onMouseUp, onDoubleClick, onKeyDown } = events
 const { doCopy, doSave, doOcr, doPin, doCancel } = actions
+
+// 按下选区控制点即把十字线与选区边框都对齐到鼠标位置。
+// 否则十字线停在上次 mousemove 的位置（鼠标在 8×8 控制点内，偏离选区边缘 grab offset），
+// 边框仍在原位，两者差 grab offset；要等首次 mousemove 才 snap，视觉上"按下偏移、拉动正常"。
+function onSelResizeStart(handle: string, e: MouseEvent) {
+  // 进入 resize：清空 hover 锚定，放大窗改为跟随光标（与 select 首次拉选区一致）。
+  // 否则翻转时 hoveredHandle 残留旧 id，放大窗位置锚定翻转后已位移的控制点而非光标。
+  hoveredHandle.value = null
+  rootEl.value?.style.setProperty('--cross-x', `${e.clientX}px`)
+  rootEl.value?.style.setProperty('--cross-y', `${e.clientY}px`)
+  crossX.value = e.clientX
+  crossY.value = e.clientY
+  const oldX = sel.value.x
+  const oldY = sel.value.y
+  startSelResize(handle, e)
+  applySelResize(e.clientX, e.clientY)
+  // snap 改变了 sel.x/y（w/n 控制点），反向平移标注保持其屏幕绝对位置（与拖动中一致）
+  const dx = sel.value.x - oldX
+  const dy = sel.value.y - oldY
+  if (dx !== 0 || dy !== 0) {
+    for (const s of annotation.shapes.value) {
+      s.x1 -= dx
+      s.x2 -= dx
+      s.y1 -= dy
+      s.y2 -= dy
+    }
+    drawing.redraw()
+  }
+  magnifier.updateMagnifier(e.clientX, e.clientY)
+}
+
+// 悬浮到选区控制点即显示放大窗（不出十字线）。位置与内容都以控制点为锚固定，
+// 不受指针在控制点内的微动影响。
+function onHandleEnter(id: string) {
+  hoveredHandle.value = id
+  const { x, y } = handleAbsolutePos(id, sel.value)
+  // 放大窗由 hoveredHandle 触发 v-if 渲染，需等 canvas 挂载后再取色绘制
+  nextTick(() => magnifier.updateMagnifier(x, y))
+}
 
 // ── 滚动截屏 ─────────────────────────────────────────────
 const scrollCapture = useScrollCapture({ dpr })
