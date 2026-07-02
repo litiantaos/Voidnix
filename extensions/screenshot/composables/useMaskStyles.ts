@@ -1,5 +1,5 @@
 import { computed, type Ref } from 'vue'
-import type { Sel, WindowRect, Tool } from './useTypes'
+import type { Sel, WindowRect, Tool, Phase } from './useTypes'
 import { PALETTE_H, PALETTE_GAP } from './useTypes'
 
 export function useMaskStyles(options: {
@@ -7,6 +7,7 @@ export function useMaskStyles(options: {
   hoverWindow: Ref<WindowRect | null>
   screenW: Ref<number>
   screenH: Ref<number>
+  phase: Ref<Phase>
   selResizeHandle: Ref<string | null>
   draggingShapeHandle: Ref<string | null>
   selectedShape: Ref<{ type: Tool; rotation?: number } | null>
@@ -25,6 +26,16 @@ export function useMaskStyles(options: {
     width: `${options.sel.value.w}px`,
     height: `${options.sel.value.h}px`,
   }))
+
+  // 选区/hover 边框：用 outline 替代 border，让边框中心精确对齐选区几何边缘。
+  // border-box 下 1px border 中心恒在几何边缘内侧 0.5px，无法与十字线中心（几何边缘）
+  // 重合；outline 不占布局，outline-offset:-0.5px 使 1px 边框中心落在几何边缘，
+  // 与过鼠标坐标的十字线（已 translateY/X(-0.5px) 居中）device-pixel 级重合。
+  // 控制点以 right/left 相对 padding-box 定位，去 border 后自然居中几何边缘，与边框对齐。
+  const edgeOutline = {
+    outline: '1px solid var(--color-accent)',
+    outlineOffset: '-0.5px',
+  }
 
   const hoverWindowStyle = computed(() => {
     const w = options.hoverWindow.value
@@ -127,29 +138,32 @@ export function useMaskStyles(options: {
   const handles = computed(() => {
     const { w, h } = options.sel.value
     const half = -4
+    // 选区过小时控制点互相重叠，统一光标方向避免指针在各 resize 方向间乱跳
+    const small = w < 16 || h < 16
+    const c = (dir: string) => (small ? 'nwse-resize' : dir)
     return [
       {
         id: 'nw',
-        style: { left: `${half}px`, top: `${half}px`, cursor: 'nw-resize' },
+        style: { left: `${half}px`, top: `${half}px`, cursor: c('nw-resize') },
       },
       {
         id: 'n',
         style: {
           left: `${w / 2 + half}px`,
           top: `${half}px`,
-          cursor: 'n-resize',
+          cursor: c('n-resize'),
         },
       },
       {
         id: 'ne',
-        style: { right: `${half}px`, top: `${half}px`, cursor: 'ne-resize' },
+        style: { right: `${half}px`, top: `${half}px`, cursor: c('ne-resize') },
       },
       {
         id: 'w',
         style: {
           left: `${half}px`,
           top: `${h / 2 + half}px`,
-          cursor: 'w-resize',
+          cursor: c('w-resize'),
         },
       },
       {
@@ -157,24 +171,24 @@ export function useMaskStyles(options: {
         style: {
           right: `${half}px`,
           top: `${h / 2 + half}px`,
-          cursor: 'e-resize',
+          cursor: c('e-resize'),
         },
       },
       {
         id: 'sw',
-        style: { left: `${half}px`, bottom: `${half}px`, cursor: 'sw-resize' },
+        style: { left: `${half}px`, bottom: `${half}px`, cursor: c('sw-resize') },
       },
       {
         id: 's',
         style: {
           left: `${w / 2 + half}px`,
           bottom: `${half}px`,
-          cursor: 's-resize',
+          cursor: c('s-resize'),
         },
       },
       {
         id: 'se',
-        style: { right: `${half}px`, bottom: `${half}px`, cursor: 'se-resize' },
+        style: { right: `${half}px`, bottom: `${half}px`, cursor: c('se-resize') },
       },
     ]
   })
@@ -195,6 +209,8 @@ export function useMaskStyles(options: {
   }
 
   const cursorStyle = computed(() => {
+    // select 阶段始终是选区绘制光标（含拖动画选区），不进 grabbing
+    if (options.phase.value === 'select') return 'crosshair'
     if (options.selResizeHandle.value) return getCursorForHandle(options.selResizeHandle.value)
     if (options.draggingShapeHandle.value === 'e' && options.selectedShape.value?.type === 'text')
       return 'ew-resize'
@@ -209,13 +225,15 @@ export function useMaskStyles(options: {
       const { x, y, w, h } = options.sel.value
       const cx = options.crossX.value,
         cy = options.crossY.value
-      if (cx >= x && cx <= x + w && cy >= y && cy <= y + h) return 'grab'
+      if (cx >= x && cx <= x + w && cy >= y && cy <= y + h)
+        return w < 16 || h < 16 ? 'nwse-resize' : 'grab'
     }
     return 'default'
   })
 
   return {
     selectionStyle,
+    edgeOutline,
     hoverWindowStyle,
     hoverMaskTop,
     hoverMaskBottom,
