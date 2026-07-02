@@ -11,7 +11,7 @@ export const config = defineConfig('extensions/window-manager/config', {
 })
 
 /// 自定义尺寸 floor/cap（权威在 native/mod.rs WIDTH_BOUNDS/HEIGHT_BOUNDS，
-/// ⚠️ 须手动同步，check:wm-bounds CI 强制约束）。
+/// 须手动同步，check:wm-bounds CI 强制约束）。
 export const BOUNDS = {
   customWidth: { floor: 200, cap: 4096 },
   customHeight: { floor: 200, cap: 4096 },

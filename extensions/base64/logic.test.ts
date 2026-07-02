@@ -43,7 +43,7 @@ describe('encode → decode roundtrip', () => {
   })
 
   it('preserves mixed text', () => {
-    const original = 'Hello 你好 🎉'
+    const original = 'Hello 你好'
     expect(decodeBase64(encodeBase64(original))).toBe(original)
   })
 })

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // check:agent-bounds —— agent 资源上限 Rust↔TS 双向一致校验。
 // 权威源在 extensions/agent/native/policy.rs 的 const（floor/cap），config.ts 的 BOUNDS
-// 仅 UI 镜像（⚠️ 须手动同步）。本脚本把人工同步变成 CI 强制约束。
+// 仅 UI 镜像（须手动同步）。本脚本把人工同步变成 CI 强制约束。
 //
 // 校验项（每项 Rust 与 TS 必须完全一致）：
 //   - 6 个数值 tuple（MAX_TURNS / MAX_CPU_SECS / MAX_MEMORY_MB / MAX_OPEN_FILES /
