@@ -125,7 +125,7 @@ fn run_osascript(script: &str) -> Result<(), String> {
         }
         let err = String::from_utf8_lossy(&out.stderr);
         if err.contains("-128") || err.contains("User canceled") || err.contains("user canceled") {
-            return Err("用户取消授权".to_string());
+            return Err("已取消授权".to_string());
         }
         Err(err.trim().to_string())
     })();

@@ -22,7 +22,7 @@ dist
 **/target/
 src-tauri/gen/
 src-tauri/proptest-regressions/
-# 根目录无 Cargo.toml，仅 src-tauri/Cargo.lock 受跟踪
+# 根目录无 Cargo.toml，Cargo.lock 仅子 crate（src-tauri / zsh-autosuggestions）各自跟踪
 /Cargo.lock
 
 # Coverage
