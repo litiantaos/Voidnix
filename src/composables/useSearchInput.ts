@@ -27,7 +27,7 @@ export function useSearchInput(opts: SearchInputOptions) {
   let currentSearchId = 0
   // 模块模式 dynamic 的可取消句柄：新查询/离开模块时 abort 旧的，避免孤儿网络/IPC 请求
   let moduleAbort: AbortController | undefined
-  // 进入模块前保存主列表选中位置，goBackToToolList 恢复（与 scroll save/restore 同构）
+  // 进入模块前保存工具列表选中位置，退出回工具列表时恢复
   let savedToolIndex = 0
 
   const isLoading = ref(false)
@@ -37,17 +37,30 @@ export function useSearchInput(opts: SearchInputOptions) {
     if (searchInput.value) searchInput.value.value = value
   }
 
-  function goBackToToolList() {
-    moduleAbort?.abort()
-    appStore.setActiveModule(null)
-    clearSearch('/')
-    results.value = buildModuleResults()
-    selectedIndex.value = savedToolIndex
-    if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
-    restore('tools')
+  /** 激活模块：store.setActiveModule 自动快照入口 query。handleExecute 模块入口专用。 */
+  function activateModule(moduleId: string) {
+    appStore.setActiveModule(moduleId)
+    clearSearch()
   }
 
-  /** 退出当前模块 → 回到主界面（清空 query + 默认结果）。ESC 专用。 */
+  /** 退出模块 → 回到入口前状态：query 决定返回目标（/ → 工具列表，其余 → 主界面）。 */
+  function exitModule() {
+    const query = appStore.entryQuery
+    moduleAbort?.abort()
+    appStore.setActiveModule(null)
+    if (query.startsWith('/')) {
+      clearSearch(query)
+      results.value = buildModuleResults()
+      selectedIndex.value = savedToolIndex
+      if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
+      restore('tools')
+    } else {
+      clearSearch()
+      loadDefaultResults()
+    }
+  }
+
+  /** 强制回主界面（清空 query + 默认结果）。外部 subview ESC 专用。 */
   function goHome() {
     moduleAbort?.abort()
     appStore.setActiveModule(null)
@@ -256,7 +269,7 @@ export function useSearchInput(opts: SearchInputOptions) {
         loadDefaultResults()
       }
     } else if (appStore.activeModuleId) {
-      goBackToToolList()
+      exitModule()
     }
     searchInput.value?.focus()
   }
@@ -298,9 +311,10 @@ export function useSearchInput(opts: SearchInputOptions) {
     onInput,
     clearSearch,
     loadDefaultResults,
-    goBackToToolList,
+    activateModule,
     goHome,
     handleTagClose,
     refreshModule,
+    exitModule,
   }
 }

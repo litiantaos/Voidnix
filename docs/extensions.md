@@ -89,7 +89,7 @@ interface SearchContext {
 }
 ```
 
-- **全局模式**（searchEngine）：并行调用所有扩展 dynamic，合流 keyword 模块入口（`keywordMatch` 双向匹配：正向子串 + 反向降权 0.5 + 拼音，覆盖多词 query 含关键词场景；**dynamic 已产出结果的扩展抑制其入口**——即时答案优先，如「100 usd」已返回换算值不再重复显示该扩展入口，dynamic 返空/失败时入口保留作降级）+ dedupe + groupAndSort。
+- **全局模式**（searchEngine）：并行调用所有扩展 dynamic，合流 keyword 模块入口（`keywordMatch` 双向匹配：正向子串 + 反向降权 0.5 + 拼音，覆盖多词 query 含关键词场景；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口**——即时答案优先如「100 usd」已返回换算值不再重复显示该扩展入口；clipboard 等数据型结果 kind≠module 不抑制，用户搜模块名时先看入口再看记录）+ dedupe + groupAndSort。
 - **模块模式**（runModuleSearch）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序。dynamic 返回 Promise（异步网络/IPC）时进入即清空旧结果 + 显示 loading 占位（「先进去再加载」），返回 `ProviderResult[]`（同步）则即时填充无闪烁。
 - `moduleMode` 区分调用场景：**全局空 query 时网络型扩展（ip/currency）应跳过网络请求返回 `[]`**，避免拖慢默认列表；模块内空 query 正常执行。
 - 半静态内容（如 base64 选项）用模块级缓存自管，走 dynamic 返回。

@@ -24,6 +24,8 @@ export interface StatusOptions {
 export const useAppStore = defineStore('app', () => {
   const activeModuleId = ref<string | null>(null)
   const searchQuery = ref('')
+  // 进入模块时的入口 query 快照：ESC 退出据此决定返回目标（/ → 工具列表，其余 → 主界面）
+  const entryQuery = ref('')
   const isComposing = ref(false)
 
   const isDialogOpen = ref(false)
@@ -61,6 +63,16 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function setActiveModule(id: string | null) {
+    const prevId = activeModuleId.value
+    if (id && !prevId) {
+      // 从外部进入模块：快照入口 query（统一所有激活路径——快捷键 toggle / open-module
+      // 事件 / 扩展自激活等均经此，避免 useSearchInput 旁路漏存）
+      entryQuery.value = searchQuery.value
+    } else if (!id && prevId) {
+      // 退出模块：清空
+      entryQuery.value = ''
+    }
+    // module→module（如 OCR→translate）：保留原入口，ESC 回到最初进入点
     activeModuleId.value = id
     activeSubview.value = null
     subviewExternal.value = false
@@ -122,6 +134,7 @@ export const useAppStore = defineStore('app', () => {
   return {
     activeModuleId,
     searchQuery,
+    entryQuery,
     isComposing,
     isDialogOpen,
     dialogOptions,

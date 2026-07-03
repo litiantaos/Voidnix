@@ -16,22 +16,32 @@ interface ResultNavOptions {
   activeModule: ComputedRef<Extension | null>
   clearSearch: (value?: string) => void
   loadDefaultResults: () => Promise<void>
+  activateModule: (moduleId: string) => void
   goHome: () => void
+  exitModule: () => void
 }
 
 /// 结果键盘导航：ArrowUp/Down 移动、Enter 执行分派、Escape 返回主界面/关闭窗口。
 /// 搜索状态由 useSearchInput 持有，通过 opts 注入（clearSearch/loadDefaultResults 等）。
 export function useResultNavigation(opts: ResultNavOptions) {
   const appStore = useAppStore()
-  const { searchInput, results, selectedIndex, clearSearch, loadDefaultResults, goHome } = opts
+  const {
+    searchInput,
+    results,
+    selectedIndex,
+    clearSearch,
+    loadDefaultResults,
+    activateModule,
+    goHome,
+    exitModule,
+  } = opts
 
   // --- execute ---
 
   async function handleExecute(result: SearchResult, _index?: number, e?: KeyboardEvent) {
     if (e) e.preventDefault()
     if (result.data?.kind === 'module' && result.data.moduleId) {
-      appStore.setActiveModule(result.data.moduleId as string)
-      clearSearch()
+      activateModule(result.data.moduleId as string)
       return
     }
     // 扩展私有回车动作（result.module = 产出扩展 id，框架注入）
@@ -131,7 +141,7 @@ export function useResultNavigation(opts: ResultNavOptions) {
         }
         e.preventDefault()
         if (appStore.activeModuleId) {
-          goHome()
+          exitModule()
         } else {
           hideWindow()
         }

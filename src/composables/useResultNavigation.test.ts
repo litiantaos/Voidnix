@@ -38,6 +38,8 @@ function makeWrapper(opts: {
   const clearSearch = vi.fn()
   const loadDefaultResults = vi.fn().mockResolvedValue(undefined)
   const goHome = vi.fn()
+  const exitModule = vi.fn()
+  const activateModule = vi.fn()
 
   const TestComp = defineComponent({
     setup() {
@@ -48,7 +50,9 @@ function makeWrapper(opts: {
         activeModule: computed(() => null),
         clearSearch,
         loadDefaultResults,
+        activateModule,
         goHome,
+        exitModule,
       })
       return { nav }
     },
@@ -64,7 +68,9 @@ function makeWrapper(opts: {
     searchQuery,
     clearSearch,
     loadDefaultResults,
+    activateModule,
     goHome,
+    exitModule,
   }
 }
 
@@ -75,8 +81,8 @@ describe('useResultNavigation', () => {
   })
 
   describe('handleExecute 分派', () => {
-    it('kind=module 触发 setActiveModule + clearSearch', async () => {
-      const { wrapper, results, clearSearch } = makeWrapper({
+    it('kind=module 触发 activateModule', async () => {
+      const { wrapper, results, activateModule } = makeWrapper({
         results: [
           {
             id: 'm1',
@@ -89,7 +95,7 @@ describe('useResultNavigation', () => {
       })
       await wrapper.vm.nav.handleExecute(results.value[0])
       await flushPromises()
-      expect(clearSearch).toHaveBeenCalled()
+      expect(activateModule).toHaveBeenCalledWith('calculator')
     })
 
     it('kind=file 调用扩展 onExecute', async () => {
