@@ -23,23 +23,23 @@ mihomo 监听 `mixed-port`（HTTP+SOCKS5 共用）与 `external-controller`（RE
 
 下载状态真相源在 Rust：`DOWNLOADING` 原子标记下载中，`core_status` 据此返回。前端 `isDownloading` = `coreStatus.downloading`（computed），重新进入界面 `loadCoreStatus` 反映下载中/已下载/未下载。进度数值不持久化（下载是低频一次性操作，不值得为之维护快照）——退出重进时若仍在下载，按钮显示「下载中」，收到下一个 `proxy-core-progress` 事件即恢复具体百分比。gunzip/chmod/version 全部就绪后 Rust emit `proxy-core-ready`，前端事件驱动 `loadCoreStatus` 刷新——不依赖 `invoke(proxyEnsureCore)` 的 resolve 时序（sha256/gunzip 同步阻塞可能延迟 IPC 响应，曾导致前端乐观标记的 `downloading=true` 不被刷新、UI 卡在「解压中」）。下载与启用解耦：`downloadCore` 不自动 `toggleEnabled`，内核就绪后用户手动开启。
 
-Geo 数据库（`ensure_geo_files`）：mihomo 加载含 GEOIP/GEOSITE 规则的 config 时需 `geoip.metadb` + `geosite.dat`，缺失触发同步下载（直连 GitHub 国内不可达 → EOF → config 加载失败/控制器不启动 → 开代理超时）。`spawn_root`/`restart_root` 前置 `ensure_geo_files` 经 gh-proxy 镜像预下载（已存在跳过，失败不阻塞——mihomo 经 `geox-url` 自行重试）。
+Geo 数据库（`ensure_geo_files`）：mihomo 加载含 GEOIP/GEOSITE 规则的 config 时需 `geoip.metadb` + `geosite.dat`，缺失触发同步下载（直连 GitHub 国内不可达 → EOF → config 加载失败/控制器不启动 → 开代理超时）。`restart_root` 前置 `ensure_geo_files` 经 gh-proxy 镜像预下载（已存在跳过，失败不阻塞——mihomo 经 `geox-url` 自行重试）。
 
 ## 运行模式（统一 TUN）
 
-mihomo 以 root 经 `tun::spawn_root`（`osascript do shell script "..." with administrator privileges`）后台启动——TUN 需 root 创建虚拟网卡 + auto-route，接管全部 IP 流量。无 Child 句柄，PID 记 `mihomo.pid`，停止走 `tun::stop_root`（提权：SIGTERM → 轮询 `kill -0` 确认 → SIGKILL 兜底 → 按 binary 路径扫杀孤儿 → 验证确死）。config.yaml 含 `tun`（gvisor stack + dns-hijack + auto-route）+ `dns`（fake-ip）段。`run_osascript` 调用期间 `click_monitor::suppress`——SecurityAgent 授权框在主窗口外，用户点击（输密码/确认）会被判为 click-outside 触发 hideWindow 致窗口提前关闭。
+mihomo 以 root 经 `tun::restart_root`（`osascript do shell script "..." with administrator privileges`）后台启动——TUN 需 root 创建虚拟网卡 + auto-route，接管全部 IP 流量。**TUN 是系统独占资源**（虚拟网卡 + 路由 `1.0.0.0/8` 等），两个 mihomo 实例不能同时占 TUN（`add route: file exists`），故 `restart_root` 启动前先清理**所有 Voidnix mihomo**（按 `com.litiantao.voidnix` 前缀 ps 匹配，覆盖 dev/prod 两个 bundle id 数据目录路径）释放 TUN + 端口，再启动新的。无 Child 句柄，PID 记 `mihomo.pid`，停止走 `tun::stop_root`（提权：SIGTERM → 轮询 `kill -0` 确认 → SIGKILL 兜底 → 按 binary 路径扫杀孤儿 → 验证确死；仅杀自己路径的，关代理不影响另一版）。config.yaml 含 `tun`（gvisor stack + dns-hijack + auto-route）+ `dns`（fake-ip）段。`run_osascript` 调用期间 `click_monitor::suppress`——SecurityAgent 授权框在主窗口外，用户点击（输密码/确认）会被判为 click-outside 触发 hideWindow 致窗口提前关闭。
 
 ### root mihomo 常驻 + 热重载 active/idle（免反复提权）
 
 osascript 每次提权都弹系统密码框，若「开/关代理 = spawn/kill root 进程」则每次开关 2 次密码。改为**进程生命周期与流量开关解耦**：
 
-- **首次开代理**：`ensure_root_mihomo` spawn_root（提权 1 次）+ 热重载 active config；之后 `tun_active=true`，进程常驻
+- **首次开代理**：`ensure_root_mihomo` restart_root（提权 1 次，清理所有 Voidnix mihomo + 启新）+ 热重载 active config；之后 `tun_active=true`，进程常驻
 - **关代理**：`stop_core` 优先热重载 idle config（`mode=direct + 无 tun 段`）→ mihomo 撤销 utun、流量直通（被墙不可达，符合「关闭」语义），**进程保留**。热重载失败（mihomo 崩溃/controller 卡死致 127.0.0.1:9090 不可达）回退强杀保关闭可靠性：进程已退出则直接重置状态（TUN 已由 OS 回收，免提权），进程仍跑（卡死）则 `stop_root` 强杀释放 TUN
-- **再开代理**：`start_core` 检测 `tun_active=true` → 热重载 active config 恢复，**免提权**；热重载失败（罕见边缘情况）时回退 `stop_root` + `spawn_root` 重启进程
+- **再开代理**：`start_core` 检测 `tun_active=true` → 热重载 active config 恢复，**免提权**；热重载失败（罕见边缘情况）时回退 `restart_root` 重启进程
 
 效果：密码从「每次开关 2 次」→「首次 1 次，之后 0 次」。代价：root mihomo 进程首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感）。app 启动时 `reconnect_root_mihomo` 检测上次遗留的 root mihomo（按 binary 路径 ps 查）：先 `GET /version` 验 secret——匹配则热重载 idle（重置为 direct 直通，idle config 复用真实 mixed_port 与 `stop_core` 一致），成功才标记 `tun_active`（复用），reload 因配置/瞬态失败不杀进程（保留常驻免提权）；secret 不匹配（401 = 不可控）即 `stop_root` 清理僵尸。
 
-`ensure_root_mihomo` 仅信任 `tun_active=true` 的进程（reconnect 成功置 idle 或本 session spawn）可热重载复用；`tun_active=false` 但有遗留进程（reconnect 未完成或失败）→ 状态不可信（secret 可能不匹配、TUN 可能已激活导致 reload 带 tun 段被 mihomo 拒绝 400），`restart_root` 单次 osascript 提权完成杀旧+启新（SIGTERM→轮询至多 2s 确认退出→SIGKILL→sleep 1 等端口/utun 释放→spawn），避免 stop_root + spawn_root 两次密码框 + 端口释放 race。mihomo 输出重定向到 mihomo.log（启动失败可查日志）。
+`ensure_root_mihomo` 仅信任 `tun_active=true` 的进程（reconnect 成功置 idle 或本 session spawn）可热重载复用；`tun_active=false` → 状态不可信（secret 可能不匹配、TUN 可能已被其他实例占用），`restart_root` 单次 osascript 提权完成**杀所有 Voidnix mihomo**+启新（SIGTERM→轮询至多 2s 确认退出→SIGKILL→sleep 1 等端口/utun 释放→spawn）。按 `com.litiantao.voidnix` 前缀匹配 dev/prod 两版数据目录路径——TUN 互斥决定了同一时刻只能有一个 Voidnix mihomo 占 TUN，开代理即接管。mihomo 输出重定向到 mihomo.log（启动失败可查日志）。
 
 > 历史上有过 user 模式（系统代理，仅覆盖遵守系统代理的应用）+ TUN 模式双选；因 user 模式覆盖不全（命令行/Docker/部分原生应用不走代理）非完整代理，已移除，统一为 TUN。
 
@@ -63,7 +63,7 @@ osascript 每次提权都弹系统密码框，若「开/关代理 = spawn/kill r
 
 ## 命令（10 个）
 
-`set_proxy_enabled` / `is_proxy_enabled`（启停；root mihomo 常驻——首次 spawn_root 提权一次，之后开关走热重载 active/idle config 免提权）、`proxy_core_status` / `proxy_ensure_core`（内核版本查询与运行时按需下载）、`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）、`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）、`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_delay` / `proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退）。`proxy_set_mode` 含「未变跳过」守卫 + emit 同步前端。
+`set_proxy_enabled` / `is_proxy_enabled`（启停；root mihomo 常驻——首次 restart_root 提权一次，之后开关走热重载 active/idle config 免提权）、`proxy_core_status` / `proxy_ensure_core`（内核版本查询与运行时按需下载）、`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）、`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）、`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_delay` / `proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退）。`proxy_set_mode` 含「未变跳过」守卫 + emit 同步前端。
 
 ## 文件布局
 
@@ -75,12 +75,12 @@ osascript 每次提权都弹系统密码框，若「开/关代理 = spawn/kill r
 - `config.yaml` —— mihomo 运行配置（active/idle 切换时重写）
 - `subs/<id>.yaml` —— 各订阅原始 Clash YAML
 - `mihomo.pid` —— root 进程 PID
-- `mihomo.log` —— mihomo 运行日志（每次 spawn/restart 截断重写，启动失败可查）
+- `mihomo.log` —— mihomo 运行日志（每次 restart 截断重写，启动失败可查）
 - `geoip.metadb` / `geosite.dat` —— Geo 数据库（首次使用经 gh-proxy 镜像预下载，mihomo 加载含 GEOIP/GEOSITE 规则的 config 时需此文件）
 
 ## 限制
 
 - 提权：osascript 限制无法完全免密，但 root mihomo 常驻方案将密码从「每次开关 2 次」降至「首次开代理 1 次，之后 0 次」（彻底停止/app 退出后重启需再次提权）。SMJobBless helper 可实现首次安装后全程免密，但 Rust 无成熟 XPC server 绑定 + 签名/打包工程重，未做
-- 关闭可靠性：`stop_root` 按 pidfile PID 优雅停（SIGTERM → 轮询 `kill -0` 至 3s → SIGKILL），再按 mihomo binary 完整路径（含 bundle-id 数据目录）扫杀所有残留进程（防 pidfile 脱节、多次 spawn 累积孤儿），末尾验证确死否则报错
+- 关闭可靠性：`stop_root` 按 pidfile PID 优雅停（SIGTERM → 轮询 `kill -0` 至 3s → SIGKILL），再按 mihomo binary 完整路径（含 bundle-id 数据目录）扫杀自己路径的所有残留进程（防 pidfile 脱节、多次 restart 累积孤儿；不杀另一版 Voidnix mihomo），末尾验证确死否则报错
 - 进程常驻：root mihomo 首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感；无主动停止入口，靠 app 退出 + reconnect 复用）。app 退出后进程仍跑，下次启动 `reconnect_root_mihomo` 先验 secret（GET /version）：匹配则热重载 idle 重置状态（防端口冲突 + 状态一致），不匹配（401）则 stop_root 清理僵尸。panic=abort 下无 Drop 清理，仅崩溃场景可能残留，启动期 reconnect 兜底
 - 无连接列表/流量统计（mihomo `/connections`/`/traffic` 未接，后续可加）

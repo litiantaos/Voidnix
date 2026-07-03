@@ -7,37 +7,24 @@ fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// 通过 osascript 提权后台启动 mihomo（TUN 需 root 创建虚拟网卡 + auto-route）。
+/// Voidnix mihomo 进程匹配模式：覆盖 dev/prod 两个 bundle id 数据目录路径
+/// （`com.litiantao.voidnix` 与 `com.litiantao.voidnix.dev` 均含此前缀）。
+/// TUN 是系统独占资源（虚拟网卡 + 路由 `1.0.0.0/8` 等），两个 mihomo 实例不能同时
+/// 占 TUN（`add route: file exists`），故 spawn 前必须清理所有 Voidnix mihomo 释放之。
+const VOIDNIX_PATTERN: &str = "com.litiantao.voidnix";
+
+/// 提权启动 root mihomo（TUN 需 root 创建虚拟网卡 + auto-route）。
+///
+/// 先清理**所有 Voidnix mihomo**（dev/prod 均匹配，释放 TUN 路由 + 端口），再启动新的。
+/// 单次 osascript 提权完成「杀旧 + 启新」，免多次密码框。SIGTERM → 轮询确认退出
+/// （至多 2s，撤 TUN/路由）→ SIGKILL 兜底 → sleep 1（端口/utun 释放）→ 启新。
+///
+/// SIGTERM 阶段用轮询而非固定 sleep：正常退出（几百 ms）更快进入下一阶段，异常给满 2s
+/// 再强杀，避免 mihomo 未及撤销 utun 就被 SIGKILL 致残留虚拟网卡挡道新进程 TUN 创建。
 ///
 /// `do shell script "... & echo $! > pidfile" with administrator privileges`：
 /// mihomo 后台 detach（PPID→1），$! 写入 pidfile 供热重启/停止用。弹出系统授权对话框。
 /// 输出重定向到 mihomo.log（启动失败时可查日志诊断）。
-pub async fn spawn_root(app: &AppHandle, params: &super::core::RunParams) -> Result<(), String> {
-    let bin = super::core::ensure_bin(app).await?;
-    super::core::ensure_geo_files(app).await?;
-    let yaml = super::subscription::build_run_config(app, params)?;
-    std::fs::write(super::core::run_config_path(app)?, yaml).map_err(|e| e.to_string())?;
-    let dir = ext_data_dir(app, "proxy")?;
-    let pidfile = dir.join("mihomo.pid");
-    let logfile = dir.join("mihomo.log");
-    let cmd = format!(
-        "{} -d {} >{} 2>&1 & echo $! > {}",
-        shell_quote(&bin.display().to_string()),
-        shell_quote(&dir.display().to_string()),
-        shell_quote(&logfile.display().to_string()),
-        shell_quote(&pidfile.display().to_string()),
-    );
-    let script = format!("do shell script \"{cmd}\" with administrator privileges");
-    run_osascript(&script)
-}
-
-/// 提权重启 root mihomo：杀旧 + 启新（单次 osascript 提权，免多次密码框）。
-///
-/// SIGTERM → 轮询确认退出（至多 2s，撤 TUN/路由）→ SIGKILL 兜底 → sleep 1（端口/utun 释放）
-/// → 启新。用于遗留进程状态不可信时（secret 不匹配/TUN 已激活）的干净重启——比 stop_root +
-/// spawn_root 两次独立提权更可靠（单次密码框 + 杀启原子化，杜绝端口占用 race）。
-/// SIGTERM 阶段用轮询而非固定 sleep：正常退出（几百 ms）更快进入下一阶段，异常给满 2s 再强杀，
-/// 避免 mihomo 未及撤销 utun 就被 SIGKILL 致残留虚拟网卡挡道新进程 TUN 创建。
 pub async fn restart_root(app: &AppHandle, params: &super::core::RunParams) -> Result<(), String> {
     let bin = super::core::ensure_bin(app).await?;
     super::core::ensure_geo_files(app).await?;
@@ -50,17 +37,18 @@ pub async fn restart_root(app: &AppHandle, params: &super::core::RunParams) -> R
     let dir_q = shell_quote(&dir.display().to_string());
     let pidfile_q = shell_quote(&pidfile.display().to_string());
     let logfile_q = shell_quote(&logfile.display().to_string());
+    let pat_q = shell_quote(VOIDNIX_PATTERN);
     let cmd = format!(
-        "for p in $(ps -eo pid,args | grep -F {bin_q} | grep -v grep | awk '{{print $1}}'); do \
+        "for p in $(ps -eo pid,args | grep -F {pat_q} | grep -F '/mihomo' | grep -v grep | awk '{{print $1}}'); do \
             kill $p 2>/dev/null; \
          done; \
          i=0; \
-         while ps -eo pid,args | grep -F {bin_q} | grep -v grep | grep -q .; do \
+         while ps -eo pid,args | grep -F {pat_q} | grep -F '/mihomo' | grep -v grep | grep -q .; do \
             i=$((i+1)); \
             if [ $i -gt 10 ]; then break; fi; \
             sleep 0.2; \
          done; \
-         for p in $(ps -eo pid,args | grep -F {bin_q} | grep -v grep | awk '{{print $1}}'); do \
+         for p in $(ps -eo pid,args | grep -F {pat_q} | grep -F '/mihomo' | grep -v grep | awk '{{print $1}}'); do \
             kill -9 $p 2>/dev/null; \
          done; \
          sleep 1; \

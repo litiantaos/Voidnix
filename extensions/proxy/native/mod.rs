@@ -73,17 +73,6 @@ async fn reload_config_yaml(app: &AppHandle, params: &RunParams) -> Result<(), S
     controller::reload_config(&base, &params.secret, &path.to_string_lossy()).await
 }
 
-/// spawn root mihomo + wait_ready（失败回滚 stop_root 防端口占用残留）。
-async fn spawn_and_wait(app: &AppHandle, params: &RunParams) -> Result<(), String> {
-    let base = format!("http://127.0.0.1:{}", params.controller_port);
-    tun::spawn_root(app, params).await?;
-    if let Err(e) = controller::wait_ready(&base, &params.secret, 8000).await {
-        let _ = tun::stop_root(app);
-        return Err(e);
-    }
-    Ok(())
-}
-
 /// restart_root + wait_ready。失败不清理（restart_root 含杀旧逻辑，下次重启自动回收）。
 async fn restart_and_wait(app: &AppHandle, params: &RunParams) -> Result<(), String> {
     let base = format!("http://127.0.0.1:{}", params.controller_port);
@@ -91,15 +80,16 @@ async fn restart_and_wait(app: &AppHandle, params: &RunParams) -> Result<(), Str
     controller::wait_ready(&base, &params.secret, 8000).await
 }
 
-/// 确保 root mihomo 进程在跑（常驻）。已常驻则幂等返回；否则 spawn_root（提权一次）
-/// 并 wait_ready（失败回滚 stop_root）。一旦启动，进程常驻到显式 stop_root 或 app
-/// 退出——代理开关与 TUN 切换均走热重载，免再提权。
+/// 确保 root mihomo 进程在跑（常驻）。已常驻且状态可信则幂等返回；否则 restart_root
+/// （单次提权）并 wait_ready。一旦启动，进程常驻到显式 stop_root 或 app 退出——
+/// 代理开关与 TUN 切换均走热重载，免再提权。
 ///
 /// 返回 `true` 表示本次新 spawn（提权一次），`false` 表示复用已常驻进程。
 ///
 /// 仅信任 `tun_active=true` 的进程（reconnect 成功置 idle 或本 session spawn 的），
-/// 可安全热重载复用。`tun_active=false` 但有遗留进程（reconnect 未完成或失败）→ 状态
-/// 不可信（secret 可能不匹配、TUN 可能已激活），restart_root 单次提权杀旧+启新。
+/// 可安全热重载复用。`tun_active=false` → 状态不可信（secret 可能不匹配、TUN 可能已被
+/// 其他实例占用），restart_root 清理**所有 Voidnix mihomo**（含 dev/prod 另一版）+ 启新：
+/// TUN 是系统独占资源（虚拟网卡 + 路由），两个 mihomo 实例不能同时占 TUN，必须先释放。
 async fn ensure_root_mihomo(
     app: &AppHandle,
     state: &ProxyState,
@@ -108,11 +98,7 @@ async fn ensure_root_mihomo(
     if state.tun_active.load(Ordering::Relaxed) {
         return Ok(false); // 本 session 已知状态，可热重载复用
     }
-    if root_mihomo_running(app) {
-        restart_and_wait(app, params).await?;
-    } else {
-        spawn_and_wait(app, params).await?;
-    }
+    restart_and_wait(app, params).await?;
     state.tun_active.store(true, Ordering::Relaxed);
     Ok(true)
 }
@@ -209,7 +195,7 @@ pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> 
     // 删旧 binary + version → ensure_bin 走 fetch_latest_asset 重下最新
     core::remove_core_files(&app)?;
     core::ensure_bin(&app).await?;
-    // 恢复启用状态（若之前在跑）。start_core 会重新 spawn_root + 提权
+    // 恢复启用状态（若之前在跑）。start_core 会重新 restart_root + 提权
     if was_enabled {
         if let Some(p) = params {
             start_core(&app, &state, p).await?;
