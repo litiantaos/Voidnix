@@ -170,13 +170,22 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
         let mut dns = Mapping::new();
         dns.insert(s("enable"), Value::Bool(true));
         dns.insert(s("enhanced-mode"), s("fake-ip"));
+        dns.insert(s("fake-ip-range"), s("198.18.0.1/16"));
+        // nameserver 国内直连：fake-ip 查询 + DIRECT 流量真实解析（如 apple.com）均走此。
+        // 国内 DNS 对常见域名（含未被污染的海外域名如 apple）返回正确 IP，快速可靠。
+        // 不配 fallback/fallback-filter：海外 DoH 在 TUN 下经代理，会让 DIRECT 海外域名解析
+        // 串行等待 fallback（实测 apple.com couldn't find ip），拖慢测速与直连（active 比 idle
+        // 慢一个数量级的根因）。被污染域名（google 等）走代理远程解析，不依赖本地 DNS。
         dns.insert(
             s("nameserver"),
-            Value::Sequence(vec![
-                s("https://dns.google/dns-query"),
-                s("https://1.1.1.1/dns-query"),
-                s("223.5.5.5"),
-            ]),
+            Value::Sequence(vec![s("223.5.5.5"), s("119.29.29.29")]),
+        );
+        // proxy-server-nameserver：代理节点域名（server 字段，如 old.beibei1.top）专用解析，
+        // 保证可靠解析 → mihomo 为节点 IP 添加 TUN 排除路由 → 避免 mihomo 到节点的流量被自身
+        // TUN 接管形成回环（开启代理后全部 session 超时；idle 无 TUN 则正常）。
+        dns.insert(
+            s("proxy-server-nameserver"),
+            Value::Sequence(vec![s("223.5.5.5"), s("119.29.29.29")]),
         );
         root.insert(s("dns"), Value::Mapping(dns));
     }
@@ -208,7 +217,9 @@ fn auto_groups(proxies: &[Value]) -> Value {
     let mut url_test = Mapping::new();
     url_test.insert(s("name"), s("自动选择"));
     url_test.insert(s("type"), s("url-test"));
-    url_test.insert(s("url"), s("http://www.gstatic.com/generate_204"));
+    // 测速 URL 用 Cloudflare generate_204（cp.cloudflare.com 国内 DNS 不污染，海外 anycast 快）；
+    // gstatic.com 被国内 DNS 污染到中国移动 IP，海外节点访问污染 IP 跨海高延迟（见 controller.rs）
+    url_test.insert(s("url"), s("http://cp.cloudflare.com/generate_204"));
     url_test.insert(s("interval"), Value::from(300i64));
     url_test.insert(s("proxies"), Value::Sequence(names));
 
@@ -301,6 +312,11 @@ mod tests {
         assert!(out.contains("auto-route: true"));
         assert!(out.contains("dns:"));
         assert!(out.contains("fake-ip"));
+        // DNS：国内 nameserver 直连 + 节点域名专用 proxy-server-nameserver（防 TUN 回环）。
+        // 不用 fallback（海外 DoH 经代理致 DIRECT 海外域名解析失败/等待，是 active 测速慢的根因）。
+        assert!(out.contains("223.5.5.5"));
+        assert!(out.contains("proxy-server-nameserver"));
+        assert!(!out.contains("fallback"));
         // tun 关闭时不含 tun 段
         let out2 = merge_yaml(&[], &params()).unwrap();
         assert!(!out2.contains("tun:"));

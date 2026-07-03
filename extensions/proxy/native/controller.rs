@@ -15,9 +15,11 @@ static CONTROLLER: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .expect("Failed to build mihomo controller client")
 });
 
-/// 测速探测 URL：经代理节点访问（节点在海外），用 Google generate_204 端点——全球 CDN
-/// 对等极佳，海外节点访问延迟最低最稳，亦是 mihomo/clash 默认（airport 节点常据此优化）。
-const DELAY_TEST_URL: &str = "http://www.gstatic.com/generate_204";
+/// 测速探测 URL：经海外节点访问，用 Cloudflare generate_204（cp.cloudflare.com）——全球
+/// anycast CDN 海外节点访问延迟最低最稳。**不用 gstatic**：gstatic.com 国内 DNS 污染到中国
+/// 移动 IP（120.253.x.x），海外节点访问该污染 IP 跨海高延迟，致测速虚高（无论开关代理）。
+/// cp.cloudflare.com 国内 DNS 解析得 Cloudflare 真实 IP（104.16.x.x），不污染。
+const DELAY_TEST_URL: &str = "http://cp.cloudflare.com/generate_204";
 const DELAY_TIMEOUT_MS: u64 = 5000;
 
 /// GET /proxies → 完整代理树（含 selector/url-test 分组与各节点）。

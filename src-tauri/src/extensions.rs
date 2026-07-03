@@ -57,6 +57,7 @@ macro_rules! configure_app {
                 crate::extensions::proxy::proxy_core_status,
                 crate::extensions::proxy::proxy_ensure_core,
                 crate::extensions::proxy::proxy_get_proxies,
+                crate::extensions::proxy::proxy_reconnect,
                 crate::extensions::proxy::proxy_remove_subscription,
                 crate::extensions::proxy::proxy_select_proxy,
                 crate::extensions::proxy::proxy_set_mode,
