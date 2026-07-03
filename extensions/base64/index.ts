@@ -9,7 +9,7 @@ export default defineExtension({
     name: 'Base64',
     description: 'Base64 编解码工具',
     icon: 'i-ri-code-s-slash-line',
-    order: 100,
+    order: 80,
     keywords: ['编码', '解码', 'encode', 'decode', 'base64'],
   },
 

@@ -8,7 +8,7 @@ export default defineExtension({
     description: '访达右键菜单快捷操作',
     icon: 'i-ri-folder-add-line',
     keywords: ['finder', '访达', '右键', '菜单', '扩展', 'extension'],
-    order: 60,
+    order: 130,
   },
 
   mainView: () => FinderExtView,

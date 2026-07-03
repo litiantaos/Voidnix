@@ -33,7 +33,7 @@ export default defineExtension({
     description: '查询 IP 地址信息',
     icon: 'i-ri-global-line',
     keywords: ['ip', 'network', '网络', '地址'],
-    order: 5,
+    order: 60,
   },
 
   placeholder: '输入指定 IP 地址，留空则查询本机',

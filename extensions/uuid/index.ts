@@ -9,7 +9,7 @@ export default defineExtension({
     name: 'UUID',
     description: 'UUID / NanoID 生成',
     icon: 'i-ri-fingerprint-line',
-    order: 110,
+    order: 70,
     keywords: ['uuid', 'guid', 'nanoid', '唯一', '标识'],
   },
 

@@ -9,7 +9,7 @@ export default defineExtension({
     name: '时间戳',
     description: 'Unix 时间戳与转换',
     icon: 'i-ri-time-line',
-    order: 120,
+    order: 50,
     keywords: ['时间', '时间戳', 'timestamp', 'date', 'unix', 'epoch'],
   },
 

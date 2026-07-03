@@ -12,7 +12,7 @@ export default defineExtension({
     description: '数学表达式计算',
     icon: 'i-ri-calculator-line',
     keywords: ['calc', 'calculator', 'math', '计算器', '数学'],
-    order: 2,
+    order: 90,
   },
 
   placeholder: '输入数学表达式',

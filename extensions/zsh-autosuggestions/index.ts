@@ -8,7 +8,7 @@ export default defineExtension({
     description: 'zsh 命令行智能补全',
     icon: 'i-ri-terminal-box-line',
     keywords: ['zsh', 'autosuggestions', '终端', '命令', '补全', '预测', 'shell', '历史'],
-    order: 80,
+    order: 140,
   },
 
   mainView: () => View,

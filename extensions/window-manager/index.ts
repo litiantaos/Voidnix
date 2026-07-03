@@ -12,7 +12,7 @@ export default defineExtension({
     description: '窗口布局与分屏',
     icon: 'i-ri-layout-grid-line',
     keywords: ['window', 'manager', 'layout', 'snap', 'tile', '窗口', '布局', '管理', '分屏'],
-    order: 10,
+    order: 120,
   },
 
   mainView: () => WindowManagerView,
