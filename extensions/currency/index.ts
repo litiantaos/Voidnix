@@ -43,7 +43,7 @@ export default defineExtension({
     name: '汇率',
     description: '货币汇率换算',
     icon: 'i-ri-exchange-cny-line',
-    order: 130,
+    order: 100,
     keywords: ['汇率', '货币', 'currency', 'exchange', 'usd', 'cny', 'eur', 'jpy'],
   },
 

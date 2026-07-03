@@ -80,7 +80,7 @@ export default defineExtension({
     description: '剪贴板历史管理',
     icon: 'i-ri-clipboard-line',
     keywords: ['clipboard', 'copy', 'paste', 'history', '剪贴板', '历史', '复制', '粘贴'],
-    order: 1,
+    order: 10,
   },
 
   placeholder: '搜索剪贴板记录',

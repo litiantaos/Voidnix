@@ -233,7 +233,7 @@ export default defineExtension({
     description: '选词翻译',
     icon: 'i-ri-translate-2',
     keywords: ['translate', '翻译', '翻譯', 'fanyi', 'youdao', '有道'],
-    order: 8,
+    order: 20,
   },
 
   disableSearchInput: true,

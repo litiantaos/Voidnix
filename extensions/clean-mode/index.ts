@@ -8,7 +8,7 @@ export default defineExtension({
     description: '黑屏并锁定键鼠，方便清洁屏幕和键盘',
     icon: 'i-ri-contrast-2-fill',
     keywords: ['clean', '清洁', '清洗', '亮度', '锁定', 'lock', '黑屏', '屏幕清洁', '键盘清洁'],
-    order: 55,
+    order: 150,
   },
 
   mainView: () => CleanModeView,
