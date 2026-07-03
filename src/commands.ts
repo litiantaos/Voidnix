@@ -32,6 +32,8 @@ export const CMD = {
   deleteClipboardItems: 'delete_clipboard_items',
   toggleClipboardFavorite: 'toggle_clipboard_favorite',
   getClipboardImage: 'get_clipboard_image',
+  getClipboardText: 'get_clipboard_text',
+  updateClipboardText: 'update_clipboard_text',
   clearClipboardHistory: 'clear_clipboard_history',
   pasteboardWriteText: 'pasteboard_write_text',
   setClipboardMaxDays: 'set_clipboard_max_days',

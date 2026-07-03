@@ -142,6 +142,50 @@ pub async fn get_clipboard_image(
     }
 }
 
+/// 取文本类记录的完整内容（previewOnly 模式仅截 200 字，预览需全文）。
+#[tauri::command]
+pub async fn get_clipboard_text(
+    id: String,
+    app: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    let db = app.state::<Database>();
+    let conn = db.conn();
+    let mut stmt = conn
+        .prepare("SELECT content, content_type FROM clipboard_history WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    let result: Option<(String, String)> = stmt
+        .query_row(rusqlite::params![id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .ok();
+    match result {
+        Some((content, content_type)) if content_type == "text" => Ok(Some(content)),
+        _ => Ok(None),
+    }
+}
+
+/// 编辑文本类记录内容（仅 text，非 text 拒绝）。
+#[tauri::command]
+pub async fn update_clipboard_text(
+    id: String,
+    content: String,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let db = app.state::<Database>();
+    {
+        let conn = db.conn();
+        let updated = conn
+            .execute(
+                "UPDATE clipboard_history SET content = ?1 WHERE id = ?2 AND content_type = 'text'",
+                rusqlite::params![content, id],
+            )
+            .map_err(|e| e.to_string())?;
+        if updated == 0 {
+            return Err("Clipboard item not found or not text".to_string());
+        }
+        db.maybe_checkpoint(&conn);
+    }
+    Ok(())
+}
+
 fn write_to_pasteboard(content: &str, content_type: &str) {
     use crate::platform::pasteboard;
 

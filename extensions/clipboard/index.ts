@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { listen } from '@tauri-apps/api/event'
-import { filterByQuery } from './logic'
+import { filterByQuery, filterByType, type ContentType } from './logic'
 import ClipboardSettings from './Settings.vue'
 import ClipboardView from './View.vue'
 import ClipboardActions from './Actions.vue'
@@ -26,25 +26,18 @@ export interface ClipboardItem {
 
 export const history = shallowRef<ClipboardItem[]>([])
 export const activeTab = ref<'all' | 'favorites'>('all')
+export const activeType = ref<ContentType>('all')
 
 const tabCache = new Map<string, ClipboardItem[]>()
 export const loading = ref(false)
 let fetchVersion = 0
-
-let _deleteHandler: (() => void) | null = null
-export function registerDeleteHandler(fn: () => void) {
-  _deleteHandler = fn
-}
-export function triggerDelete() {
-  _deleteHandler?.()
-}
 
 export async function fetchClipboardHistory(query: string = '', filterFavorite: boolean = false) {
   const tab = filterFavorite ? 'favorites' : 'all'
   const cached = tabCache.get(tab)
 
   if (cached) {
-    history.value = filterByQuery(cached, query)
+    history.value = applyFilters(cached, query)
     return
   }
 
@@ -58,7 +51,7 @@ export async function fetchClipboardHistory(query: string = '', filterFavorite: 
     })
     if (version === fetchVersion) {
       tabCache.set(tab, res)
-      history.value = filterByQuery(res, query)
+      history.value = applyFilters(res, query)
     }
   } catch (e) {
     console.error('Failed to fetch clipboard history:', e)
@@ -71,6 +64,10 @@ export async function fetchClipboardHistory(query: string = '', filterFavorite: 
 
 export function invalidateCache() {
   tabCache.clear()
+}
+
+function applyFilters(items: ClipboardItem[], query: string): ClipboardItem[] {
+  return filterByQuery(filterByType(items, activeType.value), query)
 }
 
 export default defineExtension({
@@ -87,7 +84,7 @@ export default defineExtension({
   mainView: () => ClipboardView,
   searchBarAccessory: () => ClipboardActions,
   subviews: { config: () => ClipboardSettings },
-  hints: { enter: '粘贴', multiSelect: 'true', delete: '删除' },
+  hints: { enter: '粘贴', multiSelect: 'true' },
   listOptions: { multiSelect: true },
   globalShortcuts: [
     {

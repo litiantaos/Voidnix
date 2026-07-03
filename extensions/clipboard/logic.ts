@@ -1,11 +1,19 @@
 import { scoreFields } from '@/utils/fuzzy'
 import type { ClipboardItem } from './index'
 
+export type ContentType = 'all' | 'text' | 'image' | 'file'
+
 /** 提取用于匹配/索引的文本（图片/文件给语义占位，便于按类型搜索）。 */
 export function matchText(item: ClipboardItem): string {
   if (item.content_type === 'image') return '图片 image'
   if (item.content_type === 'file') return `文件 file ${item.content}`
   return item.content
+}
+
+/** 按 content_type 过滤（'all' 原样返回，其余返回新数组）。 */
+export function filterByType(items: ClipboardItem[], type: ContentType): ClipboardItem[] {
+  if (type === 'all') return items
+  return items.filter((it) => it.content_type === type)
 }
 
 /** 按 query 模糊过滤 + 打分排序（score > 0 保留），空 query 原样返回。

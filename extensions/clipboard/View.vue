@@ -6,126 +6,227 @@
     :loading="loading"
   />
 
-  <BaseList
-    v-else
-    ref="listRef"
-    :items="history"
-    multi-select
-    :selected-ids="selectedIds"
-    id-field="id"
-    @update:selected-ids="selectedIds = $event"
-    @execute="handleExecute"
-  >
-    <template #item="{ item, selected, multiSelected }">
-      <BaseListItem
-        :ref="(el: unknown) => setImageRef(el, item)"
-        :selected="selected || multiSelected"
-        multiline-title
-      >
-        <template #icon>
-          <div
-            v-if="getColor(item)"
-            rounded
-            h="4"
-            w="4"
-            :style="{ backgroundColor: getColor(item)! }"
-          ></div>
-          <i
-            v-else-if="item.content_type === 'text'"
-            class="i-ri-t-box-line text-sm text-accent"
-          ></i>
-          <i
-            v-else-if="item.content_type === 'image'"
-            class="i-ri-image-line text-sm text-emerald-500"
-          ></i>
-          <i v-else class="i-ri-folder-3-line text-sm text-amber-500"></i>
-        </template>
-        <template #title>
-          <div
-            v-if="item.content_type === 'text'"
-            whitespace-pre-wrap
-            wrap-break-word
-            line-clamp="5"
-          >
-            {{ item.content }}
-          </div>
-          <div v-else-if="item.content_type === 'image'" m="b-2 t-0.5">
+  <div v-else h="full">
+    <BaseList
+      :items="history"
+      multi-select
+      :selected-ids="selectedIds"
+      :keyboard-active="!menuOpen && !previewOpen && !editOpen"
+      id-field="id"
+      @update:selected-ids="selectedIds = $event"
+      @select="selectedIndex = $event"
+      @execute="handleExecute"
+    >
+      <template #item="{ item, selected, multiSelected }">
+        <BaseListItem
+          :ref="(el: unknown) => setImageRef(el, item)"
+          :selected="selected || multiSelected"
+          multiline-title
+        >
+          <template #icon>
+            <div
+              v-if="getColor(item)"
+              rounded
+              h="4"
+              w="4"
+              :style="{ backgroundColor: getColor(item)! }"
+            ></div>
+            <i
+              v-else-if="item.content_type === 'text'"
+              class="i-ri-t-box-line text-sm text-accent"
+            ></i>
+            <i
+              v-else-if="item.content_type === 'image'"
+              class="i-ri-image-line text-sm text-emerald-500"
+            ></i>
+            <i v-else class="i-ri-folder-3-line text-sm text-amber-500"></i>
+          </template>
+          <template #title>
+            <div
+              v-if="item.content_type === 'text'"
+              whitespace-pre-wrap
+              wrap-break-word
+              line-clamp="5"
+            >
+              {{ item.content }}
+            </div>
             <img
-              v-if="imageCache.get(item.id)"
+              v-else-if="item.content_type === 'image' && imageCache.get(item.id)"
               :src="imageCache.get(item.id)"
               rounded="md"
               bg="black/5"
+              border="~ black/1"
               h="32"
               w="48"
               object="cover top"
               loading="lazy"
               alt="剪贴板图片"
             />
-            <div v-else rounded="md" bg="black/5" flex h="32" w="48" class="flex-center">
-              <div class="i-ri-image-line text-2xl text-tx-faint"></div>
+            <div v-else truncate>
+              {{ item.content.split('/').filter(Boolean).pop() || item.content }}
             </div>
-          </div>
-          <div v-else truncate>
-            {{ item.content.split('/').filter(Boolean).pop() || item.content }}
-          </div>
-        </template>
-        <template #subtitle>
-          <div flex gap="2" items="center">
-            <span>{{ item.source_app }}</span>
-            <span>•</span>
-            <span>{{ formatTime(item.created_at) }}</span>
-            <template v-if="item.file_size">
+          </template>
+          <template #subtitle>
+            <div flex gap="2" items="center">
+              <span>{{ item.source_app }}</span>
               <span>•</span>
-              <span>{{ formatSize(item.file_size) }}</span>
-            </template>
-            <template v-if="item.image_width && item.image_height">
-              <span>•</span>
-              <span>{{ item.image_width }}×{{ item.image_height }}</span>
-            </template>
-          </div>
-        </template>
-        <template #trailing>
-          <BaseButton
-            variant="ghost"
-            :icon="
-              item.is_favorite ? 'i-ri-star-fill text-amber-400' : 'i-ri-star-line text-tx-subtle'
-            "
-            @click.stop="toggleFavorite(item.id)"
-          />
-        </template>
-      </BaseListItem>
-    </template>
-  </BaseList>
+              <span>{{ formatTime(item.created_at) }}</span>
+              <template v-if="item.file_size">
+                <span>•</span>
+                <span>{{ formatSize(item.file_size) }}</span>
+              </template>
+              <template v-if="item.image_width && item.image_height">
+                <span>•</span>
+                <span>{{ item.image_width }}×{{ item.image_height }}</span>
+              </template>
+            </div>
+          </template>
+        </BaseListItem>
+      </template>
+    </BaseList>
+  </div>
+
+  <!-- Cmd+回车 动作菜单（界面右下角，同下拉框样式，键盘可达）-->
+  <Teleport to="body">
+    <Transition
+      appear
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0 translate-y-2 scale-95"
+      enter-to-class="opacity-100 translate-y-0 scale-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100 translate-y-0 scale-100"
+      leave-to-class="opacity-0 translate-y-2 scale-95"
+    >
+      <div
+        v-if="menuOpen"
+        ref="menuRef"
+        tabindex="-1"
+        class="dropdown-panel outline-none bottom-4 right-4 fixed z-50"
+        role="menu"
+      >
+        <BaseDropdownItems
+          :items="actionMenuItems"
+          :active-index="menuIndex"
+          @select="onMenuClick"
+          @hover="(i: number) => (menuIndex = i)"
+        />
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- 预览覆盖层（无标题/无按钮，点击或 Esc 关闭）-->
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="previewOpen"
+        z="100"
+        flex
+        items-center
+        inset-0
+        justify-center
+        fixed
+        bg="surface"
+        p="6"
+        @click.self="previewOpen = false"
+      >
+        <img
+          v-if="previewType === 'image' && previewImage"
+          :src="previewImage"
+          max-w="full"
+          max-h="full"
+          object="contain"
+          rounded="md"
+          alt="预览图片"
+        />
+        <span
+          v-else-if="previewType === 'image'"
+          class="i-ri-loader-4-line text-2xl text-tx-muted animate-spin"
+        />
+        <div
+          v-else
+          text="sm tx-primary"
+          leading="relaxed"
+          whitespace="pre-wrap"
+          break="words"
+          max-w="prose"
+          max-h="full"
+          overflow="auto"
+        >
+          {{ previewText }}
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- 编辑弹窗（仅文本）-->
+  <BaseDialog
+    v-if="editOpen"
+    title="编辑文本"
+    variant="form"
+    size="md"
+    show-footer
+    ok-label="保存"
+    @confirm="saveEdit"
+    @cancel="editOpen = false"
+  >
+    <div class="form-field">
+      <BaseTextarea
+        v-model="editText"
+        :rows="12"
+        :max-height="0"
+        :auto-resize="false"
+        :submit-on-enter="false"
+        placeholder="编辑剪贴板文本"
+      />
+    </div>
+  </BaseDialog>
 </template>
 
 <script setup lang="ts">
-import { ref, onActivated, onDeactivated, onUnmounted, watch, shallowReactive } from 'vue'
+import {
+  ref,
+  computed,
+  nextTick,
+  onActivated,
+  onMounted,
+  onUnmounted,
+  watch,
+  shallowReactive,
+} from 'vue'
 import {
   history,
   activeTab,
+  activeType,
   loading,
   fetchClipboardHistory,
   invalidateCache,
-  registerDeleteHandler,
-  triggerDelete,
 } from './index'
+import type { ClipboardItem } from './index'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseDropdownItems, { type PanelItem } from '@/components/ui/BaseDropdownItems.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
+import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAppStore } from '@/stores/app'
-import { onKeyStroke } from '@/composables/events'
-import { isComposing as isComposingCheck } from '@/utils/dom'
+import { wrapIndex } from '@/utils/dom'
 
 const appStore = useAppStore()
 
-const listRef = ref<{ selectedIndex: number; setSelectedIndex: (i: number) => void }>()
 const selectedIds = ref(new Set<string>())
+const selectedIndex = ref(0)
 
 let debounceTimer: ReturnType<typeof setTimeout>
-watch([activeTab, () => appStore.searchQuery], ([tab, query]) => {
+watch([activeTab, activeType, () => appStore.searchQuery], ([tab, , query]) => {
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
     fetchClipboardHistory(query, tab === 'favorites')
@@ -142,11 +243,9 @@ watch(
   },
 )
 
-async function handleExecute() {
-  const ids =
-    selectedIds.value.size > 0
-      ? [...selectedIds.value]
-      : [history.value[listRef.value?.selectedIndex ?? 0]?.id].filter(Boolean)
+async function handleExecute(item: ClipboardItem, _index: number, _e?: KeyboardEvent) {
+  // Cmd+回车开菜单由捕获相监听拦截（避免 BaseList 清空多选）；此处仅处理粘贴（回车/双击）
+  const ids = selectedIds.value.size > 0 ? [...selectedIds.value] : [item.id].filter(Boolean)
   selectedIds.value = new Set()
   if (ids.length === 0) return
   try {
@@ -160,6 +259,193 @@ async function handleExecute() {
     console.error('Failed to paste clipboard:', e)
   }
 }
+
+// ── 动作菜单（Cmd+回车，界面右下角，键盘可达）──
+const menuOpen = ref(false)
+const menuIndex = ref(-1)
+const menuTarget = ref<ClipboardItem | null>(null)
+const menuBatch = ref(false)
+const menuRef = ref<HTMLElement>()
+
+const actionMenuItems = computed<PanelItem[]>(() => {
+  if (menuBatch.value) {
+    return [
+      {
+        type: 'item',
+        key: 'delete',
+        label: `删除 ${selectedIds.value.size} 条`,
+        icon: 'i-ri-delete-bin-line',
+        danger: true,
+      },
+    ]
+  }
+  const item = menuTarget.value
+  if (!item) return []
+  const isText = item.content_type === 'text'
+  const items: PanelItem[] = []
+  if (item.content_type !== 'file') {
+    items.push({ type: 'item', key: 'preview', label: '预览', icon: 'i-ri-eye-line' })
+  }
+  items.push({
+    type: 'item',
+    key: 'favorite',
+    label: item.is_favorite ? '取消收藏' : '收藏',
+    icon: item.is_favorite ? 'i-ri-star-fill text-amber-400' : 'i-ri-star-line',
+  })
+  if (isText) {
+    items.push({ type: 'item', key: 'edit', label: '编辑', icon: 'i-ri-edit-line' })
+  }
+  items.push({ type: 'divider' })
+  items.push({
+    type: 'item',
+    key: 'delete',
+    label: '删除',
+    icon: 'i-ri-delete-bin-line',
+    danger: true,
+  })
+  return items
+})
+
+const selectableIndices = computed(() =>
+  actionMenuItems.value
+    .map((it, i) => (it.type === 'item' && !it.disabled ? i : -1))
+    .filter((i) => i >= 0),
+)
+
+function openMenu(item: ClipboardItem) {
+  menuBatch.value = false
+  menuTarget.value = item
+  menuIndex.value = selectableIndices.value[0] ?? -1
+  menuOpen.value = true
+  nextTick(() => menuRef.value?.focus())
+}
+
+function openBatchMenu() {
+  menuBatch.value = true
+  menuTarget.value = null
+  menuIndex.value = selectableIndices.value[0] ?? -1
+  menuOpen.value = true
+  nextTick(() => menuRef.value?.focus())
+}
+
+function closeMenu() {
+  menuOpen.value = false
+  menuBatch.value = false
+  nextTick(() => document.getElementById('main-search-input')?.focus())
+}
+
+function moveMenu(dir: 1 | -1) {
+  const ids = selectableIndices.value
+  if (ids.length === 0) return
+  const cur = Math.max(0, ids.indexOf(menuIndex.value))
+  menuIndex.value = ids[wrapIndex(cur, ids.length, dir === 1 ? 'down' : 'up')]
+}
+
+function runMenuAction(key: string | number) {
+  if (menuBatch.value) {
+    if (key !== 'delete') return
+    const ids = [...selectedIds.value]
+    closeMenu()
+    void deleteItems(ids)
+    return
+  }
+  const target = menuTarget.value
+  if (!target) return
+  closeMenu()
+  switch (key) {
+    case 'favorite':
+      void toggleFavorite(target.id)
+      break
+    case 'preview':
+      void openPreview(target)
+      break
+    case 'edit':
+      void openEdit(target)
+      break
+    case 'delete':
+      void deleteItems([target.id])
+      break
+  }
+}
+
+function confirmMenu() {
+  const item = actionMenuItems.value[menuIndex.value]
+  if (!item || item.type !== 'item' || item.disabled || !item.key) return
+  runMenuAction(item.key)
+}
+
+function onMenuClick(i: number) {
+  const item = actionMenuItems.value[i]
+  if (!item || item.type !== 'item' || item.disabled || !item.key) return
+  runMenuAction(item.key)
+}
+
+function onDocMouseDown(e: MouseEvent) {
+  if (!menuOpen.value) return
+  if (menuRef.value && !menuRef.value.contains(e.target as Node)) closeMenu()
+}
+
+// 捕获相：菜单/预览打开时拦截相关键并阻断冒泡，先于全局 useResultNavigation（exitModule）执行；
+// 并在菜单关闭时拦截 Cmd+回车开菜单（先于 BaseList，避免其清空多选）
+function onDocKey(e: KeyboardEvent) {
+  if (menuOpen.value) {
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        e.stopPropagation()
+        moveMenu(1)
+        return
+      case 'ArrowUp':
+        e.preventDefault()
+        e.stopPropagation()
+        moveMenu(-1)
+        return
+      case 'Enter':
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.metaKey) closeMenu()
+        else confirmMenu()
+        return
+      case 'Escape':
+        e.preventDefault()
+        e.stopPropagation()
+        closeMenu()
+        return
+    }
+    return
+  }
+  // Cmd+回车开菜单（多选→批量删除，否则→当前项完整菜单）。仅 clipboard 激活时拦截
+  if (
+    e.key === 'Enter' &&
+    e.metaKey &&
+    !previewOpen.value &&
+    !editOpen.value &&
+    appStore.activeModuleId === 'clipboard'
+  ) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (selectedIds.value.size > 0) openBatchMenu()
+    else {
+      const item = history.value[selectedIndex.value]
+      if (item) openMenu(item)
+    }
+    return
+  }
+  if (previewOpen.value && e.key === 'Escape') {
+    e.preventDefault()
+    e.stopPropagation()
+    previewOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', onDocMouseDown)
+  document.addEventListener('keydown', onDocKey, true)
+})
+onUnmounted(() => {
+  document.removeEventListener('mousedown', onDocMouseDown)
+  document.removeEventListener('keydown', onDocKey, true)
+})
 
 const toggleFavorite = async (id: string) => {
   try {
@@ -176,49 +462,90 @@ const toggleFavorite = async (id: string) => {
   }
 }
 
-async function handleDelete() {
-  const ids =
-    selectedIds.value.size > 0
-      ? [...selectedIds.value]
-      : [history.value[listRef.value?.selectedIndex ?? 0]?.id].filter(Boolean)
-  if (ids.length === 0) return
+// ── 预览 ──
+const previewOpen = ref(false)
+const previewType = ref<'text' | 'image'>('text')
+const previewText = ref('')
+const previewImage = ref('')
 
-  const count = ids.length
+async function openPreview(item: ClipboardItem) {
+  if (item.content_type === 'image') {
+    previewType.value = 'image'
+    previewImage.value = ''
+    previewOpen.value = true
+    try {
+      const data = await invoke<string | null>(CMD.getClipboardImage, { id: item.id })
+      if (data) previewImage.value = data
+    } catch (e) {
+      console.error('Failed to load image:', e)
+    }
+    return
+  }
+  previewType.value = 'text'
+  previewText.value = '加载中…'
+  previewOpen.value = true
+  try {
+    previewText.value = (await invoke<string | null>(CMD.getClipboardText, { id: item.id })) ?? ''
+  } catch (e) {
+    console.error('Failed to load text:', e)
+    previewText.value = '加载失败'
+  }
+}
+
+// ── 编辑（仅文本）──
+const editOpen = ref(false)
+const editText = ref('')
+const editingId = ref('')
+
+async function openEdit(item: ClipboardItem) {
+  editingId.value = item.id
+  editText.value = '加载中…'
+  editOpen.value = true
+  try {
+    editText.value = (await invoke<string | null>(CMD.getClipboardText, { id: item.id })) ?? ''
+  } catch (e) {
+    console.error('Failed to load text:', e)
+    editText.value = ''
+  }
+}
+
+async function saveEdit() {
+  if (!editingId.value) return
+  try {
+    await invoke(CMD.updateClipboardText, { id: editingId.value, content: editText.value })
+    invalidateCache()
+    await fetchClipboardHistory(appStore.searchQuery, activeTab.value === 'favorites')
+  } catch (e) {
+    console.error('Failed to update text:', e)
+  }
+  editOpen.value = false
+}
+
+// ── 删除 ──
+async function deleteItems(ids: string[]) {
+  if (ids.length === 0) return
   const confirmed = await appStore.showConfirm({
     title: '删除剪贴板记录',
-    message: count > 1 ? `确定要删除 ${count} 条记录吗？` : '确定要删除这条记录吗？',
+    message: ids.length > 1 ? `确定要删除 ${ids.length} 条记录吗？` : '确定要删除这条记录吗？',
     kind: 'warning',
     okLabel: '删除',
     cancelLabel: '取消',
   })
   if (!confirmed) return
-
   try {
     await invoke(CMD.deleteClipboardItems, { ids })
-    selectedIds.value = new Set()
     invalidateCache()
+    selectedIds.value = new Set()
     await fetchClipboardHistory(appStore.searchQuery, activeTab.value === 'favorites')
   } catch (e) {
-    console.error('Failed to delete clipboard items:', e)
+    console.error('Failed to delete clipboard item:', e)
   }
 }
 
 onActivated(() => {
-  registerDeleteHandler(handleDelete)
-  // 重置到「全部」标签并重新过滤展示。不 invalidateCache：setup 注册的
-  // clipboard-updated 监听器已实时保活缓存，进入时重查 DB 属冗余（命中缓存分支同步过滤）。
   activeTab.value = 'all'
+  activeType.value = 'all'
   fetchClipboardHistory('', false)
-})
-onDeactivated(() => registerDeleteHandler(() => {}))
-
-onKeyStroke('Backspace', (e) => {
-  if (appStore.activeModuleId !== 'clipboard') return
-  if (appStore.activeSubview) return
-  if (!(e.metaKey || e.ctrlKey)) return
-  if (appStore.isComposing || isComposingCheck(e)) return
-  e.preventDefault()
-  triggerDelete()
 })
 
 // ── 图片懒加载 ──

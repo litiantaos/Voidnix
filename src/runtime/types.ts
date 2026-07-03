@@ -83,8 +83,6 @@ export interface ModuleHints {
   enter?: string
   /** 多选提示（如「⇧/⌘ 多选」）。 */
   multiSelect?: string
-  /** 删除提示（如「删除」）。 */
-  delete?: string
 }
 
 export interface ShortcutBinding {
