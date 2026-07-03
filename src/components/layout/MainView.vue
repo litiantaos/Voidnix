@@ -85,7 +85,7 @@
             ? activeModule.disableSearchInput
               ? ''
               : activeModule.placeholder || `在 ${activeModule.meta.name} 中搜索`
-            : '搜索应用或文件，输入 / 搜索扩展'
+            : '搜索应用、文件、扩展等，输入 / 显示扩展列表，输入 // 进行网络搜索'
         "
         @input="onInput"
         @compositionstart="appStore.setComposing(true)"
@@ -185,15 +185,23 @@ const groupField = (item: SearchResult) => {
 const groupTitle = (group: string) =>
   SEARCH.GROUP_TITLES[group as keyof typeof SEARCH.GROUP_TITLES] || group
 
-const { onInput, handleTagClose, isLoading, clearSearch, loadDefaultResults, goHome } =
-  useSearchInput({
-    searchInput,
-    results,
-    selectedIndex,
-    activeModule,
-    restore,
-    reset,
-  })
+const {
+  onInput,
+  handleTagClose,
+  isLoading,
+  clearSearch,
+  loadDefaultResults,
+  activateModule,
+  goHome,
+  exitModule,
+} = useSearchInput({
+  searchInput,
+  results,
+  selectedIndex,
+  activeModule,
+  restore,
+  reset,
+})
 const { handleExecute } = useResultNavigation({
   searchInput,
   results,
@@ -201,7 +209,9 @@ const { handleExecute } = useResultNavigation({
   activeModule,
   clearSearch,
   loadDefaultResults,
+  activateModule,
   goHome,
+  exitModule,
 })
 
 useWindowHeight(activeModule)
@@ -225,7 +235,7 @@ watch(
 )
 
 // 进入模块时重置滚动位置，覆盖快捷键、open-module 事件等所有进入路径
-// 从主列表进入时保存其滚动位置，goBackToToolList 调用 restore('tools') 恢复
+// 从主列表进入时保存其滚动位置，exitModule 调用 restore('tools') 恢复
 watch(
   () => activeModule.value?.meta.id,
   (newId, oldId) => {

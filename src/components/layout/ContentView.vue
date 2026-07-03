@@ -26,11 +26,7 @@
 
           <BaseEmptyState
             v-else-if="props.results.length === 0"
-            :title="
-              module
-                ? module.placeholder || `在 ${module.meta.name} 中无结果`
-                : '搜索应用或文件，输入 / 搜索扩展'
-            "
+            title="无结果"
             :icon="module ? module.meta.icon : 'i-ri-search-line'"
           />
 

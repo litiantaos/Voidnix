@@ -42,13 +42,23 @@ class SearchEngine {
     let results = await this.searchDynamic(query, controller.signal)
 
     // 1.5 keyword 合流（全局模式 only，模块模式禁用——已在某模块内不展示其他模块入口）。
-    //    抑制 dynamic 已产出结果的扩展入口：即时答案优先（如「100 usd」已返回换算值，
-    //    不再重复显示该扩展的模块入口）；dynamic 返空/失败时入口保留作降级。
+    //    只在 dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）时抑制该扩展入口：
+    //    即时答案优先（如「100 usd」返回换算值不再与模块入口同屏）；
+    //    clipboard 等数据型结果（kind≠module）不抑制——用户搜「剪贴板」时先看模块入口再看记录。
     if (!this.activeModule && query.trim()) {
-      const dynamicModules = new Set(results.map((r) => r.module))
+      const q = query.trim()
+      const relevantDynamicModules = new Set(
+        results
+          .filter(
+            (r) =>
+              r.data?.kind === 'module' &&
+              scoreFields([r.title, r.description], q) + (r.boost ?? 0) > 0,
+          )
+          .map((r) => r.module),
+      )
       results = [
         ...results,
-        ...this.keywordSearchAll(query).filter((r) => !dynamicModules.has(r.module)),
+        ...this.keywordSearchAll(query).filter((r) => !relevantDynamicModules.has(r.module)),
       ]
     }
 

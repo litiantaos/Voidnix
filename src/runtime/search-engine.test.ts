@@ -182,6 +182,32 @@ describe('SearchEngine', () => {
     expect(out.find((r) => r.id === 'module-kwsup')).toBeUndefined()
   })
 
+  it('keyword 入口保留：dynamic 结果与 query 无关（finalScore=0）时不抑制', async () => {
+    // calculator history 标题「= 42」与 query「计算器」无关（fuzzy=0, boost=0 → 会被 groupAndSort 过滤）；
+    // 扩展有 keyword「计算器」→ keyword 入口应保留，不被不相关 dynamic 结果误杀
+    registry.push(makeSearchExt('calc', () => [result('h0', '= 42', 'module')], ['计算器', 'calc']))
+    const out = await searchEngine.search('计算器')
+    expect(out.find((r) => r.data?.kind === 'module' && r.data.moduleId === 'calc')).toBeDefined()
+  })
+
+  it('keyword 入口保留：dynamic 数据型结果（kind≠module）不抑制入口', async () => {
+    // clipboard 记录 kind=clipboard（数据型，非即时答案），即便标题命中 query 也不抑制模块入口：
+    // 用户搜「剪贴板」应先看到模块入口，其次才是剪贴板记录
+    registry.push(
+      makeSearchExt('clip', () => [result('c1', '剪贴板内容', 'clipboard')], [
+        'clipboard',
+        '剪贴板',
+      ]),
+    )
+    const out = await searchEngine.search('剪贴板')
+    const entry = out.find((r) => r.data?.kind === 'module' && r.data.moduleId === 'clip')
+    expect(entry).toBeDefined()
+    // module 组排在 clipboard 组之前
+    const entryIdx = out.indexOf(entry!)
+    const recordIdx = out.findIndex((r) => r.id === 'c1')
+    expect(entryIdx).toBeLessThanOrEqual(recordIdx)
+  })
+
   it('新查询 abort 旧查询的 signal', async () => {
     const seen: AbortSignal[] = []
     const deferreds: Array<{ resolve: (v: ProviderResult[]) => void }> = []

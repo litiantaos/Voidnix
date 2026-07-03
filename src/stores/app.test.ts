@@ -35,6 +35,41 @@ describe('app store', () => {
       store.setActiveModule(null)
       expect(store.activeModuleId).toBeNull()
     })
+
+    it('进入模块快照入口 query（entryQuery）', () => {
+      const store = useAppStore()
+      store.setSearchQuery('/calc')
+      store.setActiveModule('calculator')
+      expect(store.entryQuery).toBe('/calc')
+    })
+
+    it('退出模块清空 entryQuery', () => {
+      const store = useAppStore()
+      store.setSearchQuery('/calc')
+      store.setActiveModule('calculator')
+      store.setActiveModule(null)
+      expect(store.entryQuery).toBe('')
+    })
+
+    it('module→module 切换保留原入口（OCR→translate 等跨模块导航）', () => {
+      const store = useAppStore()
+      store.setSearchQuery('/')
+      store.setActiveModule('screenshot')
+      store.setSearchQuery('ocr text')
+      // 跨模块切换不清空 entryQuery，ESC 回到最初进入点
+      store.setActiveModule('translate')
+      expect(store.entryQuery).toBe('/')
+    })
+
+    it('全局快捷键 toggle 路径：setActiveModule 后清 query，entryQuery 已先行快照', () => {
+      // 模拟 makeToggleHandler：从工具列表按快捷键进入模块
+      const store = useAppStore()
+      store.setSearchQuery('/')
+      store.setActiveModule('clipboard') // 快照 entryQuery='/'
+      store.setSearchQuery('') // toggle handler 清空搜索
+      expect(store.entryQuery).toBe('/')
+      expect(store.searchQuery).toBe('')
+    })
   })
 
   describe('搜索状态', () => {

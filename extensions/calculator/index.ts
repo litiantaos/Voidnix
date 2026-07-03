@@ -19,7 +19,7 @@ export default defineExtension({
   hints: { enter: '复制' },
 
   search: {
-    dynamic: async (query): Promise<ProviderResult[]> => {
+    dynamic: async (query, ctx): Promise<ProviderResult[]> => {
       const results: ProviderResult[] = []
       const trimmed = query.trim()
 
@@ -42,15 +42,18 @@ export default defineExtension({
         }
       }
 
-      config.history.forEach((h, idx) => {
-        results.push({
-          id: `history-${idx}`,
-          title: `= ${h.result}`,
-          description: h.expr,
-          icon: 'i-ri-history-line',
-          data: { kind: 'module', isHistory: true, expr: h.expr, value: h.result },
+      // 全局模式只返回即时计算结果；history 仅模块内展示（避免不相关项误杀模块入口）
+      if (ctx?.moduleMode) {
+        config.history.forEach((h, idx) => {
+          results.push({
+            id: `history-${idx}`,
+            title: `= ${h.result}`,
+            description: h.expr,
+            icon: 'i-ri-history-line',
+            data: { kind: 'module', isHistory: true, expr: h.expr, value: h.result },
+          })
         })
-      })
+      }
 
       return results
     },
