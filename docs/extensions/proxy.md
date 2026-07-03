@@ -43,9 +43,20 @@ osascript 每次提权都弹系统密码框，若「开/关代理 = spawn/kill r
 
 > 历史上有过 user 模式（系统代理，仅覆盖遵守系统代理的应用）+ TUN 模式双选；因 user 模式覆盖不全（命令行/Docker/部分原生应用不走代理）非完整代理，已移除，统一为 TUN。
 
+## 健康监测 + 自动热重载恢复
+
+root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「假死」——内存状态（enabled/tun_active）与实际脱节：UI 仍显示已开启，用户靠测速才发现全超时；关闭重开还因热重载失败走 stop_root + restart_root 双提权。
+
+`start_core` 成功后 spawn 健康监测 task（`ensure_monitor`，幂等）：每 30s 探针（`probe_health` = controller GET /version 可达 + 当前主 selector 节点 delay test 出站可达），连续 2 轮异常（容忍单次抖动）才动作：
+
+- 进程已退出（`!root_mihomo_running`）或 controller 不可达 → `reset_dead_state`：重置 enabled/tun_active/monitor_alive + 清残留 pidfile + emit `proxy-enabled:false` + emit `proxy-status{kind:error}`（前端状态栏提醒 + 开启项红色提示）+ menubar 隐藏图标。**不自动提权重启**（避免突兀弹密码框），由用户手动重新开启
+- 进程在 + controller 在 但出站死 → **免提权热重载 active config**（`reload_config_yaml`，PUT /configs 让 mihomo 重建 gvisor/连接池/接口绑定，对症「重启就好」）；热重载失败 emit `proxy-status{kind:error}` 通知，下轮重试
+
+用户亦可手动触发 `proxy_reconnect`（免提权软重启，UI 开启项「重连」按钮）：进程在 + controller 可达时一键热重载 active config，规避关闭→开启的 stop_root 提权。进程已退出则报错提示需关闭重开（会提权）。`stop_core` 置 monitor_alive=false 停监测（用户主动关闭无需监测）。
+
 ## 订阅合并（subscription.rs）
 
-`merge_yaml(texts, params)`（纯函数）：多订阅 proxies 按 name 去重拼接；proxy-groups/rules 取首个非空订阅，否则自动生成（`节点选择` select + `自动选择` url-test + `MATCH,节点选择`）。config 含 `geox-url`（geoip/geosite 镜像 URL，国内直连 GitHub 不可达致 mihomo 下载 EOF）。订阅原文存 `subs/<id>.yaml`，`build_run_config` 启动时读取合并。
+`merge_yaml(texts, params)`（纯函数）：多订阅 proxies 按 name 去重拼接；proxy-groups/rules 取首个非空订阅，否则自动生成（`节点选择` select + `自动选择` url-test + `MATCH,节点选择`）。config 含 `geox-url`（geoip/geosite 镜像 URL，国内直连 GitHub 不可达致 mihomo 下载 EOF）。DNS 配置：nameserver 国内直连（223.5.5.5/119.29.29.29，fake-ip 查询 + DIRECT 流量真实解析均走此，国内 DNS 对常见海外域名如 apple.com 返回正确 IP）+ `proxy-server-nameserver`（节点域名专用，保证 TUN 排除路由可靠添加防回环）。**不配 fallback/fallback-filter**：海外 DoH 在 TUN 下经代理，DIRECT 海外域名解析会串行等待 fallback（实测 apple.com couldn't find ip），是 active 比 idle 测速慢一个数量级的根因；被污染域名走代理远程解析，不依赖本地 DNS。订阅原文存 `subs/<id>.yaml`，`build_run_config` 启动时读取合并。
 
 订阅拉取走 `http::client()`（SSRF 校验 + Clash UA `clash.meta/v1.19.27`，确保机场返回 YAML 而非 Base64）。增删订阅触发 `reload_if_running`：重建 `config.yaml` 后 `PUT /configs {path}` 让 mihomo 原生热重载（root 进程常驻，免重启免再提权）。
 
@@ -61,9 +72,9 @@ osascript 每次提权都弹系统密码框，若「开/关代理 = spawn/kill r
 
 状态行当前节点名由 `refresh_proxy_menu` 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `reload_if_running` 触发刷新。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步面板 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展面板。
 
-## 命令（10 个）
+## 命令（11 个）
 
-`set_proxy_enabled` / `is_proxy_enabled`（启停；root mihomo 常驻——首次 restart_root 提权一次，之后开关走热重载 active/idle config 免提权）、`proxy_core_status` / `proxy_ensure_core`（内核版本查询与运行时按需下载）、`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）、`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）、`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_delay` / `proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退）。`proxy_set_mode` 含「未变跳过」守卫 + emit 同步前端。
+`set_proxy_enabled` / `is_proxy_enabled`（启停；root mihomo 常驻——首次 restart_root 提权一次，之后开关走热重载 active/idle config 免提权）、`proxy_core_status` / `proxy_ensure_core`（内核版本查询与运行时按需下载）、`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）、`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）、`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_delay` / `proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退）、`proxy_reconnect`（免提权软重启：热重载 active config 重建 gvisor/连接池，出站异常时一键恢复，规避关闭→开启的 stop_root 提权）。`proxy_set_mode` 含「未变跳过」守卫 + emit 同步前端。
 
 ## 文件布局
 

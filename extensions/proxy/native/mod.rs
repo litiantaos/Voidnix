@@ -13,13 +13,24 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use self::core::RunParams;
 
 /// 代理运行状态：enabled（流量是否被代理）+ tun_active（root mihomo 进程是否在跑，常驻）
-/// + run_params（最近一次 active 参数，供热重载/复用）。
+/// + run_params（最近一次 active 参数，供热重载/复用）+ monitor_alive（健康监测 task 运行标志）。
 pub struct ProxyState {
     pub enabled: AtomicBool,
     pub run_params: Mutex<Option<RunParams>>,
     pub tun_active: AtomicBool,
     /// 菜单栏状态行当前节点名缓存；由 refresh_proxy_menu 异步拉取填充。
     pub current_node: Mutex<Option<String>>,
+    /// 健康监测 task 运行标志（协作式退出）：true=监测中。start_core 置 true 并 spawn；
+    /// stop_core / 进程退出重置时置 false，task 自行退出。
+    pub monitor_alive: AtomicBool,
+}
+
+/// 健康事件 payload（emit "proxy-status"，前端 showStatus 反馈）。
+#[derive(Clone, serde::Serialize)]
+struct ProxyStatus {
+    /// "success" | "error"：对齐 StatusBar kind 语义，错误必须 error 避免绿色对勾错位。
+    kind: String,
+    msg: String,
 }
 
 /// 启用/停用代理（统一 TUN 模式：root mihomo 常驻 + 热重载 active/idle）。
@@ -124,6 +135,7 @@ async fn start_core(app: &AppHandle, state: &ProxyState, params: RunParams) -> R
     }
     *state.run_params.lock().map_err(|e| e.to_string())? = Some(params);
     state.enabled.store(true, Ordering::Relaxed);
+    ensure_monitor(app); // 启动健康监测（幂等：已在跑则跳过）
     Ok(())
 }
 
@@ -136,6 +148,7 @@ async fn start_core(app: &AppHandle, state: &ProxyState, params: RunParams) -> R
 /// 保关闭可靠性。无论优雅还是强杀，最终 enabled=false——用户「关闭代理」意图必须达成，
 /// 不可卡死在无法关闭态。
 async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
+    state.monitor_alive.store(false, Ordering::Relaxed); // 用户主动关闭，停健康监测
     if state.tun_active.load(Ordering::Relaxed) {
         let idle = state.run_params.lock().map_err(|e| e.to_string())?.clone();
         if let Some(mut p) = idle {
@@ -154,6 +167,142 @@ async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
     }
     state.enabled.store(false, Ordering::Relaxed);
     Ok(())
+}
+
+// ── 健康监测 + 自动热重载恢复 ──
+//
+// root mihomo 常驻但无主动健康检测时，进程异常（崩溃/卡死/出站失效）后内存状态
+// （enabled/tun_active）与实际脱节：UI 仍显示"已开启"，用户靠测速才发现全超时；关闭重开
+// 还因热重载失败走 stop_root + restart_root 双提权。
+//
+// 监测 task 每 30s 探针（controller 可达 + 当前节点出站 delay），连续 2 轮异常（容忍单次
+// 抖动）才动作：进程退出/controller 不可达 → 重置状态 + 通知前端（不自动提权重启）；进程在
+// + controller 在 但出站死 → 免提权热重载 active config 软重启（重建 gvisor/连接池/接口
+// 绑定，对症"重启就好"），失败则通知，下轮重试。
+
+/// 启动健康监测 task（幂等：已在跑则跳过）。start_core 成功后调用。
+fn ensure_monitor(app: &AppHandle) {
+    let state = app.state::<ProxyState>();
+    if state.monitor_alive.swap(true, Ordering::Relaxed) {
+        return; // 已在跑
+    }
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        health_monitor(&app2).await;
+    });
+}
+
+/// 健康监测主循环。协作式退出（monitor_alive=false 即停）。
+async fn health_monitor(app: &AppHandle) {
+    let state = app.state::<ProxyState>();
+    let mut fail_streak = 0u32;
+    let mut notified_error = false;
+    while state.monitor_alive.load(Ordering::Relaxed) {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        if !state.monitor_alive.load(Ordering::Relaxed) {
+            break;
+        }
+        if !state.enabled.load(Ordering::Relaxed) {
+            continue; // 未启用不监测
+        }
+        let Some(p) = state.run_params.lock().ok().and_then(|g| g.clone()) else {
+            continue;
+        };
+        let base = format!("http://127.0.0.1:{}", p.controller_port);
+
+        if probe_health(&base, &p.secret).await {
+            if notified_error {
+                // 上轮曾报出站异常，现已恢复——通知前端清错误提示
+                let _ = app.emit(
+                    "proxy-status",
+                    ProxyStatus {
+                        kind: "success".into(),
+                        msg: "代理已恢复".into(),
+                    },
+                );
+                notified_error = false;
+            }
+            fail_streak = 0;
+            continue;
+        }
+        fail_streak += 1;
+        if fail_streak < 2 {
+            continue; // 容忍单次抖动，连续 2 轮异常才动作
+        }
+        fail_streak = 0;
+
+        // 判进程 + controller 状态决定恢复路径
+        let ctrl_ok = controller::check_auth(&base, &p.secret)
+            .await
+            .unwrap_or(false);
+        let alive = root_mihomo_running(app);
+        if !alive || !ctrl_ok {
+            // 进程退出或 controller 不可达：重置状态 + 通知，停监测（不自动提权重启）
+            reset_dead_state(app, "代理核心异常退出，请重新开启");
+            break;
+        }
+        // 进程在 + controller 在 但出站死：免提权热重载 active config 软重启。
+        // 复查 enabled/monitor_alive：stop_core 可能在上述 await 期间关闭代理，
+        // 此时热重载 active 会重新打开代理，与用户「关闭」意图冲突致状态脱节。
+        if !state.monitor_alive.load(Ordering::Relaxed) || !state.enabled.load(Ordering::Relaxed) {
+            break;
+        }
+        let mut active = p;
+        active.tun = true;
+        if let Err(e) = reload_config_yaml(app, &active).await {
+            notified_error = true;
+            let _ = app.emit(
+                "proxy-status",
+                ProxyStatus {
+                    kind: "error".into(),
+                    msg: format!("代理出站异常，自动恢复失败：{e}"),
+                },
+            );
+        }
+        // 热重载后下轮重新探针；恢复则 fail_streak 归零继续
+    }
+    state.monitor_alive.store(false, Ordering::Relaxed);
+}
+
+/// 健康探针：controller 可达（GET /version）+ 当前主节点出站可达（delay test）。
+/// 两者皆 ok 才健康。无订阅节点时仅以 controller 可达为准。
+async fn probe_health(base: &str, secret: &str) -> bool {
+    if !controller::check_auth(base, secret).await.unwrap_or(false) {
+        return false;
+    }
+    let Ok(val) = controller::get_proxies(base, secret).await else {
+        return false;
+    };
+    match parse_current_node(&val) {
+        Some(node) => {
+            controller::test_delay(base, secret, &node)
+                .await
+                .unwrap_or(0)
+                > 0
+        }
+        None => true,
+    }
+}
+
+/// 进程已退出/不可控：重置内存状态 + 通知前端 + 清理残留 pidfile + 停监测。
+/// 不做提权重启（避免突兀弹密码框），由用户手动重新开启。
+fn reset_dead_state(app: &AppHandle, msg: &str) {
+    let state = app.state::<ProxyState>();
+    state.enabled.store(false, Ordering::Relaxed);
+    state.tun_active.store(false, Ordering::Relaxed);
+    state.monitor_alive.store(false, Ordering::Relaxed);
+    if let Ok(dir) = crate::runtime::storage::ext_data_dir(app, "proxy") {
+        let _ = std::fs::remove_file(dir.join("mihomo.pid"));
+    }
+    let _ = app.emit("proxy-enabled", false);
+    let _ = app.emit(
+        "proxy-status",
+        ProxyStatus {
+            kind: "error".into(),
+            msg: msg.to_string(),
+        },
+    );
+    crate::runtime::menubar::refresh(app);
 }
 
 #[tauri::command]
@@ -327,6 +476,37 @@ pub async fn proxy_set_mode(
     }
     let _ = app.emit("proxy-mode", mode);
     crate::runtime::menubar::refresh(&app);
+    Ok(())
+}
+
+/// 免提权软重启（热重载 active config）：进程在 + controller 可达时一键重建 gvisor/连接池，
+/// 对症"出站失效/接口抖动"等无需进程重启的故障，免关闭→开启（规避可能的 stop_root 提权）。
+/// 进程已退出/controller 不可达返回错误（需关闭后重新开启，会提权）。
+#[tauri::command]
+pub async fn proxy_reconnect(app: AppHandle, state: State<'_, ProxyState>) -> Result<(), String> {
+    let mut params = state
+        .run_params
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "代理核心未运行".to_string())?;
+    let base = format!("http://127.0.0.1:{}", params.controller_port);
+    if !root_mihomo_running(&app) {
+        return Err("代理核心已退出，请关闭后重新开启".into());
+    }
+    if !controller::check_auth(&base, &params.secret)
+        .await
+        .unwrap_or(false)
+    {
+        return Err("代理核心无响应，请关闭后重新开启".into());
+    }
+    // 免提权热重载 active config 软重启（重建 gvisor/连接池，恢复出站）
+    params.tun = true;
+    reload_config_yaml(&app, &params).await?;
+    state.enabled.store(true, Ordering::Relaxed);
+    state.tun_active.store(true, Ordering::Relaxed);
+    ensure_monitor(&app);
+    let _ = app.emit("proxy-enabled", true);
     Ok(())
 }
 
@@ -522,6 +702,7 @@ impl Extension for ProxyExtension {
             run_params: Mutex::new(None),
             tun_active: AtomicBool::new(false),
             current_node: Mutex::new(None),
+            monitor_alive: AtomicBool::new(false),
         });
         crate::runtime::menubar::register(MenuBarContribution {
             title: "代理",

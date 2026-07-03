@@ -49,7 +49,8 @@
             </template>
             <template v-else>
               <span truncate>内核版本：mihomo {{ coreStatus.version }}</span>
-              <span v-if="updateInfo?.hasUpdate" text="green-500" shrink="0" ml="2"
+              <span v-if="coreError" text="red-500" shrink="0" ml="2">{{ coreError }}</span>
+              <span v-else-if="updateInfo?.hasUpdate" text="green-500" shrink="0" ml="2"
                 >有新内核 {{ updateInfo.latest
                 }}{{ isEnabled ? '，请关闭代理后更新' : '，点击下载更新' }}</span
               >
@@ -65,6 +66,7 @@
               <BaseButton :variant="isEnabled ? 'primary' : 'default'" @click.stop="toggleEnabled">
                 {{ isEnabled ? '已开启' : '已关闭' }}
               </BaseButton>
+              <BaseButton v-if="isEnabled && coreError" @click.stop="reconnect">重连</BaseButton>
               <BaseButton v-if="!isEnabled && updateInfo?.hasUpdate" @click.stop="updateCore"
                 >下载更新</BaseButton
               >
@@ -253,6 +255,8 @@ const coreProgress = ref<{ received: number; total: number | null }>({ received:
 const progressStarted = ref(false)
 /// 内核更新检查结果（hasUpdate=true 时副标题提示 + 显示「更新」按钮）。null=未检查/API 失败
 const updateInfo = ref<{ hasUpdate: boolean; current: string; latest: string } | null>(null)
+/// 健康监测异常状态（proxy-status error 事件）：非空时开启代理项显示红色提示 + 重连按钮。
+const coreError = ref('')
 /// 下载中状态真相源跟随 Rust DOWNLOADING 原子（重新进入界面也能正确反映）。
 const isDownloading = computed(() => coreStatus.value.downloading)
 let unlistenProgress: (() => void) | null = null
@@ -260,6 +264,7 @@ let unlistenProgress: (() => void) | null = null
 let unlistenReady: (() => void) | null = null
 let unlistenEnabled: (() => void) | null = null
 let unlistenMode: (() => void) | null = null
+let unlistenStatus: (() => void) | null = null
 
 // 订阅编辑弹窗（agent 模型提供商模式）
 const editingId = ref('')
@@ -444,13 +449,32 @@ const toggleEnabled = async () => {
     })
     // 成功后再翻转状态（toggling 仅作防重入，首次开代理提权时主窗口已隐藏）
     isEnabled.value = newState
+    coreError.value = '' // 切换成功清异常提示
     if (newState) {
       await loadProxies()
-      testAll() // 开启代理后自动测速（fire-and-forget，延迟随测随显）
+      prewarmAndTestAll() // 预热后全量测速（fire-and-forget，延迟随测随显）
     }
     // 关闭代理时保留节点列表显示（热重载 idle，不清空 proxiesData）
   } catch (e) {
     appStore.showStatus(`切换失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+  } finally {
+    toggling.value = false
+  }
+}
+
+/// 免提权软重启核心（热重载 active config）：代理开着但出站异常时一键重建 gvisor/连接池，
+/// 免关闭→开启（规避 stop_root 提权）。进程已退出会失败提示需关闭重开。
+async function reconnect() {
+  if (toggling.value) return
+  toggling.value = true
+  try {
+    await invoke(CMD.proxyReconnect)
+    coreError.value = ''
+    appStore.showStatus('代理已重连', { duration: 2000 })
+    await loadProxies()
+    prewarmAndTestAll()
+  } catch (e) {
+    appStore.showStatus(`重连失败：${errText(e)}`, { duration: 4000, kind: 'error' })
   } finally {
     toggling.value = false
   }
@@ -513,6 +537,17 @@ async function testAll() {
   } finally {
     testing.value = false
   }
+}
+
+/// 开启/重连后全量测速前预热：热重载后 mihomo DNS resolver + 节点连接池冷启动，直接 testAll
+/// 首轮延迟偏高（远高于 idle 热态）。先测主节点一次预热 generate_204 解析（DNS 缓存全局共享）
+/// + 主节点 anytls 连接，紧随的 testAll 命中热态缓存，结果接近真实延迟而非冷启动开销。
+async function prewarmAndTestAll() {
+  const main = mainGroup.value?.now
+  if (main) {
+    await invoke<number>(CMD.proxyTestDelay, { name: main }).catch(() => {})
+  }
+  testAll()
 }
 
 /// 定位到当前选中节点：调 BaseList.reveal 平滑滚动到目标项居中
@@ -660,6 +695,18 @@ onMounted(async () => {
   unlistenMode = await listen<string>('proxy-mode', (e) => {
     config.mode = e.payload as typeof config.mode
   })
+  // 健康监测异常反馈：进程异常退出/出站失效自动恢复失败时，核心 emit proxy-status。
+  // error 持久写入 coreError（开启代理项红色提示，enabled 态附重连按钮）+ 状态栏即时提醒。
+  unlistenStatus = await listen<{ kind: string; msg: string }>('proxy-status', (e) => {
+    const { kind, msg } = e.payload
+    coreError.value = kind === 'error' ? msg : ''
+    if (msg) {
+      appStore.showStatus(msg, {
+        duration: 4000,
+        kind: kind === 'error' ? 'error' : 'success',
+      })
+    }
+  })
   await loadCoreStatus()
   await checkStatus()
   // 核心已下载即加载节点列表（idle 常驻下 controller 仍可查询；
@@ -680,6 +727,7 @@ onUnmounted(() => {
   unlistenReady?.()
   unlistenEnabled?.()
   unlistenMode?.()
+  unlistenStatus?.()
 })
 
 // 兜底：订阅列表至少一项（磁盘旧值可能为空数组，覆盖默认项；类似 agent 默认 provider 始终存在）

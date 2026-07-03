@@ -112,4 +112,5 @@ export const CMD = {
   proxySelectProxy: 'proxy_select_proxy',
   proxyTestDelay: 'proxy_test_delay',
   proxySetMode: 'proxy_set_mode',
+  proxyReconnect: 'proxy_reconnect',
 } as const
