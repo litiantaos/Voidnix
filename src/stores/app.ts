@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { searchEngine } from '@/runtime/search-engine'
 import { hideWindow } from '@/utils/tauri'
 import { writeText } from '@/utils/clipboard'
+import { showToast, type ToastOptions } from '@/composables/useToast'
 
 export interface ConfirmOptions {
   title: string
@@ -12,13 +13,6 @@ export interface ConfirmOptions {
   okLabel?: string
   cancelLabel?: string
   showCancel?: boolean
-}
-
-export type StatusKind = 'success' | 'error'
-
-export interface StatusOptions {
-  duration?: number
-  kind?: StatusKind
 }
 
 export const useAppStore = defineStore('app', () => {
@@ -43,23 +37,8 @@ export const useAppStore = defineStore('app', () => {
 
   const shortcutErrors = ref<Record<string, string>>({})
 
-  // 状态栏瞬时消息
-  const statusMessage = ref('')
-  const statusKind = ref<StatusKind>('success')
-  let statusTimer: ReturnType<typeof setTimeout> | null = null
-
-  function showStatus(msg: string, opts?: StatusOptions) {
-    const { duration = 2000, kind = 'success' } = opts ?? {}
-    statusMessage.value = msg
-    statusKind.value = kind
-    if (statusTimer) clearTimeout(statusTimer)
-    if (duration > 0) {
-      statusTimer = setTimeout(() => {
-        statusMessage.value = ''
-        statusKind.value = 'success'
-        statusTimer = null
-      }, duration)
-    }
+  function showStatus(msg: string, opts?: ToastOptions) {
+    showToast(msg, opts)
   }
 
   function setActiveModule(id: string | null) {
@@ -154,8 +133,6 @@ export const useAppStore = defineStore('app', () => {
     shortcutErrors,
     setShortcutError,
     clearShortcutError,
-    statusMessage,
-    statusKind,
     showStatus,
   }
 })
@@ -165,7 +142,7 @@ export const useAppStore = defineStore('app', () => {
 
 let hideTimer: ReturnType<typeof setTimeout> | null = null
 
-/** 复制文本到剪贴板 + 状态栏反馈 + 延迟隐藏主窗口（复制型结果回车通用动作）。 */
+/** 复制文本到剪贴板 + toast 反馈 + 延迟隐藏主窗口（复制型结果回车通用动作）。 */
 export async function copyAndHide(value: string, label = '已复制') {
   if (hideTimer) {
     clearTimeout(hideTimer)

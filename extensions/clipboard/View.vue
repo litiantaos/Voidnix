@@ -257,6 +257,7 @@ async function handleExecute(item: ClipboardItem, _index: number, _e?: KeyboardE
     invalidateCache()
   } catch (e) {
     console.error('Failed to paste clipboard:', e)
+    appStore.showStatus('粘贴失败', { kind: 'error', duration: 4000 })
   }
 }
 
@@ -295,7 +296,6 @@ const actionMenuItems = computed<PanelItem[]>(() => {
   if (isText) {
     items.push({ type: 'item', key: 'edit', label: '编辑', icon: 'i-ri-edit-line' })
   }
-  items.push({ type: 'divider' })
   items.push({
     type: 'item',
     key: 'delete',

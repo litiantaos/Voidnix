@@ -48,6 +48,7 @@ export default defineExtension({
   },
 
   placeholder: '输入金额和货币代码，如 100 USD、1万美元、3亿日元，默认查询 1 USD',
+  hints: { enter: '复制' },
 
   search: {
     dynamic: async (query, ctx): Promise<ProviderResult[]> => {

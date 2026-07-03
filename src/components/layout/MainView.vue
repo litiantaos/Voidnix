@@ -80,13 +80,7 @@
         bg="transparent"
         flex="1"
         :class="'placeholder:text-tx-hint'"
-        :placeholder="
-          activeModule
-            ? activeModule.disableSearchInput
-              ? ''
-              : activeModule.placeholder || `在 ${activeModule.meta.name} 中搜索`
-            : '搜索应用、文件、扩展等，输入 / 显示扩展列表，输入 // 进行网络搜索'
-        "
+        :placeholder="placeholderText"
         @input="onInput"
         @compositionstart="appStore.setComposing(true)"
         @compositionend="appStore.setComposing(false)"
@@ -124,13 +118,6 @@
       :group-title="groupTitle"
       @update:selected-index="(i: number) => (selectedIndex = i)"
     />
-
-    <!-- 状态栏 -->
-    <StatusBar
-      :result-count="results.length"
-      :selected-result="results[selectedIndex]"
-      :is-loading="isLoading"
-    />
   </div>
 
   <UpdateDialog v-if="updateStore.dialogVisible" @close="updateStore.closeDialog()" />
@@ -145,7 +132,6 @@ import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import type { SearchResult } from '@/runtime/types'
 import ContentView from '@/components/layout/ContentView.vue'
-import StatusBar from '@/components/layout/StatusBar.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 
@@ -173,6 +159,20 @@ const { save, restore, reset } = useScrollPosition(scrollTop)
 const activeModule = computed(() => {
   const id = appStore.activeModuleId
   return (id ? getExtension(id) : null) ?? null
+})
+
+// placeholder：先搜索说明，后快捷键提示（读 hints）
+// disableSearchInput 模块仅当显式声明 placeholder 才显示（如 uuid），否则空
+const placeholderText = computed(() => {
+  const mod = activeModule.value
+  if (!mod) {
+    return '搜索应用、文件、扩展等，输入 / 显示扩展列表，输入 // 进行网络搜索'
+  }
+  const base = mod.placeholder ?? (mod.disableSearchInput ? '' : `在 ${mod.meta.name} 中搜索`)
+  const parts = [base]
+  if (mod.hints?.enter) parts.push(`回车${mod.hints.enter}`)
+  if (mod.hints?.multiSelect) parts.push(mod.hints.multiSelect)
+  return parts.filter(Boolean).join(' · ')
 })
 
 // 分组逻辑：按 kind 分组，file/folder 合并为"文件"；标题读 constants 单一源

@@ -57,7 +57,7 @@ export default defineConfig({
     // ── 杂项 ──
     'group-header': 'text-xs text-tx-faint tracking-wider font-medium px-3 py-1.5 uppercase',
     'overlay-abs': 'pointer-events-none absolute',
-    'dropdown-panel': 'p-1 rounded-lg bg-white shadow-lg select-none',
+    'dropdown-panel': 'p-1 rounded-lg bg-white border border-black/10 select-none',
   },
   content: {
     pipeline: {

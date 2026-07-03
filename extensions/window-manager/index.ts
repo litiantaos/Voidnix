@@ -15,6 +15,7 @@ export default defineExtension({
     order: 120,
   },
 
+  disableSearchInput: true,
   mainView: () => WindowManagerView,
   windowViews: {
     'snap-panel': () => SnapPanelWindow,
