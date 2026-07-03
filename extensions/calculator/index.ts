@@ -1,7 +1,6 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import type { ProviderResult } from '@/runtime/types'
-import { writeText } from '@/utils/clipboard'
-import { hideWindow } from '@/utils/tauri'
+import { copyAndHide } from '@/stores/app'
 import { evaluateMath } from './logic'
 import { config, appendHistory } from './config'
 
@@ -65,8 +64,7 @@ export default defineExtension({
         appendHistory(result.data.expr as string, result.data.value as string)
       }
       const value = result.data?.value ? String(result.data.value) : result.title.replace('= ', '')
-      await writeText(value)
-      hideWindow()
+      await copyAndHide(value)
     } catch (e) {
       console.error('Failed to execute calc item:', e)
     }

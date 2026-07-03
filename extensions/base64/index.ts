@@ -14,6 +14,7 @@ export default defineExtension({
   },
 
   placeholder: '输入文本进行 Base64 编解码',
+  hints: { enter: '复制' },
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {

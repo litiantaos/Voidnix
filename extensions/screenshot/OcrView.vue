@@ -61,10 +61,8 @@ import { ref, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { emit } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
-import { writeText } from '@/utils/clipboard'
-import { hideWindow } from '@/utils/tauri'
 import { useAutoWindowHeight } from '@/composables/useAutoWindowHeight'
-import { useAppStore } from '@/stores/app'
+import { copyAndHide, useAppStore } from '@/stores/app'
 import { pendingOcrData } from './index'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
@@ -143,8 +141,7 @@ watch(
 
 async function handleCopy() {
   if (!ocrText.value.trim()) return
-  await writeText(ocrText.value)
-  hideWindow()
+  await copyAndHide(ocrText.value)
 }
 
 async function handleTranslate() {

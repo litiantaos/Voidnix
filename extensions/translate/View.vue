@@ -53,8 +53,7 @@ import { ref, computed, watch, nextTick, onMounted, onActivated } from 'vue'
 
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
 import { config as translateConfig } from './config'
-import { writeText } from '@/utils/clipboard'
-import { hideWindow } from '@/utils/tauri'
+import { copyAndHide } from '@/stores/app'
 import { useAutoWindowHeight } from '@/composables/useAutoWindowHeight'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
@@ -113,8 +112,7 @@ function handleSubmit() {
 async function onExecuteResult(result: TranslateResult) {
   if (!result.translation || result.loading) return
   try {
-    await writeText(result.translation)
-    hideWindow()
+    await copyAndHide(result.translation)
   } catch (e) {
     console.error('Failed to copy:', e)
   }

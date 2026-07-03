@@ -11,5 +11,6 @@ export default defineExtension({
     order: 150,
   },
 
+  disableSearchInput: true,
   mainView: () => CleanModeView,
 })

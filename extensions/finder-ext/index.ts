@@ -11,5 +11,6 @@ export default defineExtension({
     order: 130,
   },
 
+  disableSearchInput: true,
   mainView: () => FinderExtView,
 })

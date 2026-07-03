@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAppStore } from './app'
+import { toasts, clearToasts } from '@/composables/useToast'
 
 describe('app store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    clearToasts()
   })
 
   it('初始状态', () => {
@@ -175,40 +177,40 @@ describe('app store', () => {
     })
   })
 
-  describe('状态栏消息', () => {
-    it('showStatus 设置消息', () => {
+  describe('toast 消息', () => {
+    it('showStatus 推入 toast', () => {
       const store = useAppStore()
       store.showStatus('已复制', { duration: 0 })
-      expect(store.statusMessage).toBe('已复制')
-      expect(store.statusKind).toBe('success')
+      expect(toasts.value).toHaveLength(1)
+      expect(toasts.value[0].message).toBe('已复制')
+      expect(toasts.value[0].kind).toBe('success')
     })
 
     it('showStatus duration 后自动清除', () => {
       vi.useFakeTimers()
       const store = useAppStore()
       store.showStatus('已复制', { duration: 1000 })
-      expect(store.statusMessage).toBe('已复制')
+      expect(toasts.value).toHaveLength(1)
       vi.advanceTimersByTime(1000)
-      expect(store.statusMessage).toBe('')
+      expect(toasts.value).toHaveLength(0)
       vi.useRealTimers()
     })
 
-    it('连续 showStatus 替换前一条', () => {
+    it('连续 showStatus 堆叠多条', () => {
       vi.useFakeTimers()
       const store = useAppStore()
       store.showStatus('第一条', { duration: 5000 })
       store.showStatus('第二条', { duration: 5000 })
-      expect(store.statusMessage).toBe('第二条')
-      vi.advanceTimersByTime(5000)
-      expect(store.statusMessage).toBe('')
+      expect(toasts.value).toHaveLength(2)
+      expect(toasts.value[1].message).toBe('第二条')
       vi.useRealTimers()
     })
 
     it('showStatus kind: error 切换错误语义', () => {
       const store = useAppStore()
       store.showStatus('启用失败', { duration: 0, kind: 'error' })
-      expect(store.statusMessage).toBe('启用失败')
-      expect(store.statusKind).toBe('error')
+      expect(toasts.value[0].kind).toBe('error')
+      expect(toasts.value[0].message).toBe('启用失败')
     })
   })
 })

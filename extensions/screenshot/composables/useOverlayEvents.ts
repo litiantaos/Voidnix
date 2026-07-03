@@ -1,5 +1,6 @@
 import { nextTick, type Ref } from 'vue'
 import { writeText } from '@/utils/clipboard'
+import { showToast } from '@/composables/useToast'
 import type { Sel, Shape, Tool, Phase, WindowRect, BlurMode } from './useTypes'
 import { DRAG_THRESHOLD } from './useTypes'
 
@@ -654,7 +655,9 @@ export function useOverlayEvents(options: {
       !e.metaKey &&
       !e.ctrlKey
     ) {
-      writeText(options.pickedColor.value).catch(() => {})
+      writeText(options.pickedColor.value)
+        .then(() => showToast('已复制'))
+        .catch(() => {})
     }
   }
 

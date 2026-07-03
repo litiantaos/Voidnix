@@ -35,7 +35,7 @@ export function useAutoWindowHeight(refs: {
   const { rootRef, contentRef } = refs
   const tauriWindow = getCurrentWindow()
   let ro: ResizeObserver | null = null
-  // chrome = 搜索栏 + 状态栏等固定开销（常量）。仅在 root 正确撑满（内容未溢出）时测量可信：
+  // chrome = 搜索栏等固定开销（常量）。仅在 root 正确撑满（内容未溢出）时测量可信：
   // 内容小、root 必撑满，首测缓存真值后复用，规避内容撑开后 clientHeight 失真（曾导致 chrome 为负）。
   let chromeH = 0
   // 跟踪当前窗口实际高度/位置（逻辑 px），作动画起点；null 表示待从系统读取（跨 activate 重读）
