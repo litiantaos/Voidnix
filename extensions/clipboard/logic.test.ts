@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchText, filterByQuery } from './logic'
+import { matchText, filterByQuery, filterByType } from './logic'
 import type { ClipboardItem } from './index'
 
 function makeItem(partial: Partial<ClipboardItem>): ClipboardItem {
@@ -66,6 +66,37 @@ describe('filterByQuery', () => {
   it('不修改入参数组', () => {
     const snapshot = items.map((i) => ({ ...i }))
     filterByQuery(items, 'hello')
+    expect(items).toEqual(snapshot)
+  })
+})
+
+describe('filterByType', () => {
+  const items = [
+    makeItem({ id: '1', content_type: 'text', content: 'a' }),
+    makeItem({ id: '2', content_type: 'image', content: 'img' }),
+    makeItem({ id: '3', content_type: 'file', content: '/x.txt' }),
+    makeItem({ id: '4', content_type: 'text', content: 'b' }),
+  ]
+
+  it("'all' 原样返回", () => {
+    expect(filterByType(items, 'all')).toBe(items)
+  })
+
+  it('按 text 过滤', () => {
+    expect(filterByType(items, 'text').map((i) => i.id)).toEqual(['1', '4'])
+  })
+
+  it('按 image 过滤', () => {
+    expect(filterByType(items, 'image').map((i) => i.id)).toEqual(['2'])
+  })
+
+  it('按 file 过滤', () => {
+    expect(filterByType(items, 'file').map((i) => i.id)).toEqual(['3'])
+  })
+
+  it('不修改入参数组', () => {
+    const snapshot = items.map((i) => ({ ...i }))
+    filterByType(items, 'image')
     expect(items).toEqual(snapshot)
   })
 })

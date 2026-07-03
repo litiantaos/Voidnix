@@ -8,6 +8,7 @@
       disabled ? 'ui-disabled bg-black/2' : '',
     ]"
     @click="focus()"
+    @focus="focus()"
   >
     <slot name="prefix" />
     <input

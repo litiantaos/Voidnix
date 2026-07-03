@@ -45,30 +45,16 @@
           ref="dropdownRef"
           data-select-dropdown
           :style="floatingStyles"
-          p="1"
-          rounded="lg"
-          bg="white"
+          class="dropdown-panel"
           max-w="[80vw]"
-          select="none"
-          shadow="lg"
           role="listbox"
         >
-          <template v-for="(item, index) in flatItems" :key="index">
-            <div v-if="item.type === 'group'" class="group-header">
-              {{ item.label }}
-            </div>
-            <div
-              v-else
-              @click.stop="selectOption(index)"
-              @mouseover="highlightedIndex = index"
-              :class="[
-                'text-sm font-medium px-3 py-1.5 rounded-md transition-colors truncate',
-                index === highlightedIndex ? 'ui-active text-accent' : 'text-tx-secondary',
-              ]"
-            >
-              {{ item.label }}
-            </div>
-          </template>
+          <BaseDropdownItems
+            :items="panelItems"
+            :active-index="highlightedIndex"
+            @select="selectOption"
+            @hover="(i: number) => (highlightedIndex = i)"
+          />
         </div>
       </Transition>
     </Teleport>
@@ -78,6 +64,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useFloating } from '@/composables/useFloating'
+import BaseDropdownItems, { type PanelItem } from './BaseDropdownItems.vue'
 
 interface Option {
   label: string
@@ -153,6 +140,14 @@ const flatItems = computed<FlatItem[]>(() => {
 
 const optionIndices = computed(() =>
   flatItems.value.map((item, index) => (item.type === 'option' ? index : -1)).filter((i) => i >= 0),
+)
+
+const panelItems = computed<PanelItem[]>(() =>
+  flatItems.value.map((f) =>
+    f.type === 'group'
+      ? { type: 'header', label: f.label }
+      : { type: 'item', key: f.value, label: f.label },
+  ),
 )
 
 const selectedLabel = computed(() => {

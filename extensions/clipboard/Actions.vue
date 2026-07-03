@@ -1,4 +1,10 @@
 <template>
+  <BaseSelect
+    :model-value="activeType"
+    :options="typeOptions"
+    class="min-w-0 w-30"
+    @update:model-value="handleTypeChange"
+  />
   <BaseButton
     :icon="activeTab === 'favorites' ? 'i-ri-star-fill text-amber-400' : 'i-ri-star-line'"
     @click="toggleFavoriteTab"
@@ -12,15 +18,27 @@
 <script setup lang="ts">
 import { nextTick } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import { useAppStore } from '@/stores/app'
-import { activeTab } from './index'
+import { activeTab, activeType } from './index'
+import type { ContentType } from './logic'
 
 const appStore = useAppStore()
 
+const typeOptions = [
+  { label: '全部', value: 'all' },
+  { label: '文本', value: 'text' },
+  { label: '图片', value: 'image' },
+  { label: '文件', value: 'file' },
+]
+
+function handleTypeChange(val: string | number) {
+  activeType.value = val as ContentType
+  nextTick(() => document.getElementById('main-search-input')?.focus())
+}
+
 function toggleFavoriteTab() {
   activeTab.value = activeTab.value === 'all' ? 'favorites' : 'all'
-  // 切标签后焦点回到搜索框：避免焦点留在按钮导致后续回车重复触发收藏切换，
-  // 用户切完标签即可继续方向键导航 / 回车粘贴列表项
   nextTick(() => document.getElementById('main-search-input')?.focus())
 }
 

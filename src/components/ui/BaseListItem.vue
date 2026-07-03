@@ -31,7 +31,7 @@
       <div
         text="sm"
         font="medium"
-        :class="[{ 'mb-0.5': subtitle || $slots.subtitle }, !multilineTitle ? 'truncate' : '']"
+        :class="[{ 'mb-1': subtitle || $slots.subtitle }, !multilineTitle ? 'truncate' : '']"
       >
         <slot name="title">{{ title }}</slot>
       </div>
@@ -46,7 +46,7 @@
         <slot name="subtitle">{{ subtitle }}</slot>
       </div>
     </div>
-    <div v-if="$slots.trailing" flex="none" :class="multilineTitle ? 'mt-1' : ''">
+    <div v-if="$slots.trailing" flex="none" :class="multilineTitle ? 'h-9 flex items-center' : ''">
       <slot name="trailing" />
     </div>
   </div>

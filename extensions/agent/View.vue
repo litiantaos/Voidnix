@@ -258,7 +258,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <style scoped>
-/* markdown 渲染：紧凑型，针对窄聊天面板调过间距；颜色走主题 token */
+/* markdown 渲染 */
 
 .markdown-body {
   overflow-wrap: break-word;
@@ -272,22 +272,22 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .markdown-body :deep(h5),
 .markdown-body :deep(h6) {
   font-weight: 600;
-  line-height: 1.3;
-  margin: 1.1em 0 0.45em;
+  line-height: 1.6;
+  margin: 16px 0 6px;
 }
 .markdown-body :deep(h1) {
-  font-size: 1.2em;
+  font-size: 20px;
 }
 .markdown-body :deep(h2) {
-  font-size: 1.1em;
+  font-size: 18px;
 }
 .markdown-body :deep(h3) {
-  font-size: 1.05em;
+  font-size: 16px;
 }
 .markdown-body :deep(h4),
 .markdown-body :deep(h5),
 .markdown-body :deep(h6) {
-  font-size: 1em;
+  font-size: 14px;
 }
 
 /* 块级统一底间距 + 末元素清零 */
@@ -297,7 +297,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .markdown-body :deep(pre),
 .markdown-body :deep(blockquote),
 .markdown-body :deep(table) {
-  margin: 0 0 0.6em;
+  margin: 0 0 8px;
 }
 .markdown-body :deep(:last-child) {
   margin-bottom: 0;
@@ -306,22 +306,28 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 /* 列表 */
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) {
-  padding-left: 1.4em;
+  padding-left: 20px;
+}
+.markdown-body :deep(ul) {
+  list-style: disc;
+}
+.markdown-body :deep(ol) {
+  list-style: decimal;
 }
 .markdown-body :deep(li) {
-  margin: 0.15em 0;
+  margin: 2px 0;
 }
 .markdown-body :deep(li > ul),
 .markdown-body :deep(li > ol) {
-  margin: 0.15em 0;
+  margin: 2px 0;
 }
 
 /* 行内代码（不含 pre 内）*/
 .markdown-body :deep(:not(pre) > code) {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 0.875em;
+  font-size: 12px;
   background: rgba(0, 0, 0, 0.05);
-  padding: 0.12em 0.38em;
+  padding: 2px 4px;
   border-radius: 4px;
   word-break: break-all;
 }
@@ -329,10 +335,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 /* 代码块 */
 .markdown-body :deep(pre) {
   background: rgba(0, 0, 0, 0.05);
-  padding: 0.7em 0.85em;
+  padding: 10px 12px;
   border-radius: 8px;
   overflow-x: auto;
-  font-size: 0.875em;
+  font-size: 12px;
   line-height: 1.6;
 }
 .markdown-body :deep(pre code) {
@@ -344,23 +350,26 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   word-break: normal;
 }
 
-/* 引用块：accent 色左边框 */
+/* 引用块 */
 .markdown-body :deep(blockquote) {
-  border-left: 3px solid var(--color-accent);
-  padding-left: 0.85em;
-  color: var(--color-tx-secondary);
+  background: rgba(0, 0, 0, 0.05);
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
-/* 表格（gfm）*/
+/* 表格（gfm） */
 .markdown-body :deep(table) {
   border-collapse: collapse;
   width: 100%;
-  font-size: 0.95em;
+  font-size: 14px;
 }
 .markdown-body :deep(th),
 .markdown-body :deep(td) {
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  padding: 0.35em 0.6em;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 4px 8px;
   text-align: left;
 }
 .markdown-body :deep(th) {
@@ -372,7 +381,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .markdown-body :deep(hr) {
   border: none;
   border-top: 1px solid rgba(0, 0, 0, 0.1);
-  margin: 1em 0;
+  margin: 14px 0;
 }
 .markdown-body :deep(img) {
   max-width: 100%;
