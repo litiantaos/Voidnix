@@ -110,6 +110,8 @@ export interface Extension {
   searchBarAccessory?: () => Component
   /** 扩展私有命名子视图（如 screenshot 的 ocr、各扩展的 config）。 */
   subviews?: Record<string, () => Component>
+  /** 子视图显示名（id → 中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」。 */
+  subviewTitle?: Record<string, string>
   /** 独立窗口视图（如 screenshot 的标注/pin、window-manager 的 snap-panel）。 */
   windowViews?: Record<string, () => Component>
   globalShortcuts?: ShortcutBinding[]

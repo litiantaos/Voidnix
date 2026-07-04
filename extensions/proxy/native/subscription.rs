@@ -146,7 +146,7 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
     );
     root.insert(s("secret"), s(&params.secret));
     root.insert(s("mode"), s(&params.mode));
-    root.insert(s("log-level"), s("warning"));
+    root.insert(s("log-level"), s("info"));
     root.insert(s("allow-lan"), Value::Bool(false));
 
     // Geo 数据库镜像 URL（国内直连 GitHub 不可达，mihomo 默认 URL 下载会 EOF 失败）

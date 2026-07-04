@@ -163,12 +163,19 @@ const activeModule = computed(() => {
 
 // placeholder：先搜索说明，后快捷键提示（读 hints）
 // disableSearchInput 模块仅当显式声明 placeholder 才显示（如 uuid），否则空
+// 子视图激活时：用「搜索{subviewTitle}」（扩展声明 subviewTitle 映射）
 const placeholderText = computed(() => {
   const mod = activeModule.value
   if (!mod) {
     return '搜索应用、文件、扩展等，输入 / 显示扩展列表，输入 // 进行网络搜索'
   }
-  const base = mod.placeholder ?? (mod.disableSearchInput ? '' : `在 ${mod.meta.name} 中搜索`)
+  const subview = appStore.activeSubview
+  let base: string
+  if (subview && mod.subviewTitle?.[subview]) {
+    base = `搜索${mod.subviewTitle[subview]}`
+  } else {
+    base = mod.placeholder ?? (mod.disableSearchInput ? '' : `在 ${mod.meta.name} 中搜索`)
+  }
   const parts = [base]
   if (mod.hints?.enter) parts.push(`回车${mod.hints.enter}`)
   if (mod.hints?.multiSelect) parts.push(mod.hints.multiSelect)

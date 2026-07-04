@@ -119,6 +119,21 @@ pub async fn check_auth(base: &str, secret: &str) -> Result<bool, String> {
     Ok(resp.status().is_success())
 }
 
+/// GET /rules → 分流规则列表（{ rules: [{ type, payload, proxy }] }）。
+pub async fn get_rules(base: &str, secret: &str) -> Result<Value, String> {
+    CONTROLLER
+        .get(format!("{base}/rules"))
+        .bearer_auth(secret)
+        .send()
+        .await
+        .map_err(|e| format!("controller 请求失败: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("controller 响应错误: {e}"))?
+        .json::<Value>()
+        .await
+        .map_err(|e| format!("解析 rules 失败: {e}"))
+}
+
 /// 轮询 GET /version 直到 controller 就绪或超时。
 /// mihomo spawn 后需加载 geo/初始化，controller bind 有延迟；不等待会导致前端首查连接被拒。
 pub async fn wait_ready(base: &str, secret: &str, timeout_ms: u64) -> Result<(), String> {

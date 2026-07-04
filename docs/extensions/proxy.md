@@ -13,7 +13,7 @@ View.vue
                                        tun.rs osascript 提权 root 启动/停止
 ```
 
-mihomo 监听 `mixed-port`（HTTP+SOCKS5 共用）与 `external-controller`（RESTful API，bearer secret 鉴权）。扩展不解析代理协议，proxies/proxy-groups/rules 原样合并自订阅 Clash YAML。无独立设置子视图，全部功能内联在主界面的三个分组中（代理 / 订阅 / 节点）；代理分组含开启/规则模式两项。多 selector 分组订阅时节点组首项出现分组切换器。菜单栏图标仅在已连接时显示（打开扩展 + 已连接状态可点断开）；断开隐藏，其余控制全部在面板。
+mihomo 监听 `mixed-port`（HTTP+SOCKS5 共用）与 `external-controller`（RESTful API，bearer secret 鉴权）。扩展不解析代理协议，proxies/proxy-groups/rules 原样合并自订阅 Clash YAML。无独立设置子视图，全部控制内联在主界面的三个分组中（代理 / 订阅 / 节点）；代理分组含开启/规则模式两项，开启项副标题经 /traffic WS 实时显示上下行速率。多 selector 分组订阅时节点组首项出现分组切换器。主搜索栏统一过滤当前视图：主界面按名过滤节点，诊断子视图过滤连接/规则/日志（切视图清空查询）。搜索栏右侧诊断入口（连接/规则/日志三个子视图，toggle 切换）—— 分别接 mihomo `/connections`（实时连接列表）、`/rules`（分流规则只读列表）、`/logs`（实时日志，环形缓冲 500 行，全级别推送由搜索过滤）；三个子视图均用 BaseList + 主搜索栏统一过滤。菜单栏图标仅在已连接时显示（打开扩展 + 已连接状态可点断开）；断开隐藏，其余控制全部在面板。
 
 ## mihomo binary 下载（运行时按需）
 
@@ -37,7 +37,7 @@ osascript 每次提权都弹系统密码框，若「开/关代理 = spawn/kill r
 - **关代理**：`stop_core` 优先热重载 idle config（`mode=direct + 无 tun 段`）→ mihomo 撤销 utun、流量直通（被墙不可达，符合「关闭」语义），**进程保留**。热重载失败（mihomo 崩溃/controller 卡死致 127.0.0.1:9090 不可达）回退强杀保关闭可靠性：进程已退出则直接重置状态（TUN 已由 OS 回收，免提权），进程仍跑（卡死）则 `stop_root` 强杀释放 TUN
 - **再开代理**：`start_core` 检测 `tun_active=true` → 热重载 active config 恢复，**免提权**；热重载失败（罕见边缘情况）时回退 `restart_root` 重启进程
 
-效果：密码从「每次开关 2 次」→「首次 1 次，之后 0 次」。代价：root mihomo 进程首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感）。app 启动时 `reconnect_root_mihomo` 检测上次遗留的 root mihomo（按 binary 路径 ps 查）：先 `GET /version` 验 secret——匹配则热重载 idle（重置为 direct 直通，idle config 复用真实 mixed_port 与 `stop_core` 一致），成功才标记 `tun_active`（复用），reload 因配置/瞬态失败不杀进程（保留常驻免提权）；secret 不匹配（401 = 不可控）即 `stop_root` 清理僵尸。
+效果：密码从「每次开关 2 次」→「首次 1 次，之后 0 次」。代价：root mihomo 进程首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感）。app 启动时 `reconnect_root_mihomo` 检测上次遗留的 root mihomo（按 binary 路径 ps 查）：先 `GET /version` 验 secret——匹配则热重载 idle（重置为 direct 直通，idle config 复用真实 mixed_port 与 `stop_core` 一致），成功才标记 `tun_active` + 设 `run_params`（子视图诊断只需 controller 可达，不依赖代理开启），reload 因配置/瞬态失败不杀进程（保留常驻免提权）；secret 不匹配（401 = 不可控）即 `stop_root` 清理僵尸。
 
 `ensure_root_mihomo` 仅信任 `tun_active=true` 的进程（reconnect 成功置 idle 或本 session spawn）可热重载复用；`tun_active=false` → 状态不可信（secret 可能不匹配、TUN 可能已被其他实例占用），`restart_root` 单次 osascript 提权完成**杀所有 Voidnix mihomo**+启新（SIGTERM→轮询至多 2s 确认退出→SIGKILL→sleep 1 等端口/utun 释放→spawn）。按 `com.litiantao.voidnix` 前缀匹配 dev/prod 两版数据目录路径——TUN 互斥决定了同一时刻只能有一个 Voidnix mihomo 占 TUN，开代理即接管。mihomo 输出重定向到 mihomo.log（启动失败可查日志）。
 
@@ -62,7 +62,18 @@ root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「
 
 ## mihomo controller 转发（controller.rs）
 
-独立 reqwest 客户端（不经 `http::client()` 的 SSRF 防护——controller 固定 127.0.0.1 本地回环）。路径段经 `urlencoding::encode`（支持 emoji 分组名）。端点：`GET /proxies`、`PUT /proxies/{group}`（选节点）、`GET /proxies/{name}/delay`（测速，失败返 0）、`PATCH /configs`（切模式）、`PUT /configs {path}`（热重载配置）。
+独立 reqwest 客户端（不经 `http::client()` 的 SSRF 防护——controller 固定 127.0.0.1 本地回环）。路径段经 `urlencoding::encode`（支持 emoji 分组名）。REST 端点：`GET /proxies`、`PUT /proxies/{group}`（选节点）、`GET /proxies/{name}/delay`（测速，失败返 0）、`PATCH /configs`（切模式）、`PUT /configs {path}`（热重载配置）、`GET /rules`（分流规则只读快照）。
+
+## 连接 / 流量 / 规则 / 日志（诊断，stream.rs）
+
+mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 Rust 桥接 + `tauri::ipc::Channel<T>` 推前端（与 agent Channel 同范式）；`/rules` 走 controller REST。`stream.rs` 的 `StreamRegistry`（仿 agent `SessionRegistry`，`CancellationToken` 注册中心）管理流生命周期：前端按需开（进面板/子视图传 Channel）、离开调 `proxy_stop_stream`；`stop_core` / `reset_dead_state` 调 `cancel_all` 兜底（关代理/进程退出时停所有 WS，免 idle 残留空转）。WS 鉴权用 `?token={secret}` query（mihomo 支持，bearer 不适用于 WS Upgrade）。三条流均本地回环，连接失败静默退出（前端可见时才开，无感重开）。
+
+前端子视图经 KeepAlive 缓存（切子视图走 activate/deactivate 而非重挂载），流生命周期绑 `onActivated`/`onDeactivated`：切走子视图即停 WS、切回即重开（避免不可见时空转）。
+
+- **流量**（`/traffic`，每秒 `{ up, down }` bytes/s）：主界面开启项副标题实时显示，代理开关驱动（前端开/停）
+- **连接**（`/connections?interval=500`，完整快照含 connections 数组 + 累计总量）：子视图实时列表，搜索 host/进程/IP
+- **规则**（`/rules`，`{ rules: [{ type, payload, proxy }] }`）：子视图只读列表，支持规则/策略搜索
+- **日志**（`/logs`，`{ type, payload }`，WS `level=debug` 拉取 mihomo 产出的全部级别；config `log-level=info` 故实际为 info+）：子视图实时流，前端上限 500 行超出头部丢弃，按 type 着色（error red / warning yellow / debug faint），搜索过滤 payload，贴底自动滚（用户上滚查历史时不打断）
 
 ## 聚合菜单栏贡献（mod.rs）
 
@@ -72,9 +83,9 @@ root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「
 
 状态行当前节点名由 `refresh_proxy_menu` 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `reload_if_running` 触发刷新。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步面板 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展面板。
 
-## 命令（11 个）
+## 命令（16 个）
 
-`set_proxy_enabled` / `is_proxy_enabled`（启停；root mihomo 常驻——首次 restart_root 提权一次，之后开关走热重载 active/idle config 免提权）、`proxy_core_status` / `proxy_ensure_core`（内核版本查询与运行时按需下载）、`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）、`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）、`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_delay` / `proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退）、`proxy_reconnect`（免提权软重启：热重载 active config 重建 gvisor/连接池，出站异常时一键恢复，规避关闭→开启的 stop_root 提权）。`proxy_set_mode` 含「未变跳过」守卫 + emit 同步前端。
+`set_proxy_enabled` / `is_proxy_enabled`（启停；root mihomo 常驻——首次 restart_root 提权一次，之后开关走热重载 active/idle config 免提权）、`proxy_core_status` / `proxy_ensure_core`（内核版本查询与运行时按需下载）、`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）、`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）、`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_delay` / `proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退）、`proxy_reconnect`（免提权软重启：热重载 active config 重建 gvisor/连接池，出站异常时一键恢复，规避关闭→开启的 stop_root 提权）。诊断：`proxy_traffic_stream` / `proxy_connections_stream` / `proxy_logs_stream`（开 WS 流，Channel 推流量速率/连接快照/日志行；mihomo 未运行时静默返回不 spawn，前端显示「无记录」）、`proxy_stop_stream`（StreamRegistry CancellationToken 停指定流）、`proxy_get_rules`（GET /rules 只读快照，未运行返回空）。`proxy_set_mode` 含「未变跳过」守卫 + emit 同步前端。
 
 ## 文件布局
 
@@ -94,4 +105,3 @@ root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「
 - 提权：osascript 限制无法完全免密，但 root mihomo 常驻方案将密码从「每次开关 2 次」降至「首次开代理 1 次，之后 0 次」（彻底停止/app 退出后重启需再次提权）。SMJobBless helper 可实现首次安装后全程免密，但 Rust 无成熟 XPC server 绑定 + 签名/打包工程重，未做
 - 关闭可靠性：`stop_root` 按 pidfile PID 优雅停（SIGTERM → 轮询 `kill -0` 至 3s → SIGKILL），再按 mihomo binary 完整路径（含 bundle-id 数据目录）扫杀自己路径的所有残留进程（防 pidfile 脱节、多次 restart 累积孤儿；不杀另一版 Voidnix mihomo），末尾验证确死否则报错
 - 进程常驻：root mihomo 首次开代理后常驻到 app 退出（idle ~50MB，不代理流量，用户无感；无主动停止入口，靠 app 退出 + reconnect 复用）。app 退出后进程仍跑，下次启动 `reconnect_root_mihomo` 先验 secret（GET /version）：匹配则热重载 idle 重置状态（防端口冲突 + 状态一致），不匹配（401）则 stop_root 清理僵尸。panic=abort 下无 Drop 清理，仅崩溃场景可能残留，启动期 reconnect 兜底
-- 无连接列表/流量统计（mihomo `/connections`/`/traffic` 未接，后续可加）

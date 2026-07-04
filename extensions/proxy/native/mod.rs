@@ -1,5 +1,6 @@
 mod controller;
 mod core;
+mod stream;
 mod subscription;
 mod tun;
 
@@ -8,9 +9,11 @@ use crate::runtime::registry::Extension;
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use self::core::RunParams;
+use self::stream::{LogFrame, StreamRegistry, TrafficFrame};
 
 /// 代理运行状态：enabled（流量是否被代理）+ tun_active（root mihomo 进程是否在跑，常驻）
 /// + run_params（最近一次 active 参数，供热重载/复用）+ monitor_alive（健康监测 task 运行标志）。
@@ -149,6 +152,9 @@ async fn start_core(app: &AppHandle, state: &ProxyState, params: RunParams) -> R
 /// 不可卡死在无法关闭态。
 async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
     state.monitor_alive.store(false, Ordering::Relaxed); // 用户主动关闭，停健康监测
+                                                         // 停所有 WS 流（traffic/connections/logs）：关闭代理时诊断面板无业务意义，
+                                                         // 统一停流避免 idle 残留空转（idle=direct 直通，mihomo 仍作 TUN handler）。
+    app.state::<StreamRegistry>().cancel_all();
     if state.tun_active.load(Ordering::Relaxed) {
         let idle = state.run_params.lock().map_err(|e| e.to_string())?.clone();
         if let Some(mut p) = idle {
@@ -291,6 +297,8 @@ fn reset_dead_state(app: &AppHandle, msg: &str) {
     state.enabled.store(false, Ordering::Relaxed);
     state.tun_active.store(false, Ordering::Relaxed);
     state.monitor_alive.store(false, Ordering::Relaxed);
+    // 进程已退出，所有 WS 流必然中断，停掉对应 task 防残留。
+    app.state::<StreamRegistry>().cancel_all();
     if let Ok(dir) = crate::runtime::storage::ext_data_dir(app, "proxy") {
         let _ = std::fs::remove_file(dir.join("mihomo.pid"));
     }
@@ -405,14 +413,14 @@ async fn reload_if_running(app: &AppHandle, state: &ProxyState) -> Result<(), St
     Ok(())
 }
 
-/// 取 mihomo controller endpoint（base URL + secret），核心未运行时报错。
+/// 取 mihomo controller endpoint（base URL + secret），代理未开启时报错。
 fn controller_endpoint(state: &ProxyState) -> Result<(String, String), String> {
     let params = state
         .run_params
         .lock()
         .map_err(|e| e.to_string())?
         .clone()
-        .ok_or_else(|| "代理核心未运行".to_string())?;
+        .ok_or_else(|| "代理未开启".to_string())?;
     Ok((
         format!("http://127.0.0.1:{}", params.controller_port),
         params.secret,
@@ -420,9 +428,13 @@ fn controller_endpoint(state: &ProxyState) -> Result<(String, String), String> {
 }
 
 /// GET /proxies → 完整代理树。
+/// GET /proxies → 完整代理树。未开代理时返回空（loadProxies 静默，不报错）。
 #[tauri::command]
 pub async fn proxy_get_proxies(state: State<'_, ProxyState>) -> Result<Value, String> {
-    let (base, secret) = controller_endpoint(&state)?;
+    let Some((port, secret)) = controller_creds_opt(&state) else {
+        return Ok(serde_json::json!({ "proxies": {} }));
+    };
+    let base = format!("http://127.0.0.1:{port}");
     controller::get_proxies(&base, &secret).await
 }
 
@@ -489,7 +501,7 @@ pub async fn proxy_reconnect(app: AppHandle, state: State<'_, ProxyState>) -> Re
         .lock()
         .map_err(|e| e.to_string())?
         .clone()
-        .ok_or_else(|| "代理核心未运行".to_string())?;
+        .ok_or_else(|| "代理未开启".to_string())?;
     let base = format!("http://127.0.0.1:{}", params.controller_port);
     if !root_mihomo_running(&app) {
         return Err("代理核心已退出，请关闭后重新开启".into());
@@ -507,6 +519,100 @@ pub async fn proxy_reconnect(app: AppHandle, state: State<'_, ProxyState>) -> Re
     state.tun_active.store(true, Ordering::Relaxed);
     ensure_monitor(&app);
     let _ = app.emit("proxy-enabled", true);
+    Ok(())
+}
+
+// ── 流 / 规则 / 连接（诊断）──
+//
+// mihomo controller WS 流（/traffic /connections /logs）经 Rust 桥接 + Channel 推前端。
+// 前端按需开（进面板/子视图）、按需停（离开调 proxy_stop_stream）；关代理/进程退出时
+// cancel_all 兜底。与 agent SessionRegistry 同范式（StreamRegistry + CancellationToken）。
+
+/// 读 controller 端口 + secret。mihomo 未运行（run_params 空）返回 None——调用方据此跳过
+/// spawn / 返回空，前端显示「无记录」而非报错（诊断界面不应因核心未开而阻断）。
+fn controller_creds_opt(state: &ProxyState) -> Option<(u16, String)> {
+    state
+        .run_params
+        .lock()
+        .ok()?
+        .as_ref()
+        .map(|p| (p.controller_port, p.secret.clone()))
+}
+
+/// GET /rules → 分流规则列表（只读快照）。mihomo 未跑/不可达时返回空，前端显示「无规则」。
+#[tauri::command]
+pub async fn proxy_get_rules(state: State<'_, ProxyState>) -> Result<Value, String> {
+    let Some((port, secret)) = controller_creds_opt(&state) else {
+        return Ok(serde_json::json!({ "rules": [] }));
+    };
+    let base = format!("http://127.0.0.1:{port}");
+    Ok(controller::get_rules(&base, &secret)
+        .await
+        .unwrap_or_else(|_| serde_json::json!({ "rules": [] })))
+}
+
+/// 开 /traffic WS 流（Channel 推 `{ up, down }`）。代理开着才有意义；面板单例（id 固定）。
+#[tauri::command]
+pub async fn proxy_traffic_stream(
+    app: AppHandle,
+    state: State<'_, ProxyState>,
+    on_event: Channel<TrafficFrame>,
+) -> Result<(), String> {
+    let Some((port, secret)) = controller_creds_opt(&state) else {
+        return Ok(()); // mihomo 未运行：前端显示空，不报错
+    };
+    let token = app
+        .state::<StreamRegistry>()
+        .register(stream::ID_TRAFFIC.into());
+    tauri::async_runtime::spawn(async move {
+        stream::traffic_loop(port, &secret, token, on_event).await;
+    });
+    Ok(())
+}
+
+/// 开 /connections WS 流（Channel 推完整连接快照，前端解析）。
+#[tauri::command]
+pub async fn proxy_connections_stream(
+    app: AppHandle,
+    state: State<'_, ProxyState>,
+    on_event: Channel<Value>,
+) -> Result<(), String> {
+    let Some((port, secret)) = controller_creds_opt(&state) else {
+        return Ok(()); // mihomo 未运行：前端显示空，不报错
+    };
+    let token = app
+        .state::<StreamRegistry>()
+        .register(stream::ID_CONNECTIONS.into());
+    tauri::async_runtime::spawn(async move {
+        stream::connections_loop(port, &secret, token, on_event).await;
+    });
+    Ok(())
+}
+
+/// 开 /logs WS 流（Channel 推 `{ type, payload }`）。level 由 mihomo 连接时按 query 过滤。
+#[tauri::command]
+pub async fn proxy_logs_stream(
+    app: AppHandle,
+    state: State<'_, ProxyState>,
+    level: String,
+    on_event: Channel<LogFrame>,
+) -> Result<(), String> {
+    let Some((port, secret)) = controller_creds_opt(&state) else {
+        return Ok(()); // mihomo 未运行：前端显示空，不报错
+    };
+    let token = app
+        .state::<StreamRegistry>()
+        .register(stream::ID_LOGS.into());
+    tauri::async_runtime::spawn(async move {
+        stream::logs_loop(port, &secret, &level, token, on_event).await;
+    });
+    Ok(())
+}
+
+/// 停止指定 WS 流（前端离开子视图时调用）。
+#[tauri::command]
+pub async fn proxy_stop_stream(state: State<'_, StreamRegistry>, id: String) -> Result<(), String> {
+    state.cancel(&id);
     Ok(())
 }
 
@@ -595,7 +701,8 @@ fn parse_current_node(val: &Value) -> Option<String> {
 ///
 /// 先按 GET /version 验证 secret 是否匹配残留进程：
 /// - 匹配 → 热重载 idle config（重置为 direct 直通，保证前端 enabled=false 与实际流量直通一致），
-///   成功才标记 tun_active=true（下次开代理走热重载复用）。reload 失败属配置/瞬态，**不杀进程**
+///   成功标记 tun_active=true + 设 run_params（子视图诊断只需 controller 可达，不依赖代理开启；
+///   用户点开启时 start_core 覆盖为 active params）。reload 失败属配置/瞬态，**不杀进程**
 ///   （保留常驻免提权），留给开代理时 active reload 处理。idle config 复用真实 mixed_port（与
 ///   `stop_core` 一致），避免 mixed-port 变更致 reload 失败。
 /// - 不匹配（401）= 进程不可控（secret 启动时固化、reload 不生效）→ `stop_root` 清理僵尸，消除
@@ -629,7 +736,15 @@ async fn reconnect_root_mihomo(app: &AppHandle) {
                 tun: false,
             };
             match reload_config_yaml(app, &idle).await {
-                Ok(()) => state.tun_active.store(true, Ordering::Relaxed),
+                Ok(()) => {
+                    state.tun_active.store(true, Ordering::Relaxed);
+                    // 设 run_params：mihomo 常驻 idle（direct 直通），子视图诊断（规则/连接/日志）
+                    // 只需 controller 可达，不应依赖「代理是否开启」。enabled 保持 false（流量直通），
+                    // 用户点开启时 start_core 覆盖为 active params（tun=true）。
+                    if let Ok(mut g) = state.run_params.lock() {
+                        *g = Some(idle);
+                    }
+                }
                 Err(e) => eprintln!("[proxy] 复用残留 mihomo、热重载 idle 失败: {e}"),
             }
         }
@@ -704,6 +819,7 @@ impl Extension for ProxyExtension {
             current_node: Mutex::new(None),
             monitor_alive: AtomicBool::new(false),
         });
+        app.manage(StreamRegistry::default());
         crate::runtime::menubar::register(MenuBarContribution {
             title: "代理",
             build: Arc::new(build_proxy),
@@ -713,8 +829,8 @@ impl Extension for ProxyExtension {
         // mihomo 复用。best-effort，不阻塞 setup。
         let app2 = app.clone();
         tauri::async_runtime::spawn(async move {
-            let _ = core::ensure_geo_files(&app2).await;
             reconnect_root_mihomo(&app2).await;
+            let _ = core::ensure_geo_files(&app2).await;
         });
         Ok(())
     }
