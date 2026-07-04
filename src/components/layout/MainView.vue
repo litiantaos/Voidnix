@@ -210,7 +210,6 @@ const {
   reset,
 })
 const { handleExecute } = useResultNavigation({
-  searchInput,
   results,
   selectedIndex,
   activeModule,

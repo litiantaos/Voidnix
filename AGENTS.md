@@ -155,11 +155,12 @@ src/
 ├── composables/
 │   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键注册/失焦隐藏/模块事件，抽自 App.vue）
 │   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型模块 dynamic + web 搜索// + 工具列表/ + 默认结果）
-│   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派
+│   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派 + Escape 统一退出当前层（表单先失焦由 useSettingsInput 承接）
 │   ├── useWindowHeight.ts     # 模块声明固定 windowHeight → setSize（静态）
 │   ├── useAutoWindowHeight.ts # 子视图内容自适应高度 → 双层 root/content + ResizeObserver，上限屏 90%（动态，OCR/翻译用）
+│   ├── useSettingsInput.ts    # 设置项交互 + 设置型视图 Escape 拦截（表单控件聚焦先失焦，capture 阶段 stopImmediatePropagation 阻止全局退出）
 │   ├── useFloating.ts / useScrollPosition.ts / useTauriListener.ts / useToast.ts  # 通用工具
-│   └── events.ts / useInputControl.ts / useShortcutConfig.ts / useSettingsInput.ts
+│   └── events.ts / useInputControl.ts / useShortcutConfig.ts
 ├── stores/             # app / settings（仅框架级）/ update
 ├── types/              # agent（手写 LLM/Agent 类型）
 └── utils/

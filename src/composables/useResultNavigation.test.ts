@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, h, ref, computed } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
@@ -15,6 +15,8 @@ vi.mock('@/utils/tauri', () => ({
   hideWindow: vi.fn(),
 }))
 
+import { hideWindow } from '@/utils/tauri'
+
 // useResultNavigation 通过 getExtension 查找扩展；mock 为最小扩展表
 const mockExtensions = new Map<string, { onExecute?: (r: SearchResult) => void }>()
 vi.mock('@/runtime/extension-registry', () => ({
@@ -23,7 +25,12 @@ vi.mock('@/runtime/extension-registry', () => ({
 }))
 
 import { useResultNavigation } from './useResultNavigation'
+import { useAppStore } from '@/stores/app'
 import type { SearchResult } from '@/runtime/types'
+
+/// 累积 wrapper：afterEach 统一 unmount，清理 onKeyStroke 注册的 document listener，
+/// 避免跨用例累积导致 dispatchEvent 触发多个 listener 干扰断言。
+const mountedWrappers: ReturnType<typeof mount>[] = []
 
 /// 构造测试用 component，包裹 useResultNavigation 并暴露内部 refs/方法
 function makeWrapper(opts: {
@@ -44,7 +51,6 @@ function makeWrapper(opts: {
   const TestComp = defineComponent({
     setup() {
       const nav = useResultNavigation({
-        searchInput: ref(undefined),
         results,
         selectedIndex,
         activeModule: computed(() => null),
@@ -60,6 +66,7 @@ function makeWrapper(opts: {
   })
 
   const wrapper = mount(TestComp)
+  mountedWrappers.push(wrapper)
   return {
     wrapper,
     results,
@@ -78,6 +85,10 @@ describe('useResultNavigation', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     mockExtensions.clear()
+    vi.clearAllMocks()
+  })
+  afterEach(() => {
+    while (mountedWrappers.length) mountedWrappers.pop()!.unmount()
   })
 
   describe('handleExecute 分派', () => {
@@ -138,6 +149,50 @@ describe('useResultNavigation', () => {
       expect(() => {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       }).not.toThrow()
+    })
+  })
+
+  describe('Escape：统一退出当前层', () => {
+    // 表单控件的「先失焦」由 useSettingsInput 在 capture 阶段拦截（见 useSettingsInput.test.ts），
+    // useResultNavigation 不再区分表单控件——事件到达即退出。
+    function makeEscapeDispatcher() {
+      const ctx = makeWrapper({})
+      const appStore = useAppStore()
+      const dispatch = (key: string) =>
+        document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      return { exitModule: ctx.exitModule, appStore, dispatch }
+    }
+
+    it('模块 mainView esc → exitModule', () => {
+      const { exitModule, appStore, dispatch } = makeEscapeDispatcher()
+      appStore.activeModuleId = 'translate'
+      appStore.activeSubview = null
+
+      dispatch('Escape')
+
+      expect(exitModule).toHaveBeenCalledOnce()
+    })
+
+    it('功能/设置子视图 esc → closeSubview（不区分控件类型）', () => {
+      const { exitModule, appStore, dispatch } = makeEscapeDispatcher()
+      appStore.activeModuleId = 'screenshot'
+      appStore.activeSubview = 'config'
+
+      dispatch('Escape')
+
+      expect(exitModule).not.toHaveBeenCalled()
+      expect(appStore.activeSubview).toBeNull()
+    })
+
+    it('全局模式 esc → hideWindow', () => {
+      const { exitModule, appStore, dispatch } = makeEscapeDispatcher()
+      appStore.activeModuleId = null
+      appStore.activeSubview = null
+
+      dispatch('Escape')
+
+      expect(exitModule).not.toHaveBeenCalled()
+      expect(hideWindow).toHaveBeenCalledOnce()
     })
   })
 })

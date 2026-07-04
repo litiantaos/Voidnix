@@ -10,7 +10,6 @@ import { hideWindow } from '@/utils/tauri'
 import { buildSearchUrl, parseWebSearchQuery } from '@/utils/web-search'
 
 interface ResultNavOptions {
-  searchInput: Ref<HTMLInputElement | undefined>
   results: Ref<SearchResult[]>
   selectedIndex: Ref<number>
   activeModule: ComputedRef<Extension | null>
@@ -26,7 +25,6 @@ interface ResultNavOptions {
 export function useResultNavigation(opts: ResultNavOptions) {
   const appStore = useAppStore()
   const {
-    searchInput,
     results,
     selectedIndex,
     clearSearch,
@@ -112,24 +110,9 @@ export function useResultNavigation(opts: ResultNavOptions) {
       case 'Escape': {
         if (appStore.isDialogOpen) return
 
-        const el = document.activeElement
-        const isFormControl =
-          el?.tagName === 'SELECT' ||
-          el?.tagName === 'INPUT' ||
-          el?.tagName === 'TEXTAREA' ||
-          el?.hasAttribute('contenteditable') ||
-          el?.hasAttribute('data-settings-control')
-
-        if (isFormControl) {
-          if (el === searchInput.value) {
-            // allow standard behavior to proceed
-          } else {
-            if (el instanceof HTMLElement) el.blur()
-            e.preventDefault()
-            return
-          }
-        }
-
+        // 表单控件的「先失焦」由设置型视图自行处理（useSettingsInput 在 capture 阶段
+        // 拦截并 blur + stopImmediatePropagation）。此处统一为「退出当前层」——
+        // 事件未被消费即意味着当前视图不是设置型，直接退出模块/子视图/窗口。
         if (appStore.activeSubview) {
           e.preventDefault()
           if (appStore.subviewExternal) {
