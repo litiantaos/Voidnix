@@ -114,7 +114,7 @@
     </Transition>
   </Teleport>
 
-  <!-- 预览覆盖层（无标题/无按钮，点击或 Esc 关闭）-->
+  <!-- 预览覆盖层（Esc 关闭）-->
   <Teleport to="body">
     <Transition
       enter-active-class="transition duration-150 ease-out"
@@ -126,40 +126,30 @@
     >
       <div
         v-if="previewOpen"
+        class="hide-scrollbar"
         z="100"
-        flex
-        items-center
         inset-0
-        justify-center
         fixed
         bg="surface"
-        p="6"
-        @click.self="previewOpen = false"
+        overflow="auto"
       >
-        <img
-          v-if="previewType === 'image' && previewImage"
-          :src="previewImage"
-          max-w="full"
-          max-h="full"
-          object="contain"
-          rounded="md"
-          alt="预览图片"
-        />
-        <span
-          v-else-if="previewType === 'image'"
-          class="i-ri-loader-4-line text-2xl text-tx-muted animate-spin"
-        />
-        <div
-          v-else
-          text="sm tx-primary"
-          leading="relaxed"
-          whitespace="pre-wrap"
-          break="words"
-          max-w="prose"
-          max-h="full"
-          overflow="auto"
-        >
-          {{ previewText }}
+        <div flex items-center justify-center min-h="full" p="5">
+          <img
+            v-if="previewType === 'image' && previewImage"
+            :src="previewImage"
+            max-w="full"
+            max-h="full"
+            object="contain"
+            rounded="md"
+            alt="预览图片"
+          />
+          <span
+            v-else-if="previewType === 'image'"
+            class="i-ri-loader-4-line text-2xl text-tx-muted animate-spin"
+          />
+          <div v-else text="sm tx-primary" leading="relaxed" whitespace="pre-wrap" break="words">
+            {{ previewText }}
+          </div>
         </div>
       </div>
     </Transition>
