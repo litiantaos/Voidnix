@@ -49,6 +49,20 @@
             </template>
             <template v-else>
               <span truncate>内核版本：mihomo {{ coreStatus.version }}</span>
+              <span v-if="isEnabled && traffic" text="tx-hint" shrink="0" ml="3">·</span>
+              <span
+                v-if="isEnabled && traffic"
+                text="tx-muted"
+                shrink="0"
+                ml="2"
+                flex
+                items="center"
+                gap="2.5"
+                ><span tabular="nums" whitespace="nowrap">↑ {{ formatBytes(traffic.up) }}/s</span>
+                <span tabular="nums" whitespace="nowrap"
+                  >↓ {{ formatBytes(traffic.down) }}/s</span
+                ></span
+              >
               <span v-if="coreError" text="red-500" shrink="0" ml="2">{{ coreError }}</span>
               <span v-else-if="updateInfo?.hasUpdate" text="green-500" shrink="0" ml="2"
                 >有新内核 {{ updateInfo.latest
@@ -187,8 +201,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onActivated, onUnmounted, watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, watch } from 'vue'
+import { invoke, Channel } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
@@ -206,6 +220,8 @@ import {
   type ProxiesResponse,
   DELAY_TIMEOUT,
   delayColor,
+  filterNodes,
+  formatBytes,
   formatDelay,
   isUserSelectorGroup,
   latestDelay,
@@ -222,6 +238,12 @@ interface NodeItem {
   name: string
   delay: number
   selected: boolean
+}
+
+/// mihomo /traffic WS 帧（上下行速率 bytes/s）。
+interface TrafficFrame {
+  up: number
+  down: number
 }
 
 type ListItem =
@@ -257,6 +279,9 @@ const progressStarted = ref(false)
 const updateInfo = ref<{ hasUpdate: boolean; current: string; latest: string } | null>(null)
 /// 健康监测异常状态（proxy-status error 事件）：非空时开启代理项显示红色提示 + 重连按钮。
 const coreError = ref('')
+/// 实时流量速率（开代理时经 /traffic WS 推送，开启项副标题展示）。
+const traffic = ref<TrafficFrame | null>(null)
+let trafficChannel: Channel<TrafficFrame> | null = null
 /// 下载中状态真相源跟随 Rust DOWNLOADING 原子（重新进入界面也能正确反映）。
 const isDownloading = computed(() => coreStatus.value.downloading)
 let unlistenProgress: (() => void) | null = null
@@ -310,7 +335,7 @@ const nodes = computed<NodeItem[]>(() => {
   const g = mainGroup.value
   if (!g?.all) return []
   const current = selectedNodeName.value || g.now
-  return g.all.map((name) => {
+  const list = g.all.map((name) => {
     const entry = proxiesData.value?.proxies[name]
     return {
       id: name,
@@ -319,25 +344,26 @@ const nodes = computed<NodeItem[]>(() => {
       selected: current === name,
     }
   })
+  return filterNodes(list, appStore.searchQuery)
 })
 
 /// 是否存在选中节点（定位按钮 disabled 判断）
 const hasSelectedNode = computed(() => nodes.value.some((n) => n.selected))
 
 const items = computed<ListItem[]>(() => {
-  const list: ListItem[] = [
-    { type: 'enabled', group: '代理' },
-    { type: 'mode', group: '代理' },
-  ]
+  const q = appStore.searchQuery.trim().toLowerCase()
+  const match = (s: string) => !q || s.toLowerCase().includes(q)
+  const list: ListItem[] = []
+  // 所有项（含控制项）按搜索过滤；节点在 nodes computed 已按名过滤
+  if (match('开启代理')) list.push({ type: 'enabled', group: '代理' })
+  if (match('规则模式')) list.push({ type: 'mode', group: '代理' })
   list.push(
-    ...config.subscriptions.map((s) => ({
-      type: 'subscription' as const,
-      group: '订阅' as const,
-      sub: s,
-    })),
+    ...config.subscriptions
+      .filter((s) => match(s.name || s.url || ''))
+      .map((s) => ({ type: 'subscription' as const, group: '订阅' as const, sub: s })),
   )
   // 多 selector 分组：显示分组切换项（单分组或无分组时省略）
-  if (userGroups.value.length > 1) {
+  if (userGroups.value.length > 1 && match('节点分组')) {
     list.push({ type: 'groupSelector', group: '节点' })
   }
   list.push(...nodes.value.map((n) => ({ type: 'node' as const, group: '节点' as const, node: n })))
@@ -453,6 +479,9 @@ const toggleEnabled = async () => {
     if (newState) {
       await loadProxies()
       prewarmAndTestAll() // 预热后全量测速（fire-and-forget，延迟随测随显）
+      startTrafficStream() // 开启实时流量监测
+    } else {
+      stopTrafficStream()
     }
     // 关闭代理时保留节点列表显示（热重载 idle，不清空 proxiesData）
   } catch (e) {
@@ -473,6 +502,7 @@ async function reconnect() {
     appStore.showStatus('代理已重连', { duration: 2000 })
     await loadProxies()
     prewarmAndTestAll()
+    startTrafficStream()
   } catch (e) {
     appStore.showStatus(`重连失败：${errText(e)}`, { duration: 4000, kind: 'error' })
   } finally {
@@ -554,6 +584,27 @@ async function prewarmAndTestAll() {
 function locateSelected() {
   const idx = items.value.findIndex((it) => it.type === 'node' && it.node.selected)
   if (idx >= 0) baseListRef.value?.reveal(idx)
+}
+
+/// 开 /traffic WS 流（开启项副标题实时显示上下行速率）。代理开启时调用。
+async function startTrafficStream() {
+  if (trafficChannel) return
+  const ch = new Channel<TrafficFrame>()
+  ch.onmessage = (f) => {
+    traffic.value = f
+  }
+  trafficChannel = ch
+  await invoke(CMD.proxyTrafficStream, { onEvent: ch }).catch(() => {
+    /* 核心未运行静默 */
+  })
+}
+
+/// 停 /traffic 流（关代理 / 离开面板）。
+function stopTrafficStream() {
+  if (!trafficChannel) return
+  invoke(CMD.proxyStopStream, { id: 'traffic' }).catch(() => {})
+  trafficChannel = null
+  traffic.value = null
 }
 
 async function onModeChange(value: string | number) {
@@ -691,6 +742,7 @@ onMounted(async () => {
     // 切换中由 toggleEnabled 成功后统一设值，忽略命令内提前 emit 的事件防回声
     if (toggling.value) return
     isEnabled.value = e.payload
+    if (!e.payload) stopTrafficStream() // 关代理（含菜单关闭/进程退出）停流量流
   })
   unlistenMode = await listen<string>('proxy-mode', (e) => {
     config.mode = e.payload as typeof config.mode
@@ -714,12 +766,22 @@ onMounted(async () => {
   if (coreStatus.value.downloaded) {
     await loadProxies()
   }
+  // 已启用代理时开启实时流量监测（首渲染时 onActivated 先于 onMounted async 完成，
+  // isEnabled 尚未就绪，故此处补开；后续切回面板由 onActivated 驱动）
+  if (isEnabled.value) await startTrafficStream()
 })
 
 // 面板激活时（含首次挂载后）查更新：已下载才查，API 不可达静默降级。
 // 重激活也触发，让用户切回面板即可看到最新版本提示（API rate limit 60/h 够自用）。
+// 同时恢复流量流（切子视图时 onDeactivated 停止，切回时重启；startTrafficStream 有防重入守卫）。
 onActivated(() => {
   checkUpdate()
+  if (isEnabled.value) startTrafficStream()
+})
+
+// 切子视图（连接/规则/日志）时被 KeepAlive 缓存：停流量流免空转。
+onDeactivated(() => {
+  stopTrafficStream()
 })
 
 onUnmounted(() => {
@@ -728,6 +790,7 @@ onUnmounted(() => {
   unlistenEnabled?.()
   unlistenMode?.()
   unlistenStatus?.()
+  stopTrafficStream()
 })
 
 // 兜底：订阅列表至少一项（磁盘旧值可能为空数组，覆盖默认项；类似 agent 默认 provider 始终存在）

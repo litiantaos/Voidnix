@@ -64,3 +64,11 @@ export function filterNodes<T extends { name: string }>(nodes: T[], query: strin
   if (!q) return nodes
   return nodes.filter((n) => n.name.toLowerCase().includes(q))
 }
+
+/// 字节数格式化（连接流量、流量速率共用；速率由调用方追加 "/s"）。
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n}B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}K`
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)}M`
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)}G`
+}

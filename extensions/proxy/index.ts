@@ -1,5 +1,9 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import ProxyView from './View.vue'
+import ProxyActions from './Actions.vue'
+import ConnectionsView from './views/ConnectionsView.vue'
+import RulesView from './views/RulesView.vue'
+import LogsView from './views/LogsView.vue'
 
 export default defineExtension({
   meta: {
@@ -11,7 +15,17 @@ export default defineExtension({
     order: 40,
   },
 
-  disableSearchInput: true,
   mainView: () => ProxyView,
+  searchBarAccessory: () => ProxyActions,
+  subviews: {
+    connections: () => ConnectionsView,
+    rules: () => RulesView,
+    logs: () => LogsView,
+  },
+  subviewTitle: {
+    connections: '连接',
+    rules: '规则',
+    logs: '日志',
+  },
   windowHeight: 840,
 })

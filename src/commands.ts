@@ -113,4 +113,9 @@ export const CMD = {
   proxyTestDelay: 'proxy_test_delay',
   proxySetMode: 'proxy_set_mode',
   proxyReconnect: 'proxy_reconnect',
+  proxyGetRules: 'proxy_get_rules',
+  proxyTrafficStream: 'proxy_traffic_stream',
+  proxyConnectionsStream: 'proxy_connections_stream',
+  proxyLogsStream: 'proxy_logs_stream',
+  proxyStopStream: 'proxy_stop_stream',
 } as const
