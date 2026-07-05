@@ -18,6 +18,15 @@ const GROUP_INDEX: Record<string, number> = SEARCH.GROUP_ORDER.reduce(
   {} as Record<string, number>,
 )
 
+// 打分后中间结构：finalScore 一次预算，suppress 判断 + groupAndSort 复用（消除二次 scoreFields）
+// matched = 应显示：空 query 需 finalScore>0（boost>0，默认列表过滤 time/uuid 等 boost=0 即时答案）；
+// 非空 query 需 fuzzy>0（查找型结果必须命中）。非 matched 时仅 module 类即时答案可靠 finalScore>0 穿透
+interface ScoredResult {
+  item: SearchResult
+  finalScore: number
+  matched: boolean
+}
+
 /** 单例搜索引擎：dynamic 单通道并行 + filter/group 管道（§2.5）。 */
 class SearchEngine {
   private currentController?: AbortController
@@ -39,40 +48,49 @@ class SearchEngine {
     this.currentController = controller
 
     // 1. dynamic 并行召回（框架按产出扩展 meta.id 注入 module）
-    let results = await this.searchDynamic(query, controller.signal)
+    const results = await this.searchDynamic(query, controller.signal)
+    if (controller.signal.aborted) return []
 
-    // 1.5 keyword 合流（全局模式 only，模块模式禁用——已在某模块内不展示其他模块入口）。
+    // 模块模式短路：仅去重，保留扩展返回序（不过滤不限流——模块内容是扩展自治 UX），跳过打分预算
+    if (this.activeModule) return dedupeBy(results, (r) => `${r.module}:${r.id}`)
+
+    const q = query.trim()
+
+    // 2. 一次预算 dynamic 部分的 finalScore（suppress 判断 + groupAndSort 复用，消除二次 scoreFields）
+    //    matched：空 query 默认列表需 finalScore>0（即 boost>0，主要是应用启动屏，过滤 time/uuid 等 boost=0 的即时答案）；
+    //    非空 query 需 fuzzy>0（应用/文件等查找型结果必须命中）。
+    //    module 类即时答案（calculator/currency 等）靠 boost 穿透——title 不含 query 也能展示。
+    const scored: ScoredResult[] = results.map((r) => {
+      const boost = r.boost ?? 0
+      const fuzzy = q ? scoreFields([r.title, r.description], q) : 0
+      const finalScore = fuzzy + boost
+      const matched = q ? fuzzy > 0 : finalScore > 0
+      return { item: r, finalScore, matched }
+    })
+
+    // 3. keyword 合流（全局模式 only，模块模式禁用——已在某模块内不展示其他模块入口）。
     //    只在 dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）时抑制该扩展入口：
     //    即时答案优先（如「100 usd」返回换算值不再与模块入口同屏）；
     //    clipboard 等数据型结果（kind≠module）不抑制——用户搜「剪贴板」时先看模块入口再看记录。
-    if (!this.activeModule && query.trim()) {
-      const q = query.trim()
+    //    keyword 入口 finalScore 复用 keywordSearchAll 内部 score（含 keywordMatch 反向匹配贡献）。
+    if (q) {
       const relevantDynamicModules = new Set(
-        results
-          .filter(
-            (r) =>
-              r.data?.kind === 'module' &&
-              scoreFields([r.title, r.description], q) + (r.boost ?? 0) > 0,
-          )
-          .map((r) => r.module),
+        scored
+          .filter((x) => x.item.data?.kind === 'module' && x.finalScore > 0)
+          .map((x) => x.item.module),
       )
-      results = [
-        ...results,
-        ...this.keywordSearchAll(query).filter((r) => !relevantDynamicModules.has(r.module)),
-      ]
+      const kwScored = this.keywordSearchAll(q)
+        .filter((r) => !relevantDynamicModules.has(r.module))
+        .map((r) => ({ item: r, finalScore: (r.score ?? 0) + (r.boost ?? 0), matched: true }))
+      scored.push(...kwScored)
     }
 
-    if (controller.signal.aborted) return []
+    // 4. 去重（按 <module>:<id> 组合键）
+    const deduped = dedupeBy(scored, (x) => `${x.item.module}:${x.item.id}`)
 
-    // 2. 去重（按 <module>:<id> 组合键）
-    results = dedupe(results)
-
-    // 3. 分组排序
-    //    模块模式：保留扩展返回顺序（clipboard 时间序、calculator 即时结果优先等），
-    //    仅去重不过滤不限流——模块内容是扩展自治的 UX。
-    //    全局模式：groupAndSort（分组 + 零分过滤 + 组内限流）。
-    if (this.activeModule) return results
-    return this.groupAndSort(results, query)
+    // 5. 分组排序
+    //    模块模式已在上方短路返回；全局模式 groupAndSort（分组 + 零分过滤 + 组内限流），复用 finalScore 不再重算。
+    return this.groupAndSort(deduped)
   }
 
   /** 全局模式：并行调用所有扩展 dynamic；模块模式：只调 activeModule dynamic。
@@ -132,10 +150,9 @@ class SearchEngine {
 
   /** 框架内置：扫描 meta.keywords 产出模块入口结果（§2.5）。
    *  keywords 用双向匹配（keywordMatch：正向 + 反向降权 + 拼音），覆盖多词 query 含关键词场景；
-   *  name/description 用 scoreFields 单向子串（query 在 field 中）。 */
-  private keywordSearchAll(query: string): SearchResult[] {
-    const q = query.trim()
-    if (!q) return []
+   *  name/description 用 scoreFields 单向子串（query 在 field 中）。
+   *  入参 q 约定已 trim（调用点预算）；产出序无要求——groupAndSort 在 module 组内按 finalScore 重排。 */
+  private keywordSearchAll(q: string): SearchResult[] {
     return getAllExtensions()
       .filter((e) => (e.meta.keywords?.length ?? 0) > 0)
       .map((ext) => {
@@ -146,7 +163,6 @@ class SearchEngine {
         return { ext, score }
       })
       .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
       .map(({ ext, score }) => ({
         id: `module-${ext.meta.id}`,
         title: ext.meta.name,
@@ -160,22 +176,17 @@ class SearchEngine {
   }
 
   /** 管道：分组 → 组内 finalScore 降序 → 组间 GROUP_ORDER → 组内限流。
-   *  全局模式专用（模块模式见 search() 直接返回）。 */
-  private groupAndSort(items: SearchResult[], query: string): SearchResult[] {
-    // 先算 finalScore = scoreFields(title[,description], query) + boost
-    const scored = items
-      .map((item) => {
-        const fuzzy = scoreFields([item.title, item.description], query)
-        const finalScore = fuzzy + (item.boost ?? 0)
-        return { item, finalScore }
-      })
-      // 全局模式过滤零分（避免 calculator history 等无关项污染全局结果）
-      .filter((x) => x.finalScore > 0)
+   *  全局模式专用（模块模式见 search() 直接返回）。复用 ScoredResult.finalScore，不再调 scoreFields。
+   *  过滤：matched（query 命中或空 query）保留；非 matched 仅 module 类即时答案靠 finalScore>0 穿透。 */
+  private groupAndSort(items: ScoredResult[]): SearchResult[] {
+    // 过滤 + 回填 score（UI/调试可读）
+    const filtered = items
+      .filter((x) => x.matched || (x.item.data?.kind === 'module' && x.finalScore > 0))
       .map((x) => ({ ...x.item, score: x.finalScore }))
 
     // 分组
     const groups = new Map<string, SearchResult[]>()
-    for (const item of scored) {
+    for (const item of filtered) {
       const key = getGroupKey(item.data?.kind)
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(item)
@@ -198,15 +209,15 @@ class SearchEngine {
   }
 }
 
-/** 按 <module>:<id> 组合键去重（保留首个）。 */
-function dedupe(items: SearchResult[]): SearchResult[] {
+/** 按自定义 key 去重（保留首个）。模块模式对 SearchResult、全局模式对 ScoredResult 复用同一机制。 */
+function dedupeBy<T>(items: T[], keyFn: (x: T) => string): T[] {
   const seen = new Set<string>()
-  const out: SearchResult[] = []
-  for (const item of items) {
-    const key = `${item.module}:${item.id}`
+  const out: T[] = []
+  for (const x of items) {
+    const key = keyFn(x)
     if (seen.has(key)) continue
     seen.add(key)
-    out.push(item)
+    out.push(x)
   }
   return out
 }

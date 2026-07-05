@@ -10,7 +10,9 @@
       relative
       class="hide-scrollbar overflow-y-auto"
     >
-      <!-- contentRef：量真实内容自然高（auto 高度模式消费）；不撑满，自然高 -->
+      <!-- contentRef：量真实内容自然高（auto 高度模式消费）；不撑满，自然高。
+           仅承载模块 View 与标准列表；空态移出 contentRef 作 scrollContainer 的直接 flex 子项
+           （flex-1 填满可视区垂直居中），并脱离 auto 高度测量流——空态为终态，不应撑大窗口也不应贴顶 -->
       <div ref="contentRef" flex="~ col">
         <!-- max 覆盖全部视图 key（9 模块 mainView + screenshot{ocr} + 各扩展{config} 子视图），
              驱逐会导致模块 View 重挂载（重渲染列表/消息）→ 切换卡顿，故留充裕余量 -->
@@ -22,72 +24,73 @@
         </KeepAlive>
 
         <!-- Standard list -->
-        <template v-if="!resolvedView">
-          <BaseEmptyState v-if="props.loading && props.results.length === 0" :loading="true" />
-
-          <BaseEmptyState
-            v-else-if="props.results.length === 0"
-            title="无结果"
-            :icon="module ? module.meta.icon : 'i-ri-search-line'"
-          />
-
-          <BaseList
-            v-else
-            :items="props.results"
-            :selected-index="props.selectedIndex"
-            :multi-select="isMultiSelect"
-            :selected-ids="selectedIds"
-            :keyboard-active="!!appStore.activeModuleId"
-            :composing="appStore.isComposing"
-            @update:selected-ids="selectedIds = $event"
-            :group-field="!module ? props.groupField : undefined"
-            :group-title="!module ? props.groupTitle : undefined"
-            @update:selected-index="(i: number) => emit('update:selectedIndex', i)"
-            @execute="handleExecute"
-            @reveal="handleReveal"
-          >
-            <template #item="{ item, selected, multiSelected, setRef }">
-              <BaseListItem
-                :ref="setRef"
-                :selected="selected || multiSelected"
-                :icon-wrapper-class="
-                  item.data?.icon && !item.icon?.startsWith('i-') && item.data?.kind !== 'module'
-                    ? 'bg-transparent'
-                    : undefined
-                "
-              >
-                <template #icon>
-                  <ResultIcon :item="item" :module-icon="module?.meta.icon" />
+        <BaseList
+          v-else-if="props.results.length > 0"
+          :items="props.results"
+          :selected-index="props.selectedIndex"
+          :multi-select="isMultiSelect"
+          :selected-ids="selectedIds"
+          :keyboard-active="!!appStore.activeModuleId"
+          :composing="appStore.isComposing"
+          @update:selected-ids="selectedIds = $event"
+          :group-field="!module ? props.groupField : undefined"
+          :group-title="!module ? props.groupTitle : undefined"
+          @update:selected-index="(i: number) => emit('update:selectedIndex', i)"
+          @execute="handleExecute"
+          @reveal="handleReveal"
+        >
+          <template #item="{ item, selected, multiSelected, setRef }">
+            <BaseListItem
+              :ref="setRef"
+              :selected="selected || multiSelected"
+              :icon-wrapper-class="
+                item.data?.icon && !item.icon?.startsWith('i-') && item.data?.kind !== 'module'
+                  ? 'bg-transparent'
+                  : undefined
+              "
+            >
+              <template #icon>
+                <ResultIcon :item="item" :module-icon="module?.meta.icon" />
+              </template>
+              <template #title>
+                <div :class="item.data?.isHighlight ? 'text-accent font-medium' : ''">
+                  {{ item.title }}
+                </div>
+              </template>
+              <template #subtitle>
+                <span v-if="item.description" class="flex-1 min-w-0 truncate">{{
+                  item.description
+                }}</span>
+                <template v-else-if="item.data?.path && isFileOrFolder(item)">
+                  <span
+                    class="flex-[0_1_auto] min-w-0 truncate"
+                    :title="getParentPath(item.data.path)"
+                  >
+                    {{ formatPathParts(getParentPath(item.data.path)).head }}
+                  </span>
+                  <span flex="none" whitespace="nowrap">
+                    {{ formatPathParts(getParentPath(item.data.path)).tail }}
+                  </span>
                 </template>
-                <template #title>
-                  <div :class="item.data?.isHighlight ? 'text-accent font-medium' : ''">
-                    {{ item.title }}
-                  </div>
-                </template>
-                <template #subtitle>
-                  <span v-if="item.description" class="flex-1 min-w-0 truncate">{{
-                    item.description
-                  }}</span>
-                  <template v-else-if="item.data?.path && isFileOrFolder(item)">
-                    <span
-                      class="flex-[0_1_auto] min-w-0 truncate"
-                      :title="getParentPath(item.data.path)"
-                    >
-                      {{ formatPathParts(getParentPath(item.data.path)).head }}
-                    </span>
-                    <span flex="none" whitespace="nowrap">
-                      {{ formatPathParts(getParentPath(item.data.path)).tail }}
-                    </span>
-                  </template>
-                  <span v-if="item.source" text="tx-hint" flex="none" whitespace="nowrap" ml="1">{{
-                    item.source
-                  }}</span>
-                </template>
-              </BaseListItem>
-            </template>
-          </BaseList>
-        </template>
+                <span v-if="item.source" text="tx-hint" flex="none" whitespace="nowrap" ml="1">{{
+                  item.source
+                }}</span>
+              </template>
+            </BaseListItem>
+          </template>
+        </BaseList>
       </div>
+
+      <!-- 空态/加载态：scrollContainer 直接 flex 子项，flex-1 填满可视区垂直居中 -->
+      <BaseEmptyState
+        v-if="!resolvedView && props.loading && props.results.length === 0"
+        :loading="true"
+      />
+      <BaseEmptyState
+        v-else-if="!resolvedView && props.results.length === 0"
+        title="无结果"
+        :icon="module ? module.meta.icon : 'i-ri-search-line'"
+      />
     </div>
   </div>
 </template>

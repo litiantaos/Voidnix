@@ -10,16 +10,16 @@ import { recencyScore, toResult } from './logic'
 const MIN_FILE_QUERY_LEN = 2
 
 // ── 应用前端缓存 ──
+// 事件驱动失效：app-cache-updated 事件（icon 后台批次就绪 / 应用列表变更）触发置 null，下次 dynamic 重拉。
+// 不再用 iconsPending 轮询——避免启动初期 icon 未齐时每按键都全量 invoke search_apps。
 let appListCache: ProviderResult[] | null = null
-let iconsPending = false
 
 listen('app-cache-updated', () => {
   appListCache = null
-  iconsPending = false
 }).catch(() => {})
 
 async function getAppList(): Promise<ProviderResult[]> {
-  if (appListCache && !iconsPending) return appListCache
+  if (appListCache) return appListCache
   const raw = await invoke<RawSearchResult[]>(CMD.searchApps).catch((e) => {
     console.error('[search] search_apps invoke failed:', e)
     return []
@@ -28,7 +28,6 @@ async function getAppList(): Promise<ProviderResult[]> {
     toResult(r, frequencyBoost(r.use_count ?? 0) + recencyScore(r.last_used) + 1),
   )
   appListCache = items
-  iconsPending = items.some((item) => item.data?.kind === 'application' && !item.data?.icon)
   return items
 }
 
@@ -47,14 +46,11 @@ export default defineExtension({
       if (!isTauri) return []
       const results: ProviderResult[] = []
 
-      // 应用搜索（空查询也返回，作为默认启动屏）
+      // 应用搜索（空查询也返回，作为默认启动屏；非空全量返回，由框架 groupAndSort 含拼音统一打分，
+      // 避免扩展层裸 substring 预过滤丢弃拼音命中——如「jsq」→「计算器」）
       try {
         const apps = await getAppList()
-        if (!query.trim()) {
-          results.push(...apps)
-        } else {
-          results.push(...apps.filter((a) => a.title.toLowerCase().includes(query.toLowerCase())))
-        }
+        results.push(...apps)
       } catch (e) {
         console.error('[search] apps error:', e)
       }

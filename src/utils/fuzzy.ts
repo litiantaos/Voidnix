@@ -5,23 +5,25 @@ const { prefix: SUBSTRING_PREFIX, contains: SUBSTRING_CONTAIN } = SEARCH.WEIGHTS
 const PINYIN_BASE = SEARCH.WEIGHTS.pinyinBase
 const FIELD_DECAY = SEARCH.WEIGHTS.decay
 
-function substringScore(text: string, query: string): number {
-  if (!text || !query) return 0
-  const t = text.toLowerCase()
-  const q = query.toLowerCase()
-  const idx = t.indexOf(q)
+/** 子串打分。haystack 由内部 toLowerCase（各 field 不同，无法跨结果缓存）；
+ *  needle 约定已 toLowerCase（由 scoreFields/keywordMatch 入口预算，避免热路径重复 lower）。 */
+function substringScore(haystack: string, needle: string): number {
+  if (!haystack || !needle) return 0
+  const t = haystack.toLowerCase()
+  const idx = t.indexOf(needle)
   if (idx < 0) return 0
-  const ratio = q.length / Math.max(t.length, 1)
+  const ratio = needle.length / Math.max(t.length, 1)
   const base = idx === 0 ? SUBSTRING_PREFIX : SUBSTRING_CONTAIN
   return Math.round(base + ratio * 200 - idx * 4)
 }
 
-function pinyinScore(text: string, query: string): number {
-  if (!text || !query) return 0
+/** 拼音打分。text 中文原值（lower 对中文幂等）；qLower 约定已 toLowerCase。 */
+function pinyinScore(text: string, qLower: string): number {
+  if (!text || !qLower) return 0
   if (!/[㐀-鿿]/.test(text)) return 0
-  if (!/^[a-zA-Z\s]+$/.test(query)) return 0
+  if (!/^[a-zA-Z\s]+$/.test(qLower)) return 0
 
-  const indices = match(text, query, {
+  const indices = match(text, qLower, {
     precision: 'start',
     continuous: true,
     space: 'ignore',
@@ -37,22 +39,23 @@ function pinyinScore(text: string, query: string): number {
   return Math.max(0, Math.round(PINYIN_BASE + coverage * 200 + startBonus - penalty))
 }
 
-function fieldScore(text: string, query: string): number {
-  return Math.max(substringScore(text, query), pinyinScore(text, query))
+function fieldScore(text: string, qLower: string): number {
+  return Math.max(substringScore(text, qLower), pinyinScore(text, qLower))
 }
 
 /**
  * 对一组字段（标题、描述、关键词）按权重打分取 max。
  * 第一个字段视为主字段权重 1.0，后续字段每增加一个衰减 FIELD_DECAY。
+ * query 在入口预算 qLower（trim + toLowerCase）一次，内部函数复用，避免每字段重复 lower。
  */
 export function scoreFields(fields: (string | undefined | null)[], query: string): number {
-  const q = query.trim()
-  if (!q) return 0
+  const qLower = query.trim().toLowerCase()
+  if (!qLower) return 0
   let best = 0
   let weight = 1.0
   for (const f of fields) {
     if (!f) continue
-    const s = fieldScore(f, q) * weight
+    const s = fieldScore(f, qLower) * weight
     if (s > best) best = s
     weight *= FIELD_DECAY
   }
@@ -66,14 +69,15 @@ export function scoreFields(fields: (string | undefined | null)[], query: string
  * 此处补全反向：keyword 是 query 子串时也命中（降权 0.5，弱信号），覆盖「query 包含关键词」语义。
  */
 export function keywordMatch(keywords: (string | undefined | null)[], query: string): number {
-  const q = query.trim()
-  if (!q) return 0
+  const qLower = query.trim().toLowerCase()
+  if (!qLower) return 0
   let best = 0
   for (const k of keywords) {
     if (!k) continue
-    const forward = substringScore(k, q)
-    const reverse = substringScore(q, k) * 0.5
-    const py = pinyinScore(k, q)
+    const kLower = k.toLowerCase()
+    const forward = substringScore(kLower, qLower)
+    const reverse = substringScore(qLower, kLower) * 0.5
+    const py = pinyinScore(kLower, qLower)
     if (forward > best) best = forward
     if (reverse > best) best = reverse
     if (py > best) best = py
