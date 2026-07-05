@@ -38,6 +38,45 @@ pub fn make_key_window(window: &tauri::WebviewWindow) {
     }
 }
 
+/// setFrame:display:animate: 经 NSAnimationContext —— 系统级 animator 动画，
+/// CoreAnimation 接管插值，不逐帧阻塞主线程、不逐帧触发 WebView 重排（系统合并），
+/// 流畅度远超 JS rAF 逐帧 setSize。easeOut 曲线（快速启动 + 平滑收尾）。
+/// 坐标转换：Tauri 左上角原点 → NSWindow 左下角原点。
+pub fn animate_frame(window: &tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f64) {
+    use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize};
+    const DURATION_SECS: f64 = 0.26;
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    let raw = ptr.cast::<NSWindow>();
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
+        return;
+    };
+    unsafe {
+        // 窗口当前所在 screen（多屏用窗口自身 screen 而非 mainScreen）
+        let screen: *mut objc2::runtime::AnyObject = objc2::msg_send![ns_window, screen];
+        if screen.is_null() {
+            return;
+        }
+        let screen_frame: NSRect = objc2::msg_send![screen, frame];
+        let ns_y = screen_frame.origin.y + screen_frame.size.height - (y + h);
+        let frame = NSRect::new(NSPoint::new(x, ns_y), NSSize::new(w, h));
+        // NSAnimationContext group：duration + easeOut timingFunction + animator setFrame
+        let ctx_cls = objc2::class!(NSAnimationContext);
+        let _: () = objc2::msg_send![ctx_cls, beginGrouping];
+        let ctx: *mut objc2::runtime::AnyObject = objc2::msg_send![ctx_cls, currentContext];
+        let _: () = objc2::msg_send![ctx, setDuration: DURATION_SECS];
+        // timingFunction：苹果系统默认曲线（macOS 窗口动画标准，起步-加速-减速的平滑感）
+        let timing_cls = objc2::class!(CAMediaTimingFunction);
+        let timing: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![timing_cls, functionWithName: ns_string!("default")];
+        let _: () = objc2::msg_send![ctx, setTimingFunction: timing];
+        let animator: *mut objc2::runtime::AnyObject = objc2::msg_send![ns_window, animator];
+        let _: () = objc2::msg_send![animator, setFrame: frame, display: true];
+        let _: () = objc2::msg_send![ctx_cls, endGrouping];
+    }
+}
+
 /// 主窗口框架级样式：content view 圆角（CALayer）+ NonactivatingPanel 转换（§2.8）。
 /// 在 lib.rs setup 内 bootstrap 之后调用一次。失败静默跳过（不阻断启动）。
 pub fn apply_main_window_style(window: &tauri::WebviewWindow) {

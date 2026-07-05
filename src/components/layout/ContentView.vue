@@ -10,7 +10,8 @@
       relative
       class="hide-scrollbar overflow-y-auto"
     >
-      <div flex="~ 1 col">
+      <!-- contentRef：量真实内容自然高（auto 高度模式消费）；不撑满，自然高 -->
+      <div ref="contentRef" flex="~ col">
         <!-- max 覆盖全部视图 key（9 模块 mainView + screenshot{ocr} + 各扩展{config} 子视图），
              驱逐会导致模块 View 重挂载（重渲染列表/消息）→ 切换卡顿，故留充裕余量 -->
         <KeepAlive v-if="resolvedView" :max="24">
@@ -137,7 +138,8 @@ const resolvedView = computed(() => {
 })
 
 const scrollContainer = ref<HTMLElement>()
-defineExpose({ scrollContainer })
+const contentRef = ref<HTMLElement>()
+defineExpose({ scrollContainer, contentRef })
 
 const handleExecute = async (result: SearchResult) => {
   const multiResults =

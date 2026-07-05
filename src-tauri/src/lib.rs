@@ -44,7 +44,8 @@ pub fn run() {
                 .register(crate::extensions::translate::TranslateExtension)
                 .register(crate::extensions::agent::AgentExtension)
                 .register(crate::extensions::search::SearchExtension)
-                .register(crate::extensions::proxy::ProxyExtension);
+                .register(crate::extensions::proxy::ProxyExtension)
+                .register(crate::extensions::system_status::SystemStatusExtension);
             let t_build = boot_start.elapsed();
 
             // block_on 探针（§7 N7）：确认 setup 同步闭包内可安全 block_on（非 tokio worker 嵌套）。

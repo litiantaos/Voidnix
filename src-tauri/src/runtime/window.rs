@@ -82,6 +82,29 @@ pub fn get_home_dir() -> String {
         .unwrap_or_else(|| String::from("/tmp"))
 }
 
+/// 一次 IPC 设置主窗口目标 frame，系统 animator 接管动画（NSAnimationContext）。
+#[tauri::command]
+pub fn set_main_frame(
+    app: tauri::AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    use tauri::Manager;
+    let win = app
+        .get_webview_window("main")
+        .ok_or("main window not found")?;
+    #[cfg(target_os = "macos")]
+    crate::platform::window::animate_frame(&win, x, y, width, height);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = win.set_position(tauri::LogicalPosition::new(x, y));
+        let _ = win.set_size(tauri::LogicalSize::new(width, height));
+    }
+    Ok(())
+}
+
 /// 打开目录选择器（NSOpenPanel），作为独立浮窗运行，不附着主窗口。
 /// 返回用户选择的目录路径，取消则返回空字符串。
 #[tauri::command]

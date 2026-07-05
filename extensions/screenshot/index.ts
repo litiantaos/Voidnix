@@ -45,6 +45,7 @@ export default defineExtension({
 
   mainView: () => ScreenshotView,
   subviews: { ocr: () => ScreenshotOcr },
+  subviewHeights: { ocr: 'auto' },
   windowViews: {
     screenshot: () => ScreenshotWindow,
     'pin-': () => PinWindow,

@@ -138,7 +138,7 @@ import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 import { useScrollPosition } from '@/composables/useScrollPosition'
 import { useSearchInput } from '@/composables/useSearchInput'
 import { useResultNavigation } from '@/composables/useResultNavigation'
-import { useWindowHeight } from '@/composables/useWindowHeight'
+import { useModuleHeight } from '@/composables/useModuleHeight'
 import { getFocusableElements, cycleFocus } from '@/utils/dom'
 
 const isDev = import.meta.env.DEV
@@ -220,7 +220,12 @@ const { handleExecute } = useResultNavigation({
   exitModule,
 })
 
-useWindowHeight(activeModule)
+useModuleHeight({
+  activeModule,
+  activeSubview: computed(() => appStore.activeSubview),
+  searchBarRef,
+  contentRef: computed(() => contentViewRef.value?.contentRef),
+})
 
 // 进入模块子视图时释放搜索栏焦点，让键盘事件能到达子视图内容
 // 注意：必须先把焦点转移到容器，否则窗口会因失焦而自动隐藏

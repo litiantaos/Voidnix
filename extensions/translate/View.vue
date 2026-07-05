@@ -1,50 +1,46 @@
 <template>
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置翻译服务" />
 
-  <div v-else ref="rootRef" h="full" overflow="y-auto">
-    <div ref="contentRef">
-      <div p="x-5 b-2 t-5">
-        <BaseTextarea
-          ref="textareaRef"
-          v-model="inputText"
-          placeholder="输入文本"
-          :rows="1"
-          :max-height="0"
-          @submit="handleSubmit"
-        />
-      </div>
+  <div v-else p="x-5 b-2 t-5">
+    <BaseTextarea
+      ref="textareaRef"
+      v-model="inputText"
+      placeholder="输入文本"
+      :rows="1"
+      :max-height="0"
+      @submit="handleSubmit"
+    />
+  </div>
 
-      <BaseEmptyState
-        v-if="isTranslating && translateResults.length === 0"
-        icon="i-ri-loader-4-line"
-        title="翻译中…"
-        loading
-      />
+  <BaseEmptyState
+    v-if="isTranslating && translateResults.length === 0"
+    icon="i-ri-loader-4-line"
+    title="翻译中…"
+    loading
+  />
 
-      <div p="x-3">
-        <BaseList
-          v-if="translateResults.length > 0"
-          :items="translateResults"
-          v-model:selected-index="selectedIndex"
-          @execute="onExecuteResult"
-        >
-          <template #item="{ item, selected }">
-            <BaseListItem :selected="selected" multiline-title :subtitle="item.engine">
-              <template #title>
-                <div
-                  v-if="item.loading && !item.translation"
-                  class="i-ri-loader-4-line animate-spin"
-                  text="base tx-muted"
-                />
-                <span v-else leading="relaxed" font="normal" wrap="break-word">
-                  {{ item.translation }}
-                </span>
-              </template>
-            </BaseListItem>
+  <div p="x-3">
+    <BaseList
+      v-if="translateResults.length > 0"
+      :items="translateResults"
+      v-model:selected-index="selectedIndex"
+      @execute="onExecuteResult"
+    >
+      <template #item="{ item, selected }">
+        <BaseListItem :selected="selected" multiline-title :subtitle="item.engine">
+          <template #title>
+            <div
+              v-if="item.loading && !item.translation"
+              class="i-ri-loader-4-line animate-spin"
+              text="base tx-muted"
+            />
+            <span v-else leading="relaxed" font="normal" wrap="break-word">
+              {{ item.translation }}
+            </span>
           </template>
-        </BaseList>
-      </div>
-    </div>
+        </BaseListItem>
+      </template>
+    </BaseList>
   </div>
 </template>
 
@@ -54,7 +50,6 @@ import { ref, computed, watch, nextTick, onMounted, onActivated } from 'vue'
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
 import { config as translateConfig } from './config'
 import { copyAndHide } from '@/stores/app'
-import { useAutoWindowHeight } from '@/composables/useAutoWindowHeight'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -63,9 +58,6 @@ import type { TranslateResult } from './index'
 
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const selectedIndex = ref(0)
-const rootRef = ref<HTMLElement>()
-const contentRef = ref<HTMLElement>()
-useAutoWindowHeight({ rootRef, contentRef })
 
 const isConfigured = computed(() =>
   translateConfig.configs.some(

@@ -18,7 +18,7 @@ extensions/<id>/
     └── ...                # 子模块（commands.rs / engine/ 等）
 ```
 
-18 个扩展：含 native/ 的 11 个（clipboard、screenshot、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy），纯 TS 的 7 个（calculator、settings、ip、base64、time、uuid、currency）。
+19 个扩展：含 native/ 的 12 个（clipboard、screenshot、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status），纯 TS 的 7 个（calculator、settings、ip、base64、time、uuid、currency）。
 
 ## 前端注册
 
@@ -38,20 +38,21 @@ export default defineExtension({
 
 ### 能力槽（按需声明，均有真实消费者）
 
-| 槽                   | 用途                                                                                      | 消费者                                                                  |
-| -------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `search`             | SearchProvider.dynamic 单通道召回                                                         | 见下「搜索集成」                                                        |
-| `onExecute`          | 搜索结果回车动作（扩展私有）                                                              | —                                                                       |
-| `mainView`           | 主视图组件                                                                                | 9 扩展                                                                  |
-| `searchBarAccessory` | 搜索栏右侧配件                                                                            | 3：clipboard/agent/translate                                            |
-| `subviews`           | 扩展私有命名子视图                                                                        | 4：screenshot{ocr}、clipboard{config}、agent{config}、translate{config} |
-| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀）  | 2：screenshot/window-manager                                            |
-| `globalShortcuts`    | 全局快捷键绑定                                                                            | 4：clipboard/screenshot/agent/translate                                 |
-| `hints`              | 键盘提示（enter/multiSelect/delete）                                                      | enter 3：clipboard/ip/calculator；余各 1                                |
-| `placeholder`        | 搜索框占位提示（激活模块时显示）                                                          | 7：clipboard/currency/uuid/ip/time/base64/calculator                    |
-| `windowHeight`       | 模块激活时主窗口高度（px，逻辑像素；框架 clamp `[WINDOW.MIN_HEIGHT, WINDOW.MAX_HEIGHT]`） | 1：agent                                                                |
+| 槽                   | 用途                                                                                                | 消费者                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `search`             | SearchProvider.dynamic 单通道召回                                                                   | 见下「搜索集成」                                                        |
+| `onExecute`          | 搜索结果回车动作（扩展私有）                                                                        | —                                                                       |
+| `mainView`           | 主视图组件                                                                                          | 9 扩展                                                                  |
+| `searchBarAccessory` | 搜索栏右侧配件                                                                                      | 3：clipboard/agent/translate                                            |
+| `subviews`           | 扩展私有命名子视图                                                                                  | 4：screenshot{ocr}、clipboard{config}、agent{config}、translate{config} |
+| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀）            | 2：screenshot/window-manager                                            |
+| `globalShortcuts`    | 全局快捷键绑定                                                                                      | 5：clipboard/screenshot/agent/translate/system-status                   |
+| `hints`              | 键盘提示（enter/multiSelect/delete）                                                                | enter 3：clipboard/ip/calculator；余各 1                                |
+| `placeholder`        | 搜索框占位提示（激活模块时显示）                                                                    | 7：clipboard/currency/uuid/ip/time/base64/calculator                    |
+| `windowHeight`       | 模块激活时主窗口高度：`number`（固定，clamp `[MIN,MAX]`）/ `'auto'`（随内容自适应）/ 未声明（默认） | 4：agent/proxy=840；translate/system-status='auto'                      |
+| `subviewHeights`     | subview 级高度覆盖（key→语义同 windowHeight）                                                       | 1：screenshot{ocr:'auto'}                                               |
 
-内容高度可变的视图（OCR / 翻译结果）不声明 `windowHeight`，改在 View 内调 `useAutoWindowHeight({ rootRef, contentRef })`：双层结构（root `h-full` 撑满父量 chrome + content 自然高量真实内容高 + ResizeObserver），窗口高度 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`。
+高度统一由 `useModuleHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管：高度变化一次 IPC 触发 Rust → `platform/window.rs::animate_frame` 用 macOS `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS 逐帧）；`auto` 模式 ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`，底部将出屏则上移，离开 auto 还原原位。
 
 生命周期：`setup?()`（启动钩子，无参）。3 承载字段过渡期保留：`disableSearchInput`（模块自管输入）、`listOptions.multiSelect`、`onOpenSubview`。
 
@@ -71,7 +72,7 @@ export default defineExtension({
 
 ### UI 规约补充
 
-- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=1 / calculator=2 / ip=5 / translate=8 / agent=9 / screenshot=11 / window-manager=12 / awake=50 / clean-mode=55 / finder-ext=60 / zsh-autosuggestions=80 / base64=100 / uuid=110 / time=120 / currency=130；hidden 扩展 settings=998 / search=999。
+- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=1 / calculator=2 / ip=5 / translate=8 / agent=9 / screenshot=11 / window-manager=12 / awake=50 / clean-mode=55 / finder-ext=60 / zsh-autosuggestions=80 / base64=100 / uuid=110 / time=120 / currency=130 / system-status=135；hidden 扩展 settings=998 / search=999。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
 
 ## 搜索集成
