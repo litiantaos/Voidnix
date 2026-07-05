@@ -18,7 +18,7 @@ export default defineExtension({
   hints: { enter: '复制' },
 
   search: {
-    dynamic: async (query, ctx): Promise<ProviderResult[]> => {
+    dynamic: (query, ctx): ProviderResult[] => {
       const results: ProviderResult[] = []
       const trimmed = query.trim()
 

@@ -90,7 +90,7 @@ interface SearchContext {
 }
 ```
 
-- **全局模式**（searchEngine）：并行调用所有扩展 dynamic，合流 keyword 模块入口（`keywordMatch` 双向匹配：正向子串 + 反向降权 0.5 + 拼音，覆盖多词 query 含关键词场景；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口**——即时答案优先如「100 usd」已返回换算值不再重复显示该扩展入口；clipboard 等数据型结果 kind≠module 不抑制，用户搜模块名时先看入口再看记录）+ dedupe + groupAndSort。
+- **全局模式**（searchEngine）：并行调用所有扩展 dynamic → **一次预算 finalScore（`scoreFields + boost`）** → 合流 keyword 模块入口（`keywordMatch` 双向匹配：正向子串 + 反向降权 0.5 + 拼音，覆盖多词 query 含关键词场景；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口**——即时答案优先如「100 usd」已返回换算值不再重复显示该扩展入口；clipboard 等数据型结果 kind≠module 不抑制，用户搜模块名时先看入口再看记录）+ dedupe + groupAndSort。finalScore 单次预算复用：suppress 判断与 groupAndSort 均用此分，不二次调 scoreFields；keyword 入口 finalScore 复用 `keywordSearchAll` 内部 score（含 keywordMatch 反向匹配贡献，不被 scoreFields 重算归零）。**过滤规则**：空 query 默认列表按 `finalScore>0`（boost>0，主要是应用，过滤 time/uuid 等 boost=0 即时答案）；非空 query 查找型结果（application/file/clipboard）需 `fuzzy>0`（`matched`），module 类即时答案靠 `finalScore>0` 穿透（title 不含 query 也能展示）。
 - **模块模式**（runModuleSearch）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序。dynamic 返回 Promise（异步网络/IPC）时进入即清空旧结果 + 显示 loading 占位（「先进去再加载」），返回 `ProviderResult[]`（同步）则即时填充无闪烁。
 - `moduleMode` 区分调用场景：**全局空 query 时网络型扩展（ip/currency）应跳过网络请求返回 `[]`**，避免拖慢默认列表；模块内空 query 正常执行。
 - 半静态内容（如 base64 选项）用模块级缓存自管，走 dynamic 返回。
@@ -122,7 +122,7 @@ interface SearchContext {
 
 ### 管道层次（不可破坏）
 
-去重 → 分组 → 组内排序 → 组间定序 → 组内限流。组间序由 `constants.GROUP_ORDER` 锁死（`application → file → module → clipboard → web`），不开放给扩展调整。扩展调整相关性的唯一通道：`data.kind` 归组（组间位）+ `boost`（组内位）。
+去重 → 分组 → 组内排序 → 组间定序 → 组内限流。组间序由 `constants.GROUP_ORDER` 锁死（`application → module → file → clipboard → web`），不开放给扩展调整。扩展调整相关性的唯一通道：`data.kind` 归组（组间位）+ `boost`（组内位）。
 
 ## 扩展配置（defineConfig）
 

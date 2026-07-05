@@ -99,6 +99,7 @@ export const CMD = {
   searchApps: 'search_apps',
   searchFiles: 'search_files',
   launchApp: 'launch_app',
+  getPathMetadata: 'get_path_metadata',
 
   // —— proxy ——
   setProxyEnabled: 'set_proxy_enabled',

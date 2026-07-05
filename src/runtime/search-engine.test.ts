@@ -84,7 +84,7 @@ describe('SearchEngine', () => {
     expect(out.map((r) => r.id)).toEqual(['dup', 'uniq'])
   })
 
-  it('全局模式组间序 = GROUP_ORDER（application→file→module→clipboard→web）', async () => {
+  it('全局模式组间序 = GROUP_ORDER（application→module→file→clipboard→web）', async () => {
     registry.push(
       makeSearchExt('order', () => [
         result('web', 'aa web', 'web'),
@@ -96,7 +96,14 @@ describe('SearchEngine', () => {
       ]),
     )
     const out = await searchEngine.search('aa')
-    expect(out.map(groupOf)).toEqual(['application', 'file', 'file', 'module', 'clipboard', 'web'])
+    expect(out.map(groupOf)).toEqual(['application', 'module', 'file', 'file', 'clipboard', 'web'])
+  })
+
+  it('module keyword 入口（boost=500）必在 file 组（低 boost）前——组间序不受 boost 影响', async () => {
+    // module 入口 boost=500（KEYWORD_MODULE_BOOST），file 结果 boost=0；module 组仍排前
+    registry.push(makeSearchExt('search', () => [result('f1', 'aa file', 'file', 0)], ['aa']))
+    const out = await searchEngine.search('aa')
+    expect(out.map(groupOf)).toEqual(['module', 'file'])
   })
 
   it('file 与 folder 同属 file 组（v1.5 合并）', async () => {
@@ -130,6 +137,51 @@ describe('SearchEngine', () => {
     )
     const out = await searchEngine.search('match')
     expect(out.map((r) => r.id)).toEqual(['hit'])
+  })
+
+  it('空 query 默认列表：应用靠 boost 显示（matched=true，非零分过滤）', async () => {
+    // 应用 boost>=1（frequencyBoost+recencyScore+1），空 query 时 fuzzy=0 但 finalScore=boost>0 → 显示
+    registry.push(
+      makeSearchExt('apps-default', () => [
+        result('a1', 'Safari', 'application', 50),
+        result('a2', 'VSCode', 'application', 100),
+      ]),
+    )
+    const out = await searchEngine.search('')
+    expect(out.length).toBe(2)
+    // 按 finalScore（=fuzzy(0)+boost）降序
+    expect(out.map((r) => r.id)).toEqual(['a2', 'a1'])
+  })
+
+  it('空 query 默认列表：module 类 boost=0 的即时答案被过滤（time/uuid 场景）', async () => {
+    // time/uuid 空 query 返回即时答案但 boost=0，finalScore=0 → 不进默认列表（避免污染启动屏）
+    registry.push(
+      makeSearchExt('instant-zero-boost', () => [
+        result('t1', '2024-01-01 12:00:00', 'module', 0),
+        result('u1', 'abc-123-nano', 'module', 0),
+      ]),
+    )
+    const out = await searchEngine.search('')
+    expect(out.length).toBe(0)
+  })
+
+  it('非空 query 不匹配：应用被过滤（fuzzy=0 即便 boost>0 也不显示，查找型结果必须命中）', async () => {
+    // 搜 'xyz' 不匹配任何应用 title → fuzzy=0 → application 类非 matched → 过滤（避免搜任意词显示所有应用）
+    registry.push(
+      makeSearchExt('apps-nomatch', () => [
+        result('a1', 'Safari', 'application', 500),
+        result('a2', 'VSCode', 'application', 1000),
+      ]),
+    )
+    const out = await searchEngine.search('xyz')
+    expect(out.length).toBe(0)
+  })
+
+  it('module 类即时答案：fuzzy=0 靠 boost 穿透（非 matched 但 finalScore>0 保留）', async () => {
+    // 即时答案 title 不含 query（换算结果 '717.00'），但 boost 高应穿透显示
+    registry.push(makeSearchExt('instant', () => [result('ans', '717.00', 'module', 1000)]))
+    const out = await searchEngine.search('100 usd')
+    expect(out.find((r) => r.id === 'ans')).toBeDefined()
   })
 
   it('模块模式 bypass groupAndSort：保留扩展返回序 + 不过滤零分', async () => {
@@ -206,6 +258,18 @@ describe('SearchEngine', () => {
     const entryIdx = out.indexOf(entry!)
     const recordIdx = out.findIndex((r) => r.id === 'c1')
     expect(entryIdx).toBeLessThanOrEqual(recordIdx)
+  })
+
+  it('keyword 反向命中：finalScore 保留 keywordMatch 贡献（非 scoreFields 归零，v3 修正）', async () => {
+    // keywords=['usd']，query='100 usd'：keywordMatch 反向命中（'usd' in '100 usd'）返回 > 0，
+    // 但 scoreFields(['kwrev2'], '100 usd') = 0（title 与 query 无子串关系）。
+    // 旧逻辑 groupAndSort 对 keyword 入口重算 scoreFields → finalScore = 0 + 500 = 500（keywordMatch 贡献丢失）；
+    // 新逻辑复用 keywordSearchAll 内部 score（含 keywordMatch）→ finalScore = keywordMatch_score + 500 > 500。
+    registry.push(makeSearchExt('kwrev2', () => [], ['usd']))
+    const out = await searchEngine.search('100 usd')
+    const entry = out.find((r) => r.id === 'module-kwrev2')
+    expect(entry).toBeDefined()
+    expect(entry?.score).toBeGreaterThan(500)
   })
 
   it('新查询 abort 旧查询的 signal', async () => {

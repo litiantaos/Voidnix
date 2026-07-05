@@ -19,7 +19,6 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 - [x] 截屏 + 滚动截屏 + 标注 + OCR
 - [x] 终端自动建议（终端输入显示自动建议）
 - [x] 窗口管理
-- [ ] 录屏 + 轻剪
 - [ ] 视频处理
 
 ## 快捷键
@@ -28,4 +27,4 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 - `Tab`：切换搜索栏操作项
 - `↑↓`：切换列表项
 - `Enter`：执行选中项
-- `Escape`：清空搜索 / 返回界面
+- `Escape`：关闭窗口 / 返回界面

@@ -70,6 +70,37 @@ function applyFilters(items: ClipboardItem[], query: string): ClipboardItem[] {
   return filterByQuery(filterByType(items, activeType.value), query)
 }
 
+/** clipboard 原始记录 → 搜索结果（全局 dynamic 专用映射，复用 tabCache 避免每键 IPC）。 */
+function mapClipboardResults(raw: ClipboardItem[], query: string): ProviderResult[] {
+  return filterByQuery(raw, query).map((item) => {
+    let title = item.content
+    if (item.content_type === 'image') {
+      title = '[图片]'
+    } else if (item.content_type === 'file') {
+      title = '[文件] ' + item.content.split('/').pop()
+    } else {
+      title = item.content.substring(0, 500).replace(/\r?\n/g, ' ')
+    }
+
+    return {
+      id: `clipboard-${item.id}`,
+      title: title,
+      description: `${item.source_app} • ${item.created_at}`,
+      icon:
+        item.content_type === 'image'
+          ? 'i-ri-image-line'
+          : item.content_type === 'file'
+            ? 'i-ri-file-line'
+            : 'i-ri-file-text-line',
+      data: {
+        kind: 'clipboard' as const,
+        iconStyle: 'rounded',
+        id: item.id,
+      },
+    }
+  })
+}
+
 export default defineExtension({
   meta: {
     id: 'clipboard',
@@ -104,48 +135,30 @@ export default defineExtension({
   },
 
   search: {
-    dynamic: async (query): Promise<ProviderResult[]> => {
-      if (!query.trim()) return []
+    // 优先复用 tabCache（setup 预拉 + clipboard-updated 事件驱动 invalidateCache），
+    // cache 命中同步返回零 IPC；miss 才 invoke 并回填 cache。消除每键全量拉取 + 全量打分。
+    dynamic: (query): ProviderResult[] | Promise<ProviderResult[]> => {
+      const q = query.trim()
+      if (!q) return []
 
-      try {
-        // M-cb2：全局搜索走 previewOnly=true，避免大图全量载入内存（每张可达数 MB）
-        // 图片返回空 content + icon class；详情在 clipboard 模块 View 内按需加载
-        const raw = await invoke<ClipboardItem[]>(CMD.getClipboardHistory, {
-          filterFavorite: null,
-          limit: null,
-          previewOnly: true,
-        })
-        const items = filterByQuery(raw, query)
-        return items.map((item) => {
-          let title = item.content
-          if (item.content_type === 'image') {
-            title = '[图片]'
-          } else if (item.content_type === 'file') {
-            title = '[文件] ' + item.content.split('/').pop()
-          } else {
-            title = item.content.substring(0, 500).replace(/\r?\n/g, ' ')
-          }
+      const cached = tabCache.get('all')
+      if (cached) return mapClipboardResults(cached, q)
 
-          return {
-            id: `clipboard-${item.id}`,
-            title: title,
-            description: `${item.source_app} • ${item.created_at}`,
-            icon:
-              item.content_type === 'image'
-                ? 'i-ri-image-line'
-                : item.content_type === 'file'
-                  ? 'i-ri-file-line'
-                  : 'i-ri-file-text-line',
-            data: {
-              kind: 'clipboard' as const,
-              iconStyle: 'rounded',
-              id: item.id,
-            },
-          }
-        })
-      } catch {
-        return []
-      }
+      return (async () => {
+        try {
+          // M-cb2：全局搜索走 previewOnly=true，避免大图全量载入内存（每张可达数 MB）
+          // 图片返回空 content + icon class；详情在 clipboard 模块 View 内按需加载
+          const raw = await invoke<ClipboardItem[]>(CMD.getClipboardHistory, {
+            filterFavorite: null,
+            limit: null,
+            previewOnly: true,
+          })
+          tabCache.set('all', raw)
+          return mapClipboardResults(raw, q)
+        } catch {
+          return []
+        }
+      })()
     },
   },
 
