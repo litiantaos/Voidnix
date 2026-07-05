@@ -74,7 +74,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 所有扩展同构（`extensions/<id>/index.ts` + 可选 `config.ts` + 可选 `native/`），详见 [docs/extensions.md](docs/extensions.md)。
 
-含 native/（11）：clipboard、screenshot、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy
+含 native/（12）：clipboard、screenshot、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status
 纯 TS（7）：calculator、settings、ip、base64、time、uuid、currency
 
 复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)。
@@ -87,9 +87,9 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 **搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + keyword 合流 + dedupe + groupAndSort。全局模式聚合所有扩展按 `finalScore = fuzzy + boost` 过滤排序；模块模式只调激活扩展且保留原序。`SearchContext.moduleMode` 区分两种模式（网络型扩展据此在全局空 query 跳过网络）。搜索集成细节详见 [docs/extensions.md](docs/extensions.md)。
 
-**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。`is_app_active()` 判焦点归属：NSApp keyWindow 非空 → 焦点在我们；否则查 frontmost bundle 路径——`/System/` 开头（授权弹窗、keychain 对话框等）视为交互流未中断，抑制 blur hide。`restore_captured()` 还原前查 frontmost：第三方已接管（系统弹窗/用户切到其他 app）则不抢回。系统弹窗关闭后焦点恢复由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove）处理：frontmost 变更时若 panel 可见但丢 key，frontmost == 原前台 PID → makeKeyWindow 恢复；frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss。窗口高度双机制：静态模块走 `useWindowHeight`（读 `Extension.windowHeight` 声明值 clamp `[MIN_HEIGHT, MAX_HEIGHT]`，setSize），内容可变子视图走 `useAutoWindowHeight`（双层 `rootRef` h-full 撑满父量 chrome + `contentRef` 自然高量真实内容高 + ResizeObserver 监听，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`；chrome 首测缓存规避内容撑开后 clientHeight 失真；屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口；高度变化以 rAF easeOutCubic 插值动画过渡——Tauri setSize 瞬时需自行补间；底部将出屏（含 40px 间距）则同步上移保证完整可见，退出还原 `resolveModuleHeight`）。
+**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。`is_app_active()` 判焦点归属：NSApp keyWindow 非空 → 焦点在我们；否则查 frontmost bundle 路径——`/System/` 开头（授权弹窗、keychain 对话框等）视为交互流未中断，抑制 blur hide。`restore_captured()` 还原前查 frontmost：第三方已接管（系统弹窗/用户切到其他 app）则不抢回。系统弹窗关闭后焦点恢复由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove）处理：frontmost 变更时若 panel 可见但丢 key，frontmost == 原前台 PID → makeKeyWindow 恢复；frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss。窗口高度统一机制：扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖；`useModuleHeight`（MainView 全局唯一调用）读 `activeModule` + `activeSubview` 解析模式，一次 invoke 触发 Rust 端 `set_main_frame` → `platform/window.rs::animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管插值，非 JS rAF 逐帧，不每帧阻塞主线程/触发 WebView 重排）；`auto` 模式 ResizeObserver 监听 ContentView 的 `contentRef`（自然高量真实内容高），窗口高 = chrome（搜索栏固定开销，首测缓存）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`（屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口）；底部将出屏（含 40px 间距）则同步上移保证完整可见，离开 auto 还原进入前位置。
 
-**全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。默认 Option 基（`Option+Space` 呼出，`Option+C/S/T/A` 各扩展）；dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存（dev/prod 数据目录仍按 bundle id 隔离，配置默认值一致）。
+**全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。默认 Option 基（`Option+Space` 呼出，`Option+C/S/T/A/M` 各扩展）；dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存（dev/prod 数据目录仍按 bundle id 隔离，配置默认值一致）。
 
 **菜单栏**：`runtime/menubar.rs`，框架唯一托盘图标（`public/bar_icon.png` + `icon_as_template` 深浅色自适应），左键弹聚合菜单。扩展在 Rust `setup` 内 `menubar::register(MenuBarContribution{ title, build, on_event })` 声明贡献段：`title`（分组标题，disabled 项渲染）、`build` 闭包返回 `Vec<MenuEntry>` 快照（`Item`/`CheckItem`/`Submenu`/`Separator`）、`on_event` 闭包收点击 id 自行过滤；状态变更后调 `menubar::refresh(&app)` 触发重建。镜像 `shortcut.rs` 的 hook 范式（`LazyLock<Mutex<Vec>>` + free function，`Arc<dyn Fn>` 锁外调用防 `on_event→refresh` 重入死锁）。**菜单按扩展 `title` 分组**（每段前插 disabled 标题项，段间分隔线）。**可见性 = Σ build() 项数 > 0**（空快照 = 该扩展当前不贡献；扩展全关图标自动隐藏）。Rust 侧能力（非 TS `Extension` 槽——菜单构建依赖 Rust State，纯 TS 扩展无此需求）。现 2 消费者：awake（保持系统唤醒：打开扩展 + 启用开关 + 显示模式二级菜单）、proxy（代理：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后图标隐藏，重连走扩展面板，其余控制全部在面板，统一 TUN 模式，详见 [proxy.md](docs/extensions/proxy.md)）。
 
@@ -156,8 +156,7 @@ src/
 │   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键注册/失焦隐藏/模块事件，抽自 App.vue）
 │   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型模块 dynamic + web 搜索// + 工具列表/ + 默认结果）
 │   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派 + Escape 统一退出当前层（表单先失焦由 useSettingsInput 承接）
-│   ├── useWindowHeight.ts     # 模块声明固定 windowHeight → setSize（静态）
-│   ├── useAutoWindowHeight.ts # 子视图内容自适应高度 → 双层 root/content + ResizeObserver，上限屏 90%（动态，OCR/翻译用）
+│   ├── useModuleHeight.ts    # 主窗口高度统一管理（number 固定 / 'auto' 自适应 / 默认），系统 animator 动画
 │   ├── useSettingsInput.ts    # 设置项交互 + 设置型视图 Escape 拦截（表单控件聚焦先失焦，capture 阶段 stopImmediatePropagation 阻止全局退出）
 │   ├── useFloating.ts / useScrollPosition.ts / useTauriListener.ts / useToast.ts  # 通用工具
 │   └── events.ts / useInputControl.ts / useShortcutConfig.ts
@@ -170,7 +169,7 @@ src/
 
 ## UI 规范
 
-- **总体要求**：UnoCSS + TailwindCSS 最佳实践，遵循官方规范。
+- **总体要求**：UnoCSS（presetWind4 + presetAttributify + presetIcons），遵循官方规范。
 
 - **原子组件**：只用 `@/components/ui/` 原子组件，禁止手写底层标签。主题色 `accent`；`rounded-md`（控件）/ `rounded-lg`（面板）；`h-7`；`text-sm` / `text-xs`；色阶 `text-tx-primary → secondary → subtle → muted → hint → faint`。
 
@@ -208,7 +207,7 @@ icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litia
 
 ## 约定
 
-- 环境：`isTauri()` 判断环境，非 Tauri 跳过原生调用
+- 环境：`isTauri` 判断环境（常量，非函数），非 Tauri 跳过原生调用
 - TypeScript 严格模式：`noUnusedLocals` + `noUnusedParameters`
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`
 - Git commit：`<type>(<scope>): <中文描述>`，描述力求最简，不写详情，不主动执行 git 操作

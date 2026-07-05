@@ -7,6 +7,7 @@ export const CMD = {
   isAppActive: 'is_app_active',
   getHomeDir: 'get_home_dir',
   pickDirectory: 'pick_directory',
+  setMainFrame: 'set_main_frame',
   httpGet: 'http_get',
   openModuleSubview: 'open_module_subview',
   quitApp: 'quit_app',
@@ -118,4 +119,8 @@ export const CMD = {
   proxyConnectionsStream: 'proxy_connections_stream',
   proxyLogsStream: 'proxy_logs_stream',
   proxyStopStream: 'proxy_stop_stream',
+
+  // —— system-status ——
+  systemStaticInfo: 'system_static_info',
+  systemSnapshot: 'system_snapshot',
 } as const

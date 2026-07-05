@@ -1,58 +1,56 @@
 <template>
-  <div ref="rootRef" h="full" overflow="y-auto">
-    <div ref="contentRef" p="5" flex="~ col" gap="4">
-      <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动 -->
-      <div
-        v-if="imageUrl"
-        ref="previewRef"
-        class="hide-scrollbar"
-        h="44"
-        border="~ black/8"
-        rounded="lg"
-        bg="black/4"
-        shrink="0"
-        overflow="auto"
-      >
-        <img :src="imageUrl" block max-w="none" alt="截图预览" @load="onPreviewLoad" />
-      </div>
-
-      <!-- 识别中 -->
-      <BaseEmptyState v-if="isLoading" icon="i-ri-loader-4-line" title="识别中…" loading />
-
-      <!-- 错误 -->
-      <div v-else-if="error" text="sm red-500" p="3" rounded="md" bg="red-50">
-        {{ error }}
-      </div>
-
-      <!-- 结果 -->
-      <template v-else-if="ocrText">
-        <BaseTextarea
-          ref="textareaRef"
-          v-model="ocrText"
-          :rows="4"
-          :max-height="0"
-          :submit-on-enter="false"
-          placeholder="识别结果"
-        />
-
-        <!-- 操作栏 -->
-        <div class="flex flex-wrap gap-2" shrink="0">
-          <BaseButton icon="i-ri-file-copy-line" @click="handleCopy">复制</BaseButton>
-          <BaseButton icon="i-ri-translate-2" @click="handleTranslate">翻译</BaseButton>
-          <BaseButton icon="i-ri-space" @click="trimSpaces">去空格</BaseButton>
-          <BaseButton icon="i-ri-corner-down-left-line" @click="trimNewlines">去换行</BaseButton>
-          <BaseButton icon="i-ri-text-spacing" @click="trimEmptyLines">去空行</BaseButton>
-        </div>
-      </template>
-
-      <!-- 空状态 -->
-      <BaseEmptyState
-        v-else-if="!isLoading && !imageUrl"
-        icon="i-ri-qr-scan-2-line"
-        title="从截屏触发识别"
-        description="截图后点击工具栏的识别按钮，支持文字和二维码"
-      />
+  <div p="5" flex="~ col" gap="4">
+    <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动 -->
+    <div
+      v-if="imageUrl"
+      ref="previewRef"
+      class="hide-scrollbar"
+      h="44"
+      border="~ black/8"
+      rounded="lg"
+      bg="black/4"
+      shrink="0"
+      overflow="auto"
+    >
+      <img :src="imageUrl" block max-w="none" alt="截图预览" @load="onPreviewLoad" />
     </div>
+
+    <!-- 识别中 -->
+    <BaseEmptyState v-if="isLoading" icon="i-ri-loader-4-line" title="识别中…" loading />
+
+    <!-- 错误 -->
+    <div v-else-if="error" text="sm red-500" p="3" rounded="md" bg="red-50">
+      {{ error }}
+    </div>
+
+    <!-- 结果 -->
+    <template v-else-if="ocrText">
+      <BaseTextarea
+        ref="textareaRef"
+        v-model="ocrText"
+        :rows="4"
+        :max-height="0"
+        :submit-on-enter="false"
+        placeholder="识别结果"
+      />
+
+      <!-- 操作栏 -->
+      <div class="flex flex-wrap gap-2" shrink="0">
+        <BaseButton icon="i-ri-file-copy-line" @click="handleCopy">复制</BaseButton>
+        <BaseButton icon="i-ri-translate-2" @click="handleTranslate">翻译</BaseButton>
+        <BaseButton icon="i-ri-space" @click="trimSpaces">去空格</BaseButton>
+        <BaseButton icon="i-ri-corner-down-left-line" @click="trimNewlines">去换行</BaseButton>
+        <BaseButton icon="i-ri-text-spacing" @click="trimEmptyLines">去空行</BaseButton>
+      </div>
+    </template>
+
+    <!-- 空状态 -->
+    <BaseEmptyState
+      v-else-if="!isLoading && !imageUrl"
+      icon="i-ri-qr-scan-2-line"
+      title="从截屏触发识别"
+      description="截图后点击工具栏的识别按钮，支持文字和二维码"
+    />
   </div>
 </template>
 
@@ -61,7 +59,6 @@ import { ref, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { emit } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
-import { useAutoWindowHeight } from '@/composables/useAutoWindowHeight'
 import { copyAndHide, useAppStore } from '@/stores/app'
 import { pendingOcrData } from './index'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -79,10 +76,7 @@ const ocrText = ref('')
 const isLoading = ref(false)
 const error = ref('')
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
-const rootRef = ref<HTMLElement>()
-const contentRef = ref<HTMLElement>()
 const previewRef = ref<HTMLElement>()
-useAutoWindowHeight({ rootRef, contentRef })
 
 // 截图 cover 缩放：短边撑满容器、长边溢出（容器 overflow-auto 可上下/左右滚动）
 // 纯 object-cover 会把内容裁进固定 box 不产生溢出，故按 natural 尺寸手算 cover 缩放后赋给 img

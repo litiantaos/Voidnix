@@ -237,6 +237,7 @@ export default defineExtension({
   },
 
   disableSearchInput: true,
+  windowHeight: 'auto',
   mainView: () => TranslateView,
   searchBarAccessory: () => TranslateActions,
   subviews: { config: () => TranslateSettings },

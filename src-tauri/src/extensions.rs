@@ -13,6 +13,7 @@ macro_rules! configure_app {
             .plugin(crate::extensions::proxy::init())
             .plugin(crate::extensions::screenshot::init())
             .plugin(crate::extensions::search::init())
+            .plugin(crate::extensions::system_status::init())
             .plugin(crate::extensions::translate::init())
             .plugin(crate::extensions::window_manager::init())
             .plugin(crate::extensions::zsh_autosuggestions::init())
@@ -31,6 +32,7 @@ macro_rules! configure_app {
                 crate::runtime::shortcut::stop_shortcut_recording,
                 crate::runtime::window::get_home_dir,
                 crate::runtime::window::pick_directory,
+                crate::runtime::window::set_main_frame,
                 crate::extensions::agent::agent_abort,
                 crate::extensions::agent::agent_run,
                 crate::extensions::awake::is_awake_enabled,
@@ -93,6 +95,8 @@ macro_rules! configure_app {
                 crate::extensions::search::commands::reveal_in_finder,
                 crate::extensions::search::commands::search_apps,
                 crate::extensions::search::commands::search_files,
+                crate::extensions::system_status::system_snapshot,
+                crate::extensions::system_status::system_static_info,
                 crate::extensions::translate::ai_translate::translate_ai,
                 crate::extensions::translate::ai_translate::translate_ai_stream,
                 crate::extensions::translate::get_selected_text,
@@ -134,6 +138,9 @@ pub mod screenshot;
 
 #[path = "../../extensions/search/native/mod.rs"]
 pub mod search;
+
+#[path = "../../extensions/system-status/native/mod.rs"]
+pub mod system_status;
 
 #[path = "../../extensions/translate/native/mod.rs"]
 pub mod translate;
