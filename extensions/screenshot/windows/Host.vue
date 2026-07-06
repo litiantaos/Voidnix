@@ -21,7 +21,6 @@ interface WindowRect {
   owner: string
 }
 interface ScreenshotData {
-  data_url: string
   width: number
   height: number
   scale: number

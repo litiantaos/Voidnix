@@ -48,6 +48,7 @@ export const CMD = {
   ocrImage: 'ocr_image',
   detectTextRegions: 'detect_text_regions',
   screenshotOverlayReady: 'screenshot_overlay_ready',
+  readPickerImage: 'read_picker_image',
   enterScrollCapture: 'enter_scroll_capture',
   exitScrollCapture: 'exit_scroll_capture',
   finishScrollCapture: 'finish_scroll_capture',
