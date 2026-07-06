@@ -1,9 +1,10 @@
 <template>
   <div p="5" flex="~ col" gap="4">
-    <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动 -->
+    <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动；识别中遮罩覆盖 -->
     <div
       v-if="imageUrl"
       ref="previewRef"
+      relative
       class="hide-scrollbar"
       h="44"
       border="~ black/8"
@@ -13,13 +14,13 @@
       overflow="auto"
     >
       <img :src="imageUrl" block max-w="none" alt="截图预览" @load="onPreviewLoad" />
+      <div v-if="isLoading" class="bg-white/20 flex inset-0 absolute backdrop-blur-xs">
+        <BaseEmptyState loading />
+      </div>
     </div>
 
-    <!-- 识别中 -->
-    <BaseEmptyState v-if="isLoading" icon="i-ri-loader-4-line" title="识别中…" loading />
-
     <!-- 错误 -->
-    <div v-else-if="error" text="sm red-500" p="3" rounded="md" bg="red-50">
+    <div v-if="error" text="sm red-500" p="3" rounded="md" bg="red-50">
       {{ error }}
     </div>
 
@@ -43,14 +44,6 @@
         <BaseButton icon="i-ri-text-spacing" @click="trimEmptyLines">去空行</BaseButton>
       </div>
     </template>
-
-    <!-- 空状态 -->
-    <BaseEmptyState
-      v-else-if="!isLoading && !imageUrl"
-      icon="i-ri-qr-scan-2-line"
-      title="从截屏触发识别"
-      description="截图后点击工具栏的识别按钮，支持文字和二维码"
-    />
   </div>
 </template>
 

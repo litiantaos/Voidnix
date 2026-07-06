@@ -105,7 +105,7 @@ Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`
 
 **搜索打分**：`src/utils/fuzzy.ts::scoreFields()`（[pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。keyword 模块入口用 `keywordMatch()` 双向匹配（正向子串 + 反向子串降权 0.5 + 拼音，覆盖「100 usd」含 keyword「usd」等多词 query 场景，`keywordSearchAll` 消费）；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其 keyword 入口**（即时答案优先，避免换算结果与模块入口同屏重复；clipboard 等数据型结果 kind≠module 不抑制——用户搜模块名时先看入口再看记录）。`kind` 枚举 `application | folder | file | module | clipboard | web`（folder/file 同组），组间序 `GROUP_ORDER`：`application > module > file > clipboard > web`。
 
-**toast 提示**：自研轻量浮层（`composables/useToast.ts` + `components/ui/ToastOverlay.vue`），固定窗口右下角（`fixed bottom-4 right-4`），复用 `dropdown-panel` 样式（同 clipboard cmd+回车动作菜单），按 kind 切图标/色（对勾 accent / 警告 red-500），错误反馈必须传 `kind: 'error'`；堆叠上限 3 条、默认 2000ms 自动清除，窗口隐藏时立即清空（`hideWindow` 内调 `clearToasts`，规避 macOS 隐藏 WebView 节流 setTimeout 致残留）。扩展通过 `copyAndHide`（`stores/app.ts`，写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈；`showStatus(msg, opts?)` 委托 `showToast`（调用点零改动）。快捷键提示融入搜索栏 placeholder：模块模式先显示搜索说明（`在 X 中搜索`），再以「·」分隔追加动作提示（`hints.enter` →「回车+动作」、`hints.multiSelect` →「shift+cmd 多选」），全局模式保留搜索说明。
+**toast 提示**：自研轻量浮层（`composables/useToast.ts` + `components/ui/ToastOverlay.vue`），固定窗口右下角（`fixed bottom-4 right-4`），复用 `dropdown-panel` 样式（同 clipboard cmd+回车动作菜单），按 kind 切图标/色（对勾 accent / 警告 red-500），错误反馈必须传 `kind: 'error'`；堆叠上限 3 条、默认 2000ms 自动清除，窗口隐藏时立即清空（`hideWindow` 内调 `clearToasts`，规避 macOS 隐藏 WebView 节流 setTimeout 致残留）。扩展通过 `copyAndHide`（`stores/app.ts`，写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈；`showStatus(msg, opts?)` 委托 `showToast`（调用点零改动）。搜索栏 placeholder：模块模式显示搜索说明（`在 X 中搜索` 或扩展自声明 `placeholder`），全局模式保留搜索说明。
 
 **模块视图加载**（切换性能）：模块 View（mainView/subviews/searchBarAccessory）静态 import 进主 bundle（用户高频、固定集合，首次进入零卡顿）；仅**独立窗口**（screenshot 标注 host/pin、window-manager snap 面板，`windowViews`）保留 `defineAsyncComponent` 真按需——不截图/不分屏不加载，省稳态占用（gzip ~20KB）。`ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问模块，切换走 activate/deactivate 而非重挂载。
 
@@ -155,9 +155,9 @@ src/
 ├── composables/
 │   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键注册/失焦隐藏/模块事件，抽自 App.vue）
 │   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型模块 dynamic + web 搜索// + 工具列表/ + 默认结果）
-│   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派 + Escape 统一退出当前层（表单先失焦由 useSettingsInput 承接）
+│   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派 + Escape 统一退出当前层
 │   ├── useModuleHeight.ts    # 主窗口高度统一管理（number 固定 / 'auto' 自适应 / 默认），系统 animator 动画
-│   ├── useSettingsInput.ts    # 设置项交互 + 设置型视图 Escape 拦截（表单控件聚焦先失焦，capture 阶段 stopImmediatePropagation 阻止全局退出）
+│   ├── useSettingsInput.ts    # 设置项交互（回车编辑/提交、button 延迟触发）；Escape 不再拦截，统一走 useResultNavigation
 │   ├── useFloating.ts / useScrollPosition.ts / useTauriListener.ts / useToast.ts  # 通用工具
 │   └── events.ts / useInputControl.ts / useShortcutConfig.ts
 ├── stores/             # app / settings（仅框架级）/ update

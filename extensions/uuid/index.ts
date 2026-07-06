@@ -13,8 +13,6 @@ export default defineExtension({
     keywords: ['uuid', 'guid', 'nanoid', '唯一', '标识'],
   },
 
-  placeholder: '按 Enter 生成 UUID / NanoID',
-
   disableSearchInput: true,
 
   search: {

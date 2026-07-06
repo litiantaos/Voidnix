@@ -36,6 +36,7 @@ import { useAppStore } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { config as clipboardConfig } from './config'
+import { invalidateCache, fetchClipboardHistory, activeTab } from './index'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
@@ -77,6 +78,8 @@ const handleClearHistory = async () => {
   if (confirmed) {
     try {
       await invoke(CMD.clearClipboardHistory)
+      invalidateCache()
+      await fetchClipboardHistory('', activeTab.value === 'favorites')
     } catch (e) {
       console.error('Failed to clear clipboard history:', e)
     }

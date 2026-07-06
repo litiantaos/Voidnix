@@ -1,46 +1,40 @@
 <template>
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置翻译服务" />
 
-  <div v-else p="x-5 b-2 t-5">
-    <BaseTextarea
-      ref="textareaRef"
-      v-model="inputText"
-      placeholder="输入文本"
-      :rows="1"
-      :max-height="0"
-      @submit="handleSubmit"
-    />
-  </div>
+  <div v-else flex="~ col">
+    <div p="x-5 b-2 t-5">
+      <BaseTextarea
+        ref="textareaRef"
+        v-model="inputText"
+        placeholder="输入文本"
+        :rows="1"
+        :max-height="0"
+        @submit="handleSubmit"
+      />
+    </div>
 
-  <BaseEmptyState
-    v-if="isTranslating && translateResults.length === 0"
-    icon="i-ri-loader-4-line"
-    title="翻译中…"
-    loading
-  />
-
-  <div p="x-3">
-    <BaseList
-      v-if="translateResults.length > 0"
-      :items="translateResults"
-      v-model:selected-index="selectedIndex"
-      @execute="onExecuteResult"
-    >
-      <template #item="{ item, selected }">
-        <BaseListItem :selected="selected" multiline-title :subtitle="item.engine">
-          <template #title>
-            <div
-              v-if="item.loading && !item.translation"
-              class="i-ri-loader-4-line animate-spin"
-              text="base tx-muted"
-            />
-            <span v-else leading="relaxed" font="normal" wrap="break-word">
-              {{ item.translation }}
-            </span>
-          </template>
-        </BaseListItem>
-      </template>
-    </BaseList>
+    <div v-if="translateResults.length > 0" p="x-3">
+      <BaseList
+        :items="translateResults"
+        v-model:selected-index="selectedIndex"
+        @execute="onExecuteResult"
+      >
+        <template #item="{ item, selected }">
+          <BaseListItem :selected="selected" multiline-title :subtitle="item.engine">
+            <template #title>
+              <div
+                v-if="item.loading && !item.translation"
+                class="i-ri-loader-4-line animate-spin"
+                text="base tx-muted"
+              />
+              <span v-else leading="relaxed" font="normal" wrap="break-word">
+                {{ item.translation }}
+              </span>
+            </template>
+          </BaseListItem>
+        </template>
+      </BaseList>
+    </div>
   </div>
 </template>
 
@@ -95,10 +89,9 @@ watch(translateResults, () => {
 
 function handleSubmit() {
   const text = inputText.value.trim()
-  if (text) {
-    translateText(text)
-    ;(document.activeElement as HTMLElement)?.blur()
-  }
+  if (!text) return
+  translateText(text)
+  ;(document.activeElement as HTMLElement)?.blur()
 }
 
 async function onExecuteResult(result: TranslateResult) {

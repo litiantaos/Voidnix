@@ -153,8 +153,7 @@ describe('useResultNavigation', () => {
   })
 
   describe('Escape：统一退出当前层', () => {
-    // 表单控件的「先失焦」由 useSettingsInput 在 capture 阶段拦截（见 useSettingsInput.test.ts），
-    // useResultNavigation 不再区分表单控件——事件到达即退出。
+    // esc 统一退出当前层：事件到达即退出（输入框聚焦也直接退出，不先失焦）。
     function makeEscapeDispatcher() {
       const ctx = makeWrapper({})
       const appStore = useAppStore()

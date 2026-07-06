@@ -1,5 +1,5 @@
 <template>
-  <div h="full" overflow="y-auto">
+  <div overflow="y-auto">
     <BaseList
       ref="baseListRef"
       :items="items"

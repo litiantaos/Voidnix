@@ -38,6 +38,7 @@ export const LIMITS = {
 export const WINDOW = {
   WIDTH: 720,
   DEFAULT_HEIGHT: 480,
+  CHROME_HEIGHT: 60, // 搜索栏高（h-15，border-box 含 border），auto 模式进入高度下限计算用
   MIN_HEIGHT: 360,
   MAX_HEIGHT: 820, // 留余量给菜单栏/Dock
 } as const

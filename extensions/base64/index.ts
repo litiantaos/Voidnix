@@ -13,8 +13,7 @@ export default defineExtension({
     keywords: ['编码', '解码', 'encode', 'decode', 'base64'],
   },
 
-  placeholder: '输入文本进行 Base64 编解码',
-  hints: { enter: '复制' },
+  placeholder: '输入文本编解码 Base64',
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {

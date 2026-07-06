@@ -1,7 +1,7 @@
 <template>
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置 AI Provider" />
 
-  <div v-else p="x-5 t-5" flex="~ col" h="full" min-h="0" @click="onContentClick">
+  <div v-else p="x-5 t-5" flex="~ col" @click="onContentClick">
     <div
       v-if="displayMessages.length > 0"
       flex="~ 1 col"

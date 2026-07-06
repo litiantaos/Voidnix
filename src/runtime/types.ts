@@ -78,13 +78,6 @@ export interface ExtensionMeta {
   hidden?: boolean
 }
 
-export interface ModuleHints {
-  /** ↵ 动作描述（如「粘贴」「复制」）。 */
-  enter?: string
-  /** 多选提示（如「⇧/⌘ 多选」）。 */
-  multiSelect?: string
-}
-
 export interface ShortcutBinding {
   /** 快捷键业务 id（如 'screenshot'、'translate'）。 */
   id: string
@@ -115,7 +108,6 @@ export interface Extension {
   /** 独立窗口视图（如 screenshot 的标注/pin、window-manager 的 snap-panel）。 */
   windowViews?: Record<string, () => Component>
   globalShortcuts?: ShortcutBinding[]
-  hints?: ModuleHints
   /** 搜索框占位提示（激活模块时显示）。 */
   placeholder?: string
   /** 模块激活时主窗口高度（逻辑像素）：number = 固定值（clamp 到 [MIN,MAX]）；'auto' = 随内容自适应；未声明 = 默认高度。

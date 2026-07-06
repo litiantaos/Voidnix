@@ -110,9 +110,8 @@ export function useResultNavigation(opts: ResultNavOptions) {
       case 'Escape': {
         if (appStore.isDialogOpen) return
 
-        // 表单控件的「先失焦」由设置型视图自行处理（useSettingsInput 在 capture 阶段
-        // 拦截并 blur + stopImmediatePropagation）。此处统一为「退出当前层」——
-        // 事件未被消费即意味着当前视图不是设置型，直接退出模块/子视图/窗口。
+        // 统一「退出当前层」：esc 到达即退出模块/子视图/窗口（输入框聚焦也直接退出，
+        // 不先失焦；弹窗/下拉/录制态由各自组件 stopPropagation 自行关闭，不冒泡到此）。
         if (appStore.activeSubview) {
           e.preventDefault()
           if (appStore.subviewExternal) {

@@ -1,5 +1,4 @@
-import { ref, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue'
-import { useAppStore } from '@/stores/app'
+import { ref } from 'vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 
 export interface SettingItem {
@@ -27,9 +26,9 @@ export interface SettingItem {
  * [data-settings-control][tabindex="0"] 元素并执行 focus() + click()）。
  * 这里仅处理需要额外状态管理的 input 编辑生命周期和 button 的延迟触发。
  *
- * Escape：设置型视图的表单控件聚焦时，esc 先失焦而非退出视图（capture 阶段
- * 拦截 + stopImmediatePropagation，阻止全局 useResultNavigation 的退出逻辑）。
- * 非设置型视图（translate/agent/ocr 等输入型）不调用本 composable，esc 直接退出。
+ * Escape 统一由全局 useResultNavigation 退出当前层（不先失焦）；弹窗（BaseDialog）、
+ * 下拉（BaseSelect）、快捷键录制（ShortcutInput）由各自组件在 keydown 中 stopPropagation
+ * 自行关闭，不参与全局退出。
  */
 export function useSettingsInput() {
   const inputRefs = ref<Record<string, InstanceType<typeof BaseInput>>>({})
@@ -37,37 +36,6 @@ export function useSettingsInput() {
   const editingValue = ref<Record<string, string>>({})
   const editingOriginal = ref<Record<string, string>>({})
 
-  // 设置型视图的 Escape：表单控件聚焦时先失焦（不退出视图），由全局 useResultNavigation
-  // 之外独立处理。capture 阶段先于全局 bubble listener，stopImmediatePropagation 阻止后者，
-  // 使「先失焦再退出」的分层行为仅作用于设置型视图，不影响输入型视图（translate/agent/ocr 等）。
-  function onKeydown(e: KeyboardEvent) {
-    if (e.key !== 'Escape') return
-    const appStore = useAppStore()
-    if (appStore.isDialogOpen) return
-    const el = document.activeElement
-    if (!(el instanceof HTMLElement)) return
-    const isFormControl =
-      el.tagName === 'INPUT' ||
-      el.tagName === 'TEXTAREA' ||
-      el.tagName === 'SELECT' ||
-      el.hasAttribute('contenteditable') ||
-      el.hasAttribute('data-settings-control')
-    if (isFormControl) {
-      e.preventDefault()
-      e.stopImmediatePropagation()
-      el.blur()
-    }
-  }
-
-  const add = () => document.addEventListener('keydown', onKeydown, true)
-  const remove = () => document.removeEventListener('keydown', onKeydown, true)
-  // 调用者均在 ContentView 的 KeepAlive 内：切走时 onUnmounted 不触发，listener 会泄漏到
-  // 非设置视图（误伤全局搜索框等 INPUT 的 Esc）。onActivated/onDeactivated 随缓存激活/停用
-  // 精确挂载/卸载；保留 onMounted/onUnmounted 兼容非 KeepAlive 调用（add 同函数同参数去重）。
-  onMounted(add)
-  onActivated(add)
-  onDeactivated(remove)
-  onUnmounted(remove)
   function setInputRef(id: string, el: unknown) {
     if (el) inputRefs.value[id] = el as InstanceType<typeof BaseInput>
   }

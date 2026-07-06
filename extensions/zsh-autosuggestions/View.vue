@@ -1,26 +1,28 @@
 <template>
-  <BaseList
-    :items="items"
-    v-model:selected-index="selectedIndex"
-    group-field="group"
-    :group-title="(g: string) => g"
-    @execute="toggle"
-  >
-    <template #item="{ selected, setRef }">
-      <BaseListItem
-        :ref="setRef"
-        title="启用终端自动建议"
-        subtitle="Tab 切换备选，→ 接受，Ctrl+X 开关，Ctrl+C 清空"
-        :selected="selected"
-      >
-        <template #trailing>
-          <BaseButton :variant="zshConfig.enabled ? 'primary' : 'default'" @click.stop="toggle">
-            {{ zshConfig.enabled ? '已开启' : '已关闭' }}
-          </BaseButton>
-        </template>
-      </BaseListItem>
-    </template>
-  </BaseList>
+  <div class="flex-col-full-pb">
+    <BaseList
+      :items="items"
+      v-model:selected-index="selectedIndex"
+      group-field="group"
+      :group-title="(g: string) => g"
+      @execute="toggle"
+    >
+      <template #item="{ selected, setRef }">
+        <BaseListItem
+          :ref="setRef"
+          title="启用终端自动建议"
+          subtitle="Tab 切换备选，→ 接受，Ctrl+X 开关，Ctrl+C 清空"
+          :selected="selected"
+        >
+          <template #trailing>
+            <BaseButton :variant="zshConfig.enabled ? 'primary' : 'default'" @click.stop="toggle">
+              {{ zshConfig.enabled ? '已开启' : '已关闭' }}
+            </BaseButton>
+          </template>
+        </BaseListItem>
+      </template>
+    </BaseList>
+  </div>
 </template>
 
 <script setup lang="ts">

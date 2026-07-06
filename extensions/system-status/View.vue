@@ -1,51 +1,39 @@
 <template>
   <div p="3" flex="~ col" gap="2.5">
-    <!-- 顶部设备概览 -->
-    <section
-      v-if="staticInfo && snapshot"
-      p="3"
-      rounded="lg"
-      bg="black/3"
-      flex
-      flex-wrap
-      gap="1.5"
-      items="center"
-    >
-      <span flex shrink="0" gap="2" items="center">
-        <i class="i-ri-computer-line text-base text-tx-secondary" />
-        <span text="xs tx-secondary" font="medium">设备</span>
-      </span>
-      <span text="tx-faint">·</span>
-      <span text="xs tx-secondary" font="medium" truncate>{{
-        resolveModel(staticInfo.model)
-      }}</span>
-      <span text="tx-faint">·</span>
-      <span text="xs tx-muted" shrink="0">
-        {{ staticInfo.os_name }} {{ staticInfo.os_version }}
-      </span>
-      <span text="tx-faint">·</span>
-      <span text="xs tx-muted" shrink="0">{{ staticInfo.hostname }}</span>
-      <span text="tx-faint">·</span>
-      <span text="xs tx-muted" shrink="0">运行 {{ formatUptime(snapshot.uptime) }}</span>
-    </section>
-
-    <BaseEmptyState v-if="(!staticInfo || !snapshot) && !error" :loading="true"
-      >读取系统信息...</BaseEmptyState
-    >
     <BaseEmptyState
-      v-else-if="error"
+      v-if="error"
       icon="i-ri-error-warning-line"
       :title="error"
       description="请检查系统权限或重启应用"
     />
 
-    <template v-if="staticInfo && snapshot">
+    <template v-else-if="staticInfo && snapshot">
+      <!-- 顶部设备概览 -->
+      <section p="3" rounded="lg" bg="black/3" flex flex-wrap gap="1.5" items="center">
+        <span flex shrink="0" gap="2" items="center">
+          <i class="i-ri-computer-line text-xs text-tx-secondary" />
+          <span text="xs tx-secondary" font="medium">设备</span>
+        </span>
+        <span text="tx-faint">·</span>
+        <span text="xs tx-secondary" font="medium" truncate>{{
+          resolveModel(staticInfo.model)
+        }}</span>
+        <span text="tx-faint">·</span>
+        <span text="xs tx-muted" shrink="0">
+          {{ staticInfo.os_name }} {{ staticInfo.os_version }}
+        </span>
+        <span text="tx-faint">·</span>
+        <span text="xs tx-muted" shrink="0">{{ staticInfo.hostname }}</span>
+        <span text="tx-faint">·</span>
+        <span text="xs tx-muted" shrink="0">运行 {{ formatUptime(snapshot.uptime) }}</span>
+      </section>
+
       <!-- 第 1 行：CPU + Memory -->
       <div gap="2.5" grid="~ cols-2">
         <!-- CPU -->
         <section p="3" rounded="lg" bg="black/3">
-          <div flex gap="2" items="center">
-            <i class="i-ri-cpu-line text-base text-tx-secondary" />
+          <div flex gap="2" items="center" leading="none">
+            <i class="i-ri-cpu-line text-xs text-tx-secondary" />
             <span text="xs tx-secondary" font="medium">处理器</span>
           </div>
           <div mb="1.5" mt="2" flex gap="2" items="baseline">
@@ -93,8 +81,8 @@
 
         <!-- Memory -->
         <section p="3" rounded="lg" bg="black/3">
-          <div flex gap="2" items="center">
-            <i class="i-ri-database-2-line text-base text-tx-secondary" />
+          <div flex gap="2" items="center" leading="none">
+            <i class="i-ri-database-2-line text-xs text-tx-secondary" />
             <span text="xs tx-secondary" font="medium">内存</span>
           </div>
           <div mb="1.5" mt="2" flex items="baseline" justify="between">
@@ -130,8 +118,8 @@
       <div gap="2.5" grid="~ cols-2">
         <!-- Disk -->
         <section p="3" rounded="lg" bg="black/3">
-          <div flex gap="2" items="center">
-            <i class="i-ri-hard-drive-3-line text-base text-tx-secondary" />
+          <div flex gap="2" items="center" leading="none">
+            <i class="i-ri-hard-drive-3-line text-xs text-tx-secondary" />
             <span text="xs tx-secondary" font="medium">磁盘</span>
             <span v-if="diskFsLabel" text="xs tx-muted" ml="auto" shrink="0" tabular-nums>{{
               diskFsLabel
@@ -160,13 +148,13 @@
 
         <!-- Power -->
         <section p="3" rounded="lg" bg="black/3">
-          <div flex gap="2" items="center">
+          <div flex gap="2" items="center" leading="none">
             <i
               v-if="snapshot.battery"
               :class="batteryIcon(snapshot.battery)"
-              class="text-base text-tx-secondary"
+              class="text-xs text-tx-secondary"
             />
-            <i v-else class="i-ri-plug-line text-base text-tx-secondary" />
+            <i v-else class="i-ri-plug-line text-xs text-tx-secondary" />
             <span text="xs tx-secondary" font="medium">电池</span>
             <span v-if="snapshot.battery" text="xs tx-muted" ml="auto" shrink="0">
               {{ batteryStateText(snapshot.battery.state) }}
@@ -216,8 +204,8 @@
       <div gap="2.5" grid="~ cols-2">
         <!-- Processes -->
         <section p="3" rounded="lg" bg="black/3">
-          <div flex gap="2" items="center">
-            <i class="i-ri-apps-2-line text-base text-tx-secondary" />
+          <div flex gap="2" items="center" leading="none">
+            <i class="i-ri-apps-2-line text-xs text-tx-secondary" />
             <span text="xs tx-secondary" font="medium">进程</span>
           </div>
           <div v-for="(p, i) in snapshot.processes" :key="i" mt="2" flex gap="2" items="center">
@@ -244,8 +232,8 @@
 
         <!-- Network -->
         <section p="3" rounded="lg" bg="black/3">
-          <div flex gap="2" items="center">
-            <i class="i-ri-signal-tower-line text-base text-tx-secondary" />
+          <div flex gap="2" items="center" leading="none">
+            <i class="i-ri-signal-tower-line text-xs text-tx-secondary" />
             <span text="xs tx-secondary" font="medium">网络</span>
           </div>
           <div mb="1.5" mt="2" flex gap="2" items="center">
