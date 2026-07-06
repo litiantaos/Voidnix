@@ -7,7 +7,6 @@ export interface WindowRect {
 }
 
 export interface ScreenshotData {
-  data_url: string
   width: number
   height: number
   scale: number

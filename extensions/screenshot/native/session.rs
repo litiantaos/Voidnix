@@ -388,7 +388,6 @@ pub fn capture_screen() -> Result<ScreenshotData, String> {
     let windows = enumerate_visible_windows();
 
     Ok(ScreenshotData {
-        data_url: String::new(),
         width: lw,
         height: lh,
         scale,
@@ -396,6 +395,19 @@ pub fn capture_screen() -> Result<ScreenshotData, String> {
         mouse_y: 0.0,
         windows,
     })
+}
+
+/// 读取 picker.jpg 并返回 data URL（绕过 asset:// 协议，WKWebView 下 fetch 不可靠）。
+#[tauri::command]
+pub fn read_picker_image() -> String {
+    use base64::Engine;
+    match std::fs::read(picker_jpeg_path()) {
+        Ok(bytes) => {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            format!("data:image/jpeg;base64,{}", b64)
+        }
+        Err(_) => String::new(),
+    }
 }
 
 #[tauri::command]
@@ -493,7 +505,6 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
         let mut d = data.clone();
         d.mouse_x = mouse_x;
         d.mouse_y = mouse_y;
-        d.data_url = picker_jpeg_path().to_string_lossy().to_string();
 
         if let Ok(json) = serde_json::to_string(&d) {
             let _ = window.eval(format!(

@@ -26,7 +26,6 @@ pub struct OcrResult {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ScreenshotData {
-    pub data_url: String,
     pub width: u32,
     pub height: u32,
     pub scale: f64,

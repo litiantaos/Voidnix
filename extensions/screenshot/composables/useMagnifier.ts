@@ -1,4 +1,6 @@
 import { ref, computed, type Ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import type { ScreenshotData, Sel } from './useTypes'
 import { MAGNIFIER_SIZE, MAGNIFIER_ZOOM, MAGNIFIER_OFFSET, handleAbsolutePos } from './useTypes'
 
@@ -32,29 +34,16 @@ export function useMagnifier(options: {
   })
 
   async function loadPickerImage() {
-    const pickerPath = options.initialScreenshot.data_url
-    if (!pickerPath) return
     try {
-      const { convertFileSrc } = await import('@tauri-apps/api/core')
-      const url = convertFileSrc(pickerPath) + `?t=${Date.now()}`
-      for (let i = 0; i < 20; i++) {
-        try {
-          const resp = await fetch(url)
-          if (resp.ok) {
-            const blob = await resp.blob()
-            const objectUrl = URL.createObjectURL(blob)
-            const img = new Image()
-            img.onload = () => {
-              bgImage.value = img
-            }
-            img.src = objectUrl
-            return
-          }
-        } catch {
-          /* 继续等待 */
-        }
-        await new Promise((r) => setTimeout(r, 50))
+      const dataUrl = await invoke<string>(CMD.readPickerImage)
+      if (!dataUrl) return
+      const img = new Image()
+      img.onload = () => {
+        bgImage.value = img
+        // 加载完成后立即绘制一次，不等鼠标移动（否则首帧空白直到 mousemove）
+        updateMagnifier(crossX.value, crossY.value)
       }
+      img.src = dataUrl
     } catch {
       /* 放大镜不可用 */
     }
