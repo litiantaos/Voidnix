@@ -16,7 +16,7 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 - [x] 计算器（输入数学表达式触发）
 - [x] 汇率转换 / UUID / 时间戳 / IP / Base64（斜杠命令触发）
 - [x] 右键菜单
-- [x] 截屏 + 滚动截屏 + 标注 + OCR
+- [x] 截屏 + 标注 + 滚动截屏 + OCR
 - [x] 终端自动建议（终端输入显示自动建议）
 - [x] 窗口管理
 - [ ] 视频处理
