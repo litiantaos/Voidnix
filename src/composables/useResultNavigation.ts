@@ -1,8 +1,6 @@
 import { type Ref, type ComputedRef } from 'vue'
 import { onKeyStroke } from '@/composables/events'
 import { open } from '@tauri-apps/plugin-shell'
-import { invoke } from '@tauri-apps/api/core'
-import { CMD } from '@/commands'
 import { getExtension } from '@/runtime/extension-registry'
 import { useAppStore } from '@/stores/app'
 import type { Extension, SearchResult } from '@/runtime/types'
@@ -87,15 +85,6 @@ export function useResultNavigation(opts: ResultNavOptions) {
         if (appStore.activeModuleId) {
           // 模块模式下 Enter 由各 View / BaseList 自行处理（不介入）
           return
-        }
-        if (e.metaKey && results.value.length > 0) {
-          const result = results.value[selectedIndex.value]
-          if (result?.data?.path) {
-            e.preventDefault()
-            invoke(CMD.revealInFinder, { path: result.data.path })
-            hideWindow()
-            return
-          }
         }
         e.preventDefault()
         e.stopImmediatePropagation()

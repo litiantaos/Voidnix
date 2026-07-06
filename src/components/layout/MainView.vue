@@ -122,7 +122,7 @@
 
   <UpdateDialog v-if="updateStore.dialogVisible" @close="updateStore.closeDialog()" />
 
-  <ResultMetaPanel :results="results" :selected-index="selectedIndex" />
+  <ResultActionPanel :results="results" :selected-index="selectedIndex" />
 </template>
 
 <script setup lang="ts">
@@ -134,7 +134,7 @@ import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import type { SearchResult } from '@/runtime/types'
 import ContentView from '@/components/layout/ContentView.vue'
-import ResultMetaPanel from '@/components/layout/ResultMetaPanel.vue'
+import ResultActionPanel from '@/components/layout/ResultActionPanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 

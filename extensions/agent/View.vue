@@ -80,13 +80,7 @@
                 flex="~ col"
                 gap="1"
               >
-                <div
-                  v-for="(hit, i) in part.parsed.hits"
-                  :key="i"
-                  cursor-pointer
-                  py="1"
-                  @click="openUrl(hit.url)"
-                >
+                <div v-for="(hit, i) in part.parsed.hits" :key="i" py="1" @click="openUrl(hit.url)">
                   <div text="tx-primary" truncate class="hover:underline">{{ hit.title }}</div>
                   <div text="tx-subtle" truncate>{{ hit.snippet || hit.url }}</div>
                 </div>
