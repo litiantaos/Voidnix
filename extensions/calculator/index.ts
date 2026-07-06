@@ -15,7 +15,6 @@ export default defineExtension({
   },
 
   placeholder: '输入数学表达式',
-  hints: { enter: '复制' },
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {

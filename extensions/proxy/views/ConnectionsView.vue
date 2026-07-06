@@ -1,5 +1,5 @@
 <template>
-  <div h="full" flex="~ col" overflow="y-auto">
+  <div flex="~ col" overflow="y-auto">
     <BaseList :items="filtered" v-model:selected-index="selectedIndex">
       <template #item="{ item, selected }">
         <div
@@ -30,9 +30,7 @@
         </div>
       </template>
     </BaseList>
-    <div v-if="filtered.length === 0" text="xs tx-hint" p="y-10" class="text-center">
-      无活动连接
-    </div>
+    <BaseEmptyState v-if="filtered.length === 0" icon="i-ri-links-line" title="无活动连接" />
   </div>
 </template>
 
@@ -43,6 +41,7 @@ import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { formatBytes } from '../logic'
 import BaseList from '@/components/ui/BaseList.vue'
+import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 
 interface ConnMeta {
   network: string

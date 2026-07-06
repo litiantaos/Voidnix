@@ -4,7 +4,7 @@
       <i v-if="loading" class="i-ri-loader-4-line animate-spin" text="2xl" opacity="50"></i>
       <i v-else-if="icon" :class="icon" text="2xl" opacity="50"></i>
     </slot>
-    <div text="sm" font="medium">
+    <div v-if="title || $slots.default" text="sm" font="medium">
       <slot>{{ loading ? '加载中' : title }}</slot>
     </div>
     <div v-if="description" text="xs tx-faint">

@@ -1,5 +1,5 @@
 <template>
-  <div h="full" flex="~ col" overflow="y-auto">
+  <div flex="~ col" overflow="y-auto">
     <BaseList :items="filtered" v-model:selected-index="selectedIndex">
       <template #item="{ item, selected }">
         <BaseListItem :selected="selected">
@@ -15,9 +15,12 @@
         </BaseListItem>
       </template>
     </BaseList>
-    <div v-if="filtered.length === 0" text="xs tx-hint" p="y-10" class="text-center">
-      {{ loading ? '加载中…' : '无规则' }}
-    </div>
+    <BaseEmptyState
+      v-if="filtered.length === 0"
+      icon="i-ri-ruler-line"
+      :loading="loading"
+      :title="loading ? '加载中…' : '无规则'"
+    />
   </div>
 </template>
 
@@ -28,6 +31,7 @@ import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
+import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 
 interface Rule {
   type: string

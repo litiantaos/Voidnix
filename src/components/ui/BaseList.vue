@@ -214,11 +214,14 @@ if (props.multiSelect) {
     emitIds(ids)
   })
 
+  // 有多选项时 ESC 先清选择（不退出模块）：子组件 onMounted 先于父，listener 注册在
+  // useResultNavigation 之前，stopImmediatePropagation 阻断后者同 target bubble listener。
   onKeyStroke('Escape', (e) => {
     if (!isActive.value) return
     if (!props.keyboardActive) return
     if ((props.selectedIds?.size ?? 0) === 0) return
     e.preventDefault()
+    e.stopImmediatePropagation()
     emitIds(new Set())
   })
 }

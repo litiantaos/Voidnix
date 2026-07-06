@@ -14,7 +14,6 @@ export default defineExtension({
   },
 
   placeholder: '输入 Unix 时间戳或日期进行转换',
-  hints: { enter: '复制' },
 
   search: {
     dynamic: (query): ProviderResult[] => {

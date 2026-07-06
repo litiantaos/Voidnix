@@ -48,8 +48,7 @@ export default defineExtension({
     order: 60,
   },
 
-  placeholder: '输入指定 IP 地址，留空则查询本机',
-  hints: { enter: '复制' },
+  placeholder: '输入 IP 地址，留空查询本机',
 
   search: {
     dynamic: async (query, ctx): Promise<ProviderResult[]> => {

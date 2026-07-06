@@ -201,10 +201,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { providerLabelFromUrl } from '@/utils/format'
-import { useSettingsInput } from '@/composables/useSettingsInput'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
-
-useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'translate-shortcut'
 const LANG_ITEM_ID = 'translate-target-lang'

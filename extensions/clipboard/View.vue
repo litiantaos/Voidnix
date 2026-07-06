@@ -6,7 +6,7 @@
     :loading="loading"
   />
 
-  <div v-else h="full">
+  <div v-else>
     <BaseList
       :items="history"
       multi-select

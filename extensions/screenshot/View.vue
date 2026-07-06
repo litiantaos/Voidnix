@@ -52,11 +52,9 @@ import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
-import { useSettingsInput } from '@/composables/useSettingsInput'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 
 const appStore = useAppStore()
-useSettingsInput()
 
 const SHORTCUT_ITEM_ID = 'screenshot-shortcut'
 

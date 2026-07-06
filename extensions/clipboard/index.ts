@@ -115,7 +115,6 @@ export default defineExtension({
   mainView: () => ClipboardView,
   searchBarAccessory: () => ClipboardActions,
   subviews: { config: () => ClipboardSettings },
-  hints: { enter: '粘贴', multiSelect: 'true' },
   listOptions: { multiSelect: true },
   globalShortcuts: [
     {

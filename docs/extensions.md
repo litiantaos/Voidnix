@@ -29,7 +29,7 @@ import { defineExtension } from '@/runtime/extension-registry'
 
 export default defineExtension({
   meta: { id: 'base64', name: 'Base64', icon: 'i-ri-code-s-slash-line', order: 100, keywords: ['编码'] },
-  placeholder: '输入文本进行 Base64 编码',
+  placeholder: '输入文本编解码 Base64',
   search: { dynamic: (query, ctx) => [...] },
   onExecute: (result) => { ... },
   mainView: () => View,
@@ -38,19 +38,16 @@ export default defineExtension({
 
 ### 能力槽（按需声明，均有真实消费者）
 
-| 槽                   | 用途                                                                                                | 消费者                                                                  |
-| -------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `search`             | SearchProvider.dynamic 单通道召回                                                                   | 见下「搜索集成」                                                        |
-| `onExecute`          | 搜索结果回车动作（扩展私有）                                                                        | —                                                                       |
-| `mainView`           | 主视图组件                                                                                          | 9 扩展                                                                  |
-| `searchBarAccessory` | 搜索栏右侧配件                                                                                      | 3：clipboard/agent/translate                                            |
-| `subviews`           | 扩展私有命名子视图                                                                                  | 4：screenshot{ocr}、clipboard{config}、agent{config}、translate{config} |
-| `windowViews`        | 独立窗口视图（key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀）            | 2：screenshot/window-manager                                            |
-| `globalShortcuts`    | 全局快捷键绑定                                                                                      | 5：clipboard/screenshot/agent/translate/system-status                   |
-| `hints`              | 键盘提示（enter/multiSelect/delete）                                                                | enter 3：clipboard/ip/calculator；余各 1                                |
-| `placeholder`        | 搜索框占位提示（激活模块时显示）                                                                    | 7：clipboard/currency/uuid/ip/time/base64/calculator                    |
-| `windowHeight`       | 模块激活时主窗口高度：`number`（固定，clamp `[MIN,MAX]`）/ `'auto'`（随内容自适应）/ 未声明（默认） | 4：agent/proxy=840；translate/system-status='auto'                      |
-| `subviewHeights`     | subview 级高度覆盖（key→语义同 windowHeight）                                                       | 1：screenshot{ocr:'auto'}                                               |
+- `search`：SearchProvider.dynamic 单通道召回（消费者见下「搜索集成」）
+- `onExecute`：搜索结果回车动作，扩展私有（无消费者）
+- `mainView`：主视图组件（9 扩展）
+- `searchBarAccessory`：搜索栏右侧配件（3：clipboard/agent/translate）
+- `subviews`：扩展私有命名子视图（4：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}）
+- `windowViews`：独立窗口视图，key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀（2：screenshot/window-manager）
+- `globalShortcuts`：全局快捷键绑定（5：clipboard/screenshot/agent/translate/system-status）
+- `placeholder`：搜索框占位提示，激活模块时显示（6：clipboard/currency/ip/time/base64/calculator）
+- `windowHeight`：模块激活时主窗口高度，`number`（固定，clamp `[MIN,MAX]`）/ `'auto'`（随内容自适应）/ 未声明默认（4：agent/proxy=840、translate/system-status='auto'）
+- `subviewHeights`：subview 级高度覆盖，key→语义同 windowHeight（1：screenshot{ocr:'auto'}）
 
 高度统一由 `useModuleHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管：高度变化一次 IPC 触发 Rust → `platform/window.rs::animate_frame` 用 macOS `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS 逐帧）；`auto` 模式 ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`，底部将出屏则上移，离开 auto 还原原位。
 
