@@ -43,7 +43,7 @@ describe('getFileIcon', () => {
         title: 'Documents',
         data: { kind: 'folder', path: '/Users/test/Documents' },
       })
-      expect(getFileIcon(r)).toEqual({ icon: 'i-ri-folder-fill', color: 'text-blue-400' })
+      expect(getFileIcon(r)).toEqual({ icon: 'i-ri-folder-fill', color: 'text-zinc-500' })
     })
   })
 

@@ -93,6 +93,7 @@ const metaRows = computed<{ label: string; value: string }[]>(() => {
   if (isApp) {
     r.push({ label: '版本', value: data.value.version || '—' })
     r.push({ label: '创建时间', value: fmtDate(data.value.created) })
+    r.push({ label: '修改时间', value: fmtDate(data.value.modified) })
     r.push({ label: '上次打开', value: fmtDate(data.value.last_used) })
   } else {
     r.push({ label: '创建时间', value: fmtDate(data.value.created) })
