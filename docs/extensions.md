@@ -71,6 +71,7 @@ export default defineExtension({
 
 - **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=1 / calculator=2 / ip=5 / translate=8 / agent=9 / screenshot=11 / window-manager=12 / awake=50 / clean-mode=55 / finder-ext=60 / zsh-autosuggestions=80 / base64=100 / uuid=110 / time=120 / currency=130 / system-status=135；hidden 扩展 settings=998 / search=999。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
+- **View 根禁止 overflow**：经 ContentView 渲染的 View（mainView/subviews）根及内部层级不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是唯一滚动容器——View 根在 `module-fixed` 下被内容驱动撑开（`flex:1` 无法对抗 `contentRef` 的 `minHeight:100%` + 内容驱动高度），再设 overflow 会形成双层滚动（内层失效、scrollContainer 真正滚动），`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中失效内层 → 选中框出视口。View 根让内容自然流动即可；`windowViews`（独立窗口）不经 ContentView，不受此约束。
 
 ## 搜索集成
 

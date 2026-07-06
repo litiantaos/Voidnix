@@ -1,5 +1,5 @@
 <template>
-  <div ref="listRef" flex="~ col" overflow="y-auto">
+  <div ref="listRef" flex="~ col">
     <BaseList :items="filtered" v-model:selected-index="selectedIndex">
       <template #item="{ item, selected }">
         <div
@@ -52,6 +52,9 @@ const appStore = useAppStore()
 const logs = ref<LogFrame[]>([])
 const selectedIndex = ref(0)
 const listRef = ref<HTMLElement | null>(null)
+/// 贴底滚动依赖的真正滚动容器（ContentView 的 scrollContainer）：View 根移除 overflow 后，
+/// listRef 仅作 closest 起点，实际滚动由 scrollContainer 承担（与 BaseList 键盘滚动一致）
+let scroller: HTMLElement | null = null
 let channel: Channel<LogFrame> | null = null
 let unlistenEnabled: (() => void) | null = null
 /// 用户是否贴底（决定新日志是否自动滚到底；用户上滚查历史时不打断）
@@ -98,14 +101,12 @@ function closeStream() {
 }
 
 function scrollToBottom() {
-  const el = listRef.value
-  if (el) el.scrollTop = el.scrollHeight
+  if (scroller) scroller.scrollTop = scroller.scrollHeight
 }
 
 function onScroll() {
-  const el = listRef.value
-  if (!el) return
-  stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+  if (!scroller) return
+  stickToBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 24
 }
 
 /// 日志条数变化时，贴底则自动滚到底（用户上滚查历史时不打断）
@@ -117,7 +118,9 @@ watch(
 )
 
 onMounted(async () => {
-  listRef.value?.addEventListener('scroll', onScroll, { passive: true })
+  scroller =
+    (listRef.value?.closest('.overflow-y-auto, .overflow-auto') as HTMLElement | null) ?? null
+  scroller?.addEventListener('scroll', onScroll, { passive: true })
   openStream()
   // 代理（重新）开启/重连时清空旧日志（上次运行的记录不保留）
   unlistenEnabled = await listen<boolean>('proxy-enabled', (e) => {
@@ -132,7 +135,7 @@ onDeactivated(closeStream)
 
 onUnmounted(() => {
   unlistenEnabled?.()
-  listRef.value?.removeEventListener('scroll', onScroll)
+  scroller?.removeEventListener('scroll', onScroll)
   closeStream()
 })
 </script>

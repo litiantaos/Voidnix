@@ -2,14 +2,7 @@
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置 AI Provider" />
 
   <div v-else p="x-5 t-5" flex="~ col" @click="onContentClick">
-    <div
-      v-if="displayMessages.length > 0"
-      flex="~ 1 col"
-      gap="3"
-      min-h="0"
-      overflow="y-auto"
-      pb="3"
-    >
+    <div v-if="displayMessages.length > 0" flex="~ 1 col" gap="3" min-h="0" pb="3">
       <template v-for="msg in displayMessages" :key="msg.id">
         <!-- 用户消息 -->
         <div

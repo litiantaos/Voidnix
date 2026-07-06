@@ -1,5 +1,5 @@
 <template>
-  <div flex="~ col" overflow="y-auto">
+  <div flex="~ col">
     <BaseList :items="filtered" v-model:selected-index="selectedIndex">
       <template #item="{ item, selected }">
         <BaseListItem :selected="selected">
