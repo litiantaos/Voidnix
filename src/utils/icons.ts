@@ -13,7 +13,7 @@ export function getFileIcon(result: SearchResult): { icon: string; color: string
     if (name.endsWith('.xcodeproj') || name.endsWith('.xcworkspace')) {
       return { icon: 'i-ri-code-s-slash-fill', color: 'text-orange-500' }
     }
-    return { icon: 'i-ri-folder-fill', color: 'text-blue-400' }
+    return { icon: 'i-ri-folder-fill', color: 'text-zinc-500' }
   }
 
   const ext = ((result.data?.path as string) || '').split('.').pop()?.toLowerCase()
