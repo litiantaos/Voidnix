@@ -1,5 +1,5 @@
 <template>
-  <!-- Cmd+I 信息面板（窗口右下角，同动作菜单样式；capture-phase 键盘劫持 + 外点关闭） -->
+  <!-- Cmd+Enter 动作面板（窗口右下角，详情 + 动作合成；capture-phase 键盘劫持 + 外点关闭） -->
   <Teleport to="body">
     <Transition
       appear
@@ -14,25 +14,24 @@
         v-if="open"
         ref="panelRef"
         tabindex="-1"
-        p="3"
         class="dropdown-panel outline-none max-w-96 min-w-64 bottom-4 right-4 fixed z-50"
         role="dialog"
         aria-label="项目信息"
       >
-        <!-- 标题即时可用（result 在 fetch 前已设）；长文件名换行不省略 -->
-        <div text="sm tx-primary" font="medium" class="text-justify break-words">
+        <div text="sm tx-primary" font="medium" class="text-justify break-words" px="3" pt="3">
           {{ result?.title }}
         </div>
-        <div border="b black/5" m="y-3" />
-        <div v-if="data" space-y-3>
-          <div v-for="row in rows" :key="row.label" flex items="center" justify="between" gap="4">
-            <span text="xs tx-subtle" shrink="0">{{ row.label }}</span>
-            <span text="xs tx-primary" font="medium" class="text-right min-w-0">{{
-              row.value
-            }}</span>
-          </div>
-        </div>
-        <div v-else min-h-24 class="flex-center" text="xs tx-faint">无信息</div>
+        <div border="b black/5" m="x-3 y-3" />
+        <template v-if="metaItems.length > 0">
+          <BaseDropdownItems :items="metaItems" />
+          <div border="b black/5" m="x-3 t-3 b-1" />
+        </template>
+        <BaseDropdownItems
+          :items="actionItems"
+          :active-index="menuIndex"
+          @select="onMenuClick"
+          @hover="(i: number) => (menuIndex = i)"
+        />
       </div>
     </Transition>
   </Teleport>
@@ -43,6 +42,9 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
+import { hideWindow } from '@/utils/tauri'
+import { wrapIndex } from '@/utils/dom'
+import BaseDropdownItems, { type PanelItem } from '@/components/ui/BaseDropdownItems.vue'
 import type { SearchResult } from '@/runtime/types'
 
 const props = defineProps<{
@@ -63,6 +65,7 @@ const open = ref(false)
 const data = ref<PathMetadata | null>(null)
 const result = ref<SearchResult | null>(null)
 const panelRef = ref<HTMLElement>()
+const menuIndex = ref(-1)
 
 // 先拉数据再开面板（mdls 仅几十毫秒），避免加载态与内容态 swap 造成开屏抖动
 async function openFor(r: SearchResult) {
@@ -73,6 +76,7 @@ async function openFor(r: SearchResult) {
   } catch {
     data.value = null
   }
+  menuIndex.value = selectableIndices.value[0] ?? -1
   open.value = true
   nextTick(() => panelRef.value?.focus())
 }
@@ -82,7 +86,7 @@ function close() {
   nextTick(() => document.getElementById('main-search-input')?.focus())
 }
 
-const rows = computed(() => {
+const metaRows = computed<{ label: string; value: string }[]>(() => {
   if (!data.value) return []
   const isApp = result.value?.data?.kind === 'application'
   const r: { label: string; value: string }[] = [{ label: '大小', value: fmtSize(data.value.size) }]
@@ -97,6 +101,54 @@ const rows = computed(() => {
   }
   return r
 })
+
+const actionItems = computed<PanelItem[]>(() => [
+  { type: 'item', key: 'reveal', label: '在访达中打开', icon: 'i-ri-folder-open-line' },
+  { type: 'item', key: 'copyPath', label: '复制路径', icon: 'i-ri-file-copy-line' },
+])
+
+const metaItems = computed<PanelItem[]>(() =>
+  metaRows.value.map((r) => ({ type: 'meta', label: r.label, value: r.value })),
+)
+
+const selectableIndices = computed(() =>
+  actionItems.value
+    .map((it, i) => (it.type === 'item' && !it.disabled ? i : -1))
+    .filter((i) => i >= 0),
+)
+
+function moveMenu(dir: 1 | -1) {
+  const ids = selectableIndices.value
+  if (ids.length === 0) return
+  const cur = Math.max(0, ids.indexOf(menuIndex.value))
+  menuIndex.value = ids[wrapIndex(cur, ids.length, dir === 1 ? 'down' : 'up')]
+}
+
+function runAction(key: string | number) {
+  const path = result.value?.data?.path
+  if (!path) return
+  if (key === 'reveal') {
+    close()
+    invoke(CMD.revealInFinder, { path })
+    hideWindow()
+  } else if (key === 'copyPath') {
+    close()
+    invoke(CMD.pasteboardWriteText, { text: path })
+    appStore.showStatus('已复制路径')
+  }
+}
+
+function confirmMenu() {
+  const item = actionItems.value[menuIndex.value]
+  if (!item || item.type !== 'item' || item.disabled || !item.key) return
+  runAction(item.key)
+}
+
+function onMenuClick(i: number) {
+  const item = actionItems.value[i]
+  if (!item || item.type !== 'item' || item.disabled || !item.key) return
+  runAction(item.key)
+}
 
 function fmtSize(bytes: number | null): string {
   if (!bytes || bytes <= 0) return '—'
@@ -124,20 +176,28 @@ function fmtDate(s: string | null | undefined): string {
 
 function onDocKey(e: KeyboardEvent) {
   if (e.isComposing) return
-  // 面板打开时：Cmd+I/Esc 关闭，方向键吞掉防背后列表响应
   if (open.value) {
-    if ((e.key === 'i' && e.metaKey) || e.key === 'Escape') {
+    if (e.key === 'Escape' || (e.key === 'Enter' && e.metaKey)) {
       e.preventDefault()
       e.stopPropagation()
       close()
-    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    } else if (e.key === 'Enter') {
       e.preventDefault()
       e.stopPropagation()
+      confirmMenu()
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      e.stopPropagation()
+      moveMenu(1)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      e.stopPropagation()
+      moveMenu(-1)
     }
     return
   }
-  // Cmd+I 打开：仅全局模式 + 选中项为应用/文件/文件夹且有 path
-  if (e.key === 'i' && e.metaKey && !appStore.activeModuleId && !appStore.isDialogOpen) {
+  // Cmd+Enter 打开：仅全局模式 + 选中项为应用/文件/文件夹且有 path
+  if (e.key === 'Enter' && e.metaKey && !appStore.activeModuleId && !appStore.isDialogOpen) {
     const r = props.results[props.selectedIndex]
     const kind = r?.data?.kind
     if (r?.data?.path && (kind === 'application' || kind === 'file' || kind === 'folder')) {

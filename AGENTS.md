@@ -107,6 +107,8 @@ Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`
 
 **toast 提示**：自研轻量浮层（`composables/useToast.ts` + `components/ui/ToastOverlay.vue`），固定窗口右下角（`fixed bottom-4 right-4`），复用 `dropdown-panel` 样式（同 clipboard cmd+回车动作菜单），按 kind 切图标/色（对勾 accent / 警告 red-500），错误反馈必须传 `kind: 'error'`；堆叠上限 3 条、默认 2000ms 自动清除，窗口隐藏时立即清空（`hideWindow` 内调 `clearToasts`，规避 macOS 隐藏 WebView 节流 setTimeout 致残留）。扩展通过 `copyAndHide`（`stores/app.ts`，写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈；`showStatus(msg, opts?)` 委托 `showToast`（调用点零改动）。搜索栏 placeholder：模块模式显示搜索说明（`在 X 中搜索` 或扩展自声明 `placeholder`），全局模式保留搜索说明。
 
+**浮层范式**：右下角浮层统一 `dropdown-panel` shortcut + `fixed bottom-4 right-4 z-50` + 同款进出场动画（Toast / clipboard 动作菜单 / ResultActionPanel 同构）。`BaseDropdownItems`（`components/ui/`）通用行渲染器，4 行类型 `item | header | divider | meta`（meta = label:value 详情行不可选，`selectableIndices` 仅算 item，键盘导航天然跳过其余）；消费者传 `PanelItem[]` + `activeIndex`，emit `select/hover`。`ResultActionPanel`（`components/layout/`，替代原 ResultMetaPanel）：全局模式 `Cmd+Enter` 对 application/file/folder 结果的合并面板（上方详情 meta 行 + 下方动作 item 行——在 Finder 中显示 / 复制路径），原 `Cmd+I` 已移除并入；capture-phase keydown 劫持 + 外点关闭，打开即默认选中首项可连续 Enter 触发。
+
 **模块视图加载**（切换性能）：模块 View（mainView/subviews/searchBarAccessory）静态 import 进主 bundle（用户高频、固定集合，首次进入零卡顿）；仅**独立窗口**（screenshot 标注 host/pin、window-manager snap 面板，`windowViews`）保留 `defineAsyncComponent` 真按需——不截图/不分屏不加载，省稳态占用（gzip ~20KB）。`ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问模块，切换走 activate/deactivate 而非重挂载。
 
 **LLM 基础设施**（`runtime/llm/`）：agent + translate 扩展共享。`types.rs`（LlmMessage）、`client.rs`（StreamConfig/stream_openai_request + SSRF 防护 validate_ai_request + 消息截断 + 请求管道常量）、`parser.rs`（tool_calls 解析）。
@@ -151,7 +153,7 @@ src/
 │   └── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
 ├── components/
 │   ├── ui/             # 原子组件（只用这些，禁止手写底层标签）
-│   └── layout/         # MainView / ContentView / ResultIcon
+│   └── layout/         # MainView / ContentView / ResultIcon / ResultActionPanel
 ├── composables/
 │   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键注册/失焦隐藏/模块事件，抽自 App.vue）
 │   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型模块 dynamic + web 搜索// + 工具列表/ + 默认结果）
