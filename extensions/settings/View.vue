@@ -1,32 +1,6 @@
 <template>
   <div class="flex-col-full-pb">
-    <BaseList
-      v-if="visibleItems.length > 0"
-      :items="visibleItems"
-      v-model:selected-index="selectedIndex"
-      group-field="group"
-      :group-title="(g: string) => g"
-      @execute="(item: SettingItem, _i: number, e?: KeyboardEvent) => handleExecute(item, e)"
-    >
-      <template #item="{ item, selected, setRef }">
-        <BaseListItem
-          :ref="setRef"
-          :id="`set-${item.id}`"
-          :title="item.title"
-          :subtitle="item.subtitle"
-          :icon="item.icon"
-          :selected="selected"
-        >
-          <template v-if="item.type === 'shortcut'" #trailing>
-            <ShortcutInput
-              :model-value="String(item.value)"
-              shortcut-id="main"
-              @update:model-value="item.update"
-            />
-          </template>
-        </BaseListItem>
-      </template>
-    </BaseList>
+    <BaseSettingsList v-if="visibleItems.length > 0" :items="visibleItems" shortcut-id="main" />
 
     <BaseEmptyState v-else icon="i-ri-search-line" title="没有找到相关设置" />
   </div>
@@ -43,16 +17,13 @@ import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { isTauri } from '@/utils/tauri'
 import { scoreFields } from '@/utils/fuzzy'
-import BaseList from '@/components/ui/BaseList.vue'
-import BaseListItem from '@/components/ui/BaseListItem.vue'
+import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
-import ShortcutInput from '@/components/ui/ShortcutInput.vue'
-import { useSettingsInput, type SettingItem } from '@/composables/useSettingsInput'
+import type { SettingItem } from '@/types/settings'
 
 const settings = useSettingsStore()
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
-const { handleExecute } = useSettingsInput()
 
 const query = computed(() => appStore.searchQuery.toLowerCase().trim())
 const appVersion = ref('')
@@ -173,31 +144,28 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     id: 'check-update',
     title: checkLabel,
     subtitle: versionLabel,
-    type: 'button',
+    type: 'action',
     icon: updateStore.downloaded ? 'i-ri-arrow-up-circle-line' : 'i-ri-refresh-line',
     group: '应用',
-    value: '',
     action: handleCheckUpdate,
   })
 
   items.push({
     id: 'about',
     title: '关于',
-    type: 'button',
+    type: 'action',
     icon: 'i-ri-information-line',
     subtitle: 'github.com/litiantaos/Voidnix',
     group: '应用',
-    value: '',
     action: handleOpenGitHub,
   })
 
   items.push({
     id: 'quit-app',
     title: '退出应用',
-    type: 'button',
+    type: 'action',
     icon: 'i-ri-logout-box-line',
     group: '应用',
-    value: '',
     action: handleQuitApp,
   })
 
@@ -205,20 +173,18 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     id: 'perm-screen-recording',
     title: '屏幕录制权限',
     subtitle: permStatus(permScreenRecording.value),
-    type: 'button',
+    type: 'action',
     icon: permScreenRecording.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
     group: '隐私权限',
-    value: '',
     action: () => handleOpenPrivacy('screen_recording'),
   })
   items.push({
     id: 'perm-accessibility',
     title: '辅助功能权限',
     subtitle: permStatus(permAccessibility.value),
-    type: 'button',
+    type: 'action',
     icon: permAccessibility.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
     group: '隐私权限',
-    value: '',
     action: () => {
       if (permAccessibility.value) {
         handleOpenPrivacy('accessibility')
@@ -231,10 +197,9 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     id: 'perm-full-disk-access',
     title: '完全磁盘访问权限',
     subtitle: permStatus(permFullDiskAccess.value),
-    type: 'button',
+    type: 'action',
     icon: permFullDiskAccess.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
     group: '隐私权限',
-    value: '',
     action: () => handleOpenPrivacy('full_disk_access'),
   })
 
@@ -245,11 +210,9 @@ const visibleItems = computed<SettingItem[]>(() => {
   const q = query.value
   if (!q) return allSettingsItems.value
   return allSettingsItems.value
-    .map((item) => ({ item, score: scoreFields([item.title, item.subtitle ?? ''], q) }))
+    .map((item) => ({ item, score: scoreFields([item.title ?? '', item.subtitle ?? ''], q) }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score)
     .map((x) => x.item)
 })
-
-const selectedIndex = ref(0)
 </script>

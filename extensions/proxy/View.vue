@@ -35,24 +35,19 @@
         </div>
       </template>
 
-      <template #item="{ item, selected, setRef }">
+      <template #item="{ item }">
         <!-- 启用代理（合并内核状态） -->
-        <BaseListItem
-          v-if="item.type === 'enabled'"
-          :ref="setRef"
-          title="开启代理"
-          :selected="selected"
-        >
+        <BaseListItem v-if="item.type === 'enabled'" title="开启代理">
           <template #subtitle>
             <template v-if="!coreStatus.downloaded">
               {{ isDownloading ? '正在下载内核…' : '功能依赖 mihomo 内核，请先下载' }}
             </template>
             <template v-else>
               <span truncate>内核版本：mihomo {{ coreStatus.version }}</span>
-              <span v-if="isEnabled && traffic" text="tx-hint" shrink="0" ml="3">·</span>
+              <span v-if="isEnabled && traffic" text="muted" shrink="0" ml="3">·</span>
               <span
                 v-if="isEnabled && traffic"
-                text="tx-muted"
+                text="muted"
                 shrink="0"
                 ml="2"
                 flex
@@ -93,13 +88,12 @@
         <!-- 规则模式 -->
         <BaseListItem
           v-else-if="item.type === 'mode'"
-          :ref="setRef"
           title="规则模式"
           subtitle="规则按分流策略，全局代理所有流量"
-          :selected="selected"
         >
           <template #trailing>
             <BaseSelect
+              ref="modeSelectRef"
               :model-value="config.mode"
               :options="MODE_OPTIONS"
               @update:model-value="onModeChange"
@@ -110,26 +104,23 @@
         <!-- 订阅项 -->
         <BaseListItem
           v-else-if="item.type === 'subscription'"
-          :ref="setRef"
           :title="item.sub.name || '未命名订阅'"
           :subtitle="
             item.sub.proxyCount
               ? `${item.sub.proxyCount} 节点 · ${formatTime(item.sub.updatedAt)}`
               : item.sub.url || '未配置'
           "
-          :selected="selected"
         />
 
         <!-- 分组切换（多 selector 订阅） -->
         <BaseListItem
           v-else-if="item.type === 'groupSelector'"
-          :ref="setRef"
           title="节点分组"
           subtitle="当前显示的 selector 分组"
-          :selected="selected"
         >
           <template #trailing>
             <BaseSelect
+              ref="groupSelectRef"
               :model-value="activeGroupName"
               :options="groupOptions"
               @update:model-value="onGroupChange"
@@ -138,7 +129,7 @@
         </BaseListItem>
 
         <!-- 节点项 -->
-        <BaseListItem v-else-if="item.type === 'node'" :ref="setRef" :selected="selected">
+        <BaseListItem v-else-if="item.type === 'node'">
           <template #title>
             <span :class="item.node.selected ? 'text-accent' : ''">
               {{ item.node.name }}
@@ -195,7 +186,7 @@
       @confirm="doRemoveSub"
       @cancel="deletingSub = null"
     >
-      <div text="sm tx-secondary">确定删除「{{ deletingSub.name || '未命名订阅' }}」？</div>
+      <div text="sm secondary">确定删除「{{ deletingSub.name || '未命名订阅' }}」？</div>
     </BaseDialog>
   </div>
 </template>
@@ -267,6 +258,8 @@ const delayMap = ref<Record<string, number>>({})
 const testing = ref(false)
 const selectedIndex = ref(0)
 const baseListRef = ref<{ reveal: (i: number) => void } | null>(null)
+const modeSelectRef = ref<InstanceType<typeof BaseSelect> | null>(null)
+const groupSelectRef = ref<InstanceType<typeof BaseSelect> | null>(null)
 const coreStatus = ref<{ downloaded: boolean; version: string; downloading: boolean }>({
   downloaded: false,
   version: '',
@@ -627,6 +620,12 @@ function onExecute(item: unknown) {
   if (it.type === 'enabled') {
     if (coreStatus.value.downloaded) toggleEnabled()
     else downloadCore()
+  } else if (it.type === 'mode') {
+    modeSelectRef.value?.focus()
+    modeSelectRef.value?.toggleOpen()
+  } else if (it.type === 'groupSelector') {
+    groupSelectRef.value?.focus()
+    groupSelectRef.value?.toggleOpen()
   } else if (it.type === 'node') selectNode(it.node)
   else if (it.type === 'subscription') openEditModal(it.sub)
 }

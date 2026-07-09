@@ -1,39 +1,6 @@
 <template>
   <div class="flex-col-full">
-    <BaseList
-      :items="items"
-      v-model:selected-index="selectedIndex"
-      group-field="groupId"
-      @execute="handleExecute"
-    >
-      <template #group-title="{ item }">
-        {{ item.groupTitle }}
-      </template>
-      <template #item="{ item, selected, setRef }">
-        <BaseListItem
-          :ref="setRef"
-          :title="item.title"
-          :subtitle="item.subtitle"
-          :selected="selected"
-        >
-          <template #trailing>
-            <BaseButton
-              v-if="item.id === 'awake'"
-              @click="toggleAwake"
-              :variant="isEnabled ? 'primary' : 'default'"
-            >
-              {{ isEnabled ? '已开启' : '已关闭' }}
-            </BaseButton>
-            <BaseSelect
-              v-else-if="item.id === 'mode'"
-              :model-value="awakeConfig.displayMode"
-              :options="modeOptions"
-              @update:model-value="onModeChange"
-            />
-          </template>
-        </BaseListItem>
-      </template>
-    </BaseList>
+    <BaseSettingsList :items="items" />
   </div>
 </template>
 
@@ -43,14 +10,11 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
-import { config as awakeConfig, type AwakeDisplayMode } from './config'
-import BaseList from '@/components/ui/BaseList.vue'
-import BaseListItem from '@/components/ui/BaseListItem.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseSelect from '@/components/ui/BaseSelect.vue'
+import { config as awakeConfig } from './config'
+import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
+import type { SettingItem } from '@/types/settings'
 
 const isEnabled = ref(false)
-const selectedIndex = ref(0)
 const appStore = useAppStore()
 let unlistenEnabled: (() => void) | undefined
 let unlistenMode: (() => void) | undefined
@@ -63,20 +27,14 @@ const checkStatus = async () => {
   }
 }
 
-const toggleAwake = async () => {
-  const newState = !isEnabled.value
+const toggleAwake = async (next: boolean) => {
   try {
-    await invoke(CMD.setAwakeEnabled, { enabled: newState })
-    isEnabled.value = newState
+    await invoke(CMD.setAwakeEnabled, { enabled: next })
+    isEnabled.value = next
   } catch (e) {
     appStore.showStatus(`切换失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
   }
 }
-
-const modeOptions = [
-  { label: '镜像', value: 'mirror' },
-  { label: '扩展', value: 'extend' },
-]
 
 const onModeChange = (value: string | number) => {
   awakeConfig.displayMode = value as typeof awakeConfig.displayMode
@@ -89,7 +47,7 @@ onMounted(async () => {
     isEnabled.value = e.payload
   })
   unlistenMode = await listen<string>('awake-mode', (e) => {
-    awakeConfig.displayMode = e.payload as AwakeDisplayMode
+    awakeConfig.displayMode = e.payload as typeof awakeConfig.displayMode
   })
 })
 
@@ -98,29 +56,28 @@ onUnmounted(() => {
   unlistenMode?.()
 })
 
-const items = computed(() => [
+const items = computed<SettingItem[]>(() => [
   {
     id: 'awake',
     title: '启用唤醒',
     subtitle: '通过虚拟外接显示器触发 Clamshell Mode，需接入电源',
-    groupId: 'power',
-    groupTitle: '显示器',
+    type: 'toggle',
+    value: isEnabled.value,
+    update: toggleAwake,
+    group: '显示器',
   },
   {
     id: 'mode',
     title: '显示模式',
     subtitle: '镜像与主屏显示相同画面，扩展提供独立桌面空间',
-    groupId: 'power',
-    groupTitle: '显示器',
+    type: 'select',
+    value: awakeConfig.displayMode,
+    options: [
+      { label: '镜像', value: 'mirror' },
+      { label: '扩展', value: 'extend' },
+    ],
+    update: onModeChange,
+    group: '显示器',
   },
 ])
-
-function handleExecute(item: unknown, _index?: number, e?: KeyboardEvent) {
-  if (appStore.isComposing) return
-  if (e) e.preventDefault()
-  const i = item as { id: string } | undefined
-  if (i?.id === 'awake') {
-    toggleAwake()
-  }
-}
 </script>

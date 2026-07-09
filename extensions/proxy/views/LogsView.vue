@@ -1,22 +1,12 @@
 <template>
   <div ref="listRef" flex="~ col">
     <BaseList :items="filtered" v-model:selected-index="selectedIndex">
-      <template #item="{ item, selected }">
-        <div
-          flex
-          gap="2"
-          text="xs"
-          leading="5"
-          px="3"
-          py="0.5"
-          font="mono"
-          rounded="md"
-          :class="selected ? 'bg-black/5' : ''"
-        >
+      <template #item="{ item }">
+        <div flex p="3" gap="3" text="xs" select="none" font="mono">
           <span shrink="0" w="12" flex justify="start" :class="levelColor(item.type)"
             >[{{ item.type }}]</span
           >
-          <span flex="1" break="all" text="tx-secondary">{{ item.payload }}</span>
+          <span flex="1" break="all" text="secondary">{{ item.payload }}</span>
         </div>
       </template>
     </BaseList>
@@ -74,10 +64,10 @@ function levelColor(t: string): string {
       return 'text-red-500'
     case 'warning':
       return 'text-yellow-600'
-    case 'debug':
-      return 'text-tx-faint'
+    case 'info':
+      return 'text-accent'
     default:
-      return 'text-tx-muted'
+      return 'text-muted'
   }
 }
 

@@ -1,29 +1,20 @@
 <template>
   <div flex="~ col">
     <BaseList :items="filtered" v-model:selected-index="selectedIndex">
-      <template #item="{ item, selected }">
-        <div
-          flex
-          items="center"
-          gap="2"
-          text="xs"
-          px="3"
-          h="8"
-          rounded="md"
-          :class="selected ? 'bg-black/5' : ''"
-        >
+      <template #item="{ item }">
+        <div flex p="3" gap="3" text="xs" select="none">
           <span shrink="0" w="10" flex justify="start">
-            <span rounded="sm" bg="black/5" text="tx-hint" p="x-1.5">{{
+            <span rounded="sm" bg="black/5" text="muted" p="x-1.5">{{
               item.metadata.network
             }}</span>
           </span>
           <span flex="1" min-w="0" truncate :title="displayHost(item)">{{
             displayHost(item)
           }}</span>
-          <span shrink="0" w="28" truncate text="tx-subtle" :title="chainText(item)">{{
+          <span shrink="0" w="28" truncate text="secondary" :title="chainText(item)">{{
             chainText(item)
           }}</span>
-          <div shrink="0" w="28" flex justify="end" items="center" gap="2.5" text="tx-muted">
+          <div shrink="0" w="28" flex justify="end" items="center" gap="2.5" text="muted">
             <span tabular="nums" whitespace="nowrap">↑ {{ formatBytes(item.upload) }}</span>
             <span tabular="nums" whitespace="nowrap">↓ {{ formatBytes(item.download) }}</span>
           </div>

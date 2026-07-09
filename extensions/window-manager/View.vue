@@ -1,71 +1,41 @@
 <template>
   <div class="flex-col-full">
-    <BaseList
-      :items="settingsItems"
-      v-model:selected-index="settingsSelectedIndex"
-      group-field="group"
-      :group-title="(g: string) => g"
-      @execute="onSettingsExecute"
-    >
-      <template #item="{ item, selected, setRef }">
-        <BaseListItem
-          v-if="item.type === 'toggle'"
-          :ref="setRef"
-          title="启用窗口管理"
-          subtitle="鼠标移至屏幕顶部中心激活悬浮面板"
-          :selected="selected"
-        >
-          <template #trailing>
-            <BaseButton
-              :variant="wmConfig.enabled ? 'primary' : 'default'"
-              @click.stop="wmConfig.enabled = !wmConfig.enabled"
-            >
-              {{ wmConfig.enabled ? '已开启' : '已关闭' }}
-            </BaseButton>
-          </template>
-        </BaseListItem>
-
-        <BaseListItem v-else :ref="setRef" title="自定义尺寸" :selected="selected">
-          <template #trailing>
-            <div class="no-number-spin" flex gap="1.5" items="center" @click.stop>
-              <BaseInput
-                ref="widthInputRef"
-                type="number"
-                :model-value="draftWidth"
-                class="w-16"
-                @update:model-value="draftWidth = $event"
-                @keydown="onInputKeydown($event, 'width')"
-                @focus="onFocus('width')"
-                @blur="onBlur('width')"
-              />
-              <span text="xs tx-subtle" select="none">×</span>
-              <BaseInput
-                ref="heightInputRef"
-                type="number"
-                :model-value="draftHeight"
-                class="w-16"
-                @update:model-value="draftHeight = $event"
-                @keydown="onInputKeydown($event, 'height')"
-                @focus="onFocus('height')"
-                @blur="onBlur('height')"
-              />
-            </div>
-          </template>
-        </BaseListItem>
+    <BaseSettingsList :items="settingsItems">
+      <template #trailing-wm-custom-size>
+        <div class="no-number-spin" flex gap="1.5" items="center" @click.stop>
+          <BaseInput
+            ref="widthInputRef"
+            type="number"
+            :model-value="draftWidth"
+            class="w-16"
+            @update:model-value="draftWidth = $event"
+            @keydown="onInputKeydown($event, 'width')"
+            @focus="onFocus('width')"
+            @blur="onBlur('width')"
+          />
+          <span text="xs secondary" select="none">×</span>
+          <BaseInput
+            ref="heightInputRef"
+            type="number"
+            :model-value="draftHeight"
+            class="w-16"
+            @update:model-value="draftHeight = $event"
+            @keydown="onInputKeydown($event, 'height')"
+            @focus="onFocus('height')"
+            @blur="onBlur('height')"
+          />
+        </div>
       </template>
-    </BaseList>
+    </BaseSettingsList>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { config as wmConfig, BOUNDS } from './config'
-import BaseList from '@/components/ui/BaseList.vue'
-import BaseListItem from '@/components/ui/BaseListItem.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
-
-const settingsSelectedIndex = ref(0)
+import type { SettingItem } from '@/types/settings'
 
 const widthInputRef = ref<InstanceType<typeof BaseInput>>()
 const heightInputRef = ref<InstanceType<typeof BaseInput>>()
@@ -75,24 +45,25 @@ const draftHeight = ref(String(wmConfig.customHeight))
 const focusedField = ref<'width' | 'height' | null>(null)
 const cancelOnBlur = ref(false)
 
-interface ToggleItem {
-  type: 'toggle'
-  id: string
-  group: string
-}
-
-interface InputItem {
-  type: 'input'
-  id: string
-  group: string
-}
-
-type SettingsItem = ToggleItem | InputItem
-
-const settingsItems: SettingsItem[] = [
-  { type: 'toggle', id: 'wm-enabled', group: '通用' },
-  { type: 'input', id: 'wm-custom-size', group: '通用' },
-]
+const settingsItems = computed<SettingItem[]>(() => [
+  {
+    id: 'wm-enabled',
+    title: '启用窗口管理',
+    subtitle: '鼠标移至屏幕顶部中心激活悬浮面板',
+    type: 'toggle',
+    value: wmConfig.enabled,
+    update: (v: boolean) => {
+      wmConfig.enabled = v
+    },
+    group: '通用',
+  },
+  {
+    id: 'wm-custom-size',
+    title: '自定义尺寸',
+    type: 'custom',
+    group: '通用',
+  },
+])
 
 function onFocus(field: 'width' | 'height') {
   focusedField.value = field
@@ -142,12 +113,6 @@ function onInputKeydown(e: KeyboardEvent, field: 'width' | 'height') {
     e.preventDefault()
     if (field === 'width') heightInputRef.value?.focus()
     else widthInputRef.value?.focus()
-  }
-}
-
-function onSettingsExecute(item: SettingsItem) {
-  if (item.type === 'toggle') {
-    wmConfig.enabled = !wmConfig.enabled
   }
 }
 </script>

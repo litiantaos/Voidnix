@@ -11,21 +11,19 @@
       <!-- 顶部设备概览 -->
       <section p="3" rounded="lg" bg="black/3" flex flex-wrap gap="1.5" items="center">
         <span flex shrink="0" gap="2" items="center">
-          <i class="i-ri-computer-line text-xs text-tx-secondary" />
-          <span text="xs tx-secondary" font="medium">设备</span>
+          <i class="i-ri-computer-line text-xs text-secondary" />
+          <span text="xs secondary" font="medium">设备</span>
         </span>
-        <span text="tx-faint">·</span>
-        <span text="xs tx-secondary" font="medium" truncate>{{
-          resolveModel(staticInfo.model)
-        }}</span>
-        <span text="tx-faint">·</span>
-        <span text="xs tx-muted" shrink="0">
+        <span text="muted">·</span>
+        <span text="xs secondary" font="medium" truncate>{{ resolveModel(staticInfo.model) }}</span>
+        <span text="muted">·</span>
+        <span text="xs muted" shrink="0">
           {{ staticInfo.os_name }} {{ staticInfo.os_version }}
         </span>
-        <span text="tx-faint">·</span>
-        <span text="xs tx-muted" shrink="0">{{ staticInfo.hostname }}</span>
-        <span text="tx-faint">·</span>
-        <span text="xs tx-muted" shrink="0">运行 {{ formatUptime(snapshot.uptime) }}</span>
+        <span text="muted">·</span>
+        <span text="xs muted" shrink="0">{{ staticInfo.hostname }}</span>
+        <span text="muted">·</span>
+        <span text="xs muted" shrink="0">运行 {{ formatUptime(snapshot.uptime) }}</span>
       </section>
 
       <!-- 第 1 行：CPU + Memory -->
@@ -33,14 +31,14 @@
         <!-- CPU -->
         <section p="3" rounded="lg" bg="black/3">
           <div flex gap="2" items="center" leading="none">
-            <i class="i-ri-cpu-line text-xs text-tx-secondary" />
-            <span text="xs tx-secondary" font="medium">处理器</span>
+            <i class="i-ri-cpu-line text-xs text-secondary" />
+            <span text="xs secondary" font="medium">处理器</span>
           </div>
           <div mb="1.5" mt="2" flex gap="2" items="baseline">
-            <span text="lg tx-primary" font="semibold" tabular-nums>
-              {{ snapshot.cpu_usage.toFixed(1) }}<span text="xs tx-muted">%</span>
+            <span text="lg primary" font="semibold" tabular-nums>
+              {{ snapshot.cpu_usage.toFixed(1) }}<span text="xs muted">%</span>
             </span>
-            <span v-if="snapshot.cpu_temp !== null" text="xs tx-muted" ml="auto" tabular-nums>
+            <span v-if="snapshot.cpu_temp !== null" text="xs muted" ml="auto" tabular-nums>
               {{ snapshot.cpu_temp.toFixed(0) }}°C
             </span>
           </div>
@@ -73,7 +71,7 @@
               />
             </div>
           </div>
-          <div text="xs tx-muted" truncate tabular-nums>
+          <div text="xs muted" truncate tabular-nums>
             <span v-if="staticInfo.cpu_model">{{ staticInfo.cpu_model }} · </span
             >{{ staticInfo.cpu_cores }} 核<span v-if="gpuLabel"> · {{ gpuLabel }}</span>
           </div>
@@ -82,15 +80,15 @@
         <!-- Memory -->
         <section p="3" rounded="lg" bg="black/3">
           <div flex gap="2" items="center" leading="none">
-            <i class="i-ri-database-2-line text-xs text-tx-secondary" />
-            <span text="xs tx-secondary" font="medium">内存</span>
+            <i class="i-ri-database-2-line text-xs text-secondary" />
+            <span text="xs secondary" font="medium">内存</span>
           </div>
           <div mb="1.5" mt="2" flex items="baseline" justify="between">
-            <span text="lg tx-primary" font="semibold" tabular-nums>
+            <span text="lg primary" font="semibold" tabular-nums>
               {{ formatBytes(snapshot.used_memory) }}
-              <span text="xs tx-muted">/ {{ formatBytes(snapshot.total_memory) }}</span>
+              <span text="xs muted">/ {{ formatBytes(snapshot.total_memory) }}</span>
             </span>
-            <span text="xs tx-muted" tabular-nums>
+            <span text="xs muted" tabular-nums>
               {{ pct(snapshot.used_memory, snapshot.total_memory).toFixed(0) }}%
             </span>
           </div>
@@ -105,10 +103,8 @@
               }"
             />
           </div>
-          <div text="xs tx-muted" tabular-nums>
-            可用 {{ formatBytes(snapshot.available_memory) }}
-          </div>
-          <div v-if="snapshot.used_swap > 0" text="xs tx-faint" mt="0.5" tabular-nums>
+          <div text="xs muted" tabular-nums>可用 {{ formatBytes(snapshot.available_memory) }}</div>
+          <div v-if="snapshot.used_swap > 0" text="xs muted" mt="0.5" tabular-nums>
             交换 {{ formatBytes(snapshot.used_swap) }}
           </div>
         </section>
@@ -119,18 +115,16 @@
         <!-- Disk -->
         <section p="3" rounded="lg" bg="black/3">
           <div flex gap="2" items="center" leading="none">
-            <i class="i-ri-hard-drive-3-line text-xs text-tx-secondary" />
-            <span text="xs tx-secondary" font="medium">磁盘</span>
-            <span v-if="diskFsLabel" text="xs tx-muted" ml="auto" shrink="0" tabular-nums>{{
+            <i class="i-ri-hard-drive-3-line text-xs text-secondary" />
+            <span text="xs secondary" font="medium">磁盘</span>
+            <span v-if="diskFsLabel" text="xs muted" ml="auto" shrink="0" tabular-nums>{{
               diskFsLabel
             }}</span>
           </div>
           <div v-for="d in snapshot.disks_usage" :key="d.mount_point" mb="1.5" mt="2" last:mb="0">
             <div mb="1" flex items="baseline" justify="between">
-              <span text="xs tx-secondary" font="medium" truncate>{{
-                d.name || d.mount_point
-              }}</span>
-              <span text="xs tx-muted" ml="2" shrink="0" tabular-nums>
+              <span text="xs secondary" font="medium" truncate>{{ d.name || d.mount_point }}</span>
+              <span text="xs muted" ml="2" shrink="0" tabular-nums>
                 {{ formatBytes(d.used) }} / {{ formatBytes(d.total) }}
               </span>
             </div>
@@ -152,20 +146,20 @@
             <i
               v-if="snapshot.battery"
               :class="batteryIcon(snapshot.battery)"
-              class="text-xs text-tx-secondary"
+              class="text-xs text-secondary"
             />
-            <i v-else class="i-ri-plug-line text-xs text-tx-secondary" />
-            <span text="xs tx-secondary" font="medium">电池</span>
-            <span v-if="snapshot.battery" text="xs tx-muted" ml="auto" shrink="0">
+            <i v-else class="i-ri-plug-line text-xs text-secondary" />
+            <span text="xs secondary" font="medium">电池</span>
+            <span v-if="snapshot.battery" text="xs muted" ml="auto" shrink="0">
               {{ batteryStateText(snapshot.battery.state) }}
             </span>
           </div>
           <template v-if="snapshot.battery">
             <div mb="1.5" mt="2" flex items="baseline" justify="between">
-              <span text="lg tx-primary" font="semibold" tabular-nums>
-                {{ snapshot.battery.level }}<span text="xs tx-muted">%</span>
+              <span text="lg primary" font="semibold" tabular-nums>
+                {{ snapshot.battery.level }}<span text="xs muted">%</span>
               </span>
-              <span v-if="snapshot.battery.health !== null" text="xs tx-muted" tabular-nums>
+              <span v-if="snapshot.battery.health !== null" text="xs muted" tabular-nums>
                 健康 {{ snapshot.battery.health }}%
               </span>
             </div>
@@ -178,17 +172,17 @@
                 :style="{ width: `${snapshot.battery.level}%` }"
               />
             </div>
-            <div text="xs tx-muted" flex flex-wrap gap="x-1.5 y-0.5" tabular-nums>
+            <div text="xs muted" flex flex-wrap gap="x-1.5 y-0.5" tabular-nums>
               <span v-if="snapshot.battery.time_to_empty !== null">
                 剩余 {{ formatDuration(snapshot.battery.time_to_empty) }}
               </span>
-              <span v-if="snapshot.battery.time_to_empty !== null" text="tx-faint">·</span>
+              <span v-if="snapshot.battery.time_to_empty !== null" text="muted">·</span>
               <span v-if="snapshot.battery.cycles !== null">
                 {{ snapshot.battery.cycles }} 循环
               </span>
               <span
                 v-if="snapshot.battery.cycles !== null && snapshot.battery.temperature !== null"
-                text="tx-faint"
+                text="muted"
                 >·</span
               >
               <span v-if="snapshot.battery.temperature !== null" tabular-nums>
@@ -196,7 +190,7 @@
               </span>
             </div>
           </template>
-          <div v-else text="xs tx-faint" mt="2">无电池（台式机）</div>
+          <div v-else text="xs muted" mt="2">无电池（台式机）</div>
         </section>
       </div>
 
@@ -205,15 +199,15 @@
         <!-- Processes -->
         <section p="3" rounded="lg" bg="black/3">
           <div flex gap="2" items="center" leading="none">
-            <i class="i-ri-apps-2-line text-xs text-tx-secondary" />
-            <span text="xs tx-secondary" font="medium">进程</span>
+            <i class="i-ri-apps-2-line text-xs text-secondary" />
+            <span text="xs secondary" font="medium">进程</span>
           </div>
           <div v-for="(p, i) in snapshot.processes" :key="i" mt="2" flex gap="2" items="center">
-            <span text="xs tx-faint" shrink="0" w="3" tabular-nums>{{ i + 1 }}</span>
+            <span text="xs muted" shrink="0" w="3" tabular-nums>{{ i + 1 }}</span>
             <div flex-1 min-w="0">
               <div mb="0.5" flex items="baseline" justify="between">
-                <span text="xs tx-secondary" font="medium" truncate>{{ p.name }}</span>
-                <span text="xs tx-muted" ml="2" shrink="0" tabular-nums>
+                <span text="xs secondary" font="medium" truncate>{{ p.name }}</span>
+                <span text="xs muted" ml="2" shrink="0" tabular-nums>
                   {{ p.cpu.toFixed(1) }}% · {{ formatBytes(p.memory) }}
                 </span>
               </div>
@@ -233,11 +227,11 @@
         <!-- Network -->
         <section p="3" rounded="lg" bg="black/3">
           <div flex gap="2" items="center" leading="none">
-            <i class="i-ri-signal-tower-line text-xs text-tx-secondary" />
-            <span text="xs tx-secondary" font="medium">网络</span>
+            <i class="i-ri-signal-tower-line text-xs text-secondary" />
+            <span text="xs secondary" font="medium">网络</span>
           </div>
           <div mb="1.5" mt="2" flex gap="2" items="center">
-            <i class="i-ri-arrow-down-line text-xs text-tx-faint" />
+            <i class="i-ri-arrow-down-line text-xs text-muted" />
             <div flex flex-1 gap="0.5" h="3" items="end">
               <div
                 v-for="(v, i) in sparkData(downHistory)"
@@ -251,12 +245,12 @@
                 :style="{ height: `${sparkHeight(v, downHistory)}%` }"
               />
             </div>
-            <span text="xs tx-secondary" font="medium" ml="1" shrink="0" tabular-nums>
+            <span text="xs secondary" font="medium" ml="1" shrink="0" tabular-nums>
               {{ formatRate(snapshot.net_down) }}
             </span>
           </div>
           <div mb="1.5" flex gap="2" items="center">
-            <i class="i-ri-arrow-up-line text-xs text-tx-faint" />
+            <i class="i-ri-arrow-up-line text-xs text-muted" />
             <div flex flex-1 gap="0.5" h="3" items="end">
               <div
                 v-for="(v, i) in sparkData(upHistory)"
@@ -270,12 +264,12 @@
                 :style="{ height: `${sparkHeight(v, upHistory)}%` }"
               />
             </div>
-            <span text="xs tx-secondary" font="medium" ml="1" shrink="0" tabular-nums>
+            <span text="xs secondary" font="medium" ml="1" shrink="0" tabular-nums>
               {{ formatRate(snapshot.net_up) }}
             </span>
           </div>
-          <div text="xs tx-muted" flex gap="1.5" truncate items="center">
-            <span text="tx-faint" shrink="0">内网</span>
+          <div text="xs muted" flex gap="1.5" truncate items="center">
+            <span text="muted" shrink="0">内网</span>
             <span truncate tabular-nums>{{ snapshot.local_ip || '—' }}</span>
           </div>
         </section>

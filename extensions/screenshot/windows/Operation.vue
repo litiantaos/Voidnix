@@ -111,7 +111,7 @@
     <template v-if="!hasSelection && phase === 'select' && hoverWindow">
       <div class="overlay-abs" :style="[hoverWindowStyle, edgeOutline]">
         <div
-          text="xs tx-primary"
+          text="xs primary"
           p="x-1.5 y-0.5"
           rounded
           bg="surface"
@@ -129,7 +129,7 @@
     <template v-if="hasSelection && phase !== 'scroll'">
       <div class="overlay-abs" :style="[selectionStyle, edgeOutline]">
         <div
-          text="xs tx-primary"
+          text="xs primary"
           p="x-1.5 y-0.5"
           rounded
           bg="surface"
@@ -392,7 +392,7 @@
       class="pointer-events-none left-1/2 fixed -translate-x-1/2"
       style="bottom: 20%"
     >
-      <span class="text-xs ui-ctrl text-tx-secondary px-3 py-1.5 rounded-md">
+      <span class="text-xs ui-ctrl text-secondary px-3 py-1.5 rounded-md">
         已到底部，按 Enter 完成
       </span>
     </div>
