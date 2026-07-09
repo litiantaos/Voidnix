@@ -99,6 +99,11 @@ mod inner {
         80.0
     }
 
+    /// 面板固定尺寸（show/hide 动画 target 权威源，避免读 ns.frame() 漂移）。
+    pub(crate) fn panel_dimensions() -> (f64, f64) {
+        (panel_width(), panel_height())
+    }
+
     // ── 屏幕工具 ──────────────────────────────────────────────────────────
 
     fn screen_top_inset(screen: &ScreenInfo) -> f64 {
@@ -182,7 +187,7 @@ mod inner {
         // 记录原前台应用 PID,layout 命令需要据此定位要操作的窗口。
         // SnapPanel 不调 makeKeyWindow(只接收鼠标 hover/click),也不 activate
         // NSApp —— 原前台 app 全程是 frontmost + key,菜单栏 / 输入焦点不动。
-        // PID 存入 platform::focus 唯一源（§7）。
+        // PID 存入 platform::focus 唯一源。
         crate::platform::focus::capture_frontmost();
 
         let target = compute_panel_rect(screen);
@@ -215,7 +220,7 @@ mod inner {
         STATE.lock().unwrap_or_else(|e| e.into_inner()).visible = false;
 
         // 用户点击 SnapPanel 时,panel 会被 AppKit 自动 makeKey 偷走 system key,
-        // 原 app 的 first responder 随之丢失。沿用主窗口的恢复策略（§7 唯一源）：
+        // 原 app 的 first responder 随之丢失。沿用主窗口的恢复策略：
         // deactivate self → activate 原 app。
         crate::platform::focus::restore_captured();
     }
@@ -439,6 +444,9 @@ mod inner {
 #[cfg(not(target_os = "macos"))]
 mod inner {
     use tauri::AppHandle;
+    pub(crate) fn panel_dimensions() -> (f64, f64) {
+        (0.0, 0.0)
+    }
     pub fn set_size(_cw: f64, _ch: f64) {}
     pub fn start(_app: AppHandle) {}
     pub fn stop() {}
@@ -446,6 +454,10 @@ mod inner {
         false
     }
     pub fn hide_panel(_app: &AppHandle) {}
+}
+
+pub fn panel_dimensions() -> (f64, f64) {
+    inner::panel_dimensions()
 }
 
 pub fn set_snap_size(custom_width: f64, custom_height: f64) {
