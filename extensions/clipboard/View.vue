@@ -11,18 +11,14 @@
       :items="history"
       multi-select
       :selected-ids="selectedIds"
-      :keyboard-active="!menuOpen && !previewOpen && !editOpen"
+      :keyboard-active="!open && !previewOpen && !editOpen"
       id-field="id"
       @update:selected-ids="selectedIds = $event"
       @select="selectedIndex = $event"
       @execute="handleExecute"
     >
-      <template #item="{ item, selected, multiSelected }">
-        <BaseListItem
-          :ref="(el: unknown) => setImageRef(el, item)"
-          :selected="selected || multiSelected"
-          multiline-title
-        >
+      <template #item="{ item }">
+        <BaseListItem :ref="(el: unknown) => setImageRef(el, item)" multiline-title>
           <template #icon>
             <div
               v-if="getColor(item)"
@@ -98,8 +94,8 @@
       leave-to-class="opacity-0 translate-y-2 scale-95"
     >
       <div
-        v-if="menuOpen"
-        ref="menuRef"
+        v-if="open"
+        ref="panelRef"
         tabindex="-1"
         class="dropdown-panel outline-none bottom-4 right-4 fixed z-50"
         role="menu"
@@ -145,9 +141,9 @@
           />
           <span
             v-else-if="previewType === 'image'"
-            class="i-ri-loader-4-line text-2xl text-tx-muted animate-spin"
+            class="i-ri-loader-4-line text-2xl text-muted animate-spin"
           />
-          <div v-else text="sm tx-primary" leading="relaxed" whitespace="pre-wrap" break="words">
+          <div v-else text="sm primary" leading="relaxed" whitespace="pre-wrap" break="words">
             {{ previewText }}
           </div>
         </div>
@@ -180,16 +176,7 @@
 </template>
 
 <script setup lang="ts">
-import {
-  ref,
-  computed,
-  nextTick,
-  onActivated,
-  onMounted,
-  onUnmounted,
-  watch,
-  shallowReactive,
-} from 'vue'
+import { ref, computed, onActivated, onMounted, onUnmounted, watch, shallowReactive } from 'vue'
 import {
   history,
   activeTab,
@@ -207,8 +194,8 @@ import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseDropdownItems, { type PanelItem } from '@/components/ui/BaseDropdownItems.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
+import { useActionPanel } from '@/composables/useActionPanel'
 import { useAppStore } from '@/stores/app'
-import { wrapIndex } from '@/utils/dom'
 
 const appStore = useAppStore()
 
@@ -247,16 +234,15 @@ async function handleExecute(item: ClipboardItem, _index: number, _e?: KeyboardE
     invalidateCache()
   } catch (e) {
     console.error('Failed to paste clipboard:', e)
-    appStore.showStatus('粘贴失败', { kind: 'error', duration: 4000 })
+    appStore.showStatus(typeof e === 'string' ? e : '粘贴失败', { kind: 'error', duration: 4000 })
   }
 }
 
 // ── 动作菜单（Cmd+回车，界面右下角，键盘可达）──
-const menuOpen = ref(false)
-const menuIndex = ref(-1)
+// 键盘导航 / 外点关闭 / Cmd+Enter 打开拦截 由 useActionPanel 统一承载
+const panelRef = ref<HTMLElement>()
 const menuTarget = ref<ClipboardItem | null>(null)
 const menuBatch = ref(false)
-const menuRef = ref<HTMLElement>()
 
 const actionMenuItems = computed<PanelItem[]>(() => {
   if (menuBatch.value) {
@@ -296,52 +282,39 @@ const actionMenuItems = computed<PanelItem[]>(() => {
   return items
 })
 
-const selectableIndices = computed(() =>
-  actionMenuItems.value
-    .map((it, i) => (it.type === 'item' && !it.disabled ? i : -1))
-    .filter((i) => i >= 0),
-)
-
-function openMenu(item: ClipboardItem) {
-  menuBatch.value = false
-  menuTarget.value = item
-  menuIndex.value = selectableIndices.value[0] ?? -1
-  menuOpen.value = true
-  nextTick(() => menuRef.value?.focus())
-}
-
-function openBatchMenu() {
-  menuBatch.value = true
-  menuTarget.value = null
-  menuIndex.value = selectableIndices.value[0] ?? -1
-  menuOpen.value = true
-  nextTick(() => menuRef.value?.focus())
-}
-
-function closeMenu() {
-  menuOpen.value = false
-  menuBatch.value = false
-  nextTick(() => document.getElementById('main-search-input')?.focus())
-}
-
-function moveMenu(dir: 1 | -1) {
-  const ids = selectableIndices.value
-  if (ids.length === 0) return
-  const cur = Math.max(0, ids.indexOf(menuIndex.value))
-  menuIndex.value = ids[wrapIndex(cur, ids.length, dir === 1 ? 'down' : 'up')]
-}
+const { open, menuIndex, close, onMenuClick } = useActionPanel({
+  panelRef,
+  getItems: () => actionMenuItems.value,
+  onSelect: runMenuAction,
+  shouldOpen: (e) => {
+    if (e.isComposing) return false
+    if (appStore.activeModuleId !== 'clipboard') return false
+    if (previewOpen.value || editOpen.value) return false
+    // 多选 → 批量删除菜单；否则 → 当前项完整菜单
+    if (selectedIds.value.size > 0) {
+      menuBatch.value = true
+      menuTarget.value = null
+      return true
+    }
+    const item = history.value[selectedIndex.value]
+    if (!item) return false
+    menuBatch.value = false
+    menuTarget.value = item
+    return true
+  },
+})
 
 function runMenuAction(key: string | number) {
   if (menuBatch.value) {
     if (key !== 'delete') return
     const ids = [...selectedIds.value]
-    closeMenu()
+    close()
     void deleteItems(ids)
     return
   }
   const target = menuTarget.value
   if (!target) return
-  closeMenu()
+  close()
   switch (key) {
     case 'favorite':
       void toggleFavorite(target.id)
@@ -358,84 +331,17 @@ function runMenuAction(key: string | number) {
   }
 }
 
-function confirmMenu() {
-  const item = actionMenuItems.value[menuIndex.value]
-  if (!item || item.type !== 'item' || item.disabled || !item.key) return
-  runMenuAction(item.key)
-}
-
-function onMenuClick(i: number) {
-  const item = actionMenuItems.value[i]
-  if (!item || item.type !== 'item' || item.disabled || !item.key) return
-  runMenuAction(item.key)
-}
-
-function onDocMouseDown(e: MouseEvent) {
-  if (!menuOpen.value) return
-  if (menuRef.value && !menuRef.value.contains(e.target as Node)) closeMenu()
-}
-
-// 捕获相：菜单/预览打开时拦截相关键并阻断冒泡，先于全局 useResultNavigation（exitModule）执行；
-// 并在菜单关闭时拦截 Cmd+回车开菜单（先于 BaseList，避免其清空多选）
-function onDocKey(e: KeyboardEvent) {
-  if (menuOpen.value) {
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        e.stopPropagation()
-        moveMenu(1)
-        return
-      case 'ArrowUp':
-        e.preventDefault()
-        e.stopPropagation()
-        moveMenu(-1)
-        return
-      case 'Enter':
-        e.preventDefault()
-        e.stopPropagation()
-        if (e.metaKey) closeMenu()
-        else confirmMenu()
-        return
-      case 'Escape':
-        e.preventDefault()
-        e.stopPropagation()
-        closeMenu()
-        return
-    }
-    return
-  }
-  // Cmd+回车开菜单（多选→批量删除，否则→当前项完整菜单）。仅 clipboard 激活时拦截
-  if (
-    e.key === 'Enter' &&
-    e.metaKey &&
-    !previewOpen.value &&
-    !editOpen.value &&
-    appStore.activeModuleId === 'clipboard'
-  ) {
+// 预览覆盖层 Esc 关闭（独立捕获相监听；preview 与菜单互斥，菜单由 composable 处理）
+function onPreviewKey(e: KeyboardEvent) {
+  if (!previewOpen.value) return
+  if (e.key === 'Escape') {
     e.preventDefault()
-    e.stopPropagation()
-    if (selectedIds.value.size > 0) openBatchMenu()
-    else {
-      const item = history.value[selectedIndex.value]
-      if (item) openMenu(item)
-    }
-    return
-  }
-  if (previewOpen.value && e.key === 'Escape') {
-    e.preventDefault()
-    e.stopPropagation()
+    e.stopImmediatePropagation()
     previewOpen.value = false
   }
 }
-
-onMounted(() => {
-  document.addEventListener('mousedown', onDocMouseDown)
-  document.addEventListener('keydown', onDocKey, true)
-})
-onUnmounted(() => {
-  document.removeEventListener('mousedown', onDocMouseDown)
-  document.removeEventListener('keydown', onDocKey, true)
-})
+onMounted(() => document.addEventListener('keydown', onPreviewKey, true))
+onUnmounted(() => document.removeEventListener('keydown', onPreviewKey, true))
 
 const toggleFavorite = async (id: string) => {
   try {
@@ -539,8 +445,17 @@ onActivated(() => {
 })
 
 // ── 图片懒加载 ──
+const IMAGE_CACHE_MAX = 30
 const imageCache = shallowReactive(new Map<string, string>())
 const pendingImages = new Set<string>()
+
+function cacheImage(id: string, data: string) {
+  if (imageCache.size >= IMAGE_CACHE_MAX) {
+    const first = imageCache.keys().next().value
+    if (first) imageCache.delete(first)
+  }
+  imageCache.set(id, data)
+}
 
 const observer = new IntersectionObserver(
   (entries) => {
@@ -550,7 +465,7 @@ const observer = new IntersectionObserver(
       if (id && !imageCache.has(id) && !pendingImages.has(id)) {
         pendingImages.add(id)
         invoke<string | null>(CMD.getClipboardImage, { id }).then((data) => {
-          if (data) imageCache.set(id, data)
+          if (data) cacheImage(id, data)
           pendingImages.delete(id)
         })
       }
@@ -587,8 +502,14 @@ function getColor(item: { id: string; content_type: string; content: string }): 
 }
 
 function formatTime(at: string): string {
-  const m = at.match(/\d{2}:\d{2}/)
-  return m ? m[0] : at
+  const date = at.slice(0, 10)
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  if (date === today) {
+    const m = at.match(/\d{2}:\d{2}/)
+    return m ? m[0] : at
+  }
+  return date.slice(5)
 }
 
 function formatSize(bytes: number): string {
