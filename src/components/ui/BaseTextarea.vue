@@ -1,23 +1,13 @@
 <template>
-  <div
-    data-settings-control
-    tabindex="0"
-    :class="[
-      'ui-ctrl h-auto! text-sm! flex items-start gap-2 !px-0',
-      error ? 'border-red-400' : '',
-      disabled ? 'ui-disabled bg-black/2' : '',
-    ]"
-    @click="focus()"
-    @focus="focus()"
-  >
+  <div data-settings-control tabindex="0" :class="rootClass" @click="focus()" @focus="focus()">
     <textarea
       ref="textareaRef"
       :value="modelValue"
       :placeholder="placeholder"
       :disabled="disabled"
       :rows="rows"
-      class="input-base placeholder:text-tx-hint"
-      text="tx-primary"
+      class="input-base placeholder:text-muted"
+      text="primary"
       p="x-3 y-2"
       resize="none"
       :class="autoResize && maxHeight <= 0 ? 'overflow-y-hidden' : 'overflow-y-auto'"
@@ -36,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, toRef, onMounted, onActivated } from 'vue'
+import { ref, computed, watch, nextTick, toRef, onMounted, onActivated } from 'vue'
 import { useInputControl } from '@/composables/useInputControl'
 
 interface Props {
@@ -49,6 +39,8 @@ interface Props {
   submitOnEnter?: boolean
   /** 是否随内容自动撑高（默认 true）。false 时由 rows 决定高度，超出滚动。 */
   autoResize?: boolean
+  /** 无装饰变体：去除控件背景/圆角/ring，融入所在面板（配合外部分割线布局）。 */
+  plain?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -60,6 +52,7 @@ const props = withDefaults(defineProps<Props>(), {
   maxHeight: 120,
   submitOnEnter: true,
   autoResize: true,
+  plain: false,
 })
 
 const emit = defineEmits<{
@@ -84,6 +77,20 @@ const {
 })
 
 const height = ref<string>()
+
+const rootClass = computed(() =>
+  props.plain
+    ? [
+        'flex items-start gap-2 text-sm',
+        props.error ? 'border-red-400' : '',
+        props.disabled ? 'ui-disabled' : '',
+      ]
+    : [
+        'ui-ctrl h-auto! text-sm! flex items-start gap-2 !px-0',
+        props.error ? 'border-red-400' : '',
+        props.disabled ? 'ui-disabled bg-black/2' : '',
+      ],
+)
 
 function onInput(e: Event) {
   baseOnInput(e)

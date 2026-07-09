@@ -14,12 +14,12 @@
     @keydown="onKeyDown"
     @click="toggleOpen"
   >
-    <span :class="selectedLabel ? 'text-tx-primary' : 'text-tx-hint'" truncate>
+    <span :class="selectedLabel ? 'text-primary' : 'text-muted'" truncate>
       {{ selectedLabel || placeholder }}
     </span>
     <i
       class="i-ri-arrow-down-s-line"
-      text="sm tx-muted"
+      text="sm muted"
       ml="2"
       flex="none"
       transition="transform"

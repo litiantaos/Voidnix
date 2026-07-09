@@ -63,7 +63,7 @@ export function scoreFields(fields: (string | undefined | null)[], query: string
 }
 
 /**
- * keyword 双向匹配（keywordSearchAll 专用，§2.5）。
+ * keyword 双向匹配（keywordSearchAll 专用）。
  * scoreFields 的 substringScore 只查「query 是 field 子串」，对 keyword 场景有缺陷：
  * keyword 通常很短（"usd"/"汇率"），多词 query（"100 usd"/"美元汇率"）比 keyword 长 → 永远 0 分。
  * 此处补全反向：keyword 是 query 子串时也命中（降权 0.5，弱信号），覆盖「query 包含关键词」语义。

@@ -46,7 +46,7 @@ describe('defineConfig', () => {
     expect(config.enabled).toBe(true)
   })
 
-  it('load 完成前返回 defaults（v1.6 N10 竞态）', () => {
+  it('load 完成前返回 defaults（竞态保护）', () => {
     storeGet.mockResolvedValue(null)
     const config = defineConfig('cfg-race', { maxDays: 30 })
     expect(config.maxDays).toBe(30)
@@ -78,7 +78,7 @@ describe('defineConfig', () => {
     })
   })
 
-  it('store 实例缓存：多次保存仅 load 一次（v1.5 B1）', async () => {
+  it('store 实例缓存：多次保存仅 load 一次', async () => {
     storeGet.mockResolvedValue(null)
     const config = defineConfig('cfg-cache', { maxDays: 30 })
     await vi.waitFor(() => expect(loadMock).toHaveBeenCalledTimes(1))

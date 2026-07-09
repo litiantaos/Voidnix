@@ -17,7 +17,7 @@ interface SearchInputOptions {
   reset: () => void
 }
 
-/// 搜索输入处理：query 防抖、web 搜索（//）/工具列表（/）解析、默认结果加载、清空与回退。
+/// 搜索输入处理：query 防抖、web 搜索/工具列表解析、默认结果加载、清空与回退。
 /// 搜索状态（results/selectedIndex）由调用方持有并传入，便于与键盘导航共享。
 export function useSearchInput(opts: SearchInputOptions) {
   const appStore = useAppStore()
@@ -54,6 +54,8 @@ export function useSearchInput(opts: SearchInputOptions) {
       selectedIndex.value = savedToolIndex
       if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
       restore('tools')
+      searchInput.value?.focus()
+      searchInput.value?.select()
     } else {
       clearSearch()
       loadDefaultResults()
@@ -76,12 +78,12 @@ export function useSearchInput(opts: SearchInputOptions) {
 
   // --- helpers ---
 
-  /** 扩展 → 模块入口结果（回车走框架内置激活，§2.2 执行分派） */
+  /** 扩展 → 模块入口结果（回车走框架内置激活）。不产出 description：
+   *  扩展列表为单行图标+名称，描述冗余，由 ContentView 的 v-if=item.description 自然过滤。 */
   function extToModuleResult(ext: Extension, score = 1000): SearchResult {
     return {
       id: `module-${ext.meta.id}`,
       title: ext.meta.name,
-      description: ext.meta.description,
       icon: ext.meta.icon,
       module: ext.meta.id,
       score,

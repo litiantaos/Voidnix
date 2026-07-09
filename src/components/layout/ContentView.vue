@@ -43,46 +43,9 @@
           :group-title="!module ? props.groupTitle : undefined"
           @update:selected-index="(i: number) => emit('update:selectedIndex', i)"
           @execute="handleExecute"
-          @reveal="handleReveal"
         >
-          <template #item="{ item, selected, multiSelected, setRef }">
-            <BaseListItem
-              :ref="setRef"
-              :selected="selected || multiSelected"
-              :icon-wrapper-class="
-                item.data?.icon && !item.icon?.startsWith('i-') && item.data?.kind !== 'module'
-                  ? 'bg-transparent'
-                  : undefined
-              "
-            >
-              <template #icon>
-                <ResultIcon :item="item" :module-icon="module?.meta.icon" />
-              </template>
-              <template #title>
-                <div :class="item.data?.isHighlight ? 'text-accent font-medium' : ''">
-                  {{ item.title }}
-                </div>
-              </template>
-              <template #subtitle>
-                <span v-if="item.description" class="flex-1 min-w-0 truncate">{{
-                  item.description
-                }}</span>
-                <template v-else-if="item.data?.path && isFileOrFolder(item)">
-                  <span
-                    class="flex-[0_1_auto] min-w-0 truncate"
-                    :title="getParentPath(item.data.path)"
-                  >
-                    {{ formatPathParts(getParentPath(item.data.path)).head }}
-                  </span>
-                  <span flex="none" whitespace="nowrap">
-                    {{ formatPathParts(getParentPath(item.data.path)).tail }}
-                  </span>
-                </template>
-                <span v-if="item.source" text="tx-hint" flex="none" whitespace="nowrap" ml="1">{{
-                  item.source
-                }}</span>
-              </template>
-            </BaseListItem>
+          <template #item="{ item }">
+            <ResultItem :item="item" :module="module" />
           </template>
         </BaseList>
       </div>
@@ -111,10 +74,8 @@ import { hideWindow } from '@/utils/tauri'
 import { WINDOW } from '@/runtime/constants'
 import type { Extension, SearchResult } from '@/runtime/types'
 import BaseList from '@/components/ui/BaseList.vue'
-import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
-import ResultIcon from '@/components/layout/ResultIcon.vue'
-import { getParentPath, formatPathParts } from '@/utils/format'
+import ResultItem from '@/components/layout/ResultItem.vue'
 
 const props = defineProps<{
   module?: Extension | null
@@ -175,7 +136,13 @@ const scrollContainer = ref<HTMLElement>()
 const contentRef = ref<HTMLElement>()
 defineExpose({ scrollContainer, contentRef })
 
-const handleExecute = async (result: SearchResult) => {
+const handleExecute = async (result: SearchResult, _index: number, e?: KeyboardEvent) => {
+  // Cmd+Enter：在 Finder 中显示（reveal）
+  if (e?.metaKey && result.data?.path) {
+    await invoke(CMD.revealInFinder, { path: result.data.path })
+    hideWindow()
+    return
+  }
   const multiResults =
     isMultiSelect.value && selectedIds.value.size > 0
       ? props.results.filter((r) => selectedIds.value.has(r.id))
@@ -187,16 +154,6 @@ const handleExecute = async (result: SearchResult) => {
     await props.module.onExecute(result, multiResults)
   }
 }
-
-const handleReveal = async (result: SearchResult) => {
-  if (result.data?.path) {
-    await invoke(CMD.revealInFinder, { path: result.data.path })
-    hideWindow()
-  }
-}
-
-const isFileOrFolder = (item: SearchResult) =>
-  item.data?.kind === 'file' || item.data?.kind === 'folder'
 </script>
 
 <style scoped>

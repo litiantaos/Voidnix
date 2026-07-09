@@ -62,7 +62,7 @@ export function getFileIcon(result: SearchResult): { icon: string; color: string
     case 'mdx':
     case 'csv':
     case 'log':
-      return { icon: 'i-ri-file-text-fill', color: 'text-black/40' }
+      return { icon: 'i-ri-file-text-fill', color: 'text-muted' }
     case 'pdf':
       return { icon: 'i-ri-file-pdf-fill', color: 'text-red-500' }
     case 'doc':
@@ -121,6 +121,6 @@ export function getFileIcon(result: SearchResult): { icon: string; color: string
     case 'woff2':
       return { icon: 'i-ri-font-size-2', color: 'text-teal-500' }
     default:
-      return { icon: 'i-ri-file-fill', color: 'text-black/40' }
+      return { icon: 'i-ri-file-fill', color: 'text-muted' }
   }
 }

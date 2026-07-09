@@ -3,8 +3,10 @@ import { SEARCH, LIMITS } from './constants'
 import { scoreFields, keywordMatch } from '@/utils/fuzzy'
 import type { SearchResult, SearchResultKind } from './types'
 
-// kind → group 映射：file/folder 同属 'file' 组（v1.5 合并）；其余 kind 即组名。
-function getGroupKey(kind: SearchResultKind | undefined): string {
+// kind → group 映射：file/folder 同属 'file' 组；其余 kind 即组名。
+// 框架级列表分组单一源（ContentView 全局模式 + search-engine groupAndSort 复用）。
+export function getGroupKey(item: SearchResult): string {
+  const kind = item.data?.kind
   if (kind === 'file' || kind === 'folder') return 'file'
   return kind || 'other'
 }
@@ -27,7 +29,7 @@ interface ScoredResult {
   matched: boolean
 }
 
-/** 单例搜索引擎：dynamic 单通道并行 + filter/group 管道（§2.5）。 */
+/** 单例搜索引擎：dynamic 单通道并行 + filter/group 管道。 */
 class SearchEngine {
   private currentController?: AbortController
   private activeModule: string | undefined
@@ -104,16 +106,21 @@ class SearchEngine {
       targets.map(async (ext) => {
         try {
           const raw = await this.raceWithTimeout(ext.search!.dynamic(query, { signal, moduleMode }))
-          // 框架注入 module = 产出扩展 meta.id（扩展禁填，§2.3 v1.6 N4）；
+          // 框架注入 module = 产出扩展 meta.id（扩展禁填）；
+          // module 类动态结果无 icon 时补产出扩展 meta.icon（calculator/currency 等即时答案默认带扩展图标）；
           // 全局模式 + 工具型结果（kind=module）注入 source = 扩展显示名（UI 标注来源，应用/文件等原生结果不注入）
-          return raw.map(
-            (r) =>
-              ({
-                ...r,
-                module: ext.meta.id,
-                ...(!moduleMode && r.data?.kind === 'module' ? { source: ext.meta.name } : {}),
-              }) as SearchResult,
-          )
+          return raw.map((r) => {
+            const isModule = r.data?.kind === 'module'
+            return {
+              ...r,
+              module: ext.meta.id,
+              icon:
+                r.icon ??
+                (r.data?.icon as string | undefined) ??
+                (isModule ? ext.meta.icon : undefined),
+              ...(!moduleMode && isModule ? { source: ext.meta.name } : {}),
+            } as SearchResult
+          })
         } catch (e) {
           // abort 触发的 AbortError 与超时是正常/降级路径，静默；其余打日志
           const name = (e as Error)?.name
@@ -148,7 +155,7 @@ class SearchEngine {
     }
   }
 
-  /** 框架内置：扫描 meta.keywords 产出模块入口结果（§2.5）。
+  /** 框架内置：扫描 meta.keywords 产出模块入口结果。
    *  keywords 用双向匹配（keywordMatch：正向 + 反向降权 + 拼音），覆盖多词 query 含关键词场景；
    *  name/description 用 scoreFields 单向子串（query 在 field 中）。
    *  入参 q 约定已 trim（调用点预算）；产出序无要求——groupAndSort 在 module 组内按 finalScore 重排。 */
@@ -168,7 +175,7 @@ class SearchEngine {
         title: ext.meta.name,
         description: ext.meta.description,
         icon: ext.meta.icon,
-        module: ext.meta.id, // 目标模块 id（框架内置激活，§2.2 执行分派）
+        module: ext.meta.id, // 目标模块 id（框架内置激活）
         boost: SEARCH.KEYWORD_MODULE_BOOST,
         score,
         data: { kind: 'module' as SearchResultKind, moduleId: ext.meta.id },
@@ -187,7 +194,7 @@ class SearchEngine {
     // 分组
     const groups = new Map<string, SearchResult[]>()
     for (const item of filtered) {
-      const key = getGroupKey(item.data?.kind)
+      const key = getGroupKey(item)
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(item)
     }

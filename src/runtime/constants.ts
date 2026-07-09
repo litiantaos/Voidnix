@@ -1,4 +1,4 @@
-// 语义常量单一真相源（仅前端；Rust 端无常量文件，见 RV §3.1）。
+// 语义常量单一真相源（仅前端；Rust 端无常量文件）。
 // 不可配置；可调参数走 config 系统（stores/settings.ts + defineConfig）。
 
 export const SEARCH = {
@@ -12,7 +12,7 @@ export const SEARCH = {
     logMul: 50, // frequencyBoost log 乘子
     cap: 320, // frequencyBoost 上限
   },
-  // 组间定序严格锁死（§2.5）；不设组级 GROUP_BOOST（GROUP_ORDER 已定组间序）。
+  // 组间定序严格锁死；不设组级 GROUP_BOOST（GROUP_ORDER 已定组间序）。
   // 扩展用 per-item boost（SearchResult.boost）调整组内优先级。
   // 顺序按使用频率第一性推导：启动应用 / 扩展工具 / 查找文件 / 剪贴板辅助 / web 垫底。
   GROUP_ORDER: ['application', 'module', 'file', 'clipboard', 'web'] as const,

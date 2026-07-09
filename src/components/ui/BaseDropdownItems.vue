@@ -11,8 +11,8 @@
       px="3"
       py="1"
     >
-      <span text="xs tx-subtle" shrink="0">{{ item.label }}</span>
-      <span text="xs tx-primary" font="medium" class="text-right min-w-0 truncate">{{
+      <span text="xs secondary" shrink="0">{{ item.label }}</span>
+      <span text="xs primary" font="medium" class="text-right min-w-0 truncate">{{
         item.value
       }}</span>
     </div>
@@ -55,7 +55,7 @@ function rowClass(item: PanelItem, i: number) {
     'flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-md transition-colors truncate',
     item.disabled ? 'opacity-40 cursor-not-allowed' : '',
     active ? 'ui-active' : '',
-    item.danger ? 'text-red-500' : active ? 'text-accent' : 'text-tx-secondary',
+    item.danger ? 'text-red-500' : active ? 'text-accent' : 'text-secondary',
   ]
 }
 

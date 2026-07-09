@@ -12,7 +12,7 @@
     />
     <span
       v-if="!hideValue"
-      text="xs tx-secondary right"
+      text="xs secondary right"
       leading="none"
       shrink="0"
       tabular-nums
@@ -72,7 +72,7 @@ const displayValue = computed(() => `${props.modelValue}${props.suffix}`)
   height: 12px;
   border-radius: 50%;
   background: var(--color-accent, #3b82f6);
-  border: 2px solid var(--color-surface, #fcfcfc);
+  border: 2px solid var(--color-surface, #fafafa);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 </style>

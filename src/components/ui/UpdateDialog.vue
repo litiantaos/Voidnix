@@ -8,14 +8,14 @@
     @cancel="emit('close')"
   >
     <div flex="~ col" gap="3">
-      <div text="xs tx-subtle" flex gap="2" items="center">
-        <span text="tx-muted">当前版本</span>
+      <div text="xs secondary" flex gap="2" items="center">
+        <span text="muted">当前版本</span>
         <span font="mono">v{{ updateStore.info?.currentVersion }}</span>
-        <span class="i-ri-arrow-right-line" text="tx-hint"></span>
+        <span class="i-ri-arrow-right-line" text="muted"></span>
         <span text="accent" font="medium mono">v{{ updateStore.info?.newVersion }}</span>
       </div>
 
-      <p v-if="updateStore.info?.body" text="xs tx-subtle" leading="relaxed" line-clamp="4">
+      <p v-if="updateStore.info?.body" text="xs secondary" leading="relaxed" line-clamp="4">
         {{ updateStore.info.body }}
       </p>
 
