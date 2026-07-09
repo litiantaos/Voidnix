@@ -10,8 +10,9 @@
 use objc2::rc::autoreleasepool;
 use objc2_app_kit::{
     NSPasteboard, NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSPasteboardTypeString,
+    NSPasteboardTypeTIFF,
 };
-use objc2_foundation::{NSData, NSString};
+use objc2_foundation::{NSData, NSString, NSURL};
 
 /// 读取剪贴板文本。
 pub fn read_text() -> Option<String> {
@@ -31,12 +32,56 @@ pub fn read_file_url() -> Option<String> {
     })
 }
 
+/// 读取所有文件 URL（多选复制时剪贴板含多个 NSPasteboardItem，每个一个 file URL）。
+/// 单文件复制返回 1 元素 Vec。
+pub fn read_file_urls() -> Vec<String> {
+    autoreleasepool(|_| unsafe {
+        let pb = NSPasteboard::generalPasteboard();
+        let mut urls = Vec::new();
+        if let Some(items) = pb.pasteboardItems() {
+            for item in items.iter() {
+                if let Some(s) = item.stringForType(NSPasteboardTypeFileURL) {
+                    urls.push(s.to_string());
+                }
+            }
+        }
+        urls
+    })
+}
+
+/// 把 file URL（可能是 file reference URL `file:///.file/id=...`）解析为实际文件路径。
+/// Finder 复制文件写入 file reference URL（基于文件 id），无法直接 fs::read，
+/// 需经 NSURL.filePathURL 转为 path-based URL 再取 path。
+pub fn resolve_file_url_to_path(url: &str) -> Option<String> {
+    autoreleasepool(|_| {
+        let nsurl = NSURL::URLWithString(&NSString::from_str(url))?;
+        let path_url = nsurl.filePathURL()?;
+        let path = path_url.path()?;
+        Some(path.to_string())
+    })
+}
+
 /// 读取 PNG 原始字节（NSPasteboardTypePNG）。
 pub fn read_png() -> Option<Vec<u8>> {
     autoreleasepool(|_| unsafe {
         NSPasteboard::generalPasteboard()
             .dataForType(NSPasteboardTypePNG)
             .map(|d| d.to_vec())
+    })
+}
+
+/// 读取 TIFF 数据并转为 PNG 字节（微信、预览程序等写 NSPasteboardTypeTIFF）。
+/// 用 NSBitmapImageRep 解码 TIFF 后重新编码为 PNG，供 base64 data URL 复用。
+pub fn read_tiff_as_png() -> Option<Vec<u8>> {
+    use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep};
+    use objc2_foundation::NSDictionary;
+    autoreleasepool(|_| unsafe {
+        let pb = NSPasteboard::generalPasteboard();
+        let tiff_data = pb.dataForType(NSPasteboardTypeTIFF)?;
+        let rep = NSBitmapImageRep::imageRepWithData(&tiff_data)?;
+        let empty = NSDictionary::<objc2_foundation::NSString, objc2::runtime::AnyObject>::new();
+        let png = rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &empty)?;
+        Some(png.to_vec())
     })
 }
 
@@ -71,6 +116,33 @@ pub fn set_file_url(s: &str) {
 pub fn set_png(bytes: &[u8]) {
     let d = NSData::with_bytes(bytes);
     NSPasteboard::generalPasteboard().setData_forType(Some(&d), unsafe { NSPasteboardTypePNG });
+}
+
+/// 写入任意图片字节，经 NSImage 解码后统一转 PNG 再写 NSPasteboardTypePNG。
+/// NSImage 支持所有系统格式（PNG/JPEG/GIF/WebP/BMP/HEIC/HEIF 等，内部用 ImageIO）；
+/// NSBitmapImageRep 不支持 HEIC，故经 NSImage → TIFF 中转再转 PNG。
+pub fn set_image_bytes(bytes: &[u8]) {
+    use objc2::AnyThread;
+    use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
+    use objc2_foundation::NSDictionary;
+    autoreleasepool(|_| unsafe {
+        let data = NSData::with_bytes(bytes);
+        let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) else {
+            return;
+        };
+        let Some(tiff) = image.TIFFRepresentation() else {
+            return;
+        };
+        let Some(rep) = NSBitmapImageRep::imageRepWithData(&tiff) else {
+            return;
+        };
+        let empty = NSDictionary::<NSString, objc2::runtime::AnyObject>::new();
+        let Some(png) = rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &empty)
+        else {
+            return;
+        };
+        NSPasteboard::generalPasteboard().setData_forType(Some(&png), NSPasteboardTypePNG);
+    });
 }
 
 /// 写自定义 UTI 类型字符串（不清空，供写入自定义标记类型用于自识别）。
