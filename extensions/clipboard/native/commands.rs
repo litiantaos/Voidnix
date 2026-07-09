@@ -33,7 +33,7 @@ pub async fn get_clipboard_history(
         sql.push_str(" WHERE is_favorite = 1");
     }
     sql.push_str(" ORDER BY created_at DESC");
-    let effective_limit = limit.unwrap_or(100);
+    let effective_limit = limit.unwrap_or(500);
     sql.push_str(&format!(" LIMIT {}", effective_limit));
 
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
@@ -79,6 +79,7 @@ pub async fn clear_clipboard_history(app: tauri::AppHandle) -> Result<(), String
     let conn = db.conn();
     conn.execute("DELETE FROM clipboard_history WHERE is_favorite = 0", [])
         .map_err(|e| e.to_string())?;
+    db.maybe_checkpoint(&conn);
     Ok(())
 }
 
@@ -105,6 +106,7 @@ pub async fn delete_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> 
         .collect();
     conn.execute(&sql, params.as_slice())
         .map_err(|e| e.to_string())?;
+    db.maybe_checkpoint(&conn);
     Ok(())
 }
 
@@ -117,6 +119,7 @@ pub async fn toggle_clipboard_favorite(id: String, app: tauri::AppHandle) -> Res
         rusqlite::params![id],
     )
     .map_err(|e| e.to_string())?;
+    db.maybe_checkpoint(&conn);
     Ok(())
 }
 
@@ -199,9 +202,12 @@ fn write_to_pasteboard(content: &str, content_type: &str) {
         "text" => pasteboard::set_string(content),
         "file" => pasteboard::set_file_url(content),
         "image" => {
-            if let Some(base64_str) = content.strip_prefix("data:image/png;base64,") {
-                if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(base64_str) {
-                    pasteboard::set_png(&decoded);
+            // 兼容任意 data:image/*;base64,<payload>（PNG/JPEG/GIF/WebP/BMP），
+            // set_image_bytes 经 NSBitmapImageRep 统一转 PNG 写入
+            if let Some(idx) = content.find(";base64,") {
+                let payload = &content[idx + ";base64,".len()..];
+                if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(payload) {
+                    pasteboard::set_image_bytes(&decoded);
                 }
             }
         }
@@ -217,6 +223,9 @@ fn hide_and_paste(app: &tauri::AppHandle) {
 
 #[tauri::command]
 pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), String> {
+    if !ax_trusted() {
+        return Err("需授予辅助功能权限".to_string());
+    }
     let item = {
         let db = app.state::<Database>();
         let conn = db.conn();
@@ -244,6 +253,9 @@ pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), Str
 
 #[tauri::command]
 pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<(), String> {
+    if !ax_trusted() {
+        return Err("需授予辅助功能权限".to_string());
+    }
     let items = {
         let db = app.state::<Database>();
         let conn = db.conn();
@@ -293,20 +305,18 @@ pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<
     Ok(())
 }
 
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXIsProcessTrusted() -> bool;
+}
+
+/// 辅助功能权限检查（CGEventPost 注入需授权，否则静默失败）。
+fn ax_trusted() -> bool {
+    // SAFETY: AXIsProcessTrusted 是 Accessibility C API，无参数，仅查询当前进程可信状态
+    unsafe { AXIsProcessTrusted() }
+}
+
 fn simulate_cmd_v() {
     std::thread::sleep(std::time::Duration::from_millis(200));
-
-    #[link(name = "ApplicationServices", kind = "framework")]
-    extern "C" {
-        fn AXIsProcessTrusted() -> bool;
-    }
-
-    // SAFETY: AXIsProcessTrusted 是 Accessibility C API，无参数，仅查询当前进程可信状态
-    unsafe {
-        if !AXIsProcessTrusted() {
-            log::warn!("Accessibility permissions not granted! CGEventPost will silently fail.");
-        }
-    }
-
     crate::platform::input::post_combo("cmd+v", None);
 }

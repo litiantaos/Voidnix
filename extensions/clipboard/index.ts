@@ -169,7 +169,10 @@ export default defineExtension({
         invalidateCache()
       } catch (e) {
         console.error('Failed to paste clipboard item:', e)
-        useAppStore().showStatus('粘贴失败', { kind: 'error', duration: 4000 })
+        useAppStore().showStatus(typeof e === 'string' ? e : '粘贴失败', {
+          kind: 'error',
+          duration: 4000,
+        })
       }
     }
   },
