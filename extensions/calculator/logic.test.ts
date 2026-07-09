@@ -59,7 +59,7 @@ describe('evaluateMath — parentheses', () => {
 
 describe('evaluateMath — unary minus', () => {
   it('negative numbers', () => {
-    expect(evaluateMath('-5')).toBe('-5')
+    expect(evaluateMath('-5')).toBeNull()
     expect(evaluateMath('-5+3')).toBe('-2')
     expect(evaluateMath('3+-5')).toBe('-2')
     expect(evaluateMath('3*-2')).toBe('-6')
@@ -75,12 +75,21 @@ describe('evaluateMath — decimals', () => {
   it('decimal arithmetic', () => {
     expect(evaluateMath('0.5+0.5')).toBe('1')
     expect(evaluateMath('1.5*2')).toBe('3')
-    expect(evaluateMath('3.14')).toBe('3.14')
+  })
+})
+
+describe('evaluateMath — pure number is not an expression', () => {
+  it('整数 / 小数 / 负数裸值返回 null', () => {
+    expect(evaluateMath('123')).toBeNull()
+    expect(evaluateMath('3.14')).toBeNull()
+    expect(evaluateMath('10.0')).toBeNull()
+    expect(evaluateMath('5.000')).toBeNull()
+    expect(evaluateMath('-5')).toBeNull()
   })
 
-  it('trailing zeros removed', () => {
-    expect(evaluateMath('10.0')).toBe('10')
-    expect(evaluateMath('5.000')).toBe('5')
+  it('含运算符或括号才求值', () => {
+    expect(evaluateMath('1+2')).toBe('3')
+    expect(evaluateMath('(5)')).toBe('5')
   })
 })
 

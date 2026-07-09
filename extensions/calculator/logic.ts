@@ -14,6 +14,8 @@ export function evaluateMath(expr: string): string | null {
 
     const tokens = tokenize(sanitized)
     if (!tokens) return null
+    // 纯数字（含前导负号折叠成的单 num token）不算表达式——需至少一个运算符或括号
+    if (!tokens.some((t) => t.type !== 'num')) return null
     const result = parseExpression(tokens)
     if (result === null) return null
 

@@ -16,9 +16,12 @@ export default defineExtension({
   placeholder: '输入 Unix 时间戳或日期进行转换',
 
   search: {
-    dynamic: (query): ProviderResult[] => {
+    dynamic: (query, ctx): ProviderResult[] => {
       const trimmed = query.trim()
       const results: ProviderResult[] = []
+
+      // 全局模式不对纯数字做时间戳转换（避免订单号/账号等误触）；模块模式正常响应
+      if (trimmed && !ctx?.moduleMode && /^\d+$/.test(trimmed)) return results
 
       const mk = (id: string, title: string, desc: string): ProviderResult => ({
         id,
