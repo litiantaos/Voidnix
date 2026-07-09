@@ -1,13 +1,26 @@
 <template>
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置 AI Provider" />
 
-  <div v-else p="x-5 t-5" flex="~ col" @click="onContentClick">
-    <div v-if="displayMessages.length > 0" flex="~ 1 col" gap="3" min-h="0" pb="3">
+  <div v-else flex="~ col" overflow="hidden" @click="onContentClick">
+    <!-- 空态：提为顶层 flex-1 兄弟并居中（原塞在 sticky 输入容器内不居中）-->
+    <div
+      v-if="displayMessages.length === 0"
+      flex="~ 1 col"
+      items="center"
+      justify="center"
+      text="center"
+      space="y-1"
+    >
+      <h1 text="xl" font="bold">来点有意思的吧！</h1>
+      <p text="xs muted">日常问题、工作任务、搜索资料、跑命令...</p>
+    </div>
+
+    <div v-else flex="~ 1 col" gap="3" min-h="0" overflow="y-auto" p="5" class="hide-scrollbar">
       <template v-for="msg in displayMessages" :key="msg.id">
         <!-- 用户消息 -->
         <div
           v-if="msg.role === 'user'"
-          text="sm tx-primary"
+          text="sm primary"
           leading="relaxed"
           p="l-3"
           border="l-2 accent"
@@ -18,16 +31,16 @@
         </div>
 
         <!-- assistant 消息（含多 part）-->
-        <div v-else flex="~ col" gap="2" p="l-3" border="l-2 tx-faint/20">
+        <div v-else flex="~ col" gap="2" p="l-3" border="l-2 muted/20">
           <!-- streaming 占位 -->
           <div
             v-if="msg.streaming && msg.parts.length === 0"
-            text="sm tx-subtle"
+            text="sm secondary"
             flex
             items="center"
             gap="2"
           >
-            <span class="i-ri-loader-4-line animate-spin" text="tx-muted" />
+            <span class="i-ri-loader-4-line animate-spin" text="muted" />
             <span>思考中…</span>
           </div>
 
@@ -36,7 +49,7 @@
             <div
               v-if="part.type === 'text'"
               class="markdown-body"
-              text="sm tx-primary"
+              text="sm primary"
               leading="relaxed"
               v-html="renderMarkdown(part.text)"
             />
@@ -51,7 +64,7 @@
               overflow="hidden"
             >
               <div p="x-2.5 y-2" flex items="center" gap="1.5">
-                <span shrink="0" font="mono" text="tx-secondary" bg="black/8" rounded px="1">{{
+                <span shrink="0" font="mono" text="secondary" bg="black/8" rounded px="1">{{
                   part.name
                 }}</span>
                 <span
@@ -59,7 +72,7 @@
                   shrink-1
                   min-w="0"
                   font="mono"
-                  text="tx-secondary"
+                  text="secondary"
                   truncate
                   >{{ toolDetail(part) }}</span
                 >
@@ -74,8 +87,8 @@
                 gap="1"
               >
                 <div v-for="(hit, i) in part.parsed.hits" :key="i" py="1" @click="openUrl(hit.url)">
-                  <div text="tx-primary" truncate class="hover:underline">{{ hit.title }}</div>
-                  <div text="tx-subtle" truncate>{{ hit.snippet || hit.url }}</div>
+                  <div text="primary" truncate class="hover:underline">{{ hit.title }}</div>
+                  <div text="secondary" truncate>{{ hit.snippet || hit.url }}</div>
                 </div>
               </div>
               <!-- 其他工具结果：pre -->
@@ -84,7 +97,7 @@
                 border="t black/5"
                 p="x-2.5 y-2"
                 font="mono"
-                text="tx-secondary"
+                text="secondary"
                 whitespace="pre-wrap"
                 break="words"
                 max-h="40"
@@ -98,27 +111,13 @@
       </template>
     </div>
 
-    <div
-      p="y-5"
-      pointer-events="none"
-      bottom="0"
-      sticky
-      class="from-transparent to-surface via-surface/60 via-30% bg-linear-to-b"
-    >
-      <div v-if="displayMessages.length === 0" p="y-6" space="y-1">
-        <h1 text="xl" font="bold">来点有意思的吧！</h1>
-        <p text="xs tx-muted">日常问题、工作任务、搜索资料、跑命令...</p>
-      </div>
-
-      <div flex items="end" gap="2">
-        <BaseTextarea
-          ref="textareaRef"
-          v-model="inputText"
-          :placeholder="agent.isGenerating.value ? '执行中，Ctrl+C 中止' : '聊点什么...'"
-          class="flex-1 pointer-events-auto !bg-[#f2f2f2]"
-          @submit="handleSubmit"
-        />
-      </div>
+    <div p="x-5 b-5" flex="~ col" shrink="0">
+      <BaseTextarea
+        ref="textareaRef"
+        v-model="inputText"
+        :placeholder="agent.isGenerating.value ? '执行中，Ctrl+C 中止' : '聊点什么...'"
+        @submit="handleSubmit"
+      />
     </div>
   </div>
 </template>
@@ -192,7 +191,7 @@ function toolStateIcon(state: string): string {
     case 'running':
       return 'i-ri-loader-4-line animate-spin text-accent'
     default:
-      return 'i-ri-tools-line text-tx-muted'
+      return 'i-ri-tools-line text-muted'
   }
 }
 

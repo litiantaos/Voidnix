@@ -1,12 +1,6 @@
 <template>
   <div class="flex-col-full-pb">
-    <BaseList
-      :items="allItems"
-      v-model:selected-index="selectedIndex"
-      :group-field="(item: ChatSettingsItem) => item.group"
-      :group-title="(g: string) => g"
-      @execute="(item: ChatSettingsItem) => onExecute(item)"
-    >
+    <BaseSettingsList :items="allItems" shortcut-id="agent">
       <template #group-title="{ group }">
         <div flex items="center">
           <span>{{ group }}</span>
@@ -18,47 +12,7 @@
           />
         </div>
       </template>
-
-      <template #item="{ item, selected, setRef }">
-        <!-- 快捷键 -->
-        <BaseListItem
-          v-if="item.type === 'shortcut'"
-          :ref="setRef"
-          :id="`si-${SHORTCUT_ITEM_ID}`"
-          title="启动快捷键"
-          :selected="selected"
-        >
-          <template #trailing>
-            <ShortcutInput
-              :model-value="agentShortcutValue"
-              shortcut-id="agent"
-              @update:model-value="handleAgentShortcutChange"
-            />
-          </template>
-        </BaseListItem>
-
-        <!-- 模型提供商 -->
-        <BaseListItem
-          v-else-if="item.type === 'provider'"
-          :ref="setRef"
-          :title="providerLabelFromUrl(item.config.endpoint, '默认提供商')"
-          :subtitle="item.config.models.filter(Boolean).join('、') || '未配置'"
-          :selected="selected"
-        />
-
-        <!-- 搜索提供商 -->
-        <BaseListItem
-          v-else-if="item.type === 'searchProvider'"
-          :ref="setRef"
-          :title="searchProviderLabel(item.config)"
-          :subtitle="item.config.apiKey ? '已配置 Key' : '无 Key'"
-          :selected="selected"
-        />
-
-        <!-- 系统提示词 -->
-        <BaseListItem v-else :ref="setRef" title="系统提示词" :selected="selected" />
-      </template>
-    </BaseList>
+    </BaseSettingsList>
 
     <!-- 编辑弹窗 -->
     <BaseDialog
@@ -90,7 +44,7 @@
               <BaseButton
                 variant="ghost"
                 :icon="passwordVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-                class="!text-tx-hint !px-1 !shrink-0 !h-auto"
+                class="!text-muted !px-1 !shrink-0 !h-auto"
                 @click.stop="passwordVisible = !passwordVisible"
               />
             </template>
@@ -149,7 +103,7 @@
               <BaseButton
                 variant="ghost"
                 :icon="searchKeyVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-                class="!text-tx-hint !px-1 !shrink-0 !h-auto"
+                class="!text-muted !px-1 !shrink-0 !h-auto"
                 @click.stop="searchKeyVisible = !searchKeyVisible"
               />
             </template>
@@ -195,17 +149,14 @@ import {
   setActiveProviderModelKey,
   updateSearchProvider,
 } from './config'
-import BaseList from '@/components/ui/BaseList.vue'
-import BaseListItem from '@/components/ui/BaseListItem.vue'
+import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { providerLabelFromUrl } from '@/utils/format'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
-
-const SHORTCUT_ITEM_ID = 'agent-shortcut'
+import type { SettingItem } from '@/types/settings'
 
 const { value: agentShortcutValue, update: handleAgentShortcutChange } = useShortcutConfig(
   'agent',
@@ -321,57 +272,52 @@ function addAndEdit() {
   openCreateModal()
 }
 
-interface ShortcutItem {
-  type: 'shortcut'
-  group: string
-}
+/// 系统提示词预览（折叠换行），空则「未设置」（截断交给 BaseListItem 的 truncate）
+const systemPromptPreview = computed(() => {
+  const text = agentConfig.systemPrompt.trim()
+  if (!text) return '未设置'
+  return text.replace(/\s+/g, ' ').trim()
+})
 
-interface ProviderItem {
-  type: 'provider'
-  group: string
-  config: AiProviderConfig
-}
-
-interface SearchProviderItem {
-  type: 'searchProvider'
-  group: string
-  config: SearchProviderConfig
-}
-
-interface AgentBehaviorItem {
-  type: 'systemPrompt'
-  group: string
-}
-
-type ChatSettingsItem = ShortcutItem | ProviderItem | SearchProviderItem | AgentBehaviorItem
-
-const allItems = computed<ChatSettingsItem[]>(() => [
-  { type: 'shortcut', group: '通用' },
+const allItems = computed<SettingItem[]>(() => [
+  {
+    id: 'agent-shortcut',
+    title: '启动快捷键',
+    type: 'shortcut',
+    group: '通用',
+    value: agentShortcutValue.value,
+    update: handleAgentShortcutChange,
+  },
   ...agentConfig.aiProviders.map((c) => ({
-    type: 'provider' as const,
+    id: `provider-${c.id}`,
+    title: providerLabelFromUrl(c.endpoint, '默认提供商'),
+    subtitle: c.models.filter(Boolean).join('、') || '未配置',
+    type: 'action' as const,
     group: '模型提供商',
-    config: c,
+    action: () => openConfigModal(c),
   })),
-  ...[
-    {
-      type: 'searchProvider' as const,
-      group: '搜索提供商',
-      config: agentConfig.searchProvider,
-    },
-  ],
-  { type: 'systemPrompt', group: 'Agent 配置' },
+  {
+    id: 'search-provider',
+    title: 'Tavily',
+    subtitle: agentConfig.searchProvider.apiKey ? '已配置 Key' : '无 Key',
+    type: 'action',
+    group: '搜索提供商',
+    action: () => openSearchModal(agentConfig.searchProvider),
+  },
+  {
+    id: 'system-prompt',
+    title: '系统提示词',
+    subtitle: systemPromptPreview.value,
+    type: 'action',
+    group: 'Agent 配置',
+    action: openSystemPromptDialog,
+  },
 ])
-
-const selectedIndex = ref(0)
 
 // ─── 搜索提供商编辑（固定 Tavily 单项，不可新增/删除）───
 const showSearchDialog = ref(false)
 const searchKeyVisible = ref(false)
 const searchForm = ref<{ apiKey: string }>({ apiKey: '' })
-
-function searchProviderLabel(_c: SearchProviderConfig): string {
-  return 'Tavily'
-}
 
 function openSearchModal(config: SearchProviderConfig) {
   searchForm.value = { apiKey: config.apiKey }
@@ -386,16 +332,6 @@ function closeSearchModal() {
 async function saveSearchModal() {
   await updateSearchProvider({ apiKey: searchForm.value.apiKey.trim() })
   closeSearchModal()
-}
-
-function onExecute(item: ChatSettingsItem) {
-  if (item.type === 'provider') {
-    openConfigModal(item.config)
-  } else if (item.type === 'searchProvider') {
-    openSearchModal(item.config)
-  } else if (item.type === 'systemPrompt') {
-    openSystemPromptDialog()
-  }
 }
 
 // ─── 系统提示词 ───

@@ -1,92 +1,82 @@
 <template>
   <div
-    p="t-12"
-    flex
+    class="panel"
     h="screen"
     w="screen"
-    items="start"
-    justify="center"
+    p="3"
+    rounded="xl"
+    flex
+    items="center"
+    gap="2.5"
     style="-webkit-app-region: no-drag"
   >
-    <div
-      ref="panel"
-      class="panel"
-      p="3"
-      border="~ gray-300"
-      rounded="xl"
-      bg="gray-50"
-      flex
-      gap="2.5"
-      shadow="2xl"
-    >
-      <div v-for="group in groups" :key="group.id" p="1" h="14" w="14">
-        <template v-if="group.nested">
-          <div h="full" w="full" relative>
+    <div v-for="group in groups" :key="group.id" p="1" h="14" w="14">
+      <template v-if="group.nested">
+        <div h="full" w="full" relative>
+          <div
+            class="snap-zone"
+            rounded
+            bg="black/8"
+            inset="0"
+            absolute
+            :class="{ 'snap-hover': hoveredLayout === group.zones[0].layout }"
+            :data-layout="group.zones[0].layout"
+            @click="onZone(group.zones[0].layout)"
+          />
+          <div
+            class="snap-zone"
+            rounded
+            bg="black/8"
+            h="40%"
+            w="40%"
+            left="30%"
+            top="30%"
+            absolute
+            z="1"
+            :class="{ 'snap-hover': hoveredLayout === group.zones[1].layout }"
+            :data-layout="group.zones[1].layout"
+            @click.stop="onZone(group.zones[1].layout)"
+          />
+        </div>
+      </template>
+      <template v-else>
+        <div :class="['w-full h-full grid gap-0.5', group.gridClass]">
+          <template v-for="zone in group.zones" :key="zone.layout">
             <div
-              class="snap-zone"
+              v-if="zone.layout === 'custom'"
+              class="snap-zone custom-zone flex-center"
+              text="muted"
               rounded
               bg="black/8"
-              inset="0"
-              absolute
-              :class="{ 'snap-hover': hoveredLayout === group.zones[0].layout }"
-              :data-layout="group.zones[0].layout"
-              @click="onZone(group.zones[0].layout)"
-            />
-            <div
-              class="snap-zone"
-              rounded
-              bg="black/8"
-              h="40%"
-              w="40%"
-              left="30%"
-              top="30%"
-              absolute
-              z="1"
-              :class="{ 'snap-hover': hoveredLayout === group.zones[1].layout }"
-              :data-layout="group.zones[1].layout"
-              @click.stop="onZone(group.zones[1].layout)"
-            />
-          </div>
-        </template>
-        <template v-else>
-          <div :class="['w-full h-full grid gap-0.5', group.gridClass]">
-            <template v-for="zone in group.zones" :key="zone.layout">
-              <div
-                v-if="zone.layout === 'custom'"
-                class="snap-zone custom-zone flex-center"
-                text="black/25"
-                rounded
-                bg="black/8"
-                :class="{ 'snap-hover': hoveredLayout === zone.layout }"
-                :data-layout="zone.layout"
-                @click="onZone(zone.layout)"
+              :class="{ 'snap-hover': hoveredLayout === zone.layout }"
+              :data-layout="zone.layout"
+              @click="onZone(zone.layout)"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
               >
-                <svg
-                  viewBox="0 0 20 20"
-                  width="20"
-                  height="20"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                >
-                  <path
-                    d="M2 7 L2 4 A2 2 0 0 1 4 2 L7 2 M13 2 L16 2 A2 2 0 0 1 18 4 L18 7 M18 13 L18 16 A2 2 0 0 1 16 18 L13 18 M7 18 L4 18 A2 2 0 0 1 2 16 L2 13"
-                  />
-                </svg>
-              </div>
-              <div
-                v-else
-                class="snap-zone"
-                rounded
-                bg="black/8"
-                :class="{ 'snap-hover': hoveredLayout === zone.layout }"
-                :data-layout="zone.layout"
-                @click="onZone(zone.layout)"
-              />
-            </template>
-          </div>
-        </template>
-      </div>
+                <path
+                  d="M2 7 L2 4 A2 2 0 0 1 4 2 L7 2 M13 2 L16 2 A2 2 0 0 1 18 4 L18 7 M18 13 L18 16 A2 2 0 0 1 16 18 L13 18 M7 18 L4 18 A2 2 0 0 1 2 16 L2 13"
+                />
+              </svg>
+            </div>
+            <div
+              v-else
+              class="snap-zone"
+              rounded
+              bg="black/8"
+              :class="{ 'snap-hover': hoveredLayout === zone.layout }"
+              :data-layout="zone.layout"
+              @click="onZone(zone.layout)"
+            />
+          </template>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -102,7 +92,6 @@ interface SnapData {
 }
 
 const snapData = ref<SnapData>({ w: 800, h: 600 })
-const panel = ref<HTMLElement>()
 const hoveredLayout = ref<string | null>(null)
 
 interface ZoneDef {
@@ -174,28 +163,20 @@ async function handleShow() {
   const data = (window as unknown as { __snapPanelData?: SnapData }).__snapPanelData
   if (data) snapData.value = data
   await invoke(CMD.showSnapPanel)
-  requestAnimationFrame(() => panel.value?.classList.add('show'))
 }
 
 function handleHide() {
-  if (!panel.value) return
   hoveredLayout.value = null
-  const el = panel.value
-  el.addEventListener('transitionend', () => invoke(CMD.hideSnapPanel).catch(() => {}), {
-    once: true,
-  })
-  el.classList.remove('show')
+  invoke(CMD.hideSnapPanel).catch(() => {})
 }
 
 onMounted(() => {
-  document.body.style.overflow = 'visible'
   window.addEventListener('__snap_panel_show', handleShow)
   window.addEventListener('__snap_panel_hide', handleHide)
   window.addEventListener('__snap_mouse', handleSnapMouse)
 })
 
 onUnmounted(() => {
-  document.body.style.overflow = ''
   window.removeEventListener('__snap_panel_show', handleShow)
   window.removeEventListener('__snap_panel_hide', handleHide)
   window.removeEventListener('__snap_mouse', handleSnapMouse)
@@ -203,15 +184,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.panel {
-  opacity: 0;
-  transform: scale(0.8);
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.panel.show {
-  opacity: 1;
-  transform: scale(1);
-}
 .snap-zone.snap-hover {
   background-color: rgba(0, 0, 0, 0.18);
 }

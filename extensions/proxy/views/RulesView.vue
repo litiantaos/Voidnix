@@ -1,18 +1,18 @@
 <template>
   <div flex="~ col">
     <BaseList :items="filtered" v-model:selected-index="selectedIndex">
-      <template #item="{ item, selected }">
-        <BaseListItem :selected="selected">
-          <template #title>
-            <span truncate>{{ item.payload || item.type }}</span>
-          </template>
-          <template #subtitle>
-            <span :class="item.proxy === 'DIRECT' ? 'text-green-500' : 'text-accent'">{{
-              item.proxy
-            }}</span>
-            <span text="tx-hint"> · {{ item.type }}</span>
-          </template>
-        </BaseListItem>
+      <template #item="{ item }">
+        <div flex p="3" gap="3" text="xs" select="none">
+          <span shrink="0" w="28" whitespace="nowrap" text="muted">{{ item.type }}</span>
+          <span
+            shrink="0"
+            w="28"
+            truncate
+            :class="item.proxy === 'DIRECT' ? 'text-green-500' : 'text-accent'"
+            >{{ item.proxy }}</span
+          >
+          <span flex="1" min-w="0" truncate :title="item.payload">{{ item.payload || '—' }}</span>
+        </div>
       </template>
     </BaseList>
     <BaseEmptyState
@@ -30,7 +30,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import BaseList from '@/components/ui/BaseList.vue'
-import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 
 interface Rule {

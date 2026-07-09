@@ -2,10 +2,11 @@
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置翻译服务" />
 
   <div v-else flex="~ col">
-    <div p="x-5 b-2 t-5">
+    <div p="x-2" border="b black/5">
       <BaseTextarea
         ref="textareaRef"
         v-model="inputText"
+        plain
         placeholder="输入文本"
         :rows="1"
         :max-height="0"
@@ -13,19 +14,20 @@
       />
     </div>
 
-    <div v-if="translateResults.length > 0" p="x-3">
+    <div v-if="translateResults.length > 0">
       <BaseList
         :items="translateResults"
         v-model:selected-index="selectedIndex"
+        navigate-on-input
         @execute="onExecuteResult"
       >
-        <template #item="{ item, selected }">
-          <BaseListItem :selected="selected" multiline-title :subtitle="item.engine">
+        <template #item="{ item }">
+          <BaseListItem multiline-title :subtitle="item.engine">
             <template #title>
               <div
                 v-if="item.loading && !item.translation"
                 class="i-ri-loader-4-line animate-spin"
-                text="base tx-muted"
+                text="base muted"
               />
               <span v-else leading="relaxed" font="normal" wrap="break-word">
                 {{ item.translation }}
@@ -68,6 +70,8 @@ watch(
       inputText.value = text
       pendingText.value = ''
       translateText(text)
+      // 选词翻译进入：翻译启动即让出输入框焦点，确保结果出来后回车直接复制（而非触发提交）
+      textareaRef.value?.blur()
     }
   },
   { immediate: true },
@@ -103,15 +107,14 @@ async function onExecuteResult(result: TranslateResult) {
   }
 }
 
-onMounted(() => {
+// 正在翻译中（流式未完成）重新激活时不抢焦点；其余情况聚焦输入框。
+// 注：选词翻译的焦点让出由 pendingText watch 的 blur 兜底（pendingText 由快捷键
+// 异步取词后设置，远晚于 onActivated，无法在激活时判定）
+function maybeFocusInput() {
   if (!isTranslating.value) {
     nextTick(() => textareaRef.value?.focus())
   }
-})
-
-onActivated(() => {
-  if (!isTranslating.value) {
-    nextTick(() => textareaRef.value?.focus())
-  }
-})
+}
+onMounted(maybeFocusInput)
+onActivated(maybeFocusInput)
 </script>

@@ -1,12 +1,6 @@
 <template>
   <div class="flex-col-full-pb">
-    <BaseList
-      :items="allItems"
-      v-model:selected-index="selectedIndex"
-      :group-field="(item: TranslateSettingsItem) => item.group"
-      :group-title="(g: string) => g"
-      @execute="(item: TranslateSettingsItem) => onExecute(item)"
-    >
+    <BaseSettingsList :items="allItems" shortcut-id="translate">
       <template #group-title="{ group }">
         <div flex items="center">
           <span>{{ group }}</span>
@@ -18,58 +12,7 @@
           />
         </div>
       </template>
-
-      <template #item="{ item, selected, setRef }">
-        <!-- 快捷键 -->
-        <BaseListItem
-          v-if="item.type === 'shortcut'"
-          :ref="setRef"
-          :id="`si-${SHORTCUT_ITEM_ID}`"
-          title="启动快捷键"
-          :selected="selected"
-        >
-          <template #trailing>
-            <ShortcutInput
-              :model-value="translateShortcutValue"
-              shortcut-id="translate"
-              @update:model-value="handleTranslateShortcutChange"
-            />
-          </template>
-        </BaseListItem>
-
-        <!-- 目标语言 -->
-        <BaseListItem
-          v-else-if="item.type === 'lang'"
-          :ref="setRef"
-          :id="`si-${LANG_ITEM_ID}`"
-          title="目标语言"
-          :selected="selected"
-        >
-          <template #trailing>
-            <BaseSelect
-              :model-value="translateConfig.targetLang"
-              :options="targetLangOptions"
-              @update:model-value="(val: string | number) => handleTargetLangChange(String(val))"
-            />
-          </template>
-        </BaseListItem>
-
-        <!-- 翻译服务 -->
-        <BaseListItem
-          v-else
-          :ref="setRef"
-          :title="providerLabel(item.config)"
-          :subtitle="
-            item.config.type === 'ai'
-              ? item.config.models.filter(Boolean).join('、') || '未配置模型'
-              : item.config.appKey
-                ? '已配置'
-                : '未配置'
-          "
-          :selected="selected"
-        />
-      </template>
-    </BaseList>
+    </BaseSettingsList>
 
     <!-- 编辑弹窗 -->
     <BaseDialog
@@ -96,7 +39,7 @@
                 <BaseButton
                   variant="ghost"
                   :icon="passwordVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-                  class="!text-tx-hint !px-1 !shrink-0 !h-auto"
+                  class="!text-muted !px-1 !shrink-0 !h-auto"
                   @click.stop="passwordVisible = !passwordVisible"
                 />
               </template>
@@ -192,42 +135,32 @@ import {
   updateTranslateConfig,
   removeTranslateConfig,
 } from './config'
-import BaseList from '@/components/ui/BaseList.vue'
-import BaseListItem from '@/components/ui/BaseListItem.vue'
+import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseSelect from '@/components/ui/BaseSelect.vue'
-import ShortcutInput from '@/components/ui/ShortcutInput.vue'
 import { providerLabelFromUrl } from '@/utils/format'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
-
-const SHORTCUT_ITEM_ID = 'translate-shortcut'
-const LANG_ITEM_ID = 'translate-target-lang'
+import type { SettingItem } from '@/types/settings'
 
 const { value: translateShortcutValue, update: handleTranslateShortcutChange } = useShortcutConfig(
   'translate',
   'Alt+T',
 )
 
-const targetLangOptions = [
-  { label: '中文', value: 'zh' },
-  { label: '英文', value: 'en' },
-  { label: '日文', value: 'ja' },
-  { label: '韩文', value: 'ko' },
-  { label: '法文', value: 'fr' },
-  { label: '德文', value: 'de' },
-  { label: '西班牙文', value: 'es' },
-]
-
-const handleTargetLangChange = async (val: string) => {
-  translateConfig.targetLang = val
+const handleTargetLangChange = async (val: string | number) => {
+  translateConfig.targetLang = String(val)
 }
 
 function providerLabel(config: TranslateApiConfig): string {
   if (config.type === 'youdao') return '有道翻译'
   return providerLabelFromUrl(config.endpoint, '翻译')
+}
+
+function providerSubtitle(c: TranslateApiConfig): string {
+  if (c.type === 'ai') return c.models.filter(Boolean).join('、') || '未配置模型'
+  return c.appKey ? '已配置' : '未配置'
 }
 
 // ── 编辑弹窗状态 ──────────────────────────────────────────
@@ -355,41 +288,41 @@ function deleteAndClose() {
 
 // ── 列表项 ─────────────────────────────────────────────────
 
-interface ShortcutItem {
-  type: 'shortcut'
-  group: string
-}
-
-interface LangItem {
-  type: 'lang'
-  group: string
-}
-
-interface ProviderItem {
-  type: 'provider'
-  group: string
-  config: TranslateApiConfig
-}
-
-type TranslateSettingsItem = ShortcutItem | LangItem | ProviderItem
-
-const allItems = computed<TranslateSettingsItem[]>(() => [
-  { type: 'shortcut', group: '通用' },
-  { type: 'lang', group: '通用' },
+const allItems = computed<SettingItem[]>(() => [
+  {
+    id: 'translate-shortcut',
+    title: '启动快捷键',
+    type: 'shortcut',
+    group: '通用',
+    value: translateShortcutValue.value,
+    update: handleTranslateShortcutChange,
+  },
+  {
+    id: 'translate-target-lang',
+    title: '目标语言',
+    type: 'select',
+    group: '通用',
+    value: translateConfig.targetLang,
+    options: [
+      { label: '中文', value: 'zh' },
+      { label: '英文', value: 'en' },
+      { label: '日文', value: 'ja' },
+      { label: '韩文', value: 'ko' },
+      { label: '法文', value: 'fr' },
+      { label: '德文', value: 'de' },
+      { label: '西班牙文', value: 'es' },
+    ],
+    update: handleTargetLangChange,
+  },
   ...translateConfig.configs.map((c) => ({
-    type: 'provider' as const,
+    id: `provider-${c.id}`,
+    title: providerLabel(c),
+    subtitle: providerSubtitle(c),
+    type: 'action' as const,
     group: '翻译服务',
-    config: c,
+    action: () => openConfigModal(c),
   })),
 ])
-
-const selectedIndex = ref(0)
-
-function onExecute(item: TranslateSettingsItem) {
-  if (item.type === 'provider') {
-    openConfigModal(item.config)
-  }
-}
 
 /** 当前编辑的配置类型（弹窗中判断表单布局） */
 const editingType = computed(() => {
