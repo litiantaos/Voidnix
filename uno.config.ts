@@ -12,22 +12,17 @@ export default defineConfig({
     }),
   ],
   theme: {
-    // ── 语义色阶 ──
+    // ── 语义色阶（Voidnix 设计系统，单一真相源在 docs/design.md）──
     colors: {
       surface: {
-        DEFAULT: '#fcfcfc',
+        DEFAULT: '#fafafa',
       },
       accent: {
         DEFAULT: '#3b82f6',
       },
-      tx: {
-        primary: 'rgba(0, 0, 0, 0.85)',
-        secondary: 'rgba(0, 0, 0, 0.70)',
-        subtle: 'rgba(0, 0, 0, 0.50)',
-        muted: 'rgba(0, 0, 0, 0.40)',
-        hint: 'rgba(0, 0, 0, 0.35)',
-        faint: 'rgba(0, 0, 0, 0.30)',
-      },
+      primary: 'rgba(0, 0, 0, 0.89)',
+      secondary: 'rgba(0, 0, 0, 0.60)',
+      muted: 'rgba(0, 0, 0, 0.40)',
     },
 
     // ── 动画 easing（全仓单一源；duration 用内置数值 duration-100/150/200）──
@@ -40,7 +35,7 @@ export default defineConfig({
   shortcuts: {
     // ── 控件状态 ──
     'ui-ctrl':
-      'h-7 px-3 rounded-md outline-none border-none text-xs font-medium bg-black/4 text-tx-primary transition-colors duration-150 ease-out focus-within:ring-1 focus-within:ring-inset focus-within:ring-accent/40 select-none',
+      'h-7 px-3 rounded-md outline-none border-none text-xs font-medium bg-black/4 text-primary transition-colors duration-150 ease-out focus-within:ring-1 focus-within:ring-inset focus-within:ring-accent/40 select-none',
     'ui-disabled': 'opacity-50 cursor-not-allowed',
     'ui-active': 'bg-black/5',
 
@@ -51,14 +46,15 @@ export default defineConfig({
     'flex-col-full-pb': 'pb-4 flex flex-col',
 
     // ── 表单 ──
-    'form-label': 'text-xs text-tx-faint font-medium',
+    'form-label': 'text-xs text-muted font-medium',
     'form-field': 'flex flex-col gap-1.5',
     'input-base': 'outline-none bg-transparent flex-1 min-w-0',
 
     // ── 杂项 ──
-    'group-header': 'text-xs text-tx-faint tracking-wider font-medium px-3 py-1.5 uppercase',
+    'group-header': 'text-xs text-muted tracking-wider font-medium px-3 py-1.5 uppercase',
     'overlay-abs': 'pointer-events-none absolute',
-    'dropdown-panel': 'p-1 rounded-lg bg-white border border-black/10 select-none',
+    'dropdown-panel':
+      'p-1 rounded-lg bg-white/70 backdrop-blur-2xl backdrop-saturate-150 border border-black/10 select-none',
   },
   content: {
     pipeline: {
