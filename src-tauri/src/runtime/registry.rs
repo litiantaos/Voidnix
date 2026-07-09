@@ -2,10 +2,10 @@ use tauri::AppHandle;
 
 /// 扩展 trait：所有扩展（native / pure）统一的运行时生命周期契约。
 ///
-/// - 命令注册在各扩展 `init()` 局部 `invoke_handler`（§2.8）
+/// - 命令注册在各扩展 `init()` 局部 `invoke_handler`
 /// - 本 trait 负责运行时生命周期钩子：setup 并行执行
 ///
-/// **并行 bootstrap**（§2.1）：setup 无跨扩展依赖，全仓零跨扩展 import，
+/// **并行 bootstrap**：setup 无跨扩展依赖，全仓零跨扩展 import，
 /// 故 join_all 并行。setup 内禁止依赖其它扩展 setup 的产物、禁止初始化
 /// 框架级共享资源（此类放 lib.rs pre-bootstrap 串行）。
 #[async_trait::async_trait]
@@ -46,7 +46,7 @@ impl Default for ExtensionRegistry {
 /// 在 `tauri::Builder::setup` 同步闭包内调用：并行（join_all）执行所有扩展 setup，
 /// 随后 `app.manage()` 持有 registry。
 ///
-/// **block_on 安全性**（§7 N7）：Tauri setup 闭包在主线程同步执行，不在 tokio
+/// **block_on 安全性**：Tauri setup 闭包在主线程同步执行，不在 tokio
 /// worker 上下文内，故 `tauri::async_runtime::block_on` 非嵌套调用、不会 panic。
 /// lib.rs pre-bootstrap 处的 block_on 探针为运行期 canary。
 pub fn bootstrap(
@@ -155,7 +155,7 @@ mod tests {
 
         // registry 能持有带 async setup 的扩展。join_all 真实并行驱动需 AppHandle，
         // 此处无法注入；并行 join_all 的运行期正确性由 lib.rs 启动埋点 + tauri:dev
-        // 冒烟保证（§7 N7/N8）。
+        // 冒烟保证。
         let reg = ExtensionRegistry::new()
             .register(CountingExt { c: counter.clone() })
             .register(CountingExt { c: counter.clone() })

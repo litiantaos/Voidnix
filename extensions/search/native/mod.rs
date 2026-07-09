@@ -9,12 +9,12 @@ pub use cache::{init_app_watcher, prewarm_cache, set_app_handle};
 
 use crate::runtime::registry::Extension;
 
-/// 命令注册（局部 invoke_handler，§2.8）。
+/// 命令注册（局部 invoke_handler）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("search").build()
 }
 
-/// Search 扩展。统一走 registry bootstrap（不再绕过，§4）。
+/// Search 扩展。统一走 registry bootstrap（不再绕过）。
 pub struct SearchExtension;
 
 #[async_trait::async_trait]

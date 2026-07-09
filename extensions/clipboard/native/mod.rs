@@ -12,7 +12,7 @@ pub mod monitor;
 /// 默认 30 天（前端 config.ts 的 default 也是 30，启动时 immediate invoke 覆盖）。
 static MAX_DAYS: AtomicI32 = AtomicI32::new(30);
 
-/// 命令注册（局部 invoke_handler，§2.8）。
+/// 命令注册（局部 invoke_handler）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("clipboard").build()
 }

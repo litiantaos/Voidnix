@@ -58,7 +58,7 @@ pub async fn get_selected_text() -> Result<String, String> {
     Ok(String::new())
 }
 
-/// 命令注册（局部 invoke_handler，§2.8）。
+/// 命令注册（局部 invoke_handler）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("translate").build()
 }

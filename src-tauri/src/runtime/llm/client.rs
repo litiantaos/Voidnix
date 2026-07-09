@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::sync::atomic::Ordering;
 use tauri::Emitter;
 
-// ── 请求管道常量（agent + translate 共享，§1.1 溶解自 security.rs）────
+// ── 请求管道常量（agent + translate 共享）────
 /// SSE 缓冲上限（1 MiB），防止无界 buffer 增长
 const MAX_SSE_BUFFER: usize = 1_048_576;
 /// 单条消息内容上限（字符数，P4-rs4 统一为字符而非字节，避免多字节中文截断边界不一致）
@@ -109,7 +109,7 @@ pub async fn openai_request_once(
     Ok(content.to_string())
 }
 
-/// 单条消息内容截断（请求管道，§1.1）
+/// 单条消息内容截断（请求管道）
 ///
 /// P4-rs4：阈值与截断都按字符数（`chars().count()`），避免旧实现字节判定 + 字符截断
 /// 的边界不一致（多字节中文内容的实际字节上限可达 ~128KiB）。

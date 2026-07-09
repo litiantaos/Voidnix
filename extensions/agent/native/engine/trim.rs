@@ -1,4 +1,4 @@
-//! Agent 历史消息裁剪（agent 唯一消费者，下沉自 runtime/llm/security.rs，§1.1）。
+//! Agent 历史消息裁剪（agent 唯一消费者，下沉自 runtime/llm/security.rs）。
 
 use crate::runtime::llm::LlmMessage;
 

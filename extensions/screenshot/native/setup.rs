@@ -40,7 +40,7 @@ pub fn configure_overlay_window(app: &AppHandle) {
         ns_window.setFrame_display(screen.frame(), true);
         ns_window.setAlphaValue(0.0);
         let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: true];
-        // 禁用系统阴影（原 lib.rs 的 shadow 循环下沉，§2.8）
+        // 禁用系统阴影（原 lib.rs 的 shadow 循环下沉）
         let _: () = objc2::msg_send![ns_window, setHasShadow: false];
         ns_window.orderFrontRegardless();
     }

@@ -12,7 +12,7 @@ pub mod engine;
 mod policy;
 mod tools;
 
-/// 命令注册（局部 invoke_handler，§2.8）。
+/// 命令注册（局部 invoke_handler）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("agent").build()
 }

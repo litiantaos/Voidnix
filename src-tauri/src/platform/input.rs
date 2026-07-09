@@ -1,4 +1,4 @@
-//! CGEvent 键盘注入统一接口（RV §2.6）。
+//! CGEvent 键盘注入统一接口。
 //!
 //! 统一替代原 post_key_to_pid / inject_copy / simulate_cmd_v 三套实现：
 //! - `post_key` 是原语（虚拟键码 + 修饰键 + 可选目标 pid）；
@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-/// 修饰键（不含 Fn：macOS 上 Fn 是硬件键非修饰键，RV §2.6）。
+/// 修饰键（不含 Fn：macOS 上 Fn 是硬件键非修饰键）。
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Modifier {
     Cmd,
