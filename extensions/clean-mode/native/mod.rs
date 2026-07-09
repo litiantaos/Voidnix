@@ -18,7 +18,7 @@
 use crate::runtime::registry::Extension;
 use objc2::runtime::AnyObject;
 use objc2::{class, msg_send};
-use objc2_foundation::{NSPoint, NSRect, NSString};
+use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -188,24 +188,66 @@ fn ensure_clean_view_class() -> *mut c_void {
     ptr
 }
 
-/// 在 contentView 居中添加浅色退出提示文字。
-fn add_hint_label(view: *mut AnyObject, screen_frame: NSRect) {
+/// 在 contentView 居中渲染图标 + 标题 + 退出提示（优雅的纵向栈）。
+fn add_overlay(view: *mut AnyObject, screen_frame: NSRect) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{
+        NSColor, NSFont, NSImage, NSImageAlignment, NSImageScaling, NSImageView, NSTextField,
+    };
     unsafe {
-        let text = NSString::from_str("长按鼠标 / 触控板 2 秒退出");
-        let label: *mut AnyObject = msg_send![class!(NSTextField), labelWithString: &*text];
-        let faint: *mut AnyObject =
-            msg_send![class!(NSColor), colorWithWhite: 1.0f64, alpha: 0.2f64];
-        let _: () = msg_send![label, setTextColor: faint];
-        let font: *mut AnyObject = msg_send![class!(NSFont), systemFontOfSize: 12.0f64];
-        let _: () = msg_send![label, setFont: font];
-        let _: () = msg_send![label, sizeToFit];
-        let lbl: NSRect = msg_send![label, frame];
-        let origin = NSPoint {
-            x: (screen_frame.size.width - lbl.size.width) / 2.0,
-            y: (screen_frame.size.height - lbl.size.height) / 2.0,
-        };
-        let _: () = msg_send![label, setFrameOrigin: origin];
-        let _: () = msg_send![view, addSubview: label];
+        let mtm = MainThreadMarker::new().expect("overlay 必须在主线程渲染");
+        let sw = screen_frame.size.width;
+        let sh = screen_frame.size.height;
+
+        // ── 图标（SF Symbol，淡白）──
+        let icon_size: f64 = 30.0;
+        let sym = NSString::from_str("moon.zzz.fill");
+        let icon = NSImage::imageWithSystemSymbolName_accessibilityDescription(&sym, None);
+        let icon_view = NSImageView::initWithFrame(
+            mtm.alloc::<NSImageView>(),
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(icon_size, icon_size)),
+        );
+        icon_view.setImage(icon.as_deref());
+        icon_view.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
+        icon_view.setImageAlignment(NSImageAlignment::AlignCenter);
+        icon_view.setContentTintColor(Some(&NSColor::colorWithWhite_alpha(1.0, 0.15)));
+
+        // ── 标题 ──
+        let title = NSTextField::labelWithString(&NSString::from_str("清洁模式"), mtm);
+        title.setTextColor(Some(&NSColor::colorWithWhite_alpha(1.0, 0.35)));
+        title.setFont(Some(&NSFont::systemFontOfSize_weight(13.0, 0.23)));
+        title.sizeToFit();
+        let title_frame = title.frame();
+
+        // ── 退出提示 ──
+        let hint =
+            NSTextField::labelWithString(&NSString::from_str("长按鼠标 / 触控板 2 秒退出"), mtm);
+        hint.setTextColor(Some(&NSColor::colorWithWhite_alpha(1.0, 0.2)));
+        hint.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+        hint.sizeToFit();
+        let hint_frame = hint.frame();
+
+        // ── 纵向居中布局（坐标系原点左下）──
+        let gap_icon_title = 14.0;
+        let gap_title_hint = 6.0;
+        let total_h = icon_size
+            + gap_icon_title
+            + title_frame.size.height
+            + gap_title_hint
+            + hint_frame.size.height;
+        let top = sh / 2.0 + total_h / 2.0;
+
+        let icon_y = top - icon_size;
+        icon_view.setFrameOrigin(NSPoint::new((sw - icon_size) / 2.0, icon_y));
+        let title_y = icon_y - gap_icon_title - title_frame.size.height;
+        title.setFrameOrigin(NSPoint::new((sw - title_frame.size.width) / 2.0, title_y));
+        let hint_y = title_y - gap_title_hint - hint_frame.size.height;
+        hint.setFrameOrigin(NSPoint::new((sw - hint_frame.size.width) / 2.0, hint_y));
+
+        // view 是裸 AnyObject 指针（NSView isa-swizzling 产物），addSubview 走 msg_send
+        let _: () = msg_send![view, addSubview: &*icon_view];
+        let _: () = msg_send![view, addSubview: &*title];
+        let _: () = msg_send![view, addSubview: &*hint];
     }
 }
 
@@ -307,6 +349,10 @@ fn stop_keyboard_tap() {
 
 fn enable_clean_mode() -> Result<(), String> {
     unsafe {
+        // 提前冻结 + 隐藏光标（先于窗口上屏，避免进入瞬间可见）
+        CGAssociateMouseAndMouseCursorPosition(0);
+        CGDisplayHideCursor(CGMainDisplayID());
+
         let screens: *mut AnyObject = msg_send![class!(NSScreen), screens];
         let count: usize = msg_send![screens, count];
         let black: *mut AnyObject = msg_send![class!(NSColor), colorWithSRGBRed: 0.0f64, green: 0.0f64, blue: 0.0f64, alpha: BLACK_ALPHA];
@@ -340,7 +386,7 @@ fn enable_clean_mode() -> Result<(), String> {
             let view: *mut AnyObject = msg_send![view, initWithFrame: frame];
             if !view.is_null() {
                 object_setClass(view as *mut c_void, view_class);
-                add_hint_label(view, frame);
+                add_overlay(view, frame);
                 let _: () = msg_send![window, setContentView: view];
             }
 
@@ -354,14 +400,15 @@ fn enable_clean_mode() -> Result<(), String> {
                 let _: () = msg_send![*w, orderOut: std::ptr::null::<AnyObject>()];
                 let _: () = msg_send![*w, release];
             }
+            // 恢复光标（抵消提前的冻结 + 隐藏）
+            CGAssociateMouseAndMouseCursorPosition(1);
+            CGDisplayShowCursor(CGMainDisplayID());
             return Err(
                 "需要辅助功能权限：系统设置 → 隐私与安全性 → 辅助功能 → Voidnix".to_string(),
             );
         }
 
-        // 冻结光标（CGAssociate 解除鼠标硬件与光标位移的关联，事件仍产生但光标不动）
-        CGAssociateMouseAndMouseCursorPosition(0);
-        // 隐藏光标
+        // 窗口已上屏，再次隐藏兜底（orderFront 可能触发系统重显光标）
         CGDisplayHideCursor(CGMainDisplayID());
 
         LEFT_DOWN_AT.store(0, Ordering::Relaxed);
@@ -416,7 +463,6 @@ fn start_poll_thread() {
                 y: unsafe { CGDisplayPixelsHigh(display) } as f64 / 2.0,
             };
             loop {
-                std::thread::sleep(Duration::from_millis(POLL_MS));
                 if POLL_STOP.load(Ordering::Relaxed) {
                     return;
                 }
@@ -448,6 +494,7 @@ fn start_poll_thread() {
                         unsafe { CGEventTapEnable(tap, 1) };
                     }
                 }
+                std::thread::sleep(Duration::from_millis(POLL_MS));
             }
         })
         .expect("spawn clean-mode-poll");

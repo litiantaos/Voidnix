@@ -11,7 +11,7 @@ const HEIGHT_BOUNDS: (f64, f64) = (200.0, 4096.0);
 /// Window manager 扩展。
 pub struct WindowManagerExtension;
 
-/// 命令注册（局部 invoke_handler，§2.8）。
+/// 命令注册（局部 invoke_handler）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("window-manager").build()
 }
@@ -28,36 +28,28 @@ impl Extension for WindowManagerExtension {
     }
 }
 
-/// snap-panel 窗口配置：透明覆盖层 + 跨 Space + 禁阴影（§2.8，下沉自 lib.rs）。
+/// snap-panel 窗口配置：Mica 材质底 + NonactivatingPanel + 跨 Space + 原生阴影。
+/// 窗口尺寸精简为面板大小（show_panel 定位），CSS box-shadow 会被窗口裁剪故用原生阴影。
 #[cfg(target_os = "macos")]
 fn configure_snap_panel(app: &tauri::AppHandle) {
-    use objc2_app_kit::{NSScreen, NSWindow as SnapNSWindow, NSWindowCollectionBehavior};
-    use objc2_foundation::MainThreadMarker;
+    use objc2_app_kit::{NSWindow as SnapNSWindow, NSWindowCollectionBehavior};
     use tauri::Manager;
     let Some(window) = app.get_webview_window("snap-panel") else {
         return;
     };
     let Ok(raw) = window.ns_window() else { return };
     let raw = raw.cast::<SnapNSWindow>();
-    let Some(mtm) = MainThreadMarker::new() else {
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
         return;
     };
+    // Mica 材质底（contentView 圆角 12 + NSVisualEffectView + 子视图非透明 + 窗口本体透明）
+    crate::platform::window::apply_mica_material(ns_window, 12.0);
     // SAFETY: raw 来自 window.ns_window()（上方 Ok 分支保证句柄有效）；ns_window 经
-    // as_ref Some 分支二次非空校验。所有 msg_send 均为 NSWindow/NSView 标准选择子
-    // （setWantsLayer:/setLevel:/setCollectionBehavior/setAlphaValue/orderFrontRegardless/
-    // setHasShadow:），参数类型匹配。convert_to_panel 内部自管 null 检查。
-    // MainThreadMarker 已校验主线程。
+    // as_ref Some 分支二次非空校验。所有 msg_send 均为 NSWindow 标准选择子
+    // （setLevel:/setCollectionBehavior/setAlphaValue/orderFrontRegardless/setHasShadow:
+    // /setAcceptsMouseMovedEvents:），参数类型匹配。convert_to_panel 内部自管 null 检查。
     unsafe {
-        let Some(ns_window) = raw.as_ref() else {
-            return;
-        };
-        if let Some(cv) = ns_window.contentView() {
-            let _: () = objc2::msg_send![&cv, setWantsLayer: true];
-        }
         crate::platform::panel::convert_to_panel(raw.cast());
-        if let Some(screen) = NSScreen::mainScreen(mtm) {
-            ns_window.setFrame_display(screen.frame(), true);
-        }
         ns_window.setLevel(objc2_app_kit::NSStatusWindowLevel + 1);
         let behavior = NSWindowCollectionBehavior::FullScreenAuxiliary
             | NSWindowCollectionBehavior::Transient
@@ -67,7 +59,7 @@ fn configure_snap_panel(app: &tauri::AppHandle) {
         let _: () = objc2::msg_send![ns_window, setAcceptsMouseMovedEvents: true];
         ns_window.setAlphaValue(0.0);
         ns_window.orderFrontRegardless();
-        let _: () = objc2::msg_send![ns_window, setHasShadow: false];
+        ns_window.setHasShadow(true);
     }
 }
 
@@ -489,7 +481,7 @@ pub mod platform {
         custom_height: f64,
         prev_pid: Option<i32>,
     ) -> Result<(), String> {
-        // 优先级:显式传入 > focus 唯一源记录的（snap-panel show 时 capture，§7）
+        // 优先级:显式传入 > focus 唯一源记录的（snap-panel show 时 capture）
         let fallback_pid = crate::platform::focus::captured_pid();
         let prev_pid = prev_pid.filter(|&p| p > 0).unwrap_or(fallback_pid);
         let cg_pid = find_topmost_window_pid();
@@ -752,32 +744,61 @@ pub fn set_snap_size(width: f64, height: f64) {
 
 #[tauri::command]
 pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
     use tauri::Manager;
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     let app_clone = app.clone();
     app.run_on_main_thread(move || {
         if let Some(w) = app_clone.get_webview_window("snap-panel") {
-            if let Ok(raw) = w.ns_window() {
-                // SAFETY: ns 经 as_ref Some 分支非空校验；setFrame_display/setAlphaValue/
-                // makeKeyAndOrderFront: 均为 NSWindow 标准选择子，MainThreadMarker 校验主线程
-                unsafe {
-                    use objc2_foundation::MainThreadMarker;
+            let mut target_frame: Option<NSRect> = None;
+            let (pw, ph) = window_snap::panel_dimensions();
+            // SAFETY: ns_window 经 Ok 分支有效；ns 经 as_ref Some 非空校验。
+            // setFrame_display/setAlphaValue/makeKeyAndOrderFront 均为 NSWindow 标准方法。
+            // 窗口目标位置已由 show_panel（drag monitor）设为面板尺寸。
+            unsafe {
+                if let Ok(raw) = w.ns_window() {
                     if let Some(ns) = raw.cast::<objc2_app_kit::NSWindow>().as_ref() {
-                        if let Some(mtm) = MainThreadMarker::new() {
-                            if let Some(screen) = objc2_app_kit::NSScreen::mainScreen(mtm) {
-                                ns.setFrame_display(screen.frame(), true);
-                            }
-                        }
-                        ns.setAlphaValue(1.0);
+                        // 固定 target 尺寸（不读 ns.frame() 的 size，避免前次动画未完成时漂移）；
+                        // 中心点取当前 frame（动画为中心对齐缩放，中心点稳定）
+                        let cur = ns.frame();
+                        let cx = cur.origin.x + cur.size.width / 2.0;
+                        let cy = cur.origin.y + cur.size.height / 2.0;
+                        // 起点：固定 80%，中心对齐
+                        let sw = pw * 0.8;
+                        let sh = ph * 0.8;
+                        ns.setFrame_display(
+                            NSRect::new(
+                                NSPoint::new(cx - sw / 2.0, cy - sh / 2.0),
+                                NSSize::new(sw, sh),
+                            ),
+                            false,
+                        );
+                        ns.setAlphaValue(0.0);
                         // panel 已是 NonactivatingPanel：makeKey 只让面板接收事件，
-                        // 不会把 Voidnix 拉成前台 app，前台应用焦点保持不变；
-                        // 同时避免首次点击被「激活点击」吞掉。
+                        // 不会把 Voidnix 拉成前台 app，前台应用焦点保持不变。
                         let _: () = objc2::msg_send![
                             ns,
                             makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()
                         ];
+                        // target：固定尺寸，中心对齐
+                        target_frame = Some(NSRect::new(
+                            NSPoint::new(cx - pw / 2.0, cy - ph / 2.0),
+                            NSSize::new(pw, ph),
+                        ));
                     }
                 }
+            }
+            // alpha + frame 同步动画（缩小→目标 + alpha 0→1，单 group）
+            if let Some(tf) = target_frame {
+                crate::platform::window::animate_panel(
+                    &w,
+                    1.0,
+                    tf.origin.x,
+                    tf.origin.y,
+                    tf.size.width,
+                    tf.size.height,
+                    0.25,
+                );
             }
         }
         let _ = tx.send(());
@@ -790,24 +811,48 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
     use tauri::Manager;
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     let app_clone = app.clone();
     app.run_on_main_thread(move || {
         if let Some(w) = app_clone.get_webview_window("snap-panel") {
-            if let Ok(raw) = w.ns_window() {
-                // SAFETY: ns 经 as_ref Some 分支非空校验；setIgnoresMouseEvents/setAlphaValue
-                // 均为 NSWindow 标准方法，参数类型匹配
-                unsafe {
+            let mut smaller_frame: Option<NSRect> = None;
+            let (pw, ph) = window_snap::panel_dimensions();
+            // SAFETY: setIgnoresMouseEvents/frame 均为 NSWindow 标准方法/属性。
+            unsafe {
+                if let Ok(raw) = w.ns_window() {
                     if let Some(ns) = raw.cast::<objc2_app_kit::NSWindow>().as_ref() {
                         ns.setIgnoresMouseEvents(true);
-                        ns.setAlphaValue(0.0);
+                        // 动画终点：固定 80% 尺寸（不读 ns.frame() 的 size，避免漂移）；
+                        // 中心点取当前 frame（动画为中心对齐缩放，中心点稳定）
+                        let cur = ns.frame();
+                        let cx = cur.origin.x + cur.size.width / 2.0;
+                        let cy = cur.origin.y + cur.size.height / 2.0;
+                        let sw = pw * 0.8;
+                        let sh = ph * 0.8;
+                        smaller_frame = Some(NSRect::new(
+                            NSPoint::new(cx - sw / 2.0, cy - sh / 2.0),
+                            NSSize::new(sw, sh),
+                        ));
                     }
                 }
             }
+            // alpha + frame 同步动画（目标→缩小 + alpha 1→0，单 group）
+            if let Some(sf) = smaller_frame {
+                crate::platform::window::animate_panel(
+                    &w,
+                    0.0,
+                    sf.origin.x,
+                    sf.origin.y,
+                    sf.size.width,
+                    sf.size.height,
+                    0.25,
+                );
+            }
         }
         // 用户点击触发的 layout 路径:panel 已 makeKey 偷走 system key,
-        // 隐藏后需 deactivate + activate 原 app,把 first responder 还回去（§7 唯一源）。
+        // 隐藏后需 deactivate + activate 原 app,把 first responder 还回去。
         #[cfg(target_os = "macos")]
         {
             crate::platform::focus::restore_captured();
