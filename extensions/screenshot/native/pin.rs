@@ -16,7 +16,7 @@ const PIN_MIN_SIZE: f64 = 44.0;
 pub(super) static PIN_PREV_PID: AtomicI32 = AtomicI32::new(0);
 
 /// pin 窗口临时文件 guard 注册表：label → TempHandle。
-/// 窗口创建成功后插入，WindowEvent::Destroyed 时移除（Drop 自动删文件，§2.7）。
+/// 窗口创建成功后插入，WindowEvent::Destroyed 时移除（Drop 自动删文件）。
 static PIN_TEMPS: std::sync::LazyLock<Mutex<HashMap<String, crate::runtime::storage::TempHandle>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -45,7 +45,7 @@ pub async fn pin_image(
             .as_millis();
         let path = std::env::temp_dir().join(format!("voidnix_pin_{}.png", ts));
         std::fs::write(&path, &png).map_err(|e| e.to_string())?;
-        // TempHandle：窗口创建失败时 Drop 清理；成功后转入 PIN_TEMPS，窗口 destroy 时清理（§2.7）
+        // TempHandle：窗口创建失败时 Drop 清理；成功后转入 PIN_TEMPS，窗口 destroy 时清理
         let pin_handle = crate::runtime::storage::TempHandle::new(path.clone());
 
         let cg_addr = png_bytes_to_cgimage(&png) as usize;
@@ -131,7 +131,7 @@ fn create_pin_webview(app: &tauri::AppHandle, spec: &PinWebviewSpec) -> Result<(
 
     let window = builder.build().map_err(|e| e.to_string())?;
 
-    // 窗口销毁时移除 PIN_TEMPS 条目 → Drop TempHandle → 删除临时 PNG（§2.7）
+    // 窗口销毁时移除 PIN_TEMPS 条目 → Drop TempHandle → 删除临时 PNG
     let label_for_destroy = spec.label.to_string();
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {

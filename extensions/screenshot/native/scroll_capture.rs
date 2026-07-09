@@ -1060,7 +1060,7 @@ pub async fn copy_scroll_result_to_clipboard(result_data_url: String) -> Result<
             .unwrap_or_default()
             .as_millis();
         let tmp = std::env::temp_dir().join(format!("voidnix_scroll_{}.png", ts));
-        // TempHandle RAII：函数退出（含错误路径）自动清理（§2.7）
+        // TempHandle RAII：函数退出（含错误路径）自动清理
         let _tmp_handle = crate::runtime::storage::TempHandle::new(tmp.clone());
         std::fs::write(&tmp, &png).map_err(|e| e.to_string())?;
         let script = format!(

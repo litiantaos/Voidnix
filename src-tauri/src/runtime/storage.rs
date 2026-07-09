@@ -1,4 +1,4 @@
-// 临时文件管理 + 扩展数据目录 + 安全 PNG 写入（§2.7）。
+// 临时文件管理 + 扩展数据目录 + 安全 PNG 写入。
 //
 // TempHandle：RAII guard，Drop 时自动删除文件。
 // screenshot 等扩展持有 guard 于窗口 State / 函数作用域，离开作用域即清理。
@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
-/// RAII 临时文件 guard（§2.7）。
+/// RAII 临时文件 guard。
 ///
 /// `Drop` 自动删除文件。大文件 IO 的 Drop 同步执行（截图 PNG 通常 <几 MB，remove 很快）；
 /// 真正阻塞的大文件场景由调用方自行 `spawn_blocking` detach。

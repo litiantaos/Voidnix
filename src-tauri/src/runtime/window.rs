@@ -60,7 +60,7 @@ pub fn make_main_window_key(app: &tauri::AppHandle) {
     }
 }
 
-/// 主窗口框架级配置（panel 转换 + content 圆角，§2.8）。
+/// 主窗口框架级配置（panel 转换 + content 圆角）。
 /// 在 lib.rs setup 内 bootstrap 之后调用一次。
 #[cfg(target_os = "macos")]
 pub fn configure_main_window(app: &tauri::AppHandle) {

@@ -222,7 +222,7 @@ impl AgentTool for RunCommandTool {
             command.env(k, v);
         }
 
-        // rlimit（仅 Unix）：在 fork 后、exec 前设置（数值已 clamp，§3.4）
+        // rlimit（仅 Unix）：在 fork 后、exec 前设置（数值已 clamp）
         let cpu = self.policy.max_cpu_secs;
         let mem_mb = self.policy.max_memory_mb;
         let nofile = self.policy.max_open_files;

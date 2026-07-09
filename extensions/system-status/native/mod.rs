@@ -426,7 +426,7 @@ fn local_ip() -> String {
         .unwrap_or_default()
 }
 
-/// 命令注册（局部 invoke_handler 已移除，全局注册，§2.8）。
+/// 命令注册（局部 invoke_handler 已移除，全局注册）。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("system-status").build()
 }

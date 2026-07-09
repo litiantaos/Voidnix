@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// check:commands —— 命令名漂移检测（阻塞项，RV §2.8）。
+// check:commands —— 命令名漂移检测（阻塞项）。
 // 扫描 Rust #[tauri::command] 函数名集合 ↔ 前端 src/commands.ts 常量值集合，双向差集须为空。
 //   - Rust 删/改名而前端没跟 → caught（前端常量悬空）
 //   - Rust 新增命令而前端没注册 → caught（提醒登记）

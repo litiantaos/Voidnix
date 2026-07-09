@@ -442,7 +442,7 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
 
     // 先取原前台 pid（必须在 hide_main 前读取才是"截图前的应用"）。
     // hide_main 会 clear focus 唯一源（restore_captured swap），故在 hide_main
-    // 之后回填到唯一源（§7）。
+    // 之后回填到唯一源。
     let prev_pid = crate::platform::focus::current_frontmost_pid().unwrap_or(0);
 
     crate::runtime::window::hide_main(app);
