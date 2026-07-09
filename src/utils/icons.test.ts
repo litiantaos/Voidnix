@@ -84,7 +84,7 @@ describe('getFileIcon', () => {
 
     it('未知扩展名返回默认图标', () => {
       const r = makeResult({ data: { path: '/file.xyz' } })
-      expect(getFileIcon(r)).toEqual({ icon: 'i-ri-file-fill', color: 'text-black/40' })
+      expect(getFileIcon(r)).toEqual({ icon: 'i-ri-file-fill', color: 'text-muted' })
     })
 
     it('无路径信息返回默认图标', () => {

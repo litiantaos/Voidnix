@@ -20,7 +20,7 @@
                 : 'i-ri-check-line text-accent'
             "
           />
-          <span text="tx-secondary">{{ t.message }}</span>
+          <span text="secondary">{{ t.message }}</span>
         </div>
       </div>
     </TransitionGroup>

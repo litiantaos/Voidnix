@@ -42,7 +42,7 @@ describe('SearchEngine', () => {
     searchEngine.setActiveModule(undefined)
   })
 
-  it('框架注入 module = 产出扩展 meta.id（v1.6 N4，扩展禁填）', async () => {
+  it('框架注入 module = 产出扩展 meta.id（扩展禁填）', async () => {
     registry.push(makeSearchExt('inj', () => [result('a', 'alpha', 'module')]))
     const out = await searchEngine.search('alpha')
     expect(out[0].module).toBe('inj')
@@ -106,7 +106,7 @@ describe('SearchEngine', () => {
     expect(out.map(groupOf)).toEqual(['module', 'file'])
   })
 
-  it('file 与 folder 同属 file 组（v1.5 合并）', async () => {
+  it('file 与 folder 同属 file 组', async () => {
     registry.push(
       makeSearchExt('ff', () => [
         result('f1', 'aa file', 'file'),
@@ -198,7 +198,7 @@ describe('SearchEngine', () => {
     expect(out.map((r) => r.id)).toEqual(['web', 'app', 'clip'])
   })
 
-  it('keyword 合流：全局模式匹配 meta.keywords 产出模块入口（v1.6 N2）', async () => {
+  it('keyword 合流：全局模式匹配 meta.keywords 产出模块入口', async () => {
     registry.push(makeSearchExt('kw', () => [], ['encode', '解码']))
     const out = await searchEngine.search('encode')
     const entry = out.find((r) => r.data?.kind === 'module')

@@ -14,10 +14,10 @@
     @keydown="onKeyDown"
   >
     <template v-if="isRecording && !readyToRecord">
-      <span text="tx-muted">...</span>
+      <span text="muted">...</span>
     </template>
     <template v-else-if="isRecording && readyToRecord">
-      <span text="tx-muted" class="animate-pulse">请按下快捷键</span>
+      <span text="muted" class="animate-pulse">请按下快捷键</span>
     </template>
     <template v-else-if="keys.length">
       <kbd
@@ -37,7 +37,7 @@
       </kbd>
     </template>
     <template v-else>
-      <span text="tx-muted">未设置</span>
+      <span text="muted">未设置</span>
     </template>
   </div>
 </template>

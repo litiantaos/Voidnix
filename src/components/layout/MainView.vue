@@ -1,5 +1,5 @@
 <template>
-  <div bg="surface" flex="~ col" h="screen" w="screen" shadow="lg">
+  <div bg="surface/72" flex="~ col" h="screen" w="screen" shadow="lg">
     <div
       v-if="isDev"
       bg="accent"
@@ -12,20 +12,11 @@
     />
 
     <!-- 搜索栏 -->
-    <div
-      ref="searchBarRef"
-      p="x-5"
-      border="b black/5"
-      flex
-      gap="3"
-      h="15"
-      items="center"
-      @keydown="onSearchBarKeydown"
-    >
+    <div ref="searchBarRef" p="x-5" border="b black/5" flex gap="3" h="15" items="center">
       <!-- 扩展标签 -->
       <div
         v-if="activeModule"
-        text="xs tx-secondary"
+        text="xs secondary"
         p="x-3"
         rounded="md"
         bg="black/5"
@@ -51,14 +42,14 @@
               key="close"
               variant="ghost"
               class="rounded-full bg-black/10 flex-center inset-0 absolute !p-0 hover:bg-black/10 !h-3.5 !w-3.5"
-              icon="i-ri-close-line text-xs text-tx-subtle"
+              icon="i-ri-close-line text-xs text-secondary"
               @click="onTagClose"
             />
             <span
               v-else
               key="icon"
               :class="activeModule.meta.icon"
-              text="xs black/50"
+              text="xs muted"
               class="flex-center"
               h="3.5"
               w="3.5"
@@ -73,13 +64,14 @@
       <input
         ref="searchInput"
         id="main-search-input"
+        data-list-execute
         :value="appStore.searchQuery"
         :readonly="activeModule?.disableSearchInput"
-        text="base black/85"
+        text="base primary"
         outline="none"
         bg="transparent"
         flex="1"
-        :class="'placeholder:text-tx-hint'"
+        :class="'placeholder:text-muted'"
         :placeholder="placeholderText"
         @input="onInput"
         @compositionstart="appStore.setComposing(true)"
@@ -114,7 +106,7 @@
       :loading="isLoading"
       :selected-index="selectedIndex"
       :on-execute="activeModule ? undefined : handleExecute"
-      :group-field="groupField"
+      :group-field="getGroupKey"
       :group-title="groupTitle"
       @update:selected-index="(i: number) => (selectedIndex = i)"
     />
@@ -126,10 +118,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useScroll } from '@/composables/events'
 import { getExtension } from '@/runtime/extension-registry'
 import { SEARCH } from '@/runtime/constants'
+import { getGroupKey } from '@/runtime/search-engine'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import type { SearchResult } from '@/runtime/types'
@@ -179,13 +172,7 @@ const placeholderText = computed(() => {
   return mod.placeholder ?? (mod.disableSearchInput ? '' : `在 ${mod.meta.name} 中搜索`)
 })
 
-// 分组逻辑：按 kind 分组，file/folder 合并为"文件"；标题读 constants 单一源
-const groupField = (item: SearchResult) => {
-  const kind = item.data?.kind as string | undefined
-  if (kind === 'file' || kind === 'folder') return 'file'
-  return kind || 'other'
-}
-
+// 分组逻辑：getGroupKey 单一源（search-engine）；标题读 constants 单一源
 const groupTitle = (group: string) =>
   SEARCH.GROUP_TITLES[group as keyof typeof SEARCH.GROUP_TITLES] || group
 
@@ -260,14 +247,31 @@ watch(
   },
 )
 
-function onSearchBarKeydown(e: KeyboardEvent) {
+// Tab 切换搜索栏附加区：监听上提到 document 级，
+// 进入 disableSearchInput 模块时 input 被 blur 到 body（非 searchBarRef 子节点），
+// searchBarRef 上的 keydown 捕获不到，故需 document 级才能一次命中。
+// - 搜索栏禁用：跳过 readonly 搜索框，Tab 仅在附加区控件间循环续切
+// - 焦点已在附加区某控件：基于当前位置前进到下一个（非从头开始）
+function onTabKeydown(e: KeyboardEvent) {
   if (e.key !== 'Tab') return
-  const focusable = getFocusableElements(searchBarRef.value!)
+  const mod = activeModule.value
+  if (!mod?.searchBarAccessory) return
+  // 对话框/子视图打开时交由它们自管焦点
+  if (appStore.isDialogOpen || appStore.activeSubview) return
+  const active = document.activeElement
+  const inBar = !!searchBarRef.value?.contains(active)
+  // 仅当焦点在搜索栏内或落在 body（失焦态）时接管，避免抢夺内容区/子视图焦点
+  if (!inBar && active !== document.body) return
+  const focusable = getFocusableElements(searchBarRef.value!).filter(
+    (el) => !mod.disableSearchInput || el !== searchInput.value,
+  )
   if (focusable.length === 0) return
   e.preventDefault()
-  e.stopPropagation()
   cycleFocus(focusable, e)
 }
+
+onMounted(() => document.addEventListener('keydown', onTabKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onTabKeydown))
 
 function onTagClose() {
   isTagHovered.value = false

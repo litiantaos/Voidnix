@@ -1,14 +1,14 @@
 import type { Component } from 'vue'
 
-// ─── 搜索结果（§2.3）─────────────────────────────────────────────────
+// ─── 搜索结果─────────────────────────────────────────────────
 
-/** 严格枚举：分组依据。file/folder 同属 'file' 组（getGroupKey 合并，§2.5）。 */
+/** 严格枚举：分组依据。file/folder 同属 'file' 组（getGroupKey 合并）。 */
 export type SearchResultKind = 'application' | 'folder' | 'file' | 'module' | 'clipboard' | 'web'
 
 export interface SearchData {
   /** 必填：分组依据（经 getGroupKey 映射到组）。扩展须正确设置。 */
   kind: SearchResultKind
-  /** 模块入口结果专用：kind==='module' 时必填，框架内置激活此模块（§2.2 执行分派）。 */
+  /** 模块入口结果专用：kind==='module' 时必填，框架内置激活此模块。 */
   moduleId?: string
   path?: string
   // ── 跨扩展高频共享字段（显式声明以获得类型安全；扩展私有字段走下方索引签名）──
@@ -28,7 +28,7 @@ export interface SearchResult {
   /** 扩展内 localId（自管唯一）。框架去重用 `<module>:<id>` 组合键。 */
   id: string
   title: string
-  /** 框架自动注入，扩展禁填（v1.6 N4）：dynamic 结果 = 产出扩展 meta.id；keyword 入口 = 目标模块 id。 */
+  /** 框架自动注入，扩展禁填：dynamic 结果 = 产出扩展 meta.id；keyword 入口 = 目标模块 id。 */
   module: string
   description?: string
   icon?: string
@@ -42,10 +42,10 @@ export interface SearchResult {
   source?: string
 }
 
-/** 扩展 dynamic 返回的原始结果（不含 module，框架注入 producing 扩展 id，§2.3 v1.6 N4）。 */
+/** 扩展 dynamic 返回的原始结果（不含 module，框架注入 producing 扩展 id）。 */
 export type ProviderResult = Omit<SearchResult, 'module' | 'source'>
 
-// ─── 搜索能力（§2.3 单通道）──────────────────────────────────────────
+// ─── 搜索能力──────────────────────────────────────────
 
 export interface SearchContext {
   /** 新查询覆盖旧查询时 abort；持有非自动释放资源的 provider 须 addEventListener('abort', cleanup)。 */
@@ -62,7 +62,7 @@ export interface SearchProvider {
   dynamic(query: string, ctx: SearchContext): ProviderResult[] | Promise<ProviderResult[]>
 }
 
-// ─── 扩展接口（§2.2 能力槽）─────────────────────────────────────────
+// ─── 扩展接口─────────────────────────────────────────
 
 export interface ExtensionMeta {
   id: string
@@ -93,7 +93,7 @@ export interface Extension {
   /** 启动钩子（前端运行时初始化时调用）。 */
   setup?(): void | Promise<void>
 
-  // ── 能力槽（均有真实消费者，§2.2）──
+  // ── 能力槽（均有真实消费者）──
   search?: SearchProvider
   /** 搜索结果回车动作（扩展私有；模块入口结果走框架内置激活，见下方「执行分派」）。 */
   onExecute?(result: SearchResult, selectedResults?: SearchResult[]): void | Promise<void>

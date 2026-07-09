@@ -35,7 +35,7 @@
           :aria-describedby="message ? descId : undefined"
           tabindex="-1"
         >
-          <div text="sm tx-primary" font="bold" p="5" select="none">
+          <div text="sm primary" font="bold" p="5" select="none">
             <slot name="header">
               <h3 :id="titleId">
                 {{ title }}
@@ -48,7 +48,7 @@
               <p
                 v-if="message"
                 :id="descId"
-                text="xs tx-subtle"
+                text="xs secondary"
                 leading="relaxed"
                 whitespace="pre-wrap"
                 break="all"
