@@ -50,7 +50,7 @@ jobs:
           cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings
           cargo clippy --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml -- -D warnings
 
-      # ── 漂移校验四件套 ──
+      # ── 漂移校验 ──
       - name: 扩展同步产物校验（extensions.rs + windowViews 漂移）
         run: bun run check:extensions
 
@@ -62,6 +62,9 @@ jobs:
 
       - name: window-manager 尺寸边界 Rust↔TS 一致校验
         run: bun run check:wm-bounds
+
+      - name: 扩展 meta.order 唯一校验
+        run: bun run check:extension-orders
 
       # ── 单元测试 ──
       - name: 前端单元测试（Vitest）

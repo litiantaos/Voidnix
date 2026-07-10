@@ -39,6 +39,9 @@ jobs:
       - name: window-manager 尺寸边界一致校验
         run: bun run check:wm-bounds
 
+      - name: 扩展 meta.order 唯一校验
+        run: bun run check:extension-orders
+
       - name: 代码风格检查
         run: bun run lint:check
 
