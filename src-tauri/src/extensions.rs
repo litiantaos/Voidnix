@@ -122,8 +122,7 @@ pub(crate) use configure_app;
 pub fn register_all(
     reg: crate::runtime::registry::ExtensionRegistry,
 ) -> crate::runtime::registry::ExtensionRegistry {
-    reg
-        .register(agent::AgentExtension)
+    reg.register(agent::AgentExtension)
         .register(awake::AwakeExtension)
         .register(clean_mode::CleanModeExtension)
         .register(clipboard::ClipboardExtension)

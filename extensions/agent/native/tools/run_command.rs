@@ -511,9 +511,9 @@ mod tests {
             // ── 放行 ──
             ("rm", &["-rf", "/tmp/test"], false),
             ("rm", &["-rf", "~/Documents"], false),
-            ("rm", &["-r", "/"], false), // 缺 force
-            ("rm", &["-f", "/"], false), // 缺 recursive
-            ("rm", &["-rf"], false),     // 无目标
+            ("rm", &["-r", "/"], false),  // 缺 force
+            ("rm", &["-f", "/"], false),  // 缺 recursive
+            ("rm", &["-rf"], false),      // 无目标
             ("ls", &["-rf", "/"], false), // 非 rm
             ("echo", &["-rf", "/"], false),
         ];
