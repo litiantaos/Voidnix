@@ -30,11 +30,24 @@ impl Extension for ClipboardExtension {
     }
 
     async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
-        let db = db::Database::new(db::clipboard_db_path(app));
-        app.manage(db);
-
-        #[cfg(target_os = "macos")]
-        monitor::start_monitor(app.clone());
+        // DB 打开失败不拖垮 app：不 manage、不启 monitor；命令侧 try_state 返回可读错误
+        let path = match db::clipboard_db_path(app) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("[clipboard] data dir unavailable, history disabled: {e}");
+                return Ok(());
+            }
+        };
+        match db::Database::open(path) {
+            Ok(database) => {
+                app.manage(database);
+                #[cfg(target_os = "macos")]
+                monitor::start_monitor(app.clone());
+            }
+            Err(e) => {
+                eprintln!("[clipboard] database open failed, history disabled: {e}");
+            }
+        }
 
         Ok(())
     }

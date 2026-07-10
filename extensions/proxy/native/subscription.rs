@@ -317,8 +317,42 @@ mod tests {
         assert!(out.contains("223.5.5.5"));
         assert!(out.contains("proxy-server-nameserver"));
         assert!(!out.contains("fallback"));
-        // tun 关闭时不含 tun 段
+        // tun 关闭时不含 tun 段（idle 热重载）
         let out2 = merge_yaml(&[], &params()).unwrap();
         assert!(!out2.contains("tun:"));
+    }
+
+    #[test]
+    fn merge_yaml_skips_invalid_yaml_keeps_valid() {
+        let bad = "proxies: [unclosed".to_string();
+        let good = "proxies:\n  - {name: OK, type: ss}\n".to_string();
+        let out = merge_yaml(&[bad, good], &params()).unwrap();
+        assert!(out.contains("OK"));
+        let v: Value = serde_yml::from_str(&out).unwrap();
+        let count = v
+            .get("proxies")
+            .and_then(|p| p.as_sequence())
+            .map(|s| s.len())
+            .unwrap_or(0);
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn merge_yaml_active_vs_idle_params() {
+        let yaml = "proxies:\n  - {name: N, type: ss}\n".to_string();
+        let mut active = params();
+        active.tun = true;
+        active.mode = "rule".into();
+        let mut idle = params();
+        idle.tun = false;
+        idle.mode = "direct".into();
+        let a = merge_yaml(&[yaml.clone()], &active).unwrap();
+        let i = merge_yaml(&[yaml], &idle).unwrap();
+        assert!(a.contains("tun:"));
+        assert!(a.contains("mode: rule"));
+        assert!(!i.contains("tun:"));
+        assert!(i.contains("mode: direct"));
+        // 两端都带节点，热重载只切 mode/tun
+        assert!(a.contains("N") && i.contains("N"));
     }
 }

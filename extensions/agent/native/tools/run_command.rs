@@ -479,108 +479,52 @@ mod tests {
         assert!(args.is_empty());
     }
 
+    /// 断路器表驱动：覆盖 H1 结构化解析 + H2 大小写 + 放行边界。
+    /// args 用 `&str` 切片再转 Vec，便于一眼扫全表。
     #[test]
-    fn circuit_breaker_rm_rf_root() {
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-rf".into(), "/".into()]
-        ));
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-rf".into(), "~".into()]
-        ));
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-rf".into(), "/*".into()]
-        ));
-        // 单独的 -rf 但目标是具体目录不拦
-        assert!(!RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-rf".into(), "/tmp/test".into()]
-        ));
-    }
-
-    #[test]
-    fn circuit_breaker_case_insensitive_program() {
-        // H2：大小写变体同样拦截（macOS APFS 大小写不敏感）
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "RM",
-            &["-rf".into(), "/".into()]
-        ));
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "Rm",
-            &["-rf".into(), "~".into()]
-        ));
-    }
-
-    #[test]
-    fn circuit_breaker_split_short_flags() {
-        // H1：拆分选项 `-r -f /` 旧字符串拼接法漏判
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-r".into(), "-f".into(), "/".into()]
-        ));
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-f".into(), "-r".into(), "/".into()]
-        ));
-    }
-
-    #[test]
-    fn circuit_breaker_long_options() {
-        // H1：长选项 `--recursive --force`
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["--recursive".into(), "--force".into(), "/".into()]
-        ));
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["--force".into(), "--recursive".into(), "~".into()]
-        ));
-    }
-
-    #[test]
-    fn circuit_breaker_combined_cluster_with_extra() {
-        // H1：组合标志带额外字母 `-irf`（interactive + recursive + force）
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-irf".into(), "/".into()]
-        ));
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-fri".into(), "/".into()]
-        ));
-    }
-
-    #[test]
-    fn circuit_breaker_dd_separator_and_home_glob() {
-        // H1：`--` 分隔符 + 通配家目录 `~/*`
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-rf".into(), "--".into(), "/".into()]
-        ));
-        assert!(RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-rf".into(), "~/*".into()]
-        ));
-        // 子目录不拦（家目录树内的合法删除）
-        assert!(!RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-rf".into(), "~/Documents".into()]
-        ));
-    }
-
-    #[test]
-    fn circuit_breaker_only_r_without_f_passes() {
-        // 只有 -r 没 -f → 不拦（断路器仅拦 -rf 根/家目录）
-        assert!(!RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-r".into(), "/".into()]
-        ));
-        assert!(!RunCommandTool::is_circuit_breaker_hit(
-            "rm",
-            &["-f".into(), "/".into()]
-        ));
+    fn circuit_breaker_table() {
+        // (cmd, args, expect_blocked)
+        let cases: &[(&str, &[&str], bool)] = &[
+            // 根 / 家目录 / 通配
+            ("rm", &["-rf", "/"], true),
+            ("rm", &["-rf", "//"], true),
+            ("rm", &["-rf", "/*"], true),
+            ("rm", &["-rf", "~"], true),
+            ("rm", &["-rf", "~/*"], true),
+            // 大小写程序名
+            ("RM", &["-rf", "/"], true),
+            ("Rm", &["-rf", "~"], true),
+            // 拆分短选项 / 顺序无关
+            ("rm", &["-r", "-f", "/"], true),
+            ("rm", &["-f", "-r", "/"], true),
+            ("rm", &["-R", "-f", "/"], true),
+            // 长选项
+            ("rm", &["--recursive", "--force", "/"], true),
+            ("rm", &["--force", "--recursive", "~"], true),
+            ("rm", &["--recursive=true", "--force", "/"], true),
+            // 选项簇带额外字母
+            ("rm", &["-irf", "/"], true),
+            ("rm", &["-fri", "/"], true),
+            // `--` 后 positional 仍拦
+            ("rm", &["-rf", "--", "/"], true),
+            ("rm", &["-rf", "--", "~"], true),
+            // ── 放行 ──
+            ("rm", &["-rf", "/tmp/test"], false),
+            ("rm", &["-rf", "~/Documents"], false),
+            ("rm", &["-r", "/"], false), // 缺 force
+            ("rm", &["-f", "/"], false), // 缺 recursive
+            ("rm", &["-rf"], false),     // 无目标
+            ("ls", &["-rf", "/"], false), // 非 rm
+            ("echo", &["-rf", "/"], false),
+        ];
+        for (cmd, args, blocked) in cases {
+            let args_owned: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
+            let hit = RunCommandTool::is_circuit_breaker_hit(cmd, &args_owned);
+            assert_eq!(
+                hit, *blocked,
+                "cmd={cmd:?} args={args:?}: expected blocked={blocked}, got {hit}"
+            );
+        }
     }
 
     #[tokio::test]

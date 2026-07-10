@@ -117,7 +117,10 @@ pub fn start_monitor(app_handle: AppHandle) {
                 continue;
             }
 
-            let db = app_handle.state::<Database>();
+            // setup 降级时未 manage Database：跳过本轮写入
+            let Some(db) = app_handle.try_state::<Database>() else {
+                continue;
+            };
             let conn = db.conn();
 
             // 单条且与最后一条相同 → 跳过（连续重复优化，避免每次都刷新 created_at）
