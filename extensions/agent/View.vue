@@ -308,11 +308,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   margin: 2px 0;
 }
 
-/* 行内代码（不含 pre 内）*/
+/* 行内代码（不含 pre 内）— 填充/描边走 theme token */
 .markdown-body :deep(:not(pre) > code) {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 12px;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-fill-5);
   padding: 2px 4px;
   border-radius: 4px;
   word-break: break-all;
@@ -320,7 +320,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 /* 代码块 */
 .markdown-body :deep(pre) {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-fill-5);
   padding: 10px 12px;
   border-radius: 8px;
   overflow-x: auto;
@@ -338,7 +338,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 /* 引用块 */
 .markdown-body :deep(blockquote) {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-fill-5);
   padding: 10px 12px;
   border-radius: 8px;
   overflow-x: auto;
@@ -354,19 +354,19 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 .markdown-body :deep(th),
 .markdown-body :deep(td) {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid var(--color-divider);
   padding: 4px 8px;
   text-align: left;
 }
 .markdown-body :deep(th) {
   font-weight: 600;
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--color-fill-4);
 }
 
 /* 水平线 / 图片 / 强调 */
 .markdown-body :deep(hr) {
   border: none;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  border-top: 1px solid var(--color-border);
   margin: 14px 0;
 }
 .markdown-body :deep(img) {

@@ -241,10 +241,10 @@ onUnmounted(() => {
   transition: background-color 200ms ease-out;
 }
 .backdrop-to {
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--color-smoke);
 }
 .backdrop-from {
-  background-color: rgba(0, 0, 0, 0);
+  background-color: transparent;
 }
 
 .dialog-active {
