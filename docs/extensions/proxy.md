@@ -73,7 +73,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 - **流量**（`/traffic`，每秒 `{ up, down }` bytes/s）：主界面开启项副标题实时显示，代理开关驱动（前端开/停）
 - **连接**（`/connections?interval=500`，完整快照含 connections 数组 + 累计总量）：子视图实时列表，搜索 host/进程/IP
 - **规则**（`/rules`，`{ rules: [{ type, payload, proxy }] }`）：子视图只读列表，支持规则/策略搜索
-- **日志**（`/logs`，`{ type, payload }`，WS `level=debug` 拉取 mihomo 产出的全部级别；config `log-level=info` 故实际为 info+）：子视图实时流，前端上限 500 行超出头部丢弃，按 type 着色（error red / warning yellow / debug faint），搜索过滤 payload，贴底自动滚（用户上滚查历史时不打断）
+- **日志**（`/logs`，`{ type, payload }`，WS `level=debug` 拉取 mihomo 产出的全部级别；config `log-level=info` 故实际为 info+）：子视图实时流，前端上限 500 行超出头部丢弃，按 type 着色（error red / warning yellow / debug muted），搜索过滤 payload，贴底自动滚（用户上滚查历史时不打断）
 
 ## 聚合菜单栏贡献（mod.rs）
 
