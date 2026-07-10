@@ -50,7 +50,7 @@ export type ProviderResult = Omit<SearchResult, 'module' | 'source'>
 export interface SearchContext {
   /** 新查询覆盖旧查询时 abort；持有非自动释放资源的 provider 须 addEventListener('abort', cleanup)。 */
   signal: AbortSignal
-  /** true = 模块独占（runModuleSearch 进入模块时调用）；false/缺省 = 全局聚合（searchEngine 默认列表）。
+  /** true = 模块独占（searchEngine 模块模式，只调激活扩展）；false/缺省 = 全局聚合。
    *  扩展可据此区分：全局空 query 时跳过网络等重操作（避免拖慢默认列表），模块内空 query 正常执行。 */
   moduleMode?: boolean
 }

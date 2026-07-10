@@ -28,7 +28,8 @@ export const SEARCH = {
 } as const
 
 export const LIMITS = {
-  maxAppResults: 30,
+  /** 非 file 组组内限流（application / module / clipboard / web 共用）。 */
+  maxGroupResults: 30,
   maxFileResults: 50, // file 组限流（含 folder；单组计数，无跨组共享）
   searchTimeoutMs: 3000,
 } as const
