@@ -33,19 +33,10 @@ pub fn run() {
             }
             let t_pre = boot_start.elapsed();
 
-            let registry = crate::runtime::registry::ExtensionRegistry::new()
-                .register(crate::extensions::clipboard::ClipboardExtension)
-                .register(crate::extensions::screenshot::ScreenshotExtension)
-                .register(crate::extensions::awake::AwakeExtension)
-                .register(crate::extensions::clean_mode::CleanModeExtension)
-                .register(crate::extensions::zsh_autosuggestions::ZshAutosuggestionsExtension)
-                .register(crate::extensions::window_manager::WindowManagerExtension)
-                .register(crate::extensions::finder_ext::FinderExtExtension)
-                .register(crate::extensions::translate::TranslateExtension)
-                .register(crate::extensions::agent::AgentExtension)
-                .register(crate::extensions::search::SearchExtension)
-                .register(crate::extensions::proxy::ProxyExtension)
-                .register(crate::extensions::system_status::SystemStatusExtension);
+            // register_all 由 sync-extensions 生成，与 .plugin() 同源，禁止手写扩展清单
+            let registry = crate::extensions::register_all(
+                crate::runtime::registry::ExtensionRegistry::new(),
+            );
             let t_build = boot_start.elapsed();
 
             // block_on 探针：确认 setup 同步闭包内可安全 block_on（非 tokio worker 嵌套）。

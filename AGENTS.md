@@ -85,7 +85,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 **扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta` + 14 槽（11 能力槽 + 3 行为槽，按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
 
-**搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + 一次预算 finalScore + keyword 合流 + dedupe + groupAndSort。全局模式聚合所有扩展按 `finalScore = fuzzy + boost` 排序；**过滤规则**：空 query 默认列表按 `finalScore>0`（boost>0，主要是应用）显示；非空 query 查找型结果（application/file/clipboard）需 `fuzzy>0` 命中，module 类即时答案靠 `finalScore>0` 穿透（title 不含 query 也能展示，如换算结果）；模块模式只调激活扩展且保留原序（不过滤）。**finalScore 单次预算复用**：`search()` 对 dynamic 结果一次算 `scoreFields + boost`，suppress 判断（是否抑制该扩展 keyword 入口）与 `groupAndSort` 均复用此分，不二次调 scoreFields；keyword 入口 finalScore 复用 `keywordSearchAll` 内部 score（含 keywordMatch 反向匹配贡献，不被 scoreFields 重算归零）。`SearchContext.moduleMode` 区分两种模式（网络型扩展据此在全局空 query 跳过网络）。搜索集成细节详见 [docs/extensions.md](docs/extensions.md)。
+**搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + 一次预算 finalScore + keyword 合流 + dedupe + groupAndSort。**全局与搜索型模块共用 `search()`**（`setActiveModule` 切换模式；模块模式只调激活扩展、保留原序、同样 timeout/abort）。全局模式按 `finalScore = fuzzy + boost` 排序；**过滤规则**：空 query 默认列表按 `finalScore>0`（boost>0，主要是应用）显示；非空 query 查找型结果需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透。keyword / `/` 工具列表模块入口打分共用 `scoreModuleEntry`（name/id/description 正向 + keywords 双向）。`SearchContext.moduleMode` 供扩展区分场景（网络型全局空 query 跳过网络）。详见 [docs/extensions.md](docs/extensions.md)。
 
 **窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/window.rs::apply_main_window_style`（= `apply_mica_material(ns, 20)` + `setHasShadow(true)` + `convert_to_panel`）在 setup 内一次性配置主窗口样式（Mica 材质底 + contentView 圆角 20（单层窗口＝面板）+ 原生阴影 + 前端 inset 高光环 + 子视图 layer 透明让 WKWebView canvas 透传；材质实现见 UI 规范与 [设计系统](docs/design.md)）。snap-panel 同理经 `apply_mica_material(ns, 12)` 获 Mica 底材（窗口尺寸精简为面板大小，原生阴影）。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。`is_app_active()` 判焦点归属：NSApp keyWindow 非空 → 焦点在我们；否则查 frontmost bundle 路径——`/System/` 开头（授权弹窗、keychain 对话框等）视为交互流未中断，抑制 blur hide。`restore_captured()` 还原前查 frontmost：第三方已接管（系统弹窗/用户切到其他 app）则不抢回。系统弹窗关闭后焦点恢复由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove）处理：frontmost 变更时若 panel 可见但丢 key，frontmost == 原前台 PID → makeKeyWindow 恢复；frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss。窗口高度统一机制：扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖；`useModuleHeight`（MainView 全局唯一调用）读 `activeModule` + `activeSubview` 解析模式，一次 invoke 触发 Rust 端 `set_main_frame` → `platform/window.rs::animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管插值，非 JS rAF 逐帧，不每帧阻塞主线程/触发 WebView 重排）；`auto` 模式 ResizeObserver 监听 ContentView 的 `contentRef`（自然高量真实内容高），窗口高 = `CHROME_HEIGHT`（搜索栏高度 + 间距，scrollContainer paddingTop）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`（屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口）；底部将出屏（含 40px 间距）则同步上移保证完整可见，离开 auto 还原进入前位置。
 
@@ -103,7 +103,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`extensions/agent/native/policy.rs` 是资源上限 floor/cap 权威源（CPU/内存/文件描述符/超时/输出/轮次 clamp），`agent_run` 入口强制 clamp（不信任前端传值）；`run_command` 保留 `rm -rf /` 断路器兜底；TS 端 `config.ts` 的 `BOUNDS` 仅 UI 镜像。详见 `docs/extensions/agent.md`。
 
-**搜索打分**：`src/utils/fuzzy.ts::scoreFields()`（[pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。keyword 模块入口用 `keywordMatch()` 双向匹配（正向子串 + 反向子串降权 0.5 + 拼音，覆盖「100 usd」含 keyword「usd」等多词 query 场景，`keywordSearchAll` 消费）；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其 keyword 入口**（即时答案优先，避免换算结果与模块入口同屏重复；clipboard 等数据型结果 kind≠module 不抑制——用户搜模块名时先看入口再看记录）。`kind` 枚举 `application | folder | file | module | clipboard | web`（folder/file 同组），组间序 `GROUP_ORDER`：`application > module > file > clipboard > web`。
+**搜索打分**：`src/utils/fuzzy.ts::scoreFields()`（[pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。模块入口用 `scoreModuleEntry()`（name/id/description + `keywordMatch` 双向），全局 keyword 与 `/` 列表共用；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其 keyword 入口**（即时答案优先；clipboard 等 kind≠module 不抑制）。`kind` 枚举 `application | folder | file | module | clipboard | web`，组间序 `GROUP_ORDER`：`application > module > file > clipboard > web`。组内限流：`LIMITS.maxGroupResults`（非 file）/ `maxFileResults`。
 
 **toast 提示**：自研轻量浮层（`composables/useToast.ts` + `components/ui/ToastOverlay.vue`），按 `kind` 切图标/色（`success` accent 对勾 / `error` red-500 警告，错误反馈必须传 `kind: 'error'`）；堆叠上限 3 条、默认 2000ms 自动清除，窗口隐藏时立即清空（`hideWindow` 内调 `clearToasts`，规避 macOS 隐藏 WebView 节流 setTimeout 致残留）。扩展通过 `copyAndHide`（`stores/app.ts`，写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈；`showStatus(msg, opts?)` 委托 `showToast`（调用点零改动）。搜索栏 placeholder：模块模式显示搜索说明（`在 X 中搜索` 或扩展自声明 `placeholder`），全局模式保留搜索说明。
 
@@ -118,7 +118,7 @@ Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`
 ```
 src-tauri/src/
 ├── lib.rs / main.rs    # 入口（lib.rs setup 内含启动埋点，debug 构建打印 `[boot]` 各阶段耗时 + <100ms 判定）
-├── extensions.rs       # 自动生成（configure_app! 含 .plugin() 链 + 全局 generate_handler! + mod 声明）
+├── extensions.rs       # 自动生成（configure_app! + register_all 生命周期 + generate_handler! + mod 声明）
 ├── http.rs             # HTTP 客户端（HTTP_CLIENT 整体 120s 超时 + DOWNLOAD_CLIENT 无整体超时仅建连 30s 供流式大文件下载）+ http_get 命令（浏览器 UA 伪装 + SSRF 防护 + 重定向限制 + 共享 parse_scheme_host/is_blocked_host 原语；ip/currency 等纯 TS 扩展消费）
 ├── runtime/            # 运行时核心
 │   ├── window.rs       # 主窗口 show/hide
@@ -126,7 +126,7 @@ src-tauri/src/
 │   ├── menubar.rs      # 聚合菜单栏托盘（框架唯一图标 + 扩展贡献段注册 + 可见性 = Σ build() 项数 > 0）
 │   ├── storage.rs      # TempHandle RAII + cleanup_all_voidnix_temps（启动期统一扫 /tmp 残留）+ ext_data_dir 统一扩展数据目录 + save_png_safely（path_guard + write 共用）
 │   ├── permission.rs   # 系统权限薄壳
-│   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap，join_all 单线程并发交错）
+│   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap；单扩展 setup 失败隔离）
 │   ├── pasteboard.rs   # 框架命令薄壳（pasteboard_write_text；原语在 platform/pasteboard）
 │   └── llm/            # LLM 基础设施（types / client / parser；security 溶解入 client）
 └── platform/           # macOS 原生桥

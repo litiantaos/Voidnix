@@ -1,6 +1,6 @@
 import { getAllExtensions } from './extension-registry'
 import { SEARCH, LIMITS } from './constants'
-import { scoreFields, keywordMatch } from '@/utils/fuzzy'
+import { scoreFields, scoreModuleEntry } from '@/utils/fuzzy'
 import type { SearchResult, SearchResultKind } from './types'
 
 // kind → group 映射：file/folder 同属 'file' 组；其余 kind 即组名。
@@ -41,6 +41,12 @@ class SearchEngine {
 
   getActiveModule(): string | undefined {
     return this.activeModule
+  }
+
+  /** 取消进行中的 search（模块退出 / 组件卸载）。新 search() 也会 abort 上一次。 */
+  abort() {
+    this.currentController?.abort()
+    this.currentController = undefined
   }
 
   async search(query: string): Promise<SearchResult[]> {
@@ -155,20 +161,11 @@ class SearchEngine {
     }
   }
 
-  /** 框架内置：扫描 meta.keywords 产出模块入口结果。
-   *  keywords 用双向匹配（keywordMatch：正向 + 反向降权 + 拼音），覆盖多词 query 含关键词场景；
-   *  name/description 用 scoreFields 单向子串（query 在 field 中）。
-   *  入参 q 约定已 trim（调用点预算）；产出序无要求——groupAndSort 在 module 组内按 finalScore 重排。 */
+  /** 框架内置：scoreModuleEntry 产出模块入口（与 `/` 工具列表共用打分）。
+   *  入参 q 约定已 trim；产出序无要求——groupAndSort 在 module 组内按 finalScore 重排。 */
   private keywordSearchAll(q: string): SearchResult[] {
     return getAllExtensions()
-      .filter((e) => (e.meta.keywords?.length ?? 0) > 0)
-      .map((ext) => {
-        const score = Math.max(
-          scoreFields([ext.meta.name, ext.meta.description], q),
-          keywordMatch(ext.meta.keywords ?? [], q),
-        )
-        return { ext, score }
-      })
+      .map((ext) => ({ ext, score: scoreModuleEntry(ext.meta, q) }))
       .filter((x) => x.score > 0)
       .map(({ ext, score }) => ({
         id: `module-${ext.meta.id}`,
@@ -209,7 +206,7 @@ class SearchEngine {
       // 组内 finalScore 降序
       groupItems.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       // 组内限流
-      const max = key === 'file' ? LIMITS.maxFileResults : LIMITS.maxAppResults
+      const max = key === 'file' ? LIMITS.maxFileResults : LIMITS.maxGroupResults
       result.push(...groupItems.slice(0, max))
     }
     return result

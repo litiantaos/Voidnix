@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { scoreFields, frequencyBoost, keywordMatch } from './fuzzy'
+import { scoreFields, frequencyBoost, keywordMatch, scoreModuleEntry } from './fuzzy'
 
 describe('scoreFields', () => {
   it('空 query 返回 0', () => {
@@ -107,6 +107,23 @@ describe('keywordMatch', () => {
   it('无任何命中返回 0', () => {
     expect(keywordMatch(['usd'], 'xyz')).toBe(0)
     expect(keywordMatch(['汇率'], 'abc')).toBe(0)
+  })
+})
+
+describe('scoreModuleEntry', () => {
+  it('name / id 正向命中', () => {
+    expect(scoreModuleEntry({ name: '计算器', id: 'calculator' }, '计算')).toBeGreaterThan(0)
+    expect(scoreModuleEntry({ name: 'Base64', id: 'base64' }, 'base64')).toBeGreaterThan(0)
+  })
+
+  it('keywords 反向命中（与 keywordMatch 一致）', () => {
+    expect(
+      scoreModuleEntry({ name: '汇率', id: 'currency', keywords: ['usd'] }, '100 usd'),
+    ).toBeGreaterThan(0)
+  })
+
+  it('无命中返回 0', () => {
+    expect(scoreModuleEntry({ name: '时间', id: 'time', keywords: ['date'] }, 'xyz')).toBe(0)
   })
 })
 

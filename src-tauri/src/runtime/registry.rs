@@ -58,40 +58,40 @@ pub fn bootstrap(
     let count = registry.extensions.len();
     let start = std::time::Instant::now();
 
-    let setup_result = tauri::async_runtime::block_on(async {
+    // 扩展自治：单扩展 setup 失败 log + 跳过，不拖垮整体启动（对齐前端 main.ts try/catch）。
+    let failed = tauri::async_runtime::block_on(async {
         let results =
             futures_util::future::join_all(registry.extensions.iter().map(|e| e.setup(&handle)))
                 .await;
+        let mut n = 0usize;
         for (idx, r) in results.into_iter().enumerate() {
             if let Err(e) = r {
+                n += 1;
                 eprintln!(
-                    "[ext] '{}' setup failed: {e}",
+                    "[ext] '{}' setup failed (skipped): {e}",
                     registry.extensions[idx].id()
                 );
-                return Err(e);
             }
         }
-        Ok(())
+        n
     });
 
-    // P4-rs2：setup 失败时不打印成功耗时（避免误导），改打印失败耗时
-    match &setup_result {
-        Ok(()) => {
-            eprintln!(
-                "[bootstrap] {} extensions setup in {:?}",
-                count,
-                start.elapsed()
-            );
-        }
-        Err(_) => {
-            eprintln!(
-                "[bootstrap] extensions setup FAILED after {:?}",
-                start.elapsed()
-            );
-        }
+    if failed == 0 {
+        eprintln!(
+            "[bootstrap] {} extensions setup in {:?}",
+            count,
+            start.elapsed()
+        );
+    } else {
+        eprintln!(
+            "[bootstrap] {} extensions setup in {:?} ({} failed, isolated)",
+            count,
+            start.elapsed(),
+            failed
+        );
     }
     app.manage(registry);
-    setup_result
+    Ok(())
 }
 
 #[cfg(test)]

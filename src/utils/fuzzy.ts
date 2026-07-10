@@ -63,7 +63,7 @@ export function scoreFields(fields: (string | undefined | null)[], query: string
 }
 
 /**
- * keyword 双向匹配（keywordSearchAll 专用）。
+ * keyword 双向匹配（scoreModuleEntry / keyword 入口专用）。
  * scoreFields 的 substringScore 只查「query 是 field 子串」，对 keyword 场景有缺陷：
  * keyword 通常很短（"usd"/"汇率"），多词 query（"100 usd"/"美元汇率"）比 keyword 长 → 永远 0 分。
  * 此处补全反向：keyword 是 query 子串时也命中（降权 0.5，弱信号），覆盖「query 包含关键词」语义。
@@ -83,6 +83,17 @@ export function keywordMatch(keywords: (string | undefined | null)[], query: str
     if (py > best) best = py
   }
   return Math.round(best)
+}
+
+/** 模块入口打分单一源：name/id/description 正向 + keywords 双向。全局 keyword 与 `/` 工具列表共用。 */
+export function scoreModuleEntry(
+  meta: { name: string; id?: string; description?: string; keywords?: string[] },
+  query: string,
+): number {
+  return Math.max(
+    scoreFields([meta.name, meta.id, meta.description], query),
+    keywordMatch(meta.keywords ?? [], query),
+  )
 }
 
 /**

@@ -69,9 +69,10 @@ export default defineExtension({
 
 ### UI 规约补充
 
-- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=1 / calculator=2 / ip=5 / translate=8 / agent=9 / screenshot=11 / window-manager=12 / awake=50 / clean-mode=55 / finder-ext=60 / zsh-autosuggestions=80 / base64=100 / uuid=110 / time=120 / currency=130 / system-status=135；hidden 扩展 settings=998 / search=999。
+- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / screenshot=110 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160；hidden 扩展 settings=998 / search=999。
+- **`disableSearchInput` 决策**：与 `mainView` 独立——mainView 模块若仍用主搜索框过滤列表（如 clipboard）则不声明；自管输入或无需搜索框（agent/translate/settings 等）声明 `true`。uuid 有 search 但 disableSearchInput（进入后只展示即时结果）。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
-- **View 根禁止 overflow**：经 ContentView 渲染的 View（mainView/subviews）根及内部层级不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是唯一滚动容器——View 根在 `module-fixed` 下被内容驱动撑开（`flex:1` 无法对抗 `contentRef` 的 `minHeight:100%` + 内容驱动高度），再设 overflow 会形成双层滚动（内层失效、scrollContainer 真正滚动），`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中失效内层 → 选中框出视口。View 根让内容自然流动即可；`windowViews`（独立窗口）不经 ContentView，不受此约束。
+- **View 根禁止与 ContentView 竞争的纵向双滚**：经 ContentView 渲染的 View（mainView/subviews）根及主内容流不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是页面级唯一滚动容器——View 根再设 overflow 会形成双层滚动，`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中失效内层 → 选中框出视口。固定高度媒体预览等局部区域（如 OCR 图预览）可自滚。`windowViews`（独立窗口）不经 ContentView，不受此约束。
 
 ## 搜索集成
 
@@ -88,8 +89,8 @@ interface SearchContext {
 }
 ```
 
-- **全局模式**（searchEngine）：并行调用所有扩展 dynamic → **一次预算 finalScore（`scoreFields + boost`）** → 合流 keyword 模块入口（`keywordMatch` 双向匹配：正向子串 + 反向降权 0.5 + 拼音，覆盖多词 query 含关键词场景；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口**——即时答案优先如「100 usd」已返回换算值不再重复显示该扩展入口；clipboard 等数据型结果 kind≠module 不抑制，用户搜模块名时先看入口再看记录）+ dedupe + groupAndSort。finalScore 单次预算复用：suppress 判断与 groupAndSort 均用此分，不二次调 scoreFields；keyword 入口 finalScore 复用 `keywordSearchAll` 内部 score（含 keywordMatch 反向匹配贡献，不被 scoreFields 重算归零）。**过滤规则**：空 query 默认列表按 `finalScore>0`（boost>0，主要是应用，过滤 time/uuid 等 boost=0 即时答案）；非空 query 查找型结果（application/file/clipboard）需 `fuzzy>0`（`matched`），module 类即时答案靠 `finalScore>0` 穿透（title 不含 query 也能展示）。
-- **模块模式**（runModuleSearch）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序。dynamic 返回 Promise（异步网络/IPC）时进入即清空旧结果 + 显示 loading 占位（「先进去再加载」），返回 `ProviderResult[]`（同步）则即时填充无闪烁。
+- **全局模式**（`searchEngine.search`）：并行调用所有扩展 dynamic → **一次预算 finalScore（`scoreFields + boost`）** → 合流 keyword 模块入口（`scoreModuleEntry`：name/id/description 正向 + keywords 双向，与 `/` 工具列表共用；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口**——即时答案优先；clipboard 等数据型 kind≠module 不抑制）+ dedupe + groupAndSort。keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）。**过滤规则**：空 query 按 `finalScore>0`；非空 query 查找型需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透。
+- **模块模式**（同一 `searchEngine.search`，`setActiveModule` 后）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序；同样受 `searchTimeoutMs` 超时与 abort 保护。UX 外壳（`useSearchInput`）延迟 50ms 显示 loading，同步 dynamic 不闪、网络型才占位。
 - `moduleMode` 区分调用场景：**全局空 query 时网络型扩展（ip/currency）应跳过网络请求返回 `[]`**，避免拖慢默认列表；模块内空 query 正常执行。
 - 半静态内容（如 base64 选项）用模块级缓存自管，走 dynamic 返回。
 

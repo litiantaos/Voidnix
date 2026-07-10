@@ -272,6 +272,32 @@ describe('SearchEngine', () => {
     expect(entry?.score).toBeGreaterThan(500)
   })
 
+  it('scoreModuleEntry：无 keywords 仅 name 命中也产出模块入口', async () => {
+    registry.push({
+      meta: { id: 'nameonly', name: '纯名称模块', icon: 'i-ri-test-line', order: 1 },
+      search: { dynamic: () => [] },
+    })
+    const out = await searchEngine.search('纯名称')
+    expect(out.find((r) => r.id === 'module-nameonly')).toBeDefined()
+  })
+
+  it('abort() 取消进行中的 search signal', async () => {
+    const seen: AbortSignal[] = []
+    registry.push(
+      makeSearchExt('abort-api', (_q, ctx) => {
+        seen.push(ctx.signal)
+        return new Promise<ProviderResult[]>((resolve) => {
+          ctx.signal.addEventListener('abort', () => resolve([]))
+        })
+      }),
+    )
+    const p = searchEngine.search('x')
+    expect(seen.length).toBe(1)
+    searchEngine.abort()
+    expect(seen[0].aborted).toBe(true)
+    await p
+  })
+
   it('新查询 abort 旧查询的 signal', async () => {
     const seen: AbortSignal[] = []
     const deferreds: Array<{ resolve: (v: ProviderResult[]) => void }> = []
