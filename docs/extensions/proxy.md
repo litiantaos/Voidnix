@@ -7,10 +7,14 @@ Clash 风格代理扩展（统一 TUN 模式）。运行时按需下载 mihomo�
 ```
 前端（Vue，单主界面分组列表）        Rust（native/）
 View.vue
-  ├ 代理组：开启/模式    ──invoke──→ core.rs binary 写盘 + 版本查询
-  ├ 订阅组：导入/更新/删除 ──invoke──→ subscription.rs 拉取+解析+合并 Clash YAML
-  └ 节点组：列表/切换/测速/分组切 ──invoke──→ controller.rs ──reqwest──→ mihomo controller API
-                                       tun.rs osascript 提权 root 启动/停止
+  ├ 代理组：开启/模式    ──invoke──→ mod.rs 命令入口
+  ├ 订阅组：导入/更新/删除           ├ lifecycle.rs  状态机（启停/热重载/健康监测/启动复用）
+  └ 节点组：列表/切换/测速/分组切    ├ menu.rs       菜单栏贡献
+                                       ├ core.rs       binary 写盘 + 版本
+                                       ├ subscription.rs 拉取+合并 Clash YAML
+                                       ├ controller.rs ──reqwest──→ mihomo API
+                                       ├ tun.rs        osascript 提权 root
+                                       └ stream.rs     traffic/connections/logs WS
 ```
 
 mihomo 监听 `mixed-port`（HTTP+SOCKS5 共用）与 `external-controller`（RESTful API，bearer secret 鉴权）。扩展不解析代理协议，proxies/proxy-groups/rules 原样合并自订阅 Clash YAML。无独立设置子视图，全部控制内联在主界面的三个分组中（代理 / 订阅 / 节点）；代理分组含开启/规则模式两项，开启项副标题经 /traffic WS 实时显示上下行速率。多 selector 分组订阅时节点组首项出现分组切换器。主搜索栏统一过滤当前视图：主界面按名过滤节点，诊断子视图过滤连接/规则/日志（切视图清空查询）。搜索栏右侧诊断入口（连接/规则/日志三个子视图，toggle 切换）—— 分别接 mihomo `/connections`（实时连接列表）、`/rules`（分流规则只读列表）、`/logs`（实时日志，环形缓冲 500 行，全级别推送由搜索过滤）；三个子视图均用 BaseList + 主搜索栏统一过滤。菜单栏图标仅在已连接时显示（打开扩展 + 已连接状态可点断开）；断开隐藏，其余控制全部在面板。

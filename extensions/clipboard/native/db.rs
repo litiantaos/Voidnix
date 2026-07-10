@@ -28,8 +28,7 @@ impl Database {
             std::fs::create_dir_all(parent).map_err(|e| format!("创建剪贴板目录失败: {e}"))?;
         }
 
-        let conn =
-            Connection::open(&db_path).map_err(|e| format!("打开剪贴板数据库失败: {e}"))?;
+        let conn = Connection::open(&db_path).map_err(|e| format!("打开剪贴板数据库失败: {e}"))?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| format!("设置 WAL 失败: {e}"))?;
 
