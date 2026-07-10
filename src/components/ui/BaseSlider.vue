@@ -62,7 +62,7 @@ const displayValue = computed(() => `${props.modelValue}${props.suffix}`)
 .base-slider {
   appearance: none;
   height: 4px;
-  background: rgba(0, 0, 0, 0.12);
+  background: var(--color-fill-12);
   border-radius: 9999px;
   outline: none;
 }
@@ -71,8 +71,8 @@ const displayValue = computed(() => `${props.modelValue}${props.suffix}`)
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--color-accent, #3b82f6);
-  border: 2px solid var(--color-surface, #fafafa);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  background: var(--color-accent);
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 1px 2px var(--color-fill-12);
 }
 </style>

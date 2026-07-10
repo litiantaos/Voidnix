@@ -6,29 +6,33 @@ Voidnix 自身的设计系统（仅浅色）。本文档是色值、材质、排
 
 ## 颜色
 
-单一色源 `uno.config.ts` theme，扁平化语义色名（`text-primary` / `bg-surface` / `border-black/10`）。
+双入口、同一数值：`uno.config.ts` theme（Attributify / utility）+ `src/styles/theme.css` CSS 变量（scoped 样式）。扁平化语义色名（`text-primary` / `bg-surface` / `border-black/10`）；scoped 写 `var(--color-*)`，禁止再写裸 rgba。
 
 **文本色阶**（3 档，基于 `#fafafa` 背景 WCAG 验证）：
 
-- `primary` = `rgba(0,0,0,0.89)`（16.4:1）—— 主要文本、列表标题、数值、强调内容
-- `secondary` = `rgba(0,0,0,0.60)`（5.7:1）—— 副文本、表头、控件标签、辅助说明、元信息
-- `muted` = `rgba(0,0,0,0.40)`（2.9:1）—— placeholder、分组标题、分隔点、序号、禁用态
+- `primary` / `--color-text-primary` = `rgba(0,0,0,0.89)`（16.4:1）—— 主要文本、列表标题、数值、强调内容
+- `secondary` / `--color-text-secondary` = `rgba(0,0,0,0.60)`（5.7:1）—— 副文本、表头、控件标签、辅助说明、元信息
+- `muted` / `--color-text-muted` = `rgba(0,0,0,0.40)`（2.9:1）—— placeholder、分组标题、分隔点、序号、禁用态
 
 **选档原则**：问「这是主内容 / 辅助内容 / 非内容」一个三选一问题。一致性优先于层次细分——同一语义场景跨组件必须同档。`primary` 与 `secondary` 满足 WCAG AA；`muted` 是非内容层（装饰/占位），不参与正文阅读故无 AA 要求。
 
 **基础色**：
 
-- `surface` = `#fafafa` —— content layer 底色（窗口根容器）
-- `accent` = `#3b82f6` —— 强调色（激活态/链接/进度/选中）；取鲜活观感的纯蓝，不用饱和度偏低的传统系统蓝
+- `surface` / `--color-surface` = `#fafafa` —— content layer 底色（窗口根容器）
+- `accent` / `--color-accent` = `#3b82f6` —— 强调色（激活态/链接/进度/选中）；取鲜活观感的纯蓝，不用饱和度偏低的传统系统蓝
 
-**层级背景**（`bg-black/N` 灰阶，经 `fill-*` token 消费）：
+**层级背景**（Uno `fill-*` + CSS `--color-fill-N`，同数值）：
 
-- `fill-ctrl` / `fill-hover` / `fill-active` —— 对应 `black/4` / `5` / `8`，内嵌实色底
+- `fill-ctrl` / `bg-black/4` / `--color-fill-4` —— 控件底
+- `fill-hover` / `bg-black/5` / `--color-fill-5` —— hover / 子层 / markdown 代码底
+- `fill-active` / `bg-black/8` / `--color-fill-8` —— active / 强调按压
+- `--color-fill-12` / `--color-fill-18` —— 滑轨、snap 强 hover 等（scoped 变量）
 
 **描边与分隔**：
 
-- 描边 `border-black/10` —— 面板/控件边缘
-- 分隔线 `border-black/5` —— 卡片内分隔、组间细线
+- 描边 `border-black/10` / `--color-border` —— 面板/控件边缘
+- 分隔线 `border-black/5` / `--color-divider` —— 卡片内分隔、组间细线
+- Smoke 遮罩 `--color-smoke` = `rgba(0,0,0,0.5)`
 
 **语义色**（不进 theme，按需直接写 UnoCSS 预设）：
 
@@ -92,7 +96,7 @@ WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只�
 
 ### Smoke（模态遮罩）
 
-`BaseDialog` 遮罩 `rgba(0,0,0,0.5)`，主体实色白 + `radius-panel`（模态非磨砂，强对比聚焦）。
+模态遮罩专用。`BaseDialog` 遮罩 `var(--color-smoke)`，主体实色白 + `radius-panel`（模态非磨砂，强对比聚焦）。
 
 ## 排版
 

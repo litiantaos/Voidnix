@@ -178,6 +178,6 @@ onUnmounted(() => {
 <style scoped>
 /* hover 材质走 ui-active；custom 图标色略加深 */
 .snap-zone.custom-zone.snap-hover {
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--color-text-secondary);
 }
 </style>

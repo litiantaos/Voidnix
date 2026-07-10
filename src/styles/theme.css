@@ -1,7 +1,20 @@
 :root {
+  /* 色值唯一源见 docs/design.md；Uno theme 与 scoped CSS 共用这些变量 */
   --color-surface: #fafafa;
   --color-accent: #3b82f6;
   --color-text-primary: rgba(0, 0, 0, 0.89);
+  --color-text-secondary: rgba(0, 0, 0, 0.6);
+  --color-text-muted: rgba(0, 0, 0, 0.4);
+  /* 层级填充 = bg-black/N */
+  --color-fill-4: rgba(0, 0, 0, 0.04);
+  --color-fill-5: rgba(0, 0, 0, 0.05);
+  --color-fill-8: rgba(0, 0, 0, 0.08);
+  --color-fill-12: rgba(0, 0, 0, 0.12);
+  --color-fill-18: rgba(0, 0, 0, 0.18);
+  /* 描边 / 分隔 / 遮罩 */
+  --color-border: rgba(0, 0, 0, 0.1);
+  --color-divider: rgba(0, 0, 0, 0.05);
+  --color-smoke: rgba(0, 0, 0, 0.5);
   --font-sans: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   /* 圆角：外框 12 / 内嵌控件 8 / 窗口壳 20（内小外大，匹配父子圆角） */
@@ -38,12 +51,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--color-fill-8);
   border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--color-fill-12);
 }
 
 .hide-scrollbar {
