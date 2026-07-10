@@ -2,7 +2,7 @@
   <img
     v-if="previewDataUrl"
     :src="previewDataUrl"
-    class="rounded-md"
+    class="radius-ctrl"
     block
     absolute
     z="50"

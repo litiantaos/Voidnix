@@ -88,7 +88,7 @@ const rootClass = computed(() =>
     : [
         'ui-ctrl h-auto! text-sm! flex items-start gap-2 !px-0',
         props.error ? 'border-red-400' : '',
-        props.disabled ? 'ui-disabled bg-black/2' : '',
+        props.disabled ? 'ui-disabled' : '',
       ],
 )
 

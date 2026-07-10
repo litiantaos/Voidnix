@@ -5,10 +5,9 @@
       v-if="imageUrl"
       ref="previewRef"
       relative
-      class="hide-scrollbar"
+      class="hide-scrollbar radius-panel"
       h="44"
       border="~ black/8"
-      rounded="lg"
       bg="black/4"
       shrink="0"
       overflow="auto"
@@ -20,7 +19,7 @@
     </div>
 
     <!-- 错误 -->
-    <div v-if="error" text="sm red-500" p="3" rounded="md" bg="red-50">
+    <div v-if="error" text="sm red-500" p="3" class="radius-ctrl" bg="red-50">
       {{ error }}
     </div>
 

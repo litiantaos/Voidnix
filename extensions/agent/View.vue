@@ -57,7 +57,7 @@
             <!-- 工具调用 part：状态图标 + 工具名 + 参数明细 + 结果 -->
             <div
               v-else-if="part.type === 'toolCall'"
-              rounded="md"
+              class="radius-ctrl"
               bg="black/4"
               text="xs"
               flex="~ col"

@@ -42,7 +42,7 @@ const isFileOrFolder = computed(
   () => props.item.data?.kind === 'file' || props.item.data?.kind === 'folder',
 )
 
-/** 图标 wrapper 背景：图片图标透明底自显；其余默认 bg-black/4 衬底 */
+/** 图标 wrapper 背景：图片图标透明底自显；其余默认 fill-ctrl 实色衬底 */
 const iconWrapperClass = computed(() => {
   const effective = props.item.icon || (props.item.data?.icon as string | undefined)
   if (effective && !effective.startsWith('i-')) return 'bg-transparent'

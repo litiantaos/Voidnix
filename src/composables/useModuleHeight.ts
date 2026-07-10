@@ -18,23 +18,21 @@ type HeightMode = { mode: 'fixed'; value: number } | { mode: 'auto' } | { mode: 
 /// 框架统一处理。高度过渡交给 macOS 系统 animator（NSAnimationContext + setFrame:display:animate:），
 /// CoreAnimation 接管插值，不逐帧阻塞主线程、不逐帧触发 WebView 重排，流畅度远超 JS rAF。
 ///
-/// auto 模式：ResizeObserver 监听内容根（contentRef）实际高度，窗口高 = chrome + 内容高，
+/// auto 模式：ResizeObserver 监听内容根（contentRef）实际高度，窗口高 = CHROME_HEIGHT + 内容高，
 /// clamp [DEFAULT_HEIGHT, 屏幕高 90%]，底部将出屏（含间距）则上移，离开 auto 还原进入前位置。
 ///
 /// 用法（MainView 全局唯一调用）：
-///   useModuleHeight({ activeModule, activeSubview, searchBarRef, contentRef })
+///   useModuleHeight({ activeModule, activeSubview, contentRef })
 export function useModuleHeight(deps: {
   activeModule: ComputedRef<Extension | null>
   activeSubview: ComputedRef<string | null>
-  searchBarRef: Ref<HTMLElement | undefined>
   contentRef: Ref<HTMLElement | undefined>
 }) {
   if (!isTauri) return
 
-  const { activeModule, activeSubview, searchBarRef, contentRef } = deps
+  const { activeModule, activeSubview, contentRef } = deps
   const tauriWindow = getCurrentWindow()
   let ro: ResizeObserver | null = null
-  let chromeH = 0
   // 逻辑目标位置（上次 setMainFrame 设定值）。animator 动画期间 outerPosition 返回
   // 动画中间瞬时值，连续 adjust 若以此为准会导致位置/尺寸漂移，故以逻辑目标为准。
   // 首次未初始化时才读一次实际窗口位置。
@@ -84,13 +82,11 @@ export function useModuleHeight(deps: {
     if (mode.mode === 'fixed') {
       target = clampHeight(mode.value)
     } else if (mode.mode === 'auto') {
-      const sb = searchBarRef.value
       const ct = contentRef.value
-      if (!sb || !ct) return
-      if (chromeH === 0) chromeH = sb.offsetHeight
+      if (!ct) return
       const contentH = ct.offsetHeight
       const maxH = Math.round((screenBottom - screenTop) * 0.9)
-      target = Math.max(WINDOW.DEFAULT_HEIGHT, Math.min(chromeH + contentH, maxH))
+      target = Math.max(WINDOW.DEFAULT_HEIGHT, Math.min(WINDOW.CHROME_HEIGHT + contentH, maxH))
     } else {
       target = WINDOW.DEFAULT_HEIGHT
     }

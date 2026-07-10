@@ -1,39 +1,35 @@
 <template>
   <div
-    class="panel"
+    class="radius-panel mica-tint"
     h="screen"
     w="screen"
     p="3"
-    rounded="xl"
     flex
     items="center"
     gap="2.5"
+    overflow="hidden"
     style="-webkit-app-region: no-drag"
   >
     <div v-for="group in groups" :key="group.id" p="1" h="14" w="14">
       <template v-if="group.nested">
         <div h="full" w="full" relative>
           <div
-            class="snap-zone"
-            rounded
-            bg="black/8"
+            class="snap-zone radius-ctrl fill-ctrl"
             inset="0"
             absolute
-            :class="{ 'snap-hover': hoveredLayout === group.zones[0].layout }"
+            :class="{ 'ui-active snap-hover': hoveredLayout === group.zones[0].layout }"
             :data-layout="group.zones[0].layout"
             @click="onZone(group.zones[0].layout)"
           />
           <div
-            class="snap-zone"
-            rounded
-            bg="black/8"
+            class="snap-zone radius-ctrl fill-ctrl"
             h="40%"
             w="40%"
             left="30%"
             top="30%"
             absolute
             z="1"
-            :class="{ 'snap-hover': hoveredLayout === group.zones[1].layout }"
+            :class="{ 'ui-active snap-hover': hoveredLayout === group.zones[1].layout }"
             :data-layout="group.zones[1].layout"
             @click.stop="onZone(group.zones[1].layout)"
           />
@@ -44,11 +40,9 @@
           <template v-for="zone in group.zones" :key="zone.layout">
             <div
               v-if="zone.layout === 'custom'"
-              class="snap-zone custom-zone flex-center"
+              class="snap-zone custom-zone radius-ctrl fill-ctrl flex-center"
               text="muted"
-              rounded
-              bg="black/8"
-              :class="{ 'snap-hover': hoveredLayout === zone.layout }"
+              :class="{ 'ui-active snap-hover': hoveredLayout === zone.layout }"
               :data-layout="zone.layout"
               @click="onZone(zone.layout)"
             >
@@ -67,10 +61,8 @@
             </div>
             <div
               v-else
-              class="snap-zone"
-              rounded
-              bg="black/8"
-              :class="{ 'snap-hover': hoveredLayout === zone.layout }"
+              class="snap-zone radius-ctrl fill-ctrl"
+              :class="{ 'ui-active snap-hover': hoveredLayout === zone.layout }"
               :data-layout="zone.layout"
               @click="onZone(zone.layout)"
             />
@@ -184,10 +176,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.snap-zone.snap-hover {
-  background-color: rgba(0, 0, 0, 0.18);
-}
+/* hover 材质走 ui-active；custom 图标色略加深 */
 .snap-zone.custom-zone.snap-hover {
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(0, 0, 0, 0.6);
 }
 </style>

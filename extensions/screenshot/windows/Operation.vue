@@ -48,8 +48,7 @@
     <div
       v-if="showMagnifier"
       border="~ black/20"
-      rounded="lg"
-      class="overlay-abs"
+      class="overlay-abs radius-panel"
       shadow="xl"
       z="60"
       overflow="hidden"
@@ -392,7 +391,7 @@
       class="pointer-events-none left-1/2 fixed -translate-x-1/2"
       style="bottom: 20%"
     >
-      <span class="text-xs ui-ctrl text-secondary px-3 py-1.5 rounded-md">
+      <span class="text-xs ui-ctrl text-secondary px-3 py-1.5">
         已到底部，按 Enter 完成
       </span>
     </div>

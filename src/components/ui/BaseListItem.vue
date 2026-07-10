@@ -9,9 +9,8 @@
   >
     <div
       v-if="icon || $slots.icon"
-      class="flex-center h-9 w-9"
-      :class="iconWrapperClass || 'bg-black/4'"
-      rounded="md"
+      class="radius-ctrl flex-center h-9 w-9"
+      :class="iconWrapperClass || 'fill-ctrl'"
       shrink="0"
       overflow="hidden"
     >

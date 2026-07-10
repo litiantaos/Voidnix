@@ -4,7 +4,7 @@
       <template #item="{ item }">
         <div flex p="3" gap="3" text="xs" select="none">
           <span shrink="0" w="10" flex justify="start">
-            <span rounded="sm" bg="black/5" text="muted" p="x-1.5">{{
+            <span class="radius-ctrl" bg="black/5" text="muted" p="x-1.5">{{
               item.metadata.network
             }}</span>
           </span>
@@ -15,8 +15,8 @@
             chainText(item)
           }}</span>
           <div shrink="0" w="28" flex justify="end" items="center" gap="2.5" text="muted">
-            <span tabular="nums" whitespace="nowrap">↑ {{ formatBytes(item.upload) }}</span>
-            <span tabular="nums" whitespace="nowrap">↓ {{ formatBytes(item.download) }}</span>
+            <span tabular="nums" whitespace="nowrap">↑ {{ fmtTraffic(item.upload) }}</span>
+            <span tabular="nums" whitespace="nowrap">↓ {{ fmtTraffic(item.download) }}</span>
           </div>
         </div>
       </template>
@@ -30,8 +30,10 @@ import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted } fro
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
-import { formatBytes } from '../logic'
+import { formatBytes } from '@/utils/format'
 import BaseList from '@/components/ui/BaseList.vue'
+
+const fmtTraffic = (n: number) => formatBytes(n, { compact: true })
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 
 interface ConnMeta {

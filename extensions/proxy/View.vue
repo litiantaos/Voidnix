@@ -53,10 +53,8 @@
                 flex
                 items="center"
                 gap="2.5"
-                ><span tabular="nums" whitespace="nowrap">↑ {{ formatBytes(traffic.up) }}/s</span>
-                <span tabular="nums" whitespace="nowrap"
-                  >↓ {{ formatBytes(traffic.down) }}/s</span
-                ></span
+                ><span tabular="nums" whitespace="nowrap">↑ {{ fmtTrafficRate(traffic.up) }}</span>
+                <span tabular="nums" whitespace="nowrap">↓ {{ fmtTrafficRate(traffic.down) }}</span></span
               >
               <span v-if="coreError" text="red-500" shrink="0" ml="2">{{ coreError }}</span>
               <span v-else-if="updateInfo?.hasUpdate" text="green-500" shrink="0" ml="2"
@@ -205,18 +203,20 @@ import {
   updateSubscription,
   removeSubscription,
 } from './config'
-import { toErrorMessage } from '@/utils/format'
+import { formatRate, toErrorMessage } from '@/utils/format'
 import { generateRequestId } from '@/utils/id'
 import {
   type ProxiesResponse,
   DELAY_TIMEOUT,
   delayColor,
   filterNodes,
-  formatBytes,
   formatDelay,
   isUserSelectorGroup,
   latestDelay,
 } from './logic'
+
+/** proxy 流量速率紧凑口径（1.2K/s） */
+const fmtTrafficRate = (n: number) => formatRate(n, { compact: true })
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'

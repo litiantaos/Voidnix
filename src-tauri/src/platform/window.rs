@@ -114,16 +114,18 @@ pub fn animate_panel(
     }
 }
 
-/// Mica 材质底：NSVisualEffectView（material=UnderWindowBackground，blendingMode=BehindWindow）
-/// 作为 contentView 最底层子视图（WKWebView 之下），系统 GPU 合成弱模糊窗口后内容，
-/// 近不透明、微妙透出壁纸色。强制 aqua appearance 锁浅色（项目仅浅色色阶）。
+/// Mica 材质底：NSVisualEffectView（material=Popover，blendingMode=BehindWindow）
+/// 作为 contentView 最底层子视图（WKWebView 之下），系统 GPU 合成强实时高斯模糊，
+/// 通透染浅白透出壁纸。强制 aqua appearance 锁浅色（项目仅浅色色阶）。
 ///
 /// 同时配置：窗口本体透明（setOpaque:NO + clearColor）+ contentView 圆角裁剪（CALayer
 /// cornerRadius + masksToBounds，含 NSVisualEffectView）+ 子视图 layer 非透明（Tauri
 /// transparent:true 只让 WKWebView canvas 透明，CALayer 默认仍 opaque 会盖住材质）。
 ///
-/// corner_radius 经 contentView CALayer 裁剪：主窗口 16 / snap-panel 12。
-/// 注：不用 WindowBackground(12)，Apple 文档明确定性为 opaque（不透明），无模糊透出。
+/// corner_radius 经 contentView CALayer 裁剪：主窗口 20（单层，窗口＝面板圆角，无 padding）
+/// / snap-panel 12。
+/// 注：不用 UnderWindowBackground(21)（近不透明、静态染壁纸色）；不用 WindowBackground(12)
+/// （Apple 定性 opaque，无模糊透出）。
 pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
     use objc2::{ClassType, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
@@ -183,7 +185,7 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
     let effect =
         NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), content_view.bounds());
     effect.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
-    effect.setMaterial(NSVisualEffectMaterial::UnderWindowBackground);
+    effect.setMaterial(NSVisualEffectMaterial::Popover);
     effect.setState(NSVisualEffectState::Active);
     // 锁浅色 appearance：避免跟随系统暗模式导致材质变暗与前端浅色色阶冲突
     if let Some(aqua) = NSAppearance::appearanceNamed(ns_string!("NSAppearanceNameAqua")) {
@@ -206,7 +208,9 @@ pub fn apply_main_window_style(window: &tauri::WebviewWindow) {
     let Some(ns_window) = (unsafe { raw.as_ref() }) else {
         return;
     };
-    apply_mica_material(ns_window, 16.0);
+    apply_mica_material(ns_window, 20.0);
+    // 原生阴影：单层窗口（窗口＝面板），阴影提供浅色背景下的层次区分
+    ns_window.setHasShadow(true);
     crate::platform::panel::convert_to_panel(raw.cast());
 }
 
