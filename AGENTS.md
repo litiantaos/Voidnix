@@ -87,7 +87,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 **搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + 一次预算 finalScore + keyword 合流 + dedupe + groupAndSort。全局模式聚合所有扩展按 `finalScore = fuzzy + boost` 排序；**过滤规则**：空 query 默认列表按 `finalScore>0`（boost>0，主要是应用）显示；非空 query 查找型结果（application/file/clipboard）需 `fuzzy>0` 命中，module 类即时答案靠 `finalScore>0` 穿透（title 不含 query 也能展示，如换算结果）；模块模式只调激活扩展且保留原序（不过滤）。**finalScore 单次预算复用**：`search()` 对 dynamic 结果一次算 `scoreFields + boost`，suppress 判断（是否抑制该扩展 keyword 入口）与 `groupAndSort` 均复用此分，不二次调 scoreFields；keyword 入口 finalScore 复用 `keywordSearchAll` 内部 score（含 keywordMatch 反向匹配贡献，不被 scoreFields 重算归零）。`SearchContext.moduleMode` 区分两种模式（网络型扩展据此在全局空 query 跳过网络）。搜索集成细节详见 [docs/extensions.md](docs/extensions.md)。
 
-**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。`is_app_active()` 判焦点归属：NSApp keyWindow 非空 → 焦点在我们；否则查 frontmost bundle 路径——`/System/` 开头（授权弹窗、keychain 对话框等）视为交互流未中断，抑制 blur hide。`restore_captured()` 还原前查 frontmost：第三方已接管（系统弹窗/用户切到其他 app）则不抢回。系统弹窗关闭后焦点恢复由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove）处理：frontmost 变更时若 panel 可见但丢 key，frontmost == 原前台 PID → makeKeyWindow 恢复；frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss。窗口高度统一机制：扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖；`useModuleHeight`（MainView 全局唯一调用）读 `activeModule` + `activeSubview` 解析模式，一次 invoke 触发 Rust 端 `set_main_frame` → `platform/window.rs::animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管插值，非 JS rAF 逐帧，不每帧阻塞主线程/触发 WebView 重排）；`auto` 模式 ResizeObserver 监听 ContentView 的 `contentRef`（自然高量真实内容高），窗口高 = chrome（搜索栏固定开销，首测缓存）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`（屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口）；底部将出屏（含 40px 间距）则同步上移保证完整可见，离开 auto 还原进入前位置。
+**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/window.rs::apply_main_window_style`（= `apply_mica_material(ns, 16)` + `convert_to_panel`）在 setup 内一次性配置主窗口样式（Mica 材质底 + 圆角 + 子视图 layer 透明让 WKWebView canvas 透传；材质实现见 UI 规范与 [设计系统](docs/design.md)）。snap-panel 同理经 `apply_mica_material(ns, 12)` 获 Mica 底材（窗口尺寸精简为面板大小，原生阴影）。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`，显示不抢 NSApp active，关闭时 `platform/focus::restore_captured()` 还给原应用（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。`is_app_active()` 判焦点归属：NSApp keyWindow 非空 → 焦点在我们；否则查 frontmost bundle 路径——`/System/` 开头（授权弹窗、keychain 对话框等）视为交互流未中断，抑制 blur hide。`restore_captured()` 还原前查 frontmost：第三方已接管（系统弹窗/用户切到其他 app）则不抢回。系统弹窗关闭后焦点恢复由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove）处理：frontmost 变更时若 panel 可见但丢 key，frontmost == 原前台 PID → makeKeyWindow 恢复；frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss。窗口高度统一机制：扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖；`useModuleHeight`（MainView 全局唯一调用）读 `activeModule` + `activeSubview` 解析模式，一次 invoke 触发 Rust 端 `set_main_frame` → `platform/window.rs::animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管插值，非 JS rAF 逐帧，不每帧阻塞主线程/触发 WebView 重排）；`auto` 模式 ResizeObserver 监听 ContentView 的 `contentRef`（自然高量真实内容高），窗口高 = chrome（搜索栏固定开销，首测缓存）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`（屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口）；底部将出屏（含 40px 间距）则同步上移保证完整可见，离开 auto 还原进入前位置。
 
 **全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。默认 Option 基（`Option+Space` 呼出，`Option+C/S/T/A/M` 各扩展）；dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存（dev/prod 数据目录仍按 bundle id 隔离，配置默认值一致）。
 
@@ -105,9 +105,9 @@ Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`
 
 **搜索打分**：`src/utils/fuzzy.ts::scoreFields()`（[pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。keyword 模块入口用 `keywordMatch()` 双向匹配（正向子串 + 反向子串降权 0.5 + 拼音，覆盖「100 usd」含 keyword「usd」等多词 query 场景，`keywordSearchAll` 消费）；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其 keyword 入口**（即时答案优先，避免换算结果与模块入口同屏重复；clipboard 等数据型结果 kind≠module 不抑制——用户搜模块名时先看入口再看记录）。`kind` 枚举 `application | folder | file | module | clipboard | web`（folder/file 同组），组间序 `GROUP_ORDER`：`application > module > file > clipboard > web`。
 
-**toast 提示**：自研轻量浮层（`composables/useToast.ts` + `components/ui/ToastOverlay.vue`），固定窗口右下角（`fixed bottom-4 right-4`），复用 `dropdown-panel` 样式（同 clipboard cmd+回车动作菜单），按 kind 切图标/色（对勾 accent / 警告 red-500），错误反馈必须传 `kind: 'error'`；堆叠上限 3 条、默认 2000ms 自动清除，窗口隐藏时立即清空（`hideWindow` 内调 `clearToasts`，规避 macOS 隐藏 WebView 节流 setTimeout 致残留）。扩展通过 `copyAndHide`（`stores/app.ts`，写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈；`showStatus(msg, opts?)` 委托 `showToast`（调用点零改动）。搜索栏 placeholder：模块模式显示搜索说明（`在 X 中搜索` 或扩展自声明 `placeholder`），全局模式保留搜索说明。
+**toast 提示**：自研轻量浮层（`composables/useToast.ts` + `components/ui/ToastOverlay.vue`），按 `kind` 切图标/色（`success` accent 对勾 / `error` red-500 警告，错误反馈必须传 `kind: 'error'`）；堆叠上限 3 条、默认 2000ms 自动清除，窗口隐藏时立即清空（`hideWindow` 内调 `clearToasts`，规避 macOS 隐藏 WebView 节流 setTimeout 致残留）。扩展通过 `copyAndHide`（`stores/app.ts`，写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈；`showStatus(msg, opts?)` 委托 `showToast`（调用点零改动）。搜索栏 placeholder：模块模式显示搜索说明（`在 X 中搜索` 或扩展自声明 `placeholder`），全局模式保留搜索说明。
 
-**浮层范式**：右下角浮层统一 `dropdown-panel` shortcut + `fixed bottom-4 right-4 z-50` + 同款进出场动画（Toast / clipboard 动作菜单 / ResultActionPanel 同构）。`BaseDropdownItems`（`components/ui/`）通用行渲染器，4 行类型 `item | header | divider | meta`（meta = label:value 详情行不可选，`selectableIndices` 仅算 item，键盘导航天然跳过其余）；消费者传 `PanelItem[]` + `activeIndex`，emit `select/hover`。`ResultActionPanel`（`components/layout/`，替代原 ResultMetaPanel）：全局模式 `Cmd+Enter` 对 application/file/folder 结果的合并面板（上方详情 meta 行 + 下方动作 item 行——在 Finder 中显示 / 复制路径），原 `Cmd+I` 已移除并入；capture-phase keydown 劫持 + 外点关闭，打开即默认选中首项可连续 Enter 触发。
+**浮层组件**：`BaseDropdownItems`（`components/ui/`）通用行渲染器，4 行类型 `item | header | divider | meta`（`selectableIndices` 仅算 item，键盘导航天然跳过其余）；消费者传 `PanelItem[]` + `activeIndex`，emit `select/hover`。`ResultActionPanel`（`components/layout/`）：全局模式 `Cmd+Enter` 对 application/file/folder 结果的合并面板（上方详情 meta 行 + 下方动作 item 行——在 Finder 中显示 / 复制路径）；capture-phase keydown 劫持 + 外点关闭，打开即默认选中首项可连续 Enter 触发。
 
 **模块视图加载**（切换性能）：模块 View（mainView/subviews/searchBarAccessory）静态 import 进主 bundle（用户高频、固定集合，首次进入零卡顿）；仅**独立窗口**（screenshot 标注 host/pin、window-manager snap 面板，`windowViews`）保留 `defineAsyncComponent` 真按需——不截图/不分屏不加载，省稳态占用（gzip ~20KB）。`ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问模块，切换走 activate/deactivate 而非重挂载。
 
@@ -146,24 +146,24 @@ src/
 ├── main.ts             # 入口（import.meta.glob eager 扫描扩展 + 并行 setup）
 ├── commands.ts         # 命令名常量（CMD.xxx，禁止裸 invoke）
 ├── runtime/            # 前端运行时（5 文件）
-│   ├── types.ts        # Extension / SearchProvider / SearchResult（12 槽：9 能力 + 3 行为）
+│   ├── types.ts        # Extension / SearchProvider / SearchResult（14 槽：11 能力 + 3 行为）
 │   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS/GROUP_ORDER/GROUP_TITLES/KEYWORD_MODULE_BOOST + LIMITS）
 │   ├── storage.ts      # defineConfig（storePath + defaults；reactive + watch 自动持久化 + 递归 deepEqual race 保护 + 类型守卫 + isLoading 抑制 + 退出 flush + 跨窗口 onChange 同步 + store 实例缓存）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
 │   └── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
 ├── components/
 │   ├── ui/             # 原子组件（只用这些，禁止手写底层标签）
-│   └── layout/         # MainView / ContentView / ResultIcon / ResultActionPanel
+│   └── layout/         # MainView / ContentView / ResultItem（kind 分支内聚）/ ResultIcon（纯图标）/ ResultActionPanel
 ├── composables/
 │   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键注册/失焦隐藏/模块事件，抽自 App.vue）
 │   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型模块 dynamic + web 搜索// + 工具列表/ + 默认结果）
 │   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派 + Escape 统一退出当前层
 │   ├── useModuleHeight.ts    # 主窗口高度统一管理（number 固定 / 'auto' 自适应 / 默认），系统 animator 动画
-│   ├── useSettingsInput.ts    # 设置项交互（回车编辑/提交、button 延迟触发）；Escape 不再拦截，统一走 useResultNavigation
+│   ├── useActionPanel.ts      # Cmd+Enter 动作浮层通用逻辑（键盘导航 + 外点关闭 + capture-phase 劫持）
 │   ├── useFloating.ts / useScrollPosition.ts / useTauriListener.ts / useToast.ts  # 通用工具
 │   └── events.ts / useInputControl.ts / useShortcutConfig.ts
 ├── stores/             # app / settings（仅框架级）/ update
-├── types/              # agent（手写 LLM/Agent 类型）
+├── types/              # agent（手写 LLM/Agent 类型）+ settings（SettingItem 类型）
 └── utils/
 ```
 
@@ -171,17 +171,21 @@ src/
 
 ## UI 规范
 
-- **总体要求**：UnoCSS（presetWind4 + presetAttributify + presetIcons），遵循官方规范。
+Voidnix 设计系统（仅浅色），取 macOS 原生能力实现（`NSVisualEffectView` / `backdrop-filter`）。单一色源在 `uno.config.ts` theme。具体色值、材质实现细节、排版形态参数见 [docs/design.md](docs/design.md)。
 
-- **原子组件**：只用 `@/components/ui/` 原子组件，禁止手写底层标签。主题色 `accent`；`rounded-md`（控件）/ `rounded-lg`（面板）；`h-7`；`text-sm` / `text-xs`；色阶 `text-tx-primary → secondary → subtle → muted → hint → faint`。
+**颜色**：扁平化语义色名。文本色阶 `primary → secondary → muted`（3 档：主内容 / 辅助内容 / 非内容），一致性优先于层次细分；基础色 `surface`（content layer 底色 #fafafa）/ `accent`（强调色 #3b82f6）；层级背景 `bg-black/N` 灰阶（4 控件底 / 5 hover / 8 active）；描边 `border-black/10`、分隔线 `border-black/5`。**禁止裸 hex / arbitrary 色值**，经 theme 语义化命名。
 
-- **慎用 arbitrary 值**：class 中务必使用 Tailwind 预设值或 Uno 主题值，非必要禁止使用 `[10px]`、`[#ff3b30]` 等方括号任意值，除非是单一特殊场景。无合适预设时在 `uno.config.ts` theme 中定义。
+**材质三件套**：
 
-- **写法规范**：原生 HTML 元素使用 Attributify 模式，Vue 组件 props 保持 `class`。
+- Mica（窗口背景）：主窗口 + snap-panel `NSVisualEffectView`（`UnderWindowBackground` + `behindWindow`），`apply_mica_material` 参数化 corner_radius（主窗口 16 / snap-panel 12）；前端 `MainView` 根 `bg="surface/72"` 透出 ~28%（可读性优先），snap-panel 面板根透明透出原生材质 + 原生阴影
+- Acrylic（浮层）：`dropdown-panel` shortcut 统一封装（`bg-white/70 backdrop-blur-2xl backdrop-saturate-150`），Toast / clipboard 动作菜单 / ResultActionPanel / BaseSelect 下拉零改动复用
+- Smoke（模态遮罩）：`BaseDialog` 遮罩 `rgba(0,0,0,0.5)`，主体实色白（模态非磨砂）
 
-- **Attributify 禁用属性**：`animate` 等与 DOM 原生属性同名的特性禁止用 Attributify，必须用 `class="animate-spin"`。
+**组件**：只用 `@/components/ui/` 原子组件，**禁止手写底层标签**（`<div>`/`<span>` 仅用于无样式布局容器）。统一样式入口走 `uno.config.ts` shortcuts（`ui-ctrl` / `ui-disabled` / `ui-active` / `dropdown-panel` / `flex-center` / `flex-col-full` / `form-label` / `group-header` 等，完整清单见 design.md）。
 
-- **Shortcuts**：`ui-ctrl`、`ui-disabled`、`ui-active`、`flex-center`、`flex-col-full`、`flex-col-full-pb`、`form-label`、`input-base`、`action-footer`、`form-field`、`group-header`、`overlay-abs`
+**浮层范式**：右下角浮层统一 `fixed bottom-4 right-4 z-50` + `dropdown-panel` + 同款进出场动画（`ease-out` 进 / `ease-in` 离）。`BaseDropdownItems` 通用行渲染器（4 行类型 `item | header | divider | meta`，meta = label:value 详情行不可选）。screenshot 标注 / pin / clean-mode 为功能性覆盖层不加材质。
+
+**写法**：原生 HTML 元素用 Attributify 模式（`<div text="sm primary" p="3">`），Vue 组件 props 保持 `class`；`animate` 等与 DOM 原生属性同名的禁用 Attributify，必须用 `class="animate-spin"`。
 
 ## 存储结构
 
