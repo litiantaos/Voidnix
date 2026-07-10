@@ -185,126 +185,13 @@
       :style="blurFrameStyle"
     />
 
-    <!-- 形状控制点覆盖层（选中形状 / 绘制中的 blur 形状时显示） -->
-    <template v-if="effectiveShape && phase === 'annotate'">
-      <!-- 矩形/模糊：8个控制点 + (矩形)圆角/旋转控制点 -->
-      <template v-if="effectiveShape.type === 'rect' || effectiveShape.type === 'blur'">
-        <div
-          v-for="hp in shapeHandles"
-          :key="hp.id"
-          pointer-events="auto"
-          absolute
-          z="100"
-          :class="{
-            'cursor-ns-resize': hp.id === 'cr',
-            'cursor-grab hover:cursor-grab active:cursor-grabbing': hp.id === 'rot',
-          }"
-          :style="hp.style"
-          @mousedown.stop="startShapeHandleDrag(hp.id, $event)"
-        >
-          <!-- 圆角控制点：四段弧 + 透明命中区 -->
-          <template v-if="hp.id === 'cr'">
-            <div h="4" w="4" absolute class="-translate-x-1/2 -translate-y-1/2" />
-            <svg
-              class="overlay-abs -translate-x-1/2 -translate-y-1/2"
-              width="11"
-              height="11"
-              viewBox="0 0 11 11"
-            >
-              <g stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round">
-                <path d="M 3.4 1.45 A 4.25 4.25 0 0 1 7.6 1.45" />
-                <path d="M 9.55 3.4 A 4.25 4.25 0 0 1 9.55 7.6" />
-                <path d="M 7.6 9.55 A 4.25 4.25 0 0 1 3.4 9.55" />
-                <path d="M 1.45 7.6 A 4.25 4.25 0 0 1 1.45 3.4" />
-              </g>
-            </svg>
-          </template>
-          <!-- 旋转控制点：环形箭头 -->
-          <template v-else-if="hp.id === 'rot'">
-            <div h="4" w="4" absolute class="-translate-x-1/2 -translate-y-1/2" />
-            <svg
-              class="overlay-abs -translate-x-1/2 -translate-y-1/2"
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-            >
-              <g
-                stroke="#3b82f6"
-                stroke-width="1.4"
-                fill="none"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <!-- 3/4 圆弧（顶部断开） -->
-                <path d="M 9.5 4 A 4 4 0 1 0 8.7 8.7" />
-                <!-- 起始端箭头（指向左上） -->
-                <path d="M 9.5 1.5 L 9.5 4 L 7 4" />
-              </g>
-            </svg>
-          </template>
-          <!-- 8个尺寸控制点：圆形 + 方向光标 -->
-          <div
-            v-else
-            border="~ accent"
-            rounded="full"
-            bg="white"
-            h="2.5"
-            w="2.5"
-            absolute
-            class="-translate-x-1/2 -translate-y-1/2"
-            :style="{
-              cursor: handleCursor(hp.id, effectiveShape?.rotation ?? 0),
-            }"
-          />
-        </div>
-      </template>
-      <!-- 直线/箭头：首尾2个控制点 -->
-      <template v-else-if="effectiveShape.type === 'line' || effectiveShape.type === 'arrow'">
-        <div
-          v-for="hp in shapeHandles"
-          :key="hp.id"
-          pointer-events="auto"
-          absolute
-          z="100"
-          :style="hp.style"
-          @mousedown.stop="startShapeHandleDrag(hp.id, $event)"
-        >
-          <div
-            border="~ accent"
-            rounded="full"
-            bg="white"
-            h="2.5"
-            w="2.5"
-            cursor="move"
-            absolute
-            class="-translate-x-1/2 -translate-y-1/2"
-          />
-        </div>
-      </template>
-      <!-- 文本：只有右边中间一个控制点（调整宽度） -->
-      <template v-else-if="effectiveShape.type === 'text'">
-        <div
-          v-for="hp in shapeHandles"
-          :key="hp.id"
-          pointer-events="auto"
-          absolute
-          z="100"
-          :style="hp.style"
-          @mousedown.stop="startShapeHandleDrag(hp.id, $event)"
-        >
-          <div
-            border="~ accent"
-            rounded="full"
-            bg="white"
-            h="2.5"
-            w="2.5"
-            cursor="ew-resize"
-            absolute
-            class="-translate-x-1/2 -translate-y-1/2"
-          />
-        </div>
-      </template>
-    </template>
+    <ShapeHandlesOverlay
+      :shape="effectiveShape"
+      :phase="phase"
+      :handles="shapeHandles"
+      :handle-cursor="handleCursor"
+      @drag="startShapeHandleDrag"
+    />
 
     <!-- 文字输入框：外框可拖动移动，textarea 完全无边距与 canvas 对齐 -->
     <div
@@ -406,6 +293,7 @@ import AnnotationPalette from './AnnotationPalette.vue'
 import ScrollPreview from './ScrollPreview.vue'
 import type { ScreenshotData, Phase } from '../composables/useTypes'
 import { MAGNIFIER_SIZE, handleAbsolutePos } from '../composables/useTypes'
+import ShapeHandlesOverlay from './ShapeHandlesOverlay.vue'
 import { useSelection } from '../composables/useSelection'
 import { useAnnotation } from '../composables/useAnnotation'
 import { useTextInput } from '../composables/useTextInput'
