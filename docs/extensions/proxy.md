@@ -6,7 +6,7 @@ Clash 风格代理扩展（统一 TUN 模式）。运行时按需下载 mihomo�
 
 ```
 前端（Vue，单主界面分组列表）        Rust（native/）
-View.vue
+View.vue（模板）+ useProxyPanel.ts（状态/动作）
   ├ 代理组：开启/模式    ──invoke──→ mod.rs 命令入口
   ├ 订阅组：导入/更新/删除           ├ lifecycle.rs  状态机（启停/热重载/健康监测/启动复用）
   └ 节点组：列表/切换/测速/分组切    ├ menu.rs       菜单栏贡献
