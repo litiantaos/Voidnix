@@ -4,6 +4,12 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
+/// DB 未 manage（打开失败降级）时返回可读错误，避免 state 缺失 panic。
+fn require_db(app: &tauri::AppHandle) -> Result<tauri::State<'_, Database>, String> {
+    app.try_state::<Database>()
+        .ok_or_else(|| "剪贴板数据库不可用".to_string())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipboardItem {
     pub id: String,
@@ -25,7 +31,7 @@ pub async fn get_clipboard_history(
     preview_only: Option<bool>,
     app: tauri::AppHandle,
 ) -> Result<Vec<ClipboardItem>, String> {
-    let db = app.state::<Database>();
+    let db = require_db(&app)?;
     let conn = db.conn();
 
     let mut sql = "SELECT id, content, content_type, source_app, created_at, is_favorite, file_size, image_width, image_height FROM clipboard_history".to_string();
@@ -75,7 +81,7 @@ pub async fn get_clipboard_history(
 
 #[tauri::command]
 pub async fn clear_clipboard_history(app: tauri::AppHandle) -> Result<(), String> {
-    let db = app.state::<Database>();
+    let db = require_db(&app)?;
     let conn = db.conn();
     conn.execute("DELETE FROM clipboard_history WHERE is_favorite = 0", [])
         .map_err(|e| e.to_string())?;
@@ -88,7 +94,7 @@ pub async fn delete_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> 
     if ids.is_empty() {
         return Ok(());
     }
-    let db = app.state::<Database>();
+    let db = require_db(&app)?;
     let conn = db.conn();
     let placeholders: String = ids
         .iter()
@@ -112,7 +118,7 @@ pub async fn delete_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> 
 
 #[tauri::command]
 pub async fn toggle_clipboard_favorite(id: String, app: tauri::AppHandle) -> Result<(), String> {
-    let db = app.state::<Database>();
+    let db = require_db(&app)?;
     let conn = db.conn();
     conn.execute(
         "UPDATE clipboard_history SET is_favorite = NOT is_favorite WHERE id = ?1",
@@ -128,7 +134,7 @@ pub async fn get_clipboard_image(
     id: String,
     app: tauri::AppHandle,
 ) -> Result<Option<String>, String> {
-    let db = app.state::<Database>();
+    let db = require_db(&app)?;
     let conn = db.conn();
 
     let mut stmt = conn
@@ -151,7 +157,7 @@ pub async fn get_clipboard_text(
     id: String,
     app: tauri::AppHandle,
 ) -> Result<Option<String>, String> {
-    let db = app.state::<Database>();
+    let db = require_db(&app)?;
     let conn = db.conn();
     let mut stmt = conn
         .prepare("SELECT content, content_type FROM clipboard_history WHERE id = ?1")
@@ -172,7 +178,7 @@ pub async fn update_clipboard_text(
     content: String,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let db = app.state::<Database>();
+    let db = require_db(&app)?;
     {
         let conn = db.conn();
         let updated = conn
@@ -227,7 +233,7 @@ pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), Str
         return Err("需授予辅助功能权限".to_string());
     }
     let item = {
-        let db = app.state::<Database>();
+        let db = require_db(&app)?;
         let conn = db.conn();
 
         let mut stmt = conn
@@ -257,7 +263,7 @@ pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<
         return Err("需授予辅助功能权限".to_string());
     }
     let items = {
-        let db = app.state::<Database>();
+        let db = require_db(&app)?;
         let conn = db.conn();
         let placeholders: String = ids
             .iter()

@@ -18,7 +18,7 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 
 ## 数据存储
 
-`extensions/clipboard/clipboard.db`（SQLite WAL）。表 `clipboard_history`：
+`extensions/clipboard/clipboard.db`（SQLite WAL）。`Database::open` 返回 `Result`：目录/打开/建表失败时 setup 降级（不 manage、不启 monitor），命令 `try_state` 返回「剪贴板数据库不可用」，**禁止 expect 拖垮进程**。表 `clipboard_history`：
 
 - `id`（毫秒时间戳）、`content`（文本原文 / `data:image/png;base64,...` / path-based `file://` URL；Finder 写入的 file reference URL `file:///.file/id=...` 经 `NSURL.filePathURL` 解析为实际路径后存为 `file://{path}`）、`content_type`（text/image/file）
 - `source_app`、`created_at`（本地时间 `datetime('now','localtime')`；重复项 UPDATE 刷新）、`is_favorite`
