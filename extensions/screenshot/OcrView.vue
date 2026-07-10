@@ -1,5 +1,5 @@
 <template>
-  <div p="5" flex="~ col" gap="4">
+  <div p="3" flex="~ col" gap="3">
     <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动；识别中遮罩覆盖 -->
     <div
       v-if="imageUrl"

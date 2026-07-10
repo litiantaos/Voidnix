@@ -14,7 +14,7 @@
         v-if="open"
         ref="panelRef"
         tabindex="-1"
-        class="dropdown-panel outline-none max-w-96 min-w-64 bottom-2 right-2 fixed z-50"
+        class="dropdown-panel outline-none max-w-96 min-w-64 bottom-3 right-3 fixed z-50"
         role="dialog"
         aria-label="项目信息"
       >

@@ -15,12 +15,12 @@
     <!-- 搜索栏：acrylic-bar = acrylic + glass-ring + radius-panel -->
     <div
       ref="searchBarRef"
-      px="4"
+      px="3"
       flex
       gap="3"
       h="13"
       items="center"
-      class="acrylic-bar inset-x-2 top-2 absolute z-10"
+      class="acrylic-bar inset-x-3 top-3 absolute z-10"
     >
       <!-- 扩展标签 -->
       <div

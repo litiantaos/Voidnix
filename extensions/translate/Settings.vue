@@ -25,7 +25,7 @@
       @confirm="saveConfigModal"
       @cancel="closeConfigModal"
     >
-      <div flex="~ col" gap="4">
+      <div flex="~ col" gap="3">
         <!-- 有道表单 -->
         <template v-if="editingType === 'youdao'">
           <div class="form-field">

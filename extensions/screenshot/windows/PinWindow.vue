@@ -21,8 +21,8 @@
         flex
         gap="2"
         items="center"
-        right="2"
-        top="2"
+        right="3"
+        top="3"
         absolute
         z="10"
         @mousedown.stop
@@ -30,7 +30,7 @@
         <!-- 透明度拖动条：窗口太窄时隐藏，给关闭按钮让位 -->
         <div
           v-if="showOpacitySlider"
-          p="x-2"
+          p="x-3"
           flex
           h="7"
           shadow="lg"

@@ -97,7 +97,7 @@
         v-if="open"
         ref="panelRef"
         tabindex="-1"
-        class="dropdown-panel outline-none bottom-2 right-2 fixed z-50"
+        class="dropdown-panel outline-none bottom-3 right-3 fixed z-50"
         role="menu"
       >
         <BaseDropdownItems
@@ -129,7 +129,7 @@
         bg="surface"
         overflow="auto"
       >
-        <div flex items-center justify-center min-h="full" p="5">
+        <div flex items-center justify-center min-h="full" p="3">
           <img
             v-if="previewType === 'image' && previewImage"
             :src="previewImage"

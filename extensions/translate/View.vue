@@ -2,11 +2,10 @@
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置翻译服务" />
 
   <div v-else flex="~ col">
-    <div p="x-2" border="b black/5">
+    <div p="3">
       <BaseTextarea
         ref="textareaRef"
         v-model="inputText"
-        plain
         placeholder="输入文本"
         :rows="1"
         :max-height="0"

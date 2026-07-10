@@ -49,7 +49,7 @@ export function useSearchInput(opts: SearchInputOptions) {
     appStore.setActiveModule(null)
     if (query.startsWith('/')) {
       clearSearch(query)
-      results.value = buildModuleResults()
+      results.value = buildToolListResults(query)
       selectedIndex.value = savedToolIndex
       if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
       restore('tools')
@@ -99,6 +99,19 @@ export function useSearchInput(opts: SearchInputOptions) {
 
   function buildModuleResults(): SearchResult[] {
     return getVisibleExtensions().map((e) => extToModuleResult(e, 1000))
+  }
+
+  /** `/` 工具列表结果：空关键词全量 order 序；有关键词则 scoreModuleEntry 过滤排序。
+   *  onInput 与 exitModule 共用，避免退出模块后丢过滤。 */
+  function buildToolListResults(query: string): SearchResult[] {
+    const keyword = query.slice(1).trim().toLowerCase()
+    if (!keyword) return buildModuleResults()
+
+    return getVisibleExtensions()
+      .map((ext) => ({ ext, score: scoreModuleEntry(ext.meta, keyword) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(({ ext, score }) => extToModuleResult(ext, score))
   }
 
   async function loadDefaultResults() {
@@ -180,22 +193,7 @@ export function useSearchInput(opts: SearchInputOptions) {
         reset()
         selectedIndex.value = 0
       }
-      const keyword = query.slice(1).trim().toLowerCase()
-
-      if (!keyword) {
-        results.value = buildModuleResults()
-        if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
-        return
-      }
-
-      // 与全局 keyword 入口共用 scoreModuleEntry（name/id/description + keywords 双向）
-      const matchedExts = getVisibleExtensions()
-        .map((ext) => ({ ext, score: scoreModuleEntry(ext.meta, keyword) }))
-        .filter((item) => item.score > 0)
-        .sort((a, b) => b.score - a.score)
-
-      results.value = matchedExts.map(({ ext, score }) => extToModuleResult(ext, score))
-
+      results.value = buildToolListResults(query)
       if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
       return
     }

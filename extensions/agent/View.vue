@@ -15,7 +15,7 @@
       <p text="xs muted">日常问题、工作任务、搜索资料、跑命令...</p>
     </div>
 
-    <div v-else flex="~ 1 col" gap="3" min-h="0" overflow="y-auto" p="5" class="hide-scrollbar">
+    <div v-else flex="~ 1 col" gap="3" min-h="0" overflow="y-auto" p="3" class="hide-scrollbar">
       <template v-for="msg in displayMessages" :key="msg.id">
         <!-- 用户消息 -->
         <div
@@ -63,7 +63,7 @@
               flex="~ col"
               overflow="hidden"
             >
-              <div p="x-2.5 y-2" flex items="center" gap="1.5">
+              <div p="3" flex items="center" gap="1.5">
                 <span shrink="0" font="mono" text="secondary" bg="black/8" rounded px="1">{{
                   part.name
                 }}</span>
@@ -82,9 +82,9 @@
               <div
                 v-if="part.parsed && (part.state === 'done' || part.state === 'failed')"
                 border="t black/5"
-                p="x-2.5 y-2"
+                p="3"
                 flex="~ col"
-                gap="1"
+                gap="1.5"
               >
                 <div v-for="(hit, i) in part.parsed.hits" :key="i" py="1" @click="openUrl(hit.url)">
                   <div text="primary" truncate class="hover:underline">{{ hit.title }}</div>
@@ -95,7 +95,7 @@
               <pre
                 v-else-if="part.output && (part.state === 'done' || part.state === 'failed')"
                 border="t black/5"
-                p="x-2.5 y-2"
+                p="3"
                 font="mono"
                 text="secondary"
                 whitespace="pre-wrap"
@@ -111,7 +111,7 @@
       </template>
     </div>
 
-    <div p="x-5 b-5" flex="~ col" shrink="0">
+    <div p="x-3 b-3" flex="~ col" shrink="0">
       <BaseTextarea
         ref="textareaRef"
         v-model="inputText"

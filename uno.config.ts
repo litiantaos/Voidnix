@@ -68,7 +68,7 @@ export default defineConfig({
     'flex-center': 'flex items-center justify-center',
     // 模块 View 根布局惯例（撑满由 ContentView :deep flex-1 统一注入，无需自带 h-full）
     'flex-col-full': 'flex flex-col',
-    'flex-col-full-pb': 'pb-4 flex flex-col',
+    'flex-col-full-pb': 'pb-3 flex flex-col',
 
     // ── 表单 ──
     'form-label': 'text-xs text-muted font-medium',

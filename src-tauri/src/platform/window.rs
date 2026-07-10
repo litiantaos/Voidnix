@@ -7,12 +7,16 @@
 
 use objc2_app_kit::NSWindow;
 
-/// orderFrontRegardless —— 让窗口前置显示但不激活 NSApp。
+/// orderFrontRegardless + 浮层 level + 鼠标接管。
+/// 激活 NSApp 由 runtime::window::show_main 在 makeKey 后显式调用（见该处注释）。
 pub fn bring_to_front(window: &tauri::WebviewWindow) {
     if let Ok(raw) = window.ns_window() {
         let raw = raw.cast::<NSWindow>();
         if let Some(ns_window) = unsafe { raw.as_ref() } {
+            // 高于普通文档窗，保证叠在原前台 app 之上参与 hit-test
+            ns_window.setLevel(objc2_app_kit::NSFloatingWindowLevel);
             ns_window.orderFrontRegardless();
+            capture_mouse_events(ns_window);
         }
     }
 }
@@ -75,6 +79,10 @@ pub fn animate_frame(window: &tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f
         let _: () = objc2::msg_send![animator, setFrame: frame, display: true];
         let _: () = objc2::msg_send![ctx_cls, endGrouping];
     }
+    // 高度动画后 event shape 必须对齐目标尺寸，否则仍按旧矩形/alpha 穿透
+    let window_number: objc2_foundation::NSInteger =
+        unsafe { objc2::msg_send![ns_window, windowNumber] };
+    crate::platform::skylight::set_full_event_shape(window_number as i64, w, h);
 }
 
 /// snap-panel 进出场动画：窗口 alpha + frame 同步缩放（单 NSAnimationContext group，
@@ -121,6 +129,7 @@ pub fn animate_panel(
 /// 同时配置：窗口本体透明（setOpaque:NO + clearColor）+ contentView 圆角裁剪（CALayer
 /// cornerRadius + masksToBounds，含 NSVisualEffectView）+ 子视图 layer 非透明（Tauri
 /// transparent:true 只让 WKWebView canvas 透明，CALayer 默认仍 opaque 会盖住材质）。
+/// 鼠标穿透由 [`capture_mouse_events`] / SkyLight event shape 处理，不在此层。
 ///
 /// corner_radius 经 contentView CALayer 裁剪：主窗口 20（单层，窗口＝面板圆角，无 padding）
 /// / snap-panel 12。
@@ -200,6 +209,13 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
     content_view.addSubview_positioned_relativeTo(&effect, NSWindowOrderingMode::Below, None);
 }
 
+/// 透明面板强制接管鼠标：禁止 ignore + 收 mouseMoved + 全窗 event shape（不依赖 alpha）。
+pub fn capture_mouse_events(ns_window: &NSWindow) {
+    ns_window.setIgnoresMouseEvents(false);
+    ns_window.setAcceptsMouseMovedEvents(true);
+    crate::platform::skylight::set_full_event_shape_for_nswindow(ns_window);
+}
+
 /// 主窗口框架级样式：Mica 材质底（apply_mica_material）+ NonactivatingPanel 转换。
 /// 在 lib.rs setup 内 bootstrap 之后调用一次。失败静默跳过。
 pub fn apply_main_window_style(window: &tauri::WebviewWindow) {
@@ -212,6 +228,7 @@ pub fn apply_main_window_style(window: &tauri::WebviewWindow) {
     // 原生阴影：单层窗口（窗口＝面板），阴影提供浅色背景下的层次区分
     ns_window.setHasShadow(true);
     crate::platform::panel::convert_to_panel(raw.cast());
+    capture_mouse_events(ns_window);
 }
 
 /// NSOpenPanel 模态选目录。返回选中路径，取消返回空串。

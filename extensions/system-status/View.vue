@@ -1,5 +1,5 @@
 <template>
-  <div p="3" flex="~ col" gap="2.5">
+  <div p="3" flex="~ col" gap="3">
     <BaseEmptyState
       v-if="error"
       icon="i-ri-error-warning-line"
@@ -27,7 +27,7 @@
       </section>
 
       <!-- 第 1 行：CPU + Memory -->
-      <div gap="2.5" grid="~ cols-2">
+      <div gap="3" grid="~ cols-2">
         <!-- CPU -->
         <section p="3" class="radius-panel" bg="black/3">
           <div flex gap="2" items="center" leading="none">
@@ -111,7 +111,7 @@
       </div>
 
       <!-- 第 2 行：Disk + Power -->
-      <div gap="2.5" grid="~ cols-2">
+      <div gap="3" grid="~ cols-2">
         <!-- Disk -->
         <section p="3" class="radius-panel" bg="black/3">
           <div flex gap="2" items="center" leading="none">
@@ -172,7 +172,7 @@
                 :style="{ width: `${snapshot.battery.level}%` }"
               />
             </div>
-            <div text="xs muted" flex flex-wrap gap="x-1.5 y-0.5" tabular-nums>
+            <div text="xs muted" flex flex-wrap gap="1.5" tabular-nums>
               <span v-if="snapshot.battery.time_to_empty !== null">
                 剩余 {{ formatDuration(snapshot.battery.time_to_empty) }}
               </span>
@@ -195,7 +195,7 @@
       </div>
 
       <!-- 第 3 行：Processes + Network -->
-      <div gap="2.5" grid="~ cols-2">
+      <div gap="3" grid="~ cols-2">
         <!-- Processes -->
         <section p="3" class="radius-panel" bg="black/3">
           <div flex gap="2" items="center" leading="none">

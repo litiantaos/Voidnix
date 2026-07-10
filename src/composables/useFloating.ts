@@ -36,7 +36,7 @@ export function useFloating(
     const floating = floatingRef.value
     if (!reference || !floating) return
 
-    const padding = options.padding ?? 8
+    const padding = options.padding ?? 12
 
     computePosition(reference, floating, {
       placement: options.placement ?? 'bottom-start',

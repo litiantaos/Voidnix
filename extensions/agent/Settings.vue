@@ -25,7 +25,7 @@
       @confirm="saveConfigModal"
       @cancel="closeConfigModal"
     >
-      <div flex="~ col" gap="4">
+      <div flex="~ col" gap="3">
         <!-- API URL -->
         <div class="form-field">
           <span class="form-label">API URL</span>
@@ -91,7 +91,7 @@
       @confirm="saveSearchModal"
       @cancel="closeSearchModal"
     >
-      <div flex="~ col" gap="4">
+      <div flex="~ col" gap="3">
         <div class="form-field">
           <span class="form-label">Tavily API Key</span>
           <BaseInput

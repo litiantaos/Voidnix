@@ -6,7 +6,7 @@
     p="3"
     flex
     items="center"
-    gap="2.5"
+    gap="3"
     overflow="hidden"
     style="-webkit-app-region: no-drag"
   >

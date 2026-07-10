@@ -1,8 +1,11 @@
 /// 显示主窗口。
 ///
-/// 编排：可见性状态 → 捕获原前台 PID → 平台 show（Space 迁移 + 前置）→
-/// makeKey → click_monitor。NonactivatingPanel + LSUIElement 组合下显示不抢
-/// NSApp active，原前台应用的菜单栏 / Dock 高亮全程不变。
+/// 编排：可见性状态 → 捕获原前台 PID → Space 迁移 + 前置 → **显式 activate**
+/// → makeKey → click_monitor。
+///
+/// macOS 26+：仅 NonactivatingPanel（NSApp 保持 inactive）时，mouseMoved/hover
+/// 仍路由给前台 app，导致「鼠标在面板上却触发下层 hover」。必须在 show 时
+/// `activate_app`，hide 时 `restore_captured` 交还。LSUIElement 仍无 Dock 图标。
 pub fn show_main(app: &tauri::AppHandle) {
     use tauri::Manager;
     crate::runtime::shortcut::set_window_visible(true);
@@ -20,6 +23,10 @@ pub fn show_main(app: &tauri::AppHandle) {
         let _ = window.show();
     }
     make_main_window_key(app);
+    // 在 makeKey 之后 activate：mouseMoved 只派给 active app；不 activate 则下层
+    // app 仍收 tracking/hover（透明/非激活面板在 macOS 26 上整窗可复现）。
+    #[cfg(target_os = "macos")]
+    crate::platform::focus::activate_app();
     crate::platform::click_monitor::add(app);
     crate::platform::frontmost_watcher::add(app);
 }
