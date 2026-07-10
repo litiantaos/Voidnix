@@ -14,7 +14,7 @@
         v-if="open"
         ref="panelRef"
         tabindex="-1"
-        class="dropdown-panel outline-none max-w-96 min-w-64 bottom-4 right-4 fixed z-50"
+        class="dropdown-panel outline-none max-w-96 min-w-64 bottom-2 right-2 fixed z-50"
         role="dialog"
         aria-label="项目信息"
       >
@@ -45,6 +45,7 @@ import { useAppStore } from '@/stores/app'
 import { hideWindow } from '@/utils/tauri'
 import BaseDropdownItems, { type PanelItem } from '@/components/ui/BaseDropdownItems.vue'
 import { useActionPanel } from '@/composables/useActionPanel'
+import { formatBytes } from '@/utils/format'
 import type { SearchResult } from '@/runtime/types'
 
 const props = defineProps<{
@@ -73,7 +74,9 @@ const actionItems = computed<PanelItem[]>(() => [
 const metaRows = computed<{ label: string; value: string }[]>(() => {
   if (!data.value) return []
   const isApp = result.value?.data?.kind === 'application'
-  const r: { label: string; value: string }[] = [{ label: '大小', value: fmtSize(data.value.size) }]
+  const r: { label: string; value: string }[] = [
+    { label: '大小', value: formatBytes(data.value.size, { empty: '—' }) },
+  ]
   if (isApp) {
     r.push({ label: '版本', value: data.value.version || '—' })
   }
@@ -130,19 +133,6 @@ function runAction(key: string | number) {
     invoke(CMD.pasteboardWriteText, { text: path })
     appStore.showStatus('已复制路径')
   }
-}
-
-function fmtSize(bytes: number | null): string {
-  if (!bytes || bytes <= 0) return '—'
-  if (bytes < 1024) return `${bytes} B`
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let v = bytes / 1024
-  let i = 0
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024
-    i++
-  }
-  return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`
 }
 
 // mdls 日期 "2024-01-01 12:00:00 +0000" → 转 ISO 后格式化为本地 "2024-01-01 12:00"

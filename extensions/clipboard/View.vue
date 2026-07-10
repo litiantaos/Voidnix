@@ -49,7 +49,7 @@
             <img
               v-else-if="item.content_type === 'image' && imageCache.get(item.id)"
               :src="imageCache.get(item.id)"
-              rounded="md"
+              class="radius-ctrl"
               bg="black/5"
               border="~ black/1"
               h="32"
@@ -69,7 +69,7 @@
               <span>{{ formatTime(item.created_at) }}</span>
               <template v-if="item.file_size">
                 <span>•</span>
-                <span>{{ formatSize(item.file_size) }}</span>
+                <span>{{ formatBytes(item.file_size) }}</span>
               </template>
               <template v-if="item.image_width && item.image_height">
                 <span>•</span>
@@ -97,7 +97,7 @@
         v-if="open"
         ref="panelRef"
         tabindex="-1"
-        class="dropdown-panel outline-none bottom-4 right-4 fixed z-50"
+        class="dropdown-panel outline-none bottom-2 right-2 fixed z-50"
         role="menu"
       >
         <BaseDropdownItems
@@ -136,7 +136,7 @@
             max-w="full"
             max-h="full"
             object="contain"
-            rounded="md"
+            class="radius-ctrl"
             alt="预览图片"
           />
           <span
@@ -196,6 +196,7 @@ import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useActionPanel } from '@/composables/useActionPanel'
 import { useAppStore } from '@/stores/app'
+import { formatBytes } from '@/utils/format'
 
 const appStore = useAppStore()
 
@@ -510,11 +511,5 @@ function formatTime(at: string): string {
     return m ? m[0] : at
   }
   return date.slice(5)
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 </script>

@@ -1,6 +1,6 @@
 <template>
-  <div p="2" flex="~ col" gap="1" role="listbox" aria-label="搜索结果">
-    <template v-for="(item, i) in items" :key="i">
+  <div p="x-2" pb="2" flex="~ col" gap="1" role="listbox" aria-label="搜索结果">
+    <template v-for="(item, i) in items" :key="itemKey(item, i)">
       <div
         v-if="
           groupField &&
@@ -18,7 +18,7 @@
         :ref="(el: unknown) => setItemRef(el, i)"
         role="option"
         :aria-selected="isItemSelected(i)"
-        rounded="lg"
+        class="radius-panel"
         :class="{ 'ui-active': isItemSelected(i) }"
         @click="onItemClick(i, $event)"
         @dblclick="onItemDblClick(i)"
@@ -107,6 +107,13 @@ let anchorIndex = -1
 
 function getId(item: T): string {
   return (item as Record<string, unknown>)[props.idField] as string
+}
+
+/// 列表 key：优先 idField，缺省回退 index（避免重排时 DOM 错位复用）
+function itemKey(item: T, index: number): string | number {
+  const id = (item as Record<string, unknown>)?.[props.idField]
+  if (id != null && id !== '') return String(id)
+  return index
 }
 
 function isMultiSelected(index: number): boolean {
@@ -247,6 +254,12 @@ function findScrollContainer(el: HTMLElement): HTMLElement | null {
   return el.closest('.overflow-y-auto, .overflow-auto') as HTMLElement | null
 }
 
+/// 读 scroll-padding-top（ContentView 悬浮搜索栏 chrome 经此声明；无则 0）
+function scrollPaddingTop(container: HTMLElement): number {
+  const n = parseFloat(getComputedStyle(container).scrollPaddingTop)
+  return Number.isFinite(n) ? n : 0
+}
+
 /// 抑制 watch 的瞬时滚动，reveal 定位时由 smooth 滚动接管
 let suppressScroll = false
 
@@ -267,14 +280,18 @@ watch(localIndex, async (index) => {
     isFirstInGroup && el.previousElementSibling ? (el.previousElementSibling as HTMLElement) : el
 
   const PADDING = 8
+  const topInset = scrollPaddingTop(container)
   const elRectTop = topElement.getBoundingClientRect().top
   const elRectBottom = el.getBoundingClientRect().bottom
   const containerRect = container.getBoundingClientRect()
+  // 顶部可见区 = 容器顶 + chrome inset（悬浮搜索栏）+ 边距；底部仍以容器底为准
+  const visibleTop = containerRect.top + topInset + PADDING
+  const visibleBottom = containerRect.bottom - PADDING
 
-  if (elRectBottom > containerRect.bottom - PADDING) {
-    container.scrollTop += elRectBottom - containerRect.bottom + PADDING
-  } else if (elRectTop < containerRect.top + PADDING) {
-    container.scrollTop -= containerRect.top - elRectTop + PADDING
+  if (elRectBottom > visibleBottom) {
+    container.scrollTop += elRectBottom - visibleBottom
+  } else if (elRectTop < visibleTop) {
+    container.scrollTop -= visibleTop - elRectTop
   }
 })
 
@@ -295,9 +312,12 @@ async function scrollIntoCenter(index: number) {
   if (!el) return
   const container = findScrollContainer(el)
   if (!container) return
+  const topInset = scrollPaddingTop(container)
   const elRect = el.getBoundingClientRect()
   const containerRect = container.getBoundingClientRect()
-  const offset = elRect.top - containerRect.top + elRect.height / 2 - containerRect.height / 2
+  // 在扣除 chrome 后的可视区内垂直居中
+  const visibleHeight = containerRect.height - topInset
+  const offset = elRect.top - (containerRect.top + topInset) + elRect.height / 2 - visibleHeight / 2
   container.scrollTo({ top: container.scrollTop + offset, behavior: 'smooth' })
 }
 

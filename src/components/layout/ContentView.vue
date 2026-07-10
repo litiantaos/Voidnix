@@ -9,6 +9,10 @@
       min-h="0"
       relative
       class="hide-scrollbar overflow-y-auto"
+      :style="{
+        paddingTop: WINDOW.CHROME_HEIGHT + 'px',
+        scrollPaddingTop: WINDOW.CHROME_HEIGHT + 'px',
+      }"
     >
       <!-- contentRef：量真实内容自然高（auto 高度模式消费）。
            fixed/default：min-height:100% + View 根 :deep flex-1 撑满可视区（声明值/DEFAULT_HEIGHT）。

@@ -9,7 +9,7 @@
 
     <template v-else-if="staticInfo && snapshot">
       <!-- 顶部设备概览 -->
-      <section p="3" rounded="lg" bg="black/3" flex flex-wrap gap="1.5" items="center">
+      <section p="3" class="radius-panel" bg="black/3" flex flex-wrap gap="1.5" items="center">
         <span flex shrink="0" gap="2" items="center">
           <i class="i-ri-computer-line text-xs text-secondary" />
           <span text="xs secondary" font="medium">设备</span>
@@ -29,7 +29,7 @@
       <!-- 第 1 行：CPU + Memory -->
       <div gap="2.5" grid="~ cols-2">
         <!-- CPU -->
-        <section p="3" rounded="lg" bg="black/3">
+        <section p="3" class="radius-panel" bg="black/3">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-cpu-line text-xs text-secondary" />
             <span text="xs secondary" font="medium">处理器</span>
@@ -78,7 +78,7 @@
         </section>
 
         <!-- Memory -->
-        <section p="3" rounded="lg" bg="black/3">
+        <section p="3" class="radius-panel" bg="black/3">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-database-2-line text-xs text-secondary" />
             <span text="xs secondary" font="medium">内存</span>
@@ -113,7 +113,7 @@
       <!-- 第 2 行：Disk + Power -->
       <div gap="2.5" grid="~ cols-2">
         <!-- Disk -->
-        <section p="3" rounded="lg" bg="black/3">
+        <section p="3" class="radius-panel" bg="black/3">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-hard-drive-3-line text-xs text-secondary" />
             <span text="xs secondary" font="medium">磁盘</span>
@@ -141,7 +141,7 @@
         </section>
 
         <!-- Power -->
-        <section p="3" rounded="lg" bg="black/3">
+        <section p="3" class="radius-panel" bg="black/3">
           <div flex gap="2" items="center" leading="none">
             <i
               v-if="snapshot.battery"
@@ -197,7 +197,7 @@
       <!-- 第 3 行：Processes + Network -->
       <div gap="2.5" grid="~ cols-2">
         <!-- Processes -->
-        <section p="3" rounded="lg" bg="black/3">
+        <section p="3" class="radius-panel" bg="black/3">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-apps-2-line text-xs text-secondary" />
             <span text="xs secondary" font="medium">进程</span>
@@ -225,7 +225,7 @@
         </section>
 
         <!-- Network -->
-        <section p="3" rounded="lg" bg="black/3">
+        <section p="3" class="radius-panel" bg="black/3">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-signal-tower-line text-xs text-secondary" />
             <span text="xs secondary" font="medium">网络</span>
@@ -284,6 +284,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { CMD } from '@/commands'
 import { isTauri } from '@/utils/tauri'
+import { formatBytes, formatRate } from '@/utils/format'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 
 interface DiskStatic {
@@ -448,19 +449,6 @@ const gpuLabel = computed(() => {
 })
 
 // ── 格式化 ──
-
-function formatBytes(bytes: number, decimals = 1): string {
-  if (!bytes || bytes <= 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1)
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`
-}
-
-function formatRate(bytesPerSec: number): string {
-  if (bytesPerSec < 1) return '0 KB/s'
-  return `${formatBytes(bytesPerSec)}/s`
-}
 
 function formatUptime(secs: number): string {
   const d = Math.floor(secs / 86400)

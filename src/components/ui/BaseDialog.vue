@@ -20,9 +20,8 @@
         <div
           v-if="visible"
           ref="dialogRef"
-          class="dialog-to"
+          class="dialog-to radius-panel"
           outline="none"
-          rounded="lg"
           bg="white"
           flex="~ col"
           shadow="md"

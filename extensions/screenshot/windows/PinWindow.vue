@@ -6,7 +6,7 @@
     select="none"
     relative
     overflow="hidden"
-    :style="{ borderRadius: '10px' }"
+    class="radius-panel"
     @mouseenter="hoverActive = true"
     @mouseleave="hoverActive = false"
     @mousedown="onWindowMouseDown"
@@ -31,13 +31,11 @@
         <div
           v-if="showOpacitySlider"
           p="x-2"
-          border="~ black/10"
-          rounded="md"
-          bg="surface/90"
           flex
           h="7"
           shadow="lg"
           items="center"
+          class="acrylic-bar"
           title="透明度"
         >
           <BaseSlider
@@ -51,13 +49,8 @@
           />
         </div>
 
-        <!-- 关闭按钮 -->
-        <BaseButton
-          class="shadow-lg !border !border-black/10 !border-solid !bg-surface/90 hover:!bg-surface"
-          title="关闭 (Esc)"
-          icon="i-ri-close-line"
-          @click="handleClose"
-        />
+        <!-- 关闭按钮：ui-ctrl 实色 fill；外阴影单独加 -->
+        <BaseButton class="shadow-lg" title="关闭 (Esc)" icon="i-ri-close-line" @click="handleClose" />
       </div>
     </Transition>
   </div>

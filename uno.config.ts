@@ -33,11 +33,36 @@ export default defineConfig({
     },
   },
   shortcuts: {
+    // ── 圆角语义（值源 theme.css --radius-*；Wind4 用 var() 任意值）──
+    // panel 12 = 外框（搜索栏 / 列表选中 / 浮层）；ctrl 8 = 框内嵌元素（标签 / 图标井 / 按钮）
+    'radius-ctrl': 'rounded-[var(--radius-ctrl)]',
+    'radius-panel': 'rounded-[var(--radius-panel)]',
+    'radius-window': 'rounded-[var(--radius-window)]',
+
+    // ── 材质：Mica 窗口壳（叠在原生 NSVisualEffect 之上的前端染色 + 高光环）──
+    'mica-tint': 'bg-white/30',
+    'mica-ring':
+      'shadow-[inset_0_2px_0_0_rgba(255,255,255,0.7),inset_0_0_0_1px_rgba(255,255,255,0.35)]',
+    'mica-shell': 'mica-tint mica-ring radius-window overflow-hidden',
+
+    // ── 材质：Acrylic 仅外框（搜索栏 / 浮层）；内嵌禁止再叠磨砂，否则糊成一片 ──
+    acrylic: 'bg-white/70 backdrop-blur-2xl backdrop-saturate-150',
+    'glass-ring': 'shadow-[inset_0_2px_0_0_rgba(255,255,255,0.6)]',
+    'acrylic-bar': 'acrylic glass-ring radius-panel',
+    'acrylic-panel': 'acrylic glass-ring radius-panel border border-black/10 select-none',
+    'dropdown-panel': 'acrylic-panel p-1',
+
+    // ── 内嵌实色填充（标签 / 图标井 / 按钮 / 选中；无 blur，保证叠在玻璃上仍可读）──
+    'fill-ctrl': 'bg-black/4',
+    'fill-hover': 'bg-black/5',
+    'fill-active': 'bg-black/8',
+
     // ── 控件状态 ──
     'ui-ctrl':
-      'h-7 px-3 rounded-md outline-none border-none text-xs font-medium bg-black/4 text-primary transition-colors duration-150 ease-out focus-within:ring-1 focus-within:ring-inset focus-within:ring-accent/40 select-none',
+      'h-7 px-3 radius-ctrl outline-none border-none text-xs font-medium fill-ctrl text-primary transition-colors duration-150 ease-out focus-within:ring-1 focus-within:ring-inset focus-within:ring-accent/40 select-none',
     'ui-disabled': 'opacity-50 cursor-not-allowed',
-    'ui-active': 'bg-black/5',
+    // 选中 / 焦点行：浅灰实色（black/5，比 fill-active 的 /8 更轻）
+    'ui-active': 'fill-hover',
 
     // ── 布局 ──
     'flex-center': 'flex items-center justify-center',
@@ -53,8 +78,6 @@ export default defineConfig({
     // ── 杂项 ──
     'group-header': 'text-xs text-muted tracking-wider font-medium px-3 py-1.5 uppercase',
     'overlay-abs': 'pointer-events-none absolute',
-    'dropdown-panel':
-      'p-1 rounded-lg bg-white/70 backdrop-blur-2xl backdrop-saturate-150 border border-black/10 select-none',
   },
   content: {
     pipeline: {

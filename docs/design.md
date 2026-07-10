@@ -21,11 +21,9 @@ Voidnix 自身的设计系统（仅浅色）。本文档是色值、材质、排
 - `surface` = `#fafafa` —— content layer 底色（窗口根容器）
 - `accent` = `#3b82f6` —— 强调色（激活态/链接/进度/选中）；取鲜活观感的纯蓝，不用饱和度偏低的传统系统蓝
 
-**层级背景**（`bg-black/N` 灰阶）：
+**层级背景**（`bg-black/N` 灰阶，经 `fill-*` token 消费）：
 
-- `bg-black/4` —— 控件底（按钮/输入/标签默认底）
-- `bg-black/5` —— hover / 子层容器 / 卡片
-- `bg-black/8` —— active / 强调按压
+- `fill-ctrl` / `fill-hover` / `fill-active` —— 对应 `black/4` / `5` / `8`，内嵌实色底
 
 **描边与分隔**：
 
@@ -40,36 +38,61 @@ Voidnix 自身的设计系统（仅浅色）。本文档是色值、材质、排
 
 ## 材质
 
+材质分三层：**原生 Mica**（跨窗口磨砂）、**Acrylic**（WebView 内 backdrop-filter）、**chrome-fade**（渐隐遮罩）。全部经 `uno.config.ts` shortcuts / `theme.css` 抽离，禁止组件内手写 blur/tint/高光环配方。
+
 ### Mica（窗口底材）
 
-不透明壁纸染色材质，active 时微妙染壁纸色（系统仅采样一次，非实时模糊）。主窗口 + snap-panel 使用。
+通透实时磨砂玻璃，强高斯模糊透出壁纸、染浅白。主窗口 + snap-panel。
 
-macOS 实现（`platform/window.rs::apply_mica_material`，corner_radius 参数化：主窗口 16 / snap-panel 12）：
+**原生**（`platform/window.rs::apply_mica_material`，corner_radius 对齐圆角 token：主窗口 `20` = `radius-window` / snap-panel `12` = `radius-panel`）：
 
-- NSWindow `setOpaque:NO` + `clearColor` 底色透明
-- contentView `wantsLayer` + `cornerRadius:16` + `masksToBounds` 圆角裁剪
-- 嵌入 `NSVisualEffectView`（`material=UnderWindowBackground` + `blendingMode=behindWindow` + `state=.active` + 强制 aqua appearance 锁浅色）作为 contentView 最底层子视图（`NSWindowBelow` 位于 WKWebView 之下），系统 GPU 合成（零 CPU）
-- 遍历 contentView 子视图置 `layer.opaque:NO`（Tauri `transparent:true` 只让 WKWebView canvas 透明，CALayer 默认仍 opaque 会盖住材质）
+- NSWindow `setOpaque:NO` + `clearColor`
+- contentView 圆角裁剪 + `NSVisualEffectView`（`Popover` + `behindWindow` + aqua 锁浅色）垫底
+- 子视图 layer 非透明（否则盖住材质）
 
-材质选择：不用 `WindowBackground`(12)（Apple 定性 opaque 无模糊）；不用 `HUDWindow`(13)（偏深色 HUD 语义不符）；`UnderWindowBackground`(21) 模糊窗口后内容、近不透明微染壁纸色，契合 Mica 静态质感。
+材质选择：不用 `UnderWindowBackground`(21) / `WindowBackground`(12) / `HUDWindow`(13)；用 `Popover`(6)。
 
-前端 `MainView` 根 `bg="surface/72"` 透出 ~28%（可读性优先；窗口固定居中不可拖动，无「跟移动变化」副作用）。snap-panel 窗口尺寸精简为面板大小，前端面板根透明透出原生材质 + 原生阴影（CSS box-shadow 会被窗口裁剪）。
+**前端壳**（叠在原生材质之上）：
 
-### Acrylic（浮层磨砂）
+- `mica-tint`：`bg-white/30` 薄白染
+- `mica-ring`：inset 高光环（顶 2px 受光 + 全周 1px 细环）
+- `mica-shell` = `mica-tint` + `mica-ring` + `radius-window` + `overflow-hidden`（主窗口根）
+- snap-panel 根：`mica-tint` + `radius-panel`（原生圆角 12，无主窗 inset 环以免双层）
 
-半透明磨砂玻璃，用于 transient / light-dismiss 浮层（dropdown / toast / 动作菜单）。WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容（等价应用内磨砂，非跨窗口磨砂）。
+### Acrylic（WebView 内磨砂，仅外框）
 
-`dropdown-panel` shortcut 配方：
+WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只用于外壳**（搜索栏 / 浮层），内嵌元素禁止再叠半透明磨砂，否则与外壳糊成一片、可读性崩溃。
 
-- blur：`backdrop-blur-2xl`（≈40px 高斯模糊）
-- tint：`bg-white/70`（70% 不透明白着色）
-- 饱和度：`backdrop-saturate-150`
+- `acrylic`：`bg-white/70 backdrop-blur-2xl backdrop-saturate-150` —— 磨砂基底
+- `glass-ring`：inset 顶 2px 白高光
+- `acrylic-bar`：`acrylic` + `glass-ring` + `radius-panel` —— 搜索栏、工具条
+- `acrylic-panel` / `dropdown-panel`：浮层外壳
 
-未实现：exclusion blend（CSS 难精确还原，影响可读性）、noise 纹理（SVG 模拟易显脏，收益低）。
+### 内嵌实色填充（可读性）
+
+叠在 Mica / Acrylic 上的内容面用灰阶实色，**无 backdrop-filter**：
+
+- `fill-ctrl`：`bg-black/4` —— 按钮 / 输入 / 模块标签 / 图标井默认底
+- `fill-hover`：`bg-black/5` —— 列表选中 / hover
+- `fill-active`：`bg-black/8` —— 按压强调
+
+`ui-ctrl` = 尺寸 + `fill-ctrl` + `radius-ctrl`；`ui-active` = `fill-hover`（选中宜轻，忌 /8 过深）。
+
+未实现：exclusion blend、noise 纹理。
+
+### chrome-fade（渐隐遮罩）
+
+悬浮栏下自上而下模糊渐变透明。实现在 `theme.css` `.chrome-fade`：
+
+- `backdrop-filter: blur(var(--chrome-fade-blur))` + 白染色渐变
+- `mask-image` 自上而下透明
+- `pointer-events: none`；高度 `--chrome-fade-height`（MainView 用 `WINDOW.CHROME_FADE_HEIGHT` 覆盖）
+
+任何悬浮顶栏可复用：`<div class="chrome-fade" :style="{ '--chrome-fade-height': h + 'px' }" />`。
 
 ### Smoke（模态遮罩）
 
-模态遮罩专用。`BaseDialog` 遮罩 `rgba(0,0,0,0.5)`，配合主体实色白形成层级（模态非磨砂，强对比聚焦）。
+`BaseDialog` 遮罩 `rgba(0,0,0,0.5)`，主体实色白 + `radius-panel`（模态非磨砂，强对比聚焦）。
 
 ## 排版
 
@@ -86,22 +109,22 @@ macOS 实现（`platform/window.rs::apply_mica_material`，corner_radius 参数�
 
 ## 形态
 
-**圆角**：
+**圆角**（shortcut → `rounded-[var(--radius-*)]`，值源 `theme.css`；禁止散写 `rounded-md/lg/xl/[Npx]`；内小外大）：
 
-- `rounded-md`（6px）：控件（按钮、输入框、标签、shortcut input）
-- `rounded-lg`（8px）：面板（dropdown-panel、dialog、列表容器）
-- `rounded-xl`（12px）：snap-panel 预览
-- `rounded-full`：圆形小图标按钮、状态点
-- `16px`：主窗口 contentView（原生 CALayer cornerRadius）
+- `radius-panel`（12px）：外框——搜索栏、列表选中行、浮层、dialog、卡片
+- `radius-ctrl`（8px）：框内嵌元素——模块标签、图标井、按钮/输入、下拉行
+- `radius-window`（20px）：仅主窗口 contentView（原生 corner 20）；snap-panel 原生 12 对齐 panel
+- `rounded-full`：圆形小图标按钮、进度条、状态点（保留）
 
 **阴影**（4 级层级）：
 
 - `shadow-sm`：低（控件 hover）
 - `shadow-md`：中（dialog、下拉）
-- `shadow-lg`：高（主窗口 `MainView` 根）
-- `shadow-2xl`：最高（浮层强调，snap-panel 改用原生 NSWindow 阴影）
+- `shadow-lg`：高（浮层强调）
+- `shadow-2xl`：最高（浮层强调）
+- 主窗口 / snap-panel：原生 NSWindow 阴影（CSS box-shadow 会被窗口 `masksToBounds` 裁剪，故窗口级外阴影走原生）
 
-**描边**：统一 1px。`border` solid 用于面板边缘，`border-black/5` 用于分隔线。
+**描边**：统一 1px。`border` solid 用于面板边缘，`border-black/5` 用于分隔线；主窗口面板边缘高光环走 `mica-ring`。
 
 **间距**：遵循 4px 网格（UnoCSS 预设 `p-1`=4px / `p-2`=8px / `p-3`=12px / `p-5`=20px / `gap-2`=8px）。
 
@@ -109,15 +132,17 @@ macOS 实现（`platform/window.rs::apply_mica_material`，corner_radius 参数�
 
 `uno.config.ts` shortcuts（全仓统一样式入口）：
 
-- `ui-ctrl`：控件基础态（`h-7 px-3 rounded-md text-xs font-medium bg-black/4 text-primary` + focus ring）
-- `ui-disabled`：`opacity-50 cursor-not-allowed`
-- `ui-active`：`bg-black/5`
-- `flex-center`：`flex items-center justify-center`
-- `flex-col-full` / `flex-col-full-pb`：模块 View 根布局惯例
-- `form-label` / `form-field` / `input-base`：表单
-- `group-header`：分组标题（`text-xs text-muted tracking-wider uppercase`）
-- `overlay-abs`：`pointer-events-none absolute`
-- `dropdown-panel`：浮层 Acrylic（见材质系统）
+**圆角**：`radius-ctrl` / `radius-panel` / `radius-window`
+
+**材质（外框）**：`mica-tint` / `mica-ring` / `mica-shell` · `acrylic` / `glass-ring` / `acrylic-bar` / `acrylic-panel` / `dropdown-panel`
+
+**内嵌填充**：`fill-ctrl` / `fill-hover` / `fill-active`
+
+**控件**：`ui-ctrl` / `ui-disabled` / `ui-active`
+
+**布局 / 表单 / 杂项**：`flex-center` / `flex-col-full` / `flex-col-full-pb` / `form-label` / `form-field` / `input-base` / `group-header` / `overlay-abs`
+
+**CSS 类**（`theme.css`）：`chrome-fade` / `hide-scrollbar`
 
 ## 动画
 

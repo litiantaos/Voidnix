@@ -1,5 +1,5 @@
 <template>
-  <div bg="surface/72" flex="~ col" h="screen" w="screen" shadow="lg">
+  <div flex="~ col" h="screen" w="screen" relative class="mica-shell">
     <div
       v-if="isDev"
       bg="accent"
@@ -8,23 +8,31 @@
       left="1/2"
       top="1"
       absolute
-      class="-translate-x-1/2"
+      class="z-20 -translate-x-1/2"
     />
-
-    <!-- 搜索栏 -->
-    <div ref="searchBarRef" p="x-5" border="b black/5" flex gap="3" h="15" items="center">
+    <!-- chrome 渐隐遮罩：材质抽离为 .chrome-fade（theme.css），高度走 CSS 变量 -->
+    <div class="chrome-fade" :style="chromeFadeStyle" aria-hidden="true" />
+    <!-- 搜索栏：acrylic-bar = acrylic + glass-ring + radius-panel -->
+    <div
+      ref="searchBarRef"
+      px="4"
+      flex
+      gap="3"
+      h="13"
+      items="center"
+      class="acrylic-bar inset-x-2 top-2 absolute z-10"
+    >
       <!-- 扩展标签 -->
       <div
         v-if="activeModule"
         text="xs secondary"
         p="x-3"
-        rounded="md"
-        bg="black/5"
         flex="~ none"
         gap="1.5"
         h="7"
         select="none"
         items="center"
+        class="radius-ctrl fill-ctrl"
         @mouseenter="isTagHovered = true"
         @mouseleave="isTagHovered = false"
       >
@@ -121,7 +129,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useScroll } from '@/composables/events'
 import { getExtension } from '@/runtime/extension-registry'
-import { SEARCH } from '@/runtime/constants'
+import { SEARCH, WINDOW } from '@/runtime/constants'
 import { getGroupKey } from '@/runtime/search-engine'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
@@ -140,6 +148,11 @@ import { getFocusableElements, cycleFocus } from '@/utils/dom'
 const isDev = import.meta.env.DEV
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
+
+// chrome-fade 高度覆盖（配方在 theme.css .chrome-fade）
+const chromeFadeStyle = {
+  '--chrome-fade-height': `${WINDOW.CHROME_FADE_HEIGHT}px`,
+} as Record<string, string>
 
 const searchBarRef = ref<HTMLDivElement>()
 const searchInput = ref<HTMLInputElement>()
@@ -207,7 +220,6 @@ const { handleExecute } = useResultNavigation({
 useModuleHeight({
   activeModule,
   activeSubview: computed(() => appStore.activeSubview),
-  searchBarRef,
   contentRef: computed(() => contentViewRef.value?.contentRef),
 })
 

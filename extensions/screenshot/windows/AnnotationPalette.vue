@@ -2,16 +2,13 @@
   <div
     ref="rootEl"
     p="2"
-    border="~ black/10"
-    rounded="lg"
-    bg="surface/95"
     flex
     gap="2"
     shadow="xl"
     items="center"
     absolute
     z="50"
-    backdrop-blur="sm"
+    class="acrylic-panel"
     :style="style"
     @mousedown.stop
   >
@@ -57,9 +54,6 @@
           <div
             v-if="showColors"
             p="2"
-            border="~ black/10"
-            rounded="lg"
-            bg="surface/95"
             flex
             gap="2"
             shadow="xl"
@@ -67,8 +61,7 @@
             left="1/2"
             absolute
             z="100"
-            backdrop-blur="sm"
-            class="-translate-x-1/2"
+            class="acrylic-panel -translate-x-1/2"
             :class="popDir === 'up' ? 'bottom-full mb-4' : 'top-full mt-4'"
             @mousedown.stop
             @click.stop

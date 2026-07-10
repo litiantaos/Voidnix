@@ -6,6 +6,61 @@ export function getParentPath(path: unknown): string {
   return path.substring(0, lastSlashIndex)
 }
 
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'] as const
+const BYTE_UNITS_COMPACT = ['B', 'K', 'M', 'G', 'T', 'P'] as const
+
+export interface FormatBytesOptions {
+  /** 小数位，默认 1；compact 下 G 及以上固定 2 位（对齐原 proxy 口径） */
+  decimals?: number
+  /** 非正数 / null / undefined 时返回值；默认标准 `'0 B'`、compact `'0B'` */
+  empty?: string
+  /** 紧凑单位无空格（B/K/M/G），proxy 流量用；默认 false → `1.2 KB` */
+  compact?: boolean
+}
+
+/**
+ * 字节数格式化（列表副标题 / 详情元数据 / 仪表盘 / 代理流量共用）。
+ * 标准：`512 B` · `1.5 KB` · `2 GB`；compact：`512B` · `1.5K` · `2.00G`。
+ */
+export function formatBytes(
+  bytes: number | null | undefined,
+  opts?: FormatBytesOptions,
+): string {
+  const compact = opts?.compact ?? false
+  const empty = opts?.empty ?? (compact ? '0B' : '0 B')
+  if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return empty
+
+  const units = compact ? BYTE_UNITS_COMPACT : BYTE_UNITS
+  const k = 1024
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), units.length - 1)
+
+  if (i === 0) {
+    const n = Math.round(bytes)
+    return compact ? `${n}${units[0]}` : `${n} ${units[0]}`
+  }
+
+  const decimals = compact && i >= 3 ? 2 : (opts?.decimals ?? 1)
+  const raw = bytes / Math.pow(k, i)
+  // 标准模式 strip 尾零（1.0 → 1）；compact 保留 toFixed 宽度与原 proxy 一致
+  const num = compact ? raw.toFixed(decimals) : String(parseFloat(raw.toFixed(decimals)))
+  return compact ? `${num}${units[i]}` : `${num} ${units[i]}`
+}
+
+/**
+ * 速率格式化（字节/秒）。标准空值 `0 KB/s`；compact 空值 `0B/s`。
+ * 调用方无需再拼 `/s`。
+ */
+export function formatRate(
+  bytesPerSec: number | null | undefined,
+  opts?: FormatBytesOptions,
+): string {
+  const compact = opts?.compact ?? false
+  if (bytesPerSec == null || !Number.isFinite(bytesPerSec) || bytesPerSec < 1) {
+    return compact ? '0B/s' : '0 KB/s'
+  }
+  return `${formatBytes(bytesPerSec, opts)}/s`
+}
+
 export function formatPathParts(path: unknown): { head: string; tail: string } {
   if (typeof path !== 'string' || !path) return { head: '', tail: '' }
 

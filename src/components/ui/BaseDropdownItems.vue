@@ -52,7 +52,7 @@ const emit = defineEmits<{
 function rowClass(item: PanelItem, i: number) {
   const active = i === props.activeIndex && !item.disabled
   return [
-    'flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-md transition-colors truncate',
+    'flex items-center gap-2 text-sm font-medium px-3 py-1.5 radius-ctrl transition-colors truncate',
     item.disabled ? 'opacity-40 cursor-not-allowed' : '',
     active ? 'ui-active' : '',
     item.danger ? 'text-red-500' : active ? 'text-accent' : 'text-secondary',
