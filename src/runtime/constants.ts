@@ -37,9 +37,9 @@ export const LIMITS = {
 // 主窗口尺寸（不可配置；与 tauri.conf.json 主窗口 width/height 一致）。
 // 扩展通过 Extension.windowHeight 声明模块激活时的高度，框架 clamp 到 [MIN, MAX]。
 // 搜索栏 chrome 拆成 top/height/gap 再求和，改 MainView top-*/h-* 时同步改这三项。
-const SEARCH_BAR_TOP = 8 // top-2
+const SEARCH_BAR_TOP = 12 // top-3
 const SEARCH_BAR_HEIGHT = 52 // h-13
-const SEARCH_BAR_GAP = 8 // 栏底与内容间距
+const SEARCH_BAR_GAP = 12 // 栏底与内容间距（与全局 p-3 一致）
 /** chrome 渐隐遮罩伸入内容的尾部长（视觉软边，不计入 paddingTop） */
 const CHROME_FADE_EXTRA = 24
 export const WINDOW = {

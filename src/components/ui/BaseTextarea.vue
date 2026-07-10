@@ -8,7 +8,7 @@
       :rows="rows"
       class="input-base placeholder:text-muted"
       text="primary"
-      p="x-3 y-2"
+      p="3"
       resize="none"
       :class="autoResize && maxHeight <= 0 ? 'overflow-y-hidden' : 'overflow-y-auto'"
       :style="{
@@ -39,8 +39,6 @@ interface Props {
   submitOnEnter?: boolean
   /** 是否随内容自动撑高（默认 true）。false 时由 rows 决定高度，超出滚动。 */
   autoResize?: boolean
-  /** 无装饰变体：去除控件背景/圆角/ring，融入所在面板（配合外部分割线布局）。 */
-  plain?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -52,7 +50,6 @@ const props = withDefaults(defineProps<Props>(), {
   maxHeight: 120,
   submitOnEnter: true,
   autoResize: true,
-  plain: false,
 })
 
 const emit = defineEmits<{
@@ -78,19 +75,11 @@ const {
 
 const height = ref<string>()
 
-const rootClass = computed(() =>
-  props.plain
-    ? [
-        'flex items-start gap-2 text-sm',
-        props.error ? 'border-red-400' : '',
-        props.disabled ? 'ui-disabled' : '',
-      ]
-    : [
-        'ui-ctrl h-auto! text-sm! flex items-start gap-2 !px-0',
-        props.error ? 'border-red-400' : '',
-        props.disabled ? 'ui-disabled' : '',
-      ],
-)
+const rootClass = computed(() => [
+  'ui-ctrl h-auto! text-sm! flex items-start gap-2 !px-0',
+  props.error ? 'border-red-400' : '',
+  props.disabled ? 'ui-disabled' : '',
+])
 
 function onInput(e: Event) {
   baseOnInput(e)

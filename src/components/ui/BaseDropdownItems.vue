@@ -7,7 +7,7 @@
       flex
       items="center"
       justify="between"
-      gap="4"
+      gap="3"
       px="3"
       py="1"
     >

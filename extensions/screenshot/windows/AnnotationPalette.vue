@@ -1,7 +1,7 @@
 <template>
   <div
     ref="rootEl"
-    p="2"
+    p="3"
     flex
     gap="2"
     shadow="xl"
@@ -53,7 +53,7 @@
         <Transition name="palette-popup">
           <div
             v-if="showColors"
-            p="2"
+            p="3"
             flex
             gap="2"
             shadow="xl"

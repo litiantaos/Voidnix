@@ -130,7 +130,10 @@ WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只�
 
 **描边**：统一 1px。`border` solid 用于面板边缘，`border-black/5` 用于分隔线；主窗口面板边缘高光环走 `mica-ring`。
 
-**间距**：遵循 4px 网格（UnoCSS 预设 `p-1`=4px / `p-2`=8px / `p-3`=12px / `p-5`=20px / `gap-2`=8px）。
+**间距**：遵循 4px 网格。
+
+- **容器边距**统一 `p-3`（12px）：搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、dialog、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`；栏底 gap 与 chrome 常量同步 12px
+- **元素间距**三档：`gap-1.5`（6px，控件内紧凑）/ `gap-2`（8px，默认行内行间）/ `gap-3`（12px，区块级）。禁止 `gap-1` / `2.5` / `4`；`gap-0.5` 仅限柱状条/分屏格子等微密 UI
 
 ## Shortcuts
 

@@ -52,7 +52,7 @@
                 ml="2"
                 flex
                 items="center"
-                gap="2.5"
+                gap="3"
                 ><span tabular="nums" whitespace="nowrap">↑ {{ fmtTrafficRate(traffic.up) }}</span>
                 <span tabular="nums" whitespace="nowrap"
                   >↓ {{ fmtTrafficRate(traffic.down) }}</span
@@ -155,7 +155,7 @@
       @confirm="saveSub"
       @cancel="closeEditModal"
     >
-      <div flex="~ col" gap="4">
+      <div flex="~ col" gap="3">
         <div class="form-field">
           <span class="form-label">订阅名称</span>
           <BaseInput v-model="editForm.name" placeholder="默认为订阅链接域名" />

@@ -14,7 +14,7 @@
           <span shrink="0" w="28" truncate text="secondary" :title="chainText(item)">{{
             chainText(item)
           }}</span>
-          <div shrink="0" w="28" flex justify="end" items="center" gap="2.5" text="muted">
+          <div shrink="0" w="28" flex justify="end" items="center" gap="3" text="muted">
             <span tabular="nums" whitespace="nowrap">↑ {{ fmtTraffic(item.upload) }}</span>
             <span tabular="nums" whitespace="nowrap">↓ {{ fmtTraffic(item.download) }}</span>
           </div>

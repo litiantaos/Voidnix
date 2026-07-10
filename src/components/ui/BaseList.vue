@@ -1,5 +1,5 @@
 <template>
-  <div p="x-2" pb="2" flex="~ col" gap="1" role="listbox" aria-label="搜索结果">
+  <div p="x-3" pb="3" flex="~ col" gap="1.5" role="listbox" aria-label="搜索结果">
     <template v-for="(item, i) in items" :key="itemKey(item, i)">
       <div
         v-if="

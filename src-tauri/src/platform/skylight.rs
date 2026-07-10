@@ -33,6 +33,57 @@ extern "C" {
     // Add 是叠加 + 适用任何 Space 类型（包括全屏）。
     fn SLSAddWindowsToSpaces(cid: i32, windows: CFArrayRef, spaces: CFArrayRef);
     fn SLSRemoveWindowsFromSpaces(cid: i32, windows: CFArrayRef, spaces: CFArrayRef);
+
+    // 仅 EventShape（NUIKit/CGSInternal）。禁止 CGSSetWindowShape：会改窗口几何，
+    // 曾导致主窗被钉到屏幕原点。macOS 26 停下层 hover 仍靠 show 时 activate_app。
+    fn CGSNewRegionWithRect(rect: *const CgRect, region: *mut *mut c_void) -> i32;
+    fn CGSReleaseRegion(region: *mut c_void);
+    fn CGSSetWindowEventShape(cid: i32, wid: u32, region: *mut c_void) -> i32;
+}
+
+/// C 布局 CGRect = { CGPoint origin; CGSize size }（四个 CGFloat 顺序 x,y,w,h）。
+#[repr(C)]
+struct CgRect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+/// 把窗口的鼠标 hit-test 区域设为完整 frame 矩形（不改窗口位置/尺寸）。
+/// frame 变化后需重调（show / set_main_frame）。
+pub fn set_full_event_shape(window_number: i64, width: f64, height: f64) {
+    if window_number <= 0 || width <= 0.0 || height <= 0.0 {
+        return;
+    }
+    let rect = CgRect {
+        x: 0.0,
+        y: 0.0,
+        width,
+        height,
+    };
+    let cid = unsafe { SLSMainConnectionID() };
+    let mut region: *mut c_void = std::ptr::null_mut();
+    // SAFETY: SkyLight 私有 API；rect 栈上有效；region 由 CGSNewRegionWithRect 写出。
+    let err = unsafe { CGSNewRegionWithRect(&rect, &mut region) };
+    if err != 0 || region.is_null() {
+        return;
+    }
+    let _ = unsafe { CGSSetWindowEventShape(cid, window_number as u32, region) };
+    unsafe { CGSReleaseRegion(region) };
+}
+
+/// 从 NSWindow 取 windowNumber + frame 尺寸并设置全窗 event shape。
+pub fn set_full_event_shape_for_nswindow(ns_window: &objc2_app_kit::NSWindow) {
+    use objc2_foundation::NSRect;
+    let window_number: objc2_foundation::NSInteger =
+        unsafe { objc2::msg_send![ns_window, windowNumber] };
+    let frame: NSRect = unsafe { objc2::msg_send![ns_window, frame] };
+    set_full_event_shape(
+        window_number as i64,
+        frame.size.width,
+        frame.size.height,
+    );
 }
 
 /// 把指定 windowNumber 的窗口附加到当前 active Space。

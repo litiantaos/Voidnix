@@ -105,7 +105,7 @@ const { floatingStyles, dropUp } = useFloating(selectRef, dropdownRef, {
   isOpen,
   placement: 'bottom-start',
   offset: 4,
-  padding: 20,
+  padding: 12,
   matchWidth: true,
 })
 

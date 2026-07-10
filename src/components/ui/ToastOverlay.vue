@@ -3,7 +3,7 @@
     <TransitionGroup
       :key="overlayKey"
       tag="div"
-      class="flex flex-col gap-2 pointer-events-none bottom-2 right-2 fixed z-50"
+      class="flex flex-col gap-2 pointer-events-none bottom-3 right-3 fixed z-50"
       enter-active-class="transition duration-150 ease-out"
       enter-from-class="opacity-0 translate-y-2 scale-95"
       enter-to-class="opacity-100 translate-y-0 scale-100"
