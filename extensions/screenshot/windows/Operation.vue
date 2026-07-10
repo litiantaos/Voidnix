@@ -14,34 +14,30 @@
     @keydown="onKeyDown"
     tabindex="0"
   >
-    <!-- 遮罩层 -->
-    <template v-if="hasSelection">
-      <div bg="black/45" pointer-events="none" fixed :style="maskTop" />
-      <div bg="black/45" pointer-events="none" fixed :style="maskBottom" />
-      <div bg="black/45" pointer-events="none" fixed :style="maskLeft" />
-      <div bg="black/45" pointer-events="none" fixed :style="maskRight" />
-    </template>
-    <template v-else-if="phase === 'select' && hoverWindow">
-      <div bg="black/45" pointer-events="none" fixed :style="hoverMaskTop" />
-      <div bg="black/45" pointer-events="none" fixed :style="hoverMaskBottom" />
-      <div bg="black/45" pointer-events="none" fixed :style="hoverMaskLeft" />
-      <div bg="black/45" pointer-events="none" fixed :style="hoverMaskRight" />
-    </template>
-    <div v-else bg="black/45" pointer-events="none" inset="0" fixed />
-
-    <!-- 十字线：1px 线 transform 居中在坐标点，消除线右/下偏 0.5px。
-         select 阶段双轴；resize 边中控制点（n/s/e/w）仅显与边平齐的单轴，角控制点双轴 -->
-    <div
-      v-if="showCrossH"
-      bg="accent/80"
-      class="overlay-abs"
-      style="left: 0; right: 0; height: 1px; top: var(--cross-y); transform: translateY(-0.5px)"
-    />
-    <div
-      v-if="showCrossV"
-      bg="accent/80"
-      class="overlay-abs"
-      style="top: 0; bottom: 0; width: 1px; left: var(--cross-x); transform: translateX(-0.5px)"
+    <SelectionChrome
+      :phase="phase"
+      :has-selection="hasSelection"
+      :hover-window="hoverWindow"
+      :sel="sel"
+      :show-cross-h="showCrossH"
+      :show-cross-v="showCrossV"
+      :mask-top="maskTop"
+      :mask-bottom="maskBottom"
+      :mask-left="maskLeft"
+      :mask-right="maskRight"
+      :hover-mask-top="hoverMaskTop"
+      :hover-mask-bottom="hoverMaskBottom"
+      :hover-mask-left="hoverMaskLeft"
+      :hover-mask-right="hoverMaskRight"
+      :selection-style="selectionStyle"
+      :edge-outline="edgeOutline"
+      :hover-window-style="hoverWindowStyle"
+      :sel-size-style="selSizeStyle"
+      :hover-size-style="hoverSizeStyle"
+      :handles="handles"
+      @handle-enter="onHandleEnter"
+      @handle-leave="hoveredHandle = null"
+      @handle-resize="onSelResizeStart"
     />
 
     <!-- 放大镜 -->
@@ -105,62 +101,6 @@
         <div>{{ pickedColor }}</div>
       </div>
     </div>
-
-    <!-- 窗口高亮 -->
-    <template v-if="!hasSelection && phase === 'select' && hoverWindow">
-      <div class="overlay-abs" :style="[hoverWindowStyle, edgeOutline]">
-        <div
-          text="xs primary"
-          p="x-1.5 y-0.5"
-          rounded
-          bg="surface"
-          class="overlay-abs"
-          select="none"
-          shadow
-          :style="hoverSizeStyle"
-        >
-          {{ Math.round(hoverWindow.w) }}×{{ Math.round(hoverWindow.h) }}
-        </div>
-      </div>
-    </template>
-
-    <!-- 选区边框 + 8个控制点 -->
-    <template v-if="hasSelection && phase !== 'scroll'">
-      <div class="overlay-abs" :style="[selectionStyle, edgeOutline]">
-        <div
-          text="xs primary"
-          p="x-1.5 y-0.5"
-          rounded
-          bg="surface"
-          class="overlay-abs"
-          select="none"
-          shadow
-          :style="selSizeStyle"
-        >
-          {{ Math.round(sel.w) }}×{{ Math.round(sel.h) }}
-        </div>
-        <div
-          v-for="h in handles"
-          :key="h.id"
-          border="~ accent"
-          rounded="sm"
-          bg="white"
-          h="2"
-          w="2"
-          pointer-events="auto"
-          absolute
-          :style="h.style"
-          @mouseenter="onHandleEnter(h.id)"
-          @mouseleave="hoveredHandle = null"
-          @mousedown.stop="onSelResizeStart(h.id, $event)"
-        />
-      </div>
-    </template>
-
-    <!-- 滚动截屏阶段：仅显示选区边框 -->
-    <template v-if="hasSelection && phase === 'scroll'">
-      <div class="overlay-abs" :style="[selectionStyle, edgeOutline]" />
-    </template>
 
     <!-- 标注 canvas -->
     <canvas
@@ -286,14 +226,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
-import { CMD } from '@/commands'
+import { ref, computed, nextTick } from 'vue'
 import AnnotationPalette from './AnnotationPalette.vue'
 import ScrollPreview from './ScrollPreview.vue'
+import SelectionChrome from './SelectionChrome.vue'
+import ShapeHandlesOverlay from './ShapeHandlesOverlay.vue'
 import type { ScreenshotData, Phase } from '../composables/useTypes'
 import { MAGNIFIER_SIZE, handleAbsolutePos } from '../composables/useTypes'
-import ShapeHandlesOverlay from './ShapeHandlesOverlay.vue'
 import { useSelection } from '../composables/useSelection'
 import { useAnnotation } from '../composables/useAnnotation'
 import { useTextInput } from '../composables/useTextInput'
@@ -304,8 +243,8 @@ import { useMaskStyles } from '../composables/useMaskStyles'
 import { useScreenshotActions } from '../composables/useScreenshotActions'
 import { useOverlayEvents } from '../composables/useOverlayEvents'
 import { useTextDetection } from '../composables/useTextDetection'
-import { useScrollCapture } from '../composables/useScrollCapture'
-import { wrapText } from '../composables/wrapText'
+import { useOperationScroll } from '../composables/useOperationScroll'
+import { useOperationLifecycle } from '../composables/useOperationLifecycle'
 
 const props = defineProps<{ initialScreenshot: ScreenshotData }>()
 const emit = defineEmits<{ close: [noRestoreFocus?: boolean] }>()
@@ -470,14 +409,29 @@ const events = useOverlayEvents({
   doOcr: actions.doOcr,
   doPin: actions.doPin,
   doCancel: actions.doCancel,
-  onScrollCancel: () => onScrollCancelRef(),
-  onScrollFinish: () => onScrollFinishRef(),
+  onScrollCancel: () => scroll.onScrollCancel(),
+  onScrollFinish: () => scroll.onScrollFinish(),
   rootEl,
 })
 
-// 转发：events 在 onScrollCancel/Finish 之前构造，用 ref 解决前向引用。
-let onScrollCancelRef: () => Promise<void> | void = () => {}
-let onScrollFinishRef: () => Promise<void> | void = () => {}
+// 滚动编排：须在 events 之后构造；events 通过闭包延迟调用 scroll 方法，无 TDZ
+const scroll = useOperationScroll({
+  dpr,
+  phase,
+  sel: selection.sel,
+  hasSelection: selection.hasSelection,
+  shapes: annotation.shapes,
+  selectedShapeIndex: annotation.selectedShapeIndex,
+  activeTool: annotation.activeTool,
+  isDrawing: annotation.isDrawing,
+  currentShape: annotation.currentShape,
+  rootEl,
+  reportToolbarRect: () => paletteRef.value?.reportToolbarRect(),
+  doScrollCopy: actions.doScrollCopy,
+  doScrollSave: actions.doScrollSave,
+  doCancel: actions.doCancel,
+})
+const { scrollCapture, onScrollStart, onScrollFinish, onScrollSave, onScrollCancel } = scroll
 
 // ── 从 composables 解构模板需要的属性和方法 ──────────────────
 const { sel, hasSelection, hoverWindow, selResizeHandle, startSelResize, applySelResize } =
@@ -565,67 +519,6 @@ function onHandleEnter(id: string) {
   nextTick(() => magnifier.updateMagnifier(x, y))
 }
 
-// ── 滚动截屏 ─────────────────────────────────────────────
-const scrollCapture = useScrollCapture({ dpr })
-
-async function onScrollStart() {
-  if (!hasSelection.value) return
-  // 进入滚动截屏阶段：清空已有标注（互斥关系）；选中态/绘制态全部复位
-  annotation.shapes.value = []
-  annotation.selectedShapeIndex.value = null
-  annotation.activeTool.value = null
-  annotation.isDrawing.value = false
-  annotation.currentShape.value = null
-  phase.value = 'scroll'
-  await scrollCapture.start(sel.value)
-  // 启动失败：回退到 annotate 阶段
-  if (scrollCapture.error.value) {
-    phase.value = 'annotate'
-    return
-  }
-  // session 已创建，主动上报工具栏矩形（mouse_monitor 据此排除穿透）
-  await nextTick()
-  paletteRef.value?.reportToolbarRect()
-  // 进入滚动模式后，根 div 必须保持可接收键盘事件以响应 Esc
-  // 但鼠标在选区内的 mousedown 由原生 setIgnoresMouseEvents 放行，不会触达此 div
-  nextTick(() => rootEl.value?.focus())
-}
-
-async function onScrollFinish() {
-  // 完成：finish_scroll_capture 拿到 dataURL → 默认复制到剪贴板
-  try {
-    const dataUrl = await scrollCapture.finish()
-    if (dataUrl) {
-      await actions.doScrollCopy(dataUrl)
-    } else {
-      doCancel()
-    }
-  } catch (err) {
-    console.error('[scroll] finish failed:', err)
-    doCancel()
-  }
-}
-onScrollFinishRef = onScrollFinish
-
-async function onScrollSave() {
-  try {
-    const dataUrl = await scrollCapture.finish()
-    if (dataUrl) {
-      await actions.doScrollSave(dataUrl)
-    } else {
-      doCancel()
-    }
-  } catch (err) {
-    console.error('[scroll] save failed:', err)
-    doCancel()
-  }
-}
-
-async function onScrollCancel() {
-  await scrollCapture.cancel()
-  doCancel()
-}
-onScrollCancelRef = onScrollCancel
 // ── 模糊元素选中边框样式（DOM 层，与控制点天然同步） ────────
 const blurFrameStyle = computed(() => {
   const s = effectiveShape.value
@@ -642,149 +535,30 @@ const blurFrameStyle = computed(() => {
   }
 })
 
-// ── 生命周期 ──────────────────────────────────────────────
-function refocus() {
-  rootEl.value?.focus()
-}
-
-function setCrossPosition(cx: number, cy: number) {
-  if (rootEl.value) {
-    rootEl.value.style.setProperty('--cross-x', `${cx}px`)
-    rootEl.value.style.setProperty('--cross-y', `${cy}px`)
-  }
-  crossX.value = cx
-  crossY.value = cy
-  if (phase.value === 'select') magnifier.updateMagnifier(cx, cy)
-}
-;(
-  window as unknown as { __setScreenshotCross?: (x: number, y: number) => void }
-).__setScreenshotCross = setCrossPosition
-
-onMounted(() => {
-  // @mousedown 等监听已挂在 DOM 上，通知 Rust 解锁窗口鼠标事件并启动淡入。
-  // 早于这一刻的点击会因 ignoresMouseEvents=true 击穿到底下应用，不会被吞。
-  invoke(CMD.screenshotOverlayReady).catch(() => {})
-
-  if (rootEl.value) {
-    rootEl.value.style.setProperty('--cross-x', `${props.initialScreenshot.mouse_x}px`)
-    rootEl.value.style.setProperty('--cross-y', `${props.initialScreenshot.mouse_y}px`)
-  }
-  selection.hoverWindow.value = selection.findWindowAt(
-    props.initialScreenshot.mouse_x,
-    props.initialScreenshot.mouse_y,
-  )
-  nextTick(() => {
-    magnifier.updateMagnifier(props.initialScreenshot.mouse_x, props.initialScreenshot.mouse_y)
-    refocus()
-  })
-  magnifier.loadPickerImage()
-  window.addEventListener('focus', refocus)
-  // ESC 兜底：用户点过画布/遮罩后焦点可能漂移到 body，根 div 的 @keydown 不再收
-  // 到 ESC。挂在 window 上确保任何阶段都能退出。其他键仍由根 div 处理。
-  window.addEventListener('keydown', onWindowKeyDown)
-})
-
-function onWindowKeyDown(e: KeyboardEvent) {
-  if (e.key !== 'Escape') return
-  // 已被根 div 的 @keydown 处理过的不再重复（事件冒泡到 window 时根 div 已处理）；
-  // 这里只在根 div 没接到时兜底——通过 activeElement 判断。
-  if (document.activeElement === rootEl.value) return
-  events.onKeyDown(e)
-}
-
-onUnmounted(() => {
-  window.removeEventListener('focus', refocus)
-  window.removeEventListener('keydown', onWindowKeyDown)
-  delete (window as unknown as { __setScreenshotCross?: unknown }).__setScreenshotCross
-})
-
-watch(annotateCanvas, () => {
-  if (annotateCanvas.value) drawing.redraw()
-})
-
-watch(annotation.annotBlurAmount, (v) => {
-  const s = annotation.selectedShape.value
-  if (s && s.type === 'blur') {
-    s.blurAmount = v
-    drawing.redraw()
-  }
-})
-
-// 调字号：若当前选中是 text，同步更新字号并按新字号重新换行。
-// 若正在编辑该形状，textarea 高度需要按新字号重算。
-watch(annotation.annotFontSize, (v) => {
-  const s = annotation.selectedShape.value
-  if (s && s.type === 'text') {
-    s.fontSize = v
-    if (s.text) {
-      const font = `${v}px -apple-system, sans-serif`
-      s.textLines = wrapText(s.text, s.textWidth ?? 160, font)
-    }
-    drawing.redraw()
-    const ti = textInputComposable.textInput.value
-    if (ti.visible && ti.editingIndex === annotation.selectedShapeIndex.value) {
-      nextTick(() => textInputComposable.autoResizeTextInput())
-    }
-  }
-})
-
-// 调线宽：若当前选中是 rect/line/arrow，同步更新。
-watch(annotation.annotLineWidth, (v) => {
-  const s = annotation.selectedShape.value
-  if (s && (s.type === 'rect' || s.type === 'line' || s.type === 'arrow')) {
-    s.lineWidth = v
-    drawing.redraw()
-  }
-})
-
-watch(annotation.selectedShapeIndex, (idx) => {
-  if (idx === null) return
-  const s = annotation.shapes.value[idx]
-  if (!s) return
-  // 选中 blur：同步 blur 参数
-  if (s.type === 'blur') {
-    if (typeof s.blurAmount === 'number') annotation.annotBlurAmount.value = s.blurAmount
-    const mode = s.blurMode ?? 'selection'
-    annotation.annotBlurMode.value = mode
-    if (mode === 'text') textDetection.detect()
-  }
-  // 选中 text：同步字号
-  if (s.type === 'text' && typeof s.fontSize === 'number') {
-    annotation.annotFontSize.value = s.fontSize
-  }
-  // 选中 rect/line/arrow：同步线宽
-  if (s.type === 'rect' || s.type === 'line' || s.type === 'arrow') {
-    annotation.annotLineWidth.value = s.lineWidth
-  }
-})
-
-// 模糊模式切换：更新当前选中 shape；切到文本模式时按需触发检测。
-watch(annotation.annotBlurMode, (mode) => {
-  const s = annotation.selectedShape.value
-  if (s && s.type === 'blur') {
-    s.blurMode = mode
-    drawing.redraw()
-  }
-  if (mode === 'text') textDetection.detect()
-})
-
-// 选中 blur 工具且为文本模式时，预热检测（用户开始画框前完成）。
-watch(annotation.activeTool, (tool) => {
-  if (tool === 'blur' && annotation.annotBlurMode.value === 'text') {
-    textDetection.detect()
-  }
-})
-
-// 进入标注阶段即预热文本检测，把 Swift 冷启动放在「框选完成 → 选择工具 → 拖动」
-// 这段空闲里，避免用户第一次拉文本模糊选区时看到延迟。
-watch(
+useOperationLifecycle({
+  initialScreenshot: props.initialScreenshot,
+  rootEl,
+  annotateCanvas,
   phase,
-  (p) => {
-    if (p === 'annotate') textDetection.detect()
-  },
-  { immediate: true },
-)
-
-// 文本区域更新后，重绘画布以应用最新结果。
-watch(textDetection.textRegions, () => drawing.redraw(), { deep: true })
+  crossX,
+  crossY,
+  hoverWindow: selection.hoverWindow,
+  findWindowAt: selection.findWindowAt,
+  updateMagnifier: magnifier.updateMagnifier,
+  loadPickerImage: magnifier.loadPickerImage,
+  onKeyDown: events.onKeyDown,
+  redraw: drawing.redraw,
+  selectedShape: annotation.selectedShape,
+  shapes: annotation.shapes,
+  selectedShapeIndex: annotation.selectedShapeIndex,
+  annotBlurAmount: annotation.annotBlurAmount,
+  annotFontSize: annotation.annotFontSize,
+  annotLineWidth: annotation.annotLineWidth,
+  annotBlurMode: annotation.annotBlurMode,
+  activeTool: annotation.activeTool,
+  textInput: textInputComposable.textInput,
+  autoResizeTextInput: textInputComposable.autoResizeTextInput,
+  detectText: textDetection.detect,
+  textRegions: textDetection.textRegions,
+})
 </script>

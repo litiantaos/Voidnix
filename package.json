@@ -13,11 +13,12 @@
     "lint:check": "prettier --check . && eslint .",
     "typecheck": "vue-tsc --noEmit",
     "sync:extensions": "bun run scripts/sync-extensions.ts",
-    "check:drift": "bun run check:extensions && bun run check:commands && bun run check:agent-bounds && bun run check:wm-bounds",
+    "check:drift": "bun run check:extensions && bun run check:commands && bun run check:agent-bounds && bun run check:wm-bounds && bun run check:extension-orders",
     "check:extensions": "bun run scripts/sync-extensions.ts -- --check",
     "check:commands": "bun run scripts/check-commands.ts",
     "check:agent-bounds": "bun run scripts/check-agent-bounds.ts",
     "check:wm-bounds": "bun run scripts/check-wm-bounds.ts",
+    "check:extension-orders": "bun run scripts/check-extension-orders.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"

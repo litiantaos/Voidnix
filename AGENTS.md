@@ -26,11 +26,12 @@ bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
 bun run lint:check           # 只读校验（CI 用，不写）
 bun run typecheck            # vue-tsc 严格类型检查
 bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions.rs）
-bun run check:drift          # 漂移校验聚合（= check:extensions + commands + agent-bounds + wm-bounds）
+bun run check:drift          # 漂移校验聚合（extensions + commands + agent-bounds + wm-bounds + extension-orders）
 bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移）
 bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
 bun run check:agent-bounds   # CI 校验（agent 资源上限 policy.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:wm-bounds      # CI 校验（window-manager mod.rs ↔ config.ts BOUNDS 双向一致）
+bun run check:extension-orders # CI 校验（非 hidden 扩展 meta.order 唯一）
 ```
 
 Rust 端代码质量：
@@ -66,7 +67,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 2. Rust `cargo fmt --check`
 3. `bun run typecheck`（vue-tsc 严格）
 4. Rust `cargo clippy --lib -- -D warnings`
-5. 漂移校验四件套：`check:extensions` / `check:commands` / `check:agent-bounds` / `check:wm-bounds`
+5. 漂移校验：`check:extensions` / `check:commands` / `check:agent-bounds` / `check:wm-bounds` / `check:extension-orders`
 6. 单测：`bun run test`（Vitest）+ `cargo test --lib`
 7. E2E：`bun run test:e2e`（Playwright，含浏览器安装）
 
