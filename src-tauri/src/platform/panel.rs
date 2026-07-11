@@ -64,10 +64,11 @@ fn ensure_panel_class() -> *mut c_void {
 
 /// 把 NSWindow 替换为自定义 NSPanel 子类并打开 NonactivatingPanel 属性。
 ///
-/// NonactivatingPanel：点击 / makeKey **不会**自动 activate NSApp（避免误抢）。
-/// 主窗 show 路径须在 makeKey 后显式 `focus::activate_app()`，否则 NSApp 保持
-/// inactive，macOS 26 会把 mouseMoved/hover 继续派给原前台 app（整窗穿透）。
-/// hide 时 `restore_captured` 交还焦点。LSUIElement 仍无 Dock 图标。
+/// 这是「轻浮层」体感的基底：panel makeKey 时不抢 NSApp active，
+/// 原应用菜单栏 / 聚焦视图 / Dock 不动。但 panel 仍会偷走系统级 key window /
+/// first responder —— 关闭时由调用方（runtime::window::hide_main）走
+/// `restore_captured`（deactivate_app + activate_app_by_pid）把焦点还给原应用
+/// 窗口。两步缺一不可。
 pub fn convert_to_panel(ns_window: *mut AnyObject) {
     if ns_window.is_null() {
         return;

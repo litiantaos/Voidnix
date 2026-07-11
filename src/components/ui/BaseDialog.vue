@@ -34,7 +34,7 @@
           :aria-describedby="message ? descId : undefined"
           tabindex="-1"
         >
-          <div text="sm primary" font="bold" p="3" select="none">
+          <div text="sm primary" font="bold" p="4" select="none">
             <slot name="header">
               <h3 :id="titleId">
                 {{ title }}
@@ -42,7 +42,7 @@
             </slot>
           </div>
 
-          <div class="hide-scrollbar" p="x-3" flex="1" overflow="auto">
+          <div class="hide-scrollbar" p="x-4" flex="1" overflow="auto">
             <slot>
               <p
                 v-if="message"
@@ -58,7 +58,7 @@
           </div>
 
           <slot v-if="resolvedShowFooter" name="footer">
-            <div p="3" flex gap="2" justify="between">
+            <div p="4" flex gap="2" justify="between">
               <div>
                 <slot name="footer-start" />
               </div>

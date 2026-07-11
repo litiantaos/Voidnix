@@ -15,7 +15,8 @@
       <p text="xs muted">日常问题、工作任务、搜索资料、跑命令...</p>
     </div>
 
-    <div v-else flex="~ 1 col" gap="3" min-h="0" overflow="y-auto" p="3" class="hide-scrollbar">
+    <!-- 顶距交给 CHROME_HEIGHT，与列表 px-3 pb-3 同构，勿 p-t 叠双层 -->
+    <div v-else flex="~ 1 col" gap="3" min-h="0" overflow="y-auto" p="x-3 b-3" class="hide-scrollbar">
       <template v-for="msg in displayMessages" :key="msg.id">
         <!-- 用户消息 -->
         <div
@@ -115,6 +116,7 @@
       <BaseTextarea
         ref="textareaRef"
         v-model="inputText"
+        rounded="panel"
         :placeholder="agent.isGenerating.value ? '执行中，Ctrl+C 中止' : '聊点什么...'"
         @submit="handleSubmit"
       />

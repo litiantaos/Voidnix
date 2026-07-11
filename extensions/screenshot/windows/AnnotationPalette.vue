@@ -1,14 +1,14 @@
 <template>
   <div
     ref="rootEl"
-    p="3"
+    p="1.5"
     flex
-    gap="2"
+    gap="1.5"
     shadow="xl"
     items="center"
     absolute
     z="50"
-    class="acrylic-panel"
+    class="mica-panel"
     :style="style"
     @mousedown.stop
   >
@@ -53,15 +53,15 @@
         <Transition name="palette-popup">
           <div
             v-if="showColors"
-            p="3"
+            p="1.5"
             flex
-            gap="2"
+            gap="1.5"
             shadow="xl"
             items="center"
             left="1/2"
             absolute
             z="100"
-            class="acrylic-panel -translate-x-1/2"
+            class="mica-panel -translate-x-1/2"
             :class="popDir === 'up' ? 'bottom-full mb-4' : 'top-full mt-4'"
             @mousedown.stop
             @click.stop

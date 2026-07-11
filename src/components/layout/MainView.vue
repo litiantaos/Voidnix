@@ -12,7 +12,7 @@
     />
     <!-- chrome 渐隐遮罩：材质抽离为 .chrome-fade（theme.css），高度走 CSS 变量 -->
     <div class="chrome-fade" :style="chromeFadeStyle" aria-hidden="true" />
-    <!-- 搜索栏：acrylic-bar = acrylic + glass-ring + radius-panel -->
+    <!-- 搜索栏：acrylic-bar = acrylic + glass-ring + radius-panel + border -->
     <div
       ref="searchBarRef"
       px="3"

@@ -40,6 +40,8 @@ export const LIMITS = {
 const SEARCH_BAR_TOP = 12 // top-3
 const SEARCH_BAR_HEIGHT = 52 // h-13
 const SEARCH_BAR_GAP = 12 // 栏底与内容间距（与全局 p-3 一致）
+/** 内容区内边距（与全局 p-3 / 列表 px-3 pb-3 一致；scroll-padding-bottom / 选中项贴边对齐共用） */
+const CONTENT_INSET = 12
 /** chrome 渐隐遮罩伸入内容的尾部长（视觉软边，不计入 paddingTop） */
 const CHROME_FADE_EXTRA = 24
 export const WINDOW = {
@@ -48,6 +50,7 @@ export const WINDOW = {
   SEARCH_BAR_TOP,
   SEARCH_BAR_HEIGHT,
   SEARCH_BAR_GAP,
+  CONTENT_INSET,
   CHROME_FADE_EXTRA,
   /** 悬浮搜索栏占用高 = top + height + gap；scrollContainer paddingTop / scroll-padding-top / auto 高度共用 */
   CHROME_HEIGHT: SEARCH_BAR_TOP + SEARCH_BAR_HEIGHT + SEARCH_BAR_GAP,

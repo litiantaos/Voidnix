@@ -35,7 +35,8 @@ extern "C" {
     fn SLSRemoveWindowsFromSpaces(cid: i32, windows: CFArrayRef, spaces: CFArrayRef);
 
     // 仅 EventShape（NUIKit/CGSInternal）。禁止 CGSSetWindowShape：会改窗口几何，
-    // 曾导致主窗被钉到屏幕原点。macOS 26 停下层 hover 仍靠 show 时 activate_app。
+    // 曾导致主窗被钉到屏幕原点。EventShape 保证本窗 hit-test 完整；不 activate
+    // 时下层 app 仍可能收 tracking（产品取舍：不抢 active 优先于停 hover）。
     fn CGSNewRegionWithRect(rect: *const CgRect, region: *mut *mut c_void) -> i32;
     fn CGSReleaseRegion(region: *mut c_void);
     fn CGSSetWindowEventShape(cid: i32, wid: u32, region: *mut c_void) -> i32;

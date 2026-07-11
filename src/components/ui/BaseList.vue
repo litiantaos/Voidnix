@@ -254,9 +254,9 @@ function findScrollContainer(el: HTMLElement): HTMLElement | null {
   return el.closest('.overflow-y-auto, .overflow-auto') as HTMLElement | null
 }
 
-/// 读 scroll-padding-top（ContentView 悬浮搜索栏 chrome 经此声明；无则 0）
-function scrollPaddingTop(container: HTMLElement): number {
-  const n = parseFloat(getComputedStyle(container).scrollPaddingTop)
+/// 读 scroll-padding-*（ContentView：top = chrome；bottom = CONTENT_INSET；无则 0）
+function scrollPadding(container: HTMLElement, edge: 'Top' | 'Bottom'): number {
+  const n = parseFloat(getComputedStyle(container)[`scrollPadding${edge}`])
   return Number.isFinite(n) ? n : 0
 }
 
@@ -279,14 +279,15 @@ watch(localIndex, async (index) => {
   const topElement =
     isFirstInGroup && el.previousElementSibling ? (el.previousElementSibling as HTMLElement) : el
 
-  const PADDING = 8
-  const topInset = scrollPaddingTop(container)
+  const topInset = scrollPadding(container, 'Top')
+  // bottom 无声明时回退 12（与列表 pb-3 / 全局 p-3 一致），避免贴底时下边距小于两侧
+  const bottomInset = scrollPadding(container, 'Bottom') || 12
   const elRectTop = topElement.getBoundingClientRect().top
   const elRectBottom = el.getBoundingClientRect().bottom
   const containerRect = container.getBoundingClientRect()
-  // 顶部可见区 = 容器顶 + chrome inset（悬浮搜索栏）+ 边距；底部仍以容器底为准
-  const visibleTop = containerRect.top + topInset + PADDING
-  const visibleBottom = containerRect.bottom - PADDING
+  // 顶部可见区 = 容器顶 + chrome；底部 = 容器底 − scroll-padding-bottom
+  const visibleTop = containerRect.top + topInset
+  const visibleBottom = containerRect.bottom - bottomInset
 
   if (elRectBottom > visibleBottom) {
     container.scrollTop += elRectBottom - visibleBottom
@@ -312,12 +313,14 @@ async function scrollIntoCenter(index: number) {
   if (!el) return
   const container = findScrollContainer(el)
   if (!container) return
-  const topInset = scrollPaddingTop(container)
+  const topInset = scrollPadding(container, 'Top')
+  const bottomInset = scrollPadding(container, 'Bottom') || 12
   const elRect = el.getBoundingClientRect()
   const containerRect = container.getBoundingClientRect()
-  // 在扣除 chrome 后的可视区内垂直居中
-  const visibleHeight = containerRect.height - topInset
-  const offset = elRect.top - (containerRect.top + topInset) + elRect.height / 2 - visibleHeight / 2
+  // 在扣除 chrome / 底边 inset 后的可视区内垂直居中
+  const visibleHeight = containerRect.height - topInset - bottomInset
+  const offset =
+    elRect.top - (containerRect.top + topInset) + elRect.height / 2 - visibleHeight / 2
   container.scrollTo({ top: container.scrollTop + offset, behavior: 'smooth' })
 }
 

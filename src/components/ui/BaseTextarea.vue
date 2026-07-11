@@ -39,6 +39,11 @@ interface Props {
   submitOnEnter?: boolean
   /** 是否随内容自动撑高（默认 true）。false 时由 rows 决定高度，超出滚动。 */
   autoResize?: boolean
+  /**
+   * 圆角档：ctrl（默认 8，表单内嵌）/ panel（12，与搜索栏/列表选中同级的主输入面）。
+   * 翻译 / Agent 等模块主输入用 panel。
+   */
+  rounded?: 'ctrl' | 'panel'
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -50,6 +55,7 @@ const props = withDefaults(defineProps<Props>(), {
   maxHeight: 120,
   submitOnEnter: true,
   autoResize: true,
+  rounded: 'ctrl',
 })
 
 const emit = defineEmits<{
@@ -77,7 +83,9 @@ const height = ref<string>()
 
 const rootClass = computed(() => [
   'ui-ctrl h-auto! text-sm! flex items-start gap-2 !px-0',
-  props.error ? 'border-red-400' : '',
+  // ui-ctrl 自带 radius-ctrl；panel 主输入面抬到与搜索栏/选中行同级
+  props.rounded === 'panel' ? '!radius-panel' : '',
+  props.error ? 'border border-red-400' : '',
   props.disabled ? 'ui-disabled' : '',
 ])
 
