@@ -7,8 +7,7 @@
 
 use objc2_app_kit::NSWindow;
 
-/// orderFrontRegardless + 浮层 level + 鼠标接管。
-/// 激活 NSApp 由 runtime::window::show_main 在 makeKey 后显式调用（见该处注释）。
+/// orderFrontRegardless + 浮层 level + 鼠标 hit-test 接管（不 activate NSApp）。
 pub fn bring_to_front(window: &tauri::WebviewWindow) {
     if let Ok(raw) = window.ns_window() {
         let raw = raw.cast::<NSWindow>();
@@ -122,9 +121,10 @@ pub fn animate_panel(
     }
 }
 
-/// Mica 材质底：NSVisualEffectView（material=Popover，blendingMode=BehindWindow）
+/// Mica 材质底：NSVisualEffectView（material=HeaderView，blendingMode=BehindWindow）
 /// 作为 contentView 最底层子视图（WKWebView 之下），系统 GPU 合成强实时高斯模糊，
-/// 通透染浅白透出壁纸。强制 aqua appearance 锁浅色（项目仅浅色色阶）。
+/// 再叠前端 `mica-tint` 白染，得到白色磨砂而非「纯模糊透壁纸」。
+/// 强制 aqua appearance 锁浅色（项目仅浅色色阶）。
 ///
 /// 同时配置：窗口本体透明（setOpaque:NO + clearColor）+ contentView 圆角裁剪（CALayer
 /// cornerRadius + masksToBounds，含 NSVisualEffectView）+ 子视图 layer 非透明（Tauri
@@ -133,7 +133,8 @@ pub fn animate_panel(
 ///
 /// corner_radius 经 contentView CALayer 裁剪：主窗口 20（单层，窗口＝面板圆角，无 padding）
 /// / snap-panel 12。
-/// 注：不用 UnderWindowBackground(21)（近不透明、静态染壁纸色）；不用 WindowBackground(12)
+/// 材质：HeaderView 比 Popover 更密、白染更重，花壁纸上色噪更少仍保留实时模糊。
+/// 不用 UnderWindowBackground(21)（近不透明、静态染壁纸色）；不用 WindowBackground(12)
 /// （Apple 定性 opaque，无模糊透出）。
 pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
     use objc2::{ClassType, MainThreadMarker, MainThreadOnly};
@@ -152,12 +153,15 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
         return;
     };
 
-    // 幂等守卫：contentView 已含 NSVisualEffectView 则跳过，防重复调用叠加材质层
+    // 幂等守卫：contentView 已含 NSVisualEffectView 则更新 material（配方迭代可热生效），
+    // 不重复叠加材质层
     unsafe {
         let ve_class = NSVisualEffectView::class();
         for sv in content_view.subviews().iter() {
             let is_kind: bool = objc2::msg_send![&*sv, isKindOfClass: ve_class];
             if is_kind {
+                let _: () =
+                    objc2::msg_send![&*sv, setMaterial: NSVisualEffectMaterial::HeaderView];
                 return;
             }
         }
@@ -194,7 +198,7 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
     let effect =
         NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), content_view.bounds());
     effect.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
-    effect.setMaterial(NSVisualEffectMaterial::Popover);
+    effect.setMaterial(NSVisualEffectMaterial::HeaderView);
     effect.setState(NSVisualEffectState::Active);
     // 锁浅色 appearance：避免跟随系统暗模式导致材质变暗与前端浅色色阶冲突
     if let Some(aqua) = NSAppearance::appearanceNamed(ns_string!("NSAppearanceNameAqua")) {

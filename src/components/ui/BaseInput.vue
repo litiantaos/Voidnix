@@ -4,7 +4,8 @@
     tabindex="0"
     :class="[
       'ui-ctrl flex items-center gap-2',
-      error ? 'border-red-400' : '',
+      rounded === 'panel' ? '!radius-panel' : '',
+      error ? 'border border-red-400' : '',
       disabled ? 'ui-disabled' : '',
     ]"
     @click="focus()"
@@ -40,6 +41,8 @@ interface Props {
   type?: 'text' | 'password' | 'email' | 'number'
   disabled?: boolean
   error?: boolean
+  /** 圆角档：ctrl（默认 8）/ panel（12，主输入面） */
+  rounded?: 'ctrl' | 'panel'
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -48,6 +51,7 @@ const props = withDefaults(defineProps<Props>(), {
   type: 'text',
   disabled: false,
   error: false,
+  rounded: 'ctrl',
 })
 
 const emit = defineEmits<{

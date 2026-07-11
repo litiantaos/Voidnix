@@ -46,31 +46,32 @@ Voidnix 自身的设计系统（仅浅色）。本文档是色值、材质、排
 
 ### Mica（窗口底材）
 
-通透实时磨砂玻璃，强高斯模糊透出壁纸、染浅白。主窗口 + snap-panel。
+白色磨砂玻璃：原生实时模糊 + 前端白染压色噪。主窗口 + snap-panel。目标是「白雾磨砂」而非「纯模糊透壁纸」（花壁纸上色相会脏）。
 
 **原生**（`platform/window.rs::apply_mica_material`，corner_radius 对齐圆角 token：主窗口 `20` = `radius-window` / snap-panel `12` = `radius-panel`）：
 
 - NSWindow `setOpaque:NO` + `clearColor`
-- contentView 圆角裁剪 + `NSVisualEffectView`（`Popover` + `behindWindow` + aqua 锁浅色）垫底
+- contentView 圆角裁剪 + `NSVisualEffectView`（`HeaderView` + `behindWindow` + aqua 锁浅色）垫底
 - 子视图 layer 非透明（否则盖住材质）
 
-材质选择：不用 `UnderWindowBackground`(21) / `WindowBackground`(12) / `HUDWindow`(13)；用 `Popover`(6)。
+材质选择：用 `HeaderView`(10)（比 `Popover` 更密、白底更重，仍实时模糊）。不用 `UnderWindowBackground`(21)（近不透明、静态染壁纸色）/ `WindowBackground`(12)（Apple 定性 opaque，无模糊透出）。
 
 **前端壳**（叠在原生材质之上）：
 
-- `mica-tint`：`bg-white/30` 薄白染
+- `mica-tint`：`bg-white/40` 窗级白染（/60 过粉墙；/30 花壁纸易脏；与截屏 `mica-panel` 分轨）
 - `mica-ring`：inset 高光环（顶 2px 受光 + 全周 1px 细环）
 - `mica-shell` = `mica-tint` + `mica-ring` + `radius-window` + `overflow-hidden`（主窗口根）
 - snap-panel 根：`mica-tint` + `radius-panel`（原生圆角 12，无主窗 inset 环以免双层）
+- `mica-panel` / `mica-bar`：`bg-white/90` + `backdrop-blur-xl` + 边框圆角——截屏工具条 / 贴图悬停条叠在花图上用；白染独立于窗级 `mica-tint`，避免 CSS blur 混成灰蒙；**禁止**浅透 `acrylic`
 
-### Acrylic（WebView 内磨砂，仅外框）
+### Acrylic（WebView 内磨砂，仅叠在已有 Mica 上的外框）
 
-WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只用于外壳**（搜索栏 / 浮层），内嵌元素禁止再叠半透明磨砂，否则与外壳糊成一片、可读性崩溃。
+WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只用于主窗搜索栏 / 下拉浮层**（底下已有窗级 Mica），内嵌禁止再叠半透明磨砂。
 
-- `acrylic`：`bg-white/70 backdrop-blur-2xl backdrop-saturate-150` —— 磨砂基底
+- `acrylic`：`bg-white/45 backdrop-blur-2xl backdrop-saturate-125` —— 磨砂基底（叠 mica 后仍透；勿回 /70 级实心）
 - `glass-ring`：inset 顶 2px 白高光
-- `acrylic-bar`：`acrylic` + `glass-ring` + `radius-panel` —— 搜索栏、工具条
-- `acrylic-panel` / `dropdown-panel`：浮层外壳
+- `acrylic-bar`：`acrylic` + `glass-ring` + `radius-panel` + `border border-black/10` —— 主窗搜索栏
+- `acrylic-panel` / `dropdown-panel`：主窗内下拉 / 动作浮层
 
 ### 内嵌实色填充（可读性）
 
@@ -80,7 +81,7 @@ WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只�
 - `fill-hover`：`bg-black/5` —— 列表选中 / hover
 - `fill-active`：`bg-black/8` —— 按压强调
 
-`ui-ctrl` = 尺寸 + `fill-ctrl` + `radius-ctrl`；`ui-active` = `fill-hover`（选中宜轻，忌 /8 过深）。
+`ui-ctrl` = 尺寸 + `fill-ctrl` + `radius-ctrl`（无默认边框）；`ui-active` = `fill-hover`（选中宜轻，忌 /8 过深）。按钮 outline 自带 `border-black/12`；error 态表单再加红边。
 
 未实现：exclusion blend、noise 纹理。
 
@@ -115,8 +116,8 @@ WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只�
 
 **圆角**（shortcut → `rounded-[var(--radius-*)]`，值源 `theme.css`；禁止散写 `rounded-md/lg/xl/[Npx]`；内小外大）：
 
-- `radius-panel`（12px）：外框——搜索栏、列表选中行、浮层、dialog、卡片
-- `radius-ctrl`（8px）：框内嵌元素——模块标签、图标井、按钮/输入、下拉行
+- `radius-panel`（12px）：外框——搜索栏、列表选中行、浮层、dialog、卡片；模块主输入面（翻译/Agent `BaseTextarea rounded="panel"`）
+- `radius-ctrl`（8px）：框内嵌元素——模块标签、图标井、按钮、设置表单输入（`rounded` 默认 ctrl）
 - `radius-window`（20px）：仅主窗口 contentView（原生 corner 20）；snap-panel 原生 12 对齐 panel
 - `rounded-full`：圆形小图标按钮、进度条、状态点（保留）
 
@@ -132,7 +133,7 @@ WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只�
 
 **间距**：遵循 4px 网格。
 
-- **容器边距**统一 `p-3`（12px）：搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、dialog、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`；栏底 gap 与 chrome 常量同步 12px
+- **容器边距**统一 `p-3`（12px）：搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`；栏底 gap 与 chrome 常量同步 12px。`BaseDialog` 标题/内容/页脚用 `p-4`（16px）
 - **元素间距**三档：`gap-1.5`（6px，控件内紧凑）/ `gap-2`（8px，默认行内行间）/ `gap-3`（12px，区块级）。禁止 `gap-1` / `2.5` / `4`；`gap-0.5` 仅限柱状条/分屏格子等微密 UI
 
 ## Shortcuts
@@ -141,7 +142,7 @@ WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只�
 
 **圆角**：`radius-ctrl` / `radius-panel` / `radius-window`
 
-**材质（外框）**：`mica-tint` / `mica-ring` / `mica-shell` · `acrylic` / `glass-ring` / `acrylic-bar` / `acrylic-panel` / `dropdown-panel`
+**材质（外框）**：`mica-tint` / `mica-ring` / `mica-shell` / `mica-panel` / `mica-bar` · `acrylic` / `glass-ring` / `acrylic-bar` / `acrylic-panel` / `dropdown-panel`
 
 **内嵌填充**：`fill-ctrl` / `fill-hover` / `fill-active`
 

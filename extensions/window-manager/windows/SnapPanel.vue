@@ -14,22 +14,22 @@
       <template v-if="group.nested">
         <div h="full" w="full" relative>
           <div
-            class="snap-zone radius-ctrl fill-ctrl"
+            class="snap-zone"
             inset="0"
             absolute
-            :class="{ 'ui-active snap-hover': hoveredLayout === group.zones[0].layout }"
+            :class="{ 'snap-hover': hoveredLayout === group.zones[0].layout }"
             :data-layout="group.zones[0].layout"
             @click="onZone(group.zones[0].layout)"
           />
           <div
-            class="snap-zone radius-ctrl fill-ctrl"
+            class="snap-zone snap-inset"
             h="40%"
             w="40%"
             left="30%"
             top="30%"
             absolute
             z="1"
-            :class="{ 'ui-active snap-hover': hoveredLayout === group.zones[1].layout }"
+            :class="{ 'snap-hover': hoveredLayout === group.zones[1].layout }"
             :data-layout="group.zones[1].layout"
             @click.stop="onZone(group.zones[1].layout)"
           />
@@ -40,9 +40,9 @@
           <template v-for="zone in group.zones" :key="zone.layout">
             <div
               v-if="zone.layout === 'custom'"
-              class="snap-zone custom-zone radius-ctrl fill-ctrl flex-center"
+              class="snap-zone custom-zone flex-center"
               text="muted"
-              :class="{ 'ui-active snap-hover': hoveredLayout === zone.layout }"
+              :class="{ 'snap-hover': hoveredLayout === zone.layout }"
               :data-layout="zone.layout"
               @click="onZone(zone.layout)"
             >
@@ -61,8 +61,8 @@
             </div>
             <div
               v-else
-              class="snap-zone radius-ctrl fill-ctrl"
-              :class="{ 'ui-active snap-hover': hoveredLayout === zone.layout }"
+              class="snap-zone"
+              :class="{ 'snap-hover': hoveredLayout === zone.layout }"
               :data-layout="zone.layout"
               @click="onZone(zone.layout)"
             />
@@ -176,7 +176,24 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* hover 材质走 ui-active；custom 图标色略加深 */
+/*
+ * 矩形仅三色：
+ * 1. 默认 fill-8
+ * 2. 悬浮 fill-18
+ * 3. 居中小框白（snap-inset 默认；悬浮仍走 2）
+ */
+.snap-zone {
+  /* 介于 Uno rounded(4) 与 radius-ctrl(8) 之间，微格略圆即可 */
+  border-radius: 6px;
+  background-color: var(--color-fill-8);
+}
+.snap-zone.snap-inset {
+  border-radius: 4px; /* 居中小框小一级 */
+  background-color: #fff;
+}
+.snap-zone.snap-hover {
+  background-color: var(--color-fill-18);
+}
 .snap-zone.custom-zone.snap-hover {
   color: var(--color-text-secondary);
 }

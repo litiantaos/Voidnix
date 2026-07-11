@@ -1,5 +1,6 @@
 <template>
-  <div p="3" flex="~ col" gap="3">
+  <!-- 顶距交给 CHROME_HEIGHT，与列表 px-3 pb-3 同构，勿 p-t 叠双层 -->
+  <div p="x-3 b-3" flex="~ col" gap="3">
     <BaseEmptyState
       v-if="error"
       icon="i-ri-error-warning-line"

@@ -2,10 +2,12 @@
   <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置翻译服务" />
 
   <div v-else flex="~ col">
-    <div p="3">
+    <!-- 顶距交给 scrollContainer CHROME_HEIGHT（已含栏底 gap），勿再 p-t 叠双层 -->
+    <div p="x-3 b-3">
       <BaseTextarea
         ref="textareaRef"
         v-model="inputText"
+        rounded="panel"
         placeholder="输入文本"
         :rows="1"
         :max-height="0"

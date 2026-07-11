@@ -39,16 +39,22 @@ export default defineConfig({
     'radius-panel': 'rounded-[var(--radius-panel)]',
     'radius-window': 'rounded-[var(--radius-window)]',
 
-    // ── 材质：Mica 窗口壳（叠在原生 NSVisualEffect 之上的前端染色 + 高光环）──
-    'mica-tint': 'bg-white/30',
+    // ── 材质：Mica 窗口壳（叠在原生 NSVisualEffect 之上的前端白染 + 高光环）──
+    // 白染 40%：/60 过粉墙；/30 花壁纸易脏。窗级与截屏浮层分轨，勿绑同一 opacity
+    'mica-tint': 'bg-white/40',
     'mica-ring':
       'shadow-[inset_0_2px_0_0_rgba(255,255,255,0.7),inset_0_0_0_1px_rgba(255,255,255,0.35)]',
     'mica-shell': 'mica-tint mica-ring radius-window overflow-hidden',
+    // 叠在花图上的浮层（截屏工具条等）：独立高白染，与窗级 mica-tint 解耦
+    'mica-panel':
+      'bg-white/90 backdrop-blur-xl glass-ring radius-panel border border-black/10 select-none',
+    'mica-bar': 'bg-white/90 backdrop-blur-xl glass-ring radius-panel border border-black/10',
 
-    // ── 材质：Acrylic 仅外框（搜索栏 / 浮层）；内嵌禁止再叠磨砂，否则糊成一片 ──
-    acrylic: 'bg-white/70 backdrop-blur-2xl backdrop-saturate-150',
-    'glass-ring': 'shadow-[inset_0_2px_0_0_rgba(255,255,255,0.6)]',
-    'acrylic-bar': 'acrylic glass-ring radius-panel',
+    // ── 材质：Acrylic 仅外框（主窗搜索栏 / 下拉，叠在已有 Mica 上）；内嵌禁止再叠磨砂 ──
+    // 白底 45%：叠在窗级 mica 上仍有层次与透感
+    acrylic: 'bg-white/45 backdrop-blur-2xl backdrop-saturate-125',
+    'glass-ring': 'shadow-[inset_0_2px_0_0_rgba(255,255,255,0.65)]',
+    'acrylic-bar': 'acrylic glass-ring radius-panel border border-black/10',
     'acrylic-panel': 'acrylic glass-ring radius-panel border border-black/10 select-none',
     'dropdown-panel': 'acrylic-panel p-1',
 

@@ -35,7 +35,7 @@
           h="7"
           shadow="lg"
           items="center"
-          class="acrylic-bar"
+          class="mica-bar"
           title="透明度"
         >
           <BaseSlider

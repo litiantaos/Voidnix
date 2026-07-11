@@ -12,6 +12,7 @@
       :style="{
         paddingTop: WINDOW.CHROME_HEIGHT + 'px',
         scrollPaddingTop: WINDOW.CHROME_HEIGHT + 'px',
+        scrollPaddingBottom: WINDOW.CONTENT_INSET + 'px',
       }"
     >
       <!-- contentRef：量真实内容自然高（auto 高度模式消费）。

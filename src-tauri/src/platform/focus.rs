@@ -5,10 +5,11 @@ use std::sync::atomic::{AtomicI32, Ordering};
 /// 前台 PID 唯一源：显示主窗口前记录原前台 app PID，隐藏时恢复。
 static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
 
-/// 将 Voidnix 设为 active app（收 mouseMoved / 停下层 app hover）。
+/// 将 Voidnix 设为 active app。
 ///
-/// NonactivatingPanel 本身不会因 makeKey 激活 NSApp；show 路径必须显式调用，
-/// 否则 macOS 26 上 mouse tracking 仍留在原前台 app，整窗穿透 hover。
+/// 主窗 show **故意不调用**（保持 NonactivatingPanel 轻浮层，避免原 app
+/// resign active 导致聚焦视图消失）。截图全屏 overlay 等需要独占鼠标/键盘
+/// 的场景才显式 activate。
 pub fn activate_app() {
     if let Some(mtm) = MainThreadMarker::new() {
         let app = NSApp(mtm);
