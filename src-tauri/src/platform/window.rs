@@ -131,8 +131,8 @@ pub fn animate_panel(
 /// transparent:true 只让 WKWebView canvas 透明，CALayer 默认仍 opaque 会盖住材质）。
 /// 鼠标穿透由 [`capture_mouse_events`] / SkyLight event shape 处理，不在此层。
 ///
-/// corner_radius 经 contentView CALayer 裁剪：主窗口 20（单层，窗口＝面板圆角，无 padding）
-/// / snap-panel 12。
+/// corner_radius 经 contentView CALayer 裁剪：主窗口 16（单层，窗口＝面板圆角，无 padding）
+/// / snap-panel 10。
 /// 材质：HeaderView 比 Popover 更密、白染更重，花壁纸上色噪更少仍保留实时模糊。
 /// 不用 UnderWindowBackground(21)（近不透明、静态染壁纸色）；不用 WindowBackground(12)
 /// （Apple 定性 opaque，无模糊透出）。
@@ -228,7 +228,7 @@ pub fn apply_main_window_style(window: &tauri::WebviewWindow) {
     let Some(ns_window) = (unsafe { raw.as_ref() }) else {
         return;
     };
-    apply_mica_material(ns_window, 20.0);
+    apply_mica_material(ns_window, 16.0);
     // 原生阴影：单层窗口（窗口＝面板），阴影提供浅色背景下的层次区分
     ns_window.setHasShadow(true);
     crate::platform::panel::convert_to_panel(raw.cast());

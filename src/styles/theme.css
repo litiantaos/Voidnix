@@ -17,10 +17,10 @@
   --color-smoke: rgba(0, 0, 0, 0.5);
   --font-sans: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-  /* 圆角：外框 12 / 内嵌控件 8 / 窗口壳 20（内小外大，匹配父子圆角） */
-  --radius-ctrl: 8px;
-  --radius-panel: 12px;
-  --radius-window: 20px;
+  /* 圆角：外框 10 / 内嵌控件 6 / 窗口壳 16（内小外大，匹配父子圆角） */
+  --radius-ctrl: 6px;
+  --radius-panel: 10px;
+  --radius-window: 16px;
 
   /* chrome 渐隐遮罩（MainView 等通过 --chrome-fade-height 覆盖高度） */
   --chrome-fade-height: 92px;

@@ -12,9 +12,10 @@
   >
     <div v-for="group in groups" :key="group.id" p="1" h="14" w="14">
       <template v-if="group.nested">
-        <div h="full" w="full" relative>
+        <div class="snap-nested" h="full" w="full" relative>
+          <!-- 全屏：中心镂空环；居中：cell×0.78 压小，同色 fill-8 -->
           <div
-            class="snap-zone"
+            class="snap-zone snap-ring"
             inset="0"
             absolute
             :class="{ 'snap-hover': hoveredLayout === group.zones[0].layout }"
@@ -23,10 +24,6 @@
           />
           <div
             class="snap-zone snap-inset"
-            h="40%"
-            w="40%"
-            left="30%"
-            top="30%"
             absolute
             z="1"
             :class="{ 'snap-hover': hoveredLayout === group.zones[1].layout }"
@@ -177,22 +174,67 @@ onUnmounted(() => {
 
 <style scoped>
 /*
- * 矩形仅三色：
- * 1. 默认 fill-8
- * 2. 悬浮 fill-18
- * 3. 居中小框白（snap-inset 默认；悬浮仍走 2）
+ * 矩形默认 fill-8 / 悬浮 fill-18（前三组一致）。
+ *
+ * 全屏/居中组：
+ * - 居中压小为 cell×0.78（给环与间隙留权重），同色 fill-8
+ * - 镂空 = 居中 + 两侧 gap
+ * - 外环 / 镂空内缘 = --snap-r；居中 r = 镂空 r − gap/2（略收，避免同 r 偏鼓、全减过方）
+ * - 环仅靠 ::after box-shadow 上色，本体背景必须始终透明（否则 hover 会填满间隙）
  */
+.snap-nested {
+  --snap-gap: 0.1875rem; /* 3px，略宽于 gap-0.5 */
+  --snap-cell: calc((100% - var(--snap-gap)) / 2);
+  --snap-center: calc(var(--snap-cell) * 0.78);
+  --snap-hollow: calc(var(--snap-center) + 2 * var(--snap-gap));
+  --snap-r: 4px;
+  /* 同绝对 r 在更小块上会显得更圆；居中略收半档 gap（全减过方） */
+  --snap-r-center: max(0px, calc(var(--snap-r) - var(--snap-gap) / 2));
+}
 .snap-zone {
-  /* 介于 Uno rounded(4) 与 radius-ctrl(8) 之间，微格略圆即可 */
-  border-radius: 6px;
+  /* 介于微圆与 radius-ctrl(6) 之间，微格略圆即可 */
+  border-radius: var(--snap-r, 4px);
   background-color: var(--color-fill-8);
 }
+/*
+ * 中心镂空环：伪元定位镂空区 + 扩散 box-shadow 填环；
+ * 内缘与外环同 --snap-r（对齐大矩形），居中用 --snap-r-center
+ */
+.snap-zone.snap-ring {
+  background-color: transparent;
+  border-radius: var(--snap-r);
+  overflow: hidden;
+}
+.snap-zone.snap-ring::after {
+  content: '';
+  position: absolute;
+  width: var(--snap-hollow);
+  height: var(--snap-hollow);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: var(--snap-r);
+  box-shadow: 0 0 0 999px var(--color-fill-8);
+  pointer-events: none;
+}
 .snap-zone.snap-inset {
-  border-radius: 4px; /* 居中小框小一级 */
-  background-color: #fff;
+  width: var(--snap-center);
+  height: var(--snap-center);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: var(--snap-r-center);
+  /* 默认色走 .snap-zone fill-8，与其它格一致 */
 }
 .snap-zone.snap-hover {
   background-color: var(--color-fill-18);
+}
+/* 环本体禁止铺底：间隙保持透空，仅 ::after 阴影变色 */
+.snap-zone.snap-ring.snap-hover {
+  background-color: transparent;
+}
+.snap-zone.snap-ring.snap-hover::after {
+  box-shadow: 0 0 0 999px var(--color-fill-18);
 }
 .snap-zone.custom-zone.snap-hover {
   color: var(--color-text-secondary);
