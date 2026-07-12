@@ -40,7 +40,7 @@ interface Props {
   /** 是否随内容自动撑高（默认 true）。false 时由 rows 决定高度，超出滚动。 */
   autoResize?: boolean
   /**
-   * 圆角档：ctrl（默认 8，表单内嵌）/ panel（12，与搜索栏/列表选中同级的主输入面）。
+   * 圆角档：ctrl（默认 6，表单内嵌）/ panel（10，与搜索栏/列表选中同级的主输入面）。
    * 翻译 / Agent 等模块主输入用 panel。
    */
   rounded?: 'ctrl' | 'panel'

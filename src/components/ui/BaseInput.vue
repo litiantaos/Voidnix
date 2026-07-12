@@ -41,7 +41,7 @@ interface Props {
   type?: 'text' | 'password' | 'email' | 'number'
   disabled?: boolean
   error?: boolean
-  /** 圆角档：ctrl（默认 8）/ panel（12，主输入面） */
+  /** 圆角档：ctrl（默认 6）/ panel（10，主输入面） */
   rounded?: 'ctrl' | 'panel'
 }
 

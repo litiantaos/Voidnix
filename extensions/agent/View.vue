@@ -310,13 +310,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   margin: 2px 0;
 }
 
-/* 行内代码（不含 pre 内）— 填充/描边走 theme token */
+/* 行内代码（不含 pre 内）— 填充/圆角走 theme token */
 .markdown-body :deep(:not(pre) > code) {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 12px;
   background: var(--color-fill-5);
   padding: 2px 4px;
-  border-radius: 4px;
+  border-radius: calc(var(--radius-ctrl) / 2);
   word-break: break-all;
 }
 
@@ -324,7 +324,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .markdown-body :deep(pre) {
   background: var(--color-fill-5);
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-ctrl);
   overflow-x: auto;
   font-size: 12px;
   line-height: 1.6;
@@ -342,7 +342,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .markdown-body :deep(blockquote) {
   background: var(--color-fill-5);
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-ctrl);
   overflow-x: auto;
   font-size: 12px;
   line-height: 1.6;
@@ -373,7 +373,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 .markdown-body :deep(img) {
   max-width: 100%;
-  border-radius: 6px;
+  border-radius: calc(var(--radius-ctrl) * 2 / 3);
 }
 .markdown-body :deep(strong) {
   font-weight: 600;

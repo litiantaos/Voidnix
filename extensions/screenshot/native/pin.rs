@@ -166,6 +166,7 @@ fn create_pin_webview(app: &tauri::AppHandle, spec: &PinWebviewSpec) -> Result<(
                     let layer: *mut objc2::runtime::AnyObject =
                         objc2::msg_send![&content_view, layer];
                     if !layer.is_null() {
+                        // 对齐 radius-panel（10）
                         let _: () = objc2::msg_send![layer, setCornerRadius: 10.0_f64];
                         let _: () = objc2::msg_send![layer, setMasksToBounds: true];
                     }

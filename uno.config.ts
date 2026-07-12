@@ -34,7 +34,7 @@ export default defineConfig({
   },
   shortcuts: {
     // ── 圆角语义（值源 theme.css --radius-*；Wind4 用 var() 任意值）──
-    // panel 12 = 外框（搜索栏 / 列表选中 / 浮层）；ctrl 8 = 框内嵌元素（标签 / 图标井 / 按钮）
+    // panel 10 = 外框（搜索栏 / 列表选中 / 浮层）；ctrl 6 = 框内嵌元素（标签 / 图标井 / 按钮）
     'radius-ctrl': 'rounded-[var(--radius-ctrl)]',
     'radius-panel': 'rounded-[var(--radius-panel)]',
     'radius-window': 'rounded-[var(--radius-window)]',

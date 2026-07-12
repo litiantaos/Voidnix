@@ -48,7 +48,7 @@ Voidnix 自身的设计系统（仅浅色）。本文档是色值、材质、排
 
 白色磨砂玻璃：原生实时模糊 + 前端白染压色噪。主窗口 + snap-panel。目标是「白雾磨砂」而非「纯模糊透壁纸」（花壁纸上色相会脏）。
 
-**原生**（`platform/window.rs::apply_mica_material`，corner_radius 对齐圆角 token：主窗口 `20` = `radius-window` / snap-panel `12` = `radius-panel`）：
+**原生**（`platform/window.rs::apply_mica_material`，corner_radius 对齐圆角 token：主窗口 `16` = `radius-window` / snap-panel `10` = `radius-panel`）：
 
 - NSWindow `setOpaque:NO` + `clearColor`
 - contentView 圆角裁剪 + `NSVisualEffectView`（`HeaderView` + `behindWindow` + aqua 锁浅色）垫底
@@ -61,7 +61,7 @@ Voidnix 自身的设计系统（仅浅色）。本文档是色值、材质、排
 - `mica-tint`：`bg-white/40` 窗级白染（/60 过粉墙；/30 花壁纸易脏；与截屏 `mica-panel` 分轨）
 - `mica-ring`：inset 高光环（顶 2px 受光 + 全周 1px 细环）
 - `mica-shell` = `mica-tint` + `mica-ring` + `radius-window` + `overflow-hidden`（主窗口根）
-- snap-panel 根：`mica-tint` + `radius-panel`（原生圆角 12，无主窗 inset 环以免双层）
+- snap-panel 根：`mica-tint` + `radius-panel`（原生圆角 10，无主窗 inset 环以免双层）
 - `mica-panel` / `mica-bar`：`bg-white/90` + `backdrop-blur-xl` + 边框圆角——截屏工具条 / 贴图悬停条叠在花图上用；白染独立于窗级 `mica-tint`，避免 CSS blur 混成灰蒙；**禁止**浅透 `acrylic`
 
 ### Acrylic（WebView 内磨砂，仅叠在已有 Mica 上的外框）
@@ -116,9 +116,9 @@ WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只�
 
 **圆角**（shortcut → `rounded-[var(--radius-*)]`，值源 `theme.css`；禁止散写 `rounded-md/lg/xl/[Npx]`；内小外大）：
 
-- `radius-panel`（12px）：外框——搜索栏、列表选中行、浮层、dialog、卡片；模块主输入面（翻译/Agent `BaseTextarea rounded="panel"`）
-- `radius-ctrl`（8px）：框内嵌元素——模块标签、图标井、按钮、设置表单输入（`rounded` 默认 ctrl）
-- `radius-window`（20px）：仅主窗口 contentView（原生 corner 20）；snap-panel 原生 12 对齐 panel
+- `radius-panel`（10px）：外框——搜索栏、列表选中行、浮层、dialog、卡片；模块主输入面（翻译/Agent `BaseTextarea rounded="panel"`）
+- `radius-ctrl`（6px）：框内嵌元素——模块标签、图标井、按钮、设置表单输入（`rounded` 默认 ctrl）
+- `radius-window`（16px）：仅主窗口 contentView（原生 corner 16）；snap-panel 原生 10 对齐 panel
 - `rounded-full`：圆形小图标按钮、进度条、状态点（保留）
 
 **阴影**（4 级层级）：
