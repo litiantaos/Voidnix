@@ -58,7 +58,7 @@ const handleGlobalShortcutChange = async (val: string | number) => {
 const handleQuitApp = async () => {
   const confirmed = await appStore.showConfirm({
     title: '退出应用',
-    message: '确定要退出 Voidnix 吗？所有访达扩展也将一并停止。',
+    message: '确定要退出 Voidnix 吗？',
     okLabel: '退出',
     cancelLabel: '取消',
     kind: 'warning',

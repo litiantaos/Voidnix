@@ -120,6 +120,55 @@ describe('BaseDialog', () => {
     expect(wrapper.emitted('confirm')).toHaveLength(1)
   })
 
+  it('form + footer：INPUT 上 Enter 提交', async () => {
+    const wrapper = mount(BaseDialog, {
+      props: { title: '新建', variant: 'form', showFooter: true, okLabel: '创建' },
+      slots: { default: '<input data-testid="field" />' },
+      global: {
+        stubs: {
+          Teleport: { template: '<div><slot /></div>' },
+          Transition: { template: '<div><slot /></div>' },
+        },
+      },
+    })
+    await wrapper.find('[data-testid="field"]').trigger('keydown', { key: 'Enter' })
+    vi.advanceTimersByTime(200)
+    expect(wrapper.emitted('confirm')).toHaveLength(1)
+  })
+
+  it('form + footer：IME composition 中 Enter 不提交', async () => {
+    const wrapper = mount(BaseDialog, {
+      props: { title: '新建', variant: 'form', showFooter: true, okLabel: '创建' },
+      slots: { default: '<input data-testid="field" />' },
+      global: {
+        stubs: {
+          Teleport: { template: '<div><slot /></div>' },
+          Transition: { template: '<div><slot /></div>' },
+        },
+      },
+    })
+    await wrapper.find('[data-testid="field"]').trigger('keydown', {
+      key: 'Enter',
+      isComposing: true,
+    })
+    vi.advanceTimersByTime(200)
+    expect(wrapper.emitted('confirm')).toBeUndefined()
+  })
+
+  it('closeOnConfirm=false：确定立即 emit 且弹窗仍可见', async () => {
+    const wrapper = mountDialog({
+      variant: 'form',
+      showFooter: true,
+      closeOnConfirm: false,
+      okLabel: '创建',
+    })
+    const confirmBtn = wrapper.findAll('button').find((b) => b.text() === '创建')!
+    await confirmBtn.trigger('click')
+    // 无关窗动画延迟
+    expect(wrapper.emitted('confirm')).toHaveLength(1)
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+  })
+
   it('role="dialog" 和 aria-modal', () => {
     const wrapper = mountDialog()
     const dialog = wrapper.find('[role="dialog"]')

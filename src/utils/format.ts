@@ -22,10 +22,7 @@ export interface FormatBytesOptions {
  * 字节数格式化（列表副标题 / 详情元数据 / 仪表盘 / 代理流量共用）。
  * 标准：`512 B` · `1.5 KB` · `2 GB`；compact：`512B` · `1.5K` · `2.00G`。
  */
-export function formatBytes(
-  bytes: number | null | undefined,
-  opts?: FormatBytesOptions,
-): string {
+export function formatBytes(bytes: number | null | undefined, opts?: FormatBytesOptions): string {
   const compact = opts?.compact ?? false
   const empty = opts?.empty ?? (compact ? '0B' : '0 B')
   if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return empty
