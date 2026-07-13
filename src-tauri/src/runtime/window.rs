@@ -129,3 +129,31 @@ pub async fn pick_directory(app: tauri::AppHandle) -> Result<String, String> {
     rx.recv_timeout(std::time::Duration::from_secs(60))
         .map_err(|e| e.to_string())
 }
+
+/// 打开文件选择器（NSOpenPanel）。
+/// `allowed_extensions`：扩展名列表（无点号）；空 = 不限制。
+/// 取消返回空数组。
+#[tauri::command]
+pub async fn pick_files(
+    app: tauri::AppHandle,
+    allows_multiple: bool,
+    allowed_extensions: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<String>>();
+    let app_clone = app.clone();
+    app.run_on_main_thread(move || {
+        #[cfg(target_os = "macos")]
+        let paths = crate::platform::window::pick_files_modal(
+            &app_clone,
+            allows_multiple,
+            allowed_extensions,
+        );
+        #[cfg(not(target_os = "macos"))]
+        let paths = Vec::new();
+        let _ = tx.send(paths);
+    })
+    .map_err(|e| e.to_string())?;
+
+    rx.recv_timeout(std::time::Duration::from_secs(60))
+        .map_err(|e| e.to_string())
+}

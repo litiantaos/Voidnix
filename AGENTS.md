@@ -75,10 +75,10 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 所有扩展同构（`extensions/<id>/index.ts` + 可选 `config.ts` + 可选 `native/`），详见 [docs/extensions.md](docs/extensions.md)。
 
-含 native/（12）：clipboard、screenshot、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status
+含 native/（13）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status
 纯 TS（7）：calculator、settings、ip、base64、time、uuid、currency
 
-复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)。
+复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)。
 
 ## 架构要点
 
@@ -210,6 +210,7 @@ Voidnix 设计系统（仅浅色），取 macOS 原生能力实现（`NSVisualEf
     ├── window-manager/config.json    # window-manager 扩展配置
     ├── translate/config.json         # translate 扩展配置
     ├── agent/config.json             # agent 扩展配置（资源上限 + systemPrompt + 搜索/AI Provider）
+    ├── video/{ffmpeg,ffprobe,ffmpeg.version,config.json}  # 视频处理：按需下载的静态 ffmpeg/ffprobe + 配置（系统 PATH 有则优先用系统）
     └── proxy/{mihomo, mihomo.pid, mihomo.log, geoip.metadb, geosite.dat, config.yaml, subs/, config.json}  # 代理：mihomo 核心（TUN 模式 root 常驻）+ root 进程 PID + 运行日志 + Geo 数据库 + 运行配置 + 订阅 YAML + 配置
 ```
 

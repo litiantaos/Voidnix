@@ -7,6 +7,7 @@ export const CMD = {
   isAppActive: 'is_app_active',
   getHomeDir: 'get_home_dir',
   pickDirectory: 'pick_directory',
+  pickFiles: 'pick_files',
   setMainFrame: 'set_main_frame',
   httpGet: 'http_get',
   openModuleSubview: 'open_module_subview',
@@ -125,4 +126,12 @@ export const CMD = {
   // —— system-status ——
   systemStaticInfo: 'system_static_info',
   systemSnapshot: 'system_snapshot',
+
+  // —— video ——
+  videoCoreStatus: 'video_core_status',
+  videoEnsureCore: 'video_ensure_core',
+  videoProbe: 'video_probe',
+  videoRun: 'video_run',
+  videoCancel: 'video_cancel',
+  videoJobStatus: 'video_job_status',
 } as const

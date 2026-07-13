@@ -18,7 +18,7 @@ extensions/<id>/
     └── ...                # 子模块（commands.rs / engine/ 等）
 ```
 
-19 个扩展：含 native/ 的 12 个（clipboard、screenshot、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status），纯 TS 的 7 个（calculator、settings、ip、base64、time、uuid、currency）。
+20 个扩展：含 native/ 的 13 个（clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status），纯 TS 的 7 个（calculator、settings、ip、base64、time、uuid、currency）。
 
 ## 前端注册
 
@@ -40,13 +40,13 @@ export default defineExtension({
 
 - `search`：SearchProvider.dynamic 单通道召回（消费者见下「搜索集成」）
 - `onExecute`：搜索结果回车动作，扩展私有（无消费者）
-- `mainView`：主视图组件（9 扩展）
+- `mainView`：主视图组件（10 扩展）
 - `searchBarAccessory`：搜索栏右侧配件（3：clipboard/agent/translate）
 - `subviews`：扩展私有命名子视图（4：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}）
 - `windowViews`：独立窗口视图，key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀（2：screenshot/window-manager）
 - `globalShortcuts`：全局快捷键绑定（5：clipboard/screenshot/agent/translate/system-status）
 - `placeholder`：搜索框占位提示，激活模块时显示（6：clipboard/currency/ip/time/base64/calculator）
-- `windowHeight`：模块激活时主窗口高度，`number`（固定，clamp `[MIN,MAX]`）/ `'auto'`（随内容自适应）/ 未声明默认（4：agent/proxy=840、translate/system-status='auto'）
+- `windowHeight`：模块激活时主窗口高度，`number`（固定，clamp `[MIN,MAX]`）/ `'auto'`（随内容自适应）/ 未声明默认（5：agent/proxy=840、translate/system-status/video='auto'）
 - `subviewHeights`：subview 级高度覆盖，key→语义同 windowHeight（1：screenshot{ocr:'auto'}）
 
 高度统一由 `useModuleHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管：高度变化一次 IPC 触发 Rust → `platform/window.rs::animate_frame` 用 macOS `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS 逐帧）；`auto` 模式 ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`，底部将出屏则上移，离开 auto 还原原位。
@@ -69,7 +69,7 @@ export default defineExtension({
 
 ### UI 规约补充
 
-- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / screenshot=110 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160；hidden 扩展 settings=998 / search=999。
+- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / screenshot=110 / video=115 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160；hidden 扩展 settings=998 / search=999。
 - **`disableSearchInput` 决策**：与 `mainView` 独立——mainView 模块若仍用主搜索框过滤列表（如 clipboard）则不声明；自管输入或无需搜索框（agent/translate/settings 等）声明 `true`。uuid 有 search 但 disableSearchInput（进入后只展示即时结果）。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
 - **View 根禁止与 ContentView 竞争的纵向双滚**：经 ContentView 渲染的 View（mainView/subviews）根及主内容流不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是页面级唯一滚动容器——View 根再设 overflow 会形成双层滚动，`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中失效内层 → 选中框出视口。固定高度媒体预览等局部区域（如 OCR 图预览）可自滚。`windowViews`（独立窗口）不经 ContentView，不受此约束。
@@ -208,7 +208,7 @@ impl Extension for ClipboardExtension {
 
 扩展可消费的框架原语：
 
-- `runtime::window`：主窗口 show/hide/move + panel 转换 + `pick_directory` / `get_home_dir`
+- `runtime::window`：主窗口 show/hide/move + panel 转换 + `pick_directory` / `pick_files` / `get_home_dir`
 - `runtime::shortcut`：快捷键注册 + 录制 + `register_shortcut_hook`（扩展钩子）
 - `runtime::storage`：`TempHandle` RAII（new / Drop 自动清理）+ `cleanup_all_voidnix_temps`（lib.rs setup 启动期统一扫 `voidnix_*` / `voidnix-icon-*` / `voidnix/picker.jpg`）+ `ext_data_dir(app, id)`（统一扩展数据目录，替代各 native/ 重复的 `app_data_dir().unwrap_or_else().join(...)` 模式）+ `save_png_safely`（create_dir_all + path_guard + write 共用）
 - `runtime::permission`：系统权限薄壳
