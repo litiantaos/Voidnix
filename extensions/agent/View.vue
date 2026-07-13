@@ -16,7 +16,15 @@
     </div>
 
     <!-- 顶距交给 CHROME_HEIGHT，与列表 px-3 pb-3 同构，勿 p-t 叠双层 -->
-    <div v-else flex="~ 1 col" gap="3" min-h="0" overflow="y-auto" p="x-3 b-3" class="hide-scrollbar">
+    <div
+      v-else
+      flex="~ 1 col"
+      gap="3"
+      min-h="0"
+      overflow="y-auto"
+      p="x-3 b-3"
+      class="hide-scrollbar"
+    >
       <template v-for="msg in displayMessages" :key="msg.id">
         <!-- 用户消息 -->
         <div

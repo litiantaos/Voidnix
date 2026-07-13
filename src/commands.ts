@@ -13,7 +13,6 @@ export const CMD = {
   openModuleSubview: 'open_module_subview',
   quitApp: 'quit_app',
   revealInFinder: 'reveal_in_finder',
-  openExtensionsPrefs: 'open_extensions_prefs',
   openPrivacySettings: 'open_privacy_settings',
 
   // —— 权限（框架）——
@@ -80,8 +79,7 @@ export const CMD = {
   checkWindowManagerAccessibility: 'check_window_manager_accessibility',
 
   // —— finder-ext ——
-  checkFinderExtAuthorized: 'check_finder_ext_authorized',
-  setFinderExtEnabled: 'set_finder_ext_enabled',
+  finderRunAction: 'finder_run_action',
 
   // —— zsh-autosuggestions ——
   setZshAutosuggestionsEnabled: 'set_zsh_autosuggestions_enabled',

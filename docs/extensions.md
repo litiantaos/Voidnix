@@ -44,9 +44,9 @@ export default defineExtension({
 - `searchBarAccessory`：搜索栏右侧配件（3：clipboard/agent/translate）
 - `subviews`：扩展私有命名子视图（4：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}）
 - `windowViews`：独立窗口视图，key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀（2：screenshot/window-manager）
-- `globalShortcuts`：全局快捷键绑定（5：clipboard/screenshot/agent/translate/system-status）
+- `globalShortcuts`：全局快捷键绑定（6：clipboard/screenshot/agent/translate/system-status/finder-ext）
 - `placeholder`：搜索框占位提示，激活模块时显示（6：clipboard/currency/ip/time/base64/calculator）
-- `windowHeight`：模块激活时主窗口高度，`number`（固定，clamp `[MIN,MAX]`）/ `'auto'`（随内容自适应）/ 未声明默认（5：agent/proxy=840、translate/system-status/video='auto'）
+- `windowHeight`：模块激活时主窗口高度，`number`（固定，clamp `[MIN,MAX]`）/ `'auto'`（随内容自适应）/ 未声明默认（6：agent/proxy=840、translate/system-status/video/finder-ext='auto'）
 - `subviewHeights`：subview 级高度覆盖，key→语义同 windowHeight（1：screenshot{ocr:'auto'}）
 
 高度统一由 `useModuleHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管：高度变化一次 IPC 触发 Rust → `platform/window.rs::animate_frame` 用 macOS `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS 逐帧）；`auto` 模式 ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`，底部将出屏则上移，离开 auto 还原原位。

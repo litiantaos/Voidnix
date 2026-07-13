@@ -190,18 +190,21 @@ const selectOption = (index: number) => {
   emit('update:modelValue', item.value)
   isOpen.value = false
   selectRef.value?.focus()
-  selectRef.value?.blur()
 }
 
+/**
+ * 键盘约定（与 form 弹窗回车提交对齐）：
+ * - 关闭：空格 / ↓ 展开；Enter **不拦截**（冒泡给 BaseDialog form 提交）
+ * - 展开：↑↓ 移动，Enter/空格 选中并 stopPropagation（不提交表单）
+ */
 const onKeyDown = (e: KeyboardEvent) => {
   if (props.disabled) return
 
   if (!isOpen.value) {
-    if (e.key === 'Enter' || e.key === ' ') {
+    // Enter 放行 → 外层 form 提交；仅空格/↓ 打开下拉
+    if (e.key === ' ' || e.key === 'ArrowDown') {
       e.preventDefault()
-      toggleOpen()
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault()
+      e.stopPropagation()
       toggleOpen()
     }
     return
@@ -212,7 +215,7 @@ const onKeyDown = (e: KeyboardEvent) => {
 
   if (e.key === 'Escape') {
     isOpen.value = false
-    selectRef.value?.blur()
+    selectRef.value?.focus()
   } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     const currentOptionIndex = optionIndices.value.indexOf(highlightedIndex.value)
     let nextOptionIndex: number

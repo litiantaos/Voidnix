@@ -157,3 +157,10 @@ pub async fn pick_files(
     rx.recv_timeout(std::time::Duration::from_secs(60))
         .map_err(|e| e.to_string())
 }
+
+/// 退出应用（设置页「退出」等）。
+#[tauri::command]
+pub fn quit_app(app_handle: tauri::AppHandle) {
+    log::info!("Quitting app...");
+    app_handle.exit(0);
+}

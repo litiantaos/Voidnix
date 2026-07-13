@@ -50,7 +50,12 @@
         </div>
 
         <!-- 关闭按钮：ui-ctrl 实色 fill；外阴影单独加 -->
-        <BaseButton class="shadow-lg" title="关闭 (Esc)" icon="i-ri-close-line" @click="handleClose" />
+        <BaseButton
+          class="shadow-lg"
+          title="关闭 (Esc)"
+          icon="i-ri-close-line"
+          @click="handleClose"
+        />
       </div>
     </Transition>
   </div>

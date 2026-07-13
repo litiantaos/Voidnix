@@ -78,7 +78,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 含 native/（13）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status
 纯 TS（7）：calculator、settings、ip、base64、time、uuid、currency
 
-复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)。
+复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[finder-ext](docs/extensions/finder-ext.md)。
 
 ## 架构要点
 
@@ -90,7 +90,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 **窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/window.rs::apply_main_window_style`（= `apply_mica_material(ns, 16)` + `setHasShadow(true)` + `convert_to_panel`）在 setup 内一次性配置主窗口样式（Mica 材质底 + contentView 圆角 16（单层窗口＝面板）+ 原生阴影 + 前端 inset 高光环 + 子视图 layer 透明让 WKWebView canvas 透传；材质实现见 UI 规范与 [设计系统](docs/design.md)）。snap-panel 同理经 `apply_mica_material(ns, 10)` 获 Mica 底材（窗口尺寸精简为面板大小，原生阴影）。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`（点击/makeKey 不自动激活）；主窗 show **不** `activate_app`（保持原前台 active，避免聚焦视图/菜单栏突变；代价是 macOS 26 上偶发下层 hover 穿透——产品优先不打断），hit-test 仍靠 `capture_mouse_events` + SkyLight event shape；`hide_main` 走 `restore_captured()` 交还 first responder（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。截图 overlay 等独占场景才显式 `activate_app`。`is_app_active()` 判焦点归属：NSApp keyWindow 非空 → 焦点在我们；否则查 frontmost bundle 路径——`/System/` 开头（授权弹窗、keychain 对话框等）视为交互流未中断，抑制 blur hide。`restore_captured()` 还原前查 frontmost：第三方已接管（系统弹窗/用户切到其他 app）则不抢回。系统弹窗关闭后焦点恢复由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove）处理：frontmost 变更时若 panel 可见但丢 key，frontmost == 原前台 PID → makeKeyWindow 恢复；frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss。窗口高度统一机制：扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖；`useModuleHeight`（MainView 全局唯一调用）读 `activeModule` + `activeSubview` 解析模式，一次 invoke 触发 Rust 端 `set_main_frame` → `platform/window.rs::animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管插值，非 JS rAF 逐帧，不每帧阻塞主线程/触发 WebView 重排）；`auto` 模式 ResizeObserver 监听 ContentView 的 `contentRef`（自然高量真实内容高），窗口高 = `CHROME_HEIGHT`（搜索栏高度 + 间距，scrollContainer paddingTop）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`（屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口）；底部将出屏（含 40px 间距）则同步上移保证完整可见，离开 auto 还原进入前位置。
 
-**全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。默认 Option 基（`Option+Space` 呼出，`Option+C/S/T/A/M` 各扩展）；dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存（dev/prod 数据目录仍按 bundle id 隔离，配置默认值一致）。
+**全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。默认 Option 基（`Option+Space` 呼出，`Option+C/S/T/A/M/F`：剪贴板 / 截屏 / 翻译 / Agent / 系统状态 / 访达工具）；dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存（dev/prod 数据目录仍按 bundle id 隔离，配置默认值一致）。
 
 **菜单栏**：`runtime/menubar.rs`，框架唯一托盘图标（`public/bar_icon.png` + `icon_as_template` 深浅色自适应），左键弹聚合菜单。扩展在 Rust `setup` 内 `menubar::register(MenuBarContribution{ title, build, on_event })` 声明贡献段：`title`（分组标题，disabled 项渲染）、`build` 闭包返回 `Vec<MenuEntry>` 快照（`Item`/`CheckItem`/`Submenu`/`Separator`）、`on_event` 闭包收点击 id 自行过滤；状态变更后调 `menubar::refresh(&app)` 触发重建。镜像 `shortcut.rs` 的 hook 范式（`LazyLock<Mutex<Vec>>` + free function，`Arc<dyn Fn>` 锁外调用防 `on_event→refresh` 重入死锁）。**菜单按扩展 `title` 分组**（每段前插 disabled 标题项，段间分隔线）。**可见性 = Σ build() 项数 > 0**（空快照 = 该扩展当前不贡献；扩展全关图标自动隐藏）。Rust 侧能力（非 TS `Extension` 槽——菜单构建依赖 Rust State，纯 TS 扩展无此需求）。现 2 消费者：awake（保持系统唤醒：打开扩展 + 启用开关 + 显示模式二级菜单）、proxy（代理：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后图标隐藏，重连走扩展面板，其余控制全部在面板，统一 TUN 模式，详见 [proxy.md](docs/extensions/proxy.md)）。
 
@@ -189,7 +189,7 @@ Voidnix 设计系统（仅浅色），取 macOS 原生能力实现（`NSVisualEf
 
 **容器边距**：全局统一 `p-3`（12px）——搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`、`WINDOW.SEARCH_BAR_TOP/GAP` 同步 12px。**例外**：`BaseDialog` 标题/内容/页脚用 `p-4`（16px）。**元素间距**三档：`gap-1.5`（控件内）/ `gap-2`（默认）/ `gap-3`（区块）；`gap-0.5` 仅微密 UI。
 
-**浮层范式**：右下角浮层统一 `fixed bottom-3 right-3 z-50`（离边缘 12px，与全局 p-3 一致）+ `dropdown-panel` + 同款进出场动画（`ease-out` 进 / `ease-in` 离）。`BaseDropdownItems` 通用行渲染器（4 行类型 `item | header | divider | meta`，meta = label:value 详情行不可选）。screenshot 标注选区 / clean-mode 为功能性覆盖层不加材质；工具条 / 贴图悬停条走 `mica-panel` / `mica-bar`（与窗级 Mica 同白染，忌 acrylic 浅透）。
+**浮层范式**：右下角浮层统一 `fixed bottom-3 right-3 z-50`（离边缘 12px，与全局 p-3 一致）+ `dropdown-panel` + 同款进出场动画（`ease-out` 进 / `ease-in` 离）。**toast**（`ToastOverlay`）用 `z-9999`，高于 `BaseDialog`（z-100）与动作面板（z-50），保证错误/成功反馈始终顶层可见。`BaseDropdownItems` 通用行渲染器（4 行类型 `item | header | divider | meta`，meta = label:value 详情行不可选）。screenshot 标注选区 / clean-mode 为功能性覆盖层不加材质；工具条 / 贴图悬停条走 `mica-panel` / `mica-bar`（与窗级 Mica 同白染，忌 acrylic 浅透）。
 
 **写法**：原生 HTML 元素用 Attributify 模式（`<div text="sm primary" p="3">`），Vue 组件 props 保持 `class`；`animate` 等与 DOM 原生属性同名的禁用 Attributify，必须用 `class="animate-spin"`。
 
@@ -203,7 +203,6 @@ Voidnix 设计系统（仅浅色），取 macOS 原生能力实现（`NSVisualEf
 └── extensions/
     ├── clipboard/{clipboard.db, clipboard.db-wal, config.json}   # 剪贴板历史（SQLite WAL，写入计数达 200 触发 wal_checkpoint(TRUNCATE)）+ 配置
     ├── calculator/config.json        # 计算器历史（history key，10 条上限；走 defineConfig）
-    ├── finder-ext/{commands/, config.json}     # Finder 扩展 IPC 目录 + 配置
     ├── zsh-autosuggestions/{bin/, index.zsh, signals.log, bin.version, config.json}  # zsh 补全
     ├── awake/{Display Wakelock, config.json}   # awake binary + 配置
     ├── screenshot/config.json        # screenshot 扩展配置

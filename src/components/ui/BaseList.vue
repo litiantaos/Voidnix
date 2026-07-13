@@ -319,8 +319,7 @@ async function scrollIntoCenter(index: number) {
   const containerRect = container.getBoundingClientRect()
   // 在扣除 chrome / 底边 inset 后的可视区内垂直居中
   const visibleHeight = containerRect.height - topInset - bottomInset
-  const offset =
-    elRect.top - (containerRect.top + topInset) + elRect.height / 2 - visibleHeight / 2
+  const offset = elRect.top - (containerRect.top + topInset) + elRect.height / 2 - visibleHeight / 2
   container.scrollTo({ top: container.scrollTop + offset, behavior: 'smooth' })
 }
 
