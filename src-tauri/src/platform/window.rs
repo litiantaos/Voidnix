@@ -235,26 +235,69 @@ pub fn apply_main_window_style(window: &tauri::WebviewWindow) {
     capture_mouse_events(ns_window);
 }
 
-/// NSOpenPanel 模态选目录。返回选中路径，取消返回空串。
+/// NSOpenPanel 选项（文件 / 目录 / 多选 / 扩展名过滤）。
+#[derive(Clone, Debug)]
+pub struct PickOptions {
+    pub can_choose_files: bool,
+    pub can_choose_directories: bool,
+    pub allows_multiple: bool,
+    /// 允许的文件扩展名（无点号，如 `"mp4"`）；空 = 不限制。
+    pub allowed_extensions: Vec<String>,
+}
+
+impl PickOptions {
+    pub fn directory() -> Self {
+        Self {
+            can_choose_files: false,
+            can_choose_directories: true,
+            allows_multiple: false,
+            allowed_extensions: Vec::new(),
+        }
+    }
+
+    pub fn files(allows_multiple: bool, allowed_extensions: Vec<String>) -> Self {
+        Self {
+            can_choose_files: true,
+            can_choose_directories: false,
+            allows_multiple,
+            allowed_extensions,
+        }
+    }
+}
+
+/// NSOpenPanel 模态选择。返回选中路径列表，取消返回空。
 /// 调用期间暂停 click-outside 检测；结束后恢复主窗口 key window。
-pub fn pick_directory_modal(app: &tauri::AppHandle) -> String {
+pub fn pick_paths_modal(app: &tauri::AppHandle, opts: PickOptions) -> Vec<String> {
     use objc2::runtime::AnyObject;
-    use objc2_foundation::NSString;
+    use objc2_foundation::{NSArray, NSString};
     use tauri::Manager;
     unsafe {
         let panel_cls = objc2::class!(NSOpenPanel);
         let panel: *mut AnyObject = objc2::msg_send![panel_cls, openPanel];
 
-        // 仅允许选择目录
-        let _: () = objc2::msg_send![panel, setCanChooseFiles: false];
-        let _: () = objc2::msg_send![panel, setCanChooseDirectories: true];
-        let _: () = objc2::msg_send![panel, setAllowsMultipleSelection: false];
-        let _: () = objc2::msg_send![panel, setCanCreateDirectories: true];
+        let _: () = objc2::msg_send![panel, setCanChooseFiles: opts.can_choose_files];
+        let _: () = objc2::msg_send![panel, setCanChooseDirectories: opts.can_choose_directories];
+        let _: () = objc2::msg_send![panel, setAllowsMultipleSelection: opts.allows_multiple];
+        if opts.can_choose_directories {
+            let _: () = objc2::msg_send![panel, setCanCreateDirectories: true];
+        }
 
-        // panel 运行期间暂停 click-outside 检测，防止点击 panel 触发窗口隐藏
+        // 扩展名过滤（setAllowedFileTypes，扩展名不含点号）
+        if !opts.allowed_extensions.is_empty() {
+            let ns_exts: Vec<_> = opts
+                .allowed_extensions
+                .iter()
+                .map(|e| NSString::from_str(e.trim_start_matches('.')))
+                .collect();
+            let arr = NSArray::from_retained_slice(&ns_exts);
+            let _: () = objc2::msg_send![panel, setAllowedFileTypes: &*arr];
+        }
+
         crate::platform::click_monitor::suppress(true);
+        // LSUIElement + NonactivatingPanel 下 NSApp 默认 inactive，NSOpenPanel
+        // 虽 runModal 但键盘仍留在原前台 app → Esc 关不掉。独占对话框须 activate。
+        crate::platform::focus::activate_app();
 
-        // 作为独立窗口运行（不附着父窗口，避免 sheet 遮罩）
         // NSModalResponseOK = 1
         let response: isize = objc2::msg_send![panel, runModal];
 
@@ -263,20 +306,38 @@ pub fn pick_directory_modal(app: &tauri::AppHandle) -> String {
             make_key_window(&window);
         }
 
-        if response == 1 {
-            let urls: *mut AnyObject = objc2::msg_send![panel, URLs];
-            let count: usize = objc2::msg_send![urls, count];
-            if count > 0 {
-                let url: *mut AnyObject = objc2::msg_send![urls, objectAtIndex: 0usize];
-                let path: *mut NSString = objc2::msg_send![url, path];
-                // M-rs1：path 来自 NSURL.path，对正常 file URL 非空；
-                // 但 url 为 nil 或异常路径时可能返 null，解引用前必须检查
-                if path.is_null() {
-                    return String::new();
-                }
-                return (*path).to_string();
-            }
+        if response != 1 {
+            return Vec::new();
         }
-        String::new()
+
+        let urls: *mut AnyObject = objc2::msg_send![panel, URLs];
+        let count: usize = objc2::msg_send![urls, count];
+        let mut out = Vec::with_capacity(count);
+        for i in 0..count {
+            let url: *mut AnyObject = objc2::msg_send![urls, objectAtIndex: i];
+            let path: *mut NSString = objc2::msg_send![url, path];
+            if path.is_null() {
+                continue;
+            }
+            out.push((*path).to_string());
+        }
+        out
     }
+}
+
+/// NSOpenPanel 模态选目录。返回选中路径，取消返回空串。
+pub fn pick_directory_modal(app: &tauri::AppHandle) -> String {
+    pick_paths_modal(app, PickOptions::directory())
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
+/// NSOpenPanel 模态选文件。返回路径列表，取消返回空。
+pub fn pick_files_modal(
+    app: &tauri::AppHandle,
+    allows_multiple: bool,
+    allowed_extensions: Vec<String>,
+) -> Vec<String> {
+    pick_paths_modal(app, PickOptions::files(allows_multiple, allowed_extensions))
 }

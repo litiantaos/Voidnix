@@ -16,6 +16,7 @@ macro_rules! configure_app {
             .plugin(crate::extensions::search::init())
             .plugin(crate::extensions::system_status::init())
             .plugin(crate::extensions::translate::init())
+            .plugin(crate::extensions::video::init())
             .plugin(crate::extensions::window_manager::init())
             .plugin(crate::extensions::zsh_autosuggestions::init())
             .invoke_handler(tauri::generate_handler![
@@ -33,6 +34,7 @@ macro_rules! configure_app {
                 crate::runtime::shortcut::stop_shortcut_recording,
                 crate::runtime::window::get_home_dir,
                 crate::runtime::window::pick_directory,
+                crate::runtime::window::pick_files,
                 crate::runtime::window::set_main_frame,
                 crate::extensions::agent::agent_abort,
                 crate::extensions::agent::agent_run,
@@ -105,6 +107,12 @@ macro_rules! configure_app {
                 crate::extensions::translate::get_selected_text,
                 crate::extensions::translate::get_selected_text_cached,
                 crate::extensions::translate::youdao::translate_youdao,
+                crate::extensions::video::video_cancel,
+                crate::extensions::video::video_core_status,
+                crate::extensions::video::video_ensure_core,
+                crate::extensions::video::video_job_status,
+                crate::extensions::video::video_probe,
+                crate::extensions::video::video_run,
                 crate::extensions::window_manager::check_window_manager_accessibility,
                 crate::extensions::window_manager::get_screen_info,
                 crate::extensions::window_manager::hide_snap_panel,
@@ -133,6 +141,7 @@ pub fn register_all(
         .register(search::SearchExtension)
         .register(system_status::SystemStatusExtension)
         .register(translate::TranslateExtension)
+        .register(video::VideoExtension)
         .register(window_manager::WindowManagerExtension)
         .register(zsh_autosuggestions::ZshAutosuggestionsExtension)
 }
@@ -166,6 +175,9 @@ pub mod system_status;
 
 #[path = "../../extensions/translate/native/mod.rs"]
 pub mod translate;
+
+#[path = "../../extensions/video/native/mod.rs"]
+pub mod video;
 
 #[path = "../../extensions/window-manager/native/mod.rs"]
 pub mod window_manager;
