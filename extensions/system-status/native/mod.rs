@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::Instant;
-use sysinfo::{Components, Disks, Networks, ProcessesToUpdate, System};
+use sysinfo::{Components, DiskKind, Disks, Networks, ProcessesToUpdate, System};
 use tauri::{AppHandle, Manager, State};
 
 /// 系统状态扩展：硬件信息 + 实时状态。拉模式（前端进入模块轮询，零常驻后台）。
@@ -31,6 +31,9 @@ pub struct DiskStaticInfo {
     pub name: String,
     pub mount_point: String,
     pub fs_type: String,
+    /// SSD / HDD / Unknown
+    pub kind: String,
+    pub removable: bool,
     pub total: u64,
 }
 
@@ -54,6 +57,9 @@ pub struct SystemStaticInfo {
 pub struct DiskUsageInfo {
     pub name: String,
     pub mount_point: String,
+    /// SSD / HDD / Unknown
+    pub kind: String,
+    pub removable: bool,
     pub used: u64,
     pub total: u64,
 }
@@ -72,6 +78,10 @@ pub struct BatteryInfo {
     pub cycles: Option<u32>,
     pub health: Option<u8>,
     pub time_to_empty: Option<i32>,
+    /// 充满剩余分钟（仅充电中有意义）
+    pub time_to_full: Option<i32>,
+    /// 适配器额定功率（W）
+    pub adapter_watts: Option<u32>,
     pub temperature: Option<f32>,
 }
 
@@ -84,6 +94,14 @@ pub struct SystemSnapshot {
     pub available_memory: u64,
     pub total_memory: u64,
     pub used_swap: u64,
+    pub total_swap: u64,
+    /// 1 / 5 / 15 分钟负载均值
+    pub load_one: f64,
+    pub load_five: f64,
+    pub load_fifteen: f64,
+    /// nominal / fair / serious / critical
+    pub thermal: String,
+    pub low_power_mode: bool,
     pub disks_usage: Vec<DiskUsageInfo>,
     pub battery: Option<BatteryInfo>,
     pub net_up: f64,
@@ -91,6 +109,14 @@ pub struct SystemSnapshot {
     pub local_ip: String,
     pub uptime: u64,
     pub processes: Vec<ProcessInfo>,
+}
+
+fn disk_kind_label(kind: DiskKind) -> String {
+    match kind {
+        DiskKind::SSD => "SSD".into(),
+        DiskKind::HDD => "HDD".into(),
+        _ => "Unknown".into(),
+    }
 }
 
 #[tauri::command]
@@ -125,6 +151,8 @@ pub async fn system_static_info(state: State<'_, SystemState>) -> Result<SystemS
                     name,
                     mount_point,
                     fs_type: d.file_system().to_string_lossy().into_owned(),
+                    kind: disk_kind_label(d.kind()),
+                    removable: d.is_removable(),
                     total: d.total_space(),
                 })
             })
@@ -206,6 +234,8 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
                 Some(DiskUsageInfo {
                     name,
                     mount_point,
+                    kind: disk_kind_label(d.kind()),
+                    removable: d.is_removable(),
                     used: d.total_space().saturating_sub(d.available_space()),
                     total: d.total_space(),
                 })
@@ -252,6 +282,9 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
     });
     processes.truncate(3);
 
+    let load = System::load_average();
+    let (thermal, low_power_mode) = read_thermal();
+
     Ok(SystemSnapshot {
         cpu_usage,
         cpu_cores_usage,
@@ -260,6 +293,12 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
         available_memory: sys.available_memory(),
         total_memory: sys.total_memory(),
         used_swap: sys.used_swap(),
+        total_swap: sys.total_swap(),
+        load_one: load.one,
+        load_five: load.five,
+        load_fifteen: load.fifteen,
+        thermal,
+        low_power_mode,
         disks_usage,
         battery: read_battery(),
         net_up,
@@ -330,6 +369,8 @@ fn read_battery() -> Option<BatteryInfo> {
     let mut external = None;
     let mut fully_charged = None;
     let mut time_to_empty = None;
+    let mut time_to_full = None;
+    let mut adapter_watts = None;
     let mut temperature = None;
 
     for line in text.lines() {
@@ -361,7 +402,27 @@ fn read_battery() -> Option<BatteryInfo> {
                 time_to_empty = Some(v as i32);
             }
         }
-        // 电池温度（单位 100×°C，如 3000 = 30.0°C）
+        // 充满剩余时间：优先 Instant，回退 Avg
+        if let Some(v) = parse_ioreg_int(line, "\"InstantTimeToFull\"") {
+            if v > 0 && v < 65535 {
+                time_to_full = Some(v as i32);
+            }
+        } else if time_to_full.is_none() {
+            if let Some(v) = parse_ioreg_int(line, "\"AvgTimeToFull\"") {
+                if v > 0 && v < 65535 {
+                    time_to_full = Some(v as i32);
+                }
+            }
+        }
+        // 适配器瓦数（嵌在 AdapterDetails 字典里）
+        if line.contains("\"AdapterDetails\"") || line.contains("\"AppleRawAdapterDetails\"") {
+            if let Some(v) = parse_ioreg_dict_int(line, "\"Watts\"") {
+                if v > 0 && v < 1000 {
+                    adapter_watts = Some(v as u32);
+                }
+            }
+        }
+        // 电池温度（单位 100×°C，如 3000 = 30.0°C）；键精确匹配避免命中 TemperatureSamples
         if let Some(v) = parse_ioreg_int(line, "\"Temperature\"") {
             temperature = Some(v as f32 / 100.0);
         }
@@ -379,6 +440,23 @@ fn read_battery() -> Option<BatteryInfo> {
     }
     .to_string();
 
+    // 仅放电显示剩余；仅充电显示充满；未接电源清空适配器瓦数
+    let time_to_empty = if state == "discharging" {
+        time_to_empty
+    } else {
+        None
+    };
+    let time_to_full = if state == "charging" {
+        time_to_full
+    } else {
+        None
+    };
+    let adapter_watts = if external == Some(true) {
+        adapter_watts
+    } else {
+        None
+    };
+
     let health = match (max_cap, design_cap) {
         (Some(m), Some(d)) if d > 0 => {
             Some(((m as f64 / d as f64) * 100.0).round().min(100.0) as u8)
@@ -392,30 +470,68 @@ fn read_battery() -> Option<BatteryInfo> {
         cycles: cycles.filter(|&c| c > 0).map(|c| c as u32),
         health,
         time_to_empty,
+        time_to_full,
+        adapter_watts,
         temperature: temperature.filter(|t| *t > 0.0 && *t < 100.0),
     })
 }
 
+/// NSProcessInfo.thermalState + isLowPowerModeEnabled（无 root、无子进程）。
+fn read_thermal() -> (String, bool) {
+    use objc2_foundation::{NSProcessInfo, NSProcessInfoThermalState};
+    let info = NSProcessInfo::processInfo();
+    let thermal = match info.thermalState() {
+        NSProcessInfoThermalState::Nominal => "nominal",
+        NSProcessInfoThermalState::Fair => "fair",
+        NSProcessInfoThermalState::Serious => "serious",
+        NSProcessInfoThermalState::Critical => "critical",
+        _ => "nominal",
+    };
+    (thermal.into(), info.isLowPowerModeEnabled())
+}
+
+/// 精确匹配 ioreg 键（`key` 后必须是 `=`，避免 `"Temperature"` 命中 `TemperatureSamples`）。
 fn parse_ioreg_int(line: &str, key: &str) -> Option<u64> {
-    if line.contains(key) {
-        let after_eq = line.split('=').nth(1)?;
-        after_eq.trim().trim_end_matches(',').parse::<u64>().ok()
-    } else {
-        None
+    let mut search = line;
+    while let Some(pos) = search.find(key) {
+        let after_key = &search[pos + key.len()..];
+        let trimmed = after_key.trim_start();
+        if let Some(rest) = trimmed.strip_prefix('=') {
+            let token = rest
+                .trim_start()
+                .split(|c: char| c == ',' || c == '}' || c == ')' || c.is_whitespace())
+                .next()?;
+            return token.parse::<u64>().ok();
+        }
+        search = &search[pos + key.len()..];
     }
+    None
+}
+
+/// 从 ioreg 字典行内解析嵌套键值（如 AdapterDetails 内的 "Watts"=65）。
+fn parse_ioreg_dict_int(line: &str, key: &str) -> Option<u64> {
+    parse_ioreg_int(line, key)
 }
 
 fn parse_ioreg_bool(line: &str, key: &str) -> Option<bool> {
-    if line.contains(key) {
-        let after_eq = line.split('=').nth(1)?;
-        match after_eq.trim().trim_end_matches(',') {
-            "Yes" | "true" => Some(true),
-            "No" | "false" => Some(false),
-            _ => None,
+    let mut search = line;
+    while let Some(pos) = search.find(key) {
+        let after_key = &search[pos + key.len()..];
+        let trimmed = after_key.trim_start();
+        if let Some(rest) = trimmed.strip_prefix('=') {
+            let token = rest
+                .trim_start()
+                .split(|c: char| c == ',' || c == '}' || c == ')' || c.is_whitespace())
+                .next()?;
+            return match token {
+                "Yes" | "true" => Some(true),
+                "No" | "false" => Some(false),
+                _ => None,
+            };
         }
-    } else {
-        None
+        search = &search[pos + key.len()..];
     }
+    None
 }
 
 /// 内网 IP：UDP "连接" 外网地址拿出口接口的本地 IP（不发实际数据包）。
