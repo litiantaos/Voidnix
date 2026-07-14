@@ -29,18 +29,6 @@ export function latestDelay(history?: ProxyHistory[]): number {
   return history[history.length - 1]?.delay ?? 0
 }
 
-/// 规则模式 → 显示标签
-export function modeLabel(mode: string): string {
-  switch (mode) {
-    case 'rule':
-      return '规则'
-    case 'global':
-      return '全局'
-    default:
-      return mode
-  }
-}
-
 /// 测速超时哨兵值：测速失败/超时写入 delayMap，与「未测速」（0）区分。
 export const DELAY_TIMEOUT = -1
 

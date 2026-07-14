@@ -75,8 +75,14 @@ export function formatPathParts(path: unknown): { head: string; tail: string } {
   }
 }
 
+/** 统一错误文案：Error.message / 字符串透传 / 其余 fallback（Tauri invoke reject 常为 string）。 */
 export function toErrorMessage(e: unknown, fallback = '未知错误'): string {
-  return e instanceof Error ? e.message || fallback : fallback
+  if (typeof e === 'string') {
+    const s = e.trim()
+    return s || fallback
+  }
+  if (e instanceof Error) return e.message || fallback
+  return fallback
 }
 
 export function providerLabelFromUrl(url: string, fallback: string): string {

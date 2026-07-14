@@ -40,8 +40,7 @@ export const CMD = {
   setClipboardMaxDays: 'set_clipboard_max_days',
 
   // —— screenshot ——
-  captureScreen: 'capture_screen',
-  enterScreenshotMode: 'enter_screenshot_mode',
+  // capture_screen / enter_screenshot_mode 仅 Rust 内部（快捷键路径），不暴露 IPC
   exitScreenshotMode: 'exit_screenshot_mode',
   saveScreenshot: 'save_screenshot',
   copyScreenshotToClipboard: 'copy_screenshot_to_clipboard',
@@ -59,7 +58,6 @@ export const CMD = {
   pinGlobalMouse: 'pin_global_mouse',
   setPinWindowOpacity: 'set_pin_window_opacity',
   restorePinFocus: 'restore_pin_focus',
-  getScreenInfo: 'get_screen_info',
 
   // —— awake ——
   setAwakeEnabled: 'set_awake_enabled',
@@ -76,7 +74,6 @@ export const CMD = {
   setSnapSize: 'set_snap_size',
   showSnapPanel: 'show_snap_panel',
   hideSnapPanel: 'hide_snap_panel',
-  checkWindowManagerAccessibility: 'check_window_manager_accessibility',
 
   // —— finder-ext ——
   finderRunAction: 'finder_run_action',

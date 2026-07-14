@@ -1,4 +1,5 @@
 import { ref, watch, onUnmounted, onMounted, type Ref } from 'vue'
+import { isFormControl } from '@/utils/dom'
 
 export function useScroll(element: Ref<HTMLElement | undefined>) {
   const y = ref(0)
@@ -41,19 +42,11 @@ export function onKeyStroke(
   const keySet = new Set(Array.isArray(keys) ? keys : [keys])
   const listener = (e: KeyboardEvent) => {
     if (keySet.has(e.key)) {
-      // M-fe5：可选跳过表单控件（input/textarea/select/contenteditable），
-      // 避免每个消费者重复实现 isFormControl 判断
-      if (opts?.ignoreFormControls) {
-        const el = document.activeElement
-        if (
-          el?.tagName === 'INPUT' ||
-          el?.tagName === 'TEXTAREA' ||
-          el?.tagName === 'SELECT' ||
-          el?.hasAttribute('contenteditable') ||
-          el?.hasAttribute('data-settings-control')
-        ) {
-          return
-        }
+      if (
+        opts?.ignoreFormControls &&
+        isFormControl(document.activeElement, { settingsControl: true })
+      ) {
+        return
       }
       handler(e)
     }

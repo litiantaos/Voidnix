@@ -78,11 +78,6 @@ pub struct ScreenInfo {
 mod platform;
 
 #[tauri::command]
-pub fn get_screen_info() -> Vec<ScreenInfo> {
-    platform::do_get_screens()
-}
-
-#[tauri::command]
 pub async fn set_frontmost_window_layout(
     app: tauri::AppHandle,
     layout: String,
@@ -97,11 +92,6 @@ pub async fn set_frontmost_window_layout(
         custom_height.unwrap_or(800.0),
         prev_pid,
     )
-}
-
-#[tauri::command]
-pub fn check_window_manager_accessibility() -> bool {
-    platform::do_check_accessibility()
 }
 
 #[tauri::command]

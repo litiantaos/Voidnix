@@ -196,7 +196,7 @@ import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useActionPanel } from '@/composables/useActionPanel'
 import { useAppStore } from '@/stores/app'
-import { formatBytes } from '@/utils/format'
+import { formatBytes, toErrorMessage } from '@/utils/format'
 
 const appStore = useAppStore()
 
@@ -235,7 +235,7 @@ async function handleExecute(item: ClipboardItem, _index: number, _e?: KeyboardE
     invalidateCache()
   } catch (e) {
     console.error('Failed to paste clipboard:', e)
-    appStore.showStatus(typeof e === 'string' ? e : '粘贴失败', { kind: 'error', duration: 4000 })
+    appStore.showStatus(toErrorMessage(e, '粘贴失败'), { kind: 'error', duration: 4000 })
   }
 }
 

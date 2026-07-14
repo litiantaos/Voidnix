@@ -314,7 +314,6 @@ mod tests {
             sel_y: 0.0,
             sel_w: 0.0,
             sel_h: 0.0,
-            scale: 1.0,
             pw: w,
             ph_per_frame: h,
             buf: Vec::new(),

@@ -1,4 +1,6 @@
-/** 视频扩展纯逻辑：命名、格式白名单、元数据展示。 */
+/** 视频扩展纯逻辑：格式白名单、路径展示、元数据行。 */
+
+import { formatBytes as formatBytesShared } from '@/utils/format'
 
 export type VideoMode = 'compress' | 'convert' | 'extract-audio'
 export type Quality = 'high' | 'balanced' | 'small'
@@ -28,31 +30,9 @@ export const FORMAT_BY_MODE: Record<VideoMode, OutputFormat[]> = {
   'extract-audio': ['m4a', 'mp3'],
 }
 
-export function actionLabel(mode: VideoMode, _format?: OutputFormat): string {
-  if (mode === 'extract-audio') return 'audio'
-  if (mode === 'compress') return 'compressed'
-  return 'converted'
-}
-
-/** 输出文件名：`{stem}.{action}.{ext}` */
-export function buildOutputName(stem: string, mode: VideoMode, format: OutputFormat): string {
-  const safe = sanitizeStem(stem) || 'video'
-  return `${safe}.${actionLabel(mode, format)}.${format}`
-}
-
-export function sanitizeStem(stem: string): string {
-  return stem.replace(/[\u0000-\u001f/\\]/g, '_').trim()
-}
-
 export function fileNameFromPath(path: string): string {
   const parts = path.split(/[/\\]/)
   return parts[parts.length - 1] || path
-}
-
-export function stemFromPath(path: string): string {
-  const name = fileNameFromPath(path)
-  const i = name.lastIndexOf('.')
-  return i > 0 ? name.slice(0, i) : name
 }
 
 export function displayPath(path: string): string {
@@ -69,12 +49,9 @@ export function formatDuration(secs: number): string {
   return `${m}:${String(r).padStart(2, '0')}`
 }
 
+/** 字节展示（空值 `—`；与 @/utils/format 共用实现）。 */
 export function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '—'
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`
-  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
+  return formatBytesShared(n, { empty: '—' })
 }
 
 export function formatMetaLine(meta: {

@@ -216,7 +216,7 @@ impl Extension for ClipboardExtension {
 - `runtime::pasteboard`：框架命令薄壳（`pasteboard_write_text`；原语在 `platform::pasteboard`）
 - `platform::focus`：焦点管理（`capture_frontmost` / `restore_captured` / `captured_pid`，PREV_FRONT_PID 唯一源）
 - `platform::input`：键盘注入（`post_key(key_code, &[Modifier], Option<pid>)` 原语 / `post_combo` 字符串糖）
-- `platform::pasteboard`：NSPasteboard 原语（read_text / string_for_type / data_for_type / has_type / change_count / snapshot / restore）
+- `platform::pasteboard`：NSPasteboard 原语（read_text / read_file_urls / read_png(max) / read_tiff_as_png(max) / encode_image_to_png / set_png_bytes / write_text / set_string / set_file_urls / set_custom / has_type / change_count / snapshot / restore）
 - `platform::selection`：AX 选中文本提取（`try_ax` / `poll_clipboard` / `init_ax_timeout`）
 - `platform::path_guard`：路径安全校验（`validate(path)`，canonicalize + 拦系统致命前缀）
 - `http::client()`：全局 reqwest 客户端

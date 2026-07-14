@@ -22,8 +22,8 @@
   --radius-panel: 10px;
   --radius-window: 16px;
 
-  /* chrome 渐隐遮罩（MainView 等通过 --chrome-fade-height 覆盖高度） */
-  --chrome-fade-height: 92px;
+  /* chrome 渐隐遮罩（= CHROME_HEIGHT 76；MainView 仍可经 --chrome-fade-height 覆盖） */
+  --chrome-fade-height: 76px;
   --chrome-fade-blur: 20px;
   /* 与窗级 mica-tint 白染同级 */
   --chrome-fade-tint: rgb(255 255 255 / 0.4);
@@ -70,7 +70,7 @@ body {
 
 /*
  * chrome-fade：悬浮栏下方从上到下模糊渐变透明遮罩。
- * 高度用 --chrome-fade-height（默认 92px = CHROME_FADE_HEIGHT）；仅视觉，不拦截指针。
+ * 高度用 --chrome-fade-height（默认 76px = CHROME_HEIGHT / CHROME_FADE_HEIGHT）；仅视觉，不拦截指针。
  */
 .chrome-fade {
   pointer-events: none;

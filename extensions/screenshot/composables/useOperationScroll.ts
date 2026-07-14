@@ -4,7 +4,6 @@ import { useScrollCapture } from './useScrollCapture'
 
 /** 滚动截屏编排：phase 切换、标注互斥清空、完成/保存/取消。 */
 export function useOperationScroll(options: {
-  dpr: Ref<number>
   phase: Ref<Phase>
   sel: Ref<Sel>
   hasSelection: Ref<boolean>
@@ -19,7 +18,7 @@ export function useOperationScroll(options: {
   doScrollSave: (dataUrl: string) => Promise<void>
   doCancel: () => void
 }) {
-  const scrollCapture = useScrollCapture({ dpr: options.dpr })
+  const scrollCapture = useScrollCapture()
 
   async function onScrollStart() {
     if (!options.hasSelection.value) return

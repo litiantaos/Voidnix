@@ -102,7 +102,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 - `secret_scrub.rs`：gitleaks 风格正则打码
 - `tool_registry.rs`：`AgentTool` trait + `ToolRegistry`
 
-Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`extensions/agent/native/policy.rs` 是资源上限 floor/cap 权威源（CPU/内存/文件描述符/超时/输出/轮次 clamp），`agent_run` 入口强制 clamp（不信任前端传值）；`run_command` 保留 `rm -rf /` 断路器兜底；TS 端 `config.ts` 的 `BOUNDS` 仅 UI 镜像。详见 `docs/extensions/agent.md`。
+Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`extensions/agent/native/policy.rs` 是资源上限 floor/cap 权威源（CPU/内存/文件描述符/超时/输出/轮次 clamp），`agent_run` 入口强制 clamp（不信任前端传值）；`run_command` 保留 `rm -rf /` 断路器兜底；TS 端 `config.ts` 的 `BOUNDS` 仅 CI 镜像（无 Settings UI）。详见 `docs/extensions/agent.md`。
 
 **搜索打分**：`src/utils/fuzzy.ts::scoreFields()`（[pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。模块入口用 `scoreModuleEntry()`（name/id/description + `keywordMatch` 双向），全局 keyword 与 `/` 列表共用；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其 keyword 入口**（即时答案优先；clipboard 等 kind≠module 不抑制）。`kind` 枚举 `application | folder | file | module | clipboard | web`，组间序 `GROUP_ORDER`：`application > module > file > clipboard > web`。组内限流：`LIMITS.maxGroupResults`（非 file）/ `maxFileResults`。
 
@@ -135,7 +135,7 @@ src-tauri/src/
     ├── skylight.rs     # Space 迁移（私有 API）
     ├── focus.rs        # 焦点管理（PREV_FRONT_PID 唯一源 + is_app_active 系统弹窗检测 + restore_captured 第三方守卫）
     ├── input.rs        # CGEvent 键盘注入（post_key 原语 + post_combo 字符串糖；Modifier 枚举 + Option pid）
-    ├── pasteboard.rs   # NSPasteboard 原语统一（read_text/read_file_url/read_png/write_text/clear/set_string/set_file_url/set_png/set_custom/snapshot/restore）
+    ├── pasteboard.rs   # NSPasteboard 原语统一（read_text/read_file_urls/read_png(max)/read_tiff_as_png(max)/encode_image_to_png/set_png_bytes/write_text/clear/set_string/set_file_url/set_file_urls/set_custom/has_type/change_count/snapshot/restore）
     ├── selection.rs    # AX 选中文本提取 + poll_clipboard
     ├── click_monitor.rs
     ├── frontmost_watcher.rs  # NSWorkspace 激活通知观察器（系统弹窗关闭后恢复焦点，随 show/hide 生命周期）
@@ -187,7 +187,7 @@ Voidnix 设计系统（仅浅色），取 macOS 原生能力实现（`NSVisualEf
 
 **组件**：只用 `@/components/ui/` 原子组件，**禁止手写底层标签**。外框材质 / 内嵌填充 / 圆角一律走 shortcuts（见 design.md），禁止内嵌元素再叠 `backdrop-blur`。
 
-**容器边距**：全局统一 `p-3`（12px）——搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`、`WINDOW.SEARCH_BAR_TOP/GAP` 同步 12px。**例外**：`BaseDialog` 标题/内容/页脚用 `p-4`（16px）。**元素间距**三档：`gap-1.5`（控件内）/ `gap-2`（默认）/ `gap-3`（区块）；`gap-0.5` 仅微密 UI。
+**容器边距**：全局统一 `p-3`（12px）——搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`；搜索栏 top/height/gap 为 `constants.ts` 模块内常量（和为 `CHROME_HEIGHT`，与 MainView `top-3`/`h-13`/`p-3` 同步）。**例外**：`BaseDialog` 标题/内容/页脚用 `p-4`（16px）。**元素间距**三档：`gap-1.5`（控件内）/ `gap-2`（默认）/ `gap-3`（区块）；`gap-0.5` 仅微密 UI。
 
 **浮层范式**：右下角浮层统一 `fixed bottom-3 right-3 z-50`（离边缘 12px，与全局 p-3 一致）+ `dropdown-panel` + 同款进出场动画（`ease-out` 进 / `ease-in` 离）。**toast**（`ToastOverlay`）用 `z-9999`，高于 `BaseDialog`（z-100）与动作面板（z-50），保证错误/成功反馈始终顶层可见。`BaseDropdownItems` 通用行渲染器（4 行类型 `item | header | divider | meta`，meta = label:value 详情行不可选）。screenshot 标注选区 / clean-mode 为功能性覆盖层不加材质；工具条 / 贴图悬停条走 `mica-panel` / `mica-bar`（与窗级 Mica 同白染，忌 acrylic 浅透）。
 

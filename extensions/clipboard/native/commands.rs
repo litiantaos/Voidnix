@@ -195,29 +195,40 @@ pub async fn update_clipboard_text(
     Ok(())
 }
 
-fn write_to_pasteboard(content: &str, content_type: &str) {
+/// 写入系统剪贴板。图片路径先 decode/转 PNG 再 clear，避免失败时已清空却仍 Cmd+V。
+fn write_to_pasteboard(content: &str, content_type: &str) -> Result<(), String> {
     use crate::platform::pasteboard;
 
-    // 委托至 platform::pasteboard（不再直访 NSPasteboard，无 unsafe）
-    pasteboard::clear();
-
-    // marker：clipboard 自身写入标记，monitor 据此跳过记录
-    pasteboard::set_custom("", "com.litiantao.voidnix.clipboard");
-
     match content_type {
-        "text" => pasteboard::set_string(content),
-        "file" => pasteboard::set_file_url(content),
-        "image" => {
-            // 兼容任意 data:image/*;base64,<payload>（PNG/JPEG/GIF/WebP/BMP），
-            // set_image_bytes 经 NSBitmapImageRep 统一转 PNG 写入
-            if let Some(idx) = content.find(";base64,") {
-                let payload = &content[idx + ";base64,".len()..];
-                if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(payload) {
-                    pasteboard::set_image_bytes(&decoded);
-                }
-            }
+        "text" => {
+            pasteboard::clear();
+            pasteboard::set_custom("", "com.litiantao.voidnix.clipboard");
+            pasteboard::set_string(content);
+            Ok(())
         }
-        _ => {}
+        "file" => {
+            pasteboard::clear();
+            pasteboard::set_custom("", "com.litiantao.voidnix.clipboard");
+            pasteboard::set_file_url(content);
+            Ok(())
+        }
+        "image" => {
+            // 兼容任意 data:image/*;base64,<payload>；先 encode 再 clear+写板
+            let idx = content
+                .find(";base64,")
+                .ok_or_else(|| "无效的图片数据".to_string())?;
+            let payload = &content[idx + ";base64,".len()..];
+            let decoded = base64::engine::general_purpose::STANDARD
+                .decode(payload)
+                .map_err(|_| "图片 base64 解码失败".to_string())?;
+            let png = pasteboard::encode_image_to_png(&decoded)
+                .ok_or_else(|| "图片解码失败".to_string())?;
+            pasteboard::clear();
+            pasteboard::set_custom("", "com.litiantao.voidnix.clipboard");
+            pasteboard::set_png_bytes(&png);
+            Ok(())
+        }
+        other => Err(format!("不支持的剪贴板类型: {other}")),
     }
 }
 
@@ -259,7 +270,7 @@ pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), Str
         None => return Err(format!("Clipboard item not found: {id}")),
     };
 
-    write_to_pasteboard(&content, &content_type);
+    write_to_pasteboard(&content, &content_type)?;
     hide_and_paste(&app);
 
     Ok(())
@@ -322,7 +333,7 @@ pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<
             .map(|(c, _)| c.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        write_to_pasteboard(&merged, "text");
+        write_to_pasteboard(&merged, "text")?;
     } else if all_file {
         // 全 file：多 item pasteboard，对齐访达多选复制
         let urls: Vec<String> = items.into_iter().map(|(c, _)| c).collect();
@@ -330,7 +341,7 @@ pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<
     } else {
         // 混类型：只粘选择序首项（与 UI「主选」一致）
         let (content, content_type) = &items[0];
-        write_to_pasteboard(content, content_type);
+        write_to_pasteboard(content, content_type)?;
     }
     hide_and_paste(&app);
 

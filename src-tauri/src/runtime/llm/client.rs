@@ -309,8 +309,9 @@ fn finalize_stream(
             Ok(calls) => calls,
             Err(e) => {
                 log::warn!(
-                    "tool_calls finalize failed ({}), falling back to lenient",
-                    e
+                    "tool_calls finalize failed ({}), args_preview=[{}], falling back to lenient",
+                    e,
+                    acc.args_preview(120)
                 );
                 acc.finalize_lenient()
             }

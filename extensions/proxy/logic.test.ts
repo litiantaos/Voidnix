@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import {
-  modeLabel,
   delayColor,
   formatDelay,
   DELAY_TIMEOUT,
@@ -11,12 +10,6 @@ import {
 } from './logic'
 
 describe('proxy logic', () => {
-  it('modeLabel maps known modes', () => {
-    expect(modeLabel('rule')).toBe('规则')
-    expect(modeLabel('global')).toBe('全局')
-    expect(modeLabel('unknown')).toBe('unknown')
-  })
-
   it('delayColor连通绿/超时红/未测速空', () => {
     expect(delayColor(DELAY_TIMEOUT)).toBe('text-red-500')
     expect(delayColor(100)).toBe('text-green-500')
