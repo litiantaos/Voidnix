@@ -11,20 +11,57 @@
     <template v-else-if="staticInfo && snapshot">
       <!-- 顶部设备概览 -->
       <section p="3" class="radius-panel" bg="black/3" flex flex-wrap gap="1.5" items="center">
-        <span flex shrink="0" gap="2" items="center">
+        <span flex shrink="0" gap="2" items="center" mr="2">
           <i class="i-ri-computer-line text-xs text-secondary" />
           <span text="xs secondary" font="medium">设备</span>
         </span>
-        <span text="muted">·</span>
-        <span text="xs secondary" font="medium" truncate>{{ resolveModel(staticInfo.model) }}</span>
+        <span
+          text="xs secondary"
+          font="medium"
+          truncate
+          class="cursor-pointer hover:text-primary"
+          title="点击复制机型"
+          @click="copyField(resolveModel(staticInfo.model), '已复制机型')"
+        >
+          {{ resolveModel(staticInfo.model) }}
+        </span>
         <span text="muted">·</span>
         <span text="xs muted" shrink="0">
           {{ staticInfo.os_name }} {{ staticInfo.os_version }}
         </span>
         <span text="muted">·</span>
-        <span text="xs muted" shrink="0">{{ staticInfo.hostname }}</span>
+        <span
+          text="xs muted"
+          shrink="0"
+          class="cursor-pointer hover:text-primary"
+          title="点击复制主机名"
+          @click="copyField(staticInfo.hostname, '已复制主机名')"
+        >
+          {{ staticInfo.hostname }}
+        </span>
         <span text="muted">·</span>
         <span text="xs muted" shrink="0">运行 {{ formatUptime(snapshot.uptime) }}</span>
+        <span text="muted">·</span>
+        <span text="xs muted" shrink="0" tabular-nums title="负载均值 1 / 5 / 15 分钟">
+          负载 {{ snapshot.load_one.toFixed(2) }} /
+          {{ snapshot.load_five.toFixed(2) }} /
+          {{ snapshot.load_fifteen.toFixed(2) }}
+        </span>
+        <template v-if="snapshot.thermal !== 'nominal'">
+          <span text="muted">·</span>
+          <span
+            text="xs"
+            shrink="0"
+            :class="thermalClass(snapshot.thermal)"
+            :title="thermalTitle(snapshot.thermal)"
+          >
+            {{ thermalText(snapshot.thermal) }}
+          </span>
+        </template>
+        <template v-if="snapshot.low_power_mode">
+          <span text="muted">·</span>
+          <span text="xs amber-500" shrink="0">低电量模式</span>
+        </template>
       </section>
 
       <!-- 第 1 行：CPU + Memory -->
@@ -105,8 +142,17 @@
             />
           </div>
           <div text="xs muted" tabular-nums>可用 {{ formatBytes(snapshot.available_memory) }}</div>
-          <div v-if="snapshot.used_swap > 0" text="xs muted" mt="0.5" tabular-nums>
-            交换 {{ formatBytes(snapshot.used_swap) }}
+          <div
+            v-if="snapshot.total_swap > 0 || snapshot.used_swap > 0"
+            text="xs muted"
+            mt="0.5"
+            tabular-nums
+          >
+            交换
+            {{ formatBytes(snapshot.used_swap)
+            }}<template v-if="snapshot.total_swap > 0">
+              / {{ formatBytes(snapshot.total_swap) }}</template
+            >
           </div>
         </section>
       </div>
@@ -124,7 +170,11 @@
           </div>
           <div v-for="d in snapshot.disks_usage" :key="d.mount_point" mb="1.5" mt="2" last:mb="0">
             <div mb="1" flex items="baseline" justify="between">
-              <span text="xs secondary" font="medium" truncate>{{ d.name || d.mount_point }}</span>
+              <span text="xs secondary" font="medium" truncate min-w="0">
+                {{ d.name || d.mount_point }}
+                <span v-if="d.kind && d.kind !== 'Unknown'" text="muted"> · {{ d.kind }}</span>
+                <span v-if="d.removable" text="muted"> · 外置</span>
+              </span>
               <span text="xs muted" ml="2" shrink="0" tabular-nums>
                 {{ formatBytes(d.used) }} / {{ formatBytes(d.total) }}
               </span>
@@ -177,16 +227,16 @@
               <span v-if="snapshot.battery.time_to_empty !== null">
                 剩余 {{ formatDuration(snapshot.battery.time_to_empty) }}
               </span>
-              <span v-if="snapshot.battery.time_to_empty !== null" text="muted">·</span>
+              <span v-if="snapshot.battery.time_to_full !== null">
+                充满 {{ formatDuration(snapshot.battery.time_to_full) }}
+              </span>
+              <span v-if="snapshot.battery.adapter_watts !== null">
+                {{ snapshot.battery.adapter_watts }}W
+              </span>
               <span v-if="snapshot.battery.cycles !== null">
                 {{ snapshot.battery.cycles }} 循环
               </span>
-              <span
-                v-if="snapshot.battery.cycles !== null && snapshot.battery.temperature !== null"
-                text="muted"
-                >·</span
-              >
-              <span v-if="snapshot.battery.temperature !== null" tabular-nums>
+              <span v-if="snapshot.battery.temperature !== null">
                 {{ snapshot.battery.temperature.toFixed(1) }}°C
               </span>
             </div>
@@ -271,7 +321,15 @@
           </div>
           <div text="xs muted" flex gap="1.5" truncate items="center">
             <span text="muted" shrink="0">内网</span>
-            <span truncate tabular-nums>{{ snapshot.local_ip || '—' }}</span>
+            <span
+              truncate
+              tabular-nums
+              class="cursor-pointer hover:text-primary"
+              title="点击复制内网 IP"
+              @click="copyField(snapshot.local_ip, '已复制内网 IP')"
+            >
+              {{ snapshot.local_ip || '—' }}
+            </span>
           </div>
         </section>
       </div>
@@ -284,7 +342,9 @@ import { ref, computed, onMounted, onActivated, onDeactivated, onBeforeUnmount }
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { CMD } from '@/commands'
+import { useAppStore } from '@/stores/app'
 import { isTauri } from '@/utils/tauri'
+import { writeText } from '@/utils/clipboard'
 import { formatBytes, formatRate } from '@/utils/format'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 
@@ -292,6 +352,8 @@ interface DiskStatic {
   name: string
   mount_point: string
   fs_type: string
+  kind: string
+  removable: boolean
   total: number
 }
 interface SystemStaticInfo {
@@ -309,6 +371,8 @@ interface SystemStaticInfo {
 interface DiskUsage {
   name: string
   mount_point: string
+  kind: string
+  removable: boolean
   used: number
   total: number
 }
@@ -323,6 +387,8 @@ interface BatteryInfo {
   cycles: number | null
   health: number | null
   time_to_empty: number | null
+  time_to_full: number | null
+  adapter_watts: number | null
   temperature: number | null
 }
 interface SystemSnapshot {
@@ -333,6 +399,12 @@ interface SystemSnapshot {
   available_memory: number
   total_memory: number
   used_swap: number
+  total_swap: number
+  load_one: number
+  load_five: number
+  load_fifteen: number
+  thermal: string
+  low_power_mode: boolean
   disks_usage: DiskUsage[]
   battery: BatteryInfo | null
   net_up: number
@@ -448,6 +520,44 @@ const gpuLabel = computed(() => {
   if (g.gpu_model) return `GPU ${g.gpu_model}`
   return ''
 })
+
+// ── 交互 ──
+
+async function copyField(value: string, label = '已复制') {
+  if (!value) return
+  try {
+    await writeText(value)
+    useAppStore().showStatus(label, { duration: 800 })
+  } catch (e) {
+    console.error('[system-status] copy failed:', e)
+  }
+}
+
+function thermalText(state: string): string {
+  return (
+    {
+      fair: '轻微发热',
+      serious: '热节流',
+      critical: '严重过热',
+    }[state] ?? state
+  )
+}
+
+function thermalTitle(state: string): string {
+  return (
+    {
+      fair: '系统热状态：Fair',
+      serious: '系统热状态：Serious',
+      critical: '系统热状态：Critical',
+    }[state] ?? state
+  )
+}
+
+function thermalClass(state: string): string {
+  if (state === 'critical' || state === 'serious') return 'text-red-500'
+  if (state === 'fair') return 'text-amber-500'
+  return 'text-muted'
+}
 
 // ── 格式化 ──
 

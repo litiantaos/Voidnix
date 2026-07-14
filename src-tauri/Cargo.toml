@@ -48,7 +48,7 @@ rlimit = "0.10"
 plist = "1"
 block2 = "0.6"
 objc2 = "0.6.4"
-objc2-foundation = { version = "0.3.2", features = ["NSString", "NSURL", "NSGeometry", "NSData", "NSDictionary", "NSArray", "NSEnumerator"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString", "NSURL", "NSGeometry", "NSData", "NSDictionary", "NSArray", "NSEnumerator", "NSProcessInfo"] }
 objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSWindow", "NSEvent", "NSScreen", "NSImage", "NSGraphicsContext", "NSBitmapImageRep", "NSImageRep", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSRunningApplication", "NSAnimationContext", "NSVisualEffectView", "NSColor", "NSAppearance", "NSView", "NSTextField", "NSImageView", "NSFont", "NSCell", "NSImageCell"] }
 objc2-quartz-core = { version = "0.3", features = ["CAMediaTimingFunction", "CALayer", "CATransaction", "CATransform3D", "objc2-core-foundation"] }
 
