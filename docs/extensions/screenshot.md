@@ -7,6 +7,8 @@
 - 截图渲染走 ObjC++ 桥（`screenshot_overlay.mm`）把 CGImage 直接设为 `CALayer.contents`，按键到显示 ~20-30ms
 - 标注/选区/工具栏走 Vue（`windows/Operation.vue` + `composables/`）
 - 工具条 / 色板 / 贴图悬停条：`mica-panel` / `mica-bar`（与窗级 Mica 同白染 + blur；叠在截图花图上忌用浅透 `acrylic`，否则纯模糊且按钮不可读）
+- 选区阶段（`phase === 'select'`，尚无工具栏）底部居中轻量快捷键提示：`Esc` 取消 / `F` 全屏 / `C` 复制色值（`mica-panel` + kbd 样式，与 `onKeyDown` 对齐）
+- 提示条与标注工具栏进出场：`Transition` + 浮层范式（进 150ms `ease-out` opacity/translate-y/scale，出 100ms `ease-in` 反向；`appear` 首次挂载亦进场）
 - `native/` 按职责分：session（截图会话）、ocr（Vision 调用）、pin（钉图窗口）、scroll_capture/（滚动长截图：state / encode / stitch / mouse / 命令）、crop（裁剪）、ffi（ObjC++ 桥）、setup（启动钩子）
 
 ## 约束
