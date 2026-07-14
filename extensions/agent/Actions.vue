@@ -3,7 +3,7 @@
     v-if="modelOptions.length > 0"
     :model-value="agentConfig.activeProviderModelKey"
     :options="modelOptions"
-    class="min-w-0 w-50"
+    class="max-w-50"
     @update:model-value="handleModelChange"
   />
   <BaseButton icon="i-ri-add-line" @click="handleNewConversation" />

@@ -92,8 +92,9 @@ mod inner {
     const PANEL_TOP_GAP: f64 = 8.0;
     const HIDE_DELAY_SEC: f64 = 0.4;
 
+    /// 与 SnapPanel.vue 设计稿同步：p-3×2 + 5×w-14 + 4×gap-3 = 352；高 p-3×2 + h-14 = 80
     fn panel_width() -> f64 {
-        344.0
+        352.0
     }
     fn panel_height() -> f64 {
         80.0
@@ -219,10 +220,8 @@ mod inner {
 
         STATE.lock().unwrap_or_else(|e| e.into_inner()).visible = false;
 
-        // 用户点击 SnapPanel 时,panel 会被 AppKit 自动 makeKey 偷走 system key,
-        // 原 app 的 first responder 随之丢失。沿用主窗口的恢复策略：
-        // deactivate self → activate 原 app。
-        crate::platform::focus::restore_captured();
+        // 焦点归还不在此处：hide 经 Vue → hide_snap_panel 做 alpha 淡出，
+        // 动画结束后再 restore_captured，避免中途抢焦点导致离场卡顿。
     }
 
     // ── Hide timer ────────────────────────────────────────────────────────
@@ -439,6 +438,11 @@ mod inner {
             hide_panel_impl(app);
         }
     }
+
+    /// 面板逻辑可见（show 后至 hide 发起前）；供 hide 动画结束时条件 restore。
+    pub fn is_panel_visible() -> bool {
+        STATE.lock().unwrap_or_else(|e| e.into_inner()).visible
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -454,10 +458,17 @@ mod inner {
         false
     }
     pub fn hide_panel(_app: &AppHandle) {}
+    pub fn is_panel_visible() -> bool {
+        false
+    }
 }
 
 pub fn panel_dimensions() -> (f64, f64) {
     inner::panel_dimensions()
+}
+
+pub fn is_panel_visible() -> bool {
+    inner::is_panel_visible()
 }
 
 pub fn set_snap_size(custom_width: f64, custom_height: f64) {

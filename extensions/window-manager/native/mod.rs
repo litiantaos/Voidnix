@@ -126,6 +126,12 @@ pub fn set_snap_size(width: f64, height: f64) {
     platform::do_set_snap_size(width, height);
 }
 
+/// snap-panel 进出场：淡入淡出 + 轻微纵向位移动画（尺寸固定，无 reflow）。
+/// 进：自上滑入 + fade in（easeOut）；出：上移淡出（easeIn）。系统浮层手感。
+const SNAP_PANEL_ANIM_SECS: f64 = 0.2;
+/// AppKit 坐标 y 向上；正值 = 起点/终点更靠屏幕上方（自顶缘滑入/滑出）。
+const SNAP_PANEL_SLIDE_PT: f64 = 10.0;
+
 #[tauri::command]
 pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
     use objc2_foundation::{NSPoint, NSRect, NSSize};
@@ -134,54 +140,49 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
     let app_clone = app.clone();
     app.run_on_main_thread(move || {
         if let Some(w) = app_clone.get_webview_window("snap-panel") {
-            let mut target_frame: Option<NSRect> = None;
             let (pw, ph) = window_snap::panel_dimensions();
-            // SAFETY: ns_window 经 Ok 分支有效；ns 经 as_ref Some 非空校验。
-            // setFrame_display/setAlphaValue/makeKeyAndOrderFront 均为 NSWindow 标准方法。
-            // 窗口目标位置已由 show_panel（drag monitor）设为面板尺寸。
+            let mut target: Option<NSRect> = None;
+            // SAFETY: setFrame/setAlpha/makeKeyAndOrderFront 均为 NSWindow 标准方法。
+            // show_panel 已把窗口放到满尺寸目标位；此处只抬高 y 作滑入起点，宽高不变。
             unsafe {
                 if let Ok(raw) = w.ns_window() {
                     if let Some(ns) = raw.cast::<objc2_app_kit::NSWindow>().as_ref() {
-                        // 固定 target 尺寸（不读 ns.frame() 的 size，避免前次动画未完成时漂移）；
-                        // 中心点取当前 frame（动画为中心对齐缩放，中心点稳定）
                         let cur = ns.frame();
-                        let cx = cur.origin.x + cur.size.width / 2.0;
-                        let cy = cur.origin.y + cur.size.height / 2.0;
-                        // 起点：固定 80%，中心对齐
-                        let sw = pw * 0.8;
-                        let sh = ph * 0.8;
+                        // 锁定满尺寸（避免前次离场残留半透明小帧）
+                        let x = cur.origin.x + cur.size.width / 2.0 - pw / 2.0;
+                        let y = cur.origin.y + cur.size.height / 2.0 - ph / 2.0;
                         ns.setFrame_display(
                             NSRect::new(
-                                NSPoint::new(cx - sw / 2.0, cy - sh / 2.0),
-                                NSSize::new(sw, sh),
+                                NSPoint::new(x, y + SNAP_PANEL_SLIDE_PT),
+                                NSSize::new(pw, ph),
                             ),
                             false,
                         );
                         ns.setAlphaValue(0.0);
-                        // panel 已是 NonactivatingPanel：makeKey 只让面板接收事件，
-                        // 不会把 Voidnix 拉成前台 app，前台应用焦点保持不变。
+                        // NonactivatingPanel：makeKey 不抢前台 app
                         let _: () = objc2::msg_send![
                             ns,
                             makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()
                         ];
-                        // target：固定尺寸，中心对齐
-                        target_frame = Some(NSRect::new(
-                            NSPoint::new(cx - pw / 2.0, cy - ph / 2.0),
+                        target = Some(NSRect::new(
+                            NSPoint::new(x, y),
                             NSSize::new(pw, ph),
                         ));
                     }
                 }
             }
-            // alpha + frame 同步动画（缩小→目标 + alpha 0→1，单 group）
-            if let Some(tf) = target_frame {
+            if let Some(tf) = target {
                 crate::platform::window::animate_panel(
                     &w,
-                    1.0,
-                    tf.origin.x,
-                    tf.origin.y,
-                    tf.size.width,
-                    tf.size.height,
-                    0.25,
+                    crate::platform::window::PanelAnimTarget {
+                        alpha: 1.0,
+                        x: tf.origin.x,
+                        y: tf.origin.y,
+                        w: tf.size.width,
+                        h: tf.size.height,
+                        duration: SNAP_PANEL_ANIM_SECS,
+                        ease_out: true,
+                    },
                 );
             }
         }
@@ -201,45 +202,52 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
     let app_clone = app.clone();
     app.run_on_main_thread(move || {
         if let Some(w) = app_clone.get_webview_window("snap-panel") {
-            let mut smaller_frame: Option<NSRect> = None;
             let (pw, ph) = window_snap::panel_dimensions();
-            // SAFETY: setIgnoresMouseEvents/frame 均为 NSWindow 标准方法/属性。
+            let mut end: Option<NSRect> = None;
+            // SAFETY: setIgnoresMouseEvents / frame 均为 NSWindow 标准 API。
             unsafe {
                 if let Ok(raw) = w.ns_window() {
                     if let Some(ns) = raw.cast::<objc2_app_kit::NSWindow>().as_ref() {
                         ns.setIgnoresMouseEvents(true);
-                        // 动画终点：固定 80% 尺寸（不读 ns.frame() 的 size，避免漂移）；
-                        // 中心点取当前 frame（动画为中心对齐缩放，中心点稳定）
                         let cur = ns.frame();
-                        let cx = cur.origin.x + cur.size.width / 2.0;
-                        let cy = cur.origin.y + cur.size.height / 2.0;
-                        let sw = pw * 0.8;
-                        let sh = ph * 0.8;
-                        smaller_frame = Some(NSRect::new(
-                            NSPoint::new(cx - sw / 2.0, cy - sh / 2.0),
-                            NSSize::new(sw, sh),
+                        let x = cur.origin.x + cur.size.width / 2.0 - pw / 2.0;
+                        let y = cur.origin.y + cur.size.height / 2.0 - ph / 2.0;
+                        // 终点：上移 10pt + 淡出，宽高仍满尺寸
+                        end = Some(NSRect::new(
+                            NSPoint::new(x, y + SNAP_PANEL_SLIDE_PT),
+                            NSSize::new(pw, ph),
                         ));
                     }
                 }
             }
-            // alpha + frame 同步动画（目标→缩小 + alpha 1→0，单 group）
-            if let Some(sf) = smaller_frame {
+            if let Some(ef) = end {
                 crate::platform::window::animate_panel(
                     &w,
-                    0.0,
-                    sf.origin.x,
-                    sf.origin.y,
-                    sf.size.width,
-                    sf.size.height,
-                    0.25,
+                    crate::platform::window::PanelAnimTarget {
+                        alpha: 0.0,
+                        x: ef.origin.x,
+                        y: ef.origin.y,
+                        w: ef.size.width,
+                        h: ef.size.height,
+                        duration: SNAP_PANEL_ANIM_SECS,
+                        ease_out: false,
+                    },
                 );
             }
-        }
-        // 用户点击触发的 layout 路径:panel 已 makeKey 偷走 system key,
-        // 隐藏后需 deactivate + activate 原 app,把 first responder 还回去。
-        #[cfg(target_os = "macos")]
-        {
-            crate::platform::focus::restore_captured();
+            // 焦点归还等动画结束，避免中途抢前台
+            #[cfg(target_os = "macos")]
+            {
+                let delay = std::time::Duration::from_secs_f64(SNAP_PANEL_ANIM_SECS + 0.02);
+                let app_restore = app_clone.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(delay);
+                    let _ = app_restore.run_on_main_thread(|| {
+                        if !window_snap::is_panel_visible() {
+                            crate::platform::focus::restore_captured();
+                        }
+                    });
+                });
+            }
         }
         let _ = tx.send(());
     })

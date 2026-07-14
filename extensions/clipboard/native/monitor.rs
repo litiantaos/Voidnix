@@ -235,7 +235,8 @@ fn collect_clipboard_snapshots() -> Vec<ClipboardSnapshot> {
         }
     } else if let Some(slice) = pasteboard::read_png().or_else(pasteboard::read_tiff_as_png) {
         let len = slice.len();
-        if len > 0 {
+        // 与磁盘图片上限对齐：超限丢弃，避免大截图/高分辨率 TIFF 整段 base64 撑爆内存与 DB
+        if len > 0 && (len as u64) <= MAX_IMAGE_FILE_SIZE {
             let (mut image_width, mut image_height) = (None, None);
             if len >= 24 && slice[0..4] == [0x89, 0x50, 0x4E, 0x47] {
                 image_width = Some(u32::from_be_bytes(slice[16..20].try_into().unwrap()) as i32);

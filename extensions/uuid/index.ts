@@ -16,7 +16,9 @@ export default defineExtension({
   disableSearchInput: true,
 
   search: {
-    dynamic: (): ProviderResult[] => {
+    dynamic: (_query, ctx): ProviderResult[] => {
+      // 仅模块内生成（全局只走 keyword 入口）
+      if (!ctx?.moduleMode) return []
       const results: ProviderResult[] = []
       const uuid = uuidv4()
       const nano = nanoId(21)

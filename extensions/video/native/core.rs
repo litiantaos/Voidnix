@@ -278,12 +278,16 @@ async fn stream_download(
         .map_err(|e| format!("下载响应错误: {e}"))?;
     let file_total = resp.content_length();
     let overall_total = file_total.map(|t| progress_base + t);
-    let mut file = std::fs::File::create(gz).map_err(|e| e.to_string())?;
+    // 网络读 async + 内存缓冲；落盘一次 spawn_blocking，避免同步 write 阻塞 runtime
+    let mut buf: Vec<u8> = file_total
+        .and_then(|n| usize::try_from(n).ok())
+        .map(Vec::with_capacity)
+        .unwrap_or_default();
     let mut received: u64 = 0;
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("下载读取失败: {e}"))?;
-        std::io::Write::write_all(&mut file, &chunk).map_err(|e| e.to_string())?;
+        buf.extend_from_slice(&chunk);
         received += chunk.len() as u64;
         let _ = app.emit(
             "video-core-progress",
@@ -293,7 +297,11 @@ async fn stream_download(
             },
         );
     }
-    drop(file);
+    let gz_path = gz.to_path_buf();
+    tokio::task::spawn_blocking(move || std::fs::write(&gz_path, &buf))
+        .await
+        .map_err(|e| format!("写入任务失败: {e}"))?
+        .map_err(|e| e.to_string())?;
     let _ = app.emit(
         "video-core-progress",
         CoreProgress {

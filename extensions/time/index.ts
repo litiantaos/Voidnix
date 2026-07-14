@@ -17,11 +17,10 @@ export default defineExtension({
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {
+      // 仅模块内转换（全局避免日期/时间戳形态误触）
+      if (!ctx?.moduleMode) return []
       const trimmed = query.trim()
       const results: ProviderResult[] = []
-
-      // 全局模式不对纯数字做时间戳转换（避免订单号/账号等误触）；模块模式正常响应
-      if (trimmed && !ctx?.moduleMode && /^\d+$/.test(trimmed)) return results
 
       const mk = (id: string, title: string, desc: string): ProviderResult => ({
         id,

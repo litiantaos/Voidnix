@@ -4,7 +4,8 @@
     :id="id"
     data-settings-control
     :class="[
-      'ui-ctrl custom-select flex items-center justify-between min-w-0 w-full relative overflow-hidden',
+      // w-fit：默认贴合当前 label；max-w-full 防撑破父级；消费者可用 max-w-* 设上限（勿用固定 w-*）
+      'ui-ctrl custom-select inline-flex w-fit max-w-full flex-none items-center relative',
       disabled ? 'ui-disabled' : '',
     ]"
     tabindex="0"
@@ -14,7 +15,10 @@
     @keydown="onKeyDown"
     @click="toggleOpen"
   >
-    <span :class="selectedLabel ? 'text-primary' : 'text-muted'" truncate>
+    <span
+      :class="selectedLabel ? 'text-primary' : 'text-muted'"
+      class="min-w-0 truncate"
+    >
       {{ selectedLabel || placeholder }}
     </span>
     <i
@@ -162,16 +166,24 @@ const selectedLabel = computed(() => {
   return ''
 })
 
+/** 关闭下拉并失焦：交还 ↑↓/Enter 给 BaseList（否则 settings-control 聚焦时列表让出键盘） */
+function closeAndReleaseFocus() {
+  isOpen.value = false
+  selectRef.value?.blur()
+}
+
 const toggleOpen = () => {
   if (props.disabled) return
-  isOpen.value = !isOpen.value
   if (isOpen.value) {
-    const currentFlatIndex = flatItems.value.findIndex(
-      (item) => item.type === 'option' && item.value === props.modelValue,
-    )
-    highlightedIndex.value =
-      currentFlatIndex >= 0 ? currentFlatIndex : (optionIndices.value[0] ?? 0)
+    closeAndReleaseFocus()
+    return
   }
+  isOpen.value = true
+  const currentFlatIndex = flatItems.value.findIndex(
+    (item) => item.type === 'option' && item.value === props.modelValue,
+  )
+  highlightedIndex.value =
+    currentFlatIndex >= 0 ? currentFlatIndex : (optionIndices.value[0] ?? 0)
 }
 
 const focus = () => {
@@ -188,21 +200,20 @@ const selectOption = (index: number) => {
   const item = flatItems.value[index]
   if (!item || item.type !== 'option') return
   emit('update:modelValue', item.value)
-  isOpen.value = false
-  selectRef.value?.focus()
+  closeAndReleaseFocus()
 }
 
 /**
- * 键盘约定（与 form 弹窗回车提交对齐）：
- * - 关闭：空格 / ↓ 展开；Enter **不拦截**（冒泡给 BaseDialog form 提交）
- * - 展开：↑↓ 移动，Enter/空格 选中并 stopPropagation（不提交表单）
+ * 键盘约定：
+ * - 关闭：Enter / 空格 / ↓ 展开
+ * - 展开：↑↓ 移动，Enter/空格 选中，Esc 关闭
+ * - 关闭后一律失焦，↑↓ 回列表导航；再 Enter 由 BaseList execute → focus+click 打开
  */
 const onKeyDown = (e: KeyboardEvent) => {
   if (props.disabled) return
 
   if (!isOpen.value) {
-    // Enter 放行 → 外层 form 提交；仅空格/↓ 打开下拉
-    if (e.key === ' ' || e.key === 'ArrowDown') {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
       e.preventDefault()
       e.stopPropagation()
       toggleOpen()
@@ -214,8 +225,7 @@ const onKeyDown = (e: KeyboardEvent) => {
   e.stopPropagation()
 
   if (e.key === 'Escape') {
-    isOpen.value = false
-    selectRef.value?.focus()
+    closeAndReleaseFocus()
   } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     const currentOptionIndex = optionIndices.value.indexOf(highlightedIndex.value)
     let nextOptionIndex: number
@@ -236,7 +246,7 @@ const onClickOutside = (e: MouseEvent) => {
   // 改用组件本地 dropdownRef 精确判定当前实例的下拉是否被点击
   if (isOpen.value && selectRef.value && !selectRef.value.contains(e.target as Node)) {
     if (!dropdownRef.value?.contains(e.target as Node)) {
-      isOpen.value = false
+      closeAndReleaseFocus()
     }
   }
 }

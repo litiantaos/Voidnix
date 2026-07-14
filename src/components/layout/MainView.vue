@@ -176,7 +176,7 @@ const activeModule = computed(() => {
 const placeholderText = computed(() => {
   const mod = activeModule.value
   if (!mod) {
-    return '搜索应用、文件、扩展等，输入 / 显示扩展列表，输入 // 进行网络搜索'
+    return '搜索应用、文件、扩展等'
   }
   const subview = appStore.activeSubview
   if (subview && mod.subviewTitle?.[subview]) {

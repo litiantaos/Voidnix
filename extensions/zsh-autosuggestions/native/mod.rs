@@ -16,7 +16,7 @@ const ZSHRC_MARKER: &str = "# voidnix zsh-autosuggestions";
 /// binary 分发版本号。install_bin 比对此常量与 `bin_version` 文件，相等即跳过复制。
 /// **每改 binary 内容（`native/src/*.rs` 或 `include_str!` 嵌入的 `init.zsh`）
 /// 必须 bump**——开发期迭代亦然，共用版本号会导致改动不部署。
-const BIN_VERSION: u32 = 7;
+const BIN_VERSION: u32 = 8;
 
 /// 串行化 setup / set_enabled 路径，避免 torn write。
 static SETUP_LOCK: Mutex<()> = Mutex::new(());

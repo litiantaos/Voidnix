@@ -15,6 +15,11 @@
 # 1. Config & globals                                                #
 #--------------------------------------------------------------------#
 
+# frecency 依赖每条命令的时间戳（`: <ts>:<dur>;cmd`）。未开时所有命令共享
+# 文件 mtime，排序退化为纯频次，多行续行也会被拆成独立命令。
+# 仅影响本会话及之后写入的 history；旧记录无 ts 时仍走 mtime fallback。
+setopt EXTENDED_HISTORY
+
 : ${ZSH_AS_DIR:=}
 ZSH_AS_BIN="$ZSH_AS_DIR/bin/zsh-autosuggestions"
 ZSH_AS_CACHE="$ZSH_AS_DIR/index.zsh"

@@ -51,11 +51,13 @@ export default defineConfig({
     'mica-bar': 'bg-white/90 backdrop-blur-xl glass-ring radius-panel border border-black/10',
 
     // ── 材质：Acrylic 仅外框（主窗搜索栏 / 下拉，叠在已有 Mica 上）；内嵌禁止再叠磨砂 ──
-    // 白底 45%：叠在窗级 mica 上仍有层次与透感
+    // 搜索栏：白底 45% + 强 blur，叠 mica 上仍有层次与透感
     acrylic: 'bg-white/45 backdrop-blur-2xl backdrop-saturate-125',
     'glass-ring': 'shadow-[inset_0_2px_0_0_rgba(255,255,255,0.65)]',
     'acrylic-bar': 'acrylic glass-ring radius-panel border border-black/10',
-    'acrylic-panel': 'acrylic glass-ring radius-panel border border-black/10 select-none',
+    // 弹出层：高白染 + 轻 blur，近纯白磨砂（与搜索栏浅透 acrylic 分轨）
+    'acrylic-panel':
+      'bg-white/95 backdrop-blur-sm glass-ring radius-panel border border-black/10 select-none',
     'dropdown-panel': 'acrylic-panel p-1',
 
     // ── 内嵌实色填充（标签 / 图标井 / 按钮 / 选中；无 blur，保证叠在玻璃上仍可读）──
