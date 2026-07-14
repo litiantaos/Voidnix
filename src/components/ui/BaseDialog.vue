@@ -90,9 +90,8 @@ export type CloseReason = 'cancel' | 'escape' | 'overlay'
  * variant 驱动弹窗行为模式：
  * - confirm：确认对话框。默认显示 footer，支持方向键/回车导航，焦点聚焦确认按钮，warning 禁止遮罩关闭
  * - form：表单面板。默认隐藏 footer。有 footer 时回车提交：
- *   单行 INPUT、关闭态 combobox（方便「改完格式直接回车创建」）；
- *   展开中的下拉由 BaseSelect 消费 Enter 选选项。多行 textarea 不提交。
- *   焦点聚焦首个输入，遮罩始终可关闭
+ *   单行 INPUT（方便「改完直接回车创建」）；BaseSelect 自管 Enter（关=开/开=选），不参与提交。
+ *   多行 textarea 不提交。焦点聚焦首个输入，遮罩始终可关闭
  *
  * closeOnConfirm：false 时确定/回车只 emit confirm、不关窗，由父级在异步结果后决定卸载
  * （如新建文件：失败 toast 时弹窗保持，避免先关再开）。
@@ -194,23 +193,14 @@ function onKeyDown(e: KeyboardEvent) {
     target.tagName === 'SELECT' ||
     target.isContentEditable
 
-  // form + footer 回车提交（操作顺手优先）：
-  // - 单行 INPUT / 关闭态 combobox：事件会冒泡到此 → 提交
-  // - 展开中的 BaseSelect 已 stopPropagation，不会进到这里
-  // - textarea 不提交
-  const comboboxEl =
-    (target.getAttribute('role') === 'combobox' ? target : null) ||
-    (target.closest('[role="combobox"]') as HTMLElement | null)
-  const isComboboxOpen = comboboxEl?.getAttribute('aria-expanded') === 'true'
-  const canFormSubmit = target.tagName === 'INPUT' || (!!comboboxEl && !isComboboxOpen)
-
+  // form + footer 回车提交：仅单行 INPUT（BaseSelect 自管 Enter，不冒泡到此）
   if (
     props.variant === 'form' &&
     resolvedShowFooter.value &&
     e.key === 'Enter' &&
     !isComposing(e) &&
     !isTextarea &&
-    canFormSubmit
+    target.tagName === 'INPUT'
   ) {
     e.preventDefault()
     e.stopPropagation()

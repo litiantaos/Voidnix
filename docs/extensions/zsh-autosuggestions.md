@@ -12,7 +12,7 @@ zsh 启动 → `source index.zsh`（<5ms，零解析，版本校验）→ 按键
 
 - `init`（输出 zsh 集成脚本，无模板替换，`include_str!` 嵌入）
 - `rebuild`（读 .zsh_history + signals.log → 先 rotate+compact signals → 写 index.zsh，atomic rename）
-- `stats`（诊断，支持 `--half-life-days` / `--fail-penalty` 覆盖默认参数；未检测到 extended_history 时提示 `setopt EXTENDED_HISTORY`）
+- `stats`（诊断，支持 `--half-life-days` / `--fail-penalty` 覆盖默认参数；未检测到 extended_history 时提示——通常是历史文件仍为旧格式，新会话已由 init 自动 `setopt EXTENDED_HISTORY`）
 
 ## 保留算法
 
@@ -30,7 +30,7 @@ frecency（`(count+1)^0.7 * exp(-dt/half_life)` + K=10 归一，半衰期默认 
 
 ## history 解析
 
-zsh extended_history 格式 `: <ts>:<dur>;<cmd>`；非 extended 库（无 ts）fallback 用文件 mtime（续行被当作独立命令，已知限制）。多行命令（for/heredoc）折叠为单行（`\n` → 空格）。含控制字符（`< 0x20` 或 `0x7f`）的命令不入 cache（行结构完整性 + 终端安全）。
+zsh extended_history 格式 `: <ts>:<dur>;<cmd>`。`init.zsh` 启动时自动 `setopt EXTENDED_HISTORY`（启用扩展即写带时间戳的 history；关闭扩展后不再注入）。非 extended 库（无 ts，常见于开启前的旧文件）fallback 用文件 mtime（续行被当作独立命令，已知限制）。多行命令（for/heredoc）折叠为单行（`\n` → 空格）。含控制字符（`< 0x20` 或 `0x7f`）的命令不入 cache（行结构完整性 + 终端安全）。
 
 ## cache reload
 

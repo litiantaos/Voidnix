@@ -30,7 +30,7 @@
 
 未找到则按需下载 [eugeneware/ffmpeg-static](https://github.com/eugeneware/ffmpeg-static) 静态构建（`b6.1.1`，arm64/x64，sha256 校验）：先 `gh-proxy.com` 镜像，失败回退直连 GitHub；ffmpeg + ffprobe 两段进度累计上报。写入 `ext_data_dir/video/`。
 
-编码策略：压缩模式用码率封顶（避免 VT `q:v` 撑大体积）；转换模式优先 `h264_videotoolbox`，失败回落 `libx264`；H.264 输出带 `-pix_fmt yuv420p`。webm/gif 走软编。整段 encode（进度循环 + wait）6h 超时。
+编码策略：压缩模式用码率封顶（避免 VT `q:v` 撑大体积）；转换模式优先 `h264_videotoolbox`，硬件路径任意非取消失败即软重试 `libx264` 一次（不依赖 stderr 子串）；H.264 输出带 `-pix_fmt yuv420p`。webm/gif 走软编。整段 encode（进度循环 + wait）6h 超时。内核下载网络读 async、落盘 `spawn_blocking`。
 
 ## 命令
 

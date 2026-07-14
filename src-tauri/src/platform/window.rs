@@ -84,19 +84,24 @@ pub fn animate_frame(window: &tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f
     crate::platform::skylight::set_full_event_shape(window_number as i64, w, h);
 }
 
-/// snap-panel 进出场动画：窗口 alpha + frame 同步缩放（单 NSAnimationContext group，
-/// CoreAnimation 保证完美同步）。Mica 材质 + 内容整体动画，无 CSS/native 分裂。
-/// timing 用 macOS "default" 曲线（标准 ease-in-out），与 animate_frame 一致。
-pub fn animate_panel(
-    window: &tauri::WebviewWindow,
-    target_alpha: f64,
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-    duration: f64,
-) {
+/// snap-panel 进出场目标（宽高应与稳态一致，只改 origin / alpha，避免 reflow）。
+pub struct PanelAnimTarget {
+    pub alpha: f64,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    pub duration: f64,
+    /// `true` = easeOut（进场），`false` = easeIn（离场）
+    pub ease_out: bool,
+}
+
+/// 单 group 同步 **alpha + 纵向位移**（系统曲线，尺寸不变）。
+pub fn animate_panel(window: &tauri::WebviewWindow, target: PanelAnimTarget) {
+    use objc2_app_kit::NSAnimationContext;
     use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize};
+    use objc2_quartz_core::CAMediaTimingFunction;
+
     let Ok(ptr) = window.ns_window() else {
         return;
     };
@@ -104,21 +109,26 @@ pub fn animate_panel(
     let Some(ns_window) = (unsafe { raw.as_ref() }) else {
         return;
     };
-    let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+    let frame = NSRect::new(
+        NSPoint::new(target.x, target.y),
+        NSSize::new(target.w, target.h),
+    );
+    let timing = CAMediaTimingFunction::functionWithName(if target.ease_out {
+        ns_string!("easeOut")
+    } else {
+        ns_string!("easeIn")
+    });
+
+    NSAnimationContext::beginGrouping();
+    let ctx = NSAnimationContext::currentContext();
+    ctx.setDuration(target.duration);
+    ctx.setTimingFunction(Some(&timing));
     unsafe {
-        let ctx_cls = objc2::class!(NSAnimationContext);
-        let _: () = objc2::msg_send![ctx_cls, beginGrouping];
-        let ctx: *mut objc2::runtime::AnyObject = objc2::msg_send![ctx_cls, currentContext];
-        let _: () = objc2::msg_send![ctx, setDuration: duration];
-        let timing_cls = objc2::class!(CAMediaTimingFunction);
-        let timing_fn: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![timing_cls, functionWithName: ns_string!("default")];
-        let _: () = objc2::msg_send![ctx, setTimingFunction: timing_fn];
         let animator: *mut objc2::runtime::AnyObject = objc2::msg_send![ns_window, animator];
-        let _: () = objc2::msg_send![animator, setAlphaValue: target_alpha];
+        let _: () = objc2::msg_send![animator, setAlphaValue: target.alpha];
         let _: () = objc2::msg_send![animator, setFrame: frame, display: true];
-        let _: () = objc2::msg_send![ctx_cls, endGrouping];
     }
+    NSAnimationContext::endGrouping();
 }
 
 /// Mica 材质底：NSVisualEffectView（material=HeaderView，blendingMode=BehindWindow）

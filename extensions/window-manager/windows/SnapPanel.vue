@@ -1,16 +1,10 @@
 <template>
+  <!-- 铺满固定尺寸窗口；进出场由原生 alpha + 位移动画，前端不参与 -->
   <div
-    class="radius-panel mica-tint"
-    h="screen"
-    w="screen"
-    p="3"
-    flex
-    items="center"
-    gap="3"
-    overflow="hidden"
+    class="snap-panel p-3 radius-panel mica-tint flex gap-3 h-screen w-screen items-center overflow-hidden"
     style="-webkit-app-region: no-drag"
   >
-    <div v-for="group in groups" :key="group.id" p="1" h="14" w="14">
+    <div v-for="group in groups" :key="group.id" class="snap-group p-1 shrink-0 h-14 w-14">
       <template v-if="group.nested">
         <div class="snap-nested" h="full" w="full" relative>
           <!-- 全屏：中心镂空环；居中：cell×0.78 压小，同色 fill-8 -->
@@ -38,7 +32,6 @@
             <div
               v-if="zone.layout === 'custom'"
               class="snap-zone custom-zone flex-center"
-              text="muted"
               :class="{ 'snap-hover': hoveredLayout === zone.layout }"
               :data-layout="zone.layout"
               @click="onZone(zone.layout)"
@@ -183,7 +176,7 @@ onUnmounted(() => {
  * - 环仅靠 ::after box-shadow 上色，本体背景必须始终透明（否则 hover 会填满间隙）
  */
 .snap-nested {
-  --snap-gap: 0.1875rem; /* 3px，略宽于 gap-0.5 */
+  --snap-gap: 0.125rem; /* = gap-0.5，与前三组小矩形间距一致 */
   --snap-cell: calc((100% - var(--snap-gap)) / 2);
   --snap-center: calc(var(--snap-cell) * 0.78);
   --snap-hollow: calc(var(--snap-center) + 2 * var(--snap-gap));
@@ -236,7 +229,11 @@ onUnmounted(() => {
 .snap-zone.snap-ring.snap-hover::after {
   box-shadow: 0 0 0 999px var(--color-fill-18);
 }
+/* 自定义格：底 fill-8/18 与他格相同；图标默认深一档 fill-12，悬浮再深到 muted */
+.snap-zone.custom-zone {
+  color: var(--color-fill-12);
+}
 .snap-zone.custom-zone.snap-hover {
-  color: var(--color-text-secondary);
+  color: var(--color-text-muted);
 }
 </style>

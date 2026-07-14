@@ -64,8 +64,8 @@ pub struct RunRequest {
 pub fn job_status() -> JobSnapshot {
     let last = LAST_RESULT
         .lock()
-        .ok()
-        .and_then(|g| g.clone())
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
         .unwrap_or(JobSnapshot {
             busy: false,
             last_output: None,
@@ -81,19 +81,16 @@ pub fn job_status() -> JobSnapshot {
 }
 
 pub fn cancel_job() -> bool {
-    if let Ok(guard) = CANCEL.lock() {
-        if let Some(token) = guard.as_ref() {
-            token.cancel();
-            return true;
-        }
+    let guard = CANCEL.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(token) = guard.as_ref() {
+        token.cancel();
+        return true;
     }
     false
 }
 
 fn set_last(snap: JobSnapshot) {
-    if let Ok(mut g) = LAST_RESULT.lock() {
-        *g = Some(snap);
-    }
+    *LAST_RESULT.lock().unwrap_or_else(|e| e.into_inner()) = Some(snap);
 }
 
 /// Channel + 全局事件双投递（重开面板 / 本地 Channel 共用终态契约）。
@@ -195,16 +192,12 @@ pub async fn run_job(
     }
 
     let token = CancellationToken::new();
-    if let Ok(mut g) = CANCEL.lock() {
-        *g = Some(token.clone());
-    }
+    *CANCEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(token.clone());
 
     let result = run_job_inner(app, req, on_event, token.clone()).await;
 
     BUSY.store(false, Ordering::SeqCst);
-    if let Ok(mut g) = CANCEL.lock() {
-        *g = None;
-    }
+    *CANCEL.lock().unwrap_or_else(|e| e.into_inner()) = None;
     result
 }
 
@@ -266,7 +259,8 @@ async fn run_job_inner(
         last_percent: 0.0,
     });
 
-    // 先尝试硬件，失败（明确标记）再软件；禁止裸子串匹配以免误重试
+    // 硬件路径失败一律软重试一次（VT 常见通用错误不含 videotoolbox 子串）；
+    // 取消 / 超时不重试。encode_once 在 use_hw 时统一前缀 "hw encode failed"。
     let encode_result = match encode_once(
         &app,
         &bins,
@@ -281,7 +275,7 @@ async fn run_job_inner(
     .await
     {
         Ok(()) => Ok(()),
-        Err(e) if e.starts_with("hw encode failed") => {
+        Err(e) if e.starts_with("hw encode failed") && !token.is_cancelled() => {
             log::warn!("[video] hardware encode failed, retry software: {e}");
             let _ = std::fs::remove_file(&output);
             encode_once(
@@ -528,15 +522,8 @@ async fn encode_once(
     };
 
     if !status.success() {
-        let low = stderr_buf.to_lowercase();
-        // 仅当本趟实际走硬件编码时标记，供外层精确重试软件路径
-        if use_hw
-            && (low.contains("videotoolbox")
-                || low.contains("qsv")
-                || low.contains("hwaccel")
-                || low.contains("h264_videotoolbox")
-                || low.contains("hevc_videotoolbox"))
-        {
+        // use_hw 本趟失败一律标记，外层统一软重试（VT 错误信息不稳定，子串匹配易漏）
+        if use_hw {
             return Err(format!("hw encode failed: {stderr_buf}"));
         }
         return Err(if stderr_buf.is_empty() {

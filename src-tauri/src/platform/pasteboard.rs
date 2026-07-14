@@ -112,6 +112,35 @@ pub fn set_file_url(s: &str) {
     }
 }
 
+/// 写多个 file URL：每个 NSPasteboardItem 一个（对齐 Finder 多选复制）。
+/// 单元素退化为 `set_file_url`；空切片 no-op。调用前通常先 `clear()`。
+pub fn set_file_urls(urls: &[String]) {
+    if urls.is_empty() {
+        return;
+    }
+    if urls.len() == 1 {
+        set_file_url(&urls[0]);
+        return;
+    }
+    autoreleasepool(|_| {
+        use objc2::runtime::ProtocolObject;
+        use objc2_app_kit::{NSPasteboardItem, NSPasteboardWriting};
+        use objc2_foundation::NSArray;
+        let pb = NSPasteboard::generalPasteboard();
+        let mut protos: Vec<objc2::rc::Retained<ProtocolObject<dyn NSPasteboardWriting>>> =
+            Vec::with_capacity(urls.len());
+        for url in urls {
+            let item = NSPasteboardItem::new();
+            let ns = NSString::from_str(url);
+            // setString_forType 对 file URL 项足够；与 read_file_urls 对称
+            item.setString_forType(&ns, unsafe { NSPasteboardTypeFileURL });
+            protos.push(ProtocolObject::from_retained(item));
+        }
+        let array = NSArray::from_retained_slice(&protos);
+        pb.writeObjects(&array);
+    });
+}
+
 /// 写 NSPasteboardTypePNG（不清空）。
 pub fn set_png(bytes: &[u8]) {
     let d = NSData::with_bytes(bytes);

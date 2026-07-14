@@ -1,5 +1,4 @@
 import { defineExtension } from '@/runtime/extension-registry'
-import { makeToggleHandler } from '@/stores/app'
 import SystemStatusView from './View.vue'
 
 export default defineExtension({
@@ -32,11 +31,4 @@ export default defineExtension({
   disableSearchInput: true,
   windowHeight: 'auto',
   mainView: () => SystemStatusView,
-  globalShortcuts: [
-    {
-      id: 'system-status',
-      default: 'Alt+M',
-      onExecute: makeToggleHandler('system-status'),
-    },
-  ],
 })

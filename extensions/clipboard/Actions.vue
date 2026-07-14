@@ -2,7 +2,6 @@
   <BaseSelect
     :model-value="activeType"
     :options="typeOptions"
-    class="min-w-0 w-30"
     @update:model-value="handleTypeChange"
   />
   <BaseButton

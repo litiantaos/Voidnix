@@ -221,6 +221,14 @@ fn write_to_pasteboard(content: &str, content_type: &str) {
     }
 }
 
+/// 多文件写入 pasteboard（每个 item 一个 file URL）。
+fn write_files_to_pasteboard(urls: &[String]) {
+    use crate::platform::pasteboard;
+    pasteboard::clear();
+    pasteboard::set_custom("", "com.litiantao.voidnix.clipboard");
+    pasteboard::set_file_urls(urls);
+}
+
 fn hide_and_paste(app: &tauri::AppHandle) {
     crate::runtime::window::hide_main(app);
     set_window_visible(false);
@@ -262,6 +270,10 @@ pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<
     if !ax_trusted() {
         return Err("需授予辅助功能权限".to_string());
     }
+    if ids.is_empty() {
+        return Err("No items found".to_string());
+    }
+    // 按前端 ids 顺序取行（不用 created_at），保证多选粘贴序 = 选择序
     let items = {
         let db = require_db(&app)?;
         let conn = db.conn();
@@ -272,7 +284,7 @@ pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<
             .collect::<Vec<_>>()
             .join(",");
         let sql = format!(
-            "SELECT content, content_type FROM clipboard_history WHERE id IN ({}) ORDER BY created_at DESC",
+            "SELECT id, content, content_type FROM clipboard_history WHERE id IN ({})",
             placeholders
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
@@ -282,30 +294,44 @@ pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<
             .collect();
         let rows = stmt
             .query_map(params.as_slice(), |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
             })
             .map_err(|e| e.to_string())?;
-        rows.filter_map(|r| r.ok()).collect::<Vec<_>>()
+        let by_id: std::collections::HashMap<String, (String, String)> = rows
+            .filter_map(|r| r.ok())
+            .map(|(id, c, t)| (id, (c, t)))
+            .collect();
+        ids.iter()
+            .filter_map(|id| by_id.get(id).cloned())
+            .collect::<Vec<_>>()
     };
 
     if items.is_empty() {
         return Err("No items found".to_string());
     }
 
-    // 全部为文本时拼接，否则只粘贴最后一项
     let all_text = items.iter().all(|(_, t)| t == "text");
-    let (content, content_type) = if all_text {
+    let all_file = items.iter().all(|(_, t)| t == "file");
+    if all_text {
         let merged: String = items
             .iter()
             .map(|(c, _)| c.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        (merged, "text".to_string())
+        write_to_pasteboard(&merged, "text");
+    } else if all_file {
+        // 全 file：多 item pasteboard，对齐访达多选复制
+        let urls: Vec<String> = items.into_iter().map(|(c, _)| c).collect();
+        write_files_to_pasteboard(&urls);
     } else {
-        items.into_iter().last().unwrap()
-    };
-
-    write_to_pasteboard(&content, &content_type);
+        // 混类型：只粘选择序首项（与 UI「主选」一致）
+        let (content, content_type) = &items[0];
+        write_to_pasteboard(content, content_type);
+    }
     hide_and_paste(&app);
 
     Ok(())

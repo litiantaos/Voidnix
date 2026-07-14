@@ -66,12 +66,13 @@ Voidnix 自身的设计系统（仅浅色）。本文档是色值、材质、排
 
 ### Acrylic（WebView 内磨砂，仅叠在已有 Mica 上的外框）
 
-WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只用于主窗搜索栏 / 下拉浮层**（底下已有窗级 Mica），内嵌禁止再叠半透明磨砂。
+WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只用于主窗搜索栏 / 下拉浮层**（底下已有窗级 Mica），内嵌禁止再叠半透明磨砂。搜索栏与弹出层分轨：前者浅透层次，后者近纯白磨砂。
 
-- `acrylic`：`bg-white/45 backdrop-blur-2xl backdrop-saturate-125` —— 磨砂基底（叠 mica 后仍透；勿回 /70 级实心）
+- `acrylic`：`bg-white/45 backdrop-blur-2xl backdrop-saturate-125` —— 搜索栏浅透基底（叠 mica 后仍有层次）
 - `glass-ring`：inset 顶 2px 白高光
 - `acrylic-bar`：`acrylic` + `glass-ring` + `radius-panel` + `border border-black/10` —— 主窗搜索栏
-- `acrylic-panel` / `dropdown-panel`：主窗内下拉 / 动作浮层
+- `acrylic-panel`：`bg-white/95 backdrop-blur-sm` + `glass-ring` + `radius-panel` + 边框 —— 下拉 / 动作浮层 / toast；高白染 + 轻 blur，绝大多数场景近纯白
+- `dropdown-panel`：`acrylic-panel` + `p-1`
 
 ### 内嵌实色填充（可读性）
 
@@ -158,4 +159,4 @@ WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只�
 
 - 进场 `ease-out`（`cubic-bezier(0,0,0.2,1)`）：`opacity-0 translate-y-2 scale-95` → `opacity-100 translate-y-0 scale-100`，duration-150
 - 离场 `ease-in`（`cubic-bezier(0.4,0,1,1)`）：反向，duration-100
-- snap-panel 进出场为原生 NSAnimationContext（alpha + frame 缩放单 group 同步，Mica + 内容整体动画），不走 CSS 过渡
+- snap-panel 进出场：单 `NSAnimationContext` 同步 alpha + 纵向位移 10pt（宽高固定，无 reflow）。进 easeOut 自上滑入淡入、出 easeIn 上移淡出（约 200ms）；焦点 restore 等动画结束后再执行

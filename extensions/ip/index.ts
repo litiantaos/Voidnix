@@ -52,10 +52,9 @@ export default defineExtension({
 
   search: {
     dynamic: async (query, ctx): Promise<ProviderResult[]> => {
+      // 仅模块内查询（全局避免 IP 形态误触网络）
+      if (!ctx?.moduleMode) return []
       const trimmed = query.trim()
-      // 全局默认列表（moduleMode=false）空 query 不触发网络请求（避免拖慢主列表）；
-      // 模块内空 query 正常查询本机 IP
-      if (!trimmed && !ctx?.moduleMode) return []
       if (trimmed && !isValidIpLike(trimmed)) return []
       try {
         const data = await fetchIpInfo(trimmed || null)

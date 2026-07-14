@@ -13,7 +13,7 @@ pub trait Extension: Send + Sync + 'static {
     /// 扩展 ID，应与 `extensions/<id>/` 目录名一致。
     fn id(&self) -> &'static str;
 
-    /// 启动钩子（并行执行）。任一失败则中断 bootstrap。
+    /// 启动钩子（并行执行）。单扩展失败隔离（log + 跳过），不中断整体 bootstrap。
     async fn setup(&self, _app: &AppHandle) -> tauri::Result<()> {
         Ok(())
     }
