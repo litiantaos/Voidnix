@@ -168,37 +168,47 @@
       />
     </div>
 
-    <!-- 标注调色板 -->
-    <AnnotationPalette
-      ref="paletteRef"
-      v-if="hasSelection && (phase === 'annotate' || phase === 'scroll') && !selResizeHandle"
-      :sel="sel"
-      :active-tool="activeTool"
-      :color="annotColor"
-      :line-width="annotLineWidth"
-      :font-size="annotFontSize"
-      :blur-amount="annotBlurAmount"
-      :blur-mode="annotBlurMode"
-      :screen-height="screenH"
-      :screen-width="screenW"
-      :mode="phase === 'scroll' ? 'scroll' : 'annotate'"
-      class="pointer-events-auto"
-      @tool="setTool"
-      @color="annotColor = $event"
-      @line-width="annotLineWidth = $event"
-      @font-size="annotFontSize = $event"
-      @blur-amount="annotBlurAmount = $event"
-      @blur-mode="annotBlurMode = $event"
-      @ocr="doOcr"
-      @pin="doPin"
-      @copy="doCopy"
-      @save="doSave"
-      @cancel="doCancel"
-      @scroll-start="onScrollStart"
-      @scroll-finish="onScrollFinish"
-      @scroll-save="onScrollSave"
-      @scroll-cancel="onScrollCancel"
-    />
+    <!-- 标注调色板（进出场与浮层范式一致：150 ease-out / 100 ease-in） -->
+    <Transition
+      appear
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0 translate-y-2 scale-95"
+      enter-to-class="opacity-100 translate-y-0 scale-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100 translate-y-0 scale-100"
+      leave-to-class="opacity-0 translate-y-2 scale-95"
+    >
+      <AnnotationPalette
+        ref="paletteRef"
+        v-if="hasSelection && (phase === 'annotate' || phase === 'scroll') && !selResizeHandle"
+        :sel="sel"
+        :active-tool="activeTool"
+        :color="annotColor"
+        :line-width="annotLineWidth"
+        :font-size="annotFontSize"
+        :blur-amount="annotBlurAmount"
+        :blur-mode="annotBlurMode"
+        :screen-height="screenH"
+        :screen-width="screenW"
+        :mode="phase === 'scroll' ? 'scroll' : 'annotate'"
+        class="pointer-events-auto"
+        @tool="setTool"
+        @color="annotColor = $event"
+        @line-width="annotLineWidth = $event"
+        @font-size="annotFontSize = $event"
+        @blur-amount="annotBlurAmount = $event"
+        @blur-mode="annotBlurMode = $event"
+        @ocr="doOcr"
+        @pin="doPin"
+        @copy="doCopy"
+        @save="doSave"
+        @cancel="doCancel"
+        @scroll-start="onScrollStart"
+        @scroll-finish="onScrollFinish"
+        @scroll-save="onScrollSave"
+        @scroll-cancel="onScrollCancel"
+      />
+    </Transition>
 
     <!-- 滚动截屏：右侧实时预览面板 -->
     <ScrollPreview
@@ -212,6 +222,42 @@
       :screen-width="screenW"
       :screen-height="screenH"
     />
+    <!-- 选区阶段：快捷键提示（无工具栏时） -->
+    <Transition
+      appear
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0 translate-y-2 scale-95"
+      enter-to-class="opacity-100 translate-y-0 scale-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100 translate-y-0 scale-100"
+      leave-to-class="opacity-0 translate-y-2 scale-95"
+    >
+      <div
+        v-if="phase === 'select'"
+        class="pointer-events-none left-1/2 bottom-6 fixed z-60 -translate-x-1/2"
+      >
+        <div text="xs secondary" p="1.5" flex gap="1.5" items="center" class="mica-panel">
+          <span v-for="tip in selectShortcutTips" :key="tip.key" flex gap="1.5" items="center">
+            <kbd
+              text="xs primary"
+              font="medium mono"
+              rounded
+              bg="black/5"
+              flex
+              h="5"
+              min-w="5"
+              px="1.5"
+              items="center"
+              justify="center"
+            >
+              {{ tip.key }}
+            </kbd>
+            <span>{{ tip.label }}</span>
+          </span>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 自动停止提示 -->
     <div
       v-if="phase === 'scroll' && scrollCapture.atBottom.value"
@@ -258,6 +304,12 @@ const dpr = ref(props.initialScreenshot.scale)
 const windows = ref(props.initialScreenshot.windows ?? [])
 const phase = ref<Phase>('select')
 const hoveredHandle = ref<string | null>(null)
+/** 选区阶段底部快捷键提示（与 useOverlayEvents.onKeyDown 对齐） */
+const selectShortcutTips = [
+  { key: 'Esc', label: '取消' },
+  { key: 'F', label: '全屏' },
+  { key: 'C', label: '复制色值' },
+] as const
 // 十字线分轴显示：select 阶段双轴；resize 时仅显与拖动边平齐的轴——
 // n/s（水平边）显水平线，e/w（垂直边）显垂直线，角控制点双轴
 const showCrossH = computed(() => {
