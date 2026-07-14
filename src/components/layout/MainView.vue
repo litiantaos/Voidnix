@@ -36,35 +36,34 @@
         @mouseenter="isTagHovered = true"
         @mouseleave="isTagHovered = false"
       >
+        <!-- 图标缩小 / 关闭钮放大交叉：进 spring 回弹，出 ease-in 快收；叠在 fill-ctrl 标签上故底色深一档 -->
         <span shrink="0" h="3.5" w="3.5" relative>
-          <Transition
-            enter-active-class="transition duration-150 ease-out"
-            enter-from-class="opacity-0 scale-75"
-            enter-to-class="opacity-100 scale-100"
-            leave-active-class="transition duration-100 ease-in"
-            leave-from-class="opacity-100 scale-100"
-            leave-to-class="opacity-0 scale-75"
-          >
-            <BaseButton
-              v-if="isTagHovered"
-              key="close"
-              variant="ghost"
-              class="rounded-full bg-black/10 flex-center inset-0 absolute !p-0 hover:bg-black/10 !h-3.5 !w-3.5"
-              icon="i-ri-close-line text-xs text-secondary"
-              @click="onTagClose"
-            />
-            <span
-              v-else
-              key="icon"
-              :class="activeModule.meta.icon"
-              text="xs muted"
-              class="flex-center"
-              h="3.5"
-              w="3.5"
-              inset="0"
-              absolute
-            ></span>
-          </Transition>
+          <span
+            text="xs muted"
+            h="3.5"
+            w="3.5"
+            inset="0"
+            absolute
+            class="flex-center transition-all"
+            :class="[
+              activeModule.meta.icon,
+              isTagHovered
+                ? 'opacity-0 scale-50 duration-100 ease-in'
+                : 'opacity-100 scale-100 duration-200 ease-spring',
+            ]"
+            aria-hidden="true"
+          />
+          <BaseButton
+            class="rounded-full flex-center inset-0 absolute !p-0 !h-3.5 !w-3.5 !bg-black/8 hover:!bg-black/12 transition-all"
+            :class="
+              isTagHovered
+                ? 'opacity-100 scale-100 duration-200 ease-spring'
+                : 'opacity-0 scale-50 duration-100 ease-in pointer-events-none'
+            "
+            :tabindex="isTagHovered ? undefined : -1"
+            icon="i-ri-close-line text-xs text-secondary"
+            @click="onTagClose"
+          />
         </span>
         <span>{{ activeModule.meta.name }}</span>
       </div>
