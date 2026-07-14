@@ -39,10 +39,6 @@ class SearchEngine {
     this.activeModule = id
   }
 
-  getActiveModule(): string | undefined {
-    return this.activeModule
-  }
-
   /** 取消进行中的 search（模块退出 / 组件卸载）。新 search() 也会 abort 上一次。 */
   abort() {
     this.currentController?.abort()

@@ -4,7 +4,7 @@ import { defineExtension } from '@/runtime/extension-registry'
 import { makeToggleHandler } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { listen } from '@tauri-apps/api/event'
 import { toErrorMessage } from '@/utils/format'
 import { generateRequestId } from '@/utils/id'
 import { cleanStreamResult, engineLabel } from './logic'
@@ -24,22 +24,30 @@ export type TranslateResult = TranslateBaseResult & { loading?: boolean }
 
 export const translateResults = ref<TranslateResult[]>([])
 export const isTranslating = ref(false)
-export const sourceText = ref('')
 export const pendingText = ref('')
 export const inputText = ref('')
 
-let unlistenChunk: UnlistenFn | null = null
-let unlistenDone: UnlistenFn | null = null
-let unlistenReady: UnlistenFn | null = null
-let unlistenPendingText: UnlistenFn | null = null
-let streamInitializing = false
+/** 流式监听应用级常驻（扩展不卸载），只装一次；并发共用同一 Promise。 */
+let streamListenersReady = false
+let streamInitPromise: Promise<void> | null = null
 
 const streamIndexMap = new Map<string, number>()
 
 async function initStreamListeners() {
-  if (unlistenChunk || streamInitializing) return
-  streamInitializing = true
+  if (streamListenersReady) return
+  if (!streamInitPromise) {
+    streamInitPromise = doInitStreamListeners().catch((e) => {
+      // 允许半失败后重试；成功后 Promise 常驻，不再清空
+      streamInitPromise = null
+      throw e
+    })
+  }
+  return streamInitPromise
+}
 
+async function doInitStreamListeners() {
+  // 半失败时 unlisten 已装监听，避免重试双注册 chunk
+  let unlistenChunk: (() => void) | null = null
   try {
     unlistenChunk = await listen<{ requestId: string; content: string }>(
       'translate-chunk',
@@ -52,7 +60,7 @@ async function initStreamListeners() {
       },
     )
 
-    unlistenDone = await listen<{ requestId: string }>('translate-done', (event) => {
+    await listen<{ requestId: string }>('translate-done', (event) => {
       const { requestId } = event.payload
       const idx = streamIndexMap.get(requestId)
       if (idx !== undefined && translateResults.value[idx]) {
@@ -64,8 +72,11 @@ async function initStreamListeners() {
       streamIndexMap.delete(requestId)
       checkAllDone()
     })
-  } finally {
-    streamInitializing = false
+    streamListenersReady = true
+    // 成功后不 unlisten：应用级常驻
+  } catch (e) {
+    unlistenChunk?.()
+    throw e
   }
 }
 
@@ -75,25 +86,12 @@ function checkAllDone() {
   }
 }
 
-export function destroyStreamListeners() {
-  unlistenChunk?.()
-  unlistenChunk = null
-  unlistenDone?.()
-  unlistenDone = null
-  unlistenReady?.()
-  unlistenReady = null
-  unlistenPendingText?.()
-  unlistenPendingText = null
-  streamInitializing = false
-}
-
 export async function translateText(text: string) {
   if (!text.trim()) {
     translateResults.value = []
     return
   }
 
-  sourceText.value = text
   isTranslating.value = true
   streamIndexMap.clear()
 
@@ -242,7 +240,7 @@ export default defineExtension({
   searchBarAccessory: () => TranslateActions,
   subviews: { config: () => TranslateSettings },
   setup: async () => {
-    unlistenReady = await listen<string>('translate-text-ready', (e) => {
+    await listen<string>('translate-text-ready', (e) => {
       if (translateReadyResolver) {
         translateReadyResolver(e.payload || '')
         translateReadyResolver = null
@@ -250,7 +248,7 @@ export default defineExtension({
     })
     // 跨扩展通信（C9）：screenshot OCR 等通过事件总线投递待翻译文本，
     // 避免扩展之间直 import 内部状态。
-    unlistenPendingText = await listen<string>('translate-pending-text', (e) => {
+    await listen<string>('translate-pending-text', (e) => {
       pendingText.value = e.payload || ''
     })
     await initStreamListeners()

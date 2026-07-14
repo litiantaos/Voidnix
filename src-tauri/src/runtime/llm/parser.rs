@@ -63,8 +63,6 @@ pub enum FinalizeError {
     },
     BadJson {
         index: u32,
-        #[allow(dead_code)]
-        raw: String,
         err: serde_json::Error,
     },
 }
@@ -74,7 +72,7 @@ impl std::fmt::Display for FinalizeError {
         match self {
             Self::MissingId { index } => write!(f, "tool_call[{}] missing id", index),
             Self::MissingName { index } => write!(f, "tool_call[{}] missing function.name", index),
-            Self::BadJson { index, err, .. } => {
+            Self::BadJson { index, err } => {
                 write!(
                     f,
                     "tool_call[{}] arguments JSON parse failed: {}",
@@ -123,17 +121,6 @@ impl ToolCallAccumulator {
         }
     }
 
-    /// 当前累积的 tool_call 数量（监控用）。
-    #[allow(dead_code)]
-    pub fn len(&self) -> usize {
-        self.calls.len()
-    }
-
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.calls.is_empty()
-    }
-
     /// 在 `finish_reason == "tool_calls"` 时调用，按 index 升序产出完整 tool_calls。
     ///
     /// 容错：
@@ -156,7 +143,6 @@ impl ToolCallAccumulator {
             } else {
                 serde_json::from_str(args).map_err(|e| FinalizeError::BadJson {
                     index: *index,
-                    raw: args.clone(),
                     err: e,
                 })?
             };
@@ -167,6 +153,26 @@ impl ToolCallAccumulator {
             });
         }
         Ok(out)
+    }
+
+    /// 截断各 tool_call 原始 arguments 串，供 finalize 失败日志定位坏 JSON。
+    pub fn args_preview(&self, max_per: usize) -> String {
+        self.calls
+            .iter()
+            .map(|(i, (_, _, args))| {
+                let t = if args.len() > max_per {
+                    let mut end = max_per;
+                    while end > 0 && !args.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    format!("{}…", &args[..end])
+                } else {
+                    args.clone()
+                };
+                format!("[{}]={}", i, t)
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
     }
 
     /// 与 `finalize` 相同，但 id 缺失时自动生成 `gen_{index}` 兜底（不报错）。
@@ -192,32 +198,25 @@ impl ToolCallAccumulator {
     }
 }
 
-/// 从一个 SSE chunk 的原始 JSON 文本中提取 `choices[0].delta`。
-///
-/// 返回 `None` 当：
-/// - JSON 解析失败
-/// - 没有 choices 数组（如 usage-only 末尾 chunk）
-///
-/// 主要为测试和外部消费者使用；sse.rs 内部用内联解析（功能等价）。
-#[allow(dead_code)]
-pub fn parse_choice_delta(raw_json: &str) -> Option<ChoiceDelta> {
-    #[derive(Deserialize)]
-    struct Chunk {
-        #[serde(default)]
-        choices: Vec<Choice>,
-    }
-    #[derive(Deserialize)]
-    struct Choice {
-        #[serde(default)]
-        delta: ChoiceDelta,
-    }
-    let chunk: Chunk = serde_json::from_str(raw_json).ok()?;
-    chunk.choices.into_iter().next().map(|c| c.delta)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 从一个 SSE chunk 的原始 JSON 文本中提取 `choices[0].delta`（单测辅助）。
+    fn parse_choice_delta(raw_json: &str) -> Option<ChoiceDelta> {
+        #[derive(Deserialize)]
+        struct Chunk {
+            #[serde(default)]
+            choices: Vec<Choice>,
+        }
+        #[derive(Deserialize)]
+        struct Choice {
+            #[serde(default)]
+            delta: ChoiceDelta,
+        }
+        let chunk: Chunk = serde_json::from_str(raw_json).ok()?;
+        chunk.choices.into_iter().next().map(|c| c.delta)
+    }
 
     /// 模拟 OpenAI 标准流式 tool_calls 序列（get_weather("Paris, France")）。
     fn openai_stream_chunks() -> Vec<&'static str> {
@@ -236,7 +235,6 @@ mod tests {
             let delta = parse_choice_delta(raw).unwrap();
             acc.process_delta(&delta);
         }
-        assert_eq!(acc.len(), 1);
         let calls = acc.finalize().unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].id, "call_abc");
@@ -314,7 +312,7 @@ mod tests {
         let raw = r#"{"choices":[{"index":0,"delta":{"content":"hello"}}]}"#;
         let mut acc = ToolCallAccumulator::default();
         acc.process_delta(&parse_choice_delta(raw).unwrap());
-        assert!(acc.is_empty());
+        assert!(acc.finalize().unwrap().is_empty());
     }
 
     #[test]

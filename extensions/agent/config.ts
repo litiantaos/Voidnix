@@ -62,8 +62,8 @@ export const config = defineConfig('extensions/agent/config', {
   activeProviderModelKey: '',
 })
 
-/// 资源上限 UI 镜像（权威在 native/policy.rs，须手动同步）。
-/// 仅用于 check:agent-bounds CI 校验（BOUNDS ↔ policy.rs 双向一致）；Rust 端 clamp 兜底，不信任此值。
+/// 资源上限 floor/cap 镜像（权威在 native/policy.rs，须手动同步）。
+/// 无 Settings UI：仅供 check:agent-bounds CI 文本校验；运行时由 Rust clamp，不信任前端/config 传值。
 export const BOUNDS = {
   maxTurns: { floor: 1, cap: 50 },
   maxCpuSeconds: { floor: 1, cap: 300 },

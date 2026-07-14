@@ -40,22 +40,21 @@ export const LIMITS = {
 const SEARCH_BAR_TOP = 12 // top-3
 const SEARCH_BAR_HEIGHT = 52 // h-13
 const SEARCH_BAR_GAP = 12 // 栏底与内容间距（与全局 p-3 一致）
+/** 悬浮搜索栏占用高 = top + height + gap；scrollContainer / chrome-fade 共用 */
+const CHROME_HEIGHT = SEARCH_BAR_TOP + SEARCH_BAR_HEIGHT + SEARCH_BAR_GAP
 /** 内容区内边距（与全局 p-3 / 列表 px-3 pb-3 一致；scroll-padding-bottom / 选中项贴边对齐共用） */
 const CONTENT_INSET = 12
-/** chrome 渐隐遮罩伸入内容的尾部长（视觉软边，不计入 paddingTop） */
-const CHROME_FADE_EXTRA = 24
 export const WINDOW = {
   WIDTH: 720,
   DEFAULT_HEIGHT: 480,
-  SEARCH_BAR_TOP,
-  SEARCH_BAR_HEIGHT,
-  SEARCH_BAR_GAP,
   CONTENT_INSET,
-  CHROME_FADE_EXTRA,
-  /** 悬浮搜索栏占用高 = top + height + gap；scrollContainer paddingTop / scroll-padding-top / auto 高度共用 */
-  CHROME_HEIGHT: SEARCH_BAR_TOP + SEARCH_BAR_HEIGHT + SEARCH_BAR_GAP,
-  /** 渐隐遮罩总高 = chrome + 伸入内容的尾部 */
-  CHROME_FADE_HEIGHT: SEARCH_BAR_TOP + SEARCH_BAR_HEIGHT + SEARCH_BAR_GAP + CHROME_FADE_EXTRA,
+  /** 悬浮搜索栏占用高；scrollContainer paddingTop / scroll-padding-top / auto 高度共用 */
+  CHROME_HEIGHT,
+  /**
+   * 渐隐遮罩总高 = chrome（与内容顶对齐；与 CHROME_HEIGHT 同值）。
+   * 勿再伸入内容区：静止时会糊住翻译输入框等顶边控件；列表上滚进 gap/栏底时自然进入 mask 软边。
+   */
+  CHROME_FADE_HEIGHT: CHROME_HEIGHT,
   MIN_HEIGHT: 360,
   MAX_HEIGHT: 820, // 留余量给菜单栏/Dock
 } as const

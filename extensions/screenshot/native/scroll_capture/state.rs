@@ -7,8 +7,6 @@ pub struct ScrollSession {
     pub sel_y: f64,
     pub sel_w: f64,
     pub sel_h: f64,
-    #[allow(dead_code)]
-    pub scale: f64,
     pub pw: usize,
     pub ph_per_frame: usize,
     pub buf: Vec<u8>,

@@ -1,7 +1,7 @@
 export const CURRENCIES = ['CNY', 'USD', 'EUR', 'JPY', 'GBP', 'HKD', 'KRW', 'TWD']
 
 /** 中文名 → ISO 代码映射；未命中的代码原样大写。 */
-export const CURRENCY_NAME_MAP: Record<string, string> = {
+const CURRENCY_NAME_MAP: Record<string, string> = {
   美元: 'USD',
   人民币: 'CNY',
   欧元: 'EUR',
@@ -13,7 +13,7 @@ export const CURRENCY_NAME_MAP: Record<string, string> = {
 }
 
 /** 中文量词 → 倍率（alternation 中万亿必须先于万匹配）。 */
-export const CURRENCY_UNITS: Record<string, number> = {
+const CURRENCY_UNITS: Record<string, number> = {
   万亿: 1e12,
   万: 1e4,
   亿: 1e8,

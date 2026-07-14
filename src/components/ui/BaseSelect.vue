@@ -15,10 +15,7 @@
     @keydown="onKeyDown"
     @click="toggleOpen"
   >
-    <span
-      :class="selectedLabel ? 'text-primary' : 'text-muted'"
-      class="min-w-0 truncate"
-    >
+    <span :class="selectedLabel ? 'text-primary' : 'text-muted'" class="min-w-0 truncate">
       {{ selectedLabel || placeholder }}
     </span>
     <i
@@ -182,8 +179,7 @@ const toggleOpen = () => {
   const currentFlatIndex = flatItems.value.findIndex(
     (item) => item.type === 'option' && item.value === props.modelValue,
   )
-  highlightedIndex.value =
-    currentFlatIndex >= 0 ? currentFlatIndex : (optionIndices.value[0] ?? 0)
+  highlightedIndex.value = currentFlatIndex >= 0 ? currentFlatIndex : (optionIndices.value[0] ?? 0)
 }
 
 const focus = () => {

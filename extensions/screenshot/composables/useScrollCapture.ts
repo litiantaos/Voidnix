@@ -7,7 +7,7 @@ import type { Sel } from './useTypes'
 /// 滚动截屏：进入后 Rust 装挖洞遮罩 + 启动抓帧线程，预览帧通过事件推。
 /// 三态：idle → running → finishing/finished/cancelled。
 /// 完成后 result 持有最终 PNG dataURL（前端用于保存/复制）。
-export function useScrollCapture(options: { dpr: { value: number } }) {
+export function useScrollCapture() {
   const isActive = ref(false)
   const previewDataUrl = ref<string>('')
   const previewWidth = ref(0)
@@ -61,7 +61,6 @@ export function useScrollCapture(options: { dpr: { value: number } }) {
         selY: sel.y,
         selW: sel.w,
         selH: sel.h,
-        scale: options.dpr.value,
       })
       isActive.value = true
     } catch (e) {

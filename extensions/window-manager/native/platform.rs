@@ -579,11 +579,6 @@ mod imp {
             .map_err(|e| e.to_string())?
     }
 
-    pub fn do_check_accessibility() -> bool {
-        // SAFETY: AXIsProcessTrusted 是 Accessibility C API，无参数，仅查询当前进程可信状态
-        unsafe { AXIsProcessTrusted() }
-    }
-
     pub fn do_set_window_manager_enabled(app: &tauri::AppHandle, enabled: bool) {
         if enabled {
             super::super::window_snap::start_drag_monitor(app.clone());
@@ -611,9 +606,6 @@ mod imp {
         _: Option<i32>,
     ) -> Result<(), String> {
         Err("仅支持 macOS".to_string())
-    }
-    pub fn do_check_accessibility() -> bool {
-        false
     }
     pub fn do_set_window_manager_enabled(_: &tauri::AppHandle, _: bool) {}
     pub fn do_set_snap_size(_: f64, _: f64) {}

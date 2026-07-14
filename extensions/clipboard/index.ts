@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { listen } from '@tauri-apps/api/event'
+import { toErrorMessage } from '@/utils/format'
 import { filterByQuery, filterByType, type ContentType } from './logic'
 import ClipboardSettings from './Settings.vue'
 import ClipboardView from './View.vue'
@@ -169,7 +170,7 @@ export default defineExtension({
         invalidateCache()
       } catch (e) {
         console.error('Failed to paste clipboard item:', e)
-        useAppStore().showStatus(typeof e === 'string' ? e : '粘贴失败', {
+        useAppStore().showStatus(toErrorMessage(e, '粘贴失败'), {
           kind: 'error',
           duration: 4000,
         })

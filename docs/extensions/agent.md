@@ -75,7 +75,8 @@ defineConfig('extensions/agent/config', {
   systemPrompt: '你是全能的 AI Agent…',
   searchProvider: { type: 'tavily', apiKey: '' },
   aiProviders: [{ id, endpoint: '', apiKey: '', models: [] }], // 多 provider + activeProviderModelKey 激活选择
-  // 资源上限（maxCpuSeconds/maxMemoryMb/maxOpenFiles/executionTimeout/maxOutputBytes/maxTurns）+ BOUNDS 镜像
+  // 资源上限默认值（maxCpuSeconds/maxMemoryMb/maxOpenFiles/executionTimeout/maxOutputBytes/maxTurns）
+  // BOUNDS 仅 CI 镜像 policy.rs，无 Settings UI；运行时 Rust clamp
 })
 ```
 
@@ -86,7 +87,7 @@ AI Provider（endpoint/apiKey/models）由 agent 自管（与 translate 同构�
 ```
 extensions/agent/
 ├── index.ts               # module 注册（id 'agent'）
-├── config.ts              # defineConfig（systemPrompt/searchProvider/aiProviders + 资源上限 BOUNDS UI 镜像 + provider CRUD/active computed）
+├── config.ts              # defineConfig（systemPrompt/searchProvider/aiProviders + 资源默认值 + BOUNDS 仅 CI 镜像 + provider CRUD/active computed）
 ├── agent.ts               # useAgentChat composable（前端状态机）
 ├── View.vue               # part 渲染
 ├── Settings.vue           # Provider + Agent 配置

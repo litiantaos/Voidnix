@@ -5,8 +5,6 @@
 //! H6：所有返回 autoreleased NSString/NSData 的读路径包 autoreleasepool，
 //! 避免在后台线程（translate 划词、clipboard monitor 等）累积内存。
 
-#![allow(dead_code)]
-
 use objc2::rc::autoreleasepool;
 use objc2_app_kit::{
     NSPasteboard, NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSPasteboardTypeString,
@@ -19,15 +17,6 @@ pub fn read_text() -> Option<String> {
     autoreleasepool(|_| unsafe {
         NSPasteboard::generalPasteboard()
             .stringForType(NSPasteboardTypeString)
-            .map(|s| s.to_string())
-    })
-}
-
-/// 读取文件 URL（NSPasteboardTypeFileURL）。
-pub fn read_file_url() -> Option<String> {
-    autoreleasepool(|_| unsafe {
-        NSPasteboard::generalPasteboard()
-            .stringForType(NSPasteboardTypeFileURL)
             .map(|s| s.to_string())
     })
 }
@@ -62,26 +51,43 @@ pub fn resolve_file_url_to_path(url: &str) -> Option<String> {
 }
 
 /// 读取 PNG 原始字节（NSPasteboardTypePNG）。
-pub fn read_png() -> Option<Vec<u8>> {
-    autoreleasepool(|_| unsafe {
-        NSPasteboard::generalPasteboard()
-            .dataForType(NSPasteboardTypePNG)
-            .map(|d| d.to_vec())
+/// `max_bytes`：源 NSData 超限则丢弃（先量后拷，避免大图 `to_vec` 与后续 base64）。
+pub fn read_png(max_bytes: u64) -> Option<Vec<u8>> {
+    autoreleasepool(|_| {
+        let d = unsafe { NSPasteboard::generalPasteboard().dataForType(NSPasteboardTypePNG) }?;
+        let len = d.len() as u64;
+        if len == 0 || len > max_bytes {
+            return None;
+        }
+        Some(d.to_vec())
     })
 }
 
 /// 读取 TIFF 数据并转为 PNG 字节（微信、预览程序等写 NSPasteboardTypeTIFF）。
 /// 用 NSBitmapImageRep 解码 TIFF 后重新编码为 PNG，供 base64 data URL 复用。
-pub fn read_tiff_as_png() -> Option<Vec<u8>> {
+///
+/// `max_bytes` 同时约束：
+/// 1. **源 TIFF** 超限 → 不解码、直接丢弃（有意收紧：不赌转码后 PNG 更小，避免主线程尖峰）
+/// 2. 转码后 PNG 超限 → 丢弃（与入库/base64 上限对齐）
+pub fn read_tiff_as_png(max_bytes: u64) -> Option<Vec<u8>> {
     use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep};
     use objc2_foundation::NSDictionary;
     autoreleasepool(|_| unsafe {
         let pb = NSPasteboard::generalPasteboard();
         let tiff_data = pb.dataForType(NSPasteboardTypeTIFF)?;
+        let src_len = tiff_data.len() as u64;
+        if src_len == 0 || src_len > max_bytes {
+            return None;
+        }
         let rep = NSBitmapImageRep::imageRepWithData(&tiff_data)?;
         let empty = NSDictionary::<objc2_foundation::NSString, objc2::runtime::AnyObject>::new();
         let png = rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &empty)?;
-        Some(png.to_vec())
+        let out = png.to_vec();
+        // 转码膨胀后仍超限则丢弃（入库/base64 与磁盘图上限对齐）
+        if out.is_empty() || (out.len() as u64) > max_bytes {
+            return None;
+        }
+        Some(out)
     })
 }
 
@@ -141,37 +147,34 @@ pub fn set_file_urls(urls: &[String]) {
     });
 }
 
-/// 写 NSPasteboardTypePNG（不清空）。
-pub fn set_png(bytes: &[u8]) {
-    let d = NSData::with_bytes(bytes);
-    NSPasteboard::generalPasteboard().setData_forType(Some(&d), unsafe { NSPasteboardTypePNG });
-}
-
-/// 写入任意图片字节，经 NSImage 解码后统一转 PNG 再写 NSPasteboardTypePNG。
-/// NSImage 支持所有系统格式（PNG/JPEG/GIF/WebP/BMP/HEIC/HEIF 等，内部用 ImageIO）；
-/// NSBitmapImageRep 不支持 HEIC，故经 NSImage → TIFF 中转再转 PNG。
-pub fn set_image_bytes(bytes: &[u8]) {
+/// 任意图片字节 → PNG（NSImage 解码；不触碰 pasteboard）。
+/// NSImage 支持 PNG/JPEG/GIF/WebP/BMP/HEIC 等；NSBitmapImageRep 不支持 HEIC，故经 NSImage → TIFF 中转。
+pub fn encode_image_to_png(bytes: &[u8]) -> Option<Vec<u8>> {
     use objc2::AnyThread;
     use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
     use objc2_foundation::NSDictionary;
     autoreleasepool(|_| unsafe {
         let data = NSData::with_bytes(bytes);
-        let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) else {
-            return;
-        };
-        let Some(tiff) = image.TIFFRepresentation() else {
-            return;
-        };
-        let Some(rep) = NSBitmapImageRep::imageRepWithData(&tiff) else {
-            return;
-        };
+        let image = NSImage::initWithData(NSImage::alloc(), &data)?;
+        let tiff = image.TIFFRepresentation()?;
+        let rep = NSBitmapImageRep::imageRepWithData(&tiff)?;
         let empty = NSDictionary::<NSString, objc2::runtime::AnyObject>::new();
-        let Some(png) = rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &empty)
-        else {
-            return;
-        };
-        NSPasteboard::generalPasteboard().setData_forType(Some(&png), NSPasteboardTypePNG);
-    });
+        let png = rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &empty)?;
+        let out = png.to_vec();
+        if out.is_empty() {
+            return None;
+        }
+        Some(out)
+    })
+}
+
+/// 写已是 PNG 的字节到 `NSPasteboardTypePNG`（不清空）。
+/// 与 `encode_image_to_png` 配对：先 encode 校验，再 clear + 本函数，避免失败时剪贴板已空。
+pub fn set_png_bytes(png: &[u8]) {
+    unsafe {
+        let data = NSData::with_bytes(png);
+        NSPasteboard::generalPasteboard().setData_forType(Some(&data), NSPasteboardTypePNG);
+    }
 }
 
 /// 写自定义 UTI 类型字符串（不清空，供写入自定义标记类型用于自识别）。
@@ -179,26 +182,6 @@ pub fn set_custom(s: &str, type_uti: &str) {
     let ns = NSString::from_str(s);
     let ty = NSString::from_str(type_uti);
     NSPasteboard::generalPasteboard().setString_forType(&ns, &ty);
-}
-
-/// 按类型名读取字符串值。
-pub fn string_for_type(type_name: &str) -> Option<String> {
-    autoreleasepool(|_| {
-        let ns_type = NSString::from_str(type_name);
-        NSPasteboard::generalPasteboard()
-            .stringForType(&ns_type)
-            .map(|s| s.to_string())
-    })
-}
-
-/// 按类型名读取原始数据。
-pub fn data_for_type(type_name: &str) -> Option<Vec<u8>> {
-    autoreleasepool(|_| {
-        let ns_type = NSString::from_str(type_name);
-        NSPasteboard::generalPasteboard()
-            .dataForType(&ns_type)
-            .map(|d| d.to_vec())
-    })
 }
 
 /// 检查剪贴板是否包含指定类型。

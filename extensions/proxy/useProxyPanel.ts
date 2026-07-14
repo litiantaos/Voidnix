@@ -47,10 +47,8 @@ export type ListItem =
   | { type: 'node'; group: '节点'; node: NodeItem }
 
 export function useProxyPanel() {
-  /// Tauri 命令错误为 Rust `Err(String)` → 前端 reject 值即字符串；
-  /// toErrorMessage 仅识别 Error 实例（字符串回落"未知错误"），这里补 string 透传便于诊断。
   function errText(e: unknown): string {
-    return typeof e === 'string' ? e : toErrorMessage(e)
+    return toErrorMessage(e)
   }
 
   const appStore = useAppStore()

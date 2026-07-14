@@ -100,8 +100,9 @@ describe('toErrorMessage', () => {
     expect(toErrorMessage(new Error('test'))).toBe('test')
   })
 
-  it('非 Error 用 fallback', () => {
-    expect(toErrorMessage('string')).toBe('未知错误')
+  it('字符串透传；空串/非 Error 用 fallback', () => {
+    expect(toErrorMessage('粘贴失败')).toBe('粘贴失败')
+    expect(toErrorMessage('  ')).toBe('未知错误')
     expect(toErrorMessage(42)).toBe('未知错误')
   })
 

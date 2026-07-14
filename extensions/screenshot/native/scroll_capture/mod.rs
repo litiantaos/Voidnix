@@ -30,7 +30,6 @@ pub async fn enter_scroll_capture(
     sel_y: f64,
     sel_w: f64,
     sel_h: f64,
-    scale: f64,
 ) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -86,7 +85,6 @@ pub async fn enter_scroll_capture(
                 sel_y,
                 sel_w,
                 sel_h,
-                scale,
                 pw: 0,
                 ph_per_frame: 0,
                 buf: Vec::new(),
@@ -142,7 +140,7 @@ pub async fn enter_scroll_capture(
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, sel_x, sel_y, sel_w, sel_h, scale);
+        let _ = (app, sel_x, sel_y, sel_w, sel_h);
         Err("仅支持 macOS".to_string())
     }
 }

@@ -234,7 +234,7 @@
     >
       <div
         v-if="phase === 'select'"
-        class="pointer-events-none left-1/2 bottom-6 fixed z-60 -translate-x-1/2"
+        class="pointer-events-none bottom-6 left-1/2 fixed z-60 -translate-x-1/2"
       >
         <div text="xs secondary" p="1.5" flex gap="1.5" items="center" class="mica-panel">
           <span v-for="tip in selectShortcutTips" :key="tip.key" flex gap="1.5" items="center">
@@ -466,7 +466,6 @@ const events = useOverlayEvents({
 
 // 滚动编排：须在 events 之后构造；events 通过闭包延迟调用 scroll 方法，无 TDZ
 const scroll = useOperationScroll({
-  dpr,
   phase,
   sel: selection.sel,
   hasSelection: selection.hasSelection,

@@ -360,7 +360,7 @@ static SCREENSHOT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU
 pub(super) static IS_IN_SCREENSHOT_SESSION: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-#[tauri::command]
+/// 捕获主屏（仅 Rust 内部：快捷键路径 → enter_screenshot_mode_sync；不暴露 IPC）。
 pub fn capture_screen() -> Result<ScreenshotData, String> {
     use core_graphics::display::CGDisplay;
 
@@ -410,21 +410,7 @@ pub fn read_picker_image() -> String {
     }
 }
 
-#[tauri::command]
-pub async fn enter_screenshot_mode(
-    app: tauri::AppHandle,
-    data: ScreenshotData,
-) -> Result<(), String> {
-    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
-    let app_c = app.clone();
-    app.run_on_main_thread(move || {
-        let _ = tx.send(enter_impl(&app_c, &data));
-    })
-    .map_err(|e| e.to_string())?;
-    rx.recv_timeout(std::time::Duration::from_secs(10))
-        .map_err(|e| e.to_string())?
-}
-
+/// 进入截图模式（仅 Rust 内部：须在主线程调用；不暴露 IPC）。
 #[cfg(target_os = "macos")]
 pub fn enter_screenshot_mode_sync(app: &tauri::AppHandle, data: ScreenshotData) {
     let _ = enter_impl(app, &data);
