@@ -97,7 +97,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 **Agent 引擎**（`extensions/agent/native/engine/`）：tool calling loop，服务 agent 扩展。prompt/max_turns/资源上限由扩展 config 注入（非框架硬编码）。
 
 - `loop_runner.rs`：主循环 `run_loop`：调 LLM → 解析 tool_calls → 执行 → 回灌 → 下一轮
-- `cancellation.rs`：`SessionRegistry`（per-session CancellationToken）
+- `cancellation.rs`：`SessionRegistry`（per-session CancellationToken；loop 结束 unregister，abort 走 cancel）
 - `trim.rs`：历史消息裁剪（下沉自 runtime/llm）
 - `secret_scrub.rs`：gitleaks 风格正则打码
 - `tool_registry.rs`：`AgentTool` trait + `ToolRegistry`
@@ -179,9 +179,9 @@ Voidnix 设计系统（仅浅色），取 macOS 原生能力实现（`NSVisualEf
 **材质三件套**：
 
 - Mica（窗口底材 / 花图上浮层）：原生 `apply_mica_material`（主窗 corner 16 / snap 10）+ 前端 `mica-shell`（主窗）/ `mica-tint`（snap）/ `mica-panel`·`mica-bar`（截屏工具条等无原生 effect 时的同款白雾）；配方见 [设计系统](docs/design.md)
-- Acrylic（仅叠在主窗 Mica 上的外框）：`acrylic-bar`（搜索栏浅透）· `acrylic-panel` / `dropdown-panel`（弹出层近纯白磨砂 `bg-white/95` + 轻 blur）；**内嵌禁止叠磨砂**；截屏工具条勿用 Acrylic
+- Acrylic（仅叠在主窗 Mica 上的外框）：`acrylic-bar`（搜索栏 `bg-white/90` + `blur-xl` + 独立合成层）· `acrylic-panel` / `dropdown-panel`（弹出层近纯白磨砂）；**内嵌禁止叠磨砂**；截屏工具条勿用 Acrylic
 - 内嵌实色：`fill-ctrl` / `fill-active`（`ui-ctrl` / `ui-active` / 标签 / 图标井），保证叠在玻璃上可读
-- chrome-fade：`theme.css` `.chrome-fade`，高度 `--chrome-fade-height`
+- chrome-fade：`theme.css` 纯白染渐变（无 blur），高度 `--chrome-fade-height`；顶实底软，减字进入搜索栏 blur 采样区
 - Smoke：`BaseDialog` 遮罩半黑 + 主体实色白 + `radius-panel`
 - 圆角内小外大：`radius-panel` 10 · `radius-ctrl` 6 · `radius-window` 16
 

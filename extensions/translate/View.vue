@@ -7,6 +7,7 @@
       <BaseTextarea
         ref="textareaRef"
         v-model="inputText"
+        class="translate-input"
         rounded="panel"
         placeholder="输入文本"
         :rows="1"
@@ -119,3 +120,19 @@ function maybeFocusInput() {
 onMounted(maybeFocusInput)
 onActivated(maybeFocusInput)
 </script>
+
+<style scoped>
+/* 与 Agent 输入框一致：默认描边 + 聚焦改色并关 ui-ctrl inset ring，避免双线 */
+:deep(.translate-input) {
+  border: 1px solid var(--color-border);
+  transition: border-color 150ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+:deep(.translate-input:focus-within) {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+  --un-ring-shadow: 0 0 #0000;
+  --un-inset-ring-shadow: 0 0 #0000;
+  --un-ring-offset-shadow: 0 0 #0000;
+  box-shadow: none !important;
+}
+</style>

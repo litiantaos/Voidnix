@@ -24,9 +24,6 @@
 
   /* chrome 渐隐遮罩（= CHROME_HEIGHT 76；MainView 仍可经 --chrome-fade-height 覆盖） */
   --chrome-fade-height: 76px;
-  --chrome-fade-blur: 20px;
-  /* 与窗级 mica-tint 白染同级 */
-  --chrome-fade-tint: rgb(255 255 255 / 0.4);
 }
 
 html {
@@ -69,8 +66,20 @@ body {
 }
 
 /*
- * chrome-fade：悬浮栏下方从上到下模糊渐变透明遮罩。
- * 高度用 --chrome-fade-height（默认 76px = CHROME_HEIGHT / CHROME_FADE_HEIGHT）；仅视觉，不拦截指针。
+ * acrylic-bar：独立合成层，减轻滚动时 backdrop 与主文档层争抢重绘。
+ * 配方在 uno `acrylic`；此处只做层提示（transform 不改变布局）。
+ */
+.acrylic-bar {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/*
+ * chrome-fade：悬浮栏下白染渐隐（纯 gradient，无 backdrop-filter）。
+ * 高度 --chrome-fade-height（默认 76 = CHROME_HEIGHT）；仅视觉，不拦截指针。
+ * 顶～栏底段高不透明，少让字钻进搜索栏 blur 采样区；仅底缘软透。
+ * stop 对齐 CHROME：16%≈栏顶 12px，84%≈栏底 64px。
  */
 .chrome-fade {
   pointer-events: none;
@@ -79,10 +88,13 @@ body {
   top: 0;
   z-index: 5;
   height: var(--chrome-fade-height);
-  background: linear-gradient(to bottom, var(--chrome-fade-tint), transparent);
-  /* saturate 压低：花壁纸上避免渐隐带把色相抬得更艳 */
-  backdrop-filter: blur(var(--chrome-fade-blur)) saturate(1.05);
-  -webkit-backdrop-filter: blur(var(--chrome-fade-blur)) saturate(1.05);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
+  background: linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.97) 0%,
+    rgb(255 255 255 / 0.94) 16%,
+    rgb(255 255 255 / 0.88) 70%,
+    rgb(255 255 255 / 0.4) 84%,
+    rgb(255 255 255 / 0.1) 94%,
+    transparent 100%
+  );
 }

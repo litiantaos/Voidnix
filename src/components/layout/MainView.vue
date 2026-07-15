@@ -54,7 +54,7 @@
             aria-hidden="true"
           />
           <BaseButton
-            class="rounded-full flex-center inset-0 absolute !p-0 !h-3.5 !w-3.5 !bg-black/8 hover:!bg-black/12 transition-all"
+            class="rounded-full flex-center transition-all inset-0 absolute !p-0 !bg-black/8 !h-3.5 !w-3.5 hover:!bg-black/12"
             :class="
               isTagHovered
                 ? 'opacity-100 scale-100 duration-200 ease-spring'

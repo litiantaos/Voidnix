@@ -6,6 +6,8 @@ import {
   removeAiProvider,
   updateAiProvider,
   setActiveProviderModelKey,
+  resolveActiveModel,
+  isProviderReady,
 } from './config'
 
 // config.ts 顶层立即调用 defineConfig（触发 plugin-store load），mock 变量须经 vi.hoisted 提升以避开 TDZ
@@ -49,6 +51,29 @@ beforeEach(() => {
     models: ['m1'],
   })
   config.activeProviderModelKey = ''
+})
+
+describe('resolveActiveModel / isProviderReady', () => {
+  it('无 :: 时 model 为空且未就绪', () => {
+    expect(resolveActiveModel()).toBe('')
+    expect(isProviderReady.value).toBe(false)
+  })
+
+  it('endpoint + apiKey + model 齐全时就绪', () => {
+    config.aiProviders[0].endpoint = 'https://api.openai.com/v1'
+    config.aiProviders[0].apiKey = 'sk-test'
+    setActiveProviderModelKey('p1::m1')
+    expect(resolveActiveModel()).toBe('m1')
+    expect(isProviderReady.value).toBe(true)
+  })
+
+  it('缺 model 时不就绪', () => {
+    config.aiProviders[0].endpoint = 'https://api.openai.com/v1'
+    config.aiProviders[0].apiKey = 'sk-test'
+    setActiveProviderModelKey('p1::')
+    expect(resolveActiveModel()).toBe('')
+    expect(isProviderReady.value).toBe(false)
+  })
 })
 
 describe('activeProviderConfig', () => {

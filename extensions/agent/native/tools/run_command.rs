@@ -287,6 +287,8 @@ impl AgentTool for RunCommandTool {
                 }
                 if exit_code != 0 {
                     output.push_str(&format!("\n[exit code: {}]", exit_code));
+                    // 非 0 仍把完整输出回灌 LLM；ok=false 仅驱动前端「失败」态
+                    return ToolResult::err(output);
                 }
                 ToolResult::ok(output)
             }

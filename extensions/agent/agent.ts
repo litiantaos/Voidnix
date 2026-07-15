@@ -10,7 +10,12 @@ import { ref, computed } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { generateRequestId } from '@/utils/id'
-import { config as agentConfig, activeProviderConfig } from './config'
+import {
+  config as agentConfig,
+  activeProviderConfig,
+  resolveActiveModel,
+  isProviderReady,
+} from './config'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 import { toLlmMessages, tryParseSearch } from './logic'
 
@@ -32,15 +37,17 @@ export function useAgentChat() {
     if (isGenerating.value || !text.trim()) return
 
     const provider = activeProviderConfig.value
-    const key = agentConfig.activeProviderModelKey
-    const sep = key.indexOf('::')
-    const model = sep !== -1 ? key.substring(sep + 2) : ''
+    const model = resolveActiveModel()
 
-    if (!provider.endpoint || !provider.apiKey) {
+    if (!isProviderReady.value) {
+      const hint =
+        !provider.endpoint.trim() || !provider.apiKey.trim()
+          ? '请先在设置中配置 AI Provider 的 API 地址和 API Key。'
+          : '请先在设置中选择模型。'
       messages.value.push({
         id: generateRequestId(),
         role: 'assistant',
-        parts: [{ type: 'text', text: '请先在设置中配置 AI Provider 的 API 地址和 API Key。' }],
+        parts: [{ type: 'text', text: hint }],
       })
       return
     }
@@ -65,11 +72,11 @@ export function useAgentChat() {
       streaming: true,
     })
 
-    // 创建 Channel + 注册 onmessage
+    // 创建 Channel + 注册 onmessage（runSessionId 闭包：晚到事件不得踩踏新 run 控制面）
     const newSessionId = generateRequestId()
     sessionId.value = newSessionId
     const channel = new Channel<AgentEvent>()
-    channel.onmessage = (msg) => handleEvent(msg, assistantId)
+    channel.onmessage = (msg) => handleEvent(msg, assistantId, newSessionId)
 
     status.value = 'streaming'
     errorMessage.value = ''
@@ -100,20 +107,13 @@ export function useAgentChat() {
       })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      errorMessage.value = msg
-      status.value = 'error'
-      finalizeStreamingMessage(assistantId)
-      // 推入错误消息
-      messages.value.push({
-        id: generateRequestId(),
-        role: 'assistant',
-        parts: [{ type: 'text', text: `错误：${msg}` }],
-      })
+      pushErrorOnMessage(assistantId, msg, newSessionId)
     }
   }
 
-  /// 处理 AgentEvent，更新 messages
-  function handleEvent(event: AgentEvent, assistantId: string) {
+  /// 处理 AgentEvent，更新 messages。
+  /// 内容侧按 assistantId 写旧气泡；status/sessionId 仅当仍是 runSessionId 时才改。
+  function handleEvent(event: AgentEvent, assistantId: string, runSessionId: string) {
     const msg = findMessage(assistantId)
     if (!msg) return
 
@@ -151,7 +151,7 @@ export function useAgentChat() {
         if (part) {
           part.state = event.ok ? 'done' : 'failed'
           part.output = event.output
-          // web_search 解析结构化结果供 UI 卡片渲染
+          // web_search：成功解析结构化结果供 UI hits；失败时 parsed 空，UI 展示 output
           part.parsed =
             part.name === 'web_search' && event.ok ? tryParseSearch(event.output) : undefined
         }
@@ -159,15 +159,31 @@ export function useAgentChat() {
       }
       case 'completed': {
         finalizeStreamingMessage(assistantId)
-        status.value = 'ready'
+        if (sessionId.value === runSessionId) {
+          status.value = 'ready'
+          sessionId.value = ''
+        }
         break
       }
       case 'error': {
-        finalizeStreamingMessage(assistantId)
-        errorMessage.value = event.message
-        status.value = 'error'
+        pushErrorOnMessage(assistantId, event.message, runSessionId)
         break
       }
+    }
+  }
+
+  /// 错误写入 assistant 气泡并结束 streaming。
+  /// 仅当 `sessionId` 仍属本 run（或未传 runSessionId）时改全局 status/sessionId。
+  function pushErrorOnMessage(assistantId: string, message: string, runSessionId?: string) {
+    const msg = findMessage(assistantId)
+    if (msg) {
+      msg.parts.push({ type: 'text', text: `错误：${message}` })
+    }
+    finalizeStreamingMessage(assistantId)
+    if (runSessionId === undefined || sessionId.value === runSessionId) {
+      errorMessage.value = message
+      status.value = 'error'
+      sessionId.value = ''
     }
   }
 
@@ -214,8 +230,8 @@ export function useAgentChat() {
   }
 
   /// 清空对话
-  function newConversation() {
-    if (isGenerating.value) abort()
+  async function newConversation() {
+    if (isGenerating.value) await abort()
     messages.value = []
     status.value = 'ready'
     errorMessage.value = ''

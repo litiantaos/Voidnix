@@ -66,12 +66,12 @@ Voidnix 自身的设计系统（仅浅色）。本文档是色值、材质、排
 
 ### Acrylic（WebView 内磨砂，仅叠在已有 Mica 上的外框）
 
-WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只用于主窗搜索栏 / 下拉浮层**（底下已有窗级 Mica），内嵌禁止再叠半透明磨砂。搜索栏与弹出层分轨：前者浅透层次，后者近纯白磨砂。
+WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只用于主窗搜索栏 / 下拉浮层**（底下已有窗级 Mica），内嵌禁止再叠半透明磨砂。搜索栏与弹出层分轨。
 
-- `acrylic`：`bg-white/45 backdrop-blur-2xl backdrop-saturate-125` —— 搜索栏浅透基底（叠 mica 后仍有层次）
+- `acrylic`：`bg-white/90 backdrop-blur-xl backdrop-saturate-150` —— 搜索栏（高白染压滚动字透出减闪 + 中强 blur；过浅/blur-2xl 易闪或发灰）
 - `glass-ring`：inset 顶 2px 白高光
-- `acrylic-bar`：`acrylic` + `glass-ring` + `radius-panel` + `border border-black/10` —— 主窗搜索栏
-- `acrylic-panel`：`bg-white/95 backdrop-blur-sm` + `glass-ring` + `radius-panel` + 边框 —— 下拉 / 动作浮层 / toast；高白染 + 轻 blur，绝大多数场景近纯白
+- `acrylic-bar`：`acrylic` + `glass-ring` + `radius-panel` + 边框；`theme.css` 另加 `translateZ(0)` 独立合成层
+- `acrylic-panel`：`bg-white/95 backdrop-blur-sm` + `glass-ring` + `radius-panel` + 边框 —— 下拉 / 动作浮层 / toast
 - `dropdown-panel`：`acrylic-panel` + `p-1`
 
 ### 内嵌实色填充（可读性）
@@ -88,10 +88,10 @@ WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只�
 
 ### chrome-fade（渐隐遮罩）
 
-悬浮栏下自上而下模糊渐变透明。实现在 `theme.css` `.chrome-fade`：
+悬浮栏下自上而下白染渐变透明。实现在 `theme.css` `.chrome-fade`：
 
-- `backdrop-filter: blur(var(--chrome-fade-blur))` + 白染色渐变
-- `mask-image` 自上而下透明
+- **仅** 多段 `linear-gradient` 白染，无 `backdrop-filter`（避免与搜索栏双 blur 叠闪）
+- 顶～栏底段高不透明（少让字进入 acrylic 采样区），仅底缘软透
 - `pointer-events: none`；高度 `--chrome-fade-height`（MainView 用 `WINDOW.CHROME_FADE_HEIGHT` 覆盖）
 
 任何悬浮顶栏可复用：`<div class="chrome-fade" :style="{ '--chrome-fade-height': h + 'px' }" />`。

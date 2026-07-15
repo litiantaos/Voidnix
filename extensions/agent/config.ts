@@ -94,6 +94,23 @@ export const activeProviderConfig = computed<AiProviderConfig>(
   () => parseActiveConfig(config.activeProviderModelKey, config.aiProviders, (c) => c[0])!,
 )
 
+/// 从 activeProviderModelKey（`id::model`）解析模型名；无 `::` 或空串 → `''`。
+export function resolveActiveModel(): string {
+  const key = config.activeProviderModelKey
+  const sep = key.indexOf('::')
+  return sep !== -1 ? key.substring(sep + 2).trim() : ''
+}
+
+/// endpoint + apiKey + model 均非空时才可发起对话。
+export const isProviderReady = computed(
+  () =>
+    !!(
+      activeProviderConfig.value.endpoint.trim() &&
+      activeProviderConfig.value.apiKey.trim() &&
+      resolveActiveModel()
+    ),
+)
+
 export function setActiveProviderModelKey(key: string) {
   config.activeProviderModelKey = key
 }
