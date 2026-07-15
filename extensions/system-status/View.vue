@@ -43,8 +43,7 @@
         <span text="xs muted" shrink="0">运行 {{ formatUptime(snapshot.uptime) }}</span>
         <span text="muted">·</span>
         <span text="xs muted" shrink="0" tabular-nums title="负载均值 1 / 5 / 15 分钟">
-          负载 {{ snapshot.load_one.toFixed(2) }} /
-          {{ snapshot.load_five.toFixed(2) }} /
+          负载 {{ snapshot.load_one.toFixed(2) }} / {{ snapshot.load_five.toFixed(2) }} /
           {{ snapshot.load_fifteen.toFixed(2) }}
         </span>
         <template v-if="snapshot.thermal !== 'nominal'">

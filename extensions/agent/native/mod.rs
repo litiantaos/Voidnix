@@ -25,7 +25,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRunConfig {
-    /// 搜索提供商（duckduckgo / tavily）
+    /// 搜索提供商（前端固定 tavily，保留 type 字段便于扩展）
     pub search_provider: SearchProviderConfig,
     /// system prompt（扩展自管，前端 config 直传，空串则不注入 system 消息）。
     #[serde(default)]
@@ -131,8 +131,12 @@ pub async fn agent_run(
 
     sessions.register(session_id.clone(), cancel.clone());
 
+    // SessionRegistry 是 cheap clone（Arc）；task 结束后 unregister，避免只增不减
+    let sessions_for_cleanup = sessions.inner().clone();
+    let sid_for_cleanup = session_id.clone();
     let handle = tauri::async_runtime::spawn(async move {
         run_loop(input).await;
+        sessions_for_cleanup.unregister(&sid_for_cleanup);
     });
     sessions.set_handle(&session_id, handle);
 

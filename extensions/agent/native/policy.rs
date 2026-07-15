@@ -2,7 +2,7 @@
 //!
 //! 权威源：资源上限 floor/cap 定义于此 Rust const，`agent_run` 入口强制 clamp。
 //! 命令无白名单/黑名单拦截——所有命令直接放行，仅 run_command 的断路器
-//! （`rm -rf /` 等灾难性操作）兜底。TS 端 `BOUNDS` 仅 UI 镜像。
+//! （`rm -rf /` 等灾难性操作）兜底。TS 端 `BOUNDS` 仅 CI 镜像（无 Settings UI）。
 
 // ── 数值上限 floor/cap（用户值 clamp 到此区间）──
 pub const MAX_TURNS: (usize, usize) = (1, 50);

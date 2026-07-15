@@ -55,7 +55,7 @@ impl SessionRegistry {
         }
     }
 
-    /// 取消并移除一个会话（用户点 abort 或会话自然结束时调用）。
+    /// 取消并移除一个会话（用户点 abort）。
     pub fn cancel(&self, session_id: &str) -> bool {
         if let Some(mut session) = self
             .sessions
@@ -71,6 +71,25 @@ impl SessionRegistry {
         } else {
             false
         }
+    }
+
+    /// 自然结束时移除会话（不 cancel token / 不 abort handle）。
+    /// 与 `cancel` 互斥：任一方先 remove 后另一方 no-op。
+    pub fn unregister(&self, session_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(session_id)
+            .is_some()
+    }
+
+    /// 当前注册会话数（测试 / 诊断用）。
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 }
 
@@ -94,5 +113,26 @@ mod tests {
     fn cancel_unknown_session_returns_false() {
         let reg = SessionRegistry::default();
         assert!(!reg.cancel("missing"));
+    }
+
+    #[test]
+    fn unregister_removes_without_cancelling_token() {
+        let reg = SessionRegistry::default();
+        let token = reg.register("s1".to_string(), CancellationToken::new());
+        assert!(reg.unregister("s1"));
+        assert!(!token.is_cancelled());
+        assert_eq!(reg.len(), 0);
+        // 已移除后重复 unregister / cancel 均为 false
+        assert!(!reg.unregister("s1"));
+        assert!(!reg.cancel("s1"));
+    }
+
+    #[test]
+    fn unregister_after_cancel_is_noop() {
+        let reg = SessionRegistry::default();
+        reg.register("s1".to_string(), CancellationToken::new());
+        assert!(reg.cancel("s1"));
+        assert!(!reg.unregister("s1"));
+        assert_eq!(reg.len(), 0);
     }
 }

@@ -51,11 +51,11 @@ export default defineConfig({
     'mica-bar': 'bg-white/90 backdrop-blur-xl glass-ring radius-panel border border-black/10',
 
     // ── 材质：Acrylic 仅外框（主窗搜索栏 / 下拉，叠在已有 Mica 上）；内嵌禁止再叠磨砂 ──
-    // 搜索栏：白底 45% + 强 blur，叠 mica 上仍有层次与透感
-    acrylic: 'bg-white/45 backdrop-blur-2xl backdrop-saturate-125',
+    // 搜索栏：高白染压滚动字透出（减闪）+ 中强 blur 保一点磨砂；合成层提示见 theme.css .acrylic-bar
+    acrylic: 'bg-white/90 backdrop-blur-xl backdrop-saturate-150',
     'glass-ring': 'shadow-[inset_0_2px_0_0_rgba(255,255,255,0.65)]',
     'acrylic-bar': 'acrylic glass-ring radius-panel border border-black/10',
-    // 弹出层：高白染 + 轻 blur，近纯白磨砂（与搜索栏浅透 acrylic 分轨）
+    // 弹出层：更高白染 + 轻 blur，近纯白（与搜索栏分轨）
     'acrylic-panel':
       'bg-white/95 backdrop-blur-sm glass-ring radius-panel border border-black/10 select-none',
     'dropdown-panel': 'acrylic-panel p-1',

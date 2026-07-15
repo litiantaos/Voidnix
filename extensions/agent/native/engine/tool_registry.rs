@@ -8,9 +8,9 @@ use std::sync::Arc;
 /// 工具执行结果。
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolResult {
-    /// 是否成功（false 时 output 视为错误消息）
+    /// 业务是否成功（仅驱动前端成功/失败态；loop 仍把 output 原文回灌 LLM）
     pub ok: bool,
-    /// 人类可读的输出（已净化 secret）；失败时是错误描述
+    /// 已净化 secret 的输出；ok=false 时可以是短错误描述，也可以是完整工具输出（如非 0 退出的 stdout/stderr）
     pub output: String,
 }
 

@@ -1,30 +1,19 @@
 <template>
-  <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置 AI Provider" />
+  <BaseEmptyState
+    v-if="!isConfigured"
+    icon="i-ri-settings-3-line"
+    title="请先配置 AI Provider 与模型"
+  />
 
-  <div v-else flex="~ col" overflow="hidden" @click="onContentClick">
-    <!-- 空态：提为顶层 flex-1 兄弟并居中（原塞在 sticky 输入容器内不居中）-->
-    <div
-      v-if="displayMessages.length === 0"
-      flex="~ 1 col"
-      items="center"
-      justify="center"
-      text="center"
-      space="y-1"
-    >
+  <div v-else class="agent-layout" @click="onContentClick">
+    <!-- 空态：居中（顶部留白补偿搜索栏）-->
+    <div v-if="displayMessages.length === 0" class="agent-empty">
       <h1 text="xl" font="bold">来点有意思的吧！</h1>
       <p text="xs muted">日常问题、工作任务、搜索资料、跑命令...</p>
     </div>
 
-    <!-- 顶距交给 CHROME_HEIGHT，与列表 px-3 pb-3 同构，勿 p-t 叠双层 -->
-    <div
-      v-else
-      flex="~ 1 col"
-      gap="3"
-      min-h="0"
-      overflow="y-auto"
-      p="x-3 b-3"
-      class="hide-scrollbar"
-    >
+    <!-- 消息滚动区：填满可视区，向上滚动消息进入搜索栏下层 -->
+    <div v-else ref="scrollRef" class="agent-scroll hide-scrollbar" @scroll.passive="onScroll">
       <template v-for="msg in displayMessages" :key="msg.id">
         <!-- 用户消息 -->
         <div
@@ -36,94 +25,67 @@
           whitespace="pre-wrap"
           break="words"
         >
-          {{ getText(msg) }}
+          {{ getMessageText(msg) }}
         </div>
 
         <!-- assistant 消息（含多 part）-->
         <div v-else flex="~ col" gap="2" p="l-3" border="l-2 muted/20">
-          <!-- streaming 占位 -->
+          <!-- streaming 占位：纯文本行 + 动效（无卡片） -->
           <div
             v-if="msg.streaming && msg.parts.length === 0"
-            text="sm secondary"
+            class="agent-step agent-step--active"
+            text="xs"
             flex
             items="center"
-            gap="2"
+            gap="1.5"
+            min-w="0"
           >
-            <span class="i-ri-loader-4-line animate-spin" text="muted" />
-            <span>思考中…</span>
+            <span shrink="0" class="agent-step-icon i-ri-sparkling-2-line" text="accent" />
+            <span class="agent-step-label" shrink="0" font="medium">思考</span>
+            <span class="agent-step-dots" aria-hidden="true"> <i /><i /><i /> </span>
           </div>
 
           <template v-for="(part, i) in msg.parts" :key="i">
-            <!-- 文本 part -->
-            <div
+            <AgentTextPart
               v-if="part.type === 'text'"
-              class="markdown-body"
-              text="sm primary"
-              leading="relaxed"
-              v-html="renderMarkdown(part.text)"
+              :text="part.text"
+              :streaming="isStreamingText(msg, i)"
             />
-
-            <!-- 工具调用 part：状态图标 + 工具名 + 参数明细 + 结果 -->
-            <div
+            <AgentToolStep
               v-else-if="part.type === 'toolCall'"
-              class="radius-ctrl"
-              bg="black/4"
-              text="xs"
-              flex="~ col"
-              overflow="hidden"
-            >
-              <div p="3" flex items="center" gap="1.5">
-                <span shrink="0" font="mono" text="secondary" bg="black/8" rounded px="1">{{
-                  part.name
-                }}</span>
-                <span
-                  v-if="toolDetail(part)"
-                  shrink-1
-                  min-w="0"
-                  font="mono"
-                  text="secondary"
-                  truncate
-                  >{{ toolDetail(part) }}</span
-                >
-                <span shrink="0" ml="auto" :class="toolStateIcon(part.state)" />
-              </div>
-              <!-- web_search 结果：可点击列表（标题 + 详情）-->
-              <div
-                v-if="part.parsed && (part.state === 'done' || part.state === 'failed')"
-                border="t black/5"
-                p="3"
-                flex="~ col"
-                gap="1.5"
-              >
-                <div v-for="(hit, i) in part.parsed.hits" :key="i" py="1" @click="openUrl(hit.url)">
-                  <div text="primary" truncate class="hover:underline">{{ hit.title }}</div>
-                  <div text="secondary" truncate>{{ hit.snippet || hit.url }}</div>
-                </div>
-              </div>
-              <!-- 其他工具结果：pre -->
-              <pre
-                v-else-if="part.output && (part.state === 'done' || part.state === 'failed')"
-                border="t black/5"
-                p="3"
-                font="mono"
-                text="secondary"
-                whitespace="pre-wrap"
-                break="words"
-                max-h="40"
-                overflow="auto"
-                m="0"
-                >{{ part.output }}</pre
-              >
-            </div>
+              :part="part"
+              :index="i"
+              @open-url="openUrl"
+            />
           </template>
         </div>
       </template>
     </div>
 
-    <div p="x-3 b-3" flex="~ col" shrink="0">
+    <div class="agent-footer">
+      <!-- 输出中：滚底圆 / 中止胶囊（内光 Siri 感），单层 BaseButton + 进出场 -->
+      <Transition
+        enter-active-class="transition duration-200 ease-out"
+        enter-from-class="opacity-0 translate-y-5 scale-90"
+        enter-to-class="opacity-100 translate-y-0 scale-100"
+        leave-active-class="transition duration-150 ease-in"
+        leave-from-class="opacity-100 translate-y-0 scale-100"
+        leave-to-class="opacity-0 translate-y-4 scale-90"
+      >
+        <div v-if="agent.isGenerating.value" class="agent-float-actions">
+          <BaseButton
+            class="agent-float-scroll"
+            icon="i-ri-arrow-down-s-line"
+            @click="scrollToBottom"
+          />
+          <BaseButton class="agent-float-stop" icon="i-ri-stop-mini-fill" @click="agent.abort()" />
+        </div>
+      </Transition>
+
       <BaseTextarea
         ref="textareaRef"
         v-model="inputText"
+        class="agent-input"
         rounded="panel"
         :placeholder="agent.isGenerating.value ? '执行中，Ctrl+C 中止' : '聊点什么...'"
         @submit="handleSubmit"
@@ -133,84 +95,76 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { open } from '@tauri-apps/plugin-shell'
-import { activeProviderConfig } from './config'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { isProviderReady } from './config'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
+import AgentTextPart from './AgentTextPart.vue'
+import AgentToolStep from './AgentToolStep.vue'
 import { useAgentChat } from './agent'
-import type { AgentMessage, AgentPart } from '@/types/agent'
+import { getMessageText, isStreamingText, streamLayoutKey } from './view-logic'
 
-marked.setOptions({ gfm: true, breaks: true })
-
-const renderMarkdown = (content: unknown) => {
-  if (typeof content !== 'string' || !content) return ''
-  const result = marked.parse(content)
-  if (typeof result !== 'string') return ''
-  const sanitized = DOMPurify.sanitize(result, { ADD_ATTR: ['target', 'rel'] })
-  // 所有 a 标签加 target + rel，避免在 webview 内导航
-  return sanitized.replace(/<a\s+href/gi, '<a target="_blank" rel="noopener noreferrer" href')
-}
-
+/** 距底部多少 px 内视为贴底（自动滚底生效） */
+const NEAR_BOTTOM_PX = 24
 const MAX_INPUT_LENGTH = 8192
 
 const agent = useAgentChat()
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
+const scrollRef = ref<HTMLElement>()
 const inputText = ref('')
+/** 用户是否贴底：仅贴底时 streaming 增量才自动滚底，上翻阅读时不打断 */
+const stickToBottom = ref(true)
 
 const displayMessages = computed(() => agent.messages.value)
+const isConfigured = isProviderReady
 
-const isConfigured = computed(
-  () => activeProviderConfig.value.endpoint && activeProviderConfig.value.apiKey,
+function isNearBottom(el: HTMLElement): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
+}
+
+function onScroll() {
+  const el = scrollRef.value
+  if (!el) return
+  stickToBottom.value = isNearBottom(el)
+}
+
+function scrollToBottom() {
+  const el = scrollRef.value
+  if (!el) return
+  el.scrollTop = el.scrollHeight
+  stickToBottom.value = true
+}
+
+let scrollRaf = 0
+function scheduleScrollToBottom() {
+  if (scrollRaf) return
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = 0
+    if (stickToBottom.value) scrollToBottom()
+  })
+}
+
+/// 新消息 / streaming 增量：rAF 合并贴底滚底（流式阶段 height:auto，无逐帧高度插值）
+watch(
+  () => streamLayoutKey(agent.messages.value, agent.isGenerating.value),
+  async () => {
+    await nextTick()
+    scheduleScrollToBottom()
+  },
 )
-
-function getText(msg: AgentMessage): string {
-  return msg.parts
-    .filter((p): p is Extract<AgentPart, { type: 'text' }> => p.type === 'text')
-    .map((p) => p.text)
-    .join('')
-}
-
-/// 工具参数明细：run_command → cmd args…，web_search → query，其余空串。
-function toolDetail(part: Extract<AgentPart, { type: 'toolCall' }>): string {
-  if (!part.args || typeof part.args !== 'object') return ''
-  const obj = part.args as Record<string, unknown>
-  if (part.name === 'run_command') {
-    const cmd = typeof obj.cmd === 'string' ? obj.cmd : ''
-    const argsArr = Array.isArray(obj.args)
-      ? obj.args.filter((a): a is string => typeof a === 'string')
-      : []
-    return [cmd, ...argsArr].filter(Boolean).join(' ')
-  }
-  if (part.name === 'web_search') {
-    return typeof obj.query === 'string' ? obj.query.trim() : ''
-  }
-  return ''
-}
-
-function toolStateIcon(state: string): string {
-  switch (state) {
-    case 'streaming':
-      return 'i-ri-loader-4-line animate-spin text-accent'
-    case 'done':
-      return 'i-ri-checkbox-circle-line text-green-600'
-    case 'failed':
-      return 'i-ri-close-circle-line text-red-500'
-    case 'running':
-      return 'i-ri-loader-4-line animate-spin text-accent'
-    default:
-      return 'i-ri-tools-line text-muted'
-  }
-}
 
 async function handleSubmit() {
   const text = inputText.value.trim()
   if (!text || agent.isGenerating.value) return
-  if (text.length > MAX_INPUT_LENGTH) inputText.value = text.slice(0, MAX_INPUT_LENGTH)
+  const clipped = text.length > MAX_INPUT_LENGTH ? text.slice(0, MAX_INPUT_LENGTH) : text
   inputText.value = ''
-  await agent.sendMessage(text)
+  // 发送后跟读最新输出
+  stickToBottom.value = true
+  await agent.sendMessage(clipped)
+  await nextTick()
+  scrollToBottom()
   nextTick(() => textareaRef.value?.focus())
 }
 
@@ -250,149 +204,345 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  if (scrollRaf) cancelAnimationFrame(scrollRaf)
+})
 </script>
 
 <style scoped>
-/* markdown 渲染 */
-
-.markdown-body {
-  overflow-wrap: break-word;
+/* 绝对定位填充 scrollContainer（突破 paddingTop），
+   让消息滚至搜索栏和输入框下层 */
+.agent-layout {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-/* 标题：层级压缩，适合窄面板 */
-.markdown-body :deep(h1),
-.markdown-body :deep(h2),
-.markdown-body :deep(h3),
-.markdown-body :deep(h4),
-.markdown-body :deep(h5),
-.markdown-body :deep(h6) {
-  font-weight: 600;
-  line-height: 1.6;
-  margin: 16px 0 6px;
-}
-.markdown-body :deep(h1) {
-  font-size: 20px;
-}
-.markdown-body :deep(h2) {
-  font-size: 18px;
-}
-.markdown-body :deep(h3) {
-  font-size: 16px;
-}
-.markdown-body :deep(h4),
-.markdown-body :deep(h5),
-.markdown-body :deep(h6) {
-  font-size: 14px;
+/* 空态：在搜索栏和输入框之间居中 */
+.agent-empty {
+  flex: 1 1 0%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  padding-top: var(--chrome-fade-height);
 }
 
-/* 块级统一底间距 + 末元素清零 */
-.markdown-body :deep(p),
-.markdown-body :deep(ul),
-.markdown-body :deep(ol),
-.markdown-body :deep(pre),
-.markdown-body :deep(blockquote),
-.markdown-body :deep(table) {
-  margin: 0 0 8px;
-}
-.markdown-body :deep(:last-child) {
-  margin-bottom: 0;
+/* 消息滚动区：填满可视区，向上滚动消息进入搜索栏（z-10）下层 */
+.agent-scroll {
+  flex: 1 1 0%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--chrome-fade-height) 12px 12px;
 }
 
-/* 列表 */
-.markdown-body :deep(ul),
-.markdown-body :deep(ol) {
-  padding-left: 20px;
-}
-.markdown-body :deep(ul) {
-  list-style: disc;
-}
-.markdown-body :deep(ol) {
-  list-style: decimal;
-}
-.markdown-body :deep(li) {
-  margin: 2px 0;
-}
-.markdown-body :deep(li > ul),
-.markdown-body :deep(li > ol) {
-  margin: 2px 0;
+/* 底部：输入框 + 输出中悬浮操作；外边距由 footer 承担 */
+.agent-footer {
+  position: relative;
+  flex: none;
+  margin: 0 12px 12px;
 }
 
-/* 行内代码（不含 pre 内）— 填充/圆角走 theme token */
-.markdown-body :deep(:not(pre) > code) {
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 12px;
-  background: var(--color-fill-5);
-  padding: 2px 4px;
-  border-radius: calc(var(--radius-ctrl) / 2);
-  word-break: break-all;
+/* ui-ctrl 默认 border-none + focus-within ring；有默认描边时关 ring，聚焦只改边框色，避免双线 */
+.agent-footer :deep(.agent-input) {
+  border: 1px solid var(--color-border);
+  transition: border-color 150ms cubic-bezier(0, 0, 0.2, 1);
 }
 
-/* 代码块 */
-.markdown-body :deep(pre) {
-  background: var(--color-fill-5);
-  padding: 10px 12px;
-  border-radius: var(--radius-ctrl);
-  overflow-x: auto;
-  font-size: 12px;
-  line-height: 1.6;
+.agent-footer :deep(.agent-input:focus-within) {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+  /* 清掉 wind4 ring 相关 shadow（ui-ctrl: focus-within:ring-1 ring-inset） */
+  --un-ring-shadow: 0 0 #0000;
+  --un-inset-ring-shadow: 0 0 #0000;
+  --un-ring-offset-shadow: 0 0 #0000;
+  box-shadow: none !important;
 }
-.markdown-body :deep(pre code) {
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  background: none;
+
+/* 输入框上方居中；translate 与进出场 transform 解耦 */
+.agent-float-actions {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  translate: -50% 0;
+  margin-bottom: 8px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * 中止按钮 aurora 依赖 @property 插值自定义属性。
+ * 现代 WKWebView（较新 macOS）可用；不支持时退化为静态多层 background，功能不受影响。
+ */
+@property --agent-ai-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@property --ax {
+  syntax: '<percentage>';
+  initial-value: 28%;
+  inherits: false;
+}
+@property --ay {
+  syntax: '<percentage>';
+  initial-value: 36%;
+  inherits: false;
+}
+@property --bx {
+  syntax: '<percentage>';
+  initial-value: 74%;
+  inherits: false;
+}
+@property --by {
+  syntax: '<percentage>';
+  initial-value: 64%;
+  inherits: false;
+}
+@property --cx {
+  syntax: '<percentage>';
+  initial-value: 50%;
+  inherits: false;
+}
+@property --cy {
+  syntax: '<percentage>';
+  initial-value: 70%;
+  inherits: false;
+}
+
+/*
+ * 两钮同高、同 1px 边、同静态外阴影 → 外轮廓对齐。
+ * 中止 loading 用多层 background（非 ::before 负 inset），避免 WK button overflow 裁切失败。
+ */
+.agent-float-actions :deep(.agent-float-scroll),
+.agent-float-actions :deep(.agent-float-stop) {
+  position: relative;
+  box-sizing: border-box;
+  height: 30px;
+  border: 1px solid color-mix(in srgb, black 8%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, white 95%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px color-mix(in srgb, black 6%, transparent);
+}
+
+.agent-float-actions :deep(.agent-float-scroll:hover) {
+  background: color-mix(in srgb, white 90%, transparent);
+}
+
+/* 滚底：圆 */
+.agent-float-actions :deep(.agent-float-scroll) {
+  width: 30px;
+  min-width: 30px;
   padding: 0;
-  border-radius: 0;
-  font-size: inherit;
-  word-break: normal;
 }
 
-/* 引用块 */
-.markdown-body :deep(blockquote) {
-  background: var(--color-fill-5);
-  padding: 10px 12px;
-  border-radius: var(--radius-ctrl);
-  overflow-x: auto;
-  font-size: 12px;
-  line-height: 1.6;
+/* 中止：同高胶囊；Siri 内光 = 浅蓝 + 暖杏双斑 + 慢旋 conic（整体偏浅）
+ * background-clip: padding-box → 光只画在边框内侧，不盖描边 */
+.agent-float-actions :deep(.agent-float-stop) {
+  width: auto;
+  min-width: 48px;
+  padding: 0 14px;
+  background:
+    radial-gradient(
+      circle at var(--ax) var(--ay),
+      color-mix(in srgb, var(--color-accent) 28%, transparent) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at var(--bx) var(--by),
+      color-mix(in srgb, var(--color-accent) 16%, white) 0%,
+      transparent 50%
+    ),
+    /* 暖杏斑：装饰渐变，非语义色，不入 theme */
+    radial-gradient(
+        circle at var(--cx) var(--cy),
+        color-mix(in srgb, #ffb089 32%, transparent) 0%,
+        transparent 52%
+      ),
+    conic-gradient(
+      from var(--agent-ai-angle),
+      transparent 0deg 170deg,
+      color-mix(in srgb, var(--color-accent) 22%, white) 210deg,
+      color-mix(in srgb, #ffc4a0 26%, white) 255deg,
+      color-mix(in srgb, var(--color-accent) 14%, transparent) 300deg,
+      transparent 340deg 360deg
+    ),
+    color-mix(in srgb, white 96%, transparent);
+  background-origin: padding-box;
+  background-clip: padding-box;
+  animation:
+    agent-ai-rotate 5.5s linear infinite,
+    agent-ai-aurora 3.8s ease-in-out infinite;
 }
 
-/* 表格（gfm） */
-.markdown-body :deep(table) {
-  border-collapse: collapse;
-  width: 100%;
+/* hover 保留多层光，仅略压暗底 */
+.agent-float-actions :deep(.agent-float-stop:hover) {
+  background:
+    radial-gradient(
+      circle at var(--ax) var(--ay),
+      color-mix(in srgb, var(--color-accent) 28%, transparent) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at var(--bx) var(--by),
+      color-mix(in srgb, var(--color-accent) 16%, white) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at var(--cx) var(--cy),
+      color-mix(in srgb, #ffb089 32%, transparent) 0%,
+      transparent 52%
+    ),
+    conic-gradient(
+      from var(--agent-ai-angle),
+      transparent 0deg 170deg,
+      color-mix(in srgb, var(--color-accent) 22%, white) 210deg,
+      color-mix(in srgb, #ffc4a0 26%, white) 255deg,
+      color-mix(in srgb, var(--color-accent) 14%, transparent) 300deg,
+      transparent 340deg 360deg
+    ),
+    color-mix(in srgb, white 92%, transparent);
+  background-origin: padding-box;
+  background-clip: padding-box;
+}
+
+.agent-float-actions :deep(.agent-float-scroll i),
+.agent-float-actions :deep(.agent-float-stop i) {
+  position: relative;
   font-size: 14px;
 }
-.markdown-body :deep(th),
-.markdown-body :deep(td) {
-  border-bottom: 1px solid var(--color-divider);
-  padding: 4px 8px;
-  text-align: left;
-}
-.markdown-body :deep(th) {
-  font-weight: 600;
-  background: var(--color-fill-4);
+
+/* 中止图标：实心黑（非 danger 红） */
+.agent-float-actions :deep(.agent-float-stop i) {
+  color: var(--color-text-primary);
 }
 
-/* 水平线 / 图片 / 强调 */
-.markdown-body :deep(hr) {
-  border: none;
-  border-top: 1px solid var(--color-border);
-  margin: 14px 0;
-}
-.markdown-body :deep(img) {
-  max-width: 100%;
-  border-radius: calc(var(--radius-ctrl) * 2 / 3);
-}
-.markdown-body :deep(strong) {
-  font-weight: 600;
+@keyframes agent-ai-rotate {
+  to {
+    --agent-ai-angle: 360deg;
+  }
 }
 
-/* 链接 */
-.markdown-body :deep(a) {
-  color: var(--color-accent);
-  text-decoration: none;
+@keyframes agent-ai-aurora {
+  0%,
+  100% {
+    --ax: 28%;
+    --ay: 36%;
+    --bx: 74%;
+    --by: 64%;
+    --cx: 48%;
+    --cy: 72%;
+  }
+  33% {
+    --ax: 52%;
+    --ay: 58%;
+    --bx: 42%;
+    --by: 32%;
+    --cx: 68%;
+    --cy: 42%;
+  }
+  66% {
+    --ax: 68%;
+    --ay: 28%;
+    --bx: 30%;
+    --by: 72%;
+    --cx: 32%;
+    --cy: 55%;
+  }
 }
-.markdown-body :deep(a:hover) {
-  text-decoration: underline;
+
+/* 思考占位（工具步骤样式在 AgentToolStep） */
+.agent-step-label {
+  color: var(--color-text-secondary);
+}
+
+.agent-step--active .agent-step-label {
+  background: linear-gradient(
+    100deg,
+    var(--color-text-secondary) 0%,
+    var(--color-accent) 40%,
+    color-mix(in srgb, var(--color-accent) 50%, white) 50%,
+    var(--color-accent) 60%,
+    var(--color-text-secondary) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: agent-step-text-shimmer 2s ease-in-out infinite;
+}
+
+.agent-step--active .agent-step-icon {
+  animation: agent-step-icon-pulse 1.4s ease-in-out infinite;
+}
+
+.agent-step-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  transform: translateY(1px);
+}
+
+.agent-step-dots i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  opacity: 0.3;
+  animation: agent-step-dot 1.2s ease-in-out infinite;
+}
+
+.agent-step-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.agent-step-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes agent-step-text-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes agent-step-icon-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes agent-step-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
 }
 </style>
