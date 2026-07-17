@@ -11,9 +11,9 @@ import {
 
 describe('proxy logic', () => {
   it('delayColor连通绿/超时红/未测速空', () => {
-    expect(delayColor(DELAY_TIMEOUT)).toBe('text-red-500')
-    expect(delayColor(100)).toBe('text-green-500')
-    expect(delayColor(500)).toBe('text-green-500')
+    expect(delayColor(DELAY_TIMEOUT)).toBe('text-danger')
+    expect(delayColor(100)).toBe('text-success')
+    expect(delayColor(500)).toBe('text-success')
     expect(delayColor(0)).toBe('')
   })
 

@@ -1,18 +1,18 @@
 <template>
   <!-- 遮罩层 -->
   <template v-if="hasSelection">
-    <div bg="black/45" pointer-events="none" fixed :style="maskTop" />
-    <div bg="black/45" pointer-events="none" fixed :style="maskBottom" />
-    <div bg="black/45" pointer-events="none" fixed :style="maskLeft" />
-    <div bg="black/45" pointer-events="none" fixed :style="maskRight" />
+    <div class="mask-smoke" pointer-events="none" fixed :style="maskTop" />
+    <div class="mask-smoke" pointer-events="none" fixed :style="maskBottom" />
+    <div class="mask-smoke" pointer-events="none" fixed :style="maskLeft" />
+    <div class="mask-smoke" pointer-events="none" fixed :style="maskRight" />
   </template>
   <template v-else-if="phase === 'select' && hoverWindow">
-    <div bg="black/45" pointer-events="none" fixed :style="hoverMaskTop" />
-    <div bg="black/45" pointer-events="none" fixed :style="hoverMaskBottom" />
-    <div bg="black/45" pointer-events="none" fixed :style="hoverMaskLeft" />
-    <div bg="black/45" pointer-events="none" fixed :style="hoverMaskRight" />
+    <div class="mask-smoke" pointer-events="none" fixed :style="hoverMaskTop" />
+    <div class="mask-smoke" pointer-events="none" fixed :style="hoverMaskBottom" />
+    <div class="mask-smoke" pointer-events="none" fixed :style="hoverMaskLeft" />
+    <div class="mask-smoke" pointer-events="none" fixed :style="hoverMaskRight" />
   </template>
-  <div v-else bg="black/45" pointer-events="none" inset="0" fixed />
+  <div v-else class="mask-smoke" pointer-events="none" inset="0" fixed />
 
   <!-- 十字线：1px 线 transform 居中，消除线右/下偏 0.5px -->
   <div

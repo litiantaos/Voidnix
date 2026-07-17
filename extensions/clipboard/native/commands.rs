@@ -232,12 +232,12 @@ fn write_to_pasteboard(content: &str, content_type: &str) -> Result<(), String> 
     }
 }
 
-/// 多文件写入 pasteboard（每个 item 一个 file URL）。
+/// 多文件写入 pasteboard（每个 item 一个 file URL + 防回环 marker）。
 fn write_files_to_pasteboard(urls: &[String]) {
     use crate::platform::pasteboard;
     pasteboard::clear();
-    pasteboard::set_custom("", "com.litiantao.voidnix.clipboard");
-    pasteboard::set_file_urls(urls);
+    // writeObjects 会替换 items：marker 必须写进 item，不能先 set_custom 再 set_file_urls
+    pasteboard::set_file_urls(urls, Some("com.litiantao.voidnix.clipboard"));
 }
 
 fn hide_and_paste(app: &tauri::AppHandle) {

@@ -90,7 +90,7 @@ interface SearchContext {
 ```
 
 - **全局模式**（`searchEngine.search`）：并行调用所有扩展 dynamic → **一次预算 finalScore（`scoreFields + boost`）** → 合流 keyword 模块入口（`scoreModuleEntry`：name/id/description 正向 + keywords 双向，与 `/` 工具列表共用；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口**——即时答案优先；clipboard 等数据型 kind≠module 不抑制）+ dedupe + groupAndSort。keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）。**过滤规则**：空 query 按 `finalScore>0`；非空 query 查找型需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透。
-- **模块模式**（同一 `searchEngine.search`，`setActiveModule` 后）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序；同样受 `searchTimeoutMs` 超时与 abort 保护。UX 外壳（`useSearchInput`）延迟 50ms 显示 loading，同步 dynamic 不闪、网络型才占位。
+- **模块模式**（同一 `searchEngine.search`，`setActiveModule` 后）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序；同样受 `searchTimeoutMs` 超时与 abort 保护。`search()` 入口快照 `activeModule`，await 期间切换不影响本次后处理。超时为每扩展独立 child `AbortSignal`（超时只 abort 该扩展，父 abort 同步取消）。UX 外壳（`useSearchInput`）延迟 50ms 显示 loading，同步 dynamic 不闪、网络型才占位。
 - `moduleMode` 区分调用场景：**全局即时答案仅 calculator / currency**；ip / time / uuid / base64 等须 `if (!ctx?.moduleMode) return []`，仅模块内响应。网络型（currency）全局空 query 仍应跳过请求返回 `[]`，避免拖慢默认列表。
 - 半静态内容（如 base64）用模块级缓存自管，走 dynamic 返回。
 
@@ -216,7 +216,7 @@ impl Extension for ClipboardExtension {
 - `runtime::pasteboard`：框架命令薄壳（`pasteboard_write_text`；原语在 `platform::pasteboard`）
 - `platform::focus`：焦点管理（`capture_frontmost` / `restore_captured` / `captured_pid`，PREV_FRONT_PID 唯一源）
 - `platform::input`：键盘注入（`post_key(key_code, &[Modifier], Option<pid>)` 原语 / `post_combo` 字符串糖）
-- `platform::pasteboard`：NSPasteboard 原语（read_text / read_file_urls / read_png(max) / read_tiff_as_png(max) / encode_image_to_png / set_png_bytes / write_text / set_string / set_file_urls / set_custom / has_type / change_count / snapshot / restore）
+- `platform::pasteboard`：NSPasteboard 原语（read_text / read_file_urls / read_png(max) / read_tiff_as_png(max) / encode_image_to_png / set_png_bytes / write_text / set_string / set_file_urls(marker?) / set_custom / has_type / change_count / snapshot / restore）
 - `platform::selection`：AX 选中文本提取（`try_ax` / `poll_clipboard` / `init_ax_timeout`）
 - `platform::path_guard`：路径安全校验（`validate(path)`，canonicalize + 拦系统致命前缀）
 - `http::client()`：全局 reqwest 客户端

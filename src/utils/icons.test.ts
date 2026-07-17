@@ -62,7 +62,7 @@ describe('getFileIcon', () => {
 
     it('PDF 文件', () => {
       const r = makeResult({ data: { path: '/doc/file.pdf' } })
-      expect(getFileIcon(r)).toEqual({ icon: 'i-ri-file-pdf-fill', color: 'text-red-500' })
+      expect(getFileIcon(r)).toEqual({ icon: 'i-ri-file-pdf-fill', color: 'text-danger' })
     })
 
     it('压缩文件', () => {

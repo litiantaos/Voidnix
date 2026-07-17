@@ -44,14 +44,16 @@ impl SessionRegistry {
 
     /// 在 register 之后调用，存入 task handle。
     /// 用于 abort 时强制终止 task。
-    pub fn set_handle(&self, session_id: &str, handle: JoinHandle<()>) {
-        if let Some(s) = self
-            .sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get_mut(session_id)
-        {
+    /// 若 session 已不在（register 与 set_handle 之间被 cancel/unregister），abort handle 并返回 false。
+    pub fn set_handle(&self, session_id: &str, handle: JoinHandle<()>) -> bool {
+        let mut map = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(s) = map.get_mut(session_id) {
             s.handle = Some(handle);
+            true
+        } else {
+            // 竞态窗口：abort 已 remove session，强制终止刚 spawn 的 task
+            handle.abort();
+            false
         }
     }
 
@@ -133,6 +135,40 @@ mod tests {
         reg.register("s1".to_string(), CancellationToken::new());
         assert!(reg.cancel("s1"));
         assert!(!reg.unregister("s1"));
+        assert_eq!(reg.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn set_handle_after_cancel_aborts_task() {
+        let reg = SessionRegistry::default();
+        reg.register("s1".to_string(), CancellationToken::new());
+        assert!(reg.cancel("s1"));
+
+        // register→set_handle 竞态：session 已 remove，set_handle 必须 abort 并返回 false
+        let handle = tauri::async_runtime::spawn(async {
+            // 若未 abort 会挂起至 test timeout；abort 后 JoinHandle 以 cancel 结束
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+        });
+        assert!(!reg.set_handle("s1", handle));
+        // 给 runtime 一点时间处理 abort
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert_eq!(reg.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn set_handle_attaches_and_cancel_aborts() {
+        let reg = SessionRegistry::default();
+        let token = reg.register("s1".to_string(), CancellationToken::new());
+        let handle = tauri::async_runtime::spawn(async {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+        });
+        assert!(reg.set_handle("s1", handle));
+        assert!(reg.cancel("s1"));
+        assert!(token.is_cancelled());
         assert_eq!(reg.len(), 0);
     }
 }

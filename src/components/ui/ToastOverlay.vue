@@ -16,7 +16,7 @@
           <i
             :class="
               t.kind === 'error'
-                ? 'i-ri-error-warning-line text-red-500'
+                ? 'i-ri-error-warning-line text-danger'
                 : 'i-ri-check-line text-accent'
             "
           />

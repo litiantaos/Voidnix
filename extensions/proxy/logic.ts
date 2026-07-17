@@ -34,8 +34,8 @@ export const DELAY_TIMEOUT = -1
 
 /// 延迟（ms）→ 颜色语义类。连通=绿，连不通=红，未测速（0）返回空串不着色。
 export function delayColor(ms: number): string {
-  if (ms === DELAY_TIMEOUT) return 'text-red-500'
-  if (ms > 0) return 'text-green-500'
+  if (ms === DELAY_TIMEOUT) return 'text-danger'
+  if (ms > 0) return 'text-success'
   return ''
 }
 

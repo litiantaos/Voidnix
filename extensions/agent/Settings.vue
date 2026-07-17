@@ -59,7 +59,7 @@
               <BaseInput v-model="modalForm.models[index]" placeholder="gpt-5" class="flex-1" />
               <BaseButton
                 v-if="index > 0"
-                class="text-red-500"
+                class="text-danger"
                 icon="i-ri-close-line"
                 @click="removeModel(index)"
               />
@@ -72,7 +72,7 @@
       <template #footer-start>
         <BaseButton
           v-if="!isCreating && agentConfig.aiProviders.length > 1"
-          class="text-red-500 hover:text-red-600"
+          class="text-danger hover:text-danger/80"
           @click="deleteAndClose"
         >
           删除

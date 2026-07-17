@@ -6,9 +6,16 @@
     class="max-w-50"
     @update:model-value="handleModelChange"
   />
-  <BaseButton icon="i-ri-add-line" @click="handleNewConversation" />
+  <BaseButton
+    icon="i-ri-add-line"
+    title="新会话"
+    aria-label="新会话"
+    @click="handleNewConversation"
+  />
   <BaseButton
     :icon="appStore.activeSubview === 'config' ? 'i-ri-settings-3-fill' : 'i-ri-settings-3-line'"
+    :title="appStore.activeSubview === 'config' ? '关闭设置' : '设置'"
+    :aria-label="appStore.activeSubview === 'config' ? '关闭设置' : '设置'"
     @click="toggleConfig"
   />
 </template>

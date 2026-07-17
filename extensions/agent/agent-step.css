@@ -1,0 +1,145 @@
+/* 思考占位 / 工具步骤共用（View + AgentToolStep 导入，非 scoped） */
+
+.agent-step {
+  padding: var(--space-soft);
+  border-radius: var(--radius-ctrl);
+  background: var(--color-mist);
+  animation: agent-step-in 0.3s var(--ease-out) both;
+}
+
+.agent-step-label {
+  color: var(--color-text-secondary);
+}
+
+/* 进行中：标签流光字 + 图标脉动 + 三点 */
+.agent-step--active .agent-step-label {
+  background: linear-gradient(
+    100deg,
+    var(--color-text-secondary) 0%,
+    var(--color-accent) 40%,
+    color-mix(in srgb, var(--color-accent) 50%, var(--color-card-solid)) 50%,
+    var(--color-accent) 60%,
+    var(--color-text-secondary) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: agent-step-text-shimmer 2s ease-in-out infinite;
+}
+
+.agent-step--active .agent-step-icon {
+  animation: agent-step-icon-pulse 1.4s ease-in-out infinite;
+}
+
+/* 失败：danger token */
+.agent-step--failed .agent-step-label,
+.agent-step--failed .agent-step-icon {
+  color: var(--color-danger);
+}
+
+.agent-step-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  transform: translateY(1px);
+}
+
+.agent-step-dots i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  opacity: 0.3;
+  animation: agent-step-dot 1.2s ease-in-out infinite;
+}
+
+.agent-step-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.agent-step-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* 结果区：gutter 与图标同宽，竖线对准图标中线 */
+.agent-step-body {
+  align-items: stretch;
+}
+
+.agent-step-gutter {
+  display: flex;
+  justify-content: center;
+  align-self: stretch;
+  width: 1em;
+}
+
+.agent-step-rail {
+  width: 2px;
+  border-radius: 1px;
+  background: var(--color-divider);
+}
+
+.agent-step-out {
+  flex: 1 1 0%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  animation: agent-step-out-in 0.25s var(--ease-out) both;
+}
+
+@keyframes agent-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes agent-step-text-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes agent-step-icon-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes agent-step-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes agent-step-out-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

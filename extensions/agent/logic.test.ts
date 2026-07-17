@@ -125,6 +125,25 @@ describe('toLlmMessages', () => {
     expect(out).toEqual([])
   })
 
+  it('notice part 不进 LLM 上下文', () => {
+    const out = toLlmMessages([
+      userMsg('hi'),
+      assistantMsg([
+        { type: 'text', text: 'ok' },
+        { type: 'notice', kind: 'aborted', text: '已中止' },
+      ]),
+    ])
+    expect(out).toEqual([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'ok' },
+    ])
+  })
+
+  it('仅 notice 的 assistant 被跳过', () => {
+    const out = toLlmMessages([assistantMsg([{ type: 'notice', kind: 'error', text: 'fail' }])])
+    expect(out).toEqual([])
+  })
+
   it('空输入 → []', () => {
     expect(toLlmMessages([])).toEqual([])
   })

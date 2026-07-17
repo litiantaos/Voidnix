@@ -43,8 +43,7 @@
     <!-- 放大镜 -->
     <div
       v-if="showMagnifier"
-      border="~ black/20"
-      class="radius-panel overlay-abs"
+      class="border border-soft radius-panel border-solid overlay-abs"
       shadow="xl"
       z="60"
       overflow="hidden"
@@ -87,17 +86,21 @@
         </div>
       </div>
       <div
-        text="xs black"
+        text="xs primary"
         font="mono"
-        border="t black/20"
+        class="border-t border-soft flex-center"
         bg="white"
         flex
         gap="2"
         h="6"
         select="none"
-        class="flex-center"
       >
-        <div border="~ black/20" h="3" w="3" :style="{ background: pickedColor }"></div>
+        <div
+          class="border border-soft border-solid"
+          h="3"
+          w="3"
+          :style="{ background: pickedColor }"
+        ></div>
         <div>{{ pickedColor }}</div>
       </div>
     </div>
@@ -147,7 +150,7 @@
         cursor="move"
         inset="0"
         absolute
-        :style="{ padding: '1px', border: '1px dashed #3b82f6' }"
+        :style="{ padding: '1px', border: '1px dashed var(--color-accent)' }"
         @mousedown.stop="startTextInputDrag($event)"
       />
       <textarea
@@ -242,7 +245,7 @@
               text="xs primary"
               font="medium mono"
               rounded
-              bg="black/5"
+              class="fill-ctrl"
               flex
               h="5"
               min-w="5"

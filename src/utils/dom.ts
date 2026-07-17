@@ -29,6 +29,26 @@ export function isFormControl(
   return false
 }
 
+/**
+ * 程序化键盘聚焦。
+ * 裸 focus() 不匹配 :focus-visible；{ focusVisible:true } 在部分 WK 无效，
+ * 故同步挂 is-keyboard-focus 作样式兜底，blur 时卸下。
+ */
+export function focusFromKeyboard(el: HTMLElement) {
+  document.querySelectorAll('.is-keyboard-focus').forEach((node) => {
+    node.classList.remove('is-keyboard-focus')
+  })
+  el.focus({ focusVisible: true })
+  el.classList.add('is-keyboard-focus')
+  el.addEventListener(
+    'blur',
+    () => {
+      el.classList.remove('is-keyboard-focus')
+    },
+    { once: true },
+  )
+}
+
 export function cycleFocus(focusable: HTMLElement[], e: KeyboardEvent) {
   if (focusable.length === 0) return
   e.preventDefault()
@@ -39,7 +59,7 @@ export function cycleFocus(focusable: HTMLElement[], e: KeyboardEvent) {
   } else {
     idx = idx < 0 || idx >= focusable.length - 1 ? 0 : idx + 1
   }
-  focusable[idx].focus()
+  focusFromKeyboard(focusable[idx])
 }
 
 export function trapFocus(focusable: HTMLElement[], e: KeyboardEvent) {
@@ -49,12 +69,12 @@ export function trapFocus(focusable: HTMLElement[], e: KeyboardEvent) {
   if (e.shiftKey) {
     if (document.activeElement === first) {
       e.preventDefault()
-      last.focus()
+      focusFromKeyboard(last)
     }
   } else {
     if (document.activeElement === last) {
       e.preventDefault()
-      first.focus()
+      focusFromKeyboard(first)
     }
   }
 }

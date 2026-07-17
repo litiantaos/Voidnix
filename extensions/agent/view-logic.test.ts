@@ -10,6 +10,10 @@ import {
   getMessageText,
   streamLayoutKey,
   renderMarkdown,
+  renderCodeBlock,
+  renderListItemHtml,
+  sanitizeCodeLang,
+  partKey,
 } from './view-logic'
 import type { AgentMessage, AgentPart } from '@/types/agent'
 
@@ -166,6 +170,42 @@ describe('streamLayoutKey', () => {
   })
 })
 
+describe('partKey', () => {
+  it('tool 用 id，notice/text 用 type+index', () => {
+    expect(partKey({ type: 'toolCall', id: 'c1', name: 'x', state: 'done' }, 0)).toBe('c1')
+    expect(partKey({ type: 'notice', kind: 'error', text: 'e' }, 2)).toBe('notice-error-2')
+    expect(partKey({ type: 'text', text: 'a' }, 1)).toBe('text-1')
+  })
+})
+
+describe('sanitizeCodeLang / renderCodeBlock', () => {
+  it('语言只取首 token 且白名单', () => {
+    expect(sanitizeCodeLang('ts')).toBe('ts')
+    expect(sanitizeCodeLang('  rust  ')).toBe('rust')
+    expect(sanitizeCodeLang('ts {hl}')).toBe('ts')
+    expect(sanitizeCodeLang('a<script>')).toBe('')
+    expect(sanitizeCodeLang(undefined)).toBe('')
+  })
+
+  it('代码块含语言标签、复制按钮与转义内容', () => {
+    const html = renderCodeBlock('a <b>&', 'ts')
+    expect(html).toContain('class="md-code"')
+    expect(html).toContain('md-code-lang')
+    expect(html).toContain('>ts<')
+    expect(html).toContain('md-code-copy')
+    expect(html).toContain('language-ts')
+    expect(html).toContain('a &lt;b&gt;&amp;')
+    expect(html).not.toContain('a <b>&')
+  })
+
+  it('无语言时仍有复制按钮', () => {
+    const html = renderCodeBlock('x')
+    expect(html).toContain('md-code-lang--empty')
+    expect(html).toContain('md-code-copy')
+    expect(html).not.toContain('language-')
+  })
+})
+
 describe('renderMarkdown', () => {
   it('空串返回空', () => {
     expect(renderMarkdown('')).toBe('')
@@ -177,5 +217,26 @@ describe('renderMarkdown', () => {
     expect(html).toContain('href="https://example.com"')
     expect(html).toContain('target="_blank"')
     expect(html).toContain('noopener')
+  })
+
+  it('fenced 代码块带外壳与语言', () => {
+    const html = renderMarkdown('```python\nprint(1)\n```')
+    expect(html).toContain('md-code')
+    expect(html).toContain('md-code-copy')
+    expect(html).toContain('python')
+    expect(html).toContain('print(1)')
+  })
+
+  it('有序/无序列表共用固定标记外壳', () => {
+    // happy-dom + DOMPurify 会剥掉 ul/ol 外壳，断言项级结构即可
+    const ul = renderMarkdown('- a\n- b')
+    const ol = renderMarkdown('1. x\n2. y')
+    expect(ul).toContain('md-li-mark')
+    expect(ul).toContain('md-li-body')
+    expect(ul).toContain('•')
+    expect(ol).toContain('md-li-mark')
+    expect(ol).toContain('1.')
+    expect(ol).toContain('2.')
+    expect(renderListItemHtml('•', 'a')).toContain('class="md-li"')
   })
 })

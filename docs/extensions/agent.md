@@ -36,7 +36,7 @@ loop 结束（含 error）时 `SessionRegistry::unregister` 清会话；用户 a
 - `Error { message }`：错误终止（前端写入当前 assistant 气泡）
 
 前端手写类型 `src/types/agent.ts`，经 `invoke(CMD.agentRun / CMD.agentAbort)` 调用。
-`handleEvent` 内容按 `assistantId` 写气泡；`status` / `sessionId` 仅当事件仍属当前 run（闭包 `runSessionId`）时才改，避免晚到 completed/error 踩踏新一轮。
+`handleEvent` 内容按 `assistantId` 写气泡，且仅 `streaming` 时接受 delta/tool（abort/完成/错误 finalize 后拒绝晚到内容）；`status` / `sessionId` 仅当事件仍属当前 run（闭包 `runSessionId`）时才改，避免晚到 completed/error 踩踏新一轮。
 
 ## Agent 工具
 
@@ -87,8 +87,12 @@ AI Provider（endpoint/apiKey/models）由 agent 自管（与 translate 同构�
 ## 对话 UI
 
 - **贴底滚动**：仅列表距底 < 24px 时 streaming 增量自动滚底；用户上翻阅读不打断。发送新消息时强制贴底。布局 watch 用轻量签名（条数 + streaming 长度）+ rAF 合并滚底，流式阶段不插值高度。
-- **工具结果**：`web_search` 成功展示 parsed answer/hits（可点开系统浏览器）；失败展示 `output` 错误串；`run_command` 等展示 `output` 原文。
-- **输出中悬浮操作**：输入框上方居中、两枚单层 `BaseButton`（滚底圆 / 中止胶囊，同高 30px、同边同静阴影）；中止 loading 为按钮 `background` 内 aurora（`@property` 锚点漂移 + conic 慢旋，无伪元素外溢）；进出场 `200ms ease-out` 自下上移 + scale-90 / 离场 `150ms ease-in`；中止走 `agentAbort`（与 Ctrl+C 同路径）。
+- **悬浮输入岛**：`agent-footer` absolute 贴底（左右/底 12），不占 flex 流；消息区铺满并可滚入其下；底 padding 固定预留输入岛（~112px），**不为**悬浮钮动态加高（避免显隐抖动）；`chrome-fade-bottom` 仍叠底软透。
+- **工具结果**：`web_search` 成功展示 parsed answer/hits（button + 外链 icon，系统浏览器打开）；失败展示 `output` 错误串；`run_command` 等展示 `output` 原文。
+- **状态 notice**（`AgentPart.type = 'notice'`，不进 LLM）：`error`（气泡 danger 底 + toast）/ `aborted`（muted「已中止」）；中止/错误时进行中工具标 `failed`。
+- **未配置**：空态 +「去设置」打开 config 子视图。
+- **悬浮操作**：输入框上方零宽中线锚点。滚底非贴底即显；中止仅输出中。两钮 absolute，solo=`translate -50%` 居中，pair=分居中线两侧（半槽 4px）；中止消失后滚底 translate 200ms 滑回正中。阴影 3 层插值 hover 抬升。点滚底 smooth；streaming/发送瞬时贴底。中止 aurora；进出场 200/150ms；中止走 `agentAbort`。
+- **输入**：超长（>8192）截断并 toast；执行中 placeholder 提示可预写下一条。
 
 ## 文件结构
 
@@ -98,11 +102,12 @@ extensions/agent/
 ├── config.ts              # defineConfig（systemPrompt/searchProvider/aiProviders + 资源默认值 + BOUNDS 仅 CI 镜像 + provider CRUD/active computed）
 ├── agent.ts               # useAgentChat composable（前端状态机）
 ├── view-logic.ts          # View 纯函数（streamView / showToolBody / markdown 等）
-├── View.vue               # 布局 + 贴底滚动 + 悬浮操作
+├── View.vue               # 布局 + 贴底滚动 + 悬浮操作 + notice
 ├── AgentTextPart.vue      # 流式/完成 markdown 文本 part
 ├── AgentToolStep.vue      # 工具步骤行 + hits/output
+├── agent-step.css         # 思考/工具步骤共用样式
 ├── Settings.vue           # Provider + Agent 配置
-├── Actions.vue            # 模型切换 + 新会话
+├── Actions.vue            # 模型切换 + 新会话 + 设置
 └── native/
     ├── mod.rs             # agent_run / agent_abort + Extension impl
     ├── policy.rs          # 资源上限 floor/cap 权威源（6 项 clamp）

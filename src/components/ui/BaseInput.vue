@@ -3,9 +3,10 @@
     data-settings-control
     tabindex="0"
     :class="[
+      // 默认 soft-chip；panel = soft-surface 白边面（非 ui-field；大输入用 BaseTextarea）
       'ui-ctrl flex items-center gap-2',
-      rounded === 'panel' ? '!radius-panel' : '',
-      error ? 'border border-red-400' : '',
+      rounded === 'panel' ? 'soft-surface !radius-panel' : 'soft-chip',
+      error ? 'border border-danger' : '',
       disabled ? 'ui-disabled' : '',
     ]"
     @click="focus()"

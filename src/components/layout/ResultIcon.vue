@@ -1,6 +1,6 @@
 <template>
-  <!-- 纯图标渲染：背景由 ResultItem 的 iconWrapper 统一控制（图片=透明、字体/file=fill-ctrl）
-       file/folder 无显式 icon 按扩展名类型映射色，其他字体图标 text-muted -->
+  <!-- 纯图标渲染：背景由 ResultItem iconWrapper 统一（图片=透明、字体/file=fill-mist）
+       file/folder 无显式 icon 按扩展名映射色，其他字体图标 text-muted -->
   <img
     v-if="isImageIcon"
     :src="iconSrc"

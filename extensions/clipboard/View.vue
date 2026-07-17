@@ -35,7 +35,7 @@
               v-else-if="item.content_type === 'image'"
               class="i-ri-image-line text-sm text-emerald-500"
             ></i>
-            <i v-else class="i-ri-folder-3-line text-sm text-amber-500"></i>
+            <i v-else class="i-ri-folder-3-line text-sm text-warning"></i>
           </template>
           <template #title>
             <div
@@ -49,9 +49,7 @@
             <img
               v-else-if="item.content_type === 'image' && imageCache.get(item.id)"
               :src="imageCache.get(item.id)"
-              class="radius-ctrl"
-              bg="black/5"
-              border="~ black/1"
+              class="border border-divider radius-ctrl border-solid fill-ctrl"
               h="32"
               w="48"
               object="cover top"
@@ -63,16 +61,16 @@
             </div>
           </template>
           <template #subtitle>
-            <div flex gap="2" items="center">
+            <div flex gap="1.5" items="center">
               <span>{{ item.source_app }}</span>
-              <span>•</span>
+              <span text="muted">·</span>
               <span>{{ formatTime(item.created_at) }}</span>
               <template v-if="item.file_size">
-                <span>•</span>
+                <span text="muted">·</span>
                 <span>{{ formatBytes(item.file_size) }}</span>
               </template>
               <template v-if="item.image_width && item.image_height">
-                <span>•</span>
+                <span text="muted">·</span>
                 <span>{{ item.image_width }}×{{ item.image_height }}</span>
               </template>
             </div>

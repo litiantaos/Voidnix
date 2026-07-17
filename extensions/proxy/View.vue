@@ -58,8 +58,8 @@
                   >↓ {{ fmtTrafficRate(traffic.down) }}</span
                 ></span
               >
-              <span v-if="coreError" text="red-500" shrink="0" ml="2">{{ coreError }}</span>
-              <span v-else-if="updateInfo?.hasUpdate" text="green-500" shrink="0" ml="2"
+              <span v-if="coreError" text="danger" shrink="0" ml="2">{{ coreError }}</span>
+              <span v-else-if="updateInfo?.hasUpdate" text="success" shrink="0" ml="2"
                 >有新内核 {{ updateInfo.latest
                 }}{{ isEnabled ? '，请关闭代理后更新' : '，点击下载更新' }}</span
               >
@@ -168,7 +168,7 @@
       <template #footer-start>
         <BaseButton
           v-if="!isCreating && config.subscriptions.length > 1"
-          class="text-red-500 hover:text-red-600"
+          class="text-danger hover:text-danger/80"
           @click="confirmRemoveFromModal"
         >
           删除

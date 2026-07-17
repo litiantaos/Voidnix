@@ -119,13 +119,20 @@ pub fn set_file_url(s: &str) {
 }
 
 /// 写多个 file URL：每个 NSPasteboardItem 一个（对齐 Finder 多选复制）。
-/// 单元素退化为 `set_file_url`；空切片 no-op。调用前通常先 `clear()`。
-pub fn set_file_urls(urls: &[String]) {
+/// 单元素退化为 `set_file_url`（+ 可选 pasteboard 级 marker）；空切片 no-op。
+/// 调用前通常先 `clear()`。
+///
+/// `marker_uti`：挂到每个 item 的防回环 UTI。`writeObjects` 会替换 pasteboard items，
+/// 先 `set_custom` 再写多 URL 会丢失 marker，故多文件必须把 UTI 写进 item 本身。
+pub fn set_file_urls(urls: &[String], marker_uti: Option<&str>) {
     if urls.is_empty() {
         return;
     }
     if urls.len() == 1 {
         set_file_url(&urls[0]);
+        if let Some(m) = marker_uti {
+            set_custom("", m);
+        }
         return;
     }
     autoreleasepool(|_| {
@@ -140,6 +147,11 @@ pub fn set_file_urls(urls: &[String]) {
             let ns = NSString::from_str(url);
             // setString_forType 对 file URL 项足够；与 read_file_urls 对称
             item.setString_forType(&ns, unsafe { NSPasteboardTypeFileURL });
+            if let Some(m) = marker_uti {
+                let marker = NSString::from_str("");
+                let ty = NSString::from_str(m);
+                item.setString_forType(&marker, &ty);
+            }
             protos.push(ProtocolObject::from_retained(item));
         }
         let array = NSArray::from_retained_slice(&protos);
