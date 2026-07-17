@@ -12,79 +12,96 @@ export default defineConfig({
     }),
   ],
   theme: {
-    // ── 语义色阶（Voidnix 设计系统，单一真相源在 docs/design.md）──
     colors: {
-      surface: {
-        DEFAULT: '#fafafa',
+      surface: { DEFAULT: 'var(--color-surface)' },
+      canvas: { DEFAULT: 'var(--color-canvas)' },
+      // 字面 hex：Wind4 对纯 CSS 变量做 color-mix 时，text/bg-accent 在 WK 下不可靠；
+      // 与 theme.css --color-accent 同值（改色两处同步）。实心底按钮优先 .ui-btn-primary。
+      accent: { DEFAULT: '#3d82f0' },
+      mist: {
+        DEFAULT: 'var(--color-mist)',
+        solid: 'var(--color-mist-solid)',
       },
-      accent: {
-        DEFAULT: '#3b82f6',
+      bubble: { DEFAULT: 'var(--color-bubble)' },
+      primary: 'var(--color-text-primary)',
+      secondary: 'var(--color-text-secondary)',
+      muted: 'var(--color-text-muted)',
+      // 语义色（业务优先用这些；文件类型图标等可用 palette 区分色，见 design.md）
+      danger: {
+        DEFAULT: 'var(--color-danger)',
+        soft: 'var(--color-danger-soft)',
       },
-      primary: 'rgba(0, 0, 0, 0.89)',
-      secondary: 'rgba(0, 0, 0, 0.60)',
-      muted: 'rgba(0, 0, 0, 0.40)',
+      warning: {
+        DEFAULT: 'var(--color-warning)',
+        soft: 'var(--color-warning-soft)',
+      },
+      success: {
+        DEFAULT: 'var(--color-success)',
+        soft: 'var(--color-success-soft)',
+      },
     },
-
-    // ── 动画 easing（全仓单一源；duration 用内置数值 duration-100/150/200）──
     transitionTimingFunction: {
-      out: 'cubic-bezier(0, 0, 0.2, 1)', // 进场 / hover
-      in: 'cubic-bezier(0.4, 0, 1, 1)', // 离场
-      spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)', // 弹簧回弹
+      out: 'cubic-bezier(0, 0, 0.2, 1)',
+      in: 'cubic-bezier(0.4, 0, 1, 1)',
+      spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
     },
   },
   shortcuts: {
-    // ── 圆角语义（值源 theme.css --radius-*；Wind4 用 var() 任意值）──
-    // panel 10 = 外框（搜索栏 / 列表选中 / 浮层）；ctrl 6 = 框内嵌元素（标签 / 图标井 / 按钮）
     'radius-ctrl': 'rounded-[var(--radius-ctrl)]',
     'radius-panel': 'rounded-[var(--radius-panel)]',
     'radius-window': 'rounded-[var(--radius-window)]',
 
-    // ── 材质：Mica 窗口壳（叠在原生 NSVisualEffect 之上的前端白染 + 高光环）──
-    // 白染 40%：/60 过粉墙；/30 花壁纸易脏。窗级与截屏浮层分轨，勿绑同一 opacity
-    'mica-tint': 'bg-white/40',
-    'mica-ring':
-      'shadow-[inset_0_2px_0_0_rgba(255,255,255,0.7),inset_0_0_0_1px_rgba(255,255,255,0.35)]',
-    'mica-shell': 'mica-tint mica-ring radius-window overflow-hidden',
-    // 叠在花图上的浮层（截屏工具条等）：独立高白染，与窗级 mica-tint 解耦
-    'mica-panel':
-      'bg-white/90 backdrop-blur-xl glass-ring radius-panel border border-black/10 select-none',
-    'mica-bar': 'bg-white/90 backdrop-blur-xl glass-ring radius-panel border border-black/10',
+    /*
+     * 面：数值真相在 theme.css :root + 类规则。
+     * soft-surface：Uno 展开 fill/border/blur（acrylic 组合用）；类名再挂 theme 时以 theme saturate 为准。
+     * soft-chip / ui-active / mica-tint：仅占位扫描，完整面只在 theme.css。
+     */
+    // blur/saturate 与 theme --soft-surface-* 同值（40 / 1.35）
+    'soft-surface':
+      'border border-solid border-[var(--soft-surface-border)] bg-[var(--soft-surface-fill)] shadow-none backdrop-blur-[40px] backdrop-saturate-135',
+    // 抬升卡：soft-surface + radius-panel；阴影见 theme .soft-card
+    'soft-card': 'soft-surface radius-panel',
+    'soft-chip': 'select-none',
+    'ui-active': 'border-0 shadow-none',
 
-    // ── 材质：Acrylic 仅外框（主窗搜索栏 / 下拉，叠在已有 Mica 上）；内嵌禁止再叠磨砂 ──
-    // 搜索栏：高白染压滚动字透出（减闪）+ 中强 blur 保一点磨砂；合成层提示见 theme.css .acrylic-bar
-    acrylic: 'bg-white/90 backdrop-blur-xl backdrop-saturate-150',
-    'glass-ring': 'shadow-[inset_0_2px_0_0_rgba(255,255,255,0.65)]',
-    'acrylic-bar': 'acrylic glass-ring radius-panel border border-black/10',
-    // 弹出层：更高白染 + 轻 blur，近纯白（与搜索栏分轨）
-    'acrylic-panel':
-      'bg-white/95 backdrop-blur-sm glass-ring radius-panel border border-black/10 select-none',
+    // 窗壳：纯白磨砂在 theme.css .mica-tint / .mica-shell
+    'mica-tint': 'shadow-none',
+    'mica-ring':
+      'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.75),inset_0_0_0_1px_rgba(255,255,255,0.4)]',
+    'mica-shell': 'mica-ring radius-window overflow-hidden',
+    'mica-panel': 'soft-surface radius-panel select-none',
+    'mica-bar': 'soft-surface radius-panel',
+
+    // 搜索栏 / 浮层 = soft-surface + elevation 档
+    'acrylic-bar': 'soft-surface radius-panel !shadow-[var(--shadow-bar)]',
+    'acrylic-panel': 'soft-surface radius-panel select-none !shadow-[var(--shadow-panel)]',
     'dropdown-panel': 'acrylic-panel p-1',
 
-    // ── 内嵌实色填充（标签 / 图标井 / 按钮 / 选中；无 blur，保证叠在玻璃上仍可读）──
-    'fill-ctrl': 'bg-black/4',
-    'fill-hover': 'bg-black/5',
-    'fill-active': 'bg-black/8',
+    'fill-ctrl': 'bg-[var(--color-fill-4)]',
+    'fill-hover': 'bg-[var(--color-fill-5)]',
+    'fill-active': 'bg-[var(--color-fill-8)]',
+    'fill-strong': 'bg-[var(--color-fill-12)]',
+    'fill-mist': 'bg-mist',
+    'border-divider': 'border-[var(--color-divider)]',
+    'border-soft': 'border-[var(--color-border)]',
 
-    // ── 控件状态 ──
+    // ui-ctrl：壳（尺寸/字号）；面由 soft-chip 或 soft-surface / ui-field 另挂
     'ui-ctrl':
-      'h-7 px-3 radius-ctrl outline-none border-none text-xs font-medium fill-ctrl text-primary transition-colors duration-150 ease-out focus-within:ring-1 focus-within:ring-inset focus-within:ring-accent/40 select-none',
+      'h-7 px-3 radius-ctrl outline-none text-xs font-medium text-primary transition-[background-color,box-shadow,border-color] duration-150 ease-out select-none',
+    // 大输入：soft-surface + theme .ui-field 描边/聚焦
+    'ui-field':
+      'radius-ctrl outline-none text-sm font-medium soft-surface text-primary select-none',
     'ui-disabled': 'opacity-50 cursor-not-allowed',
-    // 选中 / 焦点行：浅灰实色（black/5，比 fill-active 的 /8 更轻）
-    'ui-active': 'fill-hover',
 
-    // ── 布局 ──
     'flex-center': 'flex items-center justify-center',
-    // 模块 View 根布局惯例（撑满由 ContentView :deep flex-1 统一注入，无需自带 h-full）
     'flex-col-full': 'flex flex-col',
     'flex-col-full-pb': 'pb-3 flex flex-col',
 
-    // ── 表单 ──
     'form-label': 'text-xs text-muted font-medium',
     'form-field': 'flex flex-col gap-1.5',
     'input-base': 'outline-none bg-transparent flex-1 min-w-0',
 
-    // ── 杂项 ──
-    'group-header': 'text-xs text-muted tracking-wider font-medium px-3 py-1.5 uppercase',
+    'group-header': 'text-xs text-muted font-medium px-3 py-1.5',
     'overlay-abs': 'pointer-events-none absolute',
   },
   content: {

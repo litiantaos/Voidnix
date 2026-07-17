@@ -4,7 +4,7 @@
       <template #item="{ item }">
         <div flex p="3" gap="3" text="xs" select="none">
           <span shrink="0" w="10" flex justify="start">
-            <span class="radius-ctrl" bg="black/5" text="muted" p="x-1.5">{{
+            <span class="radius-ctrl fill-ctrl" text="muted" p="x-1.5">{{
               item.metadata.network
             }}</span>
           </span>

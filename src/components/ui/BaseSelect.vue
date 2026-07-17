@@ -4,8 +4,8 @@
     :id="id"
     data-settings-control
     :class="[
-      // w-fit：默认贴合当前 label；max-w-full 防撑破父级；消费者可用 max-w-* 设上限（勿用固定 w-*）
-      'ui-ctrl custom-select inline-flex w-fit max-w-full flex-none items-center relative',
+      // 控件统一 soft-chip；w-fit 贴合 label，max-w-full 防撑破父级
+      'ui-ctrl soft-chip custom-select inline-flex w-fit max-w-full flex-none items-center relative',
       disabled ? 'ui-disabled' : '',
     ]"
     tabindex="0"
@@ -13,6 +13,7 @@
     :aria-expanded="isOpen"
     aria-haspopup="listbox"
     @keydown="onKeyDown"
+    @focusout="onFocusOut"
     @click="toggleOpen"
   >
     <span :class="selectedLabel ? 'text-primary' : 'text-muted'" class="min-w-0 truncate">
@@ -163,10 +164,26 @@ const selectedLabel = computed(() => {
   return ''
 })
 
-/** 关闭下拉并失焦：交还 ↑↓/Enter 给 BaseList（否则 settings-control 聚焦时列表让出键盘） */
-function closeAndReleaseFocus() {
+/** 仅关下拉，保持焦点（Tab 移走前 / 程序化关） */
+function closeDropdown() {
   isOpen.value = false
+}
+
+/** 关闭并失焦：交还 ↑↓/Enter 给 BaseList（settings-control 聚焦时列表让出键盘） */
+function closeAndReleaseFocus() {
+  closeDropdown()
   selectRef.value?.blur()
+}
+
+/**
+ * 焦点离开 combobox（含主窗 Tab 环 cycleFocus 切到邻钮）：关下拉。
+ * 下拉 Teleport 到 body，relatedTarget 在面板内则保留（选项通常不可聚焦）。
+ */
+function onFocusOut(e: FocusEvent) {
+  if (!isOpen.value) return
+  const next = e.relatedTarget as Node | null
+  if (next && (selectRef.value?.contains(next) || dropdownRef.value?.contains(next))) return
+  closeDropdown()
 }
 
 const toggleOpen = () => {
@@ -200,10 +217,11 @@ const selectOption = (index: number) => {
 }
 
 /**
- * 键盘约定：
+ * 键盘约定（对齐 combobox）：
  * - 关闭：Enter / 空格 / ↓ 展开
- * - 展开：↑↓ 移动，Enter/空格 选中，Esc 关闭
- * - 关闭后一律失焦，↑↓ 回列表导航；再 Enter 由 BaseList execute → focus+click 打开
+ * - 展开：↑↓ 移动，Enter/空格 选中，Esc 关闭并失焦
+ * - 展开 + Tab：只关下拉、不拦截，焦点由 Tab 环 / 浏览器移走（focusout 兜底）
+ * - 关闭后失焦场景：↑↓ 回列表；再 Enter 由 BaseList execute → focus+click 打开
  */
 const onKeyDown = (e: KeyboardEvent) => {
   if (props.disabled) return
@@ -214,6 +232,12 @@ const onKeyDown = (e: KeyboardEvent) => {
       e.stopPropagation()
       toggleOpen()
     }
+    return
+  }
+
+  // Tab：关列表并放行（主窗 capture Tab 环会 cycleFocus；设置页走浏览器默认）
+  if (e.key === 'Tab') {
+    closeDropdown()
     return
   }
 
@@ -238,8 +262,7 @@ const onKeyDown = (e: KeyboardEvent) => {
 }
 
 const onClickOutside = (e: MouseEvent) => {
-  // H8：多实例并存时全局 querySelector 只返回首个匹配，导致误关；
-  // 改用组件本地 dropdownRef 精确判定当前实例的下拉是否被点击
+  // 多实例：用本地 dropdownRef，忌全局 querySelector
   if (isOpen.value && selectRef.value && !selectRef.value.contains(e.target as Node)) {
     if (!dropdownRef.value?.contains(e.target as Node)) {
       closeAndReleaseFocus()

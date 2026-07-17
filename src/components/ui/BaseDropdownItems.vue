@@ -1,6 +1,6 @@
 <template>
   <template v-for="(item, i) in items" :key="item.key ?? i">
-    <div v-if="item.type === 'divider'" border="t black/5" m="y-1" />
+    <div v-if="item.type === 'divider'" class="border-t border-divider" m="y-1" />
     <div v-else-if="item.type === 'header'" class="group-header">{{ item.label }}</div>
     <div
       v-else-if="item.type === 'meta'"
@@ -52,10 +52,10 @@ const emit = defineEmits<{
 function rowClass(item: PanelItem, i: number) {
   const active = i === props.activeIndex && !item.disabled
   return [
-    'flex items-center gap-2 text-sm font-medium px-3 py-1.5 radius-ctrl transition-colors truncate',
+    'flex items-center gap-2 text-sm font-medium px-3 py-1.5 radius-ctrl truncate',
     item.disabled ? 'opacity-40 cursor-not-allowed' : '',
     active ? 'ui-active' : '',
-    item.danger ? 'text-red-500' : active ? 'text-accent' : 'text-secondary',
+    item.danger ? 'text-danger' : active ? 'text-accent' : 'text-secondary',
   ]
 }
 

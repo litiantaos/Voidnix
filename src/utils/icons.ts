@@ -64,7 +64,7 @@ export function getFileIcon(result: SearchResult): { icon: string; color: string
     case 'log':
       return { icon: 'i-ri-file-text-fill', color: 'text-muted' }
     case 'pdf':
-      return { icon: 'i-ri-file-pdf-fill', color: 'text-red-500' }
+      return { icon: 'i-ri-file-pdf-fill', color: 'text-danger' }
     case 'doc':
     case 'docx':
     case 'pages':
@@ -72,7 +72,7 @@ export function getFileIcon(result: SearchResult): { icon: string; color: string
     case 'xls':
     case 'xlsx':
     case 'numbers':
-      return { icon: 'i-ri-file-excel-fill', color: 'text-green-500' }
+      return { icon: 'i-ri-file-excel-fill', color: 'text-success' }
     case 'ppt':
     case 'pptx':
     case 'key':
@@ -84,7 +84,7 @@ export function getFileIcon(result: SearchResult): { icon: string; color: string
     case 'gz':
     case 'bz2':
     case 'xz':
-      return { icon: 'i-ri-file-zip-fill', color: 'text-red-400' }
+      return { icon: 'i-ri-file-zip-fill', color: 'text-danger' }
     case 'mp3':
     case 'wav':
     case 'flac':
@@ -102,7 +102,7 @@ export function getFileIcon(result: SearchResult): { icon: string; color: string
     case 'bash':
     case 'zsh':
     case 'fish':
-      return { icon: 'i-ri-terminal-box-fill', color: 'text-green-500' }
+      return { icon: 'i-ri-terminal-box-fill', color: 'text-success' }
     case 'dmg':
     case 'pkg':
     case 'exe':

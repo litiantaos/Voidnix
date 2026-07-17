@@ -10,7 +10,7 @@
     <div
       v-if="icon || $slots.icon"
       class="radius-ctrl flex-center h-9 w-9"
-      :class="iconWrapperClass || 'fill-ctrl'"
+      :class="iconWrapperClass || 'fill-mist'"
       shrink="0"
       overflow="hidden"
     >

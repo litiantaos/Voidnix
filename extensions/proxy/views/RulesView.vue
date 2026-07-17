@@ -8,7 +8,7 @@
             shrink="0"
             w="28"
             truncate
-            :class="item.proxy === 'DIRECT' ? 'text-green-500' : 'text-accent'"
+            :class="item.proxy === 'DIRECT' ? 'text-success' : 'text-accent'"
             >{{ item.proxy }}</span
           >
           <span flex="1" min-w="0" truncate :title="item.payload">{{ item.payload || '—' }}</span>

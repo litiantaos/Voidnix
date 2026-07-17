@@ -51,12 +51,16 @@ class SearchEngine {
     const controller = new AbortController()
     this.currentController = controller
 
+    // 快照模式：await 期间 activeModule 可能被 KeepAlive/快捷键改写，后处理必须与本次召回一致
+    const moduleId = this.activeModule
+    const moduleMode = !!moduleId
+
     // 1. dynamic 并行召回（框架按产出扩展 meta.id 注入 module）
-    const results = await this.searchDynamic(query, controller.signal)
+    const results = await this.searchDynamic(query, controller.signal, moduleId)
     if (controller.signal.aborted) return []
 
     // 模块模式短路：仅去重，保留扩展返回序（不过滤不限流——模块内容是扩展自治 UX），跳过打分预算
-    if (this.activeModule) return dedupeBy(results, (r) => `${r.module}:${r.id}`)
+    if (moduleMode) return dedupeBy(results, (r) => `${r.module}:${r.id}`)
 
     const q = query.trim()
 
@@ -98,16 +102,31 @@ class SearchEngine {
   }
 
   /** 全局模式：并行调用所有扩展 dynamic；模块模式：只调 activeModule dynamic。
-   *  每个扩展 dynamic 受 LIMITS.searchTimeoutMs 超时保护，慢扩展不拖住全局 Promise.all。 */
-  private async searchDynamic(query: string, signal: AbortSignal): Promise<SearchResult[]> {
-    const moduleMode = !!this.activeModule
+   *  每个扩展 dynamic 受 LIMITS.searchTimeoutMs 超时保护，慢扩展不拖住全局 Promise.all。
+   *  超时 abort 该扩展的 child signal（不牵连其它扩展）；父 signal abort 时同步取消 child。 */
+  private async searchDynamic(
+    query: string,
+    signal: AbortSignal,
+    moduleId: string | undefined,
+  ): Promise<SearchResult[]> {
+    const moduleMode = !!moduleId
     const exts = getAllExtensions().filter((e) => e.search)
-    const targets = this.activeModule ? exts.filter((e) => e.meta.id === this.activeModule) : exts
+    const targets = moduleId ? exts.filter((e) => e.meta.id === moduleId) : exts
 
     const settled = await Promise.all(
       targets.map(async (ext) => {
+        const child = new AbortController()
+        const onParentAbort = () => child.abort()
+        if (signal.aborted) {
+          child.abort()
+        } else {
+          signal.addEventListener('abort', onParentAbort, { once: true })
+        }
         try {
-          const raw = await this.raceWithTimeout(ext.search!.dynamic(query, { signal, moduleMode }))
+          const raw = await this.raceWithTimeout(
+            ext.search!.dynamic(query, { signal: child.signal, moduleMode }),
+            () => child.abort(),
+          )
           // 框架注入 module = 产出扩展 meta.id（扩展禁填）；
           // module 类动态结果无 icon 时补产出扩展 meta.icon（calculator/currency 等即时答案默认带扩展图标）；
           // 全局模式 + 工具型结果（kind=module）注入 source = 扩展显示名（UI 标注来源，应用/文件等原生结果不注入）
@@ -130,6 +149,8 @@ class SearchEngine {
             console.error(`[search] extension '${ext.meta.id}' dynamic failed:`, e)
           }
           return []
+        } finally {
+          signal.removeEventListener('abort', onParentAbort)
         }
       }),
     )
@@ -137,19 +158,19 @@ class SearchEngine {
   }
 
   /** 为单个扩展 dynamic 套超时保护：超时抛 SearchTimeoutError（被调用方 catch 为降级 []）。
+   *  超时立即 onTimeout（abort 该扩展 child signal），停止 in-flight HTTP/IPC。
    *  dynamic 可同步返回数组或异步返回 Promise，Promise.resolve 统一包装。 */
-  private async raceWithTimeout<T>(v: T | Promise<T>): Promise<T> {
+  private async raceWithTimeout<T>(v: T | Promise<T>, onTimeout: () => void): Promise<T> {
     const p = Promise.resolve(v)
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       return await Promise.race([
         p,
         new Promise<T>((_, reject) => {
-          timer = setTimeout(
-            () =>
-              reject(Object.assign(new Error('search timeout'), { name: 'SearchTimeoutError' })),
-            LIMITS.searchTimeoutMs,
-          )
+          timer = setTimeout(() => {
+            onTimeout()
+            reject(Object.assign(new Error('search timeout'), { name: 'SearchTimeoutError' }))
+          }, LIMITS.searchTimeoutMs)
         }),
       ])
     } finally {

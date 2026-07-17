@@ -2,7 +2,8 @@ use tauri::AppHandle;
 
 /// 扩展 trait：所有扩展（native / pure）统一的运行时生命周期契约。
 ///
-/// - 命令注册在各扩展 `init()` 局部 `invoke_handler`
+/// - 命令注册：`sync-extensions` 扫描生成 `extensions.rs`，经 `configure_app!` 的
+///   全局 `generate_handler!` 统一挂载（非各扩展局部 `invoke_handler`）
 /// - 本 trait 负责运行时生命周期钩子：setup 并行执行
 ///
 /// **并行 bootstrap**：setup 无跨扩展依赖，全仓零跨扩展 import，

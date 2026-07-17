@@ -9,6 +9,7 @@
         : icon
           ? 'flex gap-1.5 items-center'
           : '',
+      surfaceClass,
       variantClasses[variant],
       disabled ? 'ui-disabled' : '',
       active ? 'ui-active' : '',
@@ -39,11 +40,21 @@ const props = withDefaults(defineProps<Props>(), {
 const slots = useSlots()
 const isIconOnly = computed(() => !!props.icon && !slots.default)
 
+/**
+ * 面：default / outline → soft-chip（outline 与 default 同面，API 保留）。
+ * primary → .ui-btn-primary；ghost / danger → 透明底（不挂 chip）。
+ */
+const surfaceClass = computed(() =>
+  props.variant === 'default' || props.variant === 'outline' ? 'soft-chip' : '',
+)
+
 const variantClasses: Record<string, string> = {
-  default: 'hover:bg-black/8',
-  primary: 'bg-accent text-white hover:bg-accent/90',
-  outline: 'border border-solid border-black/12 bg-transparent text-primary hover:bg-black/4',
-  ghost: 'bg-transparent hover:bg-black/5',
-  danger: 'text-red-500 hover:bg-red-500/10',
+  default: '',
+  primary: 'ui-btn-primary',
+  outline: '',
+  ghost:
+    '!border-transparent !bg-transparent !shadow-none hover:!bg-[var(--color-fill-5)] [backdrop-filter:none]',
+  danger:
+    '!border-transparent !bg-transparent !shadow-none text-danger hover:!bg-danger-soft [backdrop-filter:none]',
 }
 </script>

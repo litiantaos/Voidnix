@@ -1,162 +1,81 @@
 # Voidnix 设计系统
 
-Voidnix 自身的设计系统（仅浅色）。本文档是色值、材质、排版、形态、动画的单一参数源；AGENTS.md「UI 规范」为应用规范、本文档为参数参考。
+仅浅色。**视觉已定型**：调参结果以当前界面为准；改规范/代码时优先**复用 token**，禁止再堆零散相近值。
 
-设计目标：信息密度高、视觉静稳、层次清晰；取 macOS 原生能力实现，不依附任何外部设计规范。所有色值经 WCAG 验证。
+参数源：`src/styles/theme.css`（`:root` 基元 + 面类）· `uno.config.ts`（组合）· 业务 scoped 只编排，不发明新色/阴影数。
 
-## 颜色
+**禁止**：业务裸 hex 当结构色、`black/*` / `white/*` 硬边硬底、状态语义写 `red-500` / `green-500`、业务侧再 `color-mix(accent …)` 浅染。
 
-双入口、同一数值：`uno.config.ts` theme（Attributify / utility）+ `src/styles/theme.css` CSS 变量（scoped 样式）。扁平化语义色名（`text-primary` / `bg-surface` / `border-black/10`）；scoped 写 `var(--color-*)`，禁止再写裸 rgba。
+**例外**：功能遮罩 `mask-smoke`；标注调色板；文件类型/收藏等**内容辨识色**（palette）。
 
-**文本色阶**（3 档，基于 `#fafafa` 背景 WCAG 验证）：
+## 基元（先改这里）
 
-- `primary` / `--color-text-primary` = `rgba(0,0,0,0.89)`（16.4:1）—— 主要文本、列表标题、数值、强调内容
-- `secondary` / `--color-text-secondary` = `rgba(0,0,0,0.60)`（5.7:1）—— 副文本、表头、控件标签、辅助说明、元信息
-- `muted` / `--color-text-muted` = `rgba(0,0,0,0.40)`（2.9:1）—— placeholder、分组标题、分隔点、序号、禁用态
+- `--cool` / `--cool-deep`：冷相填充与 chip 描边
+- `--shadow-ink`：elevation 中性墨
+- `--ease-out` / `--ease-in` / `--ease-spring` · `--duration-fast`（150）/ `--duration-normal`（200）
+- `--space`（12 = 全局 p-3）· `--space-soft`（6px 10px，step/notice）
 
-**选档原则**：问「这是主内容 / 辅助内容 / 非内容」一个三选一问题。一致性优先于层次细分——同一语义场景跨组件必须同档。`primary` 与 `secondary` 满足 WCAG AA；`muted` 是非内容层（装饰/占位），不参与正文阅读故无 AA 要求。
+## 分层
 
-**基础色**：
+- **soft-surface**：容器（搜索栏 / 浮层 / 大输入底材）— 白边 + fill + blur/saturate **单轨 1.35**
+- **soft-card**：抬升卡 = soft-surface + `radius-panel` + `--shadow-card`（助手消息 / system-status）
+- **soft-chip**：控件 — 实白 + 1px 冷灰 solid border，无 elevation；focus 用 `--soft-chip-shadow-focus`
+- **module-tag**：搜索栏只读扩展名
+- **ui-active**：列表选中色块 + 轻 blur
+- **ui-btn-primary**：主色实心钮
+- **dialog-\***：弹窗近实白（非 soft-surface）
+- **fill-ctrl**：实底填充（进度轨 / kbd 等，非卡片壳）
 
-- `surface` / `--color-surface` = `#fafafa` —— content layer 底色（窗口根容器）
-- `accent` / `--color-accent` = `#3b82f6` —— 强调色（激活态/链接/进度/选中）；取鲜活观感的纯蓝，不用饱和度偏低的传统系统蓝
+### elevation（仅三档 + 两特化）
 
-**层级背景**（Uno `fill-*` + CSS `--color-fill-N`，同数值）：
+- `--shadow-bar`：搜索栏 / 输入岛
+- `--shadow-panel`：下拉 / 动作浮层
+- `--shadow-dialog`：弹窗
+- `--shadow-card`：微环 + panel（助手卡）
+- `--shadow-float` / `-hover` / `-active`：浮钮 3 层同结构（可插值）
 
-- `fill-ctrl` / `bg-black/4` / `--color-fill-4` —— 控件底
-- `fill-hover` / `bg-black/5` / `--color-fill-5` —— hover / 子层 / markdown 代码底
-- `fill-active` / `bg-black/8` / `--color-fill-8` —— active / 强调按压
-- `--color-fill-12` / `--color-fill-18` —— 滑轨、snap 强 hover 等（scoped 变量）
+旧名 `--soft-bar-shadow` 等别名到上述档，新代码用 `shadow-*`。
 
-**描边与分隔**：
+### accent 浅染（markdown 等）
 
-- 描边 `border-black/10` / `--color-border` —— 面板/控件边缘
-- 分隔线 `border-black/5` / `--color-divider` —— 卡片内分隔、组间细线
-- Smoke 遮罩 `--color-smoke` = `rgba(0,0,0,0.5)`
+- `--accent-wash` / `--accent-line` / `--accent-line-soft` / `--accent-wash-grad`
+- `--focus-ring-color`：大输入聚焦边
 
-**语义色**（不进 theme，按需直接写 UnoCSS 预设）：
+## 色
 
-- 红 `text-red-500` —— 危险/错误
-- 绿 `text-green-500` —— 成功态（仅个别场景，toast 主要用 accent 对勾）
-- 黄 `text-yellow-600` —— 警告（proxy 日志 level）
+- canvas = surface `#f8f8f9`
+- accent `#3d82f0`（theme + uno 字面同值）
+- mist / bubble / 文本阶 / fill-4…18（均派生 `--cool`）
+- border / divider / smoke / dialog-\*
+- danger / warning / success + soft（soft 统一 12%）
 
-## 材质
+窗壳 mica + 雾；获焦 `.mica-fog-run`。Agent aurora：`--agent-aurora-warm*`。
 
-材质分三层：**原生 Mica**（跨窗口磨砂）、**Acrylic**（WebView 内 backdrop-filter）、**chrome-fade**（渐隐遮罩）。全部经 `uno.config.ts` shortcuts / `theme.css` 抽离，禁止组件内手写 blur/tint/高光环配方。
+## 字体 / 圆角 / 间距
 
-### Mica（窗口底材）
+- `--font-sans` = mono 优先 + cjk；代码显式 `--font-mono`
+- 圆角：ctrl 6 / panel 10 / window 16
+- 容器 `p-3`（=`--space`）；Dialog `p-4`；gap 1.5 / 2 / 3
 
-白色磨砂玻璃：原生实时模糊 + 前端白染压色噪。主窗口 + snap-panel。目标是「白雾磨砂」而非「纯模糊透壁纸」（花壁纸上色相会脏）。
+## 遮罩
 
-**原生**（`platform/window.rs::apply_mica_material`，corner_radius 对齐圆角 token：主窗口 `16` = `radius-window` / snap-panel `10` = `radius-panel`）：
+- `chrome-fade` 顶（冷相两点）· `chrome-fade-bottom` 底（多段无冷蓝）· `mask-smoke`
 
-- NSWindow `setOpaque:NO` + `clearColor`
-- contentView 圆角裁剪 + `NSVisualEffectView`（`HeaderView` + `behindWindow` + aqua 锁浅色）垫底
-- 子视图 layer 非透明（否则盖住材质）
+## 组件
 
-材质选择：用 `HeaderView`(10)（比 `Popover` 更密、白底更重，仍实时模糊）。不用 `UnderWindowBackground`(21)（近不透明、静态染壁纸色）/ `WindowBackground`(12)（Apple 定性 opaque，无模糊透出）。
+- 原子组件 `@/components/ui/`；`ui-ctrl`+`soft-chip`；outline≡default 面
+- `ui-field`：大输入；`BaseInput panel`：soft-surface 白边（非 field）
+- 图标井 `fill-mist`；仪表盘卡 `fill-ctrl`
+- 搜索栏拆层 `search-bar` / `search-bar-surface` / `search-bar-content`
+- toast / 动作面板：`dropdown-panel` + `fixed bottom-3 right-3`；toast `z-9999`
 
-**前端壳**（叠在原生材质之上）：
+## Agent
 
-- `mica-tint`：`bg-white/40` 窗级白染（/60 过粉墙；/30 花壁纸易脏；与截屏 `mica-panel` 分轨）
-- `mica-ring`：inset 高光环（顶 2px 受光 + 全周 1px 细环）
-- `mica-shell` = `mica-tint` + `mica-ring` + `radius-window` + `overflow-hidden`（主窗口根）
-- snap-panel 根：`mica-tint` + `radius-panel`（原生圆角 10，无主窗 inset 环以免双层）
-- `mica-panel` / `mica-bar`：`bg-white/90` + `backdrop-blur-xl` + 边框圆角——截屏工具条 / 贴图悬停条叠在花图上用；白染独立于窗级 `mica-tint`，避免 CSS blur 混成灰蒙；**禁止**浅透 `acrylic`
+- 用户 bubble · 助手 `soft-card` · step/notice `--space-soft` + mist/语义 soft
+- 输入岛 `ui-field` + `--shadow-bar` · 浮钮 soft-surface + `--shadow-float*` + aurora
 
-### Acrylic（WebView 内磨砂，仅叠在已有 Mica 上的外框）
+## 速查
 
-WKWebView 内 `backdrop-filter` 只能模糊 WebView 内已绘制内容。**只用于主窗搜索栏 / 下拉浮层**（底下已有窗级 Mica），内嵌禁止再叠半透明磨砂。搜索栏与弹出层分轨。
-
-- `acrylic`：`bg-white/90 backdrop-blur-xl backdrop-saturate-150` —— 搜索栏（高白染压滚动字透出减闪 + 中强 blur；过浅/blur-2xl 易闪或发灰）
-- `glass-ring`：inset 顶 2px 白高光
-- `acrylic-bar`：`acrylic` + `glass-ring` + `radius-panel` + 边框；`theme.css` 另加 `translateZ(0)` 独立合成层
-- `acrylic-panel`：`bg-white/95 backdrop-blur-sm` + `glass-ring` + `radius-panel` + 边框 —— 下拉 / 动作浮层 / toast
-- `dropdown-panel`：`acrylic-panel` + `p-1`
-
-### 内嵌实色填充（可读性）
-
-叠在 Mica / Acrylic 上的内容面用灰阶实色，**无 backdrop-filter**：
-
-- `fill-ctrl`：`bg-black/4` —— 按钮 / 输入 / 模块标签 / 图标井默认底
-- `fill-hover`：`bg-black/5` —— 列表选中 / hover
-- `fill-active`：`bg-black/8` —— 按压强调
-
-`ui-ctrl` = 尺寸 + `fill-ctrl` + `radius-ctrl`（无默认边框）；`ui-active` = `fill-hover`（选中宜轻，忌 /8 过深）。按钮 outline 自带 `border-black/12`；error 态表单再加红边。
-
-未实现：exclusion blend、noise 纹理。
-
-### chrome-fade（渐隐遮罩）
-
-悬浮栏下自上而下白染渐变透明。实现在 `theme.css` `.chrome-fade`：
-
-- **仅** 多段 `linear-gradient` 白染，无 `backdrop-filter`（避免与搜索栏双 blur 叠闪）
-- 顶～栏底段高不透明（少让字进入 acrylic 采样区），仅底缘软透
-- `pointer-events: none`；高度 `--chrome-fade-height`（MainView 用 `WINDOW.CHROME_FADE_HEIGHT` 覆盖）
-
-任何悬浮顶栏可复用：`<div class="chrome-fade" :style="{ '--chrome-fade-height': h + 'px' }" />`。
-
-### Smoke（模态遮罩）
-
-模态遮罩专用。`BaseDialog` 遮罩 `var(--color-smoke)`，主体实色白 + `radius-panel`（模态非磨砂，强对比聚焦）。
-
-## 排版
-
-**字体栈**（`src/styles/theme.css`）：`'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`。`-webkit-font-smoothing: antialiased` + `text-rendering: optimizeLegibility`。
-
-**字号**（UnoCSS 预设）：
-
-- `text-xs`（12px）：主体字号（列表标题/副标题/控件/标签）
-- `text-sm`（14px）：对话框标题、模块正文、强调说明
-- `text-base`（16px）：极少，搜索栏输入
-- `text-lg` / `text-2xl`：仅 system-status 数值大字、screenshot 加载图标
-
-**字重**：`font-medium`（500，控件/强调）、`font-semibold`（600，数值）、`font-bold`（700，对话框标题）。不使用 light/thin。
-
-## 形态
-
-**圆角**（shortcut → `rounded-[var(--radius-*)]`，值源 `theme.css`；禁止散写 `rounded-md/lg/xl/[Npx]`；内小外大）：
-
-- `radius-panel`（10px）：外框——搜索栏、列表选中行、浮层、dialog、卡片；模块主输入面（翻译/Agent `BaseTextarea rounded="panel"`）
-- `radius-ctrl`（6px）：框内嵌元素——模块标签、图标井、按钮、设置表单输入（`rounded` 默认 ctrl）
-- `radius-window`（16px）：仅主窗口 contentView（原生 corner 16）；snap-panel 原生 10 对齐 panel
-- `rounded-full`：圆形小图标按钮、进度条、状态点（保留）
-
-**阴影**（4 级层级）：
-
-- `shadow-sm`：低（控件 hover）
-- `shadow-md`：中（dialog、下拉）
-- `shadow-lg`：高（浮层强调）
-- `shadow-2xl`：最高（浮层强调）
-- 主窗口 / snap-panel：原生 NSWindow 阴影（CSS box-shadow 会被窗口 `masksToBounds` 裁剪，故窗口级外阴影走原生）
-
-**描边**：统一 1px。`border` solid 用于面板边缘，`border-black/5` 用于分隔线；主窗口面板边缘高光环走 `mica-ring`。
-
-**间距**：遵循 4px 网格。
-
-- **容器边距**统一 `p-3`（12px）：搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`；栏底 gap 与 chrome 常量同步 12px。`BaseDialog` 标题/内容/页脚用 `p-4`（16px）
-- **元素间距**三档：`gap-1.5`（6px，控件内紧凑）/ `gap-2`（8px，默认行内行间）/ `gap-3`（12px，区块级）。禁止 `gap-1` / `2.5` / `4`；`gap-0.5` 仅限柱状条/分屏格子等微密 UI
-
-## Shortcuts
-
-`uno.config.ts` shortcuts（全仓统一样式入口）：
-
-**圆角**：`radius-ctrl` / `radius-panel` / `radius-window`
-
-**材质（外框）**：`mica-tint` / `mica-ring` / `mica-shell` / `mica-panel` / `mica-bar` · `acrylic` / `glass-ring` / `acrylic-bar` / `acrylic-panel` / `dropdown-panel`
-
-**内嵌填充**：`fill-ctrl` / `fill-hover` / `fill-active`
-
-**控件**：`ui-ctrl` / `ui-disabled` / `ui-active`
-
-**布局 / 表单 / 杂项**：`flex-center` / `flex-col-full` / `flex-col-full-pb` / `form-label` / `form-field` / `input-base` / `group-header` / `overlay-abs`
-
-**CSS 类**（`theme.css`）：`chrome-fade` / `hide-scrollbar`
-
-## 动画
-
-统一 easing，单一源 `uno.config.ts` `transitionTimingFunction`：
-
-- 进场 `ease-out`（`cubic-bezier(0,0,0.2,1)`）：`opacity-0 translate-y-2 scale-95` → `opacity-100 translate-y-0 scale-100`，duration-150
-- 离场 `ease-in`（`cubic-bezier(0.4,0,1,1)`）：反向，duration-100
-- snap-panel 进出场：单 `NSAnimationContext` 同步 alpha + 纵向位移 10pt（宽高固定，无 reflow）。进 easeOut 自上滑入淡入、出 easeIn 上移淡出（约 200ms）；焦点 restore 等动画结束后再执行
+- 主窗 `mica-shell` · 搜索栏 `acrylic-bar` · 控件 chip · 大输入 `ui-field`
+- 选中 `ui-active` · 主钮 `ui-btn-primary` · 浮层 `dropdown-panel`
+- 弹窗 `.dialog-to` · 抬升卡 `soft-card` · 进度/分隔 `fill-active` / `border-divider`

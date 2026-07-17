@@ -10,7 +10,7 @@
 
     <template v-else-if="staticInfo && snapshot">
       <!-- 顶部设备概览 -->
-      <section p="3" class="radius-panel" bg="black/3" flex flex-wrap gap="1.5" items="center">
+      <section p="3" class="soft-card" flex flex-wrap gap="1.5" items="center">
         <span flex shrink="0" gap="2" items="center" mr="2">
           <i class="i-ri-computer-line text-xs text-secondary" />
           <span text="xs secondary" font="medium">设备</span>
@@ -59,14 +59,14 @@
         </template>
         <template v-if="snapshot.low_power_mode">
           <span text="muted">·</span>
-          <span text="xs amber-500" shrink="0">低电量模式</span>
+          <span text="xs warning" shrink="0">低电量模式</span>
         </template>
       </section>
 
       <!-- 第 1 行：CPU + Memory -->
       <div gap="3" grid="~ cols-2">
         <!-- CPU -->
-        <section p="3" class="radius-panel" bg="black/3">
+        <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-cpu-line text-xs text-secondary" />
             <span text="xs secondary" font="medium">处理器</span>
@@ -79,7 +79,7 @@
               {{ snapshot.cpu_temp.toFixed(0) }}°C
             </span>
           </div>
-          <div mb="2" rounded="full" bg="black/8" h="1.5" overflow="hidden">
+          <div mb="2" rounded="full" class="fill-active" h="1.5" overflow="hidden">
             <div
               rounded="full"
               h="full"
@@ -93,7 +93,7 @@
               v-for="(u, i) in snapshot.cpu_cores_usage"
               :key="i"
               rounded="sm"
-              bg="black/8"
+              class="fill-active"
               flex
               flex-1
               h="full"
@@ -115,7 +115,7 @@
         </section>
 
         <!-- Memory -->
-        <section p="3" class="radius-panel" bg="black/3">
+        <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-database-2-line text-xs text-secondary" />
             <span text="xs secondary" font="medium">内存</span>
@@ -129,7 +129,7 @@
               {{ pct(snapshot.used_memory, snapshot.total_memory).toFixed(0) }}%
             </span>
           </div>
-          <div mb="2" rounded="full" bg="black/8" h="1.5" overflow="hidden">
+          <div mb="2" rounded="full" class="fill-active" h="1.5" overflow="hidden">
             <div
               rounded="full"
               h="full"
@@ -159,7 +159,7 @@
       <!-- 第 2 行：Disk + Power -->
       <div gap="3" grid="~ cols-2">
         <!-- Disk -->
-        <section p="3" class="radius-panel" bg="black/3">
+        <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-hard-drive-3-line text-xs text-secondary" />
             <span text="xs secondary" font="medium">磁盘</span>
@@ -178,7 +178,7 @@
                 {{ formatBytes(d.used) }} / {{ formatBytes(d.total) }}
               </span>
             </div>
-            <div rounded="full" bg="black/8" h="1.5" overflow="hidden">
+            <div rounded="full" class="fill-active" h="1.5" overflow="hidden">
               <div
                 rounded="full"
                 h="full"
@@ -191,7 +191,7 @@
         </section>
 
         <!-- Power -->
-        <section p="3" class="radius-panel" bg="black/3">
+        <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i
               v-if="snapshot.battery"
@@ -213,7 +213,7 @@
                 健康 {{ snapshot.battery.health }}%
               </span>
             </div>
-            <div mb="2" rounded="full" bg="black/8" h="1.5" overflow="hidden">
+            <div mb="2" rounded="full" class="fill-active" h="1.5" overflow="hidden">
               <div
                 rounded="full"
                 h="full"
@@ -247,7 +247,7 @@
       <!-- 第 3 行：Processes + Network -->
       <div gap="3" grid="~ cols-2">
         <!-- Processes -->
-        <section p="3" class="radius-panel" bg="black/3">
+        <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-apps-2-line text-xs text-secondary" />
             <span text="xs secondary" font="medium">进程</span>
@@ -261,7 +261,7 @@
                   {{ p.cpu.toFixed(1) }}% · {{ formatBytes(p.memory) }}
                 </span>
               </div>
-              <div rounded="full" bg="black/8" h="0.5" overflow="hidden">
+              <div rounded="full" class="fill-active" h="0.5" overflow="hidden">
                 <div
                   rounded="full"
                   h="full"
@@ -275,7 +275,7 @@
         </section>
 
         <!-- Network -->
-        <section p="3" class="radius-panel" bg="black/3">
+        <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-signal-tower-line text-xs text-secondary" />
             <span text="xs secondary" font="medium">网络</span>
@@ -306,11 +306,10 @@
                 v-for="(v, i) in sparkData(upHistory)"
                 :key="'u' + i"
                 rounded="xs"
-                bg="amber-500"
                 opacity="70"
                 flex-1
                 min-w="0.5"
-                class="transition-all duration-300"
+                class="bg-warning transition-all duration-300"
                 :style="{ height: `${sparkHeight(v, upHistory)}%` }"
               />
             </div>
@@ -553,8 +552,8 @@ function thermalTitle(state: string): string {
 }
 
 function thermalClass(state: string): string {
-  if (state === 'critical' || state === 'serious') return 'text-red-500'
-  if (state === 'fair') return 'text-amber-500'
+  if (state === 'critical' || state === 'serious') return 'text-danger'
+  if (state === 'fair') return 'text-warning'
   return 'text-muted'
 }
 
@@ -586,14 +585,14 @@ function clamp(n: number): number {
 }
 
 function usageColor(p: number): string {
-  if (p >= 85) return 'bg-red-500'
-  if (p >= 60) return 'bg-amber-500'
+  if (p >= 85) return 'bg-danger'
+  if (p >= 60) return 'bg-warning'
   return 'bg-accent'
 }
 
 function batteryColor(level: number): string {
-  if (level <= 20) return 'bg-red-500'
-  if (level <= 40) return 'bg-amber-500'
+  if (level <= 20) return 'bg-danger'
+  if (level <= 40) return 'bg-warning'
   return 'bg-accent'
 }
 

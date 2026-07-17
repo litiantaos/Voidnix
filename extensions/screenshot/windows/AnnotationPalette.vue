@@ -29,7 +29,7 @@
         @click="$emit('tool', t.id)"
       />
 
-      <div m="x-0.5" bg="black/10" shrink="0" h="5" w="px" />
+      <div m="x-0.5" class="fill-active" shrink="0" h="5" w="px" />
 
       <!-- 颜色选择器（模糊工具时不显示） -->
       <div v-if="activeTool !== 'blur'" flex h="7" items="center" relative>
@@ -44,7 +44,7 @@
           class="active:scale-95"
           :style="{
             background: color,
-            borderColor: color === '#ffffff' ? '#d1d5db' : 'white',
+            borderColor: color === '#ffffff' ? 'var(--color-border)' : 'white',
           }"
           title="颜色"
           @click="showColors = !showColors"
@@ -82,7 +82,7 @@
               }"
               :style="{
                 background: c,
-                borderColor: c === '#ffffff' ? '#d1d5db' : 'white',
+                borderColor: c === '#ffffff' ? 'var(--color-border)' : 'white',
               }"
               :title="c"
               @click="selectColor(c)"
@@ -139,7 +139,7 @@
         @update:model-value="$emit('blur-amount', $event)"
       />
 
-      <div class="mx-0.5 bg-black/10 shrink-0 h-5 w-px" />
+      <div class="mx-0.5 fill-active shrink-0 h-5 w-px" />
 
       <!-- 操作按钮 -->
       <BaseButton title="识别" icon="i-ri-qr-scan-2-line" @click="$emit('ocr')" />
@@ -153,7 +153,7 @@
     </template>
 
     <!-- 统一尾部：关闭 + 确定（复制并关闭），始终位于最右侧 -->
-    <div class="mx-0.5 bg-black/10 shrink-0 h-5 w-px" />
+    <div class="mx-0.5 fill-active shrink-0 h-5 w-px" />
     <BaseButton variant="danger" title="关闭 (Esc)" icon="i-ri-close-line" @click="onClose" />
     <BaseButton
       variant="primary"

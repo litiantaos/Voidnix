@@ -61,7 +61,7 @@ const filtered = computed(() => {
 function levelColor(t: string): string {
   switch (t) {
     case 'error':
-      return 'text-red-500'
+      return 'text-danger'
     case 'warning':
       return 'text-yellow-600'
     case 'info':

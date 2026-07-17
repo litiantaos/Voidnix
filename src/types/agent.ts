@@ -46,6 +46,8 @@ export type AgentPart =
       /** 工具执行状态 */
       state: 'streaming' | 'running' | 'done' | 'failed'
     }
+  /** UI 专属状态行（不进 LLM 上下文）：错误 / 用户中止 */
+  | { type: 'notice'; kind: 'error' | 'aborted'; text: string }
 
 // ─── LLM 协议层消息（Rust `LlmMessage` 的前端映射）────────────
 export interface LlmMessage {

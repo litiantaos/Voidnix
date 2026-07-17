@@ -82,10 +82,10 @@ const {
 const height = ref<string>()
 
 const rootClass = computed(() => [
-  'ui-ctrl h-auto! text-sm! flex items-start gap-2 !px-0',
-  // ui-ctrl 自带 radius-ctrl；panel 主输入面抬到与搜索栏/选中行同级
+  // 大输入走 ui-field（soft-surface 材质 + border 描边，见 theme.css），非工具条 soft-chip
+  'ui-field h-auto! flex items-start gap-2 !px-0',
   props.rounded === 'panel' ? '!radius-panel' : '',
-  props.error ? 'border border-red-400' : '',
+  props.error ? 'border-danger' : '',
   props.disabled ? 'ui-disabled' : '',
 ])
 

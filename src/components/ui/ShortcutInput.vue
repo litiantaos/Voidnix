@@ -2,7 +2,7 @@
   <div
     ref="rootRef"
     data-settings-control
-    class="ui-ctrl"
+    class="ui-ctrl soft-chip"
     flex
     gap="1.5"
     w="36"
@@ -26,7 +26,7 @@
         text="xs"
         font="medium mono"
         rounded
-        bg="black/5"
+        class="fill-ctrl"
         flex
         h="5"
         items="center"

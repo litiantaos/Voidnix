@@ -141,8 +141,8 @@ pub fn animate_panel(window: &tauri::WebviewWindow, target: PanelAnimTarget) {
 /// transparent:true 只让 WKWebView canvas 透明，CALayer 默认仍 opaque 会盖住材质）。
 /// 鼠标穿透由 [`capture_mouse_events`] / SkyLight event shape 处理，不在此层。
 ///
-/// corner_radius 经 contentView CALayer 裁剪：主窗口 16（单层，窗口＝面板圆角，无 padding）
-/// / snap-panel 10。
+/// corner_radius 经 contentView CALayer 裁剪：主窗口 16（= radius-window）/
+/// snap-panel 10（= radius-panel）。
 /// 材质：HeaderView 比 Popover 更密、白染更重，花壁纸上色噪更少仍保留实时模糊。
 /// 不用 UnderWindowBackground(21)（近不透明、静态染壁纸色）；不用 WindowBackground(12)
 /// （Apple 定性 opaque，无模糊透出）。
@@ -170,8 +170,7 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
         for sv in content_view.subviews().iter() {
             let is_kind: bool = objc2::msg_send![&*sv, isKindOfClass: ve_class];
             if is_kind {
-                let _: () =
-                    objc2::msg_send![&*sv, setMaterial: NSVisualEffectMaterial::HeaderView];
+                let _: () = objc2::msg_send![&*sv, setMaterial: NSVisualEffectMaterial::HeaderView];
                 return;
             }
         }

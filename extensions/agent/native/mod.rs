@@ -129,6 +129,8 @@ pub async fn agent_run(
         cancel: cancel.clone(),
     };
 
+    // 先 register token，使 abort 在 spawn 后立刻可 cancel；再 spawn；set_handle 若发现
+    // 已被 cancel 移除则 abort JoinHandle，关闭 register→set_handle 竞态窗口。
     sessions.register(session_id.clone(), cancel.clone());
 
     // SessionRegistry 是 cheap clone（Arc）；task 结束后 unregister，避免只增不减
@@ -138,7 +140,7 @@ pub async fn agent_run(
         run_loop(input).await;
         sessions_for_cleanup.unregister(&sid_for_cleanup);
     });
-    sessions.set_handle(&session_id, handle);
+    let _ = sessions.set_handle(&session_id, handle);
 
     Ok(session_id)
 }

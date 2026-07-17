@@ -1,7 +1,7 @@
 <template>
   <!-- 铺满固定尺寸窗口；进出场由原生 alpha + 位移动画，前端不参与 -->
   <div
-    class="snap-panel p-3 radius-panel mica-tint flex gap-3 h-screen w-screen items-center overflow-hidden"
+    class="snap-panel p-3 radius-panel flex gap-3 h-screen w-screen mica-tint items-center overflow-hidden"
     style="-webkit-app-region: no-drag"
   >
     <div v-for="group in groups" :key="group.id" class="snap-group p-1 shrink-0 h-14 w-14">

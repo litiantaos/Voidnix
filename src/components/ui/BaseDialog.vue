@@ -22,9 +22,7 @@
           ref="dialogRef"
           class="dialog-to radius-panel"
           outline="none"
-          bg="white"
           flex="~ col"
-          shadow="md"
           relative
           z="10"
           :class="sizeClass"
@@ -279,7 +277,7 @@ onUnmounted(() => {
   transition: background-color 200ms ease-out;
 }
 .backdrop-to {
-  background-color: var(--color-smoke);
+  background-color: var(--color-dialog-overlay);
 }
 .backdrop-from {
   background-color: transparent;
@@ -288,14 +286,22 @@ onUnmounted(() => {
 .dialog-active {
   transition:
     opacity 200ms ease-out,
-    transform 200ms ease-out;
+    transform 200ms ease-out,
+    box-shadow 200ms ease-out;
 }
 .dialog-to {
   opacity: 1;
   transform: scale(1);
+  /* 独立 dialog 面（非 soft-surface）：近实白 + 中性描边 + elevation */
+  background: var(--dialog-fill);
+  border: 1px solid var(--dialog-border);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--dialog-shadow);
 }
 .dialog-from {
   opacity: 0;
   transform: scale(0.96);
+  box-shadow: none;
 }
 </style>

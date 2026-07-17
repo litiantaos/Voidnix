@@ -319,4 +319,47 @@ describe('SearchEngine', () => {
     await p1
     await p2
   })
+
+  it('单扩展超时 abort 其 child signal，不牵连其它扩展', async () => {
+    vi.useFakeTimers()
+    const signals: AbortSignal[] = []
+    registry.push(
+      makeSearchExt('slow', (_q, ctx) => {
+        signals.push(ctx.signal)
+        return new Promise<ProviderResult[]>((resolve) => {
+          ctx.signal.addEventListener('abort', () => resolve([]))
+        })
+      }),
+      makeSearchExt('fast', () => [result('f', 'fast hit', 'module')]),
+    )
+    const p = searchEngine.search('hit')
+    // 推进到 searchTimeoutMs
+    await vi.advanceTimersByTimeAsync(3000)
+    const out = await p
+    expect(signals[0]?.aborted).toBe(true)
+    // 快扩展结果仍在（超时只杀慢扩展）
+    expect(out.find((r) => r.id === 'f')).toBeDefined()
+    vi.useRealTimers()
+  })
+
+  it('search 快照 activeModule：await 期间 setActiveModule 不影响本次后处理', async () => {
+    let release!: (v: ProviderResult[]) => void
+    registry.push(
+      makeSearchExt('snap', () => {
+        return new Promise<ProviderResult[]>((resolve) => {
+          release = resolve
+        })
+      }),
+    )
+    // 全局模式启动
+    searchEngine.setActiveModule(undefined)
+    const p = searchEngine.search('anything')
+    // await 中途切到模块模式——不得把本次结果当模块短路
+    searchEngine.setActiveModule('snap')
+    release([result('g', 'anything global', 'application', 10)])
+    const out = await p
+    // 全局后处理：application 有 boost 且 title 命中
+    expect(out.find((r) => r.id === 'g')).toBeDefined()
+    searchEngine.setActiveModule(undefined)
+  })
 })

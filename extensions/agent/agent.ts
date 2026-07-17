@@ -10,6 +10,7 @@ import { ref, computed } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { generateRequestId } from '@/utils/id'
+import { showToast } from '@/composables/useToast'
 import {
   config as agentConfig,
   activeProviderConfig,
@@ -26,7 +27,6 @@ const MAX_MESSAGES = 100
 /// 单例式状态（一个 agent session 一次只跑一个）
 const messages = ref<AgentMessage[]>([])
 const status = ref<AgentStatus>('ready')
-const errorMessage = ref('')
 const sessionId = ref('')
 
 export function useAgentChat() {
@@ -47,7 +47,7 @@ export function useAgentChat() {
       messages.value.push({
         id: generateRequestId(),
         role: 'assistant',
-        parts: [{ type: 'text', text: hint }],
+        parts: [{ type: 'notice', kind: 'error', text: hint }],
       })
       return
     }
@@ -79,7 +79,6 @@ export function useAgentChat() {
     channel.onmessage = (msg) => handleEvent(msg, assistantId, newSessionId)
 
     status.value = 'streaming'
-    errorMessage.value = ''
 
     const runConfig = {
       searchProvider: {
@@ -112,10 +111,19 @@ export function useAgentChat() {
   }
 
   /// 处理 AgentEvent，更新 messages。
-  /// 内容侧按 assistantId 写旧气泡；status/sessionId 仅当仍是 runSessionId 时才改。
+  /// 内容侧：仅 `streaming` 气泡可写（abort/完成/错误 finalize 后拒绝晚到 delta/tool）。
+  /// 控制面：status/sessionId 仅当仍是 runSessionId 时才改。
   function handleEvent(event: AgentEvent, assistantId: string, runSessionId: string) {
     const msg = findMessage(assistantId)
     if (!msg) return
+
+    // 已收尾的气泡：忽略晚到内容事件（中止后 textDelta 不得接在「已中止」后）
+    const contentEvent =
+      event.type === 'textDelta' ||
+      event.type === 'toolCallStart' ||
+      event.type === 'toolCallArgs' ||
+      event.type === 'toolResult'
+    if (contentEvent && !msg.streaming) return
 
     switch (event.type) {
       case 'textDelta': {
@@ -158,7 +166,7 @@ export function useAgentChat() {
         break
       }
       case 'completed': {
-        finalizeStreamingMessage(assistantId)
+        if (msg.streaming) finalizeStreamingMessage(assistantId)
         if (sessionId.value === runSessionId) {
           status.value = 'ready'
           sessionId.value = ''
@@ -172,18 +180,19 @@ export function useAgentChat() {
     }
   }
 
-  /// 错误写入 assistant 气泡并结束 streaming。
-  /// 仅当 `sessionId` 仍属本 run（或未传 runSessionId）时改全局 status/sessionId。
+  /// 错误写入 assistant notice part 并结束 streaming。
+  /// 内容仅在仍 streaming 时写入；控制面仅当 session 仍属本 run 时改。
   function pushErrorOnMessage(assistantId: string, message: string, runSessionId?: string) {
     const msg = findMessage(assistantId)
-    if (msg) {
-      msg.parts.push({ type: 'text', text: `错误：${message}` })
+    if (msg?.streaming) {
+      failInFlightTools(msg)
+      msg.parts.push({ type: 'notice', kind: 'error', text: message })
+      finalizeStreamingMessage(assistantId)
     }
-    finalizeStreamingMessage(assistantId)
     if (runSessionId === undefined || sessionId.value === runSessionId) {
-      errorMessage.value = message
       status.value = 'error'
       sessionId.value = ''
+      showToast(message, { kind: 'error' })
     }
   }
 
@@ -201,11 +210,20 @@ export function useAgentChat() {
     )
   }
 
+  /** 进行中的工具标 failed，避免中止/错误后残留 shimmer */
+  function failInFlightTools(msg: AgentMessage) {
+    for (const p of msg.parts) {
+      if (p.type === 'toolCall' && (p.state === 'streaming' || p.state === 'running')) {
+        p.state = 'failed'
+      }
+    }
+  }
+
   function finalizeStreamingMessage(id: string) {
     const msg = findMessage(id)
     if (msg) {
       msg.streaming = false
-      // 移除空 parts（streaming 但没收到任何内容）
+      // 移除空 text parts（streaming 但没收到任何内容）；notice / tool 保留
       msg.parts = msg.parts.filter((p) => {
         if (p.type === 'text') return p.text.length > 0
         return true
@@ -224,9 +242,12 @@ export function useAgentChat() {
     status.value = 'ready'
     sessionId.value = ''
 
-    // finalize 当前 streaming 消息
     const streamingMsg = messages.value.find((m) => m.streaming)
-    if (streamingMsg) finalizeStreamingMessage(streamingMsg.id)
+    if (streamingMsg) {
+      failInFlightTools(streamingMsg)
+      streamingMsg.parts.push({ type: 'notice', kind: 'aborted', text: '已中止' })
+      finalizeStreamingMessage(streamingMsg.id)
+    }
   }
 
   /// 清空对话
@@ -234,7 +255,6 @@ export function useAgentChat() {
     if (isGenerating.value) await abort()
     messages.value = []
     status.value = 'ready'
-    errorMessage.value = ''
     sessionId.value = ''
   }
 
@@ -247,7 +267,6 @@ export function useAgentChat() {
     messages,
     status,
     isGenerating,
-    errorMessage,
     sendMessage,
     abort,
     newConversation,

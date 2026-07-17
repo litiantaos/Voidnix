@@ -21,10 +21,10 @@
         <div text="sm primary" font="medium" class="text-justify break-words" px="3" pt="3">
           {{ result?.title }}
         </div>
-        <div border="b black/5" m="x-3 y-3" />
+        <div class="border-b border-divider" m="x-3 y-3" />
         <template v-if="metaItems.length > 0">
           <BaseDropdownItems :items="metaItems" />
-          <div border="b black/5" m="x-3 t-3 b-1" />
+          <div class="border-b border-divider" m="x-3 t-3 b-1" />
         </template>
         <BaseDropdownItems
           :items="actionItems"

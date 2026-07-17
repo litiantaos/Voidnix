@@ -1,29 +1,131 @@
 :root {
-  /* 色值唯一源见 docs/design.md；Uno theme 与 scoped CSS 共用这些变量 */
-  --color-surface: #fafafa;
-  --color-accent: #3b82f6;
-  --color-text-primary: rgba(0, 0, 0, 0.89);
-  --color-text-secondary: rgba(0, 0, 0, 0.6);
-  --color-text-muted: rgba(0, 0, 0, 0.4);
-  /* 层级填充 = bg-black/N */
-  --color-fill-4: rgba(0, 0, 0, 0.04);
-  --color-fill-5: rgba(0, 0, 0, 0.05);
-  --color-fill-8: rgba(0, 0, 0, 0.08);
-  --color-fill-12: rgba(0, 0, 0, 0.12);
-  --color-fill-18: rgba(0, 0, 0, 0.18);
-  /* 描边 / 分隔 / 遮罩 */
-  --color-border: rgba(0, 0, 0, 0.1);
-  --color-divider: rgba(0, 0, 0, 0.05);
-  --color-smoke: rgba(0, 0, 0, 0.5);
-  --font-sans: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* ── 基元（相近色/动效只在此改）── */
+  --cool: 100 120 160; /* 填充 / 雾 / chip 线 冷相 */
+  --cool-deep: 110 130 165; /* chip 描边略深 */
+  --shadow-ink: 40 40 50; /* elevation 中性墨 */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --space: 12px; /* 全局 p-3 */
+  --space-soft: 6px 10px; /* step / notice 内垫 */
 
-  /* 圆角：外框 10 / 内嵌控件 6 / 窗口壳 16（内小外大，匹配父子圆角） */
+  /* ── 色 ── */
+  --color-surface: #f8f8f9;
+  --color-canvas: var(--color-surface);
+  --color-accent: #3d82f0;
+  --color-mist: rgb(var(--cool) / 0.12);
+  --color-mist-solid: #e6eaf3;
+  --color-text-primary: rgba(30, 35, 50, 0.92);
+  --color-text-secondary: rgba(80, 90, 115, 0.88);
+  --color-text-muted: rgba(110, 120, 145, 0.72);
+
+  --color-fill-4: rgb(var(--cool) / 0.06);
+  --color-fill-5: rgb(var(--cool) / 0.08);
+  --color-fill-8: rgb(var(--cool) / 0.12);
+  --color-fill-12: rgb(var(--cool) / 0.16);
+  --color-fill-18: rgb(var(--cool) / 0.22);
+
+  --color-border: rgba(140, 160, 195, 0.28);
+  --color-divider: rgb(var(--cool) / 0.1);
+  --color-smoke: rgba(30, 40, 60, 0.36);
+  --color-dialog-overlay: rgba(0, 0, 0, 0.4);
+  --dialog-fill: rgb(255 255 255 / 0.97);
+  --dialog-border: rgb(215 215 222 / 0.65);
+
+  --color-danger: #e5484d;
+  --color-warning: #d9891a;
+  --color-success: #3d9a6a;
+  /* 语义 soft 统一 12% */
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  --color-success-soft: color-mix(in srgb, var(--color-success) 12%, transparent);
+
+  --color-card-solid: rgb(255 255 255 / 0.96);
+  --color-bubble: #ececef;
+
+  /* accent 浅染（markdown 代码/引用/行内码 共用，禁止业务再写 color-mix accent） */
+  --accent-wash: color-mix(in srgb, var(--color-accent) 2.5%, transparent);
+  --accent-line: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  --accent-line-soft: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  --accent-wash-grad: linear-gradient(90deg, var(--accent-wash) 0%, transparent 100%);
+  --focus-ring-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+
+  /* ── 面 ── */
+  --soft-surface-fill: rgb(246 246 248 / 0.72);
+  --soft-surface-border: rgb(255 255 255 / 0.98);
+  --soft-surface-blur: 40px;
+  --soft-surface-saturate: 1.35; /* 卡片 / acrylic / 浮钮同一轨 */
+  --color-card: var(--soft-surface-fill);
+
+  --soft-chip-fill: rgb(255 255 255 / 0.94);
+  --soft-chip-fill-hover: #ffffff;
+  --soft-chip-fill-active: rgb(246 247 250);
+  --soft-chip-border: rgb(var(--cool-deep) / 0.16);
+  --soft-chip-border-hover: rgb(var(--cool-deep) / 0.32);
+  --soft-chip-border-active: rgb(var(--cool-deep) / 0.2);
+  /* keyboard focus：贴边 accent + 外晕（chip / 通用） */
+  --soft-chip-shadow-focus:
+    0 0 0 1.5px color-mix(in srgb, var(--color-accent) 58%, white),
+    0 0 0 4px color-mix(in srgb, var(--color-accent) 16%, transparent),
+    0 1px 4px color-mix(in srgb, var(--color-accent) 10%, transparent);
+  --soft-chip-shadow-focus-on-primary:
+    0 0 0 1.5px rgb(255 255 255 / 0.9),
+    0 0 0 4px color-mix(in srgb, var(--color-accent) 28%, transparent);
+
+  --ui-active-fill: rgb(100 110 130 / 0.11);
+  --ui-active-blur: 12px;
+
+  /*
+   * elevation 三档（中性 ink）：bar 搜索栏/输入岛 · panel 浮层 · dialog 弹窗
+   * 业务 elevation 优先复用，勿再写零散 box-shadow
+   */
+  --shadow-bar: 0 2px 28px rgb(var(--shadow-ink) / 0.08), 0 1px 2px rgb(var(--shadow-ink) / 0.05);
+  --shadow-panel: 0 4px 24px rgb(var(--shadow-ink) / 0.1), 0 2px 6px rgb(var(--shadow-ink) / 0.06);
+  --shadow-dialog: 0 8px 32px rgb(var(--shadow-ink) / 0.14), 0 2px 8px rgb(var(--shadow-ink) / 0.08);
+  --soft-bar-shadow: var(--shadow-bar);
+  --soft-panel-shadow: var(--shadow-panel);
+  --dialog-shadow: var(--shadow-dialog);
+
+  /* 卡片：微环 + panel 档（助手卡等） */
+  --shadow-card:
+    0 0 0 1px color-mix(in srgb, var(--color-text-primary) 4%, transparent), var(--shadow-panel);
+  --agent-card-shadow: var(--shadow-card);
+
+  /*
+   * 浮钮：3 层同结构（ring + 远 + 近）便于 hover 插值；墨色走 shadow-ink
+   * ring 用 border token 透明度档
+   */
+  --shadow-float:
+    0 0 0 1px color-mix(in srgb, var(--color-border) 25%, transparent),
+    0 2px 20px rgb(var(--shadow-ink) / 0.05), 0 1px 3px rgb(var(--shadow-ink) / 0.04);
+  --shadow-float-hover:
+    0 0 0 1px color-mix(in srgb, var(--color-border) 32%, transparent),
+    0 6px 24px rgb(var(--shadow-ink) / 0.1), 0 2px 6px rgb(var(--shadow-ink) / 0.07);
+  --shadow-float-active:
+    0 0 0 1px color-mix(in srgb, var(--color-border) 28%, transparent),
+    0 3px 12px rgb(var(--shadow-ink) / 0.07), 0 1px 3px rgb(var(--shadow-ink) / 0.05);
+  --agent-float-shadow: var(--shadow-float);
+  --agent-float-shadow-hover: var(--shadow-float-hover);
+  --agent-float-shadow-active: var(--shadow-float-active);
+
+  --agent-aurora-warm: #ffb089;
+  --agent-aurora-warm-hi: #ffc4a0;
+
+  /* ── 字体 / 圆角 / chrome ── */
+  --font-mono: ui-monospace, monospace;
+  --font-cjk:
+    'PingFang SC', 'Hiragino Sans GB', 'SF Pro Text', 'SF Pro Display', -apple-system,
+    BlinkMacSystemFont, 'Helvetica Neue', 'Segoe UI', sans-serif;
+  --font-sans: var(--font-mono), var(--font-cjk);
+
   --radius-ctrl: 6px;
   --radius-panel: 10px;
   --radius-window: 16px;
 
-  /* chrome 渐隐遮罩（= CHROME_HEIGHT 76；MainView 仍可经 --chrome-fade-height 覆盖） */
   --chrome-fade-height: 76px;
+  --chrome-fade-bottom-height: 100px;
 }
 
 html {
@@ -31,6 +133,15 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+/* 兜底：Uno/业务类若未继承，仍落到同一栈 */
+body,
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
 }
 
 body {
@@ -66,20 +177,309 @@ body {
 }
 
 /*
- * acrylic-bar：独立合成层，减轻滚动时 backdrop 与主文档层争抢重绘。
- * 配方在 uno `acrylic`；此处只做层提示（transform 不改变布局）。
+ * 窗壳：纯白磨砂叠 NSVisualEffect 底
+ * 雾团：极淡冷相高光；伪元素 filter 不影响子内容；获焦播一轮漂移
+ *
+ * 偶发变矩形的原因（已规避）：
+ * 1) 动画插值 border-radius 时 WK 对 filter:blur 层用轴对齐中间缓冲，过渡帧会露方边
+ * 2) 父级 overflow:hidden + 大幅 translate/scale 把椭圆裁成直边
+ * → 圆角固定为 50% 椭圆，只动 transform；位移/缩放收紧，少贴窗边
  */
-.acrylic-bar {
+.mica-shell,
+.mica-tint {
+  position: relative;
+  background-color: rgb(255 255 255 / 0.86);
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.mica-shell::before,
+.mica-shell::after,
+.mica-tint::before,
+.mica-tint::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  z-index: -1;
+  /* 固定椭圆；动画禁止改 border-radius */
+  border-radius: 50%;
+  animation: none;
+}
+
+/* 主雾团：浅天空高光（介于原先过深与过浅之间） */
+.mica-shell::before,
+.mica-tint::before {
+  width: 58%;
+  height: 48%;
+  left: 10%;
+  top: 6%;
+  background: rgb(215 230 255 / 0.32);
+  filter: blur(80px);
+  opacity: 0.72;
+}
+
+/* 次雾团：浅雾蓝 */
+.mica-shell::after,
+.mica-tint::after {
+  width: 54%;
+  height: 46%;
+  right: 4%;
+  bottom: 6%;
+  left: auto;
+  top: auto;
+  background: rgb(205 218 245 / 0.24);
+  filter: blur(88px);
+  opacity: 0.58;
+}
+
+/* 获焦挂 .mica-fog-run 播一轮（MainView window-focused / 挂载） */
+.mica-shell.mica-fog-run::before,
+.mica-tint.mica-fog-run::before {
+  animation: mica-fog-a 8s cubic-bezier(0.4, 0.05, 0.2, 1) 1 forwards;
+}
+
+.mica-shell.mica-fog-run::after,
+.mica-tint.mica-fog-run::after {
+  animation: mica-fog-b 9.5s cubic-bezier(0.4, 0.05, 0.2, 1) 1 forwards;
+}
+
+/* 只动 transform / opacity；位移与缩放收紧，避免贴边被 overflow 裁成方 */
+@keyframes mica-fog-a {
+  0% {
+    transform: translate(0%, 0%) scale(1) rotate(0deg);
+    opacity: 0.72;
+  }
+  20% {
+    transform: translate(6%, 3%) scale(1.04) rotate(3deg);
+    opacity: 0.8;
+  }
+  40% {
+    transform: translate(4%, 7%) scale(1.06) rotate(1deg);
+    opacity: 0.65;
+  }
+  60% {
+    transform: translate(-5%, 5%) scale(0.98) rotate(-2deg);
+    opacity: 0.76;
+  }
+  80% {
+    transform: translate(-4%, -2%) scale(1.02) rotate(-1deg);
+    opacity: 0.68;
+  }
+  100% {
+    transform: translate(0%, 0%) scale(1) rotate(0deg);
+    opacity: 0.72;
+  }
+}
+
+@keyframes mica-fog-b {
+  0% {
+    transform: translate(0%, 0%) scale(1.02) rotate(0deg);
+    opacity: 0.58;
+  }
+  18% {
+    transform: translate(-5%, -4%) scale(1.05) rotate(-2deg);
+    opacity: 0.66;
+  }
+  38% {
+    transform: translate(-3%, -7%) scale(1.06) rotate(-3deg);
+    opacity: 0.5;
+  }
+  58% {
+    transform: translate(6%, -4%) scale(1.02) rotate(2deg);
+    opacity: 0.62;
+  }
+  78% {
+    transform: translate(5%, 4%) scale(0.98) rotate(2deg);
+    opacity: 0.54;
+  }
+  100% {
+    transform: translate(0%, 0%) scale(1.02) rotate(0deg);
+    opacity: 0.58;
+  }
+}
+
+/* 不在此强制子项 z-index，避免压掉 search-bar 的 z-10 等 */
+
+@media (prefers-reduced-motion: reduce) {
+  .mica-shell.mica-fog-run::before,
+  .mica-shell.mica-fog-run::after,
+  .mica-tint.mica-fog-run::before,
+  .mica-tint.mica-fog-run::after {
+    animation: none;
+  }
+}
+
+/*
+ * 搜索栏外壳：不设 backdrop-filter，避免裁剪内容阴影
+ */
+.search-bar {
+  overflow: visible;
+}
+
+/* 毛玻璃底：仅装饰层，pointer-events: none */
+.search-bar-surface.acrylic-bar,
+.acrylic-bar.search-bar-surface {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
   transform: translateZ(0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
 
+/* soft-surface：容器面；blur/saturate 全仓同一套 */
+.soft-surface {
+  border: 1px solid var(--soft-surface-border);
+  background: var(--soft-surface-fill);
+  box-shadow: none;
+  backdrop-filter: blur(var(--soft-surface-blur)) saturate(var(--soft-surface-saturate));
+  -webkit-backdrop-filter: blur(var(--soft-surface-blur)) saturate(var(--soft-surface-saturate));
+}
+
+/* 抬升卡：助手消息 / system-status 等（面 = soft-surface，elevation = shadow-card） */
+.soft-card {
+  box-shadow: var(--shadow-card);
+}
+
 /*
- * chrome-fade：悬浮栏下白染渐隐（纯 gradient，无 backdrop-filter）。
- * 高度 --chrome-fade-height（默认 76 = CHROME_HEIGHT）；仅视觉，不拦截指针。
- * 顶～栏底段高不透明，少让字钻进搜索栏 blur 采样区；仅底缘软透。
- * stop 对齐 CHROME：16%≈栏顶 12px，84%≈栏底 64px。
+ * ui-field：大输入。soft-surface 底材 + --color-border；聚焦 --focus-ring-color。
+ * BaseInput panel 仍 soft-surface 白边（非本类）。
+ */
+.ui-field {
+  border: 1px solid var(--color-border);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+  --un-ring-shadow: 0 0 #0000;
+  --un-inset-ring-shadow: 0 0 #0000;
+  --un-ring-offset-shadow: 0 0 #0000;
+}
+
+.ui-field:focus-within {
+  border-color: var(--focus-ring-color);
+  box-shadow: none !important;
+}
+
+.ui-field.border-danger,
+.ui-field.border-danger:focus-within {
+  border-color: var(--color-danger);
+}
+
+/* soft-chip：solid border + 无 elevation；focus → --soft-chip-shadow-focus */
+.soft-chip {
+  border: 1px solid var(--soft-chip-border);
+  outline: none;
+  background: var(--soft-chip-fill);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.soft-chip:hover:not(:disabled):not(.ui-disabled) {
+  background: var(--soft-chip-fill-hover);
+  border-color: var(--soft-chip-border-hover);
+  box-shadow: none;
+}
+
+.soft-chip:active:not(:disabled):not(.ui-disabled) {
+  background: var(--soft-chip-fill-active);
+  border-color: var(--soft-chip-border-active);
+  box-shadow: none;
+}
+
+.ui-ctrl:is(:focus-visible, .is-keyboard-focus),
+.soft-chip.ui-ctrl:is(:focus-visible, .is-keyboard-focus):hover:not(:disabled):not(.ui-disabled),
+.soft-chip.ui-ctrl:is(:focus-visible, .is-keyboard-focus):active:not(:disabled):not(.ui-disabled) {
+  outline: none;
+  box-shadow: var(--soft-chip-shadow-focus);
+}
+
+.ui-btn-primary:is(:focus-visible, .is-keyboard-focus) {
+  box-shadow: var(--soft-chip-shadow-focus-on-primary) !important;
+}
+
+/* module-tag：只读扩展名；is-hovered 驱动图标↔关闭 */
+.module-tag {
+  background: var(--color-fill-5);
+  box-shadow: none;
+  border: none;
+  cursor: default;
+}
+
+.module-tag-icon,
+.module-tag-close {
+  transition-property: opacity, scale !important;
+  transition-duration: var(--duration-normal) !important;
+  transition-timing-function: var(--ease-spring) !important;
+}
+
+.module-tag-icon {
+  opacity: 1;
+  scale: 1;
+}
+
+.module-tag-close {
+  opacity: 0;
+  scale: 0.5;
+  pointer-events: none;
+}
+
+.module-tag.is-hovered .module-tag-icon {
+  opacity: 0;
+  scale: 0.5;
+  transition-duration: 100ms !important;
+  transition-timing-function: var(--ease-in) !important;
+}
+
+.module-tag.is-hovered .module-tag-close {
+  opacity: 1;
+  scale: 1;
+  pointer-events: auto;
+}
+
+/* 列表/下拉选中：色块，无边无 chip 阴影 */
+.ui-active {
+  border: none !important;
+  outline: none;
+  box-shadow: none !important;
+  background: var(--ui-active-fill) !important;
+  backdrop-filter: blur(var(--ui-active-blur));
+  -webkit-backdrop-filter: blur(var(--ui-active-blur));
+}
+
+/*
+ * BaseButton variant=primary：直接绑 --color-accent。
+ * 勿靠 Uno bg-accent（Wind4 对 CSS 变量 color-mix，WK 下易失效）。
+ */
+.ui-btn-primary {
+  border-color: transparent !important;
+  background: var(--color-accent) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.ui-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 88%, #000) !important;
+}
+
+.ui-btn-primary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 78%, #000) !important;
+}
+
+.ui-btn-primary i {
+  color: inherit;
+}
+
+/*
+ * chrome-fade 顶：canvas 冷相两点淡出（主窗搜索栏下）。
+ * chrome-fade-bottom：多段、无冷蓝（Agent 输入岛上）；与顶不强制同构。
  */
 .chrome-fade {
   pointer-events: none;
@@ -90,11 +490,28 @@ body {
   height: var(--chrome-fade-height);
   background: linear-gradient(
     to bottom,
-    rgb(255 255 255 / 0.97) 0%,
-    rgb(255 255 255 / 0.94) 16%,
-    rgb(255 255 255 / 0.88) 70%,
-    rgb(255 255 255 / 0.4) 84%,
-    rgb(255 255 255 / 0.1) 94%,
+    color-mix(in srgb, var(--color-canvas) 82%, rgb(200 218 240)) 0%,
     transparent 100%
   );
+}
+
+.chrome-fade-bottom {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 5;
+  height: var(--chrome-fade-bottom-height);
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--color-canvas) 95%, white) 0%,
+    color-mix(in srgb, var(--color-canvas) 85%, transparent) 28%,
+    color-mix(in srgb, var(--color-canvas) 40%, transparent) 58%,
+    transparent 100%
+  );
+}
+
+/* 功能遮罩：截图选区等 */
+.mask-smoke {
+  background: var(--color-smoke);
 }

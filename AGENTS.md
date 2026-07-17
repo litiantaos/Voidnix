@@ -86,9 +86,9 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 **扩展接口**：`Extension`（`src/runtime/types.ts`）= `meta` + 14 槽（11 能力槽 + 3 行为槽，按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
 
-**搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + 一次预算 finalScore + keyword 合流 + dedupe + groupAndSort。**全局与搜索型模块共用 `search()`**（`setActiveModule` 切换模式；模块模式只调激活扩展、保留原序、同样 timeout/abort）。全局模式按 `finalScore = fuzzy + boost` 排序；**过滤规则**：空 query 默认列表按 `finalScore>0`（boost>0，主要是应用）显示；非空 query 查找型结果需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透。keyword / `/` 工具列表模块入口打分共用 `scoreModuleEntry`（name/id/description 正向 + keywords 双向）。`SearchContext.moduleMode` 供扩展区分场景：全局即时答案仅 calculator / currency；ip / time / uuid / base64 等仅模块内响应。详见 [docs/extensions.md](docs/extensions.md)。
+**搜索引擎**（`src/runtime/search-engine.ts`）：单通道 dynamic 并行召回 + 一次预算 finalScore + keyword 合流 + dedupe + groupAndSort。**全局与搜索型模块共用 `search()`**（`setActiveModule` 切换模式；模块模式只调激活扩展、保留原序、同样 timeout/abort）。**模式快照**：`search()` 入口捕获 `activeModule`，await 期间切换不影响本次后处理。**超时**：每扩展独立 child `AbortSignal`，超时只 abort 该扩展（不牵连其它），父 signal abort 时同步取消。全局模式按 `finalScore = fuzzy + boost` 排序；**过滤规则**：空 query 默认列表按 `finalScore>0`（boost>0，主要是应用）显示；非空 query 查找型结果需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透。keyword / `/` 工具列表模块入口打分共用 `scoreModuleEntry`（name/id/description 正向 + keywords 双向）。`SearchContext.moduleMode` 供扩展区分场景：全局即时答案仅 calculator / currency；ip / time / uuid / base64 等仅模块内响应。详见 [docs/extensions.md](docs/extensions.md)。
 
-**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/window.rs::apply_main_window_style`（= `apply_mica_material(ns, 16)` + `setHasShadow(true)` + `convert_to_panel`）在 setup 内一次性配置主窗口样式（Mica 材质底 + contentView 圆角 16（单层窗口＝面板）+ 原生阴影 + 前端 inset 高光环 + 子视图 layer 透明让 WKWebView canvas 透传；材质实现见 UI 规范与 [设计系统](docs/design.md)）。snap-panel 同理经 `apply_mica_material(ns, 10)` 获 Mica 底材（窗口尺寸精简为面板大小，原生阴影）。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`（点击/makeKey 不自动激活）；主窗 show **不** `activate_app`（保持原前台 active，避免聚焦视图/菜单栏突变；代价是 macOS 26 上偶发下层 hover 穿透——产品优先不打断），hit-test 仍靠 `capture_mouse_events` + SkyLight event shape；`hide_main` 走 `restore_captured()` 交还 first responder（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。截图 overlay 等独占场景才显式 `activate_app`。`is_app_active()` 判焦点归属：NSApp keyWindow 非空 → 焦点在我们；否则查 frontmost bundle 路径——`/System/` 开头（授权弹窗、keychain 对话框等）视为交互流未中断，抑制 blur hide。`restore_captured()` 还原前查 frontmost：第三方已接管（系统弹窗/用户切到其他 app）则不抢回。系统弹窗关闭后焦点恢复由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove）处理：frontmost 变更时若 panel 可见但丢 key，frontmost == 原前台 PID → makeKeyWindow 恢复；frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss。窗口高度统一机制：扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖；`useModuleHeight`（MainView 全局唯一调用）读 `activeModule` + `activeSubview` 解析模式，一次 invoke 触发 Rust 端 `set_main_frame` → `platform/window.rs::animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管插值，非 JS rAF 逐帧，不每帧阻塞主线程/触发 WebView 重排）；`auto` 模式 ResizeObserver 监听 ContentView 的 `contentRef`（自然高量真实内容高），窗口高 = `CHROME_HEIGHT`（搜索栏高度 + 间距，scrollContainer paddingTop）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`（屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口）；底部将出屏（含 40px 间距）则同步上移保证完整可见，离开 auto 还原进入前位置。
+**窗口**：`LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。`platform/window.rs::apply_main_window_style`（= `apply_mica_material(ns, 16)` + `setHasShadow(true)` + `convert_to_panel`）在 setup 内一次性配置主窗口样式（Mica + contentView 圆角 16 = `radius-window` + 原生阴影 + 冷雾 tint；见 [设计系统](docs/design.md)）。snap-panel 经 `apply_mica_material(ns, 10)` 对齐 `radius-panel`。`platform/panel::convert_to_panel` 转 `NonactivatingPanel`（点击/makeKey 不自动激活）；主窗 show **不** `activate_app`（保持原前台 active，避免聚焦视图/菜单栏突变；代价是 macOS 26 上偶发下层 hover 穿透——产品优先不打断），hit-test 仍靠 `capture_mouse_events` + SkyLight event shape；`hide_main` 走 `restore_captured()` 交还 first responder（PREV_FRONT_PID 唯一源在 `platform/focus.rs`）。截图 overlay 等独占场景才显式 `activate_app`。`is_app_active()` 判焦点归属：NSApp keyWindow 非空 → 焦点在我们；否则查 frontmost bundle 路径——`/System/` 开头（授权弹窗、keychain 对话框等）视为交互流未中断，抑制 blur hide。`restore_captured()` 还原前查 frontmost：第三方已接管（系统弹窗/用户切到其他 app）则不抢回。系统弹窗关闭后焦点恢复由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove）处理：frontmost 变更时若 panel 可见但丢 key，frontmost == 原前台 PID → makeKeyWindow 恢复；frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss。窗口高度统一机制：扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖；`useModuleHeight`（MainView 全局唯一调用）读 `activeModule` + `activeSubview` 解析模式，一次 invoke 触发 Rust 端 `set_main_frame` → `platform/window.rs::animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管插值，非 JS rAF 逐帧，不每帧阻塞主线程/触发 WebView 重排）；`auto` 模式 ResizeObserver 监听 ContentView 的 `contentRef`（自然高量真实内容高），窗口高 = `CHROME_HEIGHT`（搜索栏高度 + 间距，scrollContainer paddingTop）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`（屏幕尺寸走 `currentMonitor` 因 WKWebView 下 `window.screen` 仅返回 webview 视口）；底部将出屏（含 40px 间距）则同步上移保证完整可见，离开 auto 还原进入前位置。
 
 **全局快捷键**：`runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。默认 Option 基（`Option+Space` 呼出，`Option+C/S/T/A/F`：剪贴板 / 截屏 / 翻译 / Agent / 访达工具）；dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存（dev/prod 数据目录仍按 bundle id 隔离，配置默认值一致）。
 
@@ -135,7 +135,7 @@ src-tauri/src/
     ├── skylight.rs     # Space 迁移（私有 API）
     ├── focus.rs        # 焦点管理（PREV_FRONT_PID 唯一源 + is_app_active 系统弹窗检测 + restore_captured 第三方守卫）
     ├── input.rs        # CGEvent 键盘注入（post_key 原语 + post_combo 字符串糖；Modifier 枚举 + Option pid）
-    ├── pasteboard.rs   # NSPasteboard 原语统一（read_text/read_file_urls/read_png(max)/read_tiff_as_png(max)/encode_image_to_png/set_png_bytes/write_text/clear/set_string/set_file_url/set_file_urls/set_custom/has_type/change_count/snapshot/restore）
+    ├── pasteboard.rs   # NSPasteboard 原语统一（read_text/read_file_urls/read_png(max)/read_tiff_as_png(max)/encode_image_to_png/set_png_bytes/write_text/clear/set_string/set_file_url/set_file_urls(marker?)/set_custom/has_type/change_count/snapshot/restore）
     ├── selection.rs    # AX 选中文本提取 + poll_clipboard
     ├── click_monitor.rs
     ├── frontmost_watcher.rs  # NSWorkspace 激活通知观察器（系统弹窗关闭后恢复焦点，随 show/hide 生命周期）
@@ -172,20 +172,21 @@ src/
 
 ## UI 规范
 
-Voidnix 设计系统（仅浅色），取 macOS 原生能力实现（`NSVisualEffectView` / `backdrop-filter`）。单一色源在 `uno.config.ts` theme。具体色值、材质实现细节、排版形态参数见 [docs/design.md](docs/design.md)。
+仅浅色。完整约定见 [docs/design.md](docs/design.md)；数值真相 `theme.css`，组合 `uno.config.ts`。**视觉已定型，改实现/文档不得无意改观感。**
 
-**颜色**：扁平化语义色名。文本色阶 `primary → secondary → muted`（3 档：主内容 / 辅助内容 / 非内容），一致性优先于层次细分；基础色 `surface`（content layer 底色 #fafafa）/ `accent`（强调色 #3b82f6）；层级背景 `bg-black/N` 灰阶（4 控件底 / 5 hover / 8 active）；描边 `border-black/10`、分隔线 `border-black/5`。**禁止裸 hex / arbitrary 色值**，经 theme 语义化命名。
+**分层**：容器 **soft-surface** · 抬升卡 **soft-card**（助手消息 / system-status）· 控件 **soft-chip**（1px 冷灰 solid border，无 elevation）· **module-tag** · **ui-active** · **ui-btn-primary** · 弹窗 **dialog-\*** · 实底填充 **fill-ctrl**。玻璃只做壳；可点控件走 chip。
 
-**材质三件套**：
+**基元与 elevation**（`theme.css`：先改基元，业务禁堆相近零散值）：`--cool` / `--shadow-ink` / ease·duration / `--space`；阴影仅 **bar / panel / dialog / card / float\***；accent 浅染 **`--accent-wash*` / `--accent-line*`**（markdown 等）。
 
-- Mica（窗口底材 / 花图上浮层）：原生 `apply_mica_material`（主窗 corner 16 / snap 10）+ 前端 `mica-shell`（主窗）/ `mica-tint`（snap）/ `mica-panel`·`mica-bar`（截屏工具条等无原生 effect 时的同款白雾）；配方见 [设计系统](docs/design.md)
-- Acrylic（仅叠在主窗 Mica 上的外框）：`acrylic-bar`（搜索栏 `bg-white/90` + `blur-xl` + 独立合成层）· `acrylic-panel` / `dropdown-panel`（弹出层近纯白磨砂）；**内嵌禁止叠磨砂**；截屏工具条勿用 Acrylic
-- 内嵌实色：`fill-ctrl` / `fill-active`（`ui-ctrl` / `ui-active` / 标签 / 图标井），保证叠在玻璃上可读
-- chrome-fade：`theme.css` 纯白染渐变（无 blur），高度 `--chrome-fade-height`；顶实底软，减字进入搜索栏 blur 采样区
-- Smoke：`BaseDialog` 遮罩半黑 + 主体实色白 + `radius-panel`
-- 圆角内小外大：`radius-panel` 10 · `radius-ctrl` 6 · `radius-window` 16
+**颜色**：canvas=surface / accent / 文本阶；fill 阶派生 cool；语义 `danger|warning|success`（soft 统一 12%）。**禁止裸 hex 结构色、`black/*`、状态用 red-500**（`mask-smoke`、标注调色板、文件类型 palette 除外）。
 
-**组件**：只用 `@/components/ui/` 原子组件，**禁止手写底层标签**。外框材质 / 内嵌填充 / 圆角一律走 shortcuts（见 design.md），禁止内嵌元素再叠 `backdrop-blur`。
+**材质**：
+
+- Mica：主窗 16 / snap 10 + `mica-shell`（获焦雾一轮）
+- 搜索栏 `acrylic-bar`（拆层）；浮层 `dropdown-panel`；soft-surface **saturate 单轨 1.35**
+- chrome-fade 顶/底配方可不同；圆角 ctrl 6 · panel 10 · window 16
+
+**组件**：只用 `@/components/ui/` 原子组件，**禁止手写底层标签**。`ui-ctrl`+`soft-chip` 默认控件（outline 与 default 同面）；`ui-field` 大输入（`BaseTextarea`；`BaseInput panel` 仍 soft-surface 白边）；外框 / 填充 / 圆角一律 token（见 design.md）。
 
 **容器边距**：全局统一 `p-3`（12px）——搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`；搜索栏 top/height/gap 为 `constants.ts` 模块内常量（和为 `CHROME_HEIGHT`，与 MainView `top-3`/`h-13`/`p-3` 同步）。**例外**：`BaseDialog` 标题/内容/页脚用 `p-4`（16px）。**元素间距**三档：`gap-1.5`（控件内）/ `gap-2`（默认）/ `gap-3`（区块）；`gap-0.5` 仅微密 UI。
 

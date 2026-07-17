@@ -88,7 +88,7 @@ describe('useAgentChat session 守卫', () => {
     expect(agent.status.value).toBe('ready')
   })
 
-  it('旧 run 的 error 不改写新 run 的 status', async () => {
+  it('旧 run 的 error 不改写新 run 的 status，也不改写已收尾气泡', async () => {
     const agent = useAgentChat()
 
     await agent.sendMessage('one')
@@ -102,13 +102,16 @@ describe('useAgentChat session 守卫', () => {
     expect(agent.isGenerating.value).toBe(true)
     expect(agent.status.value).toBe('streaming')
 
-    // 错误文案写入旧 assistant 气泡（仍在 messages 里）
-    const texts = agent.messages.value
-      .filter((m) => m.role === 'assistant')
-      .flatMap((m) => m.parts)
-      .filter((p) => p.type === 'text')
-      .map((p) => (p.type === 'text' ? p.text : ''))
-    expect(texts.some((t) => t.includes('old fail'))).toBe(true)
+    // 旧气泡已 abort finalize：晚到 error 不得再写 notice
+    const firstAssistant = agent.messages.value.find((m) => m.role === 'assistant')
+    expect(firstAssistant?.parts.some((p) => p.type === 'notice' && p.kind === 'aborted')).toBe(
+      true,
+    )
+    expect(
+      firstAssistant?.parts.some(
+        (p) => p.type === 'notice' && p.kind === 'error' && p.text.includes('old fail'),
+      ),
+    ).toBe(false)
 
     mocks.channels[1]!.onmessage?.({ type: 'completed' })
     expect(agent.status.value).toBe('ready')
@@ -152,5 +155,53 @@ describe('useAgentChat session 守卫', () => {
     expect(part && part.type === 'toolCall' && part.parsed?.hits[0]?.title).toBe('T')
 
     ch.onmessage?.({ type: 'completed' })
+  })
+
+  it('abort 写入 aborted notice 并结束 streaming', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('hi')
+    const ch = mocks.channels[0]!
+    ch.onmessage?.({ type: 'textDelta', text: 'partial' })
+
+    await agent.abort()
+    expect(agent.isGenerating.value).toBe(false)
+
+    const assistant = agent.messages.value.find((m) => m.role === 'assistant')
+    expect(assistant?.streaming).toBeFalsy()
+    const notice = assistant?.parts.find((p) => p.type === 'notice')
+    expect(notice && notice.type === 'notice' && notice.kind).toBe('aborted')
+    expect(notice && notice.type === 'notice' && notice.text).toBe('已中止')
+  })
+
+  it('error 写入 error notice', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('hi')
+    const ch = mocks.channels[0]!
+    ch.onmessage?.({ type: 'error', message: 'boom' })
+
+    expect(agent.status.value).toBe('error')
+    const assistant = agent.messages.value.find((m) => m.role === 'assistant')
+    const notice = assistant?.parts.find((p) => p.type === 'notice')
+    expect(notice && notice.type === 'notice' && notice.kind).toBe('error')
+    expect(notice && notice.type === 'notice' && notice.text).toBe('boom')
+  })
+
+  it('abort 后晚到 textDelta / tool 不写入气泡', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('hi')
+    const ch = mocks.channels[0]!
+    ch.onmessage?.({ type: 'textDelta', text: 'partial' })
+    await agent.abort()
+
+    ch.onmessage?.({ type: 'textDelta', text: ' after-abort' })
+    ch.onmessage?.({ type: 'toolCallStart', id: 'late', name: 'run_command' })
+    ch.onmessage?.({ type: 'error', message: 'late error' })
+
+    const assistant = agent.messages.value.find((m) => m.role === 'assistant')
+    expect(assistant?.parts).toHaveLength(2) // text + aborted notice
+    expect(assistant?.parts[0]).toEqual({ type: 'text', text: 'partial' })
+    expect(assistant?.parts[1]).toMatchObject({ type: 'notice', kind: 'aborted' })
+    // 晚到 error 不得再加 notice；status 已 ready（非本 run）
+    expect(agent.status.value).toBe('ready')
   })
 })
