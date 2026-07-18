@@ -3,6 +3,7 @@ pub mod menubar;
 pub mod pasteboard;
 pub mod permission;
 pub mod registry;
+pub mod shell_rc;
 pub mod shortcut;
 pub mod storage;
 pub mod window;

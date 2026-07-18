@@ -7,6 +7,8 @@ import { isTauri } from '@/utils/tauri'
 // 缓存 Promise<Store> 而非 Store，并发 getStore 共享同一 in-flight load，避免重复加载。
 // 失败时清缓存：避免单次 IO 抖动演变为永久故障（rejected Promise 被缓存）。
 const storeCache = new Map<string, Promise<Store>>()
+// defineConfig 首次 backfill 完成（成功或失败）后 resolve；未注册的 path 立即 resolve。
+const readyMap = new Map<string, Promise<void>>()
 
 function getStore(storePath: string): Promise<Store> {
   let promise = storeCache.get(storePath)
@@ -16,6 +18,11 @@ function getStore(storePath: string): Promise<Store> {
     promise.catch(() => storeCache.delete(storePath))
   }
   return promise
+}
+
+/** 等待 `defineConfig(storePath)` 磁盘回填结束（setup 导出 / 读配置前 await）。 */
+export function whenConfigReady(storePath: string): Promise<void> {
+  return readyMap.get(storePath) ?? Promise.resolve()
 }
 
 /// 递归深度相等比较。替换原 JSON.stringify 实现：
@@ -73,6 +80,12 @@ export function defineConfig<T extends object>(storePath: string, defaults: T): 
   const defaultKeys = Object.keys(defaults)
   let isLoading = true
 
+  let resolveReady!: () => void
+  const readyPromise = new Promise<void>((r) => {
+    resolveReady = r
+  })
+  readyMap.set(storePath, readyPromise)
+
   // 异步从磁盘加载已保存的值
   // 竞态保护：backfill 的 store.get 异步，返回前用户可能已改某 key。
   // 写入前 deepEqual 检查「当前值是否仍为 default」——若已非 default 说明用户已改，跳过覆盖。
@@ -93,9 +106,11 @@ export function defineConfig<T extends object>(storePath: string, defaults: T): 
         }),
       )
       isLoading = false
+      resolveReady()
     })
     .catch((e) => {
       isLoading = false
+      resolveReady()
       console.error(`[config:${storePath}] load failed:`, e)
     })
 

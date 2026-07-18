@@ -19,11 +19,11 @@
 
 - **soft-surface**：容器（搜索栏 / 浮层 / 大输入底材）— 白边 + fill + blur/saturate **单轨 1.35**
 - **soft-card**：抬升卡 = soft-surface + `radius-panel` + `--shadow-card`（助手消息 / system-status）
-- **soft-chip**：控件 — 实白 + 1px 冷灰 solid border，无 elevation；focus 用 `--soft-chip-shadow-focus`
+- **soft-chip**：控件 — 实白 + 1px 冷灰 solid border，无 elevation；focus 改边框色 `--focus-ring-color`
 - **module-tag**：搜索栏只读扩展名
 - **ui-active**：列表选中色块 + 轻 blur
 - **ui-btn-primary**：主色实心钮
-- **dialog-\***：弹窗近实白（非 soft-surface）
+- **dialog-\***：弹窗近实白（非 soft-surface）；标题/底栏为浮层 + 透明渐变，内容可滚入
 - **fill-ctrl**：实底填充（进度轨 / kbd 等，非卡片壳）
 
 ### elevation（仅三档 + 两特化）
@@ -39,7 +39,7 @@
 ### accent 浅染（markdown 等）
 
 - `--accent-wash` / `--accent-line` / `--accent-line-soft` / `--accent-wash-grad`
-- `--focus-ring-color`：大输入聚焦边
+- `--focus-ring-color`：控件/大输入聚焦边色（按钮 `:focus-visible`；`BaseInput` 等 `ui-input` 用 `:focus-within`）
 
 ## 色
 

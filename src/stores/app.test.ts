@@ -72,6 +72,16 @@ describe('app store', () => {
       expect(store.entryQuery).toBe('/')
       expect(store.searchQuery).toBe('')
     })
+
+    it('切换模块时关闭全局 confirm（避免 Teleport 遮罩残留）', async () => {
+      const store = useAppStore()
+      store.setActiveModule('clipboard')
+      const promise = store.showConfirm({ title: '确认？' })
+      expect(store.isDialogOpen).toBe(true)
+      store.setActiveModule('translate')
+      expect(store.isDialogOpen).toBe(false)
+      expect(await promise).toBe(false)
+    })
   })
 
   describe('搜索状态', () => {

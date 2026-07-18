@@ -76,13 +76,12 @@ agent 配置通过 `defineConfig` 自管，持久化至 `extensions/agent/config
 defineConfig('extensions/agent/config', {
   systemPrompt: '你是全能的 AI Agent…',
   searchProvider: { type: 'tavily', apiKey: '' },
-  aiProviders: [{ id, endpoint: '', apiKey: '', models: [] }], // 多 provider + activeProviderModelKey 激活选择
   // 资源上限默认值（maxCpuSeconds/maxMemoryMb/maxOpenFiles/executionTimeout/maxOutputBytes/maxTurns）
   // BOUNDS 仅 CI 镜像 policy.rs，无 Settings UI；运行时 Rust clamp
 })
 ```
 
-AI Provider（endpoint/apiKey/models）由 agent 自管（与 translate 同构：各自 `config.ts` 维护独立 provider 列表，互不复用）。CRUD helpers：`addAiProvider()` / `updateAiProvider(id, partial)` / `removeAiProvider(id)`（保底 ≥1 项）/ `setActiveProviderModelKey(key)`；`activeProviderConfig` computed 解析激活项。
+AI 凭证条目上收至框架级中枢（`@/runtime/ai-providers`）；**本扩展自选**模型（`extensions/agent/config.json` 的 `providerModelKey` = `providerId::keyId::model`，顶部下拉）。发起对话时 `resolveAgentRuntimeCredentials()`：按自选解析，缺项回退进程 env / `~/.config/voidnix/ai.env`。删中枢提供商/Key 时自动清空悬空选用；旧 `activeProviderModelKey` 启动时一次性迁入。详见 [ai-providers.md](./ai-providers.md)。
 
 ## 对话 UI
 
@@ -98,8 +97,8 @@ AI Provider（endpoint/apiKey/models）由 agent 自管（与 translate 同构�
 
 ```
 extensions/agent/
-├── index.ts               # module 注册（id 'agent'）
-├── config.ts              # defineConfig（systemPrompt/searchProvider/aiProviders + 资源默认值 + BOUNDS 仅 CI 镜像 + provider CRUD/active computed）
+├── index.ts               # 注册
+├── config.ts              # defineConfig + 选用 helpers
 ├── agent.ts               # useAgentChat composable（前端状态机）
 ├── view-logic.ts          # View 纯函数（streamView / showToolBody / markdown 等）
 ├── View.vue               # 布局 + 贴底滚动 + 悬浮操作 + notice

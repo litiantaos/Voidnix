@@ -21,26 +21,19 @@
           v-if="visible"
           ref="dialogRef"
           class="dialog-to radius-panel"
+          :class="[sizeClass, { 'has-footer': resolvedShowFooter }]"
           outline="none"
           flex="~ col"
           relative
           z="10"
-          :class="sizeClass"
           role="dialog"
           aria-modal="true"
           :aria-labelledby="titleId"
           :aria-describedby="message ? descId : undefined"
           tabindex="-1"
         >
-          <div text="sm primary" font="bold" p="4" select="none">
-            <slot name="header">
-              <h3 :id="titleId">
-                {{ title }}
-              </h3>
-            </slot>
-          </div>
-
-          <div class="hide-scrollbar" p="x-4" flex="1" overflow="auto">
+          <!-- 内容区通铺；顶/底 chrome 浮层盖住，滚动时形成延伸感 -->
+          <div class="dialog-body hide-scrollbar" overflow="auto" flex="1" min-h="0">
             <slot>
               <p
                 v-if="message"
@@ -55,21 +48,31 @@
             </slot>
           </div>
 
-          <slot v-if="resolvedShowFooter" name="footer">
-            <div p="4" flex gap="2" justify="between">
-              <div>
-                <slot name="footer-start" />
+          <div class="dialog-chrome dialog-chrome-header" text="sm primary" font="bold" select="none">
+            <slot name="header">
+              <h3 :id="titleId">
+                {{ title }}
+              </h3>
+            </slot>
+          </div>
+
+          <div v-if="resolvedShowFooter" class="dialog-chrome dialog-chrome-footer">
+            <slot name="footer">
+              <div flex gap="2" justify="between" items="center">
+                <div>
+                  <slot name="footer-start" />
+                </div>
+                <div flex gap="2">
+                  <BaseButton v-if="showCancel" :active="focusIndex === 0" @click="close('cancel')">
+                    {{ cancelLabel || '取消' }}
+                  </BaseButton>
+                  <BaseButton variant="primary" :active="focusIndex === 1" @click="requestConfirm">
+                    {{ okLabel || '确定' }}
+                  </BaseButton>
+                </div>
               </div>
-              <div flex gap="2">
-                <BaseButton v-if="showCancel" :active="focusIndex === 0" @click="close('cancel')">
-                  {{ cancelLabel || '取消' }}
-                </BaseButton>
-                <BaseButton variant="primary" :active="focusIndex === 1" @click="requestConfirm">
-                  {{ okLabel || '确定' }}
-                </BaseButton>
-              </div>
-            </div>
-          </slot>
+            </slot>
+          </div>
         </div>
       </Transition>
     </div>
@@ -77,12 +80,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, useId } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onDeactivated, nextTick, useId } from 'vue'
 import BaseButton from './BaseButton.vue'
 import { getFocusableElements, isComposing, trapFocus } from '@/utils/dom'
 
 /** 弹窗关闭来源 */
-export type CloseReason = 'cancel' | 'escape' | 'overlay'
+export type CloseReason = 'cancel' | 'escape' | 'overlay' | 'dismiss'
 
 /**
  * variant 驱动弹窗行为模式：
@@ -93,6 +96,8 @@ export type CloseReason = 'cancel' | 'escape' | 'overlay'
  *
  * closeOnConfirm：false 时确定/回车只 emit confirm、不关窗，由父级在异步结果后决定卸载
  * （如新建文件：失败 toast 时弹窗保持，避免先关再开）。
+ *
+ * KeepAlive 切走 / 扩展切换：onDeactivated 以 dismiss 关窗（Teleport 挂 body，不关会残留）。
  */
 interface Props {
   title: string
@@ -191,6 +196,21 @@ function onKeyDown(e: KeyboardEvent) {
     target.tagName === 'SELECT' ||
     target.isContentEditable
 
+  // form：方向键留给弹窗内容（多选列表等），阻止冒泡到外层 BaseList
+  if (
+    props.variant === 'form' &&
+    (e.key === 'ArrowDown' ||
+      e.key === 'ArrowUp' ||
+      e.key === 'Home' ||
+      e.key === 'End' ||
+      e.key === 'PageDown' ||
+      e.key === 'PageUp')
+  ) {
+    e.stopPropagation()
+    // 不 preventDefault：内容区 listbox 仍可自行处理
+    return
+  }
+
   // form + footer 回车提交：仅单行 INPUT（BaseSelect 自管 Enter，不冒泡到此）
   if (
     props.variant === 'form' &&
@@ -260,6 +280,12 @@ onMounted(() => {
   })
 })
 
+// KeepAlive 切走（快捷键换扩展等）：Teleport 已挂 body，必须卸窗，否则残留遮罩
+onDeactivated(() => {
+  if (closing || !visible.value) return
+  close('dismiss')
+})
+
 onUnmounted(() => {
   // M-fe2：组件提前销毁时清 timer，避免已卸载组件继续 emit
   if (closeTimer) {
@@ -292,16 +318,67 @@ onUnmounted(() => {
 .dialog-to {
   opacity: 1;
   transform: scale(1);
-  /* 独立 dialog 面（非 soft-surface）：近实白 + 中性描边 + elevation */
+  /* 独立 dialog 面（非 soft-surface）：近实白 + 中性描边 + elevation；内容通铺，chrome 浮层渐隐 */
+  overflow: hidden;
   background: var(--dialog-fill);
   border: 1px solid var(--dialog-border);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   box-shadow: var(--dialog-shadow);
+  /* 标题 / 底栏浮层预留（与 .dialog-chrome 高度对齐） */
+  --dialog-chrome-top: 52px;
+  --dialog-chrome-bottom: 16px;
+}
+.dialog-to.has-footer {
+  --dialog-chrome-bottom: 64px;
 }
 .dialog-from {
   opacity: 0;
   transform: scale(0.96);
   box-shadow: none;
+}
+
+.dialog-body {
+  padding: var(--dialog-chrome-top) 16px var(--dialog-chrome-bottom);
+}
+
+/*
+ * 顶/底 chrome 浮层：实色→透明渐变，内容滚入时有延伸感。
+ * header 只展示文案，不吃点击；footer 内控件恢复 pointer-events。
+ */
+.dialog-chrome {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.dialog-chrome-header {
+  top: 0;
+  padding: 16px 16px 20px;
+  background: linear-gradient(
+    to bottom,
+    var(--dialog-fill) 0%,
+    var(--dialog-fill) 52%,
+    transparent 100%
+  );
+}
+.dialog-chrome-footer {
+  bottom: 0;
+  padding: 20px 16px 16px;
+  background: linear-gradient(
+    to top,
+    var(--dialog-fill) 0%,
+    var(--dialog-fill) 52%,
+    transparent 100%
+  );
+}
+.dialog-chrome-footer :deep(button),
+.dialog-chrome-footer :deep([role='button']),
+.dialog-chrome-footer :deep(a) {
+  pointer-events: auto;
+}
+/* 默认 footer 行容器也要可点（包住按钮与 footer-start） */
+.dialog-chrome-footer > * {
+  pointer-events: auto;
 }
 </style>

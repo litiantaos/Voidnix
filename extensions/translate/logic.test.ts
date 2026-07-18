@@ -57,17 +57,12 @@ describe('engineLabel', () => {
     expect(engineLabel(cfg)).toBe('有道翻译')
   })
 
-  it('AI 类型从 endpoint 取 provider 名', () => {
+  it('AI 类型固定「AI 翻译」', () => {
     const cfg = {
       type: 'ai',
-      endpoint: 'https://api.openai.com/v1',
-      apiKey: 'k',
+      selections: [],
+      prompt: '',
     } as unknown as TranslateApiConfig
-    expect(engineLabel(cfg)).toBe('OPENAI')
-  })
-
-  it('AI 类型 endpoint 空 → fallback「翻译」', () => {
-    const cfg = { type: 'ai', endpoint: '', apiKey: 'k' } as unknown as TranslateApiConfig
-    expect(engineLabel(cfg)).toBe('翻译')
+    expect(engineLabel(cfg)).toBe('AI 翻译')
   })
 })

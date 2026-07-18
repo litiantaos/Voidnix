@@ -50,7 +50,8 @@
   --accent-line: color-mix(in srgb, var(--color-accent) 12%, transparent);
   --accent-line-soft: color-mix(in srgb, var(--color-accent) 9%, transparent);
   --accent-wash-grad: linear-gradient(90deg, var(--accent-wash) 0%, transparent 100%);
-  --focus-ring-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+  /* 聚焦：统一改边框色（chip / field / 输入壳共用，无 ring / 无 box-shadow） */
+  --focus-ring-color: color-mix(in srgb, var(--color-accent) 55%, white);
 
   /* ── 面 ── */
   --soft-surface-fill: rgb(246 246 248 / 0.72);
@@ -65,14 +66,6 @@
   --soft-chip-border: rgb(var(--cool-deep) / 0.16);
   --soft-chip-border-hover: rgb(var(--cool-deep) / 0.32);
   --soft-chip-border-active: rgb(var(--cool-deep) / 0.2);
-  /* keyboard focus：贴边 accent + 外晕（chip / 通用） */
-  --soft-chip-shadow-focus:
-    0 0 0 1.5px color-mix(in srgb, var(--color-accent) 58%, white),
-    0 0 0 4px color-mix(in srgb, var(--color-accent) 16%, transparent),
-    0 1px 4px color-mix(in srgb, var(--color-accent) 10%, transparent);
-  --soft-chip-shadow-focus-on-primary:
-    0 0 0 1.5px rgb(255 255 255 / 0.9),
-    0 0 0 4px color-mix(in srgb, var(--color-accent) 28%, transparent);
 
   --ui-active-fill: rgb(100 110 130 / 0.11);
   --ui-active-blur: 12px;
@@ -366,7 +359,7 @@ body {
   border-color: var(--color-danger);
 }
 
-/* soft-chip：solid border + 无 elevation；focus → --soft-chip-shadow-focus */
+/* soft-chip：solid border + 无 elevation；focus → 改 border-color */
 .soft-chip {
   border: 1px solid var(--soft-chip-border);
   outline: none;
@@ -376,31 +369,39 @@ body {
   -webkit-backdrop-filter: none;
   transition:
     background-color var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out);
+    border-color var(--duration-fast) var(--ease-out);
 }
 
+/* hover：始终可改底；边色仅非聚焦时改，避免盖掉 focus 框色 */
 .soft-chip:hover:not(:disabled):not(.ui-disabled) {
   background: var(--soft-chip-fill-hover);
+}
+.soft-chip:hover:not(:disabled):not(.ui-disabled):not(:focus-visible):not(:focus-within):not(
+    .is-keyboard-focus
+  ) {
   border-color: var(--soft-chip-border-hover);
-  box-shadow: none;
 }
 
-.soft-chip:active:not(:disabled):not(.ui-disabled) {
+/* 输入壳（BaseInput 等）不走按下态 */
+.soft-chip:active:not(:disabled):not(.ui-disabled):not(.ui-input) {
   background: var(--soft-chip-fill-active);
   border-color: var(--soft-chip-border-active);
-  box-shadow: none;
 }
 
+/*
+ * 聚焦：只改边框色（与 ui-field 同源 --focus-ring-color）。
+ * - 按钮/选择：:focus-visible / is-keyboard-focus
+ * - 输入壳：:focus-within
+ */
 .ui-ctrl:is(:focus-visible, .is-keyboard-focus),
-.soft-chip.ui-ctrl:is(:focus-visible, .is-keyboard-focus):hover:not(:disabled):not(.ui-disabled),
-.soft-chip.ui-ctrl:is(:focus-visible, .is-keyboard-focus):active:not(:disabled):not(.ui-disabled) {
+.ui-ctrl.ui-input:focus-within {
   outline: none;
-  box-shadow: var(--soft-chip-shadow-focus);
+  border-color: var(--focus-ring-color);
 }
 
+/* primary 无描边底：聚焦用浅白边，衬在 accent 面上 */
 .ui-btn-primary:is(:focus-visible, .is-keyboard-focus) {
-  box-shadow: var(--soft-chip-shadow-focus-on-primary) !important;
+  border-color: rgb(255 255 255 / 0.72) !important;
 }
 
 /* module-tag：只读扩展名；is-hovered 驱动图标↔关闭 */

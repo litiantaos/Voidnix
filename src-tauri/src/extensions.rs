@@ -7,6 +7,7 @@ macro_rules! configure_app {
     ($builder:expr) => {
         $builder
             .plugin(crate::extensions::agent::init())
+            .plugin(crate::extensions::ai_providers::init())
             .plugin(crate::extensions::awake::init())
             .plugin(crate::extensions::clean_mode::init())
             .plugin(crate::extensions::clipboard::init())
@@ -21,6 +22,7 @@ macro_rules! configure_app {
             .plugin(crate::extensions::zsh_autosuggestions::init())
             .invoke_handler(tauri::generate_handler![
                 crate::http::http_get,
+                crate::runtime::pasteboard::pasteboard_paste_text,
                 crate::runtime::pasteboard::pasteboard_write_text,
                 crate::runtime::permission::check_accessibility_permission,
                 crate::runtime::permission::check_full_disk_access_permission,
@@ -39,6 +41,11 @@ macro_rules! configure_app {
                 crate::runtime::window::set_main_frame,
                 crate::extensions::agent::agent_abort,
                 crate::extensions::agent::agent_run,
+                crate::extensions::ai_providers::ai_providers_deepseek_balance,
+                crate::extensions::ai_providers::ai_providers_env_snapshot,
+                crate::extensions::ai_providers::ai_providers_export,
+                crate::extensions::ai_providers::ai_providers_export_dir,
+                crate::extensions::ai_providers::ai_providers_zhipu_quota,
                 crate::extensions::awake::is_awake_enabled,
                 crate::extensions::awake::set_awake_display_mode,
                 crate::extensions::awake::set_awake_enabled,
@@ -126,6 +133,7 @@ pub fn register_all(
 ) -> crate::runtime::registry::ExtensionRegistry {
     reg
         .register(agent::AgentExtension)
+        .register(ai_providers::AiProvidersExtension)
         .register(awake::AwakeExtension)
         .register(clean_mode::CleanModeExtension)
         .register(clipboard::ClipboardExtension)
@@ -142,6 +150,9 @@ pub fn register_all(
 
 #[path = "../../extensions/agent/native/mod.rs"]
 pub mod agent;
+
+#[path = "../../extensions/ai-providers/native/mod.rs"]
+pub mod ai_providers;
 
 #[path = "../../extensions/awake/native/mod.rs"]
 pub mod awake;

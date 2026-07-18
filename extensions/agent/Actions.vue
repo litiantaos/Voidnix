@@ -1,7 +1,7 @@
 <template>
   <BaseSelect
     v-if="modelOptions.length > 0"
-    :model-value="agentConfig.activeProviderModelKey"
+    :model-value="config.providerModelKey"
     :options="modelOptions"
     class="max-w-50"
     @update:model-value="handleModelChange"
@@ -22,34 +22,19 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { providerLabelFromUrl } from '@/utils/format'
 import { useAppStore } from '@/stores/app'
 import { useAgentChat } from './agent'
-import { config as agentConfig, setActiveProviderModelKey } from './config'
+import { config, setProviderModelKey, modelSelectOptions } from './config'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 
 const appStore = useAppStore()
 const agent = useAgentChat()
 
-const modelOptions = computed(() => {
-  if (agentConfig.aiProviders.length <= 1) {
-    const config = agentConfig.aiProviders[0]
-    if (!config) return []
-    return config.models
-      .filter((m) => m.trim())
-      .map((m) => ({ label: m, value: `${config.id}::${m}` }))
-  }
-  return agentConfig.aiProviders.map((config) => ({
-    label: providerLabelFromUrl(config.endpoint, 'API'),
-    options: config.models
-      .filter((m) => m.trim())
-      .map((m) => ({ label: m, value: `${config.id}::${m}` })),
-  }))
-})
+const modelOptions = computed(() => modelSelectOptions())
 
 async function handleModelChange(val: string | number) {
-  await setActiveProviderModelKey(String(val))
+  setProviderModelKey(String(val))
 }
 
 function handleNewConversation() {

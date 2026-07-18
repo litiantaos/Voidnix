@@ -169,10 +169,16 @@ function onItemDblClick(index: number) {
 
 // ── Keyboard 守卫 ──
 
-/// 公共守卫：未激活 / IME 合成中不响应
+/** 模态弹窗打开时列表让出全部快捷键（设置页 BaseDialog 等；焦点在 BUTTON 上也不会再抢 ↑↓） */
+function isModalDialogOpen(): boolean {
+  return !!document.querySelector('[role="dialog"][aria-modal="true"]')
+}
+
+/// 公共守卫：未激活 / IME 合成中 / 模态弹窗打开 不响应
 function canNavigate(e: KeyboardEvent): boolean {
   if (!isActive.value || !props.keyboardActive) return false
   if (props.composing || isComposingCheck(e)) return false
+  if (isModalDialogOpen()) return false
   return true
 }
 
