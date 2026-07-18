@@ -44,20 +44,25 @@ vi.mock('@tauri-apps/plugin-store', () => {
 vi.mock('@/utils/tauri', () => ({ isTauri: false }))
 
 import { useAgentChat } from './agent'
-import { config, setActiveProviderModelKey } from './config'
+import { config as agentConfig, setProviderModelKey } from './config'
+import { config as aiProvidersConfig } from '@/runtime/ai-providers'
 
 beforeEach(async () => {
   mocks.channels.length = 0
   mocks.invoke.mockReset()
   mocks.invoke.mockResolvedValue(undefined)
 
-  config.aiProviders.splice(0, config.aiProviders.length, {
+  aiProvidersConfig.providers.splice(0, aiProvidersConfig.providers.length, {
     id: 'p1',
+    name: '',
     endpoint: 'https://api.example.com/v1',
-    apiKey: 'sk-test',
     models: ['m1'],
+    keys: [{ id: 'k1', label: '默认', apiKey: 'sk-test' }],
+    usageKind: '',
+    envKey: '',
   })
-  setActiveProviderModelKey('p1::m1')
+  agentConfig.providerModelKey = ''
+  setProviderModelKey('p1::k1::m1')
 
   const agent = useAgentChat()
   await agent.newConversation()

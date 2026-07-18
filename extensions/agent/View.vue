@@ -1,11 +1,11 @@
 <template>
   <div v-if="!isConfigured" class="agent-setup">
     <BaseEmptyState
-      icon="i-ri-settings-3-line"
-      title="请先配置 AI Provider 与模型"
-      description="在设置中填写 API 地址、Key 并选择模型"
+      icon="i-ri-key-2-line"
+      title="请先配置 AI 提供商与模型"
+      description="在「AI 提供商」填写，或 shell source ~/.config/voidnix/ai.env"
     />
-    <BaseButton variant="primary" @click="openConfig">去设置</BaseButton>
+    <BaseButton variant="primary" @click="openProviders">去配置</BaseButton>
   </div>
 
   <div v-else class="agent-layout" @click="onContentClick">
@@ -16,12 +16,7 @@
     </div>
 
     <!-- 消息滚动区：填满可视区，向上滚动消息进入搜索栏下层 -->
-    <div
-      v-else
-      ref="scrollRef"
-      class="agent-scroll hide-scrollbar"
-      @scroll.passive="onScroll"
-    >
+    <div v-else ref="scrollRef" class="agent-scroll hide-scrollbar" @scroll.passive="onScroll">
       <template v-for="msg in displayMessages" :key="msg.id">
         <!-- 用户消息：右对齐 bubble -->
         <div v-if="msg.role === 'user'" class="agent-row agent-row--user">
@@ -144,11 +139,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, nextTick, onMounted, onActivated, onUnmounted, watch } from 'vue'
 import { open } from '@tauri-apps/plugin-shell'
 import { useAppStore } from '@/stores/app'
 import { showToast } from '@/composables/useToast'
-import { isProviderReady } from './config'
+import { isAgentProviderReady, resolveAgentRuntimeCredentials } from './config'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
@@ -171,12 +166,25 @@ const inputText = ref('')
 const stickToBottom = ref(true)
 
 const displayMessages = computed(() => agent.messages.value)
-const isConfigured = isProviderReady
+/** 本扩展已选模型可解析，或 env 兜底可用即可对话 */
+const envReady = ref(false)
+const isConfigured = computed(() => isAgentProviderReady.value || envReady.value)
+
+async function refreshEnvReady() {
+  const creds = await resolveAgentRuntimeCredentials()
+  envReady.value = !!creds
+}
+
+onMounted(() => {
+  void refreshEnvReady()
+})
+// KeepAlive 缓存：进入模块时重检 env / ai.env，避免首次 mount 后仍显示未配置
+onActivated(() => {
+  void refreshEnvReady()
+})
 
 /** 滚底钮：有消息且非贴底；中止钮：仅输出中 */
-const showScrollBtn = computed(
-  () => displayMessages.value.length > 0 && !stickToBottom.value,
-)
+const showScrollBtn = computed(() => displayMessages.value.length > 0 && !stickToBottom.value)
 const showStopBtn = computed(() => agent.isGenerating.value)
 const showFloatActions = computed(() => showScrollBtn.value || showStopBtn.value)
 const isFloatPair = computed(() => showScrollBtn.value && showStopBtn.value)
@@ -189,8 +197,8 @@ watch(
   },
 )
 
-function openConfig() {
-  appStore.openSubview('config')
+function openProviders() {
+  appStore.setActiveModule('ai-providers')
 }
 
 function isNearBottom(el: HTMLElement): boolean {

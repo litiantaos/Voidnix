@@ -1,5 +1,4 @@
-import type { TranslateApiConfig } from './config'
-import { providerLabelFromUrl } from '@/utils/format'
+import type { TranslateApiConfig, AiConfig } from './config'
 
 const PREAMBLE_PATTERNS = [
   /here\s*(?:is|'s)\s*the\s*translation/i,
@@ -47,8 +46,12 @@ export function cleanStreamResult(raw: string): string {
   return s
 }
 
-/** 翻译引擎展示名（youdao 固定；AI 从 endpoint 取 provider 名）。 */
-export function engineLabel(config: TranslateApiConfig): string {
-  if (config.type === 'youdao') return '有道翻译'
-  return providerLabelFromUrl(config.endpoint, '翻译')
+/** 翻译引擎展示名（固定两项服务名）。 */
+export function engineLabel(cfg: TranslateApiConfig): string {
+  if (cfg.type === 'youdao') return '有道翻译'
+  return aiEngineLabel(cfg)
+}
+
+export function aiEngineLabel(_cfg?: AiConfig): string {
+  return 'AI 翻译'
 }

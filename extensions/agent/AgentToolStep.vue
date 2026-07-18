@@ -96,7 +96,7 @@ const showBody = computed(() => showToolBody(props.part))
   min-width: 0;
   margin: 0;
   padding: 2px 0;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
   font: inherit;
@@ -111,6 +111,6 @@ const showBody = computed(() => showToolBody(props.part))
 
 .agent-hit:focus-visible {
   outline: none;
-  box-shadow: var(--soft-chip-shadow-focus);
+  border-color: var(--focus-ring-color);
 }
 </style>

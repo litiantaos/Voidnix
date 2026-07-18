@@ -1,4 +1,5 @@
-import { config as translateConfig } from './config'
+import { config as translateConfig, resolveAiTargets } from './config'
+import { refreshEnvSnapshot } from '@/runtime/ai-providers'
 import { ref } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
 import { makeToggleHandler } from '@/stores/app'
@@ -95,6 +96,8 @@ export async function translateText(text: string) {
   isTranslating.value = true
   streamIndexMap.clear()
 
+  // 配置缺项时用 env / ai.env 补齐
+  await refreshEnvSnapshot()
   await initStreamListeners()
 
   const configs = translateConfig.configs
@@ -139,11 +142,9 @@ export async function translateText(text: string) {
           .finally(() => checkAllDone()),
       )
     } else if (config.type === 'ai') {
-      if (!config.endpoint || !config.apiKey) continue
-      const activeModels = config.models.filter((m) => m.trim())
-      for (const model of activeModels) {
-        const engineSuffix = ` · ${model.trim()}`
-        const engine = engineLabel(config) + engineSuffix
+      const targets = resolveAiTargets(config)
+      for (const t of targets) {
+        const engine = `${t.label} · ${t.model}`
         const i = placeholder.length
         placeholder.push({
           source: text,
@@ -156,9 +157,9 @@ export async function translateText(text: string) {
         promises.push(
           invoke<void>(CMD.translateAiStream, {
             text,
-            endpoint: config.endpoint,
-            apiKey: config.apiKey,
-            model,
+            endpoint: t.endpoint,
+            apiKey: t.apiKey,
+            model: t.model,
             targetLang,
             prompt: config.prompt ?? null,
             requestId,

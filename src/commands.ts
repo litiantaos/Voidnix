@@ -37,6 +37,7 @@ export const CMD = {
   updateClipboardText: 'update_clipboard_text',
   clearClipboardHistory: 'clear_clipboard_history',
   pasteboardWriteText: 'pasteboard_write_text',
+  pasteboardPasteText: 'pasteboard_paste_text',
   setClipboardMaxDays: 'set_clipboard_max_days',
 
   // —— screenshot ——
@@ -91,6 +92,13 @@ export const CMD = {
   // —— agent ——
   agentRun: 'agent_run',
   agentAbort: 'agent_abort',
+
+  // —— ai-providers ——
+  aiProvidersExport: 'ai_providers_export',
+  aiProvidersExportDir: 'ai_providers_export_dir',
+  aiProvidersEnvSnapshot: 'ai_providers_env_snapshot',
+  aiProvidersZhipuQuota: 'ai_providers_zhipu_quota',
+  aiProvidersDeepseekBalance: 'ai_providers_deepseek_balance',
 
   // —— search ——
   searchApps: 'search_apps',

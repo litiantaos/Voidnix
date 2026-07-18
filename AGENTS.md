@@ -75,10 +75,10 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 所有扩展同构（`extensions/<id>/index.ts` + 可选 `config.ts` + 可选 `native/`），详见 [docs/extensions.md](docs/extensions.md)。
 
-含 native/（13）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status
+含 native/（14）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers
 纯 TS（7）：calculator、settings、ip、base64、time、uuid、currency
 
-复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[finder-ext](docs/extensions/finder-ext.md)。
+复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[ai-providers](docs/extensions/ai-providers.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[finder-ext](docs/extensions/finder-ext.md)。
 
 ## 架构要点
 
@@ -114,6 +114,8 @@ Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`
 
 **LLM 基础设施**（`runtime/llm/`）：agent + translate 扩展共享。`types.rs`（LlmMessage）、`client.rs`（StreamConfig/stream_openai_request + SSRF 防护 validate_ai_request + 消息截断 + 请求管道常量）、`parser.rs`（tool_calls 解析）。
 
+**AI 凭证中枢**（`src/runtime/ai-providers.ts` → `config/ai-providers.json`）：只存 URL/Key/模型，**无「使用中」**；选用由 agent（`providerModelKey`）/ translate（`selections` 多选，可含 `keyId`）等消费者自管；删提供商/Key 时 `onAiProvidersChange` 清悬空选用；写 `ai.env` + `shell_rc` 钩子服务 CLI。详见 [ai-providers.md](docs/extensions/ai-providers.md)。**Shell rc 注入**统一走 `runtime/shell_rc`（`# voidnix <scope>`），见 [shell-rc.md](docs/shell-rc.md)。
+
 ## 目录结构
 
 ```
@@ -128,7 +130,8 @@ src-tauri/src/
 │   ├── storage.rs      # TempHandle RAII + cleanup_all_voidnix_temps（启动期统一扫 /tmp 残留）+ ext_data_dir 统一扩展数据目录 + save_png_safely（path_guard + write 共用）
 │   ├── permission.rs   # 系统权限薄壳
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap；单扩展 setup 失败隔离）
-│   ├── pasteboard.rs   # 框架命令薄壳（pasteboard_write_text；原语在 platform/pasteboard）
+│   ├── pasteboard.rs   # 框架命令薄壳（write_text / paste_text 写剪贴板并 Cmd+V；原语在 platform/pasteboard）
+│   ├── shell_rc.rs     # .zshrc 等注入约定（# voidnix <scope> marker；见 docs/shell-rc.md）
 │   └── llm/            # LLM 基础设施（types / client / parser；security 溶解入 client）
 └── platform/           # macOS 原生桥
     ├── panel.rs        # NSPanel 转换
@@ -146,12 +149,13 @@ src-tauri/src/
 src/
 ├── main.ts             # 入口（import.meta.glob eager 扫描扩展 + 并行 setup）
 ├── commands.ts         # 命令名常量（CMD.xxx，禁止裸 invoke）
-├── runtime/            # 前端运行时（5 文件）
+├── runtime/            # 前端运行时
 │   ├── types.ts        # Extension / SearchProvider / SearchResult（14 槽：11 能力 + 3 行为）
 │   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS/GROUP_ORDER/GROUP_TITLES/KEYWORD_MODULE_BOOST + LIMITS）
-│   ├── storage.ts      # defineConfig（storePath + defaults；reactive + watch 自动持久化 + 递归 deepEqual race 保护 + 类型守卫 + isLoading 抑制 + 退出 flush + 跨窗口 onChange 同步 + store 实例缓存）
+│   ├── storage.ts      # defineConfig（storePath + defaults；reactive + watch 自动持久化 + 递归 deepEqual race 保护 + 类型守卫 + isLoading 抑制 + 退出 flush + 跨窗口 onChange 同步 + store 实例缓存 + whenConfigReady）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
-│   └── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
+│   ├── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
+│   └── ai-providers.ts        # 统一 AI 提供商/Key 中枢（config/ai-providers.json；agent/translate 消费）
 ├── components/
 │   ├── ui/             # 原子组件（只用这些，禁止手写底层标签）
 │   └── layout/         # MainView / ContentView / ResultItem（kind 分支内聚）/ ResultIcon（纯图标）/ ResultActionPanel
@@ -174,7 +178,7 @@ src/
 
 仅浅色。完整约定见 [docs/design.md](docs/design.md)；数值真相 `theme.css`，组合 `uno.config.ts`。**视觉已定型，改实现/文档不得无意改观感。**
 
-**分层**：容器 **soft-surface** · 抬升卡 **soft-card**（助手消息 / system-status）· 控件 **soft-chip**（1px 冷灰 solid border，无 elevation）· **module-tag** · **ui-active** · **ui-btn-primary** · 弹窗 **dialog-\*** · 实底填充 **fill-ctrl**。玻璃只做壳；可点控件走 chip。
+**分层**：容器 **soft-surface** · 抬升卡 **soft-card**（助手消息 / system-status）· 控件 **soft-chip**（1px 冷灰 solid border，无 elevation；focus 改边框色）· **module-tag** · **ui-active** · **ui-btn-primary** · 弹窗 **dialog-\***（标题/底栏浮层渐变）· 实底填充 **fill-ctrl**。玻璃只做壳；可点控件走 chip。
 
 **基元与 elevation**（`theme.css`：先改基元，业务禁堆相近零散值）：`--cool` / `--shadow-ink` / ease·duration / `--space`；阴影仅 **bar / panel / dialog / card / float\***；accent 浅染 **`--accent-wash*` / `--accent-line*`**（markdown 等）。
 
@@ -188,7 +192,9 @@ src/
 
 **组件**：只用 `@/components/ui/` 原子组件，**禁止手写底层标签**。`ui-ctrl`+`soft-chip` 默认控件（outline 与 default 同面）；`ui-field` 大输入（`BaseTextarea`；`BaseInput panel` 仍 soft-surface 白边）；外框 / 填充 / 圆角一律 token（见 design.md）。
 
-**容器边距**：全局统一 `p-3`（12px）——搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`；搜索栏 top/height/gap 为 `constants.ts` 模块内常量（和为 `CHROME_HEIGHT`，与 MainView `top-3`/`h-13`/`p-3` 同步）。**例外**：`BaseDialog` 标题/内容/页脚用 `p-4`（16px）。**元素间距**三档：`gap-1.5`（控件内）/ `gap-2`（默认）/ `gap-3`（区块）；`gap-0.5` 仅微密 UI。
+**容器边距**：全局统一 `p-3`（12px）——搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`；搜索栏 top/height/gap 为 `constants.ts` 模块内常量（和为 `CHROME_HEIGHT`，与 MainView `top-3`/`h-13`/`p-3` 同步）。**例外**：`BaseDialog` 内容区水平 `16px`，顶/底由浮层 chrome 预留（标题/底栏渐变浮层）。**元素间距**三档：`gap-1.5`（控件内）/ `gap-2`（默认）/ `gap-3`（区块）；`gap-0.5` 仅微密 UI。
+
+**弹窗**：`BaseDialog` Teleport 到 body；标题/底栏为绝对定位浮层 + 透明渐变，内容通铺可滚入。KeepAlive 切扩展时 `onDeactivated` 以 `dismiss` 关窗（父级 `@cancel` 卸 v-if）；全局 `showConfirm` 由 `setActiveModule` 按取消收束。控件 focus 只改边框色 `--focus-ring-color`（`BaseInput` 挂 `ui-input` 走 `:focus-within`，无 active 按下态；有 suffix 时 `pr-1` 让眼睛图标贴右）。
 
 **浮层范式**：右下角浮层统一 `fixed bottom-3 right-3 z-50`（离边缘 12px，与全局 p-3 一致）+ `dropdown-panel` + 同款进出场动画（`ease-out` 进 / `ease-in` 离）。**toast**（`ToastOverlay`）用 `z-9999`，高于 `BaseDialog`（z-100）与动作面板（z-50），保证错误/成功反馈始终顶层可见。`BaseDropdownItems` 通用行渲染器（4 行类型 `item | header | divider | meta`，meta = label:value 详情行不可选）。screenshot 标注选区 / clean-mode 为功能性覆盖层不加材质；工具条 / 贴图悬停条走 `mica-panel` / `mica-bar`（与窗级 Mica 同白染，忌 acrylic 浅透）。
 
@@ -201,6 +207,7 @@ src/
 ```
 ~/Library/Application Support/com.litiantao.voidnix/
 ├── config/settings.json              # 框架级配置（全局快捷键，defineConfig 扁平 schema）
+├── config/ai-providers.json          # 统一 AI 提供商/Key（agent/translate/外部工具共用）
 └── extensions/
     ├── clipboard/{clipboard.db, clipboard.db-wal, config.json}   # 剪贴板历史（SQLite WAL，写入计数达 200 触发 wal_checkpoint(TRUNCATE)）+ 配置
     ├── calculator/config.json        # 计算器历史（history key，10 条上限；走 defineConfig）
@@ -209,14 +216,14 @@ src/
     ├── screenshot/config.json        # screenshot 扩展配置
     ├── window-manager/config.json    # window-manager 扩展配置
     ├── translate/config.json         # translate 扩展配置
-    ├── agent/config.json             # agent 扩展配置（资源上限 + systemPrompt + 搜索/AI Provider）
+    ├── agent/config.json             # agent 扩展配置（资源上限 + systemPrompt + 搜索 Provider；AI Key 见 config/ai-providers.json）
     ├── video/{ffmpeg,ffprobe,ffmpeg.version,config.json}  # 视频处理：按需下载的静态 ffmpeg/ffprobe + 配置（系统 PATH 有则优先用系统）
     └── proxy/{mihomo, mihomo.pid, mihomo.log, geoip.metadb, geosite.dat, config.yaml, subs/, config.json}  # 代理：mihomo 核心（TUN 模式 root 常驻）+ root 进程 PID + 运行日志 + Geo 数据库 + 运行配置 + 订阅 YAML + 配置
 ```
 
 icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litiantao.voidnix.dev` 同构。
 
-所有 config.json 均走 `defineConfig`（`src/runtime/storage.ts`）：reactive + watch + 300ms 防抖 + 深克隆 + race 保护 + 类型守卫 + 跨窗口 onChange 同步 + 退出 flush。schema 变更时手动删磁盘 config.json 即可（自开发自用，不维护迁移）。
+所有 config.json 均走 `defineConfig`（`src/runtime/storage.ts`）：reactive + watch + 300ms 防抖 + 深克隆 + race 保护 + 类型守卫 + 跨窗口 onChange 同步 + 退出 flush。schema 变更优先删磁盘 config.json；AI 中枢对旧 agent/translate 凭证字段做一次性 best-effort 导入（见 ai-providers）。
 
 ## 约定
 

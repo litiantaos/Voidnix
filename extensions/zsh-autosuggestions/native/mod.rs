@@ -10,8 +10,8 @@ use tauri::AppHandle;
 
 const BIN_NAME: &str = "zsh-autosuggestions";
 
-/// .zshrc 独立注释行 marker，精确识别"我们写的行"（注释行 + 紧跟 export 行成对存在）。
-const ZSHRC_MARKER: &str = "# voidnix zsh-autosuggestions";
+/// .zshrc scope id（marker `# voidnix zsh-autosuggestions`，见 runtime/shell_rc）。
+const ZSHRC_SCOPE: &str = "zsh-autosuggestions";
 
 /// binary 分发版本号。install_bin 比对此常量与 `bin_version` 文件，相等即跳过复制。
 /// **每改 binary 内容（`native/src/*.rs` 或 `include_str!` 嵌入的 `init.zsh`）
@@ -89,7 +89,7 @@ fn is_zshrc_enabled() -> bool {
         return false;
     };
     let content = std::fs::read_to_string(home.join(".zshrc")).unwrap_or_default();
-    content.lines().any(|l| l.trim() == ZSHRC_MARKER)
+    crate::runtime::shell_rc::has_marker(&content, ZSHRC_SCOPE)
 }
 
 /// 记录已部署 binary 版本号的标志文件，与 binary 同目录。
@@ -154,130 +154,33 @@ fn install_bin_to(
     }
 }
 
-/// 过滤 .zshrc 中我们写入的块：marker 注释行 + 紧跟的 export 行 + 相邻空行（整体删除，避免重复刷新累积空行）。
-fn filter_zshrc_lines(content: &str) -> String {
-    let lines: Vec<&str> = content.lines().collect();
-    let mut keep = vec![true; lines.len()];
-    for (i, l) in lines.iter().enumerate() {
-        if l.trim() == ZSHRC_MARKER {
-            keep[i] = false;
-            if i + 1 < lines.len() {
-                keep[i + 1] = false;
-                // 下空行（export 行后）
-                if i + 2 < lines.len() && lines[i + 2].trim().is_empty() {
-                    keep[i + 2] = false;
-                }
-            }
-            // 上空行（marker 行前）
-            if i > 0 && lines[i - 1].trim().is_empty() {
-                keep[i - 1] = false;
-            }
-        }
-    }
-    lines
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| keep[*i])
-        .map(|(_, l)| *l)
-        .collect::<Vec<&str>>()
-        .join("\n")
-}
-
-/// 单次 read-modify-write：过滤旧行 + 追加新行（原子写 + backup）。
-/// 若期望行已存在（内容完全一致）则短路跳过，避免无谓的 backup + rename。
+/// 单次 upsert：marker + export 行（runtime/shell_rc 统一约定）。
 fn write_zshrc_line(app: &AppHandle) -> Result<(), String> {
     let Some(home) = dirs::home_dir() else {
         return Err("无法定位 home 目录".into());
     };
     let zshrc = home.join(".zshrc");
-
-    let content = std::fs::read_to_string(&zshrc).unwrap_or_default();
-    let line = build_zshrc_line(&ext_dir(app));
-
-    // 短路：期望块已存在（marker 注释行 + export 行）则跳过写入
-    if content.contains(&line) {
-        return Ok(());
-    }
-
-    let filtered = filter_zshrc_lines(&content);
-
-    // 规范化尾部空行 + 块上下各留一个空行（与文件其余内容视觉分隔）。
-    // build_zshrc_line 输出 "# marker\nexport..."（无首尾换行），布局由本层负责。
-    let mut new_content = filtered.trim_end_matches('\n').to_string();
-    if !new_content.is_empty() {
-        new_content.push_str("\n\n"); // 上一行换行 + 上空行
-    }
-    new_content.push_str(&line);
-    new_content.push_str("\n\n"); // export 换行 + 下空行
-
-    atomic_write_zshrc(&zshrc, &new_content)
+    let body = build_zshrc_body(&ext_dir(app));
+    crate::runtime::shell_rc::upsert_block(&zshrc, ZSHRC_SCOPE, &body).map(|_| ())
 }
 
-/// 从 .zshrc 移除所有带 marker 的行（原子写 + backup）。
+/// 从 .zshrc 移除本扩展块。
 fn remove_zshrc_line() -> Result<(), String> {
     let Some(home) = dirs::home_dir() else {
         return Err("无法定位 home 目录".into());
     };
     let zshrc = home.join(".zshrc");
-    let content = std::fs::read_to_string(&zshrc).unwrap_or_default();
-    let filtered = filter_zshrc_lines(&content);
-    let new_content = if content.ends_with('\n') && !filtered.is_empty() {
-        format!("{filtered}\n")
-    } else {
-        filtered
-    };
-    if new_content != content {
-        atomic_write_zshrc(&zshrc, &new_content)?;
-    }
-    Ok(())
+    crate::runtime::shell_rc::remove_block(&zshrc, ZSHRC_SCOPE).map(|_| ())
 }
 
-fn quote_shell(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('\'');
-    for c in s.chars() {
-        if c == '\'' {
-            out.push_str("'\\''");
-        } else {
-            out.push(c);
-        }
-    }
-    out.push('\'');
-    out
-}
-
-/// 生成写入 .zshrc 的两行：marker 注释行 + export ZSH_AS_DIR + eval init。
+/// body 行：export ZSH_AS_DIR + eval init（无 marker，由 shell_rc 拼接）。
 /// 子路径（bin/cache/signals）由 init.zsh 从 ZSH_AS_DIR 内部 derive。
-fn build_zshrc_line(dir: &std::path::Path) -> String {
+fn build_zshrc_body(dir: &std::path::Path) -> String {
     format!(
-        "{marker}\nexport ZSH_AS_DIR={dir}; eval \"$( \"$ZSH_AS_DIR/bin/{bin}\" init )\"",
-        marker = ZSHRC_MARKER,
-        dir = quote_shell(&dir.display().to_string()),
+        "export ZSH_AS_DIR={dir}; eval \"$( \"$ZSH_AS_DIR/bin/{bin}\" init )\"",
+        dir = crate::runtime::shell_rc::quote_shell(&dir.display().to_string()),
         bin = BIN_NAME,
     )
-}
-
-/// 原子写入 .zshrc：先备份原始内容到 `.zshrc.voidnix-bak`，再 tmp+rename 写入新内容。
-/// 保证 .zshrc 要么完整旧内容、要么完整新内容，不会 torn。
-fn atomic_write_zshrc(zshrc: &std::path::Path, content: &str) -> Result<(), String> {
-    let parent = zshrc.parent().unwrap_or(std::path::Path::new("."));
-    let bak = parent.join(".zshrc.voidnix-bak");
-    let tmp = parent.join(".zshrc.voidnix-tmp");
-
-    if zshrc.exists() {
-        if let Err(e) = std::fs::copy(zshrc, &bak) {
-            log::warn!("zsh-as: failed to backup .zshrc: {e}");
-        }
-    }
-    std::fs::write(&tmp, content).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("write .zshrc tmp: {e}")
-    })?;
-    std::fs::rename(&tmp, zshrc).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("rename .zshrc: {e}")
-    })?;
-    Ok(())
 }
 
 #[tauri::command]
@@ -354,129 +257,32 @@ mod tests {
     }
 
     #[test]
-    fn quote_shell_plain() {
-        assert_eq!(quote_shell("abc"), "'abc'");
-    }
-
-    #[test]
-    fn quote_shell_empty() {
-        assert_eq!(quote_shell(""), "''");
-    }
-
-    #[test]
-    fn quote_shell_single_quote() {
-        assert_eq!(quote_shell("a'b"), "'a'\\''b'");
-    }
-
-    #[test]
-    fn quote_shell_spaces_and_special() {
-        assert_eq!(quote_shell("/path with spaces/x"), "'/path with spaces/x'");
-        assert_eq!(quote_shell("a$b`c"), "'a$b`c'");
-    }
-
-    #[test]
-    fn filter_zshrc_lines_removes_marker() {
-        let content = "alias ll='ls -la'\n\
-            \n\
-            # voidnix zsh-autosuggestions\n\
-            export ZSH_AS_DIR='/p'; eval\n\
-            \n\
-            echo hi\n";
-        let filtered = filter_zshrc_lines(content);
-        let lines: Vec<&str> = filtered.lines().collect();
-        assert_eq!(
-            lines,
-            vec!["alias ll='ls -la'", "echo hi"],
-            "块 + 相邻上下空行应整体删除"
-        );
-    }
-
-    #[test]
-    fn filter_zshrc_lines_no_marker() {
-        let content = "alias ll='ls -la'\n";
-        let filtered = filter_zshrc_lines(content);
-        assert_eq!(filtered, "alias ll='ls -la'");
-    }
-
-    #[test]
-    fn filter_zshrc_lines_multiple_markers() {
-        let content = "a\n\
-            \n\
-            # voidnix zsh-autosuggestions\n\
-            export one\n\
-            \n\
-            b\n\
-            \n\
-            # voidnix zsh-autosuggestions\n\
-            export two\n\
-            \n\
-            d\n";
-        let filtered = filter_zshrc_lines(content);
-        let lines: Vec<&str> = filtered.lines().collect();
-        assert_eq!(lines, vec!["a", "b", "d"]);
-    }
-
-    #[test]
-    fn build_zshrc_line_format() {
+    fn build_zshrc_body_format() {
         let dir = std::path::Path::new("/u/Lib/x/extensions/zsh-autosuggestions");
-        let line = build_zshrc_line(dir);
+        let body = build_zshrc_body(dir);
         assert_eq!(
-            line,
-            "# voidnix zsh-autosuggestions\n\
-             export ZSH_AS_DIR='/u/Lib/x/extensions/zsh-autosuggestions'; eval \"$( \"$ZSH_AS_DIR/bin/zsh-autosuggestions\" init )\""
+            body,
+            "export ZSH_AS_DIR='/u/Lib/x/extensions/zsh-autosuggestions'; eval \"$( \"$ZSH_AS_DIR/bin/zsh-autosuggestions\" init )\""
         );
-    }
-
-    #[test]
-    fn atomic_write_creates_backup_and_renames() {
-        let dir = tmp_dir("atomic");
-        let zshrc = dir.join(".zshrc");
-        let bak = dir.join(".zshrc.voidnix-bak");
-        let tmp = dir.join(".zshrc.voidnix-tmp");
-
-        std::fs::write(&zshrc, "original\n").unwrap();
-        atomic_write_zshrc(&zshrc, "new content\n").unwrap();
-
-        assert_eq!(std::fs::read_to_string(&zshrc).unwrap(), "new content\n");
-        assert_eq!(std::fs::read_to_string(&bak).unwrap(), "original\n");
-        assert!(!tmp.exists(), "tmp file cleaned up");
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn atomic_write_creates_file_when_absent() {
-        let dir = tmp_dir("atomic-new");
-        let zshrc = dir.join(".zshrc");
-        let bak = dir.join(".zshrc.voidnix-bak");
-
-        atomic_write_zshrc(&zshrc, "fresh\n").unwrap();
-
-        assert_eq!(std::fs::read_to_string(&zshrc).unwrap(), "fresh\n");
-        assert!(!bak.exists(), "no backup when original absent");
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn write_zshrc_line_short_circuits_when_exact_match() {
-        let dir = tmp_dir("short-circuit");
-        let zshrc = dir.join(".zshrc");
-        let bak = dir.join(".zshrc.voidnix-bak");
-
-        let line = build_zshrc_line(std::path::Path::new("/app/dir"));
-        std::fs::write(&zshrc, format!("alias ll='ls -la'\n{line}\n")).unwrap();
-
-        // 内容完全一致 → 不应产生 backup
-        // （write_zshrc_line 读的是真实 ~/.zshrc，无法直接测试；
-        //  这里验证短路逻辑：content.contains(&line) 判定为 true）
-        let content = std::fs::read_to_string(&zshrc).unwrap();
-        assert!(
-            content.contains(&line),
-            "exact block should be found for short-circuit"
+        let full = format!(
+            "{}\n{body}",
+            crate::runtime::shell_rc::marker_line(ZSHRC_SCOPE)
         );
-        assert!(!bak.exists(), "no backup created in this state");
+        assert!(full.starts_with("# voidnix zsh-autosuggestions\n"));
+    }
 
+    #[test]
+    fn upsert_via_shell_rc() {
+        let dir = tmp_dir("shell-rc");
+        let zshrc = dir.join(".zshrc");
+        std::fs::write(&zshrc, "alias ll='ls -la'\n").unwrap();
+        let body = build_zshrc_body(std::path::Path::new("/app/dir"));
+        assert!(crate::runtime::shell_rc::upsert_block(&zshrc, ZSHRC_SCOPE, &body).unwrap());
+        assert!(!crate::runtime::shell_rc::upsert_block(&zshrc, ZSHRC_SCOPE, &body).unwrap());
+        let text = std::fs::read_to_string(&zshrc).unwrap();
+        assert!(text.contains("alias ll="));
+        assert!(text.contains("# voidnix zsh-autosuggestions"));
+        assert!(text.contains("ZSH_AS_DIR='/app/dir'"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

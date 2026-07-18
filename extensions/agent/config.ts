@@ -1,21 +1,36 @@
 import { computed } from 'vue'
-import { defineConfig } from '@/runtime/storage'
-import { generateRequestId } from '@/utils/id'
-
-export interface AiProviderConfig {
-  id: string
-  endpoint: string
-  apiKey: string
-  models: string[]
-}
+import { load } from '@tauri-apps/plugin-store'
+import { defineConfig, whenConfigReady } from '@/runtime/storage'
+import { isTauri } from '@/utils/tauri'
+import {
+  config as aiProvidersConfig,
+  modelSelectOptions,
+  parseSelectionKey,
+  resolveCredentials,
+  resolveRuntimeCredentials,
+  hasAnyConfiguredProvider,
+  providerDisplayName,
+  onAiProvidersChange,
+  type AiProvider as AiProviderConfig,
+  type ResolvedAiCredentials,
+} from '@/runtime/ai-providers'
 
 export interface SearchProviderConfig {
   type: 'tavily'
   apiKey: string
 }
 
+// 再导出中枢工具；选用状态在 agent 本扩展 config
+export {
+  aiProvidersConfig,
+  modelSelectOptions,
+  providerDisplayName,
+  hasAnyConfiguredProvider,
+  type AiProviderConfig,
+}
+
 /// agent 扩展自管配置（持久化至 extensions/agent/config.json）。
-/// 含资源上限、systemPrompt、搜索提供商、AI Provider（多 provider + 激活选择）。
+/// AI 凭证条目在 `config/ai-providers`；**本扩展自选** provider/key/model。
 export const config = defineConfig('extensions/agent/config', {
   // 资源上限（Rust 端强制 clamp，config.json 越界无效；BOUNDS 见下方）
   maxCpuSeconds: 30,
@@ -24,6 +39,11 @@ export const config = defineConfig('extensions/agent/config', {
   executionTimeout: 30,
   maxOutputBytes: 1048576,
   maxTurns: 10,
+  /**
+   * 本扩展选用的模型：`providerId::keyId::model`（或旧式 `providerId::model`）。
+   * 中枢不存 active；换消费者互不影响。
+   */
+  providerModelKey: '',
   systemPrompt: [
     '你是全能的 AI Agent，运行在用户的 macOS 上。你的职责是帮助用户完成日常任务：回答问题、查找信息、操作文件、执行命令。',
     '',
@@ -54,12 +74,6 @@ export const config = defineConfig('extensions/agent/config', {
     type: 'tavily',
     apiKey: '',
   } as SearchProviderConfig,
-  // 不变量：aiProviders 始终 ≥1 项（removeAiProvider 删空时补默认项），
-  // activeProviderConfig 的非空断言依赖此不变量。
-  aiProviders: [
-    { id: generateRequestId(), endpoint: '', apiKey: '', models: [] },
-  ] as AiProviderConfig[],
-  activeProviderModelKey: '',
 })
 
 /// 资源上限 floor/cap 镜像（权威在 native/policy.rs，须手动同步）。
@@ -73,79 +87,75 @@ export const BOUNDS = {
   maxOutputBytes: { floor: 1024, cap: 10485760 },
 } as const
 
-// ─── AI Provider helpers ─────────────────────────────────────
-
-function parseActiveConfig<T>(
-  key: string,
-  configs: T[],
-  matchFallback?: (configs: T[]) => T | undefined,
-): T | undefined {
-  const sep = key.indexOf('::')
-  if (sep !== -1) {
-    const id = key.substring(0, sep)
-    const found = (configs as Array<{ id: string } & T>).find((c) => c.id === id)
-    if (found) return found
-  }
-  return matchFallback?.(configs)
-}
-
-/// 当前激活的 provider（未匹配 key 时回退第一项；aiProviders ≥1 不变量保证非空）。
-export const activeProviderConfig = computed<AiProviderConfig>(
-  () => parseActiveConfig(config.activeProviderModelKey, config.aiProviders, (c) => c[0])!,
-)
-
-/// 从 activeProviderModelKey（`id::model`）解析模型名；无 `::` 或空串 → `''`。
-export function resolveActiveModel(): string {
-  const key = config.activeProviderModelKey
-  const sep = key.indexOf('::')
-  return sep !== -1 ? key.substring(sep + 2).trim() : ''
-}
-
-/// endpoint + apiKey + model 均非空时才可发起对话。
-export const isProviderReady = computed(
-  () =>
-    !!(
-      activeProviderConfig.value.endpoint.trim() &&
-      activeProviderConfig.value.apiKey.trim() &&
-      resolveActiveModel()
-    ),
-)
-
-export function setActiveProviderModelKey(key: string) {
-  config.activeProviderModelKey = key
-}
-
-/// 新增空 provider 并切为激活。返回新 id。
-export function addAiProvider(): string {
-  const id = generateRequestId()
-  config.aiProviders.push({ id, endpoint: '', apiKey: '', models: [] })
-  config.activeProviderModelKey = `${id}::`
-  return id
-}
-
-/// 删除指定 provider；删空时补默认项维持 ≥1 不变量；激活项被删时回退第一项。
-export function removeAiProvider(id: string) {
-  const idx = config.aiProviders.findIndex((c) => c.id === id)
-  if (idx === -1) return
-  config.aiProviders.splice(idx, 1)
-  if (config.aiProviders.length === 0) {
-    config.aiProviders.push({ id: generateRequestId(), endpoint: '', apiKey: '', models: [] })
-  }
-  if (config.activeProviderModelKey.startsWith(`${id}::`)) {
-    config.activeProviderModelKey = `${config.aiProviders[0].id}::`
-  }
-}
-
-/// 部分更新指定 provider。
-export function updateAiProvider(id: string, partial: Partial<AiProviderConfig>) {
-  const target = config.aiProviders.find((c) => c.id === id)
-  if (!target) return
-  Object.assign(target, partial)
-}
-
 // ─── 搜索提供商 helpers ──────────────────────────────────────
 
 /// 更新搜索提供商配置（单对象，直接 Object.assign）。
 export function updateSearchProvider(partial: Partial<SearchProviderConfig>) {
   Object.assign(config.searchProvider, partial)
 }
+
+// ─── AI 选用（消费者侧）────────────────────────────────────
+
+export function setProviderModelKey(key: string) {
+  config.providerModelKey = key
+}
+
+/** 兼容旧调用名 */
+export const setActiveProviderModelKey = setProviderModelKey
+
+export function agentSelection() {
+  return parseSelectionKey(config.providerModelKey)
+}
+
+export function resolveAgentCredentials(): ResolvedAiCredentials | null {
+  const { providerId, keyId, model } = agentSelection()
+  return resolveCredentials({ providerId, keyId, model })
+}
+
+export async function resolveAgentRuntimeCredentials(): Promise<ResolvedAiCredentials | null> {
+  const { providerId, keyId, model } = agentSelection()
+  return resolveRuntimeCredentials({ providerId, keyId, model })
+}
+
+/** 当前选用在配置中可完整解析（不含 env 兜底）。 */
+export const isAgentProviderReady = computed(() => !!resolveAgentCredentials())
+
+/** @deprecated 用 isAgentProviderReady */
+export const isConfigProviderReady = isAgentProviderReady
+export const isProviderReady = isAgentProviderReady
+
+// 删提供商 / Key 时清悬空选用
+onAiProvidersChange((e) => {
+  const sel = parseSelectionKey(config.providerModelKey)
+  if (!sel.providerId) return
+  if (e.kind === 'remove-provider' && sel.providerId === e.providerId) {
+    config.providerModelKey = ''
+  } else if (
+    e.kind === 'remove-key' &&
+    sel.providerId === e.providerId &&
+    sel.keyId === e.keyId
+  ) {
+    config.providerModelKey = ''
+  }
+})
+
+// 一次性：旧 activeProviderModelKey → providerModelKey
+void whenConfigReady('extensions/agent/config').then(async () => {
+  if (config.providerModelKey.trim()) return
+  if (!isTauri) return
+  try {
+    const store = await load('extensions/agent/config.json')
+    const active = await store.get<unknown>('activeProviderModelKey')
+    if (typeof active === 'string' && active.trim()) {
+      config.providerModelKey = active.trim()
+      try {
+        await store.delete('activeProviderModelKey')
+        await store.save()
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch (e) {
+    console.warn('[agent] legacy selection migrate skipped:', e)
+  }
+})

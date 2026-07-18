@@ -45,7 +45,8 @@
 import { ref, computed, watch, nextTick, onMounted, onActivated } from 'vue'
 
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
-import { config as translateConfig } from './config'
+import { config as translateConfig, resolveAiTargets } from './config'
+import { refreshEnvSnapshot } from '@/runtime/ai-providers'
 import { copyAndHide } from '@/stores/app'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
@@ -56,13 +57,20 @@ import type { TranslateResult } from './index'
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const selectedIndex = ref(0)
 
-const isConfigured = computed(() =>
-  translateConfig.configs.some(
+const envTouched = ref(false)
+onMounted(async () => {
+  await refreshEnvSnapshot()
+  envTouched.value = true
+})
+
+const isConfigured = computed(() => {
+  void envTouched.value
+  return translateConfig.configs.some(
     (c) =>
       (c.type === 'youdao' && c.appKey && c.appSecret) ||
-      (c.type === 'ai' && c.endpoint && c.apiKey),
-  ),
-)
+      (c.type === 'ai' && resolveAiTargets(c).length > 0),
+  )
+})
 
 watch(
   pendingText,

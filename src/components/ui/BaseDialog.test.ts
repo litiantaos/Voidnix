@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { ref, defineComponent, KeepAlive, h, nextTick } from 'vue'
 import BaseDialog from './BaseDialog.vue'
 
 function mountDialog(props: Record<string, unknown> = {}) {
@@ -174,5 +175,39 @@ describe('BaseDialog', () => {
     const dialog = wrapper.find('[role="dialog"]')
     expect(dialog.exists()).toBe(true)
     expect(dialog.attributes('aria-modal')).toBe('true')
+  })
+
+  it('onDeactivated：KeepAlive 切走时 dismiss 关窗', async () => {
+    // 动态组件切换触发 KeepAlive deactivated（与扩展快捷键切模块同路径）
+    const page = ref<'dialog' | 'other'>('dialog')
+    const reason = ref<string | null>(null)
+    const Host = defineComponent({
+      setup() {
+        return () =>
+          h(KeepAlive, null, () =>
+            page.value === 'dialog'
+              ? h(BaseDialog, {
+                  key: 'dialog',
+                  title: '测试',
+                  onCancel: (r: string) => {
+                    reason.value = r
+                  },
+                })
+              : h('div', { key: 'other' }, 'other'),
+          )
+      },
+    })
+    mount(Host, {
+      global: {
+        stubs: {
+          Teleport: { template: '<div><slot /></div>' },
+          Transition: { template: '<div><slot /></div>' },
+        },
+      },
+    })
+    page.value = 'other'
+    await nextTick()
+    vi.advanceTimersByTime(200)
+    expect(reason.value).toBe('dismiss')
   })
 })

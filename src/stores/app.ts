@@ -51,12 +51,17 @@ export const useAppStore = defineStore('app', () => {
       // 退出模块：清空
       entryQuery.value = ''
     }
+    // 全局 confirm（App.vue Teleport，不在 KeepAlive 内）：切扩展时按取消收束，避免遮罩残留
+    if (isDialogOpen.value && id !== prevId) {
+      resolveConfirm(false)
+    }
     // module→module（如 OCR→translate）：保留原入口，ESC 回到最初进入点
     activeModuleId.value = id
     activeSubview.value = null
     subviewExternal.value = false
     // 模式切换：激活模块时 searchEngine 只调该模块 dynamic；null 恢复全局聚合。
     // 模块 onActivate/onDeactivate 由各 View 的 onActivated/onDeactivated（KeepAlive）承接。
+    // 扩展内 BaseDialog 由自身 onDeactivated(dismiss) 关窗。
     searchEngine.setActiveModule(id ?? undefined)
   }
 

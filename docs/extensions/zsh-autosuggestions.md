@@ -56,7 +56,7 @@ binary 是独立 `[[bin]]` target（`Cargo.toml` 声明，path 指向 `native/sr
 
 `setup` 并幂等刷新 .zshrc 行。
 
-.zshrc 写入两行：marker 注释行 `# voidnix zsh-autosuggestions` + `export ZSH_AS_DIR=...; eval "$("$ZSH_AS_DIR/bin/zsh-autosuggestions" init)"`，块上下各留一个空行与文件其余内容分隔。子路径（bin/cache/signals）由 init.zsh 从 `ZSH_AS_DIR` derive。摘除按 marker 行 + 紧跟 export 行 + 相邻空行整体删除（避免重复刷新累积空行）。写入走原子 tmp+rename + `.zshrc.voidnix-bak` 备份。关闭扩展时清理 `index.zsh` + `signals.log` + `.zshrc.voidnix-bak`（保留 binary 避免反复复制）。
+.zshrc 注入走框架 `runtime/shell_rc`（统一 marker 规范见 [shell-rc.md](../shell-rc.md)）：scope=`zsh-autosuggestions`，marker `# voidnix zsh-autosuggestions` + body `export ZSH_AS_DIR=…; eval "$(… init)"`。子路径（bin/cache/signals）由 init.zsh 从 `ZSH_AS_DIR` derive。关闭扩展时 `remove_block` + 清理 `index.zsh` / `signals.log` / `.zshrc.voidnix-bak`（保留 binary）。
 
 `View.vue` toggle **显式 invoke** `set_zsh_autosuggestions_enabled`，成功才更新 `config.enabled`，失败 `showStatus` 提示（避免 config 与 `enabled_flag` 不一致）。
 

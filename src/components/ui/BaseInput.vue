@@ -4,10 +4,13 @@
     tabindex="0"
     :class="[
       // 默认 soft-chip；panel = soft-surface 白边面（非 ui-field；大输入用 BaseTextarea）
-      'ui-ctrl flex items-center gap-2',
+      // ui-input：走 focus-within 聚焦环 + 抑制 soft-chip:active
+      'ui-ctrl ui-input flex items-center gap-2',
       rounded === 'panel' ? 'soft-surface !radius-panel' : 'soft-chip',
       error ? 'border border-danger' : '',
       disabled ? 'ui-disabled' : '',
+      // 有 suffix（密码眼睛等）时右内边距收紧，图标更贴右
+      hasSuffix ? '!pr-1' : '',
     ]"
     @click="focus()"
     @focus="focus()"
@@ -33,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-import { toRef } from 'vue'
+import { computed, toRef, useSlots } from 'vue'
 import { useInputControl } from '@/composables/useInputControl'
 
 interface Props {
@@ -63,6 +66,9 @@ const emit = defineEmits<{
   compositionstart: []
   compositionend: []
 }>()
+
+const slots = useSlots()
+const hasSuffix = computed(() => !!slots.suffix)
 
 const {
   elRef: inputRef,

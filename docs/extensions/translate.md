@@ -9,15 +9,21 @@
 ```typescript
 defineConfig('extensions/translate/config', {
   targetLang: 'zh',
-  configs: [{ id, type: 'youdao', appKey: '', appSecret: '' }] as TranslateApiConfig[],
+  configs: [
+    { id: 'service-youdao', type: 'youdao', appKey: '', appSecret: '' },
+    { id: 'service-ai', type: 'ai', selections: [], prompt: '' },
+  ],
 })
 ```
 
-`TranslateApiConfig` 为判别联合（`YoudaoConfig | AiConfig`），`type` 是创建时确定的不可变 discriminator，不同引擎只保存各自所需字段（youdao: appKey/appSecret；ai: endpoint/apiKey/models/prompt），避免互补字段空值平铺。
+固定两项服务（设置页不可增删）：
 
-configs 为多引擎并发集合（`translateText` 遍历每项独立翻译并排展示），无「激活」概念。CRUD helpers：`addTranslateConfig()`（默认新增 ai 型）/ `updateTranslateConfig(id, partial)`（partial 不含 id/type）/ `removeTranslateConfig(id)`（保底保留 1 项）。
+- **有道翻译**：appKey / appSecret
+- **AI 翻译**：`selections: { providerId, keyId?, model }[]` 跨中枢多选模型（多 Key 可选 keyId）+ `prompt`；凭证只在 `@/runtime/ai-providers`
 
-AI 型引擎的后端实现复用框架级 `runtime::llm` 基础设施（与 agent 扩展共享 `stream_openai_request` 管道）；provider 配置由 translate 自管（`configs: TranslateApiConfig[]`），与 agent 的 `aiProviders` 各自独立、互不复用。
+设置 UI：「翻译服务」下列出两项；AI 弹窗多选中枢模型、编辑提示词，并提供「管理提供商 / 打开 AI 提供商」跳转中枢扩展。无独立「模型」分组、无服务右侧加号。
+
+`resolveAiTargets` 按 selections 解析 endpoint/key（`keyId` 缺省取第一把非空 Key）；缺项可用 env 补。运行结果引擎标签为「提供商 · 模型」。详见 [ai-providers.md](./ai-providers.md)。旧 AI 引擎字段启动时一次性导入中枢并 strip。
 
 ## 后端
 

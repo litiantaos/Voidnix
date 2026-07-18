@@ -1,148 +1,161 @@
 <template>
   <div class="flex-col-full-pb">
-    <BaseSettingsList :items="allItems" shortcut-id="translate">
-      <template #group-title="{ group }">
-        <div flex items="center">
-          <span>{{ group }}</span>
-          <BaseButton
-            v-if="group === '翻译服务'"
-            class="ml-auto"
-            icon="i-ri-add-line"
-            @click.stop="openCreateModal()"
-          />
-        </div>
-      </template>
-    </BaseSettingsList>
+    <BaseSettingsList :items="allItems" shortcut-id="translate" />
 
-    <!-- 编辑弹窗 -->
+    <!-- 有道 -->
     <BaseDialog
-      v-if="showConfigModal"
-      :title="isCreating ? '添加翻译服务' : '编辑翻译服务'"
+      v-if="showYoudaoModal"
+      title="有道翻译"
       variant="form"
       size="md"
       show-footer
       ok-label="保存"
-      @confirm="saveConfigModal"
-      @cancel="closeConfigModal"
+      @confirm="saveYoudao"
+      @cancel="showYoudaoModal = false"
     >
       <div flex="~ col" gap="3">
-        <!-- 有道表单 -->
-        <template v-if="editingType === 'youdao'">
-          <div class="form-field">
-            <span class="form-label">APP ID</span>
-            <BaseInput
-              v-model="youdaoForm.appKey"
-              :type="passwordVisible ? 'text' : 'password'"
-              placeholder="App ID"
-            >
-              <template #suffix>
-                <BaseButton
-                  variant="ghost"
-                  :icon="passwordVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-                  class="!text-muted !px-1 !shrink-0 !h-auto"
-                  @click.stop="passwordVisible = !passwordVisible"
-                />
-              </template>
-            </BaseInput>
-          </div>
-          <div class="form-field">
-            <span class="form-label">APP SECRET</span>
-            <BaseInput
-              v-model="youdaoForm.appSecret"
-              :type="passwordVisible ? 'text' : 'password'"
-              placeholder="App Secret"
-            >
-              <template #suffix>
-                <BaseButton
-                  variant="ghost"
-                  :icon="passwordVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-                  @click.stop="passwordVisible = !passwordVisible"
-                />
-              </template>
-            </BaseInput>
-          </div>
-        </template>
+        <div class="form-field">
+          <span class="form-label">APP ID</span>
+          <BaseInput
+            v-model="youdaoForm.appKey"
+            :type="passwordVisible ? 'text' : 'password'"
+            placeholder="App ID"
+          >
+            <template #suffix>
+              <BaseButton
+                variant="ghost"
+                :icon="passwordVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
+                class="!text-muted !px-1 !shrink-0 !h-auto"
+                @click.stop="passwordVisible = !passwordVisible"
+              />
+            </template>
+          </BaseInput>
+        </div>
+        <div class="form-field">
+          <span class="form-label">APP SECRET</span>
+          <BaseInput
+            v-model="youdaoForm.appSecret"
+            :type="passwordVisible ? 'text' : 'password'"
+            placeholder="App Secret"
+          >
+            <template #suffix>
+              <BaseButton
+                variant="ghost"
+                :icon="passwordVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
+                class="!text-muted !px-1 !shrink-0 !h-auto"
+                @click.stop="passwordVisible = !passwordVisible"
+              />
+            </template>
+          </BaseInput>
+        </div>
+      </div>
+    </BaseDialog>
 
-        <!-- AI 表单 -->
-        <template v-else>
-          <div class="form-field">
-            <span class="form-label">API URL</span>
-            <BaseInput v-model="aiForm.endpoint" placeholder="https://api.openai.com/v1" />
-          </div>
-
-          <div class="form-field">
-            <span class="form-label">API KEY</span>
-            <BaseInput
-              v-model="aiForm.apiKey"
-              :type="passwordVisible ? 'text' : 'password'"
-              placeholder="sk-..."
-            >
-              <template #suffix>
-                <BaseButton
-                  variant="ghost"
-                  :icon="passwordVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-                  @click.stop="passwordVisible = !passwordVisible"
-                />
-              </template>
-            </BaseInput>
-          </div>
-
-          <div class="form-field">
-            <span class="form-label">模型</span>
-            <div class="form-field">
-              <div v-for="(_, index) in aiForm.models" :key="index" flex gap="1.5" items="center">
-                <BaseInput v-model="aiForm.models[index]" placeholder="gpt-4o" class="flex-1" />
-                <BaseButton
-                  v-if="index > 0"
-                  class="text-danger"
-                  icon="i-ri-close-line"
-                  @click="removeModel(index)"
-                />
-                <BaseButton v-else icon="i-ri-add-line" @click="addModel" />
-              </div>
-            </div>
-          </div>
-
-          <div class="form-field">
-            <span class="form-label">提示词</span>
-            <BaseTextarea
-              v-model="aiForm.prompt"
-              placeholder="Translate the following text from {fromLang} to {toLang}:\n\n{text}"
+    <!-- AI：多选中枢模型 + 提示词 + 跳转提供商 -->
+    <BaseDialog
+      v-if="showAiModal"
+      title="AI 翻译"
+      variant="form"
+      size="md"
+      show-footer
+      ok-label="保存"
+      @confirm="saveAi"
+      @cancel="showAiModal = false"
+    >
+      <div flex="~ col" gap="3">
+        <div class="form-field">
+          <div flex items="center" gap="2" class="form-label w-full">
+            <span class="flex-1">模型</span>
+            <BaseButton
+              variant="ghost"
+              icon="i-ri-settings-3-line"
+              title="管理提供商"
+              @click="goAiProviders"
             />
           </div>
-        </template>
-      </div>
 
-      <template #footer-start>
-        <BaseButton
-          v-if="canDeleteConfig"
-          class="text-danger hover:text-danger/80"
-          @click="deleteAndClose"
-        >
-          删除
-        </BaseButton>
-      </template>
+          <div v-if="modelOptions.length === 0" flex="~ col" gap="1.5">
+            <span text="xs muted">还没有可选用的模型</span>
+            <BaseButton class="self-start" icon="i-ri-key-2-line" @click="goAiProviders">
+              打开 AI 提供商
+            </BaseButton>
+          </div>
+
+          <!-- 选中仅图标变化（checkbox 空心/实心）；聚焦用边框色 -->
+          <div
+            v-else
+            role="listbox"
+            aria-multiselectable="true"
+            aria-label="选择翻译模型"
+            flex="~ col"
+            gap="1.5"
+            class="max-h-48 overflow-y-auto hide-scrollbar"
+            @keydown="onModelListKeydown"
+          >
+            <BaseButton
+              v-for="(opt, index) in modelOptions"
+              :key="opt.key"
+              :ref="(el) => setModelBtnRef(el, index)"
+              role="option"
+              :aria-selected="selectedKeySet.has(opt.key)"
+              :tabindex="modelFocusIndex === index ? 0 : -1"
+              class="model-option !justify-start w-full"
+              :class="modelFocusIndex === index ? 'model-option-focused' : ''"
+              :icon="
+                selectedKeySet.has(opt.key)
+                  ? 'i-ri-checkbox-circle-fill'
+                  : 'i-ri-checkbox-blank-circle-line'
+              "
+              @click="onModelClick(opt.key, index)"
+              @focus="modelFocusIndex = index"
+            >
+              <span class="flex-1 min-w-0 truncate text-left">{{ opt.model }}</span>
+              <span text="xs muted" class="truncate shrink-0 max-w-28">{{
+                opt.providerLabel
+              }}</span>
+            </BaseButton>
+          </div>
+        </div>
+
+        <div class="form-field">
+          <span class="form-label">提示词</span>
+          <BaseTextarea
+            v-model="aiForm.prompt"
+            :rows="5"
+            :max-height="0"
+            :auto-resize="false"
+            :submit-on-enter="false"
+            placeholder="Translate the following text from {fromLang} to {toLang}:\n\n{text}"
+          />
+        </div>
+      </div>
     </BaseDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, type ComponentPublicInstance } from 'vue'
 import {
-  type TranslateApiConfig,
   config as translateConfig,
-  addTranslateConfig,
-  updateTranslateConfig,
-  removeTranslateConfig,
+  getYoudaoConfig,
+  getAiConfig,
+  updateYoudaoConfig,
+  updateAiConfig,
+  selectionKey,
+  parseSelectionKey,
+  type AiModelSelection,
 } from './config'
+import { config as aiProvidersConfig, providerDisplayName } from '@/runtime/ai-providers'
+import { useAppStore } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import { providerLabelFromUrl } from '@/utils/format'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 import type { SettingItem } from '@/types/settings'
+
+const appStore = useAppStore()
 
 const { value: translateShortcutValue, update: handleTranslateShortcutChange } = useShortcutConfig(
   'translate',
@@ -153,181 +166,249 @@ const handleTargetLangChange = async (val: string | number) => {
   translateConfig.targetLang = String(val)
 }
 
-function providerLabel(config: TranslateApiConfig): string {
-  if (config.type === 'youdao') return '有道翻译'
-  return providerLabelFromUrl(config.endpoint, '翻译')
+function youdaoSubtitle(): string {
+  const c = getYoudaoConfig()
+  return c.appKey && c.appSecret ? '已配置' : '未配置'
 }
 
-function providerSubtitle(c: TranslateApiConfig): string {
-  if (c.type === 'ai') return c.models.filter(Boolean).join('、') || '未配置模型'
-  return c.appKey ? '已配置' : '未配置'
+function aiSubtitle(): string {
+  const c = getAiConfig()
+  const n = c.selections.length
+  if (n === 0) return '未选择模型'
+  if (n === 1) return c.selections[0].model
+  if (n <= 3) return c.selections.map((s) => s.model).join('、')
+  return `${c.selections
+    .slice(0, 2)
+    .map((s) => s.model)
+    .join('、')} 等 ${n} 个`
 }
 
-// ── 编辑弹窗状态 ──────────────────────────────────────────
+// ── 有道弹窗 ──────────────────────────────────────────────
 
-interface YoudaoForm {
-  appKey: string
-  appSecret: string
-}
-
-interface AiForm {
-  endpoint: string
-  apiKey: string
-  models: string[]
-  prompt: string
-}
-
-const editingConfigId = ref('')
-const isCreating = ref(false)
-const showConfigModal = ref(false)
-const youdaoForm = ref<YoudaoForm>({ appKey: '', appSecret: '' })
-const aiForm = ref<AiForm>({
-  endpoint: '',
-  apiKey: '',
-  models: [''],
-  prompt: '',
-})
+const showYoudaoModal = ref(false)
 const passwordVisible = ref(false)
+const youdaoForm = ref({ appKey: '', appSecret: '' })
 
-function openConfigModal(config: TranslateApiConfig) {
-  editingConfigId.value = config.id
-  isCreating.value = false
-
-  if (config.type === 'youdao') {
-    youdaoForm.value = {
-      appKey: config.appKey,
-      appSecret: config.appSecret,
-    }
-  } else {
-    aiForm.value = {
-      endpoint: config.endpoint,
-      apiKey: config.apiKey,
-      models: config.models.length > 0 ? [...config.models] : [''],
-      prompt: config.prompt,
-    }
-  }
-
+function openYoudao() {
+  const c = getYoudaoConfig()
+  youdaoForm.value = { appKey: c.appKey, appSecret: c.appSecret }
   passwordVisible.value = false
-  showConfigModal.value = true
+  showYoudaoModal.value = true
 }
 
-function openCreateModal() {
-  editingConfigId.value = ''
-  isCreating.value = true
-  aiForm.value = { endpoint: '', apiKey: '', models: [''], prompt: '' }
-  passwordVisible.value = false
-  showConfigModal.value = true
+function saveYoudao() {
+  updateYoudaoConfig({
+    appKey: youdaoForm.value.appKey.trim(),
+    appSecret: youdaoForm.value.appSecret.trim(),
+  })
+  showYoudaoModal.value = false
 }
 
-function closeConfigModal() {
-  showConfigModal.value = false
-  editingConfigId.value = ''
-  isCreating.value = false
-}
+// ── AI 弹窗 ───────────────────────────────────────────────
 
-async function saveConfigModal() {
-  if (isCreating.value) {
-    const id = await addTranslateConfig()
-    const models = aiForm.value.models.filter((m) => m.trim())
-    await updateTranslateConfig(id, {
-      endpoint: aiForm.value.endpoint,
-      apiKey: aiForm.value.apiKey,
-      models,
-      prompt: aiForm.value.prompt,
-    })
-  } else {
-    if (!editingConfigId.value) return
-    const config = translateConfig.configs.find((c) => c.id === editingConfigId.value)
-    if (!config) return
+const showAiModal = ref(false)
+const aiForm = ref({ prompt: '' })
+/** 选中的 `providerId::model` 列表（ref 数组保证模板响应） */
+const selectedKeyList = ref<string[]>([])
+const selectedKeySet = computed(() => new Set(selectedKeyList.value))
+/** 键盘焦点行（与是否勾选独立） */
+const modelFocusIndex = ref(0)
+const modelBtnEls = ref<(HTMLElement | null)[]>([])
 
-    if (config.type === 'youdao') {
-      await updateTranslateConfig(editingConfigId.value, {
-        appKey: youdaoForm.value.appKey,
-        appSecret: youdaoForm.value.appSecret,
-      })
-    } else {
-      const models = aiForm.value.models.filter((m) => m.trim())
-      await updateTranslateConfig(editingConfigId.value, {
-        endpoint: aiForm.value.endpoint,
-        apiKey: aiForm.value.apiKey,
-        models,
-        prompt: aiForm.value.prompt,
-      })
+const modelOptions = computed(() => {
+  type Opt = {
+    key: string
+    providerId: string
+    keyId: string
+    model: string
+    providerLabel: string
+  }
+  const opts: Opt[] = []
+  for (const p of aiProvidersConfig.providers) {
+    const base = providerDisplayName(p)
+    const keys = p.keys?.length ? p.keys : []
+    if (keys.length === 0) continue
+    for (const k of keys) {
+      const providerLabel =
+        keys.length > 1 ? `${base} · ${k.label || 'Key'}` : base
+      for (const m of p.models) {
+        const model = m.trim()
+        if (!model) continue
+        opts.push({
+          key: selectionKey({ providerId: p.id, keyId: k.id, model }),
+          providerId: p.id,
+          keyId: k.id,
+          model,
+          providerLabel,
+        })
+      }
     }
   }
-  closeConfigModal()
-}
-
-function addModel() {
-  aiForm.value.models.push('')
-}
-
-function removeModel(index: number) {
-  aiForm.value.models.splice(index, 1)
-  if (aiForm.value.models.length === 0) {
-    aiForm.value.models.push('')
-  }
-}
-
-const canDeleteConfig = computed(() => {
-  if (isCreating.value) return false
-  return translateConfig.configs.length > 1
+  return opts
 })
 
-function deleteAndClose() {
-  if (isCreating.value) {
-    closeConfigModal()
+function setModelBtnRef(el: Element | ComponentPublicInstance | null, index: number) {
+  if (!el) {
+    modelBtnEls.value[index] = null
     return
   }
-  const id = editingConfigId.value
-  if (id && canDeleteConfig.value) {
-    closeConfigModal()
-    removeTranslateConfig(id)
+  modelBtnEls.value[index] =
+    el instanceof HTMLElement ? el : ((el as ComponentPublicInstance).$el as HTMLElement)
+}
+
+function focusModel(index: number) {
+  const n = modelOptions.value.length
+  if (n === 0) return
+  const i = Math.max(0, Math.min(index, n - 1))
+  modelFocusIndex.value = i
+  nextTick(() => {
+    modelBtnEls.value[i]?.focus()
+    modelBtnEls.value[i]?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+function openAi() {
+  const c = getAiConfig()
+  aiForm.value = { prompt: c.prompt }
+  selectedKeyList.value = c.selections.map(selectionKey)
+  modelFocusIndex.value = 0
+  modelBtnEls.value = []
+  showAiModal.value = true
+  // 等 BaseDialog 首焦完成后再抢到模型列表，避免 ↑↓ 无接收方
+  nextTick(() => {
+    nextTick(() => {
+      if (modelOptions.value.length > 0) focusModel(0)
+    })
+  })
+}
+
+function toggleModel(key: string) {
+  const list = selectedKeyList.value
+  const i = list.indexOf(key)
+  selectedKeyList.value = i >= 0 ? list.filter((k) => k !== key) : [...list, key]
+}
+
+function onModelClick(key: string, index: number) {
+  modelFocusIndex.value = index
+  toggleModel(key)
+}
+
+function onModelListKeydown(e: KeyboardEvent) {
+  const n = modelOptions.value.length
+  if (n === 0) return
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    e.stopPropagation()
+    focusModel(modelFocusIndex.value + 1)
+    return
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    e.stopPropagation()
+    focusModel(modelFocusIndex.value - 1)
+    return
+  }
+  if (e.key === 'Home') {
+    e.preventDefault()
+    e.stopPropagation()
+    focusModel(0)
+    return
+  }
+  if (e.key === 'End') {
+    e.preventDefault()
+    e.stopPropagation()
+    focusModel(n - 1)
+    return
+  }
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault()
+    e.stopPropagation()
+    const opt = modelOptions.value[modelFocusIndex.value]
+    if (opt) toggleModel(opt.key)
   }
 }
 
-// ── 列表项 ─────────────────────────────────────────────────
+function goAiProviders() {
+  showAiModal.value = false
+  appStore.setActiveModule('ai-providers')
+}
 
-const allItems = computed<SettingItem[]>(() => [
-  {
-    id: 'translate-shortcut',
-    title: '启动快捷键',
-    type: 'shortcut',
-    group: '通用',
-    value: translateShortcutValue.value,
-    update: handleTranslateShortcutChange,
-  },
-  {
-    id: 'translate-target-lang',
-    title: '目标语言',
-    type: 'select',
-    group: '通用',
-    value: translateConfig.targetLang,
-    options: [
-      { label: '中文', value: 'zh' },
-      { label: '英文', value: 'en' },
-      { label: '日文', value: 'ja' },
-      { label: '韩文', value: 'ko' },
-      { label: '法文', value: 'fr' },
-      { label: '德文', value: 'de' },
-      { label: '西班牙文', value: 'es' },
-    ],
-    update: handleTargetLangChange,
-  },
-  ...translateConfig.configs.map((c) => ({
-    id: `provider-${c.id}`,
-    title: providerLabel(c),
-    subtitle: providerSubtitle(c),
-    type: 'action' as const,
-    group: '翻译服务',
-    action: () => openConfigModal(c),
-  })),
-])
+function saveAi() {
+  const selections: AiModelSelection[] = []
+  for (const key of selectedKeyList.value) {
+    const sel = parseSelectionKey(key)
+    if (sel) selections.push(sel)
+  }
+  updateAiConfig({
+    selections,
+    prompt: aiForm.value.prompt,
+  })
+  showAiModal.value = false
+}
 
-/** 当前编辑的配置类型（弹窗中判断表单布局） */
-const editingType = computed(() => {
-  if (isCreating.value) return 'ai'
-  const config = translateConfig.configs.find((c) => c.id === editingConfigId.value)
-  return config?.type || 'ai'
+// ── 列表 ──────────────────────────────────────────────────
+
+const allItems = computed<SettingItem[]>(() => {
+  // 触达 configs 响应
+  void translateConfig.configs.length
+  void getYoudaoConfig().appKey
+  void getAiConfig().selections.length
+  void getAiConfig().prompt
+
+  return [
+    {
+      id: 'translate-shortcut',
+      title: '启动快捷键',
+      type: 'shortcut',
+      group: '通用',
+      value: translateShortcutValue.value,
+      update: handleTranslateShortcutChange,
+    },
+    {
+      id: 'translate-target-lang',
+      title: '目标语言',
+      type: 'select',
+      group: '通用',
+      value: translateConfig.targetLang,
+      options: [
+        { label: '中文', value: 'zh' },
+        { label: '英文', value: 'en' },
+        { label: '日文', value: 'ja' },
+        { label: '韩文', value: 'ko' },
+        { label: '法文', value: 'fr' },
+        { label: '德文', value: 'de' },
+        { label: '西班牙文', value: 'es' },
+      ],
+      update: handleTargetLangChange,
+    },
+    {
+      id: 'service-youdao',
+      title: '有道翻译',
+      subtitle: youdaoSubtitle(),
+      type: 'action',
+      group: '翻译服务',
+      action: openYoudao,
+    },
+    {
+      id: 'service-ai',
+      title: 'AI 翻译',
+      subtitle: aiSubtitle(),
+      type: 'action',
+      group: '翻译服务',
+      action: openAi,
+    },
+  ]
 })
 </script>
+
+<style scoped>
+/* 始终保留 1px 边；选中不改面，仅图标切换；聚焦改框色 */
+.model-option {
+  border: 1px solid var(--soft-chip-border) !important;
+  box-shadow: none !important;
+}
+.model-option-focused {
+  border-color: var(--focus-ring-color) !important;
+}
+</style>
