@@ -31,7 +31,7 @@
 - `--shadow-bar`：搜索栏 / 输入岛
 - `--shadow-panel`：下拉 / 动作浮层
 - `--shadow-dialog`：弹窗
-- `--shadow-card`：微环 + panel（助手卡）
+- `--shadow-card`：微环 + 近无偏移柔和扩散（助手卡 / system-status，衬边界不抬升）
 - `--shadow-float` / `-hover` / `-active`：浮钮 3 层同结构（可插值）
 
 旧名 `--soft-bar-shadow` 等别名到上述档，新代码用 `shadow-*`。
@@ -71,7 +71,7 @@
 
 ## Agent
 
-- 用户 bubble · 助手 `soft-card` · step/notice `--space-soft` + mist/语义 soft
+- 用户 bubble（`--color-bubble` accent 浅染 + `--accent-line-soft` 描边）· 助手 `soft-card` · step/notice `--space-soft` + mist/语义 soft
 - 输入岛 `ui-field` + `--shadow-bar` · 浮钮 soft-surface + `--shadow-float*` + aurora
 
 ## 速查

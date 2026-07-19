@@ -44,7 +44,8 @@
   --color-success-soft: color-mix(in srgb, var(--color-success) 12%, transparent);
 
   --color-card-solid: rgb(255 255 255 / 0.96);
-  --color-bubble: #ececef;
+  /* 用户气泡：accent 浅染实底 */
+  --color-bubble: color-mix(in srgb, var(--color-accent) 7%, white);
 
   /* accent 浅染（markdown 代码/引用/行内码 共用，禁止业务再写 color-mix accent） */
   --accent-wash: color-mix(in srgb, var(--color-accent) 2.5%, transparent);
@@ -77,14 +78,16 @@
    */
   --shadow-bar: 0 2px 28px rgb(var(--shadow-ink) / 0.08), 0 1px 2px rgb(var(--shadow-ink) / 0.05);
   --shadow-panel: 0 4px 24px rgb(var(--shadow-ink) / 0.1), 0 2px 6px rgb(var(--shadow-ink) / 0.06);
-  --shadow-dialog: 0 8px 32px rgb(var(--shadow-ink) / 0.14), 0 2px 8px rgb(var(--shadow-ink) / 0.08);
+  --shadow-dialog:
+    0 8px 32px rgb(var(--shadow-ink) / 0.14), 0 2px 8px rgb(var(--shadow-ink) / 0.08);
   --soft-bar-shadow: var(--shadow-bar);
   --soft-panel-shadow: var(--shadow-panel);
   --dialog-shadow: var(--shadow-dialog);
 
-  /* 卡片：微环 + panel 档（助手卡等） */
+  /* 卡片：微环 + 近乎无偏移的柔和扩散（衬边界，不造抬升） */
   --shadow-card:
-    0 0 0 1px color-mix(in srgb, var(--color-text-primary) 4%, transparent), var(--shadow-panel);
+    0 0 0 1px color-mix(in srgb, var(--color-text-primary) 5%, transparent),
+    0 0 16px rgb(var(--shadow-ink) / 0.06), 0 1px 4px rgb(var(--shadow-ink) / 0.03);
   --agent-card-shadow: var(--shadow-card);
 
   /*
