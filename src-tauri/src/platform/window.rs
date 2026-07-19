@@ -164,7 +164,6 @@ pub fn present_on_cursor_screen(window: &tauri::WebviewWindow) {
         frame.size.width,
         frame.size.height,
     );
-
 }
 
 /// 隐藏：resignKey + 去阴影 + alpha=0 + 忽略鼠标。**不 orderOut**。

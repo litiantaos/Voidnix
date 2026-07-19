@@ -63,8 +63,7 @@
         break="words"
         max-h="40"
         overflow="auto"
-        >{{ part.output }}</pre
-      >
+        >{{ part.output }}</pre>
     </div>
   </div>
 </template>

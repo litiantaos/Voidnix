@@ -230,7 +230,11 @@ export function formatWindowRemain(
   unit: 'h' | 'd',
   now = Date.now(),
 ): string {
-  if (typeof nextResetTimeMs !== 'number' || !Number.isFinite(nextResetTimeMs) || nextResetTimeMs <= 0) {
+  if (
+    typeof nextResetTimeMs !== 'number' ||
+    !Number.isFinite(nextResetTimeMs) ||
+    nextResetTimeMs <= 0
+  ) {
     return '—'
   }
   const ms = nextResetTimeMs - now
@@ -289,7 +293,13 @@ export function formatKeyUsageSubtitle(
     const rem = formatWindowRemain(m.weekly.nextResetTime, 'd', now)
     parts.push(`7d ${Math.round(m.weekly.percentage)}% / ${rem}`)
   }
-  if (m.fiveHour || m.weekly || m.tokensSeries.length > 0 || m.totalCalls > 0 || m.totalTokens > 0) {
+  if (
+    m.fiveHour ||
+    m.weekly ||
+    m.tokensSeries.length > 0 ||
+    m.totalCalls > 0 ||
+    m.totalTokens > 0
+  ) {
     parts.push(`30d ${formatCompactCount(m.totalTokens)} tokens`)
   }
   return parts.join(' · ')

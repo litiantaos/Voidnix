@@ -161,13 +161,7 @@ mod imp {
     }
 
     /// 将目标矩形夹进屏的 layout 区（防跨屏钳制后残留越界）。
-    fn clamp_to_layout(
-        px: f64,
-        py: f64,
-        pw: f64,
-        ph: f64,
-        s: &ScreenInfo,
-    ) -> (f64, f64, f64, f64) {
+    fn clamp_to_layout(px: f64, py: f64, pw: f64, ph: f64, s: &ScreenInfo) -> (f64, f64, f64, f64) {
         let max_w = s.layout_width.max(0.0);
         let max_h = s.layout_height.max(0.0);
         let w = pw.clamp(0.0, max_w);

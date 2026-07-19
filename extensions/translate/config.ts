@@ -96,9 +96,7 @@ function selectionsEqual(a: AiModelSelection[], b: AiModelSelection[]): boolean 
   return a.every((s, i) => {
     const t = b[i]!
     return (
-      s.providerId === t.providerId &&
-      (s.keyId ?? '') === (t.keyId ?? '') &&
-      s.model === t.model
+      s.providerId === t.providerId && (s.keyId ?? '') === (t.keyId ?? '') && s.model === t.model
     )
   })
 }
