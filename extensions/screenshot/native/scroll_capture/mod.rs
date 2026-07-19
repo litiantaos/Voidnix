@@ -15,6 +15,7 @@ use super::ffi::{
     voidnix_screenshot_set_ignores_mouse, voidnix_screenshot_set_sharing,
     voidnix_screenshot_window_number,
 };
+use super::session::capture_origin;
 
 pub use encode::encode_png;
 pub use mouse::{start as start_mouse_monitor, stop as stop_mouse_monitor};
@@ -37,6 +38,11 @@ pub async fn enter_scroll_capture(
             return Err("滚动截屏已在进行中".to_string());
         }
 
+        // 前端 sel 为屏内本地；遮罩装在 overlay 本地坐标系，SESSION / 抓帧 / 鼠标洞用 Quartz 全局
+        let (ox, oy) = capture_origin();
+        let global_x = sel_x + ox;
+        let global_y = sel_y + oy;
+
         let (tx, rx) = std::sync::mpsc::channel::<Result<(u32, usize), String>>();
         let app_c = app.clone();
         app.run_on_main_thread(move || {
@@ -55,6 +61,7 @@ pub async fn enter_scroll_capture(
                 // SAFETY: ptr 来自 window.ns_window() Ok 分支（合法 NSWindow 指针）；
                 // voidnix_screenshot_* 为 FFI 薄壳，install_scroll_mask 返回 bool 失败检查，
                 // window_number 返回值 >0 校验；均在主线程 run_on_main_thread 闭包内执行
+                // 遮罩矩形为 overlay 本地（前端传入的本地 sel）
                 unsafe {
                     if !voidnix_screenshot_install_scroll_mask(ptr, sel_x, sel_y, sel_w, sel_h) {
                         return Err("装载滚动遮罩失败".to_string());
@@ -81,8 +88,8 @@ pub async fn enter_scroll_capture(
                 .unwrap_or_else(|e| e.into_inner())
                 .take();
             *guard = Some(ScrollSession {
-                sel_x,
-                sel_y,
+                sel_x: global_x,
+                sel_y: global_y,
                 sel_w,
                 sel_h,
                 pw: 0,
@@ -200,10 +207,12 @@ pub async fn exit_scroll_capture(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn set_scroll_toolbar_rect(x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+    // 前端本地坐标 → Quartz 全局（与 SESSION.sel / CGEvent 鼠标一致）
+    let (ox, oy) = capture_origin();
     let rect = if w <= 0.0 || h <= 0.0 {
         None
     } else {
-        Some((x, y, w, h))
+        Some((x + ox, y + oy, w, h))
     };
     let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(s) = guard.as_mut() {

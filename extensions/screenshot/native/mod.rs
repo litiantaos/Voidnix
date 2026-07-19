@@ -77,6 +77,7 @@ impl Extension for ScreenshotExtension {
             setup::configure_overlay_window(_app);
             setup::install_reactivate_observer(_app);
             setup::schedule_jpeg_prewarm(_app);
+            setup::schedule_overlay_prewarm(_app);
             setup::register_shortcut_hook();
         }
         Ok(())

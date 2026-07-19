@@ -6,27 +6,184 @@
 //! 全程不变,视觉上像浮层从未离开过当前应用。
 
 use objc2_app_kit::NSWindow;
+use objc2_foundation::NSRect;
+use std::sync::Mutex;
+
+/// 默认主窗逻辑尺寸（与 tauri.conf / WINDOW 常量一致）。
+const MAIN_DEFAULT_W: f64 = 720.0;
+const MAIN_DEFAULT_H: f64 = 480.0;
+
+/// show 时锁定的目标屏 visibleFrame（Cocoa）。
+#[derive(Clone, Copy, Debug)]
+struct PlacementVis {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+impl PlacementVis {
+    fn from_ns(r: NSRect) -> Self {
+        Self {
+            x: r.origin.x,
+            y: r.origin.y,
+            w: r.size.width,
+            h: r.size.height,
+        }
+    }
+    fn to_ns(self) -> NSRect {
+        use objc2_foundation::{NSPoint, NSSize};
+        NSRect::new(NSPoint::new(self.x, self.y), NSSize::new(self.w, self.h))
+    }
+}
+
+static PLACEMENT_VIS: Mutex<Option<PlacementVis>> = Mutex::new(None);
+
+fn store_placement(vis: NSRect) {
+    *PLACEMENT_VIS.lock().unwrap_or_else(|e| e.into_inner()) = Some(PlacementVis::from_ns(vis));
+}
+
+fn load_placement() -> Option<PlacementVis> {
+    *PLACEMENT_VIS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// hide 时调用：清掉 show 时锁定的 placement，避免隐藏态仍按旧屏改尺寸。
+pub fn cancel_pending_present() {
+    *PLACEMENT_VIS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
 
 /// orderFrontRegardless + 浮层 level + 鼠标 hit-test 接管（不 activate NSApp）。
 pub fn bring_to_front(window: &tauri::WebviewWindow) {
     if let Ok(raw) = window.ns_window() {
         let raw = raw.cast::<NSWindow>();
         if let Some(ns_window) = unsafe { raw.as_ref() } {
-            // 高于普通文档窗，保证叠在原前台 app 之上参与 hit-test
             ns_window.setLevel(objc2_app_kit::NSFloatingWindowLevel);
+            ns_window.setAlphaValue(1.0);
             ns_window.orderFrontRegardless();
             capture_mouse_events(ns_window);
         }
     }
 }
 
-/// resignKeyWindow + orderOut —— 隐藏窗口并释放 key window 状态。
+/// 光标所在屏的 visibleFrame（Cocoa）。
+fn cursor_visible_frame() -> Option<NSRect> {
+    use objc2_app_kit::{NSEvent, NSScreen};
+    use objc2_foundation::MainThreadMarker;
+
+    let mtm = MainThreadMarker::new()?;
+    let loc = NSEvent::mouseLocation();
+    for screen in NSScreen::screens(mtm).iter() {
+        let f = screen.frame();
+        if loc.x >= f.origin.x
+            && loc.x < f.origin.x + f.size.width
+            && loc.y >= f.origin.y
+            && loc.y < f.origin.y + f.size.height
+        {
+            return Some(screen.visibleFrame());
+        }
+    }
+    NSScreen::mainScreen(mtm).map(|s| s.visibleFrame())
+}
+
+/// 水平居中、垂直靠上（顶边距 ≈ visible 高 18%，Alfred / 启动器常见位置）。
+const TOP_INSET_RATIO: f64 = 0.18;
+
+fn placement_frame_on_vis(vis: NSRect, w: f64, h: f64) -> NSRect {
+    use objc2_foundation::{NSPoint, NSSize};
+    let w = w.min(vis.size.width).max(100.0);
+    let h = h.min(vis.size.height).max(100.0);
+    let x = vis.origin.x + (vis.size.width - w) / 2.0;
+    let top_inset = vis.size.height * TOP_INSET_RATIO;
+    // Cocoa：y 为底边；顶边 = vis 顶 - inset
+    let mut y = vis.origin.y + vis.size.height - top_inset - h;
+    if y < vis.origin.y {
+        y = vis.origin.y;
+    }
+    NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
+}
+
+fn apply_frame_no_anim(ns_window: &NSWindow, frame: NSRect) {
+    unsafe {
+        let cls = objc2::class!(NSAnimationContext);
+        let _: () = objc2::msg_send![cls, beginGrouping];
+        let ctx: *mut objc2::runtime::AnyObject = objc2::msg_send![cls, currentContext];
+        let _: () = objc2::msg_send![ctx, setDuration: 0.0_f64];
+        let _: () = objc2::msg_send![ns_window, setFrame: frame, display: true];
+        let _: () = objc2::msg_send![cls, endGrouping];
+    }
+}
+
+/// 主窗 show 专用：在光标屏居中并前置。写入 PLACEMENT_VIS，供 animate_frame 只改尺寸。
+pub fn present_on_cursor_screen(window: &tauri::WebviewWindow) {
+    use objc2_app_kit::NSWindowCollectionBehavior;
+
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    let raw = ptr.cast::<NSWindow>();
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
+        return;
+    };
+    let Some(vis) = cursor_visible_frame() else {
+        return;
+    };
+    store_placement(vis);
+
+    let cur = ns_window.frame();
+    let w = if cur.size.width >= 100.0 {
+        cur.size.width
+    } else {
+        MAIN_DEFAULT_W
+    };
+    let h = if cur.size.height >= 100.0 {
+        cur.size.height
+    } else {
+        MAIN_DEFAULT_H
+    };
+    let frame = placement_frame_on_vis(vis, w, h);
+
+    // 每次 present 重申：CanJoinAllSpaces（勿加 MoveToActiveSpace）
+    let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
+        | NSWindowCollectionBehavior::FullScreenAuxiliary;
+    ns_window.setCollectionBehavior(behavior);
+    ns_window.setLevel(objc2_app_kit::NSFloatingWindowLevel);
+    ns_window.setHasShadow(true);
+
+    // 先定位再露脸：hide 用 alpha=0 不 orderOut，跨屏 setFrame 更稳
+    apply_frame_no_anim(ns_window, frame);
+    ns_window.setHasShadow(true);
+    ns_window.setAlphaValue(1.0);
+    ns_window.orderFrontRegardless();
+    apply_frame_no_anim(ns_window, frame);
+    capture_mouse_events(ns_window);
+
+    let window_number: objc2_foundation::NSInteger =
+        unsafe { objc2::msg_send![ns_window, windowNumber] };
+    crate::platform::skylight::set_full_event_shape(
+        window_number as i64,
+        frame.size.width,
+        frame.size.height,
+    );
+
+}
+
+/// 隐藏：resignKey + 去阴影 + alpha=0 + 忽略鼠标。**不 orderOut**。
+///
+/// 副屏二次 show 失败的主因：orderOut 后窗口脱离扩展屏 Space/显示链路，
+/// 即使 setFrame 坐标正确也完全不绘。保持在窗口列表内，仅透明隐藏。
+///
+/// 注意：alpha=0 时 NSWindow.isVisible 仍可能为 true；业务可见性以
+/// `shortcut::WINDOW_VISIBLE` 为准，勿仅依赖 Tauri is_visible。
 pub fn hide_native(window: &tauri::WebviewWindow) {
+    cancel_pending_present();
     if let Ok(raw) = window.ns_window() {
         let raw = raw.cast::<NSWindow>();
         if let Some(ns_window) = unsafe { raw.as_ref() } {
             ns_window.resignKeyWindow();
-            ns_window.orderOut(None);
+            ns_window.setHasShadow(false);
+            ns_window.setIgnoresMouseEvents(true);
+            ns_window.setAlphaValue(0.0);
+            // 刻意不 orderOut
         }
     }
 }
@@ -41,13 +198,15 @@ pub fn make_key_window(window: &tauri::WebviewWindow) {
     }
 }
 
-/// setFrame:display:animate: 经 NSAnimationContext —— 系统级 animator 动画，
-/// CoreAnimation 接管插值，不逐帧阻塞主线程、不逐帧触发 WebView 重排（系统合并），
-/// 流畅度远超 JS rAF 逐帧 setSize。easeOut 曲线（快速启动 + 平滑收尾）。
-/// 坐标转换：Tauri 左上角原点 → NSWindow 左下角原点。
-pub fn animate_frame(window: &tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f64) {
+/// 主窗高度/尺寸动画。
+///
+/// 只在 `PLACEMENT_VIS`（show 时锁定的光标屏）内改尺寸，忽略前端 x/y 与
+/// NSWindow.screen——跨屏 show 后前端滞后坐标不会把窗拽回主屏；高度可立即生效。
+pub fn animate_frame(window: &tauri::WebviewWindow, _x: f64, _y: f64, w: f64, h: f64) {
     use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize};
     const DURATION_SECS: f64 = 0.26;
+    const BOTTOM_MARGIN: f64 = 40.0;
+
     let Ok(ptr) = window.ns_window() else {
         return;
     };
@@ -55,21 +214,55 @@ pub fn animate_frame(window: &tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f
     let Some(ns_window) = (unsafe { raw.as_ref() }) else {
         return;
     };
-    unsafe {
-        // 窗口当前所在 screen（多屏用窗口自身 screen 而非 mainScreen）
-        let screen: *mut objc2::runtime::AnyObject = objc2::msg_send![ns_window, screen];
-        if screen.is_null() {
-            return;
+
+    let vis = load_placement()
+        .map(|p| p.to_ns())
+        .or_else(cursor_visible_frame);
+    let Some(vis) = vis else {
+        return;
+    };
+
+    let mut w = w.clamp(100.0, vis.size.width.max(100.0));
+    let mut h = h.clamp(100.0, (vis.size.height * 0.9).max(100.0));
+    if w > vis.size.width {
+        w = vis.size.width;
+    }
+    if h > vis.size.height {
+        h = vis.size.height;
+    }
+
+    let cur = ns_window.frame();
+    // 与 present 同策略：水平居中、顶边优先靠上；高度变化时尽量保顶边
+    let x = vis.origin.x + (vis.size.width - w) / 2.0;
+    let top = cur.origin.y + cur.size.height;
+    let mut y = top - h;
+    let top_on_screen = top >= vis.origin.y - 1.0 && top <= vis.origin.y + vis.size.height + 1.0;
+    let x_overlap = cur.origin.x + cur.size.width > vis.origin.x
+        && cur.origin.x < vis.origin.x + vis.size.width;
+    if !top_on_screen || !x_overlap || cur.size.width < 50.0 {
+        // 不在 placement 屏：重新按靠上规则放置
+        let placed = placement_frame_on_vis(vis, w, h);
+        y = placed.origin.y;
+    } else {
+        // 底部将出屏则上移；顶边不超过 visible 顶
+        if y < vis.origin.y + BOTTOM_MARGIN {
+            y = vis.origin.y + BOTTOM_MARGIN;
         }
-        let screen_frame: NSRect = objc2::msg_send![screen, frame];
-        let ns_y = screen_frame.origin.y + screen_frame.size.height - (y + h);
-        let frame = NSRect::new(NSPoint::new(x, ns_y), NSSize::new(w, h));
-        // NSAnimationContext group：duration + easeOut timingFunction + animator setFrame
+        let max_top = vis.origin.y + vis.size.height;
+        if y + h > max_top {
+            y = max_top - h;
+        }
+        if y < vis.origin.y {
+            y = vis.origin.y;
+        }
+    }
+
+    let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+    unsafe {
         let ctx_cls = objc2::class!(NSAnimationContext);
         let _: () = objc2::msg_send![ctx_cls, beginGrouping];
         let ctx: *mut objc2::runtime::AnyObject = objc2::msg_send![ctx_cls, currentContext];
         let _: () = objc2::msg_send![ctx, setDuration: DURATION_SECS];
-        // timingFunction：苹果系统默认曲线（macOS 窗口动画标准，起步-加速-减速的平滑感）
         let timing_cls = objc2::class!(CAMediaTimingFunction);
         let timing: *mut objc2::runtime::AnyObject =
             objc2::msg_send![timing_cls, functionWithName: ns_string!("default")];
@@ -78,7 +271,6 @@ pub fn animate_frame(window: &tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f
         let _: () = objc2::msg_send![animator, setFrame: frame, display: true];
         let _: () = objc2::msg_send![ctx_cls, endGrouping];
     }
-    // 高度动画后 event shape 必须对齐目标尺寸，否则仍按旧矩形/alpha 穿透
     let window_number: objc2_foundation::NSInteger =
         unsafe { objc2::msg_send![ns_window, windowNumber] };
     crate::platform::skylight::set_full_event_shape(window_number as i64, w, h);
@@ -155,7 +347,6 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
     };
     use objc2_foundation::ns_string;
 
-    // 窗口本体透明：setOpaque:NO + clearColor，让 NSVisualEffectView 能透出到 WebView 之下
     ns_window.setOpaque(false);
     ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
 
@@ -163,8 +354,6 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
         return;
     };
 
-    // 幂等守卫：contentView 已含 NSVisualEffectView 则更新 material（配方迭代可热生效），
-    // 不重复叠加材质层
     unsafe {
         let ve_class = NSVisualEffectView::class();
         for sv in content_view.subviews().iter() {
@@ -176,9 +365,6 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
         }
     }
 
-    // 圆角裁剪：contentView wantsLayer + cornerRadius + masksToBounds
-    // 同时会把矩形 NSVisualEffectView 一并裁出圆角（同层 mask）
-    // CALayer 走 msg_send! —— objc2-quartz-core 仅启 CAMediaTimingFunction，未启 CALayer feature
     unsafe {
         let _: () = objc2::msg_send![&content_view, setWantsLayer: true];
         let layer: *mut objc2::runtime::AnyObject = objc2::msg_send![&content_view, layer];
@@ -188,9 +374,6 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
         }
     }
 
-    // 让 contentView 现有子视图（WKWebView）layer 透明：Tauri transparent:true 只设
-    // _drawsTransparentBackground（canvas 透明），WKWebView NSView 的 CALayer 默认仍
-    // opaque:YES，会整层盖住下层 NSVisualEffectView —— 必须显式遍历置 opaque:NO
     unsafe {
         for sv in content_view.subviews().iter() {
             let _: () = objc2::msg_send![&*sv, setWantsLayer: true];
@@ -201,24 +384,18 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
         }
     }
 
-    // Mica 材质底：initWithFrame 返回 Retained（自动管理 +1），bounds = contentView 当前尺寸
-    // MainThreadMarker::new 返回 Option，调用方保证在主线程（setup / configure_snap_panel），expect 永不触发
     let mtm = MainThreadMarker::new().expect("on main thread");
     let effect =
         NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), content_view.bounds());
     effect.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
     effect.setMaterial(NSVisualEffectMaterial::HeaderView);
     effect.setState(NSVisualEffectState::Active);
-    // 锁浅色 appearance：避免跟随系统暗模式导致材质变暗与前端浅色色阶冲突
     if let Some(aqua) = NSAppearance::appearanceNamed(ns_string!("NSAppearanceNameAqua")) {
         effect.setAppearance(Some(&aqua));
     }
-    // autoresizing：WidthSizable | HeightSizable，跟随 contentView 尺寸（窗口高度 animator 动画时同步）
     effect.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
     );
-    // 插到 contentView 最底层（Below），位于 WKWebView 之下
-    // addSubview 让 superview 持有 +1，Retained drop 释放 caller 的 +1，引用平衡无泄漏
     content_view.addSubview_positioned_relativeTo(&effect, NSWindowOrderingMode::Below, None);
 }
 
@@ -230,17 +407,26 @@ pub fn capture_mouse_events(ns_window: &NSWindow) {
 }
 
 /// 主窗口框架级样式：Mica 材质底（apply_mica_material）+ NonactivatingPanel 转换。
-/// 在 lib.rs setup 内 bootstrap 之后调用一次。失败静默跳过。
 pub fn apply_main_window_style(window: &tauri::WebviewWindow) {
-    let Ok(ptr) = window.ns_window() else { return };
+    use objc2_app_kit::NSWindowCollectionBehavior;
+
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
     let raw = ptr.cast::<NSWindow>();
     let Some(ns_window) = (unsafe { raw.as_ref() }) else {
         return;
     };
     apply_mica_material(ns_window, 16.0);
-    // 原生阴影：单层窗口（窗口＝面板），阴影提供浅色背景下的层次区分
     ns_window.setHasShadow(true);
     crate::platform::panel::convert_to_panel(raw.cast());
+    // 多屏：CanJoinAllSpaces（可出现在各屏 Space）。
+    // 勿与 MoveToActiveSpace 并用——二者互斥，组合会在 did_finish_launching 触发
+    // 「panic in a function that cannot unwind」级崩溃。
+    // 去掉 Transient（副屏二次 orderOut 后可能无法再 orderFront）。
+    let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
+        | NSWindowCollectionBehavior::FullScreenAuxiliary;
+    ns_window.setCollectionBehavior(behavior);
     capture_mouse_events(ns_window);
 }
 
@@ -291,7 +477,6 @@ pub fn pick_paths_modal(app: &tauri::AppHandle, opts: PickOptions) -> Vec<String
             let _: () = objc2::msg_send![panel, setCanCreateDirectories: true];
         }
 
-        // 扩展名过滤（setAllowedFileTypes，扩展名不含点号）
         if !opts.allowed_extensions.is_empty() {
             let ns_exts: Vec<_> = opts
                 .allowed_extensions
@@ -303,8 +488,6 @@ pub fn pick_paths_modal(app: &tauri::AppHandle, opts: PickOptions) -> Vec<String
         }
 
         crate::platform::click_monitor::suppress(true);
-        // LSUIElement + NonactivatingPanel 下 NSApp 默认 inactive，NSOpenPanel
-        // 虽 runModal 但键盘仍留在原前台 app → Esc 关不掉。独占对话框须 activate。
         crate::platform::focus::activate_app();
 
         // NSModalResponseOK = 1

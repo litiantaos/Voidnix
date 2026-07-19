@@ -7,9 +7,9 @@
     z="9999"
     overflow="hidden"
     :style="{ cursor: cursorStyle, pointerEvents: phase === 'scroll' ? 'none' : 'auto' }"
-    @mousedown="onMouseDown"
-    @mousemove="onMouseMove"
-    @mouseup="onMouseUp($event)"
+    @mousedown="onDomMouseDown"
+    @mousemove="onDomMouseMove"
+    @mouseup="onDomMouseUp($event)"
     @dblclick="onDoubleClick"
     @keydown="onKeyDown"
     tabindex="0"
@@ -509,7 +509,7 @@ const {
 } = textInputComposable
 const { pickedColor, crossX, crossY, magnifierStyle } = magnifier
 function setMagnifierCanvas(el: unknown) {
-  magnifier.magnifierCanvas.value = (el as HTMLCanvasElement | null) ?? undefined
+  magnifier.setMagnifierCanvas((el as HTMLCanvasElement | null) ?? undefined)
 }
 const { shapeHandles, startShapeHandleDrag } = shapeHandlesComposable
 const {
@@ -531,6 +531,50 @@ const {
 } = maskStyles
 const { onMouseDown, onMouseMove, onMouseUp, onDoubleClick, onKeyDown } = events
 const { doCopy, doSave, doOcr, doPin, doCancel } = actions
+
+function fakePointerEvent(x: number, y: number, shiftKey: boolean, buttons: number): MouseEvent {
+  return {
+    clientX: x,
+    clientY: y,
+    shiftKey,
+    button: 0,
+    buttons,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    preventDefault() {},
+    stopPropagation() {},
+  } as MouseEvent
+}
+
+/** 原生 monitor 注入：select 阶段唯一指针源（eval 异步，不能与 DOM 去重竞态）。 */
+function onNativePointer(
+  type: 'down' | 'move' | 'up',
+  x: number,
+  y: number,
+  shiftKey: boolean,
+) {
+  if (phase.value !== 'select') return
+  const buttons = type === 'up' ? 0 : 1
+  const e = fakePointerEvent(x, y, shiftKey, buttons)
+  if (type === 'down') onMouseDown(e)
+  else if (type === 'move') onMouseMove(e)
+  else onMouseUp(e)
+}
+
+// select 阶段禁用 DOM 指针（由 native 全权）；annotate / scroll 走 DOM
+function onDomMouseDown(e: MouseEvent) {
+  if (phase.value === 'select') return
+  onMouseDown(e)
+}
+function onDomMouseMove(e: MouseEvent) {
+  if (phase.value === 'select') return
+  onMouseMove(e)
+}
+function onDomMouseUp(e: MouseEvent) {
+  if (phase.value === 'select') return
+  onMouseUp(e)
+}
 
 // 按下选区控制点即把十字线与选区边框都对齐到鼠标位置。
 // 否则十字线停在上次 mousemove 的位置（鼠标在 8×8 控制点内，偏离选区边缘 grab offset），
@@ -598,7 +642,9 @@ useOperationLifecycle({
   findWindowAt: selection.findWindowAt,
   updateMagnifier: magnifier.updateMagnifier,
   loadPickerImage: magnifier.loadPickerImage,
+  disposeMagnifier: magnifier.dispose,
   onKeyDown: events.onKeyDown,
+  onNativePointer,
   redraw: drawing.redraw,
   selectedShape: annotation.selectedShape,
   shapes: annotation.shapes,

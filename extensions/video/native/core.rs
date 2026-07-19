@@ -10,19 +10,16 @@ use tauri::{AppHandle, Emitter};
 
 /// 静态构建版本标签（eugeneware/ffmpeg-static）。
 const FFMPEG_STATIC_TAG: &str = "b6.1.1";
-const RELEASE_BASE: &str =
-    "https://github.com/eugeneware/ffmpeg-static/releases/download";
+const RELEASE_BASE: &str = "https://github.com/eugeneware/ffmpeg-static/releases/download";
 /// 国内镜像前缀（与 proxy 同策略）。
 const MIRROR_PREFIX: &str = "https://gh-proxy.com/";
 
 const SHA256_FFMPEG_ARM64: &str =
     "8923876afa8db5585022d7860ec7e589af192f441c56793971276d450ed3bbfa";
-const SHA256_FFMPEG_X64: &str =
-    "929b375c1182d956c51f7ac25e0b2b0411fb01f6f407aa15c9758efeb4242106";
+const SHA256_FFMPEG_X64: &str = "929b375c1182d956c51f7ac25e0b2b0411fb01f6f407aa15c9758efeb4242106";
 const SHA256_FFPROBE_ARM64: &str =
     "d986a8ec7b030899fe66a8a288ed809a3543338705a3ce178cfb85869c5d80be";
-const SHA256_FFPROBE_X64: &str =
-    "d4da574d6e2e197bd259b47d69cf262df9e312af24ad960444f6d806d3d4c186";
+const SHA256_FFPROBE_X64: &str = "d4da574d6e2e197bd259b47d69cf262df9e312af24ad960444f6d806d3d4c186";
 
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
 static DOWNLOAD_LOCK: LazyLock<tokio::sync::Mutex<()>> =
@@ -366,7 +363,11 @@ fn sha256_file(path: &Path) -> Result<String, String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 /// ffprobe 结构化元数据。
@@ -414,10 +415,7 @@ pub fn probe(app: &AppHandle, path: &str) -> Result<VideoMeta, String> {
         .pointer("/format/duration")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
-        .or_else(|| {
-            json.pointer("/format/duration")
-                .and_then(|v| v.as_f64())
-        })
+        .or_else(|| json.pointer("/format/duration").and_then(|v| v.as_f64()))
         .unwrap_or(0.0);
 
     let container = json

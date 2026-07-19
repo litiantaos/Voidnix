@@ -68,7 +68,17 @@ mod inner {
         let Some(window) = app.get_webview_window("main") else {
             return;
         };
-        if !window.is_visible().unwrap_or(false) {
+        // hide 不 orderOut：is_visible 在 alpha=0 时仍可能为 true，以 alpha 为准
+        let visibly_shown = window
+            .ns_window()
+            .ok()
+            .and_then(|p| {
+                let raw = p.cast::<objc2_app_kit::NSWindow>();
+                // SAFETY: as_ref 后读 alphaValue
+                unsafe { raw.as_ref().map(|ns| ns.alphaValue() >= 0.01) }
+            })
+            .unwrap_or(false);
+        if !visibly_shown {
             return;
         }
 

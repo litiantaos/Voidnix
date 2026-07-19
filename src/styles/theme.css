@@ -29,7 +29,8 @@
 
   --color-border: rgba(140, 160, 195, 0.28);
   --color-divider: rgb(var(--cool) / 0.1);
-  --color-smoke: rgba(30, 40, 60, 0.36);
+  /* 截图非选区遮罩：纯黑 + 高不透明（mask-smoke 例外允许 black） */
+  --color-smoke: rgba(0, 0, 0, 0.55);
   --color-dialog-overlay: rgba(0, 0, 0, 0.4);
   --dialog-fill: rgb(255 255 255 / 0.97);
   --dialog-border: rgb(215 215 222 / 0.65);

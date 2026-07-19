@@ -80,20 +80,17 @@ pub fn set_full_event_shape_for_nswindow(ns_window: &objc2_app_kit::NSWindow) {
     let window_number: objc2_foundation::NSInteger =
         unsafe { objc2::msg_send![ns_window, windowNumber] };
     let frame: NSRect = unsafe { objc2::msg_send![ns_window, frame] };
-    set_full_event_shape(
-        window_number as i64,
-        frame.size.width,
-        frame.size.height,
-    );
+    set_full_event_shape(window_number as i64, frame.size.width, frame.size.height);
 }
 
-/// 把指定 windowNumber 的窗口附加到当前 active Space。
+/// 把指定 windowNumber 的窗口附加到**所有显示器**当前 active Space。
 ///
 /// 用 SLSAddWindowsToSpaces 直接修改窗口的 Space 归属，绕过 collectionBehavior
 /// 的异步生效问题。普通桌面和全屏 Space 都支持。
 ///
-/// `previous_spaces`：调用前窗口所在的 Space ID 列表，用于 exit_impl 时
-/// SLSRemoveWindowsFromSpaces 恢复（避免窗口残留在多个 Space 上）。
+/// 多屏下「各显示器独立 Space」时，只绑主屏 Current Space 会让副屏上的
+/// overlay 几何正确但 Space 不对 → 用户看不见。因此把各 display 的
+/// Current Space 一并加入。
 ///
 /// 调用方必须在主线程执行。返回原 Space ID 列表。
 pub fn move_window_to_active_space(window_number: i64) -> Vec<u64> {
@@ -102,9 +99,10 @@ pub fn move_window_to_active_space(window_number: i64) -> Vec<u64> {
     }
 
     let cid = unsafe { SLSMainConnectionID() };
-    let Some(active_sid) = current_active_space_id(cid) else {
+    let active_sids = current_active_space_ids(cid);
+    if active_sids.is_empty() {
         return Vec::new();
-    };
+    }
 
     let wid_num = CFNumber::from(window_number as i32);
     let wid_array = CFArray::from_CFTypes(&[wid_num]);
@@ -132,9 +130,12 @@ pub fn move_window_to_active_space(window_number: i64) -> Vec<u64> {
         }
     };
 
-    // 把窗口附加到目标 Space
-    let sid_num = CFNumber::from(active_sid as i64);
-    let sid_array = CFArray::from_CFTypes(&[sid_num]);
+    // 附加到各显示器当前 Space
+    let sid_nums: Vec<CFNumber> = active_sids
+        .iter()
+        .map(|&s| CFNumber::from(s as i64))
+        .collect();
+    let sid_array = CFArray::from_CFTypes(&sid_nums);
     // SAFETY: 同上，cid + wid_array + sid_array 均合法 SkyLight 入参
     unsafe {
         SLSAddWindowsToSpaces(
@@ -144,11 +145,11 @@ pub fn move_window_to_active_space(window_number: i64) -> Vec<u64> {
         );
     }
 
-    // 从原 Space 移除（避免残留）。如果原 Space 与目标相同则跳过。
+    // 从原 Space 移除（不在目标集合内的）
     let to_remove: Vec<u64> = prev_spaces
         .iter()
         .copied()
-        .filter(|s| *s != active_sid)
+        .filter(|s| !active_sids.contains(s))
         .collect();
     if !to_remove.is_empty() {
         let nums: Vec<CFNumber> = to_remove
@@ -169,9 +170,53 @@ pub fn move_window_to_active_space(window_number: i64) -> Vec<u64> {
     prev_spaces
 }
 
+/// 仅 **Add** 到各显示器 Current Space，不 Remove。
+/// 主窗多屏 show 用：Remove 可能把窗从扩展屏 Space 摘掉，导致二次 show 不可见。
+pub fn add_window_to_all_active_spaces(window_number: i64) {
+    if window_number <= 0 {
+        return;
+    }
+    let cid = unsafe { SLSMainConnectionID() };
+    let active_sids = current_active_space_ids(cid);
+    if active_sids.is_empty() {
+        return;
+    }
+    let wid_num = CFNumber::from(window_number as i32);
+    let wid_array = CFArray::from_CFTypes(&[wid_num]);
+    let sid_nums: Vec<CFNumber> = active_sids
+        .iter()
+        .map(|&s| CFNumber::from(s as i64))
+        .collect();
+    let sid_array = CFArray::from_CFTypes(&sid_nums);
+    // SAFETY: SkyLight Add API；cid/数组均合法
+    unsafe {
+        SLSAddWindowsToSpaces(
+            cid,
+            wid_array.as_concrete_TypeRef(),
+            sid_array.as_concrete_TypeRef(),
+        );
+    }
+}
+
+/// 主窗：只加入各屏 Current Space（不 Remove）。
+pub fn add_webview_to_all_active_spaces(window: &tauri::WebviewWindow) {
+    use objc2_app_kit::NSWindow;
+    let Ok(raw) = window.ns_window() else {
+        return;
+    };
+    let Some(ns_window) = (unsafe { raw.cast::<NSWindow>().as_ref() }) else {
+        return;
+    };
+    let window_number: objc2_foundation::NSInteger =
+        unsafe { objc2::msg_send![ns_window, windowNumber] };
+    add_window_to_all_active_spaces(window_number as i64);
+}
+
 /// 便利入口：从 Tauri WebviewWindow 提取 NSWindow 信息并迁移到当前 active Space。
 ///
 /// 调用方必须在主线程执行。返回原 Space ID 列表。
+/// 主窗请用 [`add_webview_to_all_active_spaces`]（不 Remove）。
+#[allow(dead_code)]
 pub fn move_webview_window_to_active_space(window: &tauri::WebviewWindow) -> Vec<u64> {
     use objc2_app_kit::NSWindow;
 
@@ -188,7 +233,7 @@ pub fn move_webview_window_to_active_space(window: &tauri::WebviewWindow) -> Vec
     move_window_to_active_space(window_number as i64)
 }
 
-/// 枚举 SLSCopyManagedDisplaySpaces，找到 `Current Space` 字段对应的 sid。
+/// 枚举 SLSCopyManagedDisplaySpaces，收集**每个显示器**的 `Current Space` sid。
 ///
 /// 数据结构（参考 puffnfresh/4053980 + yabai 实现）：
 /// ```text
@@ -198,28 +243,39 @@ pub fn move_webview_window_to_active_space(window: &tauri::WebviewWindow) -> Vec
 /// ]
 /// ```
 ///
-/// 多显示器场景下取首个 display 的 Current Space。Voidnix 截屏覆盖层只针对主屏，
-/// 多显示器适配是另一议题。
-fn current_active_space_id(cid: i32) -> Option<u64> {
+/// 多屏独立 Space 时必须全部收集，否则副屏 overlay 绑到主屏 Space 会不可见。
+fn current_active_space_ids(cid: i32) -> Vec<u64> {
     let raw = unsafe { SLSCopyManagedDisplaySpaces(cid) };
     if raw.is_null() {
-        return None;
+        return Vec::new();
     }
     let displays: CFArray<CFDictionary<*const c_void, *const c_void>> =
         unsafe { CFArray::wrap_under_create_rule(raw) };
 
-    if displays.is_empty() {
-        return None;
-    }
-
-    let display = displays.get(0)?;
     let key_current = CFString::from_static_string("Current Space");
     let key_id64 = CFString::from_static_string("id64");
-
-    let current_space = lookup_dict(&display, &key_current)?;
-    let sid_value = lookup(&current_space, &key_id64)?;
-    let sid_num = sid_value.downcast::<CFNumber>()?;
-    sid_num.to_i64().map(|v| v as u64)
+    let mut out = Vec::with_capacity(displays.len() as usize);
+    for i in 0..displays.len() {
+        let Some(display) = displays.get(i) else {
+            continue;
+        };
+        let Some(current_space) = lookup_dict(&display, &key_current) else {
+            continue;
+        };
+        let Some(sid_value) = lookup(&current_space, &key_id64) else {
+            continue;
+        };
+        let Some(sid_num) = sid_value.downcast::<CFNumber>() else {
+            continue;
+        };
+        if let Some(v) = sid_num.to_i64() {
+            let sid = v as u64;
+            if !out.contains(&sid) {
+                out.push(sid);
+            }
+        }
+    }
+    out
 }
 
 /// 从 CFDictionary 按 CFString key 查 CFType 值。

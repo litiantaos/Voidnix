@@ -17,7 +17,11 @@ pub fn show_main(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
         {
-            crate::platform::skylight::move_webview_window_to_active_space(&window);
+            // 1) Space Add  2) present（定位+alpha=1+orderFront） 3) 再 Add
+            // 禁止在 present 之后调 Tauri show()——会按内部缓存位置把窗打回主屏
+            crate::platform::skylight::add_webview_to_all_active_spaces(&window);
+            crate::platform::window::present_on_cursor_screen(&window);
+            crate::platform::skylight::add_webview_to_all_active_spaces(&window);
             crate::platform::window::bring_to_front(&window);
         }
         #[cfg(not(target_os = "macos"))]
@@ -30,8 +34,8 @@ pub fn show_main(app: &tauri::AppHandle) {
 
 /// 隐藏主窗口。
 ///
-/// 编排：可见性状态 → 平台 hide（释放 key + orderOut）→ click_monitor 移除 →
-/// restore_captured（deactivate + activate 原前台 app，归还 first responder）。
+/// 编排：可见性状态 → 平台 hide（resignKey + alpha=0 + ignoresMouse，**不** orderOut）→
+/// click_monitor 移除 → restore_captured（deactivate + activate 原前台 app，归还 first responder）。
 pub fn hide_main(app: &tauri::AppHandle) {
     use tauri::Manager;
 
@@ -39,6 +43,7 @@ pub fn hide_main(app: &tauri::AppHandle) {
 
     #[cfg(target_os = "macos")]
     if let Some(window) = app.get_webview_window("main") {
+        crate::platform::window::cancel_pending_present();
         crate::platform::window::hide_native(&window);
     }
     #[cfg(not(target_os = "macos"))]
