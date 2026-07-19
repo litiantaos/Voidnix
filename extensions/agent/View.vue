@@ -129,9 +129,7 @@
         ref="textareaRef"
         v-model="inputText"
         rounded="panel"
-        :placeholder="
-          agent.isGenerating.value ? '执行中，可预写下一条 · Ctrl+C 中止' : '聊点什么...'
-        "
+        placeholder="聊点什么..."
         @submit="handleSubmit"
       />
     </div>
@@ -369,10 +367,11 @@ onUnmounted(() => {
   justify-content: flex-start;
 }
 
-/* 用户气泡：bubble 面（非 soft-surface） */
+/* 用户气泡：accent 浅染实底（--color-bubble）；描边同系 accent-line-soft */
 .agent-bubble--user {
   max-width: 85%;
   padding: 10px var(--space);
+  border: 1px solid var(--accent-line-soft);
   border-radius: var(--radius-panel);
   background: var(--color-bubble);
   color: var(--color-text-primary);
