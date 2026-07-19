@@ -8,6 +8,7 @@ import {
   toolDetail,
   isStreamingText,
   getMessageText,
+  buildHistoryLabel,
   streamLayoutKey,
   renderMarkdown,
   renderCodeBlock,
@@ -149,6 +150,24 @@ describe('isStreamingText / getMessageText', () => {
       parts: [{ type: 'text', text: 'x' }],
     }
     expect(isStreamingText(msg, 0)).toBe(false)
+  })
+})
+
+describe('buildHistoryLabel', () => {
+  it('折叠空白并保留短文本', () => {
+    expect(buildHistoryLabel('  hello   world  ', 1)).toBe('hello world')
+  })
+
+  it('超长文本截断并加省略号', () => {
+    const long = 'a'.repeat(80)
+    const out = buildHistoryLabel(long, 1, 60)
+    expect(out).toHaveLength(61)
+    expect(out.endsWith('…')).toBe(true)
+  })
+
+  it('空文本回退序号占位', () => {
+    expect(buildHistoryLabel('   ', 3)).toBe('#3')
+    expect(buildHistoryLabel('', 1)).toBe('#1')
   })
 })
 

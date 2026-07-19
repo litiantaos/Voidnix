@@ -91,7 +91,8 @@ AI 凭证条目上收至框架级中枢（`@/runtime/ai-providers`）；**本扩
 - **状态 notice**（`AgentPart.type = 'notice'`，不进 LLM）：`error`（气泡 danger 底 + toast）/ `aborted`（muted「已中止」）；中止/错误时进行中工具标 `failed`。
 - **未配置**：空态 +「去设置」打开 config 子视图。
 - **悬浮操作**：输入框上方零宽中线锚点。滚底非贴底即显；中止仅输出中。两钮 absolute，solo=`translate -50%` 居中，pair=分居中线两侧（半槽 4px）；中止消失后滚底 translate 200ms 滑回正中。阴影 3 层插值 hover 抬升。点滚底 smooth；streaming/发送瞬时贴底。中止 aurora；进出场 200/150ms；中止走 `agentAbort`。
-- **输入**：超长（>8192）截断并 toast；执行中 placeholder 提示可预写下一条。
+- **输入**：超长（>8192）截断并 toast；placeholder 固定「聊点什么...」（不随生成态切换）。
+- **历史跳转**：搜索栏 accessory 内历史按钮（`Actions.vue`，`i-ri-chat-history-line`，置于新会话钮左侧），点击弹 `dropdown-panel` 浮层（`useFloating` `bottom-end` + Teleport body）列出本会话所有 user 消息（折叠空白 + 截断 60 字 + 空消息回退序号）。点击列表项 → 关浮层 → `document.querySelector('[data-msg-id]')` `scrollIntoView({ block: 'center' })`（View.vue 的 user 行带 `data-msg-id`）；跳转触发滚动 → View.vue `onScroll` 自然更新 `stickToBottom=false`，无需跨组件协调。按钮在有 user 消息前 disabled；模块切换 accessory unmount 时监听器随 `onUnmounted` 注销。
 
 ## 文件结构
 
@@ -100,13 +101,13 @@ extensions/agent/
 ├── index.ts               # 注册
 ├── config.ts              # defineConfig + 选用 helpers
 ├── agent.ts               # useAgentChat composable（前端状态机）
-├── view-logic.ts          # View 纯函数（streamView / showToolBody / markdown 等）
+├── view-logic.ts          # View 纯函数（streamView / showToolBody / markdown / buildHistoryLabel 等）
 ├── View.vue               # 布局 + 贴底滚动 + 悬浮操作 + notice
 ├── AgentTextPart.vue      # 流式/完成 markdown 文本 part
 ├── AgentToolStep.vue      # 工具步骤行 + hits/output
 ├── agent-step.css         # 思考/工具步骤共用样式
 ├── Settings.vue           # Provider + Agent 配置
-├── Actions.vue            # 模型切换 + 新会话 + 设置
+├── Actions.vue            # 模型切换 + 历史跳转 + 新会话 + 设置
 └── native/
     ├── mod.rs             # agent_run / agent_abort + Extension impl
     ├── policy.rs          # 资源上限 floor/cap 权威源（6 项 clamp）

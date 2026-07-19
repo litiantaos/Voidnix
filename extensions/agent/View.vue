@@ -19,7 +19,7 @@
     <div v-else ref="scrollRef" class="agent-scroll hide-scrollbar" @scroll.passive="onScroll">
       <template v-for="msg in displayMessages" :key="msg.id">
         <!-- 用户消息：右对齐 bubble -->
-        <div v-if="msg.role === 'user'" class="agent-row agent-row--user">
+        <div v-if="msg.role === 'user'" class="agent-row agent-row--user" :data-msg-id="msg.id">
           <div class="agent-bubble agent-bubble--user">
             {{ getMessageText(msg) }}
           </div>
@@ -350,6 +350,8 @@ onUnmounted(() => {
   min-height: 0;
   overflow-y: auto;
   padding: var(--chrome-fade-height) var(--space) 112px;
+  /* scrollIntoView（block:start）对齐到 padding-top 内侧，避免消息被搜索栏 chrome-fade 遮挡 */
+  scroll-padding-top: var(--chrome-fade-height);
 }
 
 /* 消息行：用户右 / 助手左 */
