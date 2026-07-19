@@ -16,7 +16,10 @@ export function useOperationLifecycle(options: {
   findWindowAt: (x: number, y: number) => unknown
   updateMagnifier: (x: number, y: number) => void
   loadPickerImage: () => void
+  disposeMagnifier?: () => void
   onKeyDown: (e: KeyboardEvent) => void
+  /** 原生 local monitor 注入的指针（冷启动 WebView 未激活时 DOM 收不到首击） */
+  onNativePointer?: (type: 'down' | 'move' | 'up', x: number, y: number, shiftKey: boolean) => void
   redraw: (preview?: Shape | null) => void
   selectedShape: ComputedRef<Shape | null>
   shapes: Ref<Shape[]>
@@ -72,12 +75,28 @@ export function useOperationLifecycle(options: {
     ;(
       window as unknown as { __setScreenshotCross?: (x: number, y: number) => void }
     ).__setScreenshotCross = setCrossPosition
+    // 原生指针桥：select 阶段用 local monitor 驱动，解决冷启动首击被系统当激活吞掉
+    ;(
+      window as unknown as {
+        __screenshotPointer?: (
+          type: string,
+          x: number,
+          y: number,
+          shiftKey: boolean,
+        ) => void
+      }
+    ).__screenshotPointer = (type, x, y, shiftKey) => {
+      if (type !== 'down' && type !== 'move' && type !== 'up') return
+      options.onNativePointer?.(type, x, y, !!shiftKey)
+    }
   })
 
   onUnmounted(() => {
     window.removeEventListener('focus', refocus)
     window.removeEventListener('keydown', onWindowKeyDown)
     delete (window as unknown as { __setScreenshotCross?: unknown }).__setScreenshotCross
+    delete (window as unknown as { __screenshotPointer?: unknown }).__screenshotPointer
+    options.disposeMagnifier?.()
   })
 
   watch(options.annotateCanvas, () => {

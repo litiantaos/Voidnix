@@ -80,6 +80,10 @@ extern "C" {
         ns_window_ptr: *mut std::ffi::c_void,
         sharing: i32,
     );
+    /// activate + makeKey + firstResponder=WKWebView（换屏后重申 key）
+    pub(crate) fn voidnix_screenshot_claim_key(ns_window_ptr: *mut std::ffi::c_void);
+    /// 冷启动预热 WKWebView（不 activate）
+    pub(crate) fn voidnix_screenshot_prewarm(ns_window_ptr: *mut std::ffi::c_void);
 }
 
 #[cfg(target_os = "macos")]
@@ -134,61 +138,206 @@ pub fn picker_jpeg_path() -> std::path::PathBuf {
     std::env::temp_dir().join("voidnix").join("picker.jpg")
 }
 
+/// 递增取消在途的旧编码任务（capture 成功 / 失败清理时调用）。
+static PICKER_JOB: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 取消在途 picker 编码任务并清掉残文件。
 #[cfg(target_os = "macos")]
-pub(super) fn prepare_picker_jpeg(raw: *mut std::ffi::c_void) {
+pub(super) fn cancel_picker_jobs() {
+    use std::sync::atomic::Ordering;
+    PICKER_JOB.fetch_add(1, Ordering::SeqCst);
+    let path = picker_jpeg_path();
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(path.with_extension("jpg.tmp"));
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(super) fn cancel_picker_jobs() {}
+
+/// capture 完成后立即异步编码 picker.jpg，与 enter 并行。
+/// 主屏 Retina 编码可达数百 ms，必须早于 Vue mount 启动，前端仍需轮询就绪。
+/// 任务持有 CGImage 独立 Retain，不依赖 CURRENT_CG_IMAGE 存活。
+#[cfg(target_os = "macos")]
+pub(super) fn start_prepare_picker_jpeg() {
+    use std::sync::atomic::Ordering;
+    let job = PICKER_JOB.fetch_add(1, Ordering::SeqCst) + 1;
+    let raw = get_cg_image();
+    if raw.is_null() {
+        return;
+    }
+    // 为后台任务 +1；job 结束时 Release，与 store_cg_image 生命周期解耦
+    // SAFETY: raw 非空，CURRENT_CG_IMAGE 持有的有效 CGImageRef
+    unsafe { CGImageRetain(raw) };
+    // 先清旧文件，避免前端读到上一会话残图
+    let _ = std::fs::remove_file(picker_jpeg_path());
+    let raw_addr = raw as usize;
+    std::thread::spawn(move || {
+        let ptr = raw_addr as *mut std::ffi::c_void;
+        prepare_picker_jpeg_job(ptr, job);
+        // SAFETY: 与上方 CGImageRetain 配对
+        unsafe { CGImageRelease(ptr) };
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(super) fn start_prepare_picker_jpeg() {}
+
+#[cfg(target_os = "macos")]
+fn prepare_picker_jpeg_job(raw: *mut std::ffi::c_void, job: u64) {
+    use std::sync::atomic::Ordering;
     if raw.is_null() {
         eprintln!("[shot] prepare_picker_jpeg: raw is null");
         return;
     }
     match cg_image_ptr_to_jpeg(raw) {
         Ok(data) => {
+            // 已被更新会话取代则丢弃
+            if PICKER_JOB.load(Ordering::SeqCst) != job {
+                return;
+            }
             let path = picker_jpeg_path();
             if let Some(parent) = path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
-            if let Err(e) = std::fs::write(path, &data) {
-                eprintln!("[shot] prepare_picker_jpeg write error: {e}");
+            // 原子落盘：写 tmp 再 rename，避免前端读到半截 JPEG
+            let tmp = path.with_extension("jpg.tmp");
+            if let Err(e) = std::fs::write(&tmp, &data) {
+                eprintln!("[shot] prepare_picker_jpeg write tmp error: {e}");
+                return;
+            }
+            if PICKER_JOB.load(Ordering::SeqCst) != job {
+                let _ = std::fs::remove_file(&tmp);
+                return;
+            }
+            if let Err(e) = std::fs::rename(&tmp, &path) {
+                eprintln!("[shot] prepare_picker_jpeg rename error: {e}");
+                let _ = std::fs::remove_file(&tmp);
             }
         }
         Err(e) => eprintln!("[shot] prepare_picker_jpeg encode error: {e}"),
     }
 }
 
+/// ImageIO 直编 JPEG（线程安全，不经 AppKit NSBitmapImageRep）。
 #[cfg(target_os = "macos")]
 pub(super) fn cg_image_ptr_to_jpeg(raw: *mut std::ffi::c_void) -> Result<Vec<u8>, String> {
-    use objc2::runtime::AnyObject;
     if raw.is_null() {
         return Err("CGImage 为空".to_string());
     }
-    // SAFETY: raw 已 null 检查；alloc/initWithCGImage:/representationUsingType:properties:/
-    // release 均为 NSBitmapImageRep/NSNumber/NSDictionary 标准选择子，参数类型匹配；
-    // ns_data 释放前先 length/bytes 拷贝出数据（NSData 字节缓冲区在 release 前有效）
+    // SAFETY: raw 非空 CGImageRef；CGImageDestination* / CF* 为 ImageIO/CoreFoundation
+    // 线程安全 API。Create 返回值均 null 检查，CFRelease 配平；from_raw_parts 在
+    // out_data release 前拷贝。
     unsafe {
-        let cls = objc2::class!(NSBitmapImageRep);
-        let rep: *mut AnyObject = objc2::msg_send![cls, alloc];
-        let rep: *mut AnyObject = objc2::msg_send![rep, initWithCGImage: raw];
-        if rep.is_null() {
-            return Err("NSBitmapImageRep initWithCGImage 失败".to_string());
+        extern "C" {
+            fn CFDataCreateMutable(
+                allocator: *mut std::ffi::c_void,
+                capacity: isize,
+            ) -> *mut std::ffi::c_void;
+            fn CFRelease(p: *mut std::ffi::c_void);
+            fn CFStringCreateWithCString(
+                allocator: *mut std::ffi::c_void,
+                cstr: *const std::os::raw::c_char,
+                encoding: u32,
+            ) -> *mut std::ffi::c_void;
+            fn CGImageDestinationCreateWithData(
+                data: *mut std::ffi::c_void,
+                uti: *const std::ffi::c_void,
+                count: usize,
+                options: *mut std::ffi::c_void,
+            ) -> *mut std::ffi::c_void;
+            fn CGImageDestinationAddImage(
+                dst: *mut std::ffi::c_void,
+                image: *mut std::ffi::c_void,
+                properties: *mut std::ffi::c_void,
+            );
+            fn CGImageDestinationFinalize(dst: *mut std::ffi::c_void) -> bool;
+            fn CFDataGetLength(data: *mut std::ffi::c_void) -> isize;
+            fn CFDataGetBytePtr(data: *mut std::ffi::c_void) -> *const u8;
+            fn CFNumberCreate(
+                allocator: *mut std::ffi::c_void,
+                number_type: i32,
+                value: *const std::ffi::c_void,
+            ) -> *mut std::ffi::c_void;
+            fn CFDictionaryCreate(
+                allocator: *mut std::ffi::c_void,
+                keys: *const *const std::ffi::c_void,
+                values: *const *const std::ffi::c_void,
+                num_values: isize,
+                key_callbacks: *const std::ffi::c_void,
+                value_callbacks: *const std::ffi::c_void,
+            ) -> *mut std::ffi::c_void;
+            static kCFTypeDictionaryKeyCallBacks: std::ffi::c_void;
+            static kCFTypeDictionaryValueCallBacks: std::ffi::c_void;
         }
-        let key = objc2_foundation::NSString::from_str("NSImageCompressionFactor");
-        let val: *mut AnyObject = objc2::msg_send![
-            objc2::class!(NSNumber),
-            numberWithDouble: 0.95f64
-        ];
-        let props: *mut AnyObject = objc2::msg_send![
-            objc2::class!(NSDictionary),
-            dictionaryWithObject: val,
-            forKey: &*key
-        ];
-        let ns_data: *mut AnyObject =
-            objc2::msg_send![rep, representationUsingType: 3usize, properties: props];
-        let _: () = objc2::msg_send![rep, release];
-        if ns_data.is_null() {
-            return Err("JPEG 编码失败".to_string());
+
+        let out_data = CFDataCreateMutable(std::ptr::null_mut(), 0);
+        if out_data.is_null() {
+            return Err("CFDataCreateMutable 失败".to_string());
         }
-        let length: usize = objc2::msg_send![ns_data, length];
-        let bytes: *const u8 = objc2::msg_send![ns_data, bytes];
-        Ok(std::slice::from_raw_parts(bytes, length).to_vec())
+        let cstr = std::ffi::CString::new("public.jpeg").map_err(|e| e.to_string())?;
+        // kCFStringEncodingUTF8 = 0x08000100
+        let uti_cf = CFStringCreateWithCString(std::ptr::null_mut(), cstr.as_ptr(), 0x08000100);
+        if uti_cf.is_null() {
+            CFRelease(out_data);
+            return Err("CFString 创建失败".to_string());
+        }
+        let dst = CGImageDestinationCreateWithData(out_data, uti_cf, 1, std::ptr::null_mut());
+        CFRelease(uti_cf);
+        if dst.is_null() {
+            CFRelease(out_data);
+            return Err("CGImageDestinationCreateWithData 失败".to_string());
+        }
+
+        let key_cstr =
+            std::ffi::CString::new("kCGImageDestinationLossyCompressionQuality").unwrap();
+        let key = CFStringCreateWithCString(std::ptr::null_mut(), key_cstr.as_ptr(), 0x08000100);
+        let q: f64 = 0.95;
+        // kCFNumberDoubleType = 13
+        let val = CFNumberCreate(
+            std::ptr::null_mut(),
+            13,
+            &q as *const f64 as *const std::ffi::c_void,
+        );
+        let mut props_dict: *mut std::ffi::c_void = std::ptr::null_mut();
+        if !key.is_null() && !val.is_null() {
+            let keys: [*const std::ffi::c_void; 1] = [key];
+            let vals: [*const std::ffi::c_void; 1] = [val];
+            props_dict = CFDictionaryCreate(
+                std::ptr::null_mut(),
+                keys.as_ptr(),
+                vals.as_ptr(),
+                1,
+                &kCFTypeDictionaryKeyCallBacks as *const std::ffi::c_void,
+                &kCFTypeDictionaryValueCallBacks as *const std::ffi::c_void,
+            );
+        }
+        if !key.is_null() {
+            CFRelease(key);
+        }
+        if !val.is_null() {
+            CFRelease(val);
+        }
+
+        CGImageDestinationAddImage(dst, raw, props_dict);
+        if !props_dict.is_null() {
+            CFRelease(props_dict);
+        }
+        let ok = CGImageDestinationFinalize(dst);
+        CFRelease(dst);
+        if !ok {
+            CFRelease(out_data);
+            return Err("CGImageDestinationFinalize 失败".to_string());
+        }
+
+        let len = CFDataGetLength(out_data) as usize;
+        let bytes = CFDataGetBytePtr(out_data);
+        if bytes.is_null() || len == 0 {
+            CFRelease(out_data);
+            return Err("JPEG 编码结果为空".to_string());
+        }
+        let result = std::slice::from_raw_parts(bytes, len).to_vec();
+        CFRelease(out_data);
+        Ok(result)
     }
 }
 
@@ -223,45 +372,69 @@ pub(super) fn png_bytes_to_cgimage(png: &[u8]) -> *mut std::ffi::c_void {
     }
 }
 
+/// 预热 ImageIO JPEG 路径（与后台编码同源，线程安全）。
 #[cfg(target_os = "macos")]
 pub fn prewarm_jpeg_encoder() {
-    use objc2::runtime::AnyObject;
-    // SAFETY: 仅为预热编码器：alloc + initWithBitmapDataPlanes:(1×1 空位图) +
-    // representationUsingType: 一次后 release；参数类型匹配，rep null 检查后操作
+    // SAFETY: 1×1 BGRA → CGImageCreate → ImageIO 走一遍，Create/Release 配平
     unsafe {
-        let cls = objc2::class!(NSBitmapImageRep);
-        let rep: *mut AnyObject = objc2::msg_send![cls, alloc];
-        let cs = objc2_foundation::NSString::from_str("NSDeviceRGBColorSpace");
-        let null_planes: *mut *mut u8 = std::ptr::null_mut();
-        let rep: *mut AnyObject = objc2::msg_send![
-            rep,
-            initWithBitmapDataPlanes: null_planes,
-            pixelsWide: 1isize,
-            pixelsHigh: 1isize,
-            bitsPerSample: 8isize,
-            samplesPerPixel: 4isize,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: &*cs,
-            bytesPerRow: 0isize,
-            bitsPerPixel: 0isize
-        ];
-        if rep.is_null() {
+        extern "C" {
+            fn CGColorSpaceCreateDeviceRGB() -> *mut std::ffi::c_void;
+            fn CGColorSpaceRelease(cs: *mut std::ffi::c_void);
+            fn CGDataProviderCreateWithData(
+                info: *mut std::ffi::c_void,
+                data: *const u8,
+                size: usize,
+                release: *mut std::ffi::c_void,
+            ) -> *mut std::ffi::c_void;
+            fn CGDataProviderRelease(p: *mut std::ffi::c_void);
+            fn CGImageCreate(
+                width: usize,
+                height: usize,
+                bits_per_component: usize,
+                bits_per_pixel: usize,
+                bytes_per_row: usize,
+                space: *mut std::ffi::c_void,
+                bitmap_info: u32,
+                provider: *mut std::ffi::c_void,
+                decode: *const f64,
+                should_interpolate: bool,
+                intent: u32,
+            ) -> *mut std::ffi::c_void;
+        }
+        let px: [u8; 4] = [0, 0, 0, 255];
+        let cs = CGColorSpaceCreateDeviceRGB();
+        let provider = CGDataProviderCreateWithData(
+            std::ptr::null_mut(),
+            px.as_ptr(),
+            4,
+            std::ptr::null_mut(),
+        );
+        if provider.is_null() {
+            CGColorSpaceRelease(cs);
             return;
         }
-        let key = objc2_foundation::NSString::from_str("NSImageCompressionFactor");
-        let val: *mut AnyObject = objc2::msg_send![
-            objc2::class!(NSNumber),
-            numberWithDouble: 0.95f64
-        ];
-        let props: *mut AnyObject = objc2::msg_send![
-            objc2::class!(NSDictionary),
-            dictionaryWithObject: val,
-            forKey: &*key
-        ];
-        let _: *mut AnyObject =
-            objc2::msg_send![rep, representationUsingType: 3usize, properties: props];
-        let _: () = objc2::msg_send![rep, release];
+        // kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big
+        let bitmap_info: u32 = 2 | (2 << 12);
+        let cg = CGImageCreate(
+            1,
+            1,
+            8,
+            32,
+            4,
+            cs,
+            bitmap_info,
+            provider,
+            std::ptr::null(),
+            false,
+            0,
+        );
+        CGDataProviderRelease(provider);
+        CGColorSpaceRelease(cs);
+        if cg.is_null() {
+            return;
+        }
+        let _ = cg_image_ptr_to_jpeg(cg);
+        CGImageRelease(cg);
     }
 }
 

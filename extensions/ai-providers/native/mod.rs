@@ -111,7 +111,8 @@ fn parse_export_line(line: &str) -> Option<(String, String)> {
         return None;
     }
     let mut val = v.trim().to_string();
-    if (val.starts_with('\'') && val.ends_with('\'')) || (val.starts_with('"') && val.ends_with('"'))
+    if (val.starts_with('\'') && val.ends_with('\''))
+        || (val.starts_with('"') && val.ends_with('"'))
     {
         val = val[1..val.len().saturating_sub(1)].to_string();
         // 还原 shell 单引号转义 `'\\''` → `'`
@@ -467,10 +468,7 @@ pub async fn ai_providers_zhipu_quota(api_key: String) -> Result<ZhipuQuotaResul
     let client = crate::http::client();
     let headers = zhipu_headers(key);
 
-    let quota_fut = client
-        .get(ZHIPU_QUOTA_URL)
-        .headers(headers.clone())
-        .send();
+    let quota_fut = client.get(ZHIPU_QUOTA_URL).headers(headers.clone()).send();
     let usage_fut = fetch_zhipu_usage(key);
 
     let (quota_res, (total_calls, total_tokens, tokens_series)) =
@@ -478,10 +476,7 @@ pub async fn ai_providers_zhipu_quota(api_key: String) -> Result<ZhipuQuotaResul
 
     let res = quota_res.map_err(|e| format!("请求失败: {e}"))?;
     let status = res.status();
-    let body: serde_json::Value = res
-        .json()
-        .await
-        .map_err(|e| format!("解析响应失败: {e}"))?;
+    let body: serde_json::Value = res.json().await.map_err(|e| format!("解析响应失败: {e}"))?;
 
     let code = body.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
     let success = body
@@ -635,10 +630,7 @@ pub async fn ai_providers_deepseek_balance(
         .map_err(|e| format!("请求失败: {e}"))?;
 
     let status = res.status();
-    let body: serde_json::Value = res
-        .json()
-        .await
-        .map_err(|e| format!("解析响应失败: {e}"))?;
+    let body: serde_json::Value = res.json().await.map_err(|e| format!("解析响应失败: {e}"))?;
 
     if status.as_u16() == 401 || status.as_u16() == 403 {
         return Ok(DeepseekBalanceResult {

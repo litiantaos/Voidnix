@@ -4,6 +4,10 @@ import { CMD } from '@/commands'
 import type { ScreenshotData, Sel } from './useTypes'
 import { MAGNIFIER_SIZE, MAGNIFIER_ZOOM, MAGNIFIER_OFFSET, handleAbsolutePos } from './useTypes'
 
+/** picker JPEG 与 enter 并行编码；主屏 Retina 常晚于 Vue mount，需轮询就绪。 */
+const PICKER_RETRY_MS = 40
+const PICKER_RETRY_MAX = 40 // ~1.6s
+
 export function useMagnifier(options: {
   initialScreenshot: ScreenshotData
   screenW: Ref<number>
@@ -17,6 +21,8 @@ export function useMagnifier(options: {
   const crossX = ref(options.initialScreenshot.mouse_x)
   const crossY = ref(options.initialScreenshot.mouse_y)
   const bgImage = ref<HTMLImageElement | null>(null)
+  let loadGen = 0
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
 
   const magnifierStyle = computed(() => {
     const totalH = MAGNIFIER_SIZE + 20
@@ -33,29 +39,20 @@ export function useMagnifier(options: {
     return { left: `${left}px`, top: `${top}px`, width: `${MAGNIFIER_SIZE}px` }
   })
 
-  async function loadPickerImage() {
-    try {
-      const dataUrl = await invoke<string>(CMD.readPickerImage)
-      if (!dataUrl) return
-      const img = new Image()
-      img.onload = () => {
-        bgImage.value = img
-        // 加载完成后立即绘制一次，不等鼠标移动（否则首帧空白直到 mousemove）
-        updateMagnifier(crossX.value, crossY.value)
-      }
-      img.src = dataUrl
-    } catch {
-      /* 放大镜不可用 */
+  function clearRetry() {
+    if (retryTimer != null) {
+      clearTimeout(retryTimer)
+      retryTimer = null
     }
   }
 
-  function updateMagnifier(cx: number, cy: number) {
+  function paintMagnifier(cx: number, cy: number) {
     const canvas = magnifierCanvas.value
     if (!canvas || !bgImage.value) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    const sc = options.dpr.value,
-      canvasSize = MAGNIFIER_SIZE * sc
+    const sc = options.dpr.value
+    const canvasSize = MAGNIFIER_SIZE * sc
     const half = MAGNIFIER_SIZE / MAGNIFIER_ZOOM / 2
     ctx.clearRect(0, 0, canvasSize, canvasSize)
     ctx.imageSmoothingEnabled = false
@@ -75,6 +72,71 @@ export function useMagnifier(options: {
       '#' + [px[0], px[1], px[2]].map((v) => v.toString(16).padStart(2, '0')).join('')
   }
 
+  function bindPickerDataUrl(dataUrl: string, gen: number) {
+    const img = new Image()
+    img.onload = () => {
+      if (gen !== loadGen) return
+      bgImage.value = img
+      // canvas 可能尚未挂上（v-if showMagnifier）；挂上后 setMagnifierCanvas 会再 paint
+      paintMagnifier(crossX.value, crossY.value)
+    }
+    img.onerror = () => {
+      if (gen !== loadGen) return
+      scheduleRetry(gen, 0)
+    }
+    img.src = dataUrl
+  }
+
+  function scheduleRetry(gen: number, attempt: number) {
+    if (gen !== loadGen) return
+    if (attempt >= PICKER_RETRY_MAX) return
+    clearRetry()
+    retryTimer = setTimeout(() => {
+      retryTimer = null
+      if (gen !== loadGen) return
+      void tryLoadOnce(gen, attempt + 1)
+    }, PICKER_RETRY_MS)
+  }
+
+  async function tryLoadOnce(gen: number, attempt: number) {
+    if (gen !== loadGen) return
+    try {
+      const dataUrl = await invoke<string>(CMD.readPickerImage)
+      if (gen !== loadGen) return
+      if (!dataUrl) {
+        scheduleRetry(gen, attempt)
+        return
+      }
+      bindPickerDataUrl(dataUrl, gen)
+    } catch {
+      scheduleRetry(gen, attempt)
+    }
+  }
+
+  async function loadPickerImage() {
+    clearRetry()
+    const gen = ++loadGen
+    bgImage.value = null
+    await tryLoadOnce(gen, 0)
+  }
+
+  function updateMagnifier(cx: number, cy: number) {
+    paintMagnifier(cx, cy)
+  }
+
+  /** canvas ref 回调：bg 已就绪但 canvas 后挂时补绘一帧。 */
+  function setMagnifierCanvas(el: HTMLCanvasElement | null | undefined) {
+    magnifierCanvas.value = el ?? undefined
+    if (el && bgImage.value) {
+      paintMagnifier(crossX.value, crossY.value)
+    }
+  }
+
+  function dispose() {
+    clearRetry()
+    loadGen++
+  }
+
   return {
     magnifierCanvas,
     pickedColor,
@@ -84,5 +146,7 @@ export function useMagnifier(options: {
     magnifierStyle,
     loadPickerImage,
     updateMagnifier,
+    setMagnifierCanvas,
+    dispose,
   }
 }

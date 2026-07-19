@@ -55,16 +55,9 @@ pub struct FinalizedToolCall {
 
 #[derive(Debug)]
 pub enum FinalizeError {
-    MissingId {
-        index: u32,
-    },
-    MissingName {
-        index: u32,
-    },
-    BadJson {
-        index: u32,
-        err: serde_json::Error,
-    },
+    MissingId { index: u32 },
+    MissingName { index: u32 },
+    BadJson { index: u32, err: serde_json::Error },
 }
 
 impl std::fmt::Display for FinalizeError {

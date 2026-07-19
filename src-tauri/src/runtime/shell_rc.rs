@@ -137,8 +137,8 @@ pub fn remove_block(rc_path: &Path, scope: &str) -> Result<bool, String> {
     if !rc_path.exists() {
         return Ok(false);
     }
-    let existing =
-        std::fs::read_to_string(rc_path).map_err(|e| format!("读取 {} 失败: {e}", rc_path.display()))?;
+    let existing = std::fs::read_to_string(rc_path)
+        .map_err(|e| format!("读取 {} 失败: {e}", rc_path.display()))?;
     if !has_marker(&existing, scope) {
         return Ok(false);
     }
@@ -158,10 +158,7 @@ pub fn remove_block(rc_path: &Path, scope: &str) -> Result<bool, String> {
 /// 原子写 rc：备份 `*.voidnix-bak` + tmp+rename。
 pub(crate) fn atomic_write_rc(rc_path: &Path, content: &str) -> Result<(), String> {
     let parent = rc_path.parent().unwrap_or(Path::new("."));
-    let file_name = rc_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("rc");
+    let file_name = rc_path.file_name().and_then(|s| s.to_str()).unwrap_or("rc");
     let bak = parent.join(format!("{file_name}.voidnix-bak"));
     let tmp = parent.join(format!("{file_name}.voidnix-tmp"));
 
@@ -254,13 +251,23 @@ mod tests {
         let rc = dir.join(".zshrc");
         fs::write(&rc, "# user stuff\nexport FOO=1\n").unwrap();
 
-        assert!(upsert_block(&rc, "ai-providers", r#"[ -f "$HOME/x" ] && source "$HOME/x""#).unwrap());
+        assert!(upsert_block(
+            &rc,
+            "ai-providers",
+            r#"[ -f "$HOME/x" ] && source "$HOME/x""#
+        )
+        .unwrap());
         let text = fs::read_to_string(&rc).unwrap();
         assert!(text.contains("# voidnix ai-providers"));
         assert!(text.contains("export FOO=1"));
 
         // idempotent
-        assert!(!upsert_block(&rc, "ai-providers", r#"[ -f "$HOME/x" ] && source "$HOME/x""#).unwrap());
+        assert!(!upsert_block(
+            &rc,
+            "ai-providers",
+            r#"[ -f "$HOME/x" ] && source "$HOME/x""#
+        )
+        .unwrap());
 
         // replace body
         assert!(upsert_block(&rc, "ai-providers", "export BAR=2").unwrap());
@@ -295,10 +302,8 @@ mod tests {
 
     #[test]
     fn upsert_shrink_multiline_body_removes_leftover() {
-        let dir = std::env::temp_dir().join(format!(
-            "voidnix-shell-rc-shrink-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("voidnix-shell-rc-shrink-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let rc = dir.join(".zshrc");

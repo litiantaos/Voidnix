@@ -63,18 +63,29 @@ export function useModuleHeight(deps: {
     // 当前屏全局 Y 范围（多屏下用窗口所在屏，而非 mainScreen / 单屏高）
     const screenTop = monitor.position.y / factor
     const screenBottom = (monitor.position.y + monitor.size.height) / factor
-    // 基准位置：优先逻辑目标（动画中读 outerPosition 得中间值会漂移），首次读实际位置
+    // 基准位置：优先逻辑目标（动画中读 outerPosition 得中间值会漂移），首次读实际位置。
+    // show 时 Rust 会把窗移到光标屏，与缓存逻辑坐标可差数百 px —— 偏差过大则以实际为准。
+    const pos = await tauriWindow.outerPosition()
+    const actualX = pos.x / factor
+    const actualY = pos.y / factor
     let baseX: number
     let baseY: number
-    if (targetX !== null && targetY !== null) {
+    if (
+      targetX !== null &&
+      targetY !== null &&
+      Math.abs(actualX - targetX) < 80 &&
+      Math.abs(actualY - targetY) < 80
+    ) {
       baseX = targetX
       baseY = targetY
     } else {
-      const pos = await tauriWindow.outerPosition()
-      baseX = pos.x / factor
-      baseY = pos.y / factor
+      baseX = actualX
+      baseY = actualY
       targetX = baseX
       targetY = baseY
+      // 跨屏 reposition 后 auto 原位失效，避免回到旧屏
+      originalY = null
+      wasAuto = false
     }
 
     // ── 计算目标高度 ──
@@ -145,15 +156,34 @@ export function useModuleHeight(deps: {
     }
   })
 
+  // show 时 Rust 已 center_on_cursor_screen；聚焦后丢弃逻辑坐标缓存，避免 setMainFrame
+  // 用上一屏的 target 把窗拉回主屏（副屏「只有首次能出来」的根因）。
+  let unlistenFocus: (() => void) | null = null
+
   onMounted(() => {
     nextTick(() => {
       syncObserver()
       adjust()
     })
+    void tauriWindow
+      .onFocusChanged(({ payload: focused }) => {
+        if (!focused) return
+        targetX = null
+        targetY = null
+        originalY = null
+        wasAuto = false
+        nextTick(() => adjust())
+      })
+      .then((un) => {
+        unlistenFocus = un
+      })
+      .catch(() => {})
   })
 
   onBeforeUnmount(() => {
     ro?.disconnect()
     ro = null
+    unlistenFocus?.()
+    unlistenFocus = null
   })
 }

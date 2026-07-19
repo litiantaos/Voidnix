@@ -90,23 +90,66 @@ pub fn schedule_jpeg_prewarm(app: &AppHandle) {
     });
 }
 
+/// 延迟预热截屏 WKWebView + acceptsFirstMouse（不抢前台）。
+/// 冷启动 WebKit 类未就绪时 install 会失败；300ms / 1.2s 再装两次。
+pub fn schedule_overlay_prewarm(app: &AppHandle) {
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        for sleep_ms in [300u64, 900] {
+            std::thread::sleep(Duration::from_millis(sleep_ms));
+            let app_c = app_handle.clone();
+            let app_pre = app_c.clone();
+            let _ = app_c.run_on_main_thread(move || {
+                super::session::prewarm_screenshot_window(&app_pre);
+            });
+        }
+    });
+}
+
 pub fn register_shortcut_hook() {
     use std::sync::atomic::Ordering;
     crate::runtime::shortcut::register_shortcut_hook(
         "screenshot",
         Box::new(|app, _ctx| {
-            if super::session::IS_IN_SCREENSHOT_SESSION.swap(true, Ordering::SeqCst) {
+            // 已在会话中：再按 = 取消/解卡，避免 IS_IN_SCREENSHOT_SESSION 卡死后永远进不去
+            if super::session::IS_IN_SCREENSHOT_SESSION.load(Ordering::SeqCst) {
+                let app_c = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    super::session::abort_screenshot_session(&app_c);
+                });
                 return true;
             }
+            if super::session::IS_IN_SCREENSHOT_SESSION
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+            {
+                return true;
+            }
+            // 快捷键当下就 activate：给 capture/enter 留出激活窗口，减轻「冷启动首击被吞」
+            let app_act = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                crate::platform::focus::activate_app();
+                super::session::prewarm_screenshot_window(&app_act);
+            });
             let app_clone = app.clone();
             std::thread::spawn(move || {
                 let result = super::capture_screen();
                 match result {
                     Ok(data) => {
+                        // 与 enter 并行编码 picker：主屏 Retina 更慢，放在 enter 内会晚于
+                        // Vue mount 导致 loadPickerImage 读空且永不重试
+                        super::ffi::start_prepare_picker_jpeg();
                         let app_for_enter = app_clone.clone();
-                        let _ = app_clone.run_on_main_thread(move || {
-                            super::session::enter_screenshot_mode_sync(&app_for_enter, data);
-                        });
+                        if app_clone
+                            .run_on_main_thread(move || {
+                                super::session::enter_screenshot_mode_sync(&app_for_enter, data);
+                            })
+                            .is_err()
+                        {
+                            // 主线程调度失败：与 abort 对齐清 surface / picker / CGImage
+                            super::session::cleanup_failed_capture();
+                            eprintln!("[shot] run_on_main_thread(enter) 失败，已清理会话状态");
+                        }
                     }
                     Err(e) => {
                         super::session::IS_IN_SCREENSHOT_SESSION.store(false, Ordering::SeqCst);

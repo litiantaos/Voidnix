@@ -113,7 +113,9 @@ pub fn build_ffmpeg_args(
         "-nostats".into(),
     ];
 
-    let use_hw = params.prefer_hardware && !force_software && !params.format.is_audio_only()
+    let use_hw = params.prefer_hardware
+        && !force_software
+        && !params.format.is_audio_only()
         && !params.format.is_gif()
         && !matches!(params.format, OutputFormat::Webm);
 
@@ -216,7 +218,9 @@ fn vt_compress_bitrate(q: Quality, scale: Scale) -> Vec<String> {
         Quality::Small => 700,
     };
     let h = scale.height().unwrap_or(1080) as f64;
-    let kbps = ((base_kbps as f64) * (h / 1080.0)).round().clamp(400.0, 6000.0) as u32;
+    let kbps = ((base_kbps as f64) * (h / 1080.0))
+        .round()
+        .clamp(400.0, 6000.0) as u32;
     let max = (kbps * 12) / 10;
     let buf = max * 2;
     vec![
@@ -244,12 +248,7 @@ fn x264_quality(q: Quality, compress: bool) -> Vec<String> {
             Quality::Small => ("28", "fast"),
         }
     };
-    vec![
-        "-crf".into(),
-        crf.into(),
-        "-preset".into(),
-        preset.into(),
-    ]
+    vec!["-crf".into(), crf.into(), "-preset".into(), preset.into()]
 }
 
 fn vp9_quality(q: Quality) -> Vec<String> {
@@ -332,23 +331,38 @@ mod tests {
 
     #[test]
     fn compress_uses_videotoolbox_bitrate_not_qv() {
-        let (args, hw) = build_ffmpeg_args("/in.mp4", "/out.mp4", &params(VideoMode::Compress, OutputFormat::Mp4), false);
+        let (args, hw) = build_ffmpeg_args(
+            "/in.mp4",
+            "/out.mp4",
+            &params(VideoMode::Compress, OutputFormat::Mp4),
+            false,
+        );
         assert!(hw);
         assert!(args.iter().any(|a| a == "h264_videotoolbox"));
         assert!(args.iter().any(|a| a == "-b:v"));
         assert!(!args.iter().any(|a| a == "-q:v"));
         assert!(args.iter().any(|a| a == "+faststart"));
-        assert!(args.windows(2).any(|w| w[0] == "-pix_fmt" && w[1] == "yuv420p"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-pix_fmt" && w[1] == "yuv420p"));
         // 均衡默认 1200k
         assert!(args.iter().any(|a| a == "1200k"));
     }
 
     #[test]
     fn force_software_compress_uses_higher_crf() {
-        let (args, hw) = build_ffmpeg_args("/in.mp4", "/out.mp4", &params(VideoMode::Compress, OutputFormat::Mp4), true);
+        let (args, hw) = build_ffmpeg_args(
+            "/in.mp4",
+            "/out.mp4",
+            &params(VideoMode::Compress, OutputFormat::Mp4),
+            true,
+        );
         assert!(!hw);
         assert!(args.iter().any(|a| a == "libx264"));
-        let crf = args.windows(2).find(|w| w[0] == "-crf").map(|w| w[1].as_str());
+        let crf = args
+            .windows(2)
+            .find(|w| w[0] == "-crf")
+            .map(|w| w[1].as_str());
         assert_eq!(crf, Some("30"));
     }
 
@@ -385,7 +399,10 @@ mod tests {
             false,
         );
         assert!(!hw);
-        let vf = args.windows(2).find(|w| w[0] == "-vf").map(|w| w[1].as_str());
+        let vf = args
+            .windows(2)
+            .find(|w| w[0] == "-vf")
+            .map(|w| w[1].as_str());
         assert!(vf.unwrap_or("").contains("palettegen"));
     }
 
@@ -394,15 +411,27 @@ mod tests {
         let mut p = params(VideoMode::Compress, OutputFormat::Mp4);
         p.scale = Scale::P720;
         let (args, _) = build_ffmpeg_args("/in.mp4", "/out.mp4", &p, true);
-        let vf = args.windows(2).find(|w| w[0] == "-vf").map(|w| w[1].as_str());
+        let vf = args
+            .windows(2)
+            .find(|w| w[0] == "-vf")
+            .map(|w| w[1].as_str());
         assert!(vf.unwrap_or("").contains("720"));
     }
 
     #[test]
     fn action_labels() {
-        assert_eq!(action_label(VideoMode::Compress, OutputFormat::Mp4), "compressed");
-        assert_eq!(action_label(VideoMode::ExtractAudio, OutputFormat::M4a), "audio");
-        assert_eq!(action_label(VideoMode::Convert, OutputFormat::Gif), "converted");
+        assert_eq!(
+            action_label(VideoMode::Compress, OutputFormat::Mp4),
+            "compressed"
+        );
+        assert_eq!(
+            action_label(VideoMode::ExtractAudio, OutputFormat::M4a),
+            "audio"
+        );
+        assert_eq!(
+            action_label(VideoMode::Convert, OutputFormat::Gif),
+            "converted"
+        );
     }
 
     #[test]

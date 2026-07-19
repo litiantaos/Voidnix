@@ -38,6 +38,9 @@ pub async fn pin_image(
 
     #[cfg(target_os = "macos")]
     {
+        // 钉图与 exit 并发（前端 fire-and-forget pin + 立刻 doCancel）；入口即快照 origin，
+        // 避免 exit 清 CAPTURE_SURFACE 后位置落到 (0,0)。
+        let (ox, oy) = super::session::capture_origin();
         let png = crop_with_annotation(sel_x, sel_y, sel_w, sel_h, scale, ann.as_deref())?;
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -52,11 +55,12 @@ pub async fn pin_image(
 
         let path_str = path.to_string_lossy().to_string();
         // 截图小于窗口最小尺寸时，窗口保持最小尺寸，原图居中显示；否则窗口贴合截图尺寸。
+        // sel 为屏内本地坐标；pin 窗口 position 用 Quartz 全局左上（+ 捕获屏 origin）。
         let centered = sel_w < PIN_MIN_SIZE || sel_h < PIN_MIN_SIZE;
         let win_w = sel_w.max(PIN_MIN_SIZE);
         let win_h = sel_h.max(PIN_MIN_SIZE);
-        let win_x = sel_x - (win_w - sel_w) / 2.0;
-        let win_y = sel_y - (win_h - sel_h) / 2.0;
+        let win_x = ox + sel_x - (win_w - sel_w) / 2.0;
+        let win_y = oy + sel_y - (win_h - sel_h) / 2.0;
         let label = format!("pin-{}", ts);
         let label_key = label.clone();
 

@@ -44,10 +44,122 @@
 
 static const void *kBackgroundLayerKey = &kBackgroundLayerKey;
 
+/// WKWebView acceptsFirstMouse → YES。
+/// 禁止用 dispatch_once+类为 Nil 就 return：冷启动 WebKit 未链入时 once 会永久空跑，
+/// 之后再也装不上补丁 →「重启后前几次得先点一下，多试几次才正常」。
+static BOOL Voidnix_WKWebView_acceptsFirstMouse(id self, SEL _cmd, NSEvent *event) {
+    (void)self;
+    (void)_cmd;
+    (void)event;
+    return YES;
+}
+
+static BOOL g_afm_installed = NO;
+
+static void voidnix_install_accepts_first_mouse(void) {
+    if (g_afm_installed) {
+        return;
+    }
+    Class cls = NSClassFromString(@"WKWebView");
+    if (cls == Nil) {
+        return;
+    }
+    SEL sel = @selector(acceptsFirstMouse:);
+    Method m = class_getInstanceMethod(cls, sel);
+    if (m != NULL) {
+        method_setImplementation(m, (IMP)Voidnix_WKWebView_acceptsFirstMouse);
+    } else {
+        class_addMethod(cls, sel, (IMP)Voidnix_WKWebView_acceptsFirstMouse, "B@:@");
+    }
+    g_afm_installed = YES;
+}
+
+static NSView *voidnix_find_wkwebview(NSView *root) {
+    if (root == nil) {
+        return nil;
+    }
+    Class wkClass = NSClassFromString(@"WKWebView");
+    if (wkClass == Nil) {
+        return nil;
+    }
+    if ([root isKindOfClass:wkClass]) {
+        return root;
+    }
+    for (NSView *sub in root.subviews) {
+        NSView *found = voidnix_find_wkwebview(sub);
+        if (found != nil) {
+            return found;
+        }
+    }
+    return nil;
+}
+
+/// 截屏会话抢 key / first responder（换屏 setFrame + Space 迁移后必须重申）。
+/// 顺序：activate → orderFront → makeKeyWindow → firstResponder=WKWebView。
+extern "C" void voidnix_screenshot_claim_key(void *ns_window_ptr) {
+    if (ns_window_ptr == NULL) {
+        return;
+    }
+    voidnix_install_accepts_first_mouse();
+    NSWindow *window = (__bridge NSWindow *)ns_window_ptr;
+    void (^block)(void) = ^{
+        voidnix_install_accepts_first_mouse();
+        [NSApp activateIgnoringOtherApps:YES];
+        // 跨屏/冷启动：先 orderFront 再 makeKey，避免 makeKey 落在未上屏窗口上
+        [window orderFrontRegardless];
+        [window makeKeyAndOrderFront:nil];
+        [window makeKeyWindow];
+        NSView *content = window.contentView;
+        if (content == nil) {
+            return;
+        }
+        // contentView.layer.opacity=0 时 WebKit 常吞首击；claim 时强制可交互
+        if (content.layer != nil && content.layer.opacity < 0.99f) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            content.layer.opacity = 1.0f;
+            [CATransaction commit];
+        }
+        NSView *target = voidnix_find_wkwebview(content) ?: content;
+        [window makeFirstResponder:target];
+        // 再点一次 key：部分 macOS 上 firstResponder 切换后会丢 key
+        [window makeKeyWindow];
+    };
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), block);
+    }
+}
+
+/// 冷启动预热：不 activate，只唤醒 WKWebView 进程 + 装 acceptsFirstMouse。
+extern "C" void voidnix_screenshot_prewarm(void *ns_window_ptr) {
+    if (ns_window_ptr == NULL) {
+        return;
+    }
+    voidnix_install_accepts_first_mouse();
+    NSWindow *window = (__bridge NSWindow *)ns_window_ptr;
+    void (^block)(void) = ^{
+        voidnix_install_accepts_first_mouse();
+        // 保持 alpha=0 / ignoresMouse，不抢前台
+        [window orderFrontRegardless];
+        NSView *wk = voidnix_find_wkwebview(window.contentView);
+        if (wk != nil) {
+            [wk setNeedsDisplay:YES];
+        }
+    };
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), block);
+    }
+}
+
 extern "C" bool voidnix_screenshot_install_background_layer(void *ns_window_ptr) {
     if (ns_window_ptr == NULL) {
         return false;
     }
+    voidnix_install_accepts_first_mouse();
     NSWindow *window = (__bridge NSWindow *)ns_window_ptr;
     NSView *content = window.contentView;
     if (content == nil) {
@@ -130,6 +242,9 @@ extern "C" bool voidnix_screenshot_set_background(void *ns_window_ptr, void *cg_
         CGImageRef cg = (CGImageRef)cg_image_ptr;
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
+        // 多屏切换后 window.screen 可能已变（Retina ↔ 1×），每帧同步 contentsScale
+        CGFloat scale = window.screen.backingScaleFactor ?: 2.0;
+        bg.contentsScale = scale;
         bg.contents = (__bridge id)cg;
         bg.contentsGravity = kCAGravityResize;
         bg.frame = content.layer.bounds;

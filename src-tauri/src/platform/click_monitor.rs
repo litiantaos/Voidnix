@@ -54,41 +54,29 @@ mod inner {
                         Some(w) => w,
                         None => return,
                     };
-                    if !app.is_visible().unwrap_or(false) {
-                        return;
-                    }
 
+                    // 统一 Cocoa 坐标系：mouseLocation 与 NSWindow.frame 均为左下原点全局点，
+                    // 多屏下勿用 mainScreen 高度翻转 Tauri outer_position（副屏会误判）。
                     let loc: objc2_foundation::NSPoint =
                         objc2::msg_send![NSEvent::class(), mouseLocation];
-                    let click_x = loc.x;
-                    let click_y_bottom = loc.y; // NSEvent.mouseLocation 已是屏幕坐标（左下原点）
-
-                    if let (Ok(pos), Ok(size)) = (app.outer_position(), app.outer_size()) {
-                        let scale = app.scale_factor().unwrap_or(1.0);
-                        let wx = pos.x as f64 / scale;
-                        let wy = pos.y as f64 / scale;
-                        let ww = size.width as f64 / scale;
-                        let wh = size.height as f64 / scale;
-
-                        let main_screen: *mut AnyObject =
-                            objc2::msg_send![objc2::class!(NSScreen), mainScreen];
-                        if main_screen.is_null() {
-                            return;
-                        }
-                        let frame: objc2_foundation::NSRect = objc2::msg_send![main_screen, frame];
-                        let screen_h = frame.size.height;
-
-                        // mouseLocation 是 macOS 屏幕坐标（左下原点），
-                        // Tauri outer_position 是物理像素（左上原点），需转换
-                        let click_y = screen_h - click_y_bottom;
-                        let inside = click_x >= wx
-                            && click_x <= wx + ww
-                            && click_y >= wy
-                            && click_y <= wy + wh;
-
-                        if !inside {
-                            let _ = app_handle.emit("click-outside", ());
-                        }
+                    let Ok(ns_ptr) = app.ns_window() else {
+                        return;
+                    };
+                    let ns = ns_ptr.cast::<objc2_app_kit::NSWindow>();
+                    let Some(ns_window) = ns.as_ref() else {
+                        return;
+                    };
+                    // hide 不 orderOut：is_visible 在 alpha=0 时仍可能为 true，以 alpha 为准
+                    if ns_window.alphaValue() < 0.01 {
+                        return;
+                    }
+                    let frame: objc2_foundation::NSRect = objc2::msg_send![ns_window, frame];
+                    let inside = loc.x >= frame.origin.x
+                        && loc.x <= frame.origin.x + frame.size.width
+                        && loc.y >= frame.origin.y
+                        && loc.y <= frame.origin.y + frame.size.height;
+                    if !inside {
+                        let _ = app_handle.emit("click-outside", ());
                     }
                 }
             });

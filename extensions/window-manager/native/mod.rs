@@ -154,10 +154,7 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
                             ns,
                             makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()
                         ];
-                        target = Some(NSRect::new(
-                            NSPoint::new(x, y),
-                            NSSize::new(pw, ph),
-                        ));
+                        target = Some(NSRect::new(NSPoint::new(x, y), NSSize::new(pw, ph)));
                     }
                 }
             }

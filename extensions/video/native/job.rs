@@ -231,12 +231,7 @@ async fn run_job_inner(
         .as_deref()
         .filter(|s| !s.is_empty())
         .map(Path::new);
-    let output = build_output_path(
-        &input,
-        out_dir,
-        req.params.mode,
-        req.params.format,
-    )?;
+    let output = build_output_path(&input, out_dir, req.params.mode, req.params.format)?;
     let output_str = output.to_string_lossy().to_string();
 
     let bins = core::ensure_bins(&app).await?;
@@ -315,13 +310,7 @@ async fn run_job_inner(
 
     if let Err(e) = encode_result {
         let _ = std::fs::remove_file(&output);
-        emit_both(
-            &app,
-            &on_event,
-            VideoEvent::Error {
-                message: e.clone(),
-            },
-        );
+        emit_both(&app, &on_event, VideoEvent::Error { message: e.clone() });
         set_last(JobSnapshot {
             busy: false,
             last_output: None,
@@ -551,10 +540,7 @@ mod tests {
 
     #[test]
     fn build_output_path_unique() {
-        let dir = std::env::temp_dir().join(format!(
-            "voidnix-video-test-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("voidnix-video-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let input = dir.join("clip.mp4");
         std::fs::write(&input, b"x").unwrap();
