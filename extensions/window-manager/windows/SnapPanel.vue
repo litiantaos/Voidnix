@@ -50,6 +50,27 @@
               </svg>
             </div>
             <div
+              v-else-if="zone.layout === 'prev-display' || zone.layout === 'next-display'"
+              class="snap-zone custom-zone flex-center"
+              :class="{ 'snap-hover': hoveredLayout === zone.layout }"
+              :data-layout="zone.layout"
+              @click="onZone(zone.layout)"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path v-if="zone.layout === 'prev-display'" d="M12 4 L6 10 L12 16" />
+                <path v-else d="M8 4 L14 10 L8 16" />
+              </svg>
+            </div>
+            <div
               v-else
               class="snap-zone"
               :class="{ 'snap-hover': hoveredLayout === zone.layout }"
@@ -64,16 +85,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 
 interface SnapData {
   w: number
   h: number
+  screens: number
 }
 
-const snapData = ref<SnapData>({ w: 800, h: 600 })
+const snapData = ref<SnapData>({ w: 800, h: 600, screens: 1 })
 const hoveredLayout = ref<string | null>(null)
 
 interface ZoneDef {
@@ -87,7 +109,7 @@ interface GroupDef {
   zones: ZoneDef[]
 }
 
-const groups: GroupDef[] = [
+const baseGroups: GroupDef[] = [
   {
     id: 'quarters',
     gridClass: 'grid-cols-2 grid-rows-2',
@@ -120,6 +142,16 @@ const groups: GroupDef[] = [
   },
 ]
 
+const displayGroup: GroupDef = {
+  id: 'displays',
+  gridClass: 'grid-cols-2',
+  zones: [{ layout: 'prev-display' }, { layout: 'next-display' }],
+}
+
+const groups = computed<GroupDef[]>(() =>
+  snapData.value.screens > 1 ? [...baseGroups, displayGroup] : baseGroups,
+)
+
 async function onZone(layout: string) {
   try {
     await invoke(CMD.setFrontmostWindowLayout, {
@@ -142,8 +174,14 @@ function handleSnapMouse() {
 }
 
 async function handleShow() {
-  const data = (window as unknown as { __snapPanelData?: SnapData }).__snapPanelData
-  if (data) snapData.value = data
+  const data = (window as unknown as { __snapPanelData?: Partial<SnapData> }).__snapPanelData
+  if (data) {
+    snapData.value = {
+      w: data.w ?? snapData.value.w,
+      h: data.h ?? snapData.value.h,
+      screens: data.screens ?? 1,
+    }
+  }
   await invoke(CMD.showSnapPanel)
 }
 

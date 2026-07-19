@@ -49,7 +49,7 @@ const settingsItems = computed<SettingItem[]>(() => [
   {
     id: 'wm-enabled',
     title: '启用窗口管理',
-    subtitle: '鼠标移至屏幕顶部中心激活悬浮面板',
+    subtitle: '鼠标移至任意屏顶部中心激活；多屏可左右迁移窗口',
     type: 'toggle',
     value: wmConfig.enabled,
     update: (v: boolean) => {

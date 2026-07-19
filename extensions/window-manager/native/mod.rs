@@ -66,6 +66,14 @@ fn configure_snap_panel(app: &tauri::AppHandle) {
 #[cfg(not(target_os = "macos"))]
 fn configure_snap_panel(_app: &tauri::AppHandle) {}
 
+/// 单屏几何。
+///
+/// - `x/y/width/height`：Cocoa `NSScreen.frame`（左下原点、y 向上）—— snap 面板定位 / 鼠标命中
+/// - `layout_*`：AX 坐标系下的**布局目标区**（菜单栏 / 真 Dock 侧边与底边 inset；见 `layout_cocoa_rect`）
+/// - `ax_frame_*`：AX 坐标系下的全帧 —— 用 AX 窗口坐标判定归属屏
+///
+/// 坐标翻转锚点是 **primary**（frame 原点 (0,0) 的菜单栏屏），**不是** `NSScreen.mainScreen`
+///（后者随焦点漂移，副屏操作时会整屏错位）。
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ScreenInfo {
     pub x: f64,
@@ -73,6 +81,159 @@ pub struct ScreenInfo {
     pub width: f64,
     pub height: f64,
     pub is_main: bool,
+    pub layout_x: f64,
+    pub layout_y: f64,
+    pub layout_width: f64,
+    pub layout_height: f64,
+    pub ax_frame_x: f64,
+    pub ax_frame_y: f64,
+    pub ax_frame_width: f64,
+    pub ax_frame_height: f64,
+}
+
+impl ScreenInfo {
+    /// 无屏 / 非主线程兜底（主屏 1440×900，Cocoa 与 AX 原点重合时数值相同）。
+    pub fn fallback() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            width: 1440.0,
+            height: 900.0,
+            is_main: true,
+            layout_x: 0.0,
+            layout_y: 0.0,
+            layout_width: 1440.0,
+            layout_height: 900.0,
+            ax_frame_x: 0.0,
+            ax_frame_y: 0.0,
+            ax_frame_width: 1440.0,
+            ax_frame_height: 900.0,
+        }
+    }
+
+    /// Cocoa rect → AX rect。
+    /// `primary_max_y` = primary.frame.origin.y + primary.frame.size.height
+    ///（primary = 菜单栏屏 / frame 原点近 (0,0)，非 mainScreen）。
+    /// AX_y = primary_max_y − cocoa_y − h（原点：primary 左上，y 向下）。
+    pub fn cocoa_rect_to_ax(
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        primary_max_y: f64,
+    ) -> (f64, f64, f64, f64) {
+        (x, primary_max_y - y - h, w, h)
+    }
+
+    /// 布局用 Cocoa 矩形：保留菜单栏顶 inset 与侧/底 **真 Dock** inset；
+    /// 抹掉非 Dock 屏上被系统误扣的底边（副屏底部留白主因）。
+    ///
+    /// `frame` / `visible`：`(x, y, w, h)` Cocoa。
+    /// `owns_bottom_dock`：全局仅一屏为底 Dock 宿主（bottom_inset 最大，并列 primary 优先）。
+    pub fn layout_cocoa_rect(
+        frame: (f64, f64, f64, f64),
+        visible: (f64, f64, f64, f64),
+        owns_bottom_dock: bool,
+    ) -> (f64, f64, f64, f64) {
+        let (frame_x, frame_y, frame_w, frame_h) = frame;
+        let (vis_x, vis_y, vis_w, vis_h) = visible;
+        let frame_top = frame_y + frame_h;
+        let frame_right = frame_x + frame_w;
+        let bottom_inset = (vis_y - frame_y).max(0.0);
+        let (ly, lh) = if bottom_inset > 1.0 && !owns_bottom_dock {
+            // 误扣 Dock 高：底回到 frame 底，顶仍用 visible 顶（菜单栏），且不超过 frame 顶
+            let top = (vis_y + vis_h).min(frame_top);
+            (frame_y, (top - frame_y).max(0.0))
+        } else {
+            let ly = vis_y.clamp(frame_y, frame_top);
+            let top = (vis_y + vis_h).min(frame_top).max(ly);
+            (ly, top - ly)
+        };
+        // 左右仍跟 visible（侧边 Dock / 安全区），夹进 frame
+        let lx = vis_x.clamp(frame_x, frame_right);
+        let lw = vis_w.min(frame_right - lx).max(0.0);
+        (lx, ly, lw, lh)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ScreenInfo;
+
+    #[test]
+    fn cocoa_to_ax_main_screen_top_left() {
+        // 主屏 1440×900，Cocoa 全帧 (0,0,1440,900) → AX (0,0,1440,900)
+        let (x, y, w, h) = ScreenInfo::cocoa_rect_to_ax(0.0, 0.0, 1440.0, 900.0, 900.0);
+        assert_eq!((x, y, w, h), (0.0, 0.0, 1440.0, 900.0));
+    }
+
+    #[test]
+    fn cocoa_to_ax_secondary_right_bottom_aligned() {
+        // 副屏在右侧、底对齐：Cocoa (1440, 0, 1920, 1080)，primary_max_y 900
+        // AX 顶边 = 900 - 0 - 1080 = -180
+        let (x, y, w, h) = ScreenInfo::cocoa_rect_to_ax(1440.0, 0.0, 1920.0, 1080.0, 900.0);
+        assert_eq!((x, y, w, h), (1440.0, -180.0, 1920.0, 1080.0));
+    }
+
+    #[test]
+    fn cocoa_to_ax_visible_below_menu_bar() {
+        // visibleFrame 扣掉菜单栏 25pt：Cocoa y=0 高 875 → AX y=25
+        let (x, y, w, h) = ScreenInfo::cocoa_rect_to_ax(0.0, 0.0, 1440.0, 875.0, 900.0);
+        assert_eq!((x, y, w, h), (0.0, 25.0, 1440.0, 875.0));
+    }
+
+    #[test]
+    fn layout_strips_false_dock_inset_on_secondary() {
+        // 副屏 frame 与「可见」同底应对齐，但系统误把主屏 Dock 70pt 扣到副屏 visible.y
+        let frame = (1920.0, 0.0, 2560.0, 1440.0);
+        let vis_false = (1920.0, 70.0, 2560.0, 1370.0); // 底 +70、高 -70，顶仍 1440
+        let (x, y, w, h) = ScreenInfo::layout_cocoa_rect(frame, vis_false, false);
+        assert_eq!((x, y, w, h), (1920.0, 0.0, 2560.0, 1440.0));
+    }
+
+    #[test]
+    fn layout_keeps_real_dock_inset_on_owner() {
+        let frame = (0.0, 0.0, 1440.0, 900.0);
+        let vis = (0.0, 70.0, 1440.0, 805.0); // 底 Dock 70 + 顶菜单 25
+        let (x, y, w, h) = ScreenInfo::layout_cocoa_rect(frame, vis, true);
+        assert_eq!((x, y, w, h), (0.0, 70.0, 1440.0, 805.0));
+    }
+
+    #[test]
+    fn cocoa_to_ax_secondary_above_primary() {
+        // 副屏叠在主屏上方：主 1800×1169，副 Cocoa (0, 1169, 1920, 1080)
+        // AX 顶 = 1169 - 1169 - 1080 = -1080，底边 = 0（贴主屏顶，不越界）
+        let (x, y, w, h) = ScreenInfo::cocoa_rect_to_ax(0.0, 1169.0, 1920.0, 1080.0, 1169.0);
+        assert_eq!((x, y, w, h), (0.0, -1080.0, 1920.0, 1080.0));
+        assert_eq!(y + h, 0.0);
+    }
+
+    #[test]
+    fn bottom_half_on_secondary_above_stays_within_frame() {
+        // 竖排副屏下半：AX layout (-1080,h=1080) → bottom 起点 -540、高 540、底边 0
+        let primary_max_y = 1169.0;
+        let frame = (0.0, 1169.0, 1920.0, 1080.0);
+        let vis = frame;
+        let (cx, cy, cw, ch) = ScreenInfo::layout_cocoa_rect(frame, vis, false);
+        let (lx, ly, lw, lh) = ScreenInfo::cocoa_rect_to_ax(cx, cy, cw, ch, primary_max_y);
+        let hh = lh / 2.0;
+        let bottom_y = ly + hh;
+        let bottom_h = hh;
+        assert_eq!((lx, ly, lw, lh), (0.0, -1080.0, 1920.0, 1080.0));
+        assert_eq!(bottom_y, -540.0);
+        assert_eq!(bottom_h, 540.0);
+        assert_eq!(bottom_y + bottom_h, 0.0); // 不越过副屏底 / 主屏顶
+    }
+
+    #[test]
+    fn layout_cocoa_rect_side_dock_does_not_overflow_frame() {
+        // 左侧 Dock：visible x 抬高；lw 不得超过 frame 右缘
+        let frame = (0.0, 0.0, 1440.0, 900.0);
+        let vis = (70.0, 0.0, 1370.0, 875.0);
+        let (x, y, w, h) = ScreenInfo::layout_cocoa_rect(frame, vis, true);
+        assert_eq!((x, y, w, h), (70.0, 0.0, 1370.0, 875.0));
+        assert!(x + w <= 1440.0 + f64::EPSILON);
+    }
 }
 
 mod platform;

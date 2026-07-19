@@ -151,11 +151,73 @@ mod imp {
         CFRelease(size_val);
     }
 
+    /// AX 只能分别写 size / position；macOS 会按**当前屏**钳制尺寸。
+    /// 下半/左下/右下若先 position 再 size，窗口会以旧高度短暂跨出副屏底边
+    ///（竖排副屏时直接压到主屏）。顺序：size → position → size（Rectangle 同款）。
+    pub unsafe fn set_ax_frame(win_ref: *mut c_void, px: f64, py: f64, pw: f64, ph: f64) {
+        set_ax_size(win_ref, pw, ph);
+        set_ax_position(win_ref, px, py);
+        set_ax_size(win_ref, pw, ph);
+    }
+
+    /// 将目标矩形夹进屏的 layout 区（防跨屏钳制后残留越界）。
+    fn clamp_to_layout(
+        px: f64,
+        py: f64,
+        pw: f64,
+        ph: f64,
+        s: &ScreenInfo,
+    ) -> (f64, f64, f64, f64) {
+        let max_w = s.layout_width.max(0.0);
+        let max_h = s.layout_height.max(0.0);
+        let w = pw.clamp(0.0, max_w);
+        let h = ph.clamp(0.0, max_h);
+        let mut x = px;
+        let mut y = py;
+        if x + w > s.layout_x + max_w {
+            x = s.layout_x + max_w - w;
+        }
+        if y + h > s.layout_y + max_h {
+            y = s.layout_y + max_h - h;
+        }
+        if x < s.layout_x {
+            x = s.layout_x;
+        }
+        if y < s.layout_y {
+            y = s.layout_y;
+        }
+        (x, y, w, h)
+    }
+
+    /// 自定义尺寸夹进 layout；layout 小于 BOUNDS floor 时 floor 降为 layout 边长，避免 `clamp` min>max panic。
+    fn clamp_custom_in_layout(
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        cw: f64,
+        ch: f64,
+    ) -> (f64, f64, f64, f64) {
+        let max_w = WIDTH_BOUNDS.1.min(w).max(0.0);
+        let max_h = HEIGHT_BOUNDS.1.min(h).max(0.0);
+        let min_w = WIDTH_BOUNDS.0.min(max_w);
+        let min_h = HEIGHT_BOUNDS.0.min(max_h);
+        let clamped_w = cw.clamp(min_w, max_w);
+        let clamped_h = ch.clamp(min_h, max_h);
+        (
+            x + (w - clamped_w) / 2.0,
+            y + (h - clamped_h) / 2.0,
+            clamped_w,
+            clamped_h,
+        )
+    }
+
+    /// 在目标屏的 AX visible 区内计算布局矩形（AX 坐标）。
     pub fn compute_target(layout: &str, s: &ScreenInfo, cw: f64, ch: f64) -> (f64, f64, f64, f64) {
-        let x = s.x;
-        let y = s.y;
-        let w = s.width;
-        let h = s.height;
+        let x = s.layout_x;
+        let y = s.layout_y;
+        let w = s.layout_width;
+        let h = s.layout_height;
         let hw = w / 2.0;
         let hh = h / 2.0;
 
@@ -169,71 +231,233 @@ mod imp {
             "bottom-left" => (x, y + hh, hw, hh),
             "bottom" => (x, y + hh, w, hh),
             "bottom-right" => (x + hw, y + hh, hw, hh),
-            "custom" => {
-                let clamped_w = cw.clamp(WIDTH_BOUNDS.0, WIDTH_BOUNDS.1.min(w));
-                let clamped_h = ch.clamp(HEIGHT_BOUNDS.0, HEIGHT_BOUNDS.1.min(h));
-                (
-                    x + (w - clamped_w) / 2.0,
-                    y + (h - clamped_h) / 2.0,
-                    clamped_w,
-                    clamped_h,
-                )
-            }
-            _ => {
-                let clamped_w = cw.clamp(WIDTH_BOUNDS.0, WIDTH_BOUNDS.1.min(w));
-                let clamped_h = ch.clamp(HEIGHT_BOUNDS.0, HEIGHT_BOUNDS.1.min(h));
-                (
-                    x + (w - clamped_w) / 2.0,
-                    y + (h - clamped_h) / 2.0,
-                    clamped_w,
-                    clamped_h,
-                )
+            "custom" | "center" => clamp_custom_in_layout(x, y, w, h, cw, ch),
+            _ => clamp_custom_in_layout(x, y, w, h, cw, ch),
+        }
+    }
+
+    /// AX 点是否落在屏的全帧内（含菜单栏/Dock 带，便于窗口归属判定）。
+    fn ax_point_in_frame(px: f64, py: f64, s: &ScreenInfo) -> bool {
+        px >= s.ax_frame_x
+            && px < s.ax_frame_x + s.ax_frame_width
+            && py >= s.ax_frame_y
+            && py < s.ax_frame_y + s.ax_frame_height
+    }
+
+    /// 按 AX 点选屏；重叠时优先面积更小者（嵌套/对齐边更稳），再退主屏。
+    fn screen_for_ax_point(screens: &[ScreenInfo], px: f64, py: f64) -> ScreenInfo {
+        let mut best: Option<&ScreenInfo> = None;
+        let mut best_area = f64::MAX;
+        for s in screens {
+            if ax_point_in_frame(px, py, s) {
+                let area = s.ax_frame_width * s.ax_frame_height;
+                if area < best_area {
+                    best_area = area;
+                    best = Some(s);
+                }
             }
         }
+        best.cloned()
+            .or_else(|| screens.iter().find(|s| s.is_main).cloned())
+            .unwrap_or_else(ScreenInfo::fallback)
+    }
+
+    /// 窗口中心点（AX）选屏；无位置则主屏。
+    fn screen_for_window(
+        screens: &[ScreenInfo],
+        pos: Option<(f64, f64)>,
+        size: Option<(f64, f64)>,
+    ) -> ScreenInfo {
+        match (pos, size) {
+            (Some((x, y)), Some((w, h))) => screen_for_ax_point(screens, x + w / 2.0, y + h / 2.0),
+            (Some((x, y)), None) => screen_for_ax_point(screens, x, y),
+            _ => screens
+                .iter()
+                .find(|s| s.is_main)
+                .cloned()
+                .unwrap_or_else(ScreenInfo::fallback),
+        }
+    }
+
+    /// 跨屏：相对位置比例映射到目标屏 visible 区，尺寸按比例缩放并夹紧。
+    fn map_window_to_screen(
+        win_x: f64,
+        win_y: f64,
+        win_w: f64,
+        win_h: f64,
+        from: &ScreenInfo,
+        to: &ScreenInfo,
+    ) -> (f64, f64, f64, f64) {
+        let fw = from.layout_width.max(1.0);
+        let fh = from.layout_height.max(1.0);
+        let rel_x = (win_x - from.layout_x) / fw;
+        let rel_y = (win_y - from.layout_y) / fh;
+        let rel_w = (win_w / fw).clamp(0.05, 1.0);
+        let rel_h = (win_h / fh).clamp(0.05, 1.0);
+
+        let tw = to.layout_width;
+        let th = to.layout_height;
+        let mut nw = (rel_w * tw).clamp(WIDTH_BOUNDS.0.min(tw), tw);
+        let mut nh = (rel_h * th).clamp(HEIGHT_BOUNDS.0.min(th), th);
+        let mut nx = to.layout_x + rel_x * tw;
+        let mut ny = to.layout_y + rel_y * th;
+
+        // 夹进目标 visible 区
+        if nx + nw > to.layout_x + tw {
+            nx = to.layout_x + tw - nw;
+        }
+        if ny + nh > to.layout_y + th {
+            ny = to.layout_y + th - nh;
+        }
+        if nx < to.layout_x {
+            nx = to.layout_x;
+        }
+        if ny < to.layout_y {
+            ny = to.layout_y;
+        }
+        if nw > tw {
+            nw = tw;
+        }
+        if nh > th {
+            nh = th;
+        }
+        (nx, ny, nw, nh)
+    }
+
+    /// `next-display` / `prev-display`：按 NSScreen 枚举序环移。
+    fn adjacent_screen<'a>(
+        screens: &'a [ScreenInfo],
+        current: &ScreenInfo,
+        next: bool,
+    ) -> Option<&'a ScreenInfo> {
+        if screens.len() < 2 {
+            return None;
+        }
+        let idx = screens.iter().position(|s| {
+            (s.ax_frame_x - current.ax_frame_x).abs() < 1.0
+                && (s.ax_frame_y - current.ax_frame_y).abs() < 1.0
+                && (s.ax_frame_width - current.ax_frame_width).abs() < 1.0
+        })?;
+        let n = screens.len();
+        let target = if next {
+            (idx + 1) % n
+        } else {
+            (idx + n - 1) % n
+        };
+        Some(&screens[target])
     }
 
     pub fn do_get_screens() -> Vec<ScreenInfo> {
         let mtm = match MainThreadMarker::new() {
             Some(m) => m,
-            None => {
-                return vec![ScreenInfo {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1440.0,
-                    height: 900.0,
-                    is_main: true,
-                }]
-            }
+            None => return vec![ScreenInfo::fallback()],
         };
 
         let screens = NSScreen::screens(mtm);
-        let main_screen = NSScreen::mainScreen(mtm);
-        let main_frame = main_screen.map(|s| s.frame()).unwrap_or_default();
+        if screens.is_empty() {
+            return vec![ScreenInfo::fallback()];
+        }
 
-        let mut result = Vec::with_capacity(screens.len());
-        for screen in screens.iter() {
-            let frame = screen.frame();
-            let is_main = frame.origin.x == main_frame.origin.x
-                && frame.origin.y == main_frame.origin.y
-                && frame.size.width == main_frame.size.width
-                && frame.size.height == main_frame.size.height;
+        // Primary = 菜单栏坐标系原点屏（frame 近 (0,0)），勿用 mainScreen（随焦点变）。
+        let primary_frame = screens
+            .iter()
+            .map(|s| s.frame())
+            .min_by(|a, b| {
+                let da = a.origin.x.hypot(a.origin.y);
+                let db = b.origin.x.hypot(b.origin.y);
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or_default();
+        let primary_max_y = primary_frame.origin.y + primary_frame.size.height;
+
+        // 采集 frame/visible，判定底 Dock 唯一宿主（inset 最大；并列 primary 优先）
+        struct RawScreen {
+            frame_x: f64,
+            frame_y: f64,
+            frame_w: f64,
+            frame_h: f64,
+            vis_x: f64,
+            vis_y: f64,
+            vis_w: f64,
+            vis_h: f64,
+            bottom_inset: f64,
+            is_primary: bool,
+        }
+
+        let raw: Vec<RawScreen> = screens
+            .iter()
+            .map(|screen| {
+                let frame = screen.frame();
+                let visible = screen.visibleFrame();
+                let is_primary = (frame.origin.x - primary_frame.origin.x).abs() < 1.0
+                    && (frame.origin.y - primary_frame.origin.y).abs() < 1.0
+                    && (frame.size.width - primary_frame.size.width).abs() < 1.0
+                    && (frame.size.height - primary_frame.size.height).abs() < 1.0;
+                RawScreen {
+                    frame_x: frame.origin.x,
+                    frame_y: frame.origin.y,
+                    frame_w: frame.size.width,
+                    frame_h: frame.size.height,
+                    vis_x: visible.origin.x,
+                    vis_y: visible.origin.y,
+                    vis_w: visible.size.width,
+                    vis_h: visible.size.height,
+                    bottom_inset: (visible.origin.y - frame.origin.y).max(0.0),
+                    is_primary,
+                }
+            })
+            .collect();
+
+        let dock_owner = raw
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.bottom_inset > 1.0)
+            .max_by(|(_, a), (_, b)| {
+                a.bottom_inset
+                    .partial_cmp(&b.bottom_inset)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.is_primary.cmp(&b.is_primary))
+            })
+            .map(|(i, _)| i);
+
+        let mut result = Vec::with_capacity(raw.len());
+        for (i, s) in raw.iter().enumerate() {
+            let owns_bottom_dock = dock_owner == Some(i);
+            let (cx, cy, cw, ch) = ScreenInfo::layout_cocoa_rect(
+                (s.frame_x, s.frame_y, s.frame_w, s.frame_h),
+                (s.vis_x, s.vis_y, s.vis_w, s.vis_h),
+                owns_bottom_dock,
+            );
+
+            let (ax_fx, ax_fy, ax_fw, ax_fh) = ScreenInfo::cocoa_rect_to_ax(
+                s.frame_x,
+                s.frame_y,
+                s.frame_w,
+                s.frame_h,
+                primary_max_y,
+            );
+            let (lx, ly, lw, lh) = ScreenInfo::cocoa_rect_to_ax(cx, cy, cw, ch, primary_max_y);
+
             result.push(ScreenInfo {
-                x: frame.origin.x,
-                y: frame.origin.y,
-                width: frame.size.width,
-                height: frame.size.height,
-                is_main,
+                x: s.frame_x,
+                y: s.frame_y,
+                width: s.frame_w,
+                height: s.frame_h,
+                // is_main：焦点 mainScreen 语义改为 primary（坐标系锚点屏），布局选屏不依赖它
+                is_main: s.is_primary,
+                layout_x: lx,
+                layout_y: ly,
+                layout_width: lw,
+                layout_height: lh,
+                ax_frame_x: ax_fx,
+                ax_frame_y: ax_fy,
+                ax_frame_width: ax_fw,
+                ax_frame_height: ax_fh,
             });
         }
 
         if result.is_empty() {
-            result.push(ScreenInfo {
-                x: main_frame.origin.x,
-                y: main_frame.origin.y,
-                width: main_frame.size.width,
-                height: main_frame.size.height,
-                is_main: true,
-            });
+            result.push(ScreenInfo::fallback());
         }
 
         result
@@ -375,14 +599,18 @@ mod imp {
         w: f64,
         h: f64,
     ) -> Result<(), String> {
+        // 与 set_ax_frame 同序：size → position → size，避免下半区跨屏钳制
         let script = format!(
             "tell application \"System Events\"\n\
              tell process \"{}\"\n\
+             set size of window 1 to {{{}, {}}}\n\
              set position of window 1 to {{{}, {}}}\n\
-             set size of window 1 to {{ {}, {} }}\n\
+             set size of window 1 to {{{}, {}}}\n\
              end tell\n\
              end tell",
             app_name.replace('\\', "\\\\").replace('"', "\\\""),
+            w as i32,
+            h as i32,
             x as i32,
             y as i32,
             w as i32,
@@ -445,57 +673,91 @@ mod imp {
             .or_else(|| cg_pid.and_then(get_process_name))
             .ok_or("无法获取前台窗口")?;
 
-        let screens = do_get_screens();
-        let screen = screens
-            .iter()
-            .find(|s| s.is_main)
-            .cloned()
-            .unwrap_or(ScreenInfo {
-                x: 0.0,
-                y: 0.0,
-                width: 1440.0,
-                height: 900.0,
-                is_main: true,
-            });
-
-        if layout == "center" {
-            return applescript_center_window(&app_name, &screen);
-        }
-
-        let (px, py, pw, ph) = compute_target(layout, &screen, custom_width, custom_height);
-        applescript_set_window_bounds(&app_name, px, py, pw, ph)
+        applescript_apply_layout(&app_name, layout, custom_width, custom_height)
     }
 
-    fn applescript_center_window(app_name: &str, screen: &ScreenInfo) -> Result<(), String> {
+    /// 解析 AppleScript `{a, b}` / `a, b` 输出。
+    fn parse_applescript_pair(raw: &str) -> Option<(f64, f64)> {
+        let dims: Vec<f64> = raw
+            .trim()
+            .trim_start_matches('{')
+            .trim_end_matches('}')
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        if dims.len() >= 2 {
+            Some((dims[0], dims[1]))
+        } else {
+            None
+        }
+    }
+
+    /// (position, size) 均为 AX 坐标。
+    #[allow(clippy::type_complexity)]
+    fn applescript_get_window_geom(app_name: &str) -> Result<((f64, f64), (f64, f64)), String> {
         let escaped = app_name.replace('\\', "\\\\").replace('"', "\\\"");
-        let get_size = format!(
-            "tell application \"System Events\" to tell process \"{}\" to get size of window 1",
+        let script = format!(
+            "tell application \"System Events\" to tell process \"{}\"\n\
+             set p to position of window 1\n\
+             set s to size of window 1\n\
+             return (item 1 of p as text) & \",\" & (item 2 of p as text) & \";\" & \
+                    (item 1 of s as text) & \",\" & (item 2 of s as text)\n\
+             end tell",
             escaped,
         );
         let output = std::process::Command::new("osascript")
             .arg("-e")
-            .arg(&get_size)
+            .arg(&script)
             .output()
             .map_err(|e| format!("osascript 执行失败: {e}"))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("无法获取窗口尺寸: {}", stderr.trim()));
+            return Err(format!("无法获取窗口几何: {}", stderr.trim()));
         }
-        let size_raw = String::from_utf8_lossy(&output.stdout);
-        let size_str = size_raw.trim();
-        let dims: Vec<f64> = size_str
-            .trim_start_matches('{')
-            .trim_end_matches('}')
-            .split(", ")
-            .filter_map(|s| s.parse().ok())
-            .collect();
-        if dims.len() < 2 {
-            return Err("无法解析窗口尺寸".to_string());
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut parts = text.trim().split(';');
+        let pos = parts
+            .next()
+            .and_then(parse_applescript_pair)
+            .ok_or_else(|| "无法解析窗口位置".to_string())?;
+        let size = parts
+            .next()
+            .and_then(parse_applescript_pair)
+            .ok_or_else(|| "无法解析窗口尺寸".to_string())?;
+        Ok((pos, size))
+    }
+
+    fn applescript_apply_layout(
+        app_name: &str,
+        layout: &str,
+        custom_width: f64,
+        custom_height: f64,
+    ) -> Result<(), String> {
+        let screens = do_get_screens();
+        let (pos, size) = applescript_get_window_geom(app_name)?;
+        let screen = screen_for_window(&screens, Some(pos), Some(size));
+
+        if layout == "next-display" || layout == "prev-display" {
+            let Some(target) = adjacent_screen(&screens, &screen, layout == "next-display") else {
+                return Ok(());
+            };
+            let (px, py, pw, ph) =
+                map_window_to_screen(pos.0, pos.1, size.0, size.1, &screen, target);
+            let (px, py, pw, ph) = clamp_to_layout(px, py, pw, ph, target);
+            return applescript_set_window_bounds(app_name, px, py, pw, ph);
         }
-        let (cw, ch) = (dims[0], dims[1]);
-        let px = screen.x + (screen.width - cw) / 2.0;
-        let py = screen.y + (screen.height - ch) / 2.0;
-        applescript_set_window_bounds(app_name, px, py, cw, ch)
+
+        if layout == "center" {
+            // 居中保持原尺寸；勿 clamp（大窗相对 layout 负偏移是正确居中）
+            let (cw, ch) = size;
+            let px = screen.layout_x + (screen.layout_width - cw) / 2.0;
+            let py = screen.layout_y + (screen.layout_height - ch) / 2.0;
+            return applescript_set_window_bounds(app_name, px, py, cw, ch);
+        }
+
+        let (px, py, pw, ph) = compute_target(layout, &screen, custom_width, custom_height);
+        let (px, py, pw, ph) = clamp_to_layout(px, py, pw, ph, &screen);
+        applescript_set_window_bounds(app_name, px, py, pw, ph)
     }
 
     unsafe fn apply_ax_layout(
@@ -512,49 +774,43 @@ mod imp {
             }
             result
         };
+        let current_size = {
+            let sz = ax_copy_attr(win_ref, "AXSize");
+            let result = sz.as_ref().and_then(|v| ax_value_to_size(*v));
+            if let Some(v) = sz {
+                CFRelease(v);
+            }
+            result
+        };
 
         let screens = do_get_screens();
-        let target_screen = if let Some((cx, cy)) = current_pos {
-            screens
-                .iter()
-                .find(|s| cx >= s.x && cx <= s.x + s.width && cy >= s.y && cy <= s.y + s.height)
-                .cloned()
-        } else {
-            None
-        };
-        let screen = target_screen.unwrap_or_else(|| {
-            screens
-                .iter()
-                .find(|s| s.is_main)
-                .cloned()
-                .unwrap_or(ScreenInfo {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1440.0,
-                    height: 900.0,
-                    is_main: true,
-                })
-        });
+        let screen = screen_for_window(&screens, current_pos, current_size);
+
+        if layout == "next-display" || layout == "prev-display" {
+            let Some(target) = adjacent_screen(&screens, &screen, layout == "next-display") else {
+                return Ok(());
+            };
+            let (wx, wy) = current_pos.unwrap_or((screen.layout_x, screen.layout_y));
+            let (ww, wh) =
+                current_size.unwrap_or((screen.layout_width * 0.5, screen.layout_height * 0.5));
+            let (px, py, pw, ph) = map_window_to_screen(wx, wy, ww, wh, &screen, target);
+            let (px, py, pw, ph) = clamp_to_layout(px, py, pw, ph, target);
+            set_ax_frame(win_ref, px, py, pw, ph);
+            return Ok(());
+        }
 
         if layout == "center" {
-            let current_size = {
-                let sz = ax_copy_attr(win_ref, "AXSize");
-                let result = sz.as_ref().and_then(|v| ax_value_to_size(*v));
-                if let Some(v) = sz {
-                    CFRelease(v);
-                }
-                result
-            };
+            // 居中只改位置、保持原尺寸；勿 clamp（大窗相对 layout 负偏移是正确居中）
             let (cw, ch) = current_size.unwrap_or((1200.0, 800.0));
-            let px = screen.x + (screen.width - cw) / 2.0;
-            let py = screen.y + (screen.height - ch) / 2.0;
+            let px = screen.layout_x + (screen.layout_width - cw) / 2.0;
+            let py = screen.layout_y + (screen.layout_height - ch) / 2.0;
             set_ax_position(win_ref, px, py);
             return Ok(());
         }
 
         let (px, py, pw, ph) = compute_target(layout, &screen, custom_width, custom_height);
-        set_ax_position(win_ref, px, py);
-        set_ax_size(win_ref, pw, ph);
+        let (px, py, pw, ph) = clamp_to_layout(px, py, pw, ph, &screen);
+        set_ax_frame(win_ref, px, py, pw, ph);
         Ok(())
     }
 
