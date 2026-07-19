@@ -89,7 +89,7 @@
             aria-label="选择翻译模型"
             flex="~ col"
             gap="1.5"
-            class="max-h-48 overflow-y-auto hide-scrollbar"
+            class="hide-scrollbar max-h-48 overflow-y-auto"
             @keydown="onModelListKeydown"
           >
             <BaseButton
@@ -99,7 +99,7 @@
               role="option"
               :aria-selected="selectedKeySet.has(opt.key)"
               :tabindex="modelFocusIndex === index ? 0 : -1"
-              class="model-option !justify-start w-full"
+              class="model-option w-full !justify-start"
               :class="modelFocusIndex === index ? 'model-option-focused' : ''"
               :icon="
                 selectedKeySet.has(opt.key)
@@ -109,8 +109,8 @@
               @click="onModelClick(opt.key, index)"
               @focus="modelFocusIndex = index"
             >
-              <span class="flex-1 min-w-0 truncate text-left">{{ opt.displayLabel }}</span>
-              <span text="xs muted" class="truncate shrink-0 max-w-28">{{
+              <span class="text-left flex-1 min-w-0 truncate">{{ opt.displayLabel }}</span>
+              <span text="xs muted" class="shrink-0 max-w-28 truncate">{{
                 opt.providerLabel
               }}</span>
             </BaseButton>
@@ -177,7 +177,11 @@ function youdaoSubtitle(): string {
   return c.appKey && c.appSecret ? '已配置' : '未配置'
 }
 
-function formatAiSelectionSummary(s: { providerId: string; keyId?: string; model: string }): string {
+function formatAiSelectionSummary(s: {
+  providerId: string
+  keyId?: string
+  model: string
+}): string {
   return selectionDisplayLabel(s.providerId, s.keyId, s.model)
 }
 

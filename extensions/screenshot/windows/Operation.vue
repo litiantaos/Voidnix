@@ -548,12 +548,7 @@ function fakePointerEvent(x: number, y: number, shiftKey: boolean, buttons: numb
 }
 
 /** 原生 monitor 注入：select 阶段唯一指针源（eval 异步，不能与 DOM 去重竞态）。 */
-function onNativePointer(
-  type: 'down' | 'move' | 'up',
-  x: number,
-  y: number,
-  shiftKey: boolean,
-) {
+function onNativePointer(type: 'down' | 'move' | 'up', x: number, y: number, shiftKey: boolean) {
   if (phase.value !== 'select') return
   const buttons = type === 'up' ? 0 : 1
   const e = fakePointerEvent(x, y, shiftKey, buttons)

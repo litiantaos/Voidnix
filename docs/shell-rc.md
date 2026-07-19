@@ -60,10 +60,10 @@ shell_rc::quote_shell(path);           // POSIX 单引号
 
 ## 现有消费者
 
-| scope | 扩展 | body 含义 |
-|-------|------|-----------|
-| `zsh-autosuggestions` | 补全 | `export ZSH_AS_DIR=…; eval "$(… init)"` |
-| `ai-providers` | AI 凭证 | `source ~/.config/voidnix/ai.env`（zshrc + zprofile） |
+| scope                 | 扩展    | body 含义                                             |
+| --------------------- | ------- | ----------------------------------------------------- |
+| `zsh-autosuggestions` | 补全    | `export ZSH_AS_DIR=…; eval "$(… init)"`               |
+| `ai-providers`        | AI 凭证 | `source ~/.config/voidnix/ai.env`（zshrc + zprofile） |
 
 ## 禁止
 

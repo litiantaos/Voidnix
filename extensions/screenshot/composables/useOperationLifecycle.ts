@@ -78,12 +78,7 @@ export function useOperationLifecycle(options: {
     // 原生指针桥：select 阶段用 local monitor 驱动，解决冷启动首击被系统当激活吞掉
     ;(
       window as unknown as {
-        __screenshotPointer?: (
-          type: string,
-          x: number,
-          y: number,
-          shiftKey: boolean,
-        ) => void
+        __screenshotPointer?: (type: string, x: number, y: number, shiftKey: boolean) => void
       }
     ).__screenshotPointer = (type, x, y, shiftKey) => {
       if (type !== 'down' && type !== 'move' && type !== 'up') return

@@ -48,7 +48,12 @@
             </slot>
           </div>
 
-          <div class="dialog-chrome dialog-chrome-header" text="sm primary" font="bold" select="none">
+          <div
+            class="dialog-chrome dialog-chrome-header"
+            text="sm primary"
+            font="bold"
+            select="none"
+          >
             <slot name="header">
               <h3 :id="titleId">
                 {{ title }}

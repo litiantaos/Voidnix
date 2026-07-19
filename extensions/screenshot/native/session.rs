@@ -399,7 +399,10 @@ mod mouse_tracker {
                 return;
             }
             // 已是 key 时 local monitor 会覆盖同一事件，跳过避免双份 eval
-            if let Ok(raw) = window.ns_window().map(|p| p.cast::<objc2_app_kit::NSWindow>()) {
+            if let Ok(raw) = window
+                .ns_window()
+                .map(|p| p.cast::<objc2_app_kit::NSWindow>())
+            {
                 // SAFETY: ns 非空校验
                 if let Some(ns) = unsafe { raw.as_ref() } {
                     if ns.isKeyWindow() {
