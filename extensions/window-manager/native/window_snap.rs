@@ -92,17 +92,32 @@ mod inner {
     const PANEL_TOP_GAP: f64 = 8.0;
     const HIDE_DELAY_SEC: f64 = 0.4;
 
-    /// 与 SnapPanel.vue 设计稿同步：p-3×2 + 5×w-14 + 4×gap-3 = 352；高 p-3×2 + h-14 = 80
-    fn panel_width() -> f64 {
-        352.0
+    /// 与 SnapPanel.vue 同步：p-3×2 + n×w-14 + (n-1)×gap-3；高 p-3×2 + h-14 = 80。
+    /// n = 5（单屏）/ 6（多屏，末组 prev/next display）。
+    fn group_count(screen_count: usize) -> usize {
+        if screen_count > 1 {
+            6
+        } else {
+            5
+        }
     }
+
+    fn panel_width_for(screen_count: usize) -> f64 {
+        let n = group_count(screen_count) as f64;
+        24.0 + n * 56.0 + (n - 1.0) * 12.0
+    }
+
     fn panel_height() -> f64 {
         80.0
     }
 
-    /// 面板固定尺寸（show/hide 动画 target 权威源，避免读 ns.frame() 漂移）。
+    fn current_screen_count() -> usize {
+        do_get_screens().len().max(1)
+    }
+
+    /// 面板尺寸（show/hide 动画 target 权威源，按当前屏数动态宽）。
     pub(crate) fn panel_dimensions() -> (f64, f64) {
-        (panel_width(), panel_height())
+        (panel_width_for(current_screen_count()), panel_height())
     }
 
     // ── 屏幕工具 ──────────────────────────────────────────────────────────
@@ -133,7 +148,7 @@ mod inner {
     }
 
     fn compute_panel_rect(screen: &ScreenInfo) -> NSRect {
-        let w = panel_width();
+        let w = panel_width_for(current_screen_count());
         let h = panel_height();
         let x = screen.x + (screen.width - w) / 2.0;
         let y = screen.y + screen.height - h - screen_top_inset(screen) - PANEL_TOP_GAP;
@@ -191,6 +206,7 @@ mod inner {
         // PID 存入 platform::focus 唯一源。
         crate::platform::focus::capture_frontmost();
 
+        let screen_count = current_screen_count();
         let target = compute_panel_rect(screen);
         // SAFETY: ns_window 经 as_ref().unwrap()（raw 来自 ns_window() Ok 分支，非空）；
         // setFrame_display:setAlphaValue:setIgnoresMouseEvents: 均为 NSWindow 标准方法
@@ -202,8 +218,8 @@ mod inner {
         }
 
         let _ = window.eval(format!(
-            "window.__snapPanelData={{w:{},h:{}}};window.dispatchEvent(new CustomEvent('__snap_panel_show'));",
-            cw as i32, ch as i32
+            "window.__snapPanelData={{w:{},h:{},screens:{}}};window.dispatchEvent(new CustomEvent('__snap_panel_show'));",
+            cw as i32, ch as i32, screen_count
         ));
 
         let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
