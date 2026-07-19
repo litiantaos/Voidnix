@@ -274,6 +274,11 @@ export function useSearchInput(opts: SearchInputOptions) {
       savedToolIndex = selectedIndex.value
       const mod = activeModule.value
       if (!mod || mod.mainView || !mod.search) return
+      // 立即清空旧结果 + 显示 loading：避免 HTTP 返回前残留全局列表/工具列表
+      // （ContentView loading 占位条件 = loading && results.length === 0）
+      results.value = []
+      selectedIndex.value = 0
+      isLoading.value = true
       runModuleSearch(appStore.searchQuery)
     },
   )
