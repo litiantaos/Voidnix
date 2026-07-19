@@ -67,6 +67,7 @@
           <div flex items="center" gap="2" class="form-label w-full">
             <span class="flex-1">{{ modelFieldLabel }}</span>
             <BaseButton
+              v-if="modelOptions.length > 0"
               variant="ghost"
               icon="i-ri-settings-3-line"
               title="管理提供商"
@@ -74,8 +75,7 @@
             />
           </div>
 
-          <div v-if="modelOptions.length === 0" flex="~ col" gap="1.5">
-            <span text="xs muted">还没有可选用的模型</span>
+          <div v-if="modelOptions.length === 0">
             <BaseButton class="self-start" icon="i-ri-key-2-line" @click="goAiProviders">
               打开 AI 提供商
             </BaseButton>
