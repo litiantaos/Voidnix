@@ -17,6 +17,7 @@
     />
   </div>
   <BaseButton
+    v-if="userMessages.length > 0"
     icon="i-ri-add-line"
     title="新会话"
     aria-label="新会话"

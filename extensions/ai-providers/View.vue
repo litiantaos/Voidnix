@@ -1,11 +1,6 @@
 <template>
   <div class="flex-col-full-pb">
-    <BaseEmptyState
-      v-if="keyRows.length === 0"
-      title="还没有 API Key"
-      description="点搜索栏右侧 + 添加提供商"
-      icon="i-ri-key-2-line"
-    />
+    <BaseEmptyState v-if="keyRows.length === 0" title="请添加 AI 提供商" icon="i-ri-key-2-line" />
 
     <BaseList
       v-else

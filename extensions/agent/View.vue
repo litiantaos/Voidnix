@@ -1,11 +1,6 @@
 <template>
   <div v-if="!isConfigured" class="agent-setup">
-    <BaseEmptyState
-      icon="i-ri-key-2-line"
-      title="请先配置 AI 提供商与模型"
-      description="在「AI 提供商」填写，或 shell source ~/.config/voidnix/ai.env"
-    />
-    <BaseButton variant="primary" @click="openProviders">去配置</BaseButton>
+    <BaseEmptyState icon="i-ri-key-2-line" title="请先配置 AI 提供商" />
   </div>
 
   <div v-else class="agent-layout" @click="onContentClick">
@@ -139,7 +134,6 @@
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted, onActivated, onUnmounted, watch } from 'vue'
 import { open } from '@tauri-apps/plugin-shell'
-import { useAppStore } from '@/stores/app'
 import { showToast } from '@/composables/useToast'
 import { isAgentProviderReady, resolveAgentRuntimeCredentials } from './config'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -155,7 +149,6 @@ import './agent-step.css'
 const NEAR_BOTTOM_PX = 24
 const MAX_INPUT_LENGTH = 8192
 
-const appStore = useAppStore()
 const agent = useAgentChat()
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const scrollRef = ref<HTMLElement>()
@@ -194,10 +187,6 @@ watch(
     if (n === 0) stickToBottom.value = true
   },
 )
-
-function openProviders() {
-  appStore.setActiveModule('ai-providers')
-}
 
 function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
@@ -311,14 +300,13 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 未配置：空态 + 主按钮居中 */
+/* 未配置：空态居中 */
 .agent-setup {
   flex: 1 1 0%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space);
   min-height: 0;
   padding: var(--chrome-fade-height) var(--space) var(--space);
 }
