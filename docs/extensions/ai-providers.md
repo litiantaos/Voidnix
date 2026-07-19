@@ -30,9 +30,21 @@
 
 `keys: { id, label, apiKey }[]`。消费者解析时传 `keyId`；省略则取该提供商**第一把非空** Key。
 
-选用串约定（Agent / 翻译 AI）：`providerId::keyId::model`（兼容旧式 `providerId::model`）。
+选用串约定（Agent / 翻译 AI）：`providerId::keyId::model`（兼容旧式 `providerId::model`）。选用单位 = **Key × 模型**（非仅模型）。
 
-删提供商或 Key 时中枢 `onAiProvidersChange` 通知消费者清悬空选用（agent `providerModelKey`、translate `selections`）。
+消费者 UI：`modelSelectOptions` / `selectionDisplayLabel` — 单 Key 只显示模型名；多 Key 显示 `模型 · 备注`（Agent 下拉触发器、翻译勾选主文案与设置摘要一致）。翻译弹窗在存在多 Key 时字段名改为「模型与 Key」。
+
+## 与消费者选用同步
+
+选用由消费者自持；中枢变更后**不猜替代**。机制收敛为：
+
+1. **唯一规则** `isCredentialSelectionValid`（提供商在 + 模型仍在 `models` + 有 keyId 时 Key 仍在）
+2. **热路径读时过滤**（不写回）：翻译 `effectiveAiSelections`（校验 + 补全 keyId + 去重）/ `resolveAiTargets`；Agent `effectiveProviderModelKey` / resolve
+3. **冷路径 prune**（写回干净）：双方 config ready 后一次；翻译 `updateAiConfig` 写入时压滤；Agent `setProviderModelKey` 只接受有效串
+
+翻译注意：旧式 `providerId::model`（无 keyId）与三段式同模型会算两条；`canonicalizeAiSelection` 统一补 keyId 后按 `providerId::keyId::model` 去重，避免摘要/并发次数多于中枢可选项。
+
+无 deep watch 中枢、无变更事件扇出。改名模型 = 删旧加新 → 读时视为未选，冷 prune 后落盘清空，需用户重选。
 
 ## 额度 / 余额监控
 
@@ -46,7 +58,21 @@
 保存后写 `~/.config/voidnix/ai.env`（`shell_rc` 幂等注入，见 [shell-rc.md](../shell-rc.md)）。
 
 - `OPENAI_*` = **列表中第一套完整** endpoint+key+model（方便只读 OPENAI 的工具，**不是全局 active**）
-- 其余 Key 按备注导出命名变量
+- 知名端点锁死工具约定名（`envKey` 显式可覆盖）：
+  - 智谱 Coding Plan（`bigmodel.cn` / `zhipuai`）→ `ZHIPU_API_KEY` + `ZHIPU_BASE_URL`
+  - DeepSeek（`deepseek.com`）→ `DEEPSEEK_API_KEY` + `DEEPSEEK_BASE_URL`
+  - 其余按名称 / hostname 推导 `*_API_KEY`
+- 多 Key：第一把非空写规范名（`DEEPSEEK_API_KEY` 等，供 OpenCode / Grok）；其余按备注 ASCII 后缀（`DEEPSEEK_BACKUP_API_KEY`），纯中文备注回退 `DEEPSEEK_KEY2_API_KEY`，碰撞递增，不静默丢 Key
+- 单 Key 规范名冲突（两套同端点提供商）：第二套序号兜底（`DEEPSEEK_KEY1_API_KEY`），不静默丢
+- 智谱存在时额外写 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL`（Zhipu Anthropic 兼容）+ 默认模型，供 Claude Code。**会覆盖 shell 里真实 Anthropic 凭证**（自用默认走智谱；若需官方 Anthropic CLI 并存，勿 source `ai.env` 或先 unset）
+
+### 外部工具
+
+中枢只写 env；各工具自管模型选用，不在此维护「使用中」。
+
+- **OpenCode**：读 `ZHIPU_API_KEY` / `DEEPSEEK_API_KEY`；baseURL 写在 `~/.config/opencode/opencode.json` 的 `provider.*.options.baseURL`（如 `zhipuai-coding-plan` → Coding Plan 端、`deepseek` → DeepSeek 端）。模型：`zhipuai-coding-plan/glm-5.2`、`deepseek/deepseek-v4-pro` 等
+- **Grok Build**：`~/.grok/config.toml` 的 `[model.*]` 用 `env_key = "ZHIPU_API_KEY"` / `"DEEPSEEK_API_KEY"` + `base_url`；切模型 `/model glm-5-2-1m` 等
+- **Claude Code**：shell source 后走 `ANTHROPIC_*`（智谱 Anthropic 兼容端）
 
 ## 命令
 

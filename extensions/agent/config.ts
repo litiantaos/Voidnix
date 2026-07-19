@@ -6,11 +6,14 @@ import {
   config as aiProvidersConfig,
   modelSelectOptions,
   parseSelectionKey,
+  formatSelectionKey,
+  getProviderById,
+  getKeySlot,
   resolveCredentials,
   resolveRuntimeCredentials,
   hasAnyConfiguredProvider,
   providerDisplayName,
-  onAiProvidersChange,
+  isCredentialSelectionValid,
   type AiProvider as AiProviderConfig,
   type ResolvedAiCredentials,
 } from '@/runtime/ai-providers'
@@ -96,24 +99,77 @@ export function updateSearchProvider(partial: Partial<SearchProviderConfig>) {
 
 // ─── AI 选用（消费者侧）────────────────────────────────────
 
+function selectionRefValid(providerId: string, keyId: string, model: string): boolean {
+  return isCredentialSelectionValid({
+    providerId,
+    keyId: keyId || undefined,
+    model,
+  })
+}
+
+/**
+ * 合法选用 → 规范三段串 `providerId::keyId::model`（旧式两段补 first keyId）。
+ * 无效返回 null。
+ */
+function canonicalizeSelectionRaw(raw: string): string | null {
+  const sel = parseSelectionKey(raw)
+  if (!selectionRefValid(sel.providerId, sel.keyId, sel.model)) return null
+  const p = getProviderById(sel.providerId)
+  if (!p) return null
+  const slot = getKeySlot(p, sel.keyId || undefined)
+  if (!slot) return null
+  return formatSelectionKey(sel.providerId, slot.id, sel.model)
+}
+
 export function setProviderModelKey(key: string) {
-  config.providerModelKey = key
+  const t = String(key).trim()
+  if (!t) {
+    config.providerModelKey = ''
+    return
+  }
+  // 写入时只接受与中枢一致的选用，并规范为三段（冷路径干净）
+  const canon = canonicalizeSelectionRaw(t)
+  if (!canon) {
+    console.warn('[agent] ignore invalid providerModelKey:', t)
+    return
+  }
+  config.providerModelKey = canon
 }
 
 /** 兼容旧调用名 */
 export const setActiveProviderModelKey = setProviderModelKey
 
+/** 原始落盘串；UI/解析请用 effectiveProviderModelKey。 */
 export function agentSelection() {
   return parseSelectionKey(config.providerModelKey)
 }
 
+/**
+ * 读时有效选用串：与中枢不一致则视为未选；合法则规范为三段（热路径不写回）。
+ * 依赖 hub providers，中枢变更后下拉/就绪态立刻正确。
+ */
+export const effectiveProviderModelKey = computed(() => {
+  void aiProvidersConfig.providers
+  const raw = config.providerModelKey.trim()
+  if (!raw) return ''
+  return canonicalizeSelectionRaw(raw) ?? ''
+})
+
 export function resolveAgentCredentials(): ResolvedAiCredentials | null {
-  const { providerId, keyId, model } = agentSelection()
+  const raw = effectiveProviderModelKey.value
+  if (!raw) return null
+  const { providerId, keyId, model } = parseSelectionKey(raw)
   return resolveCredentials({ providerId, keyId, model })
 }
 
+/**
+ * 运行时凭证：有有效选用则按选用解析（缺项 env 补全）；
+ * 无选用时走纯 env（OPENAI_* / ai.env），与 View「env 兜底可用即可对话」一致。
+ */
 export async function resolveAgentRuntimeCredentials(): Promise<ResolvedAiCredentials | null> {
-  const { providerId, keyId, model } = agentSelection()
+  const raw = effectiveProviderModelKey.value
+  if (!raw) return resolveRuntimeCredentials({})
+  const { providerId, keyId, model } = parseSelectionKey(raw)
   return resolveRuntimeCredentials({ providerId, keyId, model })
 }
 
@@ -124,38 +180,41 @@ export const isAgentProviderReady = computed(() => !!resolveAgentCredentials())
 export const isConfigProviderReady = isAgentProviderReady
 export const isProviderReady = isAgentProviderReady
 
-// 删提供商 / Key 时清悬空选用
-onAiProvidersChange((e) => {
-  const sel = parseSelectionKey(config.providerModelKey)
-  if (!sel.providerId) return
-  if (e.kind === 'remove-provider' && sel.providerId === e.providerId) {
+/**
+ * 冷路径：悬空清空；合法旧式两段写回三段。热路径用 effectiveProviderModelKey。
+ */
+export function pruneAgentSelection() {
+  const raw = config.providerModelKey.trim()
+  if (!raw) return
+  const canon = canonicalizeSelectionRaw(raw)
+  if (!canon) {
     config.providerModelKey = ''
-  } else if (
-    e.kind === 'remove-key' &&
-    sel.providerId === e.providerId &&
-    sel.keyId === e.keyId
-  ) {
-    config.providerModelKey = ''
+    return
   }
-})
+  if (canon !== raw) config.providerModelKey = canon
+}
 
-// 一次性：旧 activeProviderModelKey → providerModelKey
-void whenConfigReady('extensions/agent/config').then(async () => {
-  if (config.providerModelKey.trim()) return
-  if (!isTauri) return
-  try {
-    const store = await load('extensions/agent/config.json')
-    const active = await store.get<unknown>('activeProviderModelKey')
-    if (typeof active === 'string' && active.trim()) {
-      config.providerModelKey = active.trim()
-      try {
-        await store.delete('activeProviderModelKey')
-        await store.save()
-      } catch {
-        /* ignore */
+// 一次性：旧 activeProviderModelKey → providerModelKey；加载后冷 prune
+void Promise.all([
+  whenConfigReady('extensions/agent/config'),
+  whenConfigReady('config/ai-providers'),
+]).then(async () => {
+  if (!config.providerModelKey.trim() && isTauri) {
+    try {
+      const store = await load('extensions/agent/config.json')
+      const active = await store.get<unknown>('activeProviderModelKey')
+      if (typeof active === 'string' && active.trim()) {
+        config.providerModelKey = active.trim()
+        try {
+          await store.delete('activeProviderModelKey')
+          await store.save()
+        } catch {
+          /* ignore */
+        }
       }
+    } catch (e) {
+      console.warn('[agent] legacy selection migrate skipped:', e)
     }
-  } catch (e) {
-    console.warn('[agent] legacy selection migrate skipped:', e)
   }
+  pruneAgentSelection()
 })

@@ -245,17 +245,24 @@ interface KeyRow {
 }
 
 const selectedIndex = ref(0)
+/** 缓存 key = `${providerId}:${slotId}`，避免跨提供商 slot.id 碰撞 */
 const monitorByKeyId = reactive<Record<string, KeyMonitor>>({})
 const loadingByKey = reactive<Record<string, boolean>>({})
 const nowMs = ref(Date.now())
 let countdownTimer: ReturnType<typeof setInterval> | null = null
+/** 监控拉取世代：快速改配置时丢弃过期响应 */
+let monitorFetchGen = 0
+
+function monitorCacheKey(providerId: string, slotId: string): string {
+  return `${providerId}:${slotId}`
+}
 
 const keyRows = computed<KeyRow[]>(() => {
   const out: KeyRow[] = []
   for (const p of config.providers) {
     for (const slot of p.keys ?? []) {
       out.push({
-        id: `${p.id}:${slot.id}`,
+        id: monitorCacheKey(p.id, slot.id),
         type: 'key',
         group: p.id,
         providerId: p.id,
@@ -268,9 +275,9 @@ const keyRows = computed<KeyRow[]>(() => {
 
 /** 删 Key / 提供商后清监控缓存，避免 stale series 抬高 sparkMax */
 watch(
-  () => keyRows.value.map((r) => r.slot.id).join('\0'),
+  () => keyRows.value.map((r) => r.id).join('\0'),
   () => {
-    const live = new Set(keyRows.value.map((r) => r.slot.id))
+    const live = new Set(keyRows.value.map((r) => r.id))
     for (const id of Object.keys(monitorByKeyId)) {
       if (!live.has(id)) delete monitorByKeyId[id]
     }
@@ -288,7 +295,7 @@ function groupTitle(providerId: string): string {
 }
 
 function monitorOf(row: KeyRow): KeyMonitor | undefined {
-  return monitorByKeyId[row.slot.id]
+  return monitorByKeyId[row.id]
 }
 
 function itemTitle(row: KeyRow): string {
@@ -303,7 +310,7 @@ function itemTitle(row: KeyRow): string {
 
 function itemSubtitle(row: KeyRow): string {
   const m = monitorOf(row)
-  if (loadingByKey[row.slot.id] && !m) {
+  if (loadingByKey[row.id] && !m) {
     const masked = maskKey(row.slot.apiKey)
     return `${masked || '无 Key'} · 获取用量信息中…`
   }
@@ -511,8 +518,16 @@ function saveProvider() {
   const name = providerForm.value.name.trim() || defaultProviderName(endpoint)
 
   if (providerModalMode.value === 'create') {
+    const apiKey = providerForm.value.firstKey.trim()
+    if (!endpoint) {
+      showToast('请填写 API URL', { kind: 'error' })
+      return
+    }
+    if (!apiKey) {
+      showToast('请填写 API Key', { kind: 'error' })
+      return
+    }
     const label = providerForm.value.firstKeyLabel.trim() || '默认'
-    const apiKey = providerForm.value.firstKey
     const slot = newKeySlot(label, apiKey)
     addAiProvider({
       name,
@@ -521,6 +536,10 @@ function saveProvider() {
       keys: [slot],
     })
   } else if (editingProviderId.value) {
+    if (!endpoint) {
+      showToast('请填写 API URL', { kind: 'error' })
+      return
+    }
     updateAiProvider(editingProviderId.value, { name, endpoint, models })
   }
   showProviderModal.value = false
@@ -601,20 +620,22 @@ function removeKeyAndClose() {
 
 // ─── 列表项额度/余额拉取 ────────────────────────────────────
 
-async function fetchZhipuForSlot(keyId: string, apiKey: string) {
+async function fetchZhipuForSlot(cacheKey: string, apiKey: string, gen: number) {
   if (!apiKey.trim()) return
-  loadingByKey[keyId] = true
+  loadingByKey[cacheKey] = true
   try {
     const raw = await invoke<Record<string, unknown>>(CMD.aiProvidersZhipuQuota, {
       apiKey: apiKey.trim(),
     })
+    if (gen !== monitorFetchGen) return
     const mon = normalizeZhipuMonitor(raw)
     mon.tokensSeries = Array.isArray(mon.tokensSeries)
       ? mon.tokensSeries.map((n) => (Number.isFinite(n) ? n : 0))
       : []
-    monitorByKeyId[keyId] = mon
+    monitorByKeyId[cacheKey] = mon
   } catch (e) {
-    monitorByKeyId[keyId] = {
+    if (gen !== monitorFetchGen) return
+    monitorByKeyId[cacheKey] = {
       kind: 'zhipu',
       level: 'unknown',
       expired: false,
@@ -624,45 +645,64 @@ async function fetchZhipuForSlot(keyId: string, apiKey: string) {
       error: e instanceof Error ? e.message : String(e),
     }
   } finally {
-    loadingByKey[keyId] = false
+    if (gen === monitorFetchGen) loadingByKey[cacheKey] = false
   }
 }
 
-async function fetchDeepseekForSlot(keyId: string, apiKey: string, endpoint: string) {
+async function fetchDeepseekForSlot(
+  cacheKey: string,
+  apiKey: string,
+  endpoint: string,
+  gen: number,
+) {
   if (!apiKey.trim()) return
-  loadingByKey[keyId] = true
+  loadingByKey[cacheKey] = true
   try {
     const raw = await invoke<Record<string, unknown>>(CMD.aiProvidersDeepseekBalance, {
       apiKey: apiKey.trim(),
       endpoint: endpoint.trim(),
     })
-    monitorByKeyId[keyId] = normalizeDeepseekBalance(raw)
+    if (gen !== monitorFetchGen) return
+    monitorByKeyId[cacheKey] = normalizeDeepseekBalance(raw)
   } catch (e) {
-    monitorByKeyId[keyId] = {
+    if (gen !== monitorFetchGen) return
+    monitorByKeyId[cacheKey] = {
       kind: 'deepseek',
       isAvailable: false,
       balanceInfos: [],
       error: e instanceof Error ? e.message : String(e),
     }
   } finally {
-    loadingByKey[keyId] = false
+    if (gen === monitorFetchGen) loadingByKey[cacheKey] = false
   }
 }
 
 async function refreshAllMonitors() {
+  const gen = ++monitorFetchGen
+  // 指纹变化时清掉无监控类型的旧缓存（如 DeepSeek→OpenAI）
+  const liveKeys = new Set<string>()
   const tasks: Promise<void>[] = []
   for (const p of config.providers) {
     const kind = resolveUsageKind(p)
-    if (kind === 'zhipu-coding-plan') {
-      for (const slot of p.keys ?? []) {
-        if (!slot.apiKey.trim()) continue
-        tasks.push(fetchZhipuForSlot(slot.id, slot.apiKey))
+    for (const slot of p.keys ?? []) {
+      if (!slot.apiKey.trim()) continue
+      const ck = monitorCacheKey(p.id, slot.id)
+      if (kind === 'zhipu-coding-plan') {
+        liveKeys.add(ck)
+        tasks.push(fetchZhipuForSlot(ck, slot.apiKey, gen))
+      } else if (kind === 'deepseek-balance') {
+        liveKeys.add(ck)
+        tasks.push(fetchDeepseekForSlot(ck, slot.apiKey, p.endpoint, gen))
       }
-    } else if (kind === 'deepseek-balance') {
-      for (const slot of p.keys ?? []) {
-        if (!slot.apiKey.trim()) continue
-        tasks.push(fetchDeepseekForSlot(slot.id, slot.apiKey, p.endpoint))
-      }
+    }
+  }
+  // 非监控端点：立刻清掉该 key 的旧 monitor（不依赖 key 删除）
+  if (gen === monitorFetchGen) {
+    for (const id of Object.keys(monitorByKeyId)) {
+      if (!liveKeys.has(id)) delete monitorByKeyId[id]
+    }
+    for (const id of Object.keys(loadingByKey)) {
+      if (!liveKeys.has(id)) delete loadingByKey[id]
     }
   }
   await Promise.all(tasks)
@@ -671,8 +711,12 @@ async function refreshAllMonitors() {
 watch(
   () =>
     config.providers
-      .flatMap((p) => (p.keys ?? []).map((k) => `${p.id}:${k.id}:${k.apiKey}`))
-      .join('|'),
+      .map((p) => {
+        const kind = resolveUsageKind(p)
+        const keys = (p.keys ?? []).map((k) => `${k.id}:${k.apiKey}`).join(',')
+        return `${p.id}|${p.endpoint}|${kind}|${keys}`
+      })
+      .join('\n'),
   () => {
     void refreshAllMonitors()
   },

@@ -1,9 +1,9 @@
 <template>
   <BaseSelect
     v-if="modelOptions.length > 0"
-    :model-value="config.providerModelKey"
+    :model-value="effectiveProviderModelKey"
     :options="modelOptions"
-    class="max-w-50"
+    class="max-w-64"
     @update:model-value="handleModelChange"
   />
   <BaseButton
@@ -24,7 +24,11 @@
 import { computed } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useAgentChat } from './agent'
-import { config, setProviderModelKey, modelSelectOptions } from './config'
+import {
+  setProviderModelKey,
+  modelSelectOptions,
+  effectiveProviderModelKey,
+} from './config'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 

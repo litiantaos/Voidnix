@@ -3,6 +3,10 @@ import {
   shellSingleQuote,
   baseUrlEnvName,
   buildExportPayload,
+  resolveEnvKey,
+  isZhipuCodingEndpoint,
+  anthropicModelFromZhipu,
+  ZHIPU_ANTHROPIC_BASE_URL,
   maskKey,
   formatWindowRemain,
   formatCompactCount,
@@ -10,6 +14,8 @@ import {
   formatDeepseekBalanceSubtitle,
   normalizeZhipuMonitor,
   normalizeDeepseekBalance,
+  envLabelTag,
+  assignKeyEnvNames,
 } from './logic'
 import type { AiProvider } from '@/runtime/ai-providers'
 
@@ -30,6 +36,22 @@ function p(
   }
 }
 
+describe('resolveEnvKey', () => {
+  it('知名端点锁死工具约定名', () => {
+    expect(resolveEnvKey(p('z', 'https://open.bigmodel.cn/api/coding/paas/v4', []))).toBe(
+      'ZHIPU_API_KEY',
+    )
+    expect(resolveEnvKey(p('d', 'https://api.deepseek.com', []))).toBe('DEEPSEEK_API_KEY')
+    expect(isZhipuCodingEndpoint('https://open.bigmodel.cn/x')).toBe(true)
+  })
+
+  it('envKey 显式优先', () => {
+    const prov = p('z', 'https://open.bigmodel.cn/api/coding/paas/v4', [])
+    prov.envKey = 'CUSTOM_API_KEY'
+    expect(resolveEnvKey(prov)).toBe('CUSTOM_API_KEY')
+  })
+})
+
 describe('buildExportPayload', () => {
   it('第一套完整配置导出 OPENAI_*', () => {
     const { envText } = buildExportPayload({
@@ -47,7 +69,7 @@ describe('buildExportPayload', () => {
     expect(envText).toContain('first complete provider')
   })
 
-  it('多 key 命名导出', () => {
+  it('多 key：第一把规范名 + 中文备注回退 KEY{n}，不丢第二把', () => {
     const { envText } = buildExportPayload({
       providers: [
         p(
@@ -61,8 +83,98 @@ describe('buildExportPayload', () => {
         ),
       ],
     })
-    expect(envText).toContain('ds1')
-    expect(envText).toContain('DEEPSEEK')
+    expect(envText).toContain("export DEEPSEEK_API_KEY='ds1'")
+    expect(envText).toContain("export DEEPSEEK_KEY2_API_KEY='ds2'")
+    expect(envText).not.toMatch(/DEEPSEEK___/)
+  })
+
+  it('多 key 英文备注用 TAG 后缀', () => {
+    const { envText } = buildExportPayload({
+      providers: [
+        p(
+          'd',
+          'https://api.deepseek.com',
+          [
+            { id: 'k1', label: 'main', apiKey: 'ds1' },
+            { id: 'k2', label: 'backup', apiKey: 'ds2' },
+          ],
+          ['chat'],
+        ),
+      ],
+    })
+    expect(envText).toContain("export DEEPSEEK_API_KEY='ds1'")
+    expect(envText).toContain("export DEEPSEEK_BACKUP_API_KEY='ds2'")
+  })
+
+  it('envLabelTag / assignKeyEnvNames', () => {
+    expect(envLabelTag('主号')).toBe('')
+    expect(envLabelTag('backup-1')).toBe('BACKUP_1')
+    const names = assignKeyEnvNames(
+      p(
+        'd',
+        'https://api.deepseek.com',
+        [
+          { id: 'k1', label: '主号', apiKey: 'a' },
+          { id: 'k2', label: '备用', apiKey: 'b' },
+          { id: 'k3', label: '备用', apiKey: 'c' },
+        ],
+        ['m'],
+      ),
+    )
+    expect(names.map((n) => n.envName)).toEqual([
+      'DEEPSEEK_API_KEY',
+      'DEEPSEEK_KEY2_API_KEY',
+      'DEEPSEEK_KEY3_API_KEY',
+    ])
+  })
+
+  it('两个单 Key 同端点：第二套序号兜底不丢', () => {
+    const taken = new Set<string>()
+    const a = assignKeyEnvNames(
+      p('d1', 'https://api.deepseek.com', [{ id: 'k1', label: '默认', apiKey: 'ds1' }]),
+      taken,
+    )
+    const b = assignKeyEnvNames(
+      p('d2', 'https://api.deepseek.com', [{ id: 'k2', label: '默认', apiKey: 'ds2' }]),
+      taken,
+    )
+    expect(a.map((n) => n.envName)).toEqual(['DEEPSEEK_API_KEY'])
+    expect(b.map((n) => n.envName)).toEqual(['DEEPSEEK_KEY1_API_KEY'])
+    const { envText } = buildExportPayload({
+      providers: [
+        p('d1', 'https://api.deepseek.com', [{ id: 'k1', label: '默认', apiKey: 'ds1' }]),
+        p('d2', 'https://api.deepseek.com', [{ id: 'k2', label: '默认', apiKey: 'ds2' }]),
+      ],
+    })
+    expect(envText).toContain("export DEEPSEEK_API_KEY='ds1'")
+    expect(envText).toContain("export DEEPSEEK_KEY1_API_KEY='ds2'")
+  })
+
+  it('智谱 → ZHIPU_API_KEY + ANTHROPIC_*；DeepSeek → DEEPSEEK_API_KEY', () => {
+    const { envText } = buildExportPayload({
+      providers: [
+        p(
+          'd',
+          'https://api.deepseek.com',
+          [{ id: 'k', label: '默认', apiKey: 'sk-ds' }],
+          ['deepseek-v4-pro'],
+        ),
+        p(
+          'z',
+          'https://open.bigmodel.cn/api/coding/paas/v4',
+          [{ id: 'k', label: '195', apiKey: 'sk-zhipu' }],
+          ['glm-5.2'],
+        ),
+      ],
+    })
+    expect(envText).toContain("export DEEPSEEK_API_KEY='sk-ds'")
+    expect(envText).toContain("export ZHIPU_API_KEY='sk-zhipu'")
+    expect(envText).not.toContain('BIGMODEL_API_KEY')
+    expect(envText).toContain(`export ANTHROPIC_AUTH_TOKEN='sk-zhipu'`)
+    expect(envText).toContain(`export ANTHROPIC_BASE_URL='${ZHIPU_ANTHROPIC_BASE_URL}'`)
+    expect(envText).toContain("export ANTHROPIC_DEFAULT_SONNET_MODEL='glm-5.2[1M]'")
+    expect(anthropicModelFromZhipu(['glm-5.2'])).toBe('glm-5.2[1M]')
+    expect(anthropicModelFromZhipu(['glm-5.2[1M]'])).toBe('glm-5.2[1M]')
   })
 })
 

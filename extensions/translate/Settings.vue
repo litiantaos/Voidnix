@@ -65,7 +65,7 @@
       <div flex="~ col" gap="3">
         <div class="form-field">
           <div flex items="center" gap="2" class="form-label w-full">
-            <span class="flex-1">模型</span>
+            <span class="flex-1">{{ modelFieldLabel }}</span>
             <BaseButton
               variant="ghost"
               icon="i-ri-settings-3-line"
@@ -109,7 +109,7 @@
               @click="onModelClick(opt.key, index)"
               @focus="modelFocusIndex = index"
             >
-              <span class="flex-1 min-w-0 truncate text-left">{{ opt.model }}</span>
+              <span class="flex-1 min-w-0 truncate text-left">{{ opt.displayLabel }}</span>
               <span text="xs muted" class="truncate shrink-0 max-w-28">{{
                 opt.providerLabel
               }}</span>
@@ -143,9 +143,15 @@ import {
   updateAiConfig,
   selectionKey,
   parseSelectionKey,
+  effectiveAiSelections,
   type AiModelSelection,
 } from './config'
-import { config as aiProvidersConfig, providerDisplayName } from '@/runtime/ai-providers'
+import {
+  config as aiProvidersConfig,
+  providerDisplayName,
+  selectionDisplayLabel,
+  hasMultiKeyProvider,
+} from '@/runtime/ai-providers'
 import { useAppStore } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -171,16 +177,20 @@ function youdaoSubtitle(): string {
   return c.appKey && c.appSecret ? '已配置' : '未配置'
 }
 
+function formatAiSelectionSummary(s: { providerId: string; keyId?: string; model: string }): string {
+  return selectionDisplayLabel(s.providerId, s.keyId, s.model)
+}
+
 function aiSubtitle(): string {
-  const c = getAiConfig()
-  const n = c.selections.length
+  // 读时 effective + 依赖中枢，中枢改 models 后摘要立刻正确
+  void aiProvidersConfig.providers
+  const selections = effectiveAiSelections(getAiConfig().selections)
+  const n = selections.length
   if (n === 0) return '未选择模型'
-  if (n === 1) return c.selections[0].model
-  if (n <= 3) return c.selections.map((s) => s.model).join('、')
-  return `${c.selections
-    .slice(0, 2)
-    .map((s) => s.model)
-    .join('、')} 等 ${n} 个`
+  const labels = selections.map(formatAiSelectionSummary)
+  if (n === 1) return labels[0] || '未选择模型'
+  if (n <= 3) return labels.join('、')
+  return `${labels.slice(0, 2).join('、')} 等 ${n} 个`
 }
 
 // ── 有道弹窗 ──────────────────────────────────────────────
@@ -221,6 +231,9 @@ const modelOptions = computed(() => {
     providerId: string
     keyId: string
     model: string
+    /** 主文案：单 Key 仅模型；多 Key `模型 · 备注` */
+    displayLabel: string
+    /** 右侧次要：仅提供商名（Key 已进主文案） */
     providerLabel: string
   }
   const opts: Opt[] = []
@@ -229,8 +242,6 @@ const modelOptions = computed(() => {
     const keys = p.keys?.length ? p.keys : []
     if (keys.length === 0) continue
     for (const k of keys) {
-      const providerLabel =
-        keys.length > 1 ? `${base} · ${k.label || 'Key'}` : base
       for (const m of p.models) {
         const model = m.trim()
         if (!model) continue
@@ -239,13 +250,17 @@ const modelOptions = computed(() => {
           providerId: p.id,
           keyId: k.id,
           model,
-          providerLabel,
+          displayLabel: selectionDisplayLabel(p.id, k.id, model),
+          providerLabel: base,
         })
       }
     }
   }
   return opts
 })
+
+/** 存在多 Key 时字段名点明凭证维度 */
+const modelFieldLabel = computed(() => (hasMultiKeyProvider() ? '模型与 Key' : '模型'))
 
 function setModelBtnRef(el: Element | ComponentPublicInstance | null, index: number) {
   if (!el) {
@@ -270,7 +285,7 @@ function focusModel(index: number) {
 function openAi() {
   const c = getAiConfig()
   aiForm.value = { prompt: c.prompt }
-  selectedKeyList.value = c.selections.map(selectionKey)
+  selectedKeyList.value = effectiveAiSelections(c.selections).map(selectionKey)
   modelFocusIndex.value = 0
   modelBtnEls.value = []
   showAiModal.value = true
@@ -350,11 +365,12 @@ function saveAi() {
 // ── 列表 ──────────────────────────────────────────────────
 
 const allItems = computed<SettingItem[]>(() => {
-  // 触达 configs 响应
+  // 触达 configs + 中枢（effective 摘要）
   void translateConfig.configs.length
   void getYoudaoConfig().appKey
   void getAiConfig().selections.length
   void getAiConfig().prompt
+  void aiProvidersConfig.providers
 
   return [
     {
