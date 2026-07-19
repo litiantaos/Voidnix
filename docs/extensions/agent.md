@@ -81,7 +81,7 @@ defineConfig('extensions/agent/config', {
 })
 ```
 
-AI 凭证条目上收至框架级中枢（`@/runtime/ai-providers`）；**本扩展自选**模型（`extensions/agent/config.json` 的 `providerModelKey` = `providerId::keyId::model`，顶部下拉）。发起对话时 `resolveAgentRuntimeCredentials()`：按自选解析，缺项回退进程 env / `~/.config/voidnix/ai.env`。删中枢提供商/Key 时自动清空悬空选用；旧 `activeProviderModelKey` 启动时一次性迁入。详见 [ai-providers.md](./ai-providers.md)。
+AI 凭证条目上收至框架级中枢（`@/runtime/ai-providers`）；**本扩展自选** Key×模型（`providerModelKey` = `providerId::keyId::model`，旧式两段 `providerId::model` 读时规范为三段）。多 Key 时选项/触发文案为 `模型 · 备注`。UI/解析走 `effectiveProviderModelKey`（读时过滤悬空 + 规范 keyId，热路径不写回）。发起对话 `resolveAgentRuntimeCredentials()`：有选用按选用解析（缺项 env 补全），**无有效选用时纯 env 兜底**（`OPENAI_*` / `ai.env`）。启动冷 `pruneAgentSelection` 写回（悬空清空 / 两段补 keyId）；旧 `activeProviderModelKey` 一次性迁入。详见 [ai-providers.md](./ai-providers.md)。
 
 ## 对话 UI
 

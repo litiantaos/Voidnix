@@ -114,7 +114,7 @@ Agent 命令执行：无审批、无白/黑名单，所有命令直接放行；`
 
 **LLM 基础设施**（`runtime/llm/`）：agent + translate 扩展共享。`types.rs`（LlmMessage）、`client.rs`（StreamConfig/stream_openai_request + SSRF 防护 validate_ai_request + 消息截断 + 请求管道常量）、`parser.rs`（tool_calls 解析）。
 
-**AI 凭证中枢**（`src/runtime/ai-providers.ts` → `config/ai-providers.json`）：只存 URL/Key/模型，**无「使用中」**；选用由 agent（`providerModelKey`）/ translate（`selections` 多选，可含 `keyId`）等消费者自管；删提供商/Key 时 `onAiProvidersChange` 清悬空选用；写 `ai.env` + `shell_rc` 钩子服务 CLI。详见 [ai-providers.md](docs/extensions/ai-providers.md)。**Shell rc 注入**统一走 `runtime/shell_rc`（`# voidnix <scope>`），见 [shell-rc.md](docs/shell-rc.md)。
+**AI 凭证中枢**（`src/runtime/ai-providers.ts` → `config/ai-providers.json`）：只存 URL/Key/模型，**无「使用中」**；选用由 agent（`providerModelKey`）/ translate（`selections`）自管。与中枢同步：`isCredentialSelectionValid` + 读时 effective（不写回）+ 启动/写入冷 prune；写 `ai.env`（`ZHIPU_*` / `DEEPSEEK_*` / `ANTHROPIC_*` 等）+ `shell_rc` 钩子。详见 [ai-providers.md](docs/extensions/ai-providers.md)。**Shell rc 注入**统一走 `runtime/shell_rc`（`# voidnix <scope>`），见 [shell-rc.md](docs/shell-rc.md)。
 
 ## 目录结构
 

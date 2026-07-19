@@ -14,7 +14,8 @@ import {
   formatSelectionKey,
   modelSelectOptions,
   resolveUsageKind,
-  onAiProvidersChange,
+  isCredentialSelectionValid,
+  updateAiProvider,
 } from './ai-providers'
 
 const mocks = vi.hoisted(() => {
@@ -162,11 +163,7 @@ describe('resolveCredentials', () => {
     expect(config.providers[0].keys[0].apiKey).toBe('from-disk')
   })
 
-  it('remove 通知 onAiProvidersChange', () => {
-    const events: string[] = []
-    const off = onAiProvidersChange((e) => {
-      events.push(e.kind)
-    })
+  it('removeKey / removeProvider', () => {
     const id = addAiProvider({
       endpoint: 'https://x',
       apiKey: 'a',
@@ -177,9 +174,9 @@ describe('resolveCredentials', () => {
       ],
     })
     removeKeyFromProvider(id, 'k2')
+    expect(config.providers[0].keys).toHaveLength(1)
     removeAiProvider(id)
-    expect(events).toEqual(['remove-key', 'remove-provider'])
-    off()
+    expect(config.providers).toHaveLength(0)
   })
 })
 
@@ -194,7 +191,7 @@ describe('selection key', () => {
     expect(formatSelectionKey('p', 'k', 'm')).toBe('p::k::m')
   })
 
-  it('modelSelectOptions 含 keyId', () => {
+  it('modelSelectOptions 含 keyId；单 Key 仅模型名', () => {
     const id = addAiProvider({
       endpoint: 'https://x',
       models: ['m1'],
@@ -202,5 +199,45 @@ describe('selection key', () => {
     })
     const opts = modelSelectOptions() as { label: string; value: string }[]
     expect(opts[0].value).toBe(formatSelectionKey(id, 'k1', 'm1'))
+    expect(opts[0].label).toBe('m1')
+  })
+
+  it('modelSelectOptions 多 Key 选项带备注', () => {
+    const id = addAiProvider({
+      endpoint: 'https://x',
+      models: ['m1'],
+      keys: [
+        { id: 'k1', label: '主号', apiKey: 'a' },
+        { id: 'k2', label: '备用', apiKey: 'b' },
+      ],
+    })
+    const opts = modelSelectOptions() as { label: string; value: string }[]
+    expect(opts).toHaveLength(2)
+    expect(opts[0].label).toBe('m1 · 主号')
+    expect(opts[1].label).toBe('m1 · 备用')
+    expect(opts[0].value).toBe(formatSelectionKey(id, 'k1', 'm1'))
+    expect(opts[1].value).toBe(formatSelectionKey(id, 'k2', 'm1'))
+  })
+})
+
+describe('isCredentialSelectionValid', () => {
+  it('提供商/模型/Key 一致为真；删模型或 Key 为假', () => {
+    const id = addAiProvider({
+      endpoint: 'https://x',
+      models: ['m1', 'm2'],
+      keys: [
+        { id: 'k1', label: '主', apiKey: 'a' },
+        { id: 'k2', label: '备', apiKey: 'b' },
+      ],
+    })
+    expect(isCredentialSelectionValid({ providerId: id, keyId: 'k1', model: 'm1' })).toBe(true)
+    expect(isCredentialSelectionValid({ providerId: id, model: 'm1' })).toBe(true)
+    expect(isCredentialSelectionValid({ providerId: id, keyId: 'k1', model: 'gone' })).toBe(false)
+    expect(isCredentialSelectionValid({ providerId: id, keyId: 'nope', model: 'm1' })).toBe(false)
+    updateAiProvider(id, { models: ['m2'] })
+    expect(isCredentialSelectionValid({ providerId: id, model: 'm1' })).toBe(false)
+    expect(isCredentialSelectionValid({ providerId: id, model: 'm2' })).toBe(true)
+    removeAiProvider(id)
+    expect(isCredentialSelectionValid({ providerId: id, model: 'm2' })).toBe(false)
   })
 })

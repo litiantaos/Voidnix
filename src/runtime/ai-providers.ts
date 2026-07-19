@@ -164,6 +164,28 @@ export function formatSelectionKey(providerId: string, keyId: string, model: str
   return `${providerId}::${model}`
 }
 
+/**
+ * 消费者选用是否仍与中枢一致。
+ * 提供商存在、模型仍在 models 列表；有 keyId 时该 Key 仍在。
+ * （不要求 Key 非空——允许先占位后填密钥。）
+ */
+export function isCredentialSelectionValid(sel: {
+  providerId?: string
+  keyId?: string
+  model?: string
+}): boolean {
+  const providerId = sel.providerId?.trim() ?? ''
+  const model = sel.model?.trim() ?? ''
+  if (!providerId || !model) return false
+  const p = getProviderById(providerId)
+  if (!p) return false
+  if (!p.models.some((m) => m.trim() === model)) return false
+  if (sel.keyId) {
+    if (!p.keys.some((k) => k.id === sel.keyId)) return false
+  }
+  return true
+}
+
 /** 按选用解析凭证；未指定 providerId 时不猜「默认提供商」（仅 env 可补）。 */
 export function resolveCredentials(sel: AiCredentialSelection = {}): ResolvedAiCredentials | null {
   const p = sel.providerId ? getProviderById(sel.providerId) : undefined
@@ -245,34 +267,6 @@ export async function resolveRuntimeCredentials(
   })
 }
 
-// ─── 变更通知（消费者清悬空选用）──────────────────────────
-
-export type AiProvidersChangeEvent =
-  | { kind: 'remove-provider'; providerId: string }
-  | { kind: 'remove-key'; providerId: string; keyId: string }
-
-type ChangeHandler = (e: AiProvidersChangeEvent) => void
-const changeHandlers: ChangeHandler[] = []
-
-/** 注册中枢变更钩子；返回卸载函数。 */
-export function onAiProvidersChange(handler: ChangeHandler): () => void {
-  changeHandlers.push(handler)
-  return () => {
-    const i = changeHandlers.indexOf(handler)
-    if (i >= 0) changeHandlers.splice(i, 1)
-  }
-}
-
-function emitChange(e: AiProvidersChangeEvent) {
-  for (const h of changeHandlers) {
-    try {
-      h(e)
-    } catch (err) {
-      console.error('[ai-providers] change handler failed:', err)
-    }
-  }
-}
-
 /** 加载后规范化 keys[]（legacy apiKey / 缺 keys）。 */
 export function normalizeProvidersInPlace() {
   if (config.providers.length === 0) return
@@ -319,7 +313,6 @@ export function removeAiProvider(id: string) {
   const idx = config.providers.findIndex((p) => p.id === id)
   if (idx === -1) return
   config.providers.splice(idx, 1)
-  emitChange({ kind: 'remove-provider', providerId: id })
 }
 
 export function updateAiProvider(id: string, partial: Partial<Omit<AiProvider, 'id'>>) {
@@ -342,12 +335,33 @@ export function removeKeyFromProvider(providerId: string, keyId: string) {
   const idx = p.keys.findIndex((k) => k.id === keyId)
   if (idx === -1) return
   p.keys.splice(idx, 1)
-  emitChange({ kind: 'remove-key', providerId, keyId })
+}
+
+/**
+ * 选用展示文案：单 Key 仅模型；多 Key 为 `模型 · 备注`（折叠触发器 / 摘要可读）。
+ */
+export function selectionDisplayLabel(
+  providerId: string,
+  keyId: string | undefined,
+  model: string,
+): string {
+  const m = model.trim()
+  if (!m) return ''
+  const p = getProviderById(providerId)
+  if (!p || (p.keys?.length ?? 0) <= 1) return m
+  const slot = keyId ? p.keys.find((k) => k.id === keyId) : undefined
+  const tag = (slot?.label || '').trim() || (keyId ? 'Key' : '')
+  return tag ? `${m} · ${tag}` : m
+}
+
+/** 是否存在任一提供商配置了多把 Key（UI 文案分支）。 */
+export function hasMultiKeyProvider(): boolean {
+  return config.providers.some((p) => (p.keys?.length ?? 0) > 1)
 }
 
 /**
  * 消费者下拉选项：`providerId::keyId::model`。
- * 单 Key 提供商分组标题仅提供商名；多 Key 为「提供商 · 备注」。
+ * 分组 = 提供商名；单 Key 选项仅模型名；多 Key 选项为 `模型 · 备注`（与触发器一致）。
  */
 export function modelSelectOptions():
   | { label: string; value: string }[]
@@ -372,15 +386,16 @@ export function modelSelectOptions():
         })),
       })
     } else {
-      for (const k of keys) {
-        groups.push({
-          label: `${providerDisplayName(p)} · ${k.label || 'Key'}`,
-          options: models.map((m) => ({
-            label: m,
+      // 多 Key：同提供商一组，选项显式带备注，避免折叠后只见模型名
+      groups.push({
+        label: providerDisplayName(p),
+        options: keys.flatMap((k) =>
+          models.map((m) => ({
+            label: selectionDisplayLabel(p.id, k.id, m),
             value: formatSelectionKey(p.id, k.id, m),
           })),
-        })
-      }
+        ),
+      })
     }
   }
 
