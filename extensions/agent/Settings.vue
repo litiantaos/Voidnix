@@ -96,18 +96,18 @@ const allItems = computed<SettingItem[]>(() => [
   },
   {
     id: 'ai-providers-link',
-    title: 'AI 提供商',
-    subtitle: '统一管理 API Key',
+    title: 'AI',
+    subtitle: '在「AI 提供商」中配置',
     type: 'action',
-    group: '模型提供商',
+    group: '提供商',
     action: () => appStore.setActiveModule('ai-providers'),
   },
   {
     id: 'search-provider',
     title: 'Tavily',
-    subtitle: agentConfig.searchProvider.apiKey ? '已配置 Key' : '无 Key',
+    subtitle: agentConfig.searchProvider.apiKey ? '已配置' : '未配置',
     type: 'action',
-    group: '搜索提供商',
+    group: '提供商',
     action: () => openSearchModal(agentConfig.searchProvider),
   },
   {
@@ -115,7 +115,7 @@ const allItems = computed<SettingItem[]>(() => [
     title: '系统提示词',
     subtitle: systemPromptPreview.value,
     type: 'action',
-    group: 'Agent 配置',
+    group: '高级',
     action: openSystemPromptDialog,
   },
 ])

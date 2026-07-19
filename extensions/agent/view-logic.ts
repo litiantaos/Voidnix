@@ -59,7 +59,10 @@ marked.use({
     code({ text, lang }: Tokens.Code) {
       return renderCodeBlock(text, lang)
     },
-    list(this: { parser: { parse: (tokens: Tokens.ListItem['tokens']) => string } }, token: Tokens.List) {
+    list(
+      this: { parser: { parse: (tokens: Tokens.ListItem['tokens']) => string } },
+      token: Tokens.List,
+    ) {
       const tag = token.ordered ? 'ol' : 'ul'
       const start =
         typeof token.start === 'number' && Number.isFinite(token.start) ? token.start : 1
@@ -93,6 +96,16 @@ export function getMessageText(msg: AgentMessage): string {
     .filter((p): p is Extract<AgentPart, { type: 'text' }> => p.type === 'text')
     .map((p) => p.text)
     .join('')
+}
+
+/**
+ * 历史浮层单行 label：折叠空白 + 截断到 maxLen，空文本回退序号占位。
+ * 入参 ordinal 从 1 起（仅用于空消息兜底，不在正常 label 前加序号，避免噪音）。
+ */
+export function buildHistoryLabel(text: string, ordinal: number, maxLen = 60): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  if (!flat) return `#${ordinal}`
+  return flat.length > maxLen ? flat.slice(0, maxLen) + '…' : flat
 }
 
 /** 是否为该消息中最后一个 text part 且仍在流式输出 */
