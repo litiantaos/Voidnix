@@ -67,15 +67,16 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 
     let search_id = SEARCH_SESSION.next_search_id();
 
-    let target_dirs = vec![
-        "Desktop".to_string(),
-        "Documents".to_string(),
-        "Downloads".to_string(),
-        "Pictures".to_string(),
-        "Music".to_string(),
-        "Movies".to_string(),
-        "Projects".to_string(),
-        "Code".to_string(),
+    // 目标子目录白名单（仅路径前缀过滤用，不触碰文件系统，零 TCC 触发）。
+    const TARGET_SUBDIRS: &[&str] = &[
+        "Desktop",
+        "Documents",
+        "Downloads",
+        "Pictures",
+        "Music",
+        "Movies",
+        "Projects",
+        "Code",
     ];
 
     let mut command = std::process::Command::new("mdfind");
@@ -83,13 +84,10 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
     command.arg("-attr").arg("kMDItemContentType");
     command.arg("-attr").arg("kMDItemUseCount");
 
+    // 家目录本身不受 TCC 保护；Spotlight 守护进程 mds 以系统权限索引所有文件（含受保护目录），
+    // 无需 FDA 即可搜到 Documents/Desktop/Downloads 的内容。后端用 starts_with 过滤目标子目录。
     if let Some(home_dir) = dirs::home_dir() {
-        for dir in &target_dirs {
-            let path = home_dir.join(dir);
-            if path.exists() {
-                command.arg("-onlyin").arg(path);
-            }
-        }
+        command.arg("-onlyin").arg(&home_dir);
     }
 
     command.stdout(std::process::Stdio::piped());
@@ -100,6 +98,18 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         .map_err(|e| format!("mdfind spawn failed: {e}"))?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
 
+    // 目标子目录前缀（spawn_blocking 闭包捕获，纯字符串匹配，零 TCC 触发）。
+    // 在 reader 循环内即时过滤，保证 MAX_ENTRIES 配额全部留给目标子目录。
+    let allowed_prefixes: Vec<String> = dirs::home_dir()
+        .map(|home| {
+            TARGET_SUBDIRS
+                .iter()
+                .filter_map(|d| home.join(d).to_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let allow_all = allowed_prefixes.is_empty();
+
     const MAX_ENTRIES: usize = 100;
 
     let read_entries = tokio::task::spawn_blocking(move || {
@@ -109,6 +119,8 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         let mut current_use_count: u32 = 0;
         let mut current_is_folder = false;
         let mut has_pending = false;
+        // 路径前缀过滤：仅保留目标子目录内的结果。
+        let keep = |path: &str| allow_all || allowed_prefixes.iter().any(|p| path.starts_with(p));
 
         for line in reader.lines() {
             let line = match line {
@@ -119,11 +131,13 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 
             if trimmed.is_empty() {
                 if has_pending {
-                    entries.push(FileEntry {
-                        path: std::mem::take(&mut current_path),
-                        use_count: std::mem::take(&mut current_use_count),
-                        is_folder: current_is_folder,
-                    });
+                    if keep(&current_path) {
+                        entries.push(FileEntry {
+                            path: std::mem::take(&mut current_path),
+                            use_count: std::mem::take(&mut current_use_count),
+                            is_folder: current_is_folder,
+                        });
+                    }
                     has_pending = false;
                     if entries.len() >= MAX_ENTRIES {
                         break;
@@ -134,11 +148,13 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 
             if trimmed.starts_with('/') {
                 if has_pending {
-                    entries.push(FileEntry {
-                        path: std::mem::take(&mut current_path),
-                        use_count: std::mem::take(&mut current_use_count),
-                        is_folder: current_is_folder,
-                    });
+                    if keep(&current_path) {
+                        entries.push(FileEntry {
+                            path: std::mem::take(&mut current_path),
+                            use_count: std::mem::take(&mut current_use_count),
+                            is_folder: current_is_folder,
+                        });
+                    }
                     has_pending = false;
                     if entries.len() >= MAX_ENTRIES {
                         break;
@@ -171,7 +187,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
             }
         }
 
-        if has_pending {
+        if has_pending && keep(&current_path) {
             entries.push(FileEntry {
                 path: std::mem::take(&mut current_path),
                 use_count: std::mem::take(&mut current_use_count),
