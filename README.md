@@ -52,6 +52,10 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
 后台自动记录文本、图片、文件；`Option+C` 打开历史，支持搜索、收藏、多选，回车粘贴，可配置保留天数。
 
+### AI 提供商
+
+统一管理 OpenAI 兼容 URL / Key / 模型，供翻译、Agent 与外部工具（OpenCode、Grok Build、Claude Code 等）共用。同一提供商支持多 Key，智谱显示 5h / 7d / 30d 额度曲线、DeepSeek 显示账户余额；保存后写 `ai.env` 并幂等注入 shell rc，知名端点自动映射规范环境变量（`ZHIPU_*` / `DEEPSEEK_*` / `ANTHROPIC_*`）。
+
 ### 翻译
 
 `Option+T` 抓取当前选中文本进行翻译，或模块内直接输入，中英方向自动反转，可配置有道或 AI 引擎（多引擎并排）。
@@ -70,7 +74,7 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
 ### 窗口管理
 
-启用后，鼠标移至屏幕顶部中心唤起分屏面板，支持自定义尺寸。
+启用后，鼠标移至任意屏顶部中心唤起分屏面板，支持自定义尺寸；多屏环境下面板末组提供跨屏迁移，布局相对窗口所在屏计算。
 
 ### 代理
 
