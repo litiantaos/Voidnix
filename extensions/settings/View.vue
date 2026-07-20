@@ -185,12 +185,12 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     type: 'action',
     icon: permAccessibility.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
     group: '隐私权限',
-    action: () => {
-      if (permAccessibility.value) {
-        handleOpenPrivacy('accessibility')
-      } else {
-        handleRequestAccessibility()
+    action: async () => {
+      // 未授权时先触发系统把本应用注册进辅助功能列表（否则面板里找不到），再打开设置面板
+      if (!permAccessibility.value) {
+        await handleRequestAccessibility()
       }
+      await handleOpenPrivacy('accessibility')
     },
   })
   items.push({
