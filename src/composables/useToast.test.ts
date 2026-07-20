@@ -1,5 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { toasts, overlayKey, showToast, dismissToast, clearToasts } from './useToast'
+import {
+  toasts,
+  overlayKey,
+  showToast,
+  dismissToast,
+  clearToasts,
+  pauseToast,
+  resumeToast,
+  pauseAllToasts,
+  resumeAllToasts,
+} from './useToast'
 
 describe('useToast', () => {
   beforeEach(() => {
@@ -70,5 +80,79 @@ describe('useToast', () => {
     // 三个剩余 toast 各自定时器到期后正常 dismiss
     expect(toasts.value).toHaveLength(0)
     vi.useRealTimers()
+  })
+
+  describe('hover 暂停/恢复', () => {
+    it('pauseToast 期间不触发自动清除', () => {
+      vi.useFakeTimers()
+      showToast('错误', { duration: 1000 })
+      const id = toasts.value[0].id
+      vi.advanceTimersByTime(500)
+      pauseToast(id)
+      vi.advanceTimersByTime(100000) // 暂停期间时间冻结
+      expect(toasts.value).toHaveLength(1)
+      vi.useRealTimers()
+    })
+
+    it('resumeToast 从剩余时刻继续倒计时', () => {
+      vi.useFakeTimers()
+      showToast('错误', { duration: 1000 })
+      const id = toasts.value[0].id
+      vi.advanceTimersByTime(500) // 已过 500，剩 500
+      pauseToast(id)
+      vi.advanceTimersByTime(100000) // 暂停期间冻结
+      resumeToast(id)
+      vi.advanceTimersByTime(499)
+      expect(toasts.value).toHaveLength(1)
+      vi.advanceTimersByTime(2)
+      expect(toasts.value).toHaveLength(0)
+      vi.useRealTimers()
+    })
+
+    it('pauseToast / resumeToast 幂等（未暂停 resume、已暂停 pause 无副作用）', () => {
+      vi.useFakeTimers()
+      showToast('错误', { duration: 1000 })
+      const id = toasts.value[0].id
+      resumeToast(id) // 未暂停，无副作用
+      vi.advanceTimersByTime(200)
+      pauseToast(id)
+      pauseToast(id) // 已暂停，无副作用
+      vi.advanceTimersByTime(10000)
+      expect(toasts.value).toHaveLength(1)
+      resumeToast(id)
+      vi.advanceTimersByTime(10000)
+      expect(toasts.value).toHaveLength(0)
+      vi.useRealTimers()
+    })
+  })
+
+  describe('悬浮区域 pauseAll / resumeAll', () => {
+    it('pauseAllToasts 冻结全部 toast', () => {
+      vi.useFakeTimers()
+      showToast('一', { duration: 1000 })
+      showToast('二', { duration: 1000 })
+      showToast('三', { duration: 1000 })
+      vi.advanceTimersByTime(500)
+      pauseAllToasts()
+      vi.advanceTimersByTime(100000) // 全部冻结
+      expect(toasts.value).toHaveLength(3)
+      vi.useRealTimers()
+    })
+
+    it('resumeAllToasts 恢复全部并保留各自剩余时长', () => {
+      vi.useFakeTimers()
+      showToast('一', { duration: 1000 })
+      showToast('二', { duration: 2000 })
+      vi.advanceTimersByTime(500) // 一剩 500，二剩 1500
+      pauseAllToasts()
+      vi.advanceTimersByTime(100000)
+      resumeAllToasts()
+      vi.advanceTimersByTime(500)
+      expect(toasts.value).toHaveLength(1) // 一消失，二还在
+      expect(toasts.value[0].message).toBe('二')
+      vi.advanceTimersByTime(1000)
+      expect(toasts.value).toHaveLength(0)
+      vi.useRealTimers()
+    })
   })
 })
