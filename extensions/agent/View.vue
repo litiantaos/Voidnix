@@ -134,7 +134,6 @@
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted, onActivated, onUnmounted, watch } from 'vue'
 import { open } from '@tauri-apps/plugin-shell'
-import { showToast } from '@/composables/useToast'
 import { isAgentProviderReady, resolveAgentRuntimeCredentials } from './config'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -147,7 +146,6 @@ import './agent-step.css'
 
 /** 距底部多少 px 内视为贴底（自动滚底生效） */
 const NEAR_BOTTOM_PX = 24
-const MAX_INPUT_LENGTH = 8192
 
 const agent = useAgentChat()
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
@@ -234,14 +232,10 @@ watch(
 async function handleSubmit() {
   const text = inputText.value.trim()
   if (!text || agent.isGenerating.value) return
-  if (text.length > MAX_INPUT_LENGTH) {
-    showToast(`消息过长，已截断至 ${MAX_INPUT_LENGTH} 字`, { kind: 'error' })
-  }
-  const clipped = text.length > MAX_INPUT_LENGTH ? text.slice(0, MAX_INPUT_LENGTH) : text
   inputText.value = ''
   // 发送后跟读最新输出
   stickToBottom.value = true
-  await agent.sendMessage(clipped)
+  await agent.sendMessage(text)
   await nextTick()
   scrollToBottomInstant()
   nextTick(() => textareaRef.value?.focus())
