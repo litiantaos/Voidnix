@@ -112,7 +112,7 @@ async function importLegacyProviders(): Promise<number> {
   }
 
   if (imported > 0) {
-    console.info(`[ai-providers] imported ${imported} provider(s) from legacy consumer configs`)
+    console.warn(`[ai-providers] imported ${imported} provider(s) from legacy consumer configs`)
   }
   return imported
 }
