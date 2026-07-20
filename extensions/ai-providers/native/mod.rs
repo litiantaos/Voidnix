@@ -1,15 +1,19 @@
-//! AI 提供商扩展：写 `~/.config/voidnix/ai.env` + 读 env 快照（供 App 内回退）。
-//! 无代理、无热路径。
+//! AI 提供商扩展：写 `~/.config/voidnix[/dev]/ai.env` + 读 env 快照（供 App 内回退）。
+//! 无代理、无热路径。dev/prod 按构建分流到不同目录与 shell scope，避免双开互相覆盖。
 
 use crate::runtime::registry::Extension;
 use serde::Serialize;
 use std::path::PathBuf;
 use tauri::AppHandle;
 
-/// 导出目录：`~/.config/voidnix`
+/// dev 构建用 `.dev` 后缀目录与 scope，release 用基础值。
+/// 与 `src-tauri/tauri.conf.json`（`com.litiantao.voidnix`）/ `tauri.dev.conf.json`（`.dev`）的 bundle id 隔离一致。
+const DEV_SUFFIX: &str = if cfg!(debug_assertions) { ".dev" } else { "" };
+
+/// 导出目录：release `~/.config/voidnix` / debug `~/.config/voidnix.dev`
 fn export_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法解析 home 目录".to_string())?;
-    Ok(home.join(".config").join("voidnix"))
+    Ok(home.join(".config").join(format!("voidnix{DEV_SUFFIX}")))
 }
 
 fn env_file_path() -> Result<PathBuf, String> {
@@ -37,11 +41,19 @@ fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// shell rc scope（marker `# voidnix ai-providers`，见 runtime/shell_rc）。
-const SHELL_SCOPE: &str = "ai-providers";
+/// shell rc scope（marker `# voidnix ai-providers`，debug 叠 `-dev`；见 runtime/shell_rc）。
+const SHELL_SCOPE: &str = if cfg!(debug_assertions) {
+    "ai-providers-dev"
+} else {
+    "ai-providers"
+};
 
-const AI_ENV_SOURCE: &str =
-    r#"[ -f "$HOME/.config/voidnix/ai.env" ] && source "$HOME/.config/voidnix/ai.env""#;
+/// source 钩子 body：指向本构建分流的 `ai.env`。
+fn shell_hook_body() -> String {
+    format!(
+        r#"[ -f "$HOME/.config/voidnix{DEV_SUFFIX}/ai.env" ] && source "$HOME/.config/voidnix{DEV_SUFFIX}/ai.env""#
+    )
+}
 
 /// 幂等写入 shell rc 钩子（统一 shell_rc 约定）。返回是否新写入。
 fn ensure_shell_hook(rc_path: &std::path::Path) -> Result<bool, String> {
@@ -56,7 +68,7 @@ fn ensure_shell_hook(rc_path: &std::path::Path) -> Result<bool, String> {
             }
         }
     }
-    crate::runtime::shell_rc::upsert_block(rc_path, SHELL_SCOPE, AI_ENV_SOURCE)
+    crate::runtime::shell_rc::upsert_block(rc_path, SHELL_SCOPE, &shell_hook_body())
 }
 
 fn ensure_user_shell_hooks() {
@@ -165,7 +177,7 @@ fn from_process() -> (String, String, String) {
     (api_key, endpoint, model)
 }
 
-/// 读 OpenAI 兼容凭证：进程环境优先，否则 `~/.config/voidnix/ai.env`。
+/// 读 OpenAI 兼容凭证：进程环境优先，否则 `~/.config/voidnix[/dev]/ai.env`。
 /// Dock 启动时进程往往无 shell env，文件回退保证 App 内可用。
 #[tauri::command]
 pub fn ai_providers_env_snapshot() -> AiEnvSnapshot {
@@ -759,9 +771,11 @@ mod tests {
         assert!(ensure_shell_hook(&rc).unwrap());
         assert!(!ensure_shell_hook(&rc).unwrap());
         let text = std::fs::read_to_string(&rc).unwrap();
-        assert!(text.contains("# voidnix ai-providers"));
+        // debug 构建：scope 叠 -dev、路径走 voidnix.dev/
+        assert!(text.contains("# voidnix ai-providers-dev"));
+        assert!(!text.contains("# voidnix ai-providers\n"));
         assert!(!text.contains("voidnix-ai"));
-        assert!(text.contains("voidnix/ai.env"));
+        assert!(text.contains("voidnix.dev/ai.env"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

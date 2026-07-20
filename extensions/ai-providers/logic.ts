@@ -154,7 +154,7 @@ export function assignKeyEnvNames(
 export function buildExportPayload(input: ExportInput): ExportPayload {
   const lines: string[] = [
     '# Managed by Voidnix — do not edit.',
-    '# source ~/.config/voidnix/ai.env',
+    '# source ~/.config/voidnix/ai.env (release) / ~/.config/voidnix.dev/ai.env (debug)',
     '# Tools: OpenCode / Grok Build (ZHIPU_* DEEPSEEK_*) · Claude Code (ANTHROPIC_*)',
     '',
   ]
