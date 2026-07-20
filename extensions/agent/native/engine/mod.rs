@@ -17,6 +17,7 @@ use serde::Serialize;
 ///
 /// 命名约定（前端 TS 类型对齐）：
 /// - `TextDelta` → 累积成 assistant message 的 text part
+/// - `ReasoningDelta` → 累积成 reasoning part（思考模式输出，不回灌 LLM）
 /// - `ToolCallStart` / `ToolCallArgs` → 新建 tool_call part
 /// - `ToolResult` → 更新对应 tool_call part
 /// - `Completed` / `Error` → 结束当前 agent run
@@ -25,6 +26,8 @@ use serde::Serialize;
 pub enum AgentEvent {
     /// LLM 输出的文本增量（assistant 文本流）
     TextDelta { text: String },
+    /// LLM 思考模式增量（reasoning_content；不进 LLM 上下文，仅 UI 展示）
+    ReasoningDelta { text: String },
     /// 工具调用开始（拿到 tool_call_id + 工具名）
     ToolCallStart { id: String, name: String },
     /// 工具调用参数完整到达（已 parse 的 JSON）

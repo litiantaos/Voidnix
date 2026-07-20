@@ -87,7 +87,8 @@ AI 凭证条目上收至框架级中枢（`@/runtime/ai-providers`）；**本扩
 
 - **贴底滚动**：仅列表距底 < 24px 时 streaming 增量自动滚底；用户上翻阅读不打断。发送新消息时强制贴底。布局 watch 用轻量签名（条数 + streaming 长度）+ rAF 合并滚底，流式阶段不插值高度。
 - **悬浮输入岛**：`agent-footer` absolute 贴底（左右/底 12），不占 flex 流；消息区铺满并可滚入其下；底 padding 固定预留输入岛（~112px），**不为**悬浮钮动态加高（避免显隐抖动）；`chrome-fade-bottom` 仍叠底软透。
-- **工具结果**：`web_search` 成功展示 parsed answer/hits（button + 外链 icon，系统浏览器打开）；失败展示 `output` 错误串；`run_command` 等展示 `output` 原文。
+- **思考模式**（`AgentPart.type = 'reasoning'`）：LLM 思考模式输出（`reasoning_content`，DeepSeek-R1 / 智谱 GLM / Kimi 等）流式累积成 reasoning part，三行省略展示（sparkling 图标 + 「思考」标签 + secondary 文本）；**不回灌 LLM**（`toLlmMessages` 只取 text，reasoning 仅 UI 可见）；多轮中每轮独立成段（reasoningDelta 累积到最后一个 reasoning part 或新建）。
+- **工具结果**：`web_search` 成功展示 answer 摘要（三行省略）；失败展示 `output` 错误串；`run_command` 等展示 `output` 原文。
 - **状态 notice**（`AgentPart.type = 'notice'`，不进 LLM）：`error`（气泡 danger 底 + toast）/ `aborted`（muted「已中止」）；中止/错误时进行中工具标 `failed`。
 - **未配置**：空态 +「去设置」打开 config 子视图。
 - **悬浮操作**：输入框上方零宽中线锚点。滚底非贴底即显；中止仅输出中。两钮 absolute，solo=`translate -50%` 居中，pair=分居中线两侧（半槽 4px）；中止消失后滚底 translate 200ms 滑回正中。阴影 3 层插值 hover 抬升。点滚底 smooth；streaming/发送瞬时贴底。中止 aurora；进出场 200/150ms；中止走 `agentAbort`。
@@ -104,7 +105,8 @@ extensions/agent/
 ├── view-logic.ts          # View 纯函数（streamView / showToolBody / markdown / buildHistoryLabel 等）
 ├── View.vue               # 布局 + 贴底滚动 + 悬浮操作 + notice
 ├── AgentTextPart.vue      # 流式/完成 markdown 文本 part
-├── AgentToolStep.vue      # 工具步骤行 + hits/output
+├── AgentReasoningPart.vue # 思考模式 part（三行省略，不回灌 LLM）
+├── AgentToolStep.vue      # 工具步骤行 + output
 ├── agent-step.css         # 思考/工具步骤共用样式
 ├── Settings.vue           # Provider + Agent 配置
 ├── Actions.vue            # 模型切换 + 历史跳转 + 新会话 + 设置

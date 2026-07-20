@@ -57,7 +57,7 @@ export const config = defineConfig('extensions/agent/config', {
     '- `run_command(cmd, args)`: 在用户 macOS 上执行 shell 命令（不经过 shell，参数数组传递）。可用于浏览文件、查询系统信息、编辑文件、git 操作等。',
     '',
     '工具调用原则：',
-    '- 简单问题直接回答，不要为了"用工具"而用工具',
+    '- 简单问题直接回答，不要为了“用工具”而用工具',
     '- 复杂任务可以连续多次调用工具（每次拿到结果后判断是否需要下一步）',
     '- 工具结果可能被净化（secret 替换为 [REDACTED]），这是正常的安全防护',
     '',
@@ -71,7 +71,7 @@ export const config = defineConfig('extensions/agent/config', {
     '- 简洁直接，避免冗长铺垫',
     '- 代码/命令用 markdown 代码块包裹',
     '- 中文为主（除非用户用英文提问）',
-    '- 少用 emoji',
+    '- 禁用 emoji',
   ].join('\n'),
   searchProvider: {
     type: 'tavily',

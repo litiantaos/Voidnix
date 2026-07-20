@@ -13,7 +13,7 @@ import { generateRequestId } from '@/utils/id'
 import { showToast } from '@/composables/useToast'
 import { config as agentConfig, resolveAgentRuntimeCredentials } from './config'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
-import { toLlmMessages, tryParseSearch } from './logic'
+import { toLlmMessages, tryParseSearchAnswer } from './logic'
 
 export type AgentStatus = 'ready' | 'streaming' | 'error'
 
@@ -116,6 +116,7 @@ export function useAgentChat() {
     // 已收尾的气泡：忽略晚到内容事件（中止后 textDelta 不得接在「已中止」后）
     const contentEvent =
       event.type === 'textDelta' ||
+      event.type === 'reasoningDelta' ||
       event.type === 'toolCallStart' ||
       event.type === 'toolCallArgs' ||
       event.type === 'toolResult'
@@ -129,6 +130,16 @@ export function useAgentChat() {
           lastPart.text += event.text
         } else {
           msg.parts.push({ type: 'text', text: event.text })
+        }
+        break
+      }
+      case 'reasoningDelta': {
+        // 累积到最后一个 reasoning part 或新建（思考模式输出，不回灌 LLM）
+        const lastPart = msg.parts[msg.parts.length - 1]
+        if (lastPart && lastPart.type === 'reasoning') {
+          lastPart.text += event.text
+        } else {
+          msg.parts.push({ type: 'reasoning', text: event.text })
         }
         break
       }
@@ -155,9 +166,9 @@ export function useAgentChat() {
         if (part) {
           part.state = event.ok ? 'done' : 'failed'
           part.output = event.output
-          // web_search：成功解析结构化结果供 UI hits；失败时 parsed 空，UI 展示 output
+          // web_search：成功解析 answer 摘要供 UI 展示
           part.parsed =
-            part.name === 'web_search' && event.ok ? tryParseSearch(event.output) : undefined
+            part.name === 'web_search' && event.ok ? tryParseSearchAnswer(event.output) : undefined
         }
         break
       }
@@ -221,7 +232,7 @@ export function useAgentChat() {
       msg.streaming = false
       // 移除空 text parts（streaming 但没收到任何内容）；notice / tool 保留
       msg.parts = msg.parts.filter((p) => {
-        if (p.type === 'text') return p.text.length > 0
+        if (p.type === 'text' || p.type === 'reasoning') return p.text.length > 0
         return true
       })
     }

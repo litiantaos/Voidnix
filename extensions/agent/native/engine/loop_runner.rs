@@ -77,10 +77,16 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
             return Ok(());
         }
 
-        // 准备本轮 stream：text delta 通过 callback 推到前端
+        // 准备本轮 stream：text / reasoning delta 通过 callback 推到前端
         let channel_for_text = input.channel.clone();
         let mut on_text = move |delta: &str| {
             let _ = channel_for_text.send(AgentEvent::TextDelta {
+                text: delta.to_string(),
+            });
+        };
+        let channel_for_reasoning = input.channel.clone();
+        let mut on_reasoning = move |delta: &str| {
+            let _ = channel_for_reasoning.send(AgentEvent::ReasoningDelta {
                 text: delta.to_string(),
             });
         };
@@ -100,6 +106,7 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
             tools: Some(&tools_slice),
             tool_choice: Some("auto"),
             on_text_delta: Some(&mut on_text),
+            on_reasoning_delta: Some(&mut on_reasoning),
             on_tool_calls_delta: None,
             chunk_event: "", // agent loop 不走旧 emit 路径
             done_event: "",
