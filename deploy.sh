@@ -18,3 +18,6 @@ rsync -a --delete src-tauri/target/release/bundle/macos/Voidnix.app/ /Applicatio
 
 echo ""
 echo "完成。Voidnix 已更新至 /Applications/Voidnix.app"
+
+echo "==> 签名验证"
+codesign -dvv /Applications/Voidnix.app 2>&1 | grep -E "Identifier|TeamIdentifier|Signature"
