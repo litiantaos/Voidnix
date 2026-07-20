@@ -55,7 +55,7 @@
 
 ## CLI / env
 
-保存后写 `~/.config/voidnix/ai.env`（`shell_rc` 幂等注入，见 [shell-rc.md](../shell-rc.md)）。
+保存后写 `~/.config/voidnix[/dev]/ai.env`（release 基础目录，debug 叠 `.dev`；与 bundle id 隔离一致，dev/prod 双开不互相覆盖），`shell_rc` 幂等注入（见 [shell-rc.md](../shell-rc.md)）。
 
 - `OPENAI_*` = **列表中第一套完整** endpoint+key+model（方便只读 OPENAI 的工具，**不是全局 active**）
 - 知名端点锁死工具约定名（`envKey` 显式可覆盖）：

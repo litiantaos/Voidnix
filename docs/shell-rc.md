@@ -63,7 +63,7 @@ shell_rc::quote_shell(path);           // POSIX 单引号
 | scope                 | 扩展    | body 含义                                             |
 | --------------------- | ------- | ----------------------------------------------------- |
 | `zsh-autosuggestions` | 补全    | `export ZSH_AS_DIR=…; eval "$(… init)"`               |
-| `ai-providers`        | AI 凭证 | `source ~/.config/voidnix/ai.env`（zshrc + zprofile） |
+| `ai-providers` / `ai-providers-dev` | AI 凭证 | `source ~/.config/voidnix[/dev]/ai.env`（zshrc + zprofile；dev 构建叠 `-dev` scope 与 `.dev` 目录，与 bundle id 隔离一致） |
 
 ## 禁止
 
