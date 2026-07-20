@@ -134,7 +134,27 @@ describe('useAgentChat session 守卫', () => {
     expect(agent.status.value).toBe('ready')
   })
 
-  it('web_search toolResult 成功时解析 parsed', async () => {
+  it('reasoningDelta 累积成 reasoning part（不回灌 LLM）', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('hi')
+    const ch = mocks.channels[0]!
+
+    ch.onmessage?.({ type: 'reasoningDelta', text: '分析' })
+    ch.onmessage?.({ type: 'reasoningDelta', text: '问题' })
+    ch.onmessage?.({ type: 'textDelta', text: '回答' })
+    ch.onmessage?.({ type: 'completed' })
+
+    const assistant = agent.messages.value.find((m) => m.role === 'assistant')
+    const reasoning = assistant?.parts.find((p) => p.type === 'reasoning')
+    expect(reasoning && reasoning.type === 'reasoning' && reasoning.text).toBe('分析问题')
+    // reasoning 不进 LLM 上下文（toLlmMessages 只取 text）
+    const { toLlmMessages } = await import('./logic')
+    const llm = toLlmMessages(agent.messages.value)
+    expect(llm.some((m) => m.content?.includes('分析问题'))).toBe(false)
+    expect(llm.some((m) => m.content === '回答')).toBe(true)
+  })
+
+  it('web_search toolResult 成功时解析 answer 摘要', async () => {
     const agent = useAgentChat()
     await agent.sendMessage('search')
     const ch = mocks.channels[0]!
@@ -157,7 +177,7 @@ describe('useAgentChat session 守卫', () => {
 
     const assistant = agent.messages.value.find((m) => m.role === 'assistant' && m.streaming)
     const part = assistant?.parts.find((p) => p.type === 'toolCall')
-    expect(part && part.type === 'toolCall' && part.parsed?.hits[0]?.title).toBe('T')
+    expect(part && part.type === 'toolCall' && part.parsed).toBe('A')
 
     ch.onmessage?.({ type: 'completed' })
   })

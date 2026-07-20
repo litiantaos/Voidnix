@@ -1,25 +1,22 @@
 /* 思考占位 / 工具步骤共用（View + AgentToolStep 导入，非 scoped） */
 
 .agent-step {
-  padding: var(--space-soft);
-  border-radius: var(--radius-ctrl);
-  background: var(--color-mist);
   animation: agent-step-in 0.3s var(--ease-out) both;
 }
 
 .agent-step-label {
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
 }
 
 /* 进行中：标签流光字 + 图标脉动 + 三点 */
 .agent-step--active .agent-step-label {
   background: linear-gradient(
     100deg,
-    var(--color-text-secondary) 0%,
+    var(--color-text-primary) 0%,
     var(--color-accent) 40%,
     color-mix(in srgb, var(--color-accent) 50%, var(--color-card-solid)) 50%,
     var(--color-accent) 60%,
-    var(--color-text-secondary) 100%
+    var(--color-text-primary) 100%
   );
   background-size: 220% 100%;
   -webkit-background-clip: text;
@@ -88,6 +85,14 @@
   margin: 0;
   padding: 0;
   animation: agent-step-out-in 0.25s var(--ease-out) both;
+}
+
+/* step 内摘要文本：最多三行省略（web_search answer / reasoning 共用） */
+.agent-step-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 @keyframes agent-step-in {

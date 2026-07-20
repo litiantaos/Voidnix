@@ -40,6 +40,9 @@ pub struct ChoiceDelta {
     pub role: Option<String>,
     #[serde(default)]
     pub content: Option<String>,
+    /// 思考模式增量（DeepSeek-R1 / 智谱 GLM / Kimi 等的 `reasoning_content`）
+    #[serde(default)]
+    pub reasoning_content: Option<String>,
     #[serde(default)]
     pub tool_calls: Vec<ToolCallDelta>,
 }
@@ -306,6 +309,15 @@ mod tests {
         let mut acc = ToolCallAccumulator::default();
         acc.process_delta(&parse_choice_delta(raw).unwrap());
         assert!(acc.finalize().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reasoning_content_field_parsed() {
+        // 思考模式增量（DeepSeek-R1 / 智谱 GLM 等）
+        let raw = r#"{"choices":[{"index":0,"delta":{"reasoning_content":"思考中"}}]}"#;
+        let delta = parse_choice_delta(raw).unwrap();
+        assert_eq!(delta.reasoning_content.as_deref(), Some("思考中"));
+        assert!(delta.content.is_none());
     }
 
     #[test]

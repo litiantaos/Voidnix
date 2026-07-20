@@ -3,8 +3,8 @@ import {
   streamView,
   resetStreamViewCache,
   showToolBody,
-  toolLabel,
   toolIcon,
+  toolLabel,
   toolDetail,
   isStreamingText,
   getMessageText,
@@ -63,34 +63,16 @@ describe('streamView', () => {
 })
 
 describe('showToolBody', () => {
-  it('web_search 成功有 hits 则展示', () => {
-    expect(
-      showToolBody(
-        tool({
-          name: 'web_search',
-          state: 'done',
-          parsed: { hits: [{ title: 'T', url: 'https://x', snippet: '' }] },
-        }),
-      ),
-    ).toBe(true)
+  it('web_search 成功有 answer 则展示', () => {
+    expect(showToolBody(tool({ name: 'web_search', state: 'done', parsed: '摘要内容' }))).toBe(true)
   })
 
-  it('web_search 成功仅 answer 也展示', () => {
+  it('web_search 成功无 answer 不展示', () => {
     expect(
       showToolBody(
-        tool({
-          name: 'web_search',
-          state: 'done',
-          parsed: { answer: '摘要', hits: [] },
-        }),
+        tool({ name: 'web_search', state: 'done', output: '{"hits":[]}', parsed: undefined }),
       ),
-    ).toBe(true)
-  })
-
-  it('web_search 成功无 parsed 不展示', () => {
-    expect(showToolBody(tool({ name: 'web_search', state: 'done', output: '{"hits":[]}' }))).toBe(
-      false,
-    )
+    ).toBe(false)
   })
 
   it('web_search 失败有 output 则展示', () => {
@@ -109,12 +91,15 @@ describe('showToolBody', () => {
 })
 
 describe('tool helpers', () => {
-  it('toolLabel / toolIcon', () => {
-    expect(toolLabel('web_search')).toBe('搜索')
-    expect(toolLabel('run_command')).toBe('命令')
-    expect(toolLabel('other')).toBe('other')
+  it('toolIcon', () => {
     expect(toolIcon('web_search')).toContain('search')
     expect(toolIcon('run_command')).toContain('terminal')
+  })
+
+  it('toolLabel 返回语义类别', () => {
+    expect(toolLabel('web_search')).toBe('搜索')
+    expect(toolLabel('run_command')).toBe('命令')
+    expect(toolLabel('xxx')).toBe('工具')
   })
 
   it('toolDetail 解析 run_command / web_search', () => {
@@ -190,9 +175,10 @@ describe('streamLayoutKey', () => {
 })
 
 describe('partKey', () => {
-  it('tool 用 id，notice/text 用 type+index', () => {
+  it('tool 用 id，notice/reasoning/text 用 type+index', () => {
     expect(partKey({ type: 'toolCall', id: 'c1', name: 'x', state: 'done' }, 0)).toBe('c1')
     expect(partKey({ type: 'notice', kind: 'error', text: 'e' }, 2)).toBe('notice-error-2')
+    expect(partKey({ type: 'reasoning', text: '思考' }, 1)).toBe('reasoning-1')
     expect(partKey({ type: 'text', text: 'a' }, 1)).toBe('text-1')
   })
 })

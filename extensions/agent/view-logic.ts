@@ -155,26 +155,14 @@ export function resetSolidMdCache(): void {
   solidMdCache = null
 }
 
-/** 工具结果区：web_search 成功 hits / answer；失败或其它工具有 output */
+/** 工具结果区：web_search 成功展示 answer 摘要 / 失败展示 output；其它工具有 output */
 export function showToolBody(part: Extract<AgentPart, { type: 'toolCall' }>): boolean {
   if (part.state !== 'done' && part.state !== 'failed') return false
   if (part.name === 'web_search') {
-    if (part.state === 'done' && part.parsed && (part.parsed.hits.length > 0 || part.parsed.answer))
-      return true
-    return part.state === 'failed' && !!part.output
+    if (part.state === 'done') return !!part.parsed
+    return !!part.output
   }
   return !!part.output
-}
-
-export function toolLabel(name: string): string {
-  switch (name) {
-    case 'web_search':
-      return '搜索'
-    case 'run_command':
-      return '命令'
-    default:
-      return name
-  }
 }
 
 export function toolIcon(name: string): string {
@@ -185,6 +173,18 @@ export function toolIcon(name: string): string {
       return 'i-ri-terminal-box-line'
     default:
       return 'i-ri-tools-line'
+  }
+}
+
+/** 工具语义 label（active 时与「思考」同款 shimmer） */
+export function toolLabel(name: string): string {
+  switch (name) {
+    case 'web_search':
+      return '搜索'
+    case 'run_command':
+      return '命令'
+    default:
+      return '工具'
   }
 }
 
@@ -215,7 +215,7 @@ export function streamLayoutKey(messages: AgentMessage[], isGenerating: boolean)
   for (const m of messages) {
     if (!m.streaming) continue
     for (const p of m.parts) {
-      if (p.type === 'text') streamLen += p.text.length
+      if (p.type === 'text' || p.type === 'reasoning') streamLen += p.text.length
       else if (p.type === 'toolCall') {
         toolN++
         streamLen += p.output?.length ?? 0
@@ -229,5 +229,6 @@ export function streamLayoutKey(messages: AgentMessage[], isGenerating: boolean)
 export function partKey(part: AgentPart, index: number): string {
   if (part.type === 'toolCall') return part.id
   if (part.type === 'notice') return `notice-${part.kind}-${index}`
+  if (part.type === 'reasoning') return `reasoning-${index}`
   return `text-${index}`
 }

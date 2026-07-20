@@ -174,6 +174,7 @@ pub async fn translate_ai_stream(
         tools: None,
         tool_choice: None,
         on_text_delta: None,
+        on_reasoning_delta: None,
         on_tool_calls_delta: None,
         chunk_event: "translate-chunk",
         done_event: "translate-done",

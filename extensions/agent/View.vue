@@ -39,17 +39,17 @@
             </div>
 
             <template v-for="(part, i) in msg.parts" :key="partKey(part, i)">
+              <AgentReasoningPart
+                v-if="part.type === 'reasoning'"
+                :text="part.text"
+                :streaming="!!msg.streaming && i === msg.parts.length - 1"
+              />
               <AgentTextPart
-                v-if="part.type === 'text'"
+                v-else-if="part.type === 'text'"
                 :text="part.text"
                 :streaming="isStreamingText(msg, i)"
               />
-              <AgentToolStep
-                v-else-if="part.type === 'toolCall'"
-                :part="part"
-                :index="i"
-                @open-url="openUrl"
-              />
+              <AgentToolStep v-else-if="part.type === 'toolCall'" :part="part" :index="i" />
               <div
                 v-else-if="part.type === 'notice'"
                 class="agent-notice"
@@ -140,6 +140,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import AgentTextPart from './AgentTextPart.vue'
 import AgentToolStep from './AgentToolStep.vue'
+import AgentReasoningPart from './AgentReasoningPart.vue'
 import { useAgentChat } from './agent'
 import { getMessageText, isStreamingText, streamLayoutKey, partKey } from './view-logic'
 import './agent-step.css'

@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentPart, LlmMessage, WebSearchResult } from '@/types/agent'
+import type { AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 
 /// AgentMessage[] → LlmMessage[]（送 Rust 的 OpenAI 协议格式）。
 ///
@@ -50,24 +50,13 @@ export function toLlmMessages(messages: AgentMessage[]): LlmMessage[] {
   return result
 }
 
-/// 解析 web_search 的 output（JSON）为结构化结果，UI 渲染用。解析失败返回 undefined。
-export function tryParseSearch(output: string): WebSearchResult | undefined {
+/// 解析 web_search 的 output（JSON），提取 answer 摘要。无 answer 或解析失败返回 undefined。
+export function tryParseSearchAnswer(output: string): string | undefined {
   try {
     const obj = JSON.parse(output)
     if (!obj || typeof obj !== 'object') return undefined
-    const hits = Array.isArray(obj.hits)
-      ? (obj.hits as unknown[])
-          .filter((h): h is Record<string, unknown> => !!h && typeof h === 'object')
-          .map((h) => ({
-            title: typeof h.title === 'string' ? h.title : '',
-            url: typeof h.url === 'string' ? h.url : '',
-            snippet: typeof h.snippet === 'string' ? h.snippet : '',
-          }))
-          .filter((h) => h.title || h.url)
-      : []
-    const answer = typeof obj.answer === 'string' && obj.answer.trim() ? obj.answer : undefined
-    if (!answer && hits.length === 0) return undefined
-    return { answer, hits }
+    const answer = typeof obj.answer === 'string' ? obj.answer.trim() : ''
+    return answer || undefined
   } catch {
     return undefined
   }

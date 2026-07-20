@@ -238,13 +238,14 @@ async function onMarkdownClick(e: MouseEvent) {
   margin-top: 0.15em;
 }
 
-/* 行内代码 / 代码块 / 引用：accent 浅染统一走 --accent-wash* / --accent-line* */
+/* 行内代码 / 代码块 / 引用：accent 浅染统一走 --accent-wash-grad + --accent-line */
 .markdown-body :deep(:not(pre) > code) {
   font-family: var(--font-mono);
   font-size: 0.88em;
-  background: var(--accent-wash);
   padding: 0.12em 0.4em;
-  border-radius: calc(var(--radius-ctrl) / 2);
+  border: 1px solid var(--accent-line);
+  border-radius: calc(var(--radius-ctrl) * 0.8);
+  background: var(--accent-wash-grad);
   word-break: break-all;
 }
 

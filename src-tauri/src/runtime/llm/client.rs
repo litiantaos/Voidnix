@@ -139,6 +139,8 @@ pub struct StreamConfig<'a> {
     pub tools: Option<&'a [serde_json::Value]>,
     pub tool_choice: Option<&'a str>,
     pub on_text_delta: Option<&'a mut (dyn FnMut(&str) + Send)>,
+    /// 思考模式增量回调（reasoning_content）
+    pub on_reasoning_delta: Option<&'a mut (dyn FnMut(&str) + Send)>,
     pub on_tool_calls_delta: Option<&'a mut (dyn FnMut(&ChoiceDelta) + Send)>,
     pub chunk_event: &'a str,
     pub done_event: &'a str,
@@ -190,6 +192,7 @@ pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOut
     let mut finish_reason = String::new();
 
     let mut on_text = config.on_text_delta;
+    let mut on_reasoning = config.on_reasoning_delta;
     let mut on_tool = config.on_tool_calls_delta;
 
     while let Some(item) = stream.next().await {
@@ -281,6 +284,14 @@ pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOut
                         );
                     }
                     if let Some(cb) = on_text.as_deref_mut() {
+                        cb(text);
+                    }
+                }
+            }
+
+            if let Some(text) = &delta.reasoning_content {
+                if !text.is_empty() {
+                    if let Some(cb) = on_reasoning.as_deref_mut() {
                         cb(text);
                     }
                 }

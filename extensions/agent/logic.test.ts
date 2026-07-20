@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toLlmMessages, tryParseSearch } from './logic'
+import { toLlmMessages, tryParseSearchAnswer } from './logic'
 import type { AgentMessage } from '@/types/agent'
 
 function userMsg(text: string): AgentMessage {
@@ -158,36 +158,24 @@ describe('toLlmMessages', () => {
   })
 })
 
-describe('tryParseSearch', () => {
-  it('解析 answer + hits', () => {
-    const result = tryParseSearch(
-      JSON.stringify({
-        answer: '摘要',
-        hits: [{ title: 'T', url: 'https://x', snippet: 'S' }],
-      }),
+describe('tryParseSearchAnswer', () => {
+  it('提取 answer 摘要', () => {
+    expect(
+      tryParseSearchAnswer(JSON.stringify({ answer: '摘要', hits: [{ title: 'T', url: 'U' }] })),
+    ).toBe('摘要')
+  })
+
+  it('answer 空白 → undefined', () => {
+    expect(tryParseSearchAnswer(JSON.stringify({ answer: '   ', hits: [] }))).toBeUndefined()
+  })
+
+  it('无 answer 字段 → undefined', () => {
+    expect(tryParseSearchAnswer(JSON.stringify({ hits: [{ title: 'T', url: 'U' }] }))).toBe(
+      undefined,
     )
-    expect(result?.answer).toBe('摘要')
-    expect(result?.hits).toEqual([{ title: 'T', url: 'https://x', snippet: 'S' }])
-  })
-
-  it('无 answer 仅 hits', () => {
-    const result = tryParseSearch(JSON.stringify({ hits: [{ title: 'T', url: 'U' }] }))
-    expect(result?.answer).toBeUndefined()
-    expect(result?.hits).toHaveLength(1)
-  })
-
-  it('过滤无 title 且无 url 的 hit', () => {
-    const result = tryParseSearch(
-      JSON.stringify({ hits: [{ snippet: 'orphan' }, { title: 'T', url: 'U' }] }),
-    )
-    expect(result?.hits).toHaveLength(1)
-  })
-
-  it('answer 空白且无有效 hits → undefined', () => {
-    expect(tryParseSearch(JSON.stringify({ answer: '   ', hits: [] }))).toBeUndefined()
   })
 
   it('非 JSON → undefined', () => {
-    expect(tryParseSearch('not json')).toBeUndefined()
+    expect(tryParseSearchAnswer('not json')).toBeUndefined()
   })
 })

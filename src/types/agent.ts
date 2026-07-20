@@ -6,6 +6,7 @@
 // ─── Agent 扩展推给前端的事件（通过 Channel<AgentEvent> 推送，Tauri ipc::Channel）────
 export type AgentEvent =
   | { type: 'textDelta'; text: string }
+  | { type: 'reasoningDelta'; text: string }
   | { type: 'toolCallStart'; id: string; name: string }
   | { type: 'toolCallArgs'; id: string; args: unknown }
   | { type: 'toolResult'; id: string; ok: boolean; output: string }
@@ -21,19 +22,9 @@ export interface AgentMessage {
   streaming?: boolean
 }
 
-export interface WebSearchHit {
-  title: string
-  url: string
-  snippet: string
-}
-
-export interface WebSearchResult {
-  answer?: string
-  hits: WebSearchHit[]
-}
-
 export type AgentPart =
   | { type: 'text'; text: string }
+  | { type: 'reasoning'; text: string }
   | {
       type: 'toolCall'
       id: string
@@ -41,8 +32,8 @@ export type AgentPart =
       args?: unknown
       /** 工具执行结果（toolResult 事件填充；web_search 为 JSON 字符串供 LLM） */
       output?: string
-      /** web_search 解析后的结构化结果（UI 渲染用） */
-      parsed?: WebSearchResult
+      /** web_search 成功解析出的 answer 摘要（UI 渲染用） */
+      parsed?: string
       /** 工具执行状态 */
       state: 'streaming' | 'running' | 'done' | 'failed'
     }
