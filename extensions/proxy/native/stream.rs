@@ -7,6 +7,7 @@
 //! 三条流均为本地回环（controller 固定 127.0.0.1），不经 `http::client()` 的 SSRF 防护
 //! （与 controller.rs 一致）。连接失败静默退出（前端面板/子视图可见时才开流，无感重开）。
 
+use crate::runtime::lock_or_recover;
 use futures_util::StreamExt;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -48,7 +49,7 @@ impl StreamRegistry {
     /// 注册一条流，返回其 token。id 已存在时先 cancel 并替换。
     pub fn register(&self, id: String) -> CancellationToken {
         let token = CancellationToken::new();
-        let mut guard = self.tokens.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = lock_or_recover(&self.tokens);
         if let Some(old) = guard.insert(id, token.clone()) {
             old.cancel();
         }
@@ -72,7 +73,7 @@ impl StreamRegistry {
 
     /// 停止所有流（关代理 / 进程退出兜底，避免 idle 进程下残留 WS）。
     pub fn cancel_all(&self) {
-        let map = std::mem::take(&mut *self.tokens.lock().unwrap_or_else(|e| e.into_inner()));
+        let map = std::mem::take(&mut *lock_or_recover(&self.tokens));
         for (_, token) in map {
             token.cancel();
         }

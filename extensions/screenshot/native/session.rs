@@ -1,3 +1,4 @@
+use crate::runtime::lock_or_recover;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
@@ -30,15 +31,15 @@ pub fn capture_origin() -> (f64, f64) {
 }
 
 pub fn capture_surface() -> Option<CaptureSurface> {
-    *CAPTURE_SURFACE.lock().unwrap_or_else(|e| e.into_inner())
+    *lock_or_recover(&CAPTURE_SURFACE)
 }
 
 fn store_capture_surface(surface: CaptureSurface) {
-    *CAPTURE_SURFACE.lock().unwrap_or_else(|e| e.into_inner()) = Some(surface);
+    *lock_or_recover(&CAPTURE_SURFACE) = Some(surface);
 }
 
 fn clear_capture_surface() {
-    *CAPTURE_SURFACE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *lock_or_recover(&CAPTURE_SURFACE) = None;
 }
 
 /// capture 成功但 enter 调度失败时的清理：flag / surface / CGImage / 在途 picker。
@@ -229,7 +230,7 @@ pub(super) fn fade_window_layer_opacity(
                 let slot: Arc<Mutex<Option<CompletionCallback>>> = Arc::new(Mutex::new(Some(cb)));
                 let slot_clone = Arc::clone(&slot);
                 let done = block2::RcBlock::new(move || {
-                    if let Some(f) = slot_clone.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                    if let Some(f) = lock_or_recover(&slot_clone).take() {
                         f();
                     }
                 });
@@ -271,6 +272,7 @@ pub(super) fn set_window_layer_opacity(ns_window_addr: usize, opacity: f32) {
 
 #[cfg(target_os = "macos")]
 mod mouse_tracker {
+    use crate::runtime::lock_or_recover;
     use objc2::runtime::AnyObject;
     use std::sync::Mutex;
     use tauri::Manager;
@@ -290,7 +292,7 @@ mod mouse_tracker {
         use objc2::ClassType;
         use objc2_app_kit::NSEvent;
         {
-            let g = GLOBAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner());
+            let g = lock_or_recover(&GLOBAL_MONITOR);
             if !g.0.is_null() {
                 return;
             }
@@ -310,7 +312,7 @@ mod mouse_tracker {
                 let m: *mut AnyObject = objc2::msg_send![NSEvent::class(), addGlobalMonitorForEventsMatchingMask: MASK, handler: &*blk];
                 if !m.is_null() {
                     let _: () = objc2::msg_send![m, retain];
-                    *GLOBAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner()) = SendObj(m);
+                    *lock_or_recover(&GLOBAL_MONITOR) = SendObj(m);
                     std::mem::forget(blk);
                 }
             }
@@ -330,7 +332,7 @@ mod mouse_tracker {
                 let m: *mut AnyObject = objc2::msg_send![NSEvent::class(), addLocalMonitorForEventsMatchingMask: MASK, handler: &*blk];
                 if !m.is_null() {
                     let _: () = objc2::msg_send![m, retain];
-                    *LOCAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner()) = SendObj(m);
+                    *lock_or_recover(&LOCAL_MONITOR) = SendObj(m);
                     std::mem::forget(blk);
                 }
             }
@@ -341,7 +343,7 @@ mod mouse_tracker {
         use objc2::ClassType;
         use objc2_app_kit::NSEvent;
         for slot in [&GLOBAL_MONITOR, &LOCAL_MONITOR] {
-            let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
+            let mut g = lock_or_recover(slot);
             if !g.0.is_null() {
                 // SAFETY: g.0 非 null；removeMonitor + release 与 start 配对
                 unsafe {
@@ -354,17 +356,13 @@ mod mouse_tracker {
     }
 
     fn ensure_key(app: &tauri::AppHandle) {
-        use objc2_app_kit::NSWindow;
-        let Some(window) = app.get_webview_window("screenshot") else {
-            return;
-        };
-        if let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) {
-            // SAFETY: ns 非空校验；会话中丢 key 时重 claim
+        // SAFETY: ns 非空校验；会话中丢 key 时重 claim
+        if let Some(raw) = crate::extensions::screenshot::screenshot_ns_window(app) {
             unsafe {
                 if let Some(ns) = raw.as_ref() {
                     let on_space: bool = objc2::msg_send![ns, isOnActiveSpace];
                     if ns.alphaValue() > 0.5 && on_space && !ns.isKeyWindow() {
-                        let ptr = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
+                        let ptr = raw as *mut std::ffi::c_void;
                         super::super::ffi::voidnix_screenshot_claim_key(ptr);
                     }
                 }
@@ -459,40 +457,15 @@ fn enumerate_visible_windows(
     screen_w: f64,
     screen_h: f64,
 ) -> Vec<WindowRect> {
-    use core_foundation::array::{CFArray, CFArrayRef};
-    use core_foundation::base::{CFType, TCFType};
+    use crate::platform::window_list::{copy_on_screen_windows, dict_lookup};
     use core_foundation::dictionary::CFDictionary;
     use core_foundation::number::CFNumber;
     use core_foundation::string::CFString;
     use std::ffi::c_void;
 
-    type CGWindowListOption = u32;
-    const CG_WINDOW_LIST_OPTION_ON_SCREEN_ONLY: CGWindowListOption = 1 << 0;
-    const CG_WINDOW_LIST_EXCLUDE_DESKTOP_ELEMENTS: CGWindowListOption = 1 << 4;
-    type CGWindowID = u32;
-    extern "C" {
-        fn CGWindowListCopyWindowInfo(
-            option: CGWindowListOption,
-            relativeToWindow: CGWindowID,
-        ) -> CFArrayRef;
-    }
-
-    // SAFETY: CGWindowListCopyWindowInfo 为 CoreGraphics C API，option 为合法位掩码，
-    // relativeToWindow=0（无相对窗口）；返回 Create 规则 CFArray，null 检查后由
-    // wrap_under_create_rule 接管所有权
-    let raw = unsafe {
-        CGWindowListCopyWindowInfo(
-            CG_WINDOW_LIST_OPTION_ON_SCREEN_ONLY | CG_WINDOW_LIST_EXCLUDE_DESKTOP_ELEMENTS,
-            0,
-        )
-    };
-    if raw.is_null() {
+    let Some(array) = copy_on_screen_windows() else {
         return Vec::new();
-    }
-    let array: CFArray<CFDictionary<*const c_void, *const c_void>> =
-        // SAFETY: raw 由 CGWindowListCopyWindowInfo 返回（Create 规则，已 null 检查），
-        // wrap_under_create_rule 接管所有权
-        unsafe { CFArray::wrap_under_create_rule(raw) };
+    };
 
     let mut result = Vec::with_capacity(array.len() as usize);
 
@@ -501,23 +474,12 @@ fn enumerate_visible_windows(
     let key_name = CFString::from_static_string("kCGWindowOwnerName");
     let key_alpha = CFString::from_static_string("kCGWindowAlpha");
 
-    let lookup =
-        |dict: &CFDictionary<*const c_void, *const c_void>, key: &CFString| -> Option<CFType> {
-            let ptr = key.as_concrete_TypeRef() as *const c_void;
-            let v = dict.find(ptr)?;
-            if v.is_null() {
-                return None;
-            }
-            // SAFETY: *v 已非空校验；wrap_under_get_rule 遵循 CF Get 规则（不获取所有权）
-            Some(unsafe { CFType::wrap_under_get_rule(*v as _) })
-        };
-
     for i in 0..array.len() {
         let Some(dict) = array.get(i) else {
             continue;
         };
 
-        let layer = lookup(&dict, &key_layer)
+        let layer = dict_lookup(&dict, &key_layer)
             .and_then(|v| v.downcast::<CFNumber>())
             .and_then(|n| n.to_i64())
             .unwrap_or(-1);
@@ -531,7 +493,7 @@ fn enumerate_visible_windows(
             continue;
         }
 
-        let alpha = lookup(&dict, &key_alpha)
+        let alpha = dict_lookup(&dict, &key_alpha)
             .and_then(|v| v.downcast::<CFNumber>())
             .and_then(|n| n.to_f64())
             .unwrap_or(1.0);
@@ -539,12 +501,12 @@ fn enumerate_visible_windows(
             continue;
         }
 
-        let owner = lookup(&dict, &key_name)
+        let owner = dict_lookup(&dict, &key_name)
             .and_then(|v| v.downcast::<CFString>())
             .map(|s| s.to_string())
             .unwrap_or_default();
 
-        let Some(bd) = lookup(&dict, &key_bounds)
+        let Some(bd) = dict_lookup(&dict, &key_bounds)
             .and_then(|v| v.downcast::<CFDictionary<*const c_void, *const c_void>>())
         else {
             continue;
@@ -552,7 +514,7 @@ fn enumerate_visible_windows(
 
         let gn = |k: &'static str| -> f64 {
             let ks = CFString::from_static_string(k);
-            lookup(&bd, &ks)
+            dict_lookup(&bd, &ks)
                 .and_then(|v| v.downcast::<CFNumber>())
                 .and_then(|n| n.to_f64())
                 .unwrap_or(0.0)
@@ -901,21 +863,14 @@ fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), Strin
     use objc2_app_kit::{
         NSApplicationActivationOptions, NSWindow, NSWindowAnimationBehavior, NSWorkspace,
     };
-    use tauri::Manager;
 
     stop_mouse_tracker();
     IS_IN_SCREENSHOT_SESSION.store(false, std::sync::atomic::Ordering::SeqCst);
     clear_capture_surface();
 
-    let window = app
-        .get_webview_window("screenshot")
-        .ok_or("找不到截图窗口")?;
-    let raw = window
-        .ns_window()
-        .map_err(|e| e.to_string())?
-        .cast::<NSWindow>();
+    let raw = crate::extensions::screenshot::screenshot_ns_window(app).ok_or("找不到截图窗口")?;
     let session_gen = SCREENSHOT_GEN.load(std::sync::atomic::Ordering::SeqCst);
-    let ns_window_addr = raw.cast::<NSWindow>() as usize;
+    let ns_window_addr = raw as usize;
     // SAFETY: ns_window 经 as_ref().ok_or 非空校验；setAnimationBehavior/
     // setIgnoresMouseEvents:/resignKeyWindow 均为 NSWindow 标准选择子
     unsafe {

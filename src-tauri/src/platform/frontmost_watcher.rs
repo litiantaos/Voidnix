@@ -7,6 +7,7 @@
 
 #[cfg(target_os = "macos")]
 mod inner {
+    use crate::runtime::lock_or_recover;
     use objc2::runtime::AnyObject;
     use objc2_app_kit::NSWorkspace;
     use std::sync::Mutex;
@@ -27,7 +28,7 @@ mod inner {
     }
 
     pub fn add(app: &tauri::AppHandle) {
-        let mut guard = WATCHER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = lock_or_recover(&WATCHER);
         if guard.is_some() {
             return;
         }
@@ -54,7 +55,7 @@ mod inner {
     }
 
     pub fn remove() {
-        let mut guard = WATCHER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = lock_or_recover(&WATCHER);
         if let Some(entry) = guard.take() {
             unsafe {
                 let ws = NSWorkspace::sharedWorkspace();

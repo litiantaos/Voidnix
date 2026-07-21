@@ -1,3 +1,4 @@
+use crate::runtime::lock_or_recover;
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -72,7 +73,7 @@ impl Database {
     }
 
     pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap_or_else(|e| e.into_inner())
+        lock_or_recover(&self.conn)
     }
 
     /// 写入后调用：累计计数，达阈值则触发 WAL checkpoint（TRUNCATE 模式回收文件大小）。

@@ -5,6 +5,7 @@ mod mouse;
 mod state;
 mod stitch;
 
+use crate::runtime::lock_or_recover;
 use std::process::Command;
 use std::sync::atomic::Ordering;
 
@@ -46,17 +47,10 @@ pub async fn enter_scroll_capture(
         let (tx, rx) = std::sync::mpsc::channel::<Result<(u32, usize), String>>();
         let app_c = app.clone();
         app.run_on_main_thread(move || {
-            use objc2_app_kit::NSWindow;
-            use tauri::Manager;
             let r = (|| -> Result<(u32, usize), String> {
-                let window = app_c
-                    .get_webview_window("screenshot")
+                let raw = crate::extensions::screenshot::screenshot_ns_window(&app_c)
                     .ok_or("找不到截图窗口")?;
-                let raw = window
-                    .ns_window()
-                    .map_err(|e| e.to_string())?
-                    .cast::<NSWindow>();
-                let ptr = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
+                let ptr = raw as *mut std::ffi::c_void;
                 let ns_addr = ptr as usize;
                 // SAFETY: ptr 来自 window.ns_window() Ok 分支（合法 NSWindow 指针）；
                 // voidnix_screenshot_* 为 FFI 薄壳，install_scroll_mask 返回 bool 失败检查，
@@ -82,7 +76,7 @@ pub async fn enter_scroll_capture(
             .map_err(|e| e.to_string())??;
 
         {
-            let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = lock_or_recover(&SESSION);
             let pending_tb = PENDING_TOOLBAR
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -118,7 +112,7 @@ pub async fn enter_scroll_capture(
                 let mut mx: f64 = 0.0;
                 let mut my: f64 = 0.0;
                 voidnix_screenshot_get_mouse_location(&mut mx, &mut my, 0.0);
-                let g = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+                let g = lock_or_recover(&SESSION);
                 if let Some(s) = g.as_ref() {
                     let in_hole = mx >= s.sel_x
                         && mx <= s.sel_x + s.sel_w
@@ -128,7 +122,7 @@ pub async fn enter_scroll_capture(
                         let ptr = s.ns_window_addr as *mut std::ffi::c_void;
                         voidnix_screenshot_set_ignores_mouse(ptr, 1);
                         drop(g);
-                        let mut g2 = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut g2 = lock_or_recover(&SESSION);
                         if let Some(s2) = g2.as_mut() {
                             s2.ignoring_mouse = true;
                         }
@@ -159,25 +153,18 @@ pub async fn exit_scroll_capture(app: tauri::AppHandle) -> Result<(), String> {
         IS_RUNNING.store(false, Ordering::SeqCst);
         std::thread::sleep(std::time::Duration::from_millis(50));
         {
-            let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = lock_or_recover(&SESSION);
             *guard = None;
         }
 
         let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
         let app_c = app.clone();
         app.run_on_main_thread(move || {
-            use objc2_app_kit::NSWindow;
-            use tauri::Manager;
             let r = (|| -> Result<(), String> {
                 stop_mouse_monitor();
-                let window = app_c
-                    .get_webview_window("screenshot")
+                let raw = crate::extensions::screenshot::screenshot_ns_window(&app_c)
                     .ok_or("找不到截图窗口")?;
-                let raw = window
-                    .ns_window()
-                    .map_err(|e| e.to_string())?
-                    .cast::<NSWindow>();
-                let ptr = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
+                let ptr = raw as *mut std::ffi::c_void;
                 // SAFETY: ptr 来自 window.ns_window() Ok 分支（合法 NSWindow 指针）；
                 // voidnix_screenshot_clear_background/remove_scroll_mask/set_sharing
                 // 为 FFI 薄壳（纯副作用，无返回值/资源需调用方释放）；主线程执行
@@ -214,11 +201,11 @@ pub async fn set_scroll_toolbar_rect(x: f64, y: f64, w: f64, h: f64) -> Result<(
     } else {
         Some((x + ox, y + oy, w, h))
     };
-    let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = lock_or_recover(&SESSION);
     if let Some(s) = guard.as_mut() {
         s.toolbar_rect = rect;
     } else {
-        *PENDING_TOOLBAR.lock().unwrap_or_else(|e| e.into_inner()) = rect;
+        *lock_or_recover(&PENDING_TOOLBAR) = rect;
     }
     Ok(())
 }
@@ -231,7 +218,7 @@ pub async fn finish_scroll_capture(app: tauri::AppHandle) -> Result<String, Stri
         std::thread::sleep(std::time::Duration::from_millis(50));
 
         let session = {
-            let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = lock_or_recover(&SESSION);
             guard.take()
         };
         let session = session.ok_or("无滚动截屏会话".to_string())?;
@@ -242,18 +229,11 @@ pub async fn finish_scroll_capture(app: tauri::AppHandle) -> Result<String, Stri
         let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
         let app_c = app.clone();
         app.run_on_main_thread(move || {
-            use objc2_app_kit::NSWindow;
-            use tauri::Manager;
             let r = (|| -> Result<(), String> {
                 stop_mouse_monitor();
-                let window = app_c
-                    .get_webview_window("screenshot")
+                let raw = crate::extensions::screenshot::screenshot_ns_window(&app_c)
                     .ok_or("找不到截图窗口")?;
-                let raw = window
-                    .ns_window()
-                    .map_err(|e| e.to_string())?
-                    .cast::<NSWindow>();
-                let ptr = raw.cast::<NSWindow>() as *mut std::ffi::c_void;
+                let ptr = raw as *mut std::ffi::c_void;
                 // SAFETY: ptr 来自 window.ns_window() Ok 分支（合法 NSWindow 指针）；
                 // voidnix_screenshot_clear_background/remove_scroll_mask/set_sharing
                 // 为 FFI 薄壳（纯副作用，无返回值/资源需调用方释放）；主线程执行

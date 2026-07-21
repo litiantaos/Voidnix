@@ -3,6 +3,7 @@
 //! 职责：分发 binary、写 .zshrc 行、on/off 开关。
 //! 不参与 hot path（zsh 启动后 binary 仅在后台 rebuild 时被调用）。
 
+use crate::runtime::lock_or_recover;
 use crate::runtime::registry::Extension;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
@@ -22,7 +23,7 @@ const BIN_VERSION: u32 = 8;
 static SETUP_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock() -> MutexGuard<'static, ()> {
-    SETUP_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    lock_or_recover(&SETUP_LOCK)
 }
 
 fn ext_dir(app: &AppHandle) -> PathBuf {

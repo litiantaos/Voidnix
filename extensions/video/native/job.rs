@@ -4,6 +4,7 @@ use super::args::{
     action_label, build_ffmpeg_args, resolve_format, EncodeParams, OutputFormat, VideoMode,
 };
 use super::core::{self, FfmpegBins};
+use crate::runtime::lock_or_recover;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -81,7 +82,7 @@ pub fn job_status() -> JobSnapshot {
 }
 
 pub fn cancel_job() -> bool {
-    let guard = CANCEL.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = lock_or_recover(&CANCEL);
     if let Some(token) = guard.as_ref() {
         token.cancel();
         return true;
@@ -90,7 +91,7 @@ pub fn cancel_job() -> bool {
 }
 
 fn set_last(snap: JobSnapshot) {
-    *LAST_RESULT.lock().unwrap_or_else(|e| e.into_inner()) = Some(snap);
+    *lock_or_recover(&LAST_RESULT) = Some(snap);
 }
 
 /// Channel + 全局事件双投递（重开面板 / 本地 Channel 共用终态契约）。
@@ -192,12 +193,12 @@ pub async fn run_job(
     }
 
     let token = CancellationToken::new();
-    *CANCEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(token.clone());
+    *lock_or_recover(&CANCEL) = Some(token.clone());
 
     let result = run_job_inner(app, req, on_event, token.clone()).await;
 
     BUSY.store(false, Ordering::SeqCst);
-    *CANCEL.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *lock_or_recover(&CANCEL) = None;
     result
 }
 

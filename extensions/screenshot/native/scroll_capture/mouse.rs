@@ -1,5 +1,6 @@
 //! 滚动截屏鼠标穿透：选区内忽略鼠标，工具栏保留点击。
 
+use crate::runtime::lock_or_recover;
 use objc2::runtime::AnyObject;
 use std::sync::Mutex;
 
@@ -25,7 +26,7 @@ unsafe fn cur_loc() -> (f64, f64) {
 unsafe fn check_and_toggle() {
     let (mx, my) = cur_loc();
     let snapshot = {
-        let g = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+        let g = lock_or_recover(&SESSION);
         g.as_ref().map(|s| {
             (
                 s.sel_x,
@@ -49,7 +50,7 @@ unsafe fn check_and_toggle() {
     if in_hole != currently_ignoring {
         let ptr = ns_addr as *mut std::ffi::c_void;
         voidnix_screenshot_set_ignores_mouse(ptr, if in_hole { 1 } else { 0 });
-        let mut g = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+        let mut g = lock_or_recover(&SESSION);
         if let Some(s) = g.as_mut() {
             s.ignoring_mouse = in_hole;
         }
@@ -60,7 +61,7 @@ pub fn start() {
     use objc2::ClassType;
     use objc2_app_kit::NSEvent;
     {
-        let g = GLOBAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner());
+        let g = lock_or_recover(&GLOBAL_MONITOR);
         if !g.0.is_null() {
             return;
         }
@@ -87,7 +88,7 @@ pub fn start() {
             let m: *mut AnyObject = objc2::msg_send![NSEvent::class(), addGlobalMonitorForEventsMatchingMask: mask, handler: &*blk];
             if !m.is_null() {
                 let _: () = objc2::msg_send![m, retain];
-                *GLOBAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner()) = SendObj(m);
+                *lock_or_recover(&GLOBAL_MONITOR) = SendObj(m);
                 std::mem::forget(blk);
             }
         }
@@ -105,7 +106,7 @@ pub fn start() {
             let m: *mut AnyObject = objc2::msg_send![NSEvent::class(), addLocalMonitorForEventsMatchingMask: mask, handler: &*blk];
             if !m.is_null() {
                 let _: () = objc2::msg_send![m, retain];
-                *LOCAL_MONITOR.lock().unwrap_or_else(|e| e.into_inner()) = SendObj(m);
+                *lock_or_recover(&LOCAL_MONITOR) = SendObj(m);
                 std::mem::forget(blk);
             }
         }
@@ -116,7 +117,7 @@ pub fn stop() {
     use objc2::ClassType;
     use objc2_app_kit::NSEvent;
     for slot in [&GLOBAL_MONITOR, &LOCAL_MONITOR] {
-        let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
+        let mut g = lock_or_recover(slot);
         if !g.0.is_null() {
             // SAFETY: g.0 非 null（已检查）；removeMonitor + release 与 start 的
             // retain + forget 配对（monitor 注销 + 引用计数归零）

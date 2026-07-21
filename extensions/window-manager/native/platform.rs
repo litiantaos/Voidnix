@@ -4,7 +4,7 @@
 #[cfg(target_os = "macos")]
 mod imp {
     use super::super::*;
-    use core_foundation::array::{CFArray, CFArrayRef};
+    use core_foundation::array::CFArray;
     use core_foundation::base::TCFType;
     use core_foundation::dictionary::CFDictionary;
     use core_foundation::number::CFNumber;
@@ -18,9 +18,6 @@ mod imp {
     pub const AX_ERROR_SUCCESS: AXError = 0;
     pub const AX_VALUE_CGPOINT: u32 = 1;
     pub const AX_VALUE_CGSIZE: u32 = 2;
-
-    type CGWindowListOption = u32;
-    type CGWindowID = u32;
 
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
@@ -45,14 +42,8 @@ mod imp {
             c_str: *const i8,
             encoding: u32,
         ) -> *mut c_void;
-        fn CGWindowListCopyWindowInfo(
-            option: CGWindowListOption,
-            relative_to_window: CGWindowID,
-        ) -> CFArrayRef;
     }
 
-    const CG_WINDOW_LIST_ON_SCREEN_ONLY: CGWindowListOption = 1 << 0;
-    const CG_WINDOW_LIST_EXCLUDE_DESKTOP: CGWindowListOption = 1 << 4;
     const CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
 
     pub fn cf_str(s: &str) -> *mut c_void {
@@ -484,23 +475,7 @@ mod imp {
     }
 
     pub fn find_topmost_window_pid() -> Option<i32> {
-        // SAFETY: CGWindowListCopyWindowInfo 是 CoreGraphics C API，option/relativeToWindow
-        // 参数为合法位掩码与 0（无相对窗口）；返回 Create 规则 CFArray，下方 null 检查后
-        // 由 wrap_under_create_rule 接管所有权。
-        let raw = unsafe {
-            CGWindowListCopyWindowInfo(
-                CG_WINDOW_LIST_ON_SCREEN_ONLY | CG_WINDOW_LIST_EXCLUDE_DESKTOP,
-                0,
-            )
-        };
-        if raw.is_null() {
-            return None;
-        }
-
-        let array: CFArray<CFDictionary<*const c_void, *const c_void>> =
-            // SAFETY: raw 由 CGWindowListCopyWindowInfo 返回（Create 规则，已 null 检查），
-            // wrap_under_create_rule 接管所有权，array 释放时自动 CFRelease。
-            unsafe { CFArray::wrap_under_create_rule(raw) };
+        let array = crate::platform::window_list::copy_on_screen_windows()?;
 
         let self_pid = std::process::id() as i64;
         let key_layer = CFString::from_static_string("kCGWindowLayer");

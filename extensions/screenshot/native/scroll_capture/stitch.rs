@@ -1,5 +1,6 @@
 //! 帧拼接：行签名对齐、静态区 mask、append_frame、预览 emit、capture_loop。
 
+use crate::runtime::lock_or_recover;
 use std::sync::atomic::Ordering;
 use tauri::Emitter;
 
@@ -238,7 +239,7 @@ pub fn capture_loop(app: tauri::AppHandle) {
 
     while IS_RUNNING.load(Ordering::SeqCst) {
         let (sel_x, sel_y, sel_w, sel_h, overlay_id, cur_ignoring) = {
-            let guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = lock_or_recover(&SESSION);
             match guard.as_ref() {
                 Some(s) => (
                     s.sel_x,
@@ -258,7 +259,7 @@ pub fn capture_loop(app: tauri::AppHandle) {
 
         let frame = capture_below_overlay(sel_x, sel_y, sel_w, sel_h, overlay_id);
         if let Some((fw, fh, fbuf)) = frame {
-            let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = lock_or_recover(&SESSION);
             if let Some(session) = guard.as_mut() {
                 if session.pw == 0 {
                     session.pw = fw;
