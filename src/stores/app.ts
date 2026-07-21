@@ -9,7 +9,6 @@ export interface ConfirmOptions {
   title: string
   message?: string
   size?: 'sm' | 'md' | 'lg'
-  kind?: 'warning' | 'info'
   okLabel?: string
   cancelLabel?: string
   showCancel?: boolean

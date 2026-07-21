@@ -1,20 +1,24 @@
 <template>
   <div
     ref="rootEl"
-    p="1.5"
+    p="1"
     flex
     gap="1.5"
-    shadow="xl"
     items="center"
     absolute
     z="50"
-    class="mica-panel"
+    class="palette-surface acrylic-bar"
     :style="style"
     @mousedown.stop
   >
     <!-- 滚动截屏模式：仅保留保存（关闭/确定由统一尾部提供） -->
     <template v-if="mode === 'scroll'">
-      <BaseButton title="保存" icon="i-ri-save-line" @click="$emit('scroll-save')" />
+      <BaseButton
+        variant="ghost"
+        title="保存"
+        icon="i-ri-save-line"
+        @click="$emit('scroll-save')"
+      />
     </template>
 
     <!-- 标注模式：完整工具栏 -->
@@ -23,7 +27,8 @@
       <BaseButton
         v-for="t in tools"
         :key="t.label"
-        :variant="activeTool === t.id ? 'primary' : 'default'"
+        variant="ghost"
+        :active="activeTool === t.id"
         :title="t.label"
         :icon="t.icon"
         @click="$emit('tool', t.id)"
@@ -37,8 +42,8 @@
           border="2"
           rounded="full"
           shrink="0"
-          h="5"
-          w="5"
+          h="4"
+          w="4"
           shadow="sm"
           transition="transform"
           class="active:scale-95"
@@ -53,16 +58,15 @@
         <Transition name="palette-popup">
           <div
             v-if="showColors"
-            p="1.5"
+            p="2"
             flex
-            gap="1.5"
-            shadow="xl"
+            gap="2"
             items="center"
             left="1/2"
             absolute
             z="100"
-            class="mica-panel -translate-x-1/2"
-            :class="popDir === 'up' ? 'bottom-full mb-4' : 'top-full mt-4'"
+            class="acrylic-bar -translate-x-1/2"
+            :class="popDir === 'up' ? 'bottom-full mb-3' : 'top-full mt-3'"
             @mousedown.stop
             @click.stop
           >
@@ -72,8 +76,8 @@
               border="2"
               rounded="full"
               shrink="0"
-              h="5"
-              w="5"
+              h="4"
+              w="4"
               shadow="sm"
               transition="transform"
               class="active:scale-95"
@@ -112,17 +116,17 @@
       />
 
       <!-- 模糊模式切换（仅 blur 工具时显示） -->
-      <div v-if="activeTool === 'blur'" flex>
+      <div v-if="activeTool === 'blur'" flex gap="1.5">
         <BaseButton
-          class="rounded-r-0!"
-          :variant="blurMode === 'selection' ? 'primary' : 'default'"
+          variant="ghost"
+          :active="blurMode === 'selection'"
           title="模糊整个选区"
           icon="i-ri-checkbox-blank-line"
           @click="emit('blur-mode', 'selection')"
         />
         <BaseButton
-          class="rounded-l-0!"
-          :variant="blurMode === 'text' ? 'primary' : 'default'"
+          variant="ghost"
+          :active="blurMode === 'text'"
           title="模糊选区内文本"
           icon="i-ri-t-box-line"
           @click="emit('blur-mode', 'text')"
@@ -142,21 +146,22 @@
       <div class="mx-0.5 fill-active shrink-0 h-5 w-px" />
 
       <!-- 操作按钮 -->
-      <BaseButton title="识别" icon="i-ri-qr-scan-2-line" @click="$emit('ocr')" />
+      <BaseButton variant="ghost" title="识别" icon="i-ri-qr-scan-2-line" @click="$emit('ocr')" />
       <BaseButton
+        variant="ghost"
         title="滚动截屏"
         icon="i-ri-arrow-down-double-line"
         @click="$emit('scroll-start')"
       />
-      <BaseButton title="钉图" icon="i-ri-pushpin-line" @click="$emit('pin')" />
-      <BaseButton title="保存" icon="i-ri-save-line" @click="$emit('save')" />
+      <BaseButton variant="ghost" title="钉图" icon="i-ri-pushpin-line" @click="$emit('pin')" />
+      <BaseButton variant="ghost" title="保存" icon="i-ri-save-line" @click="$emit('save')" />
     </template>
 
     <!-- 统一尾部：关闭 + 确定（复制并关闭），始终位于最右侧 -->
     <div class="mx-0.5 fill-active shrink-0 h-5 w-px" />
-    <BaseButton variant="danger" title="关闭 (Esc)" icon="i-ri-close-line" @click="onClose" />
+    <BaseButton variant="ghost" title="关闭 (Esc)" icon="i-ri-close-line" @click="onClose" />
     <BaseButton
-      variant="primary"
+      variant="ghost"
       title="复制并关闭 (Enter)"
       icon="i-ri-check-line"
       @click="onConfirm"
@@ -351,6 +356,16 @@ defineExpose({ reportToolbarRect })
 </script>
 
 <style scoped>
+/*
+ * 工具栏 / 色板叠在花色截图上，需比主搜索框（0.72）更实以保证按钮可读；
+ * 仅局部覆盖 soft-surface-fill 基元，blur/saturate 玻璃感保留
+ */
+.palette-surface {
+  --soft-surface-fill: rgb(246 246 248 / 0.92);
+  /* 工具栏激活态比全局列表选中更深，保证叠在截图上可读 */
+  --ui-active-fill: rgb(var(--cool) / 0.16);
+}
+
 .palette-popup-enter-active,
 .palette-popup-leave-active {
   transition:

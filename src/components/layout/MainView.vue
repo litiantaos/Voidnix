@@ -41,20 +41,21 @@
           @mouseenter="isTagHovered = true"
           @mouseleave="isTagHovered = false"
         >
-          <span shrink="0" h="3.5" w="3.5" relative>
+          <span shrink="0" h="4" w="4" relative>
             <!-- 缩放交叉全在 theme.css（.module-tag.is-hovered），避免 ui-ctrl/Uno 抢 transition -->
             <span
               text="xs muted"
               h="3.5"
               w="3.5"
               inset="0"
+              m="auto"
               absolute
               class="module-tag-icon flex-center"
               :class="activeModule.meta.icon"
               aria-hidden="true"
             />
             <BaseButton
-              class="module-tag-close flex-center inset-0 absolute !p-0 !h-3.5 !w-3.5"
+              class="module-tag-close flex-center inset-0 absolute !p-0 !rounded-full !h-4 !w-4"
               :tabindex="isTagHovered ? undefined : -1"
               icon="i-ri-close-line text-xs text-secondary"
               @click="onTagClose"

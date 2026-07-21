@@ -422,7 +422,6 @@ async function deleteItems(ids: string[]) {
   const confirmed = await appStore.showConfirm({
     title: '删除剪贴板记录',
     message: ids.length > 1 ? `确定要删除 ${ids.length} 条记录吗？` : '确定要删除这条记录吗？',
-    kind: 'warning',
     okLabel: '删除',
     cancelLabel: '取消',
   })

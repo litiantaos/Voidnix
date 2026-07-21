@@ -61,7 +61,6 @@ const handleQuitApp = async () => {
     message: '确定要退出 Voidnix 吗？',
     okLabel: '退出',
     cancelLabel: '取消',
-    kind: 'warning',
   })
   if (confirmed) {
     await invoke(CMD.quitApp)

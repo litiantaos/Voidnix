@@ -55,13 +55,26 @@
           placeholder="定义 Agent 角色、能力边界、工具使用规则、安全约束与输出风格"
         />
       </div>
+      <template #footer-start>
+        <BaseButton
+          v-if="systemPromptText !== DEFAULT_SYSTEM_PROMPT"
+          variant="danger"
+          @click="resetSystemPrompt"
+          >重置</BaseButton
+        >
+      </template>
     </BaseDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { config as agentConfig, type SearchProviderConfig, updateSearchProvider } from './config'
+import {
+  config as agentConfig,
+  DEFAULT_SYSTEM_PROMPT,
+  type SearchProviderConfig,
+  updateSearchProvider,
+} from './config'
 import { useAppStore } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -152,5 +165,9 @@ function openSystemPromptDialog() {
 async function saveSystemPrompt() {
   agentConfig.systemPrompt = systemPromptText.value.trim()
   showSystemPromptDialog.value = false
+}
+
+function resetSystemPrompt() {
+  systemPromptText.value = DEFAULT_SYSTEM_PROMPT
 }
 </script>

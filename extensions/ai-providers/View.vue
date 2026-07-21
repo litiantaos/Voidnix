@@ -135,7 +135,7 @@
       <template #footer-start>
         <BaseButton
           v-if="providerModalMode === 'edit' && editingProviderId"
-          class="text-danger hover:text-danger/80"
+          variant="danger"
           @click="removeProviderAndClose"
         >
           删除
@@ -181,7 +181,7 @@
       <template #footer-start>
         <BaseButton
           v-if="keyModalMode === 'edit' && canDeleteKey"
-          class="text-danger hover:text-danger/80"
+          variant="danger"
           @click="removeKeyAndClose"
         >
           删除

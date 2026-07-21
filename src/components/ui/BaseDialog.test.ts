@@ -86,13 +86,6 @@ describe('BaseDialog', () => {
     expect(wrapper.emitted('cancel')![0]).toEqual(['escape'])
   })
 
-  it('confirm + warning 模式下遮罩点击不关闭', async () => {
-    const wrapper = mountDialog({ variant: 'confirm', kind: 'warning' })
-    await wrapper.find('.backdrop-to').trigger('click')
-    vi.advanceTimersByTime(200)
-    expect(wrapper.emitted('cancel')).toBeUndefined()
-  })
-
   it('form 模式下遮罩点击可关闭', async () => {
     const wrapper = mountDialog({ variant: 'form' })
     await wrapper.find('.backdrop-to').trigger('click')

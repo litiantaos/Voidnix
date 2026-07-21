@@ -77,6 +77,15 @@ function defaultValidate(_key: string, value: unknown, defaultValue: unknown): b
 /// schema 变更：自开发自用不维护迁移，改 schema 时手动删磁盘 config.json 即可。
 export function defineConfig<T extends object>(storePath: string, defaults: T): T {
   const config = reactive(structuredClone(defaults)) as T
+
+  // 仅 main 窗口持久化：pin/screenshot/snap-panel 等子窗口无 store 权限，
+  // 也无需持久化（配置统一由 main 读写）；子窗口走纯内存 reactive，避免
+  // store.load 权限错误 + onCloseRequested→destroy 权限错误
+  if (isTauri && getCurrentWindow().label !== 'main') {
+    readyMap.set(storePath, Promise.resolve())
+    return config
+  }
+
   const defaultKeys = Object.keys(defaults)
   let isLoading = true
 
