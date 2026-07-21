@@ -1,4 +1,4 @@
-import { ref, computed, type Ref } from 'vue'
+import { ref, computed, watch, type Ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import type { ScreenshotData, Sel } from './useTypes'
@@ -54,12 +54,22 @@ export function useMagnifier(options: {
     const sc = options.dpr.value
     const canvasSize = MAGNIFIER_SIZE * sc
     const half = MAGNIFIER_SIZE / MAGNIFIER_ZOOM / 2
+    // hover 控制点时锚定控制点位置（放大窗内容固定，不跟随指针微动）；
+    // 与 magnifierStyle 的位置锚定同源，确保框与画面都锁在控制点上。
+    const hid = options.hoveredHandle.value
+    let ax = cx
+    let ay = cy
+    if (hid) {
+      const p = handleAbsolutePos(hid, options.sel.value)
+      ax = p.x
+      ay = p.y
+    }
     ctx.clearRect(0, 0, canvasSize, canvasSize)
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(
       bgImage.value,
-      (cx - half) * sc,
-      (cy - half) * sc,
+      (ax - half) * sc,
+      (ay - half) * sc,
       (MAGNIFIER_SIZE / MAGNIFIER_ZOOM) * sc,
       (MAGNIFIER_SIZE / MAGNIFIER_ZOOM) * sc,
       0,
@@ -124,6 +134,17 @@ export function useMagnifier(options: {
     paintMagnifier(cx, cy)
   }
 
+  // canvas 已挂载时控制点间切换（A→B）需重绘：annotate 阶段 mousemove 不调
+  // updateMagnifier（仅 select/resize 调），没有这层 watch 放大窗会停在上一个控制点画面。
+  const stopHoverWatch = watch(
+    () => options.hoveredHandle.value,
+    () => {
+      if (options.hoveredHandle.value && magnifierCanvas.value && bgImage.value) {
+        paintMagnifier(crossX.value, crossY.value)
+      }
+    },
+  )
+
   /** canvas ref 回调：bg 已就绪但 canvas 后挂时补绘一帧。 */
   function setMagnifierCanvas(el: HTMLCanvasElement | null | undefined) {
     magnifierCanvas.value = el ?? undefined
@@ -135,6 +156,7 @@ export function useMagnifier(options: {
   function dispose() {
     clearRetry()
     loadGen++
+    stopHoverWatch()
   }
 
   return {
