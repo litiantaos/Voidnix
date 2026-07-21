@@ -155,8 +155,6 @@ export function useScrollCapture() {
 
   return {
     isActive,
-    isFinishing,
-    isPassthrough,
     atBottom,
     previewDataUrl,
     previewWidth,

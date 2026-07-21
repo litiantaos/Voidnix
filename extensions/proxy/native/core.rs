@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 /// mihomo（Clash.Meta）核心版本与 darwin asset sha256（.gz，来自 release digest）。
 /// 运行时按需下载，不编译期嵌入（避免二进制膨胀 + 可热更新）。
@@ -23,13 +23,6 @@ const LATEST_API: &str = "https://api.github.com/repos/MetaCubeX/mihomo/releases
 
 /// 内核下载进行中标记（全局，ensure_bin 期间置 true，供 status 查询）。
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
-
-/// 下载进度事件 payload：received 为已收字节，total 为 None 表示 chunked（无法算百分比）。
-#[derive(Clone, Serialize)]
-pub struct CoreProgress {
-    pub received: u64,
-    pub total: Option<u64>,
-}
 
 /// 下载串行化锁（配合 ensure_bin double-check，防并发下载损坏 .gz）。
 static DOWNLOAD_LOCK: LazyLock<tokio::sync::Mutex<()>> =
@@ -196,8 +189,8 @@ fn core_version(app: &AppHandle, bin: &Path) -> Option<String> {
     Some(v)
 }
 
-/// 当前架构名（arm64 / amd64）。
-fn darwin_arch() -> &'static str {
+/// mihomo asset 架构名（arm64 / amd64）。
+fn mihomo_arch_slug() -> &'static str {
     if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
@@ -209,7 +202,7 @@ fn darwin_arch() -> &'static str {
 /// 一次调用同时拿到 version（tag_name）+ download URL + sha256（asset.digest）。
 /// 失败由调用方决定是否回退常量。gh-proxy 不转发 API，此处直连 api.github.com。
 pub(crate) async fn fetch_latest_asset() -> Result<CoreAsset, String> {
-    let arch = darwin_arch();
+    let arch = mihomo_arch_slug();
     let resp = crate::http::client()
         .get(LATEST_API)
         .header("User-Agent", "Voidnix")
@@ -256,7 +249,7 @@ pub(crate) async fn fetch_latest_asset() -> Result<CoreAsset, String> {
 
 /// GitHub API 不可达时的 fallback：用常量版本 + sha256 拼 URL（与原硬编码逻辑等价）。
 fn fallback_asset() -> CoreAsset {
-    let arch = darwin_arch();
+    let arch = mihomo_arch_slug();
     let sha = if arch == "arm64" {
         SHA256_ARM64
     } else {
@@ -293,8 +286,8 @@ pub async fn check_update(app: &AppHandle) -> UpdateInfo {
     }
 }
 
-/// 下载 mihomo：reqwest 流式拉取 .gz（推送进度事件）→ sha256 校验 → gunzip 解压 → chmod。
-/// 进度通过 app.emit("proxy-core-progress", CoreProgress) 推送（received/total，chunked 时 total=None）；gunzip 依赖系统命令（macOS 自带）。
+/// 下载 mihomo：经 runtime::binary_fetch 流式拉取 .gz → sha256 → gunzip → chmod，
+/// 成功后写 version 缓存 + emit ready。进度事件 payload = FetchProgress（字段与旧 CoreProgress 一致）。
 async fn download_core_async(app: &AppHandle) -> Result<(), String> {
     let asset = fetch_latest_asset().await.unwrap_or_else(|e| {
         eprintln!("[proxy] 拉取最新版本失败，回退常量版本: {e}");
@@ -305,90 +298,24 @@ async fn download_core_async(app: &AppHandle) -> Result<(), String> {
     let bin = dir.join("mihomo");
 
     DOWNLOADING.store(true, Ordering::Relaxed);
-    let result =
-        download_core_inner(app, &asset.url, &gz, &bin, &asset.sha256, &asset.version).await;
-    DOWNLOADING.store(false, Ordering::Relaxed);
-    result
-}
-
-async fn download_core_inner(
-    app: &AppHandle,
-    url: &str,
-    gz: &Path,
-    bin: &Path,
-    expected_sha: &str,
-    version: &str,
-) -> Result<(), String> {
-    use futures_util::StreamExt;
-    use tauri::Emitter;
-
-    // 流式下载 + 进度推送（download_client 无整体超时，慢网络下大文件不会被中途掐断）
-    let resp = crate::http::download_client()
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("下载请求失败: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("下载响应错误: {e}"))?;
-    let total = resp.content_length();
-    let mut file = std::fs::File::create(gz).map_err(|e| e.to_string())?;
-    let mut received: u64 = 0;
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("下载读取失败: {e}"))?;
-        std::io::Write::write_all(&mut file, &chunk).map_err(|e| e.to_string())?;
-        received += chunk.len() as u64;
-        let _ = app.emit("proxy-core-progress", CoreProgress { received, total });
-    }
-    drop(file);
-    // 字节收齐，进入 sha256 + gunzip 后处理：emit 完成信号（total 设为 received 标记下载完成，
-    // chunked 场景也借此从「下载中」切到后处理态），前端按钮转「解压中」
-    let _ = app.emit(
-        "proxy-core-progress",
-        CoreProgress {
-            received,
-            total: Some(received),
+    let result = crate::runtime::binary_fetch::fetch(
+        app,
+        crate::runtime::binary_fetch::BinaryFetch {
+            urls: vec![asset.url],
+            gz_path: &gz,
+            bin_path: &bin,
+            expected_sha256: &asset.sha256,
+            progress_event: "proxy-core-progress",
+            progress_base: 0,
         },
-    );
+    )
+    .await;
+    DOWNLOADING.store(false, Ordering::Relaxed);
+    result?;
 
-    // sha256 校验（sha2，防篡改 / 部分下载损坏）
-    let actual = sha256_file(gz)?;
-    if actual != expected_sha {
-        let _ = std::fs::remove_file(gz);
-        return Err(format!(
-            "mihomo sha256 校验失败（expected {expected_sha}, got {actual}）"
-        ));
-    }
-
-    // gunzip 解压（macOS 自带）。失败清残 bin：gunzip 可能已部分输出再失败，
-    // 残 bin 会被下次 ensure_bin 直接复用，导致用户卡在「已下载但启用失败」
-    let gunzip = Command::new("gunzip")
-        .arg("-f")
-        .arg(gz)
-        .status()
-        .map_err(|e| format!("gunzip 调用失败: {e}"))?;
-    if !gunzip.success() {
-        let _ = std::fs::remove_file(bin);
-        return Err("gunzip 解压失败".into());
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(bin)
-            .map_err(|e| e.to_string())?
-            .permissions();
-        perms.set_mode(0o755);
-        if let Err(e) = std::fs::set_permissions(bin, perms) {
-            let _ = std::fs::remove_file(bin);
-            return Err(e.to_string());
-        }
-    }
-
-    std::fs::write(bin.parent().unwrap().join("mihomo.version"), version)
+    // version 缓存 + ready 信号（binary_fetch 只管下载/校验/解压/chmod）
+    std::fs::write(bin.parent().unwrap().join("mihomo.version"), &asset.version)
         .map_err(|e| e.to_string())?;
-    // gunzip + chmod + version 全部就绪：emit ready 让前端事件驱动刷新状态，
-    // 不依赖 invoke(proxyEnsureCore) resolve 时序（sha256/gunzip 同步阻塞可能延迟 IPC 响应）
     let _ = app.emit("proxy-core-ready", ());
     Ok(())
 }
@@ -400,29 +327,4 @@ pub(crate) fn remove_core_files(app: &AppHandle) -> Result<(), String> {
     let _ = std::fs::remove_file(dir.join("mihomo"));
     let _ = std::fs::remove_file(dir.join("mihomo.version"));
     Ok(())
-}
-
-/// 计算文件 sha256（十六进制小写）。
-fn sha256_file(path: &Path) -> Result<String, String> {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut buf = [0u8; 16384];
-    loop {
-        let n = std::io::Read::read(&mut file, &mut buf).map_err(|e| e.to_string())?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    let hash = hasher.finalize();
-    Ok(hash.iter().map(|b| format!("{:02x}", b)).collect())
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn sha256_file_placeholder() {
-        // 下载逻辑需 AppHandle + 联网，不便单测；sha256 校验由常量保证。
-    }
 }

@@ -72,7 +72,7 @@ fn on_proxy_event(app: &AppHandle, id: &str) {
 }
 
 /// setup 内注册菜单贡献段。
-pub(crate) fn register(_app: &AppHandle) {
+pub(crate) fn register() {
     crate::runtime::menubar::register(MenuBarContribution {
         title: "代理",
         build: Arc::new(build_proxy),

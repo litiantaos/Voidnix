@@ -719,10 +719,6 @@ pub async fn ai_providers_deepseek_balance(
     })
 }
 
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::new("ai-providers").build()
-}
-
 pub struct AiProvidersExtension;
 
 #[async_trait::async_trait]

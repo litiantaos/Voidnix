@@ -243,7 +243,6 @@ export function useMaskStyles(options: {
     maskBottom,
     maskLeft,
     maskRight,
-    palettePos,
     selSizeStyle,
     hoverSizeStyle,
     handles,

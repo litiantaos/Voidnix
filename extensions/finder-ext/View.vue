@@ -30,8 +30,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
-import { useAppStore } from '@/stores/app'
-import { hideWindow } from '@/utils/tauri'
+import { useAppStore, toastAndHide } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -49,17 +48,11 @@ const naming = ref(false)
 const fileName = ref('Untitled.txt')
 const nameInputRef = ref<InstanceType<typeof BaseInput> | null>(null)
 
-let hideTimer: ReturnType<typeof setTimeout> | null = null
-
 /** Rust 已自行 hide 的动作（勿再抢 hide / toast 时序） */
 const HIDE_IN_RUST = new Set<FinderAction>(['toggle_hidden', 'new_file'])
 
 /** @returns 是否成功（供新建文件等决定是否关弹窗） */
 async function runAction(action: FinderAction, name?: string): Promise<boolean> {
-  if (hideTimer) {
-    clearTimeout(hideTimer)
-    hideTimer = null
-  }
   try {
     const msg = await invoke<string>(CMD.finderRunAction, {
       action,
@@ -68,15 +61,7 @@ async function runAction(action: FinderAction, name?: string): Promise<boolean> 
     if (HIDE_IN_RUST.has(action)) {
       return true
     }
-    if (msg) {
-      appStore.showStatus(msg, { duration: 800 })
-      hideTimer = setTimeout(() => {
-        hideTimer = null
-        hideWindow()
-      }, 800)
-    } else {
-      hideWindow()
-    }
+    toastAndHide(msg || undefined)
     return true
   } catch (e) {
     appStore.showStatus(String(e ?? '操作失败'), { duration: 4000, kind: 'error' })

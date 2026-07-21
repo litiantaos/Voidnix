@@ -7,7 +7,13 @@ import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { listen } from '@tauri-apps/api/event'
 import { toErrorMessage } from '@/utils/format'
-import { filterByQuery, filterByType, type ContentType } from './logic'
+import {
+  filterByQuery,
+  filterByType,
+  clipboardTitle,
+  clipboardIcon,
+  type ContentType,
+} from './logic'
 import ClipboardSettings from './Settings.vue'
 import ClipboardView from './View.vue'
 import ClipboardActions from './Actions.vue'
@@ -73,33 +79,17 @@ function applyFilters(items: ClipboardItem[], query: string): ClipboardItem[] {
 
 /** clipboard 原始记录 → 搜索结果（全局 dynamic 专用映射，复用 tabCache 避免每键 IPC）。 */
 function mapClipboardResults(raw: ClipboardItem[], query: string): ProviderResult[] {
-  return filterByQuery(raw, query).map((item) => {
-    let title = item.content
-    if (item.content_type === 'image') {
-      title = '[图片]'
-    } else if (item.content_type === 'file') {
-      title = '[文件] ' + item.content.split('/').pop()
-    } else {
-      title = item.content.substring(0, 500).replace(/\r?\n/g, ' ')
-    }
-
-    return {
-      id: `clipboard-${item.id}`,
-      title: title,
-      description: `${item.source_app} • ${item.created_at}`,
-      icon:
-        item.content_type === 'image'
-          ? 'i-ri-image-line'
-          : item.content_type === 'file'
-            ? 'i-ri-file-line'
-            : 'i-ri-file-text-line',
-      data: {
-        kind: 'clipboard' as const,
-        iconStyle: 'rounded',
-        id: item.id,
-      },
-    }
-  })
+  return filterByQuery(raw, query).map((item) => ({
+    id: `clipboard-${item.id}`,
+    title: clipboardTitle(item),
+    description: `${item.source_app} • ${item.created_at}`,
+    icon: clipboardIcon(item),
+    data: {
+      kind: 'clipboard' as const,
+      iconStyle: 'rounded',
+      id: item.id,
+    },
+  }))
 }
 
 export default defineExtension({

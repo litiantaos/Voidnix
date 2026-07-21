@@ -87,7 +87,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 状态行当前节点名由 `refresh_proxy_menu` 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `reload_if_running` 触发刷新。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步面板 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展面板。
 
-## 命令（16 个）
+## 命令（18 个）
 
 `set_proxy_enabled` / `is_proxy_enabled`（启停；root mihomo 常驻——首次 restart_root 提权一次，之后开关走热重载 active/idle config 免提权）、`proxy_core_status` / `proxy_ensure_core`（内核版本查询与运行时按需下载）、`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）、`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）、`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_delay` / `proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退）、`proxy_reconnect`（免提权软重启：热重载 active config 重建 gvisor/连接池，出站异常时一键恢复，规避关闭→开启的 stop_root 提权）。诊断：`proxy_traffic_stream` / `proxy_connections_stream` / `proxy_logs_stream`（开 WS 流，Channel 推流量速率/连接快照/日志行；mihomo 未运行时静默返回不 spawn，前端显示「无记录」）、`proxy_stop_stream`（StreamRegistry CancellationToken 停指定流）、`proxy_get_rules`（GET /rules 只读快照，未运行返回空）。`proxy_set_mode` 含「未变跳过」守卫 + emit 同步前端。
 

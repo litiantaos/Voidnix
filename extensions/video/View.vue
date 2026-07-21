@@ -40,7 +40,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
-import { useAppStore } from '@/stores/app'
+import { useAppStore, withSuppressBlur } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import type { SettingItem } from '@/types/settings'
@@ -55,39 +55,12 @@ import {
   type Quality,
   type Scale,
   type VideoMode,
+  type CoreStatus,
+  type VideoMeta,
+  type JobSnapshot,
+  type VideoEvent,
   VIDEO_EXTENSIONS,
 } from './logic'
-
-interface CoreStatus {
-  available: boolean
-  source: string
-  version: string
-  downloading: boolean
-}
-
-interface VideoMeta {
-  path: string
-  durationSecs: number
-  width: number
-  height: number
-  videoCodec: string
-  audioCodec: string
-  sizeBytes: number
-  container: string
-}
-
-interface JobSnapshot {
-  busy: boolean
-  lastOutput: string | null
-  lastError: string | null
-  lastPercent: number
-}
-
-type VideoEvent =
-  | { type: 'started'; outputPath: string }
-  | { type: 'progress'; percent: number; timeSecs: number; speed: string }
-  | { type: 'done'; outputPath: string; sizeBytes: number }
-  | { type: 'error'; message: string }
 
 const appStore = useAppStore()
 
@@ -371,8 +344,7 @@ async function ensureCore() {
 }
 
 async function pickInput() {
-  appStore.suppressBlur = true
-  try {
+  await withSuppressBlur(async () => {
     const paths = await invoke<string[]>(CMD.pickFiles, {
       allowsMultiple: false,
       allowedExtensions: [...VIDEO_EXTENSIONS],
@@ -386,25 +358,14 @@ async function pickInput() {
       meta.value = null
       appStore.showStatus(`无法读取视频：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
     }
-  } finally {
-    setTimeout(() => {
-      appStore.suppressBlur = false
-    }, 800)
-  }
+  })
 }
 
 async function pickOutputDir() {
-  appStore.suppressBlur = true
-  try {
-    const selected = await invoke<string>(CMD.pickDirectory)
-    if (selected) {
-      outputDir.value = selected
-      config.outputDir = selected
-    }
-  } finally {
-    setTimeout(() => {
-      appStore.suppressBlur = false
-    }, 800)
+  const selected = await withSuppressBlur(() => invoke<string>(CMD.pickDirectory))
+  if (selected) {
+    outputDir.value = selected
+    config.outputDir = selected
   }
 }
 

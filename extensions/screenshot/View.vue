@@ -8,13 +8,11 @@
 import { computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
+import { withSuppressBlur } from '@/stores/app'
 import { config as screenshotConfig } from './config'
-import { useAppStore } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import type { SettingItem } from '@/types/settings'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
-
-const appStore = useAppStore()
 
 const { value: screenshotShortcutValue, update: handleShortcutChange } = useShortcutConfig(
   'screenshot',
@@ -22,17 +20,9 @@ const { value: screenshotShortcutValue, update: handleShortcutChange } = useShor
 )
 
 async function pickSavePath() {
-  // NSOpenPanel 运行期间抑制失焦隐藏
-  appStore.suppressBlur = true
-  try {
-    const selected = await invoke<string>(CMD.pickDirectory)
-    if (selected) {
-      await (screenshotConfig.savePath = selected)
-    }
-  } finally {
-    setTimeout(() => {
-      appStore.suppressBlur = false
-    }, 800)
+  const selected = await withSuppressBlur(() => invoke<string>(CMD.pickDirectory))
+  if (selected) {
+    screenshotConfig.savePath = selected
   }
 }
 

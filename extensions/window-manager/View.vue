@@ -32,7 +32,8 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { config as wmConfig, BOUNDS } from './config'
+import { focusSearchInput } from '@/stores/app'
+import { config as wmConfig, clampWidth, clampHeight } from './config'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import type { SettingItem } from '@/types/settings'
@@ -81,16 +82,11 @@ function onBlur(field: 'width' | 'height') {
   }
   if (field === 'width') {
     const n = parseInt(draftWidth.value, 10)
-    if (n > 0)
-      wmConfig.customWidth = Math.max(BOUNDS.customWidth.floor, Math.min(BOUNDS.customWidth.cap, n))
+    if (n > 0) wmConfig.customWidth = clampWidth(n)
     draftWidth.value = String(wmConfig.customWidth)
   } else {
     const n = parseInt(draftHeight.value, 10)
-    if (n > 0)
-      wmConfig.customHeight = Math.max(
-        BOUNDS.customHeight.floor,
-        Math.min(BOUNDS.customHeight.cap, n),
-      )
+    if (n > 0) wmConfig.customHeight = clampHeight(n)
     draftHeight.value = String(wmConfig.customHeight)
   }
 }
@@ -103,12 +99,12 @@ function onInputKeydown(e: KeyboardEvent, field: 'width' | 'height') {
     if (field === 'width') draftWidth.value = String(wmConfig.customWidth)
     else draftHeight.value = String(wmConfig.customHeight)
     ;(e.target as HTMLInputElement).blur()
-    document.getElementById('main-search-input')?.focus()
+    focusSearchInput()
   } else if (e.key === 'Enter') {
     e.preventDefault()
     e.stopImmediatePropagation()
     ;(e.target as HTMLInputElement).blur()
-    document.getElementById('main-search-input')?.focus()
+    focusSearchInput()
   } else if (e.key === 'Tab' && !e.shiftKey) {
     e.preventDefault()
     if (field === 'width') heightInputRef.value?.focus()

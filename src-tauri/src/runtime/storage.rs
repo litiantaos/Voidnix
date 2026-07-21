@@ -98,6 +98,23 @@ pub fn save_png_safely(file_path: &Path, bytes: &[u8]) -> Result<(), String> {
     std::fs::write(file_path, bytes).map_err(|e| e.to_string())
 }
 
+/// 计算文件 sha256（十六进制小写）。proxy/video binary 校验共用。
+pub fn sha256_file(path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut buf = [0u8; 16384];
+    loop {
+        let n = std::io::Read::read(&mut file, &mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let hash = hasher.finalize();
+    Ok(hash.iter().map(|b| format!("{:02x}", b)).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

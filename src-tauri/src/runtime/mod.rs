@@ -1,3 +1,4 @@
+pub mod binary_fetch;
 pub mod llm;
 pub mod menubar;
 pub mod pasteboard;

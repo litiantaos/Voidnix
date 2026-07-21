@@ -29,5 +29,5 @@ export function useTextDetection(options: { dpr: Ref<number> }) {
     }
   }
 
-  return { textRegions, isDetecting, hasDetected, detectError, detect }
+  return { textRegions, detect }
 }

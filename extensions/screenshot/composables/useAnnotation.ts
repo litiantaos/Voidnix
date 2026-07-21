@@ -33,20 +33,6 @@ export function useAnnotation() {
 
   // 拖动形状控制点
   const draggingShapeHandle = ref<string | null>(null)
-  const shapeHandleDragStart = ref({
-    mx: 0,
-    my: 0,
-    x1: 0,
-    y1: 0,
-    x2: 0,
-    y2: 0,
-    cr: 0,
-    tw: 0,
-    rotation: 0,
-  })
-
-  // 旋转：仅矩形支持，通过显式 'rot' 控制点触发
-  const rotateStart = ref({ angleStart: 0, rotationStart: 0 })
 
   function shapeCenter(s: Shape): { cx: number; cy: number } {
     return { cx: (s.x1 + s.x2) / 2, cy: (s.y1 + s.y2) / 2 }
@@ -125,8 +111,6 @@ export function useAnnotation() {
     isDraggingShape,
     shapeDragStart,
     draggingShapeHandle,
-    shapeHandleDragStart,
-    rotateStart,
     shapeCenter,
     toLocal,
     fromLocal,

@@ -47,10 +47,6 @@ export type ListItem =
   | { type: 'node'; group: '节点'; node: NodeItem }
 
 export function useProxyPanel() {
-  function errText(e: unknown): string {
-    return toErrorMessage(e)
-  }
-
   const appStore = useAppStore()
   /** proxy 流量速率紧凑口径（1.2K/s） */
   const fmtTrafficRate = (n: number) => formatRate(n, { compact: true })
@@ -204,7 +200,7 @@ export function useProxyPanel() {
       await loadCoreStatus()
     } catch (e) {
       await loadCoreStatus() // 拉权威状态（失败时 downloading 复位为 false）
-      appStore.showStatus(`内核下载失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(`内核下载失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     }
   }
 
@@ -224,7 +220,7 @@ export function useProxyPanel() {
     } catch (e) {
       await loadCoreStatus()
       await checkUpdate()
-      appStore.showStatus(`内核更新失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(`内核更新失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     }
   }
 
@@ -287,7 +283,7 @@ export function useProxyPanel() {
       }
       // 关闭代理时保留节点列表显示（热重载 idle，不清空 proxiesData）
     } catch (e) {
-      appStore.showStatus(`切换失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(`切换失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     } finally {
       toggling.value = false
     }
@@ -306,7 +302,7 @@ export function useProxyPanel() {
       prewarmAndTestAll()
       startTrafficStream()
     } catch (e) {
-      appStore.showStatus(`重连失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(`重连失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     } finally {
       toggling.value = false
     }
@@ -324,7 +320,7 @@ export function useProxyPanel() {
     } catch (e) {
       // 核心未运行（从未启用 / 进程已退出）时静默；已启用下加载失败才报错
       if (isEnabled.value) {
-        appStore.showStatus(`加载节点失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+        appStore.showStatus(`加载节点失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
       }
     }
   }
@@ -338,7 +334,7 @@ export function useProxyPanel() {
       selectedNodeName.value = node.name // 乐观更新，check 立即显示
       await loadProxies()
     } catch (e) {
-      appStore.showStatus(`切换节点失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(`切换节点失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     }
   }
 
@@ -416,7 +412,7 @@ export function useProxyPanel() {
       try {
         await invoke(CMD.proxySetMode, { mode })
       } catch (e) {
-        appStore.showStatus(`切换模式失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+        appStore.showStatus(`切换模式失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
       }
     }
   }
@@ -507,7 +503,7 @@ export function useProxyPanel() {
       // 不自动开启代理（尊重用户显式关闭）；已开启时刷新节点列表应用新订阅
       if (isEnabled.value) await loadProxies()
     } catch (e) {
-      appStore.showStatus(`更新失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(`更新失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     }
   }
 
@@ -529,7 +525,7 @@ export function useProxyPanel() {
       // 热重启完成（含 wait_ready）后刷新，节点列表移除该订阅节点
       if (isEnabled.value) await loadProxies()
     } catch (e) {
-      appStore.showStatus(`清理订阅失败：${errText(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(`清理订阅失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     }
   }
 

@@ -14,7 +14,7 @@ extensions/<id>/
 ├── logic.ts               # 纯逻辑提取（可选，便于测试）
 ├── *.test.ts              # 测试（co-location）
 └── native/                # Rust 后端（仅需要系统级能力时存在）
-    ├── mod.rs             # pub fn init() -> TauriPlugin + Extension trait 实现
+    ├── mod.rs             # Extension trait 实现（setup 生命周期 + 命令）
     └── ...                # 子模块（commands.rs / engine/ 等）
 ```
 
@@ -40,9 +40,10 @@ export default defineExtension({
 
 - `search`：SearchProvider.dynamic 单通道召回（消费者见下「搜索集成」）
 - `onExecute`：搜索结果回车动作，扩展私有（无消费者）
-- `mainView`：主视图组件（10 扩展）
-- `searchBarAccessory`：搜索栏右侧配件（3：clipboard/agent/translate）
-- `subviews`：扩展私有命名子视图（4：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}）
+- `mainView`：主视图组件（14 扩展）
+- `searchBarAccessory`：搜索栏右侧配件（5：clipboard/agent/translate/proxy/ai-providers）
+- `subviews`：扩展私有命名子视图（5：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{connections/rules/logs}）
+- `subviewTitle`：子视图显示名（id→中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」（1：proxy）
 - `windowViews`：独立窗口视图，key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀（2：screenshot/window-manager）
 - `globalShortcuts`：全局快捷键绑定（5：clipboard/screenshot/agent/translate/finder-ext）
 - `placeholder`：搜索框占位提示，激活模块时显示（6：clipboard/currency/ip/time/base64/calculator）
@@ -51,7 +52,7 @@ export default defineExtension({
 
 高度统一由 `useModuleHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管：高度变化一次 IPC 触发 Rust → `platform/window.rs::animate_frame` 用 macOS `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS 逐帧）；`auto` 模式 ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`，底部将出屏则上移，离开 auto 还原原位。
 
-生命周期：`setup?()`（启动钩子，无参）。3 承载字段过渡期保留：`disableSearchInput`（模块自管输入）、`listOptions.multiSelect`、`onOpenSubview`。
+生命周期：`setup?()`（启动钩子，无参）。3 行为槽：`disableSearchInput`（模块自管输入，禁用主搜索框）、`listOptions.multiSelect`（标准列表多选）、`onOpenSubview`（子视图打开回调，如 OCR payload 转交）。三者与能力槽同等地位（见 `runtime/types.ts`）。
 
 ### 跨扩展通信
 
@@ -165,12 +166,14 @@ config.maxDays = 60 // 自动写盘
 
 ## Rust 扩展（含 native/）
 
-### 双注册
+### 注册机制
 
-1. **编译期**：`pub fn init() -> TauriPlugin`（`plugin::Builder::new().build()`，**无 invoke_handler**）+ `#[tauri::command]` 函数由 `sync-extensions` 扫描，生成 `extensions.rs` 的 `configure_app!` 宏（单一全局 `generate_handler!`）。
-2. **运行时**：`Extension` trait（`runtime/registry.rs`），在 `lib.rs` 的 `ExtensionRegistry` 注册，提供 `setup` 生命周期钩子（并行 bootstrap via `join_all`）。
+扩展命令与生命周期分离注册：
 
-> Tauri 2 插件命令需 `plugin:name|cmd` 格式，裸名只路由全局 `invoke_handler`，故扩展命令必须全局注册、不能放插件 `invoke_handler`。
+1. **命令**：`#[tauri::command]` 函数由 `sync-extensions` 扫描，生成 `extensions.rs` 的 `configure_app!` 宏（单一全局 `generate_handler!`），前端裸名 `invoke('cmd')` 路由。Tauri 2 插件命令需 `plugin:name|cmd` 格式，裸名只路由全局 `invoke_handler`，故扩展命令必须全局注册。
+2. **生命周期**：`Extension` trait（`runtime/registry.rs`），在 `lib.rs` 的 `ExtensionRegistry` 注册，提供 `setup` 钩子（并行 bootstrap via `join_all`）。命令执行依赖的 State（DB 等）在 `setup` 内 `app.manage`。
+
+> 扩展无需声明 `init()` / plugin 空壳——纯 `Builder::new().build()` 对运行时零贡献（不注册命令/state/setup），已消除。
 
 ### Extension trait
 
@@ -180,12 +183,11 @@ impl Extension for ClipboardExtension {
     fn id(&self) -> &'static str { "clipboard" }
 
     async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
-        // 跨扩展可见的副作用：快捷键钩子、窗口配置、扩展级共享 State（app.manage）
-        // 命令执行依赖的 State（DB 等）放 plugin .setup 内 app.manage
+        // 跨扩展可见副作用：快捷键钩子、窗口配置、命令执行依赖的 State（app.manage）
         Ok(())
     }
 }
-```
+``
 
 **双 setup 职责**（按副作用可见性）：
 
@@ -229,3 +231,4 @@ impl Extension for ClipboardExtension {
 ## 测试
 
 纯逻辑提取至 `logic.ts`，co-location 写 `logic.test.ts`（vitest 自动扫描）；Rust 用 `#[cfg(test)]` 内联。运行命令见 [AGENTS.md](../AGENTS.md)。abort cleanup 按资源型分流：持有非自动释放资源（事件订阅/子进程/连接池）的 provider 须补 abort 测试，纯 fetch+signal 透传型随 abort 自动释放免测试。
+```

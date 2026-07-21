@@ -4,7 +4,7 @@
 
 ## 交互
 
-- 默认快捷键 `Alt+F`（`globalShortcuts` id=`finder-ext`，可在面板内改；dev 构建按框架规则叠加 Shift）
+- 默认快捷键 `Option+F`（代码标识符 `Alt+F`；`globalShortcuts` id=`finder-ext`，可在面板内改；dev 构建按框架规则叠加 Shift）
 - 再按一次同快捷键：已在本模块则隐藏窗口（`makeToggleHandler`）
 - 面板：操作列表 + 启动快捷键配置；↑↓ 选中、回车执行；成功后隐藏窗口（有 toast 则短延迟）
 

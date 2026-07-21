@@ -151,7 +151,6 @@ pub fn present_on_cursor_screen(window: &tauri::WebviewWindow) {
 
     // 先定位再露脸：hide 用 alpha=0 不 orderOut，跨屏 setFrame 更稳
     apply_frame_no_anim(ns_window, frame);
-    ns_window.setHasShadow(true);
     ns_window.setAlphaValue(1.0);
     ns_window.orderFrontRegardless();
     apply_frame_no_anim(ns_window, frame);

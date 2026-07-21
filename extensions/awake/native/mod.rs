@@ -5,14 +5,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+/// 优雅停止子进程：关闭 stdin（令子进程检测到 EOF 自行退出）→ SIGKILL → 回收。
+/// 三处停进程路径（drop / stop / restart）共用，保证时序一致。
+fn shutdown_child(child: &mut Child) {
+    drop(child.stdin.take());
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// 托管 awake 子进程：Drop 时自动 kill+wait，覆盖 app 正常退出/状态释放场景。
 /// panic=abort 下 Drop 不跑，由 awake binary 检测 stdin 关闭自行退出兜底。
 pub(crate) struct ManagedChild(Option<Child>);
 impl Drop for ManagedChild {
     fn drop(&mut self) {
         if let Some(mut c) = self.0.take() {
-            let _ = c.kill();
-            let _ = c.wait();
+            shutdown_child(&mut c);
         }
     }
 }
@@ -31,14 +38,12 @@ fn awake_bin_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> 
     Ok(dir.join("Display Wakelock"))
 }
 
-/// 停止 awake 子进程（take + kill + wait）。
+/// 停止 awake 子进程（take + shutdown_child）。
 fn stop_awake(state: &AwakeState) {
     let managed_opt = crate::runtime::lock_or_recover(&state.process).take();
     if let Some(mut managed) = managed_opt {
         if let Some(mut child) = managed.0.take() {
-            drop(child.stdin.take());
-            let _ = child.kill();
-            let _ = child.wait();
+            shutdown_child(&mut child);
         }
     }
 }
@@ -47,12 +52,10 @@ fn stop_awake(state: &AwakeState) {
 fn restart_awake(app: &AppHandle, state: &AwakeState, mirror: bool) -> Result<(), String> {
     let managed_opt = crate::runtime::lock_or_recover(&state.process).take();
     let Some(mut managed) = managed_opt else {
-        return Ok(());
+        return Ok(()); // 进程未运行，无需重启
     };
     if let Some(mut child) = managed.0.take() {
-        drop(child.stdin.take());
-        let _ = child.kill();
-        let _ = child.wait();
+        shutdown_child(&mut child);
     }
     let mode_arg = if mirror { "--mirror" } else { "--extend" };
     let bin_path = awake_bin_path(app)?;
@@ -146,11 +149,6 @@ pub async fn set_awake_display_mode(
     let _ = app.emit("awake-mode", mode);
     crate::runtime::menubar::refresh(&app);
     Ok(())
-}
-
-/// 命令注册（局部 invoke_handler）。
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("awake").build()
 }
 
 /// Awake 扩展。

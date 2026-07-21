@@ -11,7 +11,7 @@
       overflow="auto"
     >
       <img :src="imageUrl" block max-w="none" alt="截图预览" @load="onPreviewLoad" />
-      <div v-if="isLoading" class="bg-white/20 flex inset-0 absolute backdrop-blur-xs">
+      <div v-if="isLoading" class="fill-strong flex inset-0 absolute backdrop-blur-xs">
         <BaseEmptyState loading />
       </div>
     </div>

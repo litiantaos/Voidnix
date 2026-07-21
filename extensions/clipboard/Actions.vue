@@ -5,7 +5,7 @@
     @update:model-value="handleTypeChange"
   />
   <BaseButton
-    :icon="activeTab === 'favorites' ? 'i-ri-star-fill text-amber-400' : 'i-ri-star-line'"
+    :icon="activeTab === 'favorites' ? 'i-ri-star-fill text-warning' : 'i-ri-star-line'"
     @click="toggleFavoriteTab"
   />
   <BaseButton
@@ -18,7 +18,7 @@
 import { nextTick } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
-import { useAppStore } from '@/stores/app'
+import { useAppStore, focusSearchInput } from '@/stores/app'
 import { activeTab, activeType } from './index'
 import type { ContentType } from './logic'
 
@@ -33,12 +33,12 @@ const typeOptions = [
 
 function handleTypeChange(val: string | number) {
   activeType.value = val as ContentType
-  nextTick(() => document.getElementById('main-search-input')?.focus())
+  nextTick(() => focusSearchInput())
 }
 
 function toggleFavoriteTab() {
   activeTab.value = activeTab.value === 'all' ? 'favorites' : 'all'
-  nextTick(() => document.getElementById('main-search-input')?.focus())
+  nextTick(() => focusSearchInput())
 }
 
 function toggleConfig() {

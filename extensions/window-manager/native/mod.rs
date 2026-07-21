@@ -11,11 +11,6 @@ const HEIGHT_BOUNDS: (f64, f64) = (200.0, 4096.0);
 /// Window manager 扩展。
 pub struct WindowManagerExtension;
 
-/// 命令注册（局部 invoke_handler）。
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("window-manager").build()
-}
-
 #[async_trait::async_trait]
 impl Extension for WindowManagerExtension {
     fn id(&self) -> &'static str {
