@@ -28,7 +28,14 @@
         <div flex p="3" gap="3" select="none" items="center" text="primary">
           <div flex="~ col 1" min-w="0" justify="center">
             <div text="sm" font="medium" class="truncate">{{ itemTitle(item) }}</div>
-            <div text="xs muted" class="truncate">{{ itemSubtitle(item) }}</div>
+            <div text="xs" class="truncate">
+              <template v-for="(seg, i) in usageSegments(item)" :key="i">
+                <span v-if="i > 0" :class="{ 'opacity-50': !seg.lead }">{{
+                  seg.lead ? ' ' : ' · '
+                }}</span>
+                <span :style="{ color: TONE_COLOR[seg.tone] }">{{ seg.text }}</span>
+              </template>
+            </div>
           </div>
           <SparkLine
             v-if="sparkSeries(item).length > 1"
@@ -216,9 +223,11 @@ import {
   maskKey,
   normalizeZhipuMonitor,
   normalizeDeepseekBalance,
-  formatKeyUsageSubtitle,
-  formatDeepseekBalanceSubtitle,
+  buildZhipuUsageSegments,
+  buildDeepseekUsageSegments,
   type KeyMonitor,
+  type UsageTone,
+  type UsageSegment,
 } from './logic'
 import { createProviderTick } from './bridge'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -303,15 +312,32 @@ function itemTitle(row: KeyRow): string {
   return label
 }
 
-function itemSubtitle(row: KeyRow): string {
+/** 副标题片段（按 monitor.kind 分派）；无 monitor 走 muted 兜底。 */
+function usageSegments(row: KeyRow): UsageSegment[] {
   const m = monitorOf(row)
   if (loadingByKey[row.id] && !m) {
-    const masked = maskKey(row.slot.apiKey)
-    return `${masked || '无 Key'} · 获取用量信息中…`
+    return [
+      { text: maskKey(row.slot.apiKey) || '无 Key', tone: 'muted' },
+      { text: '获取用量信息中…', tone: 'muted' },
+    ]
   }
-  if (m?.kind === 'deepseek') return formatDeepseekBalanceSubtitle(row.slot.apiKey, m)
-  if (m?.kind === 'zhipu') return formatKeyUsageSubtitle(row.slot.apiKey, m, nowMs.value)
-  return formatKeyUsageSubtitle(row.slot.apiKey, undefined, nowMs.value)
+  if (m?.kind === 'deepseek') return buildDeepseekUsageSegments(row.slot.apiKey, m)
+  if (m?.kind === 'zhipu') return buildZhipuUsageSegments(row.slot.apiKey, m, nowMs.value)
+  return buildZhipuUsageSegments(row.slot.apiKey, undefined, nowMs.value)
+}
+
+/**
+ * 片段 tone → CSS color；走 theme.css 变量，accent 用字面值对齐 SparkLine（SVG var 不可靠）。
+ * 与 theme.css / uno.config.ts 同源，改 accent 色时同步。
+ */
+const TONE_COLOR: Record<UsageTone, string> = {
+  muted: 'var(--color-text-muted)',
+  secondary: 'var(--color-text-secondary)',
+  primary: 'var(--color-text-primary)',
+  accent: '#3d82f0',
+  warning: 'var(--color-warning)',
+  danger: 'var(--color-danger)',
+  success: 'var(--color-success)',
 }
 
 function sparkSeries(row: KeyRow): number[] {

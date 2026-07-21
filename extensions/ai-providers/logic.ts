@@ -263,30 +263,88 @@ export function formatCompactCount(n: number): string {
 
 /**
  * 列表副标题：
- * `sk-… · MAX · 5h 12% / 2.3h · 7d 34% / 2.3d · 30d 1.2B tokens`
- * 重置时间缺失时用 `—`。
+ * `sk-… · MAX · 5h 12% (2.3h) · 7d 34% (2.3d) · 30d 1.2B`
+ * 重置时间缺失时用 `—`。仅为字符串拼装便利；视觉渲染走 {@link buildZhipuUsageSegments}。
  */
 export function formatKeyUsageSubtitle(
   apiKey: string,
   m: ZhipuMonitor | undefined,
   now = Date.now(),
 ): string {
-  const parts: string[] = []
-  const masked = maskKey(apiKey)
-  if (masked) parts.push(masked)
-  else parts.push('无 Key')
-  if (!m || m.error) {
-    if (m?.error) parts.push(m.error)
-    return parts.join(' · ')
+  return joinSegments(buildZhipuUsageSegments(apiKey, m, now))
+}
+
+/** 列表副标题：脱敏 Key + DeepSeek 余额（CNY/USD）。 */
+export function formatDeepseekBalanceSubtitle(
+  apiKey: string,
+  m: DeepseekBalance | undefined,
+): string {
+  return joinSegments(buildDeepseekUsageSegments(apiKey, m))
+}
+
+/** 副标题片段语义色阶（与 theme.css 变量同源；accent 走字面值对齐 SparkLine）。 */
+export type UsageTone =
+  'muted' | 'secondary' | 'primary' | 'accent' | 'warning' | 'danger' | 'success'
+
+export interface UsageSegment {
+  text: string
+  tone: UsageTone
+  /** 紧贴前一段（空格连接，不插 `·`）；用于余量等次级信息视觉成组。 */
+  lead?: boolean
+}
+
+/** 拼接片段为单字符串：lead 段用空格连接，其余用 ` · `。 */
+function joinSegments(segs: UsageSegment[]): string {
+  let s = ''
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i]!
+    if (i === 0) s += seg.text
+    else s += seg.lead ? ` ${seg.text}` : ` · ${seg.text}`
   }
-  if (m.level && m.level !== 'unknown') parts.push(m.level.toUpperCase())
+  return s
+}
+
+/** 百分比 → tone：<70 primary / 70-89 warning / >=90 danger。 */
+function percentageTone(p: number): UsageTone {
+  if (p >= 90) return 'danger'
+  if (p >= 70) return 'warning'
+  return 'primary'
+}
+
+/**
+ * 智谱 Key 副标题片段：
+ * key=muted · 档位=accent · 5h/7d 百分比=阈值色 + 余量=muted lead · 30d 用量=primary · error=danger。
+ */
+export function buildZhipuUsageSegments(
+  apiKey: string,
+  m: ZhipuMonitor | undefined,
+  now = Date.now(),
+): UsageSegment[] {
+  const out: UsageSegment[] = []
+  const masked = maskKey(apiKey)
+  out.push({ text: masked || '无 Key', tone: 'muted' })
+  if (!m || m.error) {
+    if (m?.error) out.push({ text: m.error, tone: 'danger' })
+    return out
+  }
+  if (m.level && m.level !== 'unknown') {
+    out.push({ text: m.level.toUpperCase(), tone: 'accent' })
+  }
   if (m.fiveHour) {
     const rem = formatWindowRemain(m.fiveHour.nextResetTime, 'h', now)
-    parts.push(`5h ${Math.round(m.fiveHour.percentage)}% / ${rem}`)
+    out.push({
+      text: `5h ${Math.round(m.fiveHour.percentage)}%`,
+      tone: percentageTone(m.fiveHour.percentage),
+    })
+    out.push({ text: `(${rem})`, tone: 'muted', lead: true })
   }
   if (m.weekly) {
     const rem = formatWindowRemain(m.weekly.nextResetTime, 'd', now)
-    parts.push(`7d ${Math.round(m.weekly.percentage)}% / ${rem}`)
+    out.push({
+      text: `7d ${Math.round(m.weekly.percentage)}%`,
+      tone: percentageTone(m.weekly.percentage),
+    })
+    out.push({ text: `(${rem})`, tone: 'muted', lead: true })
   }
   if (
     m.fiveHour ||
@@ -295,32 +353,36 @@ export function formatKeyUsageSubtitle(
     m.totalCalls > 0 ||
     m.totalTokens > 0
   ) {
-    parts.push(`30d ${formatCompactCount(m.totalTokens)} tokens`)
+    out.push({
+      text: `30d ${formatCompactCount(m.totalTokens)}`,
+      tone: 'primary',
+    })
   }
-  return parts.join(' · ')
+  return out
 }
 
-/** 列表副标题：脱敏 Key + DeepSeek 余额（CNY/USD）。 */
-export function formatDeepseekBalanceSubtitle(
+/** DeepSeek 副标题片段：key=muted · 余额不足=danger · 余额数字=primary · 可用=success。 */
+export function buildDeepseekUsageSegments(
   apiKey: string,
   m: DeepseekBalance | undefined,
-): string {
-  const parts: string[] = []
+): UsageSegment[] {
+  const out: UsageSegment[] = []
   const masked = maskKey(apiKey)
-  if (masked) parts.push(masked)
-  else parts.push('无 Key')
+  out.push({ text: masked || '无 Key', tone: 'muted' })
   if (!m || m.error) {
-    if (m?.error) parts.push(m.error)
-    return parts.join(' · ')
+    if (m?.error) out.push({ text: m.error, tone: 'danger' })
+    return out
   }
-  if (!m.isAvailable) parts.push('余额不足')
+  if (!m.isAvailable) out.push({ text: '余额不足', tone: 'danger' })
   for (const b of m.balanceInfos) {
     const cur =
       b.currency === 'CNY' ? '¥' : b.currency === 'USD' ? '$' : b.currency ? `${b.currency} ` : ''
-    parts.push(`${cur}${b.totalBalance}`)
+    out.push({ text: `${cur}${b.totalBalance}`, tone: 'primary' })
   }
-  if (m.balanceInfos.length === 0 && m.isAvailable) parts.push('可用')
-  return parts.join(' · ')
+  if (m.balanceInfos.length === 0 && m.isAvailable) {
+    out.push({ text: '可用', tone: 'success' })
+  }
+  return out
 }
 
 export interface ZhipuMonitor {
