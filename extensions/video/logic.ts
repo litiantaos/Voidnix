@@ -68,3 +68,40 @@ export function formatMetaLine(meta: {
   parts.push(formatBytes(meta.sizeBytes))
   return parts.join(' · ')
 }
+
+// ─── IPC 边界类型（与 Rust 端 serde 序列化对应）──
+
+/** video_core_status 命令返回。 */
+export interface CoreStatus {
+  available: boolean
+  source: string
+  version: string
+  downloading: boolean
+}
+
+/** video_probe 命令返回。 */
+export interface VideoMeta {
+  path: string
+  durationSecs: number
+  width: number
+  height: number
+  videoCodec: string
+  audioCodec: string
+  sizeBytes: number
+  container: string
+}
+
+/** video_job_status 命令返回。 */
+export interface JobSnapshot {
+  busy: boolean
+  lastOutput: string | null
+  lastError: string | null
+  lastPercent: number
+}
+
+/** video_run 的 Channel<VideoEvent> 事件（started/progress/done/error）。 */
+export type VideoEvent =
+  | { type: 'started'; outputPath: string }
+  | { type: 'progress'; percent: number; timeSecs: number; speed: string }
+  | { type: 'done'; outputPath: string; sizeBytes: number }
+  | { type: 'error'; message: string }

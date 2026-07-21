@@ -303,11 +303,6 @@ pub async fn proxy_stop_stream(state: State<'_, StreamRegistry>, id: String) -> 
     Ok(())
 }
 
-/// 命令注册（局部 invoke_handler）。
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("proxy").build()
-}
-
 /// Proxy 扩展。
 pub struct ProxyExtension;
 
@@ -326,7 +321,7 @@ impl Extension for ProxyExtension {
             monitor_alive: AtomicBool::new(false),
         });
         app.manage(StreamRegistry::default());
-        menu::register(app);
+        menu::register();
         let app2 = app.clone();
         tauri::async_runtime::spawn(async move {
             lifecycle::reconnect_root_mihomo(&app2).await;

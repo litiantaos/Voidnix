@@ -13,11 +13,6 @@ use std::time::Duration;
 use serde::Deserialize;
 use tauri::AppHandle;
 
-/// 命令注册（局部 invoke_handler 空壳；实际命令走全局 generate_handler!）。
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("finder-ext").build()
-}
-
 /// Finder 扩展。
 pub struct FinderExtExtension;
 

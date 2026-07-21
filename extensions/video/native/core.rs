@@ -25,12 +25,6 @@ static DOWNLOADING: AtomicBool = AtomicBool::new(false);
 static DOWNLOAD_LOCK: LazyLock<tokio::sync::Mutex<()>> =
     LazyLock::new(|| tokio::sync::Mutex::new(()));
 
-#[derive(Clone, Serialize)]
-pub struct CoreProgress {
-    pub received: u64,
-    pub total: Option<u64>,
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CoreStatus {
@@ -50,7 +44,8 @@ pub struct FfmpegBins {
     pub source: &'static str,
 }
 
-fn darwin_arch() -> &'static str {
+/// ffmpeg-static asset 架构名（arm64 / x64）。
+fn ffmpeg_arch_slug() -> &'static str {
     if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
@@ -184,7 +179,7 @@ pub async fn ensure_bins(app: &AppHandle) -> Result<FfmpegBins, String> {
 }
 
 async fn download_static(app: &AppHandle) -> Result<(), String> {
-    let arch = darwin_arch();
+    let arch = ffmpeg_arch_slug();
     let dir = ext_data_dir(app, "video")?;
     let (ffmpeg_sha, ffprobe_sha) = if arch == "arm64" {
         (SHA256_FFMPEG_ARM64, SHA256_FFPROBE_ARM64)
@@ -194,26 +189,44 @@ async fn download_static(app: &AppHandle) -> Result<(), String> {
 
     DOWNLOADING.store(true, Ordering::Relaxed);
     let result = async {
+        use crate::runtime::binary_fetch::{fetch, BinaryFetch};
+
         // progress_base 累计两段下载，避免第二段进度从 0 回跳
         let mut progress_base = 0u64;
-        progress_base += download_one(
+        let ffmpeg_gz = dir.join("ffmpeg.gz");
+        let ffmpeg_bin = dir.join("ffmpeg");
+        let ffmpeg_url = format!("{RELEASE_BASE}/{FFMPEG_STATIC_TAG}/ffmpeg-darwin-{arch}.gz");
+        progress_base += file_size_or_zero(&ffmpeg_gz);
+        fetch(
             app,
-            &format!("{RELEASE_BASE}/{FFMPEG_STATIC_TAG}/ffmpeg-darwin-{arch}.gz"),
-            &dir.join("ffmpeg.gz"),
-            &dir.join("ffmpeg"),
-            ffmpeg_sha,
-            progress_base,
+            BinaryFetch {
+                urls: vec![format!("{MIRROR_PREFIX}{ffmpeg_url}"), ffmpeg_url],
+                gz_path: &ffmpeg_gz,
+                bin_path: &ffmpeg_bin,
+                expected_sha256: ffmpeg_sha,
+                progress_event: "video-core-progress",
+                progress_base,
+            },
         )
         .await?;
-        download_one(
+
+        let ffprobe_gz = dir.join("ffprobe.gz");
+        let ffprobe_bin = dir.join("ffprobe");
+        let ffprobe_url = format!("{RELEASE_BASE}/{FFMPEG_STATIC_TAG}/ffprobe-darwin-{arch}.gz");
+        progress_base += file_size_or_zero(&ffprobe_gz);
+        fetch(
             app,
-            &format!("{RELEASE_BASE}/{FFMPEG_STATIC_TAG}/ffprobe-darwin-{arch}.gz"),
-            &dir.join("ffprobe.gz"),
-            &dir.join("ffprobe"),
-            ffprobe_sha,
-            progress_base,
+            BinaryFetch {
+                urls: vec![format!("{MIRROR_PREFIX}{ffprobe_url}"), ffprobe_url],
+                gz_path: &ffprobe_gz,
+                bin_path: &ffprobe_bin,
+                expected_sha256: ffprobe_sha,
+                progress_event: "video-core-progress",
+                progress_base,
+            },
         )
         .await?;
+
         let _ = std::fs::write(dir.join("ffmpeg.version"), FFMPEG_STATIC_TAG);
         let _ = app.emit("video-core-ready", ());
         Ok::<(), String>(())
@@ -223,151 +236,9 @@ async fn download_static(app: &AppHandle) -> Result<(), String> {
     result
 }
 
-/// 先镜像、失败再直连 GitHub。成功返回本文件下载字节数（供累计进度）。
-async fn download_one(
-    app: &AppHandle,
-    github_url: &str,
-    gz: &Path,
-    bin: &Path,
-    expected_sha: &str,
-    progress_base: u64,
-) -> Result<u64, String> {
-    let mirror_url = format!("{MIRROR_PREFIX}{github_url}");
-    let urls = [mirror_url.as_str(), github_url];
-    let mut last_err = String::new();
-    for (i, url) in urls.iter().enumerate() {
-        let _ = std::fs::remove_file(gz);
-        match stream_download(app, url, gz, progress_base).await {
-            Ok(received) => match finalize_download(gz, bin, expected_sha) {
-                Ok(()) => return Ok(received),
-                Err(e) => {
-                    last_err = e;
-                    let _ = std::fs::remove_file(gz);
-                    let _ = std::fs::remove_file(bin);
-                }
-            },
-            Err(e) => {
-                last_err = e;
-                let _ = std::fs::remove_file(gz);
-            }
-        }
-        if i == 0 {
-            log::warn!("[video] mirror download failed, retry origin: {last_err}");
-        }
-    }
-    Err(last_err)
-}
-
-async fn stream_download(
-    app: &AppHandle,
-    url: &str,
-    gz: &Path,
-    progress_base: u64,
-) -> Result<u64, String> {
-    use futures_util::StreamExt;
-
-    let resp = crate::http::download_client()
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("下载请求失败: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("下载响应错误: {e}"))?;
-    let file_total = resp.content_length();
-    let overall_total = file_total.map(|t| progress_base + t);
-    // 网络读 async + 内存缓冲；落盘一次 spawn_blocking，避免同步 write 阻塞 runtime
-    let mut buf: Vec<u8> = file_total
-        .and_then(|n| usize::try_from(n).ok())
-        .map(Vec::with_capacity)
-        .unwrap_or_default();
-    let mut received: u64 = 0;
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("下载读取失败: {e}"))?;
-        buf.extend_from_slice(&chunk);
-        received += chunk.len() as u64;
-        let _ = app.emit(
-            "video-core-progress",
-            CoreProgress {
-                received: progress_base + received,
-                total: overall_total,
-            },
-        );
-    }
-    let gz_path = gz.to_path_buf();
-    tokio::task::spawn_blocking(move || std::fs::write(&gz_path, &buf))
-        .await
-        .map_err(|e| format!("写入任务失败: {e}"))?
-        .map_err(|e| e.to_string())?;
-    let _ = app.emit(
-        "video-core-progress",
-        CoreProgress {
-            received: progress_base + received,
-            total: Some(progress_base + received),
-        },
-    );
-    Ok(received)
-}
-
-fn finalize_download(gz: &Path, bin: &Path, expected_sha: &str) -> Result<(), String> {
-    let actual = sha256_file(gz)?;
-    if actual != expected_sha {
-        let _ = std::fs::remove_file(gz);
-        return Err(format!(
-            "sha256 校验失败（expected {expected_sha}, got {actual}）"
-        ));
-    }
-
-    // gunzip 会删除 .gz 并写出去掉 .gz 后缀的文件；我们下载名为 ffmpeg.gz → gunzip → ffmpeg
-    let gunzip = Command::new("gunzip")
-        .arg("-f")
-        .arg(gz)
-        .status()
-        .map_err(|e| format!("gunzip 调用失败: {e}"))?;
-    if !gunzip.success() {
-        let _ = std::fs::remove_file(bin);
-        return Err("gunzip 解压失败".into());
-    }
-
-    // gunzip 输出名 = 去掉 .gz；若与目标 bin 不一致则 rename
-    let gunzipped = gz.with_extension("");
-    // with_extension("") on "ffmpeg.gz" → "ffmpeg" on Unix; good.
-    if gunzipped != bin && gunzipped.exists() {
-        std::fs::rename(&gunzipped, bin).map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(bin)
-            .map_err(|e| e.to_string())?
-            .permissions();
-        perms.set_mode(0o755);
-        if let Err(e) = std::fs::set_permissions(bin, perms) {
-            let _ = std::fs::remove_file(bin);
-            return Err(e.to_string());
-        }
-    }
-    Ok(())
-}
-
-fn sha256_file(path: &Path) -> Result<String, String> {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut buf = [0u8; 16384];
-    loop {
-        let n = std::io::Read::read(&mut file, &mut buf).map_err(|e| e.to_string())?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect())
+/// 文件存在时的字节数（不存在返 0），供 progress_base 累计偏移估算。
+fn file_size_or_zero(path: &Path) -> u64 {
+    std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
 }
 
 /// ffprobe 结构化元数据。

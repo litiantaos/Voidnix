@@ -146,18 +146,28 @@ export const useAppStore = defineStore('app', () => {
 
 let hideTimer: ReturnType<typeof setTimeout> | null = null
 
-/** 复制文本到剪贴板 + toast 反馈 + 延迟隐藏主窗口（复制型结果回车通用动作）。 */
-export async function copyAndHide(value: string, label = '已复制') {
+/** toast 反馈 + 延迟隐藏主窗口（msg 为空则立即隐藏）。扩展「反馈后隐藏」通用动作。
+ *  copyAndHide 与 finder-ext 等的 hideTimer 时序统一于此。 */
+export function toastAndHide(msg?: string, opts?: { duration?: number; label?: string }) {
   if (hideTimer) {
     clearTimeout(hideTimer)
     hideTimer = null
   }
-  await writeText(value)
-  useAppStore().showStatus(label, { duration: 800 })
+  if (!msg) {
+    hideWindow()
+    return
+  }
+  useAppStore().showStatus(msg, { duration: opts?.duration ?? 800 })
   hideTimer = setTimeout(() => {
     hideTimer = null
     hideWindow()
-  }, 800)
+  }, opts?.duration ?? 800)
+}
+
+/** 复制文本到剪贴板 + toast 反馈 + 延迟隐藏主窗口（复制型结果回车通用动作）。 */
+export async function copyAndHide(value: string, label = '已复制') {
+  await writeText(value)
+  toastAndHide(label)
 }
 
 /**
@@ -174,5 +184,30 @@ export function makeToggleHandler(moduleId: string, onActivate?: () => void) {
     appStore.setActiveModule(moduleId)
     appStore.setSearchQuery('')
     onActivate?.()
+  }
+}
+
+/// SUPPRESS_BLUR_DELAY：原生面板（NSOpenPanel/NSColorPanel 等）关闭后窗口重获焦点前
+/// 的过渡期，抑制失焦自动隐藏。800ms 覆盖系统面板动画 + 焦点回迁。
+const SUPPRESS_BLUR_DELAY = 800
+
+/// 主搜索框 DOM id（MainView 声明，扩展经 focusSearchInput 聚焦，解耦 DOM id 硬编码）
+const SEARCH_INPUT_ID = 'main-search-input'
+
+/** 聚焦主搜索框（若存在）。扩展切换 tab/动作后回焦用，封装 DOM id 查询。 */
+export function focusSearchInput() {
+  document.getElementById(SEARCH_INPUT_ID)?.focus()
+}
+
+/** 运行 fn 期间抑制失焦隐藏（原生面板打开场景）。无论成功/抛错，结束后延迟复位。 */
+export async function withSuppressBlur<T>(fn: () => Promise<T> | T): Promise<T> {
+  const appStore = useAppStore()
+  appStore.suppressBlur = true
+  try {
+    return await fn()
+  } finally {
+    setTimeout(() => {
+      appStore.suppressBlur = false
+    }, SUPPRESS_BLUR_DELAY)
   }
 }

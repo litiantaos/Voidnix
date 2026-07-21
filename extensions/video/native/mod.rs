@@ -60,10 +60,6 @@ pub async fn video_job_status() -> Result<JobSnapshot, String> {
     Ok(job::job_status())
 }
 
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("video").build()
-}
-
 pub struct VideoExtension;
 
 #[async_trait::async_trait]

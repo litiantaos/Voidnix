@@ -65,14 +65,11 @@ fn patterns() -> &'static Vec<Regex> {
 pub fn scrub_secret(input: &str) -> Cow<'_, str> {
     let pats = patterns();
     let mut current: Cow<str> = Cow::Borrowed(input);
-    let mut changed = false;
     for re in pats {
         if re.is_match(&current) {
             current = Cow::Owned(re.replace_all(&current, "[REDACTED]").into_owned());
-            changed = true;
         }
     }
-    let _ = changed; // 仅用于短期避免 warning
     current
 }
 

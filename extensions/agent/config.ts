@@ -11,8 +11,6 @@ import {
   getKeySlot,
   resolveCredentials,
   resolveRuntimeCredentials,
-  hasAnyConfiguredProvider,
-  providerDisplayName,
   isCredentialSelectionValid,
   type AiProvider as AiProviderConfig,
   type ResolvedAiCredentials,
@@ -52,13 +50,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
 ].join('\n')
 
 // 再导出中枢工具；选用状态在 agent 本扩展 config
-export {
-  aiProvidersConfig,
-  modelSelectOptions,
-  providerDisplayName,
-  hasAnyConfiguredProvider,
-  type AiProviderConfig,
-}
+export { modelSelectOptions, type AiProviderConfig }
 
 /// agent 扩展自管配置（持久化至 extensions/agent/config.json）。
 /// AI 凭证条目在 `config/ai-providers`；**本扩展自选** provider/key/model。
@@ -139,15 +131,8 @@ export function setProviderModelKey(key: string) {
   config.providerModelKey = canon
 }
 
-/** 兼容旧调用名 */
-export const setActiveProviderModelKey = setProviderModelKey
-
-/** 原始落盘串；UI/解析请用 effectiveProviderModelKey。 */
-export function agentSelection() {
-  return parseSelectionKey(config.providerModelKey)
-}
-
 /**
+ * 读时有效选用串：与中枢不一致则视为未选；合法则规范为三段（热路径不写回）。
  * 读时有效选用串：与中枢不一致则视为未选；合法则规范为三段（热路径不写回）。
  * 依赖 hub providers，中枢变更后下拉/就绪态立刻正确。
  */
@@ -178,10 +163,6 @@ export async function resolveAgentRuntimeCredentials(): Promise<ResolvedAiCreden
 
 /** 当前选用在配置中可完整解析（不含 env 兜底）。 */
 export const isAgentProviderReady = computed(() => !!resolveAgentCredentials())
-
-/** @deprecated 用 isAgentProviderReady */
-export const isConfigProviderReady = isAgentProviderReady
-export const isProviderReady = isAgentProviderReady
 
 /**
  * 冷路径：悬空清空；合法旧式两段写回三段。热路径用 effectiveProviderModelKey。

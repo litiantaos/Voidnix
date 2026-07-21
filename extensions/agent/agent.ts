@@ -19,6 +19,15 @@ export type AgentStatus = 'ready' | 'streaming' | 'error'
 
 const MAX_MESSAGES = 100
 
+/** 写入气泡内容的事件类型（仅 streaming 气泡接受；finalize 后忽略晚到内容）。 */
+const CONTENT_EVENTS = new Set<AgentEvent['type']>([
+  'textDelta',
+  'reasoningDelta',
+  'toolCallStart',
+  'toolCallArgs',
+  'toolResult',
+])
+
 /// 单例式状态（一个 agent session 一次只跑一个）
 const messages = ref<AgentMessage[]>([])
 const status = ref<AgentStatus>('ready')
@@ -114,13 +123,7 @@ export function useAgentChat() {
     if (!msg) return
 
     // 已收尾的气泡：忽略晚到内容事件（中止后 textDelta 不得接在「已中止」后）
-    const contentEvent =
-      event.type === 'textDelta' ||
-      event.type === 'reasoningDelta' ||
-      event.type === 'toolCallStart' ||
-      event.type === 'toolCallArgs' ||
-      event.type === 'toolResult'
-    if (contentEvent && !msg.streaming) return
+    if (CONTENT_EVENTS.has(event.type) && !msg.streaming) return
 
     switch (event.type) {
       case 'textDelta': {

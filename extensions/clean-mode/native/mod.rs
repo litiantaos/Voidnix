@@ -8,9 +8,9 @@
 //! 退出：长按鼠标 / 触控板左键 2s（**CGEventTap callback + NSView mouseDown
 //! 双路检测**，共用 `LEFT_DOWN_AT` 原子时间戳——tap 正常时 callback 设值，
 //! tap 静默失效时事件穿透到 NSView 由 mouseDown 设值，任一失效另一路兜底）。
-//! 满足条件或 180s 兜底 → **std::process::exit(0)**（不依赖主线程派发，主线程
-//! 卡死也能退出——这是「被困黑屏只能重启」的根因修复）。进程退出后系统自动
-//! 回收（窗口消失 / 光标解冻 / 键盘解锁），下次启动状态自然重置。
+//! poll 线程检测到长按达标后，通过 `APP_HANDLE.run_on_main_thread` 派发
+//! `disable_clean_mode` 优雅关闭（关窗 / 停 tap / 解冻光标，**app 继续运行**），
+//! 并 `emit("clean-mode-exit")` 通知前端同步状态。
 //!
 //! 光标冻结：`CGAssociateMouseAndMouseCursorPosition(0)` 补充 tap 吞不掉的
 //! 光标位移（tap 只能吞事件，光标位置由 WindowServer 直接更新）。
@@ -447,7 +447,7 @@ fn disable_clean_mode(app: &AppHandle) -> Result<(), String> {
 }
 
 // ============================================================================
-// poll 线程：长按退出 + 180s 兜底 + tap watchdog（三合一）
+// poll 线程：长按退出 + tap watchdog + 光标钉点（三合一）
 // ============================================================================
 
 fn start_poll_thread() {
@@ -538,10 +538,6 @@ pub async fn is_clean_mode_enabled() -> Result<bool, String> {
 // ============================================================================
 // 插件注册 + Extension trait
 // ============================================================================
-
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("clean-mode").build()
-}
 
 pub struct CleanModeExtension;
 

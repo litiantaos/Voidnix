@@ -291,8 +291,6 @@ export function useShapeHandles(options: {
 
   return {
     draggingShapeHandle,
-    shapeHandleDragStart,
-    rotateStart,
     shapeHandles,
     startShapeHandleDrag,
     applyShapeHandleDrag,

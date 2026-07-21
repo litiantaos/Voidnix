@@ -1,4 +1,5 @@
 use sha2::Digest;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::lang_utils::smart_target_lang;
 use super::TranslateResult;
@@ -20,8 +21,11 @@ pub async fn translate_youdao(
     };
 
     let resolved_lang = smart_target_lang(&text, target_lang.as_deref().unwrap_or("zh"));
-    let salt = nonce();
-    let curtime = chrono_timestamp();
+    let epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let salt = format!("{}", epoch.as_nanos());
+    let curtime = format!("{}", epoch.as_secs());
     let input = truncate_for_sign(&text);
 
     let sign_input = format!("{}{}{}{}{}", app_key, input, salt, curtime, app_secret);
@@ -124,16 +128,4 @@ fn truncate_for_sign(s: &str) -> String {
         .rev()
         .collect();
     format!("{}{}{}", first, chars.len(), last)
-}
-
-fn nonce() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    format!("{}", duration.as_nanos())
-}
-
-fn chrono_timestamp() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    format!("{}", duration.as_secs())
 }

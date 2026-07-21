@@ -211,7 +211,7 @@ import {
   getProviderById,
   providerDisplayName,
 } from '@/runtime/ai-providers'
-import { providerLabelFromUrl } from '@/utils/format'
+import { providerLabelFromUrl, toErrorMessage } from '@/utils/format'
 import {
   maskKey,
   normalizeZhipuMonitor,
@@ -346,7 +346,7 @@ async function pasteField(text: string, label: string) {
   try {
     await pasteOut(t)
   } catch (e) {
-    showToast(e instanceof Error ? e.message : '粘贴失败', { kind: 'error' })
+    showToast(toErrorMessage(e, '粘贴失败'), { kind: 'error' })
   }
 }
 

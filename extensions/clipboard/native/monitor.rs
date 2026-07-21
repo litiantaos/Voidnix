@@ -199,7 +199,7 @@ pub fn start_monitor(app_handle: AppHandle) {
             // 每条入库（多文件场景产生多条）；id 用毫秒 + 序号偏移避免 PRIMARY KEY 冲突
             let base = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis();
             for (i, snap) in snaps.iter().enumerate() {
                 let id = format!("{}", base + i as u128);

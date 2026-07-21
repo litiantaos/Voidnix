@@ -212,11 +212,6 @@ pub async fn set_zsh_autosuggestions_enabled(app: AppHandle, enabled: bool) -> R
     .map_err(|e| format!("后台任务失败: {e}"))?
 }
 
-/// 命令注册（局部 invoke_handler）。
-pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::<tauri::Wry>::new("zsh-autosuggestions").build()
-}
-
 pub struct ZshAutosuggestionsExtension;
 
 #[async_trait::async_trait]

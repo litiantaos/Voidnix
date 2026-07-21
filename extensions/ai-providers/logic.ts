@@ -252,11 +252,6 @@ export function formatWindowRemain(
   return d >= 10 ? `${Math.round(d)}d` : `${d.toFixed(1)}d`
 }
 
-/** @deprecated 用 formatWindowRemain */
-export function formatResetCountdown(nextResetTimeMs: number, now = Date.now()): string {
-  return formatWindowRemain(nextResetTimeMs, 'h', now)
-}
-
 /** 用量数字：1.2K / 45.3M / 1.2B */
 export function formatCompactCount(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '0'

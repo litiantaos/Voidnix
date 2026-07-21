@@ -33,7 +33,7 @@
             ></i>
             <i
               v-else-if="item.content_type === 'image'"
-              class="i-ri-image-line text-sm text-emerald-500"
+              class="i-ri-image-line text-sm text-success"
             ></i>
             <i v-else class="i-ri-folder-3-line text-sm text-warning"></i>
           </template>
@@ -266,7 +266,7 @@ const actionMenuItems = computed<PanelItem[]>(() => {
     type: 'item',
     key: 'favorite',
     label: item.is_favorite ? '取消收藏' : '收藏',
-    icon: item.is_favorite ? 'i-ri-star-fill text-amber-400' : 'i-ri-star-line',
+    icon: item.is_favorite ? 'i-ri-star-fill text-warning' : 'i-ri-star-line',
   })
   if (isText) {
     items.push({ type: 'item', key: 'edit', label: '编辑', icon: 'i-ri-edit-line' })

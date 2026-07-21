@@ -242,16 +242,6 @@ async function handleSubmit() {
   nextTick(() => textareaRef.value?.focus())
 }
 
-/// 用系统浏览器打开 URL（不在 webview 内导航）
-async function openUrl(url: string) {
-  if (!url) return
-  try {
-    await open(url)
-  } catch (err) {
-    console.warn('Failed to open URL:', err)
-  }
-}
-
 /// 拦截 markdown-body 内的链接点击：用系统浏览器打开（不在 webview 内导航）
 async function onContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement | null
@@ -262,7 +252,11 @@ async function onContentClick(e: MouseEvent) {
   if (!/^https?:\/\//i.test(href)) return
   e.preventDefault()
   e.stopPropagation()
-  await openUrl(href)
+  try {
+    await open(href)
+  } catch (err) {
+    console.warn('Failed to open URL:', err)
+  }
 }
 
 onMounted(() => nextTick(() => textareaRef.value?.focus()))

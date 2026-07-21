@@ -10,6 +10,20 @@ export function matchText(item: ClipboardItem): string {
   return item.content
 }
 
+/** 列表标题：图片/文件给占位，文本截断 500 字符并压平换行。 */
+export function clipboardTitle(item: ClipboardItem): string {
+  if (item.content_type === 'image') return '[图片]'
+  if (item.content_type === 'file') return '[文件] ' + item.content.split('/').pop()
+  return item.content.substring(0, 500).replace(/\r?\n/g, ' ')
+}
+
+/** 列表图标：按内容类型选 iconify 图标类。 */
+export function clipboardIcon(item: ClipboardItem): string {
+  if (item.content_type === 'image') return 'i-ri-image-line'
+  if (item.content_type === 'file') return 'i-ri-file-line'
+  return 'i-ri-file-text-line'
+}
+
 /** 按 content_type 过滤（'all' 原样返回，其余返回新数组）。 */
 export function filterByType(items: ClipboardItem[], type: ContentType): ClipboardItem[] {
   if (type === 'all') return items

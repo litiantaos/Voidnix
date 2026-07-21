@@ -103,6 +103,7 @@ extensions/agent/
 ├── config.ts              # defineConfig + 选用 helpers
 ├── agent.ts               # useAgentChat composable（前端状态机）
 ├── view-logic.ts          # View 纯函数（streamView / showToolBody / markdown / buildHistoryLabel 等）
+├── logic.ts               # 纯逻辑（消息序列化等，便于测试）
 ├── View.vue               # 布局 + 贴底滚动 + 悬浮操作 + notice
 ├── AgentTextPart.vue      # 流式/完成 markdown 文本 part
 ├── AgentReasoningPart.vue # 思考模式 part（三行省略，不回灌 LLM）

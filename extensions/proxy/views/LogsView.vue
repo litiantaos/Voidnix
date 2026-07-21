@@ -63,7 +63,7 @@ function levelColor(t: string): string {
     case 'error':
       return 'text-danger'
     case 'warning':
-      return 'text-yellow-600'
+      return 'text-warning'
     case 'info':
       return 'text-accent'
     default:

@@ -17,11 +17,11 @@ export const BOUNDS = {
   customHeight: { floor: 200, cap: 4096 },
 } as const
 
-function clampWidth(n: number): number {
+export function clampWidth(n: number): number {
   return Math.max(BOUNDS.customWidth.floor, Math.min(BOUNDS.customWidth.cap, n))
 }
 
-function clampHeight(n: number): number {
+export function clampHeight(n: number): number {
   return Math.max(BOUNDS.customHeight.floor, Math.min(BOUNDS.customHeight.cap, n))
 }
 

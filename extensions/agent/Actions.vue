@@ -138,13 +138,8 @@ function onHistorySelect(i: number) {
  * 故无需跨组件协调贴底状态。
  */
 function jumpToMessage(id: string) {
-  const el = document.querySelector(`[data-msg-id="${cssEscape(id)}"]`)
+  const el = document.querySelector(`[data-msg-id="${CSS.escape(id)}"]`)
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-/// id 是 generateRequestId 产生的安全字符；保守起见用 CSS.escape（不支持时回退原值）
-function cssEscape(s: string): string {
-  return typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(s) : s
 }
 
 function onHistoryKeydown(e: KeyboardEvent) {
