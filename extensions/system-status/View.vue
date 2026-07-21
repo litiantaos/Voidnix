@@ -42,9 +42,8 @@
         <span text="muted">·</span>
         <span text="xs muted" shrink="0">运行 {{ formatUptime(snapshot.uptime) }}</span>
         <span text="muted">·</span>
-        <span text="xs muted" shrink="0" tabular-nums title="负载均值 1 / 5 / 15 分钟">
-          负载 {{ snapshot.load_one.toFixed(2) }} / {{ snapshot.load_five.toFixed(2) }} /
-          {{ snapshot.load_fifteen.toFixed(2) }}
+        <span text="xs" shrink="0" tabular-nums :class="loadColor(loadPct)">
+          负载 15m {{ loadPct.toFixed(0) }}%
         </span>
         <template v-if="snapshot.thermal !== 'nominal'">
           <span text="muted">·</span>
@@ -110,7 +109,7 @@
           </div>
           <div text="xs muted" truncate tabular-nums>
             <span v-if="staticInfo.cpu_model">{{ staticInfo.cpu_model }} · </span
-            >{{ staticInfo.cpu_cores }} 核<span v-if="gpuLabel"> · {{ gpuLabel }}</span>
+            >{{ staticInfo.cpu_cores }} 核 CPU<span v-if="gpuLabel"> · {{ gpuLabel }}</span>
           </div>
         </section>
 
@@ -514,9 +513,15 @@ const diskFsLabel = computed(() => {
 const gpuLabel = computed(() => {
   const g = staticInfo.value
   if (!g) return ''
-  if (g.gpu_cores !== null) return `GPU ${g.gpu_cores} 核`
-  if (g.gpu_model) return `GPU ${g.gpu_model}`
+  if (g.gpu_cores !== null) return `${g.gpu_cores} 核 GPU`
+  if (g.gpu_model) return g.gpu_model
   return ''
+})
+
+// 负载：15 分钟均值相对逻辑核心数的百分比（100% = 满载，> 100% = 进程排队）
+const loadPct = computed(() => {
+  const cores = staticInfo.value?.cpu_cores ?? 1
+  return ((snapshot.value?.load_fifteen ?? 0) / cores) * 100
 })
 
 // ── 交互 ──
@@ -588,6 +593,12 @@ function usageColor(p: number): string {
   if (p >= 85) return 'bg-danger'
   if (p >= 60) return 'bg-warning'
   return 'bg-accent'
+}
+
+function loadColor(p: number): string {
+  if (p >= 100) return 'text-danger'
+  if (p >= 60) return 'text-warning'
+  return 'text-muted'
 }
 
 function batteryColor(level: number): string {
