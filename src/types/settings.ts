@@ -30,7 +30,7 @@ export type SettingItem =
   | (SettingItemBase & {
       type: 'button'
       label?: string
-      variant?: 'default' | 'primary'
+      variant?: 'default' | 'primary' | 'danger'
       action: () => void
     })
   | (SettingItemBase & { type: 'toggle'; value: boolean; update: (v: boolean) => void })

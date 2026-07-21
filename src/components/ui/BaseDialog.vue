@@ -94,7 +94,7 @@ export type CloseReason = 'cancel' | 'escape' | 'overlay' | 'dismiss'
 
 /**
  * variant 驱动弹窗行为模式：
- * - confirm：确认对话框。默认显示 footer，支持方向键/回车导航，焦点聚焦确认按钮，warning 禁止遮罩关闭
+ * - confirm：确认对话框。默认显示 footer，支持方向键/回车导航，焦点聚焦确认按钮
  * - form：表单面板。默认隐藏 footer。有 footer 时回车提交：
  *   单行 INPUT（方便「改完直接回车创建」）；BaseSelect 自管 Enter（关=开/开=选），不参与提交。
  *   多行 textarea 不提交。焦点聚焦首个输入，遮罩始终可关闭
@@ -109,7 +109,6 @@ interface Props {
   message?: string
   variant?: 'confirm' | 'form'
   size?: 'sm' | 'md' | 'lg'
-  kind?: 'warning' | 'info'
   okLabel?: string
   cancelLabel?: string
   showCancel?: boolean
@@ -261,7 +260,6 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 function onOverlayClick() {
-  if (props.variant === 'confirm' && props.kind === 'warning') return
   close('overlay')
 }
 

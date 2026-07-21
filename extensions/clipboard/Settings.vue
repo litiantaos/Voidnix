@@ -32,7 +32,6 @@ const handleClearHistory = async () => {
   const confirmed = await appStore.showConfirm({
     title: '清空剪贴板记录',
     message: '确定要清空所有未收藏的剪贴板记录吗？',
-    kind: 'warning',
     okLabel: '确定',
     cancelLabel: '取消',
   })
@@ -77,6 +76,7 @@ const items = computed<SettingItem[]>(() => [
     type: 'button',
     group: '数据',
     label: '清空',
+    variant: 'danger',
     action: handleClearHistory,
   },
 ])

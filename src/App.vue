@@ -11,7 +11,6 @@
     :title="appStore.dialogOptions.title"
     :message="appStore.dialogOptions.message"
     :size="appStore.dialogOptions.size"
-    :kind="appStore.dialogOptions.kind"
     :ok-label="appStore.dialogOptions.okLabel"
     :cancel-label="appStore.dialogOptions.cancelLabel"
     :show-cancel="appStore.dialogOptions.showCancel"

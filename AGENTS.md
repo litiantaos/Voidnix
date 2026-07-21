@@ -178,7 +178,7 @@ src/
 
 仅浅色。完整约定见 [docs/design.md](docs/design.md)；数值真相 `theme.css`，组合 `uno.config.ts`。**视觉已定型，改实现/文档不得无意改观感。**
 
-**分层**：容器 **soft-surface** · 抬升卡 **soft-card**（助手消息 / system-status）· 控件 **soft-chip**（1px 冷灰 solid border，无 elevation；focus 改边框色）· **module-tag** · **ui-active** · **ui-btn-primary** · 弹窗 **dialog-\***（标题/底栏浮层渐变）· 实底填充 **fill-ctrl**。玻璃只做壳；可点控件走 chip。
+**分层**：容器 **soft-surface** · 抬升卡 **soft-card**（助手消息 / system-status）· 控件 **soft-chip**（1px 冷灰 solid border，无 elevation；focus 改边框色）· **module-tag** · **ui-active** · **ui-btn-***（BaseButton variant 面类：primary/ghost/danger） · 弹窗 **dialog-\***（标题/底栏浮层渐变）· 实底填充 **fill-ctrl**。玻璃只做壳；可点控件走 chip。
 
 **基元与 elevation**（`theme.css`：先改基元，业务禁堆相近零散值）：`--cool` / `--shadow-ink` / ease·duration / `--space`；阴影仅 **bar / panel / dialog / card / float\***；accent 浅染 **`--accent-wash*` / `--accent-line*`**（markdown 等）。
 
@@ -196,7 +196,7 @@ src/
 
 **弹窗**：`BaseDialog` Teleport 到 body；标题/底栏为绝对定位浮层 + 透明渐变，内容通铺可滚入。KeepAlive 切扩展时 `onDeactivated` 以 `dismiss` 关窗（父级 `@cancel` 卸 v-if）；全局 `showConfirm` 由 `setActiveModule` 按取消收束。控件 focus 只改边框色 `--focus-ring-color`（`BaseInput` 挂 `ui-input` 走 `:focus-within`，无 active 按下态；有 suffix 时 `pr-1` 让眼睛图标贴右）。
 
-**浮层范式**：右下角浮层统一 `fixed bottom-3 right-3 z-50`（离边缘 12px，与全局 p-3 一致）+ `dropdown-panel` + 同款进出场动画（`ease-out` 进 / `ease-in` 离）。**toast**（`ToastOverlay`）用 `z-9999`，高于 `BaseDialog`（z-100）与动作面板（z-50），保证错误/成功反馈始终顶层可见。`BaseDropdownItems` 通用行渲染器（4 行类型 `item | header | divider | meta`，meta = label:value 详情行不可选）。screenshot 标注选区 / clean-mode 为功能性覆盖层不加材质；工具条 / 贴图悬停条走 `mica-panel` / `mica-bar`（与窗级 Mica 同白染，忌 acrylic 浅透）。
+**浮层范式**：右下角浮层统一 `fixed bottom-3 right-3 z-50`（离边缘 12px，与全局 p-3 一致）+ `dropdown-panel` + 同款进出场动画（`ease-out` 进 / `ease-in` 离）。**toast**（`ToastOverlay`）用 `z-9999`，高于 `BaseDialog`（z-100）与动作面板（z-50），保证错误/成功反馈始终顶层可见。`BaseDropdownItems` 通用行渲染器（4 行类型 `item | header | divider | meta`，meta = label:value 详情行不可选）。screenshot 标注选区 / clean-mode 为功能性覆盖层不加材质；工具条 / 色板走 `acrylic-bar`（与主搜索框同款 soft-surface + `--shadow-bar`）；贴图悬停条走 `mica-bar`；选区阶段快捷键提示 `mica-panel`。
 
 **写法**：原生 HTML 元素用 Attributify 模式（`<div text="sm primary" p="3">`），Vue 组件 props 保持 `class`；`animate` 等与 DOM 原生属性同名的禁用 Attributify，必须用 `class="animate-spin"`。
 

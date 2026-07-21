@@ -35,7 +35,7 @@
   --dialog-fill: rgb(255 255 255 / 0.97);
   --dialog-border: rgb(215 215 222 / 0.65);
 
-  --color-danger: #e5484d;
+  --color-danger: #ec6a6e;
   --color-warning: #d9891a;
   --color-success: #3d9a6a;
   /* 语义 soft 统一 12% */
@@ -63,14 +63,11 @@
   --color-card: var(--soft-surface-fill);
 
   --soft-chip-fill: rgb(255 255 255 / 0.94);
-  --soft-chip-fill-hover: #ffffff;
-  --soft-chip-fill-active: rgb(246 247 250);
   --soft-chip-border: rgb(var(--cool-deep) / 0.16);
-  --soft-chip-border-hover: rgb(var(--cool-deep) / 0.32);
+  --soft-chip-border-hover: rgb(var(--cool-deep) / 0.24);
   --soft-chip-border-active: rgb(var(--cool-deep) / 0.2);
 
-  --ui-active-fill: rgb(100 110 130 / 0.11);
-  --ui-active-blur: 12px;
+  --ui-active-fill: rgb(var(--cool) / 0.11);
 
   /*
    * elevation 三档（中性 ink）：bar 搜索栏/输入岛 · panel 浮层 · dialog 弹窗
@@ -363,7 +360,7 @@ body {
   border-color: var(--color-danger);
 }
 
-/* soft-chip：solid border + 无 elevation；focus → 改 border-color */
+/* soft-chip：solid border + 无 elevation；focus → 改 border-color（transition 由 ui-ctrl 统一） */
 .soft-chip {
   border: 1px solid var(--soft-chip-border);
   outline: none;
@@ -371,14 +368,11 @@ body {
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  transition:
-    background-color var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out);
 }
 
-/* hover：始终可改底；边色仅非聚焦时改，避免盖掉 focus 框色 */
+/* hover：浅灰底（所有 chip 控件统一可见反馈）；边色仅非聚焦时改 */
 .soft-chip:hover:not(:disabled):not(.ui-disabled) {
-  background: var(--soft-chip-fill-hover);
+  background: rgb(248 249 252);
 }
 .soft-chip:hover:not(:disabled):not(.ui-disabled):not(:focus-visible):not(:focus-within):not(
     .is-keyboard-focus
@@ -388,7 +382,7 @@ body {
 
 /* 输入壳（BaseInput 等）不走按下态 */
 .soft-chip:active:not(:disabled):not(.ui-disabled):not(.ui-input) {
-  background: var(--soft-chip-fill-active);
+  background: rgb(244 246 250);
   border-color: var(--soft-chip-border-active);
 }
 
@@ -448,18 +442,24 @@ body {
 }
 
 /* 列表/下拉选中：色块，无边无 chip 阴影 */
+/* 列表/下拉选中：色块，无边无 chip 阴影；primary/danger 自带语义色，排除背景覆盖。
+ * 不设 backdrop-filter：与 ghost 静止态（none）一致，避免切换时 blur 瞬变与背景淡出不同步。 */
 .ui-active {
   border: none !important;
   outline: none;
   box-shadow: none !important;
+}
+.ui-active:not(.ui-btn-primary):not(.ui-btn-danger) {
   background: var(--ui-active-fill) !important;
-  backdrop-filter: blur(var(--ui-active-blur));
-  -webkit-backdrop-filter: blur(var(--ui-active-blur));
+  color: var(--color-accent);
 }
 
 /*
- * BaseButton variant=primary：直接绑 --color-accent。
- * 勿靠 Uno bg-accent（Wind4 对 CSS 变量 color-mix，WK 下易失效）。
+ * BaseButton variant 面类。
+ * primary：直接绑 --color-accent（勿靠 Uno bg-accent，Wind4 对 CSS 变量 color-mix，WK 下易失效）。
+ * ghost：透明无边，仅 hover/active 染浅冷灰。
+ * danger：复用 soft-chip 面（BaseButton 仍挂 soft-chip），默认淡红底 + 红字 + 红边，hover 加深边色、active 加深底与边。
+ * 所有面类的 !important 覆盖 ui-ctrl + soft-chip 默认壳样式。
  */
 .ui-btn-primary {
   border-color: transparent !important;
@@ -470,16 +470,51 @@ body {
   -webkit-backdrop-filter: none !important;
 }
 
-.ui-btn-primary:hover:not(:disabled) {
+.ui-btn-primary:hover:not(:disabled):not(.ui-disabled) {
   background: color-mix(in srgb, var(--color-accent) 88%, #000) !important;
 }
 
-.ui-btn-primary:active:not(:disabled) {
+.ui-btn-primary:active:not(:disabled):not(.ui-disabled) {
   background: color-mix(in srgb, var(--color-accent) 78%, #000) !important;
 }
 
 .ui-btn-primary i {
   color: inherit;
+}
+
+.ui-btn-ghost {
+  border-color: transparent !important;
+  /* 同 --cool 色相 0 alpha：过渡到 ui-active / hover 不经 transparent 暗中间值（防闪） */
+  background: rgb(var(--cool) / 0) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.ui-btn-ghost:hover:not(:disabled):not(.ui-disabled):not(.ui-active) {
+  background: var(--color-fill-5) !important;
+}
+
+.ui-btn-ghost:active:not(:disabled):not(.ui-disabled):not(.ui-active) {
+  background: rgb(var(--cool) / 0.1) !important;
+}
+
+/* danger：复用 soft-chip 面（BaseButton 仍挂 soft-chip），默认淡红底 + 红字 + 红边；
+   hover 不染底（继承默认淡红，仅边色加深）；active 加深红底 + 边色。
+   背景用 rgba 绝对值（非 color-mix）：WKWebView 对 color-mix+transparent 过渡插值不稳，会硬跳 */
+.ui-btn-danger {
+  color: var(--color-danger) !important;
+  background: rgb(236 106 110 / 0.04) !important;
+  border-color: color-mix(in srgb, var(--color-danger) 22%, transparent) !important;
+}
+
+.ui-btn-danger:hover:not(:disabled):not(.ui-disabled) {
+  border-color: color-mix(in srgb, var(--color-danger) 48%, transparent) !important;
+}
+
+.ui-btn-danger:active:not(:disabled):not(.ui-disabled) {
+  background: rgb(236 106 110 / 0.08) !important;
+  border-color: color-mix(in srgb, var(--color-danger) 56%, transparent) !important;
 }
 
 /*

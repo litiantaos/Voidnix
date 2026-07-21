@@ -49,13 +49,16 @@
           />
         </div>
 
-        <!-- 关闭按钮：ui-ctrl 实色 fill；外阴影单独加 -->
-        <BaseButton
-          class="shadow-lg"
-          title="关闭 (Esc)"
-          icon="i-ri-close-line"
-          @click="handleClose"
-        />
+        <!-- 关闭按钮：外层 mica-bar 材质 + ghost 按钮融入（与透明度框同款） -->
+        <div class="mica-bar shadow-lg overflow-hidden" flex h="7" items-center>
+          <BaseButton
+            variant="ghost"
+            class="!rounded-none"
+            title="关闭 (Esc)"
+            icon="i-ri-close-line"
+            @click="handleClose"
+          />
+        </div>
       </div>
     </Transition>
   </div>

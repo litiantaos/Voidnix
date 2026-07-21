@@ -49,6 +49,10 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             crate::runtime::window::configure_main_window(app.handle());
 
+            // 启动后自动打开主窗口：与 single_instance 第二实例唤起行为对齐，
+            // 用户点击 app 图标即见窗，无需先按快捷键。
+            crate::runtime::window::show_main(app.handle());
+
             // 启动埋点：量化 pre-bootstrap(串行) + bootstrap(join_all concurrent) 耗时，
             // 验证 Rust bootstrap <100ms 目标。debug 构建打印，release 静默。
             // 注：block_on(join_all) 为单线程上的并发交错（cooperative），非多核并行；

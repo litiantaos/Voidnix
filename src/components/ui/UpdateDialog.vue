@@ -22,7 +22,7 @@
       <BaseButton
         variant="ghost"
         icon="i-ri-external-link-line"
-        class="!text-xs !text-accent/80 !justify-start hover:!text-accent"
+        class="text-accent/80 hover:text-accent"
         @click="openReleases"
       >
         查看完整更新说明

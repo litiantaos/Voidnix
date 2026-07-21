@@ -168,7 +168,7 @@
       <template #footer-start>
         <BaseButton
           v-if="!isCreating && config.subscriptions.length > 1"
-          class="text-danger hover:text-danger/80"
+          variant="danger"
           @click="confirmRemoveFromModal"
         >
           删除
