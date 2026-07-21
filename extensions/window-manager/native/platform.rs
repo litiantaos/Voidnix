@@ -448,33 +448,8 @@ mod imp {
         result
     }
 
-    fn cf_lookup_num(
-        dict: &CFDictionary<*const c_void, *const c_void>,
-        key: &CFString,
-    ) -> Option<CFNumber> {
-        let ptr = key.as_concrete_TypeRef() as *const c_void;
-        let v = dict.find(ptr)?;
-        if v.is_null() {
-            return None;
-        }
-        // SAFETY: *v 已上方非空校验；wrap_under_get_rule 遵循 CF Get 规则（不获取所有权）
-        Some(unsafe { CFNumber::wrap_under_get_rule(*v as *mut _) })
-    }
-
-    fn cf_lookup_dict(
-        dict: &CFDictionary<*const c_void, *const c_void>,
-        key: &CFString,
-    ) -> Option<CFDictionary<*const c_void, *const c_void>> {
-        let ptr = key.as_concrete_TypeRef() as *const c_void;
-        let v = dict.find(ptr)?;
-        if v.is_null() {
-            return None;
-        }
-        // SAFETY: *v 已上方非空校验；wrap_under_get_rule 遵循 CF Get 规则（不获取所有权）
-        Some(unsafe { CFDictionary::wrap_under_get_rule(*v as *const _) })
-    }
-
     pub fn find_topmost_window_pid() -> Option<i32> {
+        use crate::platform::window_list::dict_lookup;
         let array = crate::platform::window_list::copy_on_screen_windows()?;
 
         let self_pid = std::process::id() as i64;
@@ -488,32 +463,39 @@ mod imp {
         for i in 0..array.len() {
             let Some(dict) = array.get(i) else { continue };
 
-            let layer = cf_lookup_num(&dict, &key_layer)
+            let layer = dict_lookup(&dict, &key_layer)
+                .and_then(|v| v.downcast::<CFNumber>())
                 .and_then(|n| n.to_i64())
                 .unwrap_or(-1);
             if layer != 0 {
                 continue;
             }
 
-            let pid = cf_lookup_num(&dict, &key_pid)
+            let pid = dict_lookup(&dict, &key_pid)
+                .and_then(|v| v.downcast::<CFNumber>())
                 .and_then(|n| n.to_i64())
                 .unwrap_or(0);
             if pid == self_pid || pid == 0 {
                 continue;
             }
 
-            let alpha = cf_lookup_num(&dict, &key_alpha)
+            let alpha = dict_lookup(&dict, &key_alpha)
+                .and_then(|v| v.downcast::<CFNumber>())
                 .and_then(|n| n.to_f64())
                 .unwrap_or(1.0);
             if alpha < 0.05 {
                 continue;
             }
 
-            if let Some(bd) = cf_lookup_dict(&dict, &key_bounds) {
-                let w = cf_lookup_num(&bd, &key_w)
+            if let Some(bd) = dict_lookup(&dict, &key_bounds)
+                .and_then(|v| v.downcast::<CFDictionary<*const c_void, *const c_void>>())
+            {
+                let w = dict_lookup(&bd, &key_w)
+                    .and_then(|v| v.downcast::<CFNumber>())
                     .and_then(|n| n.to_f64())
                     .unwrap_or(0.0);
-                let h = cf_lookup_num(&bd, &key_h)
+                let h = dict_lookup(&bd, &key_h)
+                    .and_then(|v| v.downcast::<CFNumber>())
                     .and_then(|n| n.to_f64())
                     .unwrap_or(0.0);
                 if w < 40.0 || h < 40.0 {
