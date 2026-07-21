@@ -205,7 +205,7 @@ describe('helpers', () => {
     expect(m.kind).toBe('zhipu')
     expect(m.level).toBe('max')
     const sub = formatKeyUsageSubtitle('sk-abcdefghijklmnop', m, now)
-    expect(sub).toBe('sk-abc…mnop · MAX · 5h 12% / 2.3h · 7d 34% / 2.3d · 30d 1.2B tokens')
+    expect(sub).toBe('sk-abc…mnop · MAX · 5h 12% (2.3h) · 7d 34% (2.3d) · 30d 1.2B')
     // 无重置时间 → 横杠
     const mNoReset = normalizeZhipuMonitor({
       level: 'max',
@@ -215,7 +215,7 @@ describe('helpers', () => {
       tokensSeries: [1],
     })
     expect(formatKeyUsageSubtitle('sk-abcdefghijklmnop', mNoReset, now)).toBe(
-      'sk-abc…mnop · MAX · 5h 12% / — · 7d 34% / — · 30d 100 tokens',
+      'sk-abc…mnop · MAX · 5h 12% (—) · 7d 34% (—) · 30d 100',
     )
     // snake_case 兜底
     const m2 = normalizeZhipuMonitor({
