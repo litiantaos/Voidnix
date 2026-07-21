@@ -163,11 +163,14 @@ pub async fn proxy_select_proxy(
     Ok(())
 }
 
-/// GET /proxies/{name}/delay → 延迟测速（ms，失败为 0）。
+/// GET /group/{name}/delay → 批量测速，返回 { 节点名: ms }（mihomo 内部并发，一次返回全组）。
 #[tauri::command]
-pub async fn proxy_test_delay(state: State<'_, ProxyState>, name: String) -> Result<u32, String> {
+pub async fn proxy_test_group_delay(
+    state: State<'_, ProxyState>,
+    group: String,
+) -> Result<Value, String> {
     let (base, secret) = controller_endpoint(&state)?;
-    controller::test_delay(&base, &secret, &name).await
+    controller::test_group_delay(&base, &secret, &group).await
 }
 
 /// PATCH /configs → 切换规则模式。

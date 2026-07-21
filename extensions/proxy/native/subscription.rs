@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tauri::AppHandle;
 
+use super::controller::DELAY_TEST_URL;
 use super::core::{RunParams, GEO_RELEASE_BASE, MIRROR_PREFIX};
 
 /// 订阅请求 UA：部分机场据此返回 Clash YAML 而非 Base64 订阅，与 mihomo 版本对齐。
@@ -148,6 +149,14 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
     root.insert(s("mode"), s(&params.mode));
     root.insert(s("log-level"), s("info"));
     root.insert(s("allow-lan"), Value::Bool(false));
+    // 全局性能开关（mihomo 推荐，对比 Clash Verge Rev / Mihomo Party 等图形客户端默认注入）：
+    // unified-delay：测速减去握手耗时（DNS+TCP+TLS+协议握手），只留 HTTP RTT。缺失此项是
+    //   节点测速数值偏高一个数量级的根因——ANYTLS 等 TLS 协议握手 300-600ms 被计入延迟。
+    // tcp-concurrent：多 IP 节点并发建连取最快（Happy Eyeballs 并行而非串行），降首包延迟。
+    // keep-alive-interval：连接保活探测，复用长连接降测速波动与重复握手开销。
+    root.insert(s("unified-delay"), Value::Bool(true));
+    root.insert(s("tcp-concurrent"), Value::Bool(true));
+    root.insert(s("keep-alive-interval"), Value::from(30i64));
 
     // Geo 数据库镜像 URL（国内直连 GitHub 不可达，mihomo 默认 URL 下载会 EOF 失败）
     let geo_base = format!("{MIRROR_PREFIX}{GEO_RELEASE_BASE}");
@@ -192,12 +201,41 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
 
     if !all_proxies.is_empty() {
         root.insert(s("proxies"), Value::Sequence(all_proxies.clone()));
-        let groups_val = groups.unwrap_or_else(|| auto_groups(&all_proxies));
+        let groups_val = match groups {
+            Some(v) => override_group_urls(v),
+            None => auto_groups(&all_proxies),
+        };
         root.insert(s("proxy-groups"), groups_val);
         root.insert(s("rules"), rules.unwrap_or_else(default_rules));
     }
 
     serde_yml::to_string(&root).map_err(|e| format!("序列化 config.yaml 失败: {e}"))
+}
+
+/// 强制覆盖订阅自带 proxy-groups 中所有测速型分组（url-test / fallback / load-balance）
+/// 的 `url` 字段为 HTTPS 框架统一 URL。订阅自带的 HTTP 测速 URL（如 gstatic.com）会被
+/// 机场/ISP 劫持（mihomo 自警告 "hijacking test addresses"），致测速失败或数值偏高数倍。
+/// interval/tolerance/lazy 等其他字段保留订阅原值（用户偏好）。
+fn override_group_urls(groups: Value) -> Value {
+    let arr = match groups {
+        Value::Sequence(s) => s,
+        v => return v,
+    };
+    let arr: Vec<Value> = arr
+        .into_iter()
+        .map(|g| {
+            let mut m = match g {
+                Value::Mapping(m) => m,
+                v => return v,
+            };
+            let ty = m.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if matches!(ty, "url-test" | "fallback" | "load-balance") {
+                m.insert(s("url"), s(DELAY_TEST_URL));
+            }
+            Value::Mapping(m)
+        })
+        .collect();
+    Value::Sequence(arr)
 }
 
 /// 无订阅自带 groups 时自动生成：手动选择 + 自动测速。
@@ -217,9 +255,9 @@ fn auto_groups(proxies: &[Value]) -> Value {
     let mut url_test = Mapping::new();
     url_test.insert(s("name"), s("自动选择"));
     url_test.insert(s("type"), s("url-test"));
-    // 测速 URL 用 Cloudflare generate_204（cp.cloudflare.com 国内 DNS 不污染，海外 anycast 快）；
-    // gstatic.com 被国内 DNS 污染到中国移动 IP，海外节点访问污染 IP 跨海高延迟（见 controller.rs）
-    url_test.insert(s("url"), s("http://cp.cloudflare.com/generate_204"));
+    // 测速 URL 用 HTTPS Cloudflare generate_204（cp.cloudflare.com 国内 DNS 不污染，海外
+    // anycast 快）；HTTP 会被机场/ISP 劫持（见 controller.rs DELAY_TEST_URL 注释）。
+    url_test.insert(s("url"), s(DELAY_TEST_URL));
     url_test.insert(s("interval"), Value::from(300i64));
     url_test.insert(s("proxies"), Value::Sequence(names));
 
@@ -281,6 +319,46 @@ mod tests {
     }
 
     #[test]
+    fn merge_yaml_overrides_subscription_group_urls() {
+        // 订阅自带的 HTTP 测速 URL 会被机场劫持（mihomo 自警告），框架强制覆盖为 HTTPS。
+        // url-test / fallback / load-balance 三类测速组都要覆盖；select 不带 url 不动。
+        let yaml = "\
+proxies:
+  - {name: N1, type: ss}
+proxy-groups:
+  - {name: AUTO, type: url-test, url: 'http://www.gstatic.com/generate_204', interval: 60, proxies: [N1]}
+  - {name: FB, type: fallback, url: 'http://www.gstatic.com/generate_204', interval: 60, proxies: [N1]}
+  - {name: LB, type: load-balance, url: 'http://www.gstatic.com/generate_204', interval: 60, proxies: [N1]}
+  - {name: SEL, type: select, proxies: [N1]}
+".to_string();
+        let out = merge_yaml(&[yaml], &params()).unwrap();
+        // HTTP URL 必须被全部清除
+        assert!(!out.contains("gstatic.com"));
+        assert!(!out.contains("http://"));
+        // 三类测速组都注入 HTTPS 框架 URL
+        assert!(out.contains("url: https://cp.cloudflare.com/generate_204"));
+        // 解析验证：每个测速组的 url 都是 HTTPS
+        let v: Value = serde_yml::from_str(&out).unwrap();
+        let groups = v.get("proxy-groups").and_then(|g| g.as_sequence()).unwrap();
+        let test_groups: Vec<_> = groups
+            .iter()
+            .filter(|g| {
+                matches!(
+                    g.get("type").and_then(|t| t.as_str()),
+                    Some("url-test") | Some("fallback") | Some("load-balance")
+                )
+            })
+            .collect();
+        assert_eq!(test_groups.len(), 3);
+        for g in test_groups {
+            assert_eq!(
+                g.get("url").and_then(|u| u.as_str()),
+                Some("https://cp.cloudflare.com/generate_204")
+            );
+        }
+    }
+
+    #[test]
     fn merge_yaml_dedup_by_name() {
         let a = "proxies:\n  - {name: DUP, type: ss}\n".to_string();
         let b = "proxies:\n  - {name: DUP, type: ss}\n  - {name: OK, type: ss}\n".to_string();
@@ -300,6 +378,16 @@ mod tests {
         assert!(out.contains("mixed-port: 7890"));
         assert!(!out.contains("proxies:"));
         assert!(!out.contains("proxy-groups"));
+    }
+
+    #[test]
+    fn merge_yaml_injects_global_perf_tunings() {
+        // 全局性能开关恒注入（与 tun/订阅无关）—— unified-delay 缺失是测速数值偏高
+        // 一个数量级的根因，tcp-concurrent/keep-alive-interval 降建连与复用开销
+        let out = merge_yaml(&[], &params()).unwrap();
+        assert!(out.contains("unified-delay: true"));
+        assert!(out.contains("tcp-concurrent: true"));
+        assert!(out.contains("keep-alive-interval: 30"));
     }
 
     #[test]

@@ -117,7 +117,7 @@ export const CMD = {
   proxyRemoveSubscription: 'proxy_remove_subscription',
   proxyGetProxies: 'proxy_get_proxies',
   proxySelectProxy: 'proxy_select_proxy',
-  proxyTestDelay: 'proxy_test_delay',
+  proxyTestGroupDelay: 'proxy_test_group_delay',
   proxySetMode: 'proxy_set_mode',
   proxyReconnect: 'proxy_reconnect',
   proxyGetRules: 'proxy_get_rules',
