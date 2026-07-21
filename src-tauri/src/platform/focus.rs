@@ -1,9 +1,21 @@
 use objc2_app_kit::{NSApp, NSApplicationActivationOptions, NSWorkspace};
 use objc2_foundation::{MainThreadMarker, NSURL};
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 /// 前台 PID 唯一源：显示主窗口前记录原前台 app PID，隐藏时恢复。
 static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
+
+/// osascript `with administrator privileges` 执行期间置位。SecurityAgent 接管 frontmost
+/// 时 is_system_frontmost 已能识别；但用户输完密码后 SecurityAgent 先关闭，shell 命令
+/// （kill mihomo + sleep + spawn）仍跑 2-3s，frontmost 已还给原 app（非系统进程），
+/// 此时 is_app_active 返 false 会触发 blur hide 关窗——与「授权未完成窗口就关闭」同类。
+/// 置位期间视为交互流未中断。tun.rs::run_osascript 进入时置位，主线程收尾时清零。
+static OSASCRIPT_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// 标记 osascript 授权是否执行中（由 tun.rs::run_osascript 调用）。
+pub fn set_osascript_running(v: bool) {
+    OSASCRIPT_RUNNING.store(v, Ordering::SeqCst);
+}
 
 /// 将 Voidnix 设为 active app。
 ///
@@ -38,12 +50,19 @@ pub fn deactivate_app() {
 /// 内还有 key window（主 panel、NSOpenPanel 等),就视为焦点在我们这里。
 /// panel 丢 key 后,若前台已切到系统进程（授权弹窗、keychain 对话框等），
 /// 同样视为交互流未中断,不触发 hide。
+/// 第三道兜底：osascript 授权后续 shell 命令执行期间（SecurityAgent 已关，
+/// frontmost 已还给原 app），仍视为交互流未中断——避免 blur hide 关窗。
 pub fn is_app_active() -> bool {
     if let Some(mtm) = MainThreadMarker::new() {
         if NSApp(mtm).keyWindow().is_some() {
             return true;
         }
-        return is_system_frontmost();
+        if is_system_frontmost() {
+            return true;
+        }
+        if OSASCRIPT_RUNNING.load(Ordering::SeqCst) {
+            return true;
+        }
     }
     false
 }
