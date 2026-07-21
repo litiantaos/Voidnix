@@ -15,11 +15,15 @@ static CONTROLLER: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .expect("Failed to build mihomo controller client")
 });
 
-/// 测速探测 URL：经海外节点访问，用 Cloudflare generate_204（cp.cloudflare.com）——全球
-/// anycast CDN 海外节点访问延迟最低最稳。**不用 gstatic**：gstatic.com 国内 DNS 污染到中国
-/// 移动 IP（120.253.x.x），海外节点访问该污染 IP 跨海高延迟，致测速虚高（无论开关代理）。
-/// cp.cloudflare.com 国内 DNS 解析得 Cloudflare 真实 IP（104.16.x.x），不污染。
-const DELAY_TEST_URL: &str = "http://cp.cloudflare.com/generate_204";
+/// 测速探测 URL：HTTPS Cloudflare generate_204（cp.cloudflare.com）——全球 anycast CDN
+/// 海外节点访问延迟最低最稳。**必须 HTTPS**：mihomo 自警告 HTTP 测速 URL 会被机场/ISP 劫持
+/// （"some proxy providers hijacking test addresses and not being compatible with repeated
+/// HEAD requests, using HTTP may result in failed tests"），致测速失败/数值偏高 3-4 倍。
+/// **不用 gstatic**：gstatic.com 国内 DNS 污染到中国移动 IP（120.253.x.x），海外节点访问
+/// 该污染 IP 跨海高延迟；cp.cloudflare.com 国内 DNS 解析得 Cloudflare 真实 IP（104.16.x.x）。
+///
+/// `pub(crate)`：subscription.rs 合并订阅时复用同一定义（单一真相），避免双份常量漂移。
+pub(crate) const DELAY_TEST_URL: &str = "https://cp.cloudflare.com/generate_204";
 const DELAY_TIMEOUT_MS: u64 = 5000;
 
 /// GET /proxies → 完整代理树（含 selector/url-test 分组与各节点）。
@@ -74,6 +78,32 @@ pub async fn test_delay(base: &str, secret: &str, name: &str) -> Result<u32, Str
         .and_then(|d| d.as_u64())
         .map(|d| d as u32)
         .unwrap_or(0))
+}
+
+/// GET /group/{name}/delay → 批量测速，mihomo 内部并发测该组全部节点，返回 { 节点名: ms }。
+/// 一次请求替代前端逐节点串行 invoke，消除 N 次 IPC + controller 本地 HTTP 开销；
+/// 死节点超时由 mihomo 并发吸收，不占满前端 worker 致好节点排队。
+///
+/// request 级 timeout 15s 覆盖 controller 客户端默认 10s：批量端点需等全组（含 5s 超时节点）
+/// 结算，mihomo 并发聚合后整体响应常在 5-8s；余量覆盖节点多/网络抖动场景。
+pub async fn test_group_delay(base: &str, secret: &str, group: &str) -> Result<Value, String> {
+    let g = urlencoding::encode(group);
+    let test_url = urlencoding::encode(DELAY_TEST_URL);
+    let url = format!("{base}/group/{g}/delay?url={test_url}&timeout={DELAY_TIMEOUT_MS}");
+    let resp = CONTROLLER
+        .get(&url)
+        .bearer_auth(secret)
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("批量测速请求失败: {e}"))?;
+    if !resp.status().is_success() {
+        eprintln!("[proxy] 批量测速失败: {}", resp.status());
+        return Ok(serde_json::json!({}));
+    }
+    resp.json::<Value>()
+        .await
+        .map_err(|e| format!("解析批量测速响应失败: {e}"))
 }
 
 /// PATCH /configs → 切换规则模式（rule | global | direct）。

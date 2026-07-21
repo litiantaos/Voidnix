@@ -276,7 +276,7 @@ export function useProxyPanel() {
       coreError.value = '' // 切换成功清异常提示
       if (newState) {
         await loadProxies()
-        prewarmAndTestAll() // 预热后全量测速（fire-and-forget，延迟随测随显）
+        testAll() // 全量测速（fire-and-forget，批量端点 mihomo 内部并发）
         startTrafficStream() // 开启实时流量监测
       } else {
         stopTrafficStream()
@@ -299,7 +299,7 @@ export function useProxyPanel() {
       coreError.value = ''
       appStore.showStatus('代理已重连', { duration: 2000 })
       await loadProxies()
-      prewarmAndTestAll()
+      testAll()
       startTrafficStream()
     } catch (e) {
       appStore.showStatus(`重连失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
@@ -339,43 +339,35 @@ export function useProxyPanel() {
   }
 
   async function testAll() {
-    if (testing.value || nodes.value.length === 0) return
+    if (testing.value) return
+    const g = mainGroup.value
+    if (!g) return
     testing.value = true
-    // 清空已有测速，重新逐个测（随测随显）
     delayMap.value = {}
     try {
-      // 限并发（24）+ 逐个回写 delayMap：controller 本地回环扛得住，瓶颈在实际代理连接；
-      // 并发太低时差节点吃满超时会占满 worker 致好节点排队干等。随测随显（Promise.all 全量
-      // 并发需等最慢节点才批量更新）。
-      const CONCURRENCY = 24
-      const queue = [...nodes.value]
-      const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-        while (queue.length > 0) {
-          const n = queue.shift()
-          if (!n) break
-          try {
-            const d = await invoke<number>(CMD.proxyTestDelay, { name: n.name })
-            delayMap.value[n.name] = d > 0 ? d : DELAY_TIMEOUT
-          } catch {
-            delayMap.value[n.name] = DELAY_TIMEOUT
-          }
-        }
+      // 批量测速：mihomo /group/{name}/delay 一次请求内部并发测全组，消除前端逐节点串行
+      // invoke 的 N 次 IPC + controller 本地 HTTP 开销；死节点超时由 mihomo 并发吸收，
+      // 不再占满前端 worker 致好节点排队干等。unified-delay 让数值口径与其他 mihomo 客户端一致。
+      const result = await invoke<Record<string, number>>(CMD.proxyTestGroupDelay, {
+        group: g.name,
       })
-      await Promise.all(workers)
+      // 遍历 g.all（全组）而非 nodes.value（过滤后）：批量响应含全组节点，写入完整 delayMap
+      // 可让搜索过滤切换时不回退到 latestDelay 历史值，消除闪烁
+      const map: Record<string, number> = {}
+      const all = g.all ?? []
+      for (const name of all) {
+        const d = result[name]
+        map[name] = d != null && d > 0 ? d : DELAY_TIMEOUT
+      }
+      delayMap.value = map
+    } catch {
+      // 批量测速失败（controller 不可达等）：标记全部超时，保持 UI 有反馈
+      const map: Record<string, number> = {}
+      for (const name of g.all ?? []) map[name] = DELAY_TIMEOUT
+      delayMap.value = map
     } finally {
       testing.value = false
     }
-  }
-
-  /// 开启/重连后全量测速前预热：热重载后 mihomo DNS resolver + 节点连接池冷启动，直接 testAll
-  /// 首轮延迟偏高（远高于 idle 热态）。先测主节点一次预热 generate_204 解析（DNS 缓存全局共享）
-  /// + 主节点 anytls 连接，紧随的 testAll 命中热态缓存，结果接近真实延迟而非冷启动开销。
-  async function prewarmAndTestAll() {
-    const main = mainGroup.value?.now
-    if (main) {
-      await invoke<number>(CMD.proxyTestDelay, { name: main }).catch(() => {})
-    }
-    testAll()
   }
 
   /// 定位到当前选中节点：调 BaseList.reveal 平滑滚动到目标项居中
