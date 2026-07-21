@@ -41,6 +41,14 @@ pub async fn pin_image(
         // 钉图与 exit 并发（前端 fire-and-forget pin + 立刻 doCancel）；入口即快照 origin，
         // 避免 exit 清 CAPTURE_SURFACE 后位置落到 (0,0)。
         let (ox, oy) = super::session::capture_origin();
+        // 对齐到整数点（消除亚像素）：前端 sel 来自 webview 亚像素鼠标坐标，
+        // 直接传入会让 crop `as isize` 截断丢像素、NSWindow 对亚像素尺寸规整，
+        // 二者叠加导致 image 像素 ≠ contentView backing 物理像素，kCAGravityResize
+        // 随之纵向拉伸，表现为钉图"略放大 + 内容下移"。整数点下三者严格 1:1。
+        let sel_x = sel_x.round();
+        let sel_y = sel_y.round();
+        let sel_w = sel_w.round();
+        let sel_h = sel_h.round();
         let png = crop_with_annotation(sel_x, sel_y, sel_w, sel_h, scale, ann.as_deref())?;
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -164,6 +172,11 @@ fn create_pin_webview(app: &tauri::AppHandle, spec: &PinWebviewSpec) -> Result<(
                         spec.width,
                         spec.height,
                     ));
+                    // setContentAspectRatio 在亚像素/首帧布局时可能规整 content 尺寸
+                    // （实测 124.875 点被撑到 126 点），导致 contentView backing 像素 ≠
+                    // image 像素，kCAGravityResize 拉伸错位。强制 setContentSize 锁回 spec
+                    // 尺寸（已是整数点），保证 image 像素与 backing 严格 1:1。
+                    ns.setContentSize(objc2_foundation::NSSize::new(spec.width, spec.height));
                 }
                 if let Some(content_view) = ns.contentView() {
                     let _: () = objc2::msg_send![&content_view, setWantsLayer: true];
