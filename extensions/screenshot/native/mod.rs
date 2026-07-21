@@ -13,6 +13,17 @@ pub mod session;
 mod setup;
 pub use session::{capture_screen, reactivate_screenshot_window};
 
+/// 取 screenshot 窗口的 NSWindow 裸指针（None = 窗口不存在或 ns_window 失败）。
+/// 调用方按需转 `*mut c_void` / `&NSWindow`（unsafe as_ref）/ `usize`。
+/// 封装 get_webview_window + ns_window + cast 三步样板（session/pin/setup/scroll_capture 共用）。
+#[cfg(target_os = "macos")]
+pub(crate) fn screenshot_ns_window(app: &AppHandle) -> Option<*mut objc2_app_kit::NSWindow> {
+    use tauri::Manager;
+    let window = app.get_webview_window("screenshot")?;
+    let raw = window.ns_window().ok()?;
+    Some(raw.cast::<objc2_app_kit::NSWindow>())
+}
+
 #[cfg(target_os = "macos")]
 pub fn install_background_layer(window: &tauri::WebviewWindow) {
     use objc2_app_kit::NSWindow;

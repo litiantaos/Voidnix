@@ -3,6 +3,7 @@
 //! 每个 agent_run 创建一个 session_id（前端传入），注册到这里。
 //! abort 命令按 session_id 查找并触发 CancellationToken。
 
+use crate::runtime::lock_or_recover;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::async_runtime::JoinHandle;
@@ -46,7 +47,7 @@ impl SessionRegistry {
     /// 用于 abort 时强制终止 task。
     /// 若 session 已不在（register 与 set_handle 之间被 cancel/unregister），abort handle 并返回 false。
     pub fn set_handle(&self, session_id: &str, handle: JoinHandle<()>) -> bool {
-        let mut map = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = lock_or_recover(&self.sessions);
         if let Some(s) = map.get_mut(session_id) {
             s.handle = Some(handle);
             true

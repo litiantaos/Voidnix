@@ -10,6 +10,7 @@
 
 #[cfg(target_os = "macos")]
 mod inner {
+    use crate::runtime::lock_or_recover;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
 
@@ -195,7 +196,7 @@ mod inner {
             Err(_) => return,
         };
 
-        let state = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        let state = lock_or_recover(&STATE);
         let cw = state.custom_width;
         let ch = state.custom_height;
         drop(state);
@@ -222,7 +223,7 @@ mod inner {
             cw as i32, ch as i32, screen_count
         ));
 
-        let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = lock_or_recover(&STATE);
         state.visible = true;
     }
 
@@ -234,7 +235,7 @@ mod inner {
         };
         let _ = window.eval("window.dispatchEvent(new CustomEvent('__snap_panel_hide'))");
 
-        STATE.lock().unwrap_or_else(|e| e.into_inner()).visible = false;
+        lock_or_recover(&STATE).visible = false;
 
         // 焦点归还不在此处：hide 经 Vue → hide_snap_panel 做 alpha 淡出，
         // 动画结束后再 restore_captured，避免中途抢焦点导致离场卡顿。
@@ -246,7 +247,7 @@ mod inner {
         _timer: *mut std::ffi::c_void,
         _info: *mut std::ffi::c_void,
     ) {
-        let app_opt = APP.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let app_opt = lock_or_recover(&APP).clone();
         let Some(app) = app_opt else { return };
         let app_clone = app.clone();
         let _ = app.run_on_main_thread(move || {
@@ -255,7 +256,7 @@ mod inner {
     }
 
     fn schedule_hide_timer() {
-        let mut guard = HIDE_TIMER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = lock_or_recover(&HIDE_TIMER);
         if guard.is_some() {
             return;
         }
@@ -284,7 +285,7 @@ mod inner {
     }
 
     fn cancel_hide_timer() {
-        let mut guard = HIDE_TIMER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = lock_or_recover(&HIDE_TIMER);
         if let Some(st) = guard.take() {
             // SAFETY: st.0 是已创建的 CFRunLoopTimer（start 时 null 检查通过），
             // 同一 runloop + common modes 配对 Remove；CFRelease 释放 timer 所有权
@@ -299,7 +300,7 @@ mod inner {
     // ── 鼠标事件 ──────────────────────────────────────────────────────────
 
     fn forward_mouse_to_snap_panel(mx: f64, my: f64) {
-        let app_opt = APP.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let app_opt = lock_or_recover(&APP).clone();
         let Some(app) = app_opt else { return };
         let Some(window) = get_snap_window(&app) else {
             return;
@@ -329,7 +330,7 @@ mod inner {
         let (mx, my) = get_mouse_location();
         let screen = find_screen_for_point(mx, my);
 
-        let visible = STATE.lock().unwrap_or_else(|e| e.into_inner()).visible;
+        let visible = lock_or_recover(&STATE).visible;
 
         if visible {
             let in_area = screen
@@ -344,7 +345,7 @@ mod inner {
         } else {
             if let Some(screen) = screen {
                 if is_in_trigger_zone(mx, my, &screen) {
-                    let app_opt = APP.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    let app_opt = lock_or_recover(&APP).clone();
                     if let Some(app) = app_opt {
                         show_panel(&app, &screen);
                     }
@@ -357,7 +358,7 @@ mod inner {
 
     /// 仅更新 STATE 尺寸，不启停 monitor（参数推送型，由 set_snap_size 命令消费）。
     pub fn set_size(custom_width: f64, custom_height: f64) {
-        let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = lock_or_recover(&STATE);
         state.custom_width = custom_width;
         state.custom_height = custom_height;
     }
@@ -365,13 +366,13 @@ mod inner {
     pub fn start(app: AppHandle) {
         // 尺寸由 set_size 预先推入 STATE，panel 渲染时直接读取
         {
-            let guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = lock_or_recover(&MONITOR);
             if guard.is_some() {
                 return;
             }
         }
         ENABLED.store(true, Ordering::SeqCst);
-        *APP.lock().unwrap_or_else(|e| e.into_inner()) = Some(app);
+        *lock_or_recover(&APP) = Some(app);
 
         let moved_block: block2::RcBlock<dyn Fn(*mut AnyObject)> =
             block2::RcBlock::new(move |_event: *mut AnyObject| {
@@ -404,7 +405,7 @@ mod inner {
             if !global_moved.is_null() && !local_moved.is_null() {
                 let _: () = objc2::msg_send![global_moved, retain];
                 let _: () = objc2::msg_send![local_moved, retain];
-                let mut guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
+                let mut guard = lock_or_recover(&MONITOR);
                 *guard = Some(MonitorHandles {
                     global_monitor: global_moved,
                     global_block: moved_block,
@@ -426,7 +427,7 @@ mod inner {
         ENABLED.store(false, Ordering::SeqCst);
         cancel_hide_timer();
 
-        let mut guard = MONITOR.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = lock_or_recover(&MONITOR);
         if let Some(mh) = guard.take() {
             // SAFETY: monitor 在 start 中 retain 过一次，此处 removeMonitor + release 配对。
             // mh drop 时 RcBlock drop 释放 Rust 侧引用（与 NSEvent 的 retain 平衡）。
@@ -438,7 +439,7 @@ mod inner {
             }
         }
 
-        let app_opt = APP.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let app_opt = lock_or_recover(&APP).take();
         if let Some(app) = app_opt {
             // 仅当 snap-panel 当前可见时才隐藏 + restore focus。
             // 用户在主窗口设置界面点开关关闭时 panel 并未显示，无条件 hide_panel_impl
@@ -446,18 +447,18 @@ mod inner {
             hide_panel(&app);
         }
 
-        STATE.lock().unwrap_or_else(|e| e.into_inner()).visible = false;
+        lock_or_recover(&STATE).visible = false;
     }
 
     pub fn hide_panel(app: &AppHandle) {
-        if STATE.lock().unwrap_or_else(|e| e.into_inner()).visible {
+        if lock_or_recover(&STATE).visible {
             hide_panel_impl(app);
         }
     }
 
     /// 面板逻辑可见（show 后至 hide 发起前）；供 hide 动画结束时条件 restore。
     pub fn is_panel_visible() -> bool {
-        STATE.lock().unwrap_or_else(|e| e.into_inner()).visible
+        lock_or_recover(&STATE).visible
     }
 }
 

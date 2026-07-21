@@ -2,6 +2,7 @@
 
 use super::super::ffi::voidnix_screenshot_capture_region;
 use super::state::SESSION;
+use crate::runtime::lock_or_recover;
 
 pub fn cg_image_to_bgra8(cg: *mut std::ffi::c_void) -> Option<(usize, usize, Vec<u8>)> {
     if cg.is_null() {
@@ -83,7 +84,7 @@ pub fn capture_below_overlay(
             fn CGImageRelease(image: *mut std::ffi::c_void);
         }
         let ns_addr = {
-            let g = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+            let g = lock_or_recover(&SESSION);
             g.as_ref().map(|s| s.ns_window_addr).unwrap_or(0)
         };
         if ns_addr == 0 {

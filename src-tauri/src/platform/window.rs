@@ -5,6 +5,7 @@
 //! 让面板取得键盘焦点,而不抢 NSApp active —— 原前台应用的菜单栏 / Dock 高亮
 //! 全程不变,视觉上像浮层从未离开过当前应用。
 
+use crate::runtime::lock_or_recover;
 use objc2_app_kit::NSWindow;
 use objc2_foundation::NSRect;
 use std::sync::Mutex;
@@ -40,16 +41,16 @@ impl PlacementVis {
 static PLACEMENT_VIS: Mutex<Option<PlacementVis>> = Mutex::new(None);
 
 fn store_placement(vis: NSRect) {
-    *PLACEMENT_VIS.lock().unwrap_or_else(|e| e.into_inner()) = Some(PlacementVis::from_ns(vis));
+    *lock_or_recover(&PLACEMENT_VIS) = Some(PlacementVis::from_ns(vis));
 }
 
 fn load_placement() -> Option<PlacementVis> {
-    *PLACEMENT_VIS.lock().unwrap_or_else(|e| e.into_inner())
+    *lock_or_recover(&PLACEMENT_VIS)
 }
 
 /// hide 时调用：清掉 show 时锁定的 placement，避免隐藏态仍按旧屏改尺寸。
 pub fn cancel_pending_present() {
-    *PLACEMENT_VIS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *lock_or_recover(&PLACEMENT_VIS) = None;
 }
 
 /// orderFrontRegardless + 浮层 level + 鼠标 hit-test 接管（不 activate NSApp）。

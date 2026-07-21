@@ -1,3 +1,4 @@
+use crate::runtime::lock_or_recover;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
@@ -105,7 +106,7 @@ static CURRENT_CG_IMAGE: std::sync::Mutex<SendCgImage> =
 
 #[cfg(target_os = "macos")]
 pub(super) fn store_cg_image(raw: *mut std::ffi::c_void) {
-    let mut guard = CURRENT_CG_IMAGE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = lock_or_recover(&CURRENT_CG_IMAGE);
     let old = guard.0;
     if !old.is_null() {
         // SAFETY: old 已非空校验；CGImageRelease 遵循 CG ownership（替换前释放旧引用）
@@ -120,7 +121,7 @@ pub(super) fn store_cg_image(raw: *mut std::ffi::c_void) {
 
 #[cfg(target_os = "macos")]
 pub(super) fn get_cg_image() -> *mut std::ffi::c_void {
-    CURRENT_CG_IMAGE.lock().unwrap_or_else(|e| e.into_inner()).0
+    lock_or_recover(&CURRENT_CG_IMAGE).0
 }
 
 pub(super) fn decode_image_data(s: &str) -> Result<Vec<u8>, String> {
