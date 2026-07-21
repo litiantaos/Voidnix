@@ -36,7 +36,6 @@ pub fn copy_on_screen_windows() -> Option<CFArray<CFDictionary<*const c_void, *c
 }
 
 /// 从 CFDictionary 按 key 取 CFType（Get 规则，不获取所有权）。字段提取公共 helper。
-#[allow(dead_code)]
 pub fn dict_lookup(
     dict: &CFDictionary<*const c_void, *const c_void>,
     key: &core_foundation::string::CFString,
