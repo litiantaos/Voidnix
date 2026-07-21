@@ -273,13 +273,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed } from 'vue'
 import AnnotationPalette from './AnnotationPalette.vue'
 import ScrollPreview from './ScrollPreview.vue'
 import SelectionChrome from './SelectionChrome.vue'
 import ShapeHandlesOverlay from './ShapeHandlesOverlay.vue'
 import type { ScreenshotData, Phase } from '../composables/useTypes'
-import { MAGNIFIER_SIZE, handleAbsolutePos } from '../composables/useTypes'
+import { MAGNIFIER_SIZE } from '../composables/useTypes'
 import { useSelection } from '../composables/useSelection'
 import { useAnnotation } from '../composables/useAnnotation'
 import { useTextInput } from '../composables/useTextInput'
@@ -601,13 +601,10 @@ function onSelResizeStart(handle: string, e: MouseEvent) {
   magnifier.updateMagnifier(e.clientX, e.clientY)
 }
 
-// 悬浮到选区控制点即显示放大窗（不出十字线）。位置与内容都以控制点为锚固定，
-// 不受指针在控制点内的微动影响。
+// 悬浮到选区控制点即显示放大窗（不出十字线）。位置与内容都由 useMagnifier
+// 根据 hoveredHandle 锚定控制点（固定画面，不跟随指针在控制点内的微动）。
 function onHandleEnter(id: string) {
   hoveredHandle.value = id
-  const { x, y } = handleAbsolutePos(id, sel.value)
-  // 放大窗由 hoveredHandle 触发 v-if 渲染，需等 canvas 挂载后再取色绘制
-  nextTick(() => magnifier.updateMagnifier(x, y))
 }
 
 // ── 模糊元素选中边框样式（DOM 层，与控制点天然同步） ────────
