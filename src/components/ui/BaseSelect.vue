@@ -14,7 +14,7 @@
     aria-haspopup="listbox"
     @keydown="onKeyDown"
     @focusout="onFocusOut"
-    @click="toggleOpen"
+    @mousedown.prevent="toggleOpen"
   >
     <span :class="selectedLabel ? 'text-primary' : 'text-muted'" class="min-w-0 truncate">
       {{ selectedLabel || placeholder }}
