@@ -125,6 +125,8 @@
         v-model="inputText"
         rounded="panel"
         placeholder="聊点什么..."
+        :rows="1"
+        :max-height="120"
         @submit="handleSubmit"
       />
     </div>
@@ -179,11 +181,14 @@ const showStopBtn = computed(() => agent.isGenerating.value)
 const showFloatActions = computed(() => showScrollBtn.value || showStopBtn.value)
 const isFloatPair = computed(() => showScrollBtn.value && showStopBtn.value)
 
-/** 新会话清空后强制贴底，避免滚底钮残留 */
+/** 新会话清空后强制贴底 + 聚焦输入框 */
 watch(
   () => displayMessages.value.length,
   (n) => {
-    if (n === 0) stickToBottom.value = true
+    if (n === 0) {
+      stickToBottom.value = true
+      nextTick(() => textareaRef.value?.focus())
+    }
   },
 )
 
