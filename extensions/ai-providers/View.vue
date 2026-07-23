@@ -12,15 +12,13 @@
       @execute="onExecute"
     >
       <template #group-title="{ group }">
-        <div flex items="center" gap="1.5">
-          <span class="text-xs font-medium flex-1 min-w-0 truncate">{{ groupTitle(group) }}</span>
-          <BaseButton
-            icon="i-ri-settings-3-line"
-            title="编辑提供商"
-            @click.stop="openEditProvider(group)"
-          />
-          <BaseButton icon="i-ri-add-line" title="添加 Key" @click.stop="openCreateKey(group)" />
-        </div>
+        <span class="flex-1 min-w-0 truncate">{{ groupTitle(group) }}</span>
+        <BaseButton
+          icon="i-ri-settings-3-line"
+          title="编辑提供商"
+          @click.stop="openEditProvider(group)"
+        />
+        <BaseButton icon="i-ri-add-line" title="添加 Key" @click.stop="openCreateKey(group)" />
       </template>
 
       <template #item="{ item }">

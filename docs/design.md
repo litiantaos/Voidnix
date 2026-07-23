@@ -63,7 +63,7 @@
 
 - `--font-sans` = mono 优先 + cjk；代码显式 `--font-mono`
 - 圆角：ctrl 6 / panel 10 / window 16
-- 容器 `p-3`（=`--space`）；Dialog `p-4`；gap 1.5 / 2 / 3
+- 容器 `p-3`（=`--space`）；Dialog `p-4`；元素间距 gap 全值→场景见 AGENTS.md「元素间距」（3/2/1.5/1/0.5）
 
 ## 遮罩
 

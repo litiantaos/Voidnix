@@ -13,7 +13,7 @@
         >
           下载 FFmpeg
         </BaseButton>
-        <div v-else-if="coreLoaded && core.available" flex gap="1.5">
+        <div v-else-if="coreLoaded && core.available" flex gap="2">
           <BaseButton :disabled="busy" @click.stop="pickInput">选择</BaseButton>
           <BaseButton v-if="busy" @click.stop="cancelJob">取消</BaseButton>
           <BaseButton
@@ -26,7 +26,7 @@
         </div>
       </template>
       <template #trailing-outputDir>
-        <div flex gap="1.5">
+        <div flex gap="2">
           <BaseButton v-if="outputDir" @click.stop="resetOutputDir">同目录</BaseButton>
           <BaseButton @click.stop="pickOutputDir">选择</BaseButton>
         </div>
