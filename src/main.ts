@@ -4,6 +4,7 @@ import { getAllExtensions } from '@/runtime/extension-registry'
 import App from './App.vue'
 import 'virtual:uno.css'
 import './styles/theme.css'
+import './styles/markdown.css'
 
 // 自动发现并注册所有扩展：各 index.ts 顶层调 defineExtension({...}) 完成注册
 import.meta.glob(['@ext/*/index.ts'], { eager: true })

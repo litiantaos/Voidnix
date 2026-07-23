@@ -10,12 +10,14 @@ import {
   getMessageText,
   buildHistoryLabel,
   streamLayoutKey,
+  partKey,
+} from './view-logic'
+import {
   renderMarkdown,
   renderCodeBlock,
   renderListItemHtml,
   sanitizeCodeLang,
-  partKey,
-} from './view-logic'
+} from '@/utils/markdown'
 import type { AgentMessage, AgentPart } from '@/types/agent'
 
 function tool(
