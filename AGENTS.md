@@ -365,7 +365,12 @@ src/
 - 全局统一 `p-3`（12px）：搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`
 - 搜索栏 top/height/gap 为 `constants.ts` 模块内常量（和为 `CHROME_HEIGHT`，与 MainView `top-3`/`h-13`/`p-3` 同步）
 - **例外**：`BaseDialog` 内容区水平 `16px`，顶/底由浮层 chrome 预留
-- **元素间距**三档：`gap-1.5`（控件内）/ `gap-2`（默认）/ `gap-3`（区块）；`gap-0.5` 仅微密 UI
+- **元素间距**（集中定义，按值从大到小）：
+  - `gap-3`（区块）：纵向段落 / 表单段、列表项内部主分区、grid 列间
+  - `gap-2`（同级控件 / 离散标签块）：按钮组（搜索栏 accessory / 分组标题操作项 / 弹窗底栏）、卡片标题行（icon+label）、数值行（number+unit）
+  - `gap-1.5`（控件内 / 密集信息流 / 列表项间）：单控件内部子元素（icon+text）、flex-wrap 连续文本片段、`BaseList` 纵向列间距
+  - `gap-1`：agent 步骤缩进（极密）
+  - `gap-0.5`：刻度柱（微密）
 
 ### 弹窗
 

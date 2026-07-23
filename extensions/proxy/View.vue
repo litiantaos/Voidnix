@@ -9,30 +9,27 @@
       @execute="onExecute"
     >
       <template #group-title="{ group }">
-        <div flex items="center">
-          <span>{{ group }}</span>
-          <div flex="~ 1" />
+        <span class="flex-1 min-w-0 truncate">{{ group }}</span>
+        <BaseButton
+          v-if="group === '订阅'"
+          icon="i-ri-add-line"
+          title="添加订阅"
+          @click.stop="openCreateModal"
+        />
+        <template v-else-if="group === '节点'">
           <BaseButton
-            v-if="group === '订阅'"
-            icon="i-ri-add-line"
-            title="添加订阅"
-            @click.stop="openCreateModal"
+            icon="i-ri-focus-3-line"
+            :disabled="!hasSelectedNode"
+            title="定位到选中节点"
+            @click.stop="locateSelected"
           />
-          <div v-else-if="group === '节点'" flex gap="2">
-            <BaseButton
-              icon="i-ri-focus-3-line"
-              :disabled="!hasSelectedNode"
-              title="定位到选中节点"
-              @click.stop="locateSelected"
-            />
-            <BaseButton
-              :icon="testing ? 'i-ri-loader-4-line animate-spin' : 'i-ri-flashlight-line'"
-              :disabled="testing || nodes.length === 0"
-              title="全部测速"
-              @click.stop="testAll"
-            />
-          </div>
-        </div>
+          <BaseButton
+            :icon="testing ? 'i-ri-loader-4-line animate-spin' : 'i-ri-flashlight-line'"
+            :disabled="testing || nodes.length === 0"
+            title="全部测速"
+            @click.stop="testAll"
+          />
+        </template>
       </template>
 
       <template #item="{ item }">

@@ -101,7 +101,8 @@ export default defineConfig({
     'form-field': 'flex flex-col gap-1.5',
     'input-base': 'outline-none bg-transparent flex-1 min-w-0',
 
-    'group-header': 'text-xs text-muted font-medium px-3 py-1.5',
+    // group-header：min-h-7 锚定控件高度，有无操作项行高一致（flex/gap-2 由容器兜底，slot 直平铺）
+    'group-header': 'text-xs text-muted font-medium px-3 min-h-7 flex items-center gap-2',
     'overlay-abs': 'pointer-events-none absolute',
   },
   content: {
