@@ -3,7 +3,12 @@
     <BaseEmptyState icon="i-ri-key-2-line" title="请先配置 AI 提供商" />
   </div>
 
-  <div v-else class="agent-layout" @click="onContentClick">
+  <div
+    v-else
+    class="agent-layout"
+    :style="{ '--agent-footer-reserve': footerReserve + 'px' }"
+    @click="onContentClick"
+  >
     <!-- 空态：居中（顶部留白补偿搜索栏）-->
     <div v-if="displayMessages.length === 0" class="agent-empty">
       <h1 text="xl primary" font="bold">来点有意思的吧！</h1>
@@ -73,7 +78,7 @@
     <!-- 底栏渐隐：内容滚入输入岛下方时自下而上软透 -->
     <div class="chrome-fade-bottom" aria-hidden="true" />
 
-    <div class="agent-footer">
+    <div class="agent-footer" ref="footerRef">
       <!-- 滚底：非贴底即显；中止：仅输出中。
            零宽中心锚点；两钮 absolute + translate 定位（solo 居中 / pair 分居中线两侧） -->
       <Transition
@@ -153,9 +158,27 @@ const NEAR_BOTTOM_PX = 24
 const agent = useAgentChat()
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const scrollRef = ref<HTMLElement>()
+const footerRef = ref<HTMLElement>()
 const inputText = ref('')
 /** 用户是否贴底：仅贴底时 streaming 增量才自动滚底，上翻阅读时不打断 */
 const stickToBottom = ref(true)
+
+/**
+ * 底部输入岛预留高度 = footer 实际高 + 底边距(--space)。
+ * ResizeObserver 跟踪 textarea 自动撑高，使滚动区底 padding 与渐隐高度始终对齐 footer。
+ */
+const footerReserve = ref(60)
+
+watch(footerRef, (el, _old, onCleanup) => {
+  if (!el) return
+  const measure = () => {
+    footerReserve.value = el.offsetHeight + 12 // + --space 底边距
+  }
+  measure()
+  const ro = new ResizeObserver(measure)
+  ro.observe(el)
+  onCleanup(() => ro.disconnect())
+})
 
 const displayMessages = computed(() => agent.messages.value)
 /** 有效选用可解析（含无显式选用时默认首个可用提供商）即可对话 */
@@ -300,13 +323,13 @@ onUnmounted(() => {
   justify-content: center;
   gap: 8px;
   text-align: center;
-  padding: var(--chrome-fade-height) var(--space) 112px;
+  padding: var(--chrome-fade-height) var(--space) var(--agent-footer-reserve);
 }
 
 /*
  * 消息滚动区：铺满 layout，底被悬浮输入盖住
  * - 顶 padding = chrome-fade，消息可滚入搜索栏下层
- * - 底 padding 只预留输入岛（固定，不为悬浮钮加高，避免显隐抖动）
+ * - 底 padding = footer 预留 + 消息间距（末条距输入岛恒 --space，与消息间距一致）
  */
 .agent-scroll {
   flex: 1 1 0%;
@@ -315,7 +338,7 @@ onUnmounted(() => {
   gap: var(--space);
   min-height: 0;
   overflow-y: auto;
-  padding: var(--chrome-fade-height) var(--space) 112px;
+  padding: var(--chrome-fade-height) var(--space) calc(var(--agent-footer-reserve) + var(--space));
   /* scrollIntoView（block:start）对齐到 padding-top 内侧，避免消息被搜索栏 chrome-fade 遮挡 */
   scroll-padding-top: var(--chrome-fade-height);
 }
@@ -384,6 +407,11 @@ onUnmounted(() => {
 .agent-notice--aborted {
   color: var(--color-text-muted);
   background: var(--color-mist);
+}
+
+/* 底部渐隐：高度跟随输入岛（覆盖全局 --chrome-fade-bottom-height），渐隐精确贴合 footer 区域 */
+.chrome-fade-bottom {
+  height: var(--agent-footer-reserve);
 }
 
 /* 底部输入岛：absolute；边距 --space；抬升 --shadow-bar */

@@ -86,7 +86,7 @@ AI 凭证条目上收至框架级中枢（`@/runtime/ai-providers`）；**本扩
 ## 对话 UI
 
 - **贴底滚动**：仅列表距底 < 24px 时 streaming 增量自动滚底；用户上翻阅读不打断。发送新消息时强制贴底。布局 watch 用轻量签名（条数 + streaming 长度）+ rAF 合并滚底，流式阶段不插值高度。
-- **悬浮输入岛**：`agent-footer` absolute 贴底（左右/底 12），不占 flex 流；消息区铺满并可滚入其下；底 padding 固定预留输入岛（~112px），**不为**悬浮钮动态加高（避免显隐抖动）；`chrome-fade-bottom` 仍叠底软透。
+- **悬浮输入岛**：`agent-footer` absolute 贴底（左右/底 12），不占 flex 流；消息区铺满并可滚入其下。底部预留（滚动区 `padding-bottom` + `chrome-fade-bottom` 高度）由 ResizeObserver 跟踪 footer 实际高度动态驱动（`--agent-footer-reserve`），使末条消息距输入岛恒为 `--space`，且渐隐精确贴合 footer 区域；textarea 自动撑高时三者同步增长。
 - **思考模式**（`AgentPart.type = 'reasoning'`）：LLM 思考模式输出（`reasoning_content`，DeepSeek-R1 / 智谱 GLM / Kimi 等）流式累积成 reasoning part，三行省略展示（sparkling 图标 + 「思考」标签 + secondary 文本）；**不回灌 LLM**（`toLlmMessages` 只取 text，reasoning 仅 UI 可见）；多轮中每轮独立成段（reasoningDelta 累积到最后一个 reasoning part 或新建）。
 - **工具结果**：`web_search` 成功展示 answer 摘要（三行省略）；失败展示 `output` 错误串；`run_command` 等展示 `output` 原文。
 - **状态 notice**（`AgentPart.type = 'notice'`，不进 LLM）：`error`（气泡 danger 底 + toast）/ `aborted`（muted「已中止」）；中止/错误时进行中工具标 `failed`。
@@ -102,7 +102,7 @@ extensions/agent/
 ├── index.ts               # 注册
 ├── config.ts              # defineConfig + 选用 helpers
 ├── agent.ts               # useAgentChat composable（前端状态机）
-├── view-logic.ts          # View 纯函数（streamView / showToolBody / markdown / buildHistoryLabel 等）
+├── view-logic.ts          # View 纯函数（streamView / showToolBody / buildHistoryLabel 等）
 ├── logic.ts               # 纯逻辑（消息序列化等，便于测试）
 ├── View.vue               # 布局 + 贴底滚动 + 悬浮操作 + notice
 ├── AgentTextPart.vue      # 流式/完成 markdown 文本 part
