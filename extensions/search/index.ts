@@ -42,20 +42,23 @@ export default defineExtension({
   },
 
   search: {
-    dynamic: async (query): Promise<ProviderResult[]> => {
+    dynamic: async (query, ctx): Promise<ProviderResult[]> => {
       if (!isTauri) return []
+      const emit = ctx?.emit
       const results: ProviderResult[] = []
 
       // 应用搜索（空查询也返回，作为默认启动屏；非空全量返回，由框架 groupAndSort 含拼音统一打分，
       // 避免扩展层裸 substring 预过滤丢弃拼音命中——如「jsq」→「计算器」）
+      // 流式：缓存命中立即 emit（应用秒出，不被下方 mdfind 文件搜索阻塞）；无 emit 时累积到返回值
       try {
         const apps = await getAppList()
-        results.push(...apps)
+        if (emit) emit(apps)
+        else results.push(...apps)
       } catch (e) {
         console.error('[search] apps error:', e)
       }
 
-      // 文件搜索（需 ≥2 字符，mdfind 慢且短查询噪声大）
+      // 文件搜索（需 ≥2 字符，mdfind 慢且短查询噪声大）：异步补充返回，不阻塞应用首批
       const trimmed = query.trim()
       if (trimmed.length >= MIN_FILE_QUERY_LEN) {
         try {

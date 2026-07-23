@@ -1,7 +1,7 @@
 import { getAllExtensions } from './extension-registry'
 import { SEARCH, LIMITS } from './constants'
 import { scoreFields, scoreModuleEntry } from '@/utils/fuzzy'
-import type { SearchResult, SearchResultKind } from './types'
+import type { Extension, SearchResult, SearchResultKind, ProviderResult } from './types'
 
 // kind → group 映射：file/folder 同属 'file' 组；其余 kind 即组名。
 // 框架级列表分组单一源（ContentView 全局模式 + search-engine groupAndSort 复用）。
@@ -29,7 +29,9 @@ interface ScoredResult {
   matched: boolean
 }
 
-/** 单例搜索引擎：dynamic 单通道并行 + filter/group 管道。 */
+/** 单例搜索引擎：流式增量召回（消除快结果等慢结果的 barrier）+ filter/group 管道。
+ *  每个扩展 dynamic 的 emit/resolve 都触发一次增量重排并回调 onUpdate；快结果（应用缓存/同步扩展）
+ *  秒出，慢结果（mdfind 文件/网络）增量补充，不再 Promise.all barrier。 */
 class SearchEngine {
   private currentController?: AbortController
   private activeModule: string | undefined
@@ -45,8 +47,13 @@ class SearchEngine {
     this.currentController = undefined
   }
 
-  async search(query: string): Promise<SearchResult[]> {
-    // 取消上一次查询（触发其 dynamic cleanup）
+  /** 流式搜索：query 为当前输入；onUpdate 在每次有新结果（扩展 emit/resolve）时回调增量重排结果。
+   *  返回 Promise 解析为最终完整结果（与最后一次 onUpdate 一致）。不传 onUpdate 时退化为一次性返回。
+   *  取消上一次查询（触发其 dynamic cleanup + child abort）。 */
+  async search(
+    query: string,
+    onUpdate?: (results: SearchResult[]) => void,
+  ): Promise<SearchResult[]> {
     this.currentController?.abort()
     const controller = new AbortController()
     this.currentController = controller
@@ -54,66 +61,62 @@ class SearchEngine {
     // 快照模式：await 期间 activeModule 可能被 KeepAlive/快捷键改写，后处理必须与本次召回一致
     const moduleId = this.activeModule
     const moduleMode = !!moduleId
-
-    // 1. dynamic 并行召回（框架按产出扩展 meta.id 注入 module）
-    const results = await this.searchDynamic(query, controller.signal, moduleId)
-    if (controller.signal.aborted) return []
-
-    // 模块模式短路：仅去重，保留扩展返回序（不过滤不限流——模块内容是扩展自治 UX），跳过打分预算
-    if (moduleMode) return dedupeBy(results, (r) => `${r.module}:${r.id}`)
-
     const q = query.trim()
 
-    // 2. 一次预算 dynamic 部分的 finalScore（suppress 判断 + groupAndSort 复用，消除二次 scoreFields）
-    //    matched：空 query 默认列表需 finalScore>0（即 boost>0，主要是应用启动屏，过滤 time/uuid 等 boost=0 的即时答案）；
-    //    非空 query 需 fuzzy>0（应用/文件等查找型结果必须命中）。
-    //    module 类即时答案（calculator/currency 等）靠 boost 穿透——title 不含 query 也能展示。
-    const scored: ScoredResult[] = results.map((r) => {
-      const boost = r.boost ?? 0
-      const fuzzy = q ? scoreFields([r.title, r.description], q) : 0
-      const finalScore = fuzzy + boost
-      const matched = q ? fuzzy > 0 : finalScore > 0
-      return { item: r, finalScore, matched }
-    })
-
-    // 3. keyword 合流（全局模式 only，模块模式禁用——已在某模块内不展示其他模块入口）。
-    //    只在 dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）时抑制该扩展入口：
-    //    即时答案优先（如「100 usd」返回换算值不再与模块入口同屏）；
-    //    clipboard 等数据型结果（kind≠module）不抑制——用户搜「剪贴板」时先看模块入口再看记录。
-    //    keyword 入口 finalScore 复用 keywordSearchAll 内部 score（含 keywordMatch 反向匹配贡献）。
-    if (q) {
-      const relevantDynamicModules = new Set(
-        scored
-          .filter((x) => x.item.data?.kind === 'module' && x.finalScore > 0)
-          .map((x) => x.item.module),
-      )
-      const kwScored = this.keywordSearchAll(q)
-        .filter((r) => !relevantDynamicModules.has(r.module))
-        .map((r) => ({ item: r, finalScore: (r.score ?? 0) + (r.boost ?? 0), matched: true }))
-      scored.push(...kwScored)
+    if (moduleMode) {
+      // 模块模式：累积 raw 结果，每次扩展 emit/resolve 都 dedupe + onUpdate（保留扩展返回序，不过滤不限流）
+      const acc: SearchResult[] = []
+      let last: SearchResult[] | undefined // 缓存最近一次 flush 结果，return 复用避免重复 dedupe
+      const flush = () => {
+        if (!controller.signal.aborted) {
+          last = dedupeBy(acc, (r) => `${r.module}:${r.id}`)
+          onUpdate?.(last)
+        }
+      }
+      await this.collectAll(query, controller.signal, moduleId, moduleMode, (items) => {
+        acc.push(...items)
+        flush()
+      })
+      // last 有值 = flush 至少执行过一次，最后一次与 return 等价直接复用；无值（无扩展产出/已 abort）补算
+      return last ?? dedupeBy(acc, (r) => `${r.module}:${r.id}`)
     }
 
-    // 4. 去重（按 <module>:<id> 组合键）
-    const deduped = dedupeBy(scored, (x) => `${x.item.module}:${x.item.id}`)
-
-    // 5. 分组排序
-    //    模块模式已在上方短路返回；全局模式 groupAndSort（分组 + 零分过滤 + 组内限流），复用 finalScore 不再重算。
-    return this.groupAndSort(deduped)
+    // 全局模式：累积 ScoredResult（打分只算一次），每次扩展 emit/resolve 都 keyword 合流 + groupAndSort + onUpdate
+    const scored: ScoredResult[] = []
+    let last: SearchResult[] | undefined // 缓存最近一次 flush 结果，return 复用避免重复 buildGlobal
+    const flush = () => {
+      if (!controller.signal.aborted) {
+        last = this.buildGlobal(scored, q)
+        onUpdate?.(last)
+      }
+    }
+    await this.collectAll(query, controller.signal, moduleId, moduleMode, (items) => {
+      scored.push(...this.scoreResults(items, q))
+      flush()
+    })
+    return last ?? this.buildGlobal(scored, q)
   }
 
-  /** 全局模式：并行调用所有扩展 dynamic；模块模式：只调 activeModule dynamic。
-   *  每个扩展 dynamic 受 LIMITS.searchTimeoutMs 超时保护，慢扩展不拖住全局 Promise.all。
-   *  超时 abort 该扩展的 child signal（不牵连其它扩展）；父 signal abort 时同步取消 child。 */
-  private async searchDynamic(
+  /** 并发启动所有目标扩展的 dynamic；每个扩展的 emit（部分结果）与 resolve（最终/补充结果）
+   *  都经 annotate 后回调 onBatch。用 Promise.allSettled 等待全部结束（但 onUpdate 已沿途增量触发，
+   *  快结果无需等慢结果）。每扩展 dynamic 受 LIMITS.searchTimeoutMs 超时保护，慢扩展不牵连其它；
+   *  父 signal abort 时同步取消 child。 */
+  private async collectAll(
     query: string,
     signal: AbortSignal,
     moduleId: string | undefined,
-  ): Promise<SearchResult[]> {
-    const moduleMode = !!moduleId
+    moduleMode: boolean,
+    onBatch: (items: SearchResult[]) => void,
+  ): Promise<void> {
     const exts = getAllExtensions().filter((e) => e.search)
     const targets = moduleId ? exts.filter((e) => e.meta.id === moduleId) : exts
 
-    const settled = await Promise.all(
+    // 空批次跳过：扩展 emit 后 return [] 等场景不触发多余的重排 + 渲染
+    const batch = (items: SearchResult[]) => {
+      if (items.length > 0) onBatch(items)
+    }
+
+    await Promise.allSettled(
       targets.map(async (ext) => {
         const child = new AbortController()
         const onParentAbort = () => child.abort()
@@ -122,39 +125,79 @@ class SearchEngine {
         } else {
           signal.addEventListener('abort', onParentAbort, { once: true })
         }
+        // emit 绑定到本次 search 的累积器：扩展流式产出的部分结果立即增量重排
+        const emit = (partial: ProviderResult[]) => {
+          if (signal.aborted) return
+          batch(this.annotate(partial, ext, moduleMode))
+        }
         try {
           const raw = await this.raceWithTimeout(
-            ext.search!.dynamic(query, { signal: child.signal, moduleMode }),
+            ext.search!.dynamic(query, { signal: child.signal, moduleMode, emit }),
             () => child.abort(),
           )
-          // 框架注入 module = 产出扩展 meta.id（扩展禁填）；
-          // module 类动态结果无 icon 时补产出扩展 meta.icon（calculator/currency 等即时答案默认带扩展图标）；
-          // 全局模式 + 工具型结果（kind=module）注入 source = 扩展显示名（UI 标注来源，应用/文件等原生结果不注入）
-          return raw.map((r) => {
-            const isModule = r.data?.kind === 'module'
-            return {
-              ...r,
-              module: ext.meta.id,
-              icon:
-                r.icon ??
-                (r.data?.icon as string | undefined) ??
-                (isModule ? ext.meta.icon : undefined),
-              ...(!moduleMode && isModule ? { source: ext.meta.name } : {}),
-            } as SearchResult
-          })
+          if (!signal.aborted) batch(this.annotate(raw, ext, moduleMode))
         } catch (e) {
           // abort 触发的 AbortError 与超时是正常/降级路径，静默；其余打日志
           const name = (e as Error)?.name
           if (name !== 'AbortError' && name !== 'SearchTimeoutError') {
             console.error(`[search] extension '${ext.meta.id}' dynamic failed:`, e)
           }
-          return []
         } finally {
           signal.removeEventListener('abort', onParentAbort)
         }
       }),
     )
-    return settled.flat()
+  }
+
+  /** 框架注入：module = 产出扩展 meta.id（扩展禁填）；
+   *  module 类动态结果无 icon 时补产出扩展 meta.icon（calculator/currency 等即时答案默认带扩展图标）；
+   *  全局模式 + 工具型结果（kind=module）注入 source = 扩展显示名（UI 标注来源，应用/文件等原生结果不注入）。 */
+  private annotate(raw: ProviderResult[], ext: Extension, moduleMode: boolean): SearchResult[] {
+    return raw.map((r) => {
+      const isModule = r.data?.kind === 'module'
+      return {
+        ...r,
+        module: ext.meta.id,
+        icon:
+          r.icon ?? (r.data?.icon as string | undefined) ?? (isModule ? ext.meta.icon : undefined),
+        ...(!moduleMode && isModule ? { source: ext.meta.name } : {}),
+      } as SearchResult
+    })
+  }
+
+  /** 一次预算 finalScore（suppress 判断 + groupAndSort 复用，消除二次 scoreFields）。
+   *  matched：空 query 需 finalScore>0（boost>0）；非空 query 需 fuzzy>0（查找型必须命中）。 */
+  private scoreResults(items: SearchResult[], q: string): ScoredResult[] {
+    return items.map((r) => {
+      const boost = r.boost ?? 0
+      const fuzzy = q ? scoreFields([r.title, r.description], q) : 0
+      const finalScore = fuzzy + boost
+      const matched = q ? fuzzy > 0 : finalScore > 0
+      return { item: r, finalScore, matched }
+    })
+  }
+
+  /** 全局模式最终管道：keyword 合流（过滤已被 dynamic module 结果覆盖的扩展入口）+ 去重 + groupAndSort。
+   *  每次 flush（增量）与最终返回共用——保证增量与最终结果一致。keyword 纯同步且扩展数少，每次重算可接受。 */
+  private buildGlobal(scored: ScoredResult[], q: string): SearchResult[] {
+    let all = scored
+    if (q) {
+      // 只在 dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）时抑制该扩展入口：
+      // 即时答案优先（如「100 usd」返回换算值不再与模块入口同屏）；
+      // clipboard 等数据型结果（kind≠module）不抑制——用户搜「剪贴板」时先看模块入口再看记录。
+      const relevantDynamicModules = new Set(
+        scored
+          .filter((x) => x.item.data?.kind === 'module' && x.finalScore > 0)
+          .map((x) => x.item.module),
+      )
+      const kwScored = this.keywordSearchAll(q)
+        .filter((r) => !relevantDynamicModules.has(r.module))
+        .map((r) => ({ item: r, finalScore: (r.score ?? 0) + (r.boost ?? 0), matched: true }))
+      all = [...scored, ...kwScored]
+    }
+
+    const deduped = dedupeBy(all, (x) => `${x.item.module}:${x.item.id}`)
+    return this.groupAndSort(deduped)
   }
 
   /** 为单个扩展 dynamic 套超时保护：超时抛 SearchTimeoutError（被调用方 catch 为降级 []）。

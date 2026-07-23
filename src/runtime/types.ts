@@ -53,6 +53,11 @@ export interface SearchContext {
   /** true = 模块独占（searchEngine 模块模式，只调激活扩展）；false/缺省 = 全局聚合。
    *  扩展可据此区分：全局空 query 时跳过网络等重操作（避免拖慢默认列表），模块内空 query 正常执行。 */
   moduleMode?: boolean
+  /** 流式部分结果（可选）：扩展可多次调用先产出快结果，最后 return 补充/最终结果。
+   *  不调用的扩展行为不变（一次性 return）。框架对 emit 的结果立即增量重排并回调上层，
+   *  消除「快结果等慢结果」的 barrier——如应用缓存命中秒出，mdfind 文件/网络结果后补。
+   *  emit 与最终 return 的结果会去重，扩展无需担心重复。 */
+  emit?: (results: ProviderResult[]) => void
 }
 
 export interface SearchProvider {

@@ -100,7 +100,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 ### 搜索引擎
 
-`src/runtime/search-engine.ts`：单通道 dynamic 并行召回 → 一次预算 finalScore → keyword 合流 → dedupe → groupAndSort。
+`src/runtime/search-engine.ts`：流式增量召回（消除快结果等慢结果的 barrier）→ 一次预算 finalScore → keyword 合流 → dedupe → groupAndSort。每个扩展 `emit`/`resolve` 都触发增量重排 + 回调 `onUpdate`，应用缓存秒出、mdfind 文件/网络结果后补。
 
 **两种模式共用 `search()`**：
 

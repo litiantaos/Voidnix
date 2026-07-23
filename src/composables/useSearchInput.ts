@@ -31,6 +31,12 @@ export function useSearchInput(opts: SearchInputOptions) {
 
   const isLoading = ref(false)
 
+  /** 增量结果到达时保留用户已做的导航：selectedIndex 仍在新列表有效范围内则不动，
+   *  仅越界时回 0。避免慢扩展（mdfind）的增量 flush 打断用户方向键导航。 */
+  function clampSelected(len: number) {
+    if (selectedIndex.value >= len) selectedIndex.value = 0
+  }
+
   function clearSearch(value = '') {
     appStore.setSearchQuery(value)
     if (searchInput.value) searchInput.value.value = value
@@ -119,14 +125,20 @@ export function useSearchInput(opts: SearchInputOptions) {
     const searchId = ++currentSearchId
     isLoading.value = true
     try {
-      const defaultResults = await searchEngine.search('')
+      const defaultResults = await searchEngine.search('', (partial) => {
+        if (searchId === currentSearchId) {
+          results.value = partial
+          clampSelected(partial.length)
+        }
+      })
       if (searchId === currentSearchId) {
         results.value = defaultResults
-        selectedIndex.value = 0
+        clampSelected(defaultResults.length)
       }
     } catch {
       if (searchId === currentSearchId) {
         results.value = []
+        selectedIndex.value = 0
       }
     } finally {
       if (searchId === currentSearchId) {
@@ -143,10 +155,15 @@ export function useSearchInput(opts: SearchInputOptions) {
       if (searchId === currentSearchId) isLoading.value = true
     }, 50)
     try {
-      const res = await searchEngine.search(query)
+      const res = await searchEngine.search(query, (partial) => {
+        if (searchId === currentSearchId) {
+          results.value = partial
+          clampSelected(partial.length)
+        }
+      })
       if (searchId === currentSearchId) {
         results.value = res
-        selectedIndex.value = 0
+        clampSelected(res.length)
       }
     } catch {
       if (searchId === currentSearchId) {
@@ -212,17 +229,31 @@ export function useSearchInput(opts: SearchInputOptions) {
 
     if (query.trim()) {
       searchTimeout = setTimeout(async () => {
+        // 真正发起搜索时才清空旧结果：此刻起回车不再命中上一次查询的旧结果（消除竞态）。
+        // 防抖期间保留旧列表视觉稳定（用户快速打字中不会回车）；流式 emit 近乎瞬出填充。
+        // 此处在回调内（非 onInput 同步路径），连续打字不会触发 → 不需要延迟 loading：
+        // 立即 loading=true 让空态显示"加载中"而非误导性的"无结果"；emit 填充后列表非空不受影响。
+        results.value = []
+        selectedIndex.value = 0
+        isLoading.value = true
         try {
-          const finalResults = await searchEngine.search(query)
+          const finalResults = await searchEngine.search(query, (partial) => {
+            if (searchId === currentSearchId) {
+              results.value = partial
+              clampSelected(partial.length)
+            }
+          })
           if (searchId === currentSearchId) {
             results.value = finalResults
-            selectedIndex.value = 0
+            clampSelected(finalResults.length)
           }
         } catch {
           if (searchId === currentSearchId) {
             results.value = []
             selectedIndex.value = 0
           }
+        } finally {
+          if (searchId === currentSearchId) isLoading.value = false
         }
       }, 50)
     } else {

@@ -94,14 +94,16 @@ interface SearchProvider {
 interface SearchContext {
   signal: AbortSignal // 新查询覆盖旧查询时 abort
   moduleMode?: boolean // true=模块独占（进入模块），false=全局聚合（默认列表）
+  emit?: (results: ProviderResult[]) => void // 流式部分结果：扩展可多次调用先产出快结果，最后 return 补充
 }
 ```
 
 - **全局模式**（`searchEngine.search`）：
 
-  流程：并行调用所有扩展 dynamic → **一次预算 finalScore（`scoreFields + boost`）** → 合流 keyword 模块入口 → dedupe → groupAndSort。
+  流程：**流式增量召回**——并发启动所有扩展 dynamic，每个扩展的 `emit`/`resolve` 都触发一次增量重排（keyword 合流 → dedupe → groupAndSort）并回调 `onUpdate`。快结果（应用缓存/同步扩展）秒出，慢结果（mdfind 文件/网络）增量补充，不再 `Promise.all` barrier 等全部。finalScore 仍只预算一次（emit 时打分，groupAndSort 复用）。
 
-  - **keyword 合流**：`scoreModuleEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）
+  - **流式**：扩展可选调用 `ctx.emit(partial)` 多次产出部分结果（如 search 扩展应用 emit 秒出、文件 return 后补），不调用的扩展走一次性 return 行为不变。框架按 `module:id` 去重，emit 与 return 重叠不会产生重复项；但扩展应遵循「emit 产出首批、return 产出补充」的语义分工——已 emit 的内容不放入 return，避免多余打分计算
+  - **keyword 合流**：`scoreModuleEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；每次 flush 重算（纯同步、扩展数少），keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）
   - **入口抑制**：dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口（即时答案优先）；clipboard 等数据型 kind≠module 不抑制
   - **过滤规则**：空 query 按 `finalScore>0`；非空 query 查找型需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透
 

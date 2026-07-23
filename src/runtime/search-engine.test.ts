@@ -281,6 +281,57 @@ describe('SearchEngine', () => {
     expect(out.find((r) => r.id === 'module-nameonly')).toBeDefined()
   })
 
+  // ── 流式 emit ──
+
+  it('流式 emit：扩展多次 emit 产出部分结果，onUpdate 增量回调且最终一致', async () => {
+    registry.push(
+      makeSearchExt('stream', (_q, ctx) => {
+        ctx.emit?.([result('a', 'alpha one', 'application', 10)])
+        ctx.emit?.([result('b', 'alpha two', 'application', 20)])
+        return [result('c', 'alpha three', 'file', 5)]
+      }),
+    )
+    const updates: SearchResult[][] = []
+    const final = await searchEngine.search('alpha', (partial) => updates.push([...partial]))
+    // emit 2 次 + return 1 次 = 3 次增量回调，结果逐步增长
+    expect(updates.length).toBe(3)
+    expect(updates[0].length).toBe(1)
+    expect(updates[1].length).toBe(2)
+    expect(updates[2].length).toBe(3)
+    // 最终返回与最后一次 onUpdate 一致
+    expect(final.map((r) => r.id).sort()).toEqual(['a', 'b', 'c'])
+    expect(updates[2].map((r) => r.id).sort()).toEqual(['a', 'b', 'c'])
+  })
+
+  it('流式 emit 与 return 重叠：框架去重不产生重复项', async () => {
+    registry.push(
+      makeSearchExt('dup-emit', (_q, ctx) => {
+        ctx.emit?.([result('x', 'alpha', 'application', 10)])
+        return [result('x', 'alpha', 'application', 10)] // 同 id 重叠
+      }),
+    )
+    const final = await searchEngine.search('alpha')
+    expect(final.filter((r) => r.id === 'x').length).toBe(1)
+  })
+
+  it('流式 emit 在 abort 后静默丢弃（不回调 onUpdate）', async () => {
+    let emitFn!: (results: ProviderResult[]) => void
+    registry.push(
+      makeSearchExt('late-emit', (_q, ctx) => {
+        emitFn = ctx.emit!
+        return new Promise<ProviderResult[]>((resolve) => {
+          ctx.signal.addEventListener('abort', () => resolve([]))
+        })
+      }),
+    )
+    const updates: SearchResult[][] = []
+    const p = searchEngine.search('x', (partial) => updates.push([...partial]))
+    searchEngine.abort()
+    emitFn([result('late', 'late result', 'module', 10)])
+    await p
+    expect(updates.length).toBe(0)
+  })
+
   it('abort() 取消进行中的 search signal', async () => {
     const seen: AbortSignal[] = []
     registry.push(
@@ -310,7 +361,7 @@ describe('SearchEngine', () => {
         })
       }),
     )
-    const p1 = searchEngine.search('a') // 同步执行到 await searchDynamic，dynamic 已被调用
+    const p1 = searchEngine.search('a') // 同步执行到 collectAll，dynamic 已被调用、signal 已入 seen
     expect(seen.length).toBe(1)
     const p2 = searchEngine.search('b') // 触发 seen[0] abort
     expect(seen[0].aborted).toBe(true)
