@@ -10,41 +10,69 @@
 
 ## schema 变更
 
-中枢加载后对 `keys[]` 做 `normalizeProvider`（旧单 `apiKey` → keys）。  
-中枢为空时一次性从旧 `extensions/agent/config.json` 的 `aiProviders` / translate 旧 AI 引擎字段导入，并尽量删掉旧密钥字段；消费者侧也会清悬空选用。  
-仍可直接删磁盘 config 按 defaults 重建。
+- **normalizeProvider**：中枢加载后对 `keys[]` 做 `normalizeProvider`（旧单 `apiKey` → keys）
+- **空中枢导入**：中枢为空时一次性从旧 `extensions/agent/config.json` 的 `aiProviders` / translate 旧 AI 引擎字段导入，并尽量删掉旧密钥字段；消费者侧也会清悬空选用
+- **重建**：仍可直接删磁盘 config 按 defaults 重建
 
 ## 界面（Key 为一等公民）
 
 列表按**提供商分组**（分组名 = **名称**，空则 URL 推导域名如 `OPENAI`），**每把 Key 单独一行**：
 
-- 行：标准列表项——标题 = 备注；副标题 = `sk-… · MAX · 5h 12% / 2.3h · 7d 34% / 2.3d · 30d 1.2B tokens`（重置缺失为 `—`）；**右侧 = 30d 曲线**（智谱）
-- 回车：打开编辑 Key 弹窗
+- **行**（标准列表项）：
+  - 标题 = 备注
+  - 副标题 = `sk-… · MAX · 5h 12% / 2.3h · 7d 34% / 2.3d · 30d 1.2B tokens`（重置缺失为 `—`）
+  - 右侧 = **30d 曲线**（智谱）
+- **回车**：打开编辑 Key 弹窗
 - **Cmd+Enter**：统一「粘贴 Key / 粘贴 URL / 粘贴 {模型}」、删除 Key
-- 分组标题右侧：编辑提供商 · 添加 Key
+- **分组标题右侧**：编辑提供商 · 添加 Key
 - **添加提供商**：搜索栏右侧 `+`（`searchBarAccessory`）
 
 弹窗：添加/编辑提供商（名称 / API URL / 模型；创建时含首把 Key）；添加/编辑 Key。无「选用 / 使用中」。
 
 ## 多 Key
 
-`keys: { id, label, apiKey }[]`。消费者解析时传 `keyId`；省略则取该提供商**第一把非空** Key。
+### 数据结构
 
-选用串约定（Agent / 翻译 AI）：`providerId::keyId::model`（兼容旧式 `providerId::model`）。选用单位 = **Key × 模型**（非仅模型）。
+`keys: { id, label, apiKey }[]`
 
-消费者 UI：`modelSelectOptions` / `selectionDisplayLabel` — 单 Key 只显示模型名；多 Key 显示 `模型 · 备注`（Agent 下拉触发器、翻译勾选主文案与设置摘要一致）。翻译弹窗在存在多 Key 时字段名改为「模型与 Key」。
+### 解析规则
+
+- 消费者解析时传 `keyId`
+- 省略则取该提供商**第一把非空** Key
+
+### 选用串约定（Agent / 翻译 AI）
+
+- 格式：`providerId::keyId::model`（兼容旧式 `providerId::model`）
+- 选用单位 = **Key × 模型**（非仅模型）
+
+### 消费者 UI
+
+- 工具：`modelSelectOptions` / `selectionDisplayLabel`
+- **单 Key**：只显示模型名
+- **多 Key**：显示 `模型 · 备注`（Agent 下拉触发器、翻译勾选主文案与设置摘要一致）
+- 翻译弹窗在存在多 Key 时字段名改为「模型与 Key」
 
 ## 与消费者选用同步
 
 选用由消费者自持；中枢变更后**不猜替代**。机制收敛为：
 
 1. **唯一规则** `isCredentialSelectionValid`（提供商在 + 模型仍在 `models` + 有 keyId 时 Key 仍在）
-2. **热路径读时过滤**（不写回）：翻译 `effectiveAiSelections`（校验 + 补全 keyId + 去重）/ `resolveAiTargets`；Agent `effectiveProviderModelKey` / resolve
-3. **冷路径 prune**（写回干净）：双方 config ready 后一次；翻译 `updateAiConfig` 写入时压滤；Agent `setProviderModelKey` 只接受有效串
+2. **热路径读时过滤**（不写回）：
+   - 翻译 `effectiveAiSelections`（校验 + 补全 keyId + 去重）/ `resolveAiTargets`
+   - Agent `effectiveProviderModelKey` / resolve
+3. **冷路径 prune**（写回干净）：双方 config ready 后一次
+   - 翻译 `updateAiConfig` 写入时压滤
+   - Agent `setProviderModelKey` 只接受有效串
 
-翻译注意：旧式 `providerId::model`（无 keyId）与三段式同模型会算两条；`canonicalizeAiSelection` 统一补 keyId 后按 `providerId::keyId::model` 去重，避免摘要/并发次数多于中枢可选项。
+### 翻译去重注意
 
-无 deep watch 中枢、无变更事件扇出。改名模型 = 删旧加新 → 读时视为未选，冷 prune 后落盘清空，需用户重选。
+- 旧式 `providerId::model`（无 keyId）与三段式同模型会算两条
+- `canonicalizeAiSelection` 统一补 keyId 后按 `providerId::keyId::model` 去重，避免摘要/并发次数多于中枢可选项
+
+### 架构边界
+
+- 无 deep watch 中枢、无变更事件扇出
+- 改名模型 = 删旧加新 → 读时视为未选，冷 prune 后落盘清空，需用户重选
 
 ## 额度 / 余额监控
 
@@ -55,15 +83,23 @@
 
 ## CLI / env
 
-保存后写 `~/.config/voidnix[/dev]/ai.env`（release 基础目录，debug 叠 `.dev`；与 bundle id 隔离一致）。**shell 全局投影仅 release 注入**（`shell_rc` 幂等写入 `# voidnix ai-providers` source 块，见 [shell-rc.md](../shell-rc.md)）；debug 只写 `voidnix.dev/ai.env` 文件、**不注入 shell**——外部工具固定变量名（`ZHIPU_*` / `DEEPSEEK_*`）无法 dev/prod 并存，全局只放 prod。dev 凭证供 App 内回退与手动 `source ~/.config/voidnix.dev/ai.env` 验证。
+### 写入规则
 
-- 知名端点锁死工具约定名（`envKey` 显式可覆盖）：
+- **文件路径**：保存后写 `~/.config/voidnix[/dev]/ai.env`
+- **release**：基础目录；shell 全局投影注入（`shell_rc` 幂等写入 `# voidnix ai-providers` source 块，见 [shell-rc.md](../shell-rc.md)）
+- **debug**：叠 `.dev`，与 bundle id 隔离一致；只写 `voidnix.dev/ai.env` 文件，**不注入 shell**
+- **dev/prod 不并存原因**：外部工具固定变量名（`ZHIPU_*` / `DEEPSEEK_*`），无法 dev/prod 并存，全局只放 prod
+- **dev 凭证用途**：供 App 内回退与手动 `source ~/.config/voidnix.dev/ai.env` 验证
+
+### 变量命名
+
+- **知名端点**锁死工具约定名（`envKey` 显式可覆盖）：
   - 智谱 Coding Plan（`bigmodel.cn` / `zhipuai`）→ `ZHIPU_API_KEY` + `ZHIPU_BASE_URL`
   - DeepSeek（`deepseek.com`）→ `DEEPSEEK_API_KEY` + `DEEPSEEK_BASE_URL`
   - 其余按名称 / hostname 推导 `*_API_KEY`（如配真 OpenAI 端点 → `OPENAI_API_KEY`，但中枢不猜测、不借用）
-- 多 Key：第一把非空写规范名（`DEEPSEEK_API_KEY` 等，供 OpenCode / Grok）；其余按备注 ASCII 后缀（`DEEPSEEK_BACKUP_API_KEY`），纯中文备注回退 `DEEPSEEK_KEY2_API_KEY`，碰撞递增，不静默丢 Key
-- 单 Key 规范名冲突（两套同端点提供商）：第二套序号兜底（`DEEPSEEK_KEY1_API_KEY`），不静默丢
-- `*_BASE_URL` 按**提供商**输出（endpoint 是提供商级属性），每提供商仅一条，不随 Key 重复
+- **多 Key 命名**：第一把非空写规范名（`DEEPSEEK_API_KEY` 等，供 OpenCode / Grok）；其余按备注 ASCII 后缀（`DEEPSEEK_BACKUP_API_KEY`），纯中文备注回退 `DEEPSEEK_KEY2_API_KEY`，碰撞递增，不静默丢 Key
+- **单 Key 规范名冲突**（两套同端点提供商）：第二套序号兜底（`DEEPSEEK_KEY1_API_KEY`），不静默丢
+- **`*_BASE_URL`**：按**提供商**输出（endpoint 是提供商级属性），每提供商仅一条，不随 Key 重复
 
 ### 外部工具
 
