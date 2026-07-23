@@ -13,17 +13,17 @@ test.describe('Voidnix 启动器', () => {
     await expect(input).toHaveValue('测试')
   })
 
-  test('base64 结果归入「扩展」组（module kind 归组渲染，B3）', async ({ page }) => {
+  test('calculator 结果归入「扩展」组（module kind 归组渲染，B3）', async ({ page }) => {
     const input = page.locator('#main-search-input')
-    // 合法 base64 串（= "hello"）触发全局模式解码分支（编码分支仅模块内生效）
-    await input.fill('aGVsbG8=')
+    // 算式触发 calculator 全局即时答案（base64/ip/uuid 等仅模块内响应）
+    await input.fill('1+1')
     await page.waitForTimeout(300)
 
     const headers = page.locator('.group-header')
-    // 解码结果 kind=module → 归入「扩展」组，组头渲染
+    // 计算结果 kind=module → 归入「扩展」组，组头渲染
     await expect(headers.filter({ hasText: '扩展' })).toBeVisible({ timeout: 5000 })
-    // 解码结果可见（验证搜索→分组→渲染管道）
-    await expect(page.getByText('Base64 解码')).toBeVisible({ timeout: 5000 })
+    // 计算结果可见（验证搜索→分组→渲染管道）
+    await expect(page.getByText('= 2')).toBeVisible({ timeout: 5000 })
     // 纯浏览器 E2E 无原生应用索引，不命中应用组（强化归组隔离）
     await expect(headers.filter({ hasText: '应用' })).toHaveCount(0)
   })
