@@ -5,8 +5,6 @@ import {
   buildExportPayload,
   resolveEnvKey,
   isZhipuCodingEndpoint,
-  anthropicModelFromZhipu,
-  ZHIPU_ANTHROPIC_BASE_URL,
   maskKey,
   formatWindowRemain,
   formatCompactCount,
@@ -53,7 +51,7 @@ describe('resolveEnvKey', () => {
 })
 
 describe('buildExportPayload', () => {
-  it('第一套完整配置导出 OPENAI_*', () => {
+  it('真 OpenAI 端点：按名称推导导出 OPENAI_API_KEY + OPENAI_BASE_URL（不借用、无 MODEL）', () => {
     const { envText } = buildExportPayload({
       providers: [
         p(
@@ -64,9 +62,11 @@ describe('buildExportPayload', () => {
         ),
       ],
     })
+    // 配了真 OpenAI 端点 → 名副其实地导出（非从别家借用）
     expect(envText).toContain("export OPENAI_API_KEY='sk-secret'")
     expect(envText).toContain("export OPENAI_BASE_URL='https://api.openai.com/v1'")
-    expect(envText).toContain('first complete provider')
+    // 无借用块 → 不投射 OPENAI_MODEL
+    expect(envText).not.toContain('OPENAI_MODEL')
   })
 
   it('多 key：第一把规范名 + 中文备注回退 KEY{n}，不丢第二把', () => {
@@ -150,7 +150,7 @@ describe('buildExportPayload', () => {
     expect(envText).toContain("export DEEPSEEK_KEY1_API_KEY='ds2'")
   })
 
-  it('智谱 → ZHIPU_API_KEY + ANTHROPIC_*；DeepSeek → DEEPSEEK_API_KEY', () => {
+  it('智谱 → ZHIPU_API_KEY；DeepSeek → DEEPSEEK_API_KEY；不导 ANTHROPIC', () => {
     const { envText } = buildExportPayload({
       providers: [
         p(
@@ -170,11 +170,39 @@ describe('buildExportPayload', () => {
     expect(envText).toContain("export DEEPSEEK_API_KEY='sk-ds'")
     expect(envText).toContain("export ZHIPU_API_KEY='sk-zhipu'")
     expect(envText).not.toContain('BIGMODEL_API_KEY')
-    expect(envText).toContain(`export ANTHROPIC_AUTH_TOKEN='sk-zhipu'`)
-    expect(envText).toContain(`export ANTHROPIC_BASE_URL='${ZHIPU_ANTHROPIC_BASE_URL}'`)
-    expect(envText).toContain("export ANTHROPIC_DEFAULT_SONNET_MODEL='glm-5.2[1M]'")
-    expect(anthropicModelFromZhipu(['glm-5.2'])).toBe('glm-5.2[1M]')
-    expect(anthropicModelFromZhipu(['glm-5.2[1M]'])).toBe('glm-5.2[1M]')
+    // 不再为 Claude Code 投射 ANTHROPIC_*（CC 已卸载）
+    expect(envText).not.toContain('ANTHROPIC')
+  })
+
+  it('多 key 同提供商：BASE_URL 仅一条（endpoint 是提供商级，不随 key 重复）', () => {
+    const { envText } = buildExportPayload({
+      providers: [
+        p(
+          'z',
+          'https://open.bigmodel.cn/api/coding/paas/v4',
+          [
+            { id: 'k1', label: '195', apiKey: 'k195' },
+            { id: 'k2', label: '177', apiKey: 'k177' },
+            { id: 'k3', label: '193', apiKey: 'k193' },
+          ],
+          ['glm-5.2'],
+        ),
+      ],
+    })
+    // 三把 key 各一行
+    expect(envText).toContain("export ZHIPU_API_KEY='k195'")
+    expect(envText).toContain("export ZHIPU_177_API_KEY='k177'")
+    expect(envText).toContain("export ZHIPU_193_API_KEY='k193'")
+    // BASE_URL 只出现一次（去重）
+    const urlCount = (envText.match(/ZHIPU_BASE_URL/g) ?? []).length
+    expect(urlCount).toBe(1)
+    expect(envText).toContain("export ZHIPU_BASE_URL='https://open.bigmodel.cn/api/coding/paas/v4'")
+    // 不应出现每 key 派生的 BASE_URL
+    expect(envText).not.toContain('ZHIPU_177_BASE_URL')
+    expect(envText).not.toContain('ZHIPU_193_BASE_URL')
+    // 顺序：BASE_URL 在该提供商所有 KEY 之前
+    expect(envText.indexOf('ZHIPU_BASE_URL')).toBeLessThan(envText.indexOf('ZHIPU_API_KEY'))
+    expect(envText.indexOf('ZHIPU_BASE_URL')).toBeLessThan(envText.indexOf('ZHIPU_177_API_KEY'))
   })
 })
 

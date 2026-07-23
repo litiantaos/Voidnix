@@ -134,9 +134,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted, onActivated, onUnmounted, watch } from 'vue'
+import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { open } from '@tauri-apps/plugin-shell'
-import { isAgentProviderReady, resolveAgentRuntimeCredentials } from './config'
+import { isAgentProviderReady } from './config'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
@@ -158,22 +158,8 @@ const inputText = ref('')
 const stickToBottom = ref(true)
 
 const displayMessages = computed(() => agent.messages.value)
-/** 本扩展已选模型可解析，或 env 兜底可用即可对话 */
-const envReady = ref(false)
-const isConfigured = computed(() => isAgentProviderReady.value || envReady.value)
-
-async function refreshEnvReady() {
-  const creds = await resolveAgentRuntimeCredentials()
-  envReady.value = !!creds
-}
-
-onMounted(() => {
-  void refreshEnvReady()
-})
-// KeepAlive 缓存：进入模块时重检 env / ai.env，避免首次 mount 后仍显示未配置
-onActivated(() => {
-  void refreshEnvReady()
-})
+/** 有效选用可解析（含无显式选用时默认首个可用提供商）即可对话 */
+const isConfigured = computed(() => isAgentProviderReady.value)
 
 /** 滚底钮：有消息且非贴底；中止钮：仅输出中 */
 const showScrollBtn = computed(() => displayMessages.value.length > 0 && !stickToBottom.value)

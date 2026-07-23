@@ -6,7 +6,7 @@
 
 - **本扩展**：CRUD 提供商与 Key、粘贴出去、智谱额度展示、写 `ai.env` + shell 钩子
 - **消费者**：自行持久化选用（如 Agent 的 `providerModelKey`，翻译 AI 的 `selections`）
-- **解析**：`resolveCredentials({ providerId, keyId?, model? })` / `resolveRuntimeCredentials(sel)` 按传入选用取值，中枢不猜默认提供商
+- **解析**：`resolveCredentials({ providerId, keyId?, model? })` 按传入选用取值（缺项可由 env 补全），中枢不猜默认提供商；Agent 无显式选用时自行默认首个可用提供商
 
 ## schema 变更
 
@@ -55,24 +55,22 @@
 
 ## CLI / env
 
-保存后写 `~/.config/voidnix[/dev]/ai.env`（release 基础目录，debug 叠 `.dev`；与 bundle id 隔离一致，dev/prod 双开不互相覆盖），`shell_rc` 幂等注入（见 [shell-rc.md](../shell-rc.md)）。
+保存后写 `~/.config/voidnix[/dev]/ai.env`（release 基础目录，debug 叠 `.dev`；与 bundle id 隔离一致）。**shell 全局投影仅 release 注入**（`shell_rc` 幂等写入 `# voidnix ai-providers` source 块，见 [shell-rc.md](../shell-rc.md)）；debug 只写 `voidnix.dev/ai.env` 文件、**不注入 shell**——外部工具固定变量名（`ZHIPU_*` / `DEEPSEEK_*`）无法 dev/prod 并存，全局只放 prod。dev 凭证供 App 内回退与手动 `source ~/.config/voidnix.dev/ai.env` 验证。
 
-- `OPENAI_*` = **列表中第一套完整** endpoint+key+model（方便只读 OPENAI 的工具，**不是全局 active**）
 - 知名端点锁死工具约定名（`envKey` 显式可覆盖）：
   - 智谱 Coding Plan（`bigmodel.cn` / `zhipuai`）→ `ZHIPU_API_KEY` + `ZHIPU_BASE_URL`
   - DeepSeek（`deepseek.com`）→ `DEEPSEEK_API_KEY` + `DEEPSEEK_BASE_URL`
-  - 其余按名称 / hostname 推导 `*_API_KEY`
+  - 其余按名称 / hostname 推导 `*_API_KEY`（如配真 OpenAI 端点 → `OPENAI_API_KEY`，但中枢不猜测、不借用）
 - 多 Key：第一把非空写规范名（`DEEPSEEK_API_KEY` 等，供 OpenCode / Grok）；其余按备注 ASCII 后缀（`DEEPSEEK_BACKUP_API_KEY`），纯中文备注回退 `DEEPSEEK_KEY2_API_KEY`，碰撞递增，不静默丢 Key
 - 单 Key 规范名冲突（两套同端点提供商）：第二套序号兜底（`DEEPSEEK_KEY1_API_KEY`），不静默丢
-- 智谱存在时额外写 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL`（Zhipu Anthropic 兼容）+ 默认模型，供 Claude Code。**会覆盖 shell 里真实 Anthropic 凭证**（自用默认走智谱；若需官方 Anthropic CLI 并存，勿 source `ai.env` 或先 unset）
+- `*_BASE_URL` 按**提供商**输出（endpoint 是提供商级属性），每提供商仅一条，不随 Key 重复
 
 ### 外部工具
 
-中枢只写 env；各工具自管模型选用，不在此维护「使用中」。
+中枢只写 env（key + url）；各工具自管模型选用（模型定义在工具配置里，含上下文长度/定价等元数据，不由中枢投射），不在此维护「使用中」。
 
 - **OpenCode**：读 `ZHIPU_API_KEY` / `DEEPSEEK_API_KEY`；baseURL 写在 `~/.config/opencode/opencode.json` 的 `provider.*.options.baseURL`（如 `zhipuai-coding-plan` → Coding Plan 端、`deepseek` → DeepSeek 端）。模型：`zhipuai-coding-plan/glm-5.2`、`deepseek/deepseek-v4-pro` 等
 - **Grok Build**：`~/.grok/config.toml` 的 `[model.*]` 用 `env_key = "ZHIPU_API_KEY"` / `"DEEPSEEK_API_KEY"` + `base_url`；切模型 `/model glm-5-2-1m` 等
-- **Claude Code**：shell source 后走 `ANTHROPIC_*`（智谱 Anthropic 兼容端）
 
 ## 命令
 

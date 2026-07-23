@@ -10,7 +10,6 @@ import {
   getProviderById,
   getKeySlot,
   resolveCredentials,
-  resolveRuntimeCredentials,
   isCredentialSelectionValid,
   type AiProvider as AiProviderConfig,
   type ResolvedAiCredentials,
@@ -132,33 +131,37 @@ export function setProviderModelKey(key: string) {
 }
 
 /**
- * 读时有效选用串：与中枢不一致则视为未选；合法则规范为三段（热路径不写回）。
- * 读时有效选用串：与中枢不一致则视为未选；合法则规范为三段（热路径不写回）。
- * 依赖 hub providers，中枢变更后下拉/就绪态立刻正确。
+ * 无显式选用时默认首个可用提供商（endpoint + 非空 key + 模型齐备）；列表无可用则空。
+ * 读时推导，不写回 providerModelKey。
+ */
+const firstProviderSelection = computed(() => {
+  void aiProvidersConfig.providers
+  for (const p of aiProvidersConfig.providers) {
+    if (!p.endpoint.trim()) continue
+    const slot = p.keys.find((k) => k.apiKey.trim())
+    const model = p.models.find((m) => m.trim())
+    if (slot && model) return formatSelectionKey(p.id, slot.id, model.trim())
+  }
+  return ''
+})
+
+/**
+ * 读时有效选用串：显式选用合法则规范三段；否则回退首个可用提供商（读时，不写回）。
+ * 依赖 hub providers：中枢删选/清空后自动落到（新的）首个，下拉/就绪态即时正确。
  */
 export const effectiveProviderModelKey = computed(() => {
   void aiProvidersConfig.providers
   const raw = config.providerModelKey.trim()
-  if (!raw) return ''
-  return canonicalizeSelectionRaw(raw) ?? ''
+  const canon = raw ? canonicalizeSelectionRaw(raw) : ''
+  return canon || firstProviderSelection.value
 })
 
+/** 凭证解析：按有效选用取值（无显式选用时即首个可用提供商）；中枢无可用则 null。 */
 export function resolveAgentCredentials(): ResolvedAiCredentials | null {
-  const raw = effectiveProviderModelKey.value
-  if (!raw) return null
-  const { providerId, keyId, model } = parseSelectionKey(raw)
+  const sel = effectiveProviderModelKey.value
+  if (!sel) return null
+  const { providerId, keyId, model } = parseSelectionKey(sel)
   return resolveCredentials({ providerId, keyId, model })
-}
-
-/**
- * 运行时凭证：有有效选用则按选用解析（缺项 env 补全）；
- * 无选用时走纯 env（OPENAI_* / ai.env），与 View「env 兜底可用即可对话」一致。
- */
-export async function resolveAgentRuntimeCredentials(): Promise<ResolvedAiCredentials | null> {
-  const raw = effectiveProviderModelKey.value
-  if (!raw) return resolveRuntimeCredentials({})
-  const { providerId, keyId, model } = parseSelectionKey(raw)
-  return resolveRuntimeCredentials({ providerId, keyId, model })
 }
 
 /** 当前选用在配置中可完整解析（不含 env 兜底）。 */

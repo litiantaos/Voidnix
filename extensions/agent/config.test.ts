@@ -20,15 +20,14 @@ import {
   pruneAgentSelection,
   effectiveProviderModelKey,
   setProviderModelKey,
-  resolveAgentRuntimeCredentials,
+  resolveAgentCredentials,
 } from './config'
 import {
   config as aiProvidersConfig,
   addAiProvider,
-  updateAiProvider,
+  removeAiProvider,
   formatSelectionKey,
 } from '@/runtime/ai-providers'
-import * as aiHub from '@/runtime/ai-providers'
 
 beforeEach(() => {
   aiProvidersConfig.providers.splice(0, aiProvidersConfig.providers.length)
@@ -46,7 +45,7 @@ describe('updateSearchProvider', () => {
 })
 
 describe('effectiveProviderModelKey / prune', () => {
-  it('读时失效视为未选；冷 prune 写回清空', () => {
+  it('显式选用合法时规范三段', () => {
     const id = addAiProvider({
       endpoint: 'https://x',
       models: ['m1', 'm2'],
@@ -54,9 +53,42 @@ describe('effectiveProviderModelKey / prune', () => {
     })
     config.providerModelKey = formatSelectionKey(id, 'k1', 'm1')
     expect(effectiveProviderModelKey.value).toBe(config.providerModelKey)
+  })
 
-    updateAiProvider(id, { models: ['m2'] })
-    // 热路径：不写回，effective 为空
+  it('无显式选用时默认首个可用提供商', () => {
+    const id = addAiProvider({
+      endpoint: 'https://x',
+      models: ['m1', 'm2'],
+      keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
+    })
+    config.providerModelKey = ''
+    expect(effectiveProviderModelKey.value).toBe(formatSelectionKey(id, 'k1', 'm1'))
+  })
+
+  it('首个提供商缺 key / 模型时落到下一个可用提供商', () => {
+    addAiProvider({
+      endpoint: 'https://empty',
+      models: ['m1'],
+      keys: [{ id: 'ke', label: '空', apiKey: '' }],
+    })
+    const id2 = addAiProvider({
+      endpoint: 'https://ok',
+      models: ['m1'],
+      keys: [{ id: 'k2', label: '默认', apiKey: 'a' }],
+    })
+    config.providerModelKey = ''
+    expect(effectiveProviderModelKey.value).toBe(formatSelectionKey(id2, 'k2', 'm1'))
+  })
+
+  it('显式选用悬空且无其他可用提供商时 effective 为空；冷 prune 清空持久值', () => {
+    const id = addAiProvider({
+      endpoint: 'https://x',
+      models: ['m1'],
+      keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
+    })
+    config.providerModelKey = formatSelectionKey(id, 'k1', 'm1')
+    removeAiProvider(id)
+    // 热路径：不写回，effective 回退无可用 → 空
     expect(config.providerModelKey).toContain('m1')
     expect(effectiveProviderModelKey.value).toBe('')
 
@@ -87,50 +119,52 @@ describe('effectiveProviderModelKey / prune', () => {
   })
 })
 
-describe('resolveAgentRuntimeCredentials', () => {
-  it('无有效选用时走纯 env 路径', async () => {
-    const spy = vi.spyOn(aiHub, 'resolveRuntimeCredentials').mockResolvedValue({
-      endpoint: 'https://env',
-      apiKey: 'ek',
-      model: 'em',
-      source: 'env',
+describe('resolveAgentCredentials', () => {
+  it('中枢无可用提供商时返回 null', () => {
+    config.providerModelKey = ''
+    expect(resolveAgentCredentials()).toBeNull()
+  })
+
+  it('无显式选用时按首个可用提供商解析', () => {
+    const id = addAiProvider({
+      endpoint: 'https://x',
+      models: ['m1'],
+      keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
     })
     config.providerModelKey = ''
-    const r = await resolveAgentRuntimeCredentials()
-    expect(spy).toHaveBeenCalledWith({})
-    expect(r).toEqual({
-      endpoint: 'https://env',
-      apiKey: 'ek',
-      model: 'em',
-      source: 'env',
-    })
+    const r = resolveAgentCredentials()
+    expect(r?.apiKey).toBe('a')
+    expect(r?.endpoint).toBe('https://x')
+    expect(r?.model).toBe('m1')
+    expect(r?.source).toBe('config')
+    expect(r?.providerId).toBe(id)
   })
 
-  it('悬空选用 effective 为空时同样走 env', async () => {
-    config.providerModelKey = 'gone::k::m'
-    const spy = vi.spyOn(aiHub, 'resolveRuntimeCredentials').mockResolvedValue({
-      endpoint: 'https://env',
-      apiKey: 'ek',
-      model: 'em',
-      source: 'env',
+  it('显式选用时按选用解析（非默认首个）', () => {
+    addAiProvider({
+      endpoint: 'https://first',
+      models: ['mf'],
+      keys: [{ id: 'kf', label: '默认', apiKey: 'first' }],
     })
-    const r = await resolveAgentRuntimeCredentials()
-    expect(effectiveProviderModelKey.value).toBe('')
-    expect(spy).toHaveBeenCalledWith({})
-    expect(r?.source).toBe('env')
+    const id2 = addAiProvider({
+      endpoint: 'https://second',
+      models: ['m1'],
+      keys: [{ id: 'k2', label: '默认', apiKey: 'a' }],
+    })
+    config.providerModelKey = formatSelectionKey(id2, 'k2', 'm1')
+    const r = resolveAgentCredentials()
+    expect(r?.endpoint).toBe('https://second')
+    expect(r?.apiKey).toBe('a')
   })
 
-  it('有选用时按 provider/key/model 解析', async () => {
+  it('悬空选用且无其他可用提供商时返回 null', () => {
     const id = addAiProvider({
       endpoint: 'https://x',
       models: ['m1'],
       keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
     })
     config.providerModelKey = formatSelectionKey(id, 'k1', 'm1')
-    const spy = vi.spyOn(aiHub, 'resolveRuntimeCredentials')
-    const r = await resolveAgentRuntimeCredentials()
-    expect(spy).toHaveBeenCalledWith({ providerId: id, keyId: 'k1', model: 'm1' })
-    expect(r?.apiKey).toBe('a')
-    expect(r?.source).toBe('config')
+    removeAiProvider(id)
+    expect(resolveAgentCredentials()).toBeNull()
   })
 })
