@@ -58,6 +58,8 @@ bun run test:e2e                   # E2E（Playwright）
 cd src-tauri && cargo test --lib   # Rust
 ```
 
+测试报告：`bun run test` 跑完经自定义 reporter 自动写 `.test-report.md`（gitignore）到项目根，含价值分层（回归/并发/边界/正向）与失败明细，可看可不看。
+
 E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run test:e2e`）。原生窗口行为（快捷键/焦点/隐藏）仍需人工验证。
 
 ## CI 门禁
