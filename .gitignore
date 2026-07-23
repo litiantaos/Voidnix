@@ -27,6 +27,7 @@ src-tauri/proptest-regressions/
 
 # Coverage
 coverage/
+.test-report.md
 
 # System files
 .DS_Store

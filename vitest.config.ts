@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: ['src/**/*.test.ts', 'extensions/**/*.test.ts'],
+    reporters: ['default', './scripts/test-report-reporter.ts'],
   },
   resolve: {
     alias: {
