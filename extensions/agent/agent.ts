@@ -11,7 +11,7 @@ import { invoke, Channel } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { generateRequestId } from '@/utils/id'
 import { showToast } from '@/composables/useToast'
-import { config as agentConfig, resolveAgentRuntimeCredentials } from './config'
+import { config as agentConfig, resolveAgentCredentials } from './config'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 import { toLlmMessages, tryParseSearchAnswer } from './logic'
 
@@ -40,8 +40,8 @@ export function useAgentChat() {
   async function sendMessage(text: string) {
     if (isGenerating.value || !text.trim()) return
 
-    // 本扩展自选模型；配置优先，缺项回退进程 env / ~/.config/voidnix/ai.env
-    const creds = await resolveAgentRuntimeCredentials()
+    // 本扩展自选模型；无显式选用时默认首个可用提供商
+    const creds = resolveAgentCredentials()
     if (!creds) {
       messages.value.push({
         id: generateRequestId(),
@@ -50,7 +50,7 @@ export function useAgentChat() {
           {
             type: 'notice',
             kind: 'error',
-            text: '请先在「AI 提供商」配置 API 并在本扩展选择模型，或设置 OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL（shell source ai.env）。',
+            text: '请先在「AI 提供商」配置提供商（endpoint / API Key / 模型）。',
           },
         ],
       })

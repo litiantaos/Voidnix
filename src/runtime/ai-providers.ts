@@ -250,23 +250,6 @@ export async function refreshEnvSnapshot(): Promise<AiEnvSnapshot> {
   return envSnapshot
 }
 
-/** 用显式选用解析；缺项时补 env。 */
-export async function resolveRuntimeCredentials(
-  sel: AiCredentialSelection = {},
-): Promise<ResolvedAiCredentials | null> {
-  const fromConfigOnly = resolveCredentials(sel)
-  if (fromConfigOnly?.source === 'config') return fromConfigOnly
-  await refreshEnvSnapshot()
-  return resolveCredentials({
-    ...sel,
-    env: {
-      apiKey: envSnapshot.apiKey,
-      endpoint: envSnapshot.endpoint,
-      model: envSnapshot.model,
-    },
-  })
-}
-
 /** 加载后规范化 keys[]（legacy apiKey / 缺 keys）。 */
 export function normalizeProvidersInPlace() {
   if (config.providers.length === 0) return

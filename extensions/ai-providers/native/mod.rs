@@ -1,5 +1,6 @@
 //! AI 提供商扩展：写 `~/.config/voidnix[/dev]/ai.env` + 读 env 快照（供 App 内回退）。
-//! 无代理、无热路径。dev/prod 按构建分流到不同目录与 shell scope，避免双开互相覆盖。
+//! 无代理、无热路径。env 文件按构建分流到 voidnix/ 或 voidnix.dev/；shell 全局投影仅 release
+//! 注入——外部工具固定变量名（`ZHIPU_*` 等）无法 dev/prod 并存，debug 只写文件供 App 内回退与手动 source。
 
 use crate::runtime::registry::Extension;
 use serde::Serialize;
@@ -41,34 +42,45 @@ fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// shell rc scope（marker `# voidnix ai-providers`，debug 叠 `-dev`；见 runtime/shell_rc）。
+/// shell rc scope（marker `# voidnix ai-providers`；见 runtime/shell_rc）。
+/// 仅 release 注入 source 钩子；debug 用此 scope 摘除历史 dev 块自愈。
 const SHELL_SCOPE: &str = if cfg!(debug_assertions) {
     "ai-providers-dev"
 } else {
     "ai-providers"
 };
 
-/// source 钩子 body：指向本构建分流的 `ai.env`。
+/// source 钩子 body：指向 release 的 `ai.env`（仅 release 注入）。
 fn shell_hook_body() -> String {
-    format!(
-        r#"[ -f "$HOME/.config/voidnix{DEV_SUFFIX}/ai.env" ] && source "$HOME/.config/voidnix{DEV_SUFFIX}/ai.env""#
-    )
+    r#"[ -f "$HOME/.config/voidnix/ai.env" ] && source "$HOME/.config/voidnix/ai.env""#.to_string()
 }
 
-/// 幂等写入 shell rc 钩子（统一 shell_rc 约定）。返回是否新写入。
-fn ensure_shell_hook(rc_path: &std::path::Path) -> Result<bool, String> {
-    // 迁移：摘除旧版 `>>> voidnix-ai >>>` 成对 marker（走 atomic_write_rc 留 bak）
-    if rc_path.exists() {
-        let existing = std::fs::read_to_string(rc_path)
-            .map_err(|e| format!("读取 {} 失败: {e}", rc_path.display()))?;
-        if existing.contains("# >>> voidnix-ai >>>") {
-            let cleaned = crate::runtime::shell_rc::filter_legacy_pair_markers(&existing, "ai");
-            if cleaned != existing {
-                crate::runtime::shell_rc::atomic_write_rc(rc_path, &cleaned)?;
-            }
+/// 迁移：摘除旧版 `>>> voidnix-ai >>>` 成对 marker（走 atomic_write_rc 留 bak）。
+fn migrate_legacy_pairs(rc_path: &std::path::Path) -> Result<(), String> {
+    if !rc_path.exists() {
+        return Ok(());
+    }
+    let existing = std::fs::read_to_string(rc_path)
+        .map_err(|e| format!("读取 {} 失败: {e}", rc_path.display()))?;
+    if existing.contains("# >>> voidnix-ai >>>") {
+        let cleaned = crate::runtime::shell_rc::filter_legacy_pair_markers(&existing, "ai");
+        if cleaned != existing {
+            crate::runtime::shell_rc::atomic_write_rc(rc_path, &cleaned)?;
         }
     }
-    crate::runtime::shell_rc::upsert_block(rc_path, SHELL_SCOPE, &shell_hook_body())
+    Ok(())
+}
+
+/// 维护 shell rc 钩子（统一 shell_rc 约定）。
+/// release：幂等写入 source 块；debug：摘除历史 dev 块自愈——外部工具固定变量名无法 dev/prod
+/// 并存，shell 全局投影只保留 prod，debug 凭证仅写 `voidnix.dev/ai.env` 供 App 内回退与手动 source。
+fn ensure_shell_hook(rc_path: &std::path::Path) -> Result<bool, String> {
+    migrate_legacy_pairs(rc_path)?;
+    if cfg!(debug_assertions) {
+        crate::runtime::shell_rc::remove_block(rc_path, SHELL_SCOPE)
+    } else {
+        crate::runtime::shell_rc::upsert_block(rc_path, SHELL_SCOPE, &shell_hook_body())
+    }
 }
 
 fn ensure_user_shell_hooks() {
@@ -754,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn shell_hook_idempotent_and_migrates_legacy() {
+    fn shell_hook_dev_never_injects_but_migrates_and_self_heals() {
         let dir = std::env::temp_dir().join(format!("voidnix-ai-hook-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -764,14 +776,26 @@ mod tests {
             "# existing\n\n# >>> voidnix-ai >>>\nold\n# <<< voidnix-ai <<<\n",
         )
         .unwrap();
-        assert!(ensure_shell_hook(&rc).unwrap());
+        // debug 构建：迁移旧 pair marker，不注入 source 块（无 dev 块可摘 → false）
         assert!(!ensure_shell_hook(&rc).unwrap());
         let text = std::fs::read_to_string(&rc).unwrap();
-        // debug 构建：scope 叠 -dev、路径走 voidnix.dev/
-        assert!(text.contains("# voidnix ai-providers-dev"));
-        assert!(!text.contains("# voidnix ai-providers\n"));
         assert!(!text.contains("voidnix-ai"));
-        assert!(text.contains("voidnix.dev/ai.env"));
+        assert!(!text.contains("voidnix ai-providers"));
+        assert!(!text.contains("ai.env"));
+        assert!(text.contains("# existing"));
+
+        // 历史残留 dev 块自愈摘除
+        std::fs::write(
+            &rc,
+            "# existing\n\n# voidnix ai-providers-dev\n[ -f \"$HOME/.config/voidnix.dev/ai.env\" ] && source \"$HOME/.config/voidnix.dev/ai.env\"\n",
+        )
+        .unwrap();
+        assert!(ensure_shell_hook(&rc).unwrap());
+        let text = std::fs::read_to_string(&rc).unwrap();
+        assert!(!text.contains("voidnix ai-providers-dev"));
+        assert!(!text.contains("ai.env"));
+        assert!(text.contains("# existing"));
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

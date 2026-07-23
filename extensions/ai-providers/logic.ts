@@ -1,5 +1,5 @@
 import type { AiProvider } from '@/runtime/ai-providers'
-import { apiKeyOf, providerDisplayName } from '@/runtime/ai-providers'
+import { providerDisplayName } from '@/runtime/ai-providers'
 
 export function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
@@ -13,17 +13,6 @@ export function baseUrlEnvName(apiKeyEnv: string): string {
   return ''
 }
 
-/** 智谱 Coding Plan Anthropic 兼容端（Claude Code 等）。 */
-export const ZHIPU_ANTHROPIC_BASE_URL = 'https://open.bigmodel.cn/api/anthropic'
-
-export interface ExportInput {
-  providers: AiProvider[]
-}
-
-export interface ExportPayload {
-  envText: string
-}
-
 /** 是否智谱 Coding Plan 端点（OpenCode / Grok 读 ZHIPU_API_KEY）。 */
 export function isZhipuCodingEndpoint(endpoint: string): boolean {
   return /bigmodel\.cn|zhipuai/i.test(endpoint)
@@ -34,10 +23,18 @@ export function isDeepseekEndpoint(endpoint: string): boolean {
   return /deepseek\.com/i.test(endpoint)
 }
 
+export interface ExportInput {
+  providers: AiProvider[]
+}
+
+export interface ExportPayload {
+  envText: string
+}
+
 /**
  * 导出用 API Key 环境变量名。
- * 知名端点锁死工具约定名（OpenCode / Grok Build / Claude Code）；
- * 其余按名称或 hostname 推导。
+ * 知名端点锁死工具约定名（OpenCode / Grok Build）；其余按名称或 hostname 推导
+ * （如 OpenAI 端点 → OPENAI_API_KEY）。envKey 显式优先。
  */
 export function resolveEnvKey(p: AiProvider): string {
   if (p.envKey.trim()) return p.envKey.trim()
@@ -45,16 +42,7 @@ export function resolveEnvKey(p: AiProvider): string {
   if (isDeepseekEndpoint(p.endpoint)) return 'DEEPSEEK_API_KEY'
   const label = providerDisplayName(p)
   if (!label || label === '未命名提供商') return ''
-  if (label === 'OPENAI') return ''
   return `${label.replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}_API_KEY`
-}
-
-/** Claude Code 默认模型：glm-5.2 → glm-5.2[1M]。 */
-export function anthropicModelFromZhipu(models: string[]): string {
-  const m = models.find((x) => x.trim())?.trim() || 'glm-5.2'
-  if (/\[/.test(m)) return m
-  if (/^glm/i.test(m)) return `${m}[1M]`
-  return m
 }
 
 /**
@@ -86,8 +74,7 @@ export function exportKeyPrefix(p: AiProvider): string {
 
 /**
  * 为提供商每把非空 Key 分配互不冲突的 `*_API_KEY` 名。
- * - 单 Key：规范名（`DEEPSEEK_API_KEY` 等；OPENAI 端 resolve 为空则不导出 named）；
- *   规范名已被占用时序号兜底，**不静默丢**
+ * - 单 Key：规范名（`DEEPSEEK_API_KEY` 等）；规范名已被占用时序号兜底，**不静默丢**
  * - 多 Key：第一把非空拿规范名（有则）；其余 `PREFIX_TAG_API_KEY`；
  *   tag 来自备注 ASCII，空或碰撞则 `KEY{n}` / 递增后缀，**不静默丢 Key**
  */
@@ -108,8 +95,7 @@ export function assignKeyEnvNames(
     let envName = ''
 
     if (slots.length === 1) {
-      // 单 Key：优先规范名；OPENAI 等 resolve 为空时跳过 named（已有 OPENAI_*）
-      // 规范名已被 taken 时不 continue，落入下方序号兜底（两套同端点单 Key 不丢）
+      // 单 Key：优先规范名；规范名已被 taken 时不 continue，落入下方序号兜底（不丢）
       if (!canonical) continue
       if (!taken.has(canonical)) envName = canonical
     } else if (ordinal === 1 && canonical && !taken.has(canonical)) {
@@ -142,71 +128,44 @@ export function assignKeyEnvNames(
 }
 
 /**
- * 写出全部已配置凭证。
- * OPENAI_* 取**列表第一套完整** endpoint+key+model，仅方便只读 OPENAI_* 的 CLI；
- * 不是中枢「使用中」状态（中枢不维护 active）。
+ * 写出全部已配置凭证：每提供商一条 `*_BASE_URL`（先）+ 各 `*_API_KEY`（后）。
+ * 变量名按知名端点约定（ZHIPU/DEEPSEEK）或名称/域名推导；中枢不借用、不猜默认、不维护 active。
  *
- * 工具约定：
- * - OpenCode：`ZHIPU_API_KEY` / `DEEPSEEK_API_KEY`（+ opencode.json baseURL）
+ * 工具约定（env + 工具配置文件 baseURL）：
+ * - OpenCode：`ZHIPU_API_KEY` / `DEEPSEEK_API_KEY`
  * - Grok Build：`env_key` 同上
- * - Claude Code：智谱存在时写 `ANTHROPIC_*` → Zhipu Anthropic 兼容端
  */
 export function buildExportPayload(input: ExportInput): ExportPayload {
   const lines: string[] = [
     '# Managed by Voidnix — do not edit.',
     '# source ~/.config/voidnix/ai.env (release) / ~/.config/voidnix.dev/ai.env (debug)',
-    '# Tools: OpenCode / Grok Build (ZHIPU_* DEEPSEEK_*) · Claude Code (ANTHROPIC_*)',
+    '# Tools: OpenCode / Grok Build (ZHIPU_* DEEPSEEK_*)',
     '',
   ]
 
-  const first = input.providers.find(
-    (p) => p.endpoint.trim() && apiKeyOf(p) && p.models.some((m) => m.trim()),
-  )
-  if (first) {
-    const key = apiKeyOf(first)
-    const model = first.models.find((m) => m.trim()) ?? ''
-    lines.push('# OPENAI_* = first complete provider (not a global "active" selection)')
-    lines.push(`export OPENAI_API_KEY=${shellSingleQuote(key)}`)
-    lines.push(`export OPENAI_BASE_URL=${shellSingleQuote(first.endpoint.trim())}`)
-    if (model) lines.push(`export OPENAI_MODEL=${shellSingleQuote(model)}`)
-    lines.push('')
-  }
-
-  const seen = new Set<string>(['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL'])
-  let namedHeader = false
+  const seen = new Set<string>()
+  const named: string[] = []
   for (const p of input.providers) {
     const assigned = assignKeyEnvNames(p, seen)
     if (assigned.length === 0) continue
     const byId = new Map(assigned.map((a) => [a.keyId, a.envName]))
+    // BASE_URL 按「提供商」输出（endpoint 是提供商级属性，每提供商一条）；先 URL 再 Key
+    const primaryEnv = assigned[0]?.envName ?? ''
+    const baseEnv = primaryEnv ? baseUrlEnvName(primaryEnv) : ''
+    if (baseEnv && p.endpoint.trim() && !seen.has(baseEnv)) {
+      seen.add(baseEnv)
+      named.push(`export ${baseEnv}=${shellSingleQuote(p.endpoint.trim())}`)
+    }
     for (const slot of p.keys ?? []) {
       if (!slot.apiKey.trim()) continue
       const envName = byId.get(slot.id)
       if (!envName) continue
-      if (!namedHeader) {
-        lines.push('# Named keys (OpenCode / Grok Build env_key)')
-        namedHeader = true
-      }
-      lines.push(`export ${envName}=${shellSingleQuote(slot.apiKey.trim())}`)
-      const baseEnv = baseUrlEnvName(envName)
-      if (baseEnv && p.endpoint.trim() && !seen.has(baseEnv)) {
-        seen.add(baseEnv)
-        lines.push(`export ${baseEnv}=${shellSingleQuote(p.endpoint.trim())}`)
-      }
+      named.push(`export ${envName}=${shellSingleQuote(slot.apiKey.trim())}`)
     }
   }
-  if (namedHeader) lines.push('')
-
-  // Claude Code：智谱 Coding Plan → Anthropic 兼容端
-  const zhipu = input.providers.find((p) => isZhipuCodingEndpoint(p.endpoint) && apiKeyOf(p))
-  if (zhipu) {
-    const zKey = apiKeyOf(zhipu)
-    const anthModel = anthropicModelFromZhipu(zhipu.models)
-    lines.push('# Claude Code → Zhipu Anthropic-compatible')
-    lines.push(`export ANTHROPIC_AUTH_TOKEN=${shellSingleQuote(zKey)}`)
-    lines.push(`export ANTHROPIC_BASE_URL=${shellSingleQuote(ZHIPU_ANTHROPIC_BASE_URL)}`)
-    lines.push(`export ANTHROPIC_DEFAULT_SONNET_MODEL=${shellSingleQuote(anthModel)}`)
-    lines.push(`export ANTHROPIC_DEFAULT_OPUS_MODEL=${shellSingleQuote(anthModel)}`)
-    lines.push(`export ANTHROPIC_DEFAULT_HAIKU_MODEL=${shellSingleQuote(anthModel)}`)
+  if (named.length > 0) {
+    lines.push('# Named keys (OpenCode / Grok Build env_key)')
+    lines.push(...named)
     lines.push('')
   }
 
