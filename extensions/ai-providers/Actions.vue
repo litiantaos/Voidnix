@@ -6,7 +6,14 @@
     @click="showHelp = true"
   />
   <BaseButton icon="i-ri-add-line" title="添加提供商" aria-label="添加提供商" @click="onAdd" />
-  <BaseDialog v-if="showHelp" title="使用说明" size="lg" @cancel="showHelp = false">
+  <BaseDialog
+    v-if="showHelp"
+    title="使用说明"
+    size="lg"
+    :show-cancel="false"
+    @confirm="showHelp = false"
+    @cancel="showHelp = false"
+  >
     <div class="markdown-body" text="sm primary" leading="relaxed">
       <div class="md-full" v-html="helpMarkdown" />
     </div>
