@@ -104,12 +104,14 @@ interface SearchContext {
   - **keyword 合流**：`scoreModuleEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）
   - **入口抑制**：dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口（即时答案优先）；clipboard 等数据型 kind≠module 不抑制
   - **过滤规则**：空 query 按 `finalScore>0`；非空 query 查找型需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透
+
 - **模块模式**（同一 `searchEngine.search`，`setActiveModule` 后）：
 
   - **召回**：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序
   - **超时/abort**：同样受 `searchTimeoutMs` 超时与 abort 保护；每扩展独立 child `AbortSignal`（超时只 abort 该扩展，父 abort 同步取消）
   - **模式快照**：`search()` 入口快照 `activeModule`，await 期间切换不影响本次后处理
   - **UX**：外壳（`useSearchInput`）延迟 50ms 显示 loading，同步 dynamic 不闪、网络型才占位
+
 - `moduleMode` 区分调用场景：**全局即时答案仅 calculator / currency**；ip / time / uuid / base64 等须 `if (!ctx?.moduleMode) return []`，仅模块内响应。网络型（currency）全局空 query 仍应跳过请求返回 `[]`，避免拖慢默认列表。
 - 半静态内容（如 base64）用模块级缓存自管，走 dynamic 返回。
 
