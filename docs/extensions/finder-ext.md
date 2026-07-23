@@ -22,9 +22,13 @@
 ## 实现要点
 
 - **上下文**：JXA 读 `selection` + `finderWindows[0].target` → JSON
-- **frontmost 守卫**：拷贝路径 / 终端 / 新建 要求 frontmost 为访达；切换隐藏不依赖 frontmost
-- **新建文件**：`BaseDialog` `closeOnConfirm=false` → 异步创建 → 成功卸窗 / 失败 toast 且弹窗保持（不先关再开）→ `selectFile`
-- **切换隐藏**：`ensure_accessibility`（窗口仍可见）→ **先 hide 主窗** 归还 key → 前置访达并等 frontmost → `platform/input::post_combo("cmd+shift+.", finder_pid)`。先注入再 hide 时面板仍占 key，按键常被吞，表现为需点两次
+- **frontmost 守卫**：拷贝路径 / 终端 / 新建要求 frontmost 为访达；切换隐藏不依赖 frontmost
+- **新建文件**：`BaseDialog` `closeOnConfirm=false` → 异步创建
+  - 成功 → 卸窗；失败 → toast 且弹窗保持（不先关再开）
+  - 创建后 `selectFile` 选中
+- **切换隐藏**（时序关键）：
+  - `ensure_accessibility`（窗口仍可见）→ **先 hide 主窗**归还 key → 前置访达并等 frontmost → `platform/input::post_combo("cmd+shift+.", finder_pid)`
+  - 先注入再 hide 时面板仍占 key，按键常被吞，表现为需点两次
 - **权限**：控制访达（自动化，读选区/目录）；切换隐藏需辅助功能（失败有明确 toast）
 - **无落盘扩展 config**；快捷键覆盖走框架 `settings.shortcutOverrides`
 
@@ -41,5 +45,5 @@ extensions/finder-ext/
 ## 已知限制
 
 - 终端固定 Terminal.app（不读用户默认终端）
-- 拷贝路径 / 终端 / 新建 要求访达 frontmost；`toggle_hidden` 除外
+- 拷贝路径 / 终端 / 新建要求访达 frontmost；`toggle_hidden` 除外
 - 无访达窗口时 `new_file` / 无选中且无 target 的 `open_terminal` 会失败并提示

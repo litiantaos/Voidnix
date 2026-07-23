@@ -43,13 +43,21 @@
 
 ## 色
 
+### 基础与派生
+
 - canvas = surface `#f8f8f9`
 - accent `#3d82f0`（theme + uno 字面同值）
 - mist / bubble / 文本阶 / fill-4…18（均派生 `--cool`）
 - border / divider / smoke / dialog-\*
+
+### 语义色
+
 - danger / warning / success + soft（soft 统一 12%）
 
-窗壳 mica + 雾；获焦 `.mica-fog-run`。Agent aurora：`--agent-aurora-warm*`。
+### 特化
+
+- 窗壳 mica + 雾；获焦 `.mica-fog-run`
+- Agent aurora：`--agent-aurora-warm*`
 
 ## 字体 / 圆角 / 间距
 

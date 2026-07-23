@@ -21,9 +21,22 @@ defineConfig('extensions/translate/config', {
 - **有道翻译**：appKey / appSecret
 - **AI 翻译**：`selections: { providerId, keyId?, model }[]` 跨中枢多选 **Key×模型** + `prompt`；凭证只在 `@/runtime/ai-providers`
 
-设置 UI：「翻译服务」下列出两项；AI 弹窗多选中枢选用（单 Key 仅模型名，多 Key 主文案 `模型 · 备注`、字段名「模型与 Key」）、编辑提示词，并提供「管理提供商 / 打开 AI 提供商」跳转中枢扩展。无独立「模型」分组、无服务右侧加号。
+### 设置 UI
 
-`resolveAiTargets` / UI 摘要走 `effectiveAiSelections`（读时按中枢过滤无效选用 + 补 keyId）；`keyId` 缺省取第一把非空 Key；缺项可用 env 补。启动与 `updateAiConfig` 冷 prune 写回。运行结果引擎标签：单 Key 仅提供商名，多 Key 为「提供商 · 备注」。详见 [ai-providers.md](./ai-providers.md)。旧 AI 引擎字段启动时一次性导入中枢并 strip。
+「翻译服务」下列出两项：
+
+- AI 弹窗多选中枢选用：单 Key 仅显示模型名，多 Key 主文案为 `模型 · 备注`、字段名「模型与 Key」
+- 可编辑提示词，并提供「管理提供商 / 打开 AI 提供商」跳转中枢扩展
+- 无独立「模型」分组、无服务右侧加号
+
+### AI 选用解析
+
+- `resolveAiTargets` / UI 摘要走 `effectiveAiSelections`（读时按中枢过滤无效选用 + 补 keyId）
+- `keyId` 缺省取第一把非空 Key；缺项可用 env 补
+- 启动与 `updateAiConfig` 冷 prune 写回
+- 运行结果引擎标签：单 Key 仅提供商名，多 Key 为「提供商 · 备注」
+
+旧 AI 引擎字段启动时一次性导入中枢并 strip。详见 [ai-providers.md](./ai-providers.md)。
 
 ## 后端
 

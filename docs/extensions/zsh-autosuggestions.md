@@ -52,11 +52,19 @@ binary 是独立 `[[bin]]` target（`Cargo.toml` 声明，path 指向 `native/sr
 1. 优先 `current_exe().parent().join("zsh-autosuggestions")`（dev = `target/debug/`）
 2. 兜底 `current_exe().parent().parent().join("Resources").join(...)`（release = `.app/Contents/Resources/`）
 
-**版本号部署**：`install_bin` 比较 `bin.version` 文件与编译期常量 `BIN_VERSION`（`mod.rs`），相等即跳过复制。**每改 binary 内容（`native/src/*.rs` 或 `include_str!` 嵌入的 `init.zsh`）必须 bump `BIN_VERSION`——开发期迭代亦然**：同一版本号只在首次部署时复制产物，共用版本号会导致改动不部署。`bin.version` 与 binary 同目录，缺失视为 0。手动改 init.zsh 后立即生效可重启 `tauri:dev`，或手动复制 `src-tauri/target/debug/zsh-autosuggestions` + 写 `bin.version`。
+**版本号部署**：
+
+- **比较逻辑**：`install_bin` 比较 `bin.version` 文件与编译期常量 `BIN_VERSION`（`mod.rs`），相等即跳过复制。`bin.version` 与 binary 同目录，缺失视为 0
+- **必须 bump**：每改 binary 内容（`native/src/*.rs` 或 `include_str!` 嵌入的 `init.zsh`）必须 bump `BIN_VERSION`——开发期迭代亦然。同一版本号只在首次部署时复制产物，共用版本号会导致改动不部署
+- **手动生效**：手动改 init.zsh 后立即生效可重启 `tauri:dev`，或手动复制 `src-tauri/target/debug/zsh-autosuggestions` + 写 `bin.version`
 
 `setup` 并幂等刷新 .zshrc 行。
 
-.zshrc 注入走框架 `runtime/shell_rc`（统一 marker 规范见 [shell-rc.md](../shell-rc.md)）：scope=`zsh-autosuggestions`，marker `# voidnix zsh-autosuggestions` + body `export ZSH_AS_DIR=…; eval "$(… init)"`。子路径（bin/cache/signals）由 init.zsh 从 `ZSH_AS_DIR` derive。关闭扩展时 `remove_block` + 清理 `index.zsh` / `signals.log` / `.zshrc.voidnix-bak`（保留 binary）。
+**.zshrc 注入**走框架 `runtime/shell_rc`（统一 marker 规范见 [shell-rc.md](../shell-rc.md)）：
+
+- **scope/marker**：scope=`zsh-autosuggestions`，marker `# voidnix zsh-autosuggestions` + body `export ZSH_AS_DIR=…; eval "$(… init)"`
+- **子路径**：bin/cache/signals 由 init.zsh 从 `ZSH_AS_DIR` derive
+- **关闭扩展**：`remove_block` + 清理 `index.zsh` / `signals.log` / `.zshrc.voidnix-bak`（保留 binary）
 
 `View.vue` toggle **显式 invoke** `set_zsh_autosuggestions_enabled`，成功才更新 `config.enabled`，失败 `showStatus` 提示（避免 config 与 `enabled_flag` 不一致）。
 
@@ -70,6 +78,21 @@ zsh 端 `_zsh_autosuggestions_histfile` 统一解析 rebuild 目标 history：�
 
 ## Ctrl+C 拦截
 
-Ctrl+C（SIGINT）不走任何 ZLE widget，POSTDISPLAY 会残留在重绘的新行；且 POSTDISPLAY 是 ZLE 特殊变量，TRAPINT（非 widget 上下文）中只读无法修改。解决方案：`zle-line-init` 时 `stty intr undef` 让 `^C` 作为普通按键进入 ZLE，绑定 `zsh-as-ctrl-c` widget（清空 POSTDISPLAY/高亮/状态 + `zle .send-break` 中断当前行）；`zle-line-finish` / `zshexit` 恢复 `stty intr '^C'` 保证命令执行期间 `^C` 走 SIGINT。
+### 问题
 
-同理，回车（`accept-line`）走 line_submit action（`ZSH_AS_LINE_SUBMIT_WIDGETS`，含 accept-line / accept-and-hold / accept-line-and-down-history）：清空 POSTDISPLAY 变量不等于擦除屏幕字符——accept-line 直接换行会让建议灰字滞留。line_submit 在调用 original widget 前若原 POSTDISPLAY 非空则 `zle -R` 强制重绘擦除残留（仅作用于换行类 widget，回车后立即进入新 ZLE 周期，重绘无副作用；不影响 modify 通用路径的 suggestion 渲染），使「不接受建议直接回车」与「Ctrl+C」屏幕表现一致。
+Ctrl+C（SIGINT）不走任何 ZLE widget，POSTDISPLAY 会残留在重绘的新行；且 POSTDISPLAY 是 ZLE 特殊变量，TRAPINT（非 widget 上下文）中只读无法修改。
+
+### 解决方案
+
+- **进入 ZLE**：`zle-line-init` 时 `stty intr undef` 让 `^C` 作为普通按键进入 ZLE
+- **Ctrl+C widget**：绑定 `zsh-as-ctrl-c`（清空 POSTDISPLAY/高亮/状态 + `zle .send-break` 中断当前行）
+- **恢复 SIGINT**：`zle-line-finish` / `zshexit` 恢复 `stty intr '^C'`，保证命令执行期间 `^C` 走 SIGINT
+
+### 回车同理（line_submit）
+
+回车（`accept-line`）走 line_submit action（`ZSH_AS_LINE_SUBMIT_WIDGETS`，含 accept-line / accept-and-hold / accept-line-and-down-history）。
+
+- **问题**：清空 POSTDISPLAY 变量不等于擦除屏幕字符——accept-line 直接换行会让建议灰字滞留
+- **解决**：line_submit 在调用 original widget 前若原 POSTDISPLAY 非空则 `zle -R` 强制重绘擦除残留
+- **作用域**：仅作用于换行类 widget，回车后立即进入新 ZLE 周期，重绘无副作用；不影响 modify 通用路径的 suggestion 渲染
+- **效果**：「不接受建议直接回车」与「Ctrl+C」屏幕表现一致

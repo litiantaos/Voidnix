@@ -47,10 +47,17 @@ export default defineExtension({
 - `windowViews`：独立窗口视图，key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀（2：screenshot/window-manager）
 - `globalShortcuts`：全局快捷键绑定（5：clipboard/screenshot/agent/translate/finder-ext）
 - `placeholder`：搜索框占位提示，激活模块时显示（6：clipboard/currency/ip/time/base64/calculator）
-- `windowHeight`：模块激活时主窗口高度，`number`（固定，clamp `[MIN,MAX]`）/ `'auto'`（随内容自适应）/ 未声明默认（6：agent/proxy=840、translate/system-status/video/finder-ext='auto'）
+- `windowHeight`：模块激活时主窗口高度，三种声明语义：
+  - **`number`**：固定高度，clamp `[MIN,MAX]`
+  - **`'auto'`**：随内容自适应
+  - **未声明**：默认高度
+  - 共 6 消费者：agent/proxy=840、translate/system-status/video/finder-ext='auto'
 - `subviewHeights`：subview 级高度覆盖，key→语义同 windowHeight（1：screenshot{ocr:'auto'}）
 
-高度统一由 `useModuleHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管：高度变化一次 IPC 触发 Rust → `platform/window.rs::animate_frame` 用 macOS `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS 逐帧）；`auto` 模式 ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`，底部将出屏则上移，离开 auto 还原原位。
+**高度机制**：统一由 `useModuleHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管。
+
+- **动画**：高度变化一次 IPC 触发 Rust → `platform/window.rs::animate_frame` 用 macOS `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS 逐帧）
+- **auto 模式**：ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`，底部将出屏则上移，离开 auto 还原原位
 
 生命周期：`setup?()`（启动钩子，无参）。3 行为槽：`disableSearchInput`（模块自管输入，禁用主搜索框）、`listOptions.multiSelect`（标准列表多选）、`onOpenSubview`（子视图打开回调，如 OCR payload 转交）。三者与能力槽同等地位（见 `runtime/types.ts`）。
 
@@ -90,8 +97,19 @@ interface SearchContext {
 }
 ```
 
-- **全局模式**（`searchEngine.search`）：并行调用所有扩展 dynamic → **一次预算 finalScore（`scoreFields + boost`）** → 合流 keyword 模块入口（`scoreModuleEntry`：name/id/description 正向 + keywords 双向，与 `/` 工具列表共用；**dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口**——即时答案优先；clipboard 等数据型 kind≠module 不抑制）+ dedupe + groupAndSort。keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）。**过滤规则**：空 query 按 `finalScore>0`；非空 query 查找型需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透。
-- **模块模式**（同一 `searchEngine.search`，`setActiveModule` 后）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序；同样受 `searchTimeoutMs` 超时与 abort 保护。`search()` 入口快照 `activeModule`，await 期间切换不影响本次后处理。超时为每扩展独立 child `AbortSignal`（超时只 abort 该扩展，父 abort 同步取消）。UX 外壳（`useSearchInput`）延迟 50ms 显示 loading，同步 dynamic 不闪、网络型才占位。
+- **全局模式**（`searchEngine.search`）：
+
+  流程：并行调用所有扩展 dynamic → **一次预算 finalScore（`scoreFields + boost`）** → 合流 keyword 模块入口 → dedupe → groupAndSort。
+
+  - **keyword 合流**：`scoreModuleEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）
+  - **入口抑制**：dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口（即时答案优先）；clipboard 等数据型 kind≠module 不抑制
+  - **过滤规则**：空 query 按 `finalScore>0`；非空 query 查找型需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透
+- **模块模式**（同一 `searchEngine.search`，`setActiveModule` 后）：
+
+  - **召回**：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序
+  - **超时/abort**：同样受 `searchTimeoutMs` 超时与 abort 保护；每扩展独立 child `AbortSignal`（超时只 abort 该扩展，父 abort 同步取消）
+  - **模式快照**：`search()` 入口快照 `activeModule`，await 期间切换不影响本次后处理
+  - **UX**：外壳（`useSearchInput`）延迟 50ms 显示 loading，同步 dynamic 不闪、网络型才占位
 - `moduleMode` 区分调用场景：**全局即时答案仅 calculator / currency**；ip / time / uuid / base64 等须 `if (!ctx?.moduleMode) return []`，仅模块内响应。网络型（currency）全局空 query 仍应跳过请求返回 `[]`，避免拖慢默认列表。
 - 半静态内容（如 base64）用模块级缓存自管，走 dynamic 返回。
 

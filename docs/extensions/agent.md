@@ -36,7 +36,12 @@ loop 结束（含 error）时 `SessionRegistry::unregister` 清会话；用户 a
 - `Error { message }`：错误终止（前端写入当前 assistant 气泡）
 
 前端手写类型 `src/types/agent.ts`，经 `invoke(CMD.agentRun / CMD.agentAbort)` 调用。
-`handleEvent` 内容按 `assistantId` 写气泡，且仅 `streaming` 时接受 delta/tool（abort/完成/错误 finalize 后拒绝晚到内容）；`status` / `sessionId` 仅当事件仍属当前 run（闭包 `runSessionId`）时才改，避免晚到 completed/error 踩踏新一轮。
+
+`handleEvent` 写入规则：
+
+- **内容写入**：按 `assistantId` 写气泡
+- **delta/tool 接受窗口**：仅 `streaming` 时接受（abort/完成/错误 finalize 后拒绝晚到内容）
+- **status / sessionId 守卫**：仅当事件仍属当前 run（闭包 `runSessionId`）时才改，避免晚到 completed/error 踩踏新一轮
 
 ## Agent 工具
 
@@ -81,19 +86,88 @@ defineConfig('extensions/agent/config', {
 })
 ```
 
-AI 凭证条目上收至框架级中枢（`@/runtime/ai-providers`）；**本扩展自选** Key×模型（`providerModelKey` = `providerId::keyId::model`，旧式两段 `providerId::model` 读时规范为三段）。多 Key 时选项/触发文案为 `模型 · 备注`。UI/解析走 `effectiveProviderModelKey`（读时过滤悬空 + 规范 keyId，热路径不写回）；**无显式选用时默认首个可用提供商**（endpoint + 非空 key + 模型齐备，读时推导不写回）。发起对话 `resolveAgentCredentials()` 按有效选用解析，中枢无可用提供商则提示配置。启动冷 `pruneAgentSelection` 写回（悬空清空 / 两段补 keyId）；旧 `activeProviderModelKey` 一次性迁入。详见 [ai-providers.md](./ai-providers.md)。
+### 凭证选用
+
+- **凭证中枢**：AI 凭证条目上收至框架级中枢（`@/runtime/ai-providers`），本扩展**自选** Key×模型
+- **选用串**：`providerModelKey` = `providerId::keyId::model`（旧式两段 `providerId::model` 读时规范为三段）
+- **多 Key 文案**：选项/触发文案为 `模型 · 备注`
+- **UI/解析**：走 `effectiveProviderModelKey`（读时过滤悬空 + 规范 keyId，热路径不写回）
+- **默认值**：无显式选用时默认首个可用提供商（endpoint + 非空 key + 模型齐备，读时推导不写回）
+- **发起对话**：`resolveAgentCredentials()` 按有效选用解析，中枢无可用提供商则提示配置
+- **冷 prune**：启动 `pruneAgentSelection` 写回（悬空清空 / 两段补 keyId）
+- **迁移**：旧 `activeProviderModelKey` 一次性迁入
+- 详见 [ai-providers.md](./ai-providers.md)
 
 ## 对话 UI
 
-- **贴底滚动**：仅列表距底 < 24px 时 streaming 增量自动滚底；用户上翻阅读不打断。发送新消息时强制贴底。布局 watch 用轻量签名（条数 + streaming 长度）+ rAF 合并滚底，流式阶段不插值高度。
-- **悬浮输入岛**：`agent-footer` absolute 贴底（左右/底 12），不占 flex 流；消息区铺满并可滚入其下。底部预留（滚动区 `padding-bottom` + `chrome-fade-bottom` 高度）由 ResizeObserver 跟踪 footer 实际高度动态驱动（`--agent-footer-reserve`），使末条消息距输入岛恒为 `--space`，且渐隐精确贴合 footer 区域；textarea 自动撑高时三者同步增长。
-- **思考模式**（`AgentPart.type = 'reasoning'`）：LLM 思考模式输出（`reasoning_content`，DeepSeek-R1 / 智谱 GLM / Kimi 等）流式累积成 reasoning part，三行省略展示（sparkling 图标 + 「思考」标签 + secondary 文本）；**不回灌 LLM**（`toLlmMessages` 只取 text，reasoning 仅 UI 可见）；多轮中每轮独立成段（reasoningDelta 累积到最后一个 reasoning part 或新建）。
-- **工具结果**：`web_search` 成功展示 answer 摘要（三行省略）；失败展示 `output` 错误串；`run_command` 等展示 `output` 原文。
-- **状态 notice**（`AgentPart.type = 'notice'`，不进 LLM）：`error`（气泡 danger 底 + toast）/ `aborted`（muted「已中止」）；中止/错误时进行中工具标 `failed`。
-- **未配置**：空态 +「去设置」打开 config 子视图。
-- **悬浮操作**：输入框上方零宽中线锚点。滚底非贴底即显；中止仅输出中。两钮 absolute，solo=`translate -50%` 居中，pair=分居中线两侧（半槽 4px）；中止消失后滚底 translate 200ms 滑回正中。阴影 3 层插值 hover 抬升。点滚底 smooth；streaming/发送瞬时贴底。中止 aurora；进出场 200/150ms；中止走 `agentAbort`。
-- **输入**：placeholder 固定「聊点什么...」（不随生成态切换）。
-- **历史跳转**：搜索栏 accessory 内历史按钮（`Actions.vue`，`i-ri-chat-history-line`，置于新会话钮左侧），点击弹 `dropdown-panel` 浮层（`useFloating` `bottom-end` + Teleport body）列出本会话所有 user 消息（折叠空白 + 截断 60 字 + 空消息回退序号）。点击列表项 → 关浮层 → `document.querySelector('[data-msg-id]')` `scrollIntoView({ block: 'center' })`（View.vue 的 user 行带 `data-msg-id`）；跳转触发滚动 → View.vue `onScroll` 自然更新 `stickToBottom=false`，无需跨组件协调。按钮在有 user 消息前 disabled；模块切换 accessory unmount 时监听器随 `onUnmounted` 注销。
+### 贴底滚动
+
+- **自动滚底条件**：仅列表距底 < 24px 时 streaming 增量自动滚底
+- **上翻不打断**：用户上翻阅读时不自动滚底
+- **发送强制贴底**：发送新消息时强制贴底
+- **布局 watch**：用轻量签名（条数 + streaming 长度）+ rAF 合并滚底，流式阶段不插值高度
+
+### 悬浮输入岛
+
+- **布局**：`agent-footer` absolute 贴底（左右/底 12），不占 flex 流
+- **消息区**：铺满并可滚入 footer 下方
+- **底部预留**：滚动区 `padding-bottom` + `chrome-fade-bottom` 高度，由 ResizeObserver 跟踪 footer 实际高度动态驱动（`--agent-footer-reserve`）
+- **恒定间距**：末条消息距输入岛恒为 `--space`
+- **渐隐贴合**：渐隐精确贴合 footer 区域
+- **同步增长**：textarea 自动撑高时三者（padding / 渐隐 / textarea）同步增长
+
+### 思考模式
+
+`AgentPart.type = 'reasoning'`：
+
+- **来源**：LLM 思考模式输出（`reasoning_content`，DeepSeek-R1 / 智谱 GLM / Kimi 等）流式累积成 reasoning part
+- **展示**：三行省略（sparkling 图标 + 「思考」标签 + secondary 文本）
+- **不回灌 LLM**：`toLlmMessages` 只取 text，reasoning 仅 UI 可见
+- **多轮分段**：每轮独立成段（reasoningDelta 累积到最后一个 reasoning part 或新建）
+
+### 工具结果
+
+- **web_search 成功**：展示 answer 摘要（三行省略）
+- **web_search 失败**：展示 `output` 错误串
+- **run_command 等**：展示 `output` 原文
+
+### 状态 notice
+
+`AgentPart.type = 'notice'`，不进 LLM：
+
+- **error**：气泡 danger 底 + toast
+- **aborted**：muted「已中止」
+- **副作用**：中止/错误时进行中工具标 `failed`
+
+### 未配置
+
+- 空态 +「去设置」打开 config 子视图
+
+### 悬浮操作
+
+- **锚点**：输入框上方零宽中线锚点
+- **滚底按钮显隐**：滚底非贴底即显
+- **中止按钮显隐**：仅输出中显示
+- **双钮布局**：两钮 absolute；solo = `translate -50%` 居中；pair = 分居中线两侧（半槽 4px）
+- **单→双回正**：中止消失后滚底按钮 `translate` 200ms 滑回正中
+- **滚底点击**：smooth；streaming/发送时瞬时贴底
+- **中止样式**：aurora
+- **进出场**：200/150ms
+- **中止调用**：走 `agentAbort`
+- **阴影**：3 层插值 hover 抬升
+
+### 输入
+
+- placeholder 固定「聊点什么...」（不随生成态切换）
+
+### 历史跳转
+
+- **入口**：搜索栏 accessory 内历史按钮（`Actions.vue`，`i-ri-chat-history-line`，置于新会话钮左侧）
+- **浮层**：点击弹 `dropdown-panel` 浮层（`useFloating` `bottom-end` + Teleport body），列出本会话所有 user 消息（折叠空白 + 截断 60 字 + 空消息回退序号）
+- **跳转**：点击列表项 → 关浮层 → `document.querySelector('[data-msg-id]')` `scrollIntoView({ block: 'center' })`（View.vue 的 user 行带 `data-msg-id`）
+- **滚动联动**：跳转触发滚动 → View.vue `onScroll` 自然更新 `stickToBottom=false`，无需跨组件协调
+- **禁用态**：有 user 消息前 disabled
+- **注销**：模块切换 accessory unmount 时监听器随 `onUnmounted` 注销
 
 ## 文件结构
 

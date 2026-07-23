@@ -18,9 +18,16 @@
 
 翻转锚点是 **primary**（frame 原点近 (0,0) 的菜单栏屏），**不是** `NSScreen.mainScreen`（随键盘焦点漂移）。`ax_y = primary_max_y − cocoa_y − h`。
 
-**布局区**（`layout_*`）：以 `visibleFrame` 为底，但全局只认一屏为底 Dock 宿主（`bottom_inset` 最大，并列 primary 优先）；其它屏若被系统误扣 Dock 高则把底边拉回 `frame` 底（修副屏下半/左下/右下贴底留白）。菜单栏顶 inset 与侧边 Dock 仍跟 visible；结果始终夹进 `frame`。
+**布局区**（`layout_*`）以 `visibleFrame` 为底，但全局只认一屏为底 Dock 宿主：
 
-**写入顺序**：AX / AppleScript 均 `size → position → size`（macOS 按当前屏钳制尺寸；先 position 再 size 时，下半/左下/右下会以旧高度短暂跨出副屏底边——竖排副屏时直接压到主屏）。目标矩形再夹进 `layout_*`。
+- 底 Dock 宿主判定：`bottom_inset` 最大，并列时 primary 优先
+- 其它屏若被系统误扣 Dock 高，则把底边拉回 `frame` 底（修副屏下半/左下/右下贴底留白）
+- 菜单栏顶 inset 与侧边 Dock 仍跟 visible；结果始终夹进 `frame`
+
+**写入顺序**：AX / AppleScript 均 `size → position → size`：
+
+- macOS 按当前屏钳制尺寸；先 position 再 size 时，下半/左下/右下会以旧高度短暂跨出副屏底边（竖排副屏时直接压到主屏）
+- 目标矩形再夹进 `layout_*`
 
 窗口归属屏：读 AX 位置 + 尺寸，用**中心点**命中 `ax_frame_*`；重叠时取面积更小屏。AppleScript 回退同样先取窗口几何再选屏。
 

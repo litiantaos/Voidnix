@@ -15,8 +15,40 @@
 ## 约束
 
 - 需**屏幕录制权限**（`CGDisplayCreateImage`），未授权返回中文错误
-- **多屏**：捕获**光标所在显示器**（`CGMainDisplayID` 初始化 → 安全 `CGGetDisplaysWithPoint` → 优先 `CGDisplayCreateImage`，失败改 `CGWindowListCreateImage` 同 bounds，**不回落主屏**）。overlay 几何以 capture 时 `surface.display_id` 对应 `NSScreen` 为第一优先（enter 时点仅 fallback）；SkyLight 把窗口绑到**所有显示器** Current Space（副屏独立 Space）；`CanJoinAllSpaces`；enter 即 contentView opacity=1，`claim_key` 多拍 + `overlay_ready` 再 claim。换屏/冷启动会丢 key；`acceptsFirstMouse` 可重试安装；启动预热 WebView。**select 阶段指针由原生 NSEvent local+global monitor 注入 `__screenshotPointer`**（global 仅在未 key 时注入，避免与 local 双份；冷启动首击常被系统当激活 / 穿到下层，DOM mousedown 不可靠；annotate/scroll 仍走 DOM）。快捷键当下即 `activate_app`。不跨屏框选。前端选区为屏内本地坐标；`CaptureSurface.origin` 仅 native 出口换算。会话中再按截屏快捷键 = 取消/解卡
+
+### 多屏捕获
+
+- **捕获光标所在显示器**：`CGMainDisplayID` 初始化 → 安全 `CGGetDisplaysWithPoint` → 优先 `CGDisplayCreateImage`，失败改 `CGWindowListCreateImage` 同 bounds，**不回落主屏**
+- **overlay 几何**：以 capture 时 `surface.display_id` 对应 `NSScreen` 为第一优先（enter 时点仅 fallback）
+- **Space 绑定**：SkyLight 把窗口绑到**所有显示器** Current Space（副屏独立 Space）；`CanJoinAllSpaces`
+- **不跨屏框选**
+
+### 坐标
+
+- 前端选区为**屏内本地坐标**
+- `CaptureSurface.origin` 仅 native 出口换算
+
+### 窗口与焦点
+
+- enter 即 contentView **opacity=1**，`claim_key` 多拍 + `overlay_ready` 再 claim
+- 换屏/冷启动会丢 key；`acceptsFirstMouse` 可重试安装；启动预热 WebView
+
+### 指针注入
+
+- **select 阶段指针由原生 NSEvent local+global monitor 注入 `__screenshotPointer`**：global 仅在未 key 时注入，避免与 local 双份；冷启动首击常被系统当激活 / 穿到下层，DOM mousedown 不可靠
+- **annotate/scroll 仍走 DOM**
+
+### 快捷键
+
+- 快捷键当下即 **`activate_app`**
+- 会话中再按截屏快捷键 = **取消/解卡**
+
+### 智能吸附
+
 - `CGWindowListCopyWindowInfo` 枚举可见窗口矩形（layer∈[0,24)，含本应用 Floating 主窗；截屏 overlay/钉图在 Status=25 已排除），与目标屏相交后减 origin 变本地（智能吸附选区）
+
+### OCR / 跨 Space
+
 - Vision OCR 通过 `swift -e` 执行 `VNRecognizeTextRequest` + `VNDetectBarcodesRequest`（zh-Hans/Hant/en/ja 文字 + QR/条码），一次请求同时返回文字和二维码内容（`OcrResult { text, qr }`）
 - Skylight `move_window_to_active_space` 跨 Space
 
