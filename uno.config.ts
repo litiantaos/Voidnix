@@ -91,7 +91,7 @@ export default defineConfig({
     // 大输入：soft-surface + theme .ui-field 描边/聚焦
     'ui-field':
       'radius-ctrl outline-none text-sm font-medium soft-surface text-primary select-none',
-    'ui-disabled': 'opacity-50 cursor-not-allowed',
+    'ui-disabled': 'cursor-not-allowed',
 
     'flex-center': 'flex items-center justify-center',
     'flex-col-full': 'flex flex-col',
