@@ -33,6 +33,11 @@ mod imp {
             attribute: *mut c_void,
             value: *mut c_void,
         ) -> AXError;
+        fn AXUIElementIsAttributeSettable(
+            element: AXUIElementRef,
+            attribute: *mut c_void,
+            settable: *mut bool,
+        ) -> AXError;
         fn AXValueCreate(the_type: u32, value_ptr: *const c_void) -> *mut c_void;
         fn AXValueGetValue(value: *mut c_void, the_type: u32, value_ptr: *mut c_void) -> bool;
         pub fn CFRelease(cf: *mut c_void);
@@ -42,6 +47,9 @@ mod imp {
             c_str: *const i8,
             encoding: u32,
         ) -> *mut c_void;
+        /// CoreFoundation 常量（Get 规则，无需 release），用于 AXEnhancedUserInterface 写入。
+        static kCFBooleanTrue: *const c_void;
+        static kCFBooleanFalse: *const c_void;
     }
 
     const CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
@@ -142,6 +150,44 @@ mod imp {
         CFRelease(size_val);
     }
 
+    /// 读 CFString 类型属性（如 AXSubrole / AXRole）。
+    unsafe fn ax_copy_string_attr(element: AXUIElementRef, attr: &str) -> Option<String> {
+        let val = ax_copy_attr(element, attr)?;
+        let result = {
+            let cf = core_foundation::string::CFString::wrap_under_get_rule(val as *const _);
+            cf.to_string()
+        };
+        CFRelease(val);
+        Some(result)
+    }
+
+    /// 判断窗口是否处于原生全屏（Rectangle 同款判定）：读 `AXFullScreenButton` 子元素
+    /// 的 `AXSubrole`，`AXZoomButton` = 全屏中（绿色按钮变为退出语义）。
+    unsafe fn ax_is_fullscreen(win_ref: *mut c_void) -> bool {
+        let fs_btn = ax_copy_attr(win_ref, "AXFullScreenButton");
+        let result = fs_btn
+            .as_ref()
+            .and_then(|btn| ax_copy_string_attr(*btn, "AXSubrole"))
+            .is_some_and(|s| s == "AXZoomButton");
+        if let Some(v) = fs_btn {
+            CFRelease(v);
+        }
+        result
+    }
+
+    /// 判断窗口是否可缩放：`AXSize` 是否 settable。查询失败时假设可缩放（大多数应用
+    /// 可缩放，且部分应用对该属性查询会失败但实际可缩放——Rectangle 同款保守策略）。
+    unsafe fn ax_is_resizable(win_ref: *mut c_void) -> bool {
+        let key = cf_str("AXSize");
+        let mut settable = true;
+        // SAFETY: win_ref 非 null（调用方保证）；AXUIElementIsAttributeSettable 为 AX C API，
+        // key 为合法 AX 属性名，settable 出参为 bool
+        let err = unsafe { AXUIElementIsAttributeSettable(win_ref, key, &mut settable) };
+        CFRelease(key);
+        // 查询失败（err != SUCCESS）→ 假设可缩放（true）；成功 → 看 settable
+        err != AX_ERROR_SUCCESS || settable
+    }
+
     /// AX 只能分别写 size / position；macOS 会按**当前屏**钳制尺寸。
     /// 下半/左下/右下若先 position 再 size，窗口会以旧高度短暂跨出副屏底边
     ///（竖排副屏时直接压到主屏）。顺序：size → position → size（Rectangle 同款）。
@@ -149,6 +195,77 @@ mod imp {
         set_ax_size(win_ref, pw, ph);
         set_ax_position(win_ref, px, py);
         set_ax_size(win_ref, pw, ph);
+    }
+
+    /// 读 app 级 `AXEnhancedUserInterface`（布尔）。None = 属性不存在/读取失败。
+    unsafe fn get_ax_enhanced_ui(app_ref: *mut c_void) -> Option<bool> {
+        let v = ax_copy_attr(app_ref, "AXEnhancedUserInterface")?;
+        // CFBoolean 与 CFNumber 均可能出现；统一归一为 bool
+        let b = {
+            let cf = core_foundation::base::CFType::wrap_under_get_rule(v as *const _);
+            let as_bool = cf.downcast::<core_foundation::boolean::CFBoolean>();
+            let as_num = cf.downcast::<core_foundation::number::CFNumber>();
+            as_bool
+                .map(|val| val == core_foundation::boolean::CFBoolean::true_value())
+                .or_else(|| as_num.and_then(|n| n.to_i64()).map(|n| n != 0))
+        };
+        CFRelease(v);
+        b
+    }
+
+    /// 设 app 级 `AXEnhancedUserInterface`。
+    unsafe fn set_ax_enhanced_ui(app_ref: *mut c_void, on: bool) {
+        let key = cf_str("AXEnhancedUserInterface");
+        // CFBoolean true/false 作为 AXUIElementSetAttributeValue 的 value（Get 规则拷贝即可）
+        let val: *mut c_void = if on {
+            kCFBooleanTrue as *mut _
+        } else {
+            kCFBooleanFalse as *mut _
+        };
+        AXUIElementSetAttributeValue(app_ref, key, val);
+        CFRelease(key);
+    }
+
+    /// RAII guard：构造时创建 app ref 并（若 `AXEnhancedUserInterface == true`）关 false；
+    /// drop 时恢复原值并释放 app ref。Chromium 系（Chrome 等）默认开启该属性，导致 AX
+    /// 写窗口触发异步动画（~250ms）且 position 被吞、size 漂移；关闭后写入瞬时精确
+    ///（Rectangle 同款策略）。属性不存在/读取失败时为 no-op（大多数应用无此属性）。
+    struct EnhancedUiGuard {
+        app_ref: *mut c_void,
+        prev: Option<bool>,
+    }
+
+    impl EnhancedUiGuard {
+        /// app_ref 由调用方在 drop 前保持有效；guard 接管其所有权并在 drop 时 release。
+        /// 先构造 guard（prev: None）确保任意阶段 panic 经 Drop 回收 app_ref，再读写 EnhancedUI。
+        unsafe fn new(app_ref: *mut c_void) -> Self {
+            let mut guard = EnhancedUiGuard {
+                app_ref,
+                prev: None,
+            };
+            if app_ref.is_null() {
+                return guard;
+            }
+            guard.prev = unsafe { get_ax_enhanced_ui(app_ref) };
+            if guard.prev == Some(true) {
+                unsafe { set_ax_enhanced_ui(app_ref, false) };
+            }
+            guard
+        }
+    }
+
+    impl Drop for EnhancedUiGuard {
+        fn drop(&mut self) {
+            if self.app_ref.is_null() {
+                return;
+            }
+            if self.prev == Some(true) {
+                // SAFETY: app_ref 有效（new 时由 AXUIElementCreateApplication 创建）
+                unsafe { set_ax_enhanced_ui(self.app_ref, true) };
+            }
+            // SAFETY: app_ref 为 Create 规则（AXUIElementCreateApplication），release 配平
+            unsafe { CFRelease(self.app_ref) };
+        }
     }
 
     /// 将目标矩形夹进屏的 layout 区（防跨屏钳制后残留越界）。
@@ -612,7 +729,7 @@ mod imp {
                 let result =
                     // SAFETY: win_ref 非 null（Some 分支）；apply_ax_layout 为 unsafe fn，
                     // 所有 AX 读写均经 ax_copy_attr/set_ax_* 封装（内部 null 检查 + CFRelease 配平）
-                    unsafe { apply_ax_layout(win_ref, layout, custom_width, custom_height) };
+                    unsafe { apply_ax_layout(win_ref, primary_pid, layout, custom_width, custom_height) };
                 // SAFETY: win_ref 由 AXUIElementCreateApplication + CFRetain 创建（+1 retain），
                 // 此处 release 配平，避免泄漏
                 unsafe { CFRelease(win_ref) };
@@ -713,10 +830,24 @@ mod imp {
 
     unsafe fn apply_ax_layout(
         win_ref: *mut c_void,
+        pid: i32,
         layout: &str,
         custom_width: f64,
         custom_height: f64,
     ) -> Result<(), String> {
+        // 全屏窗口跳过：原生全屏窗口 AX 写 frame 行为不可预测（静默忽略 / 退出全屏后错位）。
+        // SAFETY: win_ref 非 null（调用方保证）
+        if unsafe { ax_is_fullscreen(win_ref) } {
+            return Ok(());
+        }
+
+        // EnhancedUI guard：Chromium 系默认开启，致 AX 写窗口触发异步动画 + position 丢失。
+        // 关闭后写入瞬时精确；drop 自动恢复。无此属性的应用（大多数）为 no-op。
+        // SAFETY: pid > 0（调用方 set_layout_on_main_thread 保证）；AXUIElementCreateApplication
+        // 接受任意 pid，返回 Create 规则 app ref，guard 生命周期内有效，drop 后手动 release
+        let app_ref = unsafe { AXUIElementCreateApplication(pid) };
+        let _ui_guard = unsafe { EnhancedUiGuard::new(app_ref) };
+
         let current_pos = {
             let pos = ax_copy_attr(win_ref, "AXPosition");
             let result = pos.as_ref().and_then(|v| ax_value_to_point(*v));
@@ -737,6 +868,11 @@ mod imp {
         let screens = do_get_screens();
         let screen = screen_for_window(&screens, current_pos, current_size);
 
+        // 可缩放检测：固定尺寸窗口（FaceTime / 系统弹窗等）AXSize 写入静默失败，
+        // 会导致「位置变了但尺寸没变」。不可缩放时只写 position（Rectangle 同款策略）。
+        // SAFETY: win_ref 非 null
+        let resizable = unsafe { ax_is_resizable(win_ref) };
+
         if layout == "next-display" || layout == "prev-display" {
             let Some(target) = adjacent_screen(&screens, &screen, layout == "next-display") else {
                 return Ok(());
@@ -744,9 +880,20 @@ mod imp {
             let (wx, wy) = current_pos.unwrap_or((screen.layout_x, screen.layout_y));
             let (ww, wh) =
                 current_size.unwrap_or((screen.layout_width * 0.5, screen.layout_height * 0.5));
-            let (px, py, pw, ph) = map_window_to_screen(wx, wy, ww, wh, &screen, target);
-            let (px, py, pw, ph) = clamp_to_layout(px, py, pw, ph, target);
-            set_ax_frame(win_ref, px, py, pw, ph);
+            if resizable {
+                let (px, py, pw, ph) = map_window_to_screen(wx, wy, ww, wh, &screen, target);
+                let (px, py, pw, ph) = clamp_to_layout(px, py, pw, ph, target);
+                set_ax_frame(win_ref, px, py, pw, ph);
+            } else {
+                // 固定尺寸：只按比例迁移位置，尺寸不动
+                let fw = screen.layout_width.max(1.0);
+                let fh = screen.layout_height.max(1.0);
+                let rel_x = (wx - screen.layout_x) / fw;
+                let rel_y = (wy - screen.layout_y) / fh;
+                let px = target.layout_x + rel_x * target.layout_width;
+                let py = target.layout_y + rel_y * target.layout_height;
+                set_ax_position(win_ref, px, py);
+            }
             return Ok(());
         }
 
@@ -761,7 +908,15 @@ mod imp {
 
         let (px, py, pw, ph) = compute_target(layout, &screen, custom_width, custom_height);
         let (px, py, pw, ph) = clamp_to_layout(px, py, pw, ph, &screen);
-        set_ax_frame(win_ref, px, py, pw, ph);
+        if resizable {
+            set_ax_frame(win_ref, px, py, pw, ph);
+        } else {
+            // 固定尺寸：定位到区域左上角，尺寸不动。用真实尺寸重新 clamp 防越屏
+            //（clamp_to_layout 上方用的是区域尺寸，固定窗口可能比区域大）
+            let (cw, ch) = current_size.unwrap_or((pw, ph));
+            let (fx, fy, _, _) = clamp_to_layout(px, py, cw, ch, &screen);
+            set_ax_position(win_ref, fx, fy);
+        }
         Ok(())
     }
 
