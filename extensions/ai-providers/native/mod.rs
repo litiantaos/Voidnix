@@ -1,6 +1,6 @@
 //! AI 提供商扩展：写 `~/.config/voidnix[/dev]/ai.env` + 读 env 快照（供 App 内回退）。
 //! 无代理、无热路径。env 文件按构建分流到 voidnix/ 或 voidnix.dev/；shell 全局投影仅 release
-//! 注入——外部工具固定变量名（`ZHIPU_*` 等）无法 dev/prod 并存，debug 只写文件供 App 内回退与手动 source。
+//! 注入——外部工具按私有名（`VOIDNIX_*`）显式引用，无法 dev/prod 并存，debug 只写文件供 App 内回退与手动 source。
 
 use crate::runtime::registry::Extension;
 use serde::Serialize;
@@ -72,8 +72,8 @@ fn migrate_legacy_pairs(rc_path: &std::path::Path) -> Result<(), String> {
 }
 
 /// 维护 shell rc 钩子（统一 shell_rc 约定）。
-/// release：幂等写入 source 块；debug：摘除历史 dev 块自愈——外部工具固定变量名无法 dev/prod
-/// 并存，shell 全局投影只保留 prod，debug 凭证仅写 `voidnix.dev/ai.env` 供 App 内回退与手动 source。
+/// release：幂等写入 source 块；debug：摘除历史 dev 块自愈——外部工具按私有名（`VOIDNIX_*`）
+/// 显式引用，无法 dev/prod 并存，shell 全局投影只保留 prod，debug 凭证仅写 `voidnix.dev/ai.env` 供 App 内回退与手动 source。
 fn ensure_shell_hook(rc_path: &std::path::Path) -> Result<bool, String> {
     migrate_legacy_pairs(rc_path)?;
     if cfg!(debug_assertions) {

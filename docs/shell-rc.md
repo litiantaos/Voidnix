@@ -61,7 +61,7 @@ shell_rc::quote_shell(path);           // POSIX 单引号
 ## 现有消费者
 
 - `zsh-autosuggestions`（补全）：`export ZSH_AS_DIR=…; eval "$(… init)"`
-- `ai-providers`（AI 凭证，仅 release）：`source ~/.config/voidnix/ai.env`（zshrc + zprofile）。debug 不注入——外部工具固定变量名无法 dev/prod 并存，dev 凭证只写 `voidnix.dev/ai.env` 供 App 内回退与手动 source
+- `ai-providers`（AI 凭证，仅 release）：`source ~/.config/voidnix/ai.env`（zshrc + zprofile）。debug 不注入——外部工具按私有名（`VOIDNIX_*`）显式引用，无法 dev/prod 并存，dev 凭证只写 `voidnix.dev/ai.env` 供 App 内回退与手动 source
 
 ## 禁止
 

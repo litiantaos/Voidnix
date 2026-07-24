@@ -54,7 +54,7 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
 ### AI 提供商
 
-统一管理 OpenAI 兼容 URL / Key / 模型，供翻译、Agent 与外部工具（OpenCode、Grok Build、Claude Code 等）共用。同一提供商支持多 Key，智谱显示 5h / 7d / 30d 额度曲线、DeepSeek 显示账户余额；保存后写 `ai.env` 并幂等注入 shell rc，知名端点自动映射规范环境变量（`ZHIPU_*` / `DEEPSEEK_*` / `ANTHROPIC_*`）。
+统一管理 OpenAI 兼容 URL / Key / 模型，供翻译、Agent 与外部工具（OpenCode、Grok Build 等）共用。同一提供商支持多 Key，智谱显示 5h / 7d / 30d 额度曲线、DeepSeek 显示账户余额；保存后写 `ai.env` 并幂等注入 shell rc，全量私有命名空间（`VOIDNIX_ZHIPU_*` / `VOIDNIX_DEEPSEEK_*`），不抢占外部工具约定的通用变量名。
 
 ### 翻译
 

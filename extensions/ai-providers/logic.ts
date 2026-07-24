@@ -13,12 +13,12 @@ export function baseUrlEnvName(apiKeyEnv: string): string {
   return ''
 }
 
-/** 是否智谱 Coding Plan 端点（OpenCode / Grok 读 ZHIPU_API_KEY）。 */
+/** 是否智谱 Coding Plan 端点（固定后缀 VOIDNIX_ZHIPU）。 */
 export function isZhipuCodingEndpoint(endpoint: string): boolean {
   return /bigmodel\.cn|zhipuai/i.test(endpoint)
 }
 
-/** 是否 DeepSeek 端点（OpenCode / Grok 读 DEEPSEEK_API_KEY）。 */
+/** 是否 DeepSeek 端点（固定后缀 VOIDNIX_DEEPSEEK）。 */
 export function isDeepseekEndpoint(endpoint: string): boolean {
   return /deepseek\.com/i.test(endpoint)
 }
@@ -33,16 +33,17 @@ export interface ExportPayload {
 
 /**
  * 导出用 API Key 环境变量名。
- * 知名端点锁死工具约定名（OpenCode / Grok Build）；其余按名称或 hostname 推导
- * （如 OpenAI 端点 → OPENAI_API_KEY）。envKey 显式优先。
+ * 全量加 `VOIDNIX_` 私有前缀——不抢占外部工具约定的通用变量名（如 `ZHIPU_API_KEY`），
+ * 外部工具必须显式引用 Voidnix 变量名。知名端点用固定后缀（ZHIPU / DEEPSEEK），
+ * 其余按名称或 hostname 推导。`envKey` 显式优先（逃生舱，不加前缀）。
  */
 export function resolveEnvKey(p: AiProvider): string {
   if (p.envKey.trim()) return p.envKey.trim()
-  if (isZhipuCodingEndpoint(p.endpoint)) return 'ZHIPU_API_KEY'
-  if (isDeepseekEndpoint(p.endpoint)) return 'DEEPSEEK_API_KEY'
+  if (isZhipuCodingEndpoint(p.endpoint)) return 'VOIDNIX_ZHIPU_API_KEY'
+  if (isDeepseekEndpoint(p.endpoint)) return 'VOIDNIX_DEEPSEEK_API_KEY'
   const label = providerDisplayName(p)
   if (!label || label === '未命名提供商') return ''
-  return `${label.replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}_API_KEY`
+  return `VOIDNIX_${label.replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}_API_KEY`
 }
 
 /**
@@ -57,25 +58,17 @@ export function envLabelTag(label: string): string {
     .toUpperCase()
 }
 
-/** 导出 env 前缀（无 `_API_KEY`）；知名端点 → ZHIPU/DEEPSEEK，否则名称/域名，兜底 AI。 */
+/** 导出前缀（无 `_API_KEY`）：canonical 非空时 `VOIDNIX_<名称/域名>`，否则空串。canonical 为空即信息不全，调用方整体跳过不导出。 */
 export function exportKeyPrefix(p: AiProvider): string {
   const canonical = resolveEnvKey(p)
-  if (canonical) {
-    const pre = canonical.replace(/_API_KEY$/, '')
-    return pre || 'AI'
-  }
-  const label = providerDisplayName(p)
-  if (label && label !== '未命名提供商') {
-    const t = envLabelTag(label)
-    if (t) return t
-  }
-  return 'AI'
+  return canonical.replace(/_API_KEY$/, '')
 }
 
 /**
- * 为提供商每把非空 Key 分配互不冲突的 `*_API_KEY` 名。
- * - 单 Key：规范名（`DEEPSEEK_API_KEY` 等）；规范名已被占用时序号兜底，**不静默丢**
- * - 多 Key：第一把非空拿规范名（有则）；其余 `PREFIX_TAG_API_KEY`；
+ * 为提供商每把非空 Key 分配互不冲突的 `VOIDNIX_*_API_KEY` 名。
+ * provider 信息不全（无 endpoint → canonical 为空）→ 整体不导出。
+ * - 单 Key：规范名（`VOIDNIX_DEEPSEEK_API_KEY` 等）；规范名已被占用时序号兜底，**不静默丢**
+ * - 多 Key：第一把非空拿规范名；其余 `VOIDNIX_PREFIX_TAG_API_KEY`；
  *   tag 来自备注 ASCII，空或碰撞则 `KEY{n}` / 递增后缀，**不静默丢 Key**
  */
 export function assignKeyEnvNames(
@@ -86,6 +79,7 @@ export function assignKeyEnvNames(
   if (slots.length === 0) return []
 
   const canonical = resolveEnvKey(p)
+  if (!canonical) return []
   const prefix = exportKeyPrefix(p)
   const out: { keyId: string; envName: string }[] = []
   let ordinal = 0
@@ -95,11 +89,10 @@ export function assignKeyEnvNames(
     let envName = ''
 
     if (slots.length === 1) {
-      // 单 Key：优先规范名；规范名已被 taken 时不 continue，落入下方序号兜底（不丢）
-      if (!canonical) continue
+      // 单 Key：规范名（已被 taken 则落入下方序号兜底，不丢）
       if (!taken.has(canonical)) envName = canonical
-    } else if (ordinal === 1 && canonical && !taken.has(canonical)) {
-      // 多 Key 第一把 → 工具约定名（OpenCode / Grok）
+    } else if (ordinal === 1 && !taken.has(canonical)) {
+      // 多 Key 第一把 → 规范名
       envName = canonical
     } else {
       let tag = envLabelTag(slot.label)
@@ -128,18 +121,14 @@ export function assignKeyEnvNames(
 }
 
 /**
- * 写出全部已配置凭证：每提供商一条 `*_BASE_URL`（先）+ 各 `*_API_KEY`（后）。
- * 变量名按知名端点约定（ZHIPU/DEEPSEEK）或名称/域名推导；中枢不借用、不猜默认、不维护 active。
- *
- * 工具约定（env + 工具配置文件 baseURL）：
- * - OpenCode：`ZHIPU_API_KEY` / `DEEPSEEK_API_KEY`
- * - Grok Build：`env_key` 同上
+ * 写出全部已配置凭证：每提供商一条 `VOIDNIX_*_BASE_URL`（先）+ 各 `VOIDNIX_*_API_KEY`（后）。
+ * 全量私有前缀——不抢占外部工具约定的通用变量名，外部工具须显式引用。中枢不借用、不猜默认。
  */
 export function buildExportPayload(input: ExportInput): ExportPayload {
   const lines: string[] = [
     '# Managed by Voidnix — do not edit.',
     '# source ~/.config/voidnix/ai.env (release) / ~/.config/voidnix.dev/ai.env (debug)',
-    '# Tools: OpenCode / Grok Build (ZHIPU_* DEEPSEEK_*)',
+    '# Private namespace (VOIDNIX_*) — external tools must reference explicitly',
     '',
   ]
 
@@ -164,7 +153,7 @@ export function buildExportPayload(input: ExportInput): ExportPayload {
     }
   }
   if (named.length > 0) {
-    lines.push('# Named keys (OpenCode / Grok Build env_key)')
+    lines.push('# VOIDNIX_ keys (external tools: reference explicitly)')
     lines.push(...named)
     lines.push('')
   }
