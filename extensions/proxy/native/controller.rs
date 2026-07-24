@@ -80,32 +80,6 @@ pub async fn test_delay(base: &str, secret: &str, name: &str) -> Result<u32, Str
         .unwrap_or(0))
 }
 
-/// GET /group/{name}/delay → 批量测速，mihomo 内部并发测该组全部节点，返回 { 节点名: ms }。
-/// 一次请求替代前端逐节点串行 invoke，消除 N 次 IPC + controller 本地 HTTP 开销；
-/// 死节点超时由 mihomo 并发吸收，不占满前端 worker 致好节点排队。
-///
-/// request 级 timeout 15s 覆盖 controller 客户端默认 10s：批量端点需等全组（含 5s 超时节点）
-/// 结算，mihomo 并发聚合后整体响应常在 5-8s；余量覆盖节点多/网络抖动场景。
-pub async fn test_group_delay(base: &str, secret: &str, group: &str) -> Result<Value, String> {
-    let g = urlencoding::encode(group);
-    let test_url = urlencoding::encode(DELAY_TEST_URL);
-    let url = format!("{base}/group/{g}/delay?url={test_url}&timeout={DELAY_TIMEOUT_MS}");
-    let resp = CONTROLLER
-        .get(&url)
-        .bearer_auth(secret)
-        .timeout(Duration::from_secs(15))
-        .send()
-        .await
-        .map_err(|e| format!("批量测速请求失败: {e}"))?;
-    if !resp.status().is_success() {
-        eprintln!("[proxy] 批量测速失败: {}", resp.status());
-        return Ok(serde_json::json!({}));
-    }
-    resp.json::<Value>()
-        .await
-        .map_err(|e| format!("解析批量测速响应失败: {e}"))
-}
-
 /// PATCH /configs → 切换规则模式（rule | global | direct）。
 pub async fn set_mode(base: &str, secret: &str, mode: &str) -> Result<(), String> {
     CONTROLLER

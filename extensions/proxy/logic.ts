@@ -18,6 +18,12 @@ export interface ProxiesResponse {
   proxies: Record<string, ProxyEntry>
 }
 
+/// 流式测速单帧（Channel 推送，与 Rust DelayResult 对应）：delay=0 表示测速失败/超时。
+export interface DelayResult {
+  name: string
+  delay: number
+}
+
 /// 是否为用户可手动选择的 selector 分组（排除 mihomo 隐式 GLOBAL）。
 export function isUserSelectorGroup(node: ProxyEntry): boolean {
   return node.type === 'Selector' && node.name !== 'GLOBAL'
