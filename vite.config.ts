@@ -5,8 +5,12 @@ import { resolve } from 'path'
 
 const host = process.env.TAURI_DEV_HOST
 
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => ({
   plugins: [vue(), UnoCSS()],
+  // 生产构建剥离 console.* / debugger：release 无 inspector，残留输出纯属死码体积与噪音
+  esbuild: {
+    drop: command === 'build' ? ['console', 'debugger'] : [],
+  },
   clearScreen: false,
   server: {
     port: 1420,
