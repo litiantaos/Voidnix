@@ -17,7 +17,7 @@
 
 `search_files` 用 `mdfind -name <query> -onlyin ~` 单次拉候选，`-attr kMDItemContentType` / `-attr kMDItemUseCount` 顺带取类型与使用次数。
 
-**零 TCC 原理**：家目录本身不受 TCC 保护；Spotlight 守护进程 `mds` 以系统权限索引所有文件（含 Documents/Desktop/Downloads 等受保护目录），故无需 FDA 即可搜到内容。后端用 `starts_with` 在 reader 循环内按目标子目录前缀即时过滤——纯字符串匹配，不触达文件系统。
+**零 TCC 原理**：家目录本身不受 TCC 保护；Spotlight 守护进程 `mds` 以系统权限索引所有文件（含 Documents/Desktop/Downloads 等受保护目录），故无需 FDA 即可搜到内容。Rust 端用 `starts_with` 在 reader 循环内按目标子目录前缀即时过滤——纯字符串匹配，不触达文件系统。
 
 **白名单子目录**（`TARGET_SUBDIRS`）：Desktop / Documents / Downloads / Pictures / Music / Movies / Projects / Code。前缀过滤在解析阶段执行，保证 `MAX_ENTRIES=100` 配额全部留给目标子目录，不被家目录其它路径稀释。
 

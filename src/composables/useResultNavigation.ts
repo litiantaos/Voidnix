@@ -10,12 +10,12 @@ import { buildSearchUrl, parseWebSearchQuery } from '@/utils/web-search'
 interface ResultNavOptions {
   results: Ref<SearchResult[]>
   selectedIndex: Ref<number>
-  activeModule: ComputedRef<Extension | null>
+  activeExtension: ComputedRef<Extension | null>
   clearSearch: (value?: string) => void
   loadDefaultResults: () => Promise<void>
-  activateModule: (moduleId: string) => void
+  activateExtension: (extId: string) => void
   goHome: () => void
-  exitModule: () => void
+  exitExtension: () => void
 }
 
 /// 结果键盘导航：ArrowUp/Down 移动、Enter 执行分派、Escape 返回主界面/关闭窗口。
@@ -27,23 +27,23 @@ export function useResultNavigation(opts: ResultNavOptions) {
     selectedIndex,
     clearSearch,
     loadDefaultResults,
-    activateModule,
+    activateExtension,
     goHome,
-    exitModule,
+    exitExtension,
   } = opts
 
   // --- execute ---
 
   async function handleExecute(result: SearchResult, _index?: number, e?: KeyboardEvent) {
     if (e) e.preventDefault()
-    if (result.data?.kind === 'module' && result.data.moduleId) {
-      activateModule(result.data.moduleId as string)
+    if (result.data?.kind === 'extension' && result.data.extId) {
+      activateExtension(result.data.extId as string)
       return
     }
-    // 扩展私有回车动作（result.module = 产出扩展 id，框架注入）
-    const ext = getExtension(result.module)
+    // 扩展私有回车动作（result.extId = 产出扩展 id，框架注入）
+    const ext = getExtension(result.extId)
     await ext?.onExecute?.(result)
-    appStore.setActiveModule(null)
+    appStore.setActiveExtension(null)
     hideWindow()
   }
 
@@ -54,7 +54,7 @@ export function useResultNavigation(opts: ResultNavOptions) {
 
     switch (e.key) {
       case 'ArrowDown':
-        if (appStore.activeModuleId) return
+        if (appStore.activeExtId) return
         e.preventDefault()
         if (results.value.length > 0) {
           selectedIndex.value =
@@ -62,7 +62,7 @@ export function useResultNavigation(opts: ResultNavOptions) {
         }
         break
       case 'ArrowUp':
-        if (appStore.activeModuleId) return
+        if (appStore.activeExtId) return
         e.preventDefault()
         if (results.value.length > 0) {
           selectedIndex.value =
@@ -70,7 +70,7 @@ export function useResultNavigation(opts: ResultNavOptions) {
         }
         break
       case 'Enter':
-        if (!appStore.activeModuleId && appStore.searchQuery.startsWith('//')) {
+        if (!appStore.activeExtId && appStore.searchQuery.startsWith('//')) {
           const parsed = parseWebSearchQuery(appStore.searchQuery)
           if (parsed.type === 'url' || parsed.keyword) {
             e.preventDefault()
@@ -82,14 +82,14 @@ export function useResultNavigation(opts: ResultNavOptions) {
           }
           return
         }
-        if (appStore.activeModuleId) {
-          // 模块模式下 Enter 由各 View / BaseList 自行处理（不介入）
+        if (appStore.activeExtId) {
+          // 扩展模式下 Enter 由各 View / BaseList 自行处理（不介入）
           return
         }
         e.preventDefault()
         e.stopImmediatePropagation()
         if (results.value.length > 0) {
-          // H7：selectedIndex 可能因竞态（多选删除、模块动态返回较短结果）越界
+          // H7：selectedIndex 可能因竞态（多选删除、扩展动态返回较短结果）越界
           const result = results.value[selectedIndex.value]
           if (!result) return
           handleExecute(result)
@@ -99,7 +99,7 @@ export function useResultNavigation(opts: ResultNavOptions) {
       case 'Escape': {
         if (appStore.isDialogOpen) return
 
-        // 统一「退出当前层」：esc 到达即退出模块/子视图/窗口（输入框聚焦也直接退出，
+        // 统一「退出当前层」：esc 到达即退出扩展/子视图/窗口（输入框聚焦也直接退出，
         // 不先失焦；弹窗/下拉/录制态由各自组件 stopPropagation 自行关闭，不冒泡到此）。
         if (appStore.activeSubview) {
           e.preventDefault()
@@ -111,8 +111,8 @@ export function useResultNavigation(opts: ResultNavOptions) {
           return
         }
         e.preventDefault()
-        if (appStore.activeModuleId) {
-          exitModule()
+        if (appStore.activeExtId) {
+          exitExtension()
         } else {
           hideWindow()
         }

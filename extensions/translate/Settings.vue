@@ -350,7 +350,7 @@ function onModelListKeydown(e: KeyboardEvent) {
 
 function goAiProviders() {
   showAiModal.value = false
-  appStore.setActiveModule('ai-providers')
+  appStore.setActiveExtension('ai-providers')
 }
 
 function saveAi() {

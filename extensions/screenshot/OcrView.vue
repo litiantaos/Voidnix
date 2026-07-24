@@ -133,7 +133,7 @@ async function handleTranslate() {
   // 跨扩展通信走事件总线（C9）：screenshot 不再直依赖 translate 内部状态。
   // translate 扩展 setup 监听 'translate-pending-text'，写入自身 pendingText。
   await emit('translate-pending-text', ocrText.value)
-  appStore.setActiveModule('translate')
+  appStore.setActiveExtension('translate')
 }
 
 function trimSpaces() {

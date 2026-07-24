@@ -155,8 +155,7 @@ pub fn start_monitor(app_handle: AppHandle) {
 
             // recv_timeout 而非 recv：channel 复用后外层 tx 始终保活，
             // 主线程闭包因故未执行时 recv 会永久阻塞；超时让监控线程能跳过本轮自愈。
-            let Ok((new_change_count, sample)) =
-                rx.recv_timeout(Duration::from_secs(5)) else {
+            let Ok((new_change_count, sample)) = rx.recv_timeout(Duration::from_secs(5)) else {
                 continue;
             };
 

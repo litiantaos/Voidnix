@@ -104,7 +104,7 @@ async function importLegacyProviders(): Promise<number> {
       }
       // 旧密钥字段留在 configs 对象里；消费者侧 migrate 会 strip
       if (touched) {
-        /* agent 侧已 delete；translate 由 config 模块 strip 响应式字段 */
+        /* agent 侧已 delete；translate 由 config 扩展 strip 响应式字段 */
       }
     }
   } catch (e) {

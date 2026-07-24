@@ -52,8 +52,8 @@ export default defineExtension({
 
   search: {
     dynamic: async (query, ctx): Promise<ProviderResult[]> => {
-      // 仅模块内查询（全局避免 IP 形态误触网络）
-      if (!ctx?.moduleMode) return []
+      // 仅扩展内查询（全局避免 IP 形态误触网络）
+      if (!ctx?.extensionMode) return []
       const trimmed = query.trim()
       if (trimmed && !isValidIpLike(trimmed)) return []
       try {
@@ -67,28 +67,28 @@ export default defineExtension({
               title: data.ip,
               description: 'IP 地址',
               icon: 'i-ri-global-line',
-              data: { kind: 'module', isHighlight: true },
+              data: { kind: 'extension', isHighlight: true },
             },
             {
               id: 'ip-loc',
               title: location,
               description: '地理位置',
               icon: 'i-ri-map-pin-line',
-              data: { kind: 'module' },
+              data: { kind: 'extension' },
             },
             {
               id: 'ip-isp',
               title: data.isp || '',
               description: '运营商 (ISP)',
               icon: 'i-ri-router-line',
-              data: { kind: 'module' },
+              data: { kind: 'extension' },
             },
             {
               id: 'ip-org',
               title: data.org || '',
               description: '组织 (Org)',
               icon: 'i-ri-building-line',
-              data: { kind: 'module' },
+              data: { kind: 'extension' },
             },
           ]
           return list.filter((i) => i.title)
@@ -99,7 +99,7 @@ export default defineExtension({
             title: '查询失败',
             description: data.message || '未知错误',
             icon: 'i-ri-error-warning-line',
-            data: { kind: 'module' },
+            data: { kind: 'extension' },
           },
         ]
       } catch (e: unknown) {
@@ -109,7 +109,7 @@ export default defineExtension({
             title: '网络请求失败',
             description: e instanceof Error ? e.message : String(e),
             icon: 'i-ri-error-warning-line',
-            data: { kind: 'module' },
+            data: { kind: 'extension' },
           },
         ]
       }

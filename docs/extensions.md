@@ -1,6 +1,6 @@
 # 扩展开发
 
-所有扩展同构，目录结构统一。是否含 `native/` 子目录区分实现方式（Rust 后端 vs 纯 TS），不构成分类。全局架构见 [AGENTS.md](../AGENTS.md)。
+所有扩展同构，目录结构统一。是否含 `native/` 子目录区分实现方式（Rust 端 vs 纯 TS），不构成分类。全局架构见 [AGENTS.md](../AGENTS.md)。
 
 ## 目录结构
 
@@ -13,7 +13,7 @@ extensions/<id>/
 ├── Actions.vue            # 搜索栏配件（若声明 searchBarAccessory，命名约定 Actions 后缀）
 ├── logic.ts               # 纯逻辑提取（可选，便于测试）
 ├── *.test.ts              # 测试（co-location）
-└── native/                # Rust 后端（仅需要系统级能力时存在）
+└── native/                # Rust 端（仅需要系统级能力时存在）
     ├── mod.rs             # Extension trait 实现（setup 生命周期 + 命令）
     └── ...                # 子模块（commands.rs / engine/ 等）
 ```
@@ -46,20 +46,20 @@ export default defineExtension({
 - `subviewTitle`：子视图显示名（id→中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」（1：proxy）
 - `windowViews`：独立窗口视图，key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀（2：screenshot/window-manager）
 - `globalShortcuts`：全局快捷键绑定（5：clipboard/screenshot/agent/translate/finder-ext）
-- `placeholder`：搜索框占位提示，激活模块时显示（6：clipboard/currency/ip/time/base64/calculator）
-- `windowHeight`：模块激活时主窗口高度，三种声明语义：
+- `placeholder`：搜索框占位提示，激活扩展时显示（6：clipboard/currency/ip/time/base64/calculator）
+- `windowHeight`：扩展激活时主窗口高度，三种声明语义：
   - **`number`**：固定高度，clamp `[MIN,MAX]`
   - **`'auto'`**：随内容自适应
   - **未声明**：默认高度
   - 共 6 消费者：agent/proxy=840、translate/system-status/video/finder-ext='auto'
 - `subviewHeights`：subview 级高度覆盖，key→语义同 windowHeight（1：screenshot{ocr:'auto'}）
 
-**高度机制**：统一由 `useModuleHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管。
+**高度机制**：统一由 `useExtensionHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管。
 
 - **动画**：高度变化一次 IPC 触发 Rust → `platform/window.rs::animate_frame` 用 macOS `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS 逐帧）
 - **auto 模式**：ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`，底部将出屏则上移，离开 auto 还原原位
 
-生命周期：`setup?()`（启动钩子，无参）。3 行为槽：`disableSearchInput`（模块自管输入，禁用主搜索框）、`listOptions.multiSelect`（标准列表多选）、`onOpenSubview`（子视图打开回调，如 OCR payload 转交）。三者与能力槽同等地位（见 `runtime/types.ts`）。
+生命周期：`setup?()`（启动钩子，无参）。3 行为槽：`disableSearchInput`（扩展自管输入，禁用主搜索框）、`listOptions.multiSelect`（标准列表多选）、`onOpenSubview`（子视图打开回调，如 OCR payload 转交）。三者与能力槽同等地位（见 `runtime/types.ts`）。
 
 ### 跨扩展通信
 
@@ -77,8 +77,8 @@ export default defineExtension({
 
 ### UI 规约补充
 
-- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免模块列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / ai-providers=35 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / screenshot=110 / video=115 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160；hidden 扩展 settings=998 / search=999。
-- **`disableSearchInput` 决策**：与 `mainView` 独立——mainView 模块若仍用主搜索框过滤列表（如 clipboard）则不声明；自管输入或无需搜索框（agent/translate/settings 等）声明 `true`。uuid 有 search 但 disableSearchInput（进入后只展示即时结果）。
+- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免扩展列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / ai-providers=35 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / screenshot=110 / video=115 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160；hidden 扩展 settings=998 / search=999。
+- **`disableSearchInput` 决策**：与 `mainView` 独立——mainView 扩展若仍用主搜索框过滤列表（如 clipboard）则不声明；自管输入或无需搜索框（agent/translate/settings 等）声明 `true`。uuid 有 search 但 disableSearchInput（进入后只展示即时结果）。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
 - **View 根禁止与 ContentView 竞争的纵向双滚**：经 ContentView 渲染的 View（mainView/subviews）根及主内容流不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是页面级唯一滚动容器——View 根再设 overflow 会形成双层滚动，`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中失效内层 → 选中框出视口。固定高度媒体预览等局部区域（如 OCR 图预览）可自滚。`windowViews`（独立窗口）不经 ContentView，不受此约束。
 
@@ -93,7 +93,7 @@ interface SearchProvider {
 
 interface SearchContext {
   signal: AbortSignal // 新查询覆盖旧查询时 abort
-  moduleMode?: boolean // true=模块独占（进入模块），false=全局聚合（默认列表）
+  extensionMode?: boolean // true=扩展独占（进入扩展），false=全局聚合（默认列表）
   emit?: (results: ProviderResult[]) => void // 流式部分结果：扩展可多次调用先产出快结果，最后 return 补充
 }
 ```
@@ -102,20 +102,20 @@ interface SearchContext {
 
   流程：**流式增量召回**——并发启动所有扩展 dynamic，每个扩展的 `emit`/`resolve` 都触发一次增量重排（keyword 合流 → dedupe → groupAndSort）并回调 `onUpdate`。快结果（应用缓存/同步扩展）秒出，慢结果（mdfind 文件/网络）增量补充，不再 `Promise.all` barrier 等全部。finalScore 仍只预算一次（emit 时打分，groupAndSort 复用）。
 
-  - **流式**：扩展可选调用 `ctx.emit(partial)` 多次产出部分结果（如 search 扩展应用 emit 秒出、文件 return 后补），不调用的扩展走一次性 return 行为不变。框架按 `module:id` 去重，emit 与 return 重叠不会产生重复项；但扩展应遵循「emit 产出首批、return 产出补充」的语义分工——已 emit 的内容不放入 return，避免多余打分计算
-  - **keyword 合流**：`scoreModuleEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；每次 flush 重算（纯同步、扩展数少），keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）
-  - **入口抑制**：dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其入口（即时答案优先）；clipboard 等数据型 kind≠module 不抑制
-  - **过滤规则**：空 query 按 `finalScore>0`；非空 query 查找型需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透
+  - **流式**：扩展可选调用 `ctx.emit(partial)` 多次产出部分结果（如 search 扩展应用 emit 秒出、文件 return 后补），不调用的扩展走一次性 return 行为不变。框架按 `extId:id` 去重，emit 与 return 重叠不会产生重复项；但扩展应遵循「emit 产出首批、return 产出补充」的语义分工——已 emit 的内容不放入 return，避免多余打分计算
+  - **keyword 合流**：`scoreExtensionEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；每次 flush 重算（纯同步、扩展数少），keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）
+  - **入口抑制**：dynamic 产出相关 tool 型结果（kind=extension，finalScore > 0）的扩展抑制其入口（即时答案优先）；clipboard 等数据型 kind≠extension 不抑制
+  - **过滤规则**：空 query 按 `finalScore>0`；非空 query 查找型需 `fuzzy>0`，extension 类即时答案靠 `finalScore>0` 穿透
 
-- **模块模式**（同一 `searchEngine.search`，`setActiveModule` 后）：
+- **扩展模式**（同一 `searchEngine.search`，`setActiveExtension` 后）：
 
   - **召回**：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序
   - **超时/abort**：同样受 `searchTimeoutMs` 超时与 abort 保护；每扩展独立 child `AbortSignal`（超时只 abort 该扩展，父 abort 同步取消）
-  - **模式快照**：`search()` 入口快照 `activeModule`，await 期间切换不影响本次后处理
+  - **模式快照**：`search()` 入口快照 `activeExtension`，await 期间切换不影响本次后处理
   - **UX**：外壳（`useSearchInput`）延迟 50ms 显示 loading，同步 dynamic 不闪、网络型才占位
 
-- `moduleMode` 区分调用场景：**全局即时答案仅 calculator / currency**；ip / time / uuid / base64 等须 `if (!ctx?.moduleMode) return []`，仅模块内响应。网络型（currency）全局空 query 仍应跳过请求返回 `[]`，避免拖慢默认列表。
-- 半静态内容（如 base64）用模块级缓存自管，走 dynamic 返回。
+- `extensionMode` 区分调用场景：**全局即时答案仅 calculator / currency**；ip / time / uuid / base64 等须 `if (!ctx?.extensionMode) return []`，仅扩展内响应。网络型（currency）全局空 query 仍应跳过请求返回 `[]`，避免拖慢默认列表。
+- 半静态内容（如 base64）用扩展内缓存自管，走 dynamic 返回。
 
 ### SearchResult
 
@@ -123,28 +123,28 @@ interface SearchContext {
 {
   id: string                  // 扩展内 localId
   title: string               // 进拼音索引，框架统一打分
-  module: string              // 框架自动注入（扩展禁填）= 产出扩展 meta.id
+  extId: string               // 框架自动注入（扩展禁填）= 产出扩展 meta.id
   description?, icon?, shortcut?, boost?,
-  data: { kind, moduleId?, path?, ... }
+  data: { kind, extId?, path?, ... }
   score?: number              // 仅框架填，扩展禁止填
-  source?: string             // 框架注入（扩展禁填）：全局模式 kind=module 结果的来源扩展显示名
+  source?: string             // 框架注入（扩展禁填）：全局模式 kind=extension 结果的来源扩展显示名
 }
 ```
 
-- `kind` 严格枚举：`application | folder | file | module | clipboard | web`（folder/file 同组）。扩展须正确设置，否则分组错乱。
+- `kind` 严格枚举：`application | folder | file | extension | clipboard | web`（folder/file 同组）。扩展须正确设置，否则分组错乱。
 - `boost?`：扩展可选组内优先级提示（默认 0），`finalScore = fuzzy(title,query) + boost`。调整相关性**只能**通过 boost（score 框架独占）。
-- 扩展返回 `ProviderResult`（Omit module/source），框架注入 module 与 source（全局模式 + kind=module 时自动注入来源扩展显示名，UI 右侧标注）。
+- 扩展返回 `ProviderResult`（Omit extId/source），框架注入 extId 与 source（全局模式 + kind=extension 时自动注入来源扩展显示名，UI 右侧标注）。
 
 ### 执行分派（框架内置契约）
 
 搜索结果回车由 `data.kind` 分派：
 
-- `data.kind === 'module' && data.moduleId` → **框架内置激活**（setActiveModule），不走 onExecute（模块入口结果，由 keywordSearchAll 产出）
+- `data.kind === 'extension' && data.extId` → **框架内置激活**（setActiveExtension），不走 onExecute（扩展入口结果，由 keywordSearchAll 产出）
 - 其余 → 扩展 `onExecute` 槽，执行后框架回全局模式 + 隐藏窗口
 
 ### 管道层次（不可破坏）
 
-去重 → 分组 → 组内排序 → 组间定序 → 组内限流。组间序由 `constants.GROUP_ORDER` 锁死（`application → module → file → clipboard → web`），不开放给扩展调整。扩展调整相关性的唯一通道：`data.kind` 归组（组间位）+ `boost`（组内位）。
+去重 → 分组 → 组内排序 → 组间定序 → 组内限流。组间序由 `constants.GROUP_ORDER` 锁死（`application → extension → file → clipboard → web`），不开放给扩展调整。扩展调整相关性的唯一通道：`data.kind` 归组（组间位）+ `boost`（组内位）。
 
 ## 扩展配置（defineConfig）
 
@@ -163,7 +163,7 @@ config.maxDays = 60 // 自动写盘
 - 启动期 `isLoading` 抑制 watch 冗余写；退出 `onCloseRequested` flush 防抖窗口内变更。
 - 跨窗口同步：订阅 plugin-store `onChange`，其他窗口 set 自动同步本地 reactive。
 - schema 变更：自开发自用不维护迁移，改 schema 时手动删磁盘 config.json 即可。
-- store 实例缓存（模块级 `Map<storePath, Store>`），watch 回调复用，禁止每次保存重新 `load()`。
+- store 实例缓存（文件级 `Map<storePath, Store>`），watch 回调复用，禁止每次保存重新 `load()`。
 - 加载异步竞态：`load()` 异步，扩展 setup 早期可能读 defaults。安全参数由 Rust clamp 兜底。
 - 资源上限（agent 专属）：plain `BOUNDS` const 表达 floor/cap，**权威在 Rust `native/policy.rs`**，TS 仅 UI 镜像，详见 [agent.md](./extensions/agent.md)。
 - 含 Rust 命令同步的配置按**数据位置**分两类同步规约：

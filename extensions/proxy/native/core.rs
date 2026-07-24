@@ -21,7 +21,7 @@ pub(crate) const GEO_RELEASE_BASE: &str =
 /// GitHub API latest release 端点（不经镜像：gh-proxy 仅代理 release 下载，不转发 API）。
 const LATEST_API: &str = "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest";
 
-/// 内核下载进行中标记（全局，ensure_bin 期间置 true，供 status 查询）。
+/// 核心下载进行中标记（全局，ensure_bin 期间置 true，供 status 查询）。
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
 /// 下载串行化锁（配合 ensure_bin double-check，防并发下载损坏 .gz）。
@@ -32,7 +32,7 @@ static DOWNLOAD_LOCK: LazyLock<tokio::sync::Mutex<()>> =
 static VERSION_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"v\d+\.\d+\.\d+").expect("invalid version regex"));
 
-/// 内核状态（供前端列表「内核」项展示版本号/下载状态）。
+/// 核心状态（供前端列表「核心」项展示版本号/下载状态）。
 #[derive(Serialize)]
 pub struct CoreStatus {
     pub downloaded: bool,
@@ -81,7 +81,7 @@ pub(crate) fn run_config_path(app: &AppHandle) -> Result<PathBuf, String> {
 /// 确保 mihomo binary 就绪：已存在则直接复用，否则下载。
 ///
 /// 不做版本强校验——避免「binary 已在但因 version 文件缺失/不匹配而强制重下」导致的网络卡死。
-/// 升级 mihomo：用户手动删除 mihomo 文件触发重下（或后续加「更新内核」入口）。
+/// 升级 mihomo：用户手动删除 mihomo 文件触发重下（或后续加「更新核心」入口）。
 /// 并发守卫：多调用方（双击下载/开代理 spawn）同时触发时串行化，仅一个真正下载，其余
 /// double-check 复用——防多流并发写同一 .gz 致 sha256 校验失败、binary 无法产出。
 pub async fn ensure_bin(app: &AppHandle) -> Result<PathBuf, String> {
@@ -136,7 +136,7 @@ async fn download_file(url: &str, dest: &Path) -> Result<(), String> {
     std::fs::write(dest, &bytes).map_err(|e| e.to_string())
 }
 
-/// 查询内核状态：下载中 / 已下载（含版本号）/ 未下载。
+/// 查询核心状态：下载中 / 已下载（含版本号）/ 未下载。
 /// 版本优先读 mihomo.version 缓存，缺失则跑 `mihomo -v` 解析并回写缓存。
 pub fn core_status(app: &AppHandle) -> CoreStatus {
     if DOWNLOADING.load(Ordering::Relaxed) {

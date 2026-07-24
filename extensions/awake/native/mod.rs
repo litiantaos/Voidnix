@@ -230,7 +230,7 @@ fn on_awake_event(app: &AppHandle, id: &str) {
             let app2 = app.clone();
             let _ = app.run_on_main_thread(move || {
                 crate::runtime::window::show_main(&app2);
-                let _ = app2.emit("open-module", "awake");
+                let _ = app2.emit("open-extension", "awake");
             });
         }
         "awake_toggle" => {

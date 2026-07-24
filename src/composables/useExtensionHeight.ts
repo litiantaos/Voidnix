@@ -22,15 +22,15 @@ type HeightMode = { mode: 'fixed'; value: number } | { mode: 'auto' } | { mode: 
 /// clamp [DEFAULT_HEIGHT, 屏幕高 90%]，底部将出屏（含间距）则上移，离开 auto 还原进入前位置。
 ///
 /// 用法（MainView 全局唯一调用）：
-///   useModuleHeight({ activeModule, activeSubview, contentRef })
-export function useModuleHeight(deps: {
-  activeModule: ComputedRef<Extension | null>
+///   useExtensionHeight({ activeExtension, activeSubview, contentRef })
+export function useExtensionHeight(deps: {
+  activeExtension: ComputedRef<Extension | null>
   activeSubview: ComputedRef<string | null>
   contentRef: Ref<HTMLElement | undefined>
 }) {
   if (!isTauri) return
 
-  const { activeModule, activeSubview, contentRef } = deps
+  const { activeExtension, activeSubview, contentRef } = deps
   const tauriWindow = getCurrentWindow()
   let ro: ResizeObserver | null = null
   // 逻辑目标位置（上次 setMainFrame 设定值）。animator 动画期间 outerPosition 返回
@@ -81,15 +81,15 @@ export function useModuleHeight(deps: {
   }
 
   function currentMode(): HeightMode {
-    const mod = activeModule.value
-    if (!mod) return { mode: 'default' }
+    const ext = activeExtension.value
+    if (!ext) return { mode: 'default' }
     const subId = activeSubview.value
-    if (subId && mod.subviewHeights?.[subId] !== undefined) {
-      const v = mod.subviewHeights[subId]
+    if (subId && ext.subviewHeights?.[subId] !== undefined) {
+      const v = ext.subviewHeights[subId]
       return v === 'auto' ? { mode: 'auto' } : { mode: 'fixed', value: v }
     }
-    if (mod.windowHeight === 'auto') return { mode: 'auto' }
-    if (typeof mod.windowHeight === 'number') return { mode: 'fixed', value: mod.windowHeight }
+    if (ext.windowHeight === 'auto') return { mode: 'auto' }
+    if (typeof ext.windowHeight === 'number') return { mode: 'fixed', value: ext.windowHeight }
     return { mode: 'default' }
   }
 
@@ -176,8 +176,8 @@ export function useModuleHeight(deps: {
     ro.observe(ct)
   }
 
-  // 模块 / subview 切换：同步 observer + 重算（系统 animator 自动从中断点接续）
-  watch([activeModule, activeSubview], () => {
+  // 扩展 / subview 切换：同步 observer + 重算（系统 animator 自动从中断点接续）
+  watch([activeExtension, activeSubview], () => {
     nextTick(() => {
       syncObserver()
       adjust()

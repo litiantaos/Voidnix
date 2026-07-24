@@ -1,4 +1,4 @@
-/// proxy 主面板状态与动作（View.vue 仅模板）。
+/// proxy 主视图状态与动作（View.vue 仅模板）。
 
 import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, watch } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -67,7 +67,7 @@ export function useProxyPanel() {
   const coreProgress = ref<{ received: number; total: number | null }>({ received: 0, total: null })
   /// 首个进度事件是否到达：未收到事件时显示「下载中」，收到后显示具体进度
   const progressStarted = ref(false)
-  /// 内核更新检查结果（hasUpdate=true 时副标题提示 + 显示「更新」按钮）。null=未检查/API 失败
+  /// 核心更新检查结果（hasUpdate=true 时副标题提示 + 显示「更新」按钮）。null=未检查/API 失败
   const updateInfo = ref<{ hasUpdate: boolean; current: string; latest: string } | null>(null)
   /// 健康监测异常状态（proxy-status error 事件）：非空时开启代理项显示红色提示 + 重连按钮。
   const coreError = ref('')
@@ -200,11 +200,11 @@ export function useProxyPanel() {
       await loadCoreStatus()
     } catch (e) {
       await loadCoreStatus() // 拉权威状态（失败时 downloading 复位为 false）
-      appStore.showStatus(`内核下载失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(`核心下载失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     }
   }
 
-  /// 更新内核到最新版：停代理 → 删旧 binary → 重下 → 恢复。复用 progress 事件展示进度。
+  /// 更新核心到最新版：停代理 → 删旧 binary → 重下 → 恢复。复用 progress 事件展示进度。
   async function updateCore() {
     if (isDownloading.value) return // 防重入
     coreStatus.value = { ...coreStatus.value, downloading: true }
@@ -216,15 +216,15 @@ export function useProxyPanel() {
       // ready 事件驱动 loadCoreStatus；此处兜底 + 重新查更新
       await loadCoreStatus()
       await checkUpdate()
-      appStore.showStatus('内核已更新', { duration: 2000 })
+      appStore.showStatus('核心已更新', { duration: 2000 })
     } catch (e) {
       await loadCoreStatus()
       await checkUpdate()
-      appStore.showStatus(`内核更新失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(`核心更新失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     }
   }
 
-  /// 检查内核更新：已下载才查（避免未下载时无意义的版本比较）。失败静默（updateInfo 置 null）。
+  /// 检查核心更新：已下载才查（避免未下载时无意义的版本比较）。失败静默（updateInfo 置 null）。
   async function checkUpdate() {
     if (!coreStatus.value.downloaded) {
       updateInfo.value = null
@@ -389,7 +389,7 @@ export function useProxyPanel() {
     })
   }
 
-  /// 停 /traffic 流（关代理 / 离开面板）。
+  /// 停 /traffic 流（关代理 / 离开视图）。
   function stopTrafficStream() {
     if (!trafficChannel) return
     invoke(CMD.proxyStopStream, { id: 'traffic' }).catch(() => {})
@@ -563,12 +563,12 @@ export function useProxyPanel() {
       await loadProxies()
     }
     // 已启用代理时开启实时流量监测（首渲染时 onActivated 先于 onMounted async 完成，
-    // isEnabled 尚未就绪，故此处补开；后续切回面板由 onActivated 驱动）
+    // isEnabled 尚未就绪，故此处补开；后续切回视图由 onActivated 驱动）
     if (isEnabled.value) await startTrafficStream()
   })
 
-  // 面板激活时（含首次挂载后）查更新：已下载才查，API 不可达静默降级。
-  // 重激活也触发，让用户切回面板即可看到最新版本提示（API rate limit 60/h 够自用）。
+  // 视图激活时（含首次挂载后）查更新：已下载才查，API 不可达静默降级。
+  // 重激活也触发，让用户切回视图即可看到最新版本提示（API rate limit 60/h 够自用）。
   // 同时恢复流量流（切子视图时 onDeactivated 停止，切回时重启；startTrafficStream 有防重入守卫）。
   onActivated(() => {
     checkUpdate()

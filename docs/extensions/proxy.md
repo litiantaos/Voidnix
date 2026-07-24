@@ -36,7 +36,7 @@ View.vue（模板）+ useProxyPanel.ts（状态/动作）
 - 分别接 mihomo **`/connections`**（实时连接列表）、**`/rules`**（分流规则只读列表）、**`/logs`**（实时日志，环形缓冲 500 行，全级别推送由搜索过滤）
 - 三个子视图均用 BaseList + 主搜索栏统一过滤
 
-**菜单栏**：图标仅在已连接时显示（打开扩展 + 已连接状态可点断开）；断开隐藏，其余控制全部在面板。
+**菜单栏**：图标仅在已连接时显示（打开扩展 + 已连接状态可点断开）；断开隐藏，其余控制全部在扩展视图。
 
 ## mihomo binary 下载（运行时按需）
 
@@ -77,8 +77,8 @@ asset 名精确串等 **`mihomo-darwin-{arch}-{tag}.gz`**，排除 go120/go122/g
 
 **升级走 UI**：
 
-1. 进面板时 **`proxy_check_update`** 后台拉 latest 比对本地 `mihomo.version`
-2. 有新版时副标题显示「内核 vX.Y.Z（最新 vZ，可更新）」+ 出现「更新」按钮
+1. 进视图时 **`proxy_check_update`** 后台拉 latest 比对本地 `mihomo.version`
+2. 有新版时副标题显示「核心 vX.Y.Z（最新 vZ，可更新）」+ 出现「更新」按钮
 3. 点击触发 **`proxy_update_core`**：`stop_root`（若在跑）→ 删 binary + version → `ensure_bin` 重下最新 → `start_core` 恢复（若之前 enabled）
 4. 中途下载失败：文件已删，下次 `ensure_bin` 自动重试
 
@@ -94,7 +94,7 @@ asset 名精确串等 **`mihomo-darwin-{arch}-{tag}.gz`**，排除 go120/go122/g
 
 **就绪信号**：gunzip/chmod/version 全部就绪后 Rust emit **`proxy-core-ready`**，前端事件驱动 `loadCoreStatus` 刷新——不依赖 `invoke(proxyEnsureCore)` 的 resolve 时序（sha256/gunzip 同步阻塞可能延迟 IPC 响应，曾导致前端乐观标记的 `downloading=true` 不被刷新、UI 卡在「解压中」）。
 
-**下载与启用解耦**：`downloadCore` 不自动 `toggleEnabled`，内核就绪后用户手动开启。
+**下载与启用解耦**：`downloadCore` 不自动 `toggleEnabled`，核心就绪后用户手动开启。
 
 ### Geo 数据库
 
@@ -248,7 +248,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 **`StreamRegistry`**（仿 agent `SessionRegistry`，`CancellationToken` 注册中心）管理流生命周期：
 
-- 前端按需开（进面板/子视图传 Channel）、离开调 `proxy_stop_stream`
+- 前端按需开（进视图传 Channel）、离开调 `proxy_stop_stream`
 - `stop_core` / `reset_dead_state` 调 **`cancel_all`** 兜底（关代理/进程退出时停所有 WS，免 idle 残留空转）
 - WS 鉴权用 **`?token={secret}`** query（mihomo 支持，bearer 不适用于 WS Upgrade）
 - 三条流均本地回环，连接失败静默退出（前端可见时才开，无感重开）
@@ -264,19 +264,19 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 ## 聚合菜单栏贡献（mod.rs）
 
-代理已连接时向框架统一菜单栏托盘（`runtime/menubar.rs`，`public/bar_icon.png` 模板图）贡献两项——极简 + 唯一（控制逻辑全部在扩展面板，菜单不重复）；断开后 `build` 返回空，图标自动隐藏。`setup` 内 **`menubar::register`** 声明 `build`/`on_event`，状态变更后 **`menubar::refresh`** 重建。
+代理已连接时向框架统一菜单栏托盘（`runtime/menubar.rs`，`public/bar_icon.png` 模板图）贡献两项——极简 + 唯一（控制逻辑全部在扩展视图，菜单不重复）；断开后 `build` 返回空，图标自动隐藏。`setup` 内 **`menubar::register`** 声明 `build`/`on_event`，状态变更后 **`menubar::refresh`** 重建。
 
 **两项贡献**：
 
-- **打开扩展**（Item，点击打开代理面板）
-- **已连接：节点**（CheckItem 勾选，点击断开 → 图标隐藏，重连走扩展面板）
+- **打开扩展**（Item，点击打开代理视图）
+- **已连接：节点**（CheckItem 勾选，点击断开 → 图标隐藏，重连走扩展视图）
 
-状态行当前节点名由 **`refresh_proxy_menu`** 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `reload_if_running` 触发刷新。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步面板 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展面板。
+状态行当前节点名由 **`refresh_proxy_menu`** 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `reload_if_running` 触发刷新。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步视图 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展视图。
 
 ## 命令（18 个）
 
 - **启停**：`set_proxy_enabled` / `is_proxy_enabled`（root mihomo 常驻——首次 restart_root 提权一次，之后开关走热重载 active/idle config 免提权）
-- **内核下载**：`proxy_core_status` / `proxy_ensure_core`（内核版本查询与运行时按需下载）
+- **核心下载**：`proxy_core_status` / `proxy_ensure_core`（核心版本查询与运行时按需下载）
 - **版本升级**：`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）
 - **订阅**：`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）
 - **节点与测速**：`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_group_delay`（批量测速，一次返回全组 `{ 节点名: ms }`，替代逐节点串行 invoke）

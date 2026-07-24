@@ -38,7 +38,7 @@ defineConfig('extensions/translate/config', {
 
 旧 AI 引擎字段启动时一次性导入中枢并 strip。详见 [ai-providers.md](./ai-providers.md)。
 
-## 后端
+## Rust 端
 
 - `native/mod.rs`：Extension trait + shortcut hook 注册 + `get_selected_text_cached` 命令（SELECTED_TEXT 自管，不泄漏框架）
 - `native/ai_translate.rs`：AI 流式翻译（复用 `runtime::llm` 基础设施）

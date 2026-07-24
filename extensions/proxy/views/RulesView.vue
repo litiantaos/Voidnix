@@ -59,7 +59,7 @@ onMounted(async () => {
     const resp = await invoke<{ rules: Rule[] }>(CMD.proxyGetRules)
     rules.value = resp.rules ?? []
   } catch {
-    /* 静默：mihomo 未运行时后端返回空，极端 IPC 错误忽略 */
+    /* 静默：mihomo 未运行时 Rust 端返回空，极端 IPC 错误忽略 */
   } finally {
     loading.value = false
   }

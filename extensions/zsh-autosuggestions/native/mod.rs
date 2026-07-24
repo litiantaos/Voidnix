@@ -117,7 +117,7 @@ fn install_bin(app: &AppHandle) -> bool {
     install_bin_to(&source, &dest, &version_file(app))
 }
 
-/// install_bin 的纯路径参数内核，便于单测。
+/// install_bin 的纯路径参数版本，便于单测。
 fn install_bin_to(
     source: &std::path::Path,
     dest: &std::path::Path,

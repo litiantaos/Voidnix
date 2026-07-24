@@ -105,7 +105,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
     command.arg("-attr").arg("kMDItemUseCount");
 
     // 家目录本身不受 TCC 保护；Spotlight 守护进程 mds 以系统权限索引所有文件（含受保护目录），
-    // 无需 FDA 即可搜到 Documents/Desktop/Downloads 的内容。后端用 starts_with 过滤目标子目录。
+    // 无需 FDA 即可搜到 Documents/Desktop/Downloads 的内容。Rust 端用 starts_with 过滤目标子目录。
     if let Some(home_dir) = dirs::home_dir() {
         command.arg("-onlyin").arg(&home_dir);
     }

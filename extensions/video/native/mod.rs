@@ -11,7 +11,7 @@ use tauri::AppHandle;
 pub use core::{CoreStatus, VideoMeta};
 pub use job::{JobSnapshot, RunRequest, VideoEvent};
 
-/// 查询 FFmpeg 内核状态。
+/// 查询 FFmpeg 核心状态。
 #[tauri::command]
 pub async fn video_core_status(app: AppHandle) -> Result<CoreStatus, String> {
     // 同步 Command（ffmpeg -version）放 blocking，避免卡 runtime

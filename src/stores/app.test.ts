@@ -11,74 +11,74 @@ describe('app store', () => {
 
   it('初始状态', () => {
     const store = useAppStore()
-    expect(store.activeModuleId).toBeNull()
+    expect(store.activeExtId).toBeNull()
     expect(store.searchQuery).toBe('')
     expect(store.isComposing).toBe(false)
     expect(store.isDialogOpen).toBe(false)
   })
 
-  describe('setActiveModule', () => {
-    it('切换模块并重置 subview', () => {
+  describe('setActiveExtension', () => {
+    it('切换扩展并重置 subview', () => {
       const store = useAppStore()
       store.openSubview('settings')
       expect(store.activeSubview).toBe('settings')
 
-      store.setActiveModule('clipboard')
-      expect(store.activeModuleId).toBe('clipboard')
+      store.setActiveExtension('clipboard')
+      expect(store.activeExtId).toBe('clipboard')
       expect(store.activeSubview).toBeNull()
       expect(store.subviewExternal).toBe(false)
     })
 
-    it('退出模块回到全局模式', () => {
+    it('退出扩展回到全局模式', () => {
       const store = useAppStore()
-      store.setActiveModule('clipboard')
-      expect(store.activeModuleId).toBe('clipboard')
+      store.setActiveExtension('clipboard')
+      expect(store.activeExtId).toBe('clipboard')
 
-      store.setActiveModule(null)
-      expect(store.activeModuleId).toBeNull()
+      store.setActiveExtension(null)
+      expect(store.activeExtId).toBeNull()
     })
 
-    it('进入模块快照入口 query（entryQuery）', () => {
+    it('进入扩展快照入口 query（entryQuery）', () => {
       const store = useAppStore()
       store.setSearchQuery('/calc')
-      store.setActiveModule('calculator')
+      store.setActiveExtension('calculator')
       expect(store.entryQuery).toBe('/calc')
     })
 
-    it('退出模块清空 entryQuery', () => {
+    it('退出扩展清空 entryQuery', () => {
       const store = useAppStore()
       store.setSearchQuery('/calc')
-      store.setActiveModule('calculator')
-      store.setActiveModule(null)
+      store.setActiveExtension('calculator')
+      store.setActiveExtension(null)
       expect(store.entryQuery).toBe('')
     })
 
-    it('module→module 切换保留原入口（OCR→translate 等跨模块导航）', () => {
+    it('ext→ext 切换保留原入口（OCR→translate 等跨扩展导航）', () => {
       const store = useAppStore()
       store.setSearchQuery('/')
-      store.setActiveModule('screenshot')
+      store.setActiveExtension('screenshot')
       store.setSearchQuery('ocr text')
-      // 跨模块切换不清空 entryQuery，ESC 回到最初进入点
-      store.setActiveModule('translate')
+      // 跨扩展切换不清空 entryQuery，ESC 回到最初进入点
+      store.setActiveExtension('translate')
       expect(store.entryQuery).toBe('/')
     })
 
-    it('全局快捷键 toggle 路径：setActiveModule 后清 query，entryQuery 已先行快照', () => {
-      // 模拟 makeToggleHandler：从工具列表按快捷键进入模块
+    it('全局快捷键 toggle 路径：setActiveExtension 后清 query，entryQuery 已先行快照', () => {
+      // 模拟 makeToggleHandler：从工具列表按快捷键进入扩展
       const store = useAppStore()
       store.setSearchQuery('/')
-      store.setActiveModule('clipboard') // 快照 entryQuery='/'
+      store.setActiveExtension('clipboard') // 快照 entryQuery='/'
       store.setSearchQuery('') // toggle handler 清空搜索
       expect(store.entryQuery).toBe('/')
       expect(store.searchQuery).toBe('')
     })
 
-    it('切换模块时关闭全局 confirm（避免 Teleport 遮罩残留）', async () => {
+    it('切换扩展时关闭全局 confirm（避免 Teleport 遮罩残留）', async () => {
       const store = useAppStore()
-      store.setActiveModule('clipboard')
+      store.setActiveExtension('clipboard')
       const promise = store.showConfirm({ title: '确认？' })
       expect(store.isDialogOpen).toBe(true)
-      store.setActiveModule('translate')
+      store.setActiveExtension('translate')
       expect(store.isDialogOpen).toBe(false)
       expect(await promise).toBe(false)
     })

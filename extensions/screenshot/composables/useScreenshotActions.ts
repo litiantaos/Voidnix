@@ -71,8 +71,8 @@ export function useScreenshotActions(options: {
       previewPng = canvas.toDataURL('image/png')
     }
 
-    await invoke(CMD.openModuleSubview, {
-      moduleId: 'screenshot',
+    await invoke(CMD.openExtensionSubview, {
+      extId: 'screenshot',
       subviewId: 'ocr',
       payload: {
         selX: options.sel.value.x,

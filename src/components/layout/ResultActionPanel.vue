@@ -99,7 +99,7 @@ const { open, menuIndex, close, onMenuClick } = useActionPanel({
   getItems: () => actionItems.value,
   onSelect: runAction,
   shouldOpen: (e) => {
-    if (appStore.activeModuleId || appStore.isDialogOpen) return false
+    if (appStore.activeExtId || appStore.isDialogOpen) return false
     if (e.isComposing) return false
     const r = props.results[props.selectedIndex]
     const kind = r?.data?.kind

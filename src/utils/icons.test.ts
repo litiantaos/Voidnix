@@ -9,7 +9,7 @@ function makeResult(
   return {
     id: 'test',
     title: rest.title ?? 'file',
-    module: 'test',
+    extId: 'test',
     ...rest,
     data: { kind: 'file', ...data },
   } as SearchResult

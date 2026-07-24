@@ -10,7 +10,7 @@ export const CMD = {
   pickFiles: 'pick_files',
   setMainFrame: 'set_main_frame',
   httpGet: 'http_get',
-  openModuleSubview: 'open_module_subview',
+  openExtensionSubview: 'open_extension_subview',
   quitApp: 'quit_app',
   revealInFinder: 'reveal_in_finder',
   openPrivacySettings: 'open_privacy_settings',

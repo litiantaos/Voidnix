@@ -9,7 +9,7 @@ import ScreenshotOcr from './OcrView.vue'
 const ScreenshotWindow = defineAsyncComponent(() => import('./windows/Host.vue'))
 const PinWindow = defineAsyncComponent(() => import('./windows/PinWindow.vue'))
 
-// OCR 待识别数据（由截屏标注界面通过 open_module_subview 触发时注入）
+// OCR 待识别数据（由截屏标注界面通过 open_extension_subview 触发时注入）
 export const pendingOcrData = ref<{
   selX: number
   selY: number
@@ -57,7 +57,7 @@ export default defineExtension({
       default: 'Alt+S',
       onExecute: () => {
         // Rust 端 hook 已在 shortcut.rs 中处理截屏全流程（capture + enter 模式），
-        // 前端 onExecute 此处为占位，确保模块声明让 App.vue 能注册快捷键。
+        // 前端 onExecute 此处为占位，确保扩展声明让 App.vue 能注册快捷键。
       },
     },
   ],
@@ -84,7 +84,7 @@ export default defineExtension({
   onExecute: async (result) => {
     if (result.data?.openSubview) {
       const appStore = useAppStore()
-      appStore.setActiveModule('screenshot')
+      appStore.setActiveExtension('screenshot')
       appStore.setSearchQuery('')
       appStore.openSubview('ocr')
     }

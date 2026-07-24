@@ -70,7 +70,7 @@ macro_rules! configure_app {
             crate::extensions::screenshot::ocr::detect_text_regions,
             crate::extensions::screenshot::ocr::ocr_image,
             crate::extensions::screenshot::ocr::save_screenshot,
-            crate::extensions::screenshot::open_module_subview,
+            crate::extensions::screenshot::open_extension_subview,
             crate::extensions::screenshot::pin::pin_global_mouse,
             crate::extensions::screenshot::pin::pin_image,
             crate::extensions::screenshot::pin::restore_pin_focus,

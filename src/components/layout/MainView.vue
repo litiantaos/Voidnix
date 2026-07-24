@@ -28,7 +28,7 @@
       <div class="search-bar-content px-3 flex gap-3 h-full min-w-0 items-center relative z-1">
         <!-- 扩展标签 -->
         <div
-          v-if="activeModule"
+          v-if="activeExtension"
           text="xs secondary"
           p="x-3"
           flex="~ none"
@@ -36,13 +36,13 @@
           h="7"
           select="none"
           items="center"
-          class="module-tag radius-ctrl"
+          class="ext-tag radius-ctrl"
           :class="{ 'is-hovered': isTagHovered }"
           @mouseenter="isTagHovered = true"
           @mouseleave="isTagHovered = false"
         >
           <span shrink="0" h="4" w="4" relative>
-            <!-- 缩放交叉全在 theme.css（.module-tag.is-hovered），避免 ui-ctrl/Uno 抢 transition -->
+            <!-- 缩放交叉全在 theme.css（.ext-tag.is-hovered），避免 ui-ctrl/Uno 抢 transition -->
             <span
               text="xs muted"
               h="3.5"
@@ -50,18 +50,18 @@
               inset="0"
               m="auto"
               absolute
-              class="module-tag-icon flex-center"
-              :class="activeModule.meta.icon"
+              class="ext-tag-icon flex-center"
+              :class="activeExtension.meta.icon"
               aria-hidden="true"
             />
             <BaseButton
-              class="module-tag-close flex-center inset-0 absolute !p-0 !rounded-full !h-4 !w-4"
+              class="ext-tag-close flex-center inset-0 absolute !p-0 !rounded-full !h-4 !w-4"
               :tabindex="isTagHovered ? undefined : -1"
               icon="i-ri-close-line text-xs text-secondary"
               @click="onTagClose"
             />
           </span>
-          <span>{{ activeModule.meta.name }}</span>
+          <span>{{ activeExtension.meta.name }}</span>
         </div>
 
         <input
@@ -69,7 +69,7 @@
           id="main-search-input"
           data-list-execute
           :value="appStore.searchQuery"
-          :readonly="activeModule?.disableSearchInput"
+          :readonly="activeExtension?.disableSearchInput"
           text="base primary"
           outline="none"
           bg="transparent"
@@ -84,7 +84,7 @@
 
         <!-- 扩展附加区：勿 overflow-hidden，否则裁按钮阴影；data 供 Tab 圈定右侧控件 -->
         <div
-          v-if="activeModule?.searchBarAccessory"
+          v-if="activeExtension?.searchBarAccessory"
           ref="accessoryRef"
           data-search-bar-accessory
           flex
@@ -93,7 +93,7 @@
           items="center"
           shrink="0"
         >
-          <component :is="activeModule.searchBarAccessory()" />
+          <component :is="activeExtension.searchBarAccessory()" />
         </div>
 
         <BaseButton
@@ -107,11 +107,11 @@
     <!-- 内容区 -->
     <ContentView
       ref="contentViewRef"
-      :module="activeModule"
+      :extension="activeExtension"
       :results="results"
       :loading="isLoading"
       :selected-index="selectedIndex"
-      :on-execute="activeModule ? undefined : handleExecute"
+      :on-execute="activeExtension ? undefined : handleExecute"
       :group-field="getGroupKey"
       :group-title="groupTitle"
       @update:selected-index="(i: number) => (selectedIndex = i)"
@@ -140,7 +140,7 @@ import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 import { useScrollPosition } from '@/composables/useScrollPosition'
 import { useSearchInput } from '@/composables/useSearchInput'
 import { useResultNavigation } from '@/composables/useResultNavigation'
-import { useModuleHeight } from '@/composables/useModuleHeight'
+import { useExtensionHeight } from '@/composables/useExtensionHeight'
 import { getFocusableElements, cycleFocus, isFormControl } from '@/utils/dom'
 
 const isDev = import.meta.env.DEV
@@ -182,24 +182,24 @@ const scrollContainer = computed(() => contentViewRef.value?.scrollContainer)
 const { y: scrollTop } = useScroll(scrollContainer)
 const { save, restore, reset } = useScrollPosition(scrollTop)
 
-const activeModule = computed(() => {
-  const id = appStore.activeModuleId
+const activeExtension = computed(() => {
+  const id = appStore.activeExtId
   return (id ? getExtension(id) : null) ?? null
 })
 
 // placeholder：搜索说明
-// disableSearchInput 模块仅当显式声明 placeholder 才显示（如 uuid），否则空
+// disableSearchInput 扩展仅当显式声明 placeholder 才显示（如 uuid），否则空
 // 子视图激活时：用「搜索{subviewTitle}」（扩展声明 subviewTitle 映射）
 const placeholderText = computed(() => {
-  const mod = activeModule.value
-  if (!mod) {
+  const ext = activeExtension.value
+  if (!ext) {
     return '搜索应用、文件、扩展等'
   }
   const subview = appStore.activeSubview
-  if (subview && mod.subviewTitle?.[subview]) {
-    return `搜索${mod.subviewTitle[subview]}`
+  if (subview && ext.subviewTitle?.[subview]) {
+    return `搜索${ext.subviewTitle[subview]}`
   }
-  return mod.placeholder ?? (mod.disableSearchInput ? '' : `在 ${mod.meta.name} 中搜索`)
+  return ext.placeholder ?? (ext.disableSearchInput ? '' : `在 ${ext.meta.name} 中搜索`)
 })
 
 // 分组逻辑：getGroupKey 单一源（search-engine）；标题读 constants 单一源
@@ -212,38 +212,38 @@ const {
   isLoading,
   clearSearch,
   loadDefaultResults,
-  activateModule,
+  activateExtension,
   goHome,
-  exitModule,
+  exitExtension,
 } = useSearchInput({
   searchInput,
   results,
   selectedIndex,
-  activeModule,
+  activeExtension,
   restore,
   reset,
 })
 const { handleExecute } = useResultNavigation({
   results,
   selectedIndex,
-  activeModule,
+  activeExtension,
   clearSearch,
   loadDefaultResults,
-  activateModule,
+  activateExtension,
   goHome,
-  exitModule,
+  exitExtension,
 })
 
-useModuleHeight({
-  activeModule,
+useExtensionHeight({
+  activeExtension,
   activeSubview: computed(() => appStore.activeSubview),
   contentRef: computed(() => contentViewRef.value?.contentRef),
 })
 
-// 进入模块子视图时释放搜索栏焦点，让键盘事件能到达子视图内容
+// 进入扩展子视图时释放搜索栏焦点，让键盘事件能到达子视图内容
 // 注意：必须先把焦点转移到容器，否则窗口会因失焦而自动隐藏
-// 滚动位置：进入 subview 时保存当前（module 列表）滚动 + subview 从顶开始；
-//          返回时恢复 module 列表滚动（与 tools 列表 save/restore 同构）
+// 滚动位置：进入 subview 时保存当前（扩展列表）滚动 + subview 从顶开始；
+//          返回时恢复扩展列表滚动（与 tools 列表 save/restore 同构）
 watch(
   () => appStore.activeSubview,
   (val) => {
@@ -258,15 +258,15 @@ watch(
   },
 )
 
-// 进入模块时重置滚动位置，覆盖快捷键、open-module 事件等所有进入路径
-// 从主列表进入时保存其滚动位置，exitModule 调用 restore('tools') 恢复
+// 进入扩展时重置滚动位置，覆盖快捷键、open-extension 事件等所有进入路径
+// 从主列表进入时保存其滚动位置，exitExtension 调用 restore('tools') 恢复
 watch(
-  () => activeModule.value?.meta.id,
+  () => activeExtension.value?.meta.id,
   (newId, oldId) => {
     if (newId && newId !== oldId) {
       if (!oldId) save('tools')
       reset()
-      // disableSearchInput 模块用 readonly（始终可聚焦）而非 disabled，
+      // disableSearchInput 扩展用 readonly（始终可聚焦）而非 disabled，
       // 离开时 focus 不受 disabled→enabled 同帧缓存影响；
       // 进入时主动 blur 避免残留光标（与原 disabled 行为一致）
       if (getExtension(newId)?.disableSearchInput) searchInput.value?.blur()
@@ -276,7 +276,7 @@ watch(
   },
 )
 
-// Tab 环：搜索框 + 右侧附加控件（顺序循环，不含 module-tag 关闭）。
+// Tab 环：搜索框 + 右侧附加控件（顺序循环，不含 ext-tag 关闭）。
 //
 // 主界面：始终锁在环内——内容区 BaseTextarea 等 tabindex=0 不得抢 Tab。
 // 子视图：进入时 watch 会把焦点落到 scrollContainer（防失焦藏窗）；此时仍锁环，
@@ -285,8 +285,8 @@ watch(
 // 对话框：完全自管。
 function onTabKeydown(e: KeyboardEvent) {
   if (e.key !== 'Tab') return
-  const mod = activeModule.value
-  if (!mod?.searchBarAccessory) return
+  const ext = activeExtension.value
+  if (!ext?.searchBarAccessory) return
   if (appStore.isDialogOpen) return
 
   const active = document.activeElement as HTMLElement | null
@@ -304,7 +304,7 @@ function onTabKeydown(e: KeyboardEvent) {
 
   const search = searchInput.value
   const right = accessoryRef.value ? getFocusableElements(accessoryRef.value) : []
-  const ring = mod.disableSearchInput || !search ? right : [search, ...right]
+  const ring = ext.disableSearchInput || !search ? right : [search, ...right]
   if (ring.length === 0) return
   e.preventDefault()
   e.stopPropagation()

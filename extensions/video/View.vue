@@ -1,7 +1,7 @@
 <template>
   <div class="flex-col-full-pb">
     <BaseSettingsList :items="items" @execute="onSettingsExecute">
-      <!-- 第一项：内核 / 选文件 / 开始·取消 合一（双按钮） -->
+      <!-- 第一项：核心 / 选文件 / 开始·取消 合一（双按钮） -->
       <template #trailing-source>
         <BaseButton v-if="isDownloading" class="min-w-12 tabular-nums" disabled>{{
           downloadText
@@ -121,13 +121,13 @@ const progressText = computed(() => {
   return `${Math.round(percent.value)}%`
 })
 
-/** 合并行副标题：未选文件才显示内核版本；已选仅元数据；进行中仅进度 */
+/** 合并行副标题：未选文件才显示核心版本；已选仅元数据；进行中仅进度 */
 const sourceSubtitle = computed(() => {
-  if (isDownloading.value) return '正在下载内核…'
-  if (!coreLoaded.value) return '内核版本：FFmpeg —'
-  if (!core.value.available) return '功能依赖 FFmpeg 内核，请先下载'
+  if (isDownloading.value) return '正在下载核心…'
+  if (!coreLoaded.value) return '核心版本：FFmpeg —'
+  if (!core.value.available) return '功能依赖 FFmpeg 核心，请先下载'
   if (busy.value) return `进度 ${progressText.value || '…'}`
-  if (!inputPath.value) return `内核版本：FFmpeg ${core.value.version || '—'}`
+  if (!inputPath.value) return `核心版本：FFmpeg ${core.value.version || '—'}`
   if (meta.value) return formatMetaLine(meta.value)
   return displayPath(inputPath.value)
 })
@@ -143,7 +143,7 @@ function ensureFormatForMode(next: VideoMode) {
 const items = computed<SettingItem[]>(() => {
   const list: SettingItem[] = []
 
-  // ── 输入视频 ⇌ 内核 ⇌ 开始（右侧双按钮，见 trailing-source）──
+  // ── 输入视频 ⇌ 核心 ⇌ 开始（右侧双按钮，见 trailing-source）──
   list.push({
     id: 'source',
     title:
@@ -445,7 +445,7 @@ async function startJob() {
   const channel = new Channel<VideoEvent>()
   channel.onmessage = (ev) => applyJobEvent(ev, true)
 
-  // 提取音频时分辨率无意义，固定 original；后端仍接收
+  // 提取音频时分辨率无意义，固定 original；Rust 端仍接收
   const runScale: Scale = mode.value === 'extract-audio' ? 'original' : scale.value
 
   try {

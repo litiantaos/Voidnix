@@ -15,27 +15,27 @@ export const SEARCH = {
   // 组间定序严格锁死；不设组级 GROUP_BOOST（GROUP_ORDER 已定组间序）。
   // 扩展用 per-item boost（SearchResult.boost）调整组内优先级。
   // 顺序按使用频率第一性推导：启动应用 / 扩展工具 / 查找文件 / 剪贴板辅助 / web 垫底。
-  GROUP_ORDER: ['application', 'module', 'file', 'clipboard', 'web'] as const,
+  GROUP_ORDER: ['application', 'extension', 'file', 'clipboard', 'web'] as const,
   GROUP_TITLES: {
     application: '应用',
     file: '文件', // file 与 folder 共用（同组，仅 kind 值区分）
-    module: '扩展',
+    extension: '扩展',
     clipboard: '剪贴板',
     web: '快捷操作',
   },
-  // keywordSearchAll 产出的模块入口结果组内加权（原 module-helpers.ts:45 魔数）
-  KEYWORD_MODULE_BOOST: 500,
+  // keywordSearchAll 产出的扩展入口结果组内加权（原 ext-helpers.ts:45 魔数）
+  KEYWORD_EXTENSION_BOOST: 500,
 } as const
 
 export const LIMITS = {
-  /** 非 file 组组内限流（application / module / clipboard / web 共用）。 */
+  /** 非 file 组组内限流（application / extension / clipboard / web 共用）。 */
   maxGroupResults: 30,
   maxFileResults: 50, // file 组限流（含 folder；单组计数，无跨组共享）
   searchTimeoutMs: 3000,
 } as const
 
 // 主窗口尺寸（不可配置；与 tauri.conf.json 主窗口 width/height 一致）。
-// 扩展通过 Extension.windowHeight 声明模块激活时的高度，框架 clamp 到 [MIN, MAX]。
+// 扩展通过 Extension.windowHeight 声明扩展激活时的高度，框架 clamp 到 [MIN, MAX]。
 // 搜索栏 chrome 拆成 top/height/gap 再求和，改 MainView top-*/h-* 时同步改这三项。
 const SEARCH_BAR_TOP = 12 // top-3
 const SEARCH_BAR_HEIGHT = 52 // h-13

@@ -30,7 +30,7 @@ export default defineExtension({
             description: trimmed,
             icon: 'i-ri-calculator-line',
             data: {
-              kind: 'module',
+              kind: 'extension',
               isHighlight: true,
               isHistory: false,
               expr: trimmed,
@@ -40,15 +40,15 @@ export default defineExtension({
         }
       }
 
-      // 全局模式只返回即时计算结果；history 仅模块内展示（避免不相关项误杀模块入口）
-      if (ctx?.moduleMode) {
+      // 全局模式只返回即时计算结果；history 仅扩展内展示（避免不相关项误杀扩展入口）
+      if (ctx?.extensionMode) {
         config.history.forEach((h, idx) => {
           results.push({
             id: `history-${idx}`,
             title: `= ${h.result}`,
             description: h.expr,
             icon: 'i-ri-history-line',
-            data: { kind: 'module', isHistory: true, expr: h.expr, value: h.result },
+            data: { kind: 'extension', isHistory: true, expr: h.expr, value: h.result },
           })
         })
       }

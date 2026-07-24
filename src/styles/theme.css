@@ -402,40 +402,40 @@ body {
   border-color: rgb(255 255 255 / 0.72) !important;
 }
 
-/* module-tag：只读扩展名；is-hovered 驱动图标↔关闭 */
-.module-tag {
+/* ext-tag：只读扩展名；is-hovered 驱动图标↔关闭 */
+.ext-tag {
   background: var(--color-fill-5);
   box-shadow: none;
   border: none;
   cursor: default;
 }
 
-.module-tag-icon,
-.module-tag-close {
+.ext-tag-icon,
+.ext-tag-close {
   transition-property: opacity, scale !important;
   transition-duration: var(--duration-normal) !important;
   transition-timing-function: var(--ease-spring) !important;
 }
 
-.module-tag-icon {
+.ext-tag-icon {
   opacity: 1;
   scale: 1;
 }
 
-.module-tag-close {
+.ext-tag-close {
   opacity: 0;
   scale: 0.5;
   pointer-events: none;
 }
 
-.module-tag.is-hovered .module-tag-icon {
+.ext-tag.is-hovered .ext-tag-icon {
   opacity: 0;
   scale: 0.5;
   transition-duration: 100ms !important;
   transition-timing-function: var(--ease-in) !important;
 }
 
-.module-tag.is-hovered .module-tag-close {
+.ext-tag.is-hovered .ext-tag-close {
   opacity: 1;
   scale: 1;
   pointer-events: auto;
