@@ -81,6 +81,13 @@ export function useSearchInput(opts: SearchInputOptions) {
     }
   })
 
+  // 图标就绪（后台提取完成）：补全图标后刷新默认列表
+  useTauriListener('app-icons-updated', () => {
+    if (!appStore.activeModuleId && !appStore.searchQuery) {
+      loadDefaultResults()
+    }
+  })
+
   // --- helpers ---
 
   /** 扩展 → 模块入口结果（回车走框架内置激活）。不产出 description：
@@ -228,6 +235,10 @@ export function useSearchInput(opts: SearchInputOptions) {
     }
 
     if (query.trim()) {
+      // 全局搜索零防抖：应用缓存同步命中 + fieldScore 缓存使打分近乎即时，
+      // searchEngine abort 机制保证竞态安全，search_files session ID 丢弃过期 mdfind 结果。
+      // setTimeout(0) 推迟一个宏任务（不阻塞输入事件），Vue 批处理合并清空+emit 无闪烁。
+      // 模块搜索保留 100ms 防抖（可能含 DB/网络慢查询）。
       searchTimeout = setTimeout(async () => {
         // 真正发起搜索时才清空旧结果：此刻起回车不再命中上一次查询的旧结果（消除竞态）。
         // 防抖期间保留旧列表视觉稳定（用户快速打字中不会回车）；流式 emit 近乎瞬出填充。
@@ -255,7 +266,7 @@ export function useSearchInput(opts: SearchInputOptions) {
         } finally {
           if (searchId === currentSearchId) isLoading.value = false
         }
-      }, 50)
+      }, 0)
     } else {
       await loadDefaultResults()
     }

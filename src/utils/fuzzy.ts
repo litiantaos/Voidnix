@@ -39,8 +39,25 @@ function pinyinScore(text: string, qLower: string): number {
   return Math.max(0, Math.round(PINYIN_BASE + coverage * 200 + startBonus - penalty))
 }
 
+// Query-scoped fieldScore 缓存：同一 (text, qLower) 对的结果在单次搜索内不变。
+// qLower 变化时自动清空——无需显式生命周期管理，零内存泄漏。
+// 消除 flush 增量重排时 keywordSearchAll / scoreResults 的重复 toLowerCase + match() 调用。
+let cachedQ = ''
+const fieldScoreCache = new Map<string, number>()
+
+/** 单字段打分（substring + pinyin 取 max），带 query-scoped 缓存。
+ *  搜索引擎每次 flush 都重跑 buildGlobal → keywordSearchAll，同批 text 被重算 2-4 遍；
+ *  缓存命中时跳过 toLowerCase 分配 + pinyin-pro match() 拼音索引查找。 */
 function fieldScore(text: string, qLower: string): number {
-  return Math.max(substringScore(text, qLower), pinyinScore(text, qLower))
+  if (cachedQ !== qLower) {
+    cachedQ = qLower
+    fieldScoreCache.clear()
+  }
+  const hit = fieldScoreCache.get(text)
+  if (hit !== undefined) return hit
+  const result = Math.max(substringScore(text, qLower), pinyinScore(text, qLower))
+  fieldScoreCache.set(text, result)
+  return result
 }
 
 /**
