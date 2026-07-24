@@ -14,7 +14,7 @@ export function recencyScore(lastUsed: string | null, now: number = Date.now()):
   return 0
 }
 
-/** Rust search_apps/search_files 原始项 → ProviderResult（kind 透传，module 由框架注入）。 */
+/** Rust search_apps/search_files 原始项 → ProviderResult（kind 透传，extId 由框架注入）。 */
 export function toResult(raw: RawSearchResult, boost: number): ProviderResult {
   return {
     id: raw.id,

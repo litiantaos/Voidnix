@@ -1,6 +1,6 @@
 # zsh-autosuggestions
 
-纯 zsh 内核 + stateless rebuild kernel（`extensions/zsh-autosuggestions/native/src/`）。无 SQLite、无 daemon、无 IPC、无 socket、无 launchd。binary 仅做"读 .zsh_history + signals.log → 算 frecency → 写 sourceable zsh cache"，全部 hot path 在 zsh 内存中。
+纯 zsh 核心 + stateless rebuild kernel（`extensions/zsh-autosuggestions/native/src/`）。无 SQLite、无 daemon、无 IPC、无 socket、无 launchd。binary 仅做"读 .zsh_history + signals.log → 算 frecency → 写 sourceable zsh cache"，全部 hot path 在 zsh 内存中。
 
 ## 数据流
 

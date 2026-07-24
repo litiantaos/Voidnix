@@ -463,7 +463,7 @@ function stopPolling() {
 }
 
 // 双门控：组件激活（KeepAlive）AND 窗口可见（聚焦）才轮询。
-// 窗口隐藏时 onDeactivated 不触发（仅切模块触发），需监听 focus 避免后台持续轮询。
+// 窗口隐藏时 onDeactivated 不触发（仅切扩展触发），需监听 focus 避免后台持续轮询。
 function syncPolling() {
   if (activated && windowFocused) startPolling()
   else stopPolling()

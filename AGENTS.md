@@ -100,7 +100,7 @@ LaunchAgent 常驻方案，监控 release 构建的 RSS/CPU/线程/FD/数据目�
 
 ## 架构要点
 
-### 前后端通信
+### 前端 ↔ Rust 端通信
 
 - 命令名常量集中 `src/commands.ts`（`CMD.xxx`），**禁止裸 `invoke('xxx')`**，统一走 `invoke<T>(CMD.xxx, {...})` + 手写类型（`types/` 与各扩展）
 - CI 双向差集校验：`scripts/check-commands.ts` 对 Rust `#[tauri::command]` 名集合 ↔ `commands.ts` 常量
@@ -119,20 +119,20 @@ LaunchAgent 常驻方案，监控 release 构建的 RSS/CPU/线程/FD/数据目�
 **两种模式共用 `search()`**：
 
 - **全局模式**：并行调所有扩展 dynamic → finalScore 排序（`fuzzy + boost`）→ keyword 合流 → 分组排序
-- **模块模式**（`setActiveModule` 切换）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序；同样受 timeout/abort 保护
+- **扩展模式**（`setActiveExtension` 切换）：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序；同样受 timeout/abort 保护
 
-**模式快照**：`search()` 入口捕获 `activeModule`，await 期间切换不影响本次后处理。
+**模式快照**：`search()` 入口捕获 `activeExtension`，await 期间切换不影响本次后处理。
 
 **超时**：每扩展独立 child `AbortSignal`，超时只 abort 该扩展（不牵连其它），父 signal abort 时同步取消。
 
 **过滤规则**：
 
 - 空 query：默认列表按 `finalScore>0`（boost>0，主要是应用）
-- 非空 query：查找型结果需 `fuzzy>0`，module 类即时答案靠 `finalScore>0` 穿透
+- 非空 query：查找型结果需 `fuzzy>0`，extension 类即时答案靠 `finalScore>0` 穿透
 
-**模块入口打分**：keyword / `/` 工具列表共用 `scoreModuleEntry`（name/id/description 正向 + keywords 双向）。
+**扩展入口打分**：keyword / `/` 工具列表共用 `scoreExtensionEntry`（name/id/description 正向 + keywords 双向）。
 
-`SearchContext.moduleMode` 供扩展区分场景：全局即时答案仅 calculator / currency；ip / time / uuid / base64 等仅模块内响应。详见 [docs/extensions.md](docs/extensions.md)。
+`SearchContext.extensionMode` 供扩展区分场景：全局即时答案仅 calculator / currency；ip / time / uuid / base64 等仅扩展内响应。详见 [docs/extensions.md](docs/extensions.md)。
 
 ### 窗口
 
@@ -171,7 +171,7 @@ LaunchAgent 常驻方案，监控 release 构建的 RSS/CPU/线程/FD/数据目�
 
 **窗口高度**——扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖：
 
-- `useModuleHeight`（MainView 全局唯一调用）读 `activeModule` + `activeSubview` 解析模式
+- `useExtensionHeight`（MainView 全局唯一调用）读 `activeExtension` + `activeSubview` 解析模式
 - 一次 invoke 触发 Rust `set_main_frame` → `animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS rAF 逐帧）
 - `auto` 模式：ResizeObserver 监听 `contentRef`，窗口高 = `CHROME_HEIGHT`（搜索栏 + 间距）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`
 - 屏幕尺寸走 `currentMonitor`（WKWebView 下 `window.screen` 仅返回 webview 视口）
@@ -205,7 +205,7 @@ LaunchAgent 常驻方案，监控 release 构建的 RSS/CPU/线程/FD/数据目�
 **消费者**（2 个）：
 
 - **awake**：打开扩展 + 启用开关 + 显示模式二级菜单
-- **proxy**：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后图标隐藏，重连走扩展面板（详见 [proxy.md](docs/extensions/proxy.md)）
+- **proxy**：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后图标隐藏，重连走扩展视图（详见 [proxy.md](docs/extensions/proxy.md)）
 
 ### Agent 引擎
 
@@ -231,10 +231,10 @@ LaunchAgent 常驻方案，监控 release 构建的 RSS/CPU/线程/FD/数据目�
 
 `src/utils/fuzzy.ts::scoreFields()`（[pinyin-pro](https://github.com/zh-lx/pinyin-pro)，三开关锁死中文缩写/全拼/ü→v 语义），权重读 `runtime/constants.ts::SEARCH.WEIGHTS`。
 
-- 模块入口用 `scoreModuleEntry()`（name/id/description + `keywordMatch` 双向），全局 keyword 与 `/` 列表共用
-- **抑制规则**：dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）的扩展抑制其 keyword 入口（即时答案优先；clipboard 等 kind≠module 不抑制）
-- `kind` 枚举：`application | folder | file | module | clipboard | web`
-- 组间序 `GROUP_ORDER`：`application > module > file > clipboard > web`
+- 扩展入口用 `scoreExtensionEntry()`（name/id/description + `keywordMatch` 双向），全局 keyword 与 `/` 列表共用
+- **抑制规则**：dynamic 产出相关 tool 型结果（kind=extension，finalScore > 0）的扩展抑制其 keyword 入口（即时答案优先；clipboard 等 kind≠extension 不抑制）
+- `kind` 枚举：`application | folder | file | extension | clipboard | web`
+- 组间序 `GROUP_ORDER`：`application > extension > file > clipboard > web`
 - 组内限流：`LIMITS.maxGroupResults`（非 file）/ `maxFileResults`
 
 ### toast 提示
@@ -246,7 +246,7 @@ LaunchAgent 常驻方案，监控 release 构建的 RSS/CPU/线程/FD/数据目�
 - 窗口隐藏时立即清空（`hideWindow` 内调 `clearToasts`，规避 macOS 隐藏 WebView 节流 setTimeout 致残留）
 - 扩展通过 `copyAndHide`（`stores/app.ts`：写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈
 - `showStatus(msg, opts?)` 委托 `showToast`（调用点零改动）
-- 搜索栏 placeholder：模块模式显示搜索说明（`在 X 中搜索` 或扩展自声明 `placeholder`），全局模式保留搜索说明
+- 搜索栏 placeholder：扩展模式显示搜索说明（`在 X 中搜索` 或扩展自声明 `placeholder`），全局模式保留搜索说明
 
 ### 浮层组件
 
@@ -254,13 +254,13 @@ LaunchAgent 常驻方案，监控 release 构建的 RSS/CPU/线程/FD/数据目�
 - **`ResultActionPanel`**（`components/layout/`）：全局模式 `Cmd+Enter` 对 application/file/folder 结果的合并面板（上方详情 meta 行 + 下方动作 item 行——在 Finder 中显示 / 复制路径）；capture-phase keydown 劫持 + 外点关闭，打开即默认选中首项可连续 Enter 触发
 - **Markdown 渲染**：`utils/markdown.ts`（`renderMarkdown`：marked + 自定义 renderer + DOMPurify）+ 全局 `styles/markdown.css`（`.markdown-body` 容器类），agent / ai-providers 等扩展共用
 
-### 模块视图加载（切换性能）
+### 扩展视图加载（切换性能）
 
-- 模块 View（mainView/subviews/searchBarAccessory）**静态 import** 进主 bundle（用户高频、固定集合，首次进入零卡顿）
+- 扩展 View（mainView/subviews/searchBarAccessory）**静态 import** 进主 bundle（用户高频、固定集合，首次进入零卡顿）
 - 仅**独立窗口**（screenshot 标注 host/pin、window-manager snap 面板，`windowViews`）保留 `defineAsyncComponent` 真按需——不截图/不分屏不加载，省稳态占用（gzip ~20KB）
 - **窗口按需创建**：screenshot / snap-panel 窗口从 `tauri.conf.json` 移除静态声明，改在扩展 `setup` 中 `WebviewWindowBuilder` 代码创建（WKWebView 需启动时预加载页面，快捷键/鼠标触发时才能即时响应）
 - **vendor 分包 + pinyin 延迟加载**：`manualChunks` 拆 vendor(vue+pinia) / markdown(marked+dompurify) / pinyin 独立 chunk；pinyin-pro（拼音字典 289KB）改为首次 CJK 查询时 `import()` 异步加载，首屏零开销
-- `ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问模块，切换走 activate/deactivate 而非重挂载
+- `ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问扩展，切换走 activate/deactivate 而非重挂载
 
 ### LLM 基础设施
 
@@ -319,7 +319,7 @@ src/
 ├── commands.ts         # 命令名常量（CMD.xxx，禁止裸 invoke）
 ├── runtime/            # 前端运行时
 │   ├── types.ts        # Extension / SearchProvider / SearchResult（14 槽：11 能力 + 3 行为）
-│   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS / GROUP_ORDER / GROUP_TITLES / KEYWORD_MODULE_BOOST + LIMITS）
+│   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS / GROUP_ORDER / GROUP_TITLES / KEYWORD_EXTENSION_BOOST + LIMITS）
 │   ├── storage.ts      # defineConfig（reactive + watch 自动持久化 + race 保护 + 类型守卫 + 跨窗口同步）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
 │   ├── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
@@ -328,10 +328,10 @@ src/
 │   ├── ui/             # 原子组件（只用这些，禁止手写底层标签）
 │   └── layout/         # MainView / ContentView / ResultItem（kind 分支内聚）/ ResultIcon / ResultActionPanel
 ├── composables/
-│   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键/失焦隐藏/模块事件）
-│   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型模块 dynamic + web 搜索 + 默认结果）
+│   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键/失焦隐藏/扩展事件）
+│   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型扩展 dynamic + web 搜索 + 默认结果）
 │   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派 + Escape 统一退出
-│   ├── useModuleHeight.ts     # 主窗口高度统一管理
+│   ├── useExtensionHeight.ts   # 主窗口高度统一管理
 │   ├── useActionPanel.ts      # Cmd+Enter 动作浮层（键盘导航 + 外点关闭）
 │   ├── useFloating.ts / useScrollPosition.ts / useTauriListener.ts / useToast.ts
 │   └── events.ts / useInputControl.ts / useShortcutConfig.ts
@@ -340,7 +340,7 @@ src/
 └── utils/
 ```
 
-新增文件按所属模块归位，勿新建顶层分类。
+新增文件按所属目录归位，勿新建顶层分类。
 
 ## UI 规范
 
@@ -348,7 +348,7 @@ src/
 
 ### 分层
 
-- 容器 **soft-surface** · 抬升卡 **soft-card**（助手消息 / system-status）· 控件 **soft-chip**（1px 冷灰 solid border，无 elevation；focus 改边框色）· **module-tag** · **ui-active** · **ui-btn-\***（BaseButton variant 面类：primary/ghost/danger）· 弹窗 **dialog-\***（标题/底栏浮层渐变）· 实底填充 **fill-ctrl**
+- 容器 **soft-surface** · 抬升卡 **soft-card**（助手消息 / system-status）· 控件 **soft-chip**（1px 冷灰 solid border，无 elevation；focus 改边框色）· **ext-tag** · **ui-active** · **ui-btn-\***（BaseButton variant 面类：primary/ghost/danger）· 弹窗 **dialog-\***（标题/底栏浮层渐变）· 实底填充 **fill-ctrl**
 - 玻璃只做壳；可点控件走 chip
 
 ### 基元与 elevation
@@ -380,8 +380,8 @@ src/
 
 ### 容器边距
 
-- 全局统一 `p-3`（12px）：搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、模块内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`
-- 搜索栏 top/height/gap 为 `constants.ts` 模块内常量（和为 `CHROME_HEIGHT`，与 MainView `top-3`/`h-13`/`p-3` 同步）
+- 全局统一 `p-3`（12px）：搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、扩展内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`
+- 搜索栏 top/height/gap 为 `constants.ts` 文件内常量（和为 `CHROME_HEIGHT`，与 MainView `top-3`/`h-13`/`p-3` 同步）
 - **例外**：`BaseDialog` 内容区水平 `16px`，顶/底由浮层 chrome 预留
 - **元素间距**（集中定义，按值从大到小）：
   - `gap-3`（区块）：纵向段落 / 表单段、列表项内部主分区、grid 列间
@@ -393,7 +393,7 @@ src/
 ### 弹窗
 
 - `BaseDialog` Teleport 到 body；标题/底栏为绝对定位浮层 + 透明渐变，内容通铺可滚入
-- KeepAlive 切扩展时 `onDeactivated` 以 `dismiss` 关窗（父级 `@cancel` 卸 v-if）；全局 `showConfirm` 由 `setActiveModule` 按取消收束
+- KeepAlive 切扩展时 `onDeactivated` 以 `dismiss` 关窗（父级 `@cancel` 卸 v-if）；全局 `showConfirm` 由 `setActiveExtension` 按取消收束
 - 控件 focus 只改边框色 `--focus-ring-color`（`BaseInput` 挂 `ui-input` 走 `:focus-within`，无 active 按下态；有 suffix 时 `pr-1`）
 
 ### 浮层范式

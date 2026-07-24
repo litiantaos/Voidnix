@@ -171,7 +171,7 @@ describe('BaseDialog', () => {
   })
 
   it('onDeactivated：KeepAlive 切走时 dismiss 关窗', async () => {
-    // 动态组件切换触发 KeepAlive deactivated（与扩展快捷键切模块同路径）
+    // 动态组件切换触发 KeepAlive deactivated（与扩展快捷键切扩展同路径）
     const page = ref<'dialog' | 'other'>('dialog')
     const reason = ref<string | null>(null)
     const Host = defineComponent({

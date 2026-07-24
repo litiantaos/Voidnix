@@ -1,6 +1,6 @@
 import { getAllExtensions } from './extension-registry'
 import { SEARCH, LIMITS } from './constants'
-import { scoreFields, scoreModuleEntry } from '@/utils/fuzzy'
+import { scoreFields, scoreExtensionEntry } from '@/utils/fuzzy'
 import type { Extension, SearchResult, SearchResultKind, ProviderResult } from './types'
 
 // kind → group 映射：file/folder 同属 'file' 组；其余 kind 即组名。
@@ -22,7 +22,7 @@ const GROUP_INDEX: Record<string, number> = SEARCH.GROUP_ORDER.reduce(
 
 // 打分后中间结构：finalScore 一次预算，suppress 判断 + groupAndSort 复用（消除二次 scoreFields）
 // matched = 应显示：空 query 需 finalScore>0（boost>0，默认列表过滤 time/uuid 等 boost=0 即时答案）；
-// 非空 query 需 fuzzy>0（查找型结果必须命中）。非 matched 时仅 module 类即时答案可靠 finalScore>0 穿透
+// 非空 query 需 fuzzy>0（查找型结果必须命中）。非 matched 时仅 extension 类即时答案可靠 finalScore>0 穿透
 interface ScoredResult {
   item: SearchResult
   finalScore: number
@@ -34,17 +34,17 @@ interface ScoredResult {
  *  秒出，慢结果（mdfind 文件/网络）增量补充，不再 Promise.all barrier。 */
 class SearchEngine {
   private currentController?: AbortController
-  private activeModule: string | undefined
+  private activeExtension: string | undefined
   // keyword 入口记忆化：同 query 的 keyword 结果不变，增量 flush 复用避免重算
   private kwCacheQ: string | null = null
   private kwCache: SearchResult[] = []
 
-  /** 模块激活/退出时切换模式。激活时只调该模块 dynamic；undefined 恢复全局聚合。 */
-  setActiveModule(id: string | undefined) {
-    this.activeModule = id
+  /** 扩展激活/退出时切换模式。激活时只调该扩展 dynamic；undefined 恢复全局聚合。 */
+  setActiveExtension(id: string | undefined) {
+    this.activeExtension = id
   }
 
-  /** 取消进行中的 search（模块退出 / 组件卸载）。新 search() 也会 abort 上一次。 */
+  /** 取消进行中的 search（扩展退出 / 组件卸载）。新 search() 也会 abort 上一次。 */
   abort() {
     this.currentController?.abort()
     this.currentController = undefined
@@ -64,27 +64,27 @@ class SearchEngine {
     // 失效 keyword 缓存：跨 search() 调用时扩展注册表可能已变化（测试场景 / 运行时动态注册）
     this.kwCacheQ = null
 
-    // 快照模式：await 期间 activeModule 可能被 KeepAlive/快捷键改写，后处理必须与本次召回一致
-    const moduleId = this.activeModule
-    const moduleMode = !!moduleId
+    // 快照模式：await 期间 activeExtension 可能被 KeepAlive/快捷键改写，后处理必须与本次召回一致
+    const extId = this.activeExtension
+    const extensionMode = !!extId
     const q = query.trim()
 
-    if (moduleMode) {
-      // 模块模式：累积 raw 结果，每次扩展 emit/resolve 都 dedupe + onUpdate（保留扩展返回序，不过滤不限流）
+    if (extensionMode) {
+      // 扩展模式：累积 raw 结果，每次扩展 emit/resolve 都 dedupe + onUpdate（保留扩展返回序，不过滤不限流）
       const acc: SearchResult[] = []
       let last: SearchResult[] | undefined // 缓存最近一次 flush 结果，return 复用避免重复 dedupe
       const flush = () => {
         if (!controller.signal.aborted) {
-          last = dedupeBy(acc, (r) => `${r.module}:${r.id}`)
+          last = dedupeBy(acc, (r) => `${r.extId}:${r.id}`)
           onUpdate?.(last)
         }
       }
-      await this.collectAll(query, controller.signal, moduleId, moduleMode, (items) => {
+      await this.collectAll(query, controller.signal, extId, extensionMode, (items) => {
         acc.push(...items)
         flush()
       })
       // last 有值 = flush 至少执行过一次，最后一次与 return 等价直接复用；无值（无扩展产出/已 abort）补算
-      return last ?? dedupeBy(acc, (r) => `${r.module}:${r.id}`)
+      return last ?? dedupeBy(acc, (r) => `${r.extId}:${r.id}`)
     }
 
     // 全局模式：累积 ScoredResult（打分只算一次），每次扩展 emit/resolve 都 keyword 合流 + groupAndSort + onUpdate
@@ -96,7 +96,7 @@ class SearchEngine {
         onUpdate?.(last)
       }
     }
-    await this.collectAll(query, controller.signal, moduleId, moduleMode, (items) => {
+    await this.collectAll(query, controller.signal, extId, extensionMode, (items) => {
       scored.push(...this.scoreResults(items, q))
       flush()
     })
@@ -110,12 +110,12 @@ class SearchEngine {
   private async collectAll(
     query: string,
     signal: AbortSignal,
-    moduleId: string | undefined,
-    moduleMode: boolean,
+    extId: string | undefined,
+    extensionMode: boolean,
     onBatch: (items: SearchResult[]) => void,
   ): Promise<void> {
     const exts = getAllExtensions().filter((e) => e.search)
-    const targets = moduleId ? exts.filter((e) => e.meta.id === moduleId) : exts
+    const targets = extId ? exts.filter((e) => e.meta.id === extId) : exts
 
     // 空批次跳过：扩展 emit 后 return [] 等场景不触发多余的重排 + 渲染
     const batch = (items: SearchResult[]) => {
@@ -134,14 +134,14 @@ class SearchEngine {
         // emit 绑定到本次 search 的累积器：扩展流式产出的部分结果立即增量重排
         const emit = (partial: ProviderResult[]) => {
           if (signal.aborted) return
-          batch(this.annotate(partial, ext, moduleMode))
+          batch(this.annotate(partial, ext, extensionMode))
         }
         try {
           const raw = await this.raceWithTimeout(
-            ext.search!.dynamic(query, { signal: child.signal, moduleMode, emit }),
+            ext.search!.dynamic(query, { signal: child.signal, extensionMode, emit }),
             () => child.abort(),
           )
-          if (!signal.aborted) batch(this.annotate(raw, ext, moduleMode))
+          if (!signal.aborted) batch(this.annotate(raw, ext, extensionMode))
         } catch (e) {
           // abort 触发的 AbortError 与超时是正常/降级路径，静默；其余打日志
           const name = (e as Error)?.name
@@ -155,18 +155,20 @@ class SearchEngine {
     )
   }
 
-  /** 框架注入：module = 产出扩展 meta.id（扩展禁填）；
-   *  module 类动态结果无 icon 时补产出扩展 meta.icon（calculator/currency 等即时答案默认带扩展图标）；
-   *  全局模式 + 工具型结果（kind=module）注入 source = 扩展显示名（UI 标注来源，应用/文件等原生结果不注入）。 */
-  private annotate(raw: ProviderResult[], ext: Extension, moduleMode: boolean): SearchResult[] {
+  /** 框架注入：extId = 产出扩展 meta.id（扩展禁填）；
+   *  extension 类动态结果无 icon 时补产出扩展 meta.icon（calculator/currency 等即时答案默认带扩展图标）；
+   *  全局模式 + 工具型结果（kind=extension）注入 source = 扩展显示名（UI 标注来源，应用/文件等原生结果不注入）。 */
+  private annotate(raw: ProviderResult[], ext: Extension, extensionMode: boolean): SearchResult[] {
     return raw.map((r) => {
-      const isModule = r.data?.kind === 'module'
+      const isExtension = r.data?.kind === 'extension'
       return {
         ...r,
-        module: ext.meta.id,
+        extId: ext.meta.id,
         icon:
-          r.icon ?? (r.data?.icon as string | undefined) ?? (isModule ? ext.meta.icon : undefined),
-        ...(!moduleMode && isModule ? { source: ext.meta.name } : {}),
+          r.icon ??
+          (r.data?.icon as string | undefined) ??
+          (isExtension ? ext.meta.icon : undefined),
+        ...(!extensionMode && isExtension ? { source: ext.meta.name } : {}),
       } as SearchResult
     })
   }
@@ -183,26 +185,26 @@ class SearchEngine {
     })
   }
 
-  /** 全局模式最终管道：keyword 合流（过滤已被 dynamic module 结果覆盖的扩展入口）+ 去重 + groupAndSort。
+  /** 全局模式最终管道：keyword 合流（过滤已被 dynamic extension 结果覆盖的扩展入口）+ 去重 + groupAndSort。
    *  每次 flush（增量）与最终返回共用——保证增量与最终结果一致。keyword 纯同步且扩展数少，每次重算可接受。 */
   private buildGlobal(scored: ScoredResult[], q: string): SearchResult[] {
     let all = scored
     if (q) {
-      // 只在 dynamic 产出相关 tool 型结果（kind=module，finalScore > 0）时抑制该扩展入口：
-      // 即时答案优先（如「100 usd」返回换算值不再与模块入口同屏）；
-      // clipboard 等数据型结果（kind≠module）不抑制——用户搜「剪贴板」时先看模块入口再看记录。
-      const relevantDynamicModules = new Set(
+      // 只在 dynamic 产出相关 tool 型结果（kind=extension，finalScore > 0）时抑制该扩展入口：
+      // 即时答案优先（如「100 usd」返回换算值不再与扩展入口同屏）；
+      // clipboard 等数据型结果（kind≠extension）不抑制——用户搜「剪贴板」时先看扩展入口再看记录。
+      const relevantDynamicExtensions = new Set(
         scored
-          .filter((x) => x.item.data?.kind === 'module' && x.finalScore > 0)
-          .map((x) => x.item.module),
+          .filter((x) => x.item.data?.kind === 'extension' && x.finalScore > 0)
+          .map((x) => x.item.extId),
       )
       const kwScored = this.keywordSearchAll(q)
-        .filter((r) => !relevantDynamicModules.has(r.module))
+        .filter((r) => !relevantDynamicExtensions.has(r.extId))
         .map((r) => ({ item: r, finalScore: (r.score ?? 0) + (r.boost ?? 0), matched: true }))
       all = [...scored, ...kwScored]
     }
 
-    const deduped = dedupeBy(all, (x) => `${x.item.module}:${x.item.id}`)
+    const deduped = dedupeBy(all, (x) => `${x.item.extId}:${x.item.id}`)
     return this.groupAndSort(deduped)
   }
 
@@ -227,36 +229,36 @@ class SearchEngine {
     }
   }
 
-  /** 框架内置：scoreModuleEntry 产出模块入口（与 `/` 工具列表共用打分）。
-   *  入参 q 约定已 trim；产出序无要求——groupAndSort 在 module 组内按 finalScore 重排。
+  /** 框架内置：scoreExtensionEntry 产出扩展入口（与 `/` 工具列表共用打分）。
+   *  入参 q 约定已 trim；产出序无要求——groupAndSort 在 extension 组内按 finalScore 重排。
    *  按 q 记忆化：同 query 的 keyword 入口不变，增量 flush 直接复用。 */
   private keywordSearchAll(q: string): SearchResult[] {
     if (this.kwCacheQ === q) return this.kwCache
     this.kwCacheQ = q
     this.kwCache = getAllExtensions()
-      .map((ext) => ({ ext, score: scoreModuleEntry(ext.meta, q) }))
+      .map((ext) => ({ ext, score: scoreExtensionEntry(ext.meta, q) }))
       .filter((x) => x.score > 0)
       .map(({ ext, score }) => ({
-        id: `module-${ext.meta.id}`,
+        id: `ext-entry-${ext.meta.id}`,
         title: ext.meta.name,
         description: ext.meta.description,
         icon: ext.meta.icon,
-        module: ext.meta.id,
-        boost: SEARCH.KEYWORD_MODULE_BOOST,
+        extId: ext.meta.id,
+        boost: SEARCH.KEYWORD_EXTENSION_BOOST,
         score,
-        data: { kind: 'module' as SearchResultKind, moduleId: ext.meta.id },
+        data: { kind: 'extension' as SearchResultKind, extId: ext.meta.id },
       }))
     return this.kwCache
   }
 
   /** 管道：过滤 → 回填 score → 分组 → 组内 finalScore 降序 → 组间 GROUP_ORDER → 组内限流。
-   *  全局模式专用（模块模式见 search() 直接返回）。复用 ScoredResult.finalScore，不再调 scoreFields。
-   *  过滤：matched（query 命中或空 query）保留；非 matched 仅 module 类即时答案靠 finalScore>0 穿透。
+   *  全局模式专用（扩展模式见 search() 直接返回）。复用 ScoredResult.finalScore，不再调 scoreFields。
+   *  过滤：matched（query 命中或空 query）保留；非 matched 仅 extension 类即时答案靠 finalScore>0 穿透。
    *  单次遍历合并 filter + score 回填 + 分组，消除两次中间数组分配。 */
   private groupAndSort(items: ScoredResult[]): SearchResult[] {
     const groups = new Map<string, SearchResult[]>()
     for (const x of items) {
-      if (!x.matched && !(x.item.data?.kind === 'module' && x.finalScore > 0)) continue
+      if (!x.matched && !(x.item.data?.kind === 'extension' && x.finalScore > 0)) continue
       const item: SearchResult = { ...x.item, score: x.finalScore }
       const key = getGroupKey(item)
       let group = groups.get(key)
@@ -284,7 +286,7 @@ class SearchEngine {
   }
 }
 
-/** 按自定义 key 去重（保留首个）。模块模式对 SearchResult、全局模式对 ScoredResult 复用同一机制。 */
+/** 按自定义 key 去重（保留首个）。扩展模式对 SearchResult、全局模式对 ScoredResult 复用同一机制。 */
 function dedupeBy<T>(items: T[], keyFn: (x: T) => string): T[] {
   const seen = new Set<string>()
   const out: T[] = []

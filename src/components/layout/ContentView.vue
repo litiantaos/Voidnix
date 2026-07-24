@@ -21,16 +21,16 @@
            列表/全局模式 contentStyle 返回 undefined，ContentView 空态作 scrollContainer 直接 flex 子项 flex-1 居中 -->
       <div
         ref="contentRef"
-        :class="{ 'module-fixed': !isAutoHeight, 'module-auto': isAutoHeight }"
+        :class="{ 'view-fixed': !isAutoHeight, 'view-auto': isAutoHeight }"
         flex="~ col"
         :style="contentStyle"
       >
-        <!-- max 覆盖全部视图 key（9 模块 mainView + screenshot{ocr} + 各扩展{config} 子视图），
-             驱逐会导致模块 View 重挂载（重渲染列表/消息）→ 切换卡顿，故留充裕余量 -->
+        <!-- max 覆盖全部视图 key（9 扩展 mainView + screenshot{ocr} + 各扩展{config} 子视图），
+             驱逐会导致扩展 View 重挂载（重渲染列表/消息）→ 切换卡顿，故留充裕余量 -->
         <KeepAlive v-if="resolvedView" :max="24">
           <component
             :is="resolvedView"
-            :key="`${props.module?.meta.id ?? 'main'}-${appStore.activeSubview ?? 'view'}`"
+            :key="`${props.extension?.meta.id ?? 'main'}-${appStore.activeSubview ?? 'view'}`"
           />
         </KeepAlive>
 
@@ -41,16 +41,16 @@
           :selected-index="props.selectedIndex"
           :multi-select="isMultiSelect"
           :selected-ids="selectedIds"
-          :keyboard-active="!!appStore.activeModuleId"
+          :keyboard-active="!!appStore.activeExtId"
           :composing="appStore.isComposing"
           @update:selected-ids="selectedIds = $event"
-          :group-field="!module ? props.groupField : undefined"
-          :group-title="!module ? props.groupTitle : undefined"
+          :group-field="!extension ? props.groupField : undefined"
+          :group-title="!extension ? props.groupTitle : undefined"
           @update:selected-index="(i: number) => emit('update:selectedIndex', i)"
           @execute="handleExecute"
         >
           <template #item="{ item }">
-            <ResultItem :item="item" :module="module" />
+            <ResultItem :item="item" :extension="extension" />
           </template>
         </BaseList>
       </div>
@@ -64,7 +64,7 @@
       <BaseEmptyState
         v-else-if="!resolvedView && props.results.length === 0"
         title="无结果"
-        :icon="module ? module.meta.icon : 'i-ri-search-line'"
+        :icon="extension ? extension.meta.icon : 'i-ri-search-line'"
       />
     </div>
   </div>
@@ -83,7 +83,7 @@ import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import ResultItem from '@/components/layout/ResultItem.vue'
 
 const props = defineProps<{
-  module?: Extension | null
+  extension?: Extension | null
   results: SearchResult[]
   loading?: boolean
   selectedIndex: number
@@ -99,31 +99,31 @@ const emit = defineEmits<{
 const appStore = useAppStore()
 
 const selectedIds = ref(new Set<string>())
-const isMultiSelect = computed(() => !!props.module?.listOptions?.multiSelect)
+const isMultiSelect = computed(() => !!props.extension?.listOptions?.multiSelect)
 
 /**
  * 纯渲染器：布局决策收拢至此，搜索编排由 useSearchInput 统一承担（结果经 props 注入）。
- * subview 模式：当前模块的私有命名子视图（screenshot{ocr}、各扩展{config}）。
+ * subview 模式：当前扩展的私有命名子视图（screenshot{ocr}、各扩展{config}）。
  * mainView 模式：使用扩展声明的主视图。
  */
 const resolvedView = computed(() => {
   const subviewId = appStore.activeSubview
-  if (subviewId && props.module?.subviews?.[subviewId]) {
-    return props.module.subviews[subviewId]()
+  if (subviewId && props.extension?.subviews?.[subviewId]) {
+    return props.extension.subviews[subviewId]()
   }
-  return props.module?.mainView?.()
+  return props.extension?.mainView?.()
 })
 
 // auto 高度模式（windowHeight/subviewHeight === 'auto'）：View 根保留 min-content（min-height:auto 默认），
 // 内容自然高撑开 contentRef 驱动 ResizeObserver 自适应窗口；fixed/default 模式 View 根 min-height:0 撑满可视区
 const isAutoHeight = computed(() => {
-  const mod = props.module
-  if (!mod) return false
+  const ext = props.extension
+  if (!ext) return false
   const subId = appStore.activeSubview
-  if (subId && mod.subviewHeights?.[subId] !== undefined) {
-    return mod.subviewHeights[subId] === 'auto'
+  if (subId && ext.subviewHeights?.[subId] !== undefined) {
+    return ext.subviewHeights[subId] === 'auto'
   }
-  return mod.windowHeight === 'auto'
+  return ext.windowHeight === 'auto'
 })
 
 // fixed/default：contentRef min-height:100% 撑满可视区（View 根 :deep flex-1 撑满）。
@@ -155,22 +155,22 @@ const handleExecute = async (result: SearchResult, _index: number, e?: KeyboardE
   if (multiResults) selectedIds.value = new Set()
   if (props.onExecute) {
     props.onExecute(result)
-  } else if (props.module?.onExecute) {
-    await props.module.onExecute(result, multiResults)
+  } else if (props.extension?.onExecute) {
+    await props.extension.onExecute(result, multiResults)
   }
 }
 </script>
 
 <style scoped>
-/* 模块 View 根自动撑满，消除手写 h-full 样板（新 View 零配置撑满）。
-   - fixed/default（module-fixed）：flex:1 1 0% + min-height:0 撑满可视区，内部 overflow 滚动。
-   - auto（module-auto）：min-height = DEFAULT_HEIGHT - chrome（进入高度下限），loading/空态撑满；
+/* 扩展 View 根自动撑满，消除手写 h-full 样板（新 View 零配置撑满）。
+   - fixed/default（view-fixed）：flex:1 1 0% + min-height:0 撑满可视区，内部 overflow 滚动。
+   - auto（view-auto）：min-height = DEFAULT_HEIGHT - chrome（进入高度下限），loading/空态撑满；
      内容超出时 min-height 不生效，View 根自然撑开驱动 ResizeObserver 自适应。
      用固定值不用百分比 —— 规避 WebKit「auto-height 容器 + flex 子项 + min-height:%」的循环依赖。 */
-.module-auto > :deep(*) {
+.view-auto > :deep(*) {
   min-height: var(--content-min-h);
 }
-.module-fixed > :deep(*) {
+.view-fixed > :deep(*) {
   flex: 1 1 0%;
   min-height: 0;
 }

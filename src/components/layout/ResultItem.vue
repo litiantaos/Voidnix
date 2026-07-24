@@ -1,7 +1,7 @@
 <template>
   <BaseListItem :icon-wrapper-class="iconWrapperClass">
     <template #icon>
-      <ResultIcon :item="item" :module-icon="module?.meta.icon" />
+      <ResultIcon :item="item" :extension-icon="extension?.meta.icon" />
     </template>
     <template #title>
       <span :class="{ 'text-accent': item.data?.isHighlight }">{{ item.title }}</span>
@@ -35,7 +35,7 @@ import type { Extension, SearchResult } from '@/runtime/types'
 
 const props = defineProps<{
   item: SearchResult
-  module?: Extension | null
+  extension?: Extension | null
 }>()
 
 const isFileOrFolder = computed(

@@ -17,7 +17,7 @@ import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 
 type Win = ReturnType<typeof import('@tauri-apps/api/window').getCurrentWindow> | null
 
-/// 主窗口生命周期：全局快捷键注册/注销、窗口显隐、失焦防抖隐藏、模块/子视图事件监听。
+/// 主窗口生命周期：全局快捷键注册/注销、窗口显隐、失焦防抖隐藏、扩展/子视图事件监听。
 /// 独立窗口视图（screenshot/snap-panel）由 activeWindowView 标识，命中时跳过主窗口生命周期。
 export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, win: Win) {
   const settings = useSettingsStore()
@@ -53,7 +53,7 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
     }
   }
 
-  // 统一管理事件订阅的清理函数，避免新增监听时漏接 unlisten（曾导致 open-module-subview 泄漏）
+  // 统一管理事件订阅的清理函数，避免新增监听时漏接 unlisten（曾导致 open-extension-subview 泄漏）
   const unlistenList: Array<() => void> = []
   const track = (fn: () => void): void => {
     unlistenList.push(fn)
@@ -156,15 +156,15 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
       )
       track(unlistenShortcut)
 
-      const unlistenOpenModule = await listen<string>('open-module', (event) => {
+      const unlistenOpenExtension = await listen<string>('open-extension', (event) => {
         markSkip()
-        const moduleId = event.payload
-        if (moduleId) {
-          appStore.setActiveModule(moduleId)
+        const extId = event.payload
+        if (extId) {
+          appStore.setActiveExtension(extId)
           appStore.setSearchQuery('')
         }
       })
-      track(unlistenOpenModule)
+      track(unlistenOpenExtension)
 
       const unlistenClickOutside = await listen('click-outside', () => {
         hideWindow(true)
@@ -177,18 +177,18 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
       })
       track(unlistenFrontmostChanged)
 
-      // 通用模块子视图事件：任何模块都可以通过 Rust `open_module_subview` 触发
+      // 通用扩展子视图事件：任何扩展都可以通过 Rust `open_extension_subview` 触发
       const unlistenSubview = await listen<{
-        moduleId: string
+        extId: string
         subviewId: string
         payload: unknown
-      }>('open-module-subview', (e) => {
+      }>('open-extension-subview', (e) => {
         markSkip()
-        const { moduleId, subviewId, payload } = e.payload
-        appStore.setActiveModule(moduleId)
+        const { extId, subviewId, payload } = e.payload
+        appStore.setActiveExtension(extId)
         appStore.setSearchQuery('')
         appStore.openSubview(subviewId, true)
-        const ext = getExtension(moduleId)
+        const ext = getExtension(extId)
         if (ext?.onOpenSubview) {
           ext.onOpenSubview(subviewId, payload)
         }

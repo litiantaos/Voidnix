@@ -42,7 +42,7 @@ export function buildWebSearchResult(parsed: WebSearchQuery): SearchResult {
     title: `${engine} 搜索`,
     description: desc,
     icon: 'i-ri-earth-line',
-    module: 'system',
+    extId: 'system',
     data: { kind: 'web', engine: parsed.engine, keyword: parsed.keyword },
   }
 }
@@ -54,7 +54,7 @@ export function buildOpenUrlResult(url: string): SearchResult {
     title: '打开链接',
     description: url,
     icon: 'i-ri-links-line',
-    module: 'system',
+    extId: 'system',
     data: { kind: 'web', url },
   }
 }

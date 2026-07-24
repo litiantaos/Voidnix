@@ -113,7 +113,7 @@ const allItems = computed<SettingItem[]>(() => [
     subtitle: '在「AI 提供商」中配置',
     type: 'action',
     group: '提供商',
-    action: () => appStore.setActiveModule('ai-providers'),
+    action: () => appStore.setActiveExtension('ai-providers'),
   },
   {
     id: 'search-provider',

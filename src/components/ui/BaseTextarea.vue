@@ -41,7 +41,7 @@ interface Props {
   autoResize?: boolean
   /**
    * 圆角档：ctrl（默认 6，表单内嵌）/ panel（10，与搜索栏/列表选中同级的主输入面）。
-   * 翻译 / Agent 等模块主输入用 panel。
+   * 翻译 / Agent 等扩展主输入用 panel。
    */
   rounded?: 'ctrl' | 'panel'
 }

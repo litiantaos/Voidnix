@@ -29,7 +29,7 @@ import { requestCreateProvider } from './bridge'
 
 const showHelp = ref(false)
 
-// KeepAlive 切走模块时关闭帮助弹窗，避免再次进入时残留
+// KeepAlive 切走扩展时关闭帮助弹窗，避免再次进入时残留
 onDeactivated(() => {
   showHelp.value = false
 })

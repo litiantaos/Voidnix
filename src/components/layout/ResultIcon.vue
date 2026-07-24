@@ -24,15 +24,15 @@ import { getFileIcon } from '@/utils/icons'
 
 const props = defineProps<{
   item: SearchResult
-  moduleIcon?: string
+  extensionIcon?: string
 }>()
 
 const icon = computed(
-  () => props.item.icon || (props.item.data?.icon as string | undefined) || props.moduleIcon,
+  () => props.item.icon || (props.item.data?.icon as string | undefined) || props.extensionIcon,
 )
 const isIconFont = computed(() => icon.value?.startsWith('i-') ?? false)
 const isImageIcon = computed(() => !!icon.value && !isIconFont.value)
-const isModuleItem = computed(() => props.item.data?.kind === 'module')
+const isExtensionItem = computed(() => props.item.data?.kind === 'extension')
 const isFileOrFolder = computed(
   () => props.item.data?.kind === 'file' || props.item.data?.kind === 'folder',
 )
@@ -49,7 +49,7 @@ const displayIcon = computed(() => {
 })
 /** 字体图标色：扩展类用主色、file/folder 无显式 icon 用类型映射色、其余中性灰 */
 const displayColor = computed(() => {
-  if (isModuleItem.value) return 'text-accent'
+  if (isExtensionItem.value) return 'text-accent'
   if (isFileOrFolder.value && !icon.value) return fileIcon.value.color
   return 'text-muted'
 })

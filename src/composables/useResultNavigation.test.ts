@@ -36,29 +36,29 @@ const mountedWrappers: ReturnType<typeof mount>[] = []
 function makeWrapper(opts: {
   results?: SearchResult[]
   selectedIndex?: number
-  activeModuleId?: string | null
+  activeExtId?: string | null
 }) {
   const results = ref<SearchResult[]>(opts.results ?? [])
   const selectedIndex = ref(opts.selectedIndex ?? 0)
-  const activeModuleId = ref<string | null>(opts.activeModuleId ?? null)
+  const activeExtId = ref<string | null>(opts.activeExtId ?? null)
   const searchQuery = ref('')
   const clearSearch = vi.fn()
   const loadDefaultResults = vi.fn().mockResolvedValue(undefined)
   const goHome = vi.fn()
-  const exitModule = vi.fn()
-  const activateModule = vi.fn()
+  const exitExtension = vi.fn()
+  const activateExtension = vi.fn()
 
   const TestComp = defineComponent({
     setup() {
       const nav = useResultNavigation({
         results,
         selectedIndex,
-        activeModule: computed(() => null),
+        activeExtension: computed(() => null),
         clearSearch,
         loadDefaultResults,
-        activateModule,
+        activateExtension,
         goHome,
-        exitModule,
+        exitExtension,
       })
       return { nav }
     },
@@ -71,13 +71,13 @@ function makeWrapper(opts: {
     wrapper,
     results,
     selectedIndex,
-    activeModuleId,
+    activeExtId,
     searchQuery,
     clearSearch,
     loadDefaultResults,
-    activateModule,
+    activateExtension,
     goHome,
-    exitModule,
+    exitExtension,
   }
 }
 
@@ -92,21 +92,21 @@ describe('useResultNavigation', () => {
   })
 
   describe('handleExecute 分派', () => {
-    it('kind=module 触发 activateModule', async () => {
-      const { wrapper, results, activateModule } = makeWrapper({
+    it('kind=extension 触发 activateExtension', async () => {
+      const { wrapper, results, activateExtension } = makeWrapper({
         results: [
           {
             id: 'm1',
             title: 'Calculator',
-            module: 'calculator',
-            data: { kind: 'module', moduleId: 'calculator' },
+            extId: 'calculator',
+            data: { kind: 'extension', extId: 'calculator' },
           },
         ],
         selectedIndex: 0,
       })
       await wrapper.vm.nav.handleExecute(results.value[0])
       await flushPromises()
-      expect(activateModule).toHaveBeenCalledWith('calculator')
+      expect(activateExtension).toHaveBeenCalledWith('calculator')
     })
 
     it('kind=file 调用扩展 onExecute', async () => {
@@ -115,7 +115,7 @@ describe('useResultNavigation', () => {
       const result: SearchResult = {
         id: 'c1',
         title: 'foo.txt',
-        module: 'clipboard',
+        extId: 'clipboard',
         data: { kind: 'file', path: '/tmp/foo.txt' },
       }
       const { wrapper, results } = makeWrapper({ results: [result], selectedIndex: 0 })
@@ -128,7 +128,7 @@ describe('useResultNavigation', () => {
       const result: SearchResult = {
         id: 'x',
         title: 'x',
-        module: 'nonexistent',
+        extId: 'nonexistent',
         data: { kind: 'file' },
       }
       const { wrapper, results } = makeWrapper({ results: [result] })
@@ -141,7 +141,7 @@ describe('useResultNavigation', () => {
     it('selectedIndex 越界时 Enter 不崩溃（onKeystroke 内 null 检查）', () => {
       // 模拟竞态：results 缩短但 selectedIndex 未重置
       makeWrapper({
-        results: [{ id: 'a', title: 'A', module: 'x', data: { kind: 'file' } }],
+        results: [{ id: 'a', title: 'A', extId: 'x', data: { kind: 'file' } }],
         selectedIndex: 5, // 越界
       })
       // onKeyStroke 注册在 document 上；派发 Enter 应被 onKeydown 处理
@@ -159,38 +159,38 @@ describe('useResultNavigation', () => {
       const appStore = useAppStore()
       const dispatch = (key: string) =>
         document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
-      return { exitModule: ctx.exitModule, appStore, dispatch }
+      return { exitExtension: ctx.exitExtension, appStore, dispatch }
     }
 
-    it('模块 mainView esc → exitModule', () => {
-      const { exitModule, appStore, dispatch } = makeEscapeDispatcher()
-      appStore.activeModuleId = 'translate'
+    it('扩展 mainView esc → exitExtension', () => {
+      const { exitExtension, appStore, dispatch } = makeEscapeDispatcher()
+      appStore.activeExtId = 'translate'
       appStore.activeSubview = null
 
       dispatch('Escape')
 
-      expect(exitModule).toHaveBeenCalledOnce()
+      expect(exitExtension).toHaveBeenCalledOnce()
     })
 
     it('功能/设置子视图 esc → closeSubview（不区分控件类型）', () => {
-      const { exitModule, appStore, dispatch } = makeEscapeDispatcher()
-      appStore.activeModuleId = 'screenshot'
+      const { exitExtension, appStore, dispatch } = makeEscapeDispatcher()
+      appStore.activeExtId = 'screenshot'
       appStore.activeSubview = 'config'
 
       dispatch('Escape')
 
-      expect(exitModule).not.toHaveBeenCalled()
+      expect(exitExtension).not.toHaveBeenCalled()
       expect(appStore.activeSubview).toBeNull()
     })
 
     it('全局模式 esc → hideWindow', () => {
-      const { exitModule, appStore, dispatch } = makeEscapeDispatcher()
-      appStore.activeModuleId = null
+      const { exitExtension, appStore, dispatch } = makeEscapeDispatcher()
+      appStore.activeExtId = null
       appStore.activeSubview = null
 
       dispatch('Escape')
 
-      expect(exitModule).not.toHaveBeenCalled()
+      expect(exitExtension).not.toHaveBeenCalled()
       expect(hideWindow).toHaveBeenCalledOnce()
     })
   })

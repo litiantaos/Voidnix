@@ -52,13 +52,13 @@ const props = withDefaults(
     multiSelect?: boolean
     selectedIds?: Set<string>
     idField?: string
-    /** 是否激活键盘导航（由父组件根据模块状态控制） */
+    /** 是否激活键盘导航（由父组件根据扩展状态控制） */
     keyboardActive?: boolean
     /** IME 输入法合成状态（由父组件传入） */
     composing?: boolean
     /** ArrowUp/Down 在自定义输入框聚焦时是否仍导航（如翻译框）。
      *  全局搜索框由 data-list-execute 属性统一放行，无需此 prop。Enter 一律让出
-     *  除非控件标记 data-list-execute。默认 false 保护设置界面 input 编辑。 */
+     *  除非控件标记 data-list-execute。默认 false 保护设置页 input 编辑。 */
     navigateOnInput?: boolean
   }>(),
   {
@@ -232,7 +232,7 @@ if (props.multiSelect) {
     emitIds(new Set(props.items.map((item) => getId(item))))
   })
 
-  // 有多选项时 ESC 先清选择（不退出模块）：子组件 onMounted 先于父，listener 注册在
+  // 有多选项时 ESC 先清选择（不退出扩展）：子组件 onMounted 先于父，listener 注册在
   // useResultNavigation 之前，stopImmediatePropagation 阻断后者同 target bubble listener。
   onKeyStroke('Escape', (e) => {
     if (!canNavigate(e)) return

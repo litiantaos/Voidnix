@@ -256,7 +256,7 @@ pub struct VideoMeta {
 }
 
 pub fn probe(app: &AppHandle, path: &str) -> Result<VideoMeta, String> {
-    let bins = resolve_bins(app).ok_or("FFmpeg 未就绪，请先下载内核")?;
+    let bins = resolve_bins(app).ok_or("FFmpeg 未就绪，请先下载核心")?;
     let p = Path::new(path);
     if !crate::platform::path_guard::validate(p) {
         return Err("路径不安全或不存在".into());

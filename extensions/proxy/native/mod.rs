@@ -1,4 +1,4 @@
-//! 代理扩展：命令入口 + 插件/生命周期装配。
+//! 代理扩展：命令入口 + 生命周期装配。
 //! 核心状态机见 lifecycle；菜单栏见 menu；mihomo 进程/订阅/流见 core/tun/subscription/stream。
 
 mod controller;
@@ -63,13 +63,13 @@ pub async fn is_proxy_enabled(state: State<'_, ProxyState>) -> Result<bool, Stri
     Ok(state.enabled.load(Ordering::Relaxed))
 }
 
-/// 查询内核状态（已下载/版本号/下载中），供列表「内核」项展示。
+/// 查询核心状态（已下载/版本号/下载中），供列表「核心」项展示。
 #[tauri::command]
 pub async fn proxy_core_status(app: AppHandle) -> Result<core::CoreStatus, String> {
     Ok(core::core_status(&app))
 }
 
-/// 强制触发内核下载（未下载时）；前端「内核」项下载按钮调用。
+/// 强制触发核心下载（未下载时）；前端「核心」项下载按钮调用。
 #[tauri::command]
 pub async fn proxy_ensure_core(app: AppHandle) -> Result<bool, String> {
     core::ensure_bin(&app).await?;
@@ -82,7 +82,7 @@ pub async fn proxy_check_update(app: AppHandle) -> Result<core::UpdateInfo, Stri
     Ok(core::check_update(&app).await)
 }
 
-/// 更新内核：停代理（若在跑）→ kill root 进程 → 删旧 binary → ensure_bin 重下最新 → 恢复。
+/// 更新核心：停代理（若在跑）→ kill root 进程 → 删旧 binary → ensure_bin 重下最新 → 恢复。
 #[tauri::command]
 pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> Result<(), String> {
     let was_enabled = state.enabled.load(Ordering::Relaxed);

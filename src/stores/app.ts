@@ -15,9 +15,9 @@ export interface ConfirmOptions {
 }
 
 export const useAppStore = defineStore('app', () => {
-  const activeModuleId = ref<string | null>(null)
+  const activeExtId = ref<string | null>(null)
   const searchQuery = ref('')
-  // 进入模块时的入口 query 快照：ESC 退出据此决定返回目标（/ → 工具列表，其余 → 主界面）
+  // 进入扩展时的入口 query 快照：ESC 退出据此决定返回目标（/ → 工具列表，其余 → 主界面）
   const entryQuery = ref('')
   const isComposing = ref(false)
 
@@ -29,8 +29,8 @@ export const useAppStore = defineStore('app', () => {
   let dialogResolve: ((value: boolean) => void) | null = null
 
   const activeSubview = ref<string | null>(null)
-  // 子视图是否经由外部事件（open-module-subview）打开：外部打开时 ESC 直接回主界面，
-  // 内部打开（从模块 mainView 进入 config 等）ESC 返回 mainView。
+  // 子视图是否经由外部事件（open-extension-subview）打开：外部打开时 ESC 直接回主界面，
+  // 内部打开（从扩展 mainView 进入 config 等）ESC 返回 mainView。
   const subviewExternal = ref(false)
   const shortcutRecording = ref(false)
 
@@ -40,28 +40,28 @@ export const useAppStore = defineStore('app', () => {
     showToast(msg, opts)
   }
 
-  function setActiveModule(id: string | null) {
-    const prevId = activeModuleId.value
+  function setActiveExtension(id: string | null) {
+    const prevId = activeExtId.value
     if (id && !prevId) {
-      // 从外部进入模块：快照入口 query（统一所有激活路径——快捷键 toggle / open-module
+      // 从外部进入扩展：快照入口 query（统一所有激活路径——快捷键 toggle / open-extension
       // 事件 / 扩展自激活等均经此，避免 useSearchInput 旁路漏存）
       entryQuery.value = searchQuery.value
     } else if (!id && prevId) {
-      // 退出模块：清空
+      // 退出扩展：清空
       entryQuery.value = ''
     }
     // 全局 confirm（App.vue Teleport，不在 KeepAlive 内）：切扩展时按取消收束，避免遮罩残留
     if (isDialogOpen.value && id !== prevId) {
       resolveConfirm(false)
     }
-    // module→module（如 OCR→translate）：保留原入口，ESC 回到最初进入点
-    activeModuleId.value = id
+    // ext→ext（如 OCR→translate）：保留原入口，ESC 回到最初进入点
+    activeExtId.value = id
     activeSubview.value = null
     subviewExternal.value = false
-    // 模式切换：激活模块时 searchEngine 只调该模块 dynamic；null 恢复全局聚合。
-    // 模块 onActivate/onDeactivate 由各 View 的 onActivated/onDeactivated（KeepAlive）承接。
+    // 模式切换：激活扩展时 searchEngine 只调该扩展 dynamic；null 恢复全局聚合。
+    // 扩展 onActivate/onDeactivate 由各 View 的 onActivated/onDeactivated（KeepAlive）承接。
     // 扩展内 BaseDialog 由自身 onDeactivated(dismiss) 关窗。
-    searchEngine.setActiveModule(id ?? undefined)
+    searchEngine.setActiveExtension(id ?? undefined)
   }
 
   function setSearchQuery(query: string) {
@@ -115,7 +115,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    activeModuleId,
+    activeExtId,
     searchQuery,
     entryQuery,
     isComposing,
@@ -123,7 +123,7 @@ export const useAppStore = defineStore('app', () => {
     dialogOptions,
     lastDialogCloseTime,
     suppressBlur,
-    setActiveModule,
+    setActiveExtension,
     setSearchQuery,
     setComposing,
     showConfirm,
@@ -171,17 +171,17 @@ export async function copyAndHide(value: string, label = '已复制') {
 }
 
 /**
- * 构造全局快捷键 onExecute：已可见且当前激活 → 隐藏窗口；否则激活模块并清空搜索。
+ * 构造全局快捷键 onExecute：已可见且当前激活 → 隐藏窗口；否则激活扩展并清空搜索。
  * clipboard/translate/agent 的 globalShortcuts 共用。
  */
-export function makeToggleHandler(moduleId: string, onActivate?: () => void) {
+export function makeToggleHandler(extId: string, onActivate?: () => void) {
   return (wasVisible: boolean) => {
     const appStore = useAppStore()
-    if (wasVisible && appStore.activeModuleId === moduleId) {
+    if (wasVisible && appStore.activeExtId === extId) {
       hideWindow()
       return
     }
-    appStore.setActiveModule(moduleId)
+    appStore.setActiveExtension(extId)
     appStore.setSearchQuery('')
     onActivate?.()
   }

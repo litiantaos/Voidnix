@@ -109,7 +109,7 @@ pub fn stop_root(app: &AppHandle) -> Result<(), String> {
 /// 期间 frontmost 已还给原 app，is_app_active 会返 false 触发 blur hide——两类都会
 /// 导致窗口被意外关闭。置位 OSASCRIPT_RUNNING 让 is_app_active 期间返 true 抑制 blur hide。
 ///
-/// 收尾在主线程：make_key 恢复 panel 焦点（用户输完密码大概率想继续操作面板），再清 flag。
+/// 收尾在主线程：make_key 恢复 panel 焦点（用户输完密码大概率想继续操作），再清 flag。
 /// 与 is_app_active 的 run_on_main_thread 同线程串行，无竞态：key 未恢复前 is_app_active
 /// 仍走 OSASCRIPT_RUNNING 分支返 true，blur hide 持续被抑制。
 fn run_osascript(app: &AppHandle, script: &str) -> Result<(), String> {

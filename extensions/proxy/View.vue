@@ -33,14 +33,14 @@
       </template>
 
       <template #item="{ item }">
-        <!-- 启用代理（合并内核状态） -->
+        <!-- 启用代理（合并核心状态） -->
         <BaseListItem v-if="item.type === 'enabled'" title="开启代理">
           <template #subtitle>
             <template v-if="!coreStatus.downloaded">
-              {{ isDownloading ? '正在下载内核…' : '功能依赖 mihomo 内核，请先下载' }}
+              {{ isDownloading ? '正在下载核心…' : '功能依赖 mihomo 核心，请先下载' }}
             </template>
             <template v-else>
-              <span truncate>内核版本：mihomo {{ coreStatus.version }}</span>
+              <span truncate>核心版本：mihomo {{ coreStatus.version }}</span>
               <span v-if="isEnabled && traffic" text="muted" shrink="0" ml="3">·</span>
               <span
                 v-if="isEnabled && traffic"
@@ -57,7 +57,7 @@
               >
               <span v-if="coreError" text="danger" shrink="0" ml="2">{{ coreError }}</span>
               <span v-else-if="updateInfo?.hasUpdate" text="success" shrink="0" ml="2"
-                >有新内核 {{ updateInfo.latest
+                >有新核心 {{ updateInfo.latest
                 }}{{ isEnabled ? '，请关闭代理后更新' : '，点击下载更新' }}</span
               >
             </template>
@@ -78,7 +78,7 @@
               >
             </div>
             <!-- 未下载：下载入口 -->
-            <BaseButton v-else @click.stop="downloadCore">下载内核</BaseButton>
+            <BaseButton v-else @click.stop="downloadCore">下载核心</BaseButton>
           </template>
         </BaseListItem>
 

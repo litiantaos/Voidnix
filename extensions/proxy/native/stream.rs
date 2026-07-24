@@ -5,7 +5,7 @@
 //! 与 agent `SessionRegistry` 同范式。WS 鉴权用 `?token={secret}` query（mihomo 支持）。
 //!
 //! 三条流均为本地回环（controller 固定 127.0.0.1），不经 `http::client()` 的 SSRF 防护
-//! （与 controller.rs 一致）。连接失败静默退出（前端面板/子视图可见时才开流，无感重开）。
+//! （与 controller.rs 一致）。连接失败静默退出（前端视图可见时才开流，无感重开）。
 
 use crate::runtime::lock_or_recover;
 use futures_util::StreamExt;
@@ -16,7 +16,7 @@ use tauri::ipc::Channel;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
 
-/// 流 id 单例：面板同时只有一份 traffic / connections / logs 流（key 固定，覆盖式重开）。
+/// 流 id 单例：同一时刻只有一份 traffic / connections / logs 流（key 固定，覆盖式重开）。
 pub const ID_TRAFFIC: &str = "traffic";
 pub const ID_CONNECTIONS: &str = "connections";
 pub const ID_LOGS: &str = "logs";
@@ -87,7 +87,7 @@ fn ws_url(port: u16, secret: &str, path: &str) -> String {
     format!("ws://127.0.0.1:{port}{path}{sep}token={secret}")
 }
 
-/// /traffic 流：逐帧 emit `{ up, down }`。代理关闭/面板卸载时 token 触发退出。
+/// /traffic 流：逐帧 emit `{ up, down }`。代理关闭/视图卸载时 token 触发退出。
 pub async fn traffic_loop(
     port: u16,
     secret: &str,

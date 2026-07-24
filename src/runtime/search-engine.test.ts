@@ -45,19 +45,19 @@ function groupOf(r: SearchResult): string {
 describe('SearchEngine', () => {
   beforeEach(() => {
     registry.length = 0
-    searchEngine.setActiveModule(undefined)
+    searchEngine.setActiveExtension(undefined)
   })
 
-  it('框架注入 module = 产出扩展 meta.id（扩展禁填）', async () => {
-    registry.push(makeSearchExt('inj', () => [result('a', 'alpha', 'module')]))
+  it('框架注入 extId = 产出扩展 meta.id（扩展禁填）', async () => {
+    registry.push(makeSearchExt('inj', () => [result('a', 'alpha', 'extension')]))
     const out = await searchEngine.search('alpha')
-    expect(out[0].module).toBe('inj')
+    expect(out[0].extId).toBe('inj')
   })
 
-  it('全局模式 kind=module 结果注入 source（扩展显示名）；应用/文件等不注入', async () => {
+  it('全局模式 kind=extension 结果注入 source（扩展显示名）；应用/文件等不注入', async () => {
     registry.push(
       makeSearchExt('src', () => [
-        result('tool', 'aa tool', 'module'), // 工具型 → 注入 source
+        result('tool', 'aa tool', 'extension'), // 工具型 → 注入 source
         result('app', 'aa app', 'application'), // 应用 → 不注入
         result('file', 'aa file', 'file'), // 文件 → 不注入
       ]),
@@ -70,46 +70,53 @@ describe('SearchEngine', () => {
     expect(app?.source).toBeUndefined()
   })
 
-  it('模块模式不注入 source（结果都来自当前模块，无需标注）', async () => {
-    searchEngine.setActiveModule('modsrc')
-    registry.push(makeSearchExt('modsrc', () => [result('a', 'alpha', 'module')]))
+  it('扩展模式不注入 source（结果都来自当前扩展，无需标注）', async () => {
+    searchEngine.setActiveExtension('extsrc')
+    registry.push(makeSearchExt('extsrc', () => [result('a', 'alpha', 'extension')]))
     const out = await searchEngine.search('alpha')
     expect(out[0].source).toBeUndefined()
   })
 
-  it('去重：同 <module>:<id> 组合键保留首个', async () => {
-    searchEngine.setActiveModule('dedup')
+  it('去重：同 <extId>:<id> 组合键保留首个', async () => {
+    searchEngine.setActiveExtension('dedup')
     registry.push(
       makeSearchExt('dedup', () => [
-        result('dup', 'alpha', 'module'),
-        result('dup', 'beta', 'module'), // 同 id，应被去重
-        result('uniq', 'gamma', 'module'),
+        result('dup', 'alpha', 'extension'),
+        result('dup', 'beta', 'extension'), // 同 id，应被去重
+        result('uniq', 'gamma', 'extension'),
       ]),
     )
     const out = await searchEngine.search('a')
     expect(out.map((r) => r.id)).toEqual(['dup', 'uniq'])
   })
 
-  it('全局模式组间序 = GROUP_ORDER（application→module→file→clipboard→web）', async () => {
+  it('全局模式组间序 = GROUP_ORDER（application→extension→file→clipboard→web）', async () => {
     registry.push(
       makeSearchExt('order', () => [
         result('web', 'aa web', 'web'),
         result('clip', 'aa clip', 'clipboard'),
-        result('mod', 'aa mod', 'module'),
+        result('ext', 'aa ext', 'extension'),
         result('folder', 'aa folder', 'folder'),
         result('file', 'aa file', 'file'),
         result('app', 'aa app', 'application'),
       ]),
     )
     const out = await searchEngine.search('aa')
-    expect(out.map(groupOf)).toEqual(['application', 'module', 'file', 'file', 'clipboard', 'web'])
+    expect(out.map(groupOf)).toEqual([
+      'application',
+      'extension',
+      'file',
+      'file',
+      'clipboard',
+      'web',
+    ])
   })
 
-  it('module keyword 入口（boost=500）必在 file 组（低 boost）前——组间序不受 boost 影响', async () => {
-    // module 入口 boost=500（KEYWORD_MODULE_BOOST），file 结果 boost=0；module 组仍排前
+  it('extension keyword 入口（boost=500）必在 file 组（低 boost）前——组间序不受 boost 影响', async () => {
+    // extension 入口 boost=500（KEYWORD_EXTENSION_BOOST），file 结果 boost=0；extension 组仍排前
     registry.push(makeSearchExt('search', () => [result('f1', 'aa file', 'file', 0)], ['aa']))
     const out = await searchEngine.search('aa')
-    expect(out.map(groupOf)).toEqual(['module', 'file'])
+    expect(out.map(groupOf)).toEqual(['extension', 'file'])
   })
 
   it('file 与 folder 同属 file 组', async () => {
@@ -137,8 +144,8 @@ describe('SearchEngine', () => {
   it('全局模式过滤零分项（title 不含 query）', async () => {
     registry.push(
       makeSearchExt('filter', () => [
-        result('hit', 'match', 'module'),
-        result('miss', 'zzzzz', 'module'),
+        result('hit', 'match', 'extension'),
+        result('miss', 'zzzzz', 'extension'),
       ]),
     )
     const out = await searchEngine.search('match')
@@ -159,12 +166,12 @@ describe('SearchEngine', () => {
     expect(out.map((r) => r.id)).toEqual(['a2', 'a1'])
   })
 
-  it('空 query 默认列表：module 类 boost=0 的即时答案被过滤（time/uuid 场景）', async () => {
+  it('空 query 默认列表：extension 类 boost=0 的即时答案被过滤（time/uuid 场景）', async () => {
     // time/uuid 空 query 返回即时答案但 boost=0，finalScore=0 → 不进默认列表（避免污染启动屏）
     registry.push(
       makeSearchExt('instant-zero-boost', () => [
-        result('t1', '2024-01-01 12:00:00', 'module', 0),
-        result('u1', 'abc-123-nano', 'module', 0),
+        result('t1', '2024-01-01 12:00:00', 'extension', 0),
+        result('u1', 'abc-123-nano', 'extension', 0),
       ]),
     )
     const out = await searchEngine.search('')
@@ -183,17 +190,17 @@ describe('SearchEngine', () => {
     expect(out.length).toBe(0)
   })
 
-  it('module 类即时答案：fuzzy=0 靠 boost 穿透（非 matched 但 finalScore>0 保留）', async () => {
+  it('extension 类即时答案：fuzzy=0 靠 boost 穿透（非 matched 但 finalScore>0 保留）', async () => {
     // 即时答案 title 不含 query（换算结果 '717.00'），但 boost 高应穿透显示
-    registry.push(makeSearchExt('instant', () => [result('ans', '717.00', 'module', 1000)]))
+    registry.push(makeSearchExt('instant', () => [result('ans', '717.00', 'extension', 1000)]))
     const out = await searchEngine.search('100 usd')
     expect(out.find((r) => r.id === 'ans')).toBeDefined()
   })
 
-  it('模块模式 bypass groupAndSort：保留扩展返回序 + 不过滤零分', async () => {
-    searchEngine.setActiveModule('modmode')
+  it('扩展模式 bypass groupAndSort：保留扩展返回序 + 不过滤零分', async () => {
+    searchEngine.setActiveExtension('extmode')
     registry.push(
-      makeSearchExt('modmode', () => [
+      makeSearchExt('extmode', () => [
         result('web', 'zzz', 'web'),
         result('app', 'zzz', 'application'),
         result('clip', 'zzz', 'clipboard'),
@@ -204,53 +211,55 @@ describe('SearchEngine', () => {
     expect(out.map((r) => r.id)).toEqual(['web', 'app', 'clip'])
   })
 
-  it('keyword 合流：全局模式匹配 meta.keywords 产出模块入口', async () => {
+  it('keyword 合流：全局模式匹配 meta.keywords 产出扩展入口', async () => {
     registry.push(makeSearchExt('kw', () => [], ['encode', '解码']))
     const out = await searchEngine.search('encode')
-    const entry = out.find((r) => r.data?.kind === 'module')
+    const entry = out.find((r) => r.data?.kind === 'extension')
     expect(entry).toBeDefined()
-    expect(entry?.data?.moduleId).toBe('kw')
-    expect(entry?.module).toBe('kw')
-    expect(entry?.boost).toBe(500) // KEYWORD_MODULE_BOOST
+    expect(entry?.data?.extId).toBe('kw')
+    expect(entry?.extId).toBe('kw')
+    expect(entry?.boost).toBe(500) // KEYWORD_EXTENSION_BOOST
   })
 
-  it('keyword 合流：模块模式禁用（已在某模块内）', async () => {
-    searchEngine.setActiveModule('kwmod')
-    registry.push(makeSearchExt('kwmod', () => [], ['encode']))
+  it('keyword 合流：扩展模式禁用（已在某扩展内）', async () => {
+    searchEngine.setActiveExtension('kwext')
+    registry.push(makeSearchExt('kwext', () => [], ['encode']))
     const out = await searchEngine.search('encode')
-    expect(out.find((r) => r.data?.kind === 'module')).toBeUndefined()
+    expect(out.find((r) => r.data?.kind === 'extension')).toBeUndefined()
   })
 
-  it('keyword 反向匹配：多词 query 含 keyword 时产出模块入口', async () => {
+  it('keyword 反向匹配：多词 query 含 keyword 时产出扩展入口', async () => {
     // scoreFields 单向子串对此返回 0（query「100 usd」比 keyword「usd」长）
     registry.push(makeSearchExt('kwrev', () => [], ['usd', '汇率']))
     const out = await searchEngine.search('100 usd')
-    const entry = out.find((r) => r.data?.kind === 'module' && r.data.moduleId === 'kwrev')
+    const entry = out.find((r) => r.data?.kind === 'extension' && r.data.extId === 'kwrev')
     expect(entry).toBeDefined()
   })
 
-  it('keyword 入口抑制：dynamic 已产出结果的扩展不再显示模块入口（即时答案优先）', async () => {
+  it('keyword 入口抑制：dynamic 已产出结果的扩展不再显示扩展入口（即时答案优先）', async () => {
     // 「100 usd」同时命中 dynamic（返回换算值）与 keyword（usd 反向命中）；
-    // 预期仅保留 dynamic 即时答案，抑制该扩展的 module-kwsup 入口
+    // 预期仅保留 dynamic 即时答案，抑制该扩展的 ext-entry-kwsup 入口
     registry.push(
-      makeSearchExt('kwsup', () => [result('ans', '717.00', 'module', 1000)], ['usd', '汇率']),
+      makeSearchExt('kwsup', () => [result('ans', '717.00', 'extension', 1000)], ['usd', '汇率']),
     )
     const out = await searchEngine.search('100 usd')
     expect(out.find((r) => r.id === 'ans')).toBeDefined()
-    expect(out.find((r) => r.id === 'module-kwsup')).toBeUndefined()
+    expect(out.find((r) => r.id === 'ext-entry-kwsup')).toBeUndefined()
   })
 
   it('keyword 入口保留：dynamic 结果与 query 无关（finalScore=0）时不抑制', async () => {
     // calculator history 标题「= 42」与 query「计算器」无关（fuzzy=0, boost=0 → 会被 groupAndSort 过滤）；
     // 扩展有 keyword「计算器」→ keyword 入口应保留，不被不相关 dynamic 结果误杀
-    registry.push(makeSearchExt('calc', () => [result('h0', '= 42', 'module')], ['计算器', 'calc']))
+    registry.push(
+      makeSearchExt('calc', () => [result('h0', '= 42', 'extension')], ['计算器', 'calc']),
+    )
     const out = await searchEngine.search('计算器')
-    expect(out.find((r) => r.data?.kind === 'module' && r.data.moduleId === 'calc')).toBeDefined()
+    expect(out.find((r) => r.data?.kind === 'extension' && r.data.extId === 'calc')).toBeDefined()
   })
 
-  it('keyword 入口保留：dynamic 数据型结果（kind≠module）不抑制入口', async () => {
-    // clipboard 记录 kind=clipboard（数据型，非即时答案），即便标题命中 query 也不抑制模块入口：
-    // 用户搜「剪贴板」应先看到模块入口，其次才是剪贴板记录
+  it('keyword 入口保留：dynamic 数据型结果（kind≠extension）不抑制入口', async () => {
+    // clipboard 记录 kind=clipboard（数据型，非即时答案），即便标题命中 query 也不抑制扩展入口：
+    // 用户搜「剪贴板」应先看到扩展入口，其次才是剪贴板记录
     registry.push(
       makeSearchExt('clip', () => [result('c1', '剪贴板内容', 'clipboard')], [
         'clipboard',
@@ -258,9 +267,9 @@ describe('SearchEngine', () => {
       ]),
     )
     const out = await searchEngine.search('剪贴板')
-    const entry = out.find((r) => r.data?.kind === 'module' && r.data.moduleId === 'clip')
+    const entry = out.find((r) => r.data?.kind === 'extension' && r.data.extId === 'clip')
     expect(entry).toBeDefined()
-    // module 组排在 clipboard 组之前
+    // extension 组排在 clipboard 组之前
     const entryIdx = out.indexOf(entry!)
     const recordIdx = out.findIndex((r) => r.id === 'c1')
     expect(entryIdx).toBeLessThanOrEqual(recordIdx)
@@ -273,18 +282,18 @@ describe('SearchEngine', () => {
     // 新逻辑复用 keywordSearchAll 内部 score（含 keywordMatch）→ finalScore = keywordMatch_score + 500 > 500。
     registry.push(makeSearchExt('kwrev2', () => [], ['usd']))
     const out = await searchEngine.search('100 usd')
-    const entry = out.find((r) => r.id === 'module-kwrev2')
+    const entry = out.find((r) => r.id === 'ext-entry-kwrev2')
     expect(entry).toBeDefined()
     expect(entry?.score).toBeGreaterThan(500)
   })
 
-  it('scoreModuleEntry：无 keywords 仅 name 命中也产出模块入口', async () => {
+  it('scoreExtensionEntry：无 keywords 仅 name 命中也产出扩展入口', async () => {
     registry.push({
-      meta: { id: 'nameonly', name: '纯名称模块', icon: 'i-ri-test-line', order: 1 },
+      meta: { id: 'nameonly', name: '纯名称扩展', icon: 'i-ri-test-line', order: 1 },
       search: { dynamic: () => [] },
     })
     const out = await searchEngine.search('纯名称')
-    expect(out.find((r) => r.id === 'module-nameonly')).toBeDefined()
+    expect(out.find((r) => r.id === 'ext-entry-nameonly')).toBeDefined()
   })
 
   // ── 流式 emit ──
@@ -333,7 +342,7 @@ describe('SearchEngine', () => {
     const updates: SearchResult[][] = []
     const p = searchEngine.search('x', (partial) => updates.push([...partial]))
     searchEngine.abort()
-    emitFn([result('late', 'late result', 'module', 10)])
+    emitFn([result('late', 'late result', 'extension', 10)])
     await p
     expect(updates.length).toBe(0)
   })
@@ -387,7 +396,7 @@ describe('SearchEngine', () => {
           ctx.signal.addEventListener('abort', () => resolve([]))
         })
       }),
-      makeSearchExt('fast', () => [result('f', 'fast hit', 'module')]),
+      makeSearchExt('fast', () => [result('f', 'fast hit', 'extension')]),
     )
     const p = searchEngine.search('hit')
     // 推进到 searchTimeoutMs
@@ -399,7 +408,7 @@ describe('SearchEngine', () => {
     vi.useRealTimers()
   })
 
-  it('search 快照 activeModule：await 期间 setActiveModule 不影响本次后处理', async () => {
+  it('search 快照 activeExtension：await 期间 setActiveExtension 不影响本次后处理', async () => {
     let release!: (v: ProviderResult[]) => void
     registry.push(
       makeSearchExt('snap', () => {
@@ -409,14 +418,14 @@ describe('SearchEngine', () => {
       }),
     )
     // 全局模式启动
-    searchEngine.setActiveModule(undefined)
+    searchEngine.setActiveExtension(undefined)
     const p = searchEngine.search('anything')
-    // await 中途切到模块模式——不得把本次结果当模块短路
-    searchEngine.setActiveModule('snap')
+    // await 中途切到扩展模式——不得把本次结果当扩展短路
+    searchEngine.setActiveExtension('snap')
     release([result('g', 'anything global', 'application', 10)])
     const out = await p
     // 全局后处理：application 有 boost 且 title 命中
     expect(out.find((r) => r.id === 'g')).toBeDefined()
-    searchEngine.setActiveModule(undefined)
+    searchEngine.setActiveExtension(undefined)
   })
 })

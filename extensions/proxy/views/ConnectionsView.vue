@@ -93,7 +93,7 @@ function openStream() {
     conns.value = frame.connections ?? []
   }
   invoke(CMD.proxyConnectionsStream, { onEvent: channel }).catch(() => {
-    /* 静默：mihomo 未运行时后端不 spawn，前端显示空 */
+    /* 静默：mihomo 未运行时 Rust 端不 spawn，前端显示空 */
   })
 }
 

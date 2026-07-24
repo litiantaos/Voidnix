@@ -219,7 +219,7 @@ watch([activeTab, activeType, () => appStore.searchQuery], ([tab, , query]) => {
 })
 
 watch(
-  () => appStore.activeModuleId,
+  () => appStore.activeExtId,
   (id) => {
     if (id !== 'clipboard') {
       clearTimeout(debounceTimer)
@@ -296,7 +296,7 @@ const { open, menuIndex, close, onMenuClick } = useActionPanel({
   onSelect: runMenuAction,
   shouldOpen: (e) => {
     if (e.isComposing) return false
-    if (appStore.activeModuleId !== 'clipboard') return false
+    if (appStore.activeExtId !== 'clipboard') return false
     if (previewOpen.value || editOpen.value) return false
     // 多选 → 批量删除菜单；否则 → 当前项完整菜单
     if (selectedIds.value.size > 0) {
@@ -452,7 +452,7 @@ onActivated(() => {
 })
 
 onDeactivated(() => {
-  // 离开模块时清空颜色缓存，避免长期驻留增长（重新进入时自然重建）
+  // 离开扩展时清空颜色缓存，避免长期驻留增长（重新进入时自然重建）
   colorCache.clear()
 })
 

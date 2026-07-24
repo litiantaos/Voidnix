@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { scoreFields, frequencyBoost, keywordMatch, scoreModuleEntry, pinyinReady } from './fuzzy'
+import {
+  scoreFields,
+  frequencyBoost,
+  keywordMatch,
+  scoreExtensionEntry,
+  pinyinReady,
+} from './fuzzy'
 
 // 拼音模块延迟加载：测试前等待就绪
 beforeAll(async () => {
@@ -115,20 +121,20 @@ describe('keywordMatch', () => {
   })
 })
 
-describe('scoreModuleEntry', () => {
+describe('scoreExtensionEntry', () => {
   it('name / id 正向命中', () => {
-    expect(scoreModuleEntry({ name: '计算器', id: 'calculator' }, '计算')).toBeGreaterThan(0)
-    expect(scoreModuleEntry({ name: 'Base64', id: 'base64' }, 'base64')).toBeGreaterThan(0)
+    expect(scoreExtensionEntry({ name: '计算器', id: 'calculator' }, '计算')).toBeGreaterThan(0)
+    expect(scoreExtensionEntry({ name: 'Base64', id: 'base64' }, 'base64')).toBeGreaterThan(0)
   })
 
   it('keywords 反向命中（与 keywordMatch 一致）', () => {
     expect(
-      scoreModuleEntry({ name: '汇率', id: 'currency', keywords: ['usd'] }, '100 usd'),
+      scoreExtensionEntry({ name: '汇率', id: 'currency', keywords: ['usd'] }, '100 usd'),
     ).toBeGreaterThan(0)
   })
 
   it('无命中返回 0', () => {
-    expect(scoreModuleEntry({ name: '时间', id: 'time', keywords: ['date'] }, 'xyz')).toBe(0)
+    expect(scoreExtensionEntry({ name: '时间', id: 'time', keywords: ['date'] }, 'xyz')).toBe(0)
   })
 })
 

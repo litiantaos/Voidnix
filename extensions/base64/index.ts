@@ -17,8 +17,8 @@ export default defineExtension({
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {
-      // 仅模块内编解码（全局避免合法 base64 形态误触）
-      if (!ctx?.moduleMode) return []
+      // 仅扩展内编解码（全局避免合法 base64 形态误触）
+      if (!ctx?.extensionMode) return []
       const trimmed = query.trim()
       if (!trimmed) return []
 
@@ -32,7 +32,7 @@ export default defineExtension({
           description: 'Base64 编码',
           icon: 'i-ri-code-s-slash-line',
           boost: 1000,
-          data: { kind: 'module', value: encoded },
+          data: { kind: 'extension', value: encoded },
         })
       }
 
@@ -45,7 +45,7 @@ export default defineExtension({
             description: 'Base64 解码',
             icon: 'i-ri-text',
             boost: 999,
-            data: { kind: 'module', value: decoded },
+            data: { kind: 'extension', value: decoded },
           })
         }
       }

@@ -70,16 +70,16 @@ pub(crate) fn ensure_screenshot_window(_app: &AppHandle) -> bool {
 }
 
 #[tauri::command]
-pub async fn open_module_subview(
+pub async fn open_extension_subview(
     app: tauri::AppHandle,
-    module_id: String,
+    ext_id: String,
     subview_id: String,
     payload: serde_json::Value,
 ) -> Result<(), String> {
     use tauri::Emitter;
 
     let event_payload = serde_json::json!({
-        "moduleId": module_id,
+        "extId": ext_id,
         "subviewId": subview_id,
         "payload": payload,
     });
@@ -87,7 +87,7 @@ pub async fn open_module_subview(
     let app_handle = app.clone();
     app.run_on_main_thread(move || {
         crate::runtime::window::show_main(&app_handle);
-        let _ = app_handle.emit("open-module-subview", event_payload);
+        let _ = app_handle.emit("open-extension-subview", event_payload);
     })
     .map_err(|e| e.to_string())?;
 

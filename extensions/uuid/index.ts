@@ -17,8 +17,8 @@ export default defineExtension({
 
   search: {
     dynamic: (_query, ctx): ProviderResult[] => {
-      // 仅模块内生成（全局只走 keyword 入口）
-      if (!ctx?.moduleMode) return []
+      // 仅扩展内生成（全局只走 keyword 入口）
+      if (!ctx?.extensionMode) return []
       const results: ProviderResult[] = []
       const uuid = uuidv4()
       const nano = nanoId(21)
@@ -27,14 +27,14 @@ export default defineExtension({
         title: uuid,
         description: 'UUID v4',
         icon: 'i-ri-fingerprint-line',
-        data: { kind: 'module', value: uuid },
+        data: { kind: 'extension', value: uuid },
       })
       results.push({
         id: 'nanoid',
         title: nano,
         description: 'NanoID',
         icon: 'i-ri-shield-keyhole-line',
-        data: { kind: 'module', value: nano },
+        data: { kind: 'extension', value: nano },
       })
       return results
     },

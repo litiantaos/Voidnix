@@ -536,7 +536,7 @@ pub async fn is_clean_mode_enabled() -> Result<bool, String> {
 }
 
 // ============================================================================
-// 插件注册 + Extension trait
+// 扩展注册 + Extension trait
 // ============================================================================
 
 pub struct CleanModeExtension;

@@ -17,8 +17,8 @@ export default defineExtension({
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {
-      // 仅模块内转换（全局避免日期/时间戳形态误触）
-      if (!ctx?.moduleMode) return []
+      // 仅扩展内转换（全局避免日期/时间戳形态误触）
+      if (!ctx?.extensionMode) return []
       const trimmed = query.trim()
       const results: ProviderResult[] = []
 
@@ -27,7 +27,7 @@ export default defineExtension({
         title,
         description: desc,
         icon: 'i-ri-time-line',
-        data: { kind: 'module', value: title },
+        data: { kind: 'extension', value: title },
       })
 
       if (!trimmed) {
