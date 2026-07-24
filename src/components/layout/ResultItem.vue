@@ -8,12 +8,12 @@
     </template>
     <template #subtitle>
       <!-- file/folder：父目录分段（head 截断 + tail 不换行），优先于 description（description=path 同时供 fuzzy 评分） -->
-      <template v-if="isFileOrFolder && item.data?.path">
-        <span class="flex-[0_1_auto] min-w-0 truncate" :title="getParentPath(item.data.path)">
-          {{ formatPathParts(getParentPath(item.data.path)).head }}
+      <template v-if="filePathInfo">
+        <span class="flex-[0_1_auto] min-w-0 truncate" :title="filePathInfo.parent">
+          {{ filePathInfo.parts.head }}
         </span>
         <span flex="none" whitespace="nowrap">
-          {{ formatPathParts(getParentPath(item.data.path)).tail }}
+          {{ filePathInfo.parts.tail }}
         </span>
       </template>
       <span v-else-if="item.description" class="flex-1 min-w-0 truncate">{{
@@ -41,6 +41,13 @@ const props = defineProps<{
 const isFileOrFolder = computed(
   () => props.item.data?.kind === 'file' || props.item.data?.kind === 'folder',
 )
+
+/** file/folder 父目录分段：computed 避免模板内 3 次重复调用 */
+const filePathInfo = computed(() => {
+  if (!isFileOrFolder.value || !props.item.data?.path) return null
+  const parent = getParentPath(props.item.data.path)
+  return { parent, parts: formatPathParts(parent) }
+})
 
 /** 图标 wrapper 背景：图片图标透明底自显；其余默认 fill-mist 冷雾衬底 */
 const iconWrapperClass = computed(() => {

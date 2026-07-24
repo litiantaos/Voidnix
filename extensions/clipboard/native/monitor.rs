@@ -126,11 +126,16 @@ pub fn start_monitor(app_handle: AppHandle) {
         // None = 首次轮询基准未建立（只取当前 changeCount，不读取内容），
         // 避免启动时把当前剪贴板已有内容入库一条。
         let mut last_change_count: Option<isize> = None;
+        // 过期清理限频：每 N 次实际写入才跑一次 DELETE 扫描（非每次写入）
+        const CLEANUP_INTERVAL: u32 = 50;
+        let mut since_cleanup: u32 = 0;
+        // channel 循环外创建一次复用，避免每轮分配（Sender 是 Clone，每轮 clone 进闭包）
+        let (tx, rx) = std::sync::mpsc::channel::<(isize, PasteboardSample)>();
 
         loop {
             std::thread::sleep(Duration::from_millis(500));
 
-            let (tx, rx) = std::sync::mpsc::channel::<(isize, PasteboardSample)>();
+            let tx = tx.clone();
 
             let last_for_closure = last_change_count;
             let _ = app_handle.run_on_main_thread(move || {
@@ -148,7 +153,10 @@ pub fn start_monitor(app_handle: AppHandle) {
                 let _ = tx.send((change_count, sample));
             });
 
-            let Ok((new_change_count, sample)) = rx.recv() else {
+            // recv_timeout 而非 recv：channel 复用后外层 tx 始终保活，
+            // 主线程闭包因故未执行时 recv 会永久阻塞；超时让监控线程能跳过本轮自愈。
+            let Ok((new_change_count, sample)) =
+                rx.recv_timeout(Duration::from_secs(5)) else {
                 continue;
             };
 
@@ -206,29 +214,13 @@ pub fn start_monitor(app_handle: AppHandle) {
                 process_snapshot(&conn, snap, &id);
             }
 
-            // 由前端 config.ts invoke 推入的扩展自管参数（替代 Rust 直读 config.json）
-            let max_days: i32 = crate::extensions::clipboard::load_max_days();
-
-            const MAX_ROWS: i64 = 5000;
-
-            // 统一 UTC：与表默认 CURRENT_TIMESTAMP 一致，避免 localtime 混比 skew
-            if max_days > 0 {
-                let _ = conn.execute(
-                    "DELETE FROM clipboard_history WHERE is_favorite = 0 AND created_at < datetime('now', ?1)",
-                    rusqlite::params![format!("-{} days", max_days)],
-                );
-            } else {
-                let count: i64 = conn
-                    .query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| {
-                        row.get(0)
-                    })
-                    .unwrap_or(0);
-                if count > MAX_ROWS {
-                    let _ = conn.execute(
-                        "DELETE FROM clipboard_history WHERE is_favorite = 0 AND created_at < (SELECT MIN(created_at) FROM (SELECT created_at FROM clipboard_history ORDER BY created_at DESC LIMIT ?1))",
-                        rusqlite::params![MAX_ROWS],
-                    );
-                }
+            // 过期清理限频：每 CLEANUP_INTERVAL 次写入才执行一次 DELETE 扫描，
+            // 避免频繁复制时每次写入都跑全表过期查询
+            since_cleanup += 1;
+            if since_cleanup >= CLEANUP_INTERVAL {
+                since_cleanup = 0;
+                let max_days: i32 = crate::extensions::clipboard::load_max_days();
+                run_expiry_cleanup(&conn, max_days);
             }
 
             let _ = app_handle.emit("clipboard-updated", ());
@@ -237,6 +229,30 @@ pub fn start_monitor(app_handle: AppHandle) {
             db.maybe_checkpoint(&conn);
         }
     });
+}
+
+/// 过期清理：按 max_days 删除过期非收藏行，或超 MAX_ROWS 时裁剪最旧行。
+/// 统一 UTC（与表默认 CURRENT_TIMESTAMP 一致，避免 localtime 混比 skew）。
+fn run_expiry_cleanup(conn: &Connection, max_days: i32) {
+    const MAX_ROWS: i64 = 5000;
+    if max_days > 0 {
+        let _ = conn.execute(
+            "DELETE FROM clipboard_history WHERE is_favorite = 0 AND created_at < datetime('now', ?1)",
+            rusqlite::params![format!("-{} days", max_days)],
+        );
+    } else {
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| {
+                row.get(0)
+            })
+            .unwrap_or(0);
+        if count > MAX_ROWS {
+            let _ = conn.execute(
+                "DELETE FROM clipboard_history WHERE is_favorite = 0 AND created_at < (SELECT MIN(created_at) FROM (SELECT created_at FROM clipboard_history ORDER BY created_at DESC LIMIT ?1))",
+                rusqlite::params![MAX_ROWS],
+            );
+        }
+    }
 }
 
 /// 主线程轻采样：marker / file URL 解析 / pasteboard 位图或文本。不做磁盘读与 base64。

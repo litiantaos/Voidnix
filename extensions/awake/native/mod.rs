@@ -166,10 +166,13 @@ impl Extension for AwakeExtension {
         });
         // H12：清理旧版 awake binary（曾落 temp_dir，已迁移至 app_data_dir）。
         // 自身的向后兼容由自己负责，避免泄漏到 screenshot 等其它扩展。
-        let temp_dir = std::env::temp_dir();
-        let legacy_dir = temp_dir.join("com.litiantao.voidnix");
-        let _ = std::fs::remove_file(legacy_dir.join("Display Wakelock"));
-        let _ = std::fs::remove_dir(&legacy_dir);
+        // offload 到 worker 线程，避免阻塞 bootstrap join_all
+        tauri::async_runtime::spawn_blocking(|| {
+            let temp_dir = std::env::temp_dir();
+            let legacy_dir = temp_dir.join("com.litiantao.voidnix");
+            let _ = std::fs::remove_file(legacy_dir.join("Display Wakelock"));
+            let _ = std::fs::remove_dir(&legacy_dir);
+        });
 
         // 菜单栏贡献：保持唤醒激活时显示两项（开关 + 模式切换）
         crate::runtime::menubar::register(MenuBarContribution {

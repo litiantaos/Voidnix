@@ -37,6 +37,38 @@ pub fn install_background_layer(window: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "macos"))]
 pub fn install_background_layer(_window: &tauri::WebviewWindow) {}
 
+/// 按需创建截图窗口（首次触发截图时调用）。已存在则跳过。
+/// 创建后立即配置 CALayer / NSWindow level / collection behavior 等（原 setup::configure_overlay_window）。
+#[cfg(target_os = "macos")]
+pub(crate) fn ensure_screenshot_window(app: &AppHandle) -> bool {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+    if app.get_webview_window("screenshot").is_some() {
+        return true;
+    }
+    let url = WebviewUrl::App("index.html".into());
+    let builder = WebviewWindowBuilder::new(app, "screenshot", url)
+        .title("")
+        .inner_size(800.0, 600.0)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .visible(false);
+    if builder.build().is_err() {
+        return false;
+    }
+    // 新窗口创建后配置原生层（背景 CALayer + NSWindow 属性）
+    setup::configure_overlay_window(app);
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn ensure_screenshot_window(_app: &AppHandle) -> bool {
+    false
+}
+
 #[tauri::command]
 pub async fn open_module_subview(
     app: tauri::AppHandle,
@@ -75,15 +107,23 @@ impl Extension for ScreenshotExtension {
     }
 
     async fn setup(&self, _app: &AppHandle) -> tauri::Result<()> {
-        // /tmp 残留清理由 lib.rs setup 统一调 runtime::storage::cleanup_all_voidnix_temps()
-        // （覆盖 screenshot + search 等所有扩展的 voidnix_* / voidnix-icon-* 残留）
-
         #[cfg(target_os = "macos")]
         {
-            setup::configure_overlay_window(_app);
-            setup::install_reactivate_observer(_app);
-            setup::schedule_jpeg_prewarm(_app);
-            setup::schedule_overlay_prewarm(_app);
+            // 窗口创建（WKWebView ~45ms）重量级，deferred 到 bootstrap 后执行不阻塞 join_all。
+            // AppKit 调用必须在主线程：spawn_blocking 内用 run_on_main_thread 调度。
+            let app = _app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let (tx, rx) = std::sync::mpsc::channel();
+                let app2 = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    setup::ensure_and_configure_screenshot_window(&app2);
+                    setup::install_reactivate_observer(&app2);
+                    setup::schedule_jpeg_prewarm(&app2);
+                    setup::schedule_overlay_prewarm(&app2);
+                    let _ = tx.send(());
+                });
+                let _ = rx.recv_timeout(std::time::Duration::from_secs(10));
+            });
             setup::register_shortcut_hook();
         }
         Ok(())

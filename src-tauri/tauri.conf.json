@@ -23,31 +23,6 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "visible": false
-      },
-      {
-        "label": "screenshot",
-        "title": "",
-        "width": 800,
-        "height": 600,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "focus": true,
-        "visible": false
-      },
-      {
-        "label": "snap-panel",
-        "title": "",
-        "width": 600,
-        "height": 300,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "visible": false
       }
     ],
     "security": {

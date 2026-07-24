@@ -59,18 +59,82 @@ fn patterns() -> &'static Vec<Regex> {
     })
 }
 
-/// 净化输出：把匹配的 secret 段替换为 `[REDACTED:<kind>]`。
+/// 净化输出：把匹配的 secret 段替换为 `[REDACTED]`。
 ///
 /// 送 LLM 前的最后一道兜底；命令执行结果、web 抓取内容、文件读取等都应过此函数。
+///
+/// 两级过滤：先子串预检（memchr 加速，零正则开销），命中任一特征才走正则精确匹配。
+/// 正则用 replace_all 的 Cow 返回值天然区分有无匹配，无 is_match 预判开销。
 pub fn scrub_secret(input: &str) -> Cow<'_, str> {
+    if !has_secret_hint(input) {
+        return Cow::Borrowed(input);
+    }
     let pats = patterns();
     let mut current: Cow<str> = Cow::Borrowed(input);
     for re in pats {
-        if re.is_match(&current) {
-            current = Cow::Owned(re.replace_all(&current, "[REDACTED]").into_owned());
+        // replace_all 无匹配时返回 Cow::Borrowed（零分配），有匹配才分配
+        if let Cow::Owned(o) = re.replace_all(&current, "[REDACTED]") {
+            current = Cow::Owned(o);
         }
     }
     current
+}
+
+/// 快速子串预过滤：文本不含任一 secret 特征子串时返回 false，跳过全部正则。
+/// 每个 contains 为 memchr 加速的单次线性扫描；任一命中即需正则精确匹配。
+/// 预过滤必须是正则集的**严格超集**——漏判会导致 secret 绕过净化直接送 LLM。
+fn has_secret_hint(text: &str) -> bool {
+    /// 大小写敏感的特征前缀（格式固定的 secret 模式，大小写固定不可变）
+    const FIXED_CASE: &[&str] = &[
+        "-----BEGIN",
+        "sk-",
+        "sk_live", // Stripe（sk_ 而非 sk-，与 sk- 分开）
+        "AKIA",
+        "ASIA",
+        "ABIA",
+        "ACCA",
+        "AGPA",
+        "AIDA",
+        "AROA",
+        "AIPA",
+        "ANPA",
+        "ANVA",
+        "ghp_",
+        "gho_",
+        "ghs_",
+        "ghu_",
+        "ghr_",
+        "xox",
+        "AIza",
+        "eyJ",
+        "glpat-",
+        "SG.",
+        "lin_api_",
+    ];
+    if FIXED_CASE.iter().any(|h| text.contains(h)) {
+        return true;
+    }
+    /// 大小写不敏感关键词（正则用了 (?i)，预过滤也必须覆盖所有大小写变体）
+    /// 小写化文本一次，所有关键词按小写匹配（一次 to_ascii_lowercase 换取全量覆盖）
+    const WORDS: &[&str] = &[
+        "bearer",
+        "authorization",
+        "x-api-key",
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "token",
+        "api_key",
+        "api-key",
+        "apikey",
+        "twilio",
+        "_authtoken",
+        "discord.com/api/webhooks",
+        "bot token",
+    ];
+    let lower = text.to_ascii_lowercase();
+    WORDS.iter().any(|w| lower.contains(w))
 }
 
 #[cfg(test)]

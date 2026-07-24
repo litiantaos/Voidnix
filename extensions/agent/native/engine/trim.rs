@@ -1,5 +1,7 @@
 //! Agent 历史消息裁剪（agent 唯一消费者，下沉自 runtime/llm/security.rs）。
 
+use std::borrow::Cow;
+
 use crate::runtime::llm::LlmMessage;
 
 /// 历史消息条数硬上限
@@ -11,9 +13,11 @@ const MAX_CONVERSATION_MESSAGES: usize = 100;
 /// 导致首条是孤立 role=tool。OpenAI API 要求 tool 消息前必须有对应的
 /// assistant(tool_calls)，否则返 400。裁剪后向前剥离孤立 tool 消息，
 /// 再剥离因 tool 被剥离而悬空的 assistant(tool_calls)（无对应 tool 结果）。
-pub fn trim_conversation(messages: &[LlmMessage]) -> Vec<LlmMessage> {
+///
+/// 返回 Cow：未超限时零克隆（Borrowed），仅超限时分配（Owned）。
+pub fn trim_conversation(messages: &[LlmMessage]) -> Cow<'_, [LlmMessage]> {
     if messages.len() <= MAX_CONVERSATION_MESSAGES {
-        return messages.to_vec();
+        return Cow::Borrowed(messages);
     }
     let system_msg = messages.iter().find(|m| m.role == "system").cloned();
     let skip = messages.len() - (MAX_CONVERSATION_MESSAGES - 1);
@@ -25,7 +29,7 @@ pub fn trim_conversation(messages: &[LlmMessage]) -> Vec<LlmMessage> {
             trimmed.insert(0, sys);
         }
     }
-    trimmed
+    Cow::Owned(trimmed)
 }
 
 /// 剥离开头不完整的工具调用轮次。

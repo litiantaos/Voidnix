@@ -174,7 +174,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onActivated, onMounted, onUnmounted, watch, shallowReactive } from 'vue'
+import {
+  ref,
+  computed,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  watch,
+  shallowReactive,
+} from 'vue'
 import {
   history,
   activeTab,
@@ -440,6 +449,11 @@ onActivated(() => {
   activeTab.value = 'all'
   activeType.value = 'all'
   fetchClipboardHistory('', false)
+})
+
+onDeactivated(() => {
+  // 离开模块时清空颜色缓存，避免长期驻留增长（重新进入时自然重建）
+  colorCache.clear()
 })
 
 // ── 图片懒加载 ──

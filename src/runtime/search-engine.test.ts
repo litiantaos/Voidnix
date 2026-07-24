@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
+import { pinyinReady } from '@/utils/fuzzy'
 import type {
   Extension,
   SearchResult,
@@ -12,6 +13,11 @@ const registry: Extension[] = []
 vi.mock('./extension-registry', () => ({
   getAllExtensions: () => registry,
 }))
+
+// 拼音模块延迟加载：测试前等待就绪
+beforeAll(async () => {
+  await pinyinReady()
+})
 
 const { searchEngine } = await import('./search-engine')
 

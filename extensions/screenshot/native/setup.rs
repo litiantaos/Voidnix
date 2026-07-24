@@ -1,11 +1,17 @@
-//! Tier 1 启动钩子：screenshot 全屏覆盖窗口的 NSWindow 初始化、
+//! Tier 1 启动钩子：screenshot 全屏覆盖窗口的创建 + NSWindow 初始化、
 //! 应用激活通知的截图模式重激活监听、JPEG 编码器预热。
-//!
-//! 这些原本散落在 `lib.rs::run()::setup` 中，PR #3 全部收回扩展自管。
 
 use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
+
+/// 启动时创建截图窗口（若不存在）并配置原生层。
+/// 窗口从 tauri.conf.json 移除后改由代码创建，但仍在启动时创建（非首次触发时）：
+/// WKWebView 需提前加载页面 + Vue 挂载，快捷键触发时才能即时响应。
+pub fn ensure_and_configure_screenshot_window(app: &AppHandle) {
+    super::ensure_screenshot_window(app);
+    // ensure_screenshot_window 内部已调 configure_overlay_window（首次创建时）
+}
 
 pub fn configure_overlay_window(app: &AppHandle) {
     use objc2_app_kit::{

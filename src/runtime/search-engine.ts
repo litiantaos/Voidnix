@@ -35,6 +35,9 @@ interface ScoredResult {
 class SearchEngine {
   private currentController?: AbortController
   private activeModule: string | undefined
+  // keyword 入口记忆化：同 query 的 keyword 结果不变，增量 flush 复用避免重算
+  private kwCacheQ: string | null = null
+  private kwCache: SearchResult[] = []
 
   /** 模块激活/退出时切换模式。激活时只调该模块 dynamic；undefined 恢复全局聚合。 */
   setActiveModule(id: string | undefined) {
@@ -57,6 +60,9 @@ class SearchEngine {
     this.currentController?.abort()
     const controller = new AbortController()
     this.currentController = controller
+
+    // 失效 keyword 缓存：跨 search() 调用时扩展注册表可能已变化（测试场景 / 运行时动态注册）
+    this.kwCacheQ = null
 
     // 快照模式：await 期间 activeModule 可能被 KeepAlive/快捷键改写，后处理必须与本次召回一致
     const moduleId = this.activeModule
@@ -222,9 +228,12 @@ class SearchEngine {
   }
 
   /** 框架内置：scoreModuleEntry 产出模块入口（与 `/` 工具列表共用打分）。
-   *  入参 q 约定已 trim；产出序无要求——groupAndSort 在 module 组内按 finalScore 重排。 */
+   *  入参 q 约定已 trim；产出序无要求——groupAndSort 在 module 组内按 finalScore 重排。
+   *  按 q 记忆化：同 query 的 keyword 入口不变，增量 flush 直接复用。 */
   private keywordSearchAll(q: string): SearchResult[] {
-    return getAllExtensions()
+    if (this.kwCacheQ === q) return this.kwCache
+    this.kwCacheQ = q
+    this.kwCache = getAllExtensions()
       .map((ext) => ({ ext, score: scoreModuleEntry(ext.meta, q) }))
       .filter((x) => x.score > 0)
       .map(({ ext, score }) => ({
@@ -232,28 +241,30 @@ class SearchEngine {
         title: ext.meta.name,
         description: ext.meta.description,
         icon: ext.meta.icon,
-        module: ext.meta.id, // 目标模块 id（框架内置激活）
+        module: ext.meta.id,
         boost: SEARCH.KEYWORD_MODULE_BOOST,
         score,
         data: { kind: 'module' as SearchResultKind, moduleId: ext.meta.id },
       }))
+    return this.kwCache
   }
 
-  /** 管道：分组 → 组内 finalScore 降序 → 组间 GROUP_ORDER → 组内限流。
+  /** 管道：过滤 → 回填 score → 分组 → 组内 finalScore 降序 → 组间 GROUP_ORDER → 组内限流。
    *  全局模式专用（模块模式见 search() 直接返回）。复用 ScoredResult.finalScore，不再调 scoreFields。
-   *  过滤：matched（query 命中或空 query）保留；非 matched 仅 module 类即时答案靠 finalScore>0 穿透。 */
+   *  过滤：matched（query 命中或空 query）保留；非 matched 仅 module 类即时答案靠 finalScore>0 穿透。
+   *  单次遍历合并 filter + score 回填 + 分组，消除两次中间数组分配。 */
   private groupAndSort(items: ScoredResult[]): SearchResult[] {
-    // 过滤 + 回填 score（UI/调试可读）
-    const filtered = items
-      .filter((x) => x.matched || (x.item.data?.kind === 'module' && x.finalScore > 0))
-      .map((x) => ({ ...x.item, score: x.finalScore }))
-
-    // 分组
     const groups = new Map<string, SearchResult[]>()
-    for (const item of filtered) {
+    for (const x of items) {
+      if (!x.matched && !(x.item.data?.kind === 'module' && x.finalScore > 0)) continue
+      const item: SearchResult = { ...x.item, score: x.finalScore }
       const key = getGroupKey(item)
-      if (!groups.has(key)) groups.set(key, [])
-      groups.get(key)!.push(item)
+      let group = groups.get(key)
+      if (!group) {
+        group = []
+        groups.set(key, group)
+      }
+      group.push(item)
     }
 
     // 组间按 GROUP_ORDER 定序
