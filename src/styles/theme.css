@@ -454,6 +454,13 @@ body {
   color: var(--color-accent);
 }
 
+/* 禁用态：仅内容（文字+图标）降透明，容器边框/背景不动。
+ * currentColor 取元素计算后的 color，按 variant 自适应（primary 白字 / ghost 主色字 / default 灰字）。
+ * cursor-not-allowed 留在 uno ui-disabled shortcut（纯原子工具类）。 */
+.ui-disabled {
+  color: color-mix(in srgb, currentColor 45%, transparent);
+}
+
 /*
  * BaseButton variant 面类。
  * primary：直接绑 --color-accent（勿靠 Uno bg-accent，Wind4 对 CSS 变量 color-mix，WK 下易失效）。
