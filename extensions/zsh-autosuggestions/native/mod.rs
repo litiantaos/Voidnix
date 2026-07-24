@@ -222,17 +222,24 @@ impl Extension for ZshAutosuggestionsExtension {
     }
 
     async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
-        let _guard = lock();
-        // 以 .zshrc marker 行为启用判据（行存在 = 上次 enable 写入且未被 disable 移除）
-        if !is_zshrc_enabled() {
-            return Ok(());
-        }
-        install_bin(app);
-        // 幂等刷新 .zshrc 行：升级后若行格式变化，已启用用户自动更新。
-        // 启动阶段错误不阻塞（log 即可），用户主动 toggle 才反馈错误。
-        if let Err(e) = write_zshrc_line(app) {
-            log::warn!("zsh-as: setup write_zshrc_line: {e}");
-        }
+        // 文件 I/O（读 .zshrc / 复制 binary / 写 .zshrc）全部 offload 到 worker 线程，
+        // 避免阻塞 bootstrap 的单线程 join_all（与 set_zsh_autosuggestions_enabled 一致）
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _guard = lock();
+            // 以 .zshrc marker 行为启用判据（行存在 = 上次 enable 写入且未被 disable 移除）
+            if !is_zshrc_enabled() {
+                return;
+            }
+            install_bin(&app);
+            // 幂等刷新 .zshrc 行：升级后若行格式变化，已启用用户自动更新。
+            // 启动阶段错误不阻塞（log 即可），用户主动 toggle 才反馈错误。
+            if let Err(e) = write_zshrc_line(&app) {
+                log::warn!("zsh-as: setup write_zshrc_line: {e}");
+            }
+        })
+        .await
+        .ok();
         Ok(())
     }
 }

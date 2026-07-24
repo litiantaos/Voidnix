@@ -41,6 +41,15 @@ export default defineConfig(async ({ command }) => ({
       input: {
         main: resolve(__dirname, 'index.html'),
       },
+      output: {
+        // vendor 分包：跨版本缓存边界 + 按需加载
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('pinyin-pro')) return 'pinyin'
+          if (id.includes('marked') || id.includes('dompurify')) return 'markdown'
+          if (id.includes('vue') || id.includes('pinia')) return 'vendor'
+        },
+      },
     },
   },
 }))

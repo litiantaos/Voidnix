@@ -170,7 +170,7 @@ pub async fn translate_ai_stream(
         endpoint: &p.safe_endpoint,
         api_key: &api_key,
         model: &model,
-        messages,
+        messages: &messages,
         tools: None,
         tool_choice: None,
         on_text_delta: None,

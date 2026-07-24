@@ -555,9 +555,10 @@ impl Extension for SystemStatusExtension {
         // 立即 manage 空 collector（SystemState 仅用户打开模块时消费，无需启动时阻塞）。
         // 重采集（refresh_processes(All) + Disks/Networks/Components 全量刷新 ~100ms+）
         // 下沉后台 spawn_blocking，不阻塞 bootstrap join_all。
+        // Disks::new_with_refreshed_list：sysinfo 0.32+ 的 new() 返回空列表，refresh() 只更新已有条目（空列表上为 no-op）。
         app.manage(SystemState {
             sys: Mutex::new(System::new()),
-            disks: Mutex::new(Disks::new()),
+            disks: Mutex::new(Disks::new_with_refreshed_list()),
             networks: Mutex::new(Networks::new()),
             components: Mutex::new(Components::new()),
             net_stats: Mutex::new(NetStats {

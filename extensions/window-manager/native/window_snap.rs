@@ -440,11 +440,11 @@ mod inner {
         }
 
         let app_opt = lock_or_recover(&APP).take();
-        if let Some(app) = app_opt {
+        if let Some(app) = &app_opt {
             // 仅当 snap-panel 当前可见时才隐藏 + restore focus。
             // 用户在主窗口设置界面点开关关闭时 panel 并未显示，无条件 hide_panel_impl
             // 会触发 restore_captured() → deactivate self → 主窗口失焦隐藏（回归）。
-            hide_panel(&app);
+            hide_panel(app);
         }
 
         lock_or_recover(&STATE).visible = false;

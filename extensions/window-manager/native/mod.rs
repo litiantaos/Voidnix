@@ -18,7 +18,18 @@ impl Extension for WindowManagerExtension {
     }
 
     async fn setup(&self, app: &tauri::AppHandle) -> tauri::Result<()> {
-        configure_snap_panel(app);
+        // snap-panel 窗口创建（WKWebView ~45ms）deferred 到 bootstrap 后，不阻塞 join_all。
+        // AppKit 调用必须在主线程：spawn_blocking 内用 run_on_main_thread 调度。
+        let app_clone = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let app2 = app_clone.clone();
+            let _ = app_clone.run_on_main_thread(move || {
+                create_snap_panel(&app2);
+                let _ = tx.send(());
+            });
+            let _ = rx.recv_timeout(std::time::Duration::from_secs(10));
+        });
         Ok(())
     }
 }
@@ -60,6 +71,33 @@ fn configure_snap_panel(app: &tauri::AppHandle) {
 
 #[cfg(not(target_os = "macos"))]
 fn configure_snap_panel(_app: &tauri::AppHandle) {}
+
+/// 按需创建 snap-panel 窗口（start 时调用）。已存在则跳过。
+#[cfg(target_os = "macos")]
+pub(crate) fn create_snap_panel(app: &tauri::AppHandle) {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+    if app.get_webview_window("snap-panel").is_some() {
+        return;
+    }
+    let url = WebviewUrl::App("index.html".into());
+    if WebviewWindowBuilder::new(app, "snap-panel", url)
+        .title("")
+        .inner_size(600.0, 300.0)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(false)
+        .build()
+        .is_ok()
+    {
+        configure_snap_panel(app);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn create_snap_panel(_app: &tauri::AppHandle) {}
 
 /// 单屏几何。
 ///

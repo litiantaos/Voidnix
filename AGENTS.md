@@ -27,7 +27,7 @@ bun run lint:check           # 只读校验（CI 用，不写）
 bun run typecheck            # vue-tsc 严格类型检查
 bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions.rs）
 bun run check:drift          # 漂移校验聚合（extensions + commands + agent-bounds + wm-bounds + extension-orders）
-bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移）
+bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移；动态窗口 screenshot/snap-panel 放行）
 bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
 bun run check:agent-bounds   # CI 校验（agent 资源上限 policy.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:wm-bounds      # CI 校验（window-manager mod.rs ↔ config.ts BOUNDS 双向一致）
@@ -73,6 +73,20 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 5. 漂移校验：`check:extensions` / `check:commands` / `check:agent-bounds` / `check:wm-bounds` / `check:extension-orders`
 6. 单测：`bun run test`（Vitest）+ `cargo test --lib`
 7. E2E：`bun run test:e2e`（Playwright，含浏览器安装）
+
+## Prod 资源监控（长期采样）
+
+LaunchAgent 常驻方案，监控 release 构建的 RSS/CPU/线程/FD/数据目录，用于长期跟踪内存与占用趋势、定位泄漏。**仅监控 prod（release）进程**，dev/debug 不采样。
+
+**三个脚本**（`scripts/`）：
+
+- `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时单次 `ps` 采样追加到当日日志。日志自动保留 30 天。
+- `voidnix-monitor-install.sh install|uninstall` — 安装/卸载 LaunchAgent（`com.litiantao.voidnix.monitor`，登录后自动生效）
+- `voidnix-analyze.sh [天数]` — 分析器：按天聚合 RSS 区间/漂移/CPU 峰值/线程数/数据目录，漂移 >20MB 自动告警
+
+**日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`
+
+**状态**：LaunchAgent 已安装（`launchctl list | grep voidnix.monitor`），日志尚无数据（等待 release 部署后积累）。积累数据后执行 `bash scripts/voidnix-analyze.sh` 分析趋势。
 
 ## 开发扩展
 
@@ -244,6 +258,8 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 - 模块 View（mainView/subviews/searchBarAccessory）**静态 import** 进主 bundle（用户高频、固定集合，首次进入零卡顿）
 - 仅**独立窗口**（screenshot 标注 host/pin、window-manager snap 面板，`windowViews`）保留 `defineAsyncComponent` 真按需——不截图/不分屏不加载，省稳态占用（gzip ~20KB）
+- **窗口按需创建**：screenshot / snap-panel 窗口从 `tauri.conf.json` 移除静态声明，改在扩展 `setup` 中 `WebviewWindowBuilder` 代码创建（WKWebView 需启动时预加载页面，快捷键/鼠标触发时才能即时响应）
+- **vendor 分包 + pinyin 延迟加载**：`manualChunks` 拆 vendor(vue+pinia) / markdown(marked+dompurify) / pinyin 独立 chunk；pinyin-pro（拼音字典 289KB）改为首次 CJK 查询时 `import()` 异步加载，首屏零开销
 - `ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问模块，切换走 activate/deactivate 而非重挂载
 
 ### LLM 基础设施
@@ -277,7 +293,7 @@ src-tauri/src/
 │   ├── menubar.rs      # 聚合菜单栏托盘（框架唯一图标 + 扩展贡献段注册）
 │   ├── storage.rs      # TempHandle RAII + ext_data_dir + save_png_safely
 │   ├── permission.rs   # 系统权限薄壳
-│   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap；单扩展 setup 失败隔离）
+│   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap；单扩展 setup 失败隔离；阻塞 I/O 扩展自管 spawn_blocking）
 │   ├── pasteboard.rs   # 框架命令薄壳（write_text / paste_text；原语在 platform/pasteboard）
 │   ├── shell_rc.rs     # .zshrc 注入约定（# voidnix <scope> marker）
 │   └── llm/            # LLM 基础设施（types / client / parser）

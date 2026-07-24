@@ -25,25 +25,30 @@ impl Extension for ClipboardExtension {
     }
 
     async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
-        // DB 打开失败不拖垮 app：不 manage、不启 monitor；命令侧 try_state 返回可读错误
-        let path = match db::clipboard_db_path(app) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("[clipboard] data dir unavailable, history disabled: {e}");
-                return Ok(());
+        // DB 打开 + DDL 全部 offload 到 worker 线程，避免阻塞 bootstrap join_all
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            // DB 打开失败不拖垮 app：不 manage、不启 monitor；命令侧 try_state 返回可读错误
+            let path = match db::clipboard_db_path(&app) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("[clipboard] data dir unavailable, history disabled: {e}");
+                    return;
+                }
+            };
+            match db::Database::open(path) {
+                Ok(database) => {
+                    app.manage(database);
+                    #[cfg(target_os = "macos")]
+                    monitor::start_monitor(app.clone());
+                }
+                Err(e) => {
+                    eprintln!("[clipboard] database open failed, history disabled: {e}");
+                }
             }
-        };
-        match db::Database::open(path) {
-            Ok(database) => {
-                app.manage(database);
-                #[cfg(target_os = "macos")]
-                monitor::start_monitor(app.clone());
-            }
-            Err(e) => {
-                eprintln!("[clipboard] database open failed, history disabled: {e}");
-            }
-        }
-
+        })
+        .await
+        .ok();
         Ok(())
     }
 }

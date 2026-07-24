@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
-import { scoreFields, frequencyBoost, keywordMatch, scoreModuleEntry } from './fuzzy'
+import { describe, it, expect, beforeAll } from 'vitest'
+import { scoreFields, frequencyBoost, keywordMatch, scoreModuleEntry, pinyinReady } from './fuzzy'
+
+// 拼音模块延迟加载：测试前等待就绪
+beforeAll(async () => {
+  await pinyinReady()
+})
 
 describe('scoreFields', () => {
   it('空 query 返回 0', () => {

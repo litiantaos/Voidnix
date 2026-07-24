@@ -135,7 +135,7 @@ pub struct StreamConfig<'a> {
     pub endpoint: &'a str,
     pub api_key: &'a str,
     pub model: &'a str,
-    pub messages: Vec<LlmMessage>,
+    pub messages: &'a [LlmMessage],
     pub tools: Option<&'a [serde_json::Value]>,
     pub tool_choice: Option<&'a str>,
     pub on_text_delta: Option<&'a mut (dyn FnMut(&str) + Send)>,
@@ -152,7 +152,7 @@ pub struct StreamConfig<'a> {
 pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOutcome, String> {
     let url = format!("{}/chat/completions", config.endpoint.trim_end_matches('/'));
 
-    let messages_json = messages_to_json(&config.messages);
+    let messages_json = messages_to_json(config.messages);
 
     let mut body = serde_json::json!({
         "model": config.model.trim(),
@@ -223,11 +223,16 @@ pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOut
             });
         }
 
-        buffer.push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
+        // 大部分 SSE 服务器不发 \r，跳过两次 String 分配
+        if text.contains('\r') {
+            buffer.push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
+        } else {
+            buffer.push_str(&text);
+        }
 
         while let Some(event_end) = buffer.find("\n\n") {
             let event_data = buffer[..event_end].to_string();
-            buffer = buffer[event_end + 2..].to_string();
+            buffer.drain(..event_end + 2);
 
             let mut data_content = String::new();
             for line in event_data.lines() {

@@ -678,6 +678,10 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
         height: data.height as f64,
     });
 
+    // 安全网：万一从非快捷键路径进入（命令直调），确保窗口已创建
+    if !super::ensure_screenshot_window(app) {
+        return Err("截图窗口创建失败".into());
+    }
     let window = app
         .get_webview_window("screenshot")
         .ok_or("找不到截图窗口")?;

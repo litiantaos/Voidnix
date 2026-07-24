@@ -247,7 +247,9 @@ function checkWindowViews(): string | null {
     if (!block) continue
     for (const key of extractWindowViewKeys(block)) {
       // 以 `-` 或 `*` 结尾 = 动态窗口前缀（如 `pin-`/`pin-*`），跳过精确匹配
-      if (key.endsWith('-') || key.endsWith('*')) continue
+      // DYNAMIC_WINDOW_LABELS = 运行时按需创建的窗口（非 tauri.conf.json 静态声明）
+      const DYNAMIC_WINDOW_LABELS = new Set(['screenshot', 'snap-panel'])
+      if (key.endsWith('-') || key.endsWith('*') || DYNAMIC_WINDOW_LABELS.has(key)) continue
       if (!labels.has(key)) {
         violations.push(
           `extensions/${dir}/index.ts windowViews key '${key}' 不在 tauri.conf.json windows[].label 中`,

@@ -1,5 +1,5 @@
 import { watch, nextTick, onMounted, onBeforeUnmount, type ComputedRef, type Ref } from 'vue'
-import { getCurrentWindow, currentMonitor } from '@tauri-apps/api/window'
+import { getCurrentWindow, currentMonitor, type Monitor } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { WINDOW } from '@/runtime/constants'
@@ -41,6 +41,44 @@ export function useModuleHeight(deps: {
   // auto 进入前的稳定逻辑 Y，离开 auto 时还原
   let originalY: number | null = null
   let wasAuto = false
+  // monitor 缓存：屏幕信息很少变化，仅在 focus 变化（跨屏 show）时失效
+  interface MonitorBounds {
+    factor: number
+    screenTop: number
+    screenBottom: number
+  }
+  let cachedBounds: MonitorBounds | null = null
+  // rAF 合帧标志：一帧内多次 RO 回调只触发一次 adjust
+  let rafQueued = false
+  let rafId: number | null = null
+
+  function invalidateMonitor() {
+    cachedBounds = null
+  }
+
+  async function getBounds(): Promise<MonitorBounds | null> {
+    if (cachedBounds) return cachedBounds
+    const monitor: Monitor | null = await currentMonitor().catch(() => null)
+    if (!monitor) return null
+    const factor = monitor.scaleFactor
+    cachedBounds = {
+      factor,
+      screenTop: monitor.position.y / factor,
+      screenBottom: (monitor.position.y + monitor.size.height) / factor,
+    }
+    return cachedBounds
+  }
+
+  /// rAF 合帧：RO 多次触发合并为单次 adjust，避免 auto 模式流式搜索时 IPC 风暴
+  function scheduleAdjust() {
+    if (rafQueued) return
+    rafQueued = true
+    rafId = requestAnimationFrame(() => {
+      rafQueued = false
+      rafId = null
+      void adjust()
+    })
+  }
 
   function currentMode(): HeightMode {
     const mod = activeModule.value
@@ -57,12 +95,9 @@ export function useModuleHeight(deps: {
 
   async function adjust() {
     const mode = currentMode()
-    const monitor = await currentMonitor().catch(() => null)
-    if (!monitor) return
-    const factor = monitor.scaleFactor
-    // 当前屏全局 Y 范围（多屏下用窗口所在屏，而非 mainScreen / 单屏高）
-    const screenTop = monitor.position.y / factor
-    const screenBottom = (monitor.position.y + monitor.size.height) / factor
+    const bounds = await getBounds()
+    if (!bounds) return
+    const { factor, screenTop, screenBottom } = bounds
     // 基准位置：优先逻辑目标（动画中读 outerPosition 得中间值会漂移），首次读实际位置。
     // show 时 Rust 会把窗移到光标屏，与缓存逻辑坐标可差数百 px —— 偏差过大则以实际为准。
     const pos = await tauriWindow.outerPosition()
@@ -137,7 +172,7 @@ export function useModuleHeight(deps: {
     if (currentMode().mode !== 'auto') return
     const ct = contentRef.value
     if (!ct) return
-    ro = new ResizeObserver(() => adjust())
+    ro = new ResizeObserver(() => scheduleAdjust())
     ro.observe(ct)
   }
 
@@ -151,7 +186,7 @@ export function useModuleHeight(deps: {
 
   watch(contentRef, (el) => {
     if (el && currentMode().mode === 'auto' && !ro) {
-      ro = new ResizeObserver(() => adjust())
+      ro = new ResizeObserver(() => scheduleAdjust())
       ro.observe(el)
     }
   })
@@ -172,6 +207,7 @@ export function useModuleHeight(deps: {
         targetY = null
         originalY = null
         wasAuto = false
+        invalidateMonitor()
         nextTick(() => adjust())
       })
       .then((un) => {
@@ -181,6 +217,7 @@ export function useModuleHeight(deps: {
   })
 
   onBeforeUnmount(() => {
+    if (rafId !== null) cancelAnimationFrame(rafId)
     ro?.disconnect()
     ro = null
     unlistenFocus?.()

@@ -69,6 +69,11 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
         }
     }
 
+    // 安全校验：endpoint/model/key 在单次 run 内不变，循环外一次校验
+    let safe_endpoint = llm::validate_ai_request(&input.endpoint, &input.model, &input.api_key)?;
+    // tools_schema 循环内不变，循环外克隆一次
+    let tools_schema = input.tools_schema.clone();
+
     while turn < input.max_turns {
         turn += 1;
 
@@ -91,19 +96,16 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
             });
         };
 
-        // 安全校验
-        let safe_endpoint =
-            llm::validate_ai_request(&input.endpoint, &input.model, &input.api_key)?;
+        // 安全校验（循环外已完成，此处复用）
         let trimmed = super::trim::trim_conversation(&messages);
-        let tools_slice = input.tools_schema.clone();
 
         let outcome = llm::stream_openai_request(StreamConfig {
             app: &input.app,
             endpoint: &safe_endpoint,
             api_key: &input.api_key,
             model: &input.model,
-            messages: trimmed,
-            tools: Some(&tools_slice),
+            messages: &trimmed,
+            tools: Some(&tools_schema),
             tool_choice: Some("auto"),
             on_text_delta: Some(&mut on_text),
             on_reasoning_delta: Some(&mut on_reasoning),

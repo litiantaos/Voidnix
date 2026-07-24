@@ -82,10 +82,12 @@ export function useSearchInput(opts: SearchInputOptions) {
   })
 
   // 图标就绪（后台提取完成）：补全图标后刷新默认列表
+  // 后台批量提取时可能频繁触发，trailing debounce 合并为一次重载
+  let iconTimer: ReturnType<typeof setTimeout> | undefined
   useTauriListener('app-icons-updated', () => {
-    if (!appStore.activeModuleId && !appStore.searchQuery) {
-      loadDefaultResults()
-    }
+    if (appStore.activeModuleId || appStore.searchQuery) return
+    clearTimeout(iconTimer)
+    iconTimer = setTimeout(() => loadDefaultResults(), 150)
   })
 
   // --- helpers ---
@@ -304,6 +306,8 @@ export function useSearchInput(opts: SearchInputOptions) {
   })
 
   onUnmounted(() => {
+    clearTimeout(iconTimer)
+    if (searchTimeout) clearTimeout(searchTimeout)
     searchEngine.abort()
     window.removeEventListener('window-focused', focusHandler)
   })

@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { getAllExtensions } from '@/runtime/extension-registry'
+import { prewarmPinyin } from '@/utils/fuzzy'
 import App from './App.vue'
 import 'virtual:uno.css'
 import './styles/theme.css'
@@ -12,6 +13,9 @@ import.meta.glob(['@ext/*/index.ts'], { eager: true })
 const app = createApp(App)
 app.use(createPinia())
 app.mount('#app')
+
+// 后台预热拼音模块：非阻塞，用户首次搜索中文前加载完成（不延迟首屏）
+prewarmPinyin()
 
 // 全局禁用 WKWebView 原生右键菜单（应用无任何右键交互场景，
 // 输入框复制粘贴走 Cmd+C/V/A 原生快捷键；多窗口共享同一 bundle 一处生效）

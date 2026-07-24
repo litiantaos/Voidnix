@@ -1,9 +1,36 @@
-import { match } from 'pinyin-pro'
 import { SEARCH } from '@/runtime/constants'
 
 const { prefix: SUBSTRING_PREFIX, contains: SUBSTRING_CONTAIN } = SEARCH.WEIGHTS
 const PINYIN_BASE = SEARCH.WEIGHTS.pinyinBase
 const FIELD_DECAY = SEARCH.WEIGHTS.decay
+
+/// pinyin-pro 延迟加载：携带完整汉字拼音字典（体积大头），首次 CJK 查询时才异步拉取。
+/// 加载完成前 pinyinScore 返回 0（降级为纯子串匹配），完成后恢复正常。
+type PinyinMatchFn = typeof import('pinyin-pro').match
+let pinyinMatch: PinyinMatchFn | null = null
+let pinyinPromise: Promise<void> | null = null
+
+function ensurePinyin() {
+  if (pinyinPromise) return
+  pinyinPromise = import('pinyin-pro')
+    .then((m) => {
+      pinyinMatch = m.match
+      // 拼音加载完成时清空 score 缓存：加载期间缓存的 CJK 文本得分不含拼音分（偏低）
+      fieldScoreCache.clear()
+    })
+    .catch(() => {})
+}
+
+/// 预热：在 app mount 后调用，让拼音模块在空闲时加载完成（用户首次搜索前就绪）
+export function prewarmPinyin() {
+  ensurePinyin()
+}
+
+/// 等待拼音模块加载完成（测试用；运行时 fire-and-forget 无需 await）
+export async function pinyinReady() {
+  ensurePinyin()
+  await pinyinPromise
+}
 
 /** 子串打分。haystack 由内部 toLowerCase（各 field 不同，无法跨结果缓存）；
  *  needle 约定已 toLowerCase（由 scoreFields/keywordMatch 入口预算，避免热路径重复 lower）。 */
@@ -22,8 +49,13 @@ function pinyinScore(text: string, qLower: string): number {
   if (!text || !qLower) return 0
   if (!/[㐀-鿿]/.test(text)) return 0
   if (!/^[a-zA-Z\s]+$/.test(qLower)) return 0
+  // 拼音模块尚未加载：触发异步加载（下次调用时就绪），本轮降级为 0
+  if (!pinyinMatch) {
+    ensurePinyin()
+    return 0
+  }
 
-  const indices = match(text, qLower, {
+  const indices = pinyinMatch(text, qLower, {
     precision: 'start',
     continuous: true,
     space: 'ignore',

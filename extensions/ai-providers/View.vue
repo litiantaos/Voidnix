@@ -197,7 +197,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, watch, onMounted, onUnmounted, type Ref } from 'vue'
+import {
+  ref,
+  computed,
+  reactive,
+  watch,
+  onMounted,
+  onUnmounted,
+  onActivated,
+  onDeactivated,
+  type Ref,
+} from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { showToast } from '@/composables/useToast'
 import { useActionPanel } from '@/composables/useActionPanel'
@@ -750,11 +760,29 @@ watch(
 )
 
 onMounted(() => {
+  startCountdown()
+})
+onActivated(() => {
+  startCountdown()
+})
+onDeactivated(() => {
+  stopCountdown()
+})
+onUnmounted(() => {
+  stopCountdown()
+})
+
+function startCountdown() {
+  if (countdownTimer) return
   countdownTimer = setInterval(() => {
     nowMs.value = Date.now()
   }, 30_000)
-})
-onUnmounted(() => {
-  if (countdownTimer) clearInterval(countdownTimer)
-})
+}
+
+function stopCountdown() {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+}
 </script>

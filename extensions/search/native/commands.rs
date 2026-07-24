@@ -22,18 +22,17 @@ fn path_hash(path: &str) -> String {
 #[tauri::command]
 pub async fn search_apps() -> Result<Vec<SearchResult>, String> {
     let apps = get_cached_apps().await;
-    let session_deltas = SEARCH_SESSION
-        .session_use_deltas
-        .lock()
-        .ok()
-        .map(|m| m.clone())
-        .unwrap_or_default();
+    // 锁内直接点查，避免每轮 clone 整个 HashMap（deltas 仅记录本次会话启动过的 app 路径）
+    let session_deltas = SEARCH_SESSION.session_use_deltas.lock().ok();
 
     let results: Vec<SearchResult> = apps
         .iter()
         .map(|app| {
-            let count = app.use_count.load(Ordering::Relaxed)
-                + session_deltas.get(&app.path).copied().unwrap_or(0);
+            let delta = session_deltas
+                .as_ref()
+                .and_then(|m| m.get(&app.path).copied())
+                .unwrap_or(0);
+            let count = app.use_count.load(Ordering::Relaxed) + delta;
             SearchResult {
                 id: format!("app-{}", path_hash(&app.path)),
                 title: app.name.clone(),
