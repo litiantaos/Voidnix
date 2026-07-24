@@ -35,11 +35,11 @@ function p(
 }
 
 describe('resolveEnvKey', () => {
-  it('知名端点锁死工具约定名', () => {
+  it('知名端点私有命名（VOIDNIX_ 前缀，不抢占通用变量名）', () => {
     expect(resolveEnvKey(p('z', 'https://open.bigmodel.cn/api/coding/paas/v4', []))).toBe(
-      'ZHIPU_API_KEY',
+      'VOIDNIX_ZHIPU_API_KEY',
     )
-    expect(resolveEnvKey(p('d', 'https://api.deepseek.com', []))).toBe('DEEPSEEK_API_KEY')
+    expect(resolveEnvKey(p('d', 'https://api.deepseek.com', []))).toBe('VOIDNIX_DEEPSEEK_API_KEY')
     expect(isZhipuCodingEndpoint('https://open.bigmodel.cn/x')).toBe(true)
   })
 
@@ -51,7 +51,7 @@ describe('resolveEnvKey', () => {
 })
 
 describe('buildExportPayload', () => {
-  it('真 OpenAI 端点：按名称推导导出 OPENAI_API_KEY + OPENAI_BASE_URL（不借用、无 MODEL）', () => {
+  it('真 OpenAI 端点：按名称推导导出 VOIDNIX_OPENAI_API_KEY + VOIDNIX_OPENAI_BASE_URL', () => {
     const { envText } = buildExportPayload({
       providers: [
         p(
@@ -62,11 +62,10 @@ describe('buildExportPayload', () => {
         ),
       ],
     })
-    // 配了真 OpenAI 端点 → 名副其实地导出（非从别家借用）
-    expect(envText).toContain("export OPENAI_API_KEY='sk-secret'")
-    expect(envText).toContain("export OPENAI_BASE_URL='https://api.openai.com/v1'")
-    // 无借用块 → 不投射 OPENAI_MODEL
-    expect(envText).not.toContain('OPENAI_MODEL')
+    // 配了真 OpenAI 端点 → 私有命名导出（非抢占 OPENAI_API_KEY）
+    expect(envText).toContain("export VOIDNIX_OPENAI_API_KEY='sk-secret'")
+    expect(envText).toContain("export VOIDNIX_OPENAI_BASE_URL='https://api.openai.com/v1'")
+    expect(envText).not.toContain('export OPENAI_API_KEY=')
   })
 
   it('多 key：第一把规范名 + 中文备注回退 KEY{n}，不丢第二把', () => {
@@ -83,9 +82,9 @@ describe('buildExportPayload', () => {
         ),
       ],
     })
-    expect(envText).toContain("export DEEPSEEK_API_KEY='ds1'")
-    expect(envText).toContain("export DEEPSEEK_KEY2_API_KEY='ds2'")
-    expect(envText).not.toMatch(/DEEPSEEK___/)
+    expect(envText).toContain("export VOIDNIX_DEEPSEEK_API_KEY='ds1'")
+    expect(envText).toContain("export VOIDNIX_DEEPSEEK_KEY2_API_KEY='ds2'")
+    expect(envText).not.toMatch(/VOIDNIX_DEEPSEEK___/)
   })
 
   it('多 key 英文备注用 TAG 后缀', () => {
@@ -102,8 +101,8 @@ describe('buildExportPayload', () => {
         ),
       ],
     })
-    expect(envText).toContain("export DEEPSEEK_API_KEY='ds1'")
-    expect(envText).toContain("export DEEPSEEK_BACKUP_API_KEY='ds2'")
+    expect(envText).toContain("export VOIDNIX_DEEPSEEK_API_KEY='ds1'")
+    expect(envText).toContain("export VOIDNIX_DEEPSEEK_BACKUP_API_KEY='ds2'")
   })
 
   it('envLabelTag / assignKeyEnvNames', () => {
@@ -122,9 +121,9 @@ describe('buildExportPayload', () => {
       ),
     )
     expect(names.map((n) => n.envName)).toEqual([
-      'DEEPSEEK_API_KEY',
-      'DEEPSEEK_KEY2_API_KEY',
-      'DEEPSEEK_KEY3_API_KEY',
+      'VOIDNIX_DEEPSEEK_API_KEY',
+      'VOIDNIX_DEEPSEEK_KEY2_API_KEY',
+      'VOIDNIX_DEEPSEEK_KEY3_API_KEY',
     ])
   })
 
@@ -138,19 +137,19 @@ describe('buildExportPayload', () => {
       p('d2', 'https://api.deepseek.com', [{ id: 'k2', label: '默认', apiKey: 'ds2' }]),
       taken,
     )
-    expect(a.map((n) => n.envName)).toEqual(['DEEPSEEK_API_KEY'])
-    expect(b.map((n) => n.envName)).toEqual(['DEEPSEEK_KEY1_API_KEY'])
+    expect(a.map((n) => n.envName)).toEqual(['VOIDNIX_DEEPSEEK_API_KEY'])
+    expect(b.map((n) => n.envName)).toEqual(['VOIDNIX_DEEPSEEK_KEY1_API_KEY'])
     const { envText } = buildExportPayload({
       providers: [
         p('d1', 'https://api.deepseek.com', [{ id: 'k1', label: '默认', apiKey: 'ds1' }]),
         p('d2', 'https://api.deepseek.com', [{ id: 'k2', label: '默认', apiKey: 'ds2' }]),
       ],
     })
-    expect(envText).toContain("export DEEPSEEK_API_KEY='ds1'")
-    expect(envText).toContain("export DEEPSEEK_KEY1_API_KEY='ds2'")
+    expect(envText).toContain("export VOIDNIX_DEEPSEEK_API_KEY='ds1'")
+    expect(envText).toContain("export VOIDNIX_DEEPSEEK_KEY1_API_KEY='ds2'")
   })
 
-  it('智谱 → ZHIPU_API_KEY；DeepSeek → DEEPSEEK_API_KEY；不导 ANTHROPIC', () => {
+  it('智谱 → VOIDNIX_ZHIPU_API_KEY；DeepSeek → VOIDNIX_DEEPSEEK_API_KEY；不导 ANTHROPIC', () => {
     const { envText } = buildExportPayload({
       providers: [
         p(
@@ -167,9 +166,9 @@ describe('buildExportPayload', () => {
         ),
       ],
     })
-    expect(envText).toContain("export DEEPSEEK_API_KEY='sk-ds'")
-    expect(envText).toContain("export ZHIPU_API_KEY='sk-zhipu'")
-    expect(envText).not.toContain('BIGMODEL_API_KEY')
+    expect(envText).toContain("export VOIDNIX_DEEPSEEK_API_KEY='sk-ds'")
+    expect(envText).toContain("export VOIDNIX_ZHIPU_API_KEY='sk-zhipu'")
+    expect(envText).not.toContain('VOIDNIX_BIGMODEL_API_KEY')
     // 不再为 Claude Code 投射 ANTHROPIC_*（CC 已卸载）
     expect(envText).not.toContain('ANTHROPIC')
   })
@@ -190,26 +189,32 @@ describe('buildExportPayload', () => {
       ],
     })
     // 三把 key 各一行
-    expect(envText).toContain("export ZHIPU_API_KEY='k195'")
-    expect(envText).toContain("export ZHIPU_177_API_KEY='k177'")
-    expect(envText).toContain("export ZHIPU_193_API_KEY='k193'")
+    expect(envText).toContain("export VOIDNIX_ZHIPU_API_KEY='k195'")
+    expect(envText).toContain("export VOIDNIX_ZHIPU_177_API_KEY='k177'")
+    expect(envText).toContain("export VOIDNIX_ZHIPU_193_API_KEY='k193'")
     // BASE_URL 只出现一次（去重）
-    const urlCount = (envText.match(/ZHIPU_BASE_URL/g) ?? []).length
+    const urlCount = (envText.match(/VOIDNIX_ZHIPU_BASE_URL/g) ?? []).length
     expect(urlCount).toBe(1)
-    expect(envText).toContain("export ZHIPU_BASE_URL='https://open.bigmodel.cn/api/coding/paas/v4'")
+    expect(envText).toContain(
+      "export VOIDNIX_ZHIPU_BASE_URL='https://open.bigmodel.cn/api/coding/paas/v4'",
+    )
     // 不应出现每 key 派生的 BASE_URL
-    expect(envText).not.toContain('ZHIPU_177_BASE_URL')
-    expect(envText).not.toContain('ZHIPU_193_BASE_URL')
+    expect(envText).not.toContain('VOIDNIX_ZHIPU_177_BASE_URL')
+    expect(envText).not.toContain('VOIDNIX_ZHIPU_193_BASE_URL')
     // 顺序：BASE_URL 在该提供商所有 KEY 之前
-    expect(envText.indexOf('ZHIPU_BASE_URL')).toBeLessThan(envText.indexOf('ZHIPU_API_KEY'))
-    expect(envText.indexOf('ZHIPU_BASE_URL')).toBeLessThan(envText.indexOf('ZHIPU_177_API_KEY'))
+    expect(envText.indexOf('VOIDNIX_ZHIPU_BASE_URL')).toBeLessThan(
+      envText.indexOf('VOIDNIX_ZHIPU_API_KEY'),
+    )
+    expect(envText.indexOf('VOIDNIX_ZHIPU_BASE_URL')).toBeLessThan(
+      envText.indexOf('VOIDNIX_ZHIPU_177_API_KEY'),
+    )
   })
 })
 
 describe('helpers', () => {
   it('shell / mask / remain / compact', () => {
     expect(shellSingleQuote("a'b")).toBe(`'a'\\''b'`)
-    expect(baseUrlEnvName('DEEPSEEK_API_KEY')).toBe('DEEPSEEK_BASE_URL')
+    expect(baseUrlEnvName('VOIDNIX_DEEPSEEK_API_KEY')).toBe('VOIDNIX_DEEPSEEK_BASE_URL')
     expect(maskKey('sk-abcdefghij')).toMatch(/…/)
     expect(maskKey('sk-abcdefghijklmnop')).toMatch(/^sk-abc…mnop$/)
     expect(formatWindowRemain(Date.now() + 2.3 * 3_600_000, 'h')).toBe('2.3h')

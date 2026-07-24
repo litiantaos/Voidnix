@@ -88,25 +88,27 @@
 - **文件路径**：保存后写 `~/.config/voidnix[/dev]/ai.env`
 - **release**：基础目录；shell 全局投影注入（`shell_rc` 幂等写入 `# voidnix ai-providers` source 块，见 [shell-rc.md](../shell-rc.md)）
 - **debug**：叠 `.dev`，与 bundle id 隔离一致；只写 `voidnix.dev/ai.env` 文件，**不注入 shell**
-- **dev/prod 不并存原因**：外部工具固定变量名（`ZHIPU_*` / `DEEPSEEK_*`），无法 dev/prod 并存，全局只放 prod
+- **dev/prod 不并存原因**：外部工具按私有名（`VOIDNIX_*`）显式引用，无法 dev/prod 并存，全局只放 prod
 - **dev 凭证用途**：供 App 内回退与手动 `source ~/.config/voidnix.dev/ai.env` 验证
 
 ### 变量命名
 
-- **知名端点**锁死工具约定名（`envKey` 显式可覆盖）：
-  - 智谱 Coding Plan（`bigmodel.cn` / `zhipuai`）→ `ZHIPU_API_KEY` + `ZHIPU_BASE_URL`
-  - DeepSeek（`deepseek.com`）→ `DEEPSEEK_API_KEY` + `DEEPSEEK_BASE_URL`
-  - 其余按名称 / hostname 推导 `*_API_KEY`（如配真 OpenAI 端点 → `OPENAI_API_KEY`，但中枢不猜测、不借用）
-- **多 Key 命名**：第一把非空写规范名（`DEEPSEEK_API_KEY` 等，供 OpenCode / Grok）；其余按备注 ASCII 后缀（`DEEPSEEK_BACKUP_API_KEY`），纯中文备注回退 `DEEPSEEK_KEY2_API_KEY`，碰撞递增，不静默丢 Key
-- **单 Key 规范名冲突**（两套同端点提供商）：第二套序号兜底（`DEEPSEEK_KEY1_API_KEY`），不静默丢
-- **`*_BASE_URL`**：按**提供商**输出（endpoint 是提供商级属性），每提供商仅一条，不随 Key 重复
+全量 `VOIDNIX_` 私有前缀——不抢占外部工具约定的通用变量名（如 `ZHIPU_API_KEY`），外部工具须显式引用。`envKey` 显式可覆盖（逃生舱，不加前缀）。
+
+- **知名端点**固定后缀：
+  - 智谱 Coding Plan（`bigmodel.cn` / `zhipuai`）→ `VOIDNIX_ZHIPU_API_KEY` + `VOIDNIX_ZHIPU_BASE_URL`
+  - DeepSeek（`deepseek.com`）→ `VOIDNIX_DEEPSEEK_API_KEY` + `VOIDNIX_DEEPSEEK_BASE_URL`
+  - 其余按名称 / hostname 推导（如 OpenAI 端点 → `VOIDNIX_OPENAI_API_KEY`）
+- **多 Key 命名**：第一把非空写规范名（`VOIDNIX_DEEPSEEK_API_KEY` 等）；其余按备注 ASCII 后缀（`VOIDNIX_DEEPSEEK_BACKUP_API_KEY`），纯中文备注回退 `VOIDNIX_DEEPSEEK_KEY2_API_KEY`，碰撞递增，不静默丢 Key
+- **单 Key 规范名冲突**（两套同端点提供商）：第二套序号兜底（`VOIDNIX_DEEPSEEK_KEY1_API_KEY`），不静默丢
+- **`VOIDNIX_*_BASE_URL`**：按**提供商**输出（endpoint 是提供商级属性），每提供商仅一条，不随 Key 重复
 
 ### 外部工具
 
-中枢只写 env（key + url）；各工具自管模型选用（模型定义在工具配置里，含上下文长度/定价等元数据，不由中枢投射），不在此维护「使用中」。
+中枢只写 env（`VOIDNIX_*` 私有名，key + url）；各工具自管模型选用（模型定义在工具配置里，含上下文长度/定价等元数据，不由中枢投射），不在此维护「使用中」。外部工具须显式引用 Voidnix 私有变量名。
 
-- **OpenCode**：读 `ZHIPU_API_KEY` / `DEEPSEEK_API_KEY`；baseURL 写在 `~/.config/opencode/opencode.json` 的 `provider.*.options.baseURL`（如 `zhipuai-coding-plan` → Coding Plan 端、`deepseek` → DeepSeek 端）。模型：`zhipuai-coding-plan/glm-5.2`、`deepseek/deepseek-v4-pro` 等
-- **Grok Build**：`~/.grok/config.toml` 的 `[model.*]` 用 `env_key = "ZHIPU_API_KEY"` / `"DEEPSEEK_API_KEY"` + `base_url`；切模型 `/model glm-5-2-1m` 等
+- **OpenCode**：`opencode.json` 的 `provider.*.options.apiKey` 用 `{env:VOIDNIX_ZHIPU_API_KEY}` 等显式引用；baseURL 写在 `options.baseURL`。模型：`zhipuai-coding-plan/glm-5.2`、`deepseek/deepseek-v4-pro` 等
+- **Grok Build**：`~/.grok/config.toml` 的 `[model.*]` 用 `env_key = "VOIDNIX_ZHIPU_API_KEY"` 等 + `base_url`；切模型 `/model glm-5-2-1m` 等
 
 ## 命令
 

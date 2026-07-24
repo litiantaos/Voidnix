@@ -39,11 +39,11 @@ function onAdd() {
 }
 
 const helpMarkdown = renderMarkdown(`
-提供商配置保存后会自动导出为环境变量（\`~/.config/voidnix/ai.env\`，新开终端即生效）：
+提供商配置保存后写入 \`~/.config/voidnix/ai.env\`，新开终端生效。
 
-- 每把 Key：\`*_API_KEY\`（知名端点用约定名：智谱 \`ZHIPU_API_KEY\`、DeepSeek \`DEEPSEEK_API_KEY\`，其余按名称推导）
-- 每个提供商：\`*_BASE_URL\`
-
-选中某把 Key 按 **Cmd+Enter** 可粘贴 API Key / 端点 URL / 模型名到外部工具。
+- Key 导出为 \`VOIDNIX_*_API_KEY\`，端点导出为 \`VOIDNIX_*_BASE_URL\`
+- 智谱、DeepSeek 用固定后缀，如 \`VOIDNIX_ZHIPU_API_KEY\`，其余按名称推导
+- 外部工具须显式引用，如 OpenCode \`{env:VOIDNIX_ZHIPU_API_KEY}\`
+- 选中 Key 按下 **Cmd+Enter** 可粘贴 Key / 端点 / 模型名
 `)
 </script>
