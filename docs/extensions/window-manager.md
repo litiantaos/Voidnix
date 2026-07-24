@@ -29,6 +29,13 @@
 - macOS 按当前屏钳制尺寸；先 position 再 size 时，下半/左下/右下会以旧高度短暂跨出副屏底边（竖排副屏时直接压到主屏）
 - 目标矩形再夹进 `layout_*`
 
+**EnhancedUI guard**（`apply_ax_layout` 入口）：写窗口前若目标 app 的 `AXEnhancedUserInterface == true` 则关 false，写完恢复。Chromium 系（Chrome 等）默认开启该属性，使 AX 写窗口触发异步动画（~250ms）且 `size → position` 连续写入时 position 被吞、size 漂移；关闭后写入瞬时精确（0ms 动画）。无此属性的应用（大多数）为 no-op（Rectangle 同款策略）。
+
+**前置检查**（`apply_ax_layout` 入口，AX 路径）：
+
+- **全屏窗口跳过**：读 `AXFullScreenButton` 子元素 `AXSubrole`，`AXZoomButton` = 全屏中。原生全屏窗口 AX 写 frame 行为不可预测，直接 no-op
+- **固定尺寸窗口**：`AXUIElementIsAttributeSettable(AXSize)` 检测。不可缩放时只写 position（区域左上角定位），尺寸保持不变。跨屏迁移只按比例移动位置
+
 窗口归属屏：读 AX 位置 + 尺寸，用**中心点**命中 `ax_frame_*`；重叠时取面积更小屏。AppleScript 回退同样先取窗口几何再选屏。
 
 ## 架构
