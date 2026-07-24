@@ -84,6 +84,7 @@ macro_rules! configure_app {
             crate::extensions::screenshot::session::exit_screenshot_mode,
             crate::extensions::screenshot::session::read_picker_image,
             crate::extensions::screenshot::session::screenshot_overlay_ready,
+            crate::extensions::search::commands::get_app_icons,
             crate::extensions::search::commands::get_path_metadata,
             crate::extensions::search::commands::launch_app,
             crate::extensions::search::commands::reveal_in_finder,

@@ -9,26 +9,65 @@ import { recencyScore, toResult } from './logic'
 
 const MIN_FILE_QUERY_LEN = 2
 
-// ── 应用前端缓存 ──
-// 事件驱动失效：app-cache-updated 事件（icon 后台批次就绪 / 应用列表变更）触发置 null，下次 dynamic 重拉。
-// 不再用 iconsPending 轮询——避免启动初期 icon 未齐时每按键都全量 invoke search_apps。
-let appListCache: ProviderResult[] | null = null
+// ── 应用两层缓存：metadata（轻 ~20KB）+ icons（重 ~600KB base64）──
+// search_apps 只返回元数据（无图标），get_app_icons 单独批量拉图标。
+// app-cache-updated（应用增删）→ 失效 metadata；app-icons-updated（图标就绪）→ 仅失效图标。
+let appMetaCache: ProviderResult[] | null = null
+let appIconCache: Map<string, string> | null = null
 
 listen('app-cache-updated', () => {
-  appListCache = null
+  appMetaCache = null
 }).catch(() => {})
 
-async function getAppList(): Promise<ProviderResult[]> {
-  if (appListCache) return appListCache
-  const raw = await invoke<RawSearchResult[]>(CMD.searchApps).catch((e) => {
-    console.error('[search] search_apps invoke failed:', e)
+listen('app-icons-updated', () => {
+  appIconCache = null
+}).catch(() => {})
+
+/** 将 appIconCache 中的图标 in-place patch 进 metadata 缓存（下次 emit 自动带上） */
+function applyIcons(): void {
+  if (!appMetaCache || !appIconCache) return
+  for (const item of appMetaCache) {
+    const icon = appIconCache.get(item.id)
+    if (icon) {
+      item.icon = icon
+      if (item.data) (item.data as Record<string, unknown>).icon = icon
+    }
+  }
+}
+
+/** 批量拉取图标并合流进 metadata 缓存 */
+async function fetchIcons(): Promise<void> {
+  const icons = await invoke<{ id: string; icon: string | null }[]>(CMD.getAppIcons).catch((e) => {
+    console.error('[search] get_app_icons invoke failed:', e)
     return []
   })
-  const items = raw.map((r) =>
-    toResult(r, frequencyBoost(r.use_count ?? 0) + recencyScore(r.last_used) + 1),
-  )
-  appListCache = items
-  return items
+  appIconCache = new Map()
+  for (const { id, icon } of icons) {
+    if (icon) appIconCache.set(id, icon)
+  }
+  applyIcons()
+}
+
+async function getAppList(): Promise<ProviderResult[]> {
+  if (appMetaCache && appIconCache) return appMetaCache
+
+  if (!appMetaCache) {
+    const raw = await invoke<RawSearchResult[]>(CMD.searchApps).catch((e) => {
+      console.error('[search] search_apps invoke failed:', e)
+      return []
+    })
+    appMetaCache = raw.map((r) =>
+      toResult(r, frequencyBoost(r.use_count ?? 0) + recencyScore(r.last_used) + 1),
+    )
+    // 新 metadata 复用已有图标：app-cache-updated 仅失效 metadata，图标缓存仍有效
+    applyIcons()
+  }
+
+  if (!appIconCache) {
+    await fetchIcons()
+  }
+
+  return appMetaCache
 }
 
 export default defineExtension({
