@@ -552,23 +552,37 @@ impl Extension for SystemStatusExtension {
     }
 
     async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
-        // prime：refresh_cpu_usage / refresh_processes 后下次调用才有真实使用率（差值语义）
-        let mut sys = System::new();
-        sys.refresh_cpu_usage();
-        sys.refresh_memory();
-        sys.refresh_processes(ProcessesToUpdate::All, true);
-
+        // 立即 manage 空 collector（SystemState 仅用户打开模块时消费，无需启动时阻塞）。
+        // 重采集（refresh_processes(All) + Disks/Networks/Components 全量刷新 ~100ms+）
+        // 下沉后台 spawn_blocking，不阻塞 bootstrap join_all。
         app.manage(SystemState {
-            sys: Mutex::new(sys),
-            disks: Mutex::new(Disks::new_with_refreshed_list()),
-            networks: Mutex::new(Networks::new_with_refreshed_list()),
-            components: Mutex::new(Components::new_with_refreshed_list()),
+            sys: Mutex::new(System::new()),
+            disks: Mutex::new(Disks::new()),
+            networks: Mutex::new(Networks::new()),
+            components: Mutex::new(Components::new()),
             net_stats: Mutex::new(NetStats {
                 last_time: None,
                 last_rx: 0,
                 last_tx: 0,
             }),
             gpu: Mutex::new(None),
+        });
+
+        // 后台 prime：refresh_cpu_usage / refresh_processes 后下次调用才有真实使用率（差值语义）。
+        // 用户打开模块前完成即可（首屏 ~1s 窗口动画 + 手动导航，远早于用户进入 system-status）。
+        let app2 = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Some(state) = app2.try_state::<SystemState>() {
+                {
+                    let mut sys = state.sys.lock().unwrap();
+                    sys.refresh_cpu_usage();
+                    sys.refresh_memory();
+                    sys.refresh_processes(ProcessesToUpdate::All, true);
+                }
+                state.disks.lock().unwrap().refresh();
+                state.networks.lock().unwrap().refresh();
+                state.components.lock().unwrap().refresh();
+            }
         });
         Ok(())
     }
