@@ -1,63 +1,6 @@
 use std::fs;
 use std::path::Path;
 
-pub(super) fn get_app_metadata(app_path: &str) -> (String, Option<String>, u32) {
-    let output = std::process::Command::new("mdls")
-        .arg("-name")
-        .arg("kMDItemDisplayName")
-        .arg("-name")
-        .arg("kMDItemLastUsedDate")
-        .arg("-name")
-        .arg("kMDItemUseCount")
-        .arg(app_path)
-        .output();
-
-    let mut name = String::new();
-    let mut last_used = None;
-    let mut use_count = 0;
-
-    if let Ok(out) = output {
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        for line in stdout.lines() {
-            if line.starts_with("kMDItemDisplayName") {
-                if let Some(val) = line.split('=').nth(1) {
-                    let cleaned = val.trim().trim_matches('"').to_string();
-                    name = if cleaned.ends_with(".app") {
-                        cleaned.strip_suffix(".app").unwrap_or(&cleaned).to_string()
-                    } else {
-                        cleaned
-                    };
-                }
-            } else if line.starts_with("kMDItemLastUsedDate") {
-                if let Some(val) = line.split('=').nth(1) {
-                    let cleaned = val.trim().to_string();
-                    if cleaned != "(null)" {
-                        last_used = Some(cleaned);
-                    }
-                }
-            } else if line.starts_with("kMDItemUseCount") {
-                if let Some(val) = line.split('=').nth(1) {
-                    if let Ok(count) = val.trim().parse::<u32>() {
-                        use_count = count;
-                    }
-                }
-            }
-        }
-    }
-
-    if name.is_empty() || name == "(null)" {
-        name = get_app_name_from_plist(app_path).unwrap_or_else(|| {
-            std::path::Path::new(app_path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("Unknown")
-                .to_string()
-        });
-    }
-
-    (name, last_used, use_count)
-}
-
 fn get_app_name_from_plist(app_path: &str) -> Option<String> {
     let plist_path = Path::new(app_path).join("Contents").join("Info.plist");
     let dict = plist::Value::from_file(&plist_path)
@@ -73,6 +16,19 @@ fn get_app_name_from_plist(app_path: &str) -> Option<String> {
     } else {
         Some(name)
     }
+}
+
+/// fallback 路径专用：plist 直读应用名（~1ms），失败回退文件名。
+/// 不走 mdls 子进程（~50-100ms/个），消除启动期 fallback 风暴；
+/// use_count/last_used 在 mdfind 未收录时本就无意义，置 0/None。
+fn name_from_plist_or_fallback(app_path: &str) -> String {
+    get_app_name_from_plist(app_path).unwrap_or_else(|| {
+        Path::new(app_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Unknown")
+            .to_string()
+    })
 }
 
 pub(super) fn scan_apps_from_dir(dir: &Path) -> Vec<String> {
@@ -259,15 +215,15 @@ pub(super) fn collect_apps_with_metadata() -> Vec<(String, String, Option<String
     for path in fs_apps {
         if !existing.contains(&path) {
             log::info!("Found app via filesystem scan (not in mdfind): {}", path);
-            let (name, last_used, use_count) = get_app_metadata(&path);
-            results.push((path, name, last_used, use_count));
+            let name = name_from_plist_or_fallback(&path);
+            results.push((path, name, None, 0));
         }
     }
 
     let finder_path = "/System/Library/CoreServices/Finder.app".to_string();
     if Path::new(&finder_path).exists() && !existing.contains(&finder_path) {
-        let (name, last_used, use_count) = get_app_metadata(&finder_path);
-        results.push((finder_path, name, last_used, use_count));
+        let name = name_from_plist_or_fallback(&finder_path);
+        results.push((finder_path, name, None, 0));
     }
 
     results

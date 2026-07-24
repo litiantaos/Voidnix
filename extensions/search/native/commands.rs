@@ -17,7 +17,8 @@ fn path_hash(path: &str) -> String {
     format!("{:x}", hasher.finish())
 }
 
-/// 返回全量应用列表（带 use_count + last_used），由前端做拼音匹配与排序。
+/// 返回全量应用元数据（不含图标），由前端做拼音匹配与排序。
+/// 图标单独走 get_app_icons 批量拉取，避免 ~600KB base64 膨胀搜索热路径 IPC。
 #[tauri::command]
 pub async fn search_apps() -> Result<Vec<SearchResult>, String> {
     let apps = get_cached_apps().await;
@@ -38,7 +39,7 @@ pub async fn search_apps() -> Result<Vec<SearchResult>, String> {
                 title: app.name.clone(),
                 path: app.path.clone(),
                 kind: "application".to_string(),
-                icon: app.icon_cache.clone(),
+                icon: None,
                 last_used: app.last_used.clone(),
                 score: None,
                 use_count: Some(count),
@@ -48,6 +49,26 @@ pub async fn search_apps() -> Result<Vec<SearchResult>, String> {
         .collect();
 
     Ok(results)
+}
+
+/// 批量返回应用图标（id → base64），供前端异步补全、与元数据解耦。
+#[derive(Serialize)]
+pub struct AppIcon {
+    pub id: String,
+    pub icon: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_app_icons() -> Result<Vec<AppIcon>, String> {
+    let apps = get_cached_apps().await;
+    let icons: Vec<AppIcon> = apps
+        .iter()
+        .map(|app| AppIcon {
+            id: format!("app-{}", path_hash(&app.path)),
+            icon: app.icon_cache.clone(),
+        })
+        .collect();
+    Ok(icons)
 }
 
 /// mdfind 返回的原始条目（路径 + 元数据），一次性解析完毕。
