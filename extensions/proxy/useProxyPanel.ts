@@ -16,6 +16,7 @@ import {
 import { generateRequestId } from '@/utils/id'
 import {
   type ProxiesResponse,
+  type DelayResult,
   DELAY_TIMEOUT,
   delayColor,
   filterNodes,
@@ -343,26 +344,21 @@ export function useProxyPanel() {
     const g = mainGroup.value
     if (!g) return
     testing.value = true
-    delayMap.value = {}
+    // 流式增量：每节点测完即经 Channel 推送，逐项写入 delayMap 触发该节点重渲染。
+    // 不预清空——测速中未到的节点保留上次值/历史值，避免整体闪烁；结果逐个覆盖。
+    // 快照组名防串组：测速进行中切换 mainGroup，旧组在飞的回调不再写入 delayMap，避免过期条目残留。
+    const snapshotGroup = g.name
+    const ch = new Channel<DelayResult>()
+    ch.onmessage = (r) => {
+      if (mainGroup.value?.name !== snapshotGroup) return
+      delayMap.value = { ...delayMap.value, [r.name]: r.delay > 0 ? r.delay : DELAY_TIMEOUT }
+    }
     try {
-      // 批量测速：mihomo /group/{name}/delay 一次请求内部并发测全组，消除前端逐节点串行
-      // invoke 的 N 次 IPC + controller 本地 HTTP 开销；死节点超时由 mihomo 并发吸收，
-      // 不再占满前端 worker 致好节点排队干等。unified-delay 让数值口径与其他 mihomo 客户端一致。
-      const result = await invoke<Record<string, number>>(CMD.proxyTestGroupDelay, {
-        group: g.name,
-      })
-      // 遍历 g.all（全组）而非 nodes.value（过滤后）：批量响应含全组节点，写入完整 delayMap
-      // 可让搜索过滤切换时不回退到 latestDelay 历史值，消除闪烁
-      const map: Record<string, number> = {}
-      const all = g.all ?? []
-      for (const name of all) {
-        const d = result[name]
-        map[name] = d != null && d > 0 ? d : DELAY_TIMEOUT
-      }
-      delayMap.value = map
+      await invoke(CMD.proxyTestGroupDelayStream, { group: g.name, onEvent: ch })
     } catch {
-      // 批量测速失败（controller 不可达等）：标记全部超时，保持 UI 有反馈
-      const map: Record<string, number> = {}
+      // 整体失败（controller 不可达 / 节点列表获取失败）：仍在该组时标记全组超时保持反馈
+      if (mainGroup.value?.name !== snapshotGroup) return
+      const map = { ...delayMap.value }
       for (const name of g.all ?? []) map[name] = DELAY_TIMEOUT
       delayMap.value = map
     } finally {

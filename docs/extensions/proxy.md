@@ -234,8 +234,7 @@ config 含 **`geox-url`**（geoip/geosite 镜像 URL，国内直连 GitHub 不�
 
 - `GET /proxies`（节点列表）
 - `PUT /proxies/{group}`（选节点）
-- `GET /group/{group}/delay`（批量测速，mihomo 内部并发测全组，一次返回 `{ 节点名: ms }`，request 级 15s timeout 覆盖客户端默认 10s）
-- `GET /proxies/{name}/delay`（单节点测速内部函数，健康探针 `probe_health` 用，不暴露 IPC）
+- `GET /proxies/{name}/delay`（单节点测速：流式批量测速 `proxy_test_group_delay_stream` 并发对全组每个节点调它、测完一个即经 Channel 推送；健康探针 `probe_health` 亦复用。替代 mihomo 批量端点 `/group/{group}/delay`——后者需等全组结算才一次返回，被死节点拖累）
 - `PATCH /configs`（切模式）
 - `PUT /configs {path}`（热重载配置）
 - `GET /rules`（分流规则只读快照）
@@ -279,7 +278,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 - **核心下载**：`proxy_core_status` / `proxy_ensure_core`（核心版本查询与运行时按需下载）
 - **版本升级**：`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）
 - **订阅**：`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）
-- **节点与测速**：`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_group_delay`（批量测速，一次返回全组 `{ 节点名: ms }`，替代逐节点串行 invoke）
+- **节点与测速**：`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_group_delay_stream`（流式测速：并发对全组每个节点调 `/proxies/{name}/delay`，测完一个即经 Channel 推送，前端增量更新；替代 mihomo 批量端点需等全组结算才一次返回的旧实现）
 - **模式切换**：`proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退；含「未变跳过」守卫 + emit 同步前端）
 - **软重启**：`proxy_reconnect`（免提权软重启：热重载 active config 重建 gvisor/连接池，出站异常时一键恢复，规避关闭→开启的 stop_root 提权）
 - **诊断流**：`proxy_traffic_stream` / `proxy_connections_stream` / `proxy_logs_stream`（开 WS 流，Channel 推流量速率/连接快照/日志行；mihomo 未运行时静默返回不 spawn，前端显示「无记录」）

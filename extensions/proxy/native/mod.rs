@@ -10,11 +10,13 @@ mod subscription;
 mod tun;
 
 use crate::runtime::registry::Extension;
+use serde::Serialize;
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::task::JoinSet;
 
 use self::core::RunParams;
 use self::lifecycle::{
@@ -163,14 +165,53 @@ pub async fn proxy_select_proxy(
     Ok(())
 }
 
-/// GET /group/{name}/delay → 批量测速，返回 { 节点名: ms }（mihomo 内部并发，一次返回全组）。
+/// 流式测速单个结果（Channel 推送）：delay=0 表示测速失败/超时。
+#[derive(Serialize)]
+pub struct DelayResult {
+    pub name: String,
+    pub delay: u32,
+}
+
+/// 流式批量测速：并发对全组每个节点调 `/proxies/{name}/delay`，测完一个即经 Channel 推送，
+/// 前端增量更新 delayMap。替代 mihomo 批量端点 `/group/{name}/delay`——后者需等全组（含 5s
+/// 超时的死节点）结算才一次返回，好节点被拖累致整体等 5-8s；流式下好节点百毫秒级即显示。
+/// 并发度与 mihomo 批量端点内部一致（全并发），localhost 单节点 HTTP 开销可忽略。
 #[tauri::command]
-pub async fn proxy_test_group_delay(
+pub async fn proxy_test_group_delay_stream(
     state: State<'_, ProxyState>,
     group: String,
-) -> Result<Value, String> {
+    on_event: Channel<DelayResult>,
+) -> Result<(), String> {
     let (base, secret) = controller_endpoint(&state)?;
-    controller::test_group_delay(&base, &secret, &group).await
+    // 取全组节点列表（一次 GET /proxies，响应结构 { proxies: { [group]: { all: [...] } } }）
+    let proxies = controller::get_proxies(&base, &secret).await?;
+    let nodes: Vec<String> = proxies
+        .get("proxies")
+        .and_then(|p| p.get(group.as_str()))
+        .and_then(|g| g.get("all"))
+        .and_then(|a| a.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    // 并发测速：每节点独立 spawn，测完即推送，死节点 5s 超时不阻塞好节点。
+    // base/secret 是 String 需 Arc 共享不可克隆所有权；Channel 本身 impl Clone（内部已含 Arc）。
+    let base = Arc::new(base);
+    let secret = Arc::new(secret);
+    let mut set = JoinSet::new();
+    for name in nodes {
+        let (base, secret, on_event) = (base.clone(), secret.clone(), on_event.clone());
+        set.spawn(async move {
+            let delay = controller::test_delay(&base, &secret, &name)
+                .await
+                .unwrap_or(0);
+            let _ = on_event.send(DelayResult { name, delay });
+        });
+    }
+    while set.join_next().await.is_some() {}
+    Ok(())
 }
 
 /// PATCH /configs → 切换规则模式。
