@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { getAllExtensions } from '@/runtime/extension-registry'
 import { prewarmPinyin } from '@/utils/fuzzy'
+import { useSystemStore } from '@/stores/system'
 import App from './App.vue'
 import 'virtual:uno.css'
 import './styles/theme.css'
@@ -16,6 +17,10 @@ app.mount('#app')
 
 // 后台预热拼音模块：非阻塞，用户首次搜索中文前加载完成（不延迟首屏）
 prewarmPinyin()
+
+// 后台预查系统状态（权限 + 开机自启）：设置页只读缓存值，消除首帧「检查中…」跳变。
+// fire-and-forget 不阻塞启动；Rust 侧同步纳秒/微秒级，用户进设置页前早已就绪。
+useSystemStore().refresh()
 
 // 全局禁用 WKWebView 原生右键菜单（应用无任何右键交互场景，
 // 输入框复制粘贴走 Cmd+C/V/A 原生快捷键；多窗口共享同一 bundle 一处生效）

@@ -288,16 +288,18 @@ src-tauri/src/
 ├── extensions.rs       # 自动生成（configure_app! + register_all 生命周期 + generate_handler! + mod 声明）
 ├── http.rs             # HTTP 客户端 + http_get 命令
 ├── runtime/            # 运行时核心（平台无关）
+│   ├── autostart.rs   # 开机自启命令薄壳（SMAppService Login Item 注册/查询）
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
 │   ├── menubar.rs      # 聚合菜单栏托盘（框架唯一图标 + 扩展贡献段注册）
 │   ├── storage.rs      # TempHandle RAII + ext_data_dir + save_png_safely
-│   ├── permission.rs   # 系统权限薄壳
+│   ├── permission.rs   # 系统权限命令薄壳（同步；screen_recording 走 preflight 不截屏）
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap；单扩展 setup 失败隔离；阻塞 I/O 扩展自管 spawn_blocking）
 │   ├── pasteboard.rs   # 框架命令薄壳（write_text / paste_text；原语在 platform/pasteboard）
 │   ├── shell_rc.rs     # .zshrc 注入约定（# voidnix <scope> marker）
 │   └── llm/            # LLM 基础设施（types / client / parser）
 └── platform/           # macOS 原生桥（零业务语义）
+    ├── autostart.rs    # SMAppService（macOS 13+）注册主 app 为系统 Login Item（objc2 调用）
     ├── panel.rs        # NSPanel 转换
     ├── skylight.rs     # Space 迁移（私有 API）
     ├── focus.rs        # 焦点管理（PREV_FRONT_PID + is_app_active + restore_captured）
@@ -335,7 +337,7 @@ src/
 │   ├── useActionPanel.ts      # Cmd+Enter 动作浮层（键盘导航 + 外点关闭）
 │   ├── useFloating.ts / useScrollPosition.ts / useTauriListener.ts / useToast.ts
 │   └── events.ts / useInputControl.ts / useShortcutConfig.ts
-├── stores/             # app / settings（仅框架级）/ update
+├── stores/             # app / settings（仅框架级）/ system（权限+开机自启预查缓存）/ update
 ├── types/              # agent（手写 LLM/Agent 类型）+ settings（SettingItem 类型）
 └── utils/
 ```
@@ -435,6 +437,7 @@ icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litia
 
 ## 约定
 
+- 开发环境基线：macOS 26（Apple Silicon，arm64），基于当前系统版本开发——优先采用现代 API，禁止为旧 macOS 写兼容分支或降级逻辑（私有 API / 私有 framework 直接用，不裹版本探测）
 - 环境：`isTauri` 判断环境（常量，非函数），非 Tauri 跳过原生调用
 - TypeScript 严格模式：`noUnusedLocals` + `noUnusedParameters`
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`

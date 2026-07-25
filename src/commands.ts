@@ -15,6 +15,11 @@ export const CMD = {
   revealInFinder: 'reveal_in_finder',
   openPrivacySettings: 'open_privacy_settings',
 
+  // —— 开机自启（SMAppService Login Item，macOS 13+）——
+  isAutostartEnabled: 'is_autostart_enabled',
+  enableAutostart: 'enable_autostart',
+  disableAutostart: 'disable_autostart',
+
   // —— 权限（框架）——
   checkAccessibilityPermission: 'check_accessibility_permission',
   requestAccessibilityPermission: 'request_accessibility_permission',

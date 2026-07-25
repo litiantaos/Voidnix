@@ -12,6 +12,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
+import { useSystemStore } from '@/stores/system'
 import { isTauri, hideWindow } from '@/utils/tauri'
 import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 
@@ -201,6 +202,9 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
             window.dispatchEvent(new CustomEvent('window-focused'))
             // 系统对话框（文件选择器 / 授权弹窗）返回时解除抑制
             appStore.suppressBlur = false
+            // 刷新系统状态（权限/自启）：覆盖用户从系统设置改完权限返回的场景。
+            // 权限变更唯一入口是系统设置，返回必经窗口获焦；Rust 侧 preflight 纳秒级，单次开销可忽略。
+            useSystemStore().refresh()
           } else if (
             Date.now() - lastShortcutTime > 200 &&
             Date.now() - appStore.lastDialogCloseTime > 300 &&
