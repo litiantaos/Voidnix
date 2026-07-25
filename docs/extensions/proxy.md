@@ -121,7 +121,7 @@ mihomo 以 root 经 **`tun::restart_root`**（`osascript do shell script "..." w
 - SIGTERM → 轮询 `kill -0` 确认 → SIGKILL 兜底 → 按 binary 路径扫杀孤儿 → 验证确死
 - **仅杀 Voidnix binary 路径的**，关代理不影响其他 app / 另一版
 
-**config.yaml** 含 **`tun`**（gvisor stack + dns-hijack + auto-route）+ **`dns`**（fake-ip）段。
+**config.yaml** 含 **`tun`**（system stack + dns-hijack + auto-route）+ **`dns`**（fake-ip）段。stack 选 system（非 gvisor）：走 macOS 原生 utun + 内核 TCP 栈，gvisor 用户态栈在连接风暴 + 批量超时失败时会泄漏 dial goroutine 进入 busy-loop（睡眠唤醒后数十 App 重连触发，CPU 卡 100% 不自愈），system 将连接管理交还内核从根上消除该泄漏。
 
 ### osascript 期间双抑制
 
@@ -174,7 +174,7 @@ root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「
 ### 恢复动作
 
 - **进程已退出**（`!root_mihomo_running`）或 controller 不可达 → **`reset_dead_state`**：重置 enabled/tun_active/monitor_alive + 清残留 pidfile + emit `proxy-enabled:false` + emit `proxy-status{kind:error}`（前端状态栏提醒 + 开启项红色提示）+ menubar 隐藏图标。**不自动提权重启**（避免突兀弹密码框），由用户手动重新开启
-- **进程在 + controller 在 但出站死** → **免提权热重载 active config**（`reload_config_yaml`，PUT /configs 让 mihomo 重建 gvisor/连接池/接口绑定，对症「重启就好」）；热重载失败 emit `proxy-status{kind:error}` 通知，下轮重试
+- **进程在 + controller 在 但出站死** → **免提权热重载 active config**（`reload_config_yaml`，PUT /configs 让 mihomo 重建 TUN 栈/连接池/接口绑定，对症「重启就好」）；热重载失败 emit `proxy-status{kind:error}` 通知，下轮重试
 
 ### 手动重连
 
@@ -280,7 +280,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 - **订阅**：`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）
 - **节点与测速**：`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_group_delay_stream`（流式测速：并发对全组每个节点调 `/proxies/{name}/delay`，测完一个即经 Channel 推送，前端增量更新；替代 mihomo 批量端点需等全组结算才一次返回的旧实现）
 - **模式切换**：`proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退；含「未变跳过」守卫 + emit 同步前端）
-- **软重启**：`proxy_reconnect`（免提权软重启：热重载 active config 重建 gvisor/连接池，出站异常时一键恢复，规避关闭→开启的 stop_root 提权）
+- **软重启**：`proxy_reconnect`（免提权软重启：热重载 active config 重建 TUN 栈/连接池，出站异常时一键恢复，规避关闭→开启的 stop_root 提权）
 - **诊断流**：`proxy_traffic_stream` / `proxy_connections_stream` / `proxy_logs_stream`（开 WS 流，Channel 推流量速率/连接快照/日志行；mihomo 未运行时静默返回不 spawn，前端显示「无记录」）
 - **诊断控制**：`proxy_stop_stream`（StreamRegistry CancellationToken 停指定流）/ `proxy_get_rules`（GET /rules 只读快照，未运行返回空）
 
