@@ -8,6 +8,10 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
 ## 使用说明
 
+### 首次安装
+
+从 Release 下载 `.dmg`，拖入 `/Applications`。首次打开若被 Gatekeeper 拦截：右键应用图标选「打开」，或前往「系统设置 → 隐私与安全性」点击「仍要打开」。应用已签名但未做 Apple 公证，此为预期行为。
+
 ### 基本
 
 - 启动后常驻后台，无 Dock 图标
@@ -103,3 +107,7 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 ### 设置
 
 启动快捷键、检查更新、退出，隐私权限入口（屏幕录制、辅助功能、完全磁盘访问），一键跳转系统设置。
+
+## License
+
+[MIT](LICENSE)
