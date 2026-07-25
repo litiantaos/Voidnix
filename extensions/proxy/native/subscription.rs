@@ -170,7 +170,11 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
     if params.tun {
         let mut tun = Mapping::new();
         tun.insert(s("enable"), Value::Bool(true));
-        tun.insert(s("stack"), s("gvisor"));
+        // stack=system：走 macOS 原生 utun + 内核 TCP 栈，不经用户态 goroutine。
+        // gvisor 栈在连接风暴 + 批量超时失败时会泄漏 dial goroutine 进入 busy-loop
+        // （唤醒后 iCloud/WPS 等数十 App 重连触发，CPU 卡 100% 不自愈）；system 栈
+        // 连接管理交还内核，从根上消除该类泄漏，性能也更好。
+        tun.insert(s("stack"), s("system"));
         tun.insert(s("dns-hijack"), Value::Sequence(vec![s("any:53")]));
         tun.insert(s("auto-route"), Value::Bool(true));
         tun.insert(s("auto-detect-interface"), Value::Bool(true));
@@ -396,7 +400,7 @@ proxy-groups:
         p.tun = true;
         let out = merge_yaml(&[], &p).unwrap();
         assert!(out.contains("tun:"));
-        assert!(out.contains("stack: gvisor"));
+        assert!(out.contains("stack: system"));
         assert!(out.contains("auto-route: true"));
         assert!(out.contains("dns:"));
         assert!(out.contains("fake-ip"));
