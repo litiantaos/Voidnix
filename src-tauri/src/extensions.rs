@@ -8,6 +8,9 @@ macro_rules! configure_app {
     ($builder:expr) => {
         $builder.invoke_handler(tauri::generate_handler![
             crate::http::http_get,
+            crate::runtime::autostart::disable_autostart,
+            crate::runtime::autostart::enable_autostart,
+            crate::runtime::autostart::is_autostart_enabled,
             crate::runtime::pasteboard::pasteboard_paste_text,
             crate::runtime::pasteboard::pasteboard_write_text,
             crate::runtime::permission::check_accessibility_permission,

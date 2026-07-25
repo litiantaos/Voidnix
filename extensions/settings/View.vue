@@ -7,7 +7,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { getVersion } from '@tauri-apps/api/app'
@@ -15,6 +15,7 @@ import { open } from '@tauri-apps/plugin-shell'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
+import { useSystemStore } from '@/stores/system'
 import { isTauri } from '@/utils/tauri'
 import { scoreFields } from '@/utils/fuzzy'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
@@ -24,24 +25,27 @@ import type { SettingItem } from '@/types/settings'
 const settings = useSettingsStore()
 const appStore = useAppStore()
 const updateStore = useUpdateStore()
+const systemStore = useSystemStore()
 
 const query = computed(() => appStore.searchQuery.toLowerCase().trim())
 const appVersion = ref('')
 
-const permScreenRecording = ref<boolean | null>(null)
-const permAccessibility = ref<boolean | null>(null)
-const permFullDiskAccess = ref<boolean | null>(null)
+// 权限/自启状态来自 systemStore（启动预查缓存）：设置页零 IPC、零首帧跳变。
+// 刷新仅限 handleOpenPrivacy（用户从系统设置返回）——权限变更的唯一入口。
+const permScreenRecording = computed(() => systemStore.permScreenRecording)
+const permAccessibility = computed(() => systemStore.permAccessibility)
+const permFullDiskAccess = computed(() => systemStore.permFullDiskAccess)
 
-async function refreshPermissions() {
+const handleAutostartToggle = async (val: boolean) => {
   if (!isTauri) return
   try {
-    permScreenRecording.value = await invoke<boolean>(CMD.checkScreenRecordingPermission)
-    permAccessibility.value = await invoke<boolean>(CMD.checkAccessibilityPermission)
-    permFullDiskAccess.value = await invoke<boolean>(CMD.checkFullDiskAccessPermission)
-  } catch {}
+    await invoke<void>(val ? CMD.enableAutostart : CMD.disableAutostart)
+    systemStore.autostartEnabled = val
+  } catch (e) {
+    // 透传 macOS NSError 描述：dev 裸二进制无 bundle id / 系统拒绝等真实原因
+    await appStore.showStatus(`开机自启：${e ?? '操作失败'}`, { kind: 'error' })
+  }
 }
-
-onMounted(refreshPermissions)
 
 if (isTauri) {
   getVersion()
@@ -107,14 +111,14 @@ function permStatus(granted: boolean | null): string {
 
 async function handleRequestAccessibility() {
   if (!isTauri) return
-  const granted = await invoke<boolean>(CMD.requestAccessibilityPermission)
-  permAccessibility.value = granted
+  systemStore.permAccessibility = await invoke<boolean>(CMD.requestAccessibilityPermission)
 }
 
 async function handleOpenPrivacy(kind: string) {
   if (!isTauri) return
+  // 打开系统设置面板；权限状态刷新由 useAppLifecycle 的窗口获焦钩子统一处理
+  // （用户改完权限返回时窗口重获焦点触发 refresh，比固定延时更可靠）
   await invoke(CMD.openPrivacySettings, { kind })
-  setTimeout(refreshPermissions, 1000)
 }
 
 const allSettingsItems = computed<SettingItem[]>(() => {
@@ -128,6 +132,16 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     group: '应用',
     value: settings.globalShortcut,
     update: handleGlobalShortcutChange,
+  })
+
+  items.push({
+    id: 'autostart',
+    title: '开机自启',
+    type: 'toggle',
+    icon: 'i-ri-shut-down-line',
+    group: '应用',
+    value: systemStore.autostartEnabled,
+    update: handleAutostartToggle,
   })
 
   const checkLabel = updateStore.checking

@@ -52,6 +52,7 @@ fn main() {
     if target_os == "macos" {
         build_screenshot_overlay(&out_dir);
         link_skylight();
+        link_service_management();
     }
 
     tauri_build::build()
@@ -99,4 +100,12 @@ fn build_screenshot_overlay(out_dir: &str) {
 fn link_skylight() {
     println!("cargo:rustc-link-search=framework=/System/Library/PrivateFrameworks");
     println!("cargo:rustc-link-lib=framework=SkyLight");
+}
+
+/// 链接 ServiceManagement.framework（SMAppService：注册主 app 为系统 Login Item，
+/// 开机自启）。必须经 build.rs 显式链接——若仅在空 extern 块上挂 `#[link]`，
+/// 链接器无符号需解析会忽略指令，framework 不进 LC_LOAD_DYLIB，运行时拿到的
+/// SMAppService 类缺方法实现（`+[SMAppService mainApp]` 触发 unrecognized selector）。
+fn link_service_management() {
+    println!("cargo:rustc-link-lib=framework=ServiceManagement");
 }

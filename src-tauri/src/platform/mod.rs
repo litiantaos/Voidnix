@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+pub mod autostart;
 pub mod click_monitor;
 #[cfg(target_os = "macos")]
 pub mod focus;

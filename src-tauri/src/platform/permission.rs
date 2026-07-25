@@ -1,8 +1,11 @@
-/// 屏幕录制权限：尝试调用 CGDisplayCreateImage，成功则返回 true。
+/// 屏幕录制权限：CGPreflightScreenCaptureAccess 只查 TCC 状态，不触发截屏、不分配位图（纳秒级）。
+/// 不用 CGDisplayCreateImage——那是真实 GPU 截屏（WindowServer 编码 framebuffer），阻塞数十 ms。
 #[cfg(target_os = "macos")]
 pub fn check_screen_recording() -> bool {
-    use core_graphics::display::CGDisplay;
-    CGDisplay::main().image().is_some()
+    extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+    }
+    unsafe { CGPreflightScreenCaptureAccess() }
 }
 
 #[cfg(not(target_os = "macos"))]
