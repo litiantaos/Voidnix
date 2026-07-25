@@ -19,5 +19,10 @@ export function useScrollPosition(scrollTop: Ref<number>) {
     })
   }
 
-  return { save, restore, reset }
+  /// 删除某界面的记录：使后续 restore 归顶（区别于 reset 仅写当前 scrollTop）
+  function clear(key: string) {
+    saved.delete(key)
+  }
+
+  return { save, restore, reset, clear }
 }

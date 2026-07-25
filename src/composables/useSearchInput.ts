@@ -13,7 +13,6 @@ interface SearchInputOptions {
   results: Ref<SearchResult[]>
   selectedIndex: Ref<number>
   activeExtension: ComputedRef<Extension | null>
-  restore: (key: string) => void
   reset: () => void
 }
 
@@ -22,7 +21,7 @@ interface SearchInputOptions {
 /// 搜索状态（results/selectedIndex）由调用方持有并传入，便于与键盘导航共享。
 export function useSearchInput(opts: SearchInputOptions) {
   const appStore = useAppStore()
-  const { searchInput, results, selectedIndex, activeExtension, restore, reset } = opts
+  const { searchInput, results, selectedIndex, activeExtension, reset } = opts
 
   let searchTimeout: ReturnType<typeof setTimeout> | null = null
   let currentSearchId = 0
@@ -48,22 +47,26 @@ export function useSearchInput(opts: SearchInputOptions) {
     clearSearch()
   }
 
-  /** 退出扩展 → 回到入口前状态：query 决定返回目标（/ → 工具列表，其余 → 主界面）。 */
+  /** 退出扩展 → 回到入口前状态：query 决定返回目标（/ → 工具列表，其余 → 主界面）。
+   *  滚动位置由 setActiveExtension(null) 触发 scrollKey watch 自动 save/restore，此处不再手动处理。
+   *  / 分支先 clearSearch(query) 再 setActiveExtension(null)：让 scrollKey 单调 ext→tools 变化，
+   *  避免 setActiveExtension 先行产生 ext→home 中转态（虽 Vue 批处理合并 watch 不致误触发 clear，
+   *  但线性转换更稳健、不依赖 flush 时序细节）。setActiveExtension 退出分支不读 searchQuery，顺序安全。 */
   function exitExtension() {
     const query = appStore.entryQuery
     searchEngine.abort()
-    appStore.setActiveExtension(null)
     if (query.startsWith('/')) {
       clearSearch(query)
+      appStore.setActiveExtension(null)
       results.value = buildToolListResults(query)
       selectedIndex.value = savedToolIndex
       if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
-      restore('tools')
       searchInput.value?.focus()
       searchInput.value?.select()
     } else {
+      appStore.setActiveExtension(null)
       clearSearch()
-      loadDefaultResults()
+      loadDefaultResults(true)
     }
   }
 
@@ -72,7 +75,7 @@ export function useSearchInput(opts: SearchInputOptions) {
     searchEngine.abort()
     appStore.setActiveExtension(null)
     clearSearch()
-    loadDefaultResults()
+    loadDefaultResults(true)
   }
 
   useTauriListener('app-cache-updated', () => {
@@ -129,10 +132,13 @@ export function useSearchInput(opts: SearchInputOptions) {
       .map(({ ext, score }) => extToEntryResult(ext, score))
   }
 
-  async function loadDefaultResults() {
+  async function loadDefaultResults(resetSelection = false) {
     if (!isTauri) return
     const searchId = ++currentSearchId
     isLoading.value = true
+    // 转移入口（退出扩展/回主页/清空输入）显式归首项；后台刷新（图标就绪/缓存变更/窗口获焦）
+    // 保留用户已有导航，由 clampSelected 在结果到达时兜底越界。
+    if (resetSelection) selectedIndex.value = 0
     try {
       const defaultResults = await searchEngine.search('', (partial) => {
         if (searchId === currentSearchId) {
@@ -270,7 +276,7 @@ export function useSearchInput(opts: SearchInputOptions) {
         }
       }, 0)
     } else {
-      await loadDefaultResults()
+      await loadDefaultResults(true)
     }
   }
 
@@ -282,7 +288,7 @@ export function useSearchInput(opts: SearchInputOptions) {
       if (appStore.activeExtId) {
         refreshExtension()
       } else {
-        loadDefaultResults()
+        loadDefaultResults(true)
       }
     } else if (appStore.activeExtId) {
       exitExtension()
@@ -301,7 +307,7 @@ export function useSearchInput(opts: SearchInputOptions) {
 
   onMounted(async () => {
     if (!activeExtension.value?.disableSearchInput) searchInput.value?.focus()
-    await loadDefaultResults()
+    await loadDefaultResults(true)
     window.addEventListener('window-focused', focusHandler)
   })
 
