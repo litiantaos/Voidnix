@@ -17,22 +17,42 @@ for i in $(seq 0 $((DAYS - 1))); do
   LOG="$LOG_DIR/monitor-$DAY.log"
   [ -f "$LOG" ] || continue
 
-  # 按天聚合统计
+  # 按天聚合统计（主进程 + 子进程）
   STATS=$(grep -v '^#' "$LOG" | awk '
     NF < 4 { next }
-    NR == 1 { first_rss = $2; first_ts = $1 }
+    # 子进程行：@ ext/bin  rss  cpu  vsz
+    $1 == "@" {
+      key=$2; rss=$3 + 0; cpu=$4 + 0
+      c_cnt[key]++
+      if (c_min[key] == "" || rss < c_min[key]) c_min[key]=rss
+      if (rss > c_max[key]) c_max[key]=rss
+      if (cpu > c_cpu[key]) c_cpu[key]=cpu
+      next
+    }
+    # 主进程行
     {
-      rss = $2; cpu = $3; thrd = $4; data = $6
+      rss=$2; cpu=$3; thrd=$4; data=$6
+      if (!first_done) { first_rss=rss; first_done=1 }
       sum_rss += rss; sum_cpu += cpu; n++
-      if (rss > max_rss) { max_rss = rss; max_ts = $1 }
-      if (min_rss == "" || rss < min_rss) min_rss = rss
-      if (cpu > max_cpu) max_cpu = cpu
-      last_rss = rss; last_ts = $1
+      if (rss > max_rss) max_rss=rss
+      if (min_rss == "" || rss < min_rss) min_rss=rss
+      if (cpu > max_cpu) max_cpu=cpu
+      last_rss=rss
     }
     END {
       if (n == 0) exit
       printf "  samples=%-4d  RSS[%.1f ~ %.1f ~ %.1f]  drift=%+.1f  cpu_max=%.1f%%  threads=%d  data=%sMB",
         n, min_rss, sum_rss/n, max_rss, last_rss - first_rss, max_cpu, thrd, data
+      if (length(c_cnt) > 0) {
+        nk=0
+        for (k in c_cnt) { nk++; keys[nk]=k }
+        for (i=1; i<=nk; i++) for (j=i+1; j<=nk; j++) if (keys[i] > keys[j]) { t=keys[i]; keys[i]=keys[j]; keys[j]=t }
+        printf "\n  子进程："
+        for (i=1; i<=nk; i++) {
+          k=keys[i]
+          printf "\n    %-32s n=%-4d rss[%.1f ~ %.1f]  cpu_max=%.1f%%", k, c_cnt[k], c_min[k], c_max[k], c_cpu[k]
+        }
+      }
     }')
 
   [ -z "$STATS" ] && continue
@@ -50,5 +70,5 @@ TODAY=$(date '+%Y-%m-%d')
 LOG="$LOG_DIR/monitor-$TODAY.log"
 if [ -f "$LOG" ]; then
   echo "=== 今日最近 20 个采样点 ==="
-  grep -v '^#' "$LOG" | tail -20 | awk '{printf "  %s  RSS=%6sMB  CPU=%5s%%  THR=%s  VSZ=%sMB  DATA=%sMB\n", $1, $2, $3, $4, $5, $6}'
+  grep -v '^#' "$LOG" | grep -v '^@' | tail -20 | awk '{printf "  %s  RSS=%6sMB  CPU=%5s%%  THR=%s  VSZ=%sMB  DATA=%sMB\n", $1, $2, $3, $4, $5, $6}'
 fi
