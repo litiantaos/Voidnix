@@ -76,17 +76,17 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 ## Prod 资源监控（长期采样）
 
-LaunchAgent 常驻方案，监控 release 构建的 RSS/CPU/线程/FD/数据目录，用于长期跟踪内存与占用趋势、定位泄漏。**仅监控 prod（release）进程**，dev/debug 不采样。
+LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 RSS/CPU/线程/数据目录，用于长期跟踪内存与占用趋势、定位泄漏。**仅监控 prod（release）进程**，dev/debug 不采样。
 
 **三个脚本**（`scripts/`）：
 
-- `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时单次 `ps` 采样追加到当日日志。日志自动保留 30 天。
+- `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时单次 `ps` 采主进程 + 一次 `ps -A` 全表扫描识别扩展子进程（路径匹配 `com.litiantao.voidnix/extensions/<id>/`，按扩展分组；不依赖 PPID 链——root 子进程如 mihomo 已 reparent 到 launchd）。日志自动保留 30 天。
 - `voidnix-monitor-install.sh install|uninstall` — 安装/卸载 LaunchAgent（`com.litiantao.voidnix.monitor`，登录后自动生效）
-- `voidnix-analyze.sh [天数]` — 分析器：按天聚合 RSS 区间/漂移/CPU 峰值/线程数/数据目录，漂移 >20MB 自动告警
+- `voidnix-analyze.sh [天数]` — 分析器：按天聚合主进程 RSS 区间/漂移/CPU 峰值/线程数/数据目录（漂移 >20MB 自动告警），并按扩展聚合子进程采样数/RSS 区间/CPU 峰值
 
-**日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`
+**日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`，`@ ext/bin rss cpu vsz` 子进程行紧随主进程行（`time rss cpu threads vsz data`），无子进程则无 `@` 行
 
-**状态**：LaunchAgent 已安装（`launchctl list | grep voidnix.monitor`），日志尚无数据（等待 release 部署后积累）。积累数据后执行 `bash scripts/voidnix-analyze.sh` 分析趋势。
+**状态**：LaunchAgent 已安装运行，主进程已有 2 天数据；子进程采样维度已上线。曾暴露 proxy/mihomo CPU 持续 100% 问题——根因为 gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）。执行 `bash scripts/voidnix-analyze.sh` 分析趋势。
 
 ## 开发扩展
 
