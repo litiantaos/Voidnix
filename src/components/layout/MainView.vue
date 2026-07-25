@@ -180,7 +180,7 @@ const isTagHovered = ref(false)
 
 const scrollContainer = computed(() => contentViewRef.value?.scrollContainer)
 const { y: scrollTop } = useScroll(scrollContainer)
-const { save, restore, reset } = useScrollPosition(scrollTop)
+const { save, restore, reset, clear } = useScrollPosition(scrollTop)
 
 const activeExtension = computed(() => {
   const id = appStore.activeExtId
@@ -220,7 +220,6 @@ const {
   results,
   selectedIndex,
   activeExtension,
-  restore,
   reset,
 })
 const { handleExecute } = useResultNavigation({
@@ -240,32 +239,48 @@ useExtensionHeight({
   contentRef: computed(() => contentViewRef.value?.contentRef),
 })
 
-// 进入扩展子视图时释放搜索栏焦点，让键盘事件能到达子视图内容
-// 注意：必须先把焦点转移到容器，否则窗口会因失焦而自动隐藏
-// 滚动位置：进入 subview 时保存当前（扩展列表）滚动 + subview 从顶开始；
-//          返回时恢复扩展列表滚动（与 tools 列表 save/restore 同构）
+// 滚动位置：仅「工具列表 → 扩展 → 返回工具列表」保留，其余进入一律归顶。
+// - tools → ext：save(tools)（用户深入扩展，预期返回原位继续浏览）
+// - ext → tools：restore 命中记录恢复
+// - home → tools：clear 后 restore，归顶（home 期间记录无效）
+// 关窗走 alpha=0 不改 store，scrollKey 不变、不触发 watch → 记录与滚动位续读。
+// save 读 watch oldKey（切换前稳定值），clearSearch 改变 searchQuery 不影响判断。
+const scrollKey = computed(() => {
+  const ext = activeExtension.value
+  if (!ext) {
+    const q = appStore.searchQuery
+    return q.startsWith('/') && !q.startsWith('//') ? 'tools' : 'home'
+  }
+  const sub = appStore.activeSubview
+  return sub ? `ext:${ext.meta.id}:${sub}` : `ext:${ext.meta.id}`
+})
+
+watch(scrollKey, (newKey, oldKey) => {
+  if (oldKey === 'tools' && newKey.startsWith('ext:')) {
+    save(oldKey)
+  } else if (newKey === 'tools' && !oldKey.startsWith('ext:')) {
+    clear(newKey)
+  }
+  restore(newKey)
+})
+
+// 焦点管理：进入 subview 聚焦滚动容器（防失焦藏窗），离开回搜索框
 watch(
   () => appStore.activeSubview,
   (val) => {
     if (val) {
-      save('subview')
-      reset()
       contentViewRef.value?.scrollContainer?.focus()
     } else {
-      restore('subview')
       nextTick(() => searchInput.value?.focus())
     }
   },
 )
 
-// 进入扩展时重置滚动位置，覆盖快捷键、open-extension 事件等所有进入路径
-// 从主列表进入时保存其滚动位置，exitExtension 调用 restore('tools') 恢复
+// 焦点管理：进入 disableSearchInput 扩展 blur 残留光标，离开扩展回搜索框
 watch(
   () => activeExtension.value?.meta.id,
   (newId, oldId) => {
     if (newId && newId !== oldId) {
-      if (!oldId) save('tools')
-      reset()
       // disableSearchInput 扩展用 readonly（始终可聚焦）而非 disabled，
       // 离开时 focus 不受 disabled→enabled 同帧缓存影响；
       // 进入时主动 blur 避免残留光标（与原 disabled 行为一致）
