@@ -61,14 +61,13 @@ export default defineConfig({
       'border border-solid border-[var(--soft-surface-border)] bg-[var(--soft-surface-fill)] shadow-none backdrop-blur-[40px] backdrop-saturate-135',
     // 抬升卡：soft-surface + radius-panel；阴影见 theme .soft-card
     'soft-card': 'soft-surface radius-panel',
+    // 窗壳：纯白磨砂在 theme.css .mica-tint / .mica-shell
     'soft-chip': 'select-none',
     'ui-active': 'border-0 shadow-none',
 
-    // 窗壳：纯白磨砂在 theme.css .mica-tint / .mica-shell
     'mica-tint': 'shadow-none',
-    'mica-ring':
-      'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.75),inset_0_0_0_1px_rgba(255,255,255,0.4)]',
-    'mica-shell': 'mica-ring radius-window overflow-hidden',
+    // box-shadow 由 theme.css .mica-shell 管（var(--mica-ring-shadow)，浅/深双轨）
+    'mica-shell': 'radius-window overflow-hidden',
     'mica-panel': 'soft-surface radius-panel select-none',
     'mica-bar': 'soft-surface radius-panel',
 

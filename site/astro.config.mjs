@@ -5,4 +5,5 @@ export default defineConfig({
   output: 'static',
   site: 'https://voidnix.litiantao.com',
   build: { inlineStylesheets: 'auto' },
+  devToolbar: { enabled: false },
 })

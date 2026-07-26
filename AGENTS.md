@@ -138,7 +138,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 `LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。
 
-**样式**：`platform/window.rs::apply_main_window_style`（setup 内一次性）= `apply_mica_material(ns, 16)` + `setHasShadow(true)` + `convert_to_panel`。即 Mica + contentView 圆角 16（`radius-window`）+ 原生阴影 + 冷雾 tint（见 [设计系统](docs/design.md)）。snap-panel 经 `apply_mica_material(ns, 10)` 对齐 `radius-panel`。
+**样式**：`platform/window.rs::apply_main_window_style`（setup 内一次性）= `apply_mica_material(ns, 16)` + `setHasShadow(true)` + `convert_to_panel`。即 Mica + contentView 圆角 16（`radius-window`）+ 原生阴影 + 冷雾 tint（见 [设计系统](docs/design.md)）。snap-panel 经 `apply_mica_material(ns, 10)` 对齐 `radius-panel`。appearance 跟随主题（`apply_window_appearance`：auto=None 跟随系统并驱动 WKWebView prefers-color-scheme，light/dark 强制覆盖）。**跨窗口**：`set_window_appearance` 是全局副作用命令（一次应用所有窗口），仅由 main 的 `theme.ts` 驱动；动态窗口（screenshot/pin/snap-panel）创建时调 `apply_cached_appearance` 读缓存 mode 应用，避免子窗口用陈旧 'auto' 冲掉 main 的强制模式。
 
 **panel 转换**：`platform/panel::convert_to_panel` 转 `NonactivatePanel`（点击/makeKey 不自动激活）。
 
@@ -309,7 +309,7 @@ src-tauri/src/
     ├── click_monitor.rs
     ├── frontmost_watcher.rs  # NSWorkspace 激活观察器（系统弹窗后恢复焦点）
     ├── permission.rs
-    ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel）
+    ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel + appearance 缓存）
     └── path_guard.rs   # 统一路径校验
 ```
 
@@ -325,7 +325,8 @@ src/
 │   ├── storage.ts      # defineConfig（reactive + watch 自动持久化 + race 保护 + 类型守卫 + 跨窗口同步）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
 │   ├── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
-│   └── ai-providers.ts        # 统一 AI 提供商/Key 中枢（agent/translate 消费）
+│   ├── ai-providers.ts        # 统一 AI 提供商/Key 中枢（agent/translate 消费）
+│   └── theme.ts               # 主题运行时（appearance 持久化 + 系统外观跟随 + 原生窗口同步）
 ├── components/
 │   ├── ui/             # 原子组件（只用这些，禁止手写底层标签）
 │   └── layout/         # MainView / ContentView / ResultItem（kind 分支内聚）/ ResultIcon / ResultActionPanel
@@ -346,7 +347,7 @@ src/
 
 ## UI 规范
 
-仅浅色。完整约定见 [docs/design.md](docs/design.md)；数值真相 `theme.css`，组合 `uno.config.ts`。**视觉已定型，改实现/文档不得无意改观感。**
+浅色 / 深色双轨（默认跟随系统，设置中可切自动 / 浅色 / 深色）。完整约定见 [docs/design.md](docs/design.md)；数值真相 `theme.css`（`:root` 浅色默认 + `:root[data-theme="dark"]` 深色覆盖），组合 `uno.config.ts`。**视觉已定型，改实现/文档不得无意改观感。**
 
 ### 分层
 
@@ -416,7 +417,7 @@ src/
 
 ```
 ~/Library/Application Support/com.litiantao.voidnix/
-├── config/settings.json              # 框架级配置（全局快捷键，defineConfig 扁平 schema）
+├── config/settings.json              # 框架级配置（全局快捷键 + 外观模式，defineConfig 扁平 schema）
 ├── config/ai-providers.json          # 统一 AI 提供商/Key（agent/translate/外部工具共用）
 └── extensions/
     ├── clipboard/{clipboard.db, clipboard.db-wal, config.json}   # SQLite WAL（写入达 200 触发 wal_checkpoint）+ 配置

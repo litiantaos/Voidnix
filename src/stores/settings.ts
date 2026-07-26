@@ -2,9 +2,13 @@ import { defineStore } from 'pinia'
 import { computed } from 'vue'
 import { defineConfig } from '@/runtime/storage'
 
+export type Appearance = 'auto' | 'light' | 'dark'
+
 interface SettingsSchema {
   globalShortcut: string
   shortcutOverrides: Record<string, string>
+  /** 外观模式：auto 跟随系统 / light / dark（默认 auto） */
+  appearance: Appearance
 }
 
 /// 框架级配置 store：仅管理全局快捷键。
@@ -14,6 +18,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const config = defineConfig<SettingsSchema>('config/settings', {
     globalShortcut: 'Alt+Space',
     shortcutOverrides: {},
+    appearance: 'auto',
   })
 
   // ─── 字段（可写 computed：保持 store API 兼容） ───────────────
@@ -28,6 +33,12 @@ export const useSettingsStore = defineStore('settings', () => {
     get: () => config.shortcutOverrides,
     set: (v: Record<string, string>) => {
       config.shortcutOverrides = v
+    },
+  })
+  const appearance = computed({
+    get: () => config.appearance,
+    set: (v: Appearance) => {
+      config.appearance = v
     },
   })
 
@@ -48,6 +59,7 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     globalShortcut,
     shortcutOverrides,
+    appearance,
     setGlobalShortcut,
     getShortcutOverride,
     setShortcutOverride,

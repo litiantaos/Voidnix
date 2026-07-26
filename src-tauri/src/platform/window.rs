@@ -40,6 +40,11 @@ impl PlacementVis {
 
 static PLACEMENT_VIS: Mutex<Option<PlacementVis>> = Mutex::new(None);
 
+/// 最近一次 set_window_appearance 锁定的 mode（"light"/"dark"/"auto"）。
+/// None = 未设置（首次启动，等价跟随系统）。动态窗口创建时 apply_cached_appearance
+/// 据此应用原生 appearance，使强制模式在 screenshot/pin/snap-panel 子窗口也生效。
+static WINDOW_APPEARANCE: Mutex<Option<String>> = Mutex::new(None);
+
 fn store_placement(vis: NSRect) {
     *lock_or_recover(&PLACEMENT_VIS) = Some(PlacementVis::from_ns(vis));
 }
@@ -324,8 +329,8 @@ pub fn animate_panel(window: &tauri::WebviewWindow, target: PanelAnimTarget) {
 
 /// Mica 材质底：NSVisualEffectView（material=HeaderView，blendingMode=BehindWindow）
 /// 作为 contentView 最底层子视图（WKWebView 之下），系统 GPU 合成强实时高斯模糊，
-/// 再叠前端 `mica-tint` 白染，得到白色磨砂而非「纯模糊透壁纸」。
-/// 强制 aqua appearance 锁浅色（项目仅浅色色阶）。
+/// 再叠前端 `mica-tint` 染色，得到磨砂玻璃而非「纯模糊透壁纸」。
+/// appearance 跟随主题（auto 跟随系统 / light·dark 强制），见 apply_window_appearance。
 ///
 /// 同时配置：窗口本体透明（setOpaque:NO + clearColor）+ contentView 圆角裁剪（CALayer
 /// cornerRadius + masksToBounds，含 NSVisualEffectView）+ 子视图 layer 非透明（Tauri
@@ -340,11 +345,9 @@ pub fn animate_panel(window: &tauri::WebviewWindow, target: PanelAnimTarget) {
 pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
     use objc2::{ClassType, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
-        NSAppearance, NSAppearanceCustomization, NSAutoresizingMaskOptions, NSColor,
-        NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
-        NSVisualEffectView, NSWindowOrderingMode,
+        NSAutoresizingMaskOptions, NSColor, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
+        NSVisualEffectState, NSVisualEffectView, NSWindowOrderingMode,
     };
-    use objc2_foundation::ns_string;
 
     ns_window.setOpaque(false);
     ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
@@ -389,13 +392,51 @@ pub fn apply_mica_material(ns_window: &NSWindow, corner_radius: f64) {
     effect.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
     effect.setMaterial(NSVisualEffectMaterial::HeaderView);
     effect.setState(NSVisualEffectState::Active);
-    if let Some(aqua) = NSAppearance::appearanceNamed(ns_string!("NSAppearanceNameAqua")) {
-        effect.setAppearance(Some(&aqua));
-    }
+    // appearance 不在此锁：由 apply_window_appearance 统一设置 NSWindow appearance，
+    // effect view 与 WKWebView 均继承之（auto 跟随系统 / light·dark 强制）。
     effect.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
     );
     content_view.addSubview_positioned_relativeTo(&effect, NSWindowOrderingMode::Below, None);
+}
+
+/// 设置窗口外观（appearance）：`light` / `dark` 强制，`auto` / 其它 = None（跟随系统）。
+///
+/// NSWindow.setAppearance 同时作用于 NSVisualEffectView 材质与 WKWebView：
+/// 后者的 `prefers-color-scheme` media query 随之改变。因此 auto 模式必须传 None，
+/// 使其反映系统真实外观——前端 theme.ts 据此 matchMedia 决定 DOM data-theme；
+/// light/dark 则强制覆盖（此时前端不再读 matchMedia，直接按选择值设 DOM）。
+pub fn apply_window_appearance(window: &tauri::WebviewWindow, mode: &str) {
+    use objc2_app_kit::{NSAppearance, NSAppearanceCustomization};
+    use objc2_foundation::ns_string;
+
+    // 缓存 mode：动态窗口创建时 apply_cached_appearance 据此应用，
+    // 使强制模式在子窗口（screenshot/pin/snap-panel）也生效。
+    *lock_or_recover(&WINDOW_APPEARANCE) = Some(mode.to_string());
+
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    let raw = ptr.cast::<NSWindow>();
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
+        return;
+    };
+    let appearance = match mode {
+        "light" => NSAppearance::appearanceNamed(ns_string!("NSAppearanceNameAqua")),
+        "dark" => NSAppearance::appearanceNamed(ns_string!("NSAppearanceNameDarkAqua")),
+        // auto / 未知：None = 跟随系统
+        _ => None,
+    };
+    ns_window.setAppearance(appearance.as_deref());
+}
+
+/// 动态窗口创建时调用：按最近一次 set_window_appearance 缓存的 mode 应用原生 appearance。
+/// 未缓存（首次启动）= 不设置（等价跟随系统）。配合 theme.ts 仅 main 驱动全局命令，
+/// 子窗口经此路径获得与 main 一致的强制 light/dark（含 WKWebView prefers-color-scheme）。
+pub fn apply_cached_appearance(window: &tauri::WebviewWindow) {
+    if let Some(mode) = lock_or_recover(&WINDOW_APPEARANCE).clone() {
+        apply_window_appearance(window, &mode);
+    }
 }
 
 /// 透明面板强制接管鼠标：禁止 ignore + 收 mouseMoved + 全窗 event shape（不依赖 alpha）。

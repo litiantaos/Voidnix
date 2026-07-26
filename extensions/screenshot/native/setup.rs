@@ -23,6 +23,8 @@ pub fn configure_overlay_window(app: &AppHandle) {
         return;
     };
     super::install_background_layer(&window);
+    // 强制主题在截图窗口也生效（读 set_window_appearance 缓存）
+    crate::platform::window::apply_cached_appearance(&window);
 
     let Ok(raw) = window.ns_window() else {
         return;

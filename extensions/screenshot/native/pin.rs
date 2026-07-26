@@ -153,6 +153,9 @@ fn create_pin_webview(app: &tauri::AppHandle, spec: &PinWebviewSpec) -> Result<(
         }
     });
 
+    // 强制主题在贴图窗口也生效（读 set_window_appearance 缓存）
+    crate::platform::window::apply_cached_appearance(&window);
+
     if let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) {
         // SAFETY: ns 经 as_ref Some 分支非空校验；setHidesOnDeactivate:/setLevel:/
         // setCollectionBehavior/setContentAspectRatio/contentView/layer/setCornerRadius:/

@@ -140,7 +140,7 @@ const VERSION = '0.1.0'
     height: 48%;
     left: -6%;
     top: -10%;
-    background: rgb(215 230 255 / 0.55);
+    background: var(--mica-fog-a);
     animation: fog-a 24s var(--ease-out) infinite;
   }
   .fog-b {
@@ -148,7 +148,7 @@ const VERSION = '0.1.0'
     height: 44%;
     right: -8%;
     bottom: -12%;
-    background: rgb(205 218 245 / 0.42);
+    background: var(--mica-fog-b);
     animation: fog-b 28s var(--ease-out) infinite;
   }
   @keyframes fog-a {
@@ -259,7 +259,7 @@ const VERSION = '0.1.0'
     gap: 10px;
     padding: 12px 14px;
     border-radius: var(--radius-panel);
-    background: rgb(255 255 255 / 0.7);
+    background: var(--mock-input-fill);
     border: 1px solid var(--soft-surface-border);
     backdrop-filter: blur(20px);
     margin-bottom: 8px;
@@ -300,7 +300,7 @@ const VERSION = '0.1.0'
     transition: background-color var(--duration-fast) var(--ease-out);
   }
   .row.is-active {
-    background: rgb(var(--cool) / 0.11);
+    background: var(--ui-active-fill);
   }
   .row-icon {
     width: 28px;
@@ -318,10 +318,10 @@ const VERSION = '0.1.0'
     color: #fff;
   }
   .row-icon.folder {
-    color: #5a8def;
+    color: var(--color-folder);
   }
   .row-icon.file {
-    color: #7aa2c8;
+    color: var(--color-file);
   }
   .row-main {
     display: flex;

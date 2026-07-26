@@ -50,6 +50,8 @@ fn configure_snap_panel(app: &tauri::AppHandle) {
     };
     // Mica 材质底（contentView 圆角 10 + NSVisualEffectView + 子视图非透明 + 窗口本体透明）
     crate::platform::window::apply_mica_material(ns_window, 10.0);
+    // 强制主题在 snap-panel 也生效（读 set_window_appearance 缓存）
+    crate::platform::window::apply_cached_appearance(&window);
     // SAFETY: raw 来自 window.ns_window()（上方 Ok 分支保证句柄有效）；ns_window 经
     // as_ref Some 分支二次非空校验。所有 msg_send 均为 NSWindow 标准选择子
     // （setLevel:/setCollectionBehavior/setAlphaValue/orderFrontRegardless/setHasShadow:

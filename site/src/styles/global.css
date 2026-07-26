@@ -130,7 +130,7 @@ img {
   padding: 6px 12px;
   border-radius: var(--radius-ctrl);
   border: 1px solid var(--soft-chip-border);
-  background: #fff;
+  background: var(--soft-chip-fill);
   font-size: 13px;
   color: var(--color-text-secondary);
   font-family: var(--font-mono);
