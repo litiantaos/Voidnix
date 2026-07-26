@@ -90,7 +90,7 @@ const handleCheckUpdate = async () => {
     updateStore.showDialog()
   } else if (!updateStore.error) {
     await appStore.showConfirm({
-      title: '已是最新版本',
+      title: '检查更新',
       message: `当前版本 v${appVersion.value} 已是最新版本。`,
       showCancel: false,
       okLabel: '好的',
@@ -165,7 +165,7 @@ const allSettingsItems = computed<SettingItem[]>(() => {
   const checkLabel = updateStore.checking
     ? '检查中…'
     : updateStore.downloaded
-      ? '有新版本，点击安装'
+      ? '安装新版本'
       : '检查更新'
   let versionLabel = appVersion.value ? `当前版本：${appVersion.value}` : ''
   if (updateStore.downloaded && updateStore.info) {
