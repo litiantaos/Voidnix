@@ -182,10 +182,15 @@ pub fn poll_clipboard(snap: pasteboard::PasteboardSnapshot) -> String {
                     stable = Instant::now();
                 }
             }
+            // 判断必须在 restore 之前：restore 会把剪贴板恢复到快照状态，
+            // 此后再检测文件类型必然为 false。
+            // 剪贴板含文件 URL 时，public.utf8-plain-text 携带的是文件名副作用，
+            // 不属于选中文本 → 视为空。
+            let is_file = pasteboard::has_file_url();
             let text = pasteboard::read_text().unwrap_or_default();
             let text = text.trim().to_string();
             pasteboard::restore(&snap);
-            return text;
+            return if is_file { String::new() } else { text };
         }
     }
     pasteboard::restore(&snap);
