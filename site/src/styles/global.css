@@ -163,7 +163,6 @@ img {
 }
 .btn-primary:hover {
   background: var(--color-accent-deep);
-  transform: translateY(-1px);
 }
 .btn-primary:active {
   transform: translateY(0);
