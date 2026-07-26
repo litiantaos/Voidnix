@@ -32,6 +32,19 @@ pub fn show_main(app: &tauri::AppHandle) {
     crate::platform::frontmost_watcher::add(app);
 }
 
+/// 显示主窗口（前端主动调用）。
+///
+/// 扩展快捷键从隐藏呼出时，前端先 `setActiveExtension` 再调本命令 show，
+/// 确保窗口渲染第一帧时已是目标扩展视图（避免先渲染旧视图再切换的闪现）。
+/// `main` 快捷键无需切换视图，仍由 shortcut.rs callback 自动 show。
+#[tauri::command]
+pub fn show_window(app: tauri::AppHandle) {
+    // show_main 操作 NSWindow（cocoa API 必须 main thread），与 hide_window 同路径
+    let _ = app.clone().run_on_main_thread(move || {
+        show_main(&app);
+    });
+}
+
 /// 隐藏主窗口。
 ///
 /// 编排：可见性状态 → 平台 hide（resignKey + alpha=0 + ignoresMouse，**不** orderOut）→

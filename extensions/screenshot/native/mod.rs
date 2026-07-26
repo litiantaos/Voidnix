@@ -82,14 +82,12 @@ pub async fn open_extension_subview(
         "extId": ext_id,
         "subviewId": subview_id,
         "payload": payload,
+        "wasVisible": crate::runtime::shortcut::is_window_visible(),
     });
 
-    let app_handle = app.clone();
-    app.run_on_main_thread(move || {
-        crate::runtime::window::show_main(&app_handle);
-        let _ = app_handle.emit("open-extension-subview", event_payload);
-    })
-    .map_err(|e| e.to_string())?;
+    // show 由前端 listener 控制（wasVisible=false 时 setActiveExtension → rAF → showWindow），
+    // 避免 Rust 立即 show 时 webview 仍为旧视图的闪现
+    let _ = app.emit("open-extension-subview", event_payload);
 
     Ok(())
 }
