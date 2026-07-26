@@ -3,3 +3,8 @@ dist-ssr
 coverage
 src-tauri
 node_modules
+
+# site 子项目生成物（site/.gitignore 已忽略）
+site/.astro
+site/dist
+site/node_modules

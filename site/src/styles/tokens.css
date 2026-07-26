@@ -67,7 +67,8 @@
 
   /* ── 字体 / 圆角 / 尺寸 ── */
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
-  --font-cjk: 'PingFang SC', 'Hiragino Sans GB', 'SF Pro Text', 'SF Pro Display', -apple-system,
+  --font-cjk:
+    'PingFang SC', 'Hiragino Sans GB', 'SF Pro Text', 'SF Pro Display', -apple-system,
     BlinkMacSystemFont, 'Helvetica Neue', 'Segoe UI', sans-serif;
   --font-sans: var(--font-mono), var(--font-cjk);
 
