@@ -11,7 +11,15 @@ export default [
 
   {
     name: 'app/files-to-ignore',
-    ignores: ['**/dist/**', '**/dist-ssr/**', '**/coverage/**', 'src-tauri/**'],
+    ignores: [
+      '**/dist/**',
+      '**/dist-ssr/**',
+      '**/coverage/**',
+      'src-tauri/**',
+      'site/.astro/**',
+      'site/dist/**',
+      'site/node_modules/**',
+    ],
   },
 
   ...pluginVue.configs['flat/essential'],
