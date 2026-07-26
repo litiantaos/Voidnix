@@ -142,13 +142,14 @@
 import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { open } from '@tauri-apps/plugin-shell'
 import { isAgentProviderReady } from './config'
+import { useAppStore } from '@/stores/app'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import AgentTextPart from './AgentTextPart.vue'
 import AgentToolStep from './AgentToolStep.vue'
 import AgentReasoningPart from './AgentReasoningPart.vue'
-import { useAgentChat } from './agent'
+import { useAgentChat, focusInputTick } from './agent'
 import { getMessageText, isStreamingText, streamLayoutKey, partKey } from './view-logic'
 import './agent-step.css'
 
@@ -198,6 +199,22 @@ watch(
       stickToBottom.value = true
       nextTick(() => textareaRef.value?.focus())
     }
+  },
+)
+
+const appStore = useAppStore()
+
+/**
+ * 操作 accessory 后回归输入框（agent 主交互目标）：
+ * - 选模型：Actions 监听 BaseSelect 的 focusout，relatedTarget 为空（Esc/选中/外点/toggle-off，
+ *   含选原值）时自增 focusInputTick；Tab 切换 relatedTarget 非空不触发，保留主窗 Tab 环
+ * - 从设置子视图返回（config → null；KeepAlive deactivate 下 watch 仍触发，nextTick 等 DOM 重插后 focus）
+ */
+watch(focusInputTick, () => nextTick(() => textareaRef.value?.focus()))
+watch(
+  () => appStore.activeSubview,
+  (sub, prev) => {
+    if (prev === 'config' && !sub) nextTick(() => textareaRef.value?.focus())
   },
 )
 

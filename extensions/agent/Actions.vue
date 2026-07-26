@@ -5,6 +5,7 @@
     :options="modelOptions"
     class="max-w-64"
     @update:model-value="handleModelChange"
+    @focusout="onSelectFocusOut"
   />
   <div v-if="userMessages.length > 0" ref="historyWrapRef" class="inline-flex">
     <BaseButton
@@ -65,7 +66,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { useAgentChat } from './agent'
+import { useAgentChat, focusInputTick } from './agent'
 import { setProviderModelKey, modelSelectOptions, effectiveProviderModelKey } from './config'
 import { getMessageText, buildHistoryLabel } from './view-logic'
 import type { AgentMessage } from '@/types/agent'
@@ -188,8 +189,17 @@ function onHistoryClickOutside(e: MouseEvent) {
   closeHistory()
 }
 
-async function handleModelChange(val: string | number) {
+function handleModelChange(val: string | number) {
   setProviderModelKey(String(val))
+}
+
+/**
+ * BaseSelect 焦点离开时：relatedTarget 为空 = Esc/选中/外点/toggle-off 主动关闭（焦点落 body），
+ * 回归输入框；Tab 切换 relatedTarget 是 Tab 环内下一按钮（非空），不干预（主窗 cycleFocus 自管）。
+ * 用 focusout 而非侵入 BaseSelect 加 close emit——焦点回归是 agent 自身交互契约。
+ */
+function onSelectFocusOut(e: FocusEvent) {
+  if (!e.relatedTarget) focusInputTick.value++
 }
 
 function handleNewConversation() {
