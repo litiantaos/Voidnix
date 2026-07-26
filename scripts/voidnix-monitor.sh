@@ -40,13 +40,15 @@ DATA_MB=$(du -sm "$DATA_DIR" 2>/dev/null | awk '{print $1}')
 awk -v t="$(date '+%H:%M:%S')" -v r="$RSS_KB" -v c="$CPU" -v n="$THRD" -v v="$VSZ_KB" -v d="$DATA_MB" \
   'BEGIN { printf "%s  %.1f  %s  %d  %.1f  %s\n", t, r/1024, c, n, v/1048576, d }' >> "$LOG"
 
-# 扩展子进程采样（路径匹配数据目录，不依赖 PPID 链——root 子进程如 mihomo 已 reparent 到 launchd）
-# 一次 ps 全表扫描 + awk，识别 comm 含 com.litiantao.voidnix/extensions/<id>/ 的进程，按扩展分组
-ps -A -o rss=,%cpu=,vsz=,command= 2>/dev/null | awk '
+# 扩展子进程采样（不依赖 PPID 链——root 子进程如 mihomo 已 reparent 到 launchd）
+# 用 comm（可执行文件路径）而非 command（完整命令行）匹配：只有可执行确实位于
+# extensions/<id>/ 下的进程才命中，grep/osascript/采样器 fork 的 shell 等仅在参数里
+# 引用该路径的进程天然排除，从根上杜绝误匹配（无需靠 ext 白名单兜底）
+ps -A -o rss=,%cpu=,vsz=,comm= 2>/dev/null | awk '
   NF < 4 { next }
   {
     line=$0
-    # 字面量拆分拼接：避免 awk 源码出现完整 marker，防止 ps 扫到 awk 自身进程
+    # 字面量拆分拼接：避免 awk 源码出现完整 marker
     marker="com.litiantao.void" "nix/extensions/"
     ml=length(marker)
     p=index(line, marker)
@@ -55,13 +57,11 @@ ps -A -o rss=,%cpu=,vsz=,command= 2>/dev/null | awk '
     sl=index(rest, "/")
     if (sl == 0) next
     ext=substr(rest, 1, sl - 1)
-    # ext 白名单：扩展 id 仅小写字母/数字/连字符，过滤命令行含 extensions/<id>
-    # 字样但非真实扩展子进程的多行命令（排查 shell / osascript 包装脚本，换行
-    # 渲染为 \012 致 ext 吞掉引号与后续语句）
+    # ext 白名单（二道防线）：扩展 id 仅小写字母/数字/连字符
     if (ext !~ /^[a-z0-9-]+$/) next
-    after=substr(rest, sl + 1)
-    sp=index(after, " ")
-    if (sp > 0) binpath=substr(after, 1, sp - 1); else binpath=after
+    # comm 末段无参数，binpath 取 marker 后首个 / 到行尾，可含空格（如 awake 的 "Display Wakelock"）
+    binpath=substr(rest, sl + 1)
+    sub(/[ \t]+$/, "", binpath)
     nb=split(binpath, parts, "/")
     bin=parts[nb]
     printf "@ %s/%s  %.1f  %s  %.1f\n", ext, bin, $1/1024, $2, $3/1048576
