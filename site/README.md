@@ -48,4 +48,11 @@ token 取自产品 `theme.css` 子集（`src/styles/tokens.css`）：基元 `--c
 
 ## 部署
 
-静态输出，`dist/` 可直接托管。推荐 Cloudflare Pages（Git 推送即构建）。`astro.config.mjs` 的 `site` 字段按实际域名改，BaseLayout 据此拼 OG 绝对 URL。
+静态输出，`dist/` 可直接托管。已接入 Vercel（GitHub 集成自动部署）：
+
+- **触发**：`git push origin main`（仅 `site/` 内改动）自动触发 Vercel 构建
+- **域名**：`https://voidnix.litiantao.com`（CNAME 指向 Vercel）
+- **配置**：`vercel.json`（Astro / `astro build` / `dist`）
+- 项目地址：https://vercel.com/litiantao/voidnix
+
+本地预览构建产物用 `bun run preview`。
