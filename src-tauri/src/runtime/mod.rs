@@ -7,6 +7,7 @@ pub mod permission;
 pub mod registry;
 pub mod shell_rc;
 pub mod shortcut;
+pub mod speech;
 pub mod storage;
 pub mod window;
 

@@ -50,3 +50,34 @@ export function cleanStreamResult(raw: string): string {
 export function engineLabel(cfg: TranslateApiConfig): string {
   return cfg.type === 'youdao' ? '有道翻译' : 'AI 翻译'
 }
+
+/**
+ * 按译文字符脚本推断朗读语种码（传给 say -v 选语音）。
+ * 关键：只要含假名即判日文（中文不含假名），故单遍循环遇假名立即返回；
+ * 遇谚文立即返回韩文；汉字仅标记不立即返回（后续可能遇假名改判日文）。
+ * 纯汉字的中日文无法按脚本区分，回落 zh（中文语音读日文汉字亦可懂）。
+ * 其余非拉丁脚本（西里尔 / 阿拉伯 / 泰文 / 天城文 / 越南文）即时命中对应语种；
+ * 纯拉丁（英 / 法 / 德 / 西 等）统一回落 en（say 英文语音可懂度可接受）。
+ */
+export function detectSpeechLang(text: string): string {
+  let hasCJK = false
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!
+    if (cp >= 0x3040 && cp <= 0x30ff) return 'ja' // 平假名 / 片假名 → 日文
+    if (cp >= 0xac00 && cp <= 0xd7af) return 'ko' // 谚文音节 → 韩文
+    if (cp >= 0x0400 && cp <= 0x04ff) return 'ru' // 西里尔 → 俄文
+    if (cp >= 0x0600 && cp <= 0x06ff) return 'ar' // 阿拉伯
+    if (cp >= 0x0e00 && cp <= 0x0e7f) return 'th' // 泰文
+    if (cp >= 0x0900 && cp <= 0x097f) return 'hi' // 天城文 → 印地文
+    if (cp >= 0x1e00 && cp <= 0x1eff) return 'vi' // 拉丁扩展附加（越南语声调）→ 越南文
+    if (
+      !hasCJK &&
+      ((cp >= 0x4e00 && cp <= 0x9fff) ||
+        (cp >= 0x3400 && cp <= 0x4dbf) ||
+        (cp >= 0xf900 && cp <= 0xfaff))
+    ) {
+      hasCJK = true // CJK 统一表意，标记后继续找假名
+    }
+  }
+  return hasCJK ? 'zh' : 'en'
+}

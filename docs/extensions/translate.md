@@ -38,6 +38,11 @@ defineConfig('extensions/translate/config', {
 
 旧 AI 引擎字段启动时一次性导入中枢并 strip。详见 [ai-providers.md](./ai-providers.md)。
 
+## 结果交互
+
+- **回车 / 双击**：复制译文并隐藏窗口（`copyAndHide`）
+- **朗读按钮**：每条译文右侧喇叭图标，点击用系统 TTS（框架 `say` 命令）朗读译文，再次点击停止。朗读中图标转 fill + 主色高亮，读完或切换结果自动复位；切走扩展 / 新一轮翻译自动停止。语种按译文字符脚本推断（`detectSpeechLang`：假名→ja、谚文→ko、汉字→zh、西里尔→ru、阿拉伯→ar、泰文→th、天城文→hi、越南文拉丁扩展→vi、其余→en），映射 `say -v` 系统预装语音
+
 ## Rust 端
 
 - `native/mod.rs`：Extension trait + shortcut hook 注册 + `get_selected_text_cached` 命令（SELECTED_TEXT 自管，不泄漏框架）
