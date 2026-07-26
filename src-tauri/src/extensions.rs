@@ -54,6 +54,7 @@ macro_rules! configure_app {
             crate::extensions::clipboard::commands::update_clipboard_text,
             crate::extensions::clipboard::set_clipboard_max_days,
             crate::extensions::finder_ext::finder_run_action,
+            crate::extensions::finder_ext::finder_selected_paths,
             crate::extensions::proxy::is_proxy_enabled,
             crate::extensions::proxy::proxy_check_update,
             crate::extensions::proxy::proxy_connections_stream,

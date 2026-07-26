@@ -28,12 +28,19 @@ impl Extension for FinderExtExtension {
 /// 执行访达动作。
 /// `name` 仅 `new_file` 使用（最终文件名，已含扩展名）。
 #[tauri::command]
-pub fn finder_run_action(
+pub async fn finder_run_action(
     app: AppHandle,
     action: String,
     name: Option<String>,
 ) -> Result<String, String> {
-    match action.as_str() {
+    // osascript / 文件 IO / sleep 阻塞调用放 blocking 线程，避免卡 main thread
+    tokio::task::spawn_blocking(move || run_action_inner(&app, &action, name.as_deref()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn run_action_inner(app: &AppHandle, action: &str, name: Option<&str>) -> Result<String, String> {
+    match action {
         "copy_path" => {
             require_finder_frontmost()?;
             let ctx = finder_context()?;
@@ -50,18 +57,39 @@ pub fn finder_run_action(
             require_finder_frontmost()?;
             let ctx = finder_context()?;
             let file_name = name.ok_or_else(|| "缺少文件名".to_string())?;
-            let path = create_named_file(&ctx.target, &file_name)?;
-            let _ = hide_main_sync(&app);
+            let path = create_named_file(&ctx.target, file_name)?;
+            let _ = hide_main_sync(app);
             reveal_in_finder(&path);
             Ok(String::new())
         }
         "toggle_hidden" => {
             // 权限检查须在 hide 前（失败 toast 可见）；注入在 hide 后（见 handle_toggle_hidden）
-            handle_toggle_hidden(&app)?;
+            handle_toggle_hidden(app)?;
             Ok(String::new())
         }
         other => Err(format!("未知动作: {other}")),
     }
+}
+
+/// 返回访达当前选中的文件路径（仅前台为访达时）。
+/// 供前端按文件类型做上下文入口（如选中视频时显示「视频处理」）。
+#[tauri::command]
+pub async fn finder_selected_paths() -> Result<Vec<String>, String> {
+    // osascript 阻塞调用放 blocking 线程，避免卡 main thread（进入扩展时 UI 冻结）
+    tokio::task::spawn_blocking(selected_paths_inner)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn selected_paths_inner() -> Result<Vec<String>, String> {
+    require_finder_frontmost()?;
+    let ctx = finder_context()?;
+    let paths = ctx
+        .paths
+        .into_iter()
+        .filter(|p| validate_path(Path::new(p)))
+        .collect();
+    Ok(paths)
 }
 
 // ── Finder 上下文 ──────────────────────────────────────────────────────────

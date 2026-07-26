@@ -88,6 +88,7 @@ export const CMD = {
 
   // —— finder-ext ——
   finderRunAction: 'finder_run_action',
+  finderSelectedPaths: 'finder_selected_paths',
 
   // —— zsh-autosuggestions ——
   setZshAutosuggestionsEnabled: 'set_zsh_autosuggestions_enabled',
