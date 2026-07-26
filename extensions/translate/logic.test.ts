@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanStreamResult, engineLabel } from './logic'
+import { cleanStreamResult, engineLabel, detectSpeechLang } from './logic'
 import type { TranslateApiConfig } from './config'
 
 describe('cleanStreamResult', () => {
@@ -64,5 +64,61 @@ describe('engineLabel', () => {
       prompt: '',
     } as unknown as TranslateApiConfig
     expect(engineLabel(cfg)).toBe('AI 翻译')
+  })
+})
+
+describe('detectSpeechLang', () => {
+  it('中文（含标点 / 数字）→ zh', () => {
+    expect(detectSpeechLang('你好，世界！')).toBe('zh')
+    expect(detectSpeechLang('第 3 次测试。')).toBe('zh')
+  })
+
+  it('英文 / 拉丁语系 → en', () => {
+    expect(detectSpeechLang('Hello, world!')).toBe('en')
+    expect(detectSpeechLang('Bonjour le monde')).toBe('en')
+  })
+
+  it('日文（假名）→ ja', () => {
+    expect(detectSpeechLang('こんにちは')).toBe('ja')
+    expect(detectSpeechLang('カタカナ')).toBe('ja')
+  })
+
+  it('汉字起始但含假名的日文 → ja（送り仮名）', () => {
+    // 「今日は」首字符「今」是汉字，但末尾「は」是假名 → 应判日文
+    expect(detectSpeechLang('今日は')).toBe('ja')
+  })
+
+  it('韩文（谚文）→ ko', () => {
+    expect(detectSpeechLang('안녕하세요')).toBe('ko')
+  })
+
+  it('西里尔 → ru', () => {
+    expect(detectSpeechLang('Привет мир')).toBe('ru')
+  })
+
+  it('阿拉伯 → ar', () => {
+    expect(detectSpeechLang('مرحبا بالعالم')).toBe('ar')
+  })
+
+  it('泰文 → th', () => {
+    expect(detectSpeechLang('สวัสดีชาวโลก')).toBe('th')
+  })
+
+  it('天城文 → hi', () => {
+    expect(detectSpeechLang('नमस्ते दुनिया')).toBe('hi')
+  })
+
+  it('越南文（拉丁扩展附加）→ vi', () => {
+    expect(detectSpeechLang('Xin chào thế giới')).toBe('vi')
+  })
+
+  it('混合脚本优先返回首个命中的非拉丁语种', () => {
+    // 含汉字 + 假名：汉字代码点更靠前出现则 zh，此处「中文混入 English」首个非拉丁为汉字
+    expect(detectSpeechLang('测试 English mixed')).toBe('zh')
+  })
+
+  it('空串 / 纯符号 → en（兜底）', () => {
+    expect(detectSpeechLang('')).toBe('en')
+    expect(detectSpeechLang('123 !? ')).toBe('en')
   })
 })

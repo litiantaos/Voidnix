@@ -45,6 +45,10 @@ export const CMD = {
   pasteboardPasteText: 'pasteboard_paste_text',
   setClipboardMaxDays: 'set_clipboard_max_days',
 
+  // —— 语音朗读（框架，say CLI）——
+  speakText: 'speak_text',
+  stopSpeech: 'stop_speech',
+
   // —— screenshot ——
   // capture_screen / enter_screenshot_mode 仅 Rust 内部（快捷键路径），不暴露 IPC
   exitScreenshotMode: 'exit_screenshot_mode',

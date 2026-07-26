@@ -22,8 +22,8 @@
         navigate-on-input
         @execute="onExecuteResult"
       >
-        <template #item="{ item }">
-          <BaseListItem multiline-title :subtitle="item.engine">
+        <template #item="{ item, index }">
+          <BaseListItem multiline-title>
             <template #title>
               <div
                 v-if="item.loading && !item.translation"
@@ -34,6 +34,18 @@
                 {{ item.translation }}
               </span>
             </template>
+            <template #subtitle>
+              <span class="flex-1 min-w-0 truncate">{{ item.engine }}</span>
+              <BaseButton
+                v-if="!item.loading && item.translation"
+                variant="ghost"
+                :icon="speakingIndex === index ? 'i-ri-volume-up-fill' : 'i-ri-volume-up-line'"
+                :active="speakingIndex === index"
+                class="!text-muted !px-1 !shrink-0 !h-auto"
+                title="朗读"
+                @click.stop="toggleSpeak(item, index)"
+              />
+            </template>
           </BaseListItem>
         </template>
       </BaseList>
@@ -42,20 +54,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onActivated } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onActivated, onDeactivated } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
 import { config as translateConfig, resolveAiTargets } from './config'
 import { refreshEnvSnapshot } from '@/runtime/ai-providers'
-import { copyAndHide } from '@/stores/app'
+import { copyAndHide, useAppStore } from '@/stores/app'
+import { CMD } from '@/commands'
+import { detectSpeechLang } from './logic'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import type { TranslateResult } from './index'
+
+const appStore = useAppStore()
 
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const selectedIndex = ref(0)
+/** 正在朗读的结果下标（null = 无）。自然结束 / 被取代 / 停止时复位。 */
+const speakingIndex = ref<number | null>(null)
 
 const envTouched = ref(false)
 onMounted(async () => {
@@ -98,6 +118,11 @@ watch(
 
 watch(translateResults, () => {
   selectedIndex.value = 0
+  // 旧结果作废：仅在有朗读时停止（避免翻译流式 / splice 触发的空 invoke）
+  if (speakingIndex.value !== null) {
+    void invoke(CMD.stopSpeech)
+    speakingIndex.value = null
+  }
 })
 
 function handleSubmit() {
@@ -116,6 +141,31 @@ async function onExecuteResult(result: TranslateResult) {
   }
 }
 
+// 朗读：点正在朗读的本项 → 停；点其它项 → 朗读（取代旧朗读）
+async function toggleSpeak(item: TranslateResult, index: number) {
+  if (!item.translation) return
+  if (speakingIndex.value === index) {
+    // 先复位再 fire-and-forget 停止：消除 IPC 往返窗口内点新项被覆盖的竞态
+    // （speak_text 内部本就会 cancel_current，stop 的 invoke 慢到也无妨）
+    speakingIndex.value = null
+    void invoke(CMD.stopSpeech)
+    return
+  }
+  speakingIndex.value = index
+  try {
+    await invoke(CMD.speakText, {
+      text: item.translation,
+      lang: detectSpeechLang(item.translation),
+    })
+  } catch (e) {
+    console.error('Failed to speak:', e)
+    appStore.showStatus('朗读失败', { kind: 'error' })
+  } finally {
+    // 自然结束 / 被新朗读取代 → 复位（被取代时 index 已被新值覆盖，不误清）
+    if (speakingIndex.value === index) speakingIndex.value = null
+  }
+}
+
 // 正在翻译中（流式未完成）重新激活时不抢焦点；其余情况聚焦输入框。
 // 注：选词翻译的焦点让出由 pendingText watch 的 blur 兜底（pendingText 由快捷键
 // 异步取词后设置，远晚于 onActivated，无法在激活时判定）
@@ -126,4 +176,11 @@ function maybeFocusInput() {
 }
 onMounted(maybeFocusInput)
 onActivated(maybeFocusInput)
+// 切走扩展：停止朗读（KeepAlive 下视图未卸载，仅 deactivate）
+onDeactivated(() => {
+  if (speakingIndex.value !== null) {
+    void invoke(CMD.stopSpeech)
+    speakingIndex.value = null
+  }
+})
 </script>
