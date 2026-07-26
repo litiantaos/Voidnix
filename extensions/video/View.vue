@@ -36,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
@@ -45,6 +45,7 @@ import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import type { SettingItem } from '@/types/settings'
 import { config } from './config'
+import { pendingInputPath } from './index'
 import {
   displayPath,
   fileNameFromPath,
@@ -349,16 +350,27 @@ async function pickInput() {
       allowsMultiple: false,
       allowedExtensions: [...VIDEO_EXTENSIONS],
     })
-    const path = paths[0]
-    if (!path) return
-    inputPath.value = path
-    try {
-      meta.value = await invoke<VideoMeta>(CMD.videoProbe, { path })
-    } catch (e) {
-      meta.value = null
-      appStore.showStatus(`无法读取视频：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
-    }
+    if (paths[0]) await loadInput(paths[0])
   })
+}
+
+/** loadInput 单调序号：并发探测时丢弃过期结果，避免 inputPath 与 meta 错位（错位会让 startJob 拿到错误时长，影响进度估算）。 */
+let loadInputSeq = 0
+
+/** 设置输入路径并探测元数据（失败 toast）。pickInput 与跨扩展投递共用。 */
+async function loadInput(path: string) {
+  const seq = ++loadInputSeq
+  inputPath.value = path
+  try {
+    const probed = await invoke<VideoMeta>(CMD.videoProbe, { path })
+    // 过期：探测期间已有更新的路径投递，丢弃以免 meta 与当前 inputPath 错位
+    if (seq !== loadInputSeq) return
+    meta.value = probed
+  } catch (e) {
+    if (seq !== loadInputSeq) return
+    meta.value = null
+    appStore.showStatus(`无法读取视频：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
+  }
 }
 
 async function pickOutputDir() {
@@ -488,6 +500,16 @@ async function restoreJobStatus() {
     /* ignore */
   }
 }
+
+// 跨扩展进入：finder-ext 等经事件总线投递的待处理路径，写入即加载。
+// 时序证明（无需 onMounted 兜底）：emit 走 IPC 往返（macrotask），setActiveExtension
+// 同步改 ref 触发 Vue flush（microtask）；microtask 必先于 macrotask 清空，故 View
+// 挂载 + watch 注册恒先于 IPC 回调到达，watch 不会漏触发。
+watch(pendingInputPath, (path) => {
+  if (!path) return
+  pendingInputPath.value = ''
+  void loadInput(path)
+})
 
 onMounted(async () => {
   // 先对齐模式合法格式（config 可能跨模式残留）

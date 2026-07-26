@@ -7,6 +7,8 @@ export type Quality = 'high' | 'balanced' | 'small'
 export type Scale = 'original' | '1080' | '720' | '480'
 export type OutputFormat = 'mp4' | 'mov' | 'mkv' | 'webm' | 'gif' | 'm4a' | 'mp3'
 
+// 视频格式白名单（处理权威源）。finder-ext 的 VIDEO_EXT_SET 为 UI 入口镜像（去除 .ts 歧义）；
+// 新增格式时请同步 extensions/finder-ext/View.vue 的 VIDEO_EXT_SET。
 export const VIDEO_EXTENSIONS = [
   'mp4',
   'mov',

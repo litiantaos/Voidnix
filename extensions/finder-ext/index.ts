@@ -1,7 +1,11 @@
+import { ref } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
 import { makeToggleHandler } from '@/stores/app'
 import FinderExtView from './View.vue'
 import { FINDER_SHORTCUT } from './shortcuts'
+
+/** 快捷键进入 tick：窗口隐藏后重入时 onActivated 不触发，靠此信号驱动 View 重新探测选区。 */
+export const reactivateTick = ref(0)
 
 export default defineExtension({
   meta: {
@@ -21,7 +25,9 @@ export default defineExtension({
     {
       id: FINDER_SHORTCUT.id,
       default: FINDER_SHORTCUT.default,
-      onExecute: makeToggleHandler('finder-ext'),
+      onExecute: makeToggleHandler('finder-ext', () => {
+        reactivateTick.value++
+      }),
     },
   ],
 })

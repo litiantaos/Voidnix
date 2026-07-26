@@ -1,5 +1,10 @@
+import { ref } from 'vue'
+import { listen } from '@tauri-apps/api/event'
 import { defineExtension } from '@/runtime/extension-registry'
 import VideoView from './View.vue'
+
+/** 跨扩展投递的待处理视频路径（finder-ext 等经事件总线写入，View 消费后清空）。 */
+export const pendingInputPath = ref('')
 
 export default defineExtension({
   meta: {
@@ -27,4 +32,10 @@ export default defineExtension({
   disableSearchInput: true,
   windowHeight: 'auto',
   mainView: () => VideoView,
+  setup: async () => {
+    // 跨扩展通信：finder-ext 等通过事件总线投递待处理视频路径
+    await listen<string>('video-pending-input-path', (e) => {
+      pendingInputPath.value = e.payload || ''
+    })
+  },
 })

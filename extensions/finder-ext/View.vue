@@ -27,8 +27,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { emit } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { useAppStore, toastAndHide } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
@@ -37,6 +38,7 @@ import BaseDialog from '@/components/ui/BaseDialog.vue'
 import type { SettingItem } from '@/types/settings'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 import { FINDER_SHORTCUT, FINDER_ACTIONS, type FinderAction } from './shortcuts'
+import { reactivateTick } from './index'
 
 const appStore = useAppStore()
 const { value: shortcutValue, update: updateShortcut } = useShortcutConfig(
@@ -139,28 +141,108 @@ watch(naming, (open) => {
   })
 })
 
-const allItems = computed<SettingItem[]>(() => [
-  ...FINDER_ACTIONS.map((a) => ({
-    id: a.id,
-    title: a.title,
-    icon: a.icon,
-    type: 'action' as const,
-    action: () => {
-      if (a.id === 'new_file') {
-        startNaming()
-        return
-      }
-      void runAction(a.id)
-    },
-    group: '操作',
-  })),
-  {
+// ── 选区视频探测：选中视频文件时显示「视频处理」入口，跳转 video 扩展并带入路径 ──
+
+/** 访达选区视频判断白名单（UI 入口用）。
+ * 镜像自 video 扩展 VIDEO_EXTENSIONS，去除 .ts（与 TypeScript 源码歧义）；
+ * 真正处理以 video 扩展 ffprobe 为准，此处仅作入口提示。
+ * 新增格式时双向同步：extensions/video/logic.ts 的 VIDEO_EXTENSIONS。 */
+const VIDEO_EXT_SET = new Set([
+  'mp4',
+  'mov',
+  'mkv',
+  'webm',
+  'avi',
+  'm4v',
+  'wmv',
+  'flv',
+  'mts',
+  'm2ts',
+  '3gp',
+  'mpeg',
+  'mpg',
+])
+
+const videoPath = ref<string | null>(null)
+
+function pickVideoPath(paths: string[]): string | null {
+  for (const p of paths) {
+    const ext = p.split('.').pop()?.toLowerCase()
+    if (ext && VIDEO_EXT_SET.has(ext)) return p
+  }
+  return null
+}
+
+/** 探测进行中标志：onActivated 与 reactivateTick 可能同帧触发（快捷键呼出同时切扩展），合并为单次 osascript。 */
+let detectInFlight = false
+
+async function detectVideo() {
+  if (detectInFlight) return
+  detectInFlight = true
+  // 先清空：避免 KeepAlive 重激活瞬间显示上次过期选区，探测完成再赋新值
+  videoPath.value = null
+  try {
+    const paths = await invoke<string[]>(CMD.finderSelectedPaths)
+    videoPath.value = pickVideoPath(paths)
+  } catch {
+    // 访达非前台 / 权限缺失 → 不显示视频入口
+    videoPath.value = null
+  } finally {
+    detectInFlight = false
+  }
+}
+
+onActivated(detectVideo)
+// 快捷键重入（窗口隐藏后再呼出）：onActivated 不触发，靠 tick 驱动重新探测
+watch(reactivateTick, () => void detectVideo())
+
+function baseName(path: string): string {
+  return path.split('/').pop() || path
+}
+
+const allItems = computed<SettingItem[]>(() => {
+  const list: SettingItem[] = []
+  // 选中视频时置顶「视频处理」入口（跨扩展跳转，带入路径）
+  if (videoPath.value) {
+    list.push({
+      id: 'video_process',
+      title: '视频处理',
+      subtitle: baseName(videoPath.value),
+      icon: 'i-ri-video-line',
+      type: 'action',
+      action: () => {
+        const p = videoPath.value
+        if (!p) return
+        void emit('video-pending-input-path', p)
+        appStore.setActiveExtension('video')
+      },
+      group: '操作',
+    })
+  }
+  list.push(
+    ...FINDER_ACTIONS.map((a) => ({
+      id: a.id,
+      title: a.title,
+      icon: a.icon,
+      type: 'action' as const,
+      action: () => {
+        if (a.id === 'new_file') {
+          startNaming()
+          return
+        }
+        void runAction(a.id)
+      },
+      group: '操作',
+    })),
+  )
+  list.push({
     id: FINDER_SHORTCUT.id,
     title: '启动快捷键',
     type: 'shortcut',
     value: shortcutValue.value,
     update: (v) => updateShortcut(String(v)),
     group: '通用',
-  },
-])
+  })
+  return list
+})
 </script>
