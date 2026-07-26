@@ -30,11 +30,14 @@ pub struct TranslateResult {
 pub async fn get_selected_text() -> Result<String, String> {
     use std::time::Instant;
 
-    // 优先读当前剪贴板（划词翻译快捷键触发前，cmd+c 已写入）
-    if let Some(text) = crate::platform::pasteboard::read_text() {
-        let trimmed = text.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
+    // 优先读当前剪贴板（划词翻译快捷键触发前，cmd+c 已写入）。
+    // 剪贴板含文件 URL（Finder 复制文件）时，纯文本是文件名副作用，不属于选中文本 → 跳过。
+    if !crate::platform::pasteboard::has_file_url() {
+        if let Some(text) = crate::platform::pasteboard::read_text() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return Ok(trimmed.to_string());
+            }
         }
     }
 
@@ -43,6 +46,9 @@ pub async fn get_selected_text() -> Result<String, String> {
     loop {
         tokio::time::sleep(Duration::from_millis(20)).await;
 
+        if crate::platform::pasteboard::has_file_url() {
+            return Ok(String::new());
+        }
         if let Some(text) = crate::platform::pasteboard::read_text() {
             let trimmed = text.trim();
             if !trimmed.is_empty() {

@@ -207,6 +207,16 @@ pub fn has_type(type_name: &str) -> bool {
     })
 }
 
+/// 复制文件时写入的 UTI（NSPasteboardTypeFileURL 底层值）。
+const FILE_URL_UTI: &str = "public.file-url";
+
+/// 剪贴板是否含文件 URL。
+/// 此时 `public.utf8-plain-text` 类型携带的是文件名而非选中文本，
+/// `read_text` 拿到的是附带的副作用，调用方应据此排除非文本选中场景。
+pub fn has_file_url() -> bool {
+    has_type(FILE_URL_UTI)
+}
+
 /// 获取剪贴板 changeCount（用于轮询检测变化）。
 pub fn change_count() -> isize {
     NSPasteboard::generalPasteboard().changeCount()

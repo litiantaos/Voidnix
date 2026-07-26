@@ -51,3 +51,5 @@ defineConfig('extensions/translate/config', {
 - `native/lang_utils.rs`：中英检测 + smart_target_lang
 
 划词取词流程：快捷键触发 → `platform::selection::try_ax()`（AX 直取）→ 失败则 `platform::input::post_combo("cmd+c", Some(pid))` → `platform::selection::poll_clipboard(snap)`（轮询 + `platform::pasteboard` 快照恢复）。
+
+**文件场景排除**：Finder 选中文件时 AX 取不到文本，`cmd+c` 兜底会让 Finder 把文件写入剪贴板（含 `public.file-url`，顺带写入文件名纯文本）。取词链路在 `poll_clipboard` 与 `get_selected_text` 命令两处均经 `pasteboard::has_file_url()` 判定——剪贴板含文件 URL 即视为非文本选中，返回空，不进入翻译（避免把文件名当文本翻译的无意义调用）。
