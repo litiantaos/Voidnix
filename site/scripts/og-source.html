@@ -2,16 +2,13 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css"
-    />
     <style>
       :root {
         --accent: #3d82f0;
         --cool: 100 120 160;
         --ink: rgba(30, 35, 50, 0.92);
-        --sec: rgba(80, 90, 115, 0.85);
+        --sec: rgba(80, 90, 115, 0.82);
+        --mute: rgba(110, 120, 145, 0.6);
       }
       * {
         margin: 0;
@@ -30,10 +27,12 @@
         position: relative;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
-        padding: 72px 80px;
+        justify-content: center;
+        padding: 64px 84px;
         color: var(--ink);
+        -webkit-font-smoothing: antialiased;
       }
+
       /* Mica 雾团 */
       .fog {
         position: absolute;
@@ -45,143 +44,102 @@
       .fog span {
         position: absolute;
         border-radius: 50%;
-        filter: blur(90px);
+        filter: blur(100px);
       }
       .fog .a {
-        width: 720px;
-        height: 480px;
-        left: -120px;
-        top: -160px;
+        width: 760px;
+        height: 500px;
+        left: -180px;
+        top: -210px;
         background: rgb(215 230 255 / 0.6);
       }
       .fog .b {
         width: 680px;
         height: 460px;
-        right: -140px;
-        bottom: -200px;
-        background: rgb(205 218 245 / 0.5);
+        right: -180px;
+        bottom: -230px;
+        background: rgb(205 218 245 / 0.48);
       }
-      .content {
+
+      .stage {
         position: relative;
         z-index: 1;
       }
+
+      /* ── 品牌 ── */
       .brand {
         display: flex;
         align-items: center;
-        gap: 16px;
+        gap: 14px;
       }
       .mark {
-        width: 56px;
-        height: 56px;
-        border-radius: 14px;
-        background: linear-gradient(135deg, #4d8ef5, #2f6fd9);
-        box-shadow: 0 6px 20px rgb(47 111 217 / 0.35);
-      }
-      .mark svg {
-        display: block;
+        width: 44px;
+        height: 44px;
+        filter: drop-shadow(0 4px 12px rgb(var(--cool) / 0.22));
       }
       .brand-name {
-        font-size: 30px;
+        font-size: 22px;
         font-weight: 600;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.01em;
+        color: var(--ink);
       }
-      .eyebrow {
-        font-size: 15px;
-        letter-spacing: 0.22em;
-        text-transform: uppercase;
-        color: var(--accent);
-        font-weight: 500;
-        margin-top: 4px;
-      }
+
+      /* ── 标题：主体 ── */
       .title {
-        font-size: 78px;
+        font-family: ui-monospace, 'PingFang SC', sans-serif;
+        font-size: 64px;
         font-weight: 600;
         letter-spacing: -0.035em;
-        line-height: 1.06;
-        margin: 18px 0 26px;
+        line-height: 1.24;
+        margin-top: 52px;
       }
       .title em {
         font-style: normal;
         color: var(--accent);
       }
-      .sub {
-        font-size: 26px;
-        color: var(--sec);
-        line-height: 1.5;
-        max-width: 880px;
+
+      /* ── 标题下一行：定位 + 功能 ── */
+      .info {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-top: 36px;
+        font-size: 16px;
         font-family: 'PingFang SC', sans-serif;
+        letter-spacing: 0.02em;
       }
-      .foot {
-        position: relative;
-        z-index: 1;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 18px;
+      .info .desc {
+        color: var(--accent);
+        white-space: nowrap;
+      }
+      .info .div {
+        width: 1px;
+        height: 14px;
+        background: rgb(var(--cool) / 0.22);
+        flex-shrink: 0;
+      }
+      .info .feats {
         color: var(--sec);
-      }
-      .chips {
-        display: flex;
-        gap: 14px;
-      }
-      .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 18px;
-        border-radius: 8px;
-        border: 1px solid rgba(140, 160, 195, 0.28);
-        background: rgba(255, 255, 255, 0.7);
-        font-size: 17px;
-      }
-      .chip i {
-        color: var(--accent);
-        font-size: 19px;
-      }
-      .url {
-        font-family: ui-monospace, monospace;
-        font-size: 17px;
-        color: var(--accent);
+        white-space: nowrap;
       }
     </style>
   </head>
   <body>
     <div class="fog"><span class="a"></span><span class="b"></span></div>
 
-    <div class="content">
+    <div class="stage">
       <div class="brand">
-        <div class="mark">
-          <svg width="56" height="56" viewBox="0 0 64 64">
-            <path
-              d="M20 21 L32 44 L44 21"
-              fill="none"
-              stroke="#fff"
-              stroke-width="6.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <circle cx="32" cy="13.5" r="3" fill="#fff" opacity="0.92" />
-          </svg>
-        </div>
-        <div>
-          <div class="brand-name">Voidnix</div>
-          <div class="eyebrow">macOS Launcher · Open Source</div>
-        </div>
+        <img class="mark" src="../public/app-icon.png" alt="Voidnix" />
+        <span class="brand-name">Voidnix</span>
       </div>
 
-      <h1 class="title">一个按键，<em>触及系统全部能力</em></h1>
-      <p class="sub">
-        模块化的 macOS 效率启动器。Rust 与原生原语构建，21 个一等公民扩展，常驻低占用。
-      </p>
-    </div>
+      <h1 class="title">想到就到，<em>触手可及</em></h1>
 
-    <div class="foot">
-      <div class="chips">
-        <span class="chip"><i class="ri-stack-line"></i> 模块化</span>
-        <span class="chip"><i class="ri-flashlight-line"></i> 原生性能</span>
-        <span class="chip"><i class="ri-leaf-line"></i> 极简</span>
+      <div class="info">
+        <span class="desc">macOS 效率启动器</span>
+        <span class="div"></span>
+        <span class="feats"> 剪贴板 · 截屏 · 翻译 · AI 助手 · 窗口管理 等 </span>
       </div>
-      <div class="url">github.com/litiantaos/Voidnix</div>
     </div>
   </body>
 </html>
