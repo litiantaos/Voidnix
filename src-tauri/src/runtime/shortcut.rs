@@ -95,6 +95,12 @@ pub(crate) fn set_window_visible(v: bool) {
     }
 }
 
+/// 语义层窗口可见性（alpha=0 隐藏时 NSWindow isVisible 仍返回 true，不可靠）。
+/// 供扩展菜单等路径判断是否需要 show。
+pub fn is_window_visible() -> bool {
+    WINDOW_VISIBLE.load(Ordering::Acquire)
+}
+
 #[tauri::command]
 pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
     if auto.unwrap_or(false) {
@@ -221,7 +227,9 @@ pub async fn register_global_shortcut(
                             }
                         }
 
-                        if window_hidden {
+                        // 仅 main 快捷键自动 show；扩展快捷键由前端 onExecute 控制时序
+                        // （先 setActiveExtension 再 invoke show_window，避免渲染旧视图闪现）
+                        if window_hidden && id_for_check == "main" {
                             crate::runtime::window::show_main(&app_handle);
                         }
                     });

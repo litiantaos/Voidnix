@@ -49,11 +49,13 @@ fn build_proxy(app: &AppHandle) -> Vec<MenuEntry> {
 fn on_proxy_event(app: &AppHandle, id: &str) {
     match id {
         "proxy_open" => {
-            let app2 = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                crate::runtime::window::show_main(&app2);
-                let _ = app2.emit("open-extension", "proxy");
-            });
+            // show 由前端 listener 控制（wasVisible=false 时 setActiveExtension → rAF → showWindow），
+            // 避免 Rust 立即 show 时 webview 仍为旧视图的闪现
+            let was_visible = crate::runtime::shortcut::is_window_visible();
+            let _ = app.emit(
+                "open-extension",
+                serde_json::json!({ "id": "proxy", "wasVisible": was_visible }),
+            );
         }
         "proxy_toggle" => {
             let app = app.clone();

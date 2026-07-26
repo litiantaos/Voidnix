@@ -4,6 +4,7 @@
 export const CMD = {
   // —— 窗口 / 应用（框架）——
   hideWindow: 'hide_window',
+  showWindow: 'show_window',
   isAppActive: 'is_app_active',
   getHomeDir: 'get_home_dir',
   pickDirectory: 'pick_directory',

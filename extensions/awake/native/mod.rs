@@ -222,16 +222,18 @@ fn build_awake(app: &AppHandle) -> Vec<MenuEntry> {
     ]
 }
 
-/// 菜单点击：打开扩展 → show_main + emit；启用开关 → 关闭；显示模式子项 → 切到对应模式。
+/// 菜单点击：打开扩展 → emit（带 wasVisible）；启用开关 → 关闭；显示模式子项 → 切到对应模式。
 /// 均复用命令（内部 refresh + emit 同步前端）。
 fn on_awake_event(app: &AppHandle, id: &str) {
     match id {
         "awake_open" => {
-            let app2 = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                crate::runtime::window::show_main(&app2);
-                let _ = app2.emit("open-extension", "awake");
-            });
+            // show 由前端 listener 控制（wasVisible=false 时 setActiveExtension → rAF → showWindow），
+            // 避免 Rust 立即 show 时 webview 仍为旧视图的闪现
+            let was_visible = crate::runtime::shortcut::is_window_visible();
+            let _ = app.emit(
+                "open-extension",
+                serde_json::json!({ "id": "awake", "wasVisible": was_visible }),
+            );
         }
         "awake_toggle" => {
             let app = app.clone();

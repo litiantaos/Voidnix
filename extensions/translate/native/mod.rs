@@ -91,7 +91,10 @@ impl Extension for TranslateExtension {
                             }
                         }
 
-                        crate::runtime::window::show_main(app);
+                        // show 由前端 makeToggleHandler 控制（与其他扩展同路径）：
+                        // setActiveExtension → rAF → showWindow，确保窗口渲染第一帧已是 translate 视图，
+                        // 避免 Rust 立即 show 时 webview 仍为旧视图的闪现。
+                        // 读文本（AX / cmd+c / poll）不依赖窗口可见状态。
 
                         let app_clone = app.clone();
                         std::thread::spawn(move || {

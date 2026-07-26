@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { searchEngine } from '@/runtime/search-engine'
-import { hideWindow } from '@/utils/tauri'
+import { hideWindow, showWindow } from '@/utils/tauri'
 import { writeText } from '@/utils/clipboard'
 import { showToast, type ToastOptions } from '@/composables/useToast'
 
@@ -183,6 +183,9 @@ export function makeToggleHandler(extId: string, onActivate?: () => void) {
     }
     appStore.setActiveExtension(extId)
     appStore.setSearchQuery('')
+    // 从隐藏呼出：setActiveExtension 已同步触发 Vue 视图更新（DOM 在下一 microtask 落地），
+    // 再 invoke show——窗口渲染第一帧时已是目标扩展视图，避免先闪现主界面再切换
+    if (!wasVisible) showWindow()
     onActivate?.()
   }
 }

@@ -13,7 +13,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { useSystemStore } from '@/stores/system'
-import { isTauri, hideWindow } from '@/utils/tauri'
+import { isTauri, hideWindow, showWindow } from '@/utils/tauri'
 import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 
 type Win = ReturnType<typeof import('@tauri-apps/api/window').getCurrentWindow> | null
@@ -157,14 +157,19 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
       )
       track(unlistenShortcut)
 
-      const unlistenOpenExtension = await listen<string>('open-extension', (event) => {
-        markSkip()
-        const extId = event.payload
-        if (extId) {
-          appStore.setActiveExtension(extId)
-          appStore.setSearchQuery('')
-        }
-      })
+      const unlistenOpenExtension = await listen<{ id: string; wasVisible: boolean }>(
+        'open-extension',
+        (event) => {
+          markSkip()
+          const { id: extId, wasVisible } = event.payload
+          if (extId) {
+            appStore.setActiveExtension(extId)
+            appStore.setSearchQuery('')
+            // 窗口隐藏时（菜单栏点击）：先切视图再 show，避免渲染旧视图闪现
+            if (!wasVisible) showWindow()
+          }
+        },
+      )
       track(unlistenOpenExtension)
 
       const unlistenClickOutside = await listen('click-outside', () => {
@@ -183,9 +188,10 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
         extId: string
         subviewId: string
         payload: unknown
+        wasVisible: boolean
       }>('open-extension-subview', (e) => {
         markSkip()
-        const { extId, subviewId, payload } = e.payload
+        const { extId, subviewId, payload, wasVisible } = e.payload
         appStore.setActiveExtension(extId)
         appStore.setSearchQuery('')
         appStore.openSubview(subviewId, true)
@@ -193,6 +199,8 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
         if (ext?.onOpenSubview) {
           ext.onOpenSubview(subviewId, payload)
         }
+        // 窗口隐藏时：先切视图再 show，避免渲染旧视图闪现
+        if (!wasVisible) showWindow()
       })
       track(unlistenSubview)
 
