@@ -5,6 +5,9 @@
  */
 
 :root {
+  /* 让浏览器原生控件（滚动条 / 表单）也跟随系统外观 */
+  color-scheme: light dark;
+
   /* ── 基元 ── */
   --cool: 100 120 160; /* 填充 / 雾 / chip 描边 冷相 */
   --cool-deep: 110 130 165;
@@ -79,4 +82,98 @@
   /* ── 布局 ── */
   --content-max: 1100px;
   --content-pad: clamp(20px, 5vw, 48px);
+
+  /* ── 组件专项（深色覆盖点，浅色 = 原硬编码值）── */
+  /* Mica 雾团（复刻产品 mica-shell 冷蓝光晕） */
+  --mica-fog-a: rgb(215 230 255 / 0.55);
+  --mica-fog-b: rgb(205 218 245 / 0.42);
+  /* mock 场景内的半透明白底（搜索栏 / 卡片 / 浮钮 / 助手气泡） */
+  --mock-input-fill: rgb(255 255 255 / 0.7);
+  --mock-card-fill: rgb(255 255 255 / 0.6);
+  --mock-card-hover: rgb(255 255 255 / 0.95);
+  --bubble-bot-fill: rgb(248 249 252);
+  /* 用户气泡实底（产品 color-card-solid，accent 浅染基底） */
+  --color-card-solid: rgb(255 255 255 / 0.96);
+  /* 列表 / 选中行高亮（产品 ui-active-fill） */
+  --ui-active-fill: rgb(var(--cool) / 0.11);
+  /* 截图选区尺寸标签：功能性浮层，需高对比实底（深浅都强可读） */
+  --shot-badge-fill: rgb(255 255 255 / 0.95);
+  --shot-badge-ink: var(--color-accent);
+  /* chip 实白底 */
+  --soft-chip-fill: #fff;
+  /* 文件类型辨识色（mock 结果图标） */
+  --color-folder: #5a8def;
+  --color-file: #7aa2c8;
+}
+
+/*
+ * 深色主题：跟随系统（prefers-color-scheme）。
+ * 与产品 theme.css [data-theme="dark"] 同源同值，官网「所见即产品」。
+ * 仅覆盖需反相 / 提亮的 token，基元（cool / 动效 / 字体 / 圆角 / 布局）不变。
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-surface: #1c1c1e;
+    --color-accent-deep: color-mix(in srgb, var(--color-accent) 88%, #fff);
+
+    --color-danger: #f0757a;
+    --color-warning: #e6a02e;
+    --color-success: #4dbb82;
+
+    --color-text-primary: rgba(245, 245, 247, 0.92);
+    --color-text-secondary: rgba(212, 216, 226, 0.76);
+    --color-text-muted: rgba(178, 184, 198, 0.54);
+
+    /* fill 档改白色基底：深色下白色填充比冷相更自然 */
+    --color-fill-5: rgba(255, 255, 255, 0.06);
+    --color-fill-8: rgba(255, 255, 255, 0.1);
+    --color-fill-12: rgba(255, 255, 255, 0.14);
+    --color-fill-18: rgba(255, 255, 255, 0.2);
+
+    --color-border: rgba(255, 255, 255, 0.1);
+    --color-divider: rgba(255, 255, 255, 0.08);
+
+    /* accent 浅染：深底需更高饱和才可见 */
+    --accent-wash: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    --accent-line: color-mix(in srgb, var(--color-accent) 22%, transparent);
+    --accent-line-soft: color-mix(in srgb, var(--color-accent) 18%, transparent);
+
+    --soft-surface-fill: rgb(28 28 30 / 0.72);
+    --soft-surface-border: rgb(255 255 255 / 0.06);
+    --soft-card-fill: rgb(44 44 48 / 0.96);
+    --soft-chip-border: rgba(255, 255, 255, 0.1);
+    --soft-chip-border-hover: rgba(255, 255, 255, 0.16);
+
+    /* 阴影：深底叠深影易糊，ink→纯黑并提对比，第一层用白环衬边界 */
+    --shadow-ink: 0 0 0;
+    --shadow-card:
+      0 0 0 1px rgba(255 255 255 / 0.06), 0 0 16px rgb(var(--shadow-ink) / 0.28),
+      0 1px 4px rgb(var(--shadow-ink) / 0.2);
+    --shadow-panel:
+      0 4px 24px rgb(var(--shadow-ink) / 0.44), 0 2px 6px rgb(var(--shadow-ink) / 0.32);
+    --shadow-float:
+      0 0 0 1px rgba(255 255 255 / 0.08), 0 2px 20px rgb(var(--shadow-ink) / 0.32),
+      0 1px 3px rgb(var(--shadow-ink) / 0.24);
+    --shadow-float-hover:
+      0 0 0 1px rgba(255 255 255 / 0.12), 0 6px 24px rgb(var(--shadow-ink) / 0.44),
+      0 2px 6px rgb(var(--shadow-ink) / 0.3);
+
+    /* 雾团：深色下冷蓝光晕压暗，模拟产品深色 mica */
+    --mica-fog-a: rgb(60 80 130 / 0.34);
+    --mica-fog-b: rgb(50 70 120 / 0.26);
+    /* mock 白底反相为深底 */
+    --mock-input-fill: rgb(44 44 48 / 0.7);
+    --mock-card-fill: rgb(40 40 44 / 0.6);
+    --mock-card-hover: rgb(50 50 54 / 0.95);
+    --bubble-bot-fill: rgb(255 255 255 / 0.06);
+    --color-card-solid: rgb(44 44 48 / 0.96);
+    --ui-active-fill: rgba(255, 255, 255, 0.1);
+    /* 截图尺寸标签：深色下反相为深底白字 */
+    --shot-badge-fill: rgb(60 60 66 / 0.92);
+    --shot-badge-ink: rgb(140 175 245);
+    --soft-chip-fill: rgb(44 44 48 / 0.9);
+    /* 文件类型辨识色提亮（深色可读性） */
+    --color-folder: #7ea5f4;
+    --color-file: #9ab8d6;
+  }
 }

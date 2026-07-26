@@ -16,6 +16,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { useSystemStore } from '@/stores/system'
+import type { Appearance } from '@/stores/settings'
 import { isTauri } from '@/utils/tauri'
 import { scoreFields } from '@/utils/fuzzy'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
@@ -123,6 +124,23 @@ async function handleOpenPrivacy(kind: string) {
 
 const allSettingsItems = computed<SettingItem[]>(() => {
   const items: SettingItem[] = []
+
+  items.push({
+    id: 'appearance',
+    title: '外观',
+    type: 'select',
+    icon: 'i-ri-contrast-2-line',
+    group: '应用',
+    value: settings.appearance,
+    options: [
+      { label: '自动', value: 'auto' },
+      { label: '浅色', value: 'light' },
+      { label: '深色', value: 'dark' },
+    ],
+    update: (v: string | number) => {
+      settings.appearance = v as Appearance
+    },
+  })
 
   items.push({
     id: 'app-shortcut',

@@ -30,6 +30,7 @@ macro_rules! configure_app {
             crate::runtime::window::pick_files,
             crate::runtime::window::quit_app,
             crate::runtime::window::set_main_frame,
+            crate::runtime::window::set_window_appearance,
             crate::runtime::window::show_window,
             crate::extensions::agent::agent_abort,
             crate::extensions::agent::agent_run,

@@ -174,6 +174,21 @@ pub async fn pick_files(
     rx.recv().map_err(|e| e.to_string())
 }
 
+/// 设置所有窗口外观（appearance）：`auto` 跟随系统 / `light` / `dark`。
+/// 主题切换时由前端 theme.ts 调用，对 main 及所有已存在的窗口统一应用。
+#[tauri::command]
+pub fn set_window_appearance(app: tauri::AppHandle, mode: String) {
+    use tauri::Manager;
+    let _ = app.clone().run_on_main_thread(move || {
+        for (_, window) in app.webview_windows() {
+            #[cfg(target_os = "macos")]
+            crate::platform::window::apply_window_appearance(&window, &mode);
+            #[cfg(not(target_os = "macos"))]
+            let _ = (&window, &mode);
+        }
+    });
+}
+
 /// 退出应用（设置页「退出」等）。
 #[tauri::command]
 pub fn quit_app(app_handle: tauri::AppHandle) {

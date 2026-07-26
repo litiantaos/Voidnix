@@ -85,7 +85,7 @@ import { clusters, totalExtensions } from '../data/extensions.ts'
     padding: 16px 16px 18px;
     border-radius: var(--radius-panel);
     border: 1px solid var(--color-divider);
-    background: rgb(255 255 255 / 0.6);
+    background: var(--mock-card-fill);
     transition:
       transform var(--duration-fast) var(--ease-out),
       border-color var(--duration-fast) var(--ease-out),
@@ -96,7 +96,7 @@ import { clusters, totalExtensions } from '../data/extensions.ts'
   .ext:hover {
     transform: translateY(-2px);
     border-color: var(--accent-line);
-    background: rgb(255 255 255 / 0.95);
+    background: var(--mock-card-hover);
     box-shadow: var(--shadow-float);
   }
 

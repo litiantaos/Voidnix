@@ -120,6 +120,110 @@
 
   --chrome-fade-height: 76px;
   --chrome-fade-bottom-height: 100px;
+
+  /* ── 窗壳 / 控件交互态 / 渐变混色（深色覆盖点，浅色值 = 原硬编码）── */
+  --mica-shell-fill: rgb(255 255 255 / 0.86);
+  --mica-fog-a: rgb(215 230 255 / 0.32);
+  --mica-fog-b: rgb(205 218 245 / 0.24);
+  --soft-chip-hover-fill: rgb(248 249 252);
+  --soft-chip-active-fill: rgb(244 246 250);
+  --chrome-fade-tint: rgb(200 218 240);
+  --chrome-edge: white;
+  --accent-press: color-mix(in srgb, var(--color-accent) 88%, #000);
+  --accent-press-active: color-mix(in srgb, var(--color-accent) 78%, #000);
+  --danger-fill: rgb(236 106 110 / 0.04);
+  --danger-fill-active: rgb(236 106 110 / 0.08);
+  /* 窗壳玻璃高光环：顶部光泽 + 1px 边缘（深色覆盖点） */
+  --mica-ring-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.75), inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+/*
+ * 深色主题：:root[data-theme="dark"] 覆盖。
+ * data-theme 由 runtime/theme.ts 写入 <html>（auto 跟随系统 / light / dark 强制）。
+ * 与浅色同 token 体系、同分层语义，仅反相色阶 + 提高阴影对比。
+ */
+:root[data-theme='dark'] {
+  --color-surface: #1c1c1e;
+  --color-mist: rgb(120 140 175 / 0.16);
+  --color-mist-solid: #2a2d33;
+  --color-text-primary: rgba(245, 245, 247, 0.92);
+  --color-text-secondary: rgba(212, 216, 226, 0.76);
+  --color-text-muted: rgba(178, 184, 198, 0.54);
+
+  /* fill 档改白色基底：深色下白色填充比冷相更自然 */
+  --color-fill-4: rgba(255, 255, 255, 0.04);
+  --color-fill-5: rgba(255, 255, 255, 0.06);
+  --color-fill-8: rgba(255, 255, 255, 0.1);
+  --color-fill-12: rgba(255, 255, 255, 0.14);
+  --color-fill-18: rgba(255, 255, 255, 0.2);
+
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-divider: rgba(255, 255, 255, 0.08);
+  --color-smoke: rgba(0, 0, 0, 0.65);
+  --color-dialog-overlay: rgba(0, 0, 0, 0.55);
+  --dialog-fill: rgb(40 40 44 / 0.97);
+  --dialog-border: rgb(90 90 100 / 0.5);
+
+  /* 语义色略提亮（深色可读性） */
+  --color-danger: #f0757a;
+  --color-warning: #e6a02e;
+  --color-success: #4dbb82;
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 16%, transparent);
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  --color-success-soft: color-mix(in srgb, var(--color-success) 16%, transparent);
+
+  --color-card-solid: rgb(44 44 48 / 0.96);
+  --color-bubble: color-mix(in srgb, var(--color-accent) 14%, #2a2a2e);
+
+  /* accent 浅染：深底需更高饱和才可见 */
+  --accent-wash: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  --accent-line: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  --accent-line-soft: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  --accent-wash-grad: linear-gradient(90deg, var(--accent-wash) 0%, transparent 100%);
+  --focus-ring-color: color-mix(in srgb, var(--color-accent) 60%, white);
+
+  --shadow-ink: 0 0 0;
+
+  --soft-surface-fill: rgb(28 28 30 / 0.72);
+  --soft-surface-border: rgb(255 255 255 / 0.06);
+  --soft-chip-fill: rgb(44 44 48 / 0.9);
+  --soft-chip-border: rgba(255, 255, 255, 0.1);
+  --soft-chip-border-hover: rgba(255, 255, 255, 0.16);
+  --soft-chip-border-active: rgba(255, 255, 255, 0.13);
+  --ui-active-fill: rgba(255, 255, 255, 0.1);
+
+  --mica-shell-fill: rgb(20 20 22 / 0.86);
+  --mica-fog-a: rgb(60 80 130 / 0.3);
+  --mica-fog-b: rgb(50 70 120 / 0.22);
+  --soft-chip-hover-fill: rgba(255, 255, 255, 0.05);
+  --soft-chip-active-fill: rgba(255, 255, 255, 0.08);
+  --chrome-fade-tint: rgb(40 50 75);
+  --chrome-edge: #000;
+  --accent-press: color-mix(in srgb, var(--color-accent) 92%, #fff);
+  --accent-press-active: color-mix(in srgb, var(--color-accent) 84%, #fff);
+  --danger-fill: rgb(240 117 122 / 0.1);
+  --danger-fill-active: rgb(240 117 122 / 0.16);
+  /* 深色：白色高光刺眼，降为极弱边缘定义（不发光） */
+  --mica-ring-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.03), inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+
+  /* 阴影：深底叠深影易糊，提高 ink 不透明、第一层用白环衬边界 */
+  --shadow-bar: 0 2px 28px rgb(var(--shadow-ink) / 0.36), 0 1px 2px rgb(var(--shadow-ink) / 0.28);
+  --shadow-panel: 0 4px 24px rgb(var(--shadow-ink) / 0.44), 0 2px 6px rgb(var(--shadow-ink) / 0.32);
+  --shadow-dialog: 0 8px 32px rgb(var(--shadow-ink) / 0.56), 0 2px 8px rgb(var(--shadow-ink) / 0.4);
+  --shadow-card:
+    0 0 0 1px rgba(255 255 255 / 0.06), 0 0 16px rgb(var(--shadow-ink) / 0.28),
+    0 1px 4px rgb(var(--shadow-ink) / 0.2);
+  --shadow-float:
+    0 0 0 1px rgba(255 255 255 / 0.08), 0 2px 20px rgb(var(--shadow-ink) / 0.32),
+    0 1px 3px rgb(var(--shadow-ink) / 0.24);
+  --shadow-float-hover:
+    0 0 0 1px rgba(255 255 255 / 0.12), 0 6px 24px rgb(var(--shadow-ink) / 0.44),
+    0 2px 6px rgb(var(--shadow-ink) / 0.3);
+  --shadow-float-active:
+    0 0 0 1px rgba(255 255 255 / 0.1), 0 3px 12px rgb(var(--shadow-ink) / 0.36),
+    0 1px 3px rgb(var(--shadow-ink) / 0.26);
 }
 
 html {
@@ -182,9 +286,14 @@ body {
 .mica-shell,
 .mica-tint {
   position: relative;
-  background-color: rgb(255 255 255 / 0.86);
+  background-color: var(--mica-shell-fill);
   isolation: isolate;
   overflow: hidden;
+}
+
+/* 窗壳玻璃高光环：仅 mica-shell（主窗），mica-tint（snap-panel）无环 */
+.mica-shell {
+  box-shadow: var(--mica-ring-shadow);
 }
 
 .mica-shell::before,
@@ -207,7 +316,7 @@ body {
   height: 48%;
   left: 10%;
   top: 6%;
-  background: rgb(215 230 255 / 0.32);
+  background: var(--mica-fog-a);
   filter: blur(80px);
   opacity: 0.72;
 }
@@ -221,7 +330,7 @@ body {
   bottom: 6%;
   left: auto;
   top: auto;
-  background: rgb(205 218 245 / 0.24);
+  background: var(--mica-fog-b);
   filter: blur(88px);
   opacity: 0.58;
 }
@@ -372,7 +481,7 @@ body {
 
 /* hover：浅灰底（所有 chip 控件统一可见反馈）；边色仅非聚焦时改 */
 .soft-chip:hover:not(:disabled):not(.ui-disabled) {
-  background: rgb(248 249 252);
+  background: var(--soft-chip-hover-fill);
 }
 .soft-chip:hover:not(:disabled):not(.ui-disabled):not(:focus-visible):not(:focus-within):not(
     .is-keyboard-focus
@@ -382,7 +491,7 @@ body {
 
 /* 输入壳（BaseInput 等）不走按下态 */
 .soft-chip:active:not(:disabled):not(.ui-disabled):not(.ui-input) {
-  background: rgb(244 246 250);
+  background: var(--soft-chip-active-fill);
   border-color: var(--soft-chip-border-active);
 }
 
@@ -478,11 +587,11 @@ body {
 }
 
 .ui-btn-primary:hover:not(:disabled):not(.ui-disabled) {
-  background: color-mix(in srgb, var(--color-accent) 88%, #000) !important;
+  background: var(--accent-press) !important;
 }
 
 .ui-btn-primary:active:not(:disabled):not(.ui-disabled) {
-  background: color-mix(in srgb, var(--color-accent) 78%, #000) !important;
+  background: var(--accent-press-active) !important;
 }
 
 .ui-btn-primary i {
@@ -511,7 +620,7 @@ body {
    背景用 rgba 绝对值（非 color-mix）：WKWebView 对 color-mix+transparent 过渡插值不稳，会硬跳 */
 .ui-btn-danger {
   color: var(--color-danger) !important;
-  background: rgb(236 106 110 / 0.04) !important;
+  background: var(--danger-fill) !important;
   border-color: color-mix(in srgb, var(--color-danger) 22%, transparent) !important;
 }
 
@@ -520,7 +629,7 @@ body {
 }
 
 .ui-btn-danger:active:not(:disabled):not(.ui-disabled) {
-  background: rgb(236 106 110 / 0.08) !important;
+  background: var(--danger-fill-active) !important;
   border-color: color-mix(in srgb, var(--color-danger) 56%, transparent) !important;
 }
 
@@ -537,7 +646,7 @@ body {
   height: var(--chrome-fade-height);
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--color-canvas) 82%, rgb(200 218 240)) 0%,
+    color-mix(in srgb, var(--color-canvas) 82%, var(--chrome-fade-tint)) 0%,
     transparent 100%
   );
 }
@@ -551,7 +660,7 @@ body {
   height: var(--chrome-fade-bottom-height);
   background: linear-gradient(
     to top,
-    color-mix(in srgb, var(--color-canvas) 95%, white) 0%,
+    color-mix(in srgb, var(--color-canvas) 95%, var(--chrome-edge)) 0%,
     color-mix(in srgb, var(--color-canvas) 85%, transparent) 28%,
     color-mix(in srgb, var(--color-canvas) 40%, transparent) 58%,
     transparent 100%
