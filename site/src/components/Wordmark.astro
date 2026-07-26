@@ -1,0 +1,35 @@
+---
+interface Props {
+  size?: number
+  withText?: boolean
+  class?: string
+}
+const { size = 36, withText = true, class: cls = '' } = Astro.props
+---
+
+<span class={`wordmark ${cls}`} style={`--wm-size:${size}px`}>
+  <img src="/app-icon.png" alt="" width={size} height={size} class="wordmark-mark" />
+  {withText && <span class="wordmark-text">Voidnix</span>}
+</span>
+
+<style>
+  .wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .wordmark-mark {
+    width: var(--wm-size);
+    height: var(--wm-size);
+    border-radius: calc(var(--wm-size) * 0.235);
+    box-shadow: 0 1px 4px rgb(47 111 217 / 0.18);
+    flex-shrink: 0;
+  }
+  .wordmark-text {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: -0.02em;
+    color: var(--color-text-primary);
+  }
+</style>

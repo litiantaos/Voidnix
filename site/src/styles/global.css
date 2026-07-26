@@ -1,0 +1,223 @@
+/*
+ * 全局基础样式 + 通用工具类。
+ * 与产品视觉同轨：浅色、克制、中性墨阴影、mono 优先字体。
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  font-size: 16px;
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+/* 防 vw 单位 / 负外边距导致的横向溢出（overflow:hidden 的更彻底版本）*/
+html,
+body {
+  overflow-wrap: break-word;
+}
+img,
+svg,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+::selection {
+  background: var(--accent-line);
+  color: var(--color-accent-deep);
+}
+
+/* ── 排版 ── */
+.display {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.section-title {
+  font-family: var(--font-mono);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.section-lead {
+  font-size: clamp(16px, 1.6vw, 18px);
+  color: var(--color-text-secondary);
+  max-width: 56ch;
+}
+
+/* ── 容器与章节 ── */
+.container {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding-inline: var(--content-pad);
+}
+
+.section {
+  padding-block: clamp(72px, 12vw, 132px);
+  position: relative;
+}
+
+/* ── 与产品同源的面类 ── */
+.soft-surface {
+  border: 1px solid var(--soft-surface-border);
+  background: var(--soft-surface-fill);
+  backdrop-filter: blur(var(--soft-surface-blur)) saturate(var(--soft-surface-saturate));
+  -webkit-backdrop-filter: blur(var(--soft-surface-blur)) saturate(var(--soft-surface-saturate));
+}
+
+/* backdrop-filter 降级：不支持时落回实色卡，保质感 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .soft-surface {
+    background: var(--soft-card-fill);
+  }
+}
+
+.soft-card {
+  background: var(--soft-card-fill);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-panel);
+}
+
+/* chip：与产品控件同款（实白 + 冷灰 solid border，无 elevation） */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-ctrl);
+  border: 1px solid var(--soft-chip-border);
+  background: #fff;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+}
+
+/* ── 按钮 ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: var(--radius-ctrl);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: #fff;
+  box-shadow: var(--shadow-float);
+}
+.btn-primary:hover {
+  background: var(--color-accent-deep);
+  transform: translateY(-1px);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+}
+.btn-ghost:hover {
+  background: var(--color-fill-5);
+  border-color: var(--soft-chip-border-hover);
+}
+
+/* ── 滚动渐入（IntersectionObserver 驱动 .is-visible）── */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  * {
+    animation: none !important;
+  }
+}
+
+/* ── 滚动条 ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-fill-12);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fill-18);
+}

@@ -1,0 +1,565 @@
+---
+// 6 旗舰能力。每个配一个纯 CSS 复刻的微场景（替代截图，无外部资源即高级）。
+const capabilities = [
+  {
+    id: 'search',
+    icon: 'ri-search-line',
+    title: '全局搜索',
+    tag: 'Option + Space',
+    desc: '一次按键召回一切，快结果不等慢结果。',
+    bullets: ['流式增量召回', '拼音 / 全拼 / 缩写', '应用 / 文件 / 扩展分组'],
+    scene: 'search',
+  },
+  {
+    id: 'agent',
+    icon: 'ri-robot-2-line',
+    title: 'AI Agent',
+    tag: 'Option + A',
+    desc: '对话即操作，过程全程可见。',
+    bullets: ['工具调用循环', '联网搜索 + 执行命令', '统一 Key 中枢'],
+    scene: 'agent',
+  },
+  {
+    id: 'screenshot',
+    icon: 'ri-screenshot-line',
+    title: '截屏',
+    tag: 'Option + S',
+    desc: '截屏即标注、识别、钉图，存盘路径可配。',
+    bullets: ['标注 / OCR / 二维码', '钉图常驻', '滚动长截图'],
+    scene: 'screenshot',
+  },
+  {
+    id: 'window',
+    icon: 'ri-layout-grid-line',
+    title: '窗口管理',
+    tag: '鼠标至屏顶',
+    desc: '鼠标移至屏顶中心唤起面板，多屏下布局相对当前屏计算。',
+    bullets: ['顶部分屏面板', '自定义尺寸', '跨屏迁移'],
+    scene: 'window',
+  },
+  {
+    id: 'proxy',
+    icon: 'ri-signal-tower-line',
+    title: '代理',
+    tag: 'TUN 模式',
+    desc: '内置 mihomo 系统级接管，菜单栏一键断开。',
+    bullets: ['TUN 系统级接管', '节点测速切换', '连接 / 规则 / 日志'],
+    scene: 'proxy',
+  },
+  {
+    id: 'terminal',
+    icon: 'ri-terminal-box-line',
+    title: '终端建议',
+    tag: 'zsh',
+    desc: '输入即建议，→ 接受。',
+    bullets: ['frecency 智能补全', '→ 接受 / Tab 切换', '零侵入 zsh'],
+    scene: 'terminal',
+  },
+]
+---
+
+<section class="section capabilities" id="capabilities">
+  <div class="container">
+    <div class="head reveal">
+      <p class="eyebrow">核心能力</p>
+      <h2 class="section-title">六块拼图</h2>
+      <p class="section-lead">默认配齐，按需开关。</p>
+    </div>
+
+    <div class="rows">
+      {
+        capabilities.map((c, i) => (
+          <article class={`cap reveal ${i % 2 === 1 ? 'is-rev' : ''}`} id={c.id}>
+            <div class="cap-text">
+              <div class="cap-head">
+                <span class="cap-icon"><i class={c.icon} /></span>
+                <span class="cap-tag">{c.tag}</span>
+              </div>
+              <h3 class="cap-title">{c.title}</h3>
+              <p class="cap-desc">{c.desc}</p>
+              <ul class="cap-bullets">
+                {c.bullets.map((b) => (
+                  <li><i class="ri-check-line" />{b}</li>
+                ))}
+              </ul>
+            </div>
+            <div class="cap-scene">
+              {c.scene === 'search' && (
+                <div class="scene soft-card">
+                  <div class="sc-search"><i class="ri-search-line" /><span>void</span></div>
+                  <div class="sc-row is-active">
+                    <span class="sc-ico accent"><i class="ri-terminal-box-fill" /></span>
+                    <span class="sc-m"><b>Voidnix</b><small>/Applications</small></span>
+                  </div>
+                  <div class="sc-group">文件</div>
+                  <div class="sc-row">
+                    <span class="sc-ico folder"><i class="ri-folder-3-line" /></span>
+                    <span class="sc-m"><b>Voidnix</b><small>~/Code</small></span>
+                  </div>
+                  <div class="sc-row">
+                    <span class="sc-ico"><i class="ri-file-code-line" /></span>
+                    <span class="sc-m"><b>index.ts</b><small>~/Code/Voidnix</small></span>
+                  </div>
+                </div>
+              )}
+              {c.scene === 'agent' && (
+                <div class="scene soft-card">
+                  <div class="bubble user">列出 extensions 目录里的 ts 文件</div>
+                  <div class="bubble bot">
+                    <div class="tool-step"><i class="ri-terminal-line" /><span>run_command · ls</span></div>
+                    <div class="tool-out">21 个 index.ts，含 native 的 14 个</div>
+                  </div>
+                  <div class="bubble user"><i class="ri-arrow-right-s-line" /> 复制路径</div>
+                </div>
+              )}
+              {c.scene === 'screenshot' && (
+                <div class="scene scene-shot soft-card">
+                  <div class="shot-area">
+                    <span class="shot-handle tl" />
+                    <span class="shot-handle tr" />
+                    <span class="shot-handle bl" />
+                    <span class="shot-handle br" />
+                    <div class="shot-size">1280 × 720</div>
+                  </div>
+                  <div class="shot-tools">
+                    <span class="stool active"><i class="ri-arrow-right-up-line" /></span>
+                    <span class="stool"><i class="ri-shapes-line" /></span>
+                    <span class="stool"><i class="ri-font-color" /></span>
+                    <span class="stool"><i class="ri-eraser-line" /></span>
+                    <span class="stool"><i class="ri-qr-code-line" /></span>
+                  </div>
+                </div>
+              )}
+              {c.scene === 'window' && (
+                <div class="scene scene-win soft-card">
+                  <div class="snap-grid">
+                    <div class="snap-cell" />
+                    <div class="snap-cell active" />
+                    <div class="snap-cell" />
+                    <div class="snap-cell" />
+                    <div class="snap-cell" />
+                    <div class="snap-cell" />
+                  </div>
+                  <div class="snap-label"><i class="ri-drag-move-2-line" /> 右半屏</div>
+                </div>
+              )}
+              {c.scene === 'proxy' && (
+                <div class="scene soft-card">
+                  <div class="px-status"><span class="px-dot" /> 已连接 · 12 节点</div>
+                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">香港 01</span><span class="px-ms good">38ms</span></div>
+                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">东京 02</span><span class="px-ms good">62ms</span></div>
+                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">新加坡 01</span><span class="px-ms">98ms</span></div>
+                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">洛杉矶 03</span><span class="px-ms mid">180ms</span></div>
+                </div>
+              )}
+              {c.scene === 'terminal' && (
+                <div class="scene scene-term soft-card">
+                  <div class="term-bar"><span class="tdot r" /><span class="tdot y" /><span class="tdot g" /><b>zsh</b></div>
+                  <div class="term-body">
+                    <div class="tline"><span class="prompt">❯</span> git commit -m <span class="tstr">"fix"</span> <span class="ghost">--amend --no-edit</span></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .head {
+    max-width: 640px;
+    margin-bottom: 72px;
+  }
+  .head .section-title {
+    margin: 16px 0 18px;
+  }
+
+  .rows {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(72px, 10vw, 120px);
+  }
+
+  .cap {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    gap: clamp(32px, 6vw, 72px);
+  }
+  .cap.is-rev .cap-text {
+    order: 2;
+  }
+
+  .cap-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+  .cap-icon {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 11px;
+    background: var(--accent-wash);
+    color: var(--color-accent);
+    font-size: 21px;
+    border: 1px solid var(--accent-line-soft);
+  }
+  .cap-tag {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text-muted);
+    padding: 4px 10px;
+    border-radius: var(--radius-ctrl);
+    background: var(--color-fill-5);
+    border: 1px solid var(--color-divider);
+  }
+  .cap-title {
+    font-family: var(--font-mono);
+    font-size: clamp(24px, 3vw, 32px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 14px;
+  }
+  .cap-desc {
+    color: var(--color-text-secondary);
+    font-size: 15.5px;
+    line-height: 1.8;
+    margin-bottom: 22px;
+  }
+  .cap-bullets {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .cap-bullets li {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 14px;
+    color: var(--color-text-primary);
+  }
+  .cap-bullets i {
+    color: var(--color-accent);
+    font-size: 17px;
+  }
+
+  /* ── 场景公共框 ── */
+  .scene {
+    padding: 18px;
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-panel);
+    position: relative;
+  }
+  .cap-scene {
+    position: relative;
+  }
+  .cap-scene::after {
+    content: '';
+    position: absolute;
+    inset: -40px;
+    background: radial-gradient(
+      circle at 60% 40%,
+      rgb(var(--color-accent) / 0.08),
+      transparent 70%
+    );
+    z-index: -1;
+    filter: blur(20px);
+  }
+
+  .sc-search,
+  .sc-row,
+  .sc-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .sc-search {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgb(255 255 255 / 0.7);
+    border: 1px solid var(--soft-surface-border);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+  .sc-row {
+    padding: 7px 8px;
+    border-radius: 6px;
+  }
+  .sc-row.is-active {
+    background: rgb(var(--cool) / 0.11);
+  }
+  .sc-ico {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    background: var(--color-fill-5);
+    color: var(--color-text-secondary);
+  }
+  .sc-ico.accent {
+    background: var(--color-accent);
+    color: #fff;
+  }
+  .sc-ico.folder {
+    color: #5a8def;
+  }
+  .sc-m {
+    display: flex;
+    flex-direction: column;
+  }
+  .sc-m b {
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .sc-m small {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
+  .sc-row.is-active .sc-m b {
+    color: var(--color-accent);
+  }
+  .sc-group {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-muted);
+    padding: 8px 8px 4px;
+    letter-spacing: 0.05em;
+  }
+
+  /* agent */
+  .bubble {
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    margin-bottom: 8px;
+    max-width: 88%;
+  }
+  .bubble.user {
+    background: color-mix(in srgb, var(--color-accent) 7%, white);
+    border: 1px solid var(--accent-line-soft);
+    margin-left: auto;
+    color: var(--color-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .bubble.bot {
+    background: rgb(248 249 252);
+    border: 1px solid var(--color-divider);
+  }
+  .tool-step {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-accent);
+    margin-bottom: 6px;
+  }
+  .tool-out {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text-secondary);
+  }
+
+  /* screenshot */
+  .scene-shot {
+    padding: 14px;
+  }
+  .shot-area {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgb(var(--cool) / 0.1), rgb(var(--cool) / 0.04));
+    border: 1.5px solid var(--color-accent);
+    margin-bottom: 12px;
+  }
+  .shot-handle {
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    background: #fff;
+    border: 1.5px solid var(--color-accent);
+    border-radius: 2px;
+  }
+  .shot-handle.tl { top: -5px; left: -5px; }
+  .shot-handle.tr { top: -5px; right: -5px; }
+  .shot-handle.bl { bottom: -5px; left: -5px; }
+  .shot-handle.br { bottom: -5px; right: -5px; }
+  .shot-size {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-accent);
+    background: rgb(255 255 255 / 0.9);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .shot-tools {
+    display: flex;
+    gap: 6px;
+  }
+  .stool {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    display: grid;
+    place-items: center;
+    background: var(--color-fill-5);
+    color: var(--color-text-secondary);
+    font-size: 15px;
+  }
+  .stool.active {
+    background: var(--color-accent);
+    color: #fff;
+  }
+
+  /* window */
+  .scene-win {
+    padding: 16px;
+  }
+  .snap-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 6px;
+    aspect-ratio: 16 / 9;
+    margin-bottom: 12px;
+  }
+  .snap-cell {
+    background: rgb(var(--cool) / 0.06);
+    border: 1px dashed var(--color-border);
+    border-radius: 6px;
+  }
+  .snap-cell.active {
+    background: rgb(var(--color-accent) / 0.14);
+    border: 1.5px solid var(--color-accent);
+  }
+  .snap-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text-secondary);
+  }
+
+  /* proxy */
+  .px-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--color-divider);
+  }
+  .px-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-success);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success) 18%, transparent);
+  }
+  .px-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 4px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .px-row i {
+    color: var(--color-text-muted);
+    font-size: 15px;
+  }
+  .px-name {
+    flex: 1;
+    color: var(--color-text-primary);
+  }
+  .px-ms {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .px-ms.good { color: var(--color-success); }
+  .px-ms.mid { color: var(--color-warning); }
+
+  /* terminal */
+  .scene-term {
+    padding: 0;
+    overflow: hidden;
+  }
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 12px;
+    background: rgb(var(--cool) / 0.06);
+    border-bottom: 1px solid var(--color-divider);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .term-bar b {
+    margin-left: 8px;
+  }
+  .tdot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+  .tdot.r { background: #ec6a6e; }
+  .tdot.y { background: #d9891a; }
+  .tdot.g { background: #3d9a6a; }
+  .term-body {
+    padding: 14px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .tline {
+    color: var(--color-text-primary);
+  }
+  .prompt {
+    color: var(--color-accent);
+    margin-right: 8px;
+  }
+  .tstr {
+    color: #3d9a6a;
+  }
+  .ghost {
+    color: var(--color-text-muted);
+    background: rgb(var(--color-accent) / 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid var(--accent-line-soft);
+  }
+
+  @media (max-width: 760px) {
+    .cap {
+      grid-template-columns: 1fr;
+      gap: 32px;
+    }
+    .cap.is-rev .cap-text {
+      order: 0;
+    }
+  }
+</style>

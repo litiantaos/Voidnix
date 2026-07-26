@@ -1,0 +1,59 @@
+---
+import '../styles/tokens.css'
+import '../styles/global.css'
+
+const title = 'Voidnix - macOS 效率启动器'
+const description =
+  '模块化的 macOS 效率启动器。Rust + 原生原语，21 个一等公民扩展，常驻低占用。'
+const site = Astro.site ?? new URL('https://voidnix.app')
+const og = new URL('/og-image.png', site)
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#f8f8f9" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={og.href} />
+    <meta property="og:url" content={site.href} />
+    <meta property="og:locale" content="zh_CN" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={og.href} />
+
+    <!-- Remix Icon（与产品图标集一致） -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css"
+    />
+  </head>
+  <body>
+    <slot />
+
+    <!-- 滚动渐入：极简 observer，错峰由 transition-delay 控制 -->
+    <script>
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting) {
+              e.target.classList.add('is-visible')
+              io.unobserve(e.target)
+            }
+          }
+        },
+        { threshold: 0.12, rootMargin: '0px 0px -8% 0px' },
+      )
+      document.querySelectorAll('.reveal').forEach((el) => io.observe(el))
+    </script>
+  </body>
+</html>
