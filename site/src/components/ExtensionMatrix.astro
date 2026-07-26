@@ -1,0 +1,132 @@
+---
+import { clusters, totalExtensions } from '../data/extensions.ts'
+---
+
+<section class="section matrix" id="extensions">
+  <div class="container">
+    <div class="head reveal">
+      <p class="eyebrow">扩展矩阵</p>
+      <h2 class="section-title">{totalExtensions} 个扩展，统一架构</h2>
+      <p class="section-lead">都是一等公民，声明即用。</p>
+    </div>
+
+    <div class="clusters">
+      {
+        clusters.map((c, ci) => (
+          <div class="cluster reveal" style={`transition-delay:${ci * 60}ms`}>
+            <h3 class="cluster-title">
+              <span class="cluster-count">{c.items.length}</span>
+              {c.title}
+            </h3>
+            <div class="cluster-grid">
+              {c.items.map((it) => (
+                <div class="ext" title={it.desc}>
+                  <span class="ext-icon"><i class={it.icon} /></span>
+                  <span class="ext-name">{it.name}</span>
+                  <span class="ext-desc">{it.desc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .head {
+    max-width: 640px;
+    margin-bottom: 64px;
+  }
+  .head .section-title {
+    margin: 16px 0 18px;
+  }
+
+  .clusters {
+    display: flex;
+    flex-direction: column;
+    gap: 44px;
+  }
+
+  .cluster-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    margin-bottom: 20px;
+    letter-spacing: -0.01em;
+  }
+  .cluster-count {
+    display: grid;
+    place-items: center;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 7px;
+    border-radius: 6px;
+    background: var(--color-fill-8);
+    color: var(--color-text-primary);
+    font-size: 12px;
+  }
+
+  .cluster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+
+  .ext {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px 16px 18px;
+    border-radius: var(--radius-panel);
+    border: 1px solid var(--color-divider);
+    background: rgb(255 255 255 / 0.6);
+    transition:
+      transform var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
+    cursor: default;
+  }
+  .ext:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-line);
+    background: rgb(255 255 255 / 0.95);
+    box-shadow: var(--shadow-float);
+  }
+
+  .ext-icon {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: var(--color-fill-5);
+    color: var(--color-text-secondary);
+    font-size: 18px;
+    margin-bottom: 6px;
+    transition:
+      background-color var(--duration-fast) var(--ease-out),
+      color var(--duration-fast) var(--ease-out);
+  }
+  .ext:hover .ext-icon {
+    background: var(--accent-wash);
+    color: var(--color-accent);
+  }
+
+  .ext-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+  }
+  .ext-desc {
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+    line-height: 1.55;
+  }
+</style>

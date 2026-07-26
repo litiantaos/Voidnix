@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css"
+    />
+    <style>
+      :root {
+        --accent: #3d82f0;
+        --cool: 100 120 160;
+        --ink: rgba(30, 35, 50, 0.92);
+        --sec: rgba(80, 90, 115, 0.85);
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+      }
+      body {
+        background: #f8f8f9;
+        font-family: ui-monospace, 'PingFang SC', 'SF Pro Display', sans-serif;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 72px 80px;
+        color: var(--ink);
+      }
+      /* Mica 雾团 */
+      .fog {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .fog span {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(90px);
+      }
+      .fog .a {
+        width: 720px;
+        height: 480px;
+        left: -120px;
+        top: -160px;
+        background: rgb(215 230 255 / 0.6);
+      }
+      .fog .b {
+        width: 680px;
+        height: 460px;
+        right: -140px;
+        bottom: -200px;
+        background: rgb(205 218 245 / 0.5);
+      }
+      .content {
+        position: relative;
+        z-index: 1;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .mark {
+        width: 56px;
+        height: 56px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #4d8ef5, #2f6fd9);
+        box-shadow: 0 6px 20px rgb(47 111 217 / 0.35);
+      }
+      .mark svg {
+        display: block;
+      }
+      .brand-name {
+        font-size: 30px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .eyebrow {
+        font-size: 15px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--accent);
+        font-weight: 500;
+        margin-top: 4px;
+      }
+      .title {
+        font-size: 78px;
+        font-weight: 600;
+        letter-spacing: -0.035em;
+        line-height: 1.06;
+        margin: 18px 0 26px;
+      }
+      .title em {
+        font-style: normal;
+        color: var(--accent);
+      }
+      .sub {
+        font-size: 26px;
+        color: var(--sec);
+        line-height: 1.5;
+        max-width: 880px;
+        font-family: 'PingFang SC', sans-serif;
+      }
+      .foot {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 18px;
+        color: var(--sec);
+      }
+      .chips {
+        display: flex;
+        gap: 14px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 18px;
+        border-radius: 8px;
+        border: 1px solid rgba(140, 160, 195, 0.28);
+        background: rgba(255, 255, 255, 0.7);
+        font-size: 17px;
+      }
+      .chip i {
+        color: var(--accent);
+        font-size: 19px;
+      }
+      .url {
+        font-family: ui-monospace, monospace;
+        font-size: 17px;
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="fog"><span class="a"></span><span class="b"></span></div>
+
+    <div class="content">
+      <div class="brand">
+        <div class="mark">
+          <svg width="56" height="56" viewBox="0 0 64 64">
+            <path
+              d="M20 21 L32 44 L44 21"
+              fill="none"
+              stroke="#fff"
+              stroke-width="6.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <circle cx="32" cy="13.5" r="3" fill="#fff" opacity="0.92" />
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">Voidnix</div>
+          <div class="eyebrow">macOS Launcher · Open Source</div>
+        </div>
+      </div>
+
+      <h1 class="title">一个按键，<em>触及系统全部能力</em></h1>
+      <p class="sub">模块化的 macOS 效率启动器。Rust 与原生原语构建，21 个一等公民扩展，常驻低占用。</p>
+    </div>
+
+    <div class="foot">
+      <div class="chips">
+        <span class="chip"><i class="ri-stack-line"></i> 模块化</span>
+        <span class="chip"><i class="ri-flashlight-line"></i> 原生性能</span>
+        <span class="chip"><i class="ri-leaf-line"></i> 极简</span>
+      </div>
+      <div class="url">github.com/litiantaos/Voidnix</div>
+    </div>
+  </body>
+</html>

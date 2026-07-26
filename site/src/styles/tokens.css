@@ -1,0 +1,81 @@
+/*
+ * Voidnix 官网设计 token
+ * 从产品 src/styles/theme.css 提取官网所需子集，让「所见即产品」。
+ * 基元 → 面 → 阴影 → 动效，同源同轨。
+ */
+
+:root {
+  /* ── 基元 ── */
+  --cool: 100 120 160; /* 填充 / 雾 / chip 描边 冷相 */
+  --cool-deep: 110 130 165;
+  --shadow-ink: 40 40 50; /* elevation 中性墨 */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+
+  /* ── 色 ── */
+  --color-surface: #f8f8f9;
+  --color-canvas: var(--color-surface);
+  --color-accent: #3d82f0;
+  --color-accent-deep: color-mix(in srgb, var(--color-accent) 88%, #000);
+
+  /* 语义色（与组件状态点同源：success=#3d9a6a / warning=#d9891a） */
+  --color-success: #3d9a6a;
+  --color-warning: #d9891a;
+  --color-danger: #d9534f;
+
+  --color-text-primary: rgba(30, 35, 50, 0.92);
+  --color-text-secondary: rgba(80, 90, 115, 0.88);
+  --color-text-muted: rgba(110, 120, 145, 0.72);
+
+  --color-fill-5: rgb(var(--cool) / 0.08);
+  --color-fill-8: rgb(var(--cool) / 0.12);
+  --color-fill-12: rgb(var(--cool) / 0.16);
+  --color-fill-18: rgb(var(--cool) / 0.22);
+
+  --color-border: rgba(140, 160, 195, 0.28);
+  --color-divider: rgb(var(--cool) / 0.1);
+
+  /* accent 浅染 */
+  --accent-wash: color-mix(in srgb, var(--color-accent) 2.5%, transparent);
+  --accent-line: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  --accent-line-soft: color-mix(in srgb, var(--color-accent) 9%, transparent);
+
+  /* ── 面（与产品 soft-surface / soft-card 同轨）── */
+  --soft-surface-fill: rgb(246 246 248 / 0.72);
+  --soft-surface-border: rgb(255 255 255 / 0.98);
+  --soft-surface-blur: 40px;
+  --soft-surface-saturate: 1.35;
+
+  --soft-card-fill: rgb(255 255 255 / 0.96);
+  --soft-chip-border: rgb(var(--cool-deep) / 0.16);
+  --soft-chip-border-hover: rgb(var(--cool-deep) / 0.24);
+
+  /* ── elevation（中性墨，克制三档 + 卡片）── */
+  --shadow-card:
+    0 0 0 1px color-mix(in srgb, var(--color-text-primary) 5%, transparent),
+    0 0 16px rgb(var(--shadow-ink) / 0.06), 0 1px 4px rgb(var(--shadow-ink) / 0.03);
+  --shadow-panel: 0 4px 24px rgb(var(--shadow-ink) / 0.1), 0 2px 6px rgb(var(--shadow-ink) / 0.06);
+  --shadow-float:
+    0 0 0 1px color-mix(in srgb, var(--color-border) 25%, transparent),
+    0 2px 20px rgb(var(--shadow-ink) / 0.05), 0 1px 3px rgb(var(--shadow-ink) / 0.04);
+  --shadow-float-hover:
+    0 0 0 1px color-mix(in srgb, var(--color-border) 32%, transparent),
+    0 6px 24px rgb(var(--shadow-ink) / 0.1), 0 2px 6px rgb(var(--shadow-ink) / 0.07);
+
+  /* ── 字体 / 圆角 / 尺寸 ── */
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+  --font-cjk: 'PingFang SC', 'Hiragino Sans GB', 'SF Pro Text', 'SF Pro Display', -apple-system,
+    BlinkMacSystemFont, 'Helvetica Neue', 'Segoe UI', sans-serif;
+  --font-sans: var(--font-mono), var(--font-cjk);
+
+  --radius-ctrl: 6px;
+  --radius-panel: 10px;
+  --radius-window: 16px;
+
+  /* ── 布局 ── */
+  --content-max: 1100px;
+  --content-pad: clamp(20px, 5vw, 48px);
+}

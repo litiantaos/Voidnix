@@ -1,0 +1,104 @@
+---
+const items = [
+  {
+    icon: 'ri-stack-line',
+    title: '两层正交',
+    desc: 'runtime 调度核心与 platform 原语分离，换实现即跨平台，业务零泄漏。',
+  },
+  {
+    icon: 'ri-flashlight-line',
+    title: 'Rust + 原语',
+    desc: '常驻近乎零负担，LaunchAgent 长期采样背书其稳定与克制。',
+  },
+  {
+    icon: 'ri-leaf-line',
+    title: 'Mica 玻璃',
+    desc: '仅浅色，克制圆角与中性墨阴影。',
+  },
+]
+---
+
+<section class="section philosophy" id="philosophy">
+  <div class="container">
+    <div class="head reveal">
+      <p class="eyebrow">设计哲学</p>
+      <h2 class="section-title">结构清晰，性能克制</h2>
+      <p class="section-lead">复杂藏在结构里，不在界面上。</p>
+    </div>
+
+    <div class="grid">
+      {items.map((it, i) => (
+        <article class="card soft-card reveal" style={`transition-delay:${i * 70}ms`}>
+          <span class="card-icon">
+            <i class={it.icon}></i>
+          </span>
+          <h3 class="card-title">{it.title}</h3>
+          <p class="card-desc">{it.desc}</p>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .head {
+    max-width: 640px;
+    margin-bottom: 56px;
+  }
+  .head .section-title {
+    margin: 16px 0 18px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+
+  .card {
+    padding: 32px 28px;
+    transition:
+      transform var(--duration-normal) var(--ease-out),
+      box-shadow var(--duration-normal) var(--ease-out),
+      opacity var(--duration-normal) var(--ease-out);
+  }
+  .card:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-text-primary) 6%, transparent),
+      0 12px 32px rgb(var(--shadow-ink) / 0.1);
+  }
+
+  .card-icon {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 11px;
+    background: var(--accent-wash);
+    color: var(--color-accent);
+    font-size: 22px;
+    margin-bottom: 22px;
+    border: 1px solid var(--accent-line-soft);
+  }
+
+  .card-title {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    letter-spacing: -0.01em;
+  }
+
+  .card-desc {
+    color: var(--color-text-secondary);
+    font-size: 14.5px;
+    line-height: 1.75;
+  }
+
+  @media (max-width: 880px) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
