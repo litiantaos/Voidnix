@@ -1,6 +1,6 @@
 <template>
   <BaseDialog
-    title="发现新版本"
+    title="检查更新"
     :ok-label="installing ? '安装中…' : '立即安装并重启'"
     cancel-label="稍后"
     size="sm"
@@ -18,38 +18,20 @@
       <p v-if="updateStore.info?.body" text="xs secondary" leading="relaxed" line-clamp="4">
         {{ updateStore.info.body }}
       </p>
-
-      <BaseButton
-        variant="ghost"
-        icon="i-ri-external-link-line"
-        class="text-accent/80 hover:text-accent"
-        @click="openReleases"
-      >
-        查看完整更新说明
-      </BaseButton>
     </div>
   </BaseDialog>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { open } from '@tauri-apps/plugin-shell'
 import { relaunch } from '@tauri-apps/plugin-process'
 import BaseDialog from './BaseDialog.vue'
-import BaseButton from './BaseButton.vue'
 import { useUpdateStore } from '@/stores/update'
-import { isTauri } from '@/utils/tauri'
 
 const emit = defineEmits<{ close: [] }>()
 
 const updateStore = useUpdateStore()
 const installing = ref(false)
-
-async function openReleases() {
-  if (isTauri) {
-    await open('https://github.com/litiantao/Voidnix/releases')
-  }
-}
 
 async function onConfirm() {
   installing.value = true
