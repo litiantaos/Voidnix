@@ -20,11 +20,8 @@ const VERSION = '0.1.0'
 
   <div class="hero-inner container">
     <div class="hero-copy">
-      <p class="eyebrow reveal">为 macOS 而生 · 开源</p>
-      <h1 class="hero-title display reveal">
-        一个按键，<br />触及系统全部能力
-      </h1>
-      <p class="hero-sub reveal">Rust 与原生原语构建，启动即达，常驻低占用。</p>
+      <p class="eyebrow reveal">为 macOS 而生</p>
+      <h1 class="hero-title display reveal">想到就到，触手可及</h1>
 
       <div class="hero-chips reveal">
         <span class="chip"><i class="ri-stack-line"></i> 模块化</span>
@@ -33,7 +30,7 @@ const VERSION = '0.1.0'
       </div>
 
       <div class="hero-cta reveal">
-        <a href={RELEASES} class="btn btn-primary" target="_blank" rel="noopener">
+        <a id="download-btn" href={RELEASES} class="btn btn-primary" target="_blank" rel="noopener">
           <i class="ri-download-2-line"></i> 下载
         </a>
         <a href={GITHUB} class="btn btn-ghost" target="_blank" rel="noopener">
@@ -89,6 +86,26 @@ const VERSION = '0.1.0'
     </div>
   </div>
 </section>
+
+<script>
+  // 直链最新 release 的 dmg（版本无关），失败回退 releases 页
+  const btn = document.getElementById('download-btn')
+  if (btn) {
+    fetch('https://api.github.com/repos/litiantaos/Voidnix/releases/latest')
+      .then((r) => r.json())
+      .then((data) => {
+        const assets = data.assets ?? []
+        const dmg =
+          assets.find((a) => /aarch64\.dmg$/.test(a.name)) ??
+          assets.find((a) => /\.dmg$/.test(a.name))
+        if (dmg?.browser_download_url) {
+          btn.href = dmg.browser_download_url
+          btn.removeAttribute('target')
+        }
+      })
+      .catch(() => {})
+  }
+</script>
 
 <style>
   .hero {
@@ -179,11 +196,12 @@ const VERSION = '0.1.0'
 
   .hero-copy {
     max-width: 560px;
+    padding-top: 44px;
   }
 
   .hero-title {
     font-size: clamp(34px, 4.5vw, 52px);
-    margin: 20px 0 22px;
+    margin: 36px 0 0;
     color: var(--color-text-primary);
   }
 
@@ -198,7 +216,7 @@ const VERSION = '0.1.0'
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    margin: 28px 0 32px;
+    margin: 44px 0 92px;
   }
 
   .hero-cta {
