@@ -33,6 +33,13 @@ const messages = ref<AgentMessage[]>([])
 const status = ref<AgentStatus>('ready')
 const sessionId = ref('')
 
+/**
+ * accessory 操作后要求主输入框聚焦的信号（自增触发）。
+ * 用 tick 而非直接持有 ref：Actions（搜索栏）与 View（内容区）是兄弟组件，
+ * 且选原值时 config 不变、watch 值变化会漏掉——以 BaseSelect focusout（焦点离开）为信号才准确。
+ */
+export const focusInputTick = ref(0)
+
 export function useAgentChat() {
   const isGenerating = computed(() => status.value === 'streaming')
 
