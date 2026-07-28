@@ -62,6 +62,16 @@ cd src-tauri && cargo test --lib   # Rust
 
 E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run test:e2e`）。原生窗口行为（快捷键/焦点/隐藏）仍需人工验证。
 
+## 本地门禁
+
+**每次 `git commit` 前必须先跑 `bun run precheck` 并全绿**，否则不得提交（AI agent 同样遵守，不得跳过）：
+
+```bash
+bun run precheck   # CI 同款全量门禁（不含 e2e）：lint:check → cargo fmt --check → typecheck → cargo clippy --lib -D warnings → check:drift → test → cargo test --lib
+```
+
+e2e（`bun run test:e2e`，需起 Vite dev server + 浏览器）不在本地门禁，交 CI 兜底。
+
 ## CI 门禁
 
 `.github/workflows/ci.yml` 在 push（main/refactor/v2）与任意 PR 触发，依次执行：
@@ -92,11 +102,11 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 所有扩展同构（`extensions/<id>/index.ts` + 可选 `config.ts` + 可选 `native/`），详见 [docs/extensions.md](docs/extensions.md)。
 
-含 native/（14）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers
+含 native/（15）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers、image
 
 纯 TS（7）：calculator、settings、ip、base64、time、uuid、currency
 
-复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[ai-providers](docs/extensions/ai-providers.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[finder-ext](docs/extensions/finder-ext.md)、[window-manager](docs/extensions/window-manager.md)。
+复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[ai-providers](docs/extensions/ai-providers.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[image](docs/extensions/image.md)、[finder-ext](docs/extensions/finder-ext.md)、[window-manager](docs/extensions/window-manager.md)。
 
 ## 架构要点
 
@@ -429,6 +439,7 @@ src/
     ├── translate/config.json
     ├── agent/config.json             # 资源上限 + systemPrompt + 搜索 Provider（AI Key 见 ai-providers.json）
     ├── video/{ffmpeg,ffprobe,ffmpeg.version,config.json}  # 按需下载的静态 ffmpeg/ffprobe + 配置
+    ├── image/config.json             # 输出目录配置（移除背景/拼接结果）
     └── proxy/{mihomo, mihomo.pid, mihomo.log, geoip.metadb, geosite.dat, config.yaml, subs/, config.json}  # TUN 模式 root 常驻
 ```
 
@@ -442,6 +453,6 @@ icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litia
 - 环境：`isTauri` 判断环境（常量，非函数），非 Tauri 跳过原生调用
 - TypeScript 严格模式：`noUnusedLocals` + `noUnusedParameters`
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`
-- Git commit：`<type>(<scope>): <中文描述>`，描述力求最简，不写详情，不主动执行 git 操作
+- Git commit：`<type>(<scope>): <中文描述>`，描述力求最简，不写详情，不主动执行 git 操作；**提交前必须先跑 `bun run precheck` 且全绿**
 - 语言：注释和回复用中文，禁止在任何地方使用 emoji
 - 文档：不用表格，言简意赅，修改代码后必须同步更新 AGENTS.md 或对应 docs/ 文档中相关描述

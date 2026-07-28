@@ -18,7 +18,7 @@ extensions/<id>/
     └── ...                # 子模块（commands.rs / engine/ 等）
 ```
 
-21 个扩展：含 native/ 的 14 个（clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers），纯 TS 的 7 个（calculator、settings、ip、base64、time、uuid、currency）。
+22 个扩展：含 native/ 的 15 个（clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers、image），纯 TS 的 7 个（calculator、settings、ip、base64、time、uuid、currency）。
 
 ## 前端注册
 
@@ -40,8 +40,8 @@ export default defineExtension({
 
 - `search`：SearchProvider.dynamic 单通道召回（消费者见下「搜索集成」）
 - `onExecute`：搜索结果回车动作，扩展私有（无消费者）
-- `mainView`：主视图组件（14 扩展）
-- `searchBarAccessory`：搜索栏右侧配件（5：clipboard/agent/translate/proxy/ai-providers）
+- `mainView`：主视图组件（15 扩展）
+- `searchBarAccessory`：搜索栏右侧配件（6：clipboard/agent/translate/proxy/ai-providers/image）
 - `subviews`：扩展私有命名子视图（5：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{connections/rules/logs}）
 - `subviewTitle`：子视图显示名（id→中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」（1：proxy）
 - `windowViews`：独立窗口视图，key 须存在于 `tauri.conf.json` `windows[].label`，`-`/`*` 结尾为动态前缀（2：screenshot/window-manager）
@@ -51,7 +51,7 @@ export default defineExtension({
   - **`number`**：固定高度，clamp `[MIN,MAX]`
   - **`'auto'`**：随内容自适应
   - **未声明**：默认高度
-  - 共 6 消费者：agent/proxy=840、translate/system-status/video/finder-ext='auto'
+  - 共 7 消费者：agent/proxy=840、translate/system-status/video/finder-ext/image='auto'
 - `subviewHeights`：subview 级高度覆盖，key→语义同 windowHeight（1：screenshot{ocr:'auto'}）
 
 **高度机制**：统一由 `useExtensionHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管。
@@ -77,7 +77,7 @@ export default defineExtension({
 
 ### UI 规约补充
 
-- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免扩展列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / ai-providers=35 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / screenshot=110 / video=115 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160；hidden 扩展 settings=998 / search=999。
+- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免扩展列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / ai-providers=35 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / screenshot=110 / video=115 / image=116 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160；hidden 扩展 settings=998 / search=999。
 - **`disableSearchInput` 决策**：与 `mainView` 独立——mainView 扩展若仍用主搜索框过滤列表（如 clipboard）则不声明；自管输入或无需搜索框（agent/translate/settings 等）声明 `true`。uuid 有 search 但 disableSearchInput（进入后只展示即时结果）。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
 - **View 根禁止与 ContentView 竞争的纵向双滚**：经 ContentView 渲染的 View（mainView/subviews）根及主内容流不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是页面级唯一滚动容器——View 根再设 overflow 会形成双层滚动，`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中失效内层 → 选中框出视口。固定高度媒体预览等局部区域（如 OCR 图预览）可自滚。`windowViews`（独立窗口）不经 ContentView，不受此约束。

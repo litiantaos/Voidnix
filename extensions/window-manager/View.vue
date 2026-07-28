@@ -44,7 +44,6 @@ const heightInputRef = ref<InstanceType<typeof BaseInput>>()
 const draftWidth = ref(String(wmConfig.customWidth))
 const draftHeight = ref(String(wmConfig.customHeight))
 const focusedField = ref<'width' | 'height' | null>(null)
-const cancelOnBlur = ref(false)
 
 const settingsItems = computed<SettingItem[]>(() => [
   {
@@ -74,12 +73,6 @@ function onFocus(field: 'width' | 'height') {
 
 function onBlur(field: 'width' | 'height') {
   focusedField.value = null
-  if (cancelOnBlur.value) {
-    cancelOnBlur.value = false
-    draftWidth.value = String(wmConfig.customWidth)
-    draftHeight.value = String(wmConfig.customHeight)
-    return
-  }
   if (field === 'width') {
     const n = parseInt(draftWidth.value, 10)
     if (n > 0) wmConfig.customWidth = clampWidth(n)
@@ -89,23 +82,16 @@ function onBlur(field: 'width' | 'height') {
     if (n > 0) wmConfig.customHeight = clampHeight(n)
     draftHeight.value = String(wmConfig.customHeight)
   }
+  // Tab 切到另一个输入框时焦点转移晚于 blur，延迟一帧再判断
+  requestAnimationFrame(() => {
+    if (!document.activeElement?.hasAttribute('data-settings-control')) {
+      focusSearchInput()
+    }
+  })
 }
 
 function onInputKeydown(e: KeyboardEvent, field: 'width' | 'height') {
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    e.stopImmediatePropagation()
-    cancelOnBlur.value = true
-    if (field === 'width') draftWidth.value = String(wmConfig.customWidth)
-    else draftHeight.value = String(wmConfig.customHeight)
-    ;(e.target as HTMLInputElement).blur()
-    focusSearchInput()
-  } else if (e.key === 'Enter') {
-    e.preventDefault()
-    e.stopImmediatePropagation()
-    ;(e.target as HTMLInputElement).blur()
-    focusSearchInput()
-  } else if (e.key === 'Tab' && !e.shiftKey) {
+  if (e.key === 'Tab' && !e.shiftKey) {
     e.preventDefault()
     if (field === 'width') heightInputRef.value?.focus()
     else widthInputRef.value?.focus()

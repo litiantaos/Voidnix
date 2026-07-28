@@ -21,7 +21,8 @@
     "check:extension-orders": "bun run scripts/check-extension-orders.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "precheck": "bun run lint:check && cargo fmt --manifest-path src-tauri/Cargo.toml --check && bun run typecheck && cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings && bun run check:drift && bun run test && cargo test --manifest-path src-tauri/Cargo.toml --lib"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.8.0",
