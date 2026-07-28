@@ -5,12 +5,14 @@
 //! H6：所有返回 autoreleased NSString/NSData 的读路径包 autoreleasepool，
 //! 避免在后台线程（translate 划词、clipboard monitor 等）累积内存。
 
+use objc2::exception::catch;
 use objc2::rc::autoreleasepool;
 use objc2_app_kit::{
-    NSPasteboard, NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSPasteboardTypeString,
-    NSPasteboardTypeTIFF,
+    NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL, NSPasteboardTypePNG,
+    NSPasteboardTypeString, NSPasteboardTypeTIFF,
 };
-use objc2_foundation::{NSData, NSString, NSURL};
+use objc2_foundation::{NSArray, NSData, NSString, NSURL};
+use std::panic::AssertUnwindSafe;
 
 /// 读取剪贴板文本。
 pub fn read_text() -> Option<String> {
@@ -21,13 +23,27 @@ pub fn read_text() -> Option<String> {
     })
 }
 
+/// 安全获取剪贴板 items，捕获 ObjC 异常防进程崩溃。
+///
+/// `pasteboardItems` 在并发访问或 generationCount 不一致时偶发抛出 ObjC 异常
+/// （AppKit 内部 NSConcreteMapTable 竞态），未捕获会穿透 Rust FFI 直接 abort
+/// 进程（release panic=abort 下无恢复余地）。用 objc2::exception::catch 兜底，
+/// 异常时降级为 None，调用方跳过 items 遍历。
+fn safe_pasteboard_items() -> Option<objc2::rc::Retained<NSArray<NSPasteboardItem>>> {
+    autoreleasepool(|_| {
+        let pb = NSPasteboard::generalPasteboard();
+        catch(AssertUnwindSafe(|| pb.pasteboardItems()))
+            .ok()
+            .flatten()
+    })
+}
+
 /// 读取所有文件 URL（多选复制时剪贴板含多个 NSPasteboardItem，每个一个 file URL）。
 /// 单文件复制返回 1 元素 Vec。
 pub fn read_file_urls() -> Vec<String> {
     autoreleasepool(|_| unsafe {
-        let pb = NSPasteboard::generalPasteboard();
         let mut urls = Vec::new();
-        if let Some(items) = pb.pasteboardItems() {
+        if let Some(items) = safe_pasteboard_items() {
             for item in items.iter() {
                 if let Some(s) = item.stringForType(NSPasteboardTypeFileURL) {
                     urls.push(s.to_string());
@@ -137,8 +153,7 @@ pub fn set_file_urls(urls: &[String], marker_uti: Option<&str>) {
     }
     autoreleasepool(|_| {
         use objc2::runtime::ProtocolObject;
-        use objc2_app_kit::{NSPasteboardItem, NSPasteboardWriting};
-        use objc2_foundation::NSArray;
+        use objc2_app_kit::NSPasteboardWriting;
         let pb = NSPasteboard::generalPasteboard();
         let mut protos: Vec<objc2::rc::Retained<ProtocolObject<dyn NSPasteboardWriting>>> =
             Vec::with_capacity(urls.len());
@@ -234,7 +249,7 @@ pub fn snapshot() -> PasteboardSnapshot {
         let pb = NSPasteboard::generalPasteboard();
         let change_count = pb.changeCount();
         let mut items = Vec::new();
-        if let Some(ns_items) = pb.pasteboardItems() {
+        if let Some(ns_items) = safe_pasteboard_items() {
             for item in ns_items.iter() {
                 let mut entries = Vec::new();
                 for t in item.types().iter() {
@@ -256,8 +271,7 @@ pub fn snapshot() -> PasteboardSnapshot {
 pub fn restore(snap: &PasteboardSnapshot) {
     autoreleasepool(|_| {
         use objc2::runtime::ProtocolObject;
-        use objc2_app_kit::{NSPasteboardItem, NSPasteboardWriting};
-        use objc2_foundation::{NSArray, NSData, NSString};
+        use objc2_app_kit::NSPasteboardWriting;
         let pb = NSPasteboard::generalPasteboard();
         pb.clearContents();
         if snap.items.is_empty() {
