@@ -15,7 +15,7 @@ site/
 │   └── render-og.mjs         # Playwright 截图脚本
 └── src/
     ├── components/           # Hero / Philosophy / Capabilities / ExtensionMatrix / Download / Footer / Wordmark
-    ├── data/extensions.ts    # 21 扩展元数据 + 领域分簇
+    ├── data/extensions.ts    # 22 扩展元数据 + 领域分簇
     ├── layouts/BaseLayout.astro
     ├── pages/index.astro     # 单页章节编排
     └── styles/{tokens,global}.css

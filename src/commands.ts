@@ -150,4 +150,11 @@ export const CMD = {
   videoRun: 'video_run',
   videoCancel: 'video_cancel',
   videoJobStatus: 'video_job_status',
+
+  // —— image ——
+  imageRemoveBg: 'image_remove_bg',
+  imageStitch: 'image_stitch',
+  imageReadPreview: 'image_read_preview',
+  imageSaveResult: 'image_save_result',
+  imageCopyToClipboard: 'image_copy_to_clipboard',
 } as const

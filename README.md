@@ -88,6 +88,10 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
 压缩 / 转格式 / 抽音频，无系统 FFmpeg 时按需下载静态核心。
 
+### 图片处理
+
+移除背景（macOS Vision 前景分割，与「照片」抬起主体同引擎）与拼接长图（横向 / 纵向、支持间距与重叠、统一尺寸），结果可复制、保存或在访达中显示。
+
 ### 终端自动建议
 
 开启后，zsh 输入时显示历史 frecency 建议，`→` 接受、`Tab` 切换备选、`Ctrl+X` 开关、`Ctrl+C` 清空。

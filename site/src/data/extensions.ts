@@ -1,4 +1,4 @@
-// 21 扩展元数据 + 领域分簇。图标走 Remix Icon（ri-* class）。
+// 22 扩展元数据 + 领域分簇。图标走 Remix Icon（ri-* class）。
 // 数据源：各扩展 index.ts 的 meta 字段，描述按官网语境精简。
 
 export interface ExtItem {
@@ -74,6 +74,12 @@ export const clusters: ExtCluster[] = [
         name: '视频处理',
         desc: '压缩 / 转格式 / 抽音频，按需下载核心',
         icon: 'ri-video-line',
+      },
+      {
+        id: 'image',
+        name: '图片处理',
+        desc: '移除背景 / 拼接长图，原生 Vision 分割',
+        icon: 'ri-image-edit-line',
       },
     ],
   },

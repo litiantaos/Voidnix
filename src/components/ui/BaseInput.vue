@@ -1,7 +1,5 @@
 <template>
   <div
-    data-settings-control
-    tabindex="0"
     :class="[
       // 默认 soft-chip；panel = soft-surface 白边面（非 ui-field；大输入用 BaseTextarea）
       // ui-input：走 focus-within 聚焦环 + 抑制 soft-chip:active
@@ -13,11 +11,12 @@
       hasSuffix ? '!pr-1' : '',
     ]"
     @click="focus()"
-    @focus="focus()"
   >
     <slot name="prefix" />
     <input
       ref="inputRef"
+      data-settings-control
+      :tabindex="disabled ? -1 : 0"
       :type="type"
       :value="modelValue"
       :placeholder="placeholder"
@@ -25,9 +24,9 @@
       class="input-base placeholder:text-muted"
       text="primary"
       @input="onInput"
-      @focus="emit('focus', $event)"
+      @focus="onFocus"
       @blur="emit('blur', $event)"
-      @keydown="onKeydown"
+      @keydown="onKeydownHandler"
       @compositionstart="onCompositionStart"
       @compositionend="onCompositionEnd"
     />
@@ -36,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, toRef, useSlots } from 'vue'
+import { computed, ref, toRef, useSlots } from 'vue'
 import { useInputControl } from '@/composables/useInputControl'
 
 interface Props {
@@ -80,6 +79,36 @@ const {
   modelValue: toRef(props, 'modelValue'),
   emit,
 })
+
+/** 聚焦前的值，供 Esc 还原。 */
+const valueBeforeEdit = ref('')
+
+function onFocus(e: FocusEvent) {
+  valueBeforeEdit.value = props.modelValue
+  emit('focus', e)
+}
+
+/**
+ * Enter：失焦提交（值已通过 @input 同步）。
+ * Escape：模态弹窗内冒泡（弹窗自行关闭）；否则还原值 + 失焦。
+ */
+function onKeydownHandler(e: KeyboardEvent) {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    e.stopPropagation()
+    blur()
+    return
+  }
+  if (e.key === 'Escape') {
+    if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+    e.preventDefault()
+    e.stopPropagation()
+    emit('update:modelValue', valueBeforeEdit.value)
+    blur()
+    return
+  }
+  onKeydown(e)
+}
 
 function onCompositionStart() {
   emit('compositionstart')

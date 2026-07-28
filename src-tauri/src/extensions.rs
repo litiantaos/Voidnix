@@ -56,6 +56,11 @@ macro_rules! configure_app {
             crate::extensions::clipboard::set_clipboard_max_days,
             crate::extensions::finder_ext::finder_run_action,
             crate::extensions::finder_ext::finder_selected_paths,
+            crate::extensions::image::image_copy_to_clipboard,
+            crate::extensions::image::image_read_preview,
+            crate::extensions::image::image_remove_bg,
+            crate::extensions::image::image_save_result,
+            crate::extensions::image::image_stitch,
             crate::extensions::proxy::is_proxy_enabled,
             crate::extensions::proxy::proxy_check_update,
             crate::extensions::proxy::proxy_connections_stream,
@@ -132,6 +137,7 @@ pub fn register_all(
         .register(clean_mode::CleanModeExtension)
         .register(clipboard::ClipboardExtension)
         .register(finder_ext::FinderExtExtension)
+        .register(image::ImageExtension)
         .register(proxy::ProxyExtension)
         .register(screenshot::ScreenshotExtension)
         .register(search::SearchExtension)
@@ -159,6 +165,9 @@ pub mod clipboard;
 
 #[path = "../../extensions/finder-ext/native/mod.rs"]
 pub mod finder_ext;
+
+#[path = "../../extensions/image/native/mod.rs"]
+pub mod image;
 
 #[path = "../../extensions/proxy/native/mod.rs"]
 pub mod proxy;
