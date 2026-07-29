@@ -1,111 +1,129 @@
 <template>
   <div class="flex-col-full-pb">
     <!-- ── 移除背景：预览区 ── -->
-    <div v-if="tool === 'removeBg' && previewUrl" p="3" shrink="0" flex="~ col" gap="2">
-      <div
-        class="checkerboard border border-divider radius-panel border-solid"
-        relative
-        shrink="0"
-        h="48"
-        overflow="hidden"
-      >
-        <img
-          v-if="originalPreview"
-          :src="originalPreview"
-          class="h-full w-full inset-0 absolute object-contain"
-          :style="{ opacity: result ? 0 : 1, transition: 'opacity 600ms ease-in-out' }"
-          alt="原图"
-        />
-        <Transition name="result-fade">
-          <img
-            v-if="result"
-            :src="result.previewDataUrl"
-            class="h-full w-full inset-0 absolute object-contain"
-            alt="处理结果"
-          />
-        </Transition>
-      </div>
-      <div v-if="result" class="flex flex-wrap gap-2">
-        <BaseButton icon="i-ri-clipboard-line" @click="copyToClipboard">复制</BaseButton>
-        <BaseButton icon="i-ri-save-3-line" @click="saveToFile">保存</BaseButton>
-        <BaseButton icon="i-ri-folder-line" @click="revealInFinder">在访达中显示</BaseButton>
-      </div>
-    </div>
-
-    <!-- ── 拼接：实时预览 = 列表合二为一 ── -->
-    <div v-if="tool === 'stitch' && stitchFiles.length" p="3" shrink="0" flex="~ col" gap="2">
-      <div
-        class="hide-scrollbar border border-divider radius-panel border-solid fill-ctrl"
-        relative
-        shrink="0"
-        :style="[previewStyle, overflowStyle]"
-      >
+    <Transition :css="false" v-bind="expandHooks">
+      <div v-if="tool === 'removeBg' && previewUrl" p="3" shrink="0" flex="~ col" gap="2">
         <div
-          class="h-full"
-          :class="stitchDirection === 'vertical' ? 'flex flex-col' : 'flex flex-row items-center'"
+          class="checkerboard border border-divider radius-panel border-solid"
+          relative
+          shrink="0"
+          h="48"
+          overflow="hidden"
         >
-          <div
-            v-for="(file, i) in stitchFiles"
-            :key="file"
-            shrink="0"
-            class="cursor-pointer relative"
-            :class="[
-              stitchDirection === 'vertical' ? 'w-1/2 self-center' : 'h-full',
-              selectedFile === i ? 'stitch-selected' : '',
-            ]"
-            :style="itemStyle(i)"
-            @click="selectedFile = selectedFile === i ? -1 : i"
-          >
+          <img
+            v-if="originalPreview"
+            :src="originalPreview"
+            class="h-full w-full inset-0 absolute object-contain"
+            :style="{ opacity: result ? 0 : 1, transition: 'opacity 600ms ease-in-out' }"
+            alt="原图"
+          />
+          <Transition name="result-fade">
             <img
-              v-if="thumbCache.get(file)"
-              :src="thumbCache.get(file)"
-              class="block"
-              :class="stitchDirection === 'vertical' ? 'w-full h-auto' : 'h-full w-auto max-w-none'"
-              draggable="false"
-              alt=""
+              v-if="result"
+              :src="result.previewDataUrl"
+              class="h-full w-full inset-0 absolute object-contain"
+              alt="处理结果"
             />
-            <div v-else class="flex-center h-12 w-full">
-              <i class="i-ri-loader-4-line text-sm text-muted animate-spin"></i>
-            </div>
-            <span
-              class="text-xs text-white px-0.5 bg-black/40 left-0 top-0 absolute"
-              style="z-index: 1"
-              >{{ i + 1 }}</span
+          </Transition>
+        </div>
+        <Transition :css="false" v-bind="expandHooks">
+          <div v-if="result" class="flex flex-wrap gap-2">
+            <BaseButton icon="i-ri-clipboard-line" @click="copyToClipboard">复制</BaseButton>
+            <BaseButton icon="i-ri-save-3-line" @click="saveToFile">保存</BaseButton>
+            <BaseButton v-if="savedOutputPath" icon="i-ri-folder-line" @click="revealInFinder"
+              >在访达中显示</BaseButton
             >
           </div>
+        </Transition>
+      </div>
+    </Transition>
+
+    <!-- ── 拼接：实时预览 = 列表合二为一 ── -->
+    <Transition :css="false" v-bind="expandHooks">
+      <div v-if="tool === 'stitch' && stitchFiles.length" p="3" shrink="0" flex="~ col" gap="2">
+        <div
+          class="hide-scrollbar border border-divider radius-panel border-solid fill-ctrl"
+          relative
+          shrink="0"
+          :style="[previewStyle, overflowStyle]"
+        >
+          <div
+            class="h-full"
+            :class="stitchDirection === 'vertical' ? 'flex flex-col' : 'flex flex-row items-center'"
+          >
+            <div
+              v-for="(file, i) in stitchFiles"
+              :key="file"
+              shrink="0"
+              class="cursor-pointer relative"
+              :class="[
+                stitchDirection === 'vertical' ? 'w-1/2 self-center' : 'h-full',
+                selectedFile === i ? 'stitch-selected' : '',
+              ]"
+              :style="itemStyle(i)"
+              @click="selectedFile = selectedFile === i ? -1 : i"
+            >
+              <img
+                v-if="thumbCache.get(file)"
+                :src="thumbCache.get(file)"
+                class="block"
+                :class="
+                  stitchDirection === 'vertical' ? 'w-full h-auto' : 'h-full w-auto max-w-none'
+                "
+                draggable="false"
+                alt=""
+              />
+              <div v-else class="flex-center h-12 w-full">
+                <i class="i-ri-loader-4-line text-sm text-muted animate-spin"></i>
+              </div>
+              <span
+                class="text-xs text-white px-0.5 bg-black/40 left-0 top-0 absolute"
+                style="z-index: 1"
+                >{{ i + 1 }}</span
+              >
+            </div>
+          </div>
         </div>
-      </div>
 
-      <!-- 操作条 -->
-      <div v-if="stitchFiles.length >= 2" class="flex flex-wrap gap-2">
-        <BaseButton :disabled="processing" icon="i-ri-clipboard-line" @click="copyToClipboard"
-          >复制</BaseButton
-        >
-        <BaseButton :disabled="processing" icon="i-ri-save-3-line" @click="saveToFile"
-          >保存</BaseButton
-        >
-        <BaseButton icon="i-ri-folder-line" @click="revealInFinder">在访达中显示</BaseButton>
-      </div>
+        <!-- 操作条 -->
+        <Transition :css="false" v-bind="expandHooks">
+          <div v-if="stitchFiles.length >= 2" class="flex flex-wrap gap-2">
+            <BaseButton :disabled="processing" icon="i-ri-clipboard-line" @click="copyToClipboard"
+              >复制</BaseButton
+            >
+            <BaseButton :disabled="processing" icon="i-ri-save-3-line" @click="saveToFile"
+              >保存</BaseButton
+            >
+            <BaseButton v-if="savedOutputPath" icon="i-ri-folder-line" @click="revealInFinder"
+              >在访达中显示</BaseButton
+            >
+          </div>
+        </Transition>
 
-      <!-- 选中条目操作 -->
-      <div v-if="selectedFile >= 0" flex="~ wrap" gap="2">
-        <BaseButton
-          :icon="stitchDirection === 'vertical' ? 'i-ri-arrow-up-line' : 'i-ri-arrow-left-line'"
-          :disabled="selectedFile === 0"
-          @click="moveUp"
-          >{{ stitchDirection === 'vertical' ? '上移' : '左移' }}</BaseButton
-        >
-        <BaseButton
-          :icon="stitchDirection === 'vertical' ? 'i-ri-arrow-down-line' : 'i-ri-arrow-right-line'"
-          :disabled="selectedFile === stitchFiles.length - 1"
-          @click="moveDown"
-          >{{ stitchDirection === 'vertical' ? '下移' : '右移' }}</BaseButton
-        >
-        <BaseButton variant="danger" icon="i-ri-close-line" @click="removeSelected"
-          >移除</BaseButton
-        >
+        <!-- 选中条目操作 -->
+        <Transition :css="false" v-bind="expandHooks">
+          <div v-if="selectedFile >= 0" flex="~ wrap" gap="2">
+            <BaseButton
+              :icon="stitchDirection === 'vertical' ? 'i-ri-arrow-up-line' : 'i-ri-arrow-left-line'"
+              :disabled="selectedFile === 0"
+              @click="moveUp"
+              >{{ stitchDirection === 'vertical' ? '上移' : '左移' }}</BaseButton
+            >
+            <BaseButton
+              :icon="
+                stitchDirection === 'vertical' ? 'i-ri-arrow-down-line' : 'i-ri-arrow-right-line'
+              "
+              :disabled="selectedFile === stitchFiles.length - 1"
+              @click="moveDown"
+              >{{ stitchDirection === 'vertical' ? '下移' : '右移' }}</BaseButton
+            >
+            <BaseButton variant="danger" icon="i-ri-close-line" @click="removeSelected"
+              >移除</BaseButton
+            >
+          </div>
+        </Transition>
       </div>
-    </div>
+    </Transition>
 
     <BaseSettingsList :items="items" @execute="onExecute">
       <!-- 移除背景：source 行 -->
@@ -162,7 +180,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import type { SettingItem } from '@/types/settings'
 import { config } from './config'
-import { stitchFiles, tool } from './index'
+import { stitchFiles, tool, pendingInputPath } from './index'
 import {
   IMAGE_EXTENSIONS,
   RESIZE_PRESETS,
@@ -177,9 +195,61 @@ import {
 
 const appStore = useAppStore()
 
+// ── 高度展开过渡：v-if 块平滑伸缩（maxHeight 0 → scrollHeight），避免下方布局跳变 ──
+// 曲线/时长统一走设计基元（--ease-* / --duration-*），不发明新值。
+// scrollHeight 不受 maxHeight 约束，始终反映完整内容高度；结束后清空内联样式恢复自然流。
+// 回调定时常量与 theme.css 的 --duration-* 同步（改 CSS 时一并更新）：
+const EXPAND_MS = 200 // = --duration-normal
+const COLLAPSE_MS = 150 // = --duration-fast
+const expandHooks = {
+  onBeforeEnter(el: Element) {
+    const e = el as HTMLElement
+    e.style.maxHeight = '0'
+    e.style.opacity = '0'
+    e.style.overflow = 'hidden'
+  },
+  onEnter(el: Element, done: () => void) {
+    const e = el as HTMLElement
+    e.style.transition =
+      'max-height var(--duration-normal) var(--ease-spring), opacity var(--duration-fast) var(--ease-out)'
+    void e.offsetHeight // 强制 reflow：提交 maxHeight:0 起始态后再过渡到目标高度
+    e.style.maxHeight = `${e.scrollHeight}px`
+    e.style.opacity = '1'
+    setTimeout(done, EXPAND_MS)
+  },
+  onAfterEnter(el: Element) {
+    clearExpandStyles(el as HTMLElement)
+  },
+  onBeforeLeave(el: Element) {
+    const e = el as HTMLElement
+    e.style.maxHeight = `${e.scrollHeight}px`
+    e.style.opacity = '1'
+    e.style.overflow = 'hidden'
+  },
+  onLeave(el: Element, done: () => void) {
+    const e = el as HTMLElement
+    void e.offsetHeight // 强制 reflow：提交起始高度后再过渡到 0
+    e.style.transition =
+      'max-height var(--duration-fast) var(--ease-in), opacity var(--duration-fast) var(--ease-in)'
+    e.style.maxHeight = '0'
+    e.style.opacity = '0'
+    setTimeout(done, COLLAPSE_MS)
+  },
+  onAfterLeave(el: Element) {
+    clearExpandStyles(el as HTMLElement)
+  },
+}
+
+function clearExpandStyles(e: HTMLElement) {
+  e.style.maxHeight = ''
+  e.style.transition = ''
+  e.style.overflow = ''
+  e.style.opacity = ''
+}
+
 const processing = ref(false)
 const result = ref<ImageResult | null>(null)
-let savedOutputPath = ''
+const savedOutputPath = ref('')
 
 // ── 移除背景 ──
 const inputPath = ref('')
@@ -243,7 +313,7 @@ function reset() {
   result.value = null
   originalPreview.value = ''
   inputPath.value = ''
-  savedOutputPath = ''
+  savedOutputPath.value = ''
   selectedFile.value = -1
   stitchFiles.value = []
   thumbCache.value.clear()
@@ -254,7 +324,7 @@ watch(tool, () => {
   result.value = null
   originalPreview.value = ''
   inputPath.value = ''
-  savedOutputPath = ''
+  savedOutputPath.value = ''
   selectedFile.value = -1
 })
 
@@ -262,6 +332,17 @@ watch(tool, () => {
 onDeactivated(() => {
   reset()
   tool.value = 'removeBg'
+})
+
+// 跨扩展进入：finder-ext 等经事件总线投递的待处理图片路径，写入即加载。
+// 时序同 video 扩展：emit 走 IPC 往返（macrotask），setActiveExtension 同步改 ref 触发
+// Vue flush（microtask），microtask 必先于 macrotask 清空，故 View 挂载 + watch 注册恒先于
+// IPC 回调到达，watch 不会漏触发。onDeactivated 已将 tool 复位为 removeBg，此处确保即可。
+watch(pendingInputPath, (path) => {
+  if (!path) return
+  pendingInputPath.value = ''
+  tool.value = 'removeBg'
+  void setInput(path)
 })
 
 // ── 缩略图加载 ──
@@ -412,7 +493,7 @@ async function pickInput() {
 async function setInput(path: string) {
   inputPath.value = path
   result.value = null
-  savedOutputPath = ''
+  savedOutputPath.value = ''
   await loadPreview(path)
 }
 
@@ -441,7 +522,7 @@ async function pickStitchFiles() {
     })
     if (paths.length) {
       result.value = null
-      savedOutputPath = ''
+      savedOutputPath.value = ''
       const seen = new Set(stitchFiles.value)
       const fresh = paths.filter((p) => !seen.has(p))
       if (stitchFiles.value.length === 0) {
@@ -552,7 +633,7 @@ async function saveToFile() {
   const outputPath = buildOutputPath(sourcePath, config.outputDir || undefined, suffix)
   try {
     await invoke(CMD.imageSaveResult, { tempPath: r.tempPath, outputPath })
-    savedOutputPath = outputPath
+    savedOutputPath.value = outputPath
     appStore.showStatus('已保存')
   } catch (e) {
     appStore.showStatus(`保存失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
@@ -560,7 +641,7 @@ async function saveToFile() {
 }
 
 async function revealInFinder() {
-  const path = savedOutputPath || result.value?.tempPath
+  const path = savedOutputPath.value
   if (!path) return
   try {
     await invoke(CMD.revealInFinder, { path })
