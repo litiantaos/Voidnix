@@ -27,6 +27,11 @@ export const SEARCH = {
   KEYWORD_EXTENSION_BOOST: 500,
 } as const
 
+/** 更新检查：唤起节流（窗口获焦时检查，距上次 ≥ 此间隔才真正执行；失败也计入冷却）。 */
+export const UPDATE = {
+  checkIntervalMs: 6 * 60 * 60 * 1000, // 6h
+} as const
+
 export const LIMITS = {
   /** 非 file 组组内限流（application / extension / clipboard / web 共用）。 */
   maxGroupResults: 30,

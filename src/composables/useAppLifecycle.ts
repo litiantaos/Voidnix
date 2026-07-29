@@ -13,6 +13,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { useSystemStore } from '@/stores/system'
+import { UPDATE } from '@/runtime/constants'
 import { isTauri, hideWindow, showWindow } from '@/utils/tauri'
 import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 
@@ -62,6 +63,7 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
   // M-fe1：watch stop handle + update 检查 timer 一并纳入清理，避免 HMR/测试场景累积
   const watchStops: WatchStopHandle[] = []
   let updateTimer: ReturnType<typeof setTimeout> | null = null
+  let lastCheckAt = 0
   let allGlobalShortcuts: {
     id: string
     default?: string
@@ -79,6 +81,20 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
     }
   }
 
+  // 唤起节流：窗口获焦触发，冷却期内秒退。lastCheckAt 先记后查防并发重入。
+  // 仅静默检查（发现更新后显示搜索栏入口按钮，下载由设置页弹窗驱动）；
+  // 已知有更新则不再重复检查。check() 内部已 catch，外层仅兜底。失败也计入冷却。
+  async function maybeCheckUpdate() {
+    if (updateStore.info) return
+    if (Date.now() - lastCheckAt < UPDATE.checkIntervalMs) return
+    lastCheckAt = Date.now()
+    try {
+      await updateStore.check()
+    } catch (e) {
+      console.error('Update check failed:', e)
+    }
+  }
+
   onMounted(async () => {
     // 独立窗口视图：跳过主窗口初始化（设置/更新/快捷键）
     if (activeWindowView.value) return
@@ -86,13 +102,8 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
     // settings store 走 defineConfig，启动时自动异步加载（无需显式 loadSettings）
 
     if (isTauri) {
-      updateTimer = setTimeout(async () => {
-        try {
-          const hasUpdate = await updateStore.check()
-          if (hasUpdate) await updateStore.download()
-        } catch (e) {
-          console.error('Update check failed:', e)
-        }
+      updateTimer = setTimeout(() => {
+        void maybeCheckUpdate()
       }, 3000)
     }
 
@@ -213,6 +224,8 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
             // 刷新系统状态（权限/自启）：覆盖用户从系统设置改完权限返回的场景。
             // 权限变更唯一入口是系统设置，返回必经窗口获焦；Rust 侧 preflight 纳秒级，单次开销可忽略。
             useSystemStore().refresh()
+            // 唤起节流：冷却期内秒退，无网络开销
+            void maybeCheckUpdate()
           } else if (
             Date.now() - lastShortcutTime > 200 &&
             Date.now() - appStore.lastDialogCloseTime > 300 &&

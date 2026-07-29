@@ -97,9 +97,10 @@
         </div>
 
         <BaseButton
-          v-if="updateStore.downloaded"
+          v-if="updateStore.info"
           icon="i-ri-arrow-up-circle-line text-accent"
-          @click="updateStore.showDialog()"
+          title="发现新版本，点击查看"
+          @click="appStore.setActiveExtension('settings')"
         />
       </div>
     </div>

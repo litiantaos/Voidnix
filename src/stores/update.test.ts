@@ -14,6 +14,7 @@ describe('update store', () => {
     expect(store.checking).toBe(false)
     expect(store.error).toBeNull()
     expect(store.info).toBeNull()
+    expect(store.progress).toBe(0)
     expect(store.dialogVisible).toBe(false)
   })
 
@@ -30,6 +31,7 @@ describe('update store', () => {
     store.downloading = true
     store.info = { currentVersion: '1.0', newVersion: '2.0', body: null }
     store.dialogVisible = true
+    store.progress = 0.5
     store.error = 'some error'
 
     store.reset()
@@ -39,6 +41,7 @@ describe('update store', () => {
     expect(store.checking).toBe(false)
     expect(store.error).toBeNull()
     expect(store.info).toBeNull()
+    expect(store.progress).toBe(0)
     expect(store.dialogVisible).toBe(false)
   })
 
