@@ -141,7 +141,7 @@ watch(naming, (open) => {
   })
 })
 
-// ── 选区视频探测：选中视频文件时显示「视频处理」入口，跳转 video 扩展并带入路径 ──
+// ── 选区文件探测：选中视频/图片文件时显示对应处理入口，跳转目标扩展并带入路径 ──
 
 /** 访达选区视频判断白名单（UI 入口用）。
  * 镜像自 video 扩展 VIDEO_EXTENSIONS，去除 .ts（与 TypeScript 源码歧义）；
@@ -163,12 +163,29 @@ const VIDEO_EXT_SET = new Set([
   'mpg',
 ])
 
-const videoPath = ref<string | null>(null)
+/** 访达选区图片判断白名单（UI 入口用）。
+ * 镜像自 image 扩展 IMAGE_EXTENSIONS。
+ * 新增格式时双向同步：extensions/image/logic.ts 的 IMAGE_EXTENSIONS。 */
+const IMAGE_EXT_SET = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'heic',
+  'heif',
+  'webp',
+  'tiff',
+  'tif',
+  'bmp',
+  'gif',
+])
 
-function pickVideoPath(paths: string[]): string | null {
+const videoPath = ref<string | null>(null)
+const imagePath = ref<string | null>(null)
+
+function pickByExt(paths: string[], set: Set<string>): string | null {
   for (const p of paths) {
     const ext = p.split('.').pop()?.toLowerCase()
-    if (ext && VIDEO_EXT_SET.has(ext)) return p
+    if (ext && set.has(ext)) return p
   }
   return null
 }
@@ -176,25 +193,28 @@ function pickVideoPath(paths: string[]): string | null {
 /** 探测进行中标志：onActivated 与 reactivateTick 可能同帧触发（快捷键呼出同时切扩展），合并为单次 osascript。 */
 let detectInFlight = false
 
-async function detectVideo() {
+async function detectSelection() {
   if (detectInFlight) return
   detectInFlight = true
   // 先清空：避免 KeepAlive 重激活瞬间显示上次过期选区，探测完成再赋新值
   videoPath.value = null
+  imagePath.value = null
   try {
     const paths = await invoke<string[]>(CMD.finderSelectedPaths)
-    videoPath.value = pickVideoPath(paths)
+    videoPath.value = pickByExt(paths, VIDEO_EXT_SET)
+    imagePath.value = pickByExt(paths, IMAGE_EXT_SET)
   } catch {
-    // 访达非前台 / 权限缺失 → 不显示视频入口
+    // 访达非前台 / 权限缺失 → 不显示入口
     videoPath.value = null
+    imagePath.value = null
   } finally {
     detectInFlight = false
   }
 }
 
-onActivated(detectVideo)
+onActivated(detectSelection)
 // 快捷键重入（窗口隐藏后再呼出）：onActivated 不触发，靠 tick 驱动重新探测
-watch(reactivateTick, () => void detectVideo())
+watch(reactivateTick, () => void detectSelection())
 
 function baseName(path: string): string {
   return path.split('/').pop() || path
@@ -215,6 +235,23 @@ const allItems = computed<SettingItem[]>(() => {
         if (!p) return
         void emit('video-pending-input-path', p)
         appStore.setActiveExtension('video')
+      },
+      group: '操作',
+    })
+  }
+  // 选中图片时置顶「图片处理」入口（跨扩展跳转，带入路径）
+  if (imagePath.value) {
+    list.push({
+      id: 'image_process',
+      title: '图片处理',
+      subtitle: baseName(imagePath.value),
+      icon: 'i-ri-image-edit-line',
+      type: 'action',
+      action: () => {
+        const p = imagePath.value
+        if (!p) return
+        void emit('image-pending-input-path', p)
+        appStore.setActiveExtension('image')
       },
       group: '操作',
     })

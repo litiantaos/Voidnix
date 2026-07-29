@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { listen } from '@tauri-apps/api/event'
 import { defineExtension } from '@/runtime/extension-registry'
 import ImageView from './View.vue'
 import ImageActions from './Actions.vue'
@@ -9,6 +10,9 @@ export const stitchFiles = ref<string[]>([])
 /** 当前工具（Actions 搜索栏选择器与 View 共享）。 */
 export type Tool = 'removeBg' | 'stitch'
 export const tool = ref<Tool>('removeBg')
+
+/** 跨扩展投递的待处理图片路径（finder-ext 等经事件总线写入，View 消费后清空）。 */
+export const pendingInputPath = ref('')
 
 export default defineExtension({
   meta: {
@@ -40,4 +44,10 @@ export default defineExtension({
   windowHeight: 'auto',
   mainView: () => ImageView,
   searchBarAccessory: () => ImageActions,
+  setup: async () => {
+    // 跨扩展通信：finder-ext 等通过事件总线投递待处理图片路径
+    await listen<string>('image-pending-input-path', (e) => {
+      pendingInputPath.value = e.payload || ''
+    })
+  },
 })
