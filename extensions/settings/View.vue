@@ -79,14 +79,15 @@ const handleOpenGitHub = async () => {
 }
 
 const handleCheckUpdate = async () => {
-  if (updateStore.downloaded) {
+  // 已知有更新（后台检查发现）/ 已下载 / 下载中：直接弹窗驱动后续交互
+  if (updateStore.info) {
     updateStore.showDialog()
     return
   }
   updateStore.reset()
   const hasUpdate = await updateStore.check()
   if (hasUpdate) {
-    await updateStore.download()
+    // 发现更新即弹窗，下载与进度由 UpdateDialog 驱动（用户决定何时下载）
     updateStore.showDialog()
   } else if (!updateStore.error) {
     await appStore.showConfirm({
@@ -164,11 +165,15 @@ const allSettingsItems = computed<SettingItem[]>(() => {
 
   const checkLabel = updateStore.checking
     ? '检查中…'
-    : updateStore.downloaded
-      ? '安装新版本'
-      : '检查更新'
+    : updateStore.downloading
+      ? '下载中…'
+      : updateStore.downloaded
+        ? '安装新版本'
+        : updateStore.info
+          ? '下载并安装'
+          : '检查更新'
   let versionLabel = appVersion.value ? `当前版本：${appVersion.value}` : ''
-  if (updateStore.downloaded && updateStore.info) {
+  if (updateStore.info) {
     versionLabel = `新版本：${updateStore.info.newVersion}（当前版本：${updateStore.info.currentVersion}）`
   }
   items.push({

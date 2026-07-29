@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { isTauri } from '@/utils/tauri'
 import { getVersion } from '@tauri-apps/api/app'
-import type { Update as TauriUpdate } from '@tauri-apps/plugin-updater'
+import type { Update as TauriUpdate, DownloadEvent } from '@tauri-apps/plugin-updater'
 
 export interface UpdateInfo {
   currentVersion: string
@@ -17,6 +17,7 @@ export const useUpdateStore = defineStore('update', () => {
   const error = ref<string | null>(null)
   const info = ref<UpdateInfo | null>(null)
   const dialogVisible = ref(false)
+  const progress = ref(0) // 0..1 下载进度（contentLength 未知时保持 0）
 
   let _updater: TauriUpdate | null = null
 
@@ -49,14 +50,21 @@ export const useUpdateStore = defineStore('update', () => {
     if (!_updater || downloading.value || downloaded.value) return
     downloading.value = true
     error.value = null
+    progress.value = 0
     try {
-      await _updater.downloadAndInstall((progress: { event: string }) => {
-        if (progress.event === 'Finished') {
-          downloaded.value = true
+      let total = 0
+      let received = 0
+      // 仅下载更新包（不安装）；安装由 install() 单独触发，与弹窗的两步交互对应
+      await _updater.download((e: DownloadEvent) => {
+        if (e.event === 'Started' && e.data.contentLength) {
+          total = e.data.contentLength
+        } else if (e.event === 'Progress') {
+          received += e.data.chunkLength
+          if (total > 0) progress.value = Math.min(1, received / total)
+        } else if (e.event === 'Finished') {
+          progress.value = 1
         }
       })
-      // downloadAndInstall 在 macOS 上会直接安装并重启，
-      // 若走到这里说明只下载完成还未重启
       downloaded.value = true
     } catch (e) {
       error.value = String(e)
@@ -88,6 +96,7 @@ export const useUpdateStore = defineStore('update', () => {
     checking.value = false
     error.value = null
     info.value = null
+    progress.value = 0
     _updater = null
     dialogVisible.value = false
   }
@@ -98,6 +107,7 @@ export const useUpdateStore = defineStore('update', () => {
     checking,
     error,
     info,
+    progress,
     dialogVisible,
     check,
     download,
