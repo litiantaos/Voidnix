@@ -25,6 +25,7 @@ macro_rules! configure_app {
             crate::runtime::shortcut::stop_shortcut_recording,
             crate::runtime::speech::speak_text,
             crate::runtime::speech::stop_speech,
+            crate::runtime::window::get_cached_appearance,
             crate::runtime::window::get_home_dir,
             crate::runtime::window::pick_directory,
             crate::runtime::window::pick_files,

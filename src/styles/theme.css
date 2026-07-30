@@ -226,6 +226,11 @@
     0 1px 3px rgb(var(--shadow-ink) / 0.26);
 }
 
+/* 截屏标注工具栏：叠在截图上需更实，深色基底对齐全局 surface */
+:root[data-theme='dark'] .palette-surface {
+  --soft-surface-fill: rgb(28 28 30 / 0.92);
+}
+
 html {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;

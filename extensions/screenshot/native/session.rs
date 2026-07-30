@@ -932,6 +932,12 @@ fn exit_impl(_app: &tauri::AppHandle, _no_restore_focus: bool) -> Result<(), Str
 pub fn reactivate_screenshot_window(app: &tauri::AppHandle) {
     use objc2_app_kit::NSWindow;
     use tauri::Manager;
+    // pin 窗口存在时跳过重激活：create_pin_webview 的 activate_app 触发本观察器，
+    // 此时截图窗口正在退出（exit 与 pin 并发），window alpha 尚为 1.0（fade 只改
+    // layer opacity），makeKeyAndOrderFront 会把截图窗口拉到钉图窗口前面遮住它。
+    if app.webview_windows().keys().any(|l| l.starts_with("pin-")) {
+        return;
+    }
     let Some(window) = app.get_webview_window("screenshot") else {
         return;
     };

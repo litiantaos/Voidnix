@@ -41,8 +41,9 @@ impl PlacementVis {
 static PLACEMENT_VIS: Mutex<Option<PlacementVis>> = Mutex::new(None);
 
 /// 最近一次 set_window_appearance 锁定的 mode（"light"/"dark"/"auto"）。
-/// None = 未设置（首次启动，等价跟随系统）。动态窗口创建时 apply_cached_appearance
-/// 据此应用原生 appearance，使强制模式在 screenshot/pin/snap-panel 子窗口也生效。
+/// None = 未设置（首次启动，等价跟随系统）。invisible 创建的子窗口（screenshot/
+/// snap-panel）经 apply_cached_appearance 据此设原生 appearance；visible 创建的
+/// pin 窗口不可设（setAppearance 死锁），改由前端 get_cached_appearance 命令读取。
 static WINDOW_APPEARANCE: Mutex<Option<String>> = Mutex::new(None);
 
 fn store_placement(vis: NSRect) {
@@ -410,8 +411,8 @@ pub fn apply_window_appearance(window: &tauri::WebviewWindow, mode: &str) {
     use objc2_app_kit::{NSAppearance, NSAppearanceCustomization};
     use objc2_foundation::ns_string;
 
-    // 缓存 mode：动态窗口创建时 apply_cached_appearance 据此应用，
-    // 使强制模式在子窗口（screenshot/pin/snap-panel）也生效。
+    // 缓存 mode：invisible 子窗口（screenshot/snap-panel）经 apply_cached_appearance
+    // 据此设原生 appearance；pin 窗口经 get_cached_appearance 命令由前端读取。
     *lock_or_recover(&WINDOW_APPEARANCE) = Some(mode.to_string());
 
     let Ok(ptr) = window.ns_window() else {
@@ -430,13 +431,18 @@ pub fn apply_window_appearance(window: &tauri::WebviewWindow, mode: &str) {
     ns_window.setAppearance(appearance.as_deref());
 }
 
-/// 动态窗口创建时调用：按最近一次 set_window_appearance 缓存的 mode 应用原生 appearance。
-/// 未缓存（首次启动）= 不设置（等价跟随系统）。配合 theme.ts 仅 main 驱动全局命令，
-/// 子窗口经此路径获得与 main 一致的强制 light/dark（含 WKWebView prefers-color-scheme）。
+/// invisible 创建的子窗口（screenshot/snap-panel）调用：按缓存的 mode 设原生 appearance。
+/// pin 窗口 visible 创建不调此函数（setAppearance 死锁），改由前端 get_cached_appearance 读取。
 pub fn apply_cached_appearance(window: &tauri::WebviewWindow) {
     if let Some(mode) = lock_or_recover(&WINDOW_APPEARANCE).clone() {
         apply_window_appearance(window, &mode);
     }
+}
+
+/// 返回缓存的 appearance mode（auto/light/dark）。pin 窗口前端读取后直接设 DOM data-theme，
+/// 替代不可用的 matchMedia（pin 未设 setAppearance，prefers-color-scheme 跟随系统）。
+pub fn cached_appearance() -> Option<String> {
+    lock_or_recover(&WINDOW_APPEARANCE).clone()
 }
 
 /// 透明面板强制接管鼠标：禁止 ignore + 收 mouseMoved + 全窗 event shape（不依赖 alpha）。
