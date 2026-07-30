@@ -153,8 +153,10 @@ fn create_pin_webview(app: &tauri::AppHandle, spec: &PinWebviewSpec) -> Result<(
         }
     });
 
-    // 强制主题在贴图窗口也生效（读 set_window_appearance 缓存）
-    crate::platform::window::apply_cached_appearance(&window);
+    // 不调 apply_cached_appearance：NSWindow.setAppearance 在刚 build 出的 WKWebView 上
+    // 会触发 prefers-color-scheme 重算死锁主线程（无论窗口 visible 与否）。
+    // pin 窗口主题由前端 theme.ts 读 get_cached_appearance 命令拿 main 缓存的强制值，
+    // 直接设 DOM data-theme，不依赖原生 setAppearance，主题完全正确且不死锁。
 
     if let Ok(raw) = window.ns_window().map(|p| p.cast::<NSWindow>()) {
         // SAFETY: ns 经 as_ref Some 分支非空校验；setHidesOnDeactivate:/setLevel:/

@@ -11,6 +11,7 @@ export const CMD = {
   pickFiles: 'pick_files',
   setMainFrame: 'set_main_frame',
   setWindowAppearance: 'set_window_appearance',
+  getCachedAppearance: 'get_cached_appearance',
   httpGet: 'http_get',
   openExtensionSubview: 'open_extension_subview',
   quitApp: 'quit_app',

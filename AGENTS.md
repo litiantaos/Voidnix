@@ -148,7 +148,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 `LSUIElement=true` + `ActivationPolicy::Accessory` 隐藏于 Dock。
 
-**样式**：`platform/window.rs::apply_main_window_style`（setup 内一次性）= `apply_mica_material(ns, 16)` + `setHasShadow(true)` + `convert_to_panel`。即 Mica + contentView 圆角 16（`radius-window`）+ 原生阴影 + 冷雾 tint（见 [设计系统](docs/design.md)）。snap-panel 经 `apply_mica_material(ns, 10)` 对齐 `radius-panel`。appearance 跟随主题（`apply_window_appearance`：auto=None 跟随系统并驱动 WKWebView prefers-color-scheme，light/dark 强制覆盖）。**跨窗口**：`set_window_appearance` 是全局副作用命令（一次应用所有窗口），仅由 main 的 `theme.ts` 驱动；动态窗口（screenshot/pin/snap-panel）创建时调 `apply_cached_appearance` 读缓存 mode 应用，避免子窗口用陈旧 'auto' 冲掉 main 的强制模式。
+**样式**：`platform/window.rs::apply_main_window_style`（setup 内一次性）= `apply_mica_material(ns, 16)` + `setHasShadow(true)` + `convert_to_panel`。即 Mica + contentView 圆角 16（`radius-window`）+ 原生阴影 + 冷雾 tint（见 [设计系统](docs/design.md)）。snap-panel 经 `apply_mica_material(ns, 10)` 对齐 `radius-panel`。appearance 跟随主题（`apply_window_appearance`：auto=None 跟随系统并驱动 WKWebView prefers-color-scheme，light/dark 强制覆盖）。**跨窗口**：`set_window_appearance` 是全局副作用命令（一次应用所有窗口），仅由 main 的 `theme.ts` 驱动；invisible 创建的子窗口（screenshot/snap-panel）由 Rust 经 `apply_cached_appearance` 设原生 appearance；pin 窗口 visible 创建不可设（setAppearance 在刚 build 的 WKWebView 上触发 prefers-color-scheme 重算死锁主线程），改由前端读 `get_cached_appearance` 命令拿 main 缓存值直接设 DOM data-theme。
 
 **panel 转换**：`platform/panel::convert_to_panel` 转 `NonactivatePanel`（点击/makeKey 不自动激活）。
 

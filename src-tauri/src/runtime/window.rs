@@ -178,15 +178,30 @@ pub async fn pick_files(
 /// 主题切换时由前端 theme.ts 调用，对 main 及所有已存在的窗口统一应用。
 #[tauri::command]
 pub fn set_window_appearance(app: tauri::AppHandle, mode: String) {
-    use tauri::Manager;
-    let _ = app.clone().run_on_main_thread(move || {
-        for (_, window) in app.webview_windows() {
+    use tauri::{Emitter, Manager};
+    let mode_for_emit = mode.clone();
+    // run_on_main_thread 借用 self 但闭包 move 了 app_for_windows，
+    // 故在 clone 上调用 + 再 clone 传入闭包（AppHandle clone 开销低）。
+    let app_for_windows = app.clone();
+    let _ = app_for_windows.clone().run_on_main_thread(move || {
+        for (_, window) in app_for_windows.webview_windows() {
             #[cfg(target_os = "macos")]
             crate::platform::window::apply_window_appearance(&window, &mode);
             #[cfg(not(target_os = "macos"))]
             let _ = (&window, &mode);
         }
     });
+    // 广播主题变更：invisible 子窗口（screenshot/snap-panel）的 setAppearance 不会触发
+    // WKWebView matchMedia change 事件，pin 窗口根本没有 setAppearance。
+    // 统一靠事件通知所有子窗口前端更新 DOM data-theme。
+    let _ = app.emit("appearance-changed", &mode_for_emit);
+}
+
+/// 返回缓存的 appearance mode（auto/light/dark）。子窗口前端读取以对齐 main 的强制主题，
+/// 替代不可靠的 matchMedia（子窗口未设 setAppearance，prefers-color-scheme 跟随系统）。
+#[tauri::command]
+pub fn get_cached_appearance() -> Option<String> {
+    crate::platform::window::cached_appearance()
 }
 
 /// 退出应用（设置页「退出」等）。
