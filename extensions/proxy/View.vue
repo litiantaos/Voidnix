@@ -126,12 +126,11 @@
         </BaseListItem>
 
         <!-- 节点项 -->
-        <BaseListItem v-else-if="item.type === 'node'">
-          <template #title>
-            <span :class="item.node.selected ? 'text-accent' : ''">
-              {{ item.node.name }}
-            </span>
-          </template>
+        <BaseListItem
+          v-else-if="item.type === 'node'"
+          :title="item.node.name"
+          :tone="item.node.selected ? 'accent' : undefined"
+        >
           <template #trailing>
             <span :class="delayColor(item.node.delay)" class="text-xs font-medium">
               {{ formatDelay(item.node.delay) || '\u00A0' }}

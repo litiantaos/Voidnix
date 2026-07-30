@@ -15,6 +15,7 @@
         :title="item.title"
         :subtitle="item.subtitle"
         :icon="item.icon"
+        :tone="item.tone"
       >
         <template v-if="item.type === 'shortcut'" #trailing>
           <ShortcutInput

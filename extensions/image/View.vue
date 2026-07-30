@@ -26,15 +26,6 @@
             />
           </Transition>
         </div>
-        <Transition :css="false" v-bind="expandHooks">
-          <div v-if="result" class="flex flex-wrap gap-2">
-            <BaseButton icon="i-ri-clipboard-line" @click="copyToClipboard">复制</BaseButton>
-            <BaseButton icon="i-ri-save-3-line" @click="saveToFile">保存</BaseButton>
-            <BaseButton v-if="savedOutputPath" icon="i-ri-folder-line" @click="revealInFinder"
-              >在访达中显示</BaseButton
-            >
-          </div>
-        </Transition>
       </div>
     </Transition>
 
@@ -52,6 +43,7 @@
           relative
           shrink="0"
           :style="[previewStyle, overflowStyle]"
+          @click="selectedFile = -1"
         >
           <div
             class="h-full"
@@ -67,7 +59,7 @@
                 selectedFile === i ? 'stitch-selected' : '',
               ]"
               :style="itemStyle(i)"
-              @click="selectedFile = selectedFile === i ? -1 : i"
+              @click.stop="selectedFile = selectedFile === i ? -1 : i"
             >
               <img
                 v-if="thumbCache.get(file)"
@@ -90,44 +82,6 @@
             </div>
           </div>
         </div>
-
-        <!-- 操作条 -->
-        <Transition :css="false" v-bind="expandHooks">
-          <div v-if="stitchFiles.length >= 2" class="flex flex-wrap gap-2">
-            <BaseButton :disabled="processing" icon="i-ri-clipboard-line" @click="copyToClipboard"
-              >复制</BaseButton
-            >
-            <BaseButton :disabled="processing" icon="i-ri-save-3-line" @click="saveToFile"
-              >保存</BaseButton
-            >
-            <BaseButton v-if="savedOutputPath" icon="i-ri-folder-line" @click="revealInFinder"
-              >在访达中显示</BaseButton
-            >
-          </div>
-        </Transition>
-
-        <!-- 选中条目操作 -->
-        <Transition :css="false" v-bind="expandHooks">
-          <div v-if="selectedFile >= 0" flex="~ wrap" gap="2">
-            <BaseButton
-              :icon="stitchDirection === 'vertical' ? 'i-ri-arrow-up-line' : 'i-ri-arrow-left-line'"
-              :disabled="selectedFile === 0"
-              @click="moveUp"
-              >{{ stitchDirection === 'vertical' ? '上移' : '左移' }}</BaseButton
-            >
-            <BaseButton
-              :icon="
-                stitchDirection === 'vertical' ? 'i-ri-arrow-down-line' : 'i-ri-arrow-right-line'
-              "
-              :disabled="selectedFile === stitchFiles.length - 1"
-              @click="moveDown"
-              >{{ stitchDirection === 'vertical' ? '下移' : '右移' }}</BaseButton
-            >
-            <BaseButton variant="danger" icon="i-ri-close-line" @click="removeSelected"
-              >移除</BaseButton
-            >
-          </div>
-        </Transition>
       </div>
     </Transition>
 
@@ -180,7 +134,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { currentMonitor } from '@tauri-apps/api/window'
 import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
-import { isTauri } from '@/utils/tauri'
+import { isTauri, hideWindow } from '@/utils/tauri'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -387,6 +341,41 @@ const removeBgSourceSubtitle = computed(() => {
 const items = computed<SettingItem[]>(() => {
   const list: SettingItem[] = []
 
+  // ── 操作（列表最前、紧贴预览区；原按钮组改为列表项，回车触发；无图标）──
+  // 选中图片时只显示上移/下移/移除；未选中时显示结果操作（复制/保存/访达）
+  if (tool.value === 'stitch' && selectedFile.value >= 0) {
+    const isVertical = stitchDirection.value === 'vertical'
+    list.push(
+      {
+        id: 'act-up',
+        title: isVertical ? '上移' : '左移',
+        type: 'action',
+        action: moveUp,
+        group: '操作',
+      },
+      {
+        id: 'act-down',
+        title: isVertical ? '下移' : '右移',
+        type: 'action',
+        action: moveDown,
+        group: '操作',
+      },
+      {
+        id: 'act-remove',
+        title: '移除',
+        type: 'action',
+        action: removeSelected,
+        group: '操作',
+        tone: 'danger',
+      },
+    )
+  } else {
+    const hasResult =
+      (tool.value === 'removeBg' && !!result.value) ||
+      (tool.value === 'stitch' && stitchFiles.value.length >= 2)
+    if (hasResult) list.push(...resultActionItems())
+  }
+
   if (tool.value === 'removeBg') {
     list.push({
       id: 'source',
@@ -448,6 +437,36 @@ const items = computed<SettingItem[]>(() => {
 
   return list
 })
+
+/** 结果操作项（复制 / 保存 / 在访达中显示）：移除背景与拼接共用，供 items 复用。 */
+function resultActionItems(): SettingItem[] {
+  const ops: SettingItem[] = [
+    {
+      id: 'act-copy',
+      title: '复制',
+      type: 'action',
+      action: copyToClipboard,
+      group: '操作',
+    },
+    {
+      id: 'act-save',
+      title: '保存',
+      type: 'action',
+      action: saveToFile,
+      group: '操作',
+    },
+  ]
+  if (savedOutputPath.value) {
+    ops.push({
+      id: 'act-reveal',
+      title: '在访达中显示',
+      type: 'action',
+      action: revealInFinder,
+      group: '操作',
+    })
+  }
+  return ops
+}
 
 function onExecute(item: SettingItem) {
   if (item.id === 'outputDir') {
@@ -651,6 +670,7 @@ async function revealInFinder() {
   if (!path) return
   try {
     await invoke(CMD.revealInFinder, { path })
+    hideWindow()
   } catch (e) {
     console.error(e)
   }
