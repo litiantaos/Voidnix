@@ -369,8 +369,8 @@ defineExpose({ reportToolbarRect })
 .palette-popup-enter-active,
 .palette-popup-leave-active {
   transition:
-    opacity 0.2s cubic-bezier(0, 0, 0.2, 1),
-    transform 0.2s cubic-bezier(0, 0, 0.2, 1);
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
 }
 .palette-popup-enter-from,
 .palette-popup-leave-to {

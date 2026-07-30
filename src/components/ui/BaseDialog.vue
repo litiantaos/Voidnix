@@ -303,7 +303,7 @@ onUnmounted(() => {
 
 <style scoped>
 .backdrop-active {
-  transition: background-color 200ms ease-out;
+  transition: background-color var(--duration-normal) var(--ease-out);
 }
 .backdrop-to {
   background-color: var(--color-dialog-overlay);
@@ -313,10 +313,11 @@ onUnmounted(() => {
 }
 
 .dialog-active {
+  /* 仅 opacity + transform（GPU 合成）；box-shadow 带 32px 大模糊，过渡每帧光栅化致顿，
+     且 none→具体阴影插值跨引擎不一致。阴影改为始终在场，靠整体 opacity 淡入出现 */
   transition:
-    opacity 200ms ease-out,
-    transform 200ms ease-out,
-    box-shadow 200ms ease-out;
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
 }
 .dialog-to {
   opacity: 1;
@@ -338,7 +339,6 @@ onUnmounted(() => {
 .dialog-from {
   opacity: 0;
   transform: scale(0.96);
-  box-shadow: none;
 }
 
 .dialog-body {

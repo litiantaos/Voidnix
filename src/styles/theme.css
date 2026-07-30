@@ -450,6 +450,33 @@ body {
 }
 
 /*
+ * 浮层标准进出场（toast / 动作面板 / 下拉 / 标注浮层统一走 name="ui-popup"）：
+ * 进 var(--duration-fast) ease-out / 退 100ms ease-in；位移 8px + 缩放 .95。
+ * 用 transform 属性动画——与 UnoCSS 的 translate/scale（Wind4 走独立属性）正交叠加，
+ * 故元素即便带 -translate-x-1/2 居中等定位也不冲突。仅 transform + opacity，GPU 合成不掉帧。
+ */
+.ui-popup-enter-active {
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+.ui-popup-leave-active {
+  transition:
+    transform 100ms var(--ease-in),
+    opacity 100ms var(--ease-in);
+}
+.ui-popup-enter-from,
+.ui-popup-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.95);
+}
+.ui-popup-enter-to,
+.ui-popup-leave-from {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/*
  * ui-field：大输入。soft-surface 底材 + --color-border；聚焦 --focus-ring-color。
  * BaseInput panel 仍 soft-surface 白边（非本类）。
  */

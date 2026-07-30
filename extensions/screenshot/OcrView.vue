@@ -1,5 +1,6 @@
 <template>
-  <div p="3" flex="~ col" gap="3">
+  <!-- 顶距交给 scrollContainer CHROME_HEIGHT（已含栏底 gap），勿再 p-t 叠双层 -->
+  <div p="x-3 b-3" flex="~ col" gap="3">
     <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动；识别中遮罩覆盖 -->
     <div
       v-if="imageUrl"
@@ -10,10 +11,28 @@
       shrink="0"
       overflow="auto"
     >
-      <img :src="imageUrl" block max-w="none" alt="截图预览" @load="onPreviewLoad" />
-      <div v-if="isLoading" class="fill-strong flex inset-0 absolute backdrop-blur-xs">
-        <BaseEmptyState loading />
-      </div>
+      <img
+        :src="imageUrl"
+        block
+        max-w="none"
+        w="full"
+        h="full"
+        object="cover left-top"
+        alt="截图预览"
+        @load="onPreviewLoad"
+      />
+      <Transition
+        enter-active-class="transition duration-150 ease-out"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition duration-100 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div v-if="isLoading" class="fill-strong flex inset-0 absolute backdrop-blur-xs">
+          <BaseEmptyState loading />
+        </div>
+      </Transition>
     </div>
 
     <!-- 错误 -->
@@ -69,7 +88,9 @@ const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const previewRef = ref<HTMLElement>()
 
 // 截图 cover 缩放：短边撑满容器、长边溢出（容器 overflow-auto 可上下/左右滚动）
-// 纯 object-cover 会把内容裁进固定 box 不产生溢出，故按 natural 尺寸手算 cover 缩放后赋给 img
+// 双阶段：加载前用 CSS object-fit:cover（object-position:left top 对齐 scroll 0,0）
+// 零滞后且无跳变；@load 后按 natural 尺寸手算精确 cover 尺寸写入内联宽高，
+// 切换为可滚动模式——切换前后短边撑满方式与左上对齐完全一致，视觉连续。
 function onPreviewLoad(e: Event) {
   const img = e.target as HTMLImageElement
   const box = previewRef.value

@@ -31,23 +31,11 @@
     />
 
     <Teleport to="body">
-      <Transition
-        enter-active-class="transition duration-150 ease-out"
-        :enter-from-class="
-          dropUp ? 'opacity-0 scale-95 translate-y-1' : 'opacity-0 scale-95 -translate-y-1'
-        "
-        enter-to-class="opacity-100 scale-100 translate-0"
-        leave-active-class="transition duration-100 ease-in"
-        leave-from-class="opacity-100 scale-100 translate-0"
-        :leave-to-class="
-          dropUp ? 'opacity-0 scale-95 translate-y-1' : 'opacity-0 scale-95 -translate-y-1'
-        "
-      >
+      <Transition :css="false" @enter="onEnter" @leave="onLeave">
         <div
           v-if="isOpen"
           ref="dropdownRef"
           data-select-dropdown
-          :style="floatingStyles"
           class="dropdown-panel"
           max-w="[80vw]"
           role="listbox"
@@ -104,7 +92,7 @@ const isOpen = ref(false)
 const selectRef = ref<HTMLElement | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const highlightedIndex = ref(0)
-const { floatingStyles, dropUp } = useFloating(selectRef, dropdownRef, {
+const { onEnter, onLeave } = useFloating(selectRef, dropdownRef, {
   isOpen,
   placement: 'bottom-start',
   offset: 4,

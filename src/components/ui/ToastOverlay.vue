@@ -1,15 +1,10 @@
 <template>
   <Teleport to="body">
     <TransitionGroup
+      name="ui-popup"
       :key="overlayKey"
       tag="div"
       class="flex flex-col gap-2 pointer-events-none bottom-3 right-3 fixed z-9999"
-      enter-active-class="transition duration-150 ease-out"
-      enter-from-class="opacity-0 translate-y-2 scale-95"
-      enter-to-class="opacity-100 translate-y-0 scale-100"
-      leave-active-class="transition duration-100 ease-in"
-      leave-from-class="opacity-100 translate-y-0 scale-100"
-      leave-to-class="opacity-0 translate-y-2 scale-95"
     >
       <div
         v-for="t in toasts"

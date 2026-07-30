@@ -2,7 +2,7 @@
   <div class="flex-col-full-pb">
     <!-- ── 移除背景：预览区 ── -->
     <Transition :css="false" v-bind="expandHooks">
-      <div v-if="tool === 'removeBg' && previewUrl" p="3" shrink="0" flex="~ col" gap="2">
+      <div v-if="tool === 'removeBg' && previewUrl" p="x-3 b-3" shrink="0" flex="~ col" gap="2">
         <div
           class="checkerboard border border-divider radius-panel border-solid"
           relative
@@ -40,7 +40,13 @@
 
     <!-- ── 拼接：实时预览 = 列表合二为一 ── -->
     <Transition :css="false" v-bind="expandHooks">
-      <div v-if="tool === 'stitch' && stitchFiles.length" p="3" shrink="0" flex="~ col" gap="2">
+      <div
+        v-if="tool === 'stitch' && stitchFiles.length"
+        p="x-3 b-3"
+        shrink="0"
+        flex="~ col"
+        gap="2"
+      >
         <div
           class="hide-scrollbar border border-divider radius-panel border-solid fill-ctrl"
           relative

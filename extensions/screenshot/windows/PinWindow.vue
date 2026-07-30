@@ -206,15 +206,23 @@ async function handleClose() {
 </script>
 
 <style scoped>
+/* opacity 在「祖先」会形成 group opacity，隔断 backdrop-filter 的背景采样致材质失效；
+   但 opacity 落在 mica-bar「自身」不破坏材质（毛玻璃先采样再整体降透明）。
+   故根层走 transform、材质层走自身 opacity——两者皆 GPU 合成属性，不掉帧、不顿 */
 .bar-enter-active,
 .bar-leave-active {
-  transition:
-    opacity 0.15s cubic-bezier(0, 0, 0.2, 1),
-    transform 0.15s cubic-bezier(0, 0, 0.2, 1);
+  transition: transform var(--duration-normal) var(--ease-out);
 }
 .bar-enter-from,
 .bar-leave-to {
+  transform: translateY(-6px);
+}
+.bar-enter-active .mica-bar,
+.bar-leave-active .mica-bar {
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+.bar-enter-from .mica-bar,
+.bar-leave-to .mica-bar {
   opacity: 0;
-  transform: translateY(-4px);
 }
 </style>
