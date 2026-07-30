@@ -17,6 +17,8 @@ interface SettingItemBase {
   subtitle?: string
   icon?: string
   group?: string
+  /** 标题色调（accent 强调 / danger 危险），透传 BaseListItem.tone */
+  tone?: 'accent' | 'danger'
 }
 
 export type SettingItem =

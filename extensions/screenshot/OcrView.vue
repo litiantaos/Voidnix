@@ -1,10 +1,11 @@
 <template>
   <!-- 顶距交给 scrollContainer CHROME_HEIGHT（已含栏底 gap），勿再 p-t 叠双层 -->
-  <div p="x-3 b-3" flex="~ col" gap="3">
+  <div flex="~ col" gap="3" :class="{ 'pb-3': !ocrText && !error }">
     <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动；识别中遮罩覆盖 -->
     <div
       v-if="imageUrl"
       ref="previewRef"
+      m="x-3"
       relative
       class="hide-scrollbar border border-divider radius-panel border-solid fill-ctrl"
       h="44"
@@ -36,35 +37,43 @@
     </div>
 
     <!-- 错误 -->
-    <div v-if="error" text="sm danger" p="3" class="radius-ctrl bg-danger-soft">
-      {{ error }}
+    <div v-if="error" p="x-3 b-3" shrink="0">
+      <div text="sm danger" p="3" class="radius-ctrl bg-danger-soft">
+        {{ error }}
+      </div>
     </div>
 
     <!-- 结果 -->
     <template v-else-if="ocrText">
-      <BaseTextarea
-        ref="textareaRef"
-        v-model="ocrText"
-        :rows="4"
-        :max-height="0"
-        :submit-on-enter="false"
-        placeholder="识别结果"
-      />
-
-      <!-- 操作栏 -->
-      <div class="flex flex-wrap gap-2" shrink="0">
-        <BaseButton icon="i-ri-file-copy-line" @click="handleCopy">复制</BaseButton>
-        <BaseButton icon="i-ri-translate-2" @click="handleTranslate">翻译</BaseButton>
-        <BaseButton icon="i-ri-space" @click="trimSpaces">去空格</BaseButton>
-        <BaseButton icon="i-ri-corner-down-left-line" @click="trimNewlines">去换行</BaseButton>
-        <BaseButton icon="i-ri-text-spacing" @click="trimEmptyLines">去空行</BaseButton>
+      <div p="x-3">
+        <BaseTextarea
+          v-model="ocrText"
+          rounded="panel"
+          :rows="4"
+          :max-height="0"
+          :submit-on-enter="false"
+          placeholder="识别结果"
+        />
       </div>
+
+      <!-- 操作列表（原按钮组改为列表项，回车触发）-->
+      <BaseList
+        :items="ocrActions"
+        v-model:selected-index="actionIndex"
+        group-field="group"
+        :group-title="() => '操作'"
+        @execute="onAction"
+      >
+        <template #item="{ item }">
+          <BaseListItem :title="item.label" />
+        </template>
+      </BaseList>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { emit } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
@@ -72,11 +81,19 @@ import { copyAndHide, useAppStore } from '@/stores/app'
 import { pendingOcrData } from './index'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseList from '@/components/ui/BaseList.vue'
+import BaseListItem from '@/components/ui/BaseListItem.vue'
 
 interface OcrResult {
   text: string
   qr: string[]
+}
+
+interface OcrAction {
+  id: string
+  label: string
+  group: string
+  run: () => void | Promise<void>
 }
 
 const appStore = useAppStore()
@@ -84,8 +101,8 @@ const imageUrl = ref('')
 const ocrText = ref('')
 const isLoading = ref(false)
 const error = ref('')
-const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const previewRef = ref<HTMLElement>()
+const actionIndex = ref(0)
 
 // 截图 cover 缩放：短边撑满容器、长边溢出（容器 overflow-auto 可上下/左右滚动）
 // 双阶段：加载前用 CSS object-fit:cover（object-position:left top 对齐 scroll 0,0）
@@ -127,9 +144,8 @@ async function runOcr(data: NonNullable<typeof pendingOcrData.value>) {
     error.value = String(e)
   } finally {
     isLoading.value = false
-    // preventScroll：窗口高度动画起步阶段可视区小于内容，focus 默认会 scrollIntoView 把
-    // textarea 滚进视窗导致内容跳到底部；阻止滚动，让内容始终从顶部展开
-    nextTick(() => textareaRef.value?.focus({ preventScroll: true }))
+    // 操作列表接管键盘：默认选中首项（复制），回车直接复制；点击 textarea 可编辑
+    actionIndex.value = 0
   }
 }
 
@@ -170,5 +186,21 @@ function trimEmptyLines() {
     .split('\n')
     .filter((line) => line.trim() !== '')
     .join('\n')
+}
+
+// 操作列表（原按钮组改为列表项）：识别完成后默认选中首项（复制），回车触发
+const ocrActions = computed<OcrAction[]>(() => {
+  if (!ocrText.value.trim()) return []
+  return [
+    { id: 'copy', label: '复制', group: '操作', run: handleCopy },
+    { id: 'translate', label: '翻译', group: '操作', run: handleTranslate },
+    { id: 'trimSpaces', label: '去空格', group: '操作', run: trimSpaces },
+    { id: 'trimNewlines', label: '去换行', group: '操作', run: trimNewlines },
+    { id: 'trimEmptyLines', label: '去空行', group: '操作', run: trimEmptyLines },
+  ]
+})
+
+function onAction(action: OcrAction) {
+  void action.run()
 }
 </script>
