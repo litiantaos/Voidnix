@@ -14,8 +14,8 @@
     aria-haspopup="listbox"
     @keydown="onKeyDown"
     @focusout="onFocusOut"
-    @mousedown.prevent
-    @click="toggleOpen"
+    @mousedown="onMousedownToggle"
+    @click="onClickToggle"
   >
     <span :class="selectedLabel ? 'text-primary' : 'text-muted'" class="min-w-0 truncate">
       {{ selectedLabel || placeholder }}
@@ -181,11 +181,36 @@ const toggleOpen = () => {
     closeAndReleaseFocus()
     return
   }
+  // 清残留：上一次 mousedown 置位后若 click 被吞（WKWebView 程序聚焦场景）/ 拖拽移出未释放，
+  // flag 会残留——设置页键盘 control.click() 无 mousedown 不重置，首次点击静默失效
+  suppressClickToggle = false
   isOpen.value = true
   const currentFlatIndex = flatItems.value.findIndex(
     (item) => item.type === 'option' && item.value === props.modelValue,
   )
   highlightedIndex.value = currentFlatIndex >= 0 ? currentFlatIndex : (optionIndices.value[0] ?? 0)
+}
+
+/**
+ * mousedown + click 双入口 toggle，flag 抑制同一手势 double toggle。
+ *
+ * 根因：WKWebView 在 textarea 经 .focus() 程序化聚焦后，首次用户点击只触发 mousedown
+ * 不触发 click（click 被失焦过程吞掉），导致下拉首次点击不弹。故 toggle 下沉 mousedown；
+ * click 保留兜底设置页键盘流程（BaseSettingsList Enter → control.click()，无 mousedown）。
+ */
+let suppressClickToggle = false
+
+function onMousedownToggle() {
+  toggleOpen()
+  suppressClickToggle = true
+}
+
+function onClickToggle() {
+  if (suppressClickToggle) {
+    suppressClickToggle = false
+    return
+  }
+  toggleOpen()
 }
 
 const focus = () => {
