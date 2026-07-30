@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { CMD } from '@/commands'
 import { clearToasts } from '@/composables/useToast'
 
@@ -25,16 +26,26 @@ export function hideWindow(auto = false) {
   }
 }
 
-/** 显示主窗口（扩展快捷键从隐藏呼出：先切视图再 show，避免渲染旧视图闪现）。 */
-export function showWindow() {
-  // 两层 rAF：等 Vue 视图切换的 DOM 更新 + WKWebView paint 完成一帧，
-  // 再发起 show。NSWindow orderFront 会立即合成 WKWebView 的 layer（最近 commit 的 bitmap），
-  // 若 paint 未完成则合成上一帧（主界面），表现为闪现。两层 rAF 确保 show 时已是新帧。
-  requestAnimationFrame(() => {
+/** 显示主窗口（从隐藏呼出：先切视图再 show，避免渲染旧视图闪现）。 */
+export async function showWindow() {
+  // NSWindow.isVisible 区分两种状态（JS 事件循环 / IPC 不受窗口冻结影响，仅 rAF 被停摆）：
+  //  - 从未 orderFront（WKWebView 冻结，rAF 不执行）→ false：直接 invoke 解冻，
+  //    首帧无旧 bitmap 不会闪现。
+  //  - show-then-hide（hide 不 orderOut，alpha=0 仍 ordered-in）→ true：两层 rAF
+  //    等 Vue 视图切换 + paint 完成再 show，避免 orderFront 合成上一帧旧视图闪现。
+  if (
+    await getCurrentWindow()
+      .isVisible()
+      .catch(() => false)
+  ) {
     requestAnimationFrame(() => {
-      invoke(CMD.showWindow).catch(() => {})
+      requestAnimationFrame(() => {
+        invoke(CMD.showWindow).catch(() => {})
+      })
     })
-  })
+  } else {
+    invoke(CMD.showWindow).catch(() => {})
+  }
 }
 
 export const isTauri =
