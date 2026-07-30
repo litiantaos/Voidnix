@@ -33,19 +33,11 @@
 
   <!-- 历史消息浮层：列出本会话所有 user 消息，点击跳转到对应位置 -->
   <Teleport to="body">
-    <Transition
-      enter-active-class="transition duration-150 ease-out"
-      enter-from-class="opacity-0 scale-95 translate-y-1"
-      enter-to-class="opacity-100 scale-100 translate-0"
-      leave-active-class="transition duration-100 ease-in"
-      leave-from-class="opacity-100 scale-100 translate-0"
-      leave-to-class="opacity-0 scale-95 translate-y-1"
-    >
+    <Transition :css="false" @enter="historyOnEnter" @leave="historyOnLeave">
       <div
         v-if="isHistoryOpen"
         ref="historyDropdownRef"
         class="agent-history-panel dropdown-panel"
-        :style="historyFloatingStyles"
         role="listbox"
         aria-label="历史消息"
         tabindex="-1"
@@ -104,12 +96,16 @@ const historyItems = computed<PanelItem[]>(() =>
   })),
 )
 
-const { floatingStyles: historyFloatingStyles } = useFloating(historyWrapRef, historyDropdownRef, {
-  isOpen: isHistoryOpen,
-  placement: 'bottom-end',
-  offset: 6,
-  padding: 12,
-})
+const { onEnter: historyOnEnter, onLeave: historyOnLeave } = useFloating(
+  historyWrapRef,
+  historyDropdownRef,
+  {
+    isOpen: isHistoryOpen,
+    placement: 'bottom-end',
+    offset: 6,
+    padding: 12,
+  },
+)
 
 function openHistory() {
   historyIndex.value = userMessages.value.length - 1

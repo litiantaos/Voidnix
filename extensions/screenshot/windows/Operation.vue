@@ -171,16 +171,8 @@
       />
     </div>
 
-    <!-- 标注调色板（进出场与浮层范式一致：150 ease-out / 100 ease-in） -->
-    <Transition
-      appear
-      enter-active-class="transition duration-150 ease-out"
-      enter-from-class="opacity-0 translate-y-2 scale-95"
-      enter-to-class="opacity-100 translate-y-0 scale-100"
-      leave-active-class="transition duration-100 ease-in"
-      leave-from-class="opacity-100 translate-y-0 scale-100"
-      leave-to-class="opacity-0 translate-y-2 scale-95"
-    >
+    <!-- 标注调色板：进出场统一走 ui-popup -->
+    <Transition name="ui-popup" appear>
       <AnnotationPalette
         ref="paletteRef"
         v-if="hasSelection && (phase === 'annotate' || phase === 'scroll') && !selResizeHandle"
@@ -226,15 +218,7 @@
       :screen-height="screenH"
     />
     <!-- 选区阶段：快捷键提示（无工具栏时） -->
-    <Transition
-      appear
-      enter-active-class="transition duration-150 ease-out"
-      enter-from-class="opacity-0 translate-y-2 scale-95"
-      enter-to-class="opacity-100 translate-y-0 scale-100"
-      leave-active-class="transition duration-100 ease-in"
-      leave-from-class="opacity-100 translate-y-0 scale-100"
-      leave-to-class="opacity-0 translate-y-2 scale-95"
-    >
+    <Transition name="ui-popup" appear>
       <div
         v-if="phase === 'select'"
         class="pointer-events-none bottom-6 left-1/2 fixed z-60 -translate-x-1/2"

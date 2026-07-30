@@ -1,15 +1,7 @@
 <template>
   <!-- Cmd+Enter 动作面板（窗口右下角，详情 + 动作合成） -->
   <Teleport to="body">
-    <Transition
-      appear
-      enter-active-class="transition duration-150 ease-out"
-      enter-from-class="opacity-0 translate-y-2 scale-95"
-      enter-to-class="opacity-100 translate-y-0 scale-100"
-      leave-active-class="transition duration-100 ease-in"
-      leave-from-class="opacity-100 translate-y-0 scale-100"
-      leave-to-class="opacity-0 translate-y-2 scale-95"
-    >
+    <Transition name="ui-popup" appear>
       <div
         v-if="open"
         ref="panelRef"
