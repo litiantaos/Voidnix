@@ -185,7 +185,7 @@ export function makeToggleHandler(extId: string, onActivate?: () => void) {
     appStore.setSearchQuery('')
     // 从隐藏呼出：setActiveExtension 已同步触发 Vue 视图更新（DOM 在下一 microtask 落地），
     // 再 invoke show——窗口渲染第一帧时已是目标扩展视图，避免先闪现主界面再切换
-    if (!wasVisible) showWindow()
+    if (!wasVisible) void showWindow()
     onActivate?.()
   }
 }

@@ -177,7 +177,7 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
             appStore.setActiveExtension(extId)
             appStore.setSearchQuery('')
             // 窗口隐藏时（菜单栏点击）：先切视图再 show，避免渲染旧视图闪现
-            if (!wasVisible) showWindow()
+            if (!wasVisible) void showWindow()
           }
         },
       )
@@ -211,7 +211,7 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
           ext.onOpenSubview(subviewId, payload)
         }
         // 窗口隐藏时：先切视图再 show，避免渲染旧视图闪现
-        if (!wasVisible) showWindow()
+        if (!wasVisible) void showWindow()
       })
       track(unlistenSubview)
 
