@@ -108,6 +108,7 @@ const { onEnter: historyOnEnter, onLeave: historyOnLeave } = useFloating(
 )
 
 function openHistory() {
+  suppressFocusOutClose = false
   historyIndex.value = userMessages.value.length - 1
   isHistoryOpen.value = true
   nextTick(() => historyDropdownRef.value?.focus())
@@ -121,6 +122,16 @@ function toggleHistory() {
   if (isHistoryOpen.value) closeHistory()
   else openHistory()
 }
+
+/**
+ * mousedown 点击触发按钮时置位：抑制随后 dropdown 失焦触发的 focusout close。
+ *
+ * 根因：面板打开时 focus 在 dropdown，点击触发按钮 mousedown 使 dropdown 失焦 →
+ * onHistoryFocusOut 先 closeHistory，随后 click 的 toggleHistory 检测 !isOpen 又 openHistory，
+ * 净效果「关了又开」= 只能打开。document mousedown 监听先于 focusout（focus 在 mousedown 默认动作
+ * 中转移），在此时置 flag 让 focusout 放行，由 click 的 toggle 完成关闭。
+ */
+let suppressFocusOutClose = false
 
 function onHistorySelect(i: number) {
   const entry = userMessages.value[i]
@@ -145,7 +156,7 @@ function onHistoryKeydown(e: KeyboardEvent) {
     e.preventDefault()
     e.stopPropagation()
     closeHistory()
-    historyWrapRef.value?.focus()
+    focusInputTick.value++
     return
   }
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -171,6 +182,10 @@ function onHistoryKeydown(e: KeyboardEvent) {
  */
 function onHistoryFocusOut(e: FocusEvent) {
   if (!isHistoryOpen.value) return
+  if (suppressFocusOutClose) {
+    suppressFocusOutClose = false
+    return
+  }
   const next = e.relatedTarget as Node | null
   if (next && historyDropdownRef.value?.contains(next)) return
   if (next && historyWrapRef.value?.contains(next)) return
@@ -180,7 +195,11 @@ function onHistoryFocusOut(e: FocusEvent) {
 function onHistoryClickOutside(e: MouseEvent) {
   if (!isHistoryOpen.value) return
   const t = e.target as Node | null
-  if (historyWrapRef.value?.contains(t)) return
+  if (historyWrapRef.value?.contains(t)) {
+    // 点击触发按钮：suppress 随后 dropdown 失焦的 focusout close，由 click toggle 完成关闭
+    suppressFocusOutClose = true
+    return
+  }
   if (historyDropdownRef.value?.contains(t)) return
   closeHistory()
 }
