@@ -64,5 +64,8 @@ ps -A -o rss=,%cpu=,vsz=,comm= 2>/dev/null | awk '
     sub(/[ \t]+$/, "", binpath)
     nb=split(binpath, parts, "/")
     bin=parts[nb]
+    # bin 名校验：排除含引号/换行/分号等特殊字符的异常值
+    # （极端情况下 comm 输出跨行残留会拼入 bin 名，如 `config.yaml"<LF>grep`）
+    if (bin !~ /^[A-Za-z0-9._ -]+$/) next
     printf "@ %s/%s  %.1f  %s  %.1f\n", ext, bin, $1/1024, $2, $3/1048576
   }' >> "$LOG"
