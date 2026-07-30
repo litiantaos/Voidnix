@@ -51,6 +51,9 @@ export function useExtensionHeight(deps: {
   // rAF 合帧标志：一帧内多次 RO 回调只触发一次 adjust
   let rafQueued = false
   let rafId: number | null = null
+  // 上次实际下发的 frame：目标无变化时跳过 invoke，防止 ResizeObserver ↔ animate_frame 正反馈死循环
+  // （动画期间 content reflow 触发 RO → adjust → 新动画 → 再 reflow → …，目标高度 ±1px 抖动即自维持）
+  let lastApplied: { h: number; y: number } | null = null
 
   function invalidateMonitor() {
     cachedBounds = null
@@ -157,6 +160,18 @@ export function useExtensionHeight(deps: {
 
     targetY = nextY
 
+    // 目标无变化（≤1px）则跳过：animate_frame 每次 invoke 启动 0.26s 动画，
+    // 动画期间 content reflow 可能触发 ResizeObserver → 再 adjust → 再动画，形成死循环。
+    // 跳过等价于"窗口已在正确位置"，不启动新动画，content 稳定后 RO 自然停止。
+    if (
+      lastApplied &&
+      Math.abs(target - lastApplied.h) <= 1 &&
+      Math.abs(nextY - lastApplied.y) <= 1
+    ) {
+      return
+    }
+    lastApplied = { h: target, y: nextY }
+
     // 一次 IPC 触发系统 animator 动画（CoreAnimation 接管，非 JS 逐帧）
     invoke(CMD.setMainFrame, {
       x: baseX,
@@ -178,6 +193,7 @@ export function useExtensionHeight(deps: {
 
   // 扩展 / subview 切换：同步 observer + 重算（系统 animator 自动从中断点接续）
   watch([activeExtension, activeSubview], () => {
+    lastApplied = null
     nextTick(() => {
       syncObserver()
       adjust()
@@ -207,6 +223,7 @@ export function useExtensionHeight(deps: {
         targetY = null
         originalY = null
         wasAuto = false
+        lastApplied = null
         invalidateMonitor()
         nextTick(() => adjust())
       })
