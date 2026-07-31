@@ -86,13 +86,12 @@ const metaItems = computed<PanelItem[]>(() =>
 
 let pendingResult: SearchResult | null = null
 
-const { open, menuIndex, close, onMenuClick } = useActionPanel({
+const { open, menuIndex, close, toggleOpen, onMenuClick } = useActionPanel({
   panelRef,
   getItems: () => actionItems.value,
   onSelect: runAction,
-  shouldOpen: (e) => {
+  canOpen: () => {
     if (appStore.activeExtId || appStore.isDialogOpen) return false
-    if (e.isComposing) return false
     const r = props.results[props.selectedIndex]
     const kind = r?.data?.kind
     if (r?.data?.path && (kind === 'application' || kind === 'file' || kind === 'folder')) {
@@ -126,6 +125,9 @@ function runAction(key: string | number) {
     appStore.showStatus('已复制路径')
   }
 }
+
+/// 右键入口（经 MainView 转发）：暴露 composable 统一的 toggle（已开则关，否则 canOpen → openFor）
+defineExpose({ toggleOpen })
 
 // mdls 日期 "2024-01-01 12:00:00 +0000" → 转 ISO 后格式化为本地 "2024-01-01 12:00"
 function fmtDate(s: string | null | undefined): string {

@@ -261,7 +261,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 ### 浮层组件
 
 - **`BaseDropdownItems`**（`components/ui/`）：通用行渲染器，4 行类型 `item | header | divider | meta`（`selectableIndices` 仅算 item，键盘导航天然跳过其余）；消费者传 `PanelItem[]` + `activeIndex`，emit `select/hover`
-- **`ResultActionPanel`**（`components/layout/`）：全局模式 `Cmd+Enter` 对 application/file/folder 结果的合并面板（上方详情 meta 行 + 下方动作 item 行——在 Finder 中显示 / 复制路径）；capture-phase keydown 劫持 + 外点关闭，打开即默认选中首项可连续 Enter 触发
+- **`ResultActionPanel`**（`components/layout/`）：全局模式对 application/file/folder 结果的合并面板（上方详情 meta 行 + 下方动作 item 行——在 Finder 中显示 / 复制路径）；`Cmd+Enter` 与结果项右键双触发，经 `useActionPanel` 统一的 `toggleOpen`（已开则关），打开即默认选中首项可连续 Enter 触发
 - **Markdown 渲染**：`utils/markdown.ts`（`renderMarkdown`：marked + 自定义 renderer + DOMPurify）+ 全局 `styles/markdown.css`（`.markdown-body` 容器类），agent / ai-providers 等扩展共用
 
 ### 扩展视图加载（切换性能）
@@ -345,7 +345,7 @@ src/
 │   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型扩展 dynamic + web 搜索 + 默认结果）
 │   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派 + Escape 统一退出
 │   ├── useExtensionHeight.ts   # 主窗口高度统一管理
-│   ├── useActionPanel.ts      # Cmd+Enter 动作浮层（键盘导航 + 外点关闭）
+│   ├── useActionPanel.ts      # Cmd+Enter / 右键 动作浮层（toggleOpen 统一入口 + 键盘导航 + 外点关闭）
 │   ├── useFloating.ts / useScrollPosition.ts / useTauriListener.ts / useToast.ts
 │   └── events.ts / useInputControl.ts / useShortcutConfig.ts
 ├── stores/             # app / settings（仅框架级）/ system（权限+开机自启预查缓存）/ update

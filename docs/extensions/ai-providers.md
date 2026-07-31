@@ -23,7 +23,7 @@
   - 副标题 = `sk-… · MAX · 5h 12% / 2.3h · 7d 34% / 2.3d · 30d 1.2B tokens`（重置缺失为 `—`）
   - 右侧 = **30d 曲线**（智谱）
 - **回车**：打开编辑 Key 弹窗
-- **Cmd+Enter**：统一「粘贴 Key / 粘贴 URL / 粘贴 {模型}」、删除 Key
+- **Cmd+Enter / 右键**：统一「粘贴 Key / 粘贴 URL / 粘贴 {模型}」、删除 Key（经 `useActionPanel` 统一 `toggleOpen`，二次触发关闭）
 - **分组标题右侧**：编辑提供商 · 添加 Key
 - **添加提供商**：搜索栏右侧 `+`（`searchBarAccessory`）
 

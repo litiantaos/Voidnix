@@ -16,6 +16,7 @@
       @update:selected-ids="selectedIds = $event"
       @select="selectedIndex = $event"
       @execute="handleExecute"
+      @contextmenu="toggleOpen"
     >
       <template #item="{ item }">
         <BaseListItem :ref="(el: unknown) => setImageRef(el, item)" multiline-title>
@@ -282,27 +283,28 @@ const actionMenuItems = computed<PanelItem[]>(() => {
   return items
 })
 
-const { open, menuIndex, close, onMenuClick } = useActionPanel({
+const { open, menuIndex, close, toggleOpen, onMenuClick } = useActionPanel({
   panelRef,
   getItems: () => actionMenuItems.value,
   onSelect: runMenuAction,
-  shouldOpen: (e) => {
-    if (e.isComposing) return false
-    if (appStore.activeExtId !== 'clipboard') return false
-    if (previewOpen.value || editOpen.value) return false
-    // 多选 → 批量删除菜单；否则 → 当前项完整菜单
-    if (selectedIds.value.size > 0) {
-      menuBatch.value = true
-      menuTarget.value = null
-      return true
-    }
-    const item = history.value[selectedIndex.value]
-    if (!item) return false
-    menuBatch.value = false
-    menuTarget.value = item
-    return true
-  },
+  canOpen: prepareMenu,
 })
+
+/// 准备菜单目标（Cmd+Enter 与右键共用）：多选 → 批量删除；否则 → 当前项完整菜单
+function prepareMenu(): boolean {
+  if (appStore.activeExtId !== 'clipboard') return false
+  if (previewOpen.value || editOpen.value) return false
+  if (selectedIds.value.size > 0) {
+    menuBatch.value = true
+    menuTarget.value = null
+    return true
+  }
+  const item = history.value[selectedIndex.value]
+  if (!item) return false
+  menuBatch.value = false
+  menuTarget.value = item
+  return true
+}
 
 function runMenuAction(key: string | number) {
   if (menuBatch.value) {
