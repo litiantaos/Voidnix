@@ -10,26 +10,30 @@
     @mouseenter="hoverActive = true"
     @mouseleave="hoverActive = false"
     @mousedown="onWindowMouseDown"
+    @wheel.prevent="onWheel"
     tabindex="0"
     @keydown.esc.exact="handleClose"
     @focus="onFocus"
   >
     <!-- 图像由 native CALayer 直接贴在 contentView 下渲染，不走 <img>。 -->
-    <Transition name="bar">
-      <div
-        v-if="hoverActive"
-        flex
-        gap="2"
-        items="center"
-        right="3"
-        top="3"
-        absolute
-        z="10"
-        @mousedown.stop
-      >
-        <!-- 透明度拖动条：窗口太窄时隐藏，给关闭按钮让位 -->
+    <!-- 工具栏：底部居中。每项独立 Transition——玻璃元素须为动画直接目标，
+         opacity 落自身才不破坏 backdrop-filter 采样（落祖先会 group opacity 隔断），
+         故共用全局 ui-popup；容器仅定位，flex 宽度变化时 -translate-x-1/2 实时居中 -->
+    <div
+      bottom="3"
+      left="1/2"
+      class="-translate-x-1/2"
+      flex
+      absolute
+      gap="2"
+      items="center"
+      z="10"
+      @mousedown.stop
+    >
+      <!-- 透明度拖动条：窗口太窄时隐藏，关闭按钮自动居中；缩放期间淡出避免跟随底边抖动 -->
+      <Transition name="ui-popup">
         <div
-          v-if="showOpacitySlider"
+          v-if="hoverActive && showOpacitySlider && !isScaling"
           p="x-3"
           flex
           h="7"
@@ -48,9 +52,17 @@
             @update:model-value="onOpacityChange"
           />
         </div>
+      </Transition>
 
-        <!-- 关闭按钮：外层 mica-bar 材质 + ghost 按钮融入（与透明度框同款） -->
-        <div class="mica-bar shadow-lg overflow-hidden" flex h="7" items-center>
+      <!-- 关闭按钮：外层 mica-bar 材质 + ghost 按钮融入（与透明度框同款） -->
+      <Transition name="ui-popup">
+        <div
+          v-if="hoverActive && !isScaling"
+          class="mica-bar shadow-lg overflow-hidden"
+          flex
+          h="7"
+          items="center"
+        >
           <BaseButton
             variant="ghost"
             class="!rounded-none"
@@ -59,8 +71,8 @@
             @click="handleClose"
           />
         </div>
-      </div>
-    </Transition>
+      </Transition>
+    </div>
   </div>
 </template>
 
@@ -74,8 +86,9 @@ import BaseSlider from '@/components/ui/BaseSlider.vue'
 
 const opacity = ref(100)
 const hoverActive = ref(false)
+const isScaling = ref(false)
 const winWidth = ref(window.innerWidth)
-// 滑块容器自身约 130（80 滑块 + 32 数值 + padding）+ gap 8 + 关闭按钮 28 + 右边距 8 + 缓冲
+// 整组宽度 ≈ 滑块容器 142（80 滑块 + 32 数值 + gap 6 + p-x-3 24）+ gap 8 + 关闭按钮 28；窗口放不下整组则只留关闭按钮自动居中
 const showOpacitySlider = computed(() => winWidth.value >= 180)
 
 let win: ReturnType<typeof getCurrentWindow> | null = null
@@ -107,6 +120,8 @@ onUnmounted(() => {
   window.removeEventListener('resize', onResize)
   stopHoverPolling()
   if (rafId) cancelAnimationFrame(rafId)
+  if (scaleRaf) cancelAnimationFrame(scaleRaf)
+  clearTimeout(scaleStopTimer)
 })
 
 function onResize() {
@@ -192,6 +207,36 @@ function onDocMouseUp() {
   document.removeEventListener('mousemove', onDocMouseMove)
 }
 
+// 滚轮缩放：维护绝对 scaleLevel（1=原图），每帧的 wheel 增量转 factor 乘进 scaleLevel，
+// 发送绝对 scale 给 Rust——Rust 用 orig×scale 一次算出尺寸，比例恒等于原图，
+// 不读当前 frame 迭代相乘（NSWindow 可能规整 frame 致比例漂移）。
+const ZOOM_SENS = 600 // deltaY 敏感度：100（鼠标一档）→ exp(100/600)≈1.18
+const ZOOM_MIN = 0.2 // 最小缩放（原图 20%），防止缩到无法辨识
+const ZOOM_MAX = 8 // 最大缩放（原图 800%），再大像素化严重且无意义
+let scaleLevel = 1
+let deltaAccum = 0
+let scaleRaf = 0
+let scaleStopTimer = 0
+function onWheel(e: WheelEvent) {
+  deltaAccum += e.deltaY
+  // 缩放期间隐藏控件，停止 220ms 后恢复（控件淡入淡出走 ui-popup）
+  isScaling.value = true
+  clearTimeout(scaleStopTimer)
+  scaleStopTimer = window.setTimeout(() => {
+    isScaling.value = false
+  }, 220)
+  if (!scaleRaf) scaleRaf = requestAnimationFrame(flushScale)
+}
+function flushScale() {
+  scaleRaf = 0
+  if (Math.abs(deltaAccum) < 1) return
+  // deltaY<0（上滚）→ factor>1 放大；下滚反之
+  const factor = Math.exp(-deltaAccum / ZOOM_SENS)
+  deltaAccum = 0
+  scaleLevel = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scaleLevel * factor))
+  invoke(CMD.scalePinWindow, { scale: scaleLevel }).catch(() => {})
+}
+
 async function onOpacityChange() {
   await invoke(CMD.setPinWindowOpacity, {
     opacity: opacity.value / 100,
@@ -204,25 +249,3 @@ async function handleClose() {
   await win.close()
 }
 </script>
-
-<style scoped>
-/* opacity 在「祖先」会形成 group opacity，隔断 backdrop-filter 的背景采样致材质失效；
-   但 opacity 落在 mica-bar「自身」不破坏材质（毛玻璃先采样再整体降透明）。
-   故根层走 transform、材质层走自身 opacity——两者皆 GPU 合成属性，不掉帧、不顿 */
-.bar-enter-active,
-.bar-leave-active {
-  transition: transform var(--duration-normal) var(--ease-out);
-}
-.bar-enter-from,
-.bar-leave-to {
-  transform: translateY(-6px);
-}
-.bar-enter-active .mica-bar,
-.bar-leave-active .mica-bar {
-  transition: opacity var(--duration-normal) var(--ease-out);
-}
-.bar-enter-from .mica-bar,
-.bar-leave-to .mica-bar {
-  opacity: 0;
-}
-</style>
