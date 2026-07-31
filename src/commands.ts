@@ -70,6 +70,7 @@ export const CMD = {
   pinImage: 'pin_image',
   pinGlobalMouse: 'pin_global_mouse',
   setPinWindowOpacity: 'set_pin_window_opacity',
+  scalePinWindow: 'scale_pin_window',
   restorePinFocus: 'restore_pin_focus',
 
   // —— awake ——

@@ -88,6 +88,7 @@ macro_rules! configure_app {
             crate::extensions::screenshot::pin::pin_global_mouse,
             crate::extensions::screenshot::pin::pin_image,
             crate::extensions::screenshot::pin::restore_pin_focus,
+            crate::extensions::screenshot::pin::scale_pin_window,
             crate::extensions::screenshot::pin::set_pin_window_opacity,
             crate::extensions::screenshot::scroll_capture::copy_scroll_result_to_clipboard,
             crate::extensions::screenshot::scroll_capture::enter_scroll_capture,
