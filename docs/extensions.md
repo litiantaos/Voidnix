@@ -161,7 +161,7 @@ config.maxDays = 60 // 自动写盘
 - 第一参数为完整 plugin-store path（不含 `.json` 后缀），扩展用 `extensions/<id>/config`，框架级用 `config/settings`。
 - backfill 类型守卫：磁盘值类型与 default 不符则丢弃；`isStillDefault` 走递归 deepEqual（顺序无关）。
 - 启动期 `isLoading` 抑制 watch 冗余写；退出 `onCloseRequested` flush 防抖窗口内变更。
-- 跨窗口同步：订阅 plugin-store `onChange`，其他窗口 set 自动同步本地 reactive。
+- 不订阅 plugin-store `onChange`：plugin-store 的 set 会向本进程回放 `store://change`（无来源标识），回灌会以旧快照覆盖 emit 到达前已 mutate 的新值（实测复现）；所有 config 仅在 main 窗口持有（子窗口纯内存 reactive），无跨窗口同步需求。
 - schema 变更：自开发自用不维护迁移，改 schema 时手动删磁盘 config.json 即可。
 - store 实例缓存（文件级 `Map<storePath, Store>`），watch 回调复用，禁止每次保存重新 `load()`。
 - 加载异步竞态：`load()` 异步，扩展 setup 早期可能读 defaults。安全参数由 Rust clamp 兜底。

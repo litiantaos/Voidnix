@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
 
 // 模拟 @tauri-apps/plugin-store 的 Store 接口（get/set/save/onChange）
+// onChangeCb 保留 callback 引用：defineConfig 订阅则非 null（可手动模拟 plugin-store emit）
+const onChangeCb = { fn: null as ((key: string, value: unknown) => void) | null }
 const storeGet = vi.fn()
 const storeSet = vi.fn()
 const storeSave = vi.fn()
-const onChangeCb = { fn: null as ((key: string, value: unknown) => void) | null }
 const storeOnChange = vi.fn().mockImplementation((cb: (key: string, value: unknown) => void) => {
   onChangeCb.fn = cb
   return Promise.resolve(() => {})
@@ -31,11 +32,11 @@ const { defineConfig } = await import('./storage')
 
 describe('defineConfig', () => {
   beforeEach(() => {
+    onChangeCb.fn = null
     storeGet.mockReset()
     storeSet.mockReset()
     storeSave.mockReset()
     storeOnChange.mockClear()
-    onChangeCb.fn = null
     loadMock.mockReset()
   })
 
@@ -162,35 +163,22 @@ describe('defineConfig', () => {
     expect(config.opts).toEqual({ a: 1, b: 2 })
   })
 
-  // ─── 新增：跨窗口 onChange 同步（P18） ─────────────────────
+  // ─── 回归：set 异步自回声不覆盖本地 mutate（曾致 ai.env 写空） ──
 
-  it('onChange 回调：其他窗口改值同步本地', async () => {
+  it('竞态：onChange 回灌旧快照不覆盖 emit 到达前已 mutate 的新值', async () => {
     storeGet.mockResolvedValue(null)
-    const config = defineConfig('cfg-onchange', { maxDays: 30 })
-    await vi.waitFor(() => expect(storeOnChange).toHaveBeenCalled())
-    await new Promise((r) => setTimeout(r, 10)) // 等 isLoading = false
+    const config = defineConfig('cfg-race-emit', { items: ['init'] as string[] })
+    await vi.waitFor(() => expect(loadMock).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 20)) // isLoading = false
 
-    // 模拟其他窗口 set 后触发的 onChange
-    expect(onChangeCb.fn).not.toBeNull()
-    onChangeCb.fn!('maxDays', 77)
+    // 场景：flushSave 已 set 旧快照 ['a','b']，emit 到达前用户又改成 ['a','b','c']
+    config.items = ['a', 'b', 'c']
+
+    // 模拟 plugin-store 异步回放旧快照（订阅了 onChange 时 fn 非 null）
+    onChangeCb.fn?.('items', ['a', 'b'])
     await nextTick()
-    expect(config.maxDays).toBe(77)
-  })
 
-  it('onChange 自身 set 触发：deepEqual 拦截不循环', async () => {
-    storeGet.mockResolvedValue(null)
-    const config = defineConfig('cfg-loop', { maxDays: 30 })
-    await vi.waitFor(() => expect(storeOnChange).toHaveBeenCalled())
-    await new Promise((r) => setTimeout(r, 10))
-
-    config.maxDays = 50 // 用户改
-    await vi.waitFor(() => expect(storeSet).toHaveBeenCalledWith('maxDays', 50))
-
-    // 模拟 plugin-store 在 set 后给当前窗口也派发 onChange
-    storeSet.mockClear()
-    onChangeCb.fn!('maxDays', 50)
-    await new Promise((r) => setTimeout(r, 50))
-    // 不应再次 set（deepEqual 拦截）
-    expect(storeSet).not.toHaveBeenCalled()
+    // 期望：旧快照不得覆盖新值
+    expect(config.items).toEqual(['a', 'b', 'c'])
   })
 })
