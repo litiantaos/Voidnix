@@ -47,6 +47,7 @@
           :group-field="!extension ? props.groupField : undefined"
           :group-title="!extension ? props.groupTitle : undefined"
           @update:selected-index="(i: number) => emit('update:selectedIndex', i)"
+          @contextmenu="() => emit('contextmenu')"
           @execute="handleExecute"
         >
           <template #item="{ item }">
@@ -94,6 +95,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:selectedIndex': [value: number]
+  contextmenu: []
 }>()
 
 const appStore = useAppStore()

@@ -116,12 +116,13 @@
       :group-field="getGroupKey"
       :group-title="groupTitle"
       @update:selected-index="(i: number) => (selectedIndex = i)"
+      @contextmenu="() => actionPanelRef?.toggleOpen()"
     />
   </div>
 
   <UpdateDialog v-if="updateStore.dialogVisible" @close="updateStore.closeDialog()" />
 
-  <ResultActionPanel :results="results" :selected-index="selectedIndex" />
+  <ResultActionPanel ref="actionPanelRef" :results="results" :selected-index="selectedIndex" />
 </template>
 
 <script setup lang="ts">
@@ -175,6 +176,7 @@ const searchBarRef = ref<HTMLDivElement>()
 const accessoryRef = ref<HTMLDivElement>()
 const searchInput = ref<HTMLInputElement>()
 const contentViewRef = ref<InstanceType<typeof ContentView>>()
+const actionPanelRef = ref<InstanceType<typeof ResultActionPanel>>()
 const results = ref<SearchResult[]>([])
 const selectedIndex = ref(0)
 const isTagHovered = ref(false)

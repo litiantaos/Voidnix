@@ -10,19 +10,21 @@ interface UseActionPanelOptions {
   getItems: () => PanelItem[]
   /** 选中动作回调（点击 / 回车确认统一入口） */
   onSelect: (key: string | number) => void
-  /** Cmd+Enter 是否打开（菜单未打开时才触发）。返回 true 后 composable 自动调 openFor */
-  shouldOpen: (e: KeyboardEvent) => boolean
+  /** 是否允许打开（业务守卫 + 目标准备，如设置 menuTarget）。返回 true 后 composable 自动打开。
+   *  isComposing 由 composable 在键盘通道拦截，无需消费者判；右键 toggle 时已开则直接关闭、不调用此函数 */
+  canOpen: () => boolean
   /** 打开前异步预处理（如拉元数据、设置目标项）；菜单项在此后求值 */
   beforeOpen?: () => Promise<void> | void
 }
 
 /**
- * Cmd+Enter 动作浮层的通用逻辑（右下角 dropdown-panel + BaseDropdownItems）：
+ * Cmd+Enter / 右键 动作浮层的通用逻辑（右下角 dropdown-panel + BaseDropdownItems）：
  * - menuIndex / selectableIndices / moveMenu / confirmMenu 键盘导航
+ * - toggleOpen 右键入口（已开则关，否则 canOpen → openFor）
  * - onDocKey capture-phase 拦截（ArrowUp/Down/Enter/Esc）+ 外点关闭
  * - document 监听器随生命周期自注册/注销
  *
- * 消费者负责：getItems 业务项、onSelect 动作分派、shouldOpen 打开条件、beforeOpen 预处理
+ * 消费者负责：getItems 业务项、onSelect 动作分派、canOpen 打开条件 + 目标准备、beforeOpen 预处理
  * 消费者保留浮层模板（Teleport + Transition + BaseDropdownItems）与其他独立交互（如预览 Esc）
  */
 export function useActionPanel(opts: UseActionPanelOptions) {
@@ -41,6 +43,16 @@ export function useActionPanel(opts: UseActionPanelOptions) {
     menuIndex.value = selectableIndices.value[0] ?? -1
     open.value = true
     nextTick(() => opts.panelRef.value?.focus())
+  }
+
+  /** 右键 toggle：面板已开则关闭，否则经 canOpen 守卫 + 目标准备后打开（Cmd+Enter 同款流程） */
+  async function toggleOpen() {
+    if (open.value) {
+      close()
+      return
+    }
+    if (!opts.canOpen()) return
+    await openFor()
   }
 
   function close() {
@@ -89,7 +101,7 @@ export function useActionPanel(opts: UseActionPanelOptions) {
       }
       return
     }
-    if (e.key === 'Enter' && e.metaKey && opts.shouldOpen(e)) {
+    if (e.key === 'Enter' && e.metaKey && opts.canOpen()) {
       e.preventDefault()
       e.stopPropagation()
       void openFor()
@@ -97,6 +109,8 @@ export function useActionPanel(opts: UseActionPanelOptions) {
   }
 
   function onDocMouseDown(e: MouseEvent) {
+    // 右键由 contextmenu 通道处理（结果项右键重定向面板），不在此关闭
+    if (e.button === 2) return
     if (open.value && opts.panelRef.value && !opts.panelRef.value.contains(e.target as Node)) {
       close()
     }
@@ -115,7 +129,7 @@ export function useActionPanel(opts: UseActionPanelOptions) {
     open,
     menuIndex,
     selectableIndices,
-    openFor,
+    toggleOpen,
     close,
     moveMenu,
     confirmMenu,

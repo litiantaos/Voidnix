@@ -10,6 +10,7 @@
       :group-title="groupTitle"
       :keyboard-active="!panelOpen && !showProviderModal && !showKeyModal"
       @execute="onExecute"
+      @contextmenu="toggleOpen"
     >
       <template #group-title="{ group }">
         <span class="flex-1 min-w-0 truncate">{{ groupTitle(group) }}</span>
@@ -444,15 +445,14 @@ const {
   open: panelOpen,
   menuIndex,
   close: closePanel,
+  toggleOpen,
   onMenuClick,
 } = useActionPanel({
   panelRef: panelRef as Ref<HTMLElement | undefined>,
   getItems: () => actionMenuItems.value,
-  shouldOpen: (e) => {
+  canOpen: () => {
     if (showProviderModal.value || showKeyModal.value) return false
     if (keyRows.value.length === 0) return false
-    e.preventDefault()
-    e.stopPropagation()
     return true
   },
   beforeOpen: () => {

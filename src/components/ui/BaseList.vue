@@ -22,6 +22,7 @@
         :class="{ 'ui-active': isItemSelected(i) }"
         @click="onItemClick(i, $event)"
         @dblclick="onItemDblClick(i)"
+        @contextmenu="onItemContextMenu(i, $event)"
       >
         <slot name="item" :item="item" :index="i" />
       </div>
@@ -76,6 +77,7 @@ const emit = defineEmits<{
   'update:selectedIds': [ids: Set<string>]
   select: [index: number]
   execute: [item: T, index: number, event?: KeyboardEvent]
+  contextmenu: [item: T, index: number, event: MouseEvent]
 }>()
 
 const localIndex = ref(props.selectedIndex)
@@ -165,6 +167,16 @@ function onItemClick(index: number, e: MouseEvent) {
 function onItemDblClick(index: number) {
   emit('execute', props.items[index], index)
   if (props.multiSelect) emitIds(new Set())
+}
+
+/// 右键：选中该项并冒泡（消费者决定是否弹出菜单），抑制原生右键菜单
+/// emit 延迟到 nextTick：setSelectedIndex 经 props 传播（flush）后再触发消费者
+/// —— 全局 ResultActionPanel 的 canOpen 读 props.selectedIndex，同步 emit时 prop 尚未刷新
+function onItemContextMenu(index: number, e: MouseEvent) {
+  e.preventDefault()
+  anchorIndex = index
+  setSelectedIndex(index)
+  nextTick(() => emit('contextmenu', props.items[index], index, e))
 }
 
 // ── Keyboard 守卫 ──

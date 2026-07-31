@@ -94,6 +94,12 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 - **按上限裁剪**：`maxDays` <=0 按上限 5000 裁剪（仅非收藏）
 - **拉取上限**：默认拉取上限 500 条（全局搜索 dynamic 与模块列表）
 
+## 动作菜单
+
+- **触发**：`Cmd+Enter` 或结果项右键（经 `useActionPanel` 统一 `toggleOpen`，二次触发关闭）
+- **单项菜单**：预览（非 file）/ 收藏·取消收藏 / 编辑（仅文本）/ 删除
+- **多选菜单**：多选状态下触发 → 批量删除（`删除 N 条`）
+
 ## 删除
 
 - **手动**：`⌘⌫`（`View.vue` `onKeyStroke` → `triggerDelete` → `handleDelete`），多选优先否则取光标项，二次确认后调 `delete_clipboard_items`
