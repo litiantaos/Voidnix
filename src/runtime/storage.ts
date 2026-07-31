@@ -70,8 +70,6 @@ function defaultValidate(_key: string, value: unknown, defaultValue: unknown): b
 /// 加载语义：load() 异步，扩展 setup / 早期命令可能读到 defaults
 /// （磁盘值尚未回填）。安全参数由 Rust clamp 兜底，UI 可能短暂显示 defaults。
 ///
-/// 跨窗口同步：订阅 plugin-store onChange，其他窗口 set 自动同步本地 reactive。
-///
 /// 退出 flush：onCloseRequested 触发 pending saveTimer 立即落盘，避免防抖窗口内变更丢失。
 ///
 /// schema 变更：自开发自用不维护迁移，改 schema 时手动删磁盘 config.json 即可。
@@ -157,22 +155,11 @@ export function defineConfig<T extends object>(storePath: string, defaults: T): 
     })
   }
 
-  // 跨窗口同步：订阅 onChange，其他窗口改值时本地 reactive 自动同步
-  getStore(storePath)
-    .then((store) =>
-      store.onChange<unknown>((key, value) => {
-        if (isLoading) return
-        if (!key || !defaultKeys.includes(key)) return
-        if (value === null || value === undefined) return
-        if (!defaultValidate(key, value, (defaults as Record<string, unknown>)[key])) return
-        const cur = (config as Record<string, unknown>)[key]
-        if (!deepEqual(cur, value)) {
-          // biome-ignore lint: dynamic key assignment
-          ;(config as Record<string, unknown>)[key] = value
-        }
-      }),
-    )
-    .catch(() => {})
+  // 不订阅 plugin-store 的 onChange 做回灌。
+  // plugin-store 的 set/delete 会向「所有窗口含本进程」emit store://change，无法区分来源——
+  // 本进程 flushSave 的 set 会被当作外部变更回灌：emit 到达前 config 已被后续 mutate 时，
+  // 旧快照经 deepEqual 判不等后覆盖新值（实测复现：config.items=['a','b','c'] 被旧快照 ['a','b'] 覆盖）。
+  // 本应用所有 config 仅在 main 窗口持有（子窗口上方已 return 纯内存 reactive），无跨窗口同步需求。
 
   return config
 }
