@@ -32,6 +32,7 @@
 
     <Teleport to="body">
       <Transition :css="false" @enter="onEnter" @leave="onLeave">
+        <!-- prevent：下拉项不可聚焦，mousedown 转焦致 focusout 抢先 closeDropdown，click 到达前下拉已卸载 -->
         <div
           v-if="isOpen"
           ref="dropdownRef"
@@ -39,6 +40,7 @@
           class="dropdown-panel"
           max-w="[80vw]"
           role="listbox"
+          @mousedown.prevent
         >
           <BaseDropdownItems
             :items="panelItems"
