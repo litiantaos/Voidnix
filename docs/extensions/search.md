@@ -1,12 +1,12 @@
 # search
 
-应用发现 + 文件搜索。Rust 只做数据召回（mdfind / app 扫描），过滤排序在前端 `src/utils/fuzzy.ts`。
+应用发现 + 文件搜索。Rust 维护两个内存索引（`APP_CACHE` + `FILE_CACHE`），过滤排序在前端 `src/utils/fuzzy.ts`。
 
 ## 缓存
 
-- `APP_CACHE` 进程内全局 `RwLock`，双检锁懒加载；`prewarm_cache` 启动预热
-- 先返回无图标列表，后台 `spawn_blocking` 提取图标后替换 cache 并 emit `app-cache-updated`
-- `notify` 监听 `/Applications` 等目录变化（NonRecursive + 5s 防抖）后整体重建
+- `APP_CACHE` / `FILE_CACHE` 进程内全局 `RwLock`，双检锁懒加载；`prewarm_cache` 启动并发预热两者
+- 应用先返回无图标列表，后台 `spawn_blocking` 提取图标后替换 cache 并 emit `app-cache-updated`
+- `notify` 监听 `/Applications` + 文件扫描目录变化（FSEvents 递归 + 5s 防抖）后并发重建两个缓存
 - 会话内 `launch_app` 使用次数走 `SEARCH_SESSION.session_use_deltas`（内存 HashMap），重建时合并回 `use_count`
 
 ## 应用扫描
@@ -15,15 +15,17 @@
 
 ## 文件搜索
 
-`search_files` 用 `mdfind -name <query> -onlyin ~` 单次拉候选，`-attr kMDItemContentType` / `-attr kMDItemUseCount` 顺带取类型与使用次数。
+`search_files` 对 `FILE_CACHE` 内存索引做 substring 匹配 + 基础打分（前缀 1000 / 包含 600 / 位置扣分），返回 top 100 候选。不再 per-query spawn mdfind——随打随出。
 
-**零 TCC 原理**：家目录本身不受 TCC 保护；Spotlight 守护进程 `mds` 以系统权限索引所有文件（含 Documents/Desktop/Downloads 等受保护目录），故无需 FDA 即可搜到内容。Rust 端用 `starts_with` 在 reader 循环内按目标子目录前缀即时过滤——纯字符串匹配，不触达文件系统。
+**索引构建**：启动时 `spawn_blocking` 递归扫描目标子目录，跳过隐藏文件 + `FILE_IGNORE_DIRS`（node_modules / .git / dist / build / target 等），深度上限 6 层，数量上限 50,000。
 
-**白名单子目录**（`TARGET_SUBDIRS`）：Desktop / Documents / Downloads / Pictures / Music / Movies / Projects / Code。前缀过滤在解析阶段执行，保证 `MAX_ENTRIES=100` 配额全部留给目标子目录，不被家目录其它路径稀释。
+**白名单子目录**（`FILE_SCAN_DIRS`）：Desktop / Documents / Downloads / Pictures / Music / Movies / Projects / Code。
 
-**解析与配额**：`spawn_blocking` 内按空行/新路径分块切条目，命中前缀才入列；达到 `MAX_ENTRIES` 立即 break。整体超时 3s，超时 kill 子进程并返回错误。会话 id 守护：await 期间若有新查询进入，旧结果整批丢弃。
+**name_lower 预计算**：扫描时 `to_lowercase` 一次，搜索时零分配 `String::find`。
 
-**类型与排序**：`kMDItemContentType` 含 `public.folder` 判为 folder，否则 file；使用次数透传给前端打分。前端 `src/utils/fuzzy.ts` 负责拼音匹配与排序（与 application 同通道）。
+**use_count / last_used**：索引构建时一次 `mdfind "kMDItemUseCount > 0"` 批量拉目标目录下被打开过的文件元数据（远少于全量），合并进 `CachedFile`。`last_used` 的 Spotlight 日期字符串经 `parse_epoch_hours`（Howard Hinnant days-from-civil）预解析为 epoch hours 存入 `last_used_hours`，搜索时纯整数减法算 hours_ago 做 recency 分桶——零日期解析热路径开销。
+
+**排序权重**（Rust 端截断 top 100 时用，与前端 `frequencyBoost`/`recencyScore` 对齐）：substring（前缀 1000 / 包含 600）+ frequency（log2 平滑 cap 1500）+ recency（<1h=300 / <24h=200 / <168h=100 / <720h=50）+ folder 优先 240。确保高频/近期文件在截断时不被丢弃，前端 `scoreFields` 再做 fuzzy + boost 精排。
 
 ## 图标
 

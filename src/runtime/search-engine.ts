@@ -200,7 +200,11 @@ class SearchEngine {
       )
       const kwScored = this.keywordSearchAll(q)
         .filter((r) => !relevantDynamicExtensions.has(r.extId))
-        .map((r) => ({ item: r, finalScore: (r.score ?? 0) + (r.boost ?? 0), matched: true }))
+        .map((r) => ({
+          item: { ...r },
+          finalScore: (r.score ?? 0) + (r.boost ?? 0),
+          matched: true,
+        }))
       all = [...scored, ...kwScored]
     }
 
@@ -254,19 +258,21 @@ class SearchEngine {
   /** 管道：过滤 → 回填 score → 分组 → 组内 finalScore 降序 → 组间 GROUP_ORDER → 组内限流。
    *  全局模式专用（扩展模式见 search() 直接返回）。复用 ScoredResult.finalScore，不再调 scoreFields。
    *  过滤：matched（query 命中或空 query）保留；非 matched 仅 extension 类即时答案靠 finalScore>0 穿透。
-   *  单次遍历合并 filter + score 回填 + 分组，消除两次中间数组分配。 */
+   *  单次遍历合并 filter + score 回填 + 分组，消除两次中间数组分配。
+   *  直接写回 item.score（引用 mutate）而非对象展开：keyword 项已在 buildGlobal clone，
+   *  dynamic 项为本次 search 新建，均安全 mutate，消除 ~100 项/flush 的对象分配。 */
   private groupAndSort(items: ScoredResult[]): SearchResult[] {
     const groups = new Map<string, SearchResult[]>()
     for (const x of items) {
       if (!x.matched && !(x.item.data?.kind === 'extension' && x.finalScore > 0)) continue
-      const item: SearchResult = { ...x.item, score: x.finalScore }
-      const key = getGroupKey(item)
+      x.item.score = x.finalScore
+      const key = getGroupKey(x.item)
       let group = groups.get(key)
       if (!group) {
         group = []
         groups.set(key, group)
       }
-      group.push(item)
+      group.push(x.item)
     }
 
     // 组间按 GROUP_ORDER 定序

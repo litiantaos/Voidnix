@@ -5,7 +5,7 @@ mod cache;
 pub mod commands;
 mod icon;
 
-pub use cache::{init_app_watcher, prewarm_cache, set_app_handle};
+pub use cache::{init_fs_watchers, prewarm_cache, set_app_handle};
 
 use crate::runtime::registry::Extension;
 
@@ -20,7 +20,7 @@ impl Extension for SearchExtension {
 
     async fn setup(&self, app: &tauri::AppHandle) -> tauri::Result<()> {
         set_app_handle(app.clone());
-        init_app_watcher();
+        init_fs_watchers();
         tauri::async_runtime::spawn(prewarm_cache());
         Ok(())
     }
