@@ -104,7 +104,12 @@ export default defineExtension({
           const raw = await invoke<RawSearchResult[]>(CMD.searchFiles, { query }).catch(() => [])
           for (const r of raw) {
             const isFolder = r.kind === 'folder'
-            results.push(toResult(r, frequencyBoost(r.use_count ?? 0) + (isFolder ? 80 : 0)))
+            results.push(
+              toResult(
+                r,
+                frequencyBoost(r.use_count ?? 0) + recencyScore(r.last_used) + (isFolder ? 240 : 0),
+              ),
+            )
           }
         } catch (e) {
           console.error('[search] files error:', e)

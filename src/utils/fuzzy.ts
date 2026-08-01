@@ -147,7 +147,7 @@ export function scoreExtensionEntry(
 
 /**
  * 使用频率加权（log 平滑，避免高频应用永远霸榜）。
- * useCount=0→0；1→~50；10→~170；100→~280；上限 cap（constants.WEIGHTS.cap）。
+ * useCount=0→0；1→150；10→519；100→999；上限 cap（constants.WEIGHTS.cap）。
  */
 export function frequencyBoost(useCount: number): number {
   if (!useCount || useCount <= 0) return 0
