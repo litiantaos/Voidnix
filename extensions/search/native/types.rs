@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
@@ -14,7 +14,7 @@ pub struct SearchResult {
     pub icon: Option<String>,
     pub last_used: Option<String>,
     pub score: Option<i32>,
-    /// 累计使用次数（mdfind kMDItemUseCount + 会话内增量），供前端打分加权。
+    /// 累计使用次数（系统 use_count + 会话内增量），供前端打分加权。
     pub use_count: Option<u32>,
     /// 文件父目录名（仅文件结果），供前端补充匹配字段。
     pub parent: Option<String>,
@@ -29,25 +29,33 @@ pub(super) struct CachedApp {
     pub use_count: AtomicU32,
 }
 
+/// 内存文件索引条目：启动时扫描目标子目录构建，search_files 走内存 substring 匹配（~3ms），
+/// 不再 per-query spawn mdfind。name_lower 预计算消除热路径 toLowerCase 分配。
+/// use_count / last_used / last_used_hours 由一次 mdfind 批量拉取合并，
+/// 让 Rust 排序时高频/近期文件前置（前端再做 fuzzy + boost 精排）。
+#[derive(Debug, Clone)]
+pub(super) struct CachedFile {
+    pub name: String,
+    pub name_lower: String,
+    pub path: String,
+    pub parent: Option<String>,
+    pub is_folder: bool,
+    pub use_count: u32,
+    /// Spotlight 格式原始字符串（透传给前端 recencyScore），None = 未被打开过。
+    pub last_used: Option<String>,
+    /// last_used 解析为 epoch hours（搜索时算 hours_ago 用），0 = 无数据。
+    pub last_used_hours: i64,
+}
+
 pub(super) struct SearchSession {
-    pub search_id: AtomicU32,
     pub session_use_deltas: Mutex<HashMap<String, u32>>,
 }
 
 impl SearchSession {
     pub fn new() -> Self {
         Self {
-            search_id: AtomicU32::new(0),
             session_use_deltas: Mutex::new(HashMap::new()),
         }
-    }
-
-    pub fn next_search_id(&self) -> u32 {
-        self.search_id.fetch_add(1, Ordering::SeqCst) + 1
-    }
-
-    pub fn get_current_id(&self) -> u32 {
-        self.search_id.load(Ordering::SeqCst)
     }
 
     pub fn increment_use_count(&self, path: &str) {
@@ -65,6 +73,8 @@ impl SearchSession {
 }
 
 pub(super) static APP_CACHE: LazyLock<RwLock<Option<Arc<Vec<CachedApp>>>>> =
+    LazyLock::new(|| RwLock::new(None));
+pub(super) static FILE_CACHE: LazyLock<RwLock<Option<Arc<Vec<CachedFile>>>>> =
     LazyLock::new(|| RwLock::new(None));
 pub(super) static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 pub(super) static SEARCH_SESSION: LazyLock<SearchSession> = LazyLock::new(SearchSession::new);

@@ -31,12 +31,14 @@ export function filterByType(items: ClipboardItem[], type: ContentType): Clipboa
 }
 
 /** 按 query 模糊过滤 + 打分排序（score > 0 保留），空 query 原样返回。
- *  返回新数组（每项 score 字段已回填），不修改入参。 */
+ *  返回新数组（每项 score 字段已回填），不修改入参。
+ *  打分字段用 clipboardTitle（= 结果 title）而非 matchText：全局搜索时框架 scoreResults
+ *  对 title 重算 fuzzy，同一字符串使 fieldScoreCache 100% 命中，消除 ~500 项重复打分。 */
 export function filterByQuery(items: ClipboardItem[], query: string): ClipboardItem[] {
   const q = query.trim()
   if (!q) return items
   return items
-    .map((it) => ({ it, score: scoreFields([matchText(it)], q) }))
+    .map((it) => ({ it, score: scoreFields([clipboardTitle(it)], q) }))
     .filter((e) => e.score > 0)
     .sort((a, b) => b.score - a.score)
     .map(({ it, score }) => ({ ...it, score }))

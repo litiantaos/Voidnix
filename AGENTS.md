@@ -124,7 +124,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### 搜索引擎
 
-`src/runtime/search-engine.ts`：流式增量召回（消除快结果等慢结果的 barrier）→ 一次预算 finalScore → keyword 合流 → dedupe → groupAndSort。每个扩展 `emit`/`resolve` 都触发增量重排 + 回调 `onUpdate`，应用缓存秒出、mdfind 文件/网络结果后补。
+`src/runtime/search-engine.ts`：流式增量召回（消除快结果等慢结果的 barrier）→ 一次预算 finalScore → keyword 合流 → dedupe → groupAndSort。每个扩展 `emit`/`resolve` 都触发增量重排 + 回调 `onUpdate`，应用缓存秒出、内存索引文件结果随打随出。
 
 **两种模式共用 `search()`**：
 

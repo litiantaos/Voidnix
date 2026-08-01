@@ -1,12 +1,11 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::io::BufRead;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use serde::Serialize;
 
-use super::cache::get_cached_apps;
+use super::cache::{get_cached_apps, get_cached_files};
 use super::types::{SearchResult, SEARCH_SESSION};
 
 /// 基于 path 的稳定 hash id（同 path 同 id，进程内确定性）。
@@ -70,229 +69,95 @@ pub async fn get_app_icons() -> Result<Vec<AppIcon>, String> {
     Ok(icons)
 }
 
-/// mdfind 返回的原始条目（路径 + 元数据），一次性解析完毕。
-struct FileEntry {
-    path: String,
-    use_count: u32,
-    last_used: Option<String>,
-    is_folder: bool,
-}
-
-/// 用 mdfind 拉候选，通过 kMDItemContentType 判断文件/文件夹类型，
-/// 返回带元数据的原始列表，由前端打分排序。
+/// 内存文件搜索：对预建 FILE_CACHE 做 substring 匹配 + 复合打分（名称 + 频率 + 近期），
+/// 返回 top 100 候选。典型 ~3ms（20k 条目），不再 spawn mdfind 子进程。
+/// 排序权重与前端 frequencyBoost/recencyScore 对齐：常用 + 近期文件前置，
+/// 避免高频文件在截断时被丢弃。前端 scoreFields 再做 fuzzy + boost 精排。
 #[tauri::command]
 pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
-    if query.trim().is_empty() {
+    let q = query.trim();
+    if q.is_empty() {
         return Ok(vec![]);
     }
+    let q_lower = q.to_lowercase();
 
-    let search_id = SEARCH_SESSION.next_search_id();
-
-    // 目标子目录白名单（仅路径前缀过滤用，不触碰文件系统，零 TCC 触发）。
-    const TARGET_SUBDIRS: &[&str] = &[
-        "Desktop",
-        "Documents",
-        "Downloads",
-        "Pictures",
-        "Music",
-        "Movies",
-        "Projects",
-        "Code",
-    ];
-
-    let mut command = std::process::Command::new("mdfind");
-    command.arg("-name").arg(&query);
-    command.arg("-attr").arg("kMDItemContentType");
-    command.arg("-attr").arg("kMDItemUseCount");
-    command.arg("-attr").arg("kMDItemLastUsedDate");
-
-    // 家目录本身不受 TCC 保护；Spotlight 守护进程 mds 以系统权限索引所有文件（含受保护目录），
-    // 无需 FDA 即可搜到 Documents/Desktop/Downloads 的内容。Rust 端用 starts_with 过滤目标子目录。
-    if let Some(home_dir) = dirs::home_dir() {
-        command.arg("-onlyin").arg(&home_dir);
-    }
-
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::null());
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("mdfind spawn failed: {e}"))?;
-    let stdout = child.stdout.take().ok_or("no stdout")?;
-
-    // 目标子目录前缀（spawn_blocking 闭包捕获，纯字符串匹配，零 TCC 触发）。
-    // 在 reader 循环内即时过滤，保证 MAX_ENTRIES 配额全部留给目标子目录。
-    let allowed_prefixes: Vec<String> = dirs::home_dir()
-        .map(|home| {
-            TARGET_SUBDIRS
-                .iter()
-                .filter_map(|d| home.join(d).to_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    let allow_all = allowed_prefixes.is_empty();
-
-    const PARSE_LIMIT: usize = 1000;
-
-    let read_entries = tokio::task::spawn_blocking(move || {
-        let reader = std::io::BufReader::new(stdout);
-        let mut entries: Vec<FileEntry> = Vec::new();
-        let mut current_path = String::new();
-        let mut current_use_count: u32 = 0;
-        let mut current_last_used: Option<String> = None;
-        let mut current_is_folder = false;
-        let mut has_pending = false;
-        // 路径前缀过滤：仅保留目标子目录内的结果。
-        let keep = |path: &str| allow_all || allowed_prefixes.iter().any(|p| path.starts_with(p));
-
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => break,
-            };
-            let trimmed = line.trim();
-
-            if trimmed.is_empty() {
-                if has_pending {
-                    if keep(&current_path) {
-                        entries.push(FileEntry {
-                            path: std::mem::take(&mut current_path),
-                            use_count: std::mem::take(&mut current_use_count),
-                            last_used: current_last_used.take(),
-                            is_folder: current_is_folder,
-                        });
-                    }
-                    has_pending = false;
-                    if entries.len() >= PARSE_LIMIT {
-                        break;
-                    }
-                }
-                continue;
-            }
-
-            if trimmed.starts_with('/') {
-                if has_pending {
-                    if keep(&current_path) {
-                        entries.push(FileEntry {
-                            path: std::mem::take(&mut current_path),
-                            use_count: std::mem::take(&mut current_use_count),
-                            last_used: current_last_used.take(),
-                            is_folder: current_is_folder,
-                        });
-                    }
-                    has_pending = false;
-                    if entries.len() >= PARSE_LIMIT {
-                        break;
-                    }
-                }
-
-                let parts: Vec<&str> = trimmed.split("   ").collect();
-                current_path = parts
-                    .first()
-                    .map(|s| s.trim().to_string())
-                    .unwrap_or_default();
-                current_use_count = 0;
-                current_last_used = None;
-                current_is_folder = false;
-
-                for part in &parts[1..] {
-                    let part = part.trim();
-                    if part.starts_with("kMDItemContentType = ") {
-                        current_is_folder = part.contains("public.folder");
-                    } else if part.starts_with("kMDItemUseCount = ") {
-                        if let Some(val) = part.strip_prefix("kMDItemUseCount = ") {
-                            current_use_count = val.trim().parse().unwrap_or(0);
-                        }
-                    } else if part.starts_with("kMDItemLastUsedDate = ") {
-                        if let Some(val) = part.strip_prefix("kMDItemLastUsedDate = ") {
-                            let cleaned = val.trim().trim_matches('"');
-                            if !cleaned.is_empty() && cleaned != "(null)" {
-                                current_last_used = Some(cleaned.to_string());
-                            }
-                        }
-                    }
-                }
-                has_pending = true;
-            } else if let Some(val) = trimmed.strip_prefix("kMDItemContentType = ") {
-                current_is_folder = val.contains("public.folder");
-            } else if let Some(val) = trimmed.strip_prefix("kMDItemUseCount = ") {
-                current_use_count = val.trim().parse().unwrap_or(0);
-            } else if let Some(val) = trimmed.strip_prefix("kMDItemLastUsedDate = ") {
-                let cleaned = val.trim().trim_matches('"');
-                if !cleaned.is_empty() && cleaned != "(null)" {
-                    current_last_used = Some(cleaned.to_string());
-                }
-            }
-        }
-
-        if has_pending && keep(&current_path) {
-            entries.push(FileEntry {
-                path: std::mem::take(&mut current_path),
-                use_count: std::mem::take(&mut current_use_count),
-                last_used: current_last_used.take(),
-                is_folder: current_is_folder,
-            });
-        }
-        entries
-    });
-
-    let mut entries =
-        match tokio::time::timeout(std::time::Duration::from_secs(3), read_entries).await {
-            Ok(Ok(entries)) => entries,
-            _ => {
-                let _ = child.kill();
-                return Err("Search timed out".to_string());
-            }
-        };
-
-    let _ = child.kill();
-
-    if SEARCH_SESSION.get_current_id() != search_id {
-        return Ok(vec![]);
-    }
-
-    // 按 use_count 降序排序后截断：mdfind 返回顺序不保证高频文件在前，
-    // 若直接截断 MAX_ENTRIES 会丢失排在 100 位之后的高频文件。
-    entries.sort_by_key(|e| std::cmp::Reverse(e.use_count));
-    let entries: Vec<FileEntry> = entries.into_iter().take(100).collect();
-
-    // 合并 session delta：launch_app 对所有 path（含文件）调 increment_use_count。
+    let cache = get_cached_files().await;
     let session_deltas = SEARCH_SESSION.session_use_deltas.lock().ok();
 
-    // 不再需要第二次 spawn_blocking，所有元数据已在第一次遍历中获取
-    let results: Vec<SearchResult> = entries
-        .into_iter()
-        .filter_map(|entry| {
-            if SEARCH_SESSION.get_current_id() != search_id {
-                return None;
-            }
+    let now_hours = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64 / 3600)
+        .unwrap_or(0);
+
+    // 复合打分：substring(前缀 1000 / 包含 600) + frequency(log2 平滑, cap 1500)
+    //          + recency(<1h=300 / <24h=200 / <168h=100 / <720h=50) + folder 优先 240
+    let mut candidates: Vec<(usize, i32)> = cache
+        .iter()
+        .enumerate()
+        .filter_map(|(i, f)| {
+            let idx = f.name_lower.find(&q_lower)?;
+            let base = if idx == 0 { 1000 } else { 600 };
+            let name_score = base - idx as i32 * 4;
+
             let delta = session_deltas
                 .as_ref()
-                .and_then(|m| m.get(&entry.path).copied())
+                .and_then(|m| m.get(&f.path).copied())
                 .unwrap_or(0);
-            let name = Path::new(&entry.path)
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("Unknown")
-                .to_string();
-            let parent = Path::new(&entry.path)
-                .parent()
-                .and_then(|p| p.file_name())
-                .and_then(|s| s.to_str())
-                .map(|s| s.to_string());
-            let kind_str = if entry.is_folder { "folder" } else { "file" };
-            let id = format!("{}-{}", kind_str, path_hash(&entry.path));
-            Some(SearchResult {
-                id,
-                title: name,
-                path: entry.path,
+            let total_use = f.use_count + delta;
+
+            let freq = if total_use == 0 {
+                0
+            } else {
+                let s = ((total_use as f64 + 1.0).ln() / std::f64::consts::LN_2 * 150.0) as i32;
+                s.min(1500)
+            };
+
+            let recency = if f.last_used_hours > 0 {
+                let hours_ago = now_hours - f.last_used_hours;
+                if hours_ago < 1 {
+                    300
+                } else if hours_ago < 24 {
+                    200
+                } else if hours_ago < 168 {
+                    100
+                } else if hours_ago < 720 {
+                    50
+                } else {
+                    0
+                }
+            } else {
+                0
+            };
+
+            let folder_bonus = if f.is_folder { 240 } else { 0 };
+
+            Some((i, name_score + freq + recency + folder_bonus))
+        })
+        .collect();
+
+    candidates.sort_unstable_by_key(|(_, score)| std::cmp::Reverse(*score));
+    candidates.truncate(100);
+
+    let results: Vec<SearchResult> = candidates
+        .iter()
+        .map(|(i, _)| {
+            let f = &cache[*i];
+            let delta = session_deltas
+                .as_ref()
+                .and_then(|m| m.get(&f.path).copied())
+                .unwrap_or(0);
+            let kind_str = if f.is_folder { "folder" } else { "file" };
+            SearchResult {
+                id: format!("{}-{}", kind_str, path_hash(&f.path)),
+                title: f.name.clone(),
+                path: f.path.clone(),
                 kind: kind_str.to_string(),
                 icon: None,
-                last_used: entry.last_used,
+                last_used: f.last_used.clone(),
                 score: None,
-                use_count: Some(entry.use_count + delta),
-                parent,
-            })
+                use_count: Some(f.use_count + delta),
+                parent: f.parent.clone(),
+            }
         })
         .collect();
 

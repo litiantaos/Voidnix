@@ -88,7 +88,7 @@ export default defineExtension({
 
       // 应用搜索（空查询也返回，作为默认启动屏；非空全量返回，由框架 groupAndSort 含拼音统一打分，
       // 避免扩展层裸 substring 预过滤丢弃拼音命中——如「jsq」→「计算器」）
-      // 流式：缓存命中立即 emit（应用秒出，不被下方 mdfind 文件搜索阻塞）；无 emit 时累积到返回值
+      // 流式：缓存命中立即 emit（应用秒出，不被下方文件搜索阻塞）；无 emit 时累积到返回值
       try {
         const apps = await getAppList()
         if (emit) emit(apps)
@@ -97,20 +97,25 @@ export default defineExtension({
         console.error('[search] apps error:', e)
       }
 
-      // 文件搜索（需 ≥2 字符，mdfind 慢且短查询噪声大）：异步补充返回，不阻塞应用首批
+      // 文件搜索（内存索引，零延迟）：search_files 走 Rust 内存索引 substring 匹配，
+      // 典型 ~3ms 返回（无 mdfind 子进程），与应用结果同步 emit 随打随出
       const trimmed = query.trim()
       if (trimmed.length >= MIN_FILE_QUERY_LEN) {
         try {
           const raw = await invoke<RawSearchResult[]>(CMD.searchFiles, { query }).catch(() => [])
+          if (ctx?.signal.aborted) return results
+          const fileResults: ProviderResult[] = []
           for (const r of raw) {
             const isFolder = r.kind === 'folder'
-            results.push(
+            fileResults.push(
               toResult(
                 r,
                 frequencyBoost(r.use_count ?? 0) + recencyScore(r.last_used) + (isFolder ? 240 : 0),
               ),
             )
           }
+          if (emit && fileResults.length > 0) emit(fileResults)
+          else results.push(...fileResults)
         } catch (e) {
           console.error('[search] files error:', e)
         }
