@@ -261,6 +261,9 @@ const scrollKey = computed(() => {
 watch(scrollKey, (newKey, oldKey) => {
   if (oldKey === 'tools' && newKey.startsWith('ext:')) {
     save(oldKey)
+  } else if (oldKey.startsWith('ext:') && newKey.startsWith('ext:')) {
+    // 主视图 ↔ 子视图切换：保存前者的滚动位置
+    save(oldKey)
   } else if (newKey === 'tools' && !oldKey.startsWith('ext:')) {
     clear(newKey)
   }

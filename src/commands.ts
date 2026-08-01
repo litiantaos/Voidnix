@@ -153,6 +153,12 @@ export const CMD = {
   videoCancel: 'video_cancel',
   videoJobStatus: 'video_job_status',
 
+  // —— homebrew ——
+  brewStatus: 'brew_status',
+  brewRun: 'brew_run',
+  brewServices: 'brew_services',
+  brewInfo: 'brew_info',
+
   // —— image ——
   imageRemoveBg: 'image_remove_bg',
   imageStitch: 'image_stitch',

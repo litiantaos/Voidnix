@@ -57,6 +57,10 @@ macro_rules! configure_app {
             crate::extensions::clipboard::set_clipboard_max_days,
             crate::extensions::finder_ext::finder_run_action,
             crate::extensions::finder_ext::finder_selected_paths,
+            crate::extensions::homebrew::brew_info,
+            crate::extensions::homebrew::brew_run,
+            crate::extensions::homebrew::brew_services,
+            crate::extensions::homebrew::brew_status,
             crate::extensions::image::image_copy_to_clipboard,
             crate::extensions::image::image_read_preview,
             crate::extensions::image::image_remove_bg,
@@ -139,6 +143,7 @@ pub fn register_all(
         .register(clean_mode::CleanModeExtension)
         .register(clipboard::ClipboardExtension)
         .register(finder_ext::FinderExtExtension)
+        .register(homebrew::HomebrewExtension)
         .register(image::ImageExtension)
         .register(proxy::ProxyExtension)
         .register(screenshot::ScreenshotExtension)
@@ -167,6 +172,9 @@ pub mod clipboard;
 
 #[path = "../../extensions/finder-ext/native/mod.rs"]
 pub mod finder_ext;
+
+#[path = "../../extensions/homebrew/native/mod.rs"]
+pub mod homebrew;
 
 #[path = "../../extensions/image/native/mod.rs"]
 pub mod image;
