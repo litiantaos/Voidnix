@@ -74,6 +74,7 @@ pub async fn get_app_icons() -> Result<Vec<AppIcon>, String> {
 struct FileEntry {
     path: String,
     use_count: u32,
+    last_used: Option<String>,
     is_folder: bool,
 }
 
@@ -103,6 +104,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
     command.arg("-name").arg(&query);
     command.arg("-attr").arg("kMDItemContentType");
     command.arg("-attr").arg("kMDItemUseCount");
+    command.arg("-attr").arg("kMDItemLastUsedDate");
 
     // 家目录本身不受 TCC 保护；Spotlight 守护进程 mds 以系统权限索引所有文件（含受保护目录），
     // 无需 FDA 即可搜到 Documents/Desktop/Downloads 的内容。Rust 端用 starts_with 过滤目标子目录。
@@ -130,13 +132,14 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         .unwrap_or_default();
     let allow_all = allowed_prefixes.is_empty();
 
-    const MAX_ENTRIES: usize = 100;
+    const PARSE_LIMIT: usize = 1000;
 
     let read_entries = tokio::task::spawn_blocking(move || {
         let reader = std::io::BufReader::new(stdout);
         let mut entries: Vec<FileEntry> = Vec::new();
         let mut current_path = String::new();
         let mut current_use_count: u32 = 0;
+        let mut current_last_used: Option<String> = None;
         let mut current_is_folder = false;
         let mut has_pending = false;
         // 路径前缀过滤：仅保留目标子目录内的结果。
@@ -155,11 +158,12 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
                         entries.push(FileEntry {
                             path: std::mem::take(&mut current_path),
                             use_count: std::mem::take(&mut current_use_count),
+                            last_used: current_last_used.take(),
                             is_folder: current_is_folder,
                         });
                     }
                     has_pending = false;
-                    if entries.len() >= MAX_ENTRIES {
+                    if entries.len() >= PARSE_LIMIT {
                         break;
                     }
                 }
@@ -172,11 +176,12 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
                         entries.push(FileEntry {
                             path: std::mem::take(&mut current_path),
                             use_count: std::mem::take(&mut current_use_count),
+                            last_used: current_last_used.take(),
                             is_folder: current_is_folder,
                         });
                     }
                     has_pending = false;
-                    if entries.len() >= MAX_ENTRIES {
+                    if entries.len() >= PARSE_LIMIT {
                         break;
                     }
                 }
@@ -187,6 +192,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
                     .map(|s| s.trim().to_string())
                     .unwrap_or_default();
                 current_use_count = 0;
+                current_last_used = None;
                 current_is_folder = false;
 
                 for part in &parts[1..] {
@@ -197,6 +203,13 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
                         if let Some(val) = part.strip_prefix("kMDItemUseCount = ") {
                             current_use_count = val.trim().parse().unwrap_or(0);
                         }
+                    } else if part.starts_with("kMDItemLastUsedDate = ") {
+                        if let Some(val) = part.strip_prefix("kMDItemLastUsedDate = ") {
+                            let cleaned = val.trim().trim_matches('"');
+                            if !cleaned.is_empty() && cleaned != "(null)" {
+                                current_last_used = Some(cleaned.to_string());
+                            }
+                        }
                     }
                 }
                 has_pending = true;
@@ -204,6 +217,11 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
                 current_is_folder = val.contains("public.folder");
             } else if let Some(val) = trimmed.strip_prefix("kMDItemUseCount = ") {
                 current_use_count = val.trim().parse().unwrap_or(0);
+            } else if let Some(val) = trimmed.strip_prefix("kMDItemLastUsedDate = ") {
+                let cleaned = val.trim().trim_matches('"');
+                if !cleaned.is_empty() && cleaned != "(null)" {
+                    current_last_used = Some(cleaned.to_string());
+                }
             }
         }
 
@@ -211,26 +229,35 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
             entries.push(FileEntry {
                 path: std::mem::take(&mut current_path),
                 use_count: std::mem::take(&mut current_use_count),
+                last_used: current_last_used.take(),
                 is_folder: current_is_folder,
             });
         }
         entries
     });
 
-    let entries = match tokio::time::timeout(std::time::Duration::from_secs(3), read_entries).await
-    {
-        Ok(Ok(entries)) => entries,
-        _ => {
-            let _ = child.kill();
-            return Err("Search timed out".to_string());
-        }
-    };
+    let mut entries =
+        match tokio::time::timeout(std::time::Duration::from_secs(3), read_entries).await {
+            Ok(Ok(entries)) => entries,
+            _ => {
+                let _ = child.kill();
+                return Err("Search timed out".to_string());
+            }
+        };
 
     let _ = child.kill();
 
     if SEARCH_SESSION.get_current_id() != search_id {
         return Ok(vec![]);
     }
+
+    // 按 use_count 降序排序后截断：mdfind 返回顺序不保证高频文件在前，
+    // 若直接截断 MAX_ENTRIES 会丢失排在 100 位之后的高频文件。
+    entries.sort_by_key(|e| std::cmp::Reverse(e.use_count));
+    let entries: Vec<FileEntry> = entries.into_iter().take(100).collect();
+
+    // 合并 session delta：launch_app 对所有 path（含文件）调 increment_use_count。
+    let session_deltas = SEARCH_SESSION.session_use_deltas.lock().ok();
 
     // 不再需要第二次 spawn_blocking，所有元数据已在第一次遍历中获取
     let results: Vec<SearchResult> = entries
@@ -239,6 +266,10 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
             if SEARCH_SESSION.get_current_id() != search_id {
                 return None;
             }
+            let delta = session_deltas
+                .as_ref()
+                .and_then(|m| m.get(&entry.path).copied())
+                .unwrap_or(0);
             let name = Path::new(&entry.path)
                 .file_name()
                 .and_then(|s| s.to_str())
@@ -257,9 +288,9 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
                 path: entry.path,
                 kind: kind_str.to_string(),
                 icon: None,
-                last_used: None,
+                last_used: entry.last_used,
                 score: None,
-                use_count: Some(entry.use_count),
+                use_count: Some(entry.use_count + delta),
                 parent,
             })
         })

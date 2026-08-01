@@ -9,8 +9,8 @@ export const SEARCH = {
     pinyinBase: 400, // 拼音匹配基分
     decay: 0.85, // 多字段权重衰减
     logBase: 2, // frequencyBoost log 底
-    logMul: 50, // frequencyBoost log 乘子
-    cap: 320, // frequencyBoost 上限
+    logMul: 150, // frequencyBoost log 乘子（150：use_count=10→519，足以跨越 prefix/contains fuzzy 差距 ~400）
+    cap: 1500, // frequencyBoost 上限（1500：使用频率占 finalScore ~55%，常访问文件可靠前置）
   },
   // 组间定序严格锁死；不设组级 GROUP_BOOST（GROUP_ORDER 已定组间序）。
   // 扩展用 per-item boost（SearchResult.boost）调整组内优先级。

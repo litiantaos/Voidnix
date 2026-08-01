@@ -150,13 +150,13 @@ describe('frequencyBoost', () => {
     expect(frequencyBoost(100)).toBeGreaterThan(frequencyBoost(10))
   })
 
-  it('上限 320', () => {
-    expect(frequencyBoost(100000)).toBeLessThanOrEqual(320)
-    expect(frequencyBoost(999999)).toBeLessThanOrEqual(320)
+  it('上限 1500', () => {
+    expect(frequencyBoost(100000)).toBeLessThanOrEqual(1500)
+    expect(frequencyBoost(999999)).toBeLessThanOrEqual(1500)
   })
 
   it('具体值校验', () => {
-    expect(frequencyBoost(1)).toBe(50)
-    expect(frequencyBoost(10)).toBe(173)
+    expect(frequencyBoost(1)).toBe(150)
+    expect(frequencyBoost(10)).toBe(519)
   })
 })
