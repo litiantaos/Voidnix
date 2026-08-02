@@ -36,7 +36,7 @@
             <template v-if="status.has_update" #trailing>
               <BaseButton
                 variant="primary"
-                icon="i-ri-arrow-up-circle-line"
+                :icon="running ? 'i-ri-loader-4-line animate-spin' : 'i-ri-arrow-up-circle-line'"
                 :disabled="running"
                 @click.stop="run('update_upgrade')"
               >
@@ -300,6 +300,10 @@ async function runService(operation: string, name: string) {
 }
 
 function onExecute(item: ListItem) {
+  if (item.type === 'status') {
+    if (status.value?.has_update && !running.value) run('update_upgrade')
+    return
+  }
   if (item.type !== 'package') return
   sessionStorage.setItem(
     'homebrew:detail',
