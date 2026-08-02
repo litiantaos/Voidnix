@@ -4,6 +4,7 @@ mod app_discovery;
 mod cache;
 pub mod commands;
 mod icon;
+mod pinyin;
 
 pub use cache::{init_fs_watchers, prewarm_cache, set_app_handle};
 

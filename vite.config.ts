@@ -29,8 +29,8 @@ export default defineConfig(async ({ command }) => ({
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
-      '@ext': resolve(__dirname, 'extensions'),
+      '@': resolve(import.meta.dirname, 'src'),
+      '@ext': resolve(import.meta.dirname, 'extensions'),
     },
   },
   build: {
@@ -39,7 +39,7 @@ export default defineConfig(async ({ command }) => ({
     chunkSizeWarningLimit: 700,
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html'),
+        main: resolve(import.meta.dirname, 'index.html'),
       },
       output: {
         // vendor 分包：跨版本缓存边界 + 按需加载

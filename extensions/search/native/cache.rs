@@ -8,6 +8,7 @@ use tokio::sync::Mutex;
 
 use super::app_discovery::collect_apps_with_metadata;
 use super::icon::get_app_icon;
+use super::pinyin;
 use super::types::{CachedApp, CachedFile, APP_CACHE, APP_HANDLE, FILE_CACHE, SEARCH_SESSION};
 
 static INIT_GUARD: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
@@ -244,9 +245,11 @@ fn scan_files_recursive(dir: &Path, files: &mut Vec<CachedFile>, depth: u32) {
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
 
+        let py_key = pinyin::pinyin_key(&name);
         files.push(CachedFile {
             name_lower: name.to_lowercase(),
             name,
+            pinyin_key: py_key,
             path: path.to_string_lossy().into_owned(),
             parent,
             is_folder: is_dir,
