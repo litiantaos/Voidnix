@@ -1,4 +1,4 @@
-// 22 扩展元数据 + 领域分簇。图标走 Remix Icon（ri-* class）。
+// 23 扩展元数据 + 领域分簇。图标走 Remix Icon（ri-* class）。
 // 数据源：各扩展 index.ts 的 meta 字段，描述按官网语境精简。
 
 export interface ExtItem {
@@ -117,6 +117,7 @@ export const clusters: ExtCluster[] = [
         desc: 'zsh 历史 frecency 智能补全',
         icon: 'ri-terminal-box-line',
       },
+      { id: 'homebrew', name: 'Homebrew', desc: '包管理与一键更新升级', icon: 'ri-cup-fill' },
       { id: 'proxy', name: '代理', desc: 'TUN 模式，节点切换与测速', icon: 'ri-signal-tower-line' },
       { id: 'settings', name: '设置', desc: '快捷键 / 权限 / 更新', icon: 'ri-settings-3-line' },
     ],
