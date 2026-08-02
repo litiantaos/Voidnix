@@ -69,10 +69,10 @@ pub async fn get_app_icons() -> Result<Vec<AppIcon>, String> {
     Ok(icons)
 }
 
-/// 内存文件搜索：对预建 FILE_CACHE 做 substring 匹配 + 复合打分（名称 + 频率 + 近期），
+/// 内存文件搜索：对预建 FILE_CACHE 做 substring + 拼音匹配 + 复合打分（名称 + 频率 + 近期），
 /// 返回 top 100 候选。典型 ~3ms（20k 条目），不再 spawn mdfind 子进程。
-/// 排序权重与前端 frequencyBoost/recencyScore 对齐：常用 + 近期文件前置，
-/// 避免高频文件在截断时被丢弃。前端 scoreFields 再做 fuzzy + boost 精排。
+/// ASCII 查询额外匹配 CJK 文件名的拼音键（首字母+全拼），召回拼音命中（如 "sjwd"→"设计文档"）。
+/// 前端 scoreFields 再做 fuzzy + boost 精排。
 #[tauri::command]
 pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
     let q = query.trim();
@@ -80,6 +80,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         return Ok(vec![]);
     }
     let q_lower = q.to_lowercase();
+    let is_ascii = q_lower.is_ascii();
 
     let cache = get_cached_files().await;
     let session_deltas = SEARCH_SESSION.session_use_deltas.lock().ok();
@@ -89,15 +90,30 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
         .map(|d| d.as_secs() as i64 / 3600)
         .unwrap_or(0);
 
-    // 复合打分：substring(前缀 1000 / 包含 600) + frequency(log2 平滑, cap 1500)
+    // 复合打分：name substring(前缀 1000 / 包含 600) + pinyin(300) + frequency(log2, cap 1500)
     //          + recency(<1h=300 / <24h=200 / <168h=100 / <720h=50) + folder 优先 240
     let mut candidates: Vec<(usize, i32)> = cache
         .iter()
         .enumerate()
         .filter_map(|(i, f)| {
-            let idx = f.name_lower.find(&q_lower)?;
-            let base = if idx == 0 { 1000 } else { 600 };
-            let name_score = base - idx as i32 * 4;
+            // 名称 substring 匹配
+            let name_score = f.name_lower.find(&q_lower).map(|idx| {
+                let base = if idx == 0 { 1000 } else { 600 };
+                base - idx as i32 * 4
+            });
+
+            // 拼音匹配（ASCII 查询 + CJK 文件名）：首字母或全拼 substring 命中
+            let pinyin_score = if is_ascii && !f.pinyin_key.is_empty() {
+                if f.pinyin_key.contains(q_lower.as_str()) {
+                    Some(300)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let base = name_score.max(pinyin_score)?;
 
             let delta = session_deltas
                 .as_ref()
@@ -131,7 +147,7 @@ pub async fn search_files(query: String) -> Result<Vec<SearchResult>, String> {
 
             let folder_bonus = if f.is_folder { 240 } else { 0 };
 
-            Some((i, name_score + freq + recency + folder_bonus))
+            Some((i, base + freq + recency + folder_bonus))
         })
         .collect();
 

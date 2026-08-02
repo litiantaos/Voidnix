@@ -31,12 +31,15 @@ pub(super) struct CachedApp {
 
 /// 内存文件索引条目：启动时扫描目标子目录构建，search_files 走内存 substring 匹配（~3ms），
 /// 不再 per-query spawn mdfind。name_lower 预计算消除热路径 toLowerCase 分配。
+/// pinyin_key 预计算 CJK 文件名的拼音索引（首字母+全拼），让拼音查询（如 "sjwd"→"设计文档"）在 Rust 端即可召回。
 /// use_count / last_used / last_used_hours 由一次 mdfind 批量拉取合并，
 /// 让 Rust 排序时高频/近期文件前置（前端再做 fuzzy + boost 精排）。
 #[derive(Debug, Clone)]
 pub(super) struct CachedFile {
     pub name: String,
     pub name_lower: String,
+    /// CJK 文件名拼音键（"首字母 全拼"），非 CJK 为空串。
+    pub pinyin_key: String,
     pub path: String,
     pub parent: Option<String>,
     pub is_folder: bool,
