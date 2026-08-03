@@ -25,9 +25,9 @@
         flex="~ col"
         :style="contentStyle"
       >
-        <!-- max=12：覆盖常用扩展视图（9 mainView + 常用子视图），超出按 LRU 驱逐。
-             低频扩展重挂载一次性 re-render（毫秒级），换取 WebContent 内存削减。 -->
-        <KeepAlive v-if="resolvedView" :max="12">
+        <!-- max=8：覆盖日常高频扩展视图（9 mainView + 常用子视图），超出按 LRU 驱逐。
+             低频扩展重挂载毫秒级（KeepAlive activate/deactivate 语义已处理），换取 JS 堆削减。 -->
+        <KeepAlive v-if="resolvedView" :max="8">
           <component
             :is="resolvedView"
             :key="`${props.extension?.meta.id ?? 'main'}-${appStore.activeSubview ?? 'view'}`"

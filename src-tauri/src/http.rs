@@ -23,7 +23,9 @@ fn build_client(request_timeout: Option<Duration>) -> Client {
                 Err(reason) => attempt.error(reason),
             }
         }))
-        .pool_max_idle_per_host(10);
+        // 3 idle/host：启动器峰值并发同目标主机不超过 3（agent 流式 + translate + http_get），
+        // 默认 10 纯属浪费——每 idle connection 常驻 socket buffer + TLS 状态。
+        .pool_max_idle_per_host(3);
     if let Some(t) = request_timeout {
         builder = builder.timeout(t);
     }

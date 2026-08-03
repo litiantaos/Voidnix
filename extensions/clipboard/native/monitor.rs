@@ -133,7 +133,7 @@ pub fn start_monitor(app_handle: AppHandle) {
         let (tx, rx) = std::sync::mpsc::channel::<(isize, PasteboardSample)>();
 
         loop {
-            std::thread::sleep(Duration::from_millis(500));
+            std::thread::sleep(Duration::from_millis(800));
 
             let tx = tx.clone();
 

@@ -3,7 +3,9 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::Instant;
-use sysinfo::{Components, DiskKind, Disks, Networks, ProcessesToUpdate, System};
+use sysinfo::{
+    Components, DiskKind, Disks, Networks, ProcessRefreshKind, ProcessesToUpdate, System,
+};
 use tauri::{AppHandle, Manager, State};
 
 /// 系统状态扩展：硬件信息 + 实时状态。拉模式（前端进入模块轮询，零常驻后台）。
@@ -189,6 +191,12 @@ pub async fn system_static_info(state: State<'_, SystemState>) -> Result<SystemS
     })
 }
 
+/// 精简进程刷新策略：只拉 cpu + memory（UI 仅消费 Top 3 的 name/cpu/memory）。
+/// 默认 refresh_processes 额外拉 disk_usage（I/O 开销）+ exe 路径，纯属浪费。
+fn process_refresh_kind() -> ProcessRefreshKind {
+    ProcessRefreshKind::new().with_cpu().with_memory()
+}
+
 /// 实时快照（每 2s 轮询）。
 ///
 /// 声明 async 而无显式 await：Tauri 把 async command body 调度到 runtime worker 线程，
@@ -198,7 +206,7 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
     let mut sys = crate::runtime::lock_or_recover(&state.sys);
     sys.refresh_cpu_usage();
     sys.refresh_memory();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, process_refresh_kind());
 
     let cpu_usage = sys.global_cpu_usage();
     let cpu_cores_usage = sys.cpus().iter().map(|c| c.cpu_usage()).collect();
@@ -578,7 +586,11 @@ impl Extension for SystemStatusExtension {
                     let mut sys = state.sys.lock().unwrap();
                     sys.refresh_cpu_usage();
                     sys.refresh_memory();
-                    sys.refresh_processes(ProcessesToUpdate::All, true);
+                    sys.refresh_processes_specifics(
+                        ProcessesToUpdate::All,
+                        true,
+                        process_refresh_kind(),
+                    );
                 }
                 state.disks.lock().unwrap().refresh();
                 state.networks.lock().unwrap().refresh();

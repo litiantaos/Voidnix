@@ -32,6 +32,10 @@ impl Database {
         let conn = Connection::open(&db_path).map_err(|e| format!("打开剪贴板数据库失败: {e}"))?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| format!("设置 WAL 失败: {e}"))?;
+        // 页缓存 1MB（默认 2MB）：clipboard 查询模式简单（时间倒序 LIMIT），
+        // 1MB 足够覆盖热数据页常驻，削减常驻堆占用。
+        conn.pragma_update(None, "cache_size", -1000)
+            .map_err(|e| format!("设置 cache_size 失败: {e}"))?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS clipboard_history (

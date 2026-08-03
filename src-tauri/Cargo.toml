@@ -32,8 +32,8 @@ futures-util = "0.3"
 async-trait = "0.1"
 sha2 = "0.11"
 urlencoding = "2"
+sysinfo = { version = "0.32", default-features = false, features = ["system", "disk", "network", "component"] }
 tokio-tungstenite = "0.27"
-sysinfo = "0.32"
 
 
 [dev-dependencies]
