@@ -1,3 +1,4 @@
+use objc2::rc::autoreleasepool;
 use objc2::{runtime::AnyObject, AnyThread};
 use objc2_app_kit::{
     NSBitmapImageFileType, NSBitmapImageRep, NSCompositingOperation, NSGraphicsContext, NSImage,
@@ -7,7 +8,11 @@ use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSSize, NSString};
 
 /// 提取应用图标为 base64 PNG（64×64，实时提取，不缓存到磁盘）。
 pub(super) fn get_app_icon(app_path: &str) -> Option<String> {
-    match extract_app_icon(app_path) {
+    // spawn_blocking 线程无 NSAutoreleasePool：所有 ObjC 图形操作（NSWorkspace/lockFocus/
+    // NSBitmapImageRep/TIFFRepresentation）产生的 autorelease 对象须在 pool 内及时释放，
+    // 否则长时间运行累积致内存耗尽、图标提取静默失败（实测 1000 次 ΔRSS 613MB→1.9MB）。
+    let result = autoreleasepool(|_| extract_app_icon(app_path));
+    match result {
         Some(base64_str) => {
             log::debug!("[icon] Extracted for: {}", app_path);
             Some(base64_str)
