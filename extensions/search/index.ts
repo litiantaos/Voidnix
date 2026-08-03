@@ -35,17 +35,22 @@ function applyIcons(): void {
   }
 }
 
-/** 批量拉取图标并合流进 metadata 缓存 */
+/** 批量拉取图标并合流进 metadata 缓存。
+ *  图标尚未就绪（Rust 缓存重建中后台提取未完成）时返回全 null——此时不设 appIconCache，
+ *  保留 null 让下次 getAppList 自然重试；避免空 Map（truthy）卡住 early return 致图标永久缺失。 */
 async function fetchIcons(): Promise<void> {
   const icons = await invoke<{ id: string; icon: string | null }[]>(CMD.getAppIcons).catch((e) => {
     console.error('[search] get_app_icons invoke failed:', e)
     return []
   })
-  appIconCache = new Map()
+  const map = new Map<string, string>()
   for (const { id, icon } of icons) {
-    if (icon) appIconCache.set(id, icon)
+    if (icon) map.set(id, icon)
   }
-  applyIcons()
+  if (map.size > 0) {
+    appIconCache = map
+    applyIcons()
+  }
 }
 
 async function getAppList(): Promise<ProviderResult[]> {
