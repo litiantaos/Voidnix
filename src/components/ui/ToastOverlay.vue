@@ -1,10 +1,11 @@
 <template>
   <Teleport to="body">
     <TransitionGroup
-      name="ui-popup"
+      name="toast"
       :key="overlayKey"
       tag="div"
-      class="flex flex-col gap-2 pointer-events-none bottom-3 right-3 fixed z-9999"
+      class="flex flex-col gap-2 pointer-events-none items-end bottom-3 right-3 fixed z-9999"
+      @before-leave="onBeforeLeave"
     >
       <div
         v-for="t in toasts"
@@ -48,6 +49,18 @@ function onLeave() {
   hoverCount.value = Math.max(0, hoverCount.value - 1)
   if (hoverCount.value === 0) resumeAllToasts()
 }
+
+// 离场前用视口坐标锁定元素原位——position:fixed 相对视口定位，
+// 不受容器（fixed bottom 从底向上生长，shrink 时顶缘下移）影响。
+// getBoundingClientRect() 返回视口坐标，直接写入 left/top/width 即可原地钉住。
+function onBeforeLeave(el: Element) {
+  const e = el as HTMLElement
+  const rect = e.getBoundingClientRect()
+  e.style.left = `${rect.left}px`
+  e.style.top = `${rect.top}px`
+  e.style.width = `${rect.width}px`
+}
+
 // clearToasts（hideWindow）清空列表时同步复位引用计数：
 // 否则 hover→隐藏→再显示 后 hoverCount 卡在 >0，hover 暂停功能静默失效。
 watch(

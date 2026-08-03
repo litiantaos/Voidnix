@@ -425,7 +425,8 @@ src/
 
 ### 过渡动效
 
-- **标准进出场**：toast / 动作面板 / 下拉 / 标注浮层统一走 `<Transition name="ui-popup">`（全局类在 `theme.css`，进 `--duration-fast` `--ease-out` / 退 `100ms` `--ease-in`，位移 8px + 缩放 .95）。`ui-popup` 用 `transform` 属性做动画，与 UnoCSS `translate-*`/`scale-*`（Wind4 落独立属性）正交叠加，带 `-translate-x-1/2` 居中定位也不冲突
+- **标准进出场**：动作面板 / 下拉 / 标注浮层等单元素走 `<Transition name="ui-popup">`（全局类在 `theme.css`，进 `--duration-fast` `--ease-out` / 退 `100ms` `--ease-in`，位移 8px + 缩放 .95）。`ui-popup` 用 `transform` 属性做动画，与 UnoCSS `translate-*`/`scale-*`（Wind4 落独立属性）正交叠加，带 `-translate-x-1/2` 居中定位也不冲突
+- **toast 堆叠**：`TransitionGroup name="toast"`（专用过渡，enter 8px+scale.95 弹入 / leave 4px+scale.98 柔和退场让 opacity 主导 + FLIP `move` 平滑重排 + `leave-active` 脱离文档流），容器 `items-end` 使每条 toast 保持自身宽度不互相拉伸，消除多条不同长度时离场的布局抖动；`.toast-move` 源码序必须在 enter/leave-active 之前（transition 是 shorthand，后定义的 leave-active 须覆盖 move 的 transition 以保留 opacity 过渡）；`leave-active` 用 `position: fixed`（非 absolute）+ `@before-leave` 钩子写入视口坐标 `left/top/width` 锁定原位（容器 `fixed bottom` 从底向上缩短，absolute 元素的静态位置会漂移到流尾）
 - **方向变体**（如 `BaseSelect` 上下展开）直接用 `transition`（UnoCSS 默认 property 列表已含 `translate,scale,opacity,transform`，覆盖 Wind4 独立属性的 from/to）；**禁止** `transition-[a,b,c]` 方括号多值语法——Wind4 不生成该规则，类为空致无过渡瞬时跳变。单属性可用 `transition-[opacity]`
 - **数值走基元**：自定义过渡的时长 / 曲线一律 `var(--duration-*)` / `var(--ease-*)`（`--duration-fast` 150 / `--duration-normal` 200），禁止裸 `0.2s` / `cubic-bezier(...)`。布局伸缩等 CSS 无法表达的用 JS hooks（`image` 扩展 `expandHooks`）
 - **仅 GPU 合成属性**：过渡只用 `transform` / `opacity` / `translate` / `scale`（独立属性），禁用 `box-shadow` / `background-color` 等 paint 类属性（每帧重绘致顿）。`ui-popup` 用 `transform` 属性——与 UnoCSS `translate-*`/`scale-*`（Wind4 落独立属性）正交叠加，带 `-translate-x-1/2` 居中定位也不冲突
