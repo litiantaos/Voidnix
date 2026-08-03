@@ -641,18 +641,18 @@ pub fn read_picker_image() -> String {
 
 /// 进入截图模式（仅 Rust 内部：须在主线程调用；不暴露 IPC）。
 #[cfg(target_os = "macos")]
-pub fn enter_screenshot_mode_sync(app: &tauri::AppHandle, data: ScreenshotData) {
-    if let Err(e) = enter_impl(app, &data) {
+pub fn enter_screenshot_mode_sync(app: &tauri::AppHandle, data: ScreenshotData, prev_pid: i32) {
+    if let Err(e) = enter_impl(app, &data, prev_pid) {
         clear_capture_surface();
         IS_IN_SCREENSHOT_SESSION.store(false, Ordering::SeqCst);
         eprintln!("进入截图模式失败: {e}");
     }
 }
 #[cfg(not(target_os = "macos"))]
-pub fn enter_screenshot_mode_sync(_app: &tauri::AppHandle, _data: ScreenshotData) {}
+pub fn enter_screenshot_mode_sync(_app: &tauri::AppHandle, _data: ScreenshotData, _prev_pid: i32) {}
 
 #[cfg(target_os = "macos")]
-fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), String> {
+fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData, prev_pid: i32) -> Result<(), String> {
     use objc2_app_kit::{
         NSScreen, NSWindow, NSWindowAnimationBehavior, NSWindowCollectionBehavior,
     };
@@ -661,11 +661,9 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData) -> Result<(), Strin
 
     let session_gen = SCREENSHOT_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
 
-    // 先取原前台 pid（必须在 hide_main 前读取才是"截图前的应用"）。
-    // hide_main 会 clear focus 唯一源（restore_captured swap），故在 hide_main
-    // 之后回填到唯一源。
-    let prev_pid = crate::platform::focus::current_frontmost_pid().unwrap_or(0);
-
+    // prev_pid 由快捷键钩子在 activate_app 前捕获（activate 后 Voidnix 成为 frontmost，
+    // current_frontmost_pid 返回 None）。hide_main 的 restore_captured 会 swap 清零
+    // PREV_FRONT_PID，故在 hide_main 之后回填。
     crate::runtime::window::hide_main(app);
 
     crate::platform::focus::capture_pid(prev_pid);
@@ -910,6 +908,10 @@ fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), Strin
         super::pin::PIN_PREV_PID.store(prev_pid, Ordering::SeqCst);
     }
     if !no_restore_focus && prev_pid > 0 {
+        // deactivate 广播 NSApplicationWillResignActiveNotification，配合
+        // activateWithOptions 把 system key / first responder 完整还给原应用；
+        // 缺此步 macOS 可能不转移 first responder（光标不回原输入框）。
+        crate::platform::focus::deactivate_app();
         let ws = NSWorkspace::sharedWorkspace();
         if let Some(target) = ws
             .runningApplications()

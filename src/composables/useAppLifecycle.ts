@@ -1,11 +1,4 @@
-import {
-  onMounted,
-  onUnmounted,
-  watch,
-  type Component,
-  type ShallowRef,
-  type WatchStopHandle,
-} from 'vue'
+import { onMounted, onUnmounted, watch, type WatchStopHandle } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { listen } from '@tauri-apps/api/event'
@@ -20,8 +13,7 @@ import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 type Win = ReturnType<typeof import('@tauri-apps/api/window').getCurrentWindow> | null
 
 /// 主窗口生命周期：全局快捷键注册/注销、窗口显隐、失焦防抖隐藏、扩展/子视图事件监听。
-/// 独立窗口视图（screenshot/snap-panel）由 activeWindowView 标识，命中时跳过主窗口生命周期。
-export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, win: Win) {
+export function useAppLifecycle(win: Win) {
   const settings = useSettingsStore()
   const appStore = useAppStore()
   const updateStore = useUpdateStore()
@@ -96,9 +88,6 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
   }
 
   onMounted(async () => {
-    // 独立窗口视图：跳过主窗口初始化（设置/更新/快捷键）
-    if (activeWindowView.value) return
-
     // settings store 走 defineConfig，启动时自动异步加载（无需显式 loadSettings）
 
     if (isTauri) {
@@ -250,8 +239,6 @@ export function useAppLifecycle(activeWindowView: ShallowRef<Component | null>, 
   })
 
   onUnmounted(() => {
-    if (activeWindowView.value) return
-
     document.removeEventListener('keydown', onLocalShortcut)
     // M-fe1：清理 watch + timer，与 unlisten 一并回收
     watchStops.forEach((stop) => stop())

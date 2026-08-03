@@ -86,11 +86,11 @@ pub fn open_privacy_settings(kind: &str) {
         _ => {
             let _ = Command::new("open")
                 .args(["-b", "com.apple.systempreferences"])
-                .spawn();
+                .status();
             return;
         }
     };
-    let _ = Command::new("open").arg(url).spawn();
+    let _ = Command::new("open").arg(url).status();
 }
 
 #[cfg(not(target_os = "macos"))]

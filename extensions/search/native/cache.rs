@@ -302,9 +302,13 @@ fn query_file_usage() -> HashMap<String, (u32, Option<String>)> {
     });
 
     match rx.recv_timeout(std::time::Duration::from_secs(10)) {
-        Ok(Ok(output)) => parse_file_usage_output(&output),
+        Ok(Ok(output)) => {
+            let _ = child.wait();
+            parse_file_usage_output(&output)
+        }
         _ => {
             let _ = child.kill();
+            let _ = child.wait();
             HashMap::new()
         }
     }

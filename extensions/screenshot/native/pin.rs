@@ -79,7 +79,6 @@ pub async fn pin_image(
 
         let cg_addr = png_bytes_to_cgimage(&png) as usize;
 
-        let path_str = path.to_string_lossy().to_string();
         // 截图小于窗口最小尺寸时，窗口保持最小尺寸，原图居中显示；否则窗口贴合截图尺寸。
         // sel 为屏内本地坐标；pin 窗口 position 用 Quartz 全局左上（+ 捕获屏 origin）。
         let centered = sel_w < PIN_MIN_SIZE || sel_h < PIN_MIN_SIZE;
@@ -96,7 +95,6 @@ pub async fn pin_image(
             let cg_ptr = cg_addr as *mut std::ffi::c_void;
             let spec = PinWebviewSpec {
                 label: &label,
-                image_path: &path_str,
                 width: win_w,
                 height: win_h,
                 pos_x: win_x,
@@ -128,7 +126,6 @@ pub async fn pin_image(
 #[cfg(target_os = "macos")]
 struct PinWebviewSpec<'a> {
     label: &'a str,
-    image_path: &'a str,
     width: f64,
     height: f64,
     pos_x: f64,
@@ -142,8 +139,7 @@ fn create_pin_webview(app: &tauri::AppHandle, spec: &PinWebviewSpec) -> Result<(
     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-    let url_path = format!("/?img={}&pin=1", urlencoding::encode(spec.image_path));
-    let url = WebviewUrl::App(url_path.into());
+    let url = WebviewUrl::App("pin.html".into());
 
     let builder = WebviewWindowBuilder::new(app, spec.label, url)
         .title("")

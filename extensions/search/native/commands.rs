@@ -214,7 +214,8 @@ pub async fn launch_app(path: String) -> Result<(), String> {
 
     tokio::process::Command::new("open")
         .arg(&path)
-        .spawn()
+        .status()
+        .await
         .map_err(|e| format!("Failed to launch: {e}"))?;
 
     SEARCH_SESSION.increment_use_count(&path);

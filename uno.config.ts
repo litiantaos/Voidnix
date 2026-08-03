@@ -105,6 +105,13 @@ export default defineConfig({
     'overlay-abs': 'pointer-events-none absolute',
   },
   content: {
+    // filesystem 预扫描：dev 启动时全量读取文件系统提取原子类，不依赖 Vite transform
+    // 管道的按需触发（多入口加载顺序不确定 → 初始 tokens 可能不完整 → 样式错乱）。
+    // dev 模式自带 chokidar watch 做增量 HMR。
+    filesystem: ['src/**/*.{vue,ts}', 'extensions/**/*.{vue,ts}'],
+    // pipeline.include 不可省——UnoCSS 的 pipeline filter 同时作用于 filesystem 提取
+    // （extractFile 内 if(!filter(code,file)) return），默认正则不匹配 .ts，会导致
+    // icons.ts 等 .ts 文件中的 i-ri-* / text-* 类被 filter 拒绝而丢失。
     pipeline: {
       include: [
         /\.(vue|svelte|[jt]sx|mdx?|astro|elm|php|phtml|html)($|\?)/,

@@ -48,12 +48,12 @@ fn extract_app_icon(app_path: &str) -> Option<String> {
 fn register_app_with_ls(app_path: &str) {
     let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
     if std::path::Path::new(lsregister).exists() {
-        let child = std::process::Command::new(lsregister)
+        if let Err(e) = std::process::Command::new(lsregister)
             .arg("-f")
             .arg(app_path)
-            .spawn();
-        if let Err(e) = child {
-            log::warn!("[icon] lsregister spawn failed for {}: {}", app_path, e);
+            .status()
+        {
+            log::warn!("[icon] lsregister failed for {}: {}", app_path, e);
         }
     }
 }

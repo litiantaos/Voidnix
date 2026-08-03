@@ -27,30 +27,33 @@ const props = defineProps<{
   extensionIcon?: string
 }>()
 
-const icon = computed(
-  () => props.item.icon || (props.item.data?.icon as string | undefined) || props.extensionIcon,
-)
-const isIconFont = computed(() => icon.value?.startsWith('i-') ?? false)
-const isImageIcon = computed(() => !!icon.value && !isIconFont.value)
-const isExtensionItem = computed(() => props.item.data?.kind === 'extension')
+/** item 自身声明的图标（app 图标 / 扩展结果图标），不含 extensionIcon 兜底 */
+const itemIcon = computed(() => props.item.icon || (props.item.data?.icon as string | undefined))
 const isFileOrFolder = computed(
   () => props.item.data?.kind === 'file' || props.item.data?.kind === 'folder',
 )
+const fileIcon = computed(() => getFileIcon(props.item))
+
+/** 综合图标优先级：item 显式 > file/folder 类型映射 > extension 兜底 */
+const icon = computed(() => {
+  if (itemIcon.value) return itemIcon.value
+  if (isFileOrFolder.value) return fileIcon.value.icon
+  return props.extensionIcon
+})
+const isIconFont = computed(() => icon.value?.startsWith('i-') ?? false)
+const isImageIcon = computed(() => !!icon.value && !isIconFont.value)
+const isExtensionItem = computed(() => props.item.data?.kind === 'extension')
 const iconSrc = computed(() => {
   const i = icon.value
   return i?.startsWith('data:') ? i : 'data:image/png;base64,' + i
 })
-const fileIcon = computed(() => getFileIcon(props.item))
 
-/** 字体图标类名：file/folder 无显式 icon 时按扩展名类型映射；否则用综合 icon */
-const displayIcon = computed(() => {
-  if (isFileOrFolder.value && !icon.value) return fileIcon.value.icon
-  return icon.value
-})
-/** 字体图标色：扩展类用主色、file/folder 无显式 icon 用类型映射色、其余中性灰 */
+/** 字体图标类名 */
+const displayIcon = computed(() => icon.value)
+/** 字体图标色：扩展类用主色、file/folder 用类型映射色、其余中性灰 */
 const displayColor = computed(() => {
   if (isExtensionItem.value) return 'text-accent'
-  if (isFileOrFolder.value && !icon.value) return fileIcon.value.color
+  if (isFileOrFolder.value && !itemIcon.value) return fileIcon.value.color
   return 'text-muted'
 })
 </script>
