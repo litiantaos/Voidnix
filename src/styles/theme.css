@@ -450,7 +450,7 @@ body {
 }
 
 /*
- * 浮层标准进出场（toast / 动作面板 / 下拉 / 标注浮层统一走 name="ui-popup"）：
+ * 浮层标准进出场（动作面板 / 下拉 / 标注浮层等单元素统一走 name="ui-popup"；toast 堆叠见 .toast-*）：
  * 进 var(--duration-fast) ease-out / 退 100ms ease-in；位移 8px + 缩放 .95。
  * 用 transform 属性动画——与 UnoCSS 的 translate/scale（Wind4 走独立属性）正交叠加，
  * 故元素即便带 -translate-x-1/2 居中等定位也不冲突。仅 transform + opacity，GPU 合成不掉帧。
@@ -474,6 +474,49 @@ body {
 .ui-popup-leave-from {
   opacity: 1;
   transform: translateY(0) scale(1);
+}
+
+/*
+ * Toast 堆叠进出场 + FLIP 重排（TransitionGroup 专用，区别于单元素 ui-popup）：
+ * enter 保留弹入存在感（8px + scale .95）；leave 柔和退场，位移收窄（4px + scale .98）让 opacity 主导。
+ * move（FLIP 兄弟滑入新位）+ leave-active 脱离文档流，使离场项不阻塞剩余项的平滑重排。
+ * 配合容器 items-end，每条 toast 保持自身宽度不互相拉伸。
+ *
+ * 源码序关键：toast-move 必须在 enter/leave-active 之前——离场元素同时持有两者，
+ * transition 是 shorthand，后定义的 leave-active 覆盖 move 的 transition（含 opacity），
+ * 否则 move 的 transition: transform 会吞掉 opacity 过渡致离场瞬间消失。
+ *
+ * 锚点：leave-active 的 position:fixed 配合 @before-leave 钩子写入的内联 left/top/width
+ * 用视口坐标锁定离场元素原位（position:fixed 相对视口，不受容器 shrink 影响）。
+ */
+.toast-move {
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+.toast-enter-active {
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+.toast-leave-active {
+  position: fixed;
+  margin: 0;
+  pointer-events: none;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+.toast-enter-from {
+  opacity: 0;
+  transform: translateY(8px) scale(0.95);
+}
+.toast-enter-to,
+.toast-leave-from {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(4px) scale(0.98);
 }
 
 /*
