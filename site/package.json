@@ -4,13 +4,18 @@
   "type": "module",
   "version": "0.1.0",
   "scripts": {
-    "dev": "astro dev",
-    "start": "astro dev",
-    "build": "astro build",
+    "dev": "node scripts/sync-tokens.mjs && astro dev",
+    "start": "node scripts/sync-tokens.mjs && astro dev",
+    "build": "node scripts/sync-tokens.mjs && astro build",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "astro check",
+    "sync:tokens": "node scripts/sync-tokens.mjs",
+    "generate:demo": "node scripts/capture-demo.mjs"
   },
   "dependencies": {
     "astro": "^5.13.0"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
   }
 }

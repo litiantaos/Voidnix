@@ -1,178 +1,259 @@
 /*
- * Voidnix 官网设计 token
- * 从产品 src/styles/theme.css 提取官网所需子集，让「所见即产品」。
- * 基元 → 面 → 阴影 → 动效，同源同轨。
+ * 官网设计 token——从产品 src/styles/theme.css 自动同步（勿手改）。
+ * bun run sync:tokens 重新生成。
+ *
+ * 产品深色走 :root[data-theme="dark"]（runtime/theme.ts 写 data-theme 属性），
+ * 官网无 JS 主题层，改为 @media (prefers-color-scheme: dark) 跟随系统。
+ * 官网专属 token（布局 / DemoStage mock / 雾团补偿）在末尾 SITE_ONLY 区块。
  */
 
 :root {
-  /* 让浏览器原生控件（滚动条 / 表单）也跟随系统外观 */
   color-scheme: light dark;
 
-  /* ── 基元 ── */
-  --cool: 100 120 160; /* 填充 / 雾 / chip 描边 冷相 */
-  --cool-deep: 110 130 165;
+  /* ── 基元（相近色/动效只在此改）── */
+  --cool: 100 120 160; /* 填充 / 雾 / chip 线 冷相 */
+  --cool-deep: 110 130 165; /* chip 描边略深 */
   --shadow-ink: 40 40 50; /* elevation 中性墨 */
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --duration-fast: 150ms;
   --duration-normal: 200ms;
-
+  --space: 12px; /* 全局 p-3 */
+  --space-soft: 6px 10px; /* step / notice 内垫 */
   /* ── 色 ── */
   --color-surface: #f8f8f9;
   --color-canvas: var(--color-surface);
   --color-accent: #3d82f0;
-  --color-accent-deep: color-mix(in srgb, var(--color-accent) 88%, #000);
-
-  /* 语义色（与组件状态点同源：success=#3d9a6a / warning=#d9891a） */
-  --color-success: #3d9a6a;
-  --color-warning: #d9891a;
-  --color-danger: #d9534f;
-
+  --color-mist: rgb(var(--cool) / 0.12);
+  --color-mist-solid: #e6eaf3;
   --color-text-primary: rgba(30, 35, 50, 0.92);
   --color-text-secondary: rgba(80, 90, 115, 0.88);
   --color-text-muted: rgba(110, 120, 145, 0.72);
-
+  --color-fill-4: rgb(var(--cool) / 0.06);
   --color-fill-5: rgb(var(--cool) / 0.08);
   --color-fill-8: rgb(var(--cool) / 0.12);
   --color-fill-12: rgb(var(--cool) / 0.16);
   --color-fill-18: rgb(var(--cool) / 0.22);
-
   --color-border: rgba(140, 160, 195, 0.28);
   --color-divider: rgb(var(--cool) / 0.1);
-
-  /* accent 浅染 */
+  /* 截图非选区遮罩：纯黑 + 高不透明（mask-smoke 例外允许 black） */
+  --color-smoke: rgba(0, 0, 0, 0.55);
+  --color-dialog-overlay: rgba(0, 0, 0, 0.4);
+  --dialog-fill: rgb(255 255 255 / 0.97);
+  --dialog-border: rgb(215 215 222 / 0.65);
+  --color-danger: #ec6a6e;
+  --color-warning: #d9891a;
+  --color-success: #3d9a6a;
+  /* 语义 soft 统一 12% */
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  --color-success-soft: color-mix(in srgb, var(--color-success) 12%, transparent);
+  --color-card-solid: rgb(255 255 255 / 0.96);
+  /* 用户气泡：accent 浅染实底 */
+  --color-bubble: color-mix(in srgb, var(--color-accent) 7%, white);
+  /* accent 浅染（markdown 代码/引用/行内码 共用，禁止业务再写 color-mix accent） */
   --accent-wash: color-mix(in srgb, var(--color-accent) 2.5%, transparent);
   --accent-line: color-mix(in srgb, var(--color-accent) 12%, transparent);
   --accent-line-soft: color-mix(in srgb, var(--color-accent) 9%, transparent);
-
-  /* ── 面（与产品 soft-surface / soft-card 同轨）── */
+  --accent-wash-grad: linear-gradient(90deg, var(--accent-wash) 0%, transparent 100%);
+  /* 聚焦：统一改边框色（chip / field / 输入壳共用，无 ring / 无 box-shadow） */
+  --focus-ring-color: color-mix(in srgb, var(--color-accent) 55%, white);
+  /* ── 面 ── */
   --soft-surface-fill: rgb(246 246 248 / 0.72);
   --soft-surface-border: rgb(255 255 255 / 0.98);
   --soft-surface-blur: 40px;
-  --soft-surface-saturate: 1.35;
-
-  --soft-card-fill: rgb(255 255 255 / 0.96);
+  --soft-surface-saturate: 1.35; /* 卡片 / acrylic / 浮钮同一轨 */
+  --color-card: var(--soft-surface-fill);
+  --soft-chip-fill: rgb(255 255 255 / 0.94);
   --soft-chip-border: rgb(var(--cool-deep) / 0.16);
   --soft-chip-border-hover: rgb(var(--cool-deep) / 0.24);
-
-  /* ── elevation（中性墨，克制三档 + 卡片）── */
+  --soft-chip-border-active: rgb(var(--cool-deep) / 0.2);
+  --ui-active-fill: rgb(var(--cool) / 0.11);
+  /*
+   * elevation 三档（中性 ink）：bar 搜索栏/输入岛 · panel 浮层 · dialog 弹窗
+   * 业务 elevation 优先复用，勿再写零散 box-shadow
+   */
+  --shadow-bar: 0 2px 28px rgb(var(--shadow-ink) / 0.08), 0 1px 2px rgb(var(--shadow-ink) / 0.05);
+  --shadow-panel: 0 4px 24px rgb(var(--shadow-ink) / 0.1), 0 2px 6px rgb(var(--shadow-ink) / 0.06);
+  --shadow-dialog:
+    0 8px 32px rgb(var(--shadow-ink) / 0.14), 0 2px 8px rgb(var(--shadow-ink) / 0.08);
+  --soft-bar-shadow: var(--shadow-bar);
+  --soft-panel-shadow: var(--shadow-panel);
+  --dialog-shadow: var(--shadow-dialog);
+  /* 卡片：微环 + 近乎无偏移的柔和扩散（衬边界，不造抬升） */
   --shadow-card:
     0 0 0 1px color-mix(in srgb, var(--color-text-primary) 5%, transparent),
     0 0 16px rgb(var(--shadow-ink) / 0.06), 0 1px 4px rgb(var(--shadow-ink) / 0.03);
-  --shadow-panel: 0 4px 24px rgb(var(--shadow-ink) / 0.1), 0 2px 6px rgb(var(--shadow-ink) / 0.06);
+  --agent-card-shadow: var(--shadow-card);
+  /*
+   * 浮钮：3 层同结构（ring + 远 + 近）便于 hover 插值；墨色走 shadow-ink
+   * ring 用 border token 透明度档
+   */
   --shadow-float:
     0 0 0 1px color-mix(in srgb, var(--color-border) 25%, transparent),
     0 2px 20px rgb(var(--shadow-ink) / 0.05), 0 1px 3px rgb(var(--shadow-ink) / 0.04);
   --shadow-float-hover:
     0 0 0 1px color-mix(in srgb, var(--color-border) 32%, transparent),
     0 6px 24px rgb(var(--shadow-ink) / 0.1), 0 2px 6px rgb(var(--shadow-ink) / 0.07);
-
-  /* ── 字体 / 圆角 / 尺寸 ── */
-  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+  --shadow-float-active:
+    0 0 0 1px color-mix(in srgb, var(--color-border) 28%, transparent),
+    0 3px 12px rgb(var(--shadow-ink) / 0.07), 0 1px 3px rgb(var(--shadow-ink) / 0.05);
+  --agent-float-shadow: var(--shadow-float);
+  --agent-float-shadow-hover: var(--shadow-float-hover);
+  --agent-float-shadow-active: var(--shadow-float-active);
+  --agent-aurora-warm: #ffb089;
+  --agent-aurora-warm-hi: #ffc4a0;
+  /* ── 字体 / 圆角 / chrome ── */
+  --font-mono: ui-monospace, monospace;
   --font-cjk:
     'PingFang SC', 'Hiragino Sans GB', 'SF Pro Text', 'SF Pro Display', -apple-system,
     BlinkMacSystemFont, 'Helvetica Neue', 'Segoe UI', sans-serif;
   --font-sans: var(--font-mono), var(--font-cjk);
-
   --radius-ctrl: 6px;
   --radius-panel: 10px;
   --radius-window: 16px;
-
-  /* ── 布局 ── */
-  --content-max: 1100px;
-  --content-pad: clamp(20px, 5vw, 48px);
-
-  /* ── 组件专项（深色覆盖点，浅色 = 原硬编码值）── */
-  /* Mica 雾团（复刻产品 mica-shell 冷蓝光晕） */
-  --mica-fog-a: rgb(215 230 255 / 0.55);
-  --mica-fog-b: rgb(205 218 245 / 0.42);
-  /* mock 场景内的半透明白底（搜索栏 / 卡片 / 浮钮 / 助手气泡） */
-  --mock-input-fill: rgb(255 255 255 / 0.7);
-  --mock-card-fill: rgb(255 255 255 / 0.6);
-  --mock-card-hover: rgb(255 255 255 / 0.95);
-  --bubble-bot-fill: rgb(248 249 252);
-  /* 用户气泡实底（产品 color-card-solid，accent 浅染基底） */
-  --color-card-solid: rgb(255 255 255 / 0.96);
-  /* 列表 / 选中行高亮（产品 ui-active-fill） */
-  --ui-active-fill: rgb(var(--cool) / 0.11);
-  /* 截图选区尺寸标签：功能性浮层，需高对比实底（深浅都强可读） */
-  --shot-badge-fill: rgb(255 255 255 / 0.95);
-  --shot-badge-ink: var(--color-accent);
-  /* chip 实白底 */
-  --soft-chip-fill: #fff;
-  /* 文件类型辨识色（mock 结果图标） */
-  --color-folder: #5a8def;
-  --color-file: #7aa2c8;
+  --chrome-fade-height: 76px;
+  --chrome-fade-bottom-height: 100px;
+  /* ── 窗壳 / 控件交互态 / 渐变混色（深色覆盖点，浅色值 = 原硬编码）── */
+  --mica-shell-fill: rgb(255 255 255 / 0.86);
+  --mica-fog-a: rgb(215 230 255 / 0.32);
+  --mica-fog-b: rgb(205 218 245 / 0.24);
+  --soft-chip-hover-fill: rgb(248 249 252);
+  --soft-chip-active-fill: rgb(244 246 250);
+  --chrome-fade-tint: rgb(200 218 240);
+  --chrome-edge: white;
+  --accent-press: color-mix(in srgb, var(--color-accent) 88%, #000);
+  --accent-press-active: color-mix(in srgb, var(--color-accent) 78%, #000);
+  --danger-fill: rgb(236 106 110 / 0.04);
+  --danger-fill-active: rgb(236 106 110 / 0.08);
+  /* 窗壳玻璃高光环：顶部光泽 + 1px 边缘（深色覆盖点） */
+  --mica-ring-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.75), inset 0 0 0 1px rgba(255, 255, 255, 0.4);
 }
 
-/*
- * 深色主题：跟随系统（prefers-color-scheme）。
- * 与产品 theme.css [data-theme="dark"] 同源同值，官网「所见即产品」。
- * 仅覆盖需反相 / 提亮的 token，基元（cool / 动效 / 字体 / 圆角 / 布局）不变。
- */
 @media (prefers-color-scheme: dark) {
   :root {
     --color-surface: #1c1c1e;
-    --color-accent-deep: color-mix(in srgb, var(--color-accent) 88%, #fff);
-
-    --color-danger: #f0757a;
-    --color-warning: #e6a02e;
-    --color-success: #4dbb82;
-
+    --color-mist: rgb(120 140 175 / 0.16);
+    --color-mist-solid: #2a2d33;
     --color-text-primary: rgba(245, 245, 247, 0.92);
     --color-text-secondary: rgba(212, 216, 226, 0.76);
     --color-text-muted: rgba(178, 184, 198, 0.54);
-
     /* fill 档改白色基底：深色下白色填充比冷相更自然 */
+    --color-fill-4: rgba(255, 255, 255, 0.04);
     --color-fill-5: rgba(255, 255, 255, 0.06);
     --color-fill-8: rgba(255, 255, 255, 0.1);
     --color-fill-12: rgba(255, 255, 255, 0.14);
     --color-fill-18: rgba(255, 255, 255, 0.2);
-
     --color-border: rgba(255, 255, 255, 0.1);
     --color-divider: rgba(255, 255, 255, 0.08);
-
+    --color-smoke: rgba(0, 0, 0, 0.65);
+    --color-dialog-overlay: rgba(0, 0, 0, 0.55);
+    --dialog-fill: rgb(40 40 44 / 0.97);
+    --dialog-border: rgb(90 90 100 / 0.5);
+    /* 语义色略提亮（深色可读性） */
+    --color-danger: #f0757a;
+    --color-warning: #e6a02e;
+    --color-success: #4dbb82;
+    --color-danger-soft: color-mix(in srgb, var(--color-danger) 16%, transparent);
+    --color-warning-soft: color-mix(in srgb, var(--color-warning) 16%, transparent);
+    --color-success-soft: color-mix(in srgb, var(--color-success) 16%, transparent);
+    --color-card-solid: rgb(44 44 48 / 0.96);
+    --color-bubble: color-mix(in srgb, var(--color-accent) 14%, #2a2a2e);
     /* accent 浅染：深底需更高饱和才可见 */
     --accent-wash: color-mix(in srgb, var(--color-accent) 10%, transparent);
     --accent-line: color-mix(in srgb, var(--color-accent) 22%, transparent);
     --accent-line-soft: color-mix(in srgb, var(--color-accent) 18%, transparent);
-
+    --accent-wash-grad: linear-gradient(90deg, var(--accent-wash) 0%, transparent 100%);
+    --focus-ring-color: color-mix(in srgb, var(--color-accent) 60%, white);
+    --shadow-ink: 0 0 0;
     --soft-surface-fill: rgb(28 28 30 / 0.72);
     --soft-surface-border: rgb(255 255 255 / 0.06);
-    --soft-card-fill: rgb(44 44 48 / 0.96);
+    --soft-chip-fill: rgb(44 44 48 / 0.9);
     --soft-chip-border: rgba(255, 255, 255, 0.1);
     --soft-chip-border-hover: rgba(255, 255, 255, 0.16);
-
-    /* 阴影：深底叠深影易糊，ink→纯黑并提对比，第一层用白环衬边界 */
-    --shadow-ink: 0 0 0;
+    --soft-chip-border-active: rgba(255, 255, 255, 0.13);
+    --ui-active-fill: rgba(255, 255, 255, 0.1);
+    --mica-shell-fill: rgb(20 20 22 / 0.86);
+    --mica-fog-a: rgb(60 80 130 / 0.3);
+    --mica-fog-b: rgb(50 70 120 / 0.22);
+    --soft-chip-hover-fill: rgba(255, 255, 255, 0.05);
+    --soft-chip-active-fill: rgba(255, 255, 255, 0.08);
+    --chrome-fade-tint: rgb(40 50 75);
+    --chrome-edge: #000;
+    --accent-press: color-mix(in srgb, var(--color-accent) 92%, #fff);
+    --accent-press-active: color-mix(in srgb, var(--color-accent) 84%, #fff);
+    --danger-fill: rgb(240 117 122 / 0.1);
+    --danger-fill-active: rgb(240 117 122 / 0.16);
+    /* 深色：白色高光刺眼，降为极弱边缘定义（不发光） */
+    --mica-ring-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.03), inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+    /* 阴影：深底叠深影易糊，提高 ink 不透明、第一层用白环衬边界 */
+    --shadow-bar: 0 2px 28px rgb(var(--shadow-ink) / 0.36), 0 1px 2px rgb(var(--shadow-ink) / 0.28);
+    --shadow-panel:
+      0 4px 24px rgb(var(--shadow-ink) / 0.44), 0 2px 6px rgb(var(--shadow-ink) / 0.32);
+    --shadow-dialog:
+      0 8px 32px rgb(var(--shadow-ink) / 0.56), 0 2px 8px rgb(var(--shadow-ink) / 0.4);
     --shadow-card:
       0 0 0 1px rgba(255 255 255 / 0.06), 0 0 16px rgb(var(--shadow-ink) / 0.28),
       0 1px 4px rgb(var(--shadow-ink) / 0.2);
-    --shadow-panel:
-      0 4px 24px rgb(var(--shadow-ink) / 0.44), 0 2px 6px rgb(var(--shadow-ink) / 0.32);
     --shadow-float:
       0 0 0 1px rgba(255 255 255 / 0.08), 0 2px 20px rgb(var(--shadow-ink) / 0.32),
       0 1px 3px rgb(var(--shadow-ink) / 0.24);
     --shadow-float-hover:
       0 0 0 1px rgba(255 255 255 / 0.12), 0 6px 24px rgb(var(--shadow-ink) / 0.44),
       0 2px 6px rgb(var(--shadow-ink) / 0.3);
+    --shadow-float-active:
+      0 0 0 1px rgba(255 255 255 / 0.1), 0 3px 12px rgb(var(--shadow-ink) / 0.36),
+      0 1px 3px rgb(var(--shadow-ink) / 0.26);
+  }
+}
 
-    /* 雾团：深色下冷蓝光晕压暗，模拟产品深色 mica */
+/* ══ SITE_ONLY：官网专属 token（产品无对应或需覆盖）══ */
+:root {
+  /* 布局（官网落地页专属，产品无） */
+  --content-max: 1100px;
+  --content-pad: clamp(20px, 5vw, 48px);
+
+  /* Hero 渐变标题（产品无 accent-deep，用 accent-press 系列） */
+  --color-accent-deep: color-mix(in srgb, var(--color-accent) 88%, #000);
+
+  /* Mica 雾团：官网无 NSVisualEffect 底，透明度需高于产品 */
+  --mica-fog-a: rgb(215 230 255 / 0.55);
+  --mica-fog-b: rgb(205 218 245 / 0.42);
+
+  /* DemoStage mock 场景（产品无） */
+  --menubar-fill: rgb(255 255 255 / 0.45);
+  --mock-input-fill: rgb(255 255 255 / 0.7);
+  --mock-card-fill: rgb(255 255 255 / 0.6);
+  --mock-card-hover: rgb(255 255 255 / 0.95);
+  --bubble-bot-fill: rgb(248 249 252);
+  --soft-card-fill: rgb(255 255 255 / 0.96);
+  --shot-badge-fill: rgb(255 255 255 / 0.95);
+  --shot-badge-ink: var(--color-accent);
+  --color-folder: #5a8def;
+  --color-file: #7aa2c8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Hero 渐变标题深色提亮 */
+    --color-accent-deep: color-mix(in srgb, var(--color-accent) 88%, #fff);
+
+    /* Mica 雾团 */
     --mica-fog-a: rgb(60 80 130 / 0.34);
     --mica-fog-b: rgb(50 70 120 / 0.26);
-    /* mock 白底反相为深底 */
+
+    /* DemoStage mock 场景反相 */
+    --menubar-fill: rgb(40 40 44 / 0.5);
     --mock-input-fill: rgb(44 44 48 / 0.7);
     --mock-card-fill: rgb(40 40 44 / 0.6);
     --mock-card-hover: rgb(50 50 54 / 0.95);
     --bubble-bot-fill: rgb(255 255 255 / 0.06);
-    --color-card-solid: rgb(44 44 48 / 0.96);
-    --ui-active-fill: rgba(255, 255, 255, 0.1);
-    /* 截图尺寸标签：深色下反相为深底白字 */
+    --soft-card-fill: rgb(44 44 48 / 0.96);
     --shot-badge-fill: rgb(60 60 66 / 0.92);
     --shot-badge-ink: rgb(140 175 245);
-    --soft-chip-fill: rgb(44 44 48 / 0.9);
-    /* 文件类型辨识色提亮（深色可读性） */
     --color-folder: #7ea5f4;
     --color-file: #9ab8d6;
   }

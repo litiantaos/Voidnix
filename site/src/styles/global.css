@@ -163,9 +163,12 @@ img {
 }
 .btn-primary:hover {
   background: var(--color-accent-deep);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent),
+    0 4px 20px color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 .btn-primary:active {
-  transform: translateY(0);
+  transform: translateY(1px);
 }
 
 .btn-ghost {

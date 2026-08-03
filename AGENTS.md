@@ -355,6 +355,10 @@ src/
 
 新增文件按所属目录归位，勿新建顶层分类。
 
+### 官网（site/）
+
+独立 Astro 子项目（单页落地页），token 自动同步产品 `theme.css` 全量 `:root`。首页 Hero 内嵌实时动画演示（`DemoStage.astro` 组件，非视频——840 帧 JS 驱动的拟物 macOS 桌面舞台，首页与 `/demo` 预览页共用）。文档：[site/README.md](site/README.md)（概览 / 开发 / 部署）+ [site/demo.md](site/demo.md)（DemoStage 组件架构、动画系统、分镜时间线、可选视频导出）。
+
 ## UI 规范
 
 浅色 / 深色双轨（默认跟随系统，设置中可切自动 / 浅色 / 深色）。完整约定见 [docs/design.md](docs/design.md)；数值真相 `theme.css`（`:root` 浅色默认 + `:root[data-theme="dark"]` 深色覆盖），组合 `uno.config.ts`。**视觉已定型，改实现/文档不得无意改观感。**

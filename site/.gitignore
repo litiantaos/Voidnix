@@ -13,3 +13,7 @@ node_modules/
 # 日志
 *.log
 .vercel
+
+# Demo 视频产物（由 capture-demo.mjs 生成，不进版本库）
+public/demo.mp4
+public/demo.webm

@@ -1,5 +1,6 @@
 ---
 import Wordmark from './Wordmark.astro'
+import DemoStage from './DemoStage.astro'
 
 const GITHUB = 'https://github.com/litiantaos/Voidnix'
 const RELEASES = GITHUB + '/releases/latest'
@@ -19,8 +20,8 @@ const RELEASES = GITHUB + '/releases/latest'
 
   <div class="hero-inner container">
     <div class="hero-copy">
-      <p class="eyebrow reveal">macOS 效率启动器</p>
-      <h1 class="hero-title display reveal">想到就到，触手可及</h1>
+      <p class="eyebrow reveal"><span class="eyebrow-dot"></span>macOS 效率启动器</p>
+      <h1 class="hero-title display reveal">想到就到，<span class="title-accent">触手可及</span></h1>
 
       <div class="hero-chips reveal">
         <span class="chip"><i class="ri-stack-line"></i> 模块化</span>
@@ -40,47 +41,11 @@ const RELEASES = GITHUB + '/releases/latest'
       <p class="hero-cta-meta reveal">Apple Silicon · macOS 13+</p>
     </div>
 
-    <!-- 产品 mockup：纯 CSS 复刻启动器窗口（搜索栏 + 分组结果） -->
-    <div class="mock-wrap reveal">
-      <div class="launcher soft-card">
-        <div class="search-bar">
-          <i class="ri-search-line sb-icon"></i>
-          <span class="sb-text">Option+Space</span>
-          <span class="sb-kbd">⌥ Space</span>
-        </div>
-        <div class="group-label">应用</div>
-        <div class="row is-active">
-          <span class="row-icon accent-bg"><i class="ri-terminal-box-fill"></i></span>
-          <span class="row-main">
-            <span class="row-title">终端</span>
-            <span class="row-sub">/System/Applications</span>
-          </span>
-          <span class="row-key">↵</span>
-        </div>
-        <div class="row">
-          <span class="row-icon"><i class="ri-code-s-slash-line"></i></span>
-          <span class="row-main">
-            <span class="row-title">VS Code</span>
-            <span class="row-sub">/Applications</span>
-          </span>
-        </div>
-        <div class="group-label">文件</div>
-        <div class="row">
-          <span class="row-icon folder"><i class="ri-folder-3-line"></i></span>
-          <span class="row-main">
-            <span class="row-title">voidnix</span>
-            <span class="row-sub">~/Code/Voidnix</span>
-          </span>
-        </div>
-        <div class="row">
-          <span class="row-icon file"><i class="ri-file-code-line"></i></span>
-          <span class="row-main">
-            <span class="row-title">index.ts</span>
-            <span class="row-sub">~/Code/Voidnix/extensions/search</span>
-          </span>
-        </div>
-      </div>
-    </div>
+  </div>
+
+  <!-- 产品演示：实时动画舞台 -->
+  <div class="demo-section reveal">
+    <DemoStage />
   </div>
 </section>
 
@@ -170,54 +135,73 @@ const RELEASES = GITHUB + '/releases/latest'
     );
   }
 
-  .nav,
-  .hero-inner {
+  .nav {
     position: relative;
     z-index: 1;
-  }
-
-  /* ── 导航 ── */
-  .nav {
     padding-top: 28px;
   }
 
   /* ── 主体 ── */
   .hero-inner {
-    flex: 1;
-    display: grid;
-    grid-template-columns: 1.05fr 0.95fr;
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: clamp(40px, 6vw, 80px);
+    text-align: center;
     padding-top: clamp(40px, 8vh, 96px);
   }
 
   .hero-copy {
-    max-width: 560px;
-    padding-top: 44px;
+    max-width: 580px;
+  }
+
+  /* eyebrow 视觉锚点：accent 实心圆点 */
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .eyebrow-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 50%, transparent);
   }
 
   .hero-title {
-    font-size: clamp(34px, 4.5vw, 52px);
-    margin: 36px 0 0;
+    font-size: clamp(38px, 5.5vw, 60px);
+    margin: 28px 0 0;
     color: var(--color-text-primary);
+  }
+  /* 标题后半渐变着色，accent 提亮视觉重心 */
+  .title-accent {
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-deep));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
   .hero-sub {
-    font-size: clamp(16px, 1.5vw, 18px);
+    font-size: clamp(15px, 1.4vw, 17px);
     color: var(--color-text-secondary);
     max-width: 52ch;
     line-height: 1.7;
+    margin-top: 18px;
   }
 
   .hero-chips {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     gap: 10px;
-    margin: 44px 0 92px;
+    margin: 28px 0 32px;
   }
 
   .hero-cta {
     display: flex;
+    justify-content: center;
     gap: 12px;
   }
   .hero-cta-meta {
@@ -228,146 +212,30 @@ const RELEASES = GITHUB + '/releases/latest'
     letter-spacing: 0.01em;
   }
 
-  /* ── Mockup ── */
-  .mock-wrap {
-    display: flex;
-    justify-content: center;
-    perspective: 1400px;
-  }
-  .launcher {
+  /* reveal 错峰入场（eyebrow → title → sub → chips → cta → meta） */
+  .hero-copy > .reveal:nth-child(1) { transition-delay: 0ms; }
+  .hero-copy > .reveal:nth-child(2) { transition-delay: 70ms; }
+  .hero-copy > .reveal:nth-child(3) { transition-delay: 140ms; }
+  .hero-copy > .reveal:nth-child(4) { transition-delay: 210ms; }
+  .hero-copy > .reveal:nth-child(5) { transition-delay: 280ms; }
+  .hero-copy > .reveal:nth-child(6) { transition-delay: 350ms; }
+
+  /* ── Demo 舞台 ── */
+  /* demo-section 与 .container 共用同一套横向盒模型（width / max-width / padding-inline），
+     保证 demo 可视框与上方正文在任意视口宽度严格对齐 */
+  .demo-section {
+    position: relative;
+    z-index: 1;
     width: 100%;
-    max-width: 440px;
-    padding: 14px;
-    border-radius: var(--radius-window);
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--color-text-primary) 5%, transparent),
-      0 24px 60px rgb(var(--shadow-ink) / 0.18),
-      0 8px 24px rgb(var(--shadow-ink) / 0.1);
-    transform: rotateY(-6deg) rotateX(2deg);
-    transition: transform var(--duration-normal) var(--ease-out);
-  }
-  .launcher:hover {
-    transform: rotateY(-3deg) rotateX(1deg) translateY(-2px);
-  }
-
-  .search-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 14px;
-    border-radius: var(--radius-panel);
-    background: var(--mock-input-fill);
-    border: 1px solid var(--soft-surface-border);
-    backdrop-filter: blur(20px);
-    margin-bottom: 8px;
-  }
-  .sb-icon {
-    color: var(--color-text-muted);
-    font-size: 18px;
-  }
-  .sb-text {
-    color: var(--color-text-muted);
-    font-family: var(--font-mono);
-    font-size: 14px;
-    flex: 1;
-  }
-  .sb-kbd {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--color-text-muted);
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: var(--color-fill-8);
-  }
-
-  .group-label {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--color-text-muted);
-    padding: 10px 8px 6px;
-    letter-spacing: 0.05em;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 9px 10px;
-    border-radius: var(--radius-ctrl);
-    transition: background-color var(--duration-fast) var(--ease-out);
-  }
-  .row.is-active {
-    background: var(--ui-active-fill);
-  }
-  .row-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 7px;
-    display: grid;
-    place-items: center;
-    font-size: 16px;
-    color: var(--color-text-secondary);
-    background: var(--color-fill-5);
-    flex-shrink: 0;
-  }
-  .row-icon.accent-bg {
-    background: var(--color-accent);
-    color: #fff;
-  }
-  .row-icon.folder {
-    color: var(--color-folder);
-  }
-  .row-icon.file {
-    color: var(--color-file);
-  }
-  .row-main {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    flex: 1;
-    min-width: 0;
-  }
-  .row-title {
-    font-size: 14px;
-    color: var(--color-text-primary);
-  }
-  .row-sub {
-    font-size: 12px;
-    color: var(--color-text-muted);
-    font-family: var(--font-mono);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .row.is-active .row-title {
-    color: var(--color-accent);
-    font-weight: 500;
-  }
-  .row-key {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--color-accent);
-    padding: 2px 7px;
-    border-radius: 4px;
-    background: rgb(var(--color-accent) / 0.12);
+    max-width: var(--content-max);
+    margin-inline: auto;
+    margin-top: 48px;
+    padding-inline: var(--content-pad);
   }
 
   @media (max-width: 880px) {
-    .hero-inner {
-      grid-template-columns: 1fr;
-      gap: 48px;
-    }
-    .hero-copy {
-      max-width: none;
-    }
-    .mock-wrap {
-      order: 2;
-    }
-    .launcher {
-      transform: none;
-    }
-    .launcher:hover {
-      transform: translateY(-2px);
+    .demo-section {
+      margin-top: 32px;
     }
   }
 
