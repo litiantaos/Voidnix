@@ -1,6 +1,6 @@
 # Voidnix 官网
 
-单页落地页，独立 Astro 子项目。视觉即产品——直接复用主应用 `src/styles/theme.css` 的 token 子集，纯 CSS 复刻启动器界面，无外部截图依赖。
+单页落地页，独立 Astro 子项目。视觉即产品——token 直接从主应用 `src/styles/theme.css` 自动同步（`scripts/sync-tokens.mjs`），纯 CSS 复刻启动器界面，无外部截图依赖。
 
 ## 目录
 
@@ -11,6 +11,8 @@ site/
 │   ├── favicon.png           # 站点图标
 │   └── og-image.png          # 1200×630 社交分享图（脚本生成）
 ├── scripts/
+│   ├── sync-tokens.mjs      # 产品 theme.css → tokens.css token 同步（dev/build 前置）
+│   ├── capture-demo.mjs     # Demo 动画逐帧捕获 → MP4/WebM（可选，社交分享用）
 │   ├── og-source.html        # OG 源稿（浏览器渲染 1200×630）
 │   └── render-og.mjs         # Playwright 截图脚本
 └── src/
@@ -44,7 +46,7 @@ node scripts/render-og.mjs
 
 ## 设计
 
-token 取自产品 `theme.css` 子集（`src/styles/tokens.css`）：基元 `--cool` / `--shadow-ink` / 缓动，面 `soft-surface` / `soft-card`，阴影 `card` / `panel` / `float`，圆角 `ctrl 6` / `panel 10` / `window 16`。改视觉先改 token，业务禁堆零散值。
+token 从产品 `src/styles/theme.css` 自动同步（`scripts/sync-tokens.mjs`）：`dev` / `build` 前置自动运行，提取 `:root` + `:root[data-theme="dark"]` 的 CSS 自定义属性，产品深色选择器转为官网 `@media (prefers-color-scheme: dark)`。官网专属 token（布局 `--content-max` / DemoStage mock 场景 / 雾团透明度补偿）在 `tokens.css` 末尾 SITE_ONLY 区块维护。产品改色/圆角/阴影，官网自动跟。
 
 ## 部署
 
