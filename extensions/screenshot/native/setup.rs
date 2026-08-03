@@ -133,13 +133,13 @@ pub fn register_shortcut_hook() {
             {
                 return true;
             }
-            // 快捷键当下就 activate：给 capture/enter 留出激活窗口，减轻「冷启动首击被吞」。
-            // 但必须先捕获原前台 PID——activate 后 Voidnix 成为 frontmost，
-            // current_frontmost_pid 返回 None，exit 时无法还原焦点。
+            // 先捕获原前台 PID（必须在任何 activation 之前）。
+            // 禁止提前 activate_app：那会让前台 app resign active（可见失焦）。
+            // activation 延迟到 enter_impl 的 claim_key——此时 overlay 已全屏可见，
+            // 失焦被遮住用户无感。首击不吞靠 acceptsFirstMouse swizzling + 全局事件监视器。
             let prev_pid = crate::platform::focus::current_frontmost_pid().unwrap_or(0);
             let app_act = app.clone();
             let _ = app.run_on_main_thread(move || {
-                crate::platform::focus::activate_app();
                 super::session::prewarm_screenshot_window(&app_act);
             });
             let app_clone = app.clone();
