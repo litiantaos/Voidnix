@@ -465,65 +465,95 @@ pub(super) async fn get_cached_apps() -> Arc<Vec<CachedApp>> {
     apps
 }
 
-/// 初始化文件系统监听器：监听应用目录 + 文件扫描目录。
-/// macOS FSEvents 递归监听子目录树（NonRecursive 标记在 macOS 不生效），
-/// 任何变更经 5s 防抖后并发重建两个缓存（init 均走 spawn_blocking，不阻塞 async 运行时）。
+/// 初始化文件系统监听器：应用目录与文件目录分离监听，各自独立重建。
+/// macOS FSEvents 递归监听子目录树（NonRecursive 标记在 macOS 不生效）。
+/// 分离原因：~/Downloads 等文件目录的频繁变更（iCloud 同步/浏览器下载）与应用列表无关，
+/// 不应触发 app 缓存重建（含 2-5s 图标重提取），否则图标空窗期内 get_app_icons 返回全 null。
 pub fn init_fs_watchers() {
+    tauri::async_runtime::spawn(app_dir_watcher());
+    tauri::async_runtime::spawn(file_dir_watcher());
+}
+
+/// 监听应用目录（/Applications、/System/Applications、~/Applications），
+/// 变更经 5s 防抖后重建 app 缓存（init_app_cache 内部 spawn_blocking 提取图标）。
+async fn app_dir_watcher() {
     use notify::{recommended_watcher, RecursiveMode, Watcher};
     use std::time::Duration;
     use tokio::time::sleep;
 
-    tauri::async_runtime::spawn(async {
-        let (tx, mut rx) = tokio::sync::mpsc::channel(200);
-
-        let watcher_res = recommended_watcher(move |res| {
-            if let Ok(event) = res {
-                let _ = tx.blocking_send(event);
-            }
-        });
-
-        if let Ok(mut watcher) = watcher_res {
-            // 应用目录
-            let _ = watcher.watch(Path::new("/Applications"), RecursiveMode::NonRecursive);
-            let _ = watcher.watch(
-                Path::new("/System/Applications"),
-                RecursiveMode::NonRecursive,
-            );
-            if let Some(home) = dirs::home_dir() {
-                let _ = watcher.watch(&home.join("Applications"), RecursiveMode::NonRecursive);
-
-                // 文件扫描目录
-                for dir in FILE_SCAN_DIRS {
-                    let path = home.join(dir);
-                    if path.exists() {
-                        let _ = watcher.watch(&path, RecursiveMode::NonRecursive);
-                    }
-                }
-            }
-
-            loop {
-                if rx.recv().await.is_some() {
-                    sleep(Duration::from_secs(5)).await;
-                    while rx.try_recv().is_ok() {}
-
-                    log::info!("Detected file system changes, rebuilding caches...");
-
-                    let (new_apps, new_files) = tokio::join!(init_app_cache(), init_file_cache());
-
-                    {
-                        let mut cache = APP_CACHE.write().await;
-                        *cache = Some(new_apps);
-                    }
-                    {
-                        let mut cache = FILE_CACHE.write().await;
-                        *cache = Some(new_files);
-                    }
-
-                    if let Some(app) = APP_HANDLE.get() {
-                        let _ = app.emit("app-cache-updated", ());
-                    }
-                }
-            }
+    let (tx, mut rx) = tokio::sync::mpsc::channel(50);
+    let watcher_res = recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if res.is_ok() {
+            let _ = tx.blocking_send(());
         }
     });
+
+    let Ok(mut watcher) = watcher_res else {
+        return;
+    };
+    let _ = watcher.watch(Path::new("/Applications"), RecursiveMode::NonRecursive);
+    let _ = watcher.watch(
+        Path::new("/System/Applications"),
+        RecursiveMode::NonRecursive,
+    );
+    if let Some(home) = dirs::home_dir() {
+        let _ = watcher.watch(&home.join("Applications"), RecursiveMode::NonRecursive);
+    }
+
+    loop {
+        if rx.recv().await.is_some() {
+            sleep(Duration::from_secs(5)).await;
+            while rx.try_recv().is_ok() {}
+
+            log::info!("App directory changes detected, rebuilding app cache...");
+            let new_apps = init_app_cache().await;
+            {
+                let mut cache = APP_CACHE.write().await;
+                *cache = Some(new_apps);
+            }
+            if let Some(app) = APP_HANDLE.get() {
+                let _ = app.emit("app-cache-updated", ());
+            }
+        }
+    }
+}
+
+/// 监听文件扫描目录（~/Desktop、~/Documents 等），变更经 5s 防抖后重建文件索引。
+async fn file_dir_watcher() {
+    use notify::{recommended_watcher, RecursiveMode, Watcher};
+    use std::time::Duration;
+    use tokio::time::sleep;
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(200);
+    let watcher_res = recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if res.is_ok() {
+            let _ = tx.blocking_send(());
+        }
+    });
+
+    let Ok(mut watcher) = watcher_res else {
+        return;
+    };
+    if let Some(home) = dirs::home_dir() {
+        for dir in FILE_SCAN_DIRS {
+            let path = home.join(dir);
+            if path.exists() {
+                let _ = watcher.watch(&path, RecursiveMode::NonRecursive);
+            }
+        }
+    }
+
+    loop {
+        if rx.recv().await.is_some() {
+            sleep(Duration::from_secs(5)).await;
+            while rx.try_recv().is_ok() {}
+
+            log::info!("File directory changes detected, rebuilding file cache...");
+            let new_files = init_file_cache().await;
+            {
+                let mut cache = FILE_CACHE.write().await;
+                *cache = Some(new_files);
+            }
+        }
+    }
 }
