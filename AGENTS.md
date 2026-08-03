@@ -271,7 +271,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - **窗口按需创建**：screenshot / snap-panel 窗口从 `tauri.conf.json` 移除静态声明，改在扩展 `setup` 中 `WebviewWindowBuilder` 代码创建（WKWebView 需启动时预加载页面，快捷键/鼠标触发时才能即时响应）
 - **子窗口主题**：独立入口窗口用 `runtime/child-theme.ts::initChildTheme`（无 Pinia 依赖，读 `get_cached_appearance` + 监听 `appearance-changed`），不初始化扩展系统
 - **vendor 分包 + pinyin 延迟加载**：`manualChunks` 拆 vendor(vue) / markdown(marked+dompurify) / pinyin 独立 chunk；pinyin-pro（拼音字典 289KB）改为首次 CJK 查询时 `import()` 异步加载，首屏零开销
-- `ContentView` 用 `KeepAlive`（max=12，LRU 驱逐）缓存已访问扩展，切换走 activate/deactivate 而非重挂载
+- `ContentView` 用 `KeepAlive`（max=8，LRU 驱逐）缓存已访问扩展，切换走 activate/deactivate 而非重挂载
 
 ### LLM 基础设施
 
@@ -295,7 +295,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ```
 src-tauri/src/
-├── lib.rs / main.rs    # 入口（lib.rs setup 内含启动埋点，debug 打印 [boot] 各阶段耗时 + <100ms 判定）
+├── lib.rs / main.rs    # 入口（lib.rs：自定义 tokio 运行时 4 worker + setup 内含启动埋点，debug 打印 [boot] 各阶段耗时 + <100ms 判定）
 ├── extensions.rs       # 自动生成（configure_app! + register_all 生命周期 + generate_handler! + mod 声明）
 ├── http.rs             # HTTP 客户端 + http_get 命令
 ├── runtime/            # 运行时核心（平台无关）
@@ -468,7 +468,7 @@ icon 缓存已消除（实时提取，零磁盘文件）。dev 镜像 `com.litia
 - 环境：`isTauri` 判断环境（常量，非函数），非 Tauri 跳过原生调用
 - UnoCSS Attributify：不确定的工具类语法先用 context7 查 UnoCSS 文档确认，勿靠翻 dist 源码或试错猜语法
 - TypeScript 严格模式：`noUnusedLocals` + `noUnusedParameters`
-- Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`
+- Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`，自定义 tokio 运行时 4 worker（默认按逻辑核心数）
 - Git commit：`<type>(<scope>): <中文描述>`，描述力求最简，不写详情，不主动执行 git 操作；**提交前必须先跑 `bun run precheck` 且全绿**
 - 语言：注释和回复用中文，禁止在任何地方使用 emoji
 - 文档：不用表格，言简意赅，修改代码后必须同步更新 AGENTS.md 或对应 docs/ 文档中相关描述

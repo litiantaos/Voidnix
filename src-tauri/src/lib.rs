@@ -5,6 +5,18 @@ mod runtime;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 自定义 tokio 运行时：4 worker 覆盖启动器峰值异步负载（agent 流式 + translate +
+    // 搜索 + IPC 并发）。CPU 密集任务走 spawn_blocking 独立线程池，不占 worker。
+    // 默认按逻辑核心数（10+）开 worker，对 idle-first 启动器纯属浪费——每 worker
+    // 常驻独立栈 + 任务队列 + 分配 arena，削减可线性降低基线内存。
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .expect("Failed to build tokio runtime");
+    tauri::async_runtime::set(runtime.handle().clone());
+    std::mem::forget(runtime);
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             crate::runtime::window::show_main(app);
