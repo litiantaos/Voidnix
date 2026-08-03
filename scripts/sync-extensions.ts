@@ -9,17 +9,12 @@
 //     前端用裸名 invoke('cmd')。扩展命令必须全局注册（Tauri 2 插件命令需 'plugin:name|cmd'
 //     格式，裸名只路由全局 invoke_handler）。
 //   - 扩展无 plugin 空壳（旧 init() 纯 Builder::new().build()，对运行时零贡献，已消除）。
-//
-// 另含 windowViews 漂移校验：声明 windowViews 槽的扩展，每个 key 必须在
-// tauri.conf.json 的 windows[].label 中存在；以 `-` 或 `*` 结尾的 key 视为动态窗口前缀
-// （如 `pin-` 匹配运行时创建的 `pin-<id>`），跳过精确匹配。
 import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 const ROOT = process.cwd()
 const EXT_DIR = join(ROOT, 'extensions')
 const OUT_FILE = join(ROOT, 'src-tauri', 'src', 'extensions.rs')
-const CONF_FILE = join(ROOT, 'src-tauri', 'tauri.conf.json')
 
 const COMMAND_ATTR = /^#\[\s*tauri::command/
 const FN_NAME = /(?:pub\s+)?(?:async\s+)?fn\s+(\w+)/
@@ -175,13 +170,6 @@ const extCmds = scanExtensionCommands(ids)
 const frameworkCmds = scanFrameworkCommands()
 const content = buildExtensionsRs(ids, frameworkCmds, extCmds)
 
-// windowViews 漂移校验：始终运行（sync 与 --check 模式均校验）
-const wvError = checkWindowViews()
-if (wvError) {
-  console.error(`[sync-extensions] CHECK FAILED: ${wvError}`)
-  process.exit(1)
-}
-
 if (process.argv.includes('--check')) {
   const existing = existsSync(OUT_FILE) ? readFileSync(OUT_FILE, 'utf8') : ''
   if (existing !== content) {
@@ -198,65 +186,4 @@ if (process.argv.includes('--check')) {
   console.log(
     `[sync-extensions] Synced ${ids.length} extensions, ${frameworkCmds.length + extCmds.length} commands (${extCmds.length} extension + ${frameworkCmds.length} framework, auto-discovered)`,
   )
-}
-
-/** 提取对象字面量块（从 `windowViews:` 后的 `{` 起到匹配的 `}`），返回块内文本。 */
-function extractBlock(src: string, key: string): string | null {
-  const idx = src.indexOf(`${key}:`)
-  if (idx === -1) return null
-  let i = idx + key.length
-  while (i < src.length && src[i] !== '{') i++
-  if (src[i] !== '{') return null
-  let depth = 0
-  const start = i + 1
-  for (; i < src.length; i++) {
-    const c = src[i]
-    if (c === '{') depth++
-    else if (c === '}') {
-      depth--
-      if (depth === 0) return src.slice(start, i)
-    }
-  }
-  return null
-}
-
-/** 从 windowViews 块提取所有 key（兼容 bare / 单引号 / 双引号）。 */
-function extractWindowViewKeys(block: string): string[] {
-  const keys: string[] = []
-  const re = /(?:'([^']+)'|"([^"]+)"|([A-Za-z_$][\w$]*))\s*:/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(block)) !== null) {
-    keys.push(m[1] ?? m[2] ?? m[3])
-  }
-  return keys
-}
-
-/** windowViews 漂移校验：返回错误消息（null = 通过）。 */
-function checkWindowViews(): string | null {
-  if (!existsSync(CONF_FILE)) return null // 配置缺失时不阻塞（由其他校验兜底）
-  const conf = JSON.parse(readFileSync(CONF_FILE, 'utf8'))
-  const labels = new Set<string>((conf?.app?.windows ?? []).map((w: { label: string }) => w.label))
-  if (labels.size === 0) return null
-
-  const violations: string[] = []
-  for (const dir of readdirSync(EXT_DIR)) {
-    const indexPath = join(EXT_DIR, dir, 'index.ts')
-    if (!existsSync(indexPath)) continue
-    const src = readFileSync(indexPath, 'utf8')
-    const block = extractBlock(src, 'windowViews')
-    if (!block) continue
-    for (const key of extractWindowViewKeys(block)) {
-      // 以 `-` 或 `*` 结尾 = 动态窗口前缀（如 `pin-`/`pin-*`），跳过精确匹配
-      // DYNAMIC_WINDOW_LABELS = 运行时按需创建的窗口（非 tauri.conf.json 静态声明）
-      const DYNAMIC_WINDOW_LABELS = new Set(['screenshot', 'snap-panel'])
-      if (key.endsWith('-') || key.endsWith('*') || DYNAMIC_WINDOW_LABELS.has(key)) continue
-      if (!labels.has(key)) {
-        violations.push(
-          `extensions/${dir}/index.ts windowViews key '${key}' 不在 tauri.conf.json windows[].label 中`,
-        )
-      }
-    }
-  }
-  if (violations.length === 0) return null
-  return `windowViews 漂移：\n  ${violations.join('\n  ')}`
 }

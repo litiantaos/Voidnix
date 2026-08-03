@@ -110,8 +110,6 @@ export interface Extension {
   subviews?: Record<string, () => Component>
   /** 子视图显示名（id → 中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」。 */
   subviewTitle?: Record<string, string>
-  /** 独立窗口视图（如 screenshot 的标注/pin、window-manager 的 snap-panel）。 */
-  windowViews?: Record<string, () => Component>
   globalShortcuts?: ShortcutBinding[]
   /** 搜索框占位提示（激活扩展时显示）。 */
   placeholder?: string

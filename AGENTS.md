@@ -27,7 +27,7 @@ bun run lint:check           # 只读校验（CI 用，不写）
 bun run typecheck            # vue-tsc 严格类型检查
 bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions.rs）
 bun run check:drift          # 漂移校验聚合（extensions + commands + agent-bounds + wm-bounds + extension-orders）
-bun run check:extensions     # CI 校验（extensions.rs 同步 + windowViews 漂移；动态窗口 screenshot/snap-panel 放行）
+bun run check:extensions     # CI 校验（extensions.rs 同步）
 bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
 bun run check:agent-bounds   # CI 校验（agent 资源上限 policy.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:wm-bounds      # CI 校验（window-manager mod.rs ↔ config.ts BOUNDS 双向一致）
@@ -120,7 +120,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### 扩展接口
 
-`Extension`（`src/runtime/types.ts`）= `meta` + **14 槽**（11 能力槽 + 3 行为槽，按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
+`Extension`（`src/runtime/types.ts`）= `meta` + **13 槽**（10 能力槽 + 3 行为槽，按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
 
 ### 搜索引擎
 
@@ -264,13 +264,14 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - **`ResultActionPanel`**（`components/layout/`）：全局模式对 application/file/folder 结果的合并面板（上方详情 meta 行 + 下方动作 item 行——在 Finder 中显示 / 复制路径）；`Cmd+Enter` 与结果项右键双触发，经 `useActionPanel` 统一的 `toggleOpen`（已开则关），打开即默认选中首项可连续 Enter 触发
 - **Markdown 渲染**：`utils/markdown.ts`（`renderMarkdown`：marked + 自定义 renderer + DOMPurify）+ 全局 `styles/markdown.css`（`.markdown-body` 容器类），agent / ai-providers 等扩展共用
 
-### 扩展视图加载（切换性能）
+### 扩展视图加载（切换性能 + 内存）
 
 - 扩展 View（mainView/subviews/searchBarAccessory）**静态 import** 进主 bundle（用户高频、固定集合，首次进入零卡顿）
-- 仅**独立窗口**（screenshot 标注 host/pin、window-manager snap 面板，`windowViews`）保留 `defineAsyncComponent` 真按需——不截图/不分屏不加载，省稳态占用（gzip ~20KB）
+- **独立窗口多入口**：screenshot / snap-panel / pin 窗口各自有独立 HTML 入口（`screenshot.html` / `snap-panel.html` / `pin.html`）+ 轻量 TS 入口（`src/entries/`），只加载自身组件 + vendor + 主题 CSS，**不加载**扩展注册表 / pinyin / markdown / 搜索引擎。每个 WebContent 进程 JS 从 ~700K 降至 ~86-142K
 - **窗口按需创建**：screenshot / snap-panel 窗口从 `tauri.conf.json` 移除静态声明，改在扩展 `setup` 中 `WebviewWindowBuilder` 代码创建（WKWebView 需启动时预加载页面，快捷键/鼠标触发时才能即时响应）
-- **vendor 分包 + pinyin 延迟加载**：`manualChunks` 拆 vendor(vue+pinia) / markdown(marked+dompurify) / pinyin 独立 chunk；pinyin-pro（拼音字典 289KB）改为首次 CJK 查询时 `import()` 异步加载，首屏零开销
-- `ContentView` 用 `KeepAlive`（max 覆盖全部视图 key）缓存已访问扩展，切换走 activate/deactivate 而非重挂载
+- **子窗口主题**：独立入口窗口用 `runtime/child-theme.ts::initChildTheme`（无 Pinia 依赖，读 `get_cached_appearance` + 监听 `appearance-changed`），不初始化扩展系统
+- **vendor 分包 + pinyin 延迟加载**：`manualChunks` 拆 vendor(vue) / markdown(marked+dompurify) / pinyin 独立 chunk；pinyin-pro（拼音字典 289KB）改为首次 CJK 查询时 `import()` 异步加载，首屏零开销
+- `ContentView` 用 `KeepAlive`（max=12，LRU 驱逐）缓存已访问扩展，切换走 activate/deactivate 而非重挂载
 
 ### LLM 基础设施
 
@@ -328,15 +329,17 @@ src-tauri/src/
 ```
 src/
 ├── main.ts             # 入口（import.meta.glob eager 扫描扩展 + 并行 setup）
+├── entries/            # 子窗口独立入口（screenshot/snap-panel/pin，只加载自身组件，不经扩展系统）
 ├── commands.ts         # 命令名常量（CMD.xxx，禁止裸 invoke）
 ├── runtime/            # 前端运行时
-│   ├── types.ts        # Extension / SearchProvider / SearchResult（14 槽：11 能力 + 3 行为）
+│   ├── types.ts        # Extension / SearchProvider / SearchResult（13 槽：10 能力 + 3 行为）
 │   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS / GROUP_ORDER / GROUP_TITLES / KEYWORD_EXTENSION_BOOST + LIMITS）
 │   ├── storage.ts      # defineConfig（reactive + watch 自动持久化 + race 保护 + 类型守卫 + 退出 flush）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
 │   ├── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
 │   ├── ai-providers.ts        # 统一 AI 提供商/Key 中枢（agent/translate 消费）
-│   └── theme.ts               # 主题运行时（appearance 持久化 + 系统外观跟随 + 原生窗口同步）
+│   ├── theme.ts               # 主题运行时（appearance 持久化 + 系统外观跟随 + 原生窗口同步）
+│   └── child-theme.ts         # 子窗口主题（无 Pinia 依赖，读缓存 + 监听事件）
 ├── components/
 │   ├── ui/             # 原子组件（只用这些，禁止手写底层标签）
 │   └── layout/         # MainView / ContentView / ResultItem（kind 分支内聚）/ ResultIcon / ResultActionPanel

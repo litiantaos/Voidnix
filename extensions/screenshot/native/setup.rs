@@ -133,7 +133,10 @@ pub fn register_shortcut_hook() {
             {
                 return true;
             }
-            // 快捷键当下就 activate：给 capture/enter 留出激活窗口，减轻「冷启动首击被吞」
+            // 快捷键当下就 activate：给 capture/enter 留出激活窗口，减轻「冷启动首击被吞」。
+            // 但必须先捕获原前台 PID——activate 后 Voidnix 成为 frontmost，
+            // current_frontmost_pid 返回 None，exit 时无法还原焦点。
+            let prev_pid = crate::platform::focus::current_frontmost_pid().unwrap_or(0);
             let app_act = app.clone();
             let _ = app.run_on_main_thread(move || {
                 crate::platform::focus::activate_app();
@@ -150,7 +153,11 @@ pub fn register_shortcut_hook() {
                         let app_for_enter = app_clone.clone();
                         if app_clone
                             .run_on_main_thread(move || {
-                                super::session::enter_screenshot_mode_sync(&app_for_enter, data);
+                                super::session::enter_screenshot_mode_sync(
+                                    &app_for_enter,
+                                    data,
+                                    prev_pid,
+                                );
                             })
                             .is_err()
                         {

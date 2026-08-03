@@ -25,9 +25,9 @@
         flex="~ col"
         :style="contentStyle"
       >
-        <!-- max 覆盖全部视图 key（9 扩展 mainView + screenshot{ocr} + 各扩展{config} 子视图），
-             驱逐会导致扩展 View 重挂载（重渲染列表/消息）→ 切换卡顿，故留充裕余量 -->
-        <KeepAlive v-if="resolvedView" :max="24">
+        <!-- max=12：覆盖常用扩展视图（9 mainView + 常用子视图），超出按 LRU 驱逐。
+             低频扩展重挂载一次性 re-render（毫秒级），换取 WebContent 内存削减。 -->
+        <KeepAlive v-if="resolvedView" :max="12">
           <component
             :is="resolvedView"
             :key="`${props.extension?.meta.id ?? 'main'}-${appStore.activeSubview ?? 'view'}`"

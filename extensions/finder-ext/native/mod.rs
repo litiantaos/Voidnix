@@ -275,7 +275,7 @@ fn handle_open_terminal(paths: &[String], target: &str) -> Result<(), String> {
 
     Command::new("open")
         .args(["-b", "com.apple.Terminal", dir.to_string_lossy().as_ref()])
-        .spawn()
+        .status()
         .map_err(|e| format!("打开终端失败: {e}"))?;
     Ok(())
 }

@@ -45,7 +45,7 @@ pub(crate) fn ensure_screenshot_window(app: &AppHandle) -> bool {
     if app.get_webview_window("screenshot").is_some() {
         return true;
     }
-    let url = WebviewUrl::App("index.html".into());
+    let url = WebviewUrl::App("screenshot.html".into());
     let builder = WebviewWindowBuilder::new(app, "screenshot", url)
         .title("")
         .inner_size(800.0, 600.0)

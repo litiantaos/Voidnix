@@ -81,7 +81,7 @@ pub(crate) fn create_snap_panel(app: &tauri::AppHandle) {
     if app.get_webview_window("snap-panel").is_some() {
         return;
     }
-    let url = WebviewUrl::App("index.html".into());
+    let url = WebviewUrl::App("snap-panel.html".into());
     if WebviewWindowBuilder::new(app, "snap-panel", url)
         .title("")
         .inner_size(600.0, 300.0)
