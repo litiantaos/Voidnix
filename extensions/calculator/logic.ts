@@ -3,17 +3,21 @@ interface Token {
   value: string
 }
 
-const ALLOWED_CHARS = /^[0-9+\-*/().%\s]*$/
+const ALLOWED_CHARS = /^[0-9+\-*/().%\s=]*$/
 
 export function evaluateMath(expr: string): string | null {
   try {
     const withExponent = expr.replace(/\^/g, '**')
     if (!ALLOWED_CHARS.test(withExponent)) return null
-    const sanitized = withExponent.trim()
+    // 去除末尾等号（计算器终止符，容忍受输入中态 "1+1="）
+    const sanitized = withExponent.trim().replace(/=+$/, '')
     if (!sanitized) return null
 
     const tokens = tokenize(sanitized)
     if (!tokens) return null
+    // 去除末尾悬空运算符（容忍输入中态 "1+1+"，不影响 "1+" 仍返回 null）
+    while (tokens.length > 0 && tokens[tokens.length - 1].type === 'op') tokens.pop()
+    if (tokens.length === 0) return null
     // 纯数字（含前导负号折叠成的单 num token）不算表达式——需至少一个运算符或括号
     if (!tokens.some((t) => t.type !== 'num')) return null
     const result = parseExpression(tokens)
