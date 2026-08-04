@@ -129,6 +129,27 @@ describe('evaluateMath — edge cases', () => {
     expect(evaluateMath('1+')).toBeNull()
   })
 
+  it('trailing operator tolerated as input-in-progress', () => {
+    expect(evaluateMath('1+1+')).toBe('2')
+    expect(evaluateMath('3*4-')).toBe('12')
+    expect(evaluateMath('10/2/')).toBe('5')
+    expect(evaluateMath('2**3*')).toBe('8')
+    expect(evaluateMath('1+2+3+')).toBe('6')
+  })
+
+  it('trailing equals tolerated as terminator', () => {
+    expect(evaluateMath('1+1=')).toBe('2')
+    expect(evaluateMath('3*4=')).toBe('12')
+    expect(evaluateMath('2**3=')).toBe('8')
+    expect(evaluateMath('10/2==')).toBe('5')
+    expect(evaluateMath('1+1+=')).toBe('2')
+  })
+
+  it('mid equals still rejected', () => {
+    expect(evaluateMath('1+1=2')).toBeNull()
+    expect(evaluateMath('=1+1')).toBeNull()
+  })
+
   it('whitespace ignored', () => {
     expect(evaluateMath('  1  +  2  ')).toBe('3')
     expect(evaluateMath('1 + 2 * 3')).toBe('7')
