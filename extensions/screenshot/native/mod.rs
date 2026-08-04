@@ -121,6 +121,8 @@ impl Extension for ScreenshotExtension {
                     let _ = tx.send(());
                 });
                 let _ = rx.recv_timeout(std::time::Duration::from_secs(10));
+                // 回灌上次选区（任意线程：ext_data_dir / 文件读均线程安全）
+                session::load_last_selection(&app);
             });
             setup::register_shortcut_hook();
         }

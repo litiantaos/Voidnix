@@ -13,6 +13,7 @@ export interface ScreenshotData {
   mouse_x: number
   mouse_y: number
   windows: WindowRect[]
+  last_selection: Sel | null
 }
 
 export interface Sel {

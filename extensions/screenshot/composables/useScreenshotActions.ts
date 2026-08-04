@@ -18,6 +18,18 @@ export function useScreenshotActions(options: {
     return options.annotateCanvas.value.toDataURL('image/png')
   }
 
+  /// 持久化当前选区为「上次选区」，供下次截图 R 键恢复。fire-and-forget，失败不影响主流程。
+  function persistLastSelection() {
+    const { x, y, w, h } = options.sel.value
+    if (w <= 0 || h <= 0) return
+    void invoke(CMD.saveLastSelection, {
+      selX: x,
+      selY: y,
+      selW: w,
+      selH: h,
+    }).catch(() => {})
+  }
+
   async function doCopy() {
     const ann = await getAnnotationPng()
     await invoke(CMD.copyScreenshotToClipboard, {
@@ -28,6 +40,7 @@ export function useScreenshotActions(options: {
       scale: options.dpr.value,
       annotationPng: ann,
     })
+    persistLastSelection()
     doCancel()
   }
 
@@ -47,6 +60,7 @@ export function useScreenshotActions(options: {
       annotationPng: ann,
       path,
     })
+    persistLastSelection()
     doCancel()
   }
 
@@ -84,11 +98,13 @@ export function useScreenshotActions(options: {
         previewPng,
       },
     })
+    persistLastSelection()
     doCancel(true)
   }
 
   async function doPin() {
     const ann = await getAnnotationPng()
+    persistLastSelection()
     // 钉图窗口创建走主线程 webview build，耗时约 100ms；
     // 这里不 await，立刻 doCancel(true) 让截屏窗口先开始 fade out，
     // 钉图窗口在 fade 期间出现，整体观感更连贯。
@@ -113,6 +129,7 @@ export function useScreenshotActions(options: {
       return
     }
     await invoke(CMD.copyScrollResultToClipboard, { resultDataUrl: dataUrl })
+    persistLastSelection()
     doCancel()
   }
 
@@ -128,6 +145,7 @@ export function useScreenshotActions(options: {
       ? savePath.replace('~', await invoke<string>(CMD.getHomeDir).catch(() => ''))
       : savePath
     await invoke(CMD.saveScrollResult, { resultDataUrl: dataUrl, path })
+    persistLastSelection()
     doCancel()
   }
 

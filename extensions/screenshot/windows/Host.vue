@@ -12,22 +12,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import ScreenshotOverlay from './Operation.vue'
-
-interface WindowRect {
-  x: number
-  y: number
-  w: number
-  h: number
-  owner: string
-}
-interface ScreenshotData {
-  width: number
-  height: number
-  scale: number
-  mouse_x: number
-  mouse_y: number
-  windows: WindowRect[]
-}
+import type { ScreenshotData } from '../composables/useTypes'
 
 const showScreenshot = ref(false)
 const screenshotData = ref<ScreenshotData | null>(null)

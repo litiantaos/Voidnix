@@ -1,12 +1,42 @@
 use crate::runtime::lock_or_recover;
+use crate::runtime::storage::ext_data_dir;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
 use super::ffi::{
     get_cg_image, picker_jpeg_path, store_cg_image, voidnix_screenshot_claim_key,
     voidnix_screenshot_clear_background, voidnix_screenshot_get_mouse_location,
-    voidnix_screenshot_prewarm, voidnix_screenshot_set_background, ScreenshotData, WindowRect,
+    voidnix_screenshot_prewarm, voidnix_screenshot_set_background, LastSelection, ScreenshotData,
+    WindowRect,
 };
+
+/// 上次确认选区（屏内本地坐标）。启动时从磁盘回灌，动作执行时更新。
+static LAST_SELECTION: Mutex<Option<LastSelection>> = Mutex::new(None);
+
+fn last_selection_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    ext_data_dir(app, "screenshot")
+        .ok()
+        .map(|d| d.join("last-selection.json"))
+}
+
+/// 启动时从磁盘回灌上次选区（失败静默：首次使用无文件）。
+pub fn load_last_selection(app: &tauri::AppHandle) {
+    let Some(path) = last_selection_path(app) else {
+        return;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    if let Ok(sel) = serde_json::from_str::<LastSelection>(&content) {
+        if sel.w > 0.0 && sel.h > 0.0 {
+            *lock_or_recover(&LAST_SELECTION) = Some(sel);
+        }
+    }
+}
+
+fn current_last_selection() -> Option<LastSelection> {
+    *lock_or_recover(&LAST_SELECTION)
+}
 
 /// 当前截屏会话的目标显示器（Quartz 全局原点 + 逻辑尺寸）。
 /// 前端选区始终为屏内本地坐标；pin / scroll 等出口在 native 侧加 origin。
@@ -601,6 +631,7 @@ pub fn capture_screen() -> Result<ScreenshotData, String> {
             mouse_x: 0.0,
             mouse_y: 0.0,
             windows,
+            last_selection: current_last_selection(),
         })
     }
     #[cfg(not(target_os = "macos"))]
@@ -637,6 +668,33 @@ pub fn read_picker_image() -> String {
         }
         Err(_) => String::new(),
     }
+}
+
+/// 持久化上次确认选区（屏内本地坐标），供下次截图 R 键恢复。
+#[tauri::command]
+pub fn save_last_selection(
+    app: tauri::AppHandle,
+    sel_x: f64,
+    sel_y: f64,
+    sel_w: f64,
+    sel_h: f64,
+) -> Result<(), String> {
+    if sel_w <= 0.0 || sel_h <= 0.0 {
+        return Err("选区尺寸无效".into());
+    }
+    let sel = LastSelection {
+        x: sel_x,
+        y: sel_y,
+        w: sel_w,
+        h: sel_h,
+    };
+    *lock_or_recover(&LAST_SELECTION) = Some(sel);
+    if let Some(path) = last_selection_path(&app) {
+        if let Ok(json) = serde_json::to_string(&sel) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+    Ok(())
 }
 
 /// 进入截图模式（仅 Rust 内部：须在主线程调用；不暴露 IPC）。
