@@ -86,17 +86,17 @@ e2e（`bun run test:e2e`，需起 Vite dev server + 浏览器）不在本地门�
 
 ## Prod 资源监控（长期采样）
 
-LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 RSS/CPU/线程/数据目录，用于长期跟踪内存与占用趋势、定位泄漏。**仅监控 prod（release）进程**，dev/debug 不采样。
+LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 RSS/CPU/线程/数据目录，用于长期跟踪内存与占用趋势、定位泄漏；主进程瞬时 CPU 超阈值时自动抓调用栈快照，定位高占用根因。**仅监控 prod（release）进程**，dev/debug 不采样。
 
 **三个脚本**（`scripts/`）：
 
-- `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时单次 `ps` 采主进程 + 一次 `ps -A` 全表扫描识别扩展子进程（按可执行路径 `comm` 匹配 `com.litiantao.voidnix/extensions/<id>/`，按扩展分组；不依赖 PPID 链——root 子进程如 mihomo 已 reparent 到 launchd；用 `comm` 而非 `command`，从根上排除 grep/osascript 等仅在参数里引用该路径的进程，也避免采样器自身 fork 的 shell 被误匹配）。日志自动保留 30 天。
+- `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时单次 `ps` 采主进程 + 一次 `ps -A` 全表扫描识别扩展子进程（按可执行路径 `comm` 匹配 `com.litiantao.voidnix/extensions/<id>/`，按扩展分组；不依赖 PPID 链——root 子进程如 mihomo 已 reparent 到 launchd；用 `comm` 而非 `command`，从根上排除 grep/osascript 等仅在参数里引用该路径的进程，也避免采样器自身 fork 的 shell 被误匹配）。主进程 CPU >80% 时用 `sample <pid> 2 -mayDie -file` 抓 2 秒调用栈快照（5 分钟冷却防刷屏），快照存 `stacks/cpu-<时间戳>.txt`、主日志追加 `# [stack]` 关联行。日志与快照自动保留 30 天。
 - `voidnix-monitor-install.sh install|uninstall` — 安装/卸载 LaunchAgent（`com.litiantao.voidnix.monitor`，登录后自动生效）
 - `voidnix-analyze.sh [天数]` — 分析器：按天聚合主进程 RSS 区间/漂移/CPU 峰值/线程数/数据目录（漂移 >20MB 自动告警），并按扩展聚合子进程采样数/RSS 区间/CPU 峰值
 
-**日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`，`@ ext/bin rss cpu vsz` 子进程行紧随主进程行（`time rss cpu threads vsz data`），无子进程则无 `@` 行
+**日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`，`@ ext/bin rss cpu vsz` 子进程行紧随主进程行（`time rss cpu threads vsz data`），无子进程则无 `@` 行；抓栈触发时追加 `# [stack] time cpu= -> stacks/cpu-时间戳.txt`（注释行，analyze 跳过），快照存 `~/Library/Logs/Voidnix/stacks/`
 
-**状态**：LaunchAgent 已安装运行，主进程已有 2 天数据；子进程采样维度已上线。曾暴露 proxy/mihomo CPU 持续 100% 问题——根因为 gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）。执行 `bash scripts/voidnix-analyze.sh` 分析趋势。
+**状态**：LaunchAgent 已安装运行，主进程已有 5 天数据；子进程采样维度已上线，CPU 阈值抓栈已上线。曾暴露 proxy/mihomo CPU 持续 100% 问题——根因为 gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）。执行 `bash scripts/voidnix-analyze.sh` 分析趋势。
 
 ## 开发扩展
 
