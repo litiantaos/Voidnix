@@ -69,3 +69,27 @@ ps -A -o rss=,%cpu=,vsz=,comm= 2>/dev/null | awk '
     if (bin !~ /^[A-Za-z0-9._ -]+$/) next
     printf "@ %s/%s  %.1f  %s  %.1f\n", ext, bin, $1/1024, $2, $3/1048576
   }' >> "$LOG"
+
+# ── CPU 阈值触发抓栈（外部 sample，零侵入主进程代码）──
+# 主进程瞬时 CPU 超阈值时抓调用栈，定位高占用根因；
+# 冷却窗口防连续尖峰刷屏；快照独立存 stacks/，主日志仅追加 # [stack] 关联行（被 analyze 跳过）
+CPU_THRESHOLD=80         # CPU% 触发阈值
+STACK_COOLDOWN=300       # 冷却秒数（同一尖峰窗口内只抓一次）
+STACK_DIR="$LOG_DIR/stacks"
+STACK_STATE="$LOG_DIR/.cpu-stack-last"
+if awk -v c="$CPU" -v t="$CPU_THRESHOLD" 'BEGIN{exit !(c+0 >= t)}'; then
+  NOW=$(date +%s)
+  LAST=$(cat "$STACK_STATE" 2>/dev/null)
+  case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
+  if [ $((NOW - LAST)) -ge "$STACK_COOLDOWN" ]; then
+    mkdir -p "$STACK_DIR"
+    STAMP=$(date '+%Y%m%d-%H%M%S')
+    # sample -file 指定输出文件（避免 sample 默认额外往 /tmp 写 .sample.txt）；-mayDie 允许进程期间退出
+    if sample "$PID" 2 -mayDie -file "$STACK_DIR/cpu-$STAMP.txt" >/dev/null 2>&1; then
+      printf '%s' "$NOW" > "$STACK_STATE"
+      printf '# [stack] %s cpu=%s -> stacks/cpu-%s.txt\n' "$(date '+%H:%M:%S')" "$CPU" "$STAMP" >> "$LOG"
+    fi
+    # 清理 30 天前抓栈快照（后台不阻塞）
+    find "$STACK_DIR" -name "cpu-*.txt" -mtime +30 -delete 2>/dev/null &
+  fi
+fi
