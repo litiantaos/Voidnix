@@ -17,6 +17,8 @@ export function useOverlayEvents(options: {
   findWindowAt: (cx: number, cy: number) => WindowRect | null
   applySelResize: (cx: number, cy: number) => void
   isInsideSel: (cx: number, cy: number) => boolean
+  /// 上次确认选区（屏内本地坐标），R 键恢复用；null 表示无历史
+  lastSelection: Sel | null
 
   // 标注相关
   phase: Ref<Phase>
@@ -535,6 +537,16 @@ export function useOverlayEvents(options: {
   }
 
   function onKeyDown(e: KeyboardEvent) {
+    // 选区确认：写入 sel、切 annotate 阶段、重置交互状态。F 全屏 / R 恢复共用。
+    const commitSelection = (sel: { x: number; y: number; w: number; h: number }) => {
+      options.sel.value = sel
+      options.phase.value = 'annotate'
+      options.hoverWindow.value = null
+      options.isDragging.value = false
+      options.pendingDrag.value = false
+      nextTick(() => options.rootEl.value?.focus())
+    }
+
     if (e.key === 'Escape') {
       if (options.textInput.value.visible) {
         options.cancelText()
@@ -585,12 +597,20 @@ export function useOverlayEvents(options: {
       options.redraw()
     }
     if (e.key === 'f' || e.key === 'F') {
-      options.sel.value = { x: 0, y: 0, w: options.screenW.value, h: options.screenH.value }
-      options.phase.value = 'annotate'
-      options.hoverWindow.value = null
-      options.isDragging.value = false
-      options.pendingDrag.value = false
-      nextTick(() => options.rootEl.value?.focus())
+      commitSelection({ x: 0, y: 0, w: options.screenW.value, h: options.screenH.value })
+    }
+    if (
+      (e.key === 'r' || e.key === 'R') &&
+      options.phase.value === 'select' &&
+      options.lastSelection
+    ) {
+      // 恢复上次选区：clamp 到当前屏尺寸（跨屏/分辨率变化时裁剪到屏内）
+      const ls = options.lastSelection
+      const x = Math.max(0, Math.min(ls.x, options.screenW.value))
+      const y = Math.max(0, Math.min(ls.y, options.screenH.value))
+      const w = Math.min(ls.w, options.screenW.value - x)
+      const h = Math.min(ls.h, options.screenH.value - y)
+      if (w > 0 && h > 0) commitSelection({ x, y, w, h })
     }
     if (
       (e.key === 'c' || e.key === 'C') &&

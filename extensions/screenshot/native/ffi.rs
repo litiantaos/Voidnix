@@ -25,6 +25,15 @@ pub struct OcrResult {
     pub qr: Vec<String>,
 }
 
+/// 上次确认的选区（屏内本地坐标，与前端 Sel 同语义）。跨会话持久化，供 R 键恢复。
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct LastSelection {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ScreenshotData {
     pub width: u32,
@@ -33,6 +42,8 @@ pub struct ScreenshotData {
     pub mouse_x: f64,
     pub mouse_y: f64,
     pub windows: Vec<WindowRect>,
+    /// 会话开始时回灌的上次选区（无则 null）。
+    pub last_selection: Option<LastSelection>,
 }
 
 #[cfg(target_os = "macos")]

@@ -292,11 +292,17 @@ const windows = ref(props.initialScreenshot.windows ?? [])
 const phase = ref<Phase>('select')
 const hoveredHandle = ref<string | null>(null)
 /** 选区阶段底部快捷键提示（与 useOverlayEvents.onKeyDown 对齐） */
-const selectShortcutTips = [
-  { key: 'Esc', label: '取消' },
-  { key: 'F', label: '全屏' },
-  { key: 'C', label: '复制色值' },
-] as const
+const selectShortcutTips = computed(() => {
+  const tips = [
+    { key: 'Esc', label: '取消' },
+    { key: 'F', label: '全屏' },
+    { key: 'C', label: '复制色值' },
+  ]
+  if (props.initialScreenshot.last_selection) {
+    tips.splice(2, 0, { key: 'R', label: '恢复选区' })
+  }
+  return tips
+})
 // 十字线分轴显示：select 阶段双轴；resize 时仅显与拖动边平齐的轴——
 // n/s（水平边）显水平线，e/w（垂直边）显垂直线，角控制点双轴
 const showCrossH = computed(() => {
@@ -409,6 +415,7 @@ const events = useOverlayEvents({
   findWindowAt: selection.findWindowAt,
   applySelResize: selection.applySelResize,
   isInsideSel: selection.isInsideSel,
+  lastSelection: props.initialScreenshot.last_selection,
   phase,
   activeTool: annotation.activeTool,
   annotColor: annotation.annotColor,

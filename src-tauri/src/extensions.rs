@@ -102,6 +102,7 @@ macro_rules! configure_app {
             crate::extensions::screenshot::scroll_capture::set_scroll_toolbar_rect,
             crate::extensions::screenshot::session::exit_screenshot_mode,
             crate::extensions::screenshot::session::read_picker_image,
+            crate::extensions::screenshot::session::save_last_selection,
             crate::extensions::screenshot::session::screenshot_overlay_ready,
             crate::extensions::search::commands::get_app_icons,
             crate::extensions::search::commands::get_path_metadata,

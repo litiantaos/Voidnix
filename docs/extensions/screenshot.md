@@ -8,7 +8,7 @@
 - 标注/选区/工具栏走 Vue（`windows/Operation.vue` + `composables/`）
 - 工具条 / 色板：`acrylic-bar`（与主搜索框同款，soft-surface 材质 + `--shadow-bar`）；贴图悬停条：`mica-bar`
 - 放大镜底图：capture 成功后与 enter **并行** ImageIO 编码 `picker.jpg`（任务独立 Retain CGImage；原子 rename）；前端 `loadPickerImage` 轮询就绪（主屏 Retina 编码更慢，禁止单次读空即放弃）
-- 选区阶段（`phase === 'select'`，尚无工具栏）底部居中轻量快捷键提示：`Esc` 取消 / `F` 全屏 / `C` 复制色值（`mica-panel` + kbd 样式，与 `onKeyDown` 对齐）
+- 选区阶段（`phase === 'select'`，尚无工具栏）底部居中轻量快捷键提示：`Esc` 取消 / `F` 全屏 / `C` 复制色值；有上次选区时追加 `R` 恢复（`mica-panel` + kbd 样式，与 `onKeyDown` 对齐）
 - 提示条与标注工具栏进出场：`Transition` + 浮层范式（进 150ms `ease-out` opacity/translate-y/scale，出 100ms `ease-in` 反向；`appear` 首次挂载亦进场）
 - `native/` 按职责分：session（截图会话）、ocr（Vision 调用）、pin（钉图窗口）、scroll_capture/（滚动长截图：state / encode / stitch / mouse / 命令）、crop（裁剪）、ffi（ObjC++ 桥）、setup（启动钩子）
 
@@ -54,7 +54,7 @@
 
 ## 数据存储
 
-无持久化。临时文件落 `$TMPDIR/voidnix*`（picker.jpg 预览、ocr/clip/pin/scroll 中间 PNG、voidnix-icon- 图标缓存），由 `runtime::storage::cleanup_all_voidnix_temps()` 在 `lib.rs` setup 启动期统一清理（覆盖 `voidnix_*` / `voidnix-icon-*` / `voidnix/picker.jpg` 三个前缀族）。`save_png_safely()` 提供 create_dir_all + path_guard + write 统一接口，供 save_screenshot / save_scroll_result 共用。配置通过 `extensions/screenshot/config.ts`（defineConfig 自管 `savePath`）。
+`last-selection.json`（屏内本地坐标，上次确认选区）：动作执行（copy/save/pin/ocr/scroll）时经 `save_last_selection` 命令落盘到 ext_data_dir，启动时回灌内存，供下次截图 `R` 键恢复（跨屏/分辨率变化时 clamp 到当前屏）。其余临时文件落 `$TMPDIR/voidnix*`（picker.jpg 预览、ocr/clip/pin/scroll 中间 PNG、voidnix-icon- 图标缓存），由 `runtime::storage::cleanup_all_voidnix_temps()` 在 `lib.rs` setup 启动期统一清理（覆盖 `voidnix_*` / `voidnix-icon-*` / `voidnix/picker.jpg` 三个前缀族）。`save_png_safely()` 提供 create_dir_all + path_guard + write 统一接口，供 save_screenshot / save_scroll_result 共用。配置通过 `extensions/screenshot/config.ts`（defineConfig 自管 `savePath`）。
 
 ## 滚动截屏拼接算法
 
