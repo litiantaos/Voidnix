@@ -21,11 +21,13 @@ use tokio::task::JoinSet;
 use self::core::RunParams;
 use self::lifecycle::{
     controller_creds_opt, controller_endpoint, ensure_monitor, reload_config_yaml,
-    reload_if_running, root_mihomo_running, start_core, stop_core, ProxyState,
+    reload_running_config, root_mihomo_running, start_core, stop_core, ProxyState,
 };
 use self::stream::{LogFrame, StreamRegistry, TrafficFrame};
 
 /// 启用/停用代理（统一 TUN 模式：root mihomo 常驻 + 热重载 active/idle）。
+/// 参数聚合前端 config 全部运行字段（端口/密钥/模式/激活订阅），Tauri 命令边界天然多参。
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn set_proxy_enabled(
     app: AppHandle,
@@ -35,6 +37,7 @@ pub async fn set_proxy_enabled(
     controller_port: u16,
     secret: String,
     mode: String,
+    active_sub_id: String,
 ) -> Result<bool, String> {
     if enabled {
         let params = RunParams {
@@ -42,6 +45,7 @@ pub async fn set_proxy_enabled(
             controller_port,
             secret,
             mode,
+            active_sub_id,
             tun: true, // 统一 TUN 模式：active config 恒含 tun 段
         };
         start_core(&app, &state, params).await?;
@@ -114,7 +118,7 @@ pub async fn proxy_update_subscription(
 ) -> Result<usize, String> {
     let (count, text) = subscription::fetch(&url).await?;
     subscription::save(&app, &id, &text)?;
-    reload_if_running(&app, &state).await?;
+    reload_running_config(&app, &state).await?;
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
         menu::refresh_proxy_menu(&app2).await;
@@ -123,14 +127,43 @@ pub async fn proxy_update_subscription(
 }
 
 /// 删除订阅持久化文件；核心运行中则热重载。
+/// `new_active_sub_id`：删除后新的激活订阅 id（删的若非激活则与当前一致），
+/// 在热重载前写入 run_params，使 build_run_config 用新激活订阅重建 config。
 #[tauri::command]
 pub async fn proxy_remove_subscription(
     app: AppHandle,
     state: State<'_, ProxyState>,
     id: String,
+    new_active_sub_id: String,
 ) -> Result<(), String> {
     subscription::remove(&app, &id)?;
-    reload_if_running(&app, &state).await?;
+    if let Ok(mut guard) = state.run_params.lock() {
+        if let Some(p) = guard.as_mut() {
+            p.active_sub_id = new_active_sub_id;
+        }
+    }
+    reload_running_config(&app, &state).await?;
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        menu::refresh_proxy_menu(&app2).await;
+    });
+    Ok(())
+}
+
+/// 切换激活订阅：更新 run_params.active_sub_id + 热重载（核心运行中，含 idle 常驻）。
+/// 仅激活订阅的节点参与合并，切换即重建 mihomo config（节点列表随之变更）。
+#[tauri::command]
+pub async fn proxy_set_active_subscription(
+    app: AppHandle,
+    state: State<'_, ProxyState>,
+    id: String,
+) -> Result<(), String> {
+    if let Ok(mut guard) = state.run_params.lock() {
+        if let Some(p) = guard.as_mut() {
+            p.active_sub_id = id;
+        }
+    }
+    reload_running_config(&app, &state).await?;
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
         menu::refresh_proxy_menu(&app2).await;

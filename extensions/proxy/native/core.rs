@@ -63,6 +63,9 @@ pub struct RunParams {
     pub controller_port: u16,
     pub secret: String,
     pub mode: String,
+    /// 当前激活订阅 id：build_run_config 仅合并 `subs/<id>.yaml`。空 = 无激活订阅。
+    /// 经显式命令传入（非读 config.json）规避前端持久化 300ms 防抖窗口内的竞态。
+    pub active_sub_id: String,
     /// 是否含 tun 段：active config（用户开启）= true，idle config（关闭直通）= false。
     /// 统一 TUN 模式后不再暴露为用户开关，仅作 active/idle 内部标记。
     pub tun: bool,

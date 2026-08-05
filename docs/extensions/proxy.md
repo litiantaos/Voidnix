@@ -26,7 +26,7 @@ View.vue（模板）+ useProxyPanel.ts（状态/动作）
 **UI 结构**：无独立设置子视图，全部控制内联在主界面的三个分组中：
 
 - **代理分组**：含开启/规则模式两项；开启项副标题经 `/traffic` WS 实时显示上下行速率
-- **订阅分组**：导入/更新/删除
+- **订阅分组**：导入/更新/删除；多订阅时仅激活订阅生效（点击有节点的订阅行切换激活，accent 强调当前激活项；空订阅点击进编辑，编辑按钮随时进编辑）。新建订阅拉取成功自动激活
 - **节点分组**：列表/切换/测速；多 selector 分组订阅时节点组首项出现分组切换器
 
 **搜索过滤**：主搜索栏统一过滤当前视图——主界面按名过滤节点，诊断子视图过滤连接/规则/日志（切视图清空查询）。
@@ -184,12 +184,18 @@ root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「
 
 ## 订阅合并（subscription.rs）
 
+### 单激活模型
+
+同一时刻仅一个订阅生效——前端 `config.activeSubscriptionId` 标记激活订阅，`build_run_config` 仅读取 `subs/<active_sub_id>.yaml` 参与合并，未激活订阅的 YAML 仅缓存待激活。节点列表只呈现激活订阅的节点，避免多订阅节点/分组混杂。
+
+激活订阅 id 经显式命令（`set_proxy_enabled` / `proxy_set_active_subscription` / `proxy_remove_subscription`）传入 Rust 的 `RunParams.active_sub_id`，**不读 config.json**——规避前端持久化 300ms 防抖窗口内 Rust 读到旧值的竞态。前端 normalizer watch 保证 `activeSubscriptionId` 始终指向有效 id（失效回退首项）。
+
 ### 合并规则
 
 **`merge_yaml(texts, params)`**（纯函数）：
 
-- 多订阅 **proxies** 按 name 去重拼接
-- **proxy-groups / rules** 取首个非空订阅，否则自动生成（`节点选择` select + `自动选择` url-test + `MATCH,节点选择`）
+- 多文本 **proxies** 按 name 去重拼接（单激活模型下通常仅 1 份，去重作单订阅内重名防御）
+- **proxy-groups / rules** 取首个非空文本，否则自动生成（`节点选择` select + `自动选择` url-test + `MATCH,节点选择`）
 
 订阅自带顶层字段被丢弃（仅取 proxies/groups/rules）。
 
@@ -224,7 +230,7 @@ config 含 **`geox-url`**（geoip/geosite 镜像 URL，国内直连 GitHub 不�
 ### 订阅拉取与热重载
 
 - 订阅拉取走 **`http::client()`**（SSRF 校验 + Clash UA `clash.meta/v1.19.27`，确保机场返回 YAML 而非 Base64）
-- 增删订阅触发 **`reload_if_running`**：重建 `config.yaml` 后 `PUT /configs {path}` 让 mihomo 原生热重载（root 进程常驻，免重启免再提权）
+- 切换激活订阅 / 增删订阅触发 **`reload_running_config`**（按 enabled/idle 自适应重载）：重建 `config.yaml` 后 `PUT /configs {path}` 让 mihomo 原生热重载（root 进程常驻，免重启免再提权）。激活订阅切换即整体替换节点列表（清空乐观选中与测速缓存）
 
 ## mihomo controller 转发（controller.rs）
 
@@ -270,14 +276,14 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 - **打开扩展**（Item，点击打开代理视图）
 - **已连接：节点**（CheckItem 勾选，点击断开 → 图标隐藏，重连走扩展视图）
 
-状态行当前节点名由 **`refresh_proxy_menu`** 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `reload_if_running` 触发刷新。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步视图 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展视图。
+状态行当前节点名由 **`refresh_proxy_menu`** 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `reload_running_config` 触发刷新。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步视图 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展视图。
 
-## 命令（18 个）
+## 命令（19 个）
 
-- **启停**：`set_proxy_enabled` / `is_proxy_enabled`（root mihomo 常驻——首次 restart_root 提权一次，之后开关走热重载 active/idle config 免提权）
+- **启停**：`set_proxy_enabled`（root mihomo 常驻——首次 restart_root 提权一次，之后开关走热重载 active/idle config 免提权；传 `active_sub_id` 指定激活订阅）/ `is_proxy_enabled`
 - **核心下载**：`proxy_core_status` / `proxy_ensure_core`（核心版本查询与运行时按需下载）
 - **版本升级**：`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）
-- **订阅**：`proxy_update_subscription` / `proxy_remove_subscription`（订阅 + 热重载）
+- **订阅**：`proxy_update_subscription`（订阅 + 热重载）/ `proxy_remove_subscription`（删订阅 + 切新激活 + 热重载，传 `new_active_sub_id`）/ `proxy_set_active_subscription`（切激活订阅 + 热重载）
 - **节点与测速**：`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_group_delay_stream`（流式测速：并发对全组每个节点调 `/proxies/{name}/delay`，测完一个即经 Channel 推送，前端增量更新；替代 mihomo 批量端点需等全组结算才一次返回的旧实现）
 - **模式切换**：`proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退；含「未变跳过」守卫 + emit 同步前端）
 - **软重启**：`proxy_reconnect`（免提权软重启：热重载 active config 重建 TUN 栈/连接池，出站异常时一键恢复，规避关闭→开启的 stop_root 提权）
@@ -288,7 +294,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 `~/Library/Application Support/<bundle-id>/extensions/proxy/`：
 
-- **`config.json`** —— 扩展配置（mode/mixedPort/controllerPort/secret/subscriptions）
+- **`config.json`** —— 扩展配置（mode/mixedPort/controllerPort/secret/subscriptions/activeSubscriptionId）
 - **`mihomo`** —— 运行时下载的核心 binary
 - **`mihomo.version`** —— 已下载 binary 版本号（check_update 比对依据；update_core 删除触发重下）
 - **`config.yaml`** —— mihomo 运行配置（active/idle 切换时重写）
