@@ -27,6 +27,9 @@ pub(super) struct CachedApp {
     pub icon_cache: Option<String>,
     pub last_used: Option<String>,
     pub use_count: AtomicU32,
+    /// .app bundle 目录的 mtime，用于图标增量缓存：重建时 mtime 未变则复用旧图标，
+    /// 跳过 NSWorkspace 提取（占图标提取 90%+ 耗时）。
+    pub bundle_mtime: Option<std::time::SystemTime>,
 }
 
 /// 内存文件索引条目：启动时扫描目标子目录构建，search_files 走内存 substring 匹配（~3ms），

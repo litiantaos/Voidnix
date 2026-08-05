@@ -5,8 +5,8 @@
 ## 缓存
 
 - `APP_CACHE` / `FILE_CACHE` 进程内全局 `RwLock`，双检锁懒加载；`prewarm_cache` 启动并发预热两者
-- 应用先返回无图标列表，后台 `spawn_blocking` 提取图标后替换 cache 并 emit `app-cache-updated`
-- `notify` 监听应用目录与文件目录**分离**（两个独立 watcher，各 5s 防抖）：应用目录变更仅重建 app 缓存，文件目录变更仅重建文件索引——避免 ~/Downloads 等频繁变更触发不必要的 app 图标重提取
+- 应用先返回无图标列表，后台 `spawn_blocking` 提取图标后替换 cache 并 emit `app-cache-updated`；重建时按 `.app` bundle mtime 增量复用旧图标（未变则跳过 NSWorkspace 提取）
+- `notify` 监听应用目录与文件目录**分离**（两个独立 watcher，各 5s 防抖 + 60s 最小重建间隔）：应用目录变更仅重建 app 缓存，文件目录变更仅重建文件索引——避免 ~/Downloads 等频繁变更触发不必要的 app 图标重提取。文件 watcher 额外做事件路径预过滤（变更全在 `FILE_IGNORE_DIRS` 内则跳过重建，消除 cargo build / npm install 写入 target/node_modules 的空转）
 - 会话内 `launch_app` 使用次数走 `SEARCH_SESSION.session_use_deltas`（内存 HashMap），重建时合并回 `use_count`
 
 ## 应用扫描

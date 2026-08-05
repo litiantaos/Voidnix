@@ -59,19 +59,6 @@ pub fn cancel_pending_present() {
     *lock_or_recover(&PLACEMENT_VIS) = None;
 }
 
-/// orderFrontRegardless + 浮层 level + 鼠标 hit-test 接管（不 activate NSApp）。
-pub fn bring_to_front(window: &tauri::WebviewWindow) {
-    if let Ok(raw) = window.ns_window() {
-        let raw = raw.cast::<NSWindow>();
-        if let Some(ns_window) = unsafe { raw.as_ref() } {
-            ns_window.setLevel(objc2_app_kit::NSFloatingWindowLevel);
-            ns_window.setAlphaValue(1.0);
-            ns_window.orderFrontRegardless();
-            capture_mouse_events(ns_window);
-        }
-    }
-}
-
 /// 光标所在屏的 visibleFrame（Cocoa）。
 fn cursor_visible_frame() -> Option<NSRect> {
     use objc2_app_kit::{NSEvent, NSScreen};
@@ -161,15 +148,9 @@ pub fn present_on_cursor_screen(window: &tauri::WebviewWindow) {
     ns_window.setAlphaValue(1.0);
     ns_window.orderFrontRegardless();
     apply_frame_no_anim(ns_window, frame);
+    // capture_mouse_events 内部已调 set_full_event_shape_for_nswindow（读 NSWindow frame
+    // 设全窗 hit-test region），上方 apply_frame_no_anim 已同步 frame，无需重复设 event shape。
     capture_mouse_events(ns_window);
-
-    let window_number: objc2_foundation::NSInteger =
-        unsafe { objc2::msg_send![ns_window, windowNumber] };
-    crate::platform::skylight::set_full_event_shape(
-        window_number as i64,
-        frame.size.width,
-        frame.size.height,
-    );
 }
 
 /// 隐藏：resignKey + 去阴影 + alpha=0 + 忽略鼠标。**不 orderOut**。
