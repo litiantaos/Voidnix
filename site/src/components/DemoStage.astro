@@ -1,702 +1,453 @@
 ---
 // 演示动画舞台组件——被 Hero.astro（首页）和 demo.astro（独立预览页）共用
 // 1280×720 固定画布，外层自动缩放到容器宽度
+// 6 个独立 demo 段，统一节奏（快捷键→窗口出现→交互→关闭），可单段循环 / 连续拼接
+//
+// 架构：
+//   demo-utils.ts   常量 + 数学工具（零 DOM 依赖）
+//   demo-scenes.ts  createRenderer($) → { renderFrame, resetStage }
+//   demo-player.ts  createPlayer({ renderer, $, controls }) → 播放循环 + 键盘 + UI 控件
+//   demo-stage.css  全部舞台样式（.demo-stage 作用域）
+//
+// props:
+//   controls（默认 true）：是否渲染下方控制栏。首页传 false 自动连续播放，预览页默认 true
+import './demo/demo-stage.css'
+interface Props {
+  controls?: boolean
+}
+const { controls = true } = Astro.props
 ---
 
-<div class="demo-stage" data-scale="auto">
-  <div class="stage" id="stage">
-    <!-- 桌面舞台（始终在场） -->
-    <div class="fog" aria-hidden="true">
-      <span class="fog-a" id="fogA"></span>
-      <span class="fog-b" id="fogB"></span>
-    </div>
-    <div class="grain" aria-hidden="true"></div>
+<div class="demo-stage" data-scale="auto" data-controls={controls ? '1' : '0'}>
+  <div class="stage-frame" id="stageFrame">
+    <div class="stage" id="stage">
+      <!-- ══ 桌面舞台（始终在场）══ -->
+      <div class="fog" aria-hidden="true">
+        <span class="fog-a" id="fogA"></span>
+        <span class="fog-b" id="fogB"></span>
+      </div>
+      <div class="grain" aria-hidden="true"></div>
 
-    <!-- 菜单栏 -->
-    <div class="menubar" id="menubar">
-      <div class="mb-left">
-        <span class="mb-apple"></span>
-      </div>
-      <div class="mb-right">
-        <span class="mb-icon"><i class="ri-search-line"></i></span>
-        <span class="mb-time">14:32</span>
-      </div>
-    </div>
-
-    <!-- 窗口管理场景：桌面应用窗口 -->
-    <div class="app-window win-vscode" id="winVscode">
-      <div class="aw-bar">
-        <span class="aw-dot r"></span><span class="aw-dot y"></span><span class="aw-dot g"></span>
-        <span class="aw-title">main.ts — Voidnix</span>
-      </div>
-      <div class="aw-content">
-        <div class="aw-side">
-          <span class="aw-file active">main.ts</span>
-          <span class="aw-file">search.ts</span>
-          <span class="aw-file">config.ts</span>
+      <!-- 菜单栏 -->
+      <div class="menubar" id="menubar">
+        <div class="mb-left">
+          <span class="mb-apple"></span>
         </div>
-        <div class="aw-code">
-          <div class="aw-ln w30"></div><div class="aw-ln w60"></div><div class="aw-ln w45"></div>
-          <div class="aw-ln w70"></div><div class="aw-ln w25"></div><div class="aw-ln w55"></div>
-          <div class="aw-ln w50"></div><div class="aw-ln w65"></div><div class="aw-ln w35"></div>
+        <div class="mb-right">
+          <span class="mb-icon"><i class="ri-search-line"></i></span>
+          <span class="mb-time">14:32</span>
         </div>
       </div>
-    </div>
 
-    <div class="app-window win-term" id="winTerm">
-      <div class="aw-bar">
-        <span class="aw-dot r"></span><span class="aw-dot y"></span><span class="aw-dot g"></span>
-        <span class="aw-title">zsh — 80×24</span>
-      </div>
-      <div class="wt-body">
-        <div class="wt-line"><span class="wt-prompt">❯</span> bun run dev</div>
-        <div class="wt-line wt-dim">  ready in 320ms</div>
-        <div class="wt-line wt-dim">  ➜  Local:   localhost:1420</div>
-        <div class="wt-line"><span class="wt-prompt">❯</span><span class="wt-ghost"> git status</span></div>
-      </div>
-    </div>
-
-    <!-- 鼠标光标 -->
-    <div class="cursor" id="cursor"></div>
-
-    <!-- snap 面板 -->
-    <div class="snap-panel" id="snapPanel">
-      <div class="sp-group"><div class="sp-grid cols-2 rows-2"><span class="sp-z"></span><span class="sp-z"></span><span class="sp-z"></span><span class="sp-z"></span></div></div>
-      <div class="sp-group"><div class="sp-grid rows-2"><span class="sp-z"></span><span class="sp-z"></span></div></div>
-      <div class="sp-group"><div class="sp-grid cols-2"><span class="sp-z"></span><span class="sp-z sp-hover"></span></div></div>
-      <div class="sp-group"><div class="sp-nested"><span class="sp-ring"></span><span class="sp-inset"></span></div></div>
-      <div class="sp-group"><div class="sp-grid"><span class="sp-z sp-custom"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7 L2 4 A2 2 0 0 1 4 2 L7 2 M13 2 L16 2 A2 2 0 0 1 18 4 L18 7 M18 13 L18 16 A2 2 0 0 1 16 18 L13 18 M7 18 L4 18 A2 2 0 0 1 2 16 L2 13"/></svg></span></div></div>
-    </div>
-
-    <!-- 访达场景：Finder 窗口 -->
-    <div class="finder-window" id="finderWin">
-      <div class="fw-bar">
-        <span class="aw-dot r"></span><span class="aw-dot y"></span><span class="aw-dot g"></span>
-        <span class="fw-title">extensions</span>
-      </div>
-      <div class="fw-body">
-        <div class="fw-side">
-          <span class="fw-side-item active"><i class="ri-folder-3-line"></i> extensions</span>
-          <span class="fw-side-item"><i class="ri-download-2-line"></i> 下载</span>
-          <span class="fw-side-item"><i class="ri-file-list-3-line"></i> 文稿</span>
+      <!-- ══ 桌面应用窗口（窗口管理 / 截图场景）══ -->
+      <div class="app-window win-vscode" id="winVscode">
+        <div class="aw-bar">
+          <span class="aw-dot r"></span><span class="aw-dot y"></span><span class="aw-dot g"></span>
+          <span class="aw-title">main.ts — Voidnix</span>
         </div>
-        <div class="fw-list">
-          <div class="fw-row sel"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">search</span></div>
-          <div class="fw-row"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">clipboard</span></div>
-          <div class="fw-row"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">agent</span></div>
-          <div class="fw-row"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">screenshot</span></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 访达操作面板 -->
-    <div class="finder-panel" id="finderPanel">
-      <div class="fp-search">
-        <span class="fp-tag"><i class="ri-folder-open-line"></i> 访达工具</span>
-        <span class="fp-kbd">⌥ F</span>
-      </div>
-      <div class="fp-list">
-        <div class="fp-row active">
-          <span class="fp-icon"><i class="ri-file-copy-line"></i></span>
-          <span class="fp-title">拷贝路径</span>
-          <span class="fp-key">↵</span>
-        </div>
-        <div class="fp-row">
-          <span class="fp-icon"><i class="ri-terminal-box-line"></i></span>
-          <span class="fp-title">在终端中打开</span>
-        </div>
-        <div class="fp-row">
-          <span class="fp-icon"><i class="ri-file-add-line"></i></span>
-          <span class="fp-title">新建文件</span>
-        </div>
-        <div class="fp-row">
-          <span class="fp-icon"><i class="ri-eye-off-line"></i></span>
-          <span class="fp-title">切换隐藏文件</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 启动器（搜索 / 剪贴板 / Agent） -->
-    <div class="launcher" id="launcher">
-      <div class="search-bar" id="searchBar">
-        <span class="sb-field">
-          <span class="sb-ext-tag" id="sbExtTag"><i class="sb-ext-icon" id="sbExtIcon"></i><span id="sbExtName"></span></span><span class="sb-text" id="sbText"></span><span class="sb-cursor" id="sbCursor"></span>
-        </span>
-      </div>
-      <div class="content-area">
-        <div class="panel" id="panelSearch">
-          <div class="group-label" id="grpSearchApp">应用</div>
-          <div class="result-row" id="rowVSCode">
-            <span class="r-icon accent"><i class="ri-code-s-slash-line"></i></span>
-            <span class="r-main"><span class="r-title">VS Code</span><span class="r-sub">/Applications</span></span>
-            <span class="r-key">↵</span>
+        <div class="aw-content">
+          <div class="aw-side">
+            <span class="aw-file active">main.ts</span>
+            <span class="aw-file">search.ts</span>
+            <span class="aw-file">config.ts</span>
           </div>
-          <div class="result-row" id="rowXcode">
-            <span class="r-icon"><i class="ri-hammer-line"></i></span>
-            <span class="r-main"><span class="r-title">Xcode</span><span class="r-sub">/Applications</span></span>
-          </div>
-          <div class="group-label" id="grpSearchFile">文件</div>
-          <div class="result-row" id="rowVoidnix">
-            <span class="r-icon folder"><i class="ri-folder-3-line"></i></span>
-            <span class="r-main"><span class="r-title">voidnix</span><span class="r-sub">~/Code/Voidnix</span></span>
-          </div>
-          <div class="result-row" id="rowCodegen">
-            <span class="r-icon file"><i class="ri-file-code-line"></i></span>
-            <span class="r-main"><span class="r-title">codegen.ts</span><span class="r-sub">~/Code/Voidnix/scripts</span></span>
-          </div>
-          <div class="result-row" id="rowConfig">
-            <span class="r-icon file"><i class="ri-file-text-line"></i></span>
-            <span class="r-main"><span class="r-title">config.json</span><span class="r-sub">~/Code/Voidnix/src-tauri</span></span>
+          <div class="aw-code" id="awCode">
+            <div class="aw-code-viewport" id="awCodeViewport">
+              <div class="aw-ln w30"></div><div class="aw-ln w60"></div><div class="aw-ln w45"></div>
+              <div class="aw-ln w70"></div><div class="aw-ln w25"></div><div class="aw-ln w55"></div>
+              <div class="aw-ln w50"></div><div class="aw-ln w65"></div><div class="aw-ln w35"></div>
+              <div class="aw-ln w40"></div><div class="aw-ln w60"></div><div class="aw-ln w50"></div>
+              <div class="aw-ln w30"></div><div class="aw-ln w65"></div><div class="aw-ln w45"></div>
+              <div class="aw-ln w55"></div><div class="aw-ln w35"></div><div class="aw-ln w70"></div>
+              <div class="aw-ln w50"></div><div class="aw-ln w60"></div><div class="aw-ln w40"></div>
+              <div class="aw-ln w30"></div><div class="aw-ln w55"></div><div class="aw-ln w65"></div>
+              <div class="aw-ln w45"></div><div class="aw-ln w70"></div><div class="aw-ln w35"></div>
+              <div class="aw-ln w50"></div><div class="aw-ln w60"></div><div class="aw-ln w25"></div>
+              <div class="aw-ln w40"></div><div class="aw-ln w65"></div><div class="aw-ln w50"></div>
+              <div class="aw-ln w30"></div><div class="aw-ln w55"></div><div class="aw-ln w45"></div>
+              <div class="aw-ln w70"></div><div class="aw-ln w60"></div><div class="aw-ln w35"></div>
+            </div>
           </div>
         </div>
-        <div class="panel" id="panelClipboard">
-          <div class="clip-item" id="clip1"><span class="clip-text">const FPS = 30</span><span class="clip-time">2 分钟前</span></div>
-          <div class="clip-item" id="clip2"><span class="clip-text">git rebase -i HEAD~3</span><span class="clip-time">5 分钟前</span></div>
-          <div class="clip-item" id="clip3"><span class="clip-text">bun run build</span><span class="clip-time">12 分钟前</span></div>
-          <div class="clip-item" id="clip4"><span class="clip-text">https://github.com/litiantaos/Voidnix</span><span class="clip-time">1 小时前</span></div>
-          <div class="clip-item" id="clip5"><span class="clip-text">npm install -D @types/node</span><span class="clip-time">3 小时前</span></div>
+      </div>
+
+      <div class="app-window win-term" id="winTerm">
+        <div class="aw-bar">
+          <span class="aw-dot r"></span><span class="aw-dot y"></span><span class="aw-dot g"></span>
+          <span class="aw-title">zsh — 80×24</span>
         </div>
-        <div class="panel" id="panelAgent">
-          <div class="bubble user" id="agentUser1">列出 extensions 目录下的 ts 文件</div>
-          <div class="bubble bot" id="agentBot">
-            <div class="tool-step" id="agentTool"><i class="ri-terminal-line"></i><span>run_command · find extensions -name "*.ts"</span></div>
-            <div class="tool-out" id="agentResult">23 个 index.ts，含 native 的 16 个</div>
+        <div class="wt-body">
+          <div class="wt-line"><span class="wt-prompt">❯</span> bun run dev</div>
+          <div class="wt-line wt-dim">  ready in 320ms</div>
+          <div class="wt-line wt-dim">  ➜  Local:   localhost:1420</div>
+          <div class="wt-line"><span class="wt-prompt">❯</span><span class="wt-ghost"> git status</span></div>
+        </div>
+      </div>
+
+      <!-- 编辑器窗口（剪贴板粘贴目标） -->
+      <div class="editor-window" id="editorWin">
+        <div class="aw-bar">
+          <span class="aw-dot r"></span><span class="aw-dot y"></span><span class="aw-dot g"></span>
+          <span class="aw-title">notes.txt</span>
+        </div>
+        <div class="ew-body">
+          <div class="ew-line"><span id="ewPasted"></span><span class="ew-cursor" id="ewCursor"></span></div>
+        </div>
+      </div>
+
+      <!-- 鼠标光标（箭头） -->
+      <div class="cursor" id="cursor"></div>
+      <!-- 鼠标光标（十字标，截图选区阶段） -->
+      <div class="cursor-cross" id="cursorCross"></div>
+
+      <!-- snap 面板 -->
+      <div class="snap-panel" id="snapPanel">
+        <div class="sp-group"><div class="sp-grid cols-2 rows-2"><span class="sp-z"></span><span class="sp-z"></span><span class="sp-z"></span><span class="sp-z"></span></div></div>
+        <div class="sp-group"><div class="sp-grid rows-2"><span class="sp-z"></span><span class="sp-z"></span></div></div>
+        <div class="sp-group"><div class="sp-grid cols-2"><span class="sp-z" id="snapTarget"></span><span class="sp-z"></span></div></div>
+        <div class="sp-group"><div class="sp-nested"><span class="sp-ring"></span><span class="sp-inset"></span></div></div>
+        <div class="sp-group"><div class="sp-grid"><span class="sp-z sp-custom"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7 L2 4 A2 2 0 0 1 4 2 L7 2 M13 2 L16 2 A2 2 0 0 1 18 4 L18 7 M18 13 L18 16 A2 2 0 0 1 16 18 L13 18 M7 18 L4 18 A2 2 0 0 1 2 16 L2 13"/></svg></span></div></div>
+      </div>
+
+      <!-- 访达场景：Finder 窗口 -->
+      <div class="finder-window" id="finderWin">
+        <div class="fw-bar">
+          <span class="aw-dot r"></span><span class="aw-dot y"></span><span class="aw-dot g"></span>
+          <span class="fw-title">extensions</span>
+        </div>
+        <div class="fw-body">
+          <div class="fw-side">
+            <span class="fw-side-item active"><i class="ri-folder-3-line"></i> extensions</span>
+            <span class="fw-side-item"><i class="ri-download-2-line"></i> 下载</span>
+            <span class="fw-side-item"><i class="ri-file-list-3-line"></i> 文稿</span>
           </div>
-          <div class="bubble user" id="agentUser2"><i class="ri-arrow-right-s-line"></i> 复制路径</div>
+          <div class="fw-list">
+            <div class="fw-row sel"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">search</span></div>
+            <div class="fw-row"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">clipboard</span></div>
+            <div class="fw-row"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">agent</span></div>
+            <div class="fw-row"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">screenshot</span></div>
+            <div class="fw-row"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">translate</span></div>
+            <div class="fw-row"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">proxy</span></div>
+            <div class="fw-row"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">window-manager</span></div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 截图场景：全屏 overlay -->
-    <div class="shot-overlay" id="shotOverlay">
-      <div class="shot-sel" id="shotSel">
-        <span class="shot-handle tl"></span><span class="shot-handle tr"></span><span class="shot-handle bl"></span><span class="shot-handle br"></span>
-        <span class="shot-size">960 × 480</span>
-        <div class="shot-flash" id="shotFlash"></div>
+      <!-- 访达操作面板（与启动器同尺寸 720×480） -->
+      <div class="finder-panel" id="finderPanel">
+        <div class="launcher-shell">
+          <div class="chrome-fade-demo" aria-hidden="true"></div>
+          <div class="search-bar">
+            <div class="search-bar-surface" aria-hidden="true"></div>
+            <div class="search-bar-content">
+              <div class="ext-tag" style="display:flex">
+                <span class="ext-tag-icon ri-folder-open-line"></span>
+                <span class="ext-tag-name">访达工具</span>
+              </div>
+              <span class="search-field">
+                <span class="search-text" style="color:var(--color-text-muted)">在 访达工具 中搜索</span>
+              </span>
+            </div>
+          </div>
+          <div class="content-area">
+            <div class="panel" style="opacity:1">
+              <div class="result-list">
+                <div class="fp-row active">
+                  <span class="fp-icon"><i class="ri-file-copy-line"></i></span>
+                  <span class="fp-title">拷贝路径</span>
+                  <span class="fp-key">↵</span>
+                </div>
+                <div class="fp-row">
+                  <span class="fp-icon"><i class="ri-terminal-box-line"></i></span>
+                  <span class="fp-title">在终端中打开</span>
+                </div>
+                <div class="fp-row">
+                  <span class="fp-icon"><i class="ri-file-add-line"></i></span>
+                  <span class="fp-title">新建文件</span>
+                </div>
+                <div class="fp-row">
+                  <span class="fp-icon"><i class="ri-eye-off-line"></i></span>
+                  <span class="fp-title">切换隐藏文件</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="shot-toolbar" id="shotToolbar">
-        <span class="shot-tool active"><i class="ri-arrow-right-up-line"></i></span>
-        <span class="shot-tool"><i class="ri-shapes-line"></i></span>
-        <span class="shot-tool"><i class="ri-font-color"></i></span>
-        <span class="shot-tool"><i class="ri-eraser-line"></i></span>
-        <span class="shot-sep"></span>
-        <span class="shot-tool"><i class="ri-qr-code-line"></i></span>
-        <span class="shot-tool"><i class="ri-image-line"></i></span>
-      </div>
-    </div>
 
-    <!-- 快捷键键帽 -->
-    <div class="kbd-pop" id="kbdPop"></div>
-    <!-- 场景字幕 -->
-    <div class="caption" id="caption"></div>
-    <!-- 收尾 -->
-    <div class="outro" id="outro">
-      <div class="wordmark" id="wordmark">Voidnix</div>
-      <div class="key-hint" id="keyHint">⌥ Space</div>
+      <!-- ══ 启动器窗口（复刻真实应用界面）══ -->
+      <div class="launcher" id="launcher">
+        <div class="launcher-shell">
+          <div class="chrome-fade-demo" aria-hidden="true"></div>
+
+          <!-- 搜索栏 -->
+          <div class="search-bar" id="searchBar">
+            <div class="search-bar-surface" aria-hidden="true"></div>
+            <div class="search-bar-content">
+              <div class="ext-tag" id="extTag">
+                <span class="ext-tag-icon" id="extTagIcon"></span>
+                <span class="ext-tag-name" id="extTagName"></span>
+              </div>
+              <span class="search-field">
+                <span class="search-text" id="searchText"></span>
+                <span class="search-cursor" id="searchCursor"></span>
+              </span>
+            </div>
+          </div>
+
+          <!-- 内容区 -->
+          <div class="content-area">
+            <!-- 搜索结果面板 -->
+            <div class="panel" id="panelSearch">
+              <div class="result-list">
+                <div class="group-header" id="grpApp">应用</div>
+                <div class="result-item" id="rowVSCode">
+                  <div class="result-item-inner">
+                    <div class="result-icon icon-app"><i class="ri-code-s-slash-line"></i></div>
+                    <div class="result-text">
+                      <div class="result-title" id="titleVSCode">VS Code</div>
+                      <div class="result-sub">/Applications</div>
+                    </div>
+                    <div class="result-key">↵</div>
+                  </div>
+                </div>
+                <div class="result-item" id="rowXcode">
+                  <div class="result-item-inner">
+                    <div class="result-icon"><i class="ri-hammer-line"></i></div>
+                    <div class="result-text">
+                      <div class="result-title">Xcode</div>
+                      <div class="result-sub">/Applications</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="group-header" id="grpFile">文件</div>
+                <div class="result-item" id="rowVoidnix">
+                  <div class="result-item-inner">
+                    <div class="result-icon icon-folder"><i class="ri-folder-3-line"></i></div>
+                    <div class="result-text">
+                      <div class="result-title">voidnix</div>
+                      <div class="result-sub">~/Code/Voidnix</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="result-item" id="rowCodegen">
+                  <div class="result-item-inner">
+                    <div class="result-icon icon-file"><i class="ri-file-code-line"></i></div>
+                    <div class="result-text">
+                      <div class="result-title">codegen.ts</div>
+                      <div class="result-sub">~/Code/Voidnix/scripts</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="result-item" id="rowConfig">
+                  <div class="result-item-inner">
+                    <div class="result-icon icon-file"><i class="ri-file-text-line"></i></div>
+                    <div class="result-text">
+                      <div class="result-title">config.json</div>
+                      <div class="result-sub">~/Code/Voidnix/src-tauri</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 剪贴板面板 -->
+            <div class="panel" id="panelClipboard">
+              <div class="result-list">
+                <div class="result-item" id="clip1">
+                  <div class="result-item-inner">
+                    <div class="result-icon icon-text"><i class="ri-t-box-line"></i></div>
+                    <div class="result-text">
+                      <div class="result-title">const FPS = 30</div>
+                      <div class="result-sub">VS Code · 14:28</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="result-item" id="clip2">
+                  <div class="result-item-inner">
+                    <div class="result-icon icon-text"><i class="ri-t-box-line"></i></div>
+                    <div class="result-text">
+                      <div class="result-title">git rebase -i HEAD~3</div>
+                      <div class="result-sub">Terminal · 14:25</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="result-item" id="clip3">
+                  <div class="result-item-inner">
+                    <div class="result-icon icon-text"><i class="ri-t-box-line"></i></div>
+                    <div class="result-text">
+                      <div class="result-title">bun run build</div>
+                      <div class="result-sub">Terminal · 14:18</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="result-item" id="clip4">
+                  <div class="result-item-inner">
+                    <div class="result-icon icon-text"><i class="ri-t-box-line"></i></div>
+                    <div class="result-text">
+                      <div class="result-title">https://github.com/litiantaos/Voidnix</div>
+                      <div class="result-sub">Chrome · 13:30</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="result-item" id="clip5">
+                  <div class="result-item-inner">
+                    <div class="result-icon icon-text"><i class="ri-t-box-line"></i></div>
+                    <div class="result-text">
+                      <div class="result-title">npm install -D @types/node</div>
+                      <div class="result-sub">VS Code · 11:45</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- OCR 结果面板 -->
+            <div class="panel" id="panelOcr">
+              <div class="ocr-view">
+                <div class="ocr-preview" id="ocrPreview">
+                  <div class="ocr-preview-skel"></div>
+                </div>
+                <div class="ocr-text-area" id="ocrTextArea"></div>
+                <div class="group-header">操作</div>
+                <div class="result-item" id="ocrAction">
+                  <div class="result-item-inner">
+                    <div class="result-icon"><i class="ri-file-copy-line"></i></div>
+                    <div class="result-text"><div class="result-title">复制</div></div>
+                    <div class="result-key">↵</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Agent 面板 -->
+            <div class="panel" id="panelAgent">
+              <div class="agent-messages" id="agentMessages">
+                <div class="agent-row user" id="agentUserRow">
+                  <div class="agent-bubble user" id="agentUserBubble"></div>
+                </div>
+                <div class="agent-row assistant" id="agentAsstRow">
+                  <div class="agent-card" id="agentCard">
+                    <div class="agent-step" id="agentTool">
+                      <span class="agent-step-head">
+                        <span class="agent-step-icon i-ri-terminal-line"></span>
+                        <span class="agent-step-label">run_command</span>
+                        <span class="agent-step-detail">find extensions -name "*.ts"</span>
+                      </span>
+                      <div class="agent-step-body" id="agentResult">
+                        <span class="agent-step-gutter"><span class="agent-step-rail"></span></span>
+                        <pre class="agent-step-out">23 个 index.ts，含 native 的 16 个</pre>
+                      </div>
+                    </div>
+                    <div class="agent-text" id="agentText"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="agent-footer" id="agentFooter">
+                <div class="agent-input-shell">
+                  <span class="agent-input-text">聊点什么...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 截图场景：全屏 overlay -->
+      <div class="shot-overlay" id="shotOverlay">
+        <div class="shot-sel" id="shotSel">
+          <span class="shot-handle tl"></span><span class="shot-handle tr"></span><span class="shot-handle bl"></span><span class="shot-handle br"></span>
+          <span class="shot-size">960 × 480</span>
+          <div class="shot-flash" id="shotFlash"></div>
+          <!-- 标注方框（演示画矩形标注） -->
+          <div class="shot-rect" id="shotRect"></div>
+        </div>
+        <!-- 放大窗（选区阶段光标跟随） -->
+        <div class="shot-mag" id="shotMag">
+          <canvas class="shot-mag-canvas" id="shotMagCanvas" width="180" height="180"></canvas>
+          <div class="shot-mag-cross-h"></div>
+          <div class="shot-mag-cross-v"></div>
+        </div>
+        <div class="shot-toolbar" id="shotToolbar">
+          <span class="shot-tool" id="shotRectBtn" title="矩形"><i class="ri-checkbox-blank-line"></i></span>
+          <span class="shot-tool" title="直线"><i class="ri-subtract-line"></i></span>
+          <span class="shot-tool" title="箭头"><i class="ri-arrow-right-line"></i></span>
+          <span class="shot-tool" title="文字"><i class="ri-text"></i></span>
+          <span class="shot-tool" title="模糊"><i class="ri-drop-line"></i></span>
+          <span class="shot-sep"></span>
+          <span class="shot-color-dot"></span>
+          <span class="shot-sep"></span>
+          <span class="shot-tool" id="shotOcrBtn" title="识别"><i class="ri-qr-scan-2-line"></i></span>
+          <span class="shot-tool" id="shotScrollBtn" title="滚动截屏"><i class="ri-arrow-down-double-line"></i></span>
+          <span class="shot-tool" title="钉图"><i class="ri-pushpin-line"></i></span>
+          <span class="shot-tool" title="保存"><i class="ri-save-line"></i></span>
+          <span class="shot-sep"></span>
+          <span class="shot-tool" title="关闭"><i class="ri-close-line"></i></span>
+          <span class="shot-tool" title="复制并关闭"><i class="ri-check-line"></i></span>
+        </div>
+        <!-- 滚动截屏：右侧实时预览面板 -->
+        <div class="shot-scroll-preview" id="shotScrollPreview">
+          <div class="ssp-content" id="sspContent">
+            <div class="ssp-line w85"></div><div class="ssp-line w60"></div><div class="ssp-line w75"></div>
+            <div class="ssp-line w50"></div><div class="ssp-line w90"></div><div class="ssp-line w65"></div>
+            <div class="ssp-line w80"></div><div class="ssp-line w55"></div><div class="ssp-line w70"></div>
+            <div class="ssp-line w85"></div><div class="ssp-line w60"></div><div class="ssp-line w75"></div>
+            <div class="ssp-line w50"></div><div class="ssp-line w90"></div><div class="ssp-line w65"></div>
+            <div class="ssp-line w80"></div><div class="ssp-line w55"></div><div class="ssp-line w70"></div>
+            <div class="ssp-line w85"></div><div class="ssp-line w60"></div><div class="ssp-line w75"></div>
+            <div class="ssp-line w50"></div><div class="ssp-line w90"></div><div class="ssp-line w65"></div>
+            <div class="ssp-line w80"></div><div class="ssp-line w55"></div><div class="ssp-line w70"></div>
+            <div class="ssp-line w85"></div><div class="ssp-line w60"></div><div class="ssp-line w75"></div>
+            <div class="ssp-line w50"></div><div class="ssp-line w90"></div><div class="ssp-line w65"></div>
+            <div class="ssp-line w80"></div><div class="ssp-line w55"></div><div class="ssp-line w70"></div>
+            <div class="ssp-line w85"></div><div class="ssp-line w60"></div><div class="ssp-line w75"></div>
+            <div class="ssp-line w50"></div><div class="ssp-line w90"></div><div class="ssp-line w65"></div>
+            <div class="ssp-line w80"></div><div class="ssp-line w55"></div><div class="ssp-line w70"></div>
+            <div class="ssp-line w85"></div><div class="ssp-line w60"></div><div class="ssp-line w75"></div>
+            <div class="ssp-line w50"></div><div class="ssp-line w90"></div><div class="ssp-line w65"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作反馈 toast -->
+      <div class="demo-toast" id="demoToast"><i class="ri-check-line"></i> 已粘贴</div>
+
+      <!-- 快捷键键帽 -->
+      <div class="kbd-pop" id="kbdPop"></div>
+      <!-- 场景字幕 -->
+      <div class="caption" id="caption"></div>
     </div>
   </div>
+
+  <!-- 控制栏（在缩放画布下方，不缩放；首页不渲染） -->
+  {controls && (
+    <div class="demo-controls" id="demoControls">
+    <div class="seg-btns" id="segBtns">
+      <button class="seg-btn active" data-i="0">搜索</button>
+      <button class="seg-btn" data-i="1">剪贴板</button>
+      <button class="seg-btn" data-i="2">Agent</button>
+      <button class="seg-btn" data-i="3">截屏</button>
+      <button class="seg-btn" data-i="4">窗口管理</button>
+      <button class="seg-btn" data-i="5">访达工具</button>
+    </div>
+    <span class="ctrl-sep"></span>
+    <button class="seg-btn all-btn" id="allBtn">连续播放</button>
+    <button class="icon-btn" id="playBtn" aria-label="暂停/播放"><i class="ri-pause-fill"></i></button>
+    <div class="prog-track" id="progTrack"><div class="prog-fill" id="progFill"></div></div>
+  </div>
+  )}
 </div>
 
-<style is:global>
-  /* ══ 所有 demo 样式限定在 .demo-stage 下，不泄漏到首页 ══ */
-
-  .demo-stage { width: 100%; position: relative; overflow: hidden; border-radius: var(--radius-window); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-text-primary) 5%, transparent), 0 24px 60px rgb(var(--shadow-ink) / 0.18), 0 8px 24px rgb(var(--shadow-ink) / 0.1); }
-  .demo-stage .stage {
-    position: relative; width: 1280px; height: 720px; overflow: hidden;
-    background: var(--color-surface);
-    transform-origin: top left; will-change: transform;
-    font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
-  }
-  .demo-stage .stage * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  /* Mica 雾团 */
-  .demo-stage .fog { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; isolation: isolate; clip-path: inset(0); }
-  .demo-stage .fog-a, .demo-stage .fog-b { position: absolute; border-radius: 50%; filter: blur(80px); will-change: transform, opacity; }
-  .demo-stage .fog-a { width: 60%; height: 48%; left: -6%; top: -10%; background: var(--mica-fog-a); }
-  .demo-stage .fog-b { width: 52%; height: 44%; right: -8%; bottom: -12%; background: var(--mica-fog-b); }
-  .demo-stage .grain { position: absolute; inset: 0; z-index: 0; pointer-events: none; background-image: radial-gradient(circle at 50% 0%, rgb(var(--cool) / 0.05), transparent 60%); }
-
-  /* 菜单栏 */
-  .demo-stage .menubar { position: absolute; top: 0; left: 0; right: 0; z-index: 5; height: 28px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; background: var(--menubar-fill); backdrop-filter: blur(20px) saturate(1.35); -webkit-backdrop-filter: blur(20px) saturate(1.35); border-bottom: 1px solid rgb(var(--cool) / 0.08); font-size: 13px; will-change: opacity; }
-  .demo-stage .mb-left, .demo-stage .mb-right { display: flex; align-items: center; gap: 18px; }
-  .demo-stage .mb-apple { width: 14px; height: 14px; background: var(--color-text-primary); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 384 512'%3E%3Cpath d='M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 384 512'%3E%3Cpath d='M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z'/%3E%3C/svg%3E") center / contain no-repeat; }
-  .demo-stage .mb-icon { color: var(--color-text-secondary); font-size: 15px; display: inline-flex; }
-  .demo-stage .mb-time { color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 12.5px; }
-
-  /* 启动器 */
-  .demo-stage .launcher { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 580px; padding: 12px; border-radius: var(--radius-window); background: var(--soft-surface-fill); backdrop-filter: blur(40px) saturate(1.35); -webkit-backdrop-filter: blur(40px) saturate(1.35); border: 1px solid var(--soft-surface-border); box-shadow: 0 0 0 1px rgb(var(--shadow-ink) / 0.04), 0 24px 60px rgb(var(--shadow-ink) / 0.18), 0 8px 24px rgb(var(--shadow-ink) / 0.1); z-index: 10; opacity: 0; will-change: opacity, transform, filter; }
-  .demo-stage .search-bar { display: flex; align-items: center; padding: 14px 16px; border-radius: var(--radius-panel); background: var(--mock-input-fill); border: 1px solid var(--soft-surface-border); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); margin-bottom: 8px; }
-  .demo-stage .sb-ext-tag { display: none; align-items: center; gap: 6px; padding: 3px 9px; border-radius: var(--radius-ctrl); background: color-mix(in srgb, var(--color-accent) 12%, transparent); color: var(--color-accent); font-family: var(--font-mono); font-size: 13px; font-weight: 500; margin-right: 8px; flex-shrink: 0; }
-  .demo-stage .sb-ext-icon { font-size: 14px; }
-  .demo-stage .sb-field { display: inline-flex; align-items: center; gap: 2px; }
-  .demo-stage .sb-text { font-family: var(--font-mono); font-size: 15px; color: var(--color-text-primary); white-space: pre; }
-  .demo-stage .sb-cursor { width: 2px; height: 18px; background: var(--color-accent); border-radius: 1px; opacity: 0; flex-shrink: 0; }
-  .demo-stage .content-area { position: relative; height: 340px; }
-  .demo-stage .panel { position: absolute; inset: 0; opacity: 0; will-change: opacity, transform; }
-  .demo-stage .group-label { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted); padding: 10px 8px 4px; letter-spacing: 0.05em; }
-  .demo-stage .result-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--radius-ctrl); }
-  .demo-stage .r-icon { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; font-size: 16px; background: var(--color-fill-5); color: var(--color-text-secondary); flex-shrink: 0; }
-  .demo-stage .r-icon.accent { background: var(--color-accent); color: #fff; }
-  .demo-stage .r-icon.folder { color: var(--color-folder); }
-  .demo-stage .r-icon.file { color: var(--color-file); }
-  .demo-stage .r-main { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
-  .demo-stage .r-title { font-size: 14px; color: var(--color-text-primary); }
-  .demo-stage .r-sub { font-size: 12px; color: var(--color-text-muted); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .demo-stage .r-key { font-family: var(--font-mono); font-size: 12px; color: var(--color-accent); padding: 2px 7px; border-radius: 4px; background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
-  .demo-stage .clip-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: var(--radius-ctrl); }
-  .demo-stage .clip-text { flex: 1; font-family: var(--font-mono); font-size: 13px; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .demo-stage .clip-time { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted); flex-shrink: 0; }
-  .demo-stage .bubble { padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.6; margin-bottom: 8px; max-width: 88%; }
-  .demo-stage .bubble.user { background: color-mix(in srgb, var(--color-accent) 14%, var(--color-card-solid)); border: 1px solid var(--accent-line-soft); margin-left: auto; color: var(--color-text-primary); display: flex; align-items: center; gap: 6px; }
-  .demo-stage .bubble.bot { background: var(--bubble-bot-fill); border: 1px solid var(--color-divider); }
-  .demo-stage .tool-step { display: flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 12px; color: var(--color-accent); margin-bottom: 6px; }
-  .demo-stage .tool-out { font-family: var(--font-mono); font-size: 12px; color: var(--color-text-secondary); }
-
-  /* 桌面应用窗口 */
-  .demo-stage .app-window { position: absolute; z-index: 3; border-radius: 12px; overflow: hidden; background: var(--soft-card-fill); border: 1px solid var(--soft-surface-border); box-shadow: 0 0 0 1px rgb(var(--shadow-ink) / 0.04), 0 20px 48px rgb(var(--shadow-ink) / 0.16), 0 6px 16px rgb(var(--shadow-ink) / 0.1); opacity: 0; will-change: opacity, transform; }
-  .demo-stage .aw-bar { display: flex; align-items: center; gap: 7px; padding: 8px 12px; background: rgb(var(--cool) / 0.05); border-bottom: 1px solid var(--color-divider); font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); }
-  .demo-stage .aw-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
-  .demo-stage .aw-dot.r { background: var(--color-danger); }
-  .demo-stage .aw-dot.y { background: var(--color-warning); }
-  .demo-stage .aw-dot.g { background: var(--color-success); }
-  .demo-stage .aw-title { margin-left: 10px; font-size: 12px; color: var(--color-text-muted); }
-  .demo-stage .win-vscode { left: 290px; top: 150px; width: 560px; height: 360px; display: flex; flex-direction: column; }
-  .demo-stage .aw-content { display: flex; flex: 1; min-height: 0; }
-  .demo-stage .aw-side { display: flex; flex-direction: column; gap: 2px; padding: 8px 6px; width: 130px; flex-shrink: 0; border-right: 1px solid var(--color-divider); background: rgb(var(--cool) / 0.02); }
-  .demo-stage .aw-file { padding: 4px 10px; border-radius: 5px; font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); }
-  .demo-stage .aw-file.active { background: color-mix(in srgb, var(--color-accent) 12%, transparent); color: var(--color-accent); }
-  .demo-stage .aw-code { display: flex; flex-direction: column; gap: 7px; padding: 12px 16px; flex: 1; }
-  .demo-stage .aw-ln { height: 8px; border-radius: 3px; background: rgb(var(--cool) / 0.12); }
-  .demo-stage .aw-ln.w25 { width: 25%; } .demo-stage .aw-ln.w30 { width: 30%; } .demo-stage .aw-ln.w35 { width: 35%; }
-  .demo-stage .aw-ln.w45 { width: 45%; } .demo-stage .aw-ln.w50 { width: 50%; } .demo-stage .aw-ln.w55 { width: 55%; }
-  .demo-stage .aw-ln.w60 { width: 60%; } .demo-stage .aw-ln.w65 { width: 65%; } .demo-stage .aw-ln.w70 { width: 70%; }
-  .demo-stage .win-term { left: 580px; top: 200px; width: 520px; height: 300px; z-index: 2; }
-  .demo-stage .wt-body { padding: 14px; font-family: var(--font-mono); font-size: 13px; line-height: 1.8; color: var(--color-text-primary); }
-  .demo-stage .wt-line { display: flex; align-items: center; gap: 8px; }
-  .demo-stage .wt-prompt { color: var(--color-accent); }
-  .demo-stage .wt-dim { color: var(--color-text-muted); }
-  .demo-stage .wt-ghost { color: var(--color-text-muted); background: color-mix(in srgb, var(--color-accent) 8%, transparent); padding: 1px 5px; border-radius: 3px; }
-
-  /* 鼠标光标 */
-  .demo-stage .cursor { position: absolute; top: 0; left: 0; z-index: 40; width: 16px; height: 22px; background: #000; clip-path: polygon(0% 0%, 0% 64%, 16% 50%, 32% 82%, 42% 78%, 26% 46%, 52% 46%); filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.3)); opacity: 0; will-change: opacity, transform; pointer-events: none; }
-
-  /* snap 面板 */
-  .demo-stage .snap-panel { position: absolute; top: 32px; left: 50%; z-index: 12; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: var(--radius-panel); background: var(--soft-surface-fill); backdrop-filter: blur(40px) saturate(1.35); -webkit-backdrop-filter: blur(40px) saturate(1.35); border: 1px solid var(--soft-surface-border); box-shadow: 0 0 0 1px rgb(var(--shadow-ink) / 0.04), 0 12px 36px rgb(var(--shadow-ink) / 0.14); opacity: 0; will-change: opacity, transform; }
-  .demo-stage .sp-group { width: 46px; height: 46px; padding: 3px; flex-shrink: 0; }
-  .demo-stage .sp-grid { display: grid; gap: 2px; width: 100%; height: 100%; }
-  .demo-stage .sp-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
-  .demo-stage .sp-grid.rows-2 { grid-template-rows: repeat(2, 1fr); }
-  .demo-stage .sp-z { background: var(--color-fill-8); border-radius: 4px; }
-  .demo-stage .sp-z.sp-hover { background: var(--color-fill-18); }
-  .demo-stage .sp-custom { display: grid; place-items: center; color: var(--color-fill-12); }
-  .demo-stage .sp-nested { position: relative; width: 100%; height: 100%; --snap-gap: 2px; --snap-cell: calc((100% - var(--snap-gap)) / 2); --snap-center: calc(var(--snap-cell) * 0.78); --snap-hollow: calc(var(--snap-center) + 2 * var(--snap-gap)); }
-  .demo-stage .sp-ring { position: absolute; inset: 0; border-radius: 4px; overflow: hidden; background: transparent; }
-  .demo-stage .sp-ring::after { content: ''; position: absolute; width: var(--snap-hollow); height: var(--snap-hollow); left: 50%; top: 50%; transform: translate(-50%, -50%); border-radius: 4px; box-shadow: 0 0 0 999px var(--color-fill-8); }
-  .demo-stage .sp-inset { position: absolute; width: var(--snap-center); height: var(--snap-center); left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--color-fill-8); border-radius: 3px; }
-
-  /* 访达窗口 */
-  .demo-stage .finder-window { position: absolute; left: 300px; top: 110px; z-index: 3; width: 560px; height: 400px; border-radius: 12px; overflow: hidden; background: var(--soft-card-fill); border: 1px solid var(--soft-surface-border); box-shadow: 0 0 0 1px rgb(var(--shadow-ink) / 0.04), 0 20px 48px rgb(var(--shadow-ink) / 0.16), 0 6px 16px rgb(var(--shadow-ink) / 0.1); opacity: 0; will-change: opacity, transform; display: flex; flex-direction: column; }
-  .demo-stage .fw-bar { display: flex; align-items: center; gap: 7px; padding: 9px 12px; background: rgb(var(--cool) / 0.05); border-bottom: 1px solid var(--color-divider); }
-  .demo-stage .fw-title { margin-left: 10px; font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
-  .demo-stage .fw-body { display: flex; flex: 1; min-height: 0; }
-  .demo-stage .fw-side { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; width: 150px; flex-shrink: 0; border-right: 1px solid var(--color-divider); background: rgb(var(--cool) / 0.02); }
-  .demo-stage .fw-side-item { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 5px; font-size: 13px; color: var(--color-text-secondary); }
-  .demo-stage .fw-side-item i { font-size: 14px; }
-  .demo-stage .fw-side-item.active { background: color-mix(in srgb, var(--color-accent) 12%, transparent); color: var(--color-accent); }
-  .demo-stage .fw-list { flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 1px; }
-  .demo-stage .fw-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 5px; font-size: 13px; color: var(--color-text-primary); }
-  .demo-stage .fw-row.sel { background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
-  .demo-stage .fw-folder { color: var(--color-folder); font-size: 16px; }
-  .demo-stage .fw-name { flex: 1; }
-  .demo-stage .finder-panel { position: absolute; left: 520px; top: 200px; z-index: 11; width: 420px; padding: 12px; border-radius: var(--radius-window); background: var(--soft-surface-fill); backdrop-filter: blur(40px) saturate(1.35); -webkit-backdrop-filter: blur(40px) saturate(1.35); border: 1px solid var(--soft-surface-border); box-shadow: 0 0 0 1px rgb(var(--shadow-ink) / 0.04), 0 24px 60px rgb(var(--shadow-ink) / 0.18), 0 8px 24px rgb(var(--shadow-ink) / 0.1); opacity: 0; will-change: opacity, transform; }
-  .demo-stage .fp-search { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius-panel); background: var(--mock-input-fill); border: 1px solid var(--soft-surface-border); margin-bottom: 8px; }
-  .demo-stage .fp-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: var(--radius-ctrl); background: color-mix(in srgb, var(--color-accent) 12%, transparent); color: var(--color-accent); font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
-  .demo-stage .fp-tag i { font-size: 14px; }
-  .demo-stage .fp-kbd { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); padding: 2px 6px; border-radius: 4px; background: var(--color-fill-8); }
-  .demo-stage .fp-list { display: flex; flex-direction: column; gap: 2px; }
-  .demo-stage .fp-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--radius-ctrl); }
-  .demo-stage .fp-row.active { background: rgb(var(--cool) / 0.11); }
-  .demo-stage .fp-icon { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; font-size: 16px; background: var(--color-fill-5); color: var(--color-text-secondary); flex-shrink: 0; }
-  .demo-stage .fp-row.active .fp-icon { background: var(--color-accent); color: #fff; }
-  .demo-stage .fp-title { flex: 1; font-size: 14px; color: var(--color-text-primary); }
-  .demo-stage .fp-row.active .fp-title { color: var(--color-accent); font-weight: 500; }
-  .demo-stage .fp-key { font-family: var(--font-mono); font-size: 12px; color: var(--color-accent); padding: 2px 7px; border-radius: 4px; background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
-
-  /* 截图 overlay */
-  .demo-stage .shot-overlay { position: absolute; inset: 0; z-index: 50; opacity: 0; will-change: opacity; pointer-events: none; }
-  .demo-stage .shot-sel { position: absolute; left: 160px; top: 120px; width: 960px; height: 480px; border: 1.5px solid var(--color-accent); box-shadow: 0 0 0 4000px rgb(0 0 0 / 0.42); will-change: opacity; transform-origin: center center; }
-  .demo-stage .shot-handle { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid var(--color-accent); border-radius: 2px; }
-  .demo-stage .shot-handle.tl { top: -6px; left: -6px; } .demo-stage .shot-handle.tr { top: -6px; right: -6px; }
-  .demo-stage .shot-handle.bl { bottom: -6px; left: -6px; } .demo-stage .shot-handle.br { bottom: -6px; right: -6px; }
-  .demo-stage .shot-size { position: absolute; top: 8px; left: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--shot-badge-ink); background: var(--shot-badge-fill); padding: 2px 7px; border-radius: 4px; }
-  .demo-stage .shot-flash { position: absolute; inset: 0; background: #fff; opacity: 0; will-change: opacity; }
-  .demo-stage .shot-toolbar { position: absolute; left: 160px; top: 610px; display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-radius: var(--radius-panel); background: var(--mock-input-fill); backdrop-filter: blur(20px) saturate(1.35); -webkit-backdrop-filter: blur(20px) saturate(1.35); border: 1px solid var(--soft-surface-border); box-shadow: 0 0 0 1px rgb(var(--shadow-ink) / 0.04), 0 8px 24px rgb(var(--shadow-ink) / 0.14); opacity: 0; will-change: opacity; }
-  .demo-stage .shot-tool { width: 32px; height: 32px; border-radius: 7px; display: grid; place-items: center; font-size: 16px; color: var(--color-text-secondary); }
-  .demo-stage .shot-tool.active { background: var(--color-accent); color: #fff; }
-  .demo-stage .shot-sep { width: 1px; height: 22px; background: var(--color-divider); margin: 0 3px; }
-
-  /* 快捷键键帽 */
-  .demo-stage .kbd-pop { position: absolute; top: 50%; left: 50%; z-index: 60; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 4px; padding: 10px 18px; border-radius: 12px; background: var(--color-fill-8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--color-divider); box-shadow: 0 0 0 1px rgb(var(--shadow-ink) / 0.04), 0 12px 32px rgb(var(--shadow-ink) / 0.16); font-family: var(--font-mono); font-size: 20px; font-weight: 600; color: var(--color-text-primary); opacity: 0; will-change: opacity, transform; pointer-events: none; }
-  .demo-stage .kbd-pop .kbd-opt { color: var(--color-text-muted); }
-  .demo-stage .kbd-pop .kbd-main { padding: 2px 8px; border-radius: 6px; background: var(--color-fill-12); color: var(--color-accent); }
-
-  /* 收尾 */
-  .demo-stage .outro { position: absolute; inset: 0; z-index: 70; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; opacity: 0; will-change: opacity; }
-  .demo-stage .wordmark { font-family: var(--font-mono); font-weight: 700; font-size: 56px; letter-spacing: -0.03em; color: var(--color-text-primary); will-change: opacity, transform; }
-  .demo-stage .key-hint { font-family: var(--font-mono); font-size: 16px; color: var(--color-text-muted); padding: 4px 12px; border-radius: var(--radius-ctrl); background: var(--color-fill-5); border: 1px solid var(--color-divider); will-change: opacity, transform; }
-
-  /* 场景字幕 */
-  .demo-stage .caption { position: absolute; bottom: 40px; left: 50%; z-index: 55; transform: translateX(-50%); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); opacity: 0; will-change: opacity; pointer-events: none; white-space: nowrap; transition: opacity var(--duration-fast) var(--ease-out); }
-
-</style>
-
 <script>
-  // ═══════════════════════════════════════════════
-  //  仅执行一次（防止多实例重复绑定）
-  // ═══════════════════════════════════════════════
+  import { createRenderer } from './demo/demo-scenes'
+  import { createPlayer } from './demo/demo-player'
+
   if (!window.__demoStageInit) {
     window.__demoStageInit = true
-
-    const FPS = 30
-    const TOTAL = 840
-
-    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
-    const lerp = (a, b, t) => a + (b - a) * t
-    const easeOut = (t) => 1 - Math.pow(1 - t, 3)
-    const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
-
-    function spring(f, start, stiffness = 120, damping = 18, mass = 0.6) {
-      const t = Math.max(0, (f - start) / FPS)
-      if (t <= 0) return 0
-      const w0 = Math.sqrt(stiffness / mass)
-      const z = damping / (2 * Math.sqrt(stiffness * mass))
-      const wd = w0 * Math.sqrt(Math.max(0, 1 - z * z))
-      return 1 - Math.exp(-z * w0 * t) * Math.cos(wd * t)
-    }
-
-    function fadeInOut(f, enter, exit, dur = 15) {
-      const ein = clamp((f - enter) / dur, 0, 1)
-      const eout = 1 - clamp((f - exit) / dur, 0, 1)
-      return ein * eout
-    }
-
-    // 场景间隙遮罩：在 [fadeOutStart, fadeInStart] 区间返回 0（启动器隐藏），两侧平滑过渡
-    function gapMask(f, fadeOutStart, fadeInStart, fade = 5) {
-      if (f < fadeOutStart) return 1
-      if (f < fadeOutStart + fade) return 1 - (f - fadeOutStart) / fade
-      if (f < fadeInStart) return 0
-      if (f < fadeInStart + fade) return (f - fadeInStart) / fade
-      return 1
-    }
-
-    function typeSlice(f, start, end, text) {
-      const p = clamp((f - start) / (end - start), 0, 1)
-      return text.substring(0, Math.ceil(p * text.length))
-    }
-
-    // 元素引用
     const $ = (id) => document.getElementById(id)
-    const fogA = $('fogA'), fogB = $('fogB'), menubar = $('menubar')
-    const launcher = $('launcher')
-    const sbExtTag = $('sbExtTag'), sbExtIcon = $('sbExtIcon'), sbExtName = $('sbExtName')
-    const sbText = $('sbText'), sbCursor = $('sbCursor')
-    const panelSearch = $('panelSearch'), panelClipboard = $('panelClipboard'), panelAgent = $('panelAgent')
-    const grpSearchApp = $('grpSearchApp'), grpSearchFile = $('grpSearchFile')
-    const rowVSCode = $('rowVSCode'), rowXcode = $('rowXcode')
-    const rowVoidnix = $('rowVoidnix'), rowCodegen = $('rowCodegen'), rowConfig = $('rowConfig')
-    const rowVSCodeTitle = rowVSCode.querySelector('.r-title')
-    const clip1 = $('clip1'), clip2 = $('clip2'), clip3 = $('clip3'), clip4 = $('clip4'), clip5 = $('clip5')
-    const agentUser1 = $('agentUser1'), agentBot = $('agentBot'), agentTool = $('agentTool'), agentResult = $('agentResult'), agentUser2 = $('agentUser2')
-    const shotOverlay = $('shotOverlay'), shotSel = $('shotSel'), shotFlash = $('shotFlash'), shotToolbar = $('shotToolbar')
-    const winVscode = $('winVscode'), winTerm = $('winTerm')
-    const cursorEl = $('cursor'), snapPanel = $('snapPanel')
-    const finderWin = $('finderWin'), finderPanel = $('finderPanel')
-    const kbdPop = $('kbdPop'), captionEl = $('caption')
-    const outro = $('outro'), wordmark = $('wordmark'), keyHint = $('keyHint')
-    const stageEl = $('stage')
-    // --cool 基元：运行时读取，与 token 单一源（深浅色同值）
-    const COOL_RGB = getComputedStyle(document.documentElement).getPropertyValue('--cool').trim() || '100 120 160'
-
-    // ── 自适应缩放 ──
-    function fitStage() {
-      const wrap = stageEl.closest('.demo-stage')
-      if (!wrap) return
-      const w = wrap.clientWidth
-      const scale = w / 1280
-      stageEl.style.transform = `scale(${scale})`
-      wrap.style.height = `${720 * scale}px`
-    }
-    new ResizeObserver(fitStage).observe(stageEl.closest('.demo-stage'))
-    fitStage()
-
-    // ── 提升到模块作用域（避免每帧分配）──
-    const SEARCH_ROWS = [[grpSearchApp,118],[rowVSCode,123],[rowXcode,128],[grpSearchFile,133],[rowVoidnix,138],[rowCodegen,143],[rowConfig,148]]
-    const CLIP_ROWS = [[clip1,234],[clip2,240],[clip3,246],[clip4,252],[clip5,258]]
-
-    // ── 场景级跳过状态（op=0 且上帧也 0 → DOM 已隐藏，跳过整函数）──
-    let _launcherOp = -1, _searchOp = -1, _clipboardOp = -1, _agentOp = -1, _finderOp = -1
-    let _screenshotOn = false
-
-    // ── 常量值脏检查状态 ──
-    let _menubarOp = -1, _kbdOn = false, _kbdHtml = '', _outroOn = false, _capOp = -1, _sbText = ''
-
-    // ── 场景更新函数 ──
-    function updateFog(f) {
-      const t = (f / TOTAL) * Math.PI * 2
-      fogA.style.transform = `translate(${Math.sin(t) * 3}%, ${Math.cos(t * 0.7) * 2}%) scale(${1 + Math.sin(t) * 0.03})`
-      fogA.style.opacity = 0.7 + Math.sin(t * 0.5) * 0.08
-      fogB.style.transform = `translate(${-Math.sin(t) * 4}%, ${-Math.cos(t * 0.6) * 3}%) scale(${1 + Math.cos(t) * 0.04})`
-      fogB.style.opacity = 0.55 + Math.cos(t * 0.4) * 0.1
-    }
-
-    function updateDesktop(f) {
-      const op = gapMask(f, 765, 822, 8)
-      if (op !== _menubarOp) { menubar.style.opacity = op; _menubarOp = op }
-    }
-
-    function updateLauncher(f) {
-      const fadeIn = clamp((f - 18) / 30, 0, 1)
-      const fadeOut = f > 480 ? 1 - clamp((f - 480) / 12, 0, 1) : 1
-      // 场景间隙：启动器短暂消失（kbdPop 弹出 → 重新呼出）
-      const gm = gapMask(f, 210, 226) * gapMask(f, 344, 360)
-      const op = fadeIn * fadeOut * gm
-      if (op === 0 && _launcherOp === 0) return
-      _launcherOp = op
-      launcher.style.opacity = op
-      // 弹簧缩放：首次入场用初始 spring，间隙后重新弹入
-      const re = f < 210 ? spring(f, 18, 100, 16)
-            : f < 344 ? spring(f, 226, 100, 16)
-            : spring(f, 360, 100, 16)
-      launcher.style.transform = `translate(-50%, -50%) scale(${0.94 + re * 0.06}) translateY(${(1 - re) * 8}px)`
-      launcher.style.filter = fadeIn < 1 ? `blur(${(1 - fadeIn) * 10}px)` : 'none'
-    }
-
-    function updateSearchBar(f) {
-      const clipMode = f >= 226 && f < 344
-      const agentMode = f >= 360 && f < 485
-      if (clipMode) {
-        sbExtIcon.className = 'sb-ext-icon ri-clipboard-line'; sbExtName.textContent = '剪贴板'
-        sbExtTag.style.display = 'inline-flex'; sbExtTag.style.opacity = clamp((f - 226) / 6, 0, 1)
-      } else if (agentMode) {
-        sbExtIcon.className = 'sb-ext-icon ri-robot-2-line'; sbExtName.textContent = 'Agent'
-        sbExtTag.style.display = 'inline-flex'; sbExtTag.style.opacity = clamp((f - 360) / 6, 0, 1)
-      } else { sbExtTag.style.display = 'none' }
-      let text, color
-      if (f < 88) { text = '搜索应用、文件、扩展等'; color = 'var(--color-text-muted)' }
-      else if (f >= 88 && f <= 118) { text = typeSlice(f, 88, 118, 'code'); color = 'var(--color-text-primary)' }
-      else if (f > 118 && f < 210) { text = 'code'; color = 'var(--color-text-primary)' }
-      else if (clipMode) { text = '在 剪贴板 中搜索'; color = 'var(--color-text-muted)' }
-      else if (agentMode) { text = '在 Agent 中搜索'; color = 'var(--color-text-muted)' }
-      else { text = '搜索应用、文件、扩展等'; color = 'var(--color-text-muted)' }
-      if (text !== _sbText) { sbText.textContent = text; sbText.style.color = color; _sbText = text }
-      if (f >= 88 && f <= 118) sbCursor.style.opacity = 1
-      else if (f > 118 && f < 205) sbCursor.style.opacity = Math.floor(f / 15) % 2 === 0 ? 1 : 0
-      else sbCursor.style.opacity = 0
-    }
-
-    function updateSearchScene(f) {
-      const op = fadeInOut(f, 88, 210, 10)
-      if (op === 0 && _searchOp === 0) return
-      _searchOp = op
-      panelSearch.style.opacity = op; panelSearch.style.transform = `translateY(${(1 - op) * 6}px)`
-      for (const [el, enter] of SEARCH_ROWS) {
-        const s = spring(f, enter, 100, 16); el.style.opacity = s * op; el.style.transform = `translateY(${(1 - s) * 10}px)`
-      }
-      const active = clamp((f - 152) / 8, 0, 1)
-      rowVSCode.style.background = active > 0.01 ? `rgb(${COOL_RGB} / ${active * 0.11})` : 'transparent'
-      rowVSCodeTitle.style.color = active > 0.01 ? 'var(--color-accent)' : 'var(--color-text-primary)'
-      rowVSCodeTitle.style.fontWeight = active > 0.5 ? '500' : '400'
-    }
-
-    function updateClipboardScene(f) {
-      const op = fadeInOut(f, 230, 344, 10)
-      if (op === 0 && _clipboardOp === 0) return
-      _clipboardOp = op
-      panelClipboard.style.opacity = op; panelClipboard.style.transform = `translateY(${(1 - op) * 6}px)`
-      for (const [el, enter] of CLIP_ROWS) {
-        const s = spring(f, enter, 100, 16); el.style.opacity = s * op; el.style.transform = `translateY(${(1 - s) * 10}px)`
-      }
-      const active = clamp((f - 264) / 8, 0, 1)
-      clip2.style.background = active > 0.01 ? `rgb(${COOL_RGB} / ${active * 0.11})` : 'transparent'
-    }
-
-    function updateAgentScene(f) {
-      const op = fadeInOut(f, 365, 485, 12)
-      if (op === 0 && _agentOp === 0) return
-      _agentOp = op
-      panelAgent.style.opacity = op; panelAgent.style.transform = `translateY(${(1 - op) * 6}px)`
-      const typed = typeSlice(f, 378, 415, '列出 extensions 目录下的 ts 文件')
-      const userS = spring(f, 376, 100, 16); agentUser1.style.opacity = userS * op; agentUser1.textContent = typed
-      // bot 容器跟随 tool-step 入场，避免提前显示空气泡框
-      const toolS = spring(f, 428, 100, 16)
-      agentBot.style.opacity = toolS * op
-      agentTool.style.opacity = toolS * op
-      agentResult.style.opacity = spring(f, 445, 100, 16) * op
-      const user2S = spring(f, 460, 100, 16); agentUser2.style.opacity = user2S * op; agentUser2.style.transform = `translateY(${(1 - user2S) * 8}px)`
-    }
-
-    function updateScreenshotScene(f) {
-      if (f < 488 || f > 595) {
-        if (_screenshotOn) { shotOverlay.style.opacity = 0; shotToolbar.style.opacity = 0; _screenshotOn = false }
-        return
-      }
-      if (!_screenshotOn) {
-        // 场景入口：清除 snap 残留的 inline 位置让 CSS 接管（仅一次）
-        winVscode.style.left = ''; winVscode.style.top = ''; winVscode.style.width = ''; winVscode.style.height = ''
-        winTerm.style.left = ''; winTerm.style.top = ''; winTerm.style.width = ''; winTerm.style.height = ''
-        _screenshotOn = true
-      }
-      const overlayIn = clamp((f - 488) / 12, 0, 1)
-      const overlayOut = f > 585 ? 1 - clamp((f - 585) / 10, 0, 1) : 1
-      const ov = overlayIn * overlayOut
-      shotOverlay.style.opacity = ov
-      shotSel.style.transform = `scale(${0.85 + spring(f, 495, 130, 16) * 0.15})`
-      shotToolbar.style.opacity = clamp((f - 495) / 12, 0, 1) * overlayOut
-      winVscode.style.opacity = ov
-      winTerm.style.opacity = ov * 0.96
-      if (f >= 568 && f <= 576) { const fp = f < 572 ? clamp((f - 568) / 4, 0, 1) : 1 - clamp((f - 572) / 4, 0, 1); shotFlash.style.opacity = fp * 0.7 }
-      else shotFlash.style.opacity = 0
-    }
-
-    function updateSnapScene(f) {
-      if (f < 595) return  // 不干预 screenshot 场景的窗口管理
-      const winIn = clamp((f - 598) / 14, 0, 1)
-      const winOut = f > 695 ? 1 - clamp((f - 695) / 10, 0, 1) : 1
-      const winOp = winIn * winOut
-      // 场景退场后（winOp=0 且 f>705）所有值恒定，跳过
-      if (winOp === 0 && f > 705) return
-      const snapE = easeOut(clamp((f - 672) / 18, 0, 1))
-      winVscode.style.opacity = winOp
-      winVscode.style.left = lerp(290, 16, snapE) + 'px'; winVscode.style.top = lerp(150, 36, snapE) + 'px'
-      winVscode.style.width = lerp(560, 616, snapE) + 'px'; winVscode.style.height = lerp(360, 628, snapE) + 'px'
-      // 终端同步 snap 到右半屏（16+616+16gap=648）
-      winTerm.style.opacity = winOp * 0.96
-      winTerm.style.left = lerp(580, 648, snapE) + 'px'; winTerm.style.top = lerp(200, 36, snapE) + 'px'
-      winTerm.style.width = lerp(520, 616, snapE) + 'px'; winTerm.style.height = lerp(300, 628, snapE) + 'px'
-      if (f < 618 || f > 695) cursorEl.style.opacity = 0
-      else {
-        cursorEl.style.opacity = clamp((f - 618) / 8, 0, 1) * (f > 685 ? 1 - clamp((f - 685) / 8, 0, 1) : 1)
-        let x, y
-        if (f < 642) { const t = easeInOut(clamp((f - 622) / 20, 0, 1)); x = lerp(720, 640, t); y = lerp(430, 10, t) }
-        else if (f < 665) { x = 640; y = 10 }
-        else if (f < 672) { const t = easeInOut(clamp((f - 665) / 7, 0, 1)); x = 640; y = lerp(10, 54, t) }
-        else { x = 640; y = 54 }
-        cursorEl.style.transform = `translate(${x}px, ${y}px)`
-      }
-      if (f < 638 || f > 690) snapPanel.style.opacity = 0
-      else { const spIn = easeOut(clamp((f - 638) / 8, 0, 1)); const spOut = f > 682 ? 1 - clamp((f - 682) / 8, 0, 1) : 1; snapPanel.style.opacity = spIn * spOut; snapPanel.style.transform = `translateX(-50%) translateY(${(1 - spIn) * -16}px)` }
-    }
-
-    function updateFinderScene(f) {
-      const fwIn = clamp((f - 703) / 14, 0, 1)
-      const fwOut = f > 762 ? 1 - clamp((f - 762) / 8, 0, 1) : 1
-      const op = fwIn * fwOut
-      if (op === 0 && _finderOp === 0) return
-      _finderOp = op
-      finderWin.style.opacity = op; finderWin.style.transform = `translateY(${(1 - fwIn) * 12}px)`
-      if (f < 727 || f > 768) finderPanel.style.opacity = 0
-      else { const fpIn = easeOut(clamp((f - 727) / 12, 0, 1)); const fpOut = f > 760 ? 1 - clamp((f - 760) / 6, 0, 1) : 1; finderPanel.style.opacity = fpIn * fpOut; finderPanel.style.transform = `scale(${0.95 + fpIn * 0.05})` }
-    }
-
-    function kbdPopAt(f, start, opt, main) {
-      const lf = f - start
-      if (lf < 0 || lf > 20) return false
-      const enter = spring(lf, 0, 130, 16)
-      const fadeOut = lf > 12 ? 1 - clamp((lf - 12) / 8, 0, 1) : 1
-      // innerHTML 仅在内容变化时写（每次弹出首帧），避免每帧重建 DOM 致 reflow 卡顿
-      const html = `<span class="kbd-opt">${opt}</span><span class="kbd-main">${main}</span>`
-      if (html !== _kbdHtml) { kbdPop.innerHTML = html; _kbdHtml = html }
-      kbdPop.style.opacity = fadeOut; kbdPop.style.transform = `translate(-50%, -50%) scale(${0.5 + enter * 0.5})`
-      return true
-    }
-
-    function updateKbdPop(f) {
-      if (kbdPopAt(f, 5, '⌥', 'Space')) { _kbdOn = true; return }
-      if (kbdPopAt(f, 212, '⌥', 'C')) { _kbdOn = true; return }
-      if (kbdPopAt(f, 346, '⌥', 'A')) { _kbdOn = true; return }
-      if (kbdPopAt(f, 478, '⌥', 'S')) { _kbdOn = true; return }
-      if (kbdPopAt(f, 712, '⌥', 'F')) { _kbdOn = true; return }
-      if (_kbdOn) { kbdPop.style.opacity = 0; _kbdOn = false }
-    }
-
-    function updateOutro(f) {
-      if (f < 765) { if (_outroOn) { outro.style.opacity = 0; _outroOn = false }; return }
-      _outroOn = true
-      const fadeOut = f > 820 ? 1 - clamp((f - 820) / 14, 0, 1) : 1
-      outro.style.opacity = clamp((f - 767) / 12, 0, 1) * fadeOut
-      const ws = spring(f, 768, 100, 16); wordmark.style.opacity = ws * fadeOut; wordmark.style.transform = `scale(${0.9 + ws * 0.1})`
-      const ks = clamp((f - 773) / 7, 0, 1); keyHint.style.opacity = ks * fadeOut; keyHint.style.transform = `translateY(${(1 - ks) * 6}px)`
-    }
-
-    const CAPTIONS = [
-      [10, 82, 'Option+Space 随时呼出'], [90, 210, '全局搜索：应用、文件、扩展'],
-      [226, 344, '扩展模式：剪贴板历史'], [360, 485, 'Agent：自然语言驱动工具'],
-      [488, 593, '截图标注：全屏选区 + 标注工具'], [600, 697, '窗口管理：鼠标顶部触发分屏'],
-      [703, 763, '访达工具：快捷键操作 Finder'],
-    ]
-    function updateCaption(f) {
-      let text = '', start = 0
-      for (const [s, e, m] of CAPTIONS) { if (f >= s && f < e) { text = m; start = s; break } }
-      const op = text ? clamp((f - start - 3) / 8, 0, 1) : 0
-      if (text && captionEl.textContent !== text) captionEl.textContent = text
-      if (op !== _capOp) { captionEl.style.opacity = op; _capOp = op }
-    }
-
-    function renderFrame(f) {
-      updateFog(f); updateDesktop(f); updateLauncher(f); updateSearchBar(f)
-      updateSearchScene(f); updateClipboardScene(f); updateAgentScene(f)
-      updateScreenshotScene(f); updateSnapScene(f); updateFinderScene(f)
-      updateKbdPop(f); updateCaption(f); updateOutro(f)
-    }
-
-    // 捕获模式：暴露帧渲染
-    window.__renderFrame = async (f) => { renderFrame(f); await new Promise((r) => requestAnimationFrame(r)) }
-
-    // 模式判断
-    const params = new URLSearchParams(location.search)
-    const isCapture = params.get('capture') === '1'
-
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-    if (isCapture) {
-      // 捕获模式：仅渲染首帧，脚本逐帧调 __renderFrame
-      renderFrame(0)
-    } else if (reducedMotion) {
-      // 减少动效：静态展示搜索结果满载帧，不启动动画循环
-      renderFrame(190)
-    } else {
-      // 播放循环（Space 暂停 / ←→ 逐帧）
-      let baseTime = performance.now()
-      let paused = false
-      let pauseAt = 0
-      let frameOverride = -1
-
-      const timeFrame = () => {
-        const now = paused ? pauseAt : performance.now()
-        return Math.floor(((now - baseTime) / 1000) * FPS) % TOTAL
-      }
-
-      document.addEventListener('keydown', (e) => {
-        if (e.key === ' ') {
-          e.preventDefault()
-          paused = !paused
-          if (paused) { pauseAt = performance.now() } else { baseTime += performance.now() - pauseAt; frameOverride = -1 }
-        } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-          e.preventDefault()
-          if (!paused) { paused = true; pauseAt = performance.now() }
-          const cur = frameOverride >= 0 ? frameOverride : timeFrame()
-          frameOverride = (cur + (e.key === 'ArrowRight' ? 1 : -1) + TOTAL) % TOTAL
-        }
-      })
-
-      let lastFrame = -1
-      function loop() {
-        const f = frameOverride >= 0 ? frameOverride : timeFrame()
-        // 内容是 30fps，60Hz 屏上相邻两帧往往相同——帧号未变跳过，降常驻 CPU
-        if (f !== lastFrame) { renderFrame(f); lastFrame = f }
-        requestAnimationFrame(loop)
-      }
-      loop()
-    }
+    const stage = document.querySelector('.demo-stage')!
+    const controls = stage.dataset.controls !== '0'
+    const renderer = createRenderer($)
+    createPlayer({ renderer, $, controls })
   }
 </script>

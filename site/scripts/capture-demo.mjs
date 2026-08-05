@@ -14,7 +14,9 @@ const SITE_DIR = path.resolve(__dirname, '..')
 
 // ── 配置 ──
 const FPS = 30
-const TOTAL_FRAMES = 840
+// 每段独立时长（与 demo-utils.ts SEGMENTS 保持一致）
+const SEG_DURS = [160, 190, 200, 350, 160, 160]
+const TOTAL_FRAMES = SEG_DURS.reduce((a, b) => a + b, 0) // 1220 帧 / ~40.7s
 const WIDTH = 1280
 const HEIGHT = 720
 const SCALE = 2 // retina 渲染（截图 2560×1440 → 编码降采样更锐利）

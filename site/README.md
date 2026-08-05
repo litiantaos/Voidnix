@@ -16,7 +16,7 @@ site/
 │   ├── og-source.html        # OG 源稿（浏览器渲染 1200×630）
 │   └── render-og.mjs         # Playwright 截图脚本
 └── src/
-    ├── components/           # Hero / Philosophy / Capabilities / ExtensionMatrix / Download / Footer / Wordmark
+    ├── components/           # Hero / DemoStage / Philosophy / Capabilities / ExtensionMatrix / Footer / Wordmark
     ├── data/extensions.ts    # 22 扩展元数据 + 领域分簇
     ├── layouts/BaseLayout.astro
     ├── pages/index.astro     # 单页章节编排
