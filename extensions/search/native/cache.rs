@@ -73,6 +73,9 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
 
     for (path, name, last_used, system_use_count) in app_metas {
         let delta = session_deltas.get(&path).copied().unwrap_or(0);
+        let bundle_mtime = std::fs::metadata(&path)
+            .ok()
+            .and_then(|m| m.modified().ok());
 
         apps.push(CachedApp {
             name,
@@ -80,6 +83,7 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
             icon_cache: None,
             last_used,
             use_count: std::sync::atomic::AtomicU32::new(system_use_count + delta),
+            bundle_mtime,
         });
     }
 
@@ -88,6 +92,24 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
         "App cache initialized with {} apps (icons loading in background)",
         result.len()
     );
+
+    // 在调用方覆盖 APP_CACHE 之前读取旧图标缓存，供后台任务按 bundle mtime 增量复用。
+    // 应用更新改图标的场景稀少，mtime 未变即跳过 NSWorkspace 重提取（占图标提取 90%+ 耗时）。
+    let old_icons: HashMap<String, (Option<std::time::SystemTime>, String)> = {
+        let cache = APP_CACHE.read().await;
+        cache
+            .as_ref()
+            .map(|apps| {
+                apps.iter()
+                    .filter_map(|a| {
+                        a.icon_cache
+                            .clone()
+                            .map(|icon| (a.path.clone(), (a.bundle_mtime, icon)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
 
     let result_clone = result.clone();
     let app_count = result.len();
@@ -102,15 +124,28 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
             path: String,
             last_used: Option<String>,
             use_count: u32,
+            bundle_mtime: Option<std::time::SystemTime>,
+            old_icon: Option<String>,
         }
 
         let plain: Vec<AppForIcon> = result_clone
             .iter()
-            .map(|a| AppForIcon {
-                name: a.name.clone(),
-                path: a.path.clone(),
-                last_used: a.last_used.clone(),
-                use_count: a.use_count.load(Ordering::Relaxed),
+            .map(|a| {
+                let old_icon = old_icons.get(&a.path).and_then(|(old_mt, icon)| {
+                    if a.bundle_mtime == *old_mt {
+                        Some(icon.clone())
+                    } else {
+                        None
+                    }
+                });
+                AppForIcon {
+                    name: a.name.clone(),
+                    path: a.path.clone(),
+                    last_used: a.last_used.clone(),
+                    use_count: a.use_count.load(Ordering::Relaxed),
+                    bundle_mtime: a.bundle_mtime,
+                    old_icon,
+                }
             })
             .collect();
 
@@ -122,13 +157,14 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
                     chunk
                         .into_iter()
                         .map(|app| {
-                            let icon = get_app_icon(&app.path);
+                            let icon = app.old_icon.or_else(|| get_app_icon(&app.path));
                             CachedApp {
                                 name: app.name,
                                 path: app.path,
                                 icon_cache: icon,
                                 last_used: app.last_used,
                                 use_count: std::sync::atomic::AtomicU32::new(app.use_count),
+                                bundle_mtime: app.bundle_mtime,
                             }
                         })
                         .collect::<Vec<_>>()
@@ -475,10 +511,10 @@ pub fn init_fs_watchers() {
 }
 
 /// 监听应用目录（/Applications、/System/Applications、~/Applications），
-/// 变更经 5s 防抖后重建 app 缓存（init_app_cache 内部 spawn_blocking 提取图标）。
+/// 变更经 5s 防抖 + 60s 最小重建间隔后重建 app 缓存（init_app_cache 内部增量提取图标）。
 async fn app_dir_watcher() {
     use notify::{recommended_watcher, RecursiveMode, Watcher};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(50);
@@ -500,10 +536,23 @@ async fn app_dir_watcher() {
         let _ = watcher.watch(&home.join("Applications"), RecursiveMode::NonRecursive);
     }
 
+    const DEBOUNCE: Duration = Duration::from_secs(5);
+    const MIN_INTERVAL: Duration = Duration::from_secs(60);
+    let mut last_rebuild: Option<Instant> = None;
+
     loop {
         if rx.recv().await.is_some() {
-            sleep(Duration::from_secs(5)).await;
+            sleep(DEBOUNCE).await;
             while rx.try_recv().is_ok() {}
+
+            if let Some(last) = last_rebuild {
+                let elapsed = last.elapsed();
+                if elapsed < MIN_INTERVAL {
+                    sleep(MIN_INTERVAL - elapsed).await;
+                    while rx.try_recv().is_ok() {}
+                }
+            }
+            last_rebuild = Some(Instant::now());
 
             log::info!("App directory changes detected, rebuilding app cache...");
             let new_apps = init_app_cache().await;
@@ -518,16 +567,29 @@ async fn app_dir_watcher() {
     }
 }
 
-/// 监听文件扫描目录（~/Desktop、~/Documents 等），变更经 5s 防抖后重建文件索引。
+/// 监听文件扫描目录（~/Desktop、~/Documents 等），变更经 5s 防抖 + 60s 最小重建间隔后重建文件索引。
+/// 事件路径预过滤：变更全部落在 FILE_IGNORE_DIRS 内时跳过（消除 target/node_modules 写入空转重建）。
 async fn file_dir_watcher() {
     use notify::{recommended_watcher, RecursiveMode, Watcher};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(200);
     let watcher_res = recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if res.is_ok() {
-            let _ = tx.blocking_send(());
+        if let Ok(event) = res {
+            // 预过滤：至少一条变更路径不在忽略目录内才入队，消除 cargo build / npm install
+            // 在 target/node_modules 下的大量写入导致的空转重建（FSEvents 天然递归，NonRecursive 无效）
+            let has_relevant = event.paths.iter().any(|p| {
+                !p.components().any(|c| match c {
+                    std::path::Component::Normal(name) => {
+                        name.to_str().is_some_and(|n| FILE_IGNORE_DIRS.contains(&n))
+                    }
+                    _ => false,
+                })
+            });
+            if has_relevant {
+                let _ = tx.blocking_send(());
+            }
         }
     });
 
@@ -543,10 +605,26 @@ async fn file_dir_watcher() {
         }
     }
 
+    const DEBOUNCE: Duration = Duration::from_secs(5);
+    const MIN_INTERVAL: Duration = Duration::from_secs(60);
+    let mut last_rebuild: Option<Instant> = None;
+
     loop {
         if rx.recv().await.is_some() {
-            sleep(Duration::from_secs(5)).await;
+            sleep(DEBOUNCE).await;
             while rx.try_recv().is_ok() {}
+
+            // 最小重建间隔：活跃开发下 cargo build / npm install 持续产生文件事件，
+            // 60s 间隔将重建次数从每 7s 一次降至每 60s 一次（~85% 降幅），
+            // 用户对文件搜索索引延迟不敏感。
+            if let Some(last) = last_rebuild {
+                let elapsed = last.elapsed();
+                if elapsed < MIN_INTERVAL {
+                    sleep(MIN_INTERVAL - elapsed).await;
+                    while rx.try_recv().is_ok() {}
+                }
+            }
+            last_rebuild = Some(Instant::now());
 
             log::info!("File directory changes detected, rebuilding file cache...");
             let new_files = init_file_cache().await;

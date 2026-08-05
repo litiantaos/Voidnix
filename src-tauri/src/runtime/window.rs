@@ -17,12 +17,13 @@ pub fn show_main(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
         {
-            // 1) Space Add  2) present（定位+alpha=1+orderFront） 3) 再 Add
+            // 1) Space Add  2) present（定位+alpha=1+orderFront+capture_mouse） 3) 再 Add
+            // present_on_cursor_screen 已完整覆盖 level/alpha/orderFront/event shape，
+            // 无需再调 bring_to_front（历史遗留冗余，每次 show 多 3 次 SkyLight mach_msg IPC）。
             // 禁止在 present 之后调 Tauri show()——会按内部缓存位置把窗打回主屏
             crate::platform::skylight::add_webview_to_all_active_spaces(&window);
             crate::platform::window::present_on_cursor_screen(&window);
             crate::platform::skylight::add_webview_to_all_active_spaces(&window);
-            crate::platform::window::bring_to_front(&window);
         }
         #[cfg(not(target_os = "macos"))]
         let _ = window.show();
