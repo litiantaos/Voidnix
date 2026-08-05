@@ -36,7 +36,8 @@
         <!-- 启用代理（合并核心状态） -->
         <BaseListItem v-if="item.type === 'enabled'" title="开启代理">
           <template #subtitle>
-            <template v-if="!coreStatus.downloaded">
+            <template v-if="!statusLoaded"></template>
+            <template v-else-if="!coreStatus.downloaded">
               {{ isDownloading ? '正在下载核心…' : '功能依赖 mihomo 核心，请先下载' }}
             </template>
             <template v-else>
@@ -63,8 +64,10 @@
             </template>
           </template>
           <template #trailing>
+            <!-- 状态未确认：不渲染按钮（避免 下载核心→已关闭/已开启 的错误态闪烁） -->
+            <template v-if="!statusLoaded"></template>
             <!-- 下载/更新进行中：进度按钮（disabled） -->
-            <BaseButton v-if="isDownloading" class="min-w-12 tabular-nums" disabled>{{
+            <BaseButton v-else-if="isDownloading" class="min-w-12 tabular-nums" disabled>{{
               downloadText
             }}</BaseButton>
             <!-- 已下载：开关 + 更新入口（仅关闭代理时显示，开启时走副标题绿色提示） -->
@@ -98,16 +101,25 @@
           </template>
         </BaseListItem>
 
-        <!-- 订阅项 -->
+        <!-- 订阅项（active=激活订阅，accent 强调；点击行切换激活，编辑按钮进编辑） -->
         <BaseListItem
           v-else-if="item.type === 'subscription'"
           :title="item.sub.name || '未命名订阅'"
+          :tone="item.active ? 'accent' : undefined"
           :subtitle="
             item.sub.proxyCount
               ? `${item.sub.proxyCount} 节点 · ${formatTime(item.sub.updatedAt)}`
               : item.sub.url || '未配置'
           "
-        />
+        >
+          <template #trailing>
+            <BaseButton
+              icon="i-ri-pencil-line"
+              title="编辑订阅"
+              @click.stop="openEditModal(item.sub)"
+            />
+          </template>
+        </BaseListItem>
 
         <!-- 分组切换（多 selector 订阅） -->
         <BaseListItem
@@ -214,6 +226,7 @@ const {
   coreError,
   updateInfo,
   isEnabled,
+  statusLoaded,
   reconnect,
   updateCore,
   downloadCore,
@@ -233,6 +246,7 @@ const {
   closeEditModal,
   saveSub,
   editForm,
+  openEditModal,
   confirmRemoveFromModal,
   deletingSub,
   doRemoveSub,

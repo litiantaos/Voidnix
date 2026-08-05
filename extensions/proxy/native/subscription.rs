@@ -69,33 +69,28 @@ fn s(v: &str) -> Value {
     Value::String(v.to_string())
 }
 
-/// 读取 subs/*.yaml 收集原始文本，交 merge_yaml 合并生成 config.yaml 文本。
+/// 读取激活订阅的原始 YAML（`subs/<active_sub_id>.yaml`）交 merge_yaml 合并生成 config.yaml 文本。
+///
+/// 单激活模型：同一时刻仅一个订阅生效（前端 config.activeSubscriptionId），未激活订阅的
+/// YAML 仅缓存于 `subs/` 待激活，不参与合并——避免多订阅节点/分组混杂，节点列表只呈现激活订阅。
 pub fn build_run_config(app: &AppHandle, params: &RunParams) -> Result<String, String> {
-    let dir = ext_data_dir(app, "proxy")?.join("subs");
     let mut texts: Vec<String> = Vec::new();
-    if dir.exists() {
-        for entry in std::fs::read_dir(&dir)
-            .map_err(|e| e.to_string())?
-            .flatten()
-        {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
-                continue;
-            }
-            if let Ok(t) = std::fs::read_to_string(&path) {
-                texts.push(t);
-            }
+    if !params.active_sub_id.is_empty() {
+        let path = sub_yaml_path(app, &params.active_sub_id)?;
+        if let Ok(t) = std::fs::read_to_string(&path) {
+            texts.push(t);
         }
     }
     merge_yaml(&texts, params)
 }
 
-/// 合并多份 Clash YAML 文本 + 基础配置 → config.yaml 文本（纯函数，便于单测）。
+/// 合并 Clash YAML 文本 + 基础配置 → config.yaml 文本（纯函数，便于单测）。
 ///
-/// 多订阅合并策略（MVP）：
-/// - proxies：所有订阅按 name 去重拼接
-/// - proxy-groups：取首个含非空 proxy-groups 的订阅；否则自动生成 select + url-test
-/// - rules：取首个含非空 rules 的订阅；否则默认 GEOIP CN 直连 + MATCH 代理
+/// 单激活模型下 texts 通常仅 1 份（激活订阅）；保留多文本合并与按 name 去重作为防御
+/// （单订阅内重名节点同样去重）。合并策略：
+/// - proxies：所有文本按 name 去重拼接
+/// - proxy-groups：取首个含非空 proxy-groups 的文本；否则自动生成 select + url-test
+/// - rules：取首个含非空 rules 的文本；否则默认 GEOIP CN 直连 + MATCH 代理
 pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String> {
     let mut all_proxies: Vec<Value> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -282,6 +277,7 @@ mod tests {
             controller_port: 9090,
             secret: "s3cr3t".into(),
             mode: "rule".into(),
+            active_sub_id: String::new(),
             tun: false,
         }
     }

@@ -234,8 +234,9 @@ fn reset_dead_state(app: &AppHandle, msg: &str) {
     crate::runtime::menubar::refresh(app);
 }
 
-/// 核心运行中时热重载以应用配置变更（订阅增删）。
-pub(crate) async fn reload_if_running(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
+/// 核心运行中时热重载 active config 以应用配置变更（订阅增删）。
+/// 仅 `reload_running_config` 内部调用（enabled 场景委托）。
+async fn reload_if_running(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
     if !state.enabled.load(Ordering::Relaxed) {
         return Ok(());
     }
@@ -248,6 +249,29 @@ pub(crate) async fn reload_if_running(app: &AppHandle, state: &ProxyState) -> Re
 
     reload_config_yaml(app, &params).await?;
     Ok(())
+}
+
+/// 重载当前运行配置（按 enabled/tun_active 自适应 active 或 idle）。
+/// 激活订阅切换等需在任意运行态（含 idle 常驻）刷新节点列表的场景使用：
+/// enabled → active config；idle 常驻（tun_active 但未启用）→ idle config；
+/// 进程未运行 → no-op。run_params.active_sub_id 须在调用前已更新。
+pub(crate) async fn reload_running_config(
+    app: &AppHandle,
+    state: &ProxyState,
+) -> Result<(), String> {
+    if state.enabled.load(Ordering::Relaxed) {
+        return reload_if_running(app, state).await;
+    }
+    if !state.tun_active.load(Ordering::Relaxed) {
+        return Ok(()); // 进程未运行，无可重载
+    }
+    // idle 常驻：run_params 持最近 active 参数，派生 idle（direct + 无 tun）重载
+    let Some(mut p) = state.run_params.lock().map_err(|e| e.to_string())?.clone() else {
+        return Ok(());
+    };
+    p.mode = "direct".into();
+    p.tun = false;
+    reload_config_yaml(app, &p).await
 }
 
 /// 取 mihomo controller endpoint（base URL + secret），代理未开启时报错。
@@ -292,12 +316,13 @@ pub(crate) async fn reconnect_root_mihomo(app: &AppHandle) {
         return;
     }
     let state = app.state::<ProxyState>();
-    let Some((mixed_port, controller_port, secret)) = read_controller_creds(app) else {
+    // 一次读取构造完整 RunParams（含激活订阅 id），供 idle 热重载复用。
+    let Some(p) = read_run_params(app) else {
         crate::runtime::menubar::refresh(app);
         return;
     };
-    let base = format!("http://127.0.0.1:{controller_port}");
-    match controller::check_auth(&base, &secret).await {
+    let base = format!("http://127.0.0.1:{}", p.controller_port);
+    match controller::check_auth(&base, &p.secret).await {
         Ok(false) => {
             if let Err(e) = tun::stop_root(app) {
                 eprintln!("[proxy] 清理 secret 不一致残留 mihomo 失败: {e}");
@@ -305,10 +330,11 @@ pub(crate) async fn reconnect_root_mihomo(app: &AppHandle) {
         }
         Ok(true) => {
             let idle = RunParams {
-                mixed_port,
-                controller_port,
-                secret,
+                mixed_port: p.mixed_port,
+                controller_port: p.controller_port,
+                secret: p.secret,
                 mode: "direct".into(),
+                active_sub_id: p.active_sub_id,
                 tun: false,
             };
             match reload_config_yaml(app, &idle).await {
@@ -359,12 +385,11 @@ fn read_run_params(app: &AppHandle) -> Option<RunParams> {
             .and_then(|m| m.as_str())
             .unwrap_or("rule")
             .to_string(),
+        active_sub_id: v
+            .get("activeSubscriptionId")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .to_string(),
         tun: true,
     })
-}
-
-/// 读 config.json 的 controller 凭据。
-fn read_controller_creds(app: &AppHandle) -> Option<(u16, u16, String)> {
-    let p = read_run_params(app)?;
-    Some((p.mixed_port, p.controller_port, p.secret))
 }

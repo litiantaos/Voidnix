@@ -77,6 +77,7 @@ macro_rules! configure_app {
             crate::extensions::proxy::proxy_reconnect,
             crate::extensions::proxy::proxy_remove_subscription,
             crate::extensions::proxy::proxy_select_proxy,
+            crate::extensions::proxy::proxy_set_active_subscription,
             crate::extensions::proxy::proxy_set_mode,
             crate::extensions::proxy::proxy_stop_stream,
             crate::extensions::proxy::proxy_test_group_delay_stream,

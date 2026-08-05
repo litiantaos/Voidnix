@@ -3,6 +3,7 @@
 import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, watch } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { isTauri } from '@/utils/tauri'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import {
@@ -43,15 +44,59 @@ export interface TrafficFrame {
 export type ListItem =
   | { type: 'enabled'; group: '代理' }
   | { type: 'mode'; group: '代理' }
-  | { type: 'subscription'; group: '订阅'; sub: Subscription }
+  | {
+      type: 'subscription'
+      group: '订阅'
+      sub: Subscription
+      active: boolean
+    }
   | { type: 'groupSelector'; group: '节点' }
   | { type: 'node'; group: '节点'; node: NodeItem }
+
+/// 预加载代理运行状态：本模块随 index.ts eager 加载（app 启动早期）即触发 IPC 往返，
+/// useProxyPanel 创建时同步读缓存作 ref 初始值——首帧即真实值，消除默认 false→true 的渲染闪烁。
+/// app 启动到用户打开 proxy 视图的间隔远大于 IPC 往返，缓存几乎一定已就绪。
+/// preloadPromise 保存引用供 onMounted 复用（已完成即时 resolve，未完成 await 同一 in-flight，
+/// 不重新发 IPC）——避免 onMounted 重复 IPC 往返导致按钮延迟出现。
+const preloaded = {
+  done: false,
+  enabled: false,
+  coreDownloaded: false,
+  coreDownloading: false,
+  version: '',
+}
+let preloadPromise: Promise<void> | null = null
+if (isTauri) {
+  preloadPromise = Promise.all([
+    invoke<boolean>(CMD.isProxyEnabled)
+      .then((v) => {
+        preloaded.enabled = v
+      })
+      .catch(() => {}),
+    invoke<{ downloaded: boolean; version: string; downloading: boolean }>(CMD.proxyCoreStatus)
+      .then((s) => {
+        preloaded.coreDownloaded = s.downloaded
+        preloaded.coreDownloading = s.downloading
+        preloaded.version = s.version
+      })
+      .catch(() => {}),
+  ])
+    .then(() => {
+      preloaded.done = true
+    })
+    .catch(() => {
+      preloaded.done = true
+    })
+}
 
 export function useProxyPanel() {
   const appStore = useAppStore()
   /** proxy 流量速率紧凑口径（1.2K/s） */
   const fmtTrafficRate = (n: number) => formatRate(n, { compact: true })
-  const isEnabled = ref(false)
+  const isEnabled = ref(preloaded.enabled)
+  /// 状态就绪：预加载 done 时首帧 true（按钮直接渲染正确值）；否则 onMounted 复用 preloadPromise
+  /// 完成后翻 true。false 时 View 开启代理项不渲染 trailing/subtitle（避免错误态闪烁）。
+  const statusLoaded = ref(preloaded.done)
   const toggling = ref(false)
   const proxiesData = ref<ProxiesResponse | null>(null)
   const delayMap = ref<Record<string, number>>({})
@@ -61,9 +106,9 @@ export function useProxyPanel() {
   const modeSelectRef = ref<InstanceType<typeof BaseSelect> | null>(null)
   const groupSelectRef = ref<InstanceType<typeof BaseSelect> | null>(null)
   const coreStatus = ref<{ downloaded: boolean; version: string; downloading: boolean }>({
-    downloaded: false,
-    version: '',
-    downloading: false,
+    downloaded: preloaded.coreDownloaded,
+    version: preloaded.version,
+    downloading: preloaded.coreDownloading,
   })
   const coreProgress = ref<{ received: number; total: number | null }>({ received: 0, total: null })
   /// 首个进度事件是否到达：未收到事件时显示「下载中」，收到后显示具体进度
@@ -157,7 +202,12 @@ export function useProxyPanel() {
     list.push(
       ...config.subscriptions
         .filter((s) => match(s.name || s.url || ''))
-        .map((s) => ({ type: 'subscription' as const, group: '订阅' as const, sub: s })),
+        .map((s) => ({
+          type: 'subscription' as const,
+          group: '订阅' as const,
+          sub: s,
+          active: s.id === config.activeSubscriptionId,
+        })),
     )
     // 多 selector 分组：显示分组切换项（单分组或无分组时省略）
     if (userGroups.value.length > 1 && match('节点分组')) {
@@ -169,14 +219,6 @@ export function useProxyPanel() {
     return list
   })
 
-  const checkStatus = async () => {
-    try {
-      isEnabled.value = await invoke<boolean>(CMD.isProxyEnabled)
-    } catch (e) {
-      console.error('Failed to check proxy status:', e)
-    }
-  }
-
   async function loadCoreStatus() {
     try {
       coreStatus.value = await invoke<{
@@ -184,6 +226,7 @@ export function useProxyPanel() {
         version: string
         downloading: boolean
       }>(CMD.proxyCoreStatus)
+      preloaded.coreDownloaded = coreStatus.value.downloaded
     } catch {
       /* ignore */
     }
@@ -271,9 +314,11 @@ export function useProxyPanel() {
         controllerPort: config.controllerPort,
         secret: config.secret,
         mode: config.mode,
+        activeSubId: config.activeSubscriptionId,
       })
       // 成功后再翻转状态（toggling 仅作防重入，首次开代理提权时主窗口已隐藏）
       isEnabled.value = newState
+      preloaded.enabled = newState
       coreError.value = '' // 切换成功清异常提示
       if (newState) {
         await loadProxies()
@@ -420,13 +465,33 @@ export function useProxyPanel() {
       groupSelectRef.value?.focus()
       groupSelectRef.value?.toggleOpen()
     } else if (it.type === 'node') selectNode(it.node)
-    else if (it.type === 'subscription') openEditModal(it.sub)
+    else if (it.type === 'subscription') {
+      // 有节点的订阅：点击切换激活（主操作，仅激活订阅的节点入 mihomo）；
+      // 空订阅（未配置/未拉取）：点击打开编辑配置
+      if (it.sub.proxyCount > 0) setActiveSubscription(it.sub.id)
+      else openEditModal(it.sub)
+    }
   }
 
   // ── 订阅 ──
   function formatTime(ts: string): string {
     if (!ts) return '未更新'
     return ts.slice(0, 10)
+  }
+
+  /// 切换激活订阅：写 config（持久化）+ 通知 Rust 更新 run_params + 热重载（含 idle 常驻）。
+  /// 仅激活订阅的节点参与合并，切换后节点列表整体替换，故清空乐观选中与测速缓存。
+  async function setActiveSubscription(id: string) {
+    if (config.activeSubscriptionId === id) return
+    config.activeSubscriptionId = id
+    selectedNodeName.value = ''
+    delayMap.value = {}
+    try {
+      await invoke(CMD.proxySetActiveSubscription, { id })
+      await loadProxies()
+    } catch (e) {
+      appStore.showStatus(`切换订阅失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+    }
   }
 
   /// 组标题「+」：打开新建弹窗（不预创建项，保存时才 add）
@@ -474,6 +539,7 @@ export function useProxyPanel() {
   async function saveSub() {
     const name = editForm.value.name.trim()
     const url = editForm.value.url.trim()
+    const wasCreating = isCreating.value
     let id: string
     if (isCreating.value) {
       id = addSubscription(name, url)
@@ -488,8 +554,12 @@ export function useProxyPanel() {
       const count = await invoke<number>(CMD.proxyUpdateSubscription, { id, url })
       updateSubscription(id, { proxyCount: count, updatedAt: new Date().toISOString() })
       appStore.showStatus(`已更新 ${count} 个节点`, { duration: 2000 })
-      // 不自动开启代理（尊重用户显式关闭）；已开启时刷新节点列表应用新订阅
-      if (isEnabled.value) await loadProxies()
+      // 新建订阅拉取成功即自动激活（首次添加即用，内部 loadProxies）；编辑则直接刷新
+      if (wasCreating && count > 0) {
+        await setActiveSubscription(id)
+      } else {
+        await loadProxies()
+      }
     } catch (e) {
       appStore.showStatus(`更新失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     }
@@ -507,11 +577,19 @@ export function useProxyPanel() {
     const s = deletingSub.value
     if (!s) return
     deletingSub.value = null
+    // 新激活：删的若是当前激活则回退到剩余首项（splice 前 filter，规避 watch 异步补项时序）
+    const others = config.subscriptions.filter((x) => x.id !== s.id)
+    const newActive = others[0]?.id ?? ''
+    if (config.activeSubscriptionId === s.id) {
+      config.activeSubscriptionId = newActive
+    }
     removeSubscription(s.id)
+    selectedNodeName.value = ''
+    delayMap.value = {}
     try {
-      await invoke(CMD.proxyRemoveSubscription, { id: s.id })
-      // 热重启完成（含 wait_ready）后刷新，节点列表移除该订阅节点
-      if (isEnabled.value) await loadProxies()
+      await invoke(CMD.proxyRemoveSubscription, { id: s.id, newActiveSubId: newActive })
+      // 热重启完成（含 wait_ready）后刷新，节点列表应用新激活订阅
+      await loadProxies()
     } catch (e) {
       appStore.showStatus(`清理订阅失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
     }
@@ -534,6 +612,7 @@ export function useProxyPanel() {
       // 切换中由 toggleEnabled 成功后统一设值，忽略命令内提前 emit 的事件防回声
       if (toggling.value) return
       isEnabled.value = e.payload
+      preloaded.enabled = e.payload
       if (!e.payload) stopTrafficStream() // 关代理（含菜单关闭/进程退出）停流量流
     })
     unlistenMode = await listen<string>('proxy-mode', (e) => {
@@ -551,8 +630,18 @@ export function useProxyPanel() {
         })
       }
     })
-    await loadCoreStatus()
-    await checkStatus()
+    // 复用预加载 Promise：已完成则即时（preloaded.done=true，statusLoaded 首帧已 true）；
+    // 未完成则 await 同一个 in-flight Promise（不重新发 IPC），完成后从缓存同步 ref。
+    // 避免重复 IPC 往返——那会延迟 statusLoaded 翻 true，
+    // 用户从菜单栏打开窗口时感知为"按钮延迟出现"。
+    if (preloadPromise) await preloadPromise
+    isEnabled.value = preloaded.enabled
+    coreStatus.value = {
+      downloaded: preloaded.coreDownloaded,
+      version: preloaded.version,
+      downloading: preloaded.coreDownloading,
+    }
+    statusLoaded.value = true
     // 核心已下载即加载节点列表（idle 常驻下 controller 仍可查询；
     // 核心未运行时 loadProxies 静默失败，不报错）
     if (coreStatus.value.downloaded) {
@@ -594,6 +683,19 @@ export function useProxyPanel() {
     { immediate: true },
   )
 
+  // 激活订阅归一化：activeSubscriptionId 失效（空 / 指向已删订阅）时回退首项，
+  // 保证前端与 Rust（build_run_config）始终对同一有效 id 达成共识。
+  watch(
+    () => config.subscriptions.map((s) => s.id).join('\0') + '\0' + config.activeSubscriptionId,
+    () => {
+      const ids = config.subscriptions.map((s) => s.id)
+      if (!ids.includes(config.activeSubscriptionId)) {
+        config.activeSubscriptionId = ids[0] ?? ''
+      }
+    },
+    { immediate: true },
+  )
+
   return {
     items,
     selectedIndex,
@@ -611,6 +713,7 @@ export function useProxyPanel() {
     coreError,
     updateInfo,
     isEnabled,
+    statusLoaded,
     reconnect,
     updateCore,
     downloadCore,
@@ -632,6 +735,8 @@ export function useProxyPanel() {
     closeEditModal,
     saveSub,
     editForm,
+    openEditModal,
+    setActiveSubscription,
     confirmRemoveFromModal,
     deletingSub,
     doRemoveSub,

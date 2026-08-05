@@ -26,6 +26,9 @@ export const config = defineConfig('extensions/proxy/config', {
   subscriptions: [
     { id: generateRequestId(), name: '', url: '', updatedAt: '', proxyCount: 0 },
   ] as Subscription[],
+  /// 当前激活订阅 id：同一时刻仅一个订阅生效，build_run_config 仅合并此订阅的 YAML。
+  /// 空 = 无激活（回退首项）；由 normalizer watch 保证始终指向有效 id。
+  activeSubscriptionId: '',
 })
 
 /// 规则模式选项
