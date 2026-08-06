@@ -88,13 +88,13 @@ pub async fn proxy_check_update(app: AppHandle) -> Result<core::UpdateInfo, Stri
     Ok(core::check_update(&app).await)
 }
 
-/// 更新核心：停代理（若在跑）→ kill root 进程 → 删旧 binary → ensure_bin 重下最新 → 恢复。
+/// 更新核心：停代理 → 卸载 LaunchDaemon → 删旧 binary → ensure_bin 重下最新 → 恢复。
 #[tauri::command]
 pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> Result<(), String> {
     let was_enabled = state.enabled.load(Ordering::Relaxed);
     let params = state.run_params.lock().map_err(|e| e.to_string())?.clone();
     if state.tun_active.load(Ordering::Relaxed) {
-        tun::stop_root(&app)?;
+        tun::uninstall_launchdaemon(&app)?;
         state.tun_active.store(false, Ordering::Relaxed);
     }
     state.enabled.store(false, Ordering::Relaxed);
@@ -102,7 +102,7 @@ pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> 
     core::ensure_bin(&app).await?;
     if was_enabled {
         if let Some(p) = params {
-            start_core(&app, &state, p).await?;
+            start_core(&app, &state, p).await?; // 重新 install_launchdaemon（提权）
         }
     }
     Ok(())
@@ -295,7 +295,9 @@ pub async fn proxy_reconnect(app: AppHandle, state: State<'_, ProxyState>) -> Re
         return Err("代理核心无响应，请关闭后重新开启".into());
     }
     params.tun = true;
+    let log_before = lifecycle::log_size(&app); // reload 前快照，供 verify_tun_active 区分新增行
     reload_config_yaml(&app, &params).await?;
+    lifecycle::verify_tun_active(&app, log_before).await?; // TUN 静默失效检测（同 start_core）
     state.enabled.store(true, Ordering::Relaxed);
     state.tun_active.store(true, Ordering::Relaxed);
     ensure_monitor(&app);
