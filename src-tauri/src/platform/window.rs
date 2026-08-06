@@ -143,14 +143,17 @@ pub fn present_on_cursor_screen(window: &tauri::WebviewWindow) {
     ns_window.setLevel(objc2_app_kit::NSFloatingWindowLevel);
     ns_window.setHasShadow(true);
 
-    // 先定位再露脸：hide 用 alpha=0 不 orderOut，跨屏 setFrame 更稳
+    // 先定位 + 恢复事件捕获，最后才露脸：hide 时 setIgnoresMouseEvents(true)，
+    // 须在 setAlphaValue(1.0) 之前恢复 false——窗口服务器对视觉合成（alpha）与
+    // hit-test 表（ignoresMouseEvents）的更新是异步步趋，若可见先于 hit-test 落地，
+    // 滚动等事件会穿透到下层应用窗口（菜单栏关闭后窗口服务器过渡态下偶发）。
     apply_frame_no_anim(ns_window, frame);
+    capture_mouse_events(ns_window);
     ns_window.setAlphaValue(1.0);
     ns_window.orderFrontRegardless();
     apply_frame_no_anim(ns_window, frame);
-    // capture_mouse_events 内部已调 set_full_event_shape_for_nswindow（读 NSWindow frame
-    // 设全窗 hit-test region），上方 apply_frame_no_anim 已同步 frame，无需重复设 event shape。
-    capture_mouse_events(ns_window);
+    // orderFront 后 frame 确认，重设 event shape 确保窗口服务器 hit-test 同步
+    crate::platform::skylight::set_full_event_shape_for_nswindow(ns_window);
 }
 
 /// 隐藏：resignKey + 去阴影 + alpha=0 + 忽略鼠标。**不 orderOut**。
@@ -431,6 +434,24 @@ pub fn capture_mouse_events(ns_window: &NSWindow) {
     ns_window.setIgnoresMouseEvents(false);
     ns_window.setAcceptsMouseMovedEvents(true);
     crate::platform::skylight::set_full_event_shape_for_nswindow(ns_window);
+}
+
+/// 延迟刷新事件捕获（仅窗口仍可见时执行）。
+/// 菜单栏菜单关闭后窗口服务器 hit-test 表可能滞后更新，导致滚动事件穿透；
+/// show 后延迟重应用 capture_mouse_events 强制刷新 hit-test。
+pub fn refresh_event_capture_if_visible(window: &tauri::WebviewWindow) {
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    let raw = ptr.cast::<NSWindow>();
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
+        return;
+    };
+    // 仅在窗口仍可见时执行（hide 后 alpha=0 跳过，避免对已隐藏窗口无效操作）
+    if ns_window.alphaValue() < 0.01 {
+        return;
+    }
+    capture_mouse_events(ns_window);
 }
 
 /// 主窗口框架级样式：Mica 材质底（apply_mica_material）+ NonactivatingPanel 转换。
