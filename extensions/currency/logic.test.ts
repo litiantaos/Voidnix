@@ -37,6 +37,25 @@ describe('parseCurrencyInput', () => {
     expect(parseCurrencyInput('5万亿美元')).toEqual({ amount: 5e12, fromCurrency: 'USD' })
   })
 
+  it('解析 w/k 量词（万/千）', () => {
+    expect(parseCurrencyInput('10w美元')).toEqual({ amount: 1e5, fromCurrency: 'USD' })
+    expect(parseCurrencyInput('10w USD')).toEqual({ amount: 1e5, fromCurrency: 'USD' })
+    expect(parseCurrencyInput('10k USD')).toEqual({ amount: 1e4, fromCurrency: 'USD' })
+    // 大小写兼容
+    expect(parseCurrencyInput('10W USD')).toEqual({ amount: 1e5, fromCurrency: 'USD' })
+    expect(parseCurrencyInput('10K USD')).toEqual({ amount: 1e4, fromCurrency: 'USD' })
+  })
+
+  it('解析货币前置语序（USD10 / 美元10 / 美元10万）', () => {
+    expect(parseCurrencyInput('USD10')).toEqual({ amount: 10, fromCurrency: 'USD' })
+    expect(parseCurrencyInput('美元10')).toEqual({ amount: 10, fromCurrency: 'USD' })
+    expect(parseCurrencyInput('美元10万')).toEqual({ amount: 1e5, fromCurrency: 'USD' })
+    expect(parseCurrencyInput('JPY3万')).toEqual({ amount: 3e4, fromCurrency: 'JPY' })
+    expect(parseCurrencyInput('USD10w')).toEqual({ amount: 1e5, fromCurrency: 'USD' })
+    // form2 小写代码经 toUpperCase 归一
+    expect(parseCurrencyInput('usd10')).toEqual({ amount: 10, fromCurrency: 'USD' })
+  })
+
   it('拒绝非法输入', () => {
     expect(parseCurrencyInput('')).toBeNull()
     expect(parseCurrencyInput('100')).toBeNull()
