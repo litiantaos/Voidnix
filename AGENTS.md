@@ -155,7 +155,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 **show 策略**：
 
 - 不 `activate_app`（保持原前台 active，避免聚焦视图/菜单栏突变；代价是 macOS 26 上偶发下层 hover 穿透——产品优先不打断）
-- hit-test 靠 `capture_mouse_events` + SkyLight event shape
+- hit-test 靠 `capture_mouse_events` + SkyLight event shape；`present_on_cursor_screen` 中 **先 `capture_mouse_events` 再 `setAlphaValue`**（避免窗口可见但仍 ignoresMouseEvents 的间隙导致滚动穿透），`orderFront` 后重设 event shape；`show_main` 末尾延迟 150ms 再刷新一次（兜底菜单栏关闭后窗口服务器 hit-test 滞后）
 - `present_on_cursor_screen`：光标屏居中并写 `PLACEMENT_VIS`
 - `animate_frame` 只在 `PLACEMENT_VIS` 内改尺寸（忽略前端 x/y，高度立即生效）
 - 截图 overlay 等独占场景才显式 `activate_app`

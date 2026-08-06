@@ -1,12 +1,13 @@
 /// 显示主窗口。
 ///
 /// 编排：可见性状态 → 捕获原前台 PID → Space 迁移 + 前置 → makeKey →
-/// click_monitor。NonactivatingPanel + LSUIElement 组合下显示不抢 NSApp
-/// active，原前台应用的菜单栏 / 聚焦视图 / Dock 高亮全程不变。
+/// click_monitor → 延迟刷新事件捕获。NonactivatingPanel + LSUIElement 组合下
+/// 显示不抢 NSApp active，原前台应用的菜单栏 / 聚焦视图 / Dock 高亮全程不变。
 ///
 /// 取舍：不 `activate_app`——抢 active 会让原 app resign（聚焦视图消失、
 /// 界面态突变），打断感强于「面板下偶发 hover 穿透」。hide 时
-/// `restore_captured` 交还 first responder。
+/// `restore_captured` 交还 first responder。滚动穿透靠 present 内先恢复
+/// `ignoresMouseEvents` 再露脸 + show 后延迟刷新 event capture 双重兜底。
 pub fn show_main(app: &tauri::AppHandle) {
     use tauri::Manager;
     crate::runtime::shortcut::set_window_visible(true);
@@ -17,8 +18,8 @@ pub fn show_main(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
         {
-            // 1) Space Add  2) present（定位+alpha=1+orderFront+capture_mouse） 3) 再 Add
-            // present_on_cursor_screen 已完整覆盖 level/alpha/orderFront/event shape，
+            // 1) Space Add  2) present（定位+capture_mouse+alpha=1+orderFront+event shape） 3) 再 Add
+            // present_on_cursor_screen 已完整覆盖 level/capture_mouse/alpha/orderFront/event shape，
             // 无需再调 bring_to_front（历史遗留冗余，每次 show 多 3 次 SkyLight mach_msg IPC）。
             // 禁止在 present 之后调 Tauri show()——会按内部缓存位置把窗打回主屏
             crate::platform::skylight::add_webview_to_all_active_spaces(&window);
@@ -31,6 +32,23 @@ pub fn show_main(app: &tauri::AppHandle) {
     make_main_window_key(app);
     crate::platform::click_monitor::add(app);
     crate::platform::frontmost_watcher::add(app);
+
+    // 延迟刷新事件捕获：菜单栏菜单关闭后窗口服务器 hit-test 表可能滞后，
+    // 导致滚动事件穿透到下层应用窗口。延迟 150ms 后重设 event shape 强制刷新。
+    #[cfg(target_os = "macos")]
+    {
+        let delayed = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            let main_app = delayed.clone();
+            let _ = delayed.run_on_main_thread(move || {
+                use tauri::Manager;
+                if let Some(win) = main_app.get_webview_window("main") {
+                    crate::platform::window::refresh_event_capture_if_visible(&win);
+                }
+            });
+        });
+    }
 }
 
 /// 显示主窗口（前端主动调用）。
