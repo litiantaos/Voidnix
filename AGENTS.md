@@ -90,7 +90,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **三个脚本**（`scripts/`）：
 
-- `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时单次 `ps` 采主进程 + 一次 `ps -A` 全表扫描识别扩展子进程（按可执行路径 `comm` 匹配 `com.litiantao.voidnix/extensions/<id>/`，按扩展分组；不依赖 PPID 链——root 子进程如 mihomo 已 reparent 到 launchd；用 `comm` 而非 `command`，从根上排除 grep/osascript 等仅在参数里引用该路径的进程，也避免采样器自身 fork 的 shell 被误匹配）。主进程 CPU >80% 时用 `sample <pid> 2 -mayDie -file` 抓 2 秒调用栈快照（5 分钟冷却防刷屏），快照存 `stacks/cpu-<时间戳>.txt`、主日志追加 `# [stack]` 关联行。日志与快照自动保留 30 天。
+- `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时单次 `ps` 采主进程 + 一次 `ps -A` 全表扫描识别扩展子进程（按可执行路径 `comm` 匹配 `com.litiantao.voidnix/extensions/<id>/`，按扩展分组；不依赖 PPID 链——root 子进程如 mihomo 由 launchd LaunchDaemon 托管 PPID=1；用 `comm` 而非 `command`，从根上排除 grep/osascript 等仅在参数里引用该路径的进程，也避免采样器自身 fork 的 shell 被误匹配）。主进程 CPU >80% 时用 `sample <pid> 2 -mayDie -file` 抓 2 秒调用栈快照（5 分钟冷却防刷屏），快照存 `stacks/cpu-<时间戳>.txt`、主日志追加 `# [stack]` 关联行。日志与快照自动保留 30 天。
 - `voidnix-monitor-install.sh install|uninstall` — 安装/卸载 LaunchAgent（`com.litiantao.voidnix.monitor`，登录后自动生效）
 - `voidnix-analyze.sh [天数]` — 分析器：按天聚合主进程 RSS 区间/漂移/CPU 峰值/线程数/数据目录（漂移 >20MB 自动告警），并按扩展聚合子进程采样数/RSS 区间/CPU 峰值
 
@@ -456,7 +456,7 @@ src/
     ├── agent/config.json             # 资源上限 + systemPrompt + 搜索 Provider（AI Key 见 ai-providers.json）
     ├── video/{ffmpeg,ffprobe,ffmpeg.version,config.json}  # 按需下载的静态 ffmpeg/ffprobe + 配置
     ├── image/config.json             # 输出目录配置（移除背景/拼接结果）
-    └── proxy/{mihomo, mihomo.pid, mihomo.log, geoip.metadb, geosite.dat, config.yaml, subs/, config.json}  # TUN 模式 root 常驻
+    └── proxy/{mihomo, mihomo.log, mihomo-daemon.plist, geoip.metadb, geosite.dat, config.yaml, subs/, config.json}  # TUN 模式 launchd 托管（plist 装于 /Library/LaunchDaemons）
 ```
 
 icon 缓存纯内存（首次提取后按 bundle mtime 增量复用，零磁盘文件）。dev 镜像 `com.litiantao.voidnix.dev` 同构。

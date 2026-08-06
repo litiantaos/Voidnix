@@ -336,7 +336,7 @@ export function useProxyPanel() {
   }
 
   /// 免提权软重启核心（热重载 active config）：代理开着但出站异常时一键重建 TUN 栈/连接池，
-  /// 免关闭→开启（规避 stop_root 提权）。进程已退出会失败提示需关闭重开。
+  /// 免关闭→开启（launchd 托管下关闭重开本就免提权，但软重启更快不中断）。进程已退出会失败提示需关闭重开。
   async function reconnect() {
     if (toggling.value) return
     toggling.value = true

@@ -40,7 +40,7 @@ DATA_MB=$(du -sm "$DATA_DIR" 2>/dev/null | awk '{print $1}')
 awk -v t="$(date '+%H:%M:%S')" -v r="$RSS_KB" -v c="$CPU" -v n="$THRD" -v v="$VSZ_KB" -v d="$DATA_MB" \
   'BEGIN { printf "%s  %.1f  %s  %d  %.1f  %s\n", t, r/1024, c, n, v/1048576, d }' >> "$LOG"
 
-# 扩展子进程采样（不依赖 PPID 链——root 子进程如 mihomo 已 reparent 到 launchd）
+# 扩展子进程采样（不依赖 PPID 链——root 子进程如 mihomo 由 launchd LaunchDaemon 托管，PPID=1）
 # 用 comm（可执行文件路径）而非 command（完整命令行）匹配：只有可执行确实位于
 # extensions/<id>/ 下的进程才命中，grep/osascript/采样器 fork 的 shell 等仅在参数里
 # 引用该路径的进程天然排除，从根上杜绝误匹配（无需靠 ext 白名单兜底）
