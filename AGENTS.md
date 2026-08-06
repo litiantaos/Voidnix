@@ -142,7 +142,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **扩展入口打分**：keyword / `/` 工具列表共用 `scoreExtensionEntry`（name/id/description 正向 + keywords 双向）。
 
-`SearchContext.extensionMode` 供扩展区分场景：全局即时答案仅 calculator / currency；ip / time / uuid / base64 等仅扩展内响应。详见 [docs/extensions.md](docs/extensions.md)。
+`SearchContext.extensionMode` 供扩展区分场景：全局即时答案 calculator / currency / base64（base64 仅解码，设 minLength 门槛过滤短词误触）；ip / time / uuid 等仅扩展内响应。详见 [docs/extensions.md](docs/extensions.md)。
 
 ### 窗口
 

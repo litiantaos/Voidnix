@@ -113,7 +113,7 @@ interface SearchContext {
   - **模式快照**：`search()` 入口快照 `activeExtension`，await 期间切换不影响本次后处理
   - **UX**：外壳（`useSearchInput`）延迟 50ms 显示 loading，同步 dynamic 不闪、网络型才占位
 
-- `extensionMode` 区分调用场景：**全局即时答案仅 calculator / currency**；ip / time / uuid / base64 等须 `if (!ctx?.extensionMode) return []`，仅扩展内响应。网络型（currency）全局空 query 仍应跳过请求返回 `[]`，避免拖慢默认列表。
+- `extensionMode` 区分调用场景：**全局即时答案 calculator / currency / base64**（base64 仅解码，设 minLength 门槛过滤短词误触）；ip / time / uuid 等须 `if (!ctx?.extensionMode) return []`，仅扩展内响应。网络型（currency）全局空 query 仍应跳过请求返回 `[]`，避免拖慢默认列表。
 - 半静态内容（如 base64）用扩展内缓存自管，走 dynamic 返回。
 
 ### SearchResult
