@@ -1,9 +1,11 @@
 import { ref, watch, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { useTauriListener } from '@/composables/useTauriListener'
 import { searchEngine } from '@/runtime/search-engine'
 import { getAllExtensions } from '@/runtime/extension-registry'
 import { scoreExtensionEntry } from '@/utils/fuzzy'
 import { useAppStore } from '@/stores/app'
+import { CMD } from '@/commands'
 import type { Extension, SearchResult } from '@/runtime/types'
 import { isTauri } from '@/utils/tauri'
 import { buildOpenUrlResult, buildWebSearchResult, parseWebSearchQuery } from '@/utils/web-search'
@@ -284,10 +286,43 @@ export function useSearchInput(opts: SearchInputOptions) {
     }
   }
 
+  /** 窗口唤起（主快捷键从隐藏呼出）时检查剪贴板：最新记录为文本且 3 秒内 → 填充搜索框。
+   *  搜索框禁用（disableSearchInput 扩展激活）时跳过。 */
+  async function maybeFillFromClipboard() {
+    if (!isTauri) return
+    if (activeExtension.value?.disableSearchInput) return
+    try {
+      // previewOnly 截断至 200 字符：搜索框不宜承载超长文本，避免模糊匹配 O(n×m) 开销
+      const items = await invoke<
+        Array<{ content: string; content_type: string; created_at: string }>
+      >(CMD.getClipboardHistory, {
+        filterFavorite: null,
+        limit: 1,
+        previewOnly: true,
+      })
+      if (items.length === 0) return
+      const latest = items[0]
+      if (latest.content_type !== 'text') return
+      // created_at 为 SQLite UTC（YYYY-MM-DD HH:MM:SS），补 T+Z 解析为 UTC 毫秒时间戳
+      const createdAt = new Date(latest.created_at.replace(' ', 'T') + 'Z').getTime()
+      if (Date.now() - createdAt > 3000) return
+      // 设值后派发 input 事件，复用 onInput 完整搜索链路（防抖/搜索引擎/结果更新）；
+      // select 使后续输入直接替换填充内容（focusHandler 在 IPC 往返前已执行，此时 query 仍空不会 select）
+      if (searchInput.value) {
+        searchInput.value.value = latest.content
+        searchInput.value.dispatchEvent(new Event('input', { bubbles: true }))
+        searchInput.value.select()
+      }
+    } catch {
+      // 剪贴板不可用时静默降级
+    }
+  }
+
   onMounted(async () => {
     if (!activeExtension.value?.disableSearchInput) searchInput.value?.focus()
     await loadDefaultResults(true)
     window.addEventListener('window-focused', focusHandler)
+    window.addEventListener('window-invoked', maybeFillFromClipboard)
   })
 
   onUnmounted(() => {
@@ -295,6 +330,7 @@ export function useSearchInput(opts: SearchInputOptions) {
     if (searchTimeout) clearTimeout(searchTimeout)
     searchEngine.abort()
     window.removeEventListener('window-focused', focusHandler)
+    window.removeEventListener('window-invoked', maybeFillFromClipboard)
   })
 
   // 进入搜索型扩展（无 mainView、有 search）：触发初始 dynamic 装填结果

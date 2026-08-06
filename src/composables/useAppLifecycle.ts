@@ -141,6 +141,8 @@ export function useAppLifecycle(win: Win) {
               hideWindow()
               return
             }
+            // 主快捷键从隐藏唤起：通知搜索层检查剪贴板填充
+            window.dispatchEvent(new CustomEvent('window-invoked'))
           } else {
             // 扩展快捷键动态分发
             for (const ext of getAllExtensions()) {
