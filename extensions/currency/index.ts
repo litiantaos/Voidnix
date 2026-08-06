@@ -47,7 +47,7 @@ export default defineExtension({
     keywords: ['汇率', '货币', 'currency', 'exchange', 'usd', 'cny', 'eur', 'jpy'],
   },
 
-  placeholder: '输入金额与货币代码，如 100 USD、1万美元、3亿日元，默认查询 1 USD',
+  placeholder: '输入金额与货币，如 100 USD、1万美元、USD10、10w美元，默认查询 1 USD',
 
   search: {
     dynamic: async (query, ctx): Promise<ProviderResult[]> => {

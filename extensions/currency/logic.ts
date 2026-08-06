@@ -12,11 +12,13 @@ const CURRENCY_NAME_MAP: Record<string, string> = {
   台币: 'TWD',
 }
 
-/** 中文量词 → 倍率（alternation 中万亿必须先于万匹配）。 */
+/** 量词 → 倍率（w=万、k=千；alternation 中万亿必须先于万匹配）。 */
 const CURRENCY_UNITS: Record<string, number> = {
   万亿: 1e12,
-  万: 1e4,
   亿: 1e8,
+  万: 1e4,
+  w: 1e4,
+  k: 1e3,
 }
 
 /** ISO 代码 → 中文名（CURRENCY_NAME_MAP 反向）。 */
@@ -24,22 +26,35 @@ export const CURRENCY_CODE_TO_NAME: Record<string, string> = Object.fromEntries(
   Object.entries(CURRENCY_NAME_MAP).map(([name, code]) => [code, name]),
 )
 
-const INPUT_RE =
-  /^(\d+(?:\.\d+)?)\s*(万亿|万|亿)?\s*([A-Za-z]{3}|美元|人民币|欧元|日元|英镑|港币|韩元|台币)$/
+// 公共片段：数字 / 量词 / 货币
+const NUM = '\\d+(?:\\.\\d+)?'
+const UNIT = '万亿|万|亿|w|k'
+const CUR = '[A-Za-z]{3}|美元|人民币|欧元|日元|英镑|港币|韩元|台币'
+
+/** 两种语序：数字[量词]货币 或 货币数字[量词]（量词总紧随数字）；i 标志使 w/k 兼容大小写。 */
+const INPUT_RE = new RegExp(
+  `^(${NUM})\\s*(${UNIT})?\\s*(${CUR})$|^(${CUR})\\s*(${NUM})\\s*(${UNIT})?$`,
+  'i',
+)
 
 export interface ParsedCurrencyInput {
   amount: number
   fromCurrency: string
 }
 
-/** 解析 "100 USD" / "1万美元" / "3亿日元" 形态输入；不匹配返回 null。 */
+/** 解析 "100 USD" / "1万美元" / "3亿日元" / "USD10" / "美元10万" 形态输入；不匹配返回 null。 */
 export function parseCurrencyInput(query: string): ParsedCurrencyInput | null {
   const m = query.trim().match(INPUT_RE)
   if (!m) return null
-  const base = parseFloat(m[1])
-  const unit = m[2]
-  const amount = base * (unit ? CURRENCY_UNITS[unit] : 1)
-  const fromCurrency = CURRENCY_NAME_MAP[m[3]] ?? m[3].toUpperCase()
+  // 形态一（数字在前）：[1]=数字 [2]=量词 [3]=货币
+  // 形态二（货币在前）：[4]=货币 [5]=数字 [6]=量词
+  const form1 = m[1] !== undefined
+  const baseStr = form1 ? m[1] : m[5]
+  const unitStr = form1 ? m[2] : m[6]
+  const curStr = form1 ? m[3] : m[4]
+  const base = parseFloat(baseStr!)
+  const amount = base * (unitStr ? CURRENCY_UNITS[unitStr.toLowerCase()] : 1)
+  const fromCurrency = CURRENCY_NAME_MAP[curStr!] ?? curStr!.toUpperCase()
   return { amount, fromCurrency }
 }
 
