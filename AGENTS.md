@@ -159,6 +159,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - `present_on_cursor_screen`：光标屏居中并写 `PLACEMENT_VIS`
 - `animate_frame` 只在 `PLACEMENT_VIS` 内改尺寸（忽略前端 x/y，高度立即生效）
 - 截图 overlay 等独占场景才显式 `activate_app`
+- **剪贴板填充**：主快捷键从隐藏唤起时派发 `window-invoked`（DOM 事件），`useSearchInput` 查剪贴板最新记录，文本类且 3 秒内则填充搜索框并 select（`disableSearchInput` 扩展跳过）
 
 **hide 策略**：
 
@@ -344,8 +345,8 @@ src/
 │   ├── ui/             # 原子组件（只用这些，禁止手写底层标签）
 │   └── layout/         # MainView / ContentView / ResultItem（kind 分支内聚）/ ResultIcon / ResultActionPanel
 ├── composables/
-│   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键/失焦隐藏/扩展事件）
-│   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型扩展 dynamic + web 搜索 + 默认结果）
+│   ├── useAppLifecycle.ts     # 主窗口生命周期（快捷键/失焦隐藏/扩展事件；主快捷键唤起派发 window-invoked）
+│   ├── useSearchInput.ts      # 搜索编排（全局 searchEngine + 搜索型扩展 dynamic + web 搜索 + 默认结果 + 唤起剪贴板填充）
 │   ├── useResultNavigation.ts # 结果键盘导航 + 执行分派 + Escape 统一退出
 │   ├── useExtensionHeight.ts   # 主窗口高度统一管理
 │   ├── useActionPanel.ts      # Cmd+Enter / 右键 动作浮层（toggleOpen 统一入口 + 键盘导航 + 外点关闭）
