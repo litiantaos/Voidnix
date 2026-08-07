@@ -183,6 +183,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 **窗口高度**——扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖：
 
 - `useExtensionHeight`（MainView 全局唯一调用）读 `activeExtension` + `activeSubview` 解析模式
+- **adjust 可见性守卫**：`windowVisible`（focus/blur 驱动，初始 false）为 false 时 adjust 跳过 `set_main_frame`——不可见时提前改高度会让 WKWebView viewport 与 NSWindow frame 不匹配（present 后 footer 仍按旧 viewport 底部定位、悬在窗口中间）。守卫后 present 用上次稳定高度（viewport 匹配），show 后 focus 触发 adjust，渐进 animate 到目标高度——animator `display:YES` 逐帧驱动 NSView resize，WKWebView viewport 有时间每帧跟随同步，footer 始终贴底（视觉连续的撑大动画，而非瞬间跳变）。adjust 读 `outerSize` 实际高度，fixed/default 已等于目标则跳过 invoke（回填 `lastApplied`），消除多余 reflow
 - 一次 invoke 触发 Rust `set_main_frame` → `animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS rAF 逐帧）
 - `auto` 模式：ResizeObserver 监听 `contentRef`，窗口高 = `CHROME_HEIGHT`（搜索栏 + 间距）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`
 - 屏幕尺寸走 `currentMonitor`（WKWebView 下 `window.screen` 仅返回 webview 视口）
