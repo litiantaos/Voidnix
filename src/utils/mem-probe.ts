@@ -51,7 +51,7 @@ export function probeMem(label: string): void {
     const alive = s.total - s.finalized
     return `  ${tag}: alive ${alive}/${s.total} (GC 回收 ${s.finalized})`
   })
-  console.log(`[mem] ${label}\n${lines.join('\n') || '  (无已追踪搜索)'}`)
+  console.warn(`[mem] ${label}\n${lines.join('\n') || '  (无已追踪搜索)'}`)
 }
 
 // 控制台全局入口：随时调 __mem() 看当前各搜索结果对象的存活/回收统计
