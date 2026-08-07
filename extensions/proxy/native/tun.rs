@@ -67,16 +67,17 @@ fn generate_plist(label: &str, bin: &str, dir: &str) -> String {
 ///
 /// **冲突处理（三层）**：
 /// 1. 安装前探测端口（`port_occupant`）：mixed-port/controller 被别的程序占 → 直接报错不强杀，
-///    让用户知情（关别的工具 / 改端口）。被自己旧 mihomo 占 → 正常接管。
-/// 2. install 脚本只杀**自己的** mihomo（路径含 bundle-id 数据目录），不碰别的工具的 mihomo。
-///    bootstrap 后 sleep 2 检测 mihomo 是否 fatal 退出（端口/TUN 冲突会秒退），是则在同一提权
-///    session 内 bootout + 删 plist——从根源消除 KeepAlive 反复拉起刷日志，一次提权完成全部。
+///    让用户知情（关别的工具 / 改端口）。dev/prod 默认端口隔离（dev +1 偏移），互不占用。
+/// 2. install 脚本只杀**自己的** mihomo（路径含 bundle-id 数据目录），不碰别的实例。
+///    bootstrap 后 curl 轮询验 controller 可达（secret 匹配）——mihomo 绑定端口失败时
+///    **不退出**（降级运行无监听），pgrep 误判成功；controller API 健康检查才能识别降级实例，
+///    是则在同一提权 session 内 bootout + 删 plist——从根源消除 KeepAlive 反复拉起刷日志。
 /// 3. wait_ready 超时后读 mihomo.log + lsof 拼精确诊断（端口占用者 / TUN 冲突）。
 pub async fn install_launchdaemon(
     app: &AppHandle,
     params: &super::core::RunParams,
 ) -> Result<(), String> {
-    // 第一层：端口预探测——别的程序占端口则不强杀，提示用户处理
+    // 第一层：端口预探测——别的程序占端口则报错（提示用户处理）
     for &port in &[params.mixed_port, params.controller_port] {
         if let Some((pid, command)) = port_occupant(port) {
             if !is_own_mihomo(&command, app) {
@@ -112,25 +113,47 @@ pub async fn install_launchdaemon(
     let tmp_q = shell_quote(&tmp_plist.display().to_string());
     let dest_q = shell_quote(&plist_install_path(&label).display().to_string());
     let bin_q = shell_quote(&bin.display().to_string());
+    let log_q = shell_quote(&dir.join("mihomo.log").display().to_string());
 
-    // 第三层：只杀自己的 mihomo（不碰别的工具）+ bootstrap 后检测 fatal → 同 session 回收
+    // 第三层：只杀自己的 mihomo（不碰别的实例）+ bootstrap 后 controller 健康检查 → 同 session 回收
     // 自身 mihomo 按 binary 完整路径匹配（含 bundle-id 数据目录，全局唯一）。
-    // SIGTERM → sleep 1 → SIGKILL 兜底（卡死进程不响应 TERM 致端口冲突）。
-    let self_matcher = format!("grep -F {bin_q}");
+    // dev/prod 默认端口隔离（dev +1），install 时互不影响。
+    // **条件 kill**：用 flag 变量（any）替代 `[ -n "$pids" ]`——`do shell script` 外层是
+    // AppleScript 双引号字符串，内部的双引号会提前终止它（-2740 编译错误）。flag 方式零双引号，
+    // AppleScript 安全。有匹配 pid 才 sleep 1 等 TERM 生效再 KILL 兜底；首次安装无旧进程时跳过等待。
+    // 健康检查用 curl 轮询 controller /version（secret 匹配）——mihomo 绑定失败不退出（降级运行），
+    // pgrep 误判成功；只有 controller API 能确认 mihomo 真正可用。轮询替代固定 sleep：mihomo 实际
+    // ~14ms ready，固定 sleep 白等；轮询 0.2s 间隔首次成功即 break，典型 <1s。
+    // **bootstrap 前截断 mihomo.log**——launchd StandardOutPath 是 append 模式（不截断），
+    // 旧失败尝试的 error 日志永远留在文件尾部。截断后 diagnose_launch_failure 只读到本次启动的日志，
+    // 避免陈旧的 "address already in use" 导致误报。
     let matcher = format!(
-        "ps -eo pid,args | {self_matcher} | grep -F ' -d ' | grep -v grep | awk '{{print $1}}'"
+        "ps -eo pid,args | grep -F {bin_q} | grep -F ' -d ' | grep -v grep | awk '{{print $1}}'"
     );
+    let auth_header = shell_quote(&format!("Authorization: Bearer {}", params.secret));
+    let ctrl_port = params.controller_port;
     let cmd = format!(
-        "for p in $({matcher}); do kill $p 2>/dev/null; done; \
-         sleep 1; \
-         for p in $({matcher}); do kill -9 $p 2>/dev/null; done; \
+        "pids=$({matcher}); \
+         any=0; \
+         for p in $pids; do kill $p 2>/dev/null; any=1; done; \
+         if [ $any -eq 1 ]; then \
+            sleep 1; \
+            for p in $pids; do kill -9 $p 2>/dev/null; done; \
+         fi; \
          launchctl bootout system/{label} 2>/dev/null; \
+         : > {log_q}; \
          cat {tmp_q} > {dest_q}; \
          chown root:wheel {dest_q}; \
          chmod 644 {dest_q}; \
          launchctl bootstrap system {dest_q}; \
-         sleep 2; \
-         if ! pgrep -f {bin_q} >/dev/null 2>&1; then \
+         ok=0; \
+         for i in 1 2 3 4 5 6 7 8 9 10; do \
+            if curl -sf -m 1 -H {auth_header} http://127.0.0.1:{ctrl_port}/version >/dev/null 2>&1; then \
+                ok=1; break; \
+            fi; \
+            sleep 0.2; \
+         done; \
+         if [ $ok -eq 0 ]; then \
             launchctl bootout system/{label} 2>/dev/null; \
             rm -f {dest_q}; \
             echo MIHOMO_LAUNCH_FAILED; \
@@ -144,12 +167,9 @@ pub async fn install_launchdaemon(
         return Err(diagnose_launch_failure(app, params));
     }
 
-    // 第二层：plist 已装且 mihomo 在跑，等 controller 就绪；超时则诊断
-    let base = format!("http://127.0.0.1:{}", params.controller_port);
-    match super::controller::wait_ready(&base, &params.secret, 10000).await {
-        Ok(()) => Ok(()),
-        Err(_) => Err(diagnose_launch_failure(app, params)),
-    }
+    // curl 轮询已在脚本内验证 controller 就绪（secret 匹配 + GET /version 成功），
+    // 无需再调 wait_ready 冗余轮询——此处直接返回 Ok。
+    Ok(())
 }
 
 /// 卸载 LaunchDaemon（osascript 提权）：bootout 停 mihomo + 删 plist。core 升级/卸载用。
