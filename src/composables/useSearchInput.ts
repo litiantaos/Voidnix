@@ -9,6 +9,7 @@ import { CMD } from '@/commands'
 import type { Extension, SearchResult } from '@/runtime/types'
 import { isTauri } from '@/utils/tauri'
 import { buildOpenUrlResult, buildWebSearchResult, parseWebSearchQuery } from '@/utils/web-search'
+import { probeMem, trackResults } from '@/utils/mem-probe'
 
 interface SearchInputOptions {
   searchInput: Ref<HTMLInputElement | undefined>
@@ -254,6 +255,8 @@ export function useSearchInput(opts: SearchInputOptions) {
         if (searchId === currentSearchId) {
           results.value = finalResults
           clampSelected(finalResults.length)
+          // 注册本次结果对象的 GC 追踪（控制台 __mem() 手动查看回收情况）
+          trackResults(query, finalResults)
         }
       }, 30)
     } else {
@@ -280,8 +283,17 @@ export function useSearchInput(opts: SearchInputOptions) {
   const focusHandler = async () => {
     if (activeExtension.value?.disableSearchInput) return
     searchInput.value?.focus()
-    if (appStore.searchQuery) searchInput.value?.select()
-    if (!appStore.activeExtId && !appStore.searchQuery) {
+    if (appStore.searchQuery) {
+      searchInput.value?.select()
+      // 隐藏时 results 已清空（释放 DOM），唤起重跑搜索恢复结果
+      const ext = activeExtension.value
+      if (appStore.activeExtId) {
+        // 搜索型扩展重跑；mainView 扩展不走 results 无需处理
+        if (ext && !ext.mainView && ext.search) runExtensionSearch(appStore.searchQuery)
+      } else if (appStore.searchQuery.trim()) {
+        runExtensionSearch(appStore.searchQuery)
+      }
+    } else if (!appStore.activeExtId) {
       await loadDefaultResults()
     }
   }
@@ -318,11 +330,25 @@ export function useSearchInput(opts: SearchInputOptions) {
     }
   }
 
+  /** 窗口隐藏时取消进行中搜索与待触发的防抖：窗口不可见无需继续召回/打分。
+   *  保留已渲染的 results：唤起时窗口立即可见上次结果（无空闪），focusHandler 再走应用缓存原地刷新。
+   *  results 经 LIMITS 收紧后峰值约 44 节点，隐藏期间常驻开销可忽略（且下次搜索即整体替换，非泄漏源）。 */
+  function onWindowHiding() {
+    searchEngine.abort()
+    if (searchTimeout) {
+      clearTimeout(searchTimeout)
+      searchTimeout = null
+    }
+  }
+
   onMounted(async () => {
     if (!activeExtension.value?.disableSearchInput) searchInput.value?.focus()
     await loadDefaultResults(true)
+    // 启动基线：默认结果加载完成后的 JS 堆水位
+    probeMem('boot')
     window.addEventListener('window-focused', focusHandler)
     window.addEventListener('window-invoked', maybeFillFromClipboard)
+    window.addEventListener('window-hiding', onWindowHiding)
   })
 
   onUnmounted(() => {
@@ -331,6 +357,7 @@ export function useSearchInput(opts: SearchInputOptions) {
     searchEngine.abort()
     window.removeEventListener('window-focused', focusHandler)
     window.removeEventListener('window-invoked', maybeFillFromClipboard)
+    window.removeEventListener('window-hiding', onWindowHiding)
   })
 
   // 进入搜索型扩展（无 mainView、有 search）：触发初始 dynamic 装填结果

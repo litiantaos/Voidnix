@@ -99,7 +99,7 @@ interface SearchContext {
 
 - **全局模式**（`searchEngine.search`）：
 
-  流程：**流式增量召回**——并发启动所有扩展 dynamic，每个扩展的 `emit`/`resolve` 都触发一次增量重排（keyword 合流 → dedupe → groupAndSort）并回调 `onUpdate`。快结果（应用缓存/同步扩展）秒出，慢结果（内存索引文件/网络）增量补充，不再 `Promise.all` barrier 等全部。finalScore 仍只预算一次（emit 时打分，groupAndSort 复用）。
+  流程：**流式增量召回**——并发启动所有扩展 dynamic，每个扩展的 `emit`/`resolve` 都同步触发增量重排（keyword 合流 → dedupe → groupAndSort），`onUpdate` 经 rAF 批量合帧回调（同帧多 emit 合并为一次渲染）。快结果（应用缓存/同步扩展）秒出，慢结果（内存索引文件/网络）增量补充，不再 `Promise.all` barrier 等全部。finalScore 仍只预算一次（emit 时打分，groupAndSort 复用）。
 
   - **流式**：扩展可选调用 `ctx.emit(partial)` 多次产出部分结果（如 search 扩展应用 emit 秒出、文件 return 后补），不调用的扩展走一次性 return 行为不变。框架按 `extId:id` 去重，emit 与 return 重叠不会产生重复项；但扩展应遵循「emit 产出首批、return 产出补充」的语义分工——已 emit 的内容不放入 return，避免多余打分计算
   - **keyword 合流**：`scoreExtensionEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；每次 flush 重算（纯同步、扩展数少），keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）

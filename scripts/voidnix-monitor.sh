@@ -20,25 +20,59 @@ PID=$(pgrep -f "/Applications/Voidnix.app/Contents/MacOS/Voidnix" 2>/dev/null | 
 
 # 新日志文件写表头
 if [ ! -f "$LOG" ]; then
-  printf "# Voidnix Prod Monitor %s\n# time  rss_mb  cpu%%  threads  vsz_mb  data_mb\n# @ ext/bin  rss_mb  cpu%%  vsz_mb   (扩展子进程，紧随主进程行)\n" "$TODAY" >> "$LOG"
+  printf "# Voidnix Prod Monitor %s\n# time  fp_mb  cpu%%  threads  data_mb\n# & webkit  fp_total_mb  (WebKit XPC 合计，按启动时间关联)\n# @ ext/bin  rss_mb  cpu%%  vsz_mb   (扩展子进程，紧随主进程行)\n" "$TODAY" >> "$LOG"
 fi
 
-# 单次 ps 取 rss/cpu/vsz（KB）
-INFO=$(ps -o rss=,%cpu=,vsz= -p "$PID" 2>/dev/null | tr -s ' ')
-[ -z "$INFO" ] && exit 0
-read -r RSS_KB CPU VSZ_KB <<< "$INFO"
-
-# 线程数
+# CPU + 线程数（ps，与下方抓栈逻辑一致）
+CPU=$(ps -o %cpu= -p "$PID" 2>/dev/null | tr -d ' ')
+[ -z "$CPU" ] && exit 0
 THRD=$(ps -M -p "$PID" 2>/dev/null | wc -l | awk '{print $1 - 1}')
 [ -z "$THRD" ] || [ "$THRD" -lt 0 ] 2>/dev/null && THRD=0
+
+# Physical footprint（top mem = 物理内存足迹，含被内核压缩的内存页；ps rss 不含，严重低估 WKWebView 进程）
+FP_MB=$(top -l 1 -pid "$PID" -stats pid,mem 2>/dev/null | awk '
+  $1 ~ /^[0-9]+$/ && $NF ~ /^[0-9.]+[KMG]$/ {
+    m=$NF
+    if (m~/M$/) v=substr(m,1,length(m)-1)+0
+    else if (m~/K$/) v=substr(m,1,length(m)-1)/1024
+    else v=(substr(m,1,length(m)-1)+0)*1024
+    printf "%.0f", v
+  }')
+[ -z "$FP_MB" ] && FP_MB="-"
 
 # 数据目录大小（MB）
 DATA_MB=$(du -sm "$DATA_DIR" 2>/dev/null | awk '{print $1}')
 [ -z "$DATA_MB" ] && DATA_MB="-"
 
-# 格式化输出（awk 做浮点除法，避免依赖 bc）
-awk -v t="$(date '+%H:%M:%S')" -v r="$RSS_KB" -v c="$CPU" -v n="$THRD" -v v="$VSZ_KB" -v d="$DATA_MB" \
-  'BEGIN { printf "%s  %.1f  %s  %d  %.1f  %s\n", t, r/1024, c, n, v/1048576, d }' >> "$LOG"
+printf "%s  %s  %s  %s  %s\n" "$(date '+%H:%M:%S')" "$FP_MB" "$CPU" "$THRD" "$DATA_MB" >> "$LOG"
+
+# WebKit XPC 子进程 footprint 合计（与主进程同时启动 ±10s 的 com.apple.WebKit.* 进程）
+# ps rss 对 WKWebView 严重失真（如 WebContent 进程 ps 报 47M / 实际 footprint 175M），
+# 必须用 top footprint 才能反映真实占用
+MAIN_LS=$(ps -o lstart= -p "$PID" 2>/dev/null | xargs)
+MAIN_EP=$(date -j -f "%a %b %d %H:%M:%S %Y" "$MAIN_LS" +%s 2>/dev/null)
+if [ -n "$MAIN_EP" ] && [ "$MAIN_EP" -gt 0 ] 2>/dev/null; then
+  WK_PIDS=""
+  while read -r wp _dow _mon _day _time _year _rest; do
+    we=$(date -j -f "%a %b %d %H:%M:%S %Y" "$_dow $_mon $_day $_time $_year" +%s 2>/dev/null)
+    [ -n "$we" ] && {
+      d=$((we - MAIN_EP))
+      [ "$d" -ge -10 ] && [ "$d" -le 10 ] && WK_PIDS="$WK_PIDS -pid $wp"
+    }
+  done < <(ps -ax -o pid=,lstart=,comm= 2>/dev/null | grep "com.apple.WebKit")
+  if [ -n "$WK_PIDS" ]; then
+    WK_FP=$(top -l 1 $WK_PIDS -stats pid,mem 2>/dev/null | awk '
+      $1 ~ /^[0-9]+$/ && $NF ~ /^[0-9.]+[KMG]$/ {
+        m=$NF
+        if (m~/M$/) v=substr(m,1,length(m)-1)+0
+        else if (m~/K$/) v=substr(m,1,length(m)-1)/1024
+        else v=(substr(m,1,length(m)-1)+0)*1024
+        total+=v
+      }
+      END { if (total>0) printf "%.0f", total }')
+    [ -n "$WK_FP" ] && printf "& webkit  %s\n" "$WK_FP" >> "$LOG"
+  fi
+fi
 
 # 扩展子进程采样（不依赖 PPID 链——root 子进程如 mihomo 由 launchd LaunchDaemon 托管，PPID=1）
 # 用 comm（可执行文件路径）而非 command（完整命令行）匹配：只有可执行确实位于

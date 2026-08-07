@@ -18,6 +18,12 @@ import { toLlmMessages, tryParseSearchAnswer } from './logic'
 export type AgentStatus = 'ready' | 'streaming' | 'error'
 
 const MAX_MESSAGES = 100
+/// 对话历史体积上限（字符数）：超限后从最旧 toolCall output 开始截断，
+/// 遏制深度对话（命令 stdout / web_search JSON 可达 MB 级）的 JS 堆 + DOM 无限增长。
+/// 最新一轮 tool output 始终完整保留（对当前推理最关键）。
+const MAX_HISTORY_CHARS = 400_000
+/// 被截断的旧 toolCall output 保留前 N 字符（足够回顾上下文）
+const TRUNCATED_OUTPUT_KEEP = 1500
 
 /** 写入气泡内容的事件类型（仅 streaming 气泡接受；finalize 后忽略晚到内容）。 */
 const CONTENT_EVENTS = new Set<AgentEvent['type']>([
@@ -276,8 +282,43 @@ export function useAgentChat() {
   }
 
   function trimHistory() {
-    if (messages.value.length <= MAX_MESSAGES) return
-    messages.value = messages.value.slice(-MAX_MESSAGES)
+    if (messages.value.length > MAX_MESSAGES) {
+      messages.value = messages.value.slice(-MAX_MESSAGES)
+    }
+    trimHistoryByBytes()
+  }
+
+  /// 体积维度裁剪：累计字符超 MAX_HISTORY_CHARS 时从最旧开始截断 toolCall output 和 reasoning。
+  /// 最新一条 assistant 消息跳过（当前推理最依赖）。reasoning 不回灌 LLM，截断只影响 UI 回顾。
+  function trimHistoryByBytes() {
+    let total = 0
+    for (const msg of messages.value) {
+      for (const p of msg.parts) {
+        if (p.type === 'text' || p.type === 'reasoning') total += p.text.length
+        else if (p.type === 'toolCall') total += p.output?.length ?? 0
+      }
+    }
+    if (total <= MAX_HISTORY_CHARS) return
+
+    const lastIdx = messages.value.length - 1
+    for (let i = 0; i <= lastIdx; i++) {
+      if (total <= MAX_HISTORY_CHARS) break
+      const msg = messages.value[i]
+      const isLast = i === lastIdx
+      for (const p of msg.parts) {
+        if (total <= MAX_HISTORY_CHARS) break
+        if (isLast) continue
+        if (p.type === 'toolCall' && p.output && p.output.length > TRUNCATED_OUTPUT_KEEP) {
+          const removed = p.output.length - TRUNCATED_OUTPUT_KEEP
+          p.output = p.output.slice(0, TRUNCATED_OUTPUT_KEEP) + `\n…[已截断 ${removed} 字符]`
+          total -= removed
+        } else if (p.type === 'reasoning' && p.text.length > TRUNCATED_OUTPUT_KEEP) {
+          const removed = p.text.length - TRUNCATED_OUTPUT_KEEP
+          p.text = p.text.slice(0, TRUNCATED_OUTPUT_KEEP) + `\n…[已截断 ${removed} 字符]`
+          total -= removed
+        }
+      }
+    }
   }
 
   return {

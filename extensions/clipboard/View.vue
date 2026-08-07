@@ -446,7 +446,9 @@ onActivated(() => {
 })
 
 onDeactivated(() => {
-  // 离开扩展时清空颜色缓存，避免长期驻留增长（重新进入时自然重建）
+  // 离开扩展时清空 UI 辅助缓存，避免长期驻留增长（重新进入时自然重建）。
+  // 不清 tabCache/history：tabCache 经 previewOnly 截断（~200 字符/条），
+  // 重新进入直接命中缓存秒出，避免「空列表 → 异步 IPC → 补全」的空闪。
   colorCache.clear()
 })
 

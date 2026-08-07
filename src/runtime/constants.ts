@@ -33,9 +33,10 @@ export const UPDATE = {
 } as const
 
 export const LIMITS = {
-  /** 非 file 组组内限流（application / extension / clipboard / web 共用）。 */
-  maxGroupResults: 30,
-  maxFileResults: 50, // file 组限流（含 folder；单组计数，无跨组共享）
+  /** 非 file 组组内限流（application / extension / clipboard / web 共用）。
+   *  启动器场景用户极少翻到第 12 项之后；收紧以削减每次搜索的 DOM 节点峰值（遏制 WebKit RSS 高水位）。 */
+  maxGroupResults: 12,
+  maxFileResults: 20, // file 组限流（含 folder；单组计数，无跨组共享）
   searchTimeoutMs: 3000,
 } as const
 

@@ -17,11 +17,23 @@ impl Extension for WindowManagerExtension {
         "window-manager"
     }
 
+    // snap-panel 窗口创建 deferred 到 bootstrap 后（spawn_blocking 不阻塞 join_all）。
+    // 读 config.json 判断 enabled：仅启用时创建（省一个常驻 WebContent 进程 ~30-50MB）。
+    // 不能在 set_window_manager_enabled 的 run_on_main_thread 闭包内创建——
+    // WebviewWindowBuilder::build() 内部会 dispatch 到主线程，与正在执行闭包的主线程死锁。
     async fn setup(&self, app: &tauri::AppHandle) -> tauri::Result<()> {
-        // snap-panel 窗口创建（WKWebView ~45ms）deferred 到 bootstrap 后，不阻塞 join_all。
-        // AppKit 调用必须在主线程：spawn_blocking 内用 run_on_main_thread 调度。
         let app_clone = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
+            // 读 config.json：未启用则跳过创建
+            let enabled = crate::runtime::storage::ext_data_dir(&app_clone, "window-manager")
+                .ok()
+                .and_then(|d| std::fs::read_to_string(d.join("config.json")).ok())
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .and_then(|v| v.get("enabled").and_then(|b| b.as_bool()))
+                .unwrap_or(false);
+            if !enabled {
+                return;
+            }
             let (tx, rx) = std::sync::mpsc::channel();
             let app2 = app_clone.clone();
             let _ = app_clone.run_on_main_thread(move || {
@@ -295,6 +307,13 @@ pub async fn set_window_manager_enabled(
     app: tauri::AppHandle,
     enabled: bool,
 ) -> Result<(), String> {
+    // 运行时启用补建 snap-panel 窗口：setup 仅在启动期 enabled 时建窗，
+    // 用户从设置首次开启（enabled: false→true）需在此补建，否则拖窗吸附取窗 None 静默失效。
+    // create_snap_panel 幂等（已存在直接 return）；本命令跑在 tokio worker，
+    // WebviewWindowBuilder::build 内部 dispatch 到主线程，不在主线程闭包内，无死锁风险。
+    if enabled {
+        create_snap_panel(&app);
+    }
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     let app_clone = app.clone();
     app.run_on_main_thread(move || {

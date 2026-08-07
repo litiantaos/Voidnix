@@ -322,7 +322,7 @@ body {
   left: 10%;
   top: 6%;
   background: var(--mica-fog-a);
-  filter: blur(80px);
+  filter: blur(48px);
   opacity: 0.72;
 }
 
@@ -336,7 +336,7 @@ body {
   left: auto;
   top: auto;
   background: var(--mica-fog-b);
-  filter: blur(88px);
+  filter: blur(52px);
   opacity: 0.58;
 }
 

@@ -220,6 +220,8 @@ const stitchDirection = ref<StitchDirection>('vertical')
 const stitchGap = ref(0)
 const stitchResize = ref<number>(RESIZE_PRESETS[0])
 const selectedFile = ref(-1)
+/// 拼接缩略图 LRU 缓存：base64 data URL 单张可达数十 KB，无上限时拼接大量图片致内存膨胀
+const THUMB_CACHE_MAX = 20
 const thumbCache = ref<Map<string, string>>(new Map())
 
 // ── 屏幕高度（预览区 = 75%） ──
@@ -314,6 +316,10 @@ watch(
       if (thumbCache.value.has(file)) continue
       try {
         const url = await invoke<string>(CMD.imageReadPreview, { inputPath: file })
+        if (thumbCache.value.size >= THUMB_CACHE_MAX) {
+          const first = thumbCache.value.keys().next().value
+          if (first) thumbCache.value.delete(first)
+        }
         thumbCache.value.set(file, url)
       } catch {
         /* ignore */
