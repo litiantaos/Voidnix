@@ -54,6 +54,10 @@ export function useExtensionHeight(deps: {
   // 上次实际下发的 frame：目标无变化时跳过 invoke，防止 ResizeObserver ↔ animate_frame 正反馈死循环
   // （动画期间 content reflow 触发 RO → adjust → 新动画 → 再 reflow → …，目标高度 ±1px 抖动即自维持）
   let lastApplied: { h: number; y: number } | null = null
+  // 窗口可见性（focus/blur 驱动）：不可见时 adjust 跳过 set_main_frame，避免提前改高度
+  // 导致 present 后 WKWebView viewport 与 NSWindow frame 不匹配（footer 定位错位）。
+  // 初始 false：窗口启动 visible:false（tauri.conf），首次 focus 前不可见
+  let windowVisible = false
 
   function invalidateMonitor() {
     cachedBounds = null
@@ -97,15 +101,23 @@ export function useExtensionHeight(deps: {
   }
 
   async function adjust() {
+    // 窗口不可见时跳过 set_main_frame：adjust 会把 NSWindow frame 提前改成目标高度，
+    // 但 WKWebView viewport 仍停留在旧高度——present 以新高度 visible 后，footer（absolute
+    // 定位）在旧 viewport 底部，离窗口实际底部很远，表现为「输入框悬在中间」。
+    // 跳过后 present 用上次稳定高度（viewport 匹配），show 后 focus 触发 adjust，
+    // 渐进 animate 到目标高度，WKWebView viewport 逐帧跟随、footer 始终贴底。
+    if (!windowVisible) return
     const mode = currentMode()
     const bounds = await getBounds()
     if (!bounds) return
     const { factor, screenTop, screenBottom } = bounds
     // 基准位置：优先逻辑目标（动画中读 outerPosition 得中间值会漂移），首次读实际位置。
     // show 时 Rust 会把窗移到光标屏，与缓存逻辑坐标可差数百 px —— 偏差过大则以实际为准。
-    const pos = await tauriWindow.outerPosition()
+    // outerSize 并行读取：fixed/default 实际高度检查（focus 后若窗口已在目标高度则跳过）。
+    const [pos, winSize] = await Promise.all([tauriWindow.outerPosition(), tauriWindow.outerSize()])
     const actualX = pos.x / factor
     const actualY = pos.y / factor
+    const actualH = winSize.height / factor
     let baseX: number
     let baseY: number
     if (
@@ -159,6 +171,16 @@ export function useExtensionHeight(deps: {
     }
 
     targetY = nextY
+
+    // fixed/default：窗口实际高度与 Y 均已等于目标则跳过。已可见时连续切相同高度的扩展
+    // （如 agent 840 → proxy 840）命中。即便 from==to，animator setFrame 仍启动 animation
+    // context 触发 WKWebView reflow；读实际高度兜底跳过，回填 lastApplied。
+    // Y 也需不变才跳过：auto（可能上移）→ 等高 fixed 时 nextY=originalY≠baseY 需还原 Y，
+    // 不能因高度相等就跳过。
+    if (mode.mode !== 'auto' && Math.abs(target - actualH) <= 1 && Math.abs(nextY - baseY) <= 1) {
+      lastApplied = { h: target, y: nextY }
+      return
+    }
 
     // 目标无变化（≤1px）则跳过：animate_frame 每次 invoke 启动 0.26s 动画，
     // 动画期间 content reflow 可能触发 ResizeObserver → 再 adjust → 再动画，形成死循环。
@@ -218,7 +240,11 @@ export function useExtensionHeight(deps: {
     })
     void tauriWindow
       .onFocusChanged(({ payload: focused }) => {
-        if (!focused) return
+        if (!focused) {
+          windowVisible = false
+          return
+        }
+        windowVisible = true
         targetX = null
         targetY = null
         originalY = null
