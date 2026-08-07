@@ -90,11 +90,11 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **三个脚本**（`scripts/`）：
 
-- `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时单次 `ps` 采主进程 + 一次 `ps -A` 全表扫描识别扩展子进程（按可执行路径 `comm` 匹配 `com.litiantao.voidnix/extensions/<id>/`，按扩展分组；不依赖 PPID 链——root 子进程如 mihomo 由 launchd LaunchDaemon 托管 PPID=1；用 `comm` 而非 `command`，从根上排除 grep/osascript 等仅在参数里引用该路径的进程，也避免采样器自身 fork 的 shell 被误匹配）。主进程 CPU >80% 时用 `sample <pid> 2 -mayDie -file` 抓 2 秒调用栈快照（5 分钟冷却防刷屏），快照存 `stacks/cpu-<时间戳>.txt`、主日志追加 `# [stack]` 关联行。日志与快照自动保留 30 天。
+- `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时用 `top` 采主进程 Physical footprint（含被内核压缩的内存页；`ps rss` 不含致严重低估——WKWebView WebContent 进程 ps 报 47M 实际 footprint 175M）+ WebKit XPC 子进程 footprint 合计（按启动时间关联主进程 ±10s 的 `com.apple.WebKit.*` 进程），扩展子进程识别用 `ps -A` 全表扫描（按可执行路径 `comm` 匹配 `com.litiantao.voidnix/extensions/<id>/`，按扩展分组；不依赖 PPID 链——root 子进程如 mihomo 由 launchd LaunchDaemon 托管 PPID=1；用 `comm` 而非 `command`，从根上排除 grep/osascript 等仅在参数里引用该路径的进程，也避免采样器自身 fork 的 shell 被误匹配）。主进程 CPU >80% 时用 `sample <pid> 2 -mayDie -file` 抓 2 秒调用栈快照（5 分钟冷却防刷屏），快照存 `stacks/cpu-<时间戳>.txt`、主日志追加 `# [stack]` 关联行。日志与快照自动保留 30 天。
 - `voidnix-monitor-install.sh install|uninstall` — 安装/卸载 LaunchAgent（`com.litiantao.voidnix.monitor`，登录后自动生效）
-- `voidnix-analyze.sh [天数]` — 分析器：按天聚合主进程 RSS 区间/漂移/CPU 峰值/线程数/数据目录（漂移 >20MB 自动告警），并按扩展聚合子进程采样数/RSS 区间/CPU 峰值
+- `voidnix-analyze.sh [天数]` — 分析器：按天聚合主进程 footprint 区间/漂移/CPU 峰值/线程数/数据目录（漂移 >20MB 告警）、WebKit XPC 合计 footprint 区间/漂移（漂移 >50MB 告警 compositing layer 累积），并按扩展聚合子进程采样数/RSS 区间/CPU 峰值
 
-**日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`，`@ ext/bin rss cpu vsz` 子进程行紧随主进程行（`time rss cpu threads vsz data`），无子进程则无 `@` 行；抓栈触发时追加 `# [stack] time cpu= -> stacks/cpu-时间戳.txt`（注释行，analyze 跳过），快照存 `~/Library/Logs/Voidnix/stacks/`
+**日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`，主进程行（`time fp cpu threads data`）后跟 `& webkit fp_total`（WebKit XPC 合计，按启动时间关联）+ `@ ext/bin rss cpu vsz`（扩展子进程）；抓栈触发时追加 `# [stack] time cpu= -> stacks/cpu-时间戳.txt`（注释行，analyze 跳过），快照存 `~/Library/Logs/Voidnix/stacks/`
 
 **状态**：LaunchAgent 已安装运行，主进程已有 5 天数据；子进程采样维度已上线，CPU 阈值抓栈已上线。曾暴露 proxy/mihomo CPU 持续 100% 问题——根因为 gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）。执行 `bash scripts/voidnix-analyze.sh` 分析趋势。
 
@@ -124,7 +124,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### 搜索引擎
 
-`src/runtime/search-engine.ts`：流式增量召回（消除快结果等慢结果的 barrier）→ 一次预算 finalScore → keyword 合流 → dedupe → groupAndSort。每个扩展 `emit`/`resolve` 都触发增量重排 + 回调 `onUpdate`，应用缓存秒出、内存索引文件结果随打随出。
+`src/runtime/search-engine.ts`：流式增量召回（消除快结果等慢结果的 barrier）→ 一次预算 finalScore → keyword 合流 → dedupe → groupAndSort。每个扩展 `emit`/`resolve` 都同步触发增量重排，`onUpdate` 经 rAF 批量合帧回调（同帧多扩展结果合并为一次渲染；全部同帧 resolve 时 rAF 被 cancel、结果经 return 值投递），应用缓存秒出、内存索引文件结果随打随出。
 
 **两种模式共用 `search()`**：
 
@@ -269,10 +269,10 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 - 扩展 View（mainView/subviews/searchBarAccessory）**静态 import** 进主 bundle（用户高频、固定集合，首次进入零卡顿）
 - **独立窗口多入口**：screenshot / snap-panel / pin 窗口各自有独立 HTML 入口（`screenshot.html` / `snap-panel.html` / `pin.html`）+ 轻量 TS 入口（`src/entries/`），只加载自身组件 + vendor + 主题 CSS，**不加载**扩展注册表 / pinyin / markdown / 搜索引擎。每个 WebContent 进程 JS 从 ~700K 降至 ~86-142K
-- **窗口按需创建**：screenshot / snap-panel 窗口从 `tauri.conf.json` 移除静态声明，改在扩展 `setup` 中 `WebviewWindowBuilder` 代码创建（WKWebView 需启动时预加载页面，快捷键/鼠标触发时才能即时响应）
+- **窗口按需创建**：screenshot 窗口首次截图时懒创建（`setup` 内 `WebviewWindowBuilder`，WKWebView 预加载页面）；snap-panel 窗口在 `set_window_manager_enabled(true)` 时懒创建（默认禁用，启用时才创建避免常驻 WebContent 进程）；pin 窗口每次钉图创建、关闭时销毁
 - **子窗口主题**：独立入口窗口用 `runtime/child-theme.ts::initChildTheme`（无 Pinia 依赖，读 `get_cached_appearance` + 监听 `appearance-changed`），不初始化扩展系统
 - **vendor 分包 + pinyin 延迟加载**：`manualChunks` 拆 vendor(vue) / markdown(marked+dompurify) / pinyin 独立 chunk；pinyin-pro（拼音字典 289KB）改为首次 CJK 查询时 `import()` 异步加载，首屏零开销
-- `ContentView` 用 `KeepAlive`（max=8，LRU 驱逐）缓存已访问扩展，切换走 activate/deactivate 而非重挂载
+- `ContentView` 用 `KeepAlive`（max=5，LRU 驱逐）缓存已访问扩展，切换走 activate/deactivate 而非重挂载
 
 ### LLM 基础设施
 

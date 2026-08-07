@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts" generic="T">
-import { ref, watch, nextTick, onActivated, onDeactivated } from 'vue'
+import { ref, watch, nextTick, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
 import { onKeyStroke } from '@/composables/events'
 import { isComposing as isComposingCheck, isFormControl, wrapIndex } from '@/utils/dom'
 
@@ -94,15 +94,28 @@ function setSelectedIndex(index: number) {
   emit('select', index)
 }
 
-defineExpose({ selectedIndex: localIndex, setSelectedIndex, reveal })
-
 // ── Refs ──
-const itemRefs = ref<HTMLElement[]>([])
+// 函数 ref 在节点卸载时会收到 null；必须同步释放旧 DOM 引用，否则搜索结果
+// 缩短/替换后，itemRefs 会把整棵已脱离文档的节点树继续挂在 JS 堆上。
+const itemRefs = ref<Array<HTMLElement | null>>([])
 function setItemRef(el: unknown, index: number) {
   if (el) {
     itemRefs.value[index] = (el as { $el: HTMLElement }).$el || (el as HTMLElement)
+    return
+  }
+
+  itemRefs.value[index] = null
+  // 结果列表缩短时裁掉尾部空槽，避免数组本身随历史最大列表长度保留。
+  while (itemRefs.value.length > 0 && itemRefs.value[itemRefs.value.length - 1] === null) {
+    itemRefs.value.pop()
   }
 }
+onBeforeUnmount(() => {
+  // 原地清空：比赋新数组（itemRefs.value = []）更利于 GC——
+  // 旧数组引用链立即断开，而非等 ref 替换后旧数组被间接持有期间 DOM 节点仍可达
+  itemRefs.value.length = 0
+})
+defineExpose({ selectedIndex: localIndex, setSelectedIndex, reveal })
 
 // ── Multi-select ──
 let anchorIndex = -1
@@ -348,3 +361,12 @@ function getGroupValue(item: T): string {
   )
 }
 </script>
+
+<style scoped>
+/* 列表容器 containment：限制子项 invalidation 传播范围，减少搜索结果替换时的
+   WebKit 重排/重绘面积。LIMITS 已收紧（单组≤12、file≤20，全文≈44 节点），
+   全量渲染开销可控，不使用 content-visibility（快速滚动有加载延迟 + 滚动条跳动）。 */
+[role='listbox'] {
+  contain: layout style;
+}
+</style>

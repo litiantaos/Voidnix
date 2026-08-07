@@ -15,8 +15,14 @@
       <p text="xs muted">日常问题、工作任务、搜索资料、跑命令...</p>
     </div>
 
-    <!-- 消息滚动区：填满可视区，向上滚动消息进入搜索栏下层 -->
-    <div v-else ref="scrollRef" class="agent-scroll hide-scrollbar" @scroll.passive="onScroll">
+    <!-- 消息滚动区：KeepAlive 激活时渲染 DOM，deactivate 时卸载释放 WebKit 内存。
+         数据常驻 messages 单例，重新进入时从数据重建。 -->
+    <div
+      v-else-if="shouldRenderMessages"
+      ref="scrollRef"
+      class="agent-scroll hide-scrollbar"
+      @scroll.passive="onScroll"
+    >
       <template v-for="msg in displayMessages" :key="msg.id">
         <!-- 用户消息：右对齐 bubble -->
         <div v-if="msg.role === 'user'" class="agent-row agent-row--user" :data-msg-id="msg.id">
@@ -139,7 +145,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import {
+  computed,
+  ref,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  onActivated,
+  onDeactivated,
+  watch,
+} from 'vue'
 import { open } from '@tauri-apps/plugin-shell'
 import { isAgentProviderReady } from './config'
 import { useAppStore } from '@/stores/app'
@@ -182,6 +197,12 @@ watch(footerRef, (el, _old, onCleanup) => {
 })
 
 const displayMessages = computed(() => agent.messages.value)
+
+/// KeepAlive deactivate（切到别的扩展）时不渲染消息 DOM，释放 WebKit 内存。
+/// 数据常驻 messages 单例。
+const isViewActive = ref(true)
+const shouldRenderMessages = computed(() => displayMessages.value.length > 0 && isViewActive.value)
+
 /** 有效选用可解析（含无显式选用时默认首个可用提供商）即可对话 */
 const isConfigured = computed(() => isAgentProviderReady.value)
 
@@ -303,6 +324,12 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
+onActivated(() => {
+  isViewActive.value = true
+})
+onDeactivated(() => {
+  isViewActive.value = false
+})
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   if (scrollRaf) cancelAnimationFrame(scrollRaf)

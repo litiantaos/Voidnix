@@ -19,6 +19,9 @@ export interface RawSearchResult {
 export function hideWindow(auto = false) {
   // 窗口隐藏即清 toast：macOS 隐藏 WebView 会节流 setTimeout，未清的 toast 会残留到下次显示
   clearToasts()
+  // 通知前端释放结果列表 DOM（隐藏后不可见，DOM 节点作为 zombie 占内存直至下次 GC；
+  // 唤起时 loadDefaultResults 走应用缓存毫秒级重载，无感知）
+  window.dispatchEvent(new CustomEvent('window-hiding'))
   if (auto) {
     invoke(CMD.hideWindow, { auto: true }).catch(() => {})
   } else {

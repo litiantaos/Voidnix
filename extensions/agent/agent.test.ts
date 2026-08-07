@@ -229,4 +229,57 @@ describe('useAgentChat session 守卫', () => {
     // 晚到 error 不得再加 notice；status 已 ready（非本 run）
     expect(agent.status.value).toBe('ready')
   })
+
+  it('体积超限时截断旧 toolCall output 和 reasoning（保留最新一轮）', async () => {
+    const agent = useAgentChat()
+    await agent.newConversation()
+
+    // 手动构造超体积历史：每项 300K，total ~900K 远超 400K 上限
+    const big = 'x'.repeat(300_000)
+    agent.messages.value.push(
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [
+          { type: 'reasoning', text: big },
+          {
+            type: 'toolCall',
+            id: 't1',
+            name: 'run_command',
+            state: 'done',
+            output: big,
+          },
+          { type: 'text', text: 'done1' },
+        ],
+      },
+      {
+        id: 'm2',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'toolCall',
+            id: 't2',
+            name: 'web_search',
+            state: 'done',
+            output: big,
+          },
+          { type: 'text', text: 'done2' },
+        ],
+      },
+    )
+
+    // 触发 trimHistory（sendMessage 内部调用）
+    await agent.sendMessage('next')
+    await agent.abort()
+
+    const m1 = agent.messages.value.find((m) => m.id === 'm1')
+    // 旧 reasoning 被截断（最先处理，total 从 ~900K 降到 ~600K 仍超限）
+    const r1 = m1?.parts.find((p) => p.type === 'reasoning')
+    expect(r1 && r1.type === 'reasoning' && r1.text.includes('已截断')).toBe(true)
+    expect(r1 && r1.type === 'reasoning' && r1.text.length < 1700).toBe(true)
+    // 旧 toolCall output 也被截断（total 降到 ~300K 才停）
+    const t1 = m1?.parts.find((p) => p.type === 'toolCall' && p.id === 't1')
+    expect(t1 && t1.type === 'toolCall' && t1.output?.includes('已截断')).toBe(true)
+    expect(t1 && t1.type === 'toolCall' && (t1.output?.length ?? 0) < 1700).toBe(true)
+  })
 })

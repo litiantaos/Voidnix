@@ -125,7 +125,9 @@ pub(super) fn crop_with_annotation(
         }
         let length: usize = objc2::msg_send![ns_data, length];
         let bytes: *const u8 = objc2::msg_send![ns_data, bytes];
-        std::slice::from_raw_parts(bytes, length).to_vec()
+        let png = std::slice::from_raw_parts(bytes, length).to_vec();
+        let _: () = objc2::msg_send![ns_data, release];
+        png
     };
     Ok(result)
 }

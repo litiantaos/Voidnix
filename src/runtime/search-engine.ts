@@ -30,8 +30,8 @@ interface ScoredResult {
 }
 
 /** 单例搜索引擎：流式增量召回（消除快结果等慢结果的 barrier）+ filter/group 管道。
- *  每个扩展 dynamic 的 emit/resolve 都触发一次增量重排并回调 onUpdate；快结果（应用缓存/同步扩展）
- *  秒出，慢结果（mdfind 文件/网络）增量补充，不再 Promise.all barrier。 */
+ *  每个扩展 dynamic 的 emit/resolve 都同步触发增量重排，onUpdate 经 rAF 批量合帧回调——
+ *  同帧内多扩展结果合并为一次渲染，避免逐 emit 触发 Vue 重渲染；快结果秒出，慢结果增量补充。 */
 class SearchEngine {
   private currentController?: AbortController
   private activeExtension: string | undefined
@@ -50,8 +50,9 @@ class SearchEngine {
     this.currentController = undefined
   }
 
-  /** 流式搜索：query 为当前输入；onUpdate 在每次有新结果（扩展 emit/resolve）时回调增量重排结果。
-   *  返回 Promise 解析为最终完整结果（与最后一次 onUpdate 一致）。不传 onUpdate 时退化为一次性返回。
+  /** 流式搜索：query 为当前输入；onUpdate 经 rAF 批量合帧回调增量重排结果（同帧多 emit 合并一次渲染，
+   *  全部扩展同帧 resolve 时 rAF 被 cancel，结果经 return 值投递）。
+   *  返回 Promise 解析为最终完整结果。不传 onUpdate 时退化为一次性返回。
    *  取消上一次查询（触发其 dynamic cleanup + child abort）。 */
   async search(
     query: string,
@@ -73,16 +74,23 @@ class SearchEngine {
       // 扩展模式：累积 raw 结果，每次扩展 emit/resolve 都 dedupe + onUpdate（保留扩展返回序，不过滤不限流）
       const acc: SearchResult[] = []
       let last: SearchResult[] | undefined // 缓存最近一次 flush 结果，return 复用避免重复 dedupe
+      let rafId: number | null = null
       const flush = () => {
-        if (!controller.signal.aborted) {
-          last = dedupeBy(acc, (r) => `${r.extId}:${r.id}`)
-          onUpdate?.(last)
+        if (controller.signal.aborted || !onUpdate) return
+        last = dedupeBy(acc, (r) => `${r.extId}:${r.id}`)
+        // rAF 批量：同一帧内多次 emit 合并为一次 onUpdate（减少 Vue 渲染 + DOM 节点重建）
+        if (rafId === null) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null
+            if (!controller.signal.aborted && last) onUpdate(last)
+          })
         }
       }
       await this.collectAll(query, controller.signal, extId, extensionMode, (items) => {
         acc.push(...items)
         flush()
       })
+      if (rafId !== null) cancelAnimationFrame(rafId)
       // last 有值 = flush 至少执行过一次，最后一次与 return 等价直接复用；无值（无扩展产出/已 abort）补算
       return last ?? dedupeBy(acc, (r) => `${r.extId}:${r.id}`)
     }
@@ -90,16 +98,23 @@ class SearchEngine {
     // 全局模式：累积 ScoredResult（打分只算一次），每次扩展 emit/resolve 都 keyword 合流 + groupAndSort + onUpdate
     const scored: ScoredResult[] = []
     let last: SearchResult[] | undefined // 缓存最近一次 flush 结果，return 复用避免重复 buildGlobal
+    let rafId: number | null = null
     const flush = () => {
-      if (!controller.signal.aborted) {
-        last = this.buildGlobal(scored, q)
-        onUpdate?.(last)
+      if (controller.signal.aborted || !onUpdate) return
+      last = this.buildGlobal(scored, q)
+      // rAF 批量：应用缓存 + 文件索引 + keyword 通常同帧到达，合并为一次 onUpdate
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null
+          if (!controller.signal.aborted && last) onUpdate(last)
+        })
       }
     }
     await this.collectAll(query, controller.signal, extId, extensionMode, (items) => {
       scored.push(...this.scoreResults(items, q))
       flush()
     })
+    if (rafId !== null) cancelAnimationFrame(rafId)
     return last ?? this.buildGlobal(scored, q)
   }
 

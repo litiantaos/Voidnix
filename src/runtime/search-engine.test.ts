@@ -298,7 +298,7 @@ describe('SearchEngine', () => {
 
   // ── 流式 emit ──
 
-  it('流式 emit：扩展多次 emit 产出部分结果，onUpdate 增量回调且最终一致', async () => {
+  it('流式 emit：扩展多次 emit 产出部分结果，最终一致', async () => {
     registry.push(
       makeSearchExt('stream', (_q, ctx) => {
         ctx.emit?.([result('a', 'alpha one', 'application', 10)])
@@ -308,14 +308,36 @@ describe('SearchEngine', () => {
     )
     const updates: SearchResult[][] = []
     const final = await searchEngine.search('alpha', (partial) => updates.push([...partial]))
-    // emit 2 次 + return 1 次 = 3 次增量回调，结果逐步增长
-    expect(updates.length).toBe(3)
-    expect(updates[0].length).toBe(1)
-    expect(updates[1].length).toBe(2)
-    expect(updates[2].length).toBe(3)
-    // 最终返回与最后一次 onUpdate 一致
+    // rAF 批量：同步 emit 合并为一帧，collectAll 同帧 resolve 后取消 rAF，
+    // onUpdate 不触发（结果经 return 值投递，消费者同步拿到完整结果）
+    expect(updates.length).toBe(0)
+    // 最终返回包含全部 emit + return 结果
     expect(final.map((r) => r.id).sort()).toEqual(['a', 'b', 'c'])
-    expect(updates[2].map((r) => r.id).sort()).toEqual(['a', 'b', 'c'])
+  })
+
+  it('流式 emit rAF 批量：快扩展结果经 onUpdate 增量投递，慢扩展结果经 return 补全', async () => {
+    vi.useFakeTimers()
+    let releaseSlow!: (v: ProviderResult[]) => void
+    registry.push(
+      makeSearchExt('fast', () => [result('f', 'alpha fast', 'application', 10)]),
+      makeSearchExt('slow', () => {
+        return new Promise<ProviderResult[]>((resolve) => {
+          releaseSlow = resolve
+        })
+      }),
+    )
+    const updates: SearchResult[][] = []
+    const p = searchEngine.search('alpha', (partial) => updates.push([...partial]))
+    // 快扩展同帧 resolve → flush 排 rAF；慢扩展 pending 致 collectAll 未完，rAF 得以触发
+    await vi.advanceTimersByTimeAsync(16)
+    expect(updates.length).toBe(1)
+    expect(updates[0].map((r) => r.id)).toContain('f')
+    // 慢扩展补全 → 末帧 rAF 被 cancel（onUpdate 不再触发），return 投递完整结果
+    releaseSlow([result('s', 'alpha slow', 'application', 5)])
+    const final = await p
+    expect(final.map((r) => r.id).sort()).toEqual(['f', 's'])
+    expect(updates.length).toBe(1)
+    vi.useRealTimers()
   })
 
   it('流式 emit 与 return 重叠：框架去重不产生重复项', async () => {

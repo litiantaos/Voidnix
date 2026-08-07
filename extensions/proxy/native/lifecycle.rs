@@ -382,7 +382,7 @@ pub(crate) async fn reconnect_root_mihomo(app: &AppHandle) {
         Ok(false) => {
             // secret 不匹配（旧 osascript 残留/不可控实例）：不提权清理（避免 app 启动弹窗），
             // 下次开代理时 install_launchdaemon 会清理自己的旧 mihomo 并重新接管。
-            eprintln!("[proxy] 残留 mihomo secret 不匹配，跳过复用（下次开代理时清理接管）");
+            log::debug!("[proxy] 残留 mihomo secret 不匹配，跳过复用（下次开代理时清理接管）");
         }
         Ok(true) => {
             let idle = RunParams {
@@ -400,10 +400,10 @@ pub(crate) async fn reconnect_root_mihomo(app: &AppHandle) {
                         *g = Some(idle);
                     }
                 }
-                Err(e) => eprintln!("[proxy] 复用残留 mihomo、热重载 idle 失败: {e}"),
+                Err(e) => log::debug!("[proxy] 复用残留 mihomo、热重载 idle 失败: {e}"),
             }
         }
-        Err(e) => eprintln!("[proxy] 残留 mihomo controller 不可达，跳过复用: {e}"),
+        Err(e) => log::debug!("[proxy] 残留 mihomo controller 不可达，跳过复用: {e}"),
     }
     crate::runtime::menubar::refresh(app);
 }
