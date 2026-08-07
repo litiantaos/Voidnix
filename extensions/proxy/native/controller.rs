@@ -140,18 +140,24 @@ pub async fn get_rules(base: &str, secret: &str) -> Result<Value, String> {
 
 /// 轮询 GET /version 直到 controller 就绪或超时。
 /// mihomo spawn 后需加载 geo/初始化，controller bind 有延迟；不等待会导致前端首查连接被拒。
+///
+/// **401 立即失败**：controller 返回 401 = 端口被另一个 mihomo 占着、secret 不匹配。轮询无意义
+/// （secret 不会变），立即失败避免白等整个 timeout——第三方工具（Clash Verge 等）占了同端口
+/// 或用户自定义端口撞车时，不匹配的实例会持续收到 401，旧实现傻等 12s 才超时。
 pub async fn wait_ready(base: &str, secret: &str, timeout_ms: u64) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     loop {
-        if CONTROLLER
+        match CONTROLLER
             .get(format!("{base}/version"))
             .bearer_auth(secret)
             .send()
             .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
         {
-            return Ok(());
+            Ok(r) if r.status().is_success() => return Ok(()),
+            Ok(r) if r.status().as_u16() == 401 => {
+                return Err("controller secret 不匹配（端口被另一个代理核心占用）".to_string());
+            }
+            _ => {}
         }
         if Instant::now() >= deadline {
             return Err(

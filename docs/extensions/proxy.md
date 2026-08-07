@@ -112,7 +112,9 @@ plist 的 `ProgramArguments` 指向 mihomo binary（绝对路径）+ `-d` 数据
 
 ### TUN 独占与进程清理（install 时一次性）
 
-**TUN 是系统独占资源**（虚拟网卡 + 路由 `1.0.0.0/8` 等），两个 mihomo 实例不能同时占 TUN（`add route: file exists`）。`install_launchdaemon` 安装时**只清理自己的 mihomo**（按 binary 完整路径匹配，含 bundle-id 数据目录），不杀别的工具的 mihomo——避免静默关闭用户的 Clash Verge 等。与别的工具的冲突由三层诊断处理（见下）。
+**TUN 是系统独占资源**（虚拟网卡 + 路由 `1.0.0.0/8` 等），两个 mihomo 实例不能同时占 TUN（`add route: file exists`）。`install_launchdaemon` 安装时**只清理自己的 mihomo**（按 binary 完整路径匹配，含 bundle-id 数据目录），不杀别的实例——dev/prod 默认端口隔离（dev +1 偏移），互不占用，可同时常驻。与第三方工具的冲突由三层诊断处理（见下）。
+
+**dev/prod 端口隔离**：dev 构建默认 `7891/9091`，prod 默认 `7890/9090`（`import.meta.env.DEV` 偏移 +1）。两个 mihomo 可同时常驻（idle/idle 或 idle/active）互不干扰；同一时刻仅一个能 active 占 TUN（TUN 独占，已开代理时再开另一个会诊断报错）。旧 dev config.json 存了 prod 端口时，前端 normalizer watch 自动迁移到 dev 端口。
 
 **idle config 无 tun 段、不占 TUN**：Voidnix mihomo 常驻 idle 时 TUN 空闲，不影响用户切到其他代理软件；只有开代理（active，占 TUN）时独占。但 idle 仍占 mixed-port/controller 端口，端口相同会与其他代理工具冲突（见下）。
 
@@ -120,11 +122,11 @@ plist 的 `ProgramArguments` 指向 mihomo binary（绝对路径）+ `-d` 数据
 
 与 Clash Verge / Mihomo Party / ClashX 等其他代理工具共存时，端口（7890/9090 行业默认）与 TUN（系统独占）会冲突。三层处理把「静默强杀别人 + 笼统失败」变为「探测识别 + 明确反馈 + 用户决策」：
 
-**第一层 · 端口预探测**（install 前，免提权）：`port_occupant` 经 `lsof -iTCP:<port> -sTCP:LISTEN` 查 mixed-port/controller 占用者。被**别的程序**占 → 直接报错（`7890 端口被 mihomo（PID 1234）占用，请先关闭它或修改端口`），不进 osascript 不强杀。被**自己旧 mihomo** 占 → 正常接管。
+**第一层 · 端口预探测**（install 前，免提权）：`port_occupant` 经 `lsof -iTCP:<port> -sTCP:LISTEN` 查 mixed-port/controller 占用者。被**别的程序**占 → 直接报错（`7890 端口被 mihomo（PID 1234）占用，请先关闭它或修改端口`），不进 osascript 不强杀。dev/prod 默认端口隔离互不占用。
 
 **第二层 · 启动失败诊断**（wait_ready 超时后，免提权）：`diagnose_launch_failure` 读 `mihomo.log` 尾部识别已知错误模式（`address already in use` / TUN `file exists`）+ 再跑一次 `lsof` 查端口占用者，拼成可操作提示（`TUN 网卡或路由被其他代理工具占用`），而非笼统的「启动失败」。
 
-**第三层 · fatal 回收 + 循环抑制**（install 脚本内，同一提权 session）：bootstrap 后 `sleep 2` + `pgrep` 检测 mihomo 是否 fatal 退出（端口/TUN 冲突秒退）。是则在**同一提权 session** 内 `bootout` + 删 plist——从根源消除 KeepAlive 反复拉起刷日志，一次提权完成「装 + 验证 + 失败回收」。`ThrottleInterval=30` 与 KeepAlive 配合进一步降低极端情况下拉起频率。
+**第三层 · fatal 回收 + 循环抑制**（install 脚本内，同一提权 session）：bootstrap 后 `curl` 轮询验 controller /version（secret 匹配，0.2s 间隔 ×10，首次成功即 break）——mihomo 绑定端口失败时**不退出**（降级运行无监听），`pgrep` 误判成功；controller API 健康检查才能识别降级实例。检测到不可用则在**同一提权 session** 内 `bootout` + 删 plist——从根源消除 KeepAlive 反复拉起刷日志，一次提权完成「装 + 验证 + 失败回收」。`ThrottleInterval=30` 与 KeepAlive 配合进一步降低极端情况下拉起频率。条件 kill（有匹配 pid 才 sleep 1）+ curl 轮询替代固定 sleep，首次安装从 ~4s 降至 ~1s。
 
 **热重载路径 TUN 静默失效检测**（`verify_tun_active`，覆盖 install 三层之外的场景）：mihomo PUT /configs 成功不代表 TUN 创建成功——别的工具占着 TUN 时 mihomo 创建静默失败（API 仍 204），用户以为代理开了但实际裸奔。idle config 无 TUN 段不产生 TUN error 日志，故热重载 active 后读 mihomo.log 检测 TUN error（`Start TUN listening error` / `file exists`）。热重载不重启进程、日志不截断，故 reload 前记录日志字节偏移（`log_size`），只检测新增行（`tail_after`）——避免上次失败尝试的陈旧 TUN error 残留误报。`start_core` 和 `proxy_reconnect` 的 reload active 后均调用，检测到则返回 Err 阻止 enabled 置 true。正常路径增 ~600ms 延迟（开代理非高频，可接受）。
 
