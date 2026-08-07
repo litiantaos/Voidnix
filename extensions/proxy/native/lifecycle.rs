@@ -70,10 +70,13 @@ fn tail_after(content: &str, since: u64) -> &str {
 /// mihomo.log 尾部检测 TUN error 必为本次 active 创建失败。
 ///
 /// `since` 为 reload 前日志字节偏移，只检测此后新增的行——避免进程未重启时陈旧 TUN error
-/// 日志（上次失败尝试）残留在文件尾部导致误报。正常路径增 ~600ms 延迟（开代理非高频，可接受）。
+/// 日志（上次失败尝试）残留在文件尾部导致误报。
+///
+/// **200ms buffer**：PUT /configs 同步完成 config 热重载（含 TUN 创建），返回时日志已写入
+/// （实测 PUT active 37ms，返回即 `tun.enable=True` + 日志就绪）。200ms 是文件系统刷新保守
+/// buffer，非等待 mihomo 处理。start_core 中后台调用不阻塞 enabled 翻转。
 pub(crate) async fn verify_tun_active(app: &AppHandle, since: u64) -> Result<(), String> {
-    // 等 mihomo 尝试创建 TUN + 写日志（成功/失败都在几百 ms 内完成）
-    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let Ok(dir) = crate::runtime::storage::ext_data_dir(app, "proxy") else {
         return Ok(()); // 路径异常不阻塞（reload 已成功为前提）
     };
@@ -139,9 +142,27 @@ pub(crate) async fn start_core(
     ensure_root_mihomo(app, state, &params).await?;
     let log_before = log_size(app); // reload 前快照，供 verify_tun_active 区分新增行
     reload_config_yaml(app, &params).await?;
-    // TUN 静默失效检测：mihomo PUT /configs 成功不代表 TUN 创建成功——别的工具占着 TUN 时
-    // mihomo 创建 TUN 静默失败（API 仍 204），用户以为代理开了但实际裸奔。
-    verify_tun_active(app, log_before).await?;
+    // TUN 静默失效检测后台化：PUT /configs 同步完成 TUN 创建（实测返回时日志已写入），
+    // verify 读日志检测静默失败（别的工具占 TUN 时 mihomo API 仍 204）。后台化不阻塞
+    // enabled 翻转——正常路径零感知，仅 TUN 被占（极少）时经事件回滚 enabled + toast。
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = verify_tun_active(&app2, log_before).await {
+            let st = app2.state::<ProxyState>();
+            // 竞态保护：用户可能在 verify 期间关闭重开，仅当前仍 enabled 才回滚
+            if st.enabled.swap(false, Ordering::Relaxed) {
+                let _ = app2.emit("proxy-enabled", false);
+                let _ = app2.emit(
+                    "proxy-status",
+                    ProxyStatus {
+                        kind: "error".into(),
+                        msg: e,
+                    },
+                );
+                crate::runtime::menubar::refresh(&app2);
+            }
+        }
+    });
     *state.run_params.lock().map_err(|e| e.to_string())? = Some(params);
     state.enabled.store(true, Ordering::Relaxed);
     ensure_monitor(app); // 启动健康监测（幂等：已在跑则跳过）

@@ -72,6 +72,8 @@ fn generate_plist(label: &str, bin: &str, dir: &str) -> String {
 ///    bootstrap 后 curl 轮询验 controller 可达（secret 匹配）——mihomo 绑定端口失败时
 ///    **不退出**（降级运行无监听），pgrep 误判成功；controller API 健康检查才能识别降级实例，
 ///    是则在同一提权 session 内 bootout + 删 plist——从根源消除 KeepAlive 反复拉起刷日志。
+///    install 返回前再从 Voidnix 进程 wait_ready 复验（curl 在 root shell 上下文，与 Voidnix
+///    的 reqwest 不同执行上下文，且 mihomo 刚 bootstrap 有初始化抖动窗口，本进程复验为 reload 铺路）。
 /// 3. wait_ready 超时后读 mihomo.log + lsof 拼精确诊断（端口占用者 / TUN 冲突）。
 pub async fn install_launchdaemon(
     app: &AppHandle,
@@ -167,9 +169,15 @@ pub async fn install_launchdaemon(
         return Err(diagnose_launch_failure(app, params));
     }
 
-    // curl 轮询已在脚本内验证 controller 就绪（secret 匹配 + GET /version 成功），
-    // 无需再调 wait_ready 冗余轮询——此处直接返回 Ok。
-    Ok(())
+    // install 内的 curl 在 osascript root shell 中验证（独立进程上下文），但从 Voidnix 进程
+    // 再次确认 controller 稳定——mihomo 刚 bootstrap 后 providers/geo 初始化有短暂抖动窗口，
+    // root shell 的 curl 命中不代表 Voidnix 进程的 reqwest 首次连接必达。wait_ready 用同一
+    // CONTROLLER client 轮询，成功即本进程连接已就绪，为紧随的 reload_config 铺路。
+    let base = format!("http://127.0.0.1:{}", params.controller_port);
+    match super::controller::wait_ready(&base, &params.secret, 8000).await {
+        Ok(()) => Ok(()),
+        Err(_) => Err(diagnose_launch_failure(app, params)),
+    }
 }
 
 /// 卸载 LaunchDaemon（osascript 提权）：bootout 停 mihomo + 删 plist。core 升级/卸载用。

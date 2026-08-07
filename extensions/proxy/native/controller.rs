@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::error::Error;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
@@ -95,20 +96,49 @@ pub async fn set_mode(base: &str, secret: &str, mode: &str) -> Result<(), String
 }
 
 /// PUT /configs {path} → 从磁盘 config.yaml 热重载（用于 root 运行时切换 tun，免重启免提权）。
+///
+/// **重试**：install 路径中 mihomo 刚 bootstrap，providers/geo 初始化期间首次连接可能瞬时
+/// 失败（controller 已 bind 但处理抖动）。短间隔重试 3 次自愈，避免用户看到"重载配置失败"。
+/// localhost 每次新建连接（pool_max_idle_per_host(0)），重试无 stale 连接复用风险。
+/// HTTP 错误码（如 400）不重试——是 config 内容问题，重试无意义。
 pub async fn reload_config(base: &str, secret: &str, config_path: &str) -> Result<(), String> {
-    let resp = CONTROLLER
-        .put(format!("{base}/configs"))
-        .bearer_auth(secret)
-        .json(&serde_json::json!({ "path": config_path }))
-        .send()
-        .await
-        .map_err(|e| format!("重载配置失败: {e}"))?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("重载配置错误: {status} {body}"));
+    let url = format!("{base}/configs");
+    let body = serde_json::json!({ "path": config_path });
+    let mut last_err: Option<reqwest::Error> = None;
+    for attempt in 0..3u32 {
+        match CONTROLLER
+            .put(&url)
+            .bearer_auth(secret)
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => return Ok(()),
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                return Err(format!("重载配置错误: {status} {text}"));
+            }
+            Err(e) => {
+                last_err = Some(e);
+                if attempt < 2 {
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                }
+            }
+        }
     }
-    Ok(())
+    // 重试耗尽：保留 source + 分类，定位一次到位（连接失败 vs 超时）
+    let e = last_err.unwrap();
+    let mut msg = format!("重载配置失败: {e}");
+    if let Some(src) = e.source() {
+        msg += &format!("（{src}）");
+    }
+    if e.is_connect() {
+        msg += " [连接失败]";
+    } else if e.is_timeout() {
+        msg += " [超时]";
+    }
+    Err(msg)
 }
 
 /// GET /version 验证 secret 是否匹配运行中的 mihomo（true=200 匹配，false=401 不匹配）。

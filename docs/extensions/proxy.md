@@ -126,9 +126,9 @@ plist 的 `ProgramArguments` 指向 mihomo binary（绝对路径）+ `-d` 数据
 
 **第二层 · 启动失败诊断**（wait_ready 超时后，免提权）：`diagnose_launch_failure` 读 `mihomo.log` 尾部识别已知错误模式（`address already in use` / TUN `file exists`）+ 再跑一次 `lsof` 查端口占用者，拼成可操作提示（`TUN 网卡或路由被其他代理工具占用`），而非笼统的「启动失败」。
 
-**第三层 · fatal 回收 + 循环抑制**（install 脚本内，同一提权 session）：bootstrap 后 `curl` 轮询验 controller /version（secret 匹配，0.2s 间隔 ×10，首次成功即 break）——mihomo 绑定端口失败时**不退出**（降级运行无监听），`pgrep` 误判成功；controller API 健康检查才能识别降级实例。检测到不可用则在**同一提权 session** 内 `bootout` + 删 plist——从根源消除 KeepAlive 反复拉起刷日志，一次提权完成「装 + 验证 + 失败回收」。`ThrottleInterval=30` 与 KeepAlive 配合进一步降低极端情况下拉起频率。条件 kill（有匹配 pid 才 sleep 1）+ curl 轮询替代固定 sleep，首次安装从 ~4s 降至 ~1s。
+**第三层 · fatal 回收 + 循环抑制**（install 脚本内，同一提权 session）：bootstrap 后 `curl` 轮询验 controller /version（secret 匹配，0.2s 间隔 ×10，首次成功即 break）——mihomo 绑定端口失败时**不退出**（降级运行无监听），`pgrep` 误判成功；controller API 健康检查才能识别降级实例。检测到不可用则在**同一提权 session** 内 `bootout` + 删 plist——从根源消除 KeepAlive 反复拉起刷日志，一次提权完成「装 + 验证 + 失败回收」。`ThrottleInterval=30` 与 KeepAlive 配合进一步降低极端情况下拉起频率。条件 kill（有匹配 pid 才 sleep 1）+ curl 轮询替代固定 sleep，首次安装从 ~4s 降至 ~1s。install 返回前再从 Voidnix 进程 `wait_ready` 复验 controller（curl 在 osascript root shell，与 Voidnix 的 reqwest 不同执行上下文；mihomo 刚 bootstrap 后 providers/geo 初始化有短暂抖动窗口，root shell curl 命中不代表本进程首次连接必达，wait_ready 用同一 CONTROLLER client 确认连接就绪为紧随的 reload 铺路）。
 
-**热重载路径 TUN 静默失效检测**（`verify_tun_active`，覆盖 install 三层之外的场景）：mihomo PUT /configs 成功不代表 TUN 创建成功——别的工具占着 TUN 时 mihomo 创建静默失败（API 仍 204），用户以为代理开了但实际裸奔。idle config 无 TUN 段不产生 TUN error 日志，故热重载 active 后读 mihomo.log 检测 TUN error（`Start TUN listening error` / `file exists`）。热重载不重启进程、日志不截断，故 reload 前记录日志字节偏移（`log_size`），只检测新增行（`tail_after`）——避免上次失败尝试的陈旧 TUN error 残留误报。`start_core` 和 `proxy_reconnect` 的 reload active 后均调用，检测到则返回 Err 阻止 enabled 置 true。正常路径增 ~600ms 延迟（开代理非高频，可接受）。
+**热重载路径 TUN 静默失效检测**（`verify_tun_active`，覆盖 install 三层之外的场景）：mihomo PUT /configs 成功不代表 TUN 创建成功——别的工具占着 TUN 时 mihomo 创建静默失败（API 仍 204），用户以为代理开了但实际裸奔。idle config 无 TUN 段不产生 TUN error 日志，故热重载 active 后读 mihomo.log 检测 TUN error（`Start TUN listening error` / `file exists`）。热重载不重启进程、日志不截断，故 reload 前记录日志字节偏移（`log_size`），只检测新增行（`tail_after`）——避免上次失败尝试的陈旧 TUN error 残留误报。**start_core 后台调用**（不阻塞 enabled 翻转——PUT 同步完成 TUN 创建，返回时日志已写入，200ms buffer 后读日志检测；检测到 TUN error 经 `proxy-enabled:false` + `proxy-status:error` 事件回滚），**proxy_reconnect 同步调用**（用户主动重连需确认结果，检测到则返回 Err）。
 
 ### 进程管理
 
@@ -257,7 +257,7 @@ config 含 **`geox-url`**（geoip/geosite 镜像 URL，国内直连 GitHub 不�
 - `PUT /proxies/{group}`（选节点）
 - `GET /proxies/{name}/delay`（单节点测速：流式批量测速 `proxy_test_group_delay_stream` 并发对全组每个节点调它、测完一个即经 Channel 推送；健康探针 `probe_health` 亦复用。替代 mihomo 批量端点 `/group/{group}/delay`——后者需等全组结算才一次返回，被死节点拖累）
 - `PATCH /configs`（切模式）
-- `PUT /configs {path}`（热重载配置）
+- `PUT /configs {path}`（热重载配置，**重试 3 次间隔 300ms**——install 路径 mihomo 刚 bootstrap 首次连接撞初始化抖动窗口时自愈；HTTP 错误码不重试）
 - `GET /rules`（分流规则只读快照）
 
 ## 连接 / 流量 / 规则 / 日志（诊断，stream.rs）
