@@ -103,6 +103,11 @@ pub fn is_window_visible() -> bool {
 
 #[tauri::command]
 pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
+    // 已隐藏窗口直接返回：blur → hideWindow → resignKeyWindow → 派生 blur 反馈环在
+    // 第一轮 hide（set_window_visible(false)）后断开，后续冗余 IPC 零主线程开销。
+    if !is_window_visible() {
+        return;
+    }
     if auto.unwrap_or(false) {
         // M-rs5：时间戳单调读用 Acquire；防抖计算本身容忍时钟精度
         let elapsed = now_ms().saturating_sub(LAST_SHOW_MS.load(Ordering::Acquire));

@@ -330,15 +330,22 @@ export function useSearchInput(opts: SearchInputOptions) {
     }
   }
 
-  /** 窗口隐藏时取消进行中搜索与待触发的防抖：窗口不可见无需继续召回/打分。
-   *  保留已渲染的 results：唤起时窗口立即可见上次结果（无空闪），focusHandler 再走应用缓存原地刷新。
-   *  results 经 LIMITS 收紧后峰值约 44 节点，隐藏期间常驻开销可忽略（且下次搜索即整体替换，非泄漏源）。 */
+  /** 窗口隐藏时取消搜索 + 清空结果 DOM 释放 compositing layer。
+   *  搜索结果在 WKWebView 创建 compositing layer tiles（IOSurface backing store），
+   *  结果替换时旧 tile 进入 volatile 缓存累积（100 次搜索可涨至 ~450MB）。
+   *  清空 DOM 移除滚动区域全部子节点，触发 WebCore 释放关联 layer backing。
+   *  唤起时 focusHandler 走 loadDefaultResults（应用缓存毫秒级重载，无感知）。 */
   function onWindowHiding() {
     searchEngine.abort()
     if (searchTimeout) {
       clearTimeout(searchTimeout)
       searchTimeout = null
     }
+    results.value = []
+    selectedIndex.value = 0
+    // 强制同步 layout：处理 DOM removal 产生的 render tree 变更，
+    // 让 WebCore 在 alpha=0 窗口仍完成 compositing layer 释放
+    void document.body.offsetHeight
   }
 
   onMounted(async () => {
