@@ -88,15 +88,16 @@ e2e（`bun run test:e2e`，需起 Vite dev server + 浏览器）不在本地门�
 
 LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 RSS/CPU/线程/数据目录，用于长期跟踪内存与占用趋势、定位泄漏；主进程瞬时 CPU 超阈值时自动抓调用栈快照，定位高占用根因。**仅监控 prod（release）进程**，dev/debug 不采样。
 
-**三个脚本**（`scripts/`）：
+**脚本**（`scripts/`）：
 
 - `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时用 `top` 采主进程 Physical footprint（含被内核压缩的内存页；`ps rss` 不含致严重低估——WKWebView WebContent 进程 ps 报 47M 实际 footprint 175M）+ WebKit XPC 子进程 footprint 合计（按启动时间关联主进程 ±10s 的 `com.apple.WebKit.*` 进程），扩展子进程识别用 `ps -A` 全表扫描（按可执行路径 `comm` 匹配 `com.litiantao.voidnix/extensions/<id>/`，按扩展分组；不依赖 PPID 链——root 子进程如 mihomo 由 launchd LaunchDaemon 托管 PPID=1；用 `comm` 而非 `command`，从根上排除 grep/osascript 等仅在参数里引用该路径的进程，也避免采样器自身 fork 的 shell 被误匹配）。主进程 CPU >80% 时用 `sample <pid> 2 -mayDie -file` 抓 2 秒调用栈快照（5 分钟冷却防刷屏），快照存 `stacks/cpu-<时间戳>.txt`、主日志追加 `# [stack]` 关联行。日志与快照自动保留 30 天。
 - `voidnix-monitor-install.sh install|uninstall` — 安装/卸载 LaunchAgent（`com.litiantao.voidnix.monitor`，登录后自动生效）
 - `voidnix-analyze.sh [天数]` — 分析器：按天聚合主进程 footprint 区间/漂移/CPU 峰值/线程数/数据目录（漂移 >20MB 告警）、WebKit XPC 合计 footprint 区间/漂移（漂移 >50MB 告警 compositing layer 累积），并按扩展聚合子进程采样数/RSS 区间/CPU 峰值
+- `wk-mem-test.py [轮数] [--dev]` — WebKit 内存累积测试：用 CGEvent 模拟全路径使用（全局搜索覆盖 application/file/extension/web/即时答案结果类型 → 工具列表 `/` 过滤 → 结果键盘导航 → 进入全部 mainView 扩展视图 → 全局快捷键 Alt+S 截屏 overlay 独立窗口 + Alt+C/T/A/F 扩展唤起 → 窗口管理 snap-panel 鼠标触发 → hide/show 循环释放），测试前自动切 ASCII 键盘布局避免中文输入法拦截按键，分阶段测量主 WebContent 进程的 Physical footprint + graphics 区域数 + PURGE 分类（N=不可回收 / V=可回收），定位 compositing layer 累积趋势。默认 5 轮全场景；`--dev` 叠加 Shift 匹配 debug 构建快捷键。依赖系统自带 pyobjc-framework-Quartz
 
 **日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`，主进程行（`time fp cpu threads data`）后跟 `& webkit fp_total`（WebKit XPC 合计，按启动时间关联）+ `@ ext/bin rss cpu vsz`（扩展子进程）；抓栈触发时追加 `# [stack] time cpu= -> stacks/cpu-时间戳.txt`（注释行，analyze 跳过），快照存 `~/Library/Logs/Voidnix/stacks/`
 
-**状态**：LaunchAgent 已安装运行，主进程已有 5 天数据；子进程采样维度已上线，CPU 阈值抓栈已上线。曾暴露 proxy/mihomo CPU 持续 100% 问题——根因为 gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）。执行 `bash scripts/voidnix-analyze.sh` 分析趋势。
+**状态**：LaunchAgent 已安装运行，主进程已有 5 天数据；子进程采样维度已上线，CPU 阈值抓栈已上线。曾暴露两个问题：(1) proxy/mihomo CPU 持续 100%——根因为 gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）；(2) 主进程 CPU 100% 反馈环——blur → hideWindow → resignKeyWindow → 派生 blur 失控循环，已加 `hide_window` 的 `is_window_visible()` 幂等守卫断环。WKWebView 内存累积——搜索 compositing layer tiles 随搜索累积（PURGE=N 不可回收），已加 `onWindowHiding` 清空结果 DOM 释放 layer backing。执行 `bash scripts/voidnix-analyze.sh` 分析趋势，`python3 scripts/wk-mem-test.py` 做内存累积压测（`python3 scripts/wk-mem-test.py 10 --dev` dev 构建 10 轮）。
 
 ## 开发扩展
 
@@ -165,6 +166,8 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 - 不 orderOut（仅 alpha=0 + ignoresMouse + 去阴影）——orderOut 后副屏二次 show 坐标对也不绘
 - 主窗 Space 只 Add；collectionBehavior = `CanJoinAllSpaces|FullScreenAuxiliary`（勿并 MoveToActiveSpace）
+- `hide_window` 命令入口幂等守卫 `is_window_visible()`——blur → hideWindow → resignKeyWindow → 派生 blur 反馈环在首轮 hide 后断开（原 auto 防抖 500ms 无法断环，窗口可见时间通常远超 500ms）
+- 隐藏时前端 `onWindowHiding` 清空 results DOM（`void document.body.offsetHeight` 强制 layout flush），释放 WKWebView compositing layer tiles（IOSurface backing store，PURGE=N 不可回收）；唤起时 `focusHandler` → `loadDefaultResults` 应用缓存毫秒级重载，无空闪
 - `hide_main` 走 `restore_captured()` 交还 first responder（`PREV_FRONT_PID` 唯一源在 `platform/focus.rs`）
 
 **焦点管理**——`is_app_active()` 三道判定：
