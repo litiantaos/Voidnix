@@ -167,7 +167,8 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - 不 orderOut（仅 alpha=0 + ignoresMouse + 去阴影）——orderOut 后副屏二次 show 坐标对也不绘
 - 主窗 Space 只 Add；collectionBehavior = `CanJoinAllSpaces|FullScreenAuxiliary`（勿并 MoveToActiveSpace）
 - `hide_window` 命令入口幂等守卫 `is_window_visible()`——blur → hideWindow → resignKeyWindow → 派生 blur 反馈环在首轮 hide 后断开（原 auto 防抖 500ms 无法断环，窗口可见时间通常远超 500ms）
-- 隐藏时前端 `onWindowHiding` 清空 results DOM（`void document.body.offsetHeight` 强制 layout flush），释放 WKWebView compositing layer tiles（IOSurface backing store，PURGE=N 不可回收）；唤起时 `focusHandler` → `loadDefaultResults` 应用缓存毫秒级重载，无空闪
+- 隐藏时前端 `onWindowHiding` 清空 results DOM，`ContentView` 监听同一 `window-hiding` 事件将 KeepAlive 卸载重建（`keepAliveActive` 置 false → `nextTick` → forced layout flush → 置 true），释放扩展视图缓存 DOM + WKWebView compositing layer tiles（IOSurface backing store，PURGE=N 不可回收）；forced flush 统一在 `ContentView.clearCache` 的 `await nextTick` 后执行（Vue 批量 flush，覆盖 results 清空 + KeepAlive 卸载两项变更）；唤起时 `focusHandler` → `loadDefaultResults` 应用缓存毫秒级重载，KeepAlive 空缓存按需重建，无空闪
+- KeepAlive `max=3`（日常高频 agent/settings/proxy 不超过 3 个同时活跃），隐藏时全量清空
 - `hide_main` 走 `restore_captured()` 交还 first responder（`PREV_FRONT_PID` 唯一源在 `platform/focus.rs`）
 
 **焦点管理**——`is_app_active()` 三道判定：
