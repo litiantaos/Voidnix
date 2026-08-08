@@ -80,11 +80,12 @@
           </div>
           <div mb="2" rounded="full" class="fill-active" h="1.5" overflow="hidden">
             <div
-              rounded="full"
               h="full"
-              class="transition-all duration-300 ease-out"
+              w="full"
+              class="transition-transform duration-300 ease-out"
+              style="transform-origin: left"
               :class="usageColor(snapshot.cpu_usage)"
-              :style="{ width: `${clamp(snapshot.cpu_usage)}%` }"
+              :style="{ transform: `scaleX(${clamp(snapshot.cpu_usage) / 100})` }"
             />
           </div>
           <div mb="2" flex gap="0.5" h="3" items="end">
@@ -101,9 +102,11 @@
             >
               <div
                 w="full"
-                class="transition-all duration-300 ease-out"
+                h="full"
+                class="transition-transform duration-300 ease-out"
+                style="transform-origin: bottom"
                 :class="usageColor(u)"
-                :style="{ height: `${clamp(u)}%` }"
+                :style="{ transform: `scaleY(${clamp(u) / 100})` }"
               />
             </div>
           </div>
@@ -130,12 +133,13 @@
           </div>
           <div mb="2" rounded="full" class="fill-active" h="1.5" overflow="hidden">
             <div
-              rounded="full"
               h="full"
-              class="transition-all duration-300 ease-out"
+              w="full"
+              class="transition-transform duration-300 ease-out"
+              style="transform-origin: left"
               :class="usageColor(pct(snapshot.used_memory, snapshot.total_memory))"
               :style="{
-                width: `${clamp(pct(snapshot.used_memory, snapshot.total_memory))}%`,
+                transform: `scaleX(${clamp(pct(snapshot.used_memory, snapshot.total_memory)) / 100})`,
               }"
             />
           </div>
@@ -179,11 +183,12 @@
             </div>
             <div rounded="full" class="fill-active" h="1.5" overflow="hidden">
               <div
-                rounded="full"
                 h="full"
-                class="transition-all duration-300 ease-out"
+                w="full"
+                class="transition-transform duration-300 ease-out"
+                style="transform-origin: left"
                 :class="usageColor(pct(d.used, d.total))"
-                :style="{ width: `${clamp(pct(d.used, d.total))}%` }"
+                :style="{ transform: `scaleX(${clamp(pct(d.used, d.total)) / 100})` }"
               />
             </div>
           </div>
@@ -214,11 +219,12 @@
             </div>
             <div mb="2" rounded="full" class="fill-active" h="1.5" overflow="hidden">
               <div
-                rounded="full"
                 h="full"
-                class="transition-all duration-300 ease-out"
+                w="full"
+                class="transition-transform duration-300 ease-out"
+                style="transform-origin: left"
                 :class="batteryColor(snapshot.battery.level)"
-                :style="{ width: `${snapshot.battery.level}%` }"
+                :style="{ transform: `scaleX(${snapshot.battery.level / 100})` }"
               />
             </div>
             <div text="xs muted" flex flex-wrap gap="1.5" tabular-nums>
@@ -262,11 +268,12 @@
               </div>
               <div rounded="full" class="fill-active" h="0.5" overflow="hidden">
                 <div
-                  rounded="full"
                   h="full"
-                  class="transition-all duration-300 ease-out"
+                  w="full"
+                  class="transition-transform duration-300 ease-out"
+                  style="transform-origin: left"
                   :class="usageColor(p.cpu)"
-                  :style="{ width: `${clamp(p.cpu)}%` }"
+                  :style="{ transform: `scaleX(${clamp(p.cpu) / 100})` }"
                 />
               </div>
             </div>
@@ -289,9 +296,11 @@
                 bg="accent"
                 opacity="70"
                 flex-1
+                h-full
                 min-w="0.5"
-                class="transition-all duration-300"
-                :style="{ height: `${sparkHeight(v, downHistory)}%` }"
+                style="transform-origin: bottom"
+                class="transition-transform duration-300"
+                :style="{ transform: `scaleY(${sparkHeight(v, downHistory) / 100})` }"
               />
             </div>
             <span text="xs secondary" font="medium" ml="1" shrink="0" tabular-nums>
@@ -307,9 +316,11 @@
                 rounded="xs"
                 opacity="70"
                 flex-1
+                h-full
                 min-w="0.5"
-                class="bg-warning transition-all duration-300"
-                :style="{ height: `${sparkHeight(v, upHistory)}%` }"
+                style="transform-origin: bottom"
+                class="bg-warning transition-transform duration-300"
+                :style="{ transform: `scaleY(${sparkHeight(v, upHistory) / 100})` }"
               />
             </div>
             <span text="xs secondary" font="medium" ml="1" shrink="0" tabular-nums>

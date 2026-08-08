@@ -25,10 +25,10 @@
         flex="~ col"
         :style="contentStyle"
       >
-        <!-- max=5：覆盖日常高频扩展视图（agent/settings/proxy 等常驻前三），超出按 LRU 驱逐。
+        <!-- max=3：日常高频扩展（agent/settings/proxy）不超过 3 个同时活跃，超出按 LRU 驱逐。
              低频扩展重挂载毫秒级（KeepAlive activate/deactivate 语义已处理），换取 JS 堆削减。
-             从 8 降至 5：减少同时驻留的视图 DOM + reactive 状态，遏制 WebKit 内存增长。 -->
-        <KeepAlive v-if="resolvedView" :max="5">
+             窗口隐藏时 keepAliveActive 置 false 卸载 KeepAlive 释放全部缓存 DOM + compositing layer。 -->
+        <KeepAlive v-if="resolvedView && keepAliveActive" :max="3">
           <component
             :is="resolvedView"
             :key="`${props.extension?.meta.id ?? 'main'}-${appStore.activeSubview ?? 'view'}`"
@@ -73,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
@@ -103,6 +103,27 @@ const appStore = useAppStore()
 
 const selectedIds = ref(new Set<string>())
 const isMultiSelect = computed(() => !!props.extension?.listOptions?.multiSelect)
+
+// 窗口隐藏时置 false 卸载 KeepAlive（Vue onBeforeUnmount 全量释放缓存 vnode + compositing layer），
+// nextTick 后置 true 重建空缓存（此时窗口即将 alpha=0，无视觉影响）。
+const keepAliveActive = ref(true)
+
+async function clearCache() {
+  keepAliveActive.value = false
+  await nextTick()
+  // 强制同步 layout：处理 DOM removal 产生的 render tree 变更，
+  // 让 WebCore 在 alpha=0 窗口仍完成 compositing layer 释放。
+  // 同时覆盖 useSearchInput 清 results 的变更（Vue 批量 flush，两者一次 patch）。
+  void document.body.offsetHeight
+  keepAliveActive.value = true
+}
+
+onMounted(() => {
+  window.addEventListener('window-hiding', clearCache)
+})
+onUnmounted(() => {
+  window.removeEventListener('window-hiding', clearCache)
+})
 
 /**
  * 纯渲染器：布局决策收拢至此，搜索编排由 useSearchInput 统一承担（结果经 props 注入）。

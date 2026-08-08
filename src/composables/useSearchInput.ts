@@ -334,7 +334,8 @@ export function useSearchInput(opts: SearchInputOptions) {
    *  搜索结果在 WKWebView 创建 compositing layer tiles（IOSurface backing store），
    *  结果替换时旧 tile 进入 volatile 缓存累积（100 次搜索可涨至 ~450MB）。
    *  清空 DOM 移除滚动区域全部子节点，触发 WebCore 释放关联 layer backing。
-   *  唤起时 focusHandler 走 loadDefaultResults（应用缓存毫秒级重载，无感知）。 */
+   *  唤起时 focusHandler 走 loadDefaultResults（应用缓存毫秒级重载，无感知）。
+   *  forced layout flush 由 ContentView.clearCache 统一承担（await nextTick 后批量覆盖）。 */
   function onWindowHiding() {
     searchEngine.abort()
     if (searchTimeout) {
@@ -343,9 +344,6 @@ export function useSearchInput(opts: SearchInputOptions) {
     }
     results.value = []
     selectedIndex.value = 0
-    // 强制同步 layout：处理 DOM removal 产生的 render tree 变更，
-    // 让 WebCore 在 alpha=0 窗口仍完成 compositing layer 释放
-    void document.body.offsetHeight
   }
 
   onMounted(async () => {
