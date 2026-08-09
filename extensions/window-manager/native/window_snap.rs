@@ -460,6 +460,41 @@ mod inner {
     pub fn is_panel_visible() -> bool {
         lock_or_recover(&STATE).visible
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        // group_count：单屏 5 组，多屏（>=2）6 组
+        #[test]
+        fn group_count_single_screen() {
+            assert_eq!(group_count(1), 5);
+        }
+
+        #[test]
+        fn group_count_multi_screen() {
+            assert_eq!(group_count(2), 6);
+            assert_eq!(group_count(3), 6);
+        }
+
+        // panel_width_for：24 + n*56 + (n-1)*12
+        #[test]
+        fn panel_width_single_screen() {
+            // 24 + 5*56 + 4*12 = 352
+            assert_eq!(panel_width_for(1), 352.0);
+        }
+
+        #[test]
+        fn panel_width_multi_screen() {
+            // 24 + 6*56 + 5*12 = 420
+            assert_eq!(panel_width_for(2), 420.0);
+        }
+
+        #[test]
+        fn panel_height_constant() {
+            assert_eq!(panel_height(), 80.0);
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
