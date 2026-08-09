@@ -115,9 +115,13 @@ pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
             return;
         }
     }
+    let app_for_reload = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
         crate::runtime::window::hide_main(&app);
     });
+    // 窗口已隐藏（alpha=0），异步检查 WebContent 内存：超阈值 emit webview-reload，
+    // 前端 location.reload() 释放 WKWebView tile backing（PURGE=N 不可回收）。
+    crate::runtime::window::maybe_reload_webview(&app_for_reload);
 }
 
 // ============================================================================

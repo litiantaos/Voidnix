@@ -229,3 +229,45 @@ pub fn quit_app(app_handle: tauri::AppHandle) {
     log::info!("Quitting app...");
     app_handle.exit(0);
 }
+
+/// WebContent 内存阈值（字节）：350M ≈ 日常水位（~80M）的 4 倍。
+/// 超此值说明 tile backing 大量累积（密集扩展视图遍历），reload 是唯一回收手段。
+const WC_RELOAD_THRESHOLD: u64 = 350 * 1024 * 1024;
+
+/// 窗口隐藏后异步检查 WebContent footprint，超阈值时 navigate blank → 原 URL。
+///
+/// WKWebView 的 `reload()` / `location.reload()` 不释放 tile backing（IOSurface），
+/// 必须先 navigate 到空白页销毁旧 layer tree，再 navigate 回原 URL 重建。
+/// 等同 Safari 内存压力下的 tab 重建。用 detached OS thread（不占 tokio worker）。
+/// 500ms 等 hide_main 设 alpha=0 完成，再读 footprint。
+pub fn maybe_reload_webview(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::Manager;
+        let app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if let Some(fp) = crate::platform::mem::webcontent_footprint() {
+                if fp > WC_RELOAD_THRESHOLD {
+                    log::info!(
+                        "[mem] WebContent {:.0} MB > {} MB → reload webview",
+                        fp as f64 / 1_048_576.0,
+                        WC_RELOAD_THRESHOLD / 1_048_576
+                    );
+                    if let Some(win) = app.get_webview_window("main") {
+                        if let Ok(url) = win.url() {
+                            // blank 销毁旧 layer tree（释放 tile backing），再导回原 URL 重建
+                            let _ = win.navigate(tauri::Url::parse("about:blank").unwrap());
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            let _ = win.navigate(url);
+                        }
+                    }
+                }
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+    }
+}
