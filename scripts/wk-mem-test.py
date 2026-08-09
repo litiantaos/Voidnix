@@ -123,6 +123,56 @@ def _require_visible():
         )
 
 
+# ── snap-panel 窗口检测 ───────────────────────────────────────────────────────
+# snap-panel 尺寸（与 window_snap.rs panel_dimensions 同步）：
+#   单屏 352×80 / 多屏 420×80；主窗口固定 720×480。
+# snap-panel 创建初始 600×300（WebviewWindowBuilder inner_size），show 后变为面板尺寸。
+# 隐藏策略同主窗口：alpha=0 + ignoresMouse（不 orderOut），窗口仍在全量列表中。
+
+_SNAP_W_MIN = 300
+_SNAP_W_MAX = 460
+_SNAP_H_MIN = 65
+_SNAP_H_MAX = 100
+
+
+def snap_panel_exists() -> bool:
+    """检测 snap-panel 窗口是否已创建（含 alpha=0 不可见状态）。
+
+    在全量窗口列表中查找 Voidnix 拥有、非主窗口尺寸的窗口。
+    """
+    wl = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionAll, Quartz.kCGNullWindowID
+    )
+    for w in wl:
+        if w.get('kCGWindowOwnerName', '') != 'Voidnix':
+            continue
+        bounds = w.get('kCGWindowBounds', {})
+        bw = bounds.get('Width', 0)
+        bh = bounds.get('Height', 0)
+        # 排除主窗口（720×480）与过小条目（status item 等）
+        if bw > 200 and bh > 50 and not (bw > 680 and bh > 400):
+            return True
+    return False
+
+
+def is_snap_panel_visible() -> bool:
+    """检测 snap-panel 是否可见（alpha > 0 且尺寸匹配面板）。"""
+    wl = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID
+    )
+    for w in wl:
+        if w.get('kCGWindowOwnerName', '') != 'Voidnix':
+            continue
+        alpha = w.get('kCGWindowAlpha', 0)
+        bounds = w.get('kCGWindowBounds', {})
+        bw = bounds.get('Width', 0)
+        bh = bounds.get('Height', 0)
+        if (alpha > 0.5 and _SNAP_W_MIN <= bw <= _SNAP_W_MAX
+                and _SNAP_H_MIN <= bh <= _SNAP_H_MAX):
+            return True
+    return False
+
+
 # ── 字符 → 键码映射 ───────────────────────────────────────────────────────────
 
 SHIFT = Quartz.kCGEventFlagMaskShift
@@ -301,11 +351,57 @@ def exit_ext():
 
 # ── 鼠标操作 ──────────────────────────────────────────────────────────────────
 
-def move_mouse(x: float, y: float):
-    """移动鼠标到全局坐标 (x, y)，原点在主屏左上角（CGEvent 坐标系）。"""
+def _voidnix_pid():
+    """获取 Voidnix 主进程 PID。"""
+    try:
+        out = subprocess.check_output(
+            ['pgrep', '-f', 'Voidnix.app/Contents/MacOS/Voidnix'], text=True
+        )
+        return int(out.strip().splitlines()[0])
+    except (subprocess.CalledProcessError, ValueError, IndexError):
+        return None
+
+
+def move_mouse_to_snap_trigger(x: float, y: float):
+    """专用：移动鼠标到 snap-panel 触发区，确保 drag monitor 收到事件。
+
+    global monitor 对合成 mouseMoved 的捕获是非确定性的。三路投递最大化命中率：
+      1. CGWarpMouseCursorPosition 移动光标（更新 NSEvent.mouseLocation）
+      2. CGEventPostToPid 直接送 Voidnix local monitor
+      3. CGEventPost(kCGHIDEventTap) 走系统分发，global monitor 可捕获
+    调用方应交替 y 坐标——同坐标重复 Warp 不生成新事件，monitor 不触发。
+    """
     point = Quartz.CGPoint(x, y)
-    event = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, point, 0)
-    Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+    Quartz.CGWarpMouseCursorPosition(point)
+    time.sleep(0.05)
+    pid = _voidnix_pid()
+    # 双路投递：local monitor (PostToPid) + global monitor (HIDEventTap)
+    ev_local = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, point, 0)
+    if pid:
+        Quartz.CGEventPostToPid(pid, ev_local)
+    ev_hid = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, point, 0)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev_hid)
+    time.sleep(0.05)
+
+
+def click_at(x: float, y: float):
+    """在 (x, y) 处模拟左键单击（CGEvent 坐标，top-left 原点）。
+
+    先 Warp 光标到目标位置（确保窗口服务器 hit-test 到正确窗口），再发 mouseDown/Up。
+    不 Warp 时合成事件可能投递到 Warp 前的旧光标位置对应的窗口。
+    """
+    point = Quartz.CGPoint(x, y)
+    Quartz.CGWarpMouseCursorPosition(point)
+    time.sleep(0.03)
+    down = Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventLeftMouseDown, point, Quartz.kCGMouseButtonLeft
+    )
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+    time.sleep(0.08)
+    up = Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventLeftMouseUp, point, Quartz.kCGMouseButtonLeft
+    )
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
 
 
 def screen_size() -> tuple:
@@ -604,49 +700,257 @@ def phase_global_shortcuts():
         hide_window()
 
 
+def _wm_toggle():
+    """在 window-manager 扩展视图中 Tab 到启用开关并 Enter 切换。"""
+    _require_visible()
+    _post_key(KEY_TAB)
+    time.sleep(0.2)
+    press_enter()
+
+
+def wait_snap_panel_gone(timeout=4.0, interval=0.3):
+    """轮询等待 snap-panel 窗口从全量列表消失（close 异步，固定 sleep 不可靠）。"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not snap_panel_exists():
+            return True
+        time.sleep(interval)
+    return False
+
+
+def snap_panel_visible_bounds():
+    """读取可见 snap-panel 的 bounds（CGWindowList，top-left 原点）。
+
+    供布局点击计算 zone 在屏幕上的绝对坐标。返回 (x, y, w, h) 或 None。
+    """
+    wl = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID
+    )
+    for w in wl:
+        if w.get('kCGWindowOwnerName', '') != 'Voidnix':
+            continue
+        alpha = w.get('kCGWindowAlpha', 0)
+        bounds = w.get('kCGWindowBounds', {})
+        bw = bounds.get('Width', 0)
+        bh = bounds.get('Height', 0)
+        if (alpha > 0.5 and _SNAP_W_MIN <= bw <= _SNAP_W_MAX
+                and _SNAP_H_MIN <= bh <= _SNAP_H_MAX):
+            return (bounds.get('X', 0), bounds.get('Y', 0), bw, bh)
+    return None
+
+
+# ── 布局目标窗口管理 ──────────────────────────────────────────────────────────
+# 用 Finder 窗口作为可控布局目标：打开 → 激活 → snap-panel 的 capture_frontmost 记录其
+# PID → 点击 zone → AX 写入其 frame → 读取 bounds 验证确实变化。
+
+def ensure_finder_window():
+    """关闭所有 Finder 窗口后新建一个，确保只有一个窗口作为布局目标。
+
+    多窗口时 finder_window_bounds() 读的 CGWindowList 首个窗口可能与 AX 布局作用的
+    AXFocusedWindow 不是同一个，导致验证读错窗口。关闭全部再建一个消除歧义。
+    """
+    subprocess.run(
+        ['osascript', '-e', 'tell application "Finder" to close every window'],
+        capture_output=True,
+    )
+    time.sleep(0.3)
+    subprocess.Popen(['open', '-a', 'Finder'])
+    time.sleep(0.5)
+    subprocess.run(
+        ['osascript', '-e', 'tell application "Finder" to make new Finder window'],
+        capture_output=True,
+    )
+    time.sleep(0.5)
+    subprocess.run(
+        ['osascript', '-e', 'tell application "Finder" to activate'],
+        capture_output=True,
+    )
+    time.sleep(0.6)
+
+
+def _finder_pid():
+    """获取 Finder 进程 PID（pgrep 按进程名匹配，不受窗口 owner 本地化名影响）。"""
+    try:
+        out = subprocess.check_output(['pgrep', '-x', 'Finder'], text=True)
+        return int(out.strip().splitlines()[0])
+    except (subprocess.CalledProcessError, ValueError, IndexError):
+        return None
+
+
+def finder_window_bounds():
+    """读取 Finder 主窗口 bounds（CGWindowList，top-left 原点）。
+
+    按 PID 匹配而非 owner name——窗口 owner 名随系统语言本地化（中文=「访达」）。
+    CGWindowList 的 bounds 坐标原点在主屏左上角（与 CGEvent / AX 同系），
+    直接与布局算法的 AX 坐标对比。返回 (x, y, w, h) 或 None。
+    """
+    pid = _finder_pid()
+    if not pid:
+        return None
+    wl = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID
+    )
+    for w in wl:
+        if w.get('kCGWindowOwnerPID') != pid:
+            continue
+        if w.get('kCGWindowLayer', 1) != 0:
+            continue
+        bounds = w.get('kCGWindowBounds', {})
+        bw = bounds.get('Width', 0)
+        bh = bounds.get('Height', 0)
+        if bw > 200 and bh > 200:
+            return (bounds.get('X', 0), bounds.get('Y', 0), bw, bh)
+    return None
+
+
+def close_finder_windows():
+    """关闭所有 Finder 窗口（测试清理）。"""
+    subprocess.run(
+        ['osascript', '-e', 'tell application "Finder" to close every window'],
+        capture_output=True,
+    )
+
+
+def trigger_snap_panel(screen_w: float, attempts: int = 5, interval: float = 0.35) -> bool:
+    """触发 snap-panel 显示，带重试克服 CGEvent 合成事件对 NSEvent monitor 的非确定性捕获。
+
+    策略：每次尝试先从触发区外（y=100）移入触发区（y=1/3/5 交替），模拟真实鼠标进入。
+    同坐标重复 Warp 不生成新事件；交替坐标 + 从外移入强制产生 distinct mouseMoved 事件流。
+    """
+    for i in range(attempts):
+        # 先移到触发区下方（y=100，明确在 zone 外）
+        move_mouse_to_snap_trigger(screen_w / 2, 100)
+        time.sleep(0.08)
+        # 再移入触发区（交替 y=1/3/5，均在 6px zone 内）
+        y = 1 + (i % 3) * 2
+        move_mouse_to_snap_trigger(screen_w / 2, y)
+        time.sleep(interval)
+        if is_snap_panel_visible():
+            return True
+    return False
+
+
 def phase_snap_panel():
-    """窗口管理 snap-panel：启用 → 鼠标触发面板 → 退出。
+    """窗口管理 snap-panel 全链路验证 + 内存累积触发。
 
     snap-panel 是独立 HTML 入口（snap-panel.html），启用 WM 时懒创建 WebContent 进程。
-    鼠标移至屏顶部中心触发区激活面板滑入，移开触发滑出。
+    验证链：确保启用 → 窗口创建 → 鼠标触发可见 → 移出隐藏 → 二次触发 → 布局点击 → 禁用 → 销毁。
     """
     global _in_ext
 
-    # 进入 window-manager 扩展，Tab 到启用开关，Enter 切换
-    show_window()
-    enter_ext('window', SETTLE_DEFAULT)
-
-    # Tab 到第一个 toggle（启用窗口管理），Enter 切换为开
-    _require_visible()
-    _post_key(KEY_TAB)
-    time.sleep(0.2)
-    press_enter()
-    time.sleep(1.5)              # snap-panel 窗口懒创建 + WebContent 进程启动
-
-    # 退出扩展回到主页（WM 已启用，snap-panel 窗口常驻）
-    exit_ext()
-
-    # 鼠标移至屏顶中心触发 snap-panel 滑入
     w, h = screen_size()
-    move_mouse(w / 2, 2)        # CG 坐标原点在左上角，y=2 在 6px 触发区内
-    time.sleep(0.8)             # 等面板滑入动画 + 渲染
-    move_mouse(w / 2, h / 2)   # 移回中心，触发面板滑出
-    time.sleep(0.6)
 
-    # 再次触发（测试反复进出）
-    move_mouse(w / 2, 2)
-    time.sleep(0.5)
-    move_mouse(w / 2, h / 2)
-    time.sleep(0.5)
+    # —— 确保 WM 启用：用面板触发作为状态真相 ——
+    # snap_panel_exists() 不可靠（close bug 致窗口残留），Tab+Enter 方向歧义。
+    # 直接试触发：成功=已启用，失败=toggle 再试。trigger_snap_panel 带重试，
+    # 若 monitor 在运行终会成功；若 monitor 已停再多重试也无用——是可靠的状态判定。
+    def _ensure_wm():
+        hide_window()
+        time.sleep(TOGGLE_GAP)
+        if trigger_snap_panel(w, attempts=3):
+            return True
+        # 未启用或 monitor 已停——toggle 一次再试
+        show_window()
+        enter_ext('window', SETTLE_DEFAULT)
+        _wm_toggle()
+        time.sleep(1.5)
+        exit_ext()
+        hide_window()
+        time.sleep(TOGGLE_GAP)
+        return trigger_snap_panel(w, attempts=3)
 
-    # 禁用 WM：重新进入扩展，Tab 到 toggle，Enter 关闭
-    enter_ext('window', SETTLE_DEFAULT)
-    _require_visible()
-    _post_key(KEY_TAB)
-    time.sleep(0.2)
-    press_enter()
-    time.sleep(0.5)
-    exit_ext()
+    triggered = _ensure_wm()
+
+    if snap_panel_exists():
+        log('  [ok] snap-panel 窗口已创建')
+    else:
+        log('  [警告] snap-panel 窗口未创建——窗口管理启用可能失败')
+
+    if triggered:
+        log('  [ok] snap-panel 触发区显示正常')
+    else:
+        log('  [警告] snap-panel 触发失败——drag monitor 未注册或 CGEvent 限制')
+
+    # 移回中心，等面板滑出（hide timer 0.4s + 淡出动画 0.2s）
+    move_mouse_to_snap_trigger(w / 2, h / 2)
+    time.sleep(0.8)
+    if not is_snap_panel_visible():
+        log('  [ok] snap-panel 移出后隐藏正常')
+    else:
+        log('  [警告] snap-panel 移出触发区后未隐藏')
+
+    # 二次触发（测试反复进出稳定性 + 内存累积）
+    if trigger_snap_panel(w, attempts=4):
+        log('  [ok] snap-panel 二次触发正常')
+    else:
+        log('  [警告] snap-panel 二次触发未显示')
+
+    move_mouse_to_snap_trigger(w / 2, h / 2)
+    time.sleep(0.7)
+
+    # —— 布局点击验证：完整链路（触发面板 → 点击 zone → 前台窗口 frame 变化）——
+    ensure_finder_window()
+    before = finder_window_bounds()
+
+    if before:
+        if trigger_snap_panel(w, attempts=5):
+            time.sleep(0.4)       # 等动画完成 + DOM 就绪
+            panel = snap_panel_visible_bounds()
+            if panel:
+                # SnapPanel.vue zone 布局（单屏 5 组，panel 352×80）：
+                #   根 p-3(12) | g0 quarters 56 | gap 12 | g1 halves-v 56 | gap 12
+                #   | g2 halves-h 56 | gap 12 | g3 full-center 56 | gap 12 | g4 custom 56 | p-3
+                # g2 halves-h 右列中心：local x≈188, y=40（panel 纵向中点）
+                click_x = panel[0] + 188
+                click_y = panel[1] + 40
+                click_at(click_x, click_y)
+                time.sleep(1.5)   # Vue @click → invoke → Rust AX 写入
+
+                # do_set_layout 成功后调 hide_panel——面板隐藏说明点击到达 + 命令执行
+                panel_hid = not is_snap_panel_visible()
+
+                after = finder_window_bounds()
+                if after:
+                    moved_right = after[0] > w * 0.4
+                    narrowed = after[2] < w * 0.65
+                    if moved_right and narrowed:
+                        log(f'  [ok] 布局点击生效: Finder 移至右半屏 '
+                            f'({before[2]:.0f}×{before[3]:.0f}'
+                            f' → {after[0]:.0f},{after[2]:.0f}×{after[3]:.0f})')
+                    elif panel_hid:
+                        log(f'  [警告] 布局点击到达（面板已隐藏）但 Finder 未移动 '
+                            f'(before={before[0]:.0f},{before[2]:.0f}×{before[3]:.0f}'
+                            f' after={after[0]:.0f},{after[2]:.0f}×{after[3]:.0f})'
+                            f'——AX 写入失败或 Finder 不可缩放')
+                    else:
+                        log('  [警告] 布局点击未生效: Finder frame 未变')
+                else:
+                    log('  [警告] 布局点击后无法读取 Finder 窗口 bounds')
+            else:
+                log('  [警告] 布局点击阶段 snap-panel bounds 读取失败')
+        else:
+            log('  [警告] 布局点击阶段 snap-panel 未显示，跳过点击验证')
+    else:
+        log('  [警告] 无法打开 Finder 窗口作为布局目标，跳过点击验证')
+
+    # 清理 Finder 窗口
+    close_finder_windows()
+    time.sleep(0.3)
+
+    # 恢复主窗口可见（后续键盘操作需要）
+    show_window()
+
+    # 禁用 WM
+    if snap_panel_exists():
+        show_window()
+        enter_ext('window', SETTLE_DEFAULT)
+        _wm_toggle()
+        exit_ext()
+
+    if wait_snap_panel_gone():
+        log('  [ok] snap-panel 窗口禁用后已销毁')
+    else:
+        log('  [警告] snap-panel 窗口禁用后仍存在——getAllWebviewWindows().close() 可能未销毁窗口')
 
 
 # ── 主流程 ────────────────────────────────────────────────────────────────────

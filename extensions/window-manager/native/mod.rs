@@ -307,16 +307,16 @@ pub async fn set_window_manager_enabled(
     app: tauri::AppHandle,
     enabled: bool,
 ) -> Result<(), String> {
-    // 运行时启用补建 snap-panel 窗口：setup 仅在启动期 enabled 时建窗，
-    // 用户从设置首次开启（enabled: false→true）需在此补建，否则拖窗吸附取窗 None 静默失效。
-    // create_snap_panel 幂等（已存在直接 return）；本命令跑在 tokio worker，
-    // WebviewWindowBuilder::build 内部 dispatch 到主线程，不在主线程闭包内，无死锁风险。
-    if enabled {
-        create_snap_panel(&app);
-    }
+    // create_snap_panel 必须在主线程执行：configure_snap_panel → apply_mica_material
+    // 内 MainThreadMarker::new().expect() 在非主线程 panic。不能在 run_on_main_thread
+    // 闭包外调用（本命令跑在 tokio worker）。移入闭包与 do_set_window_manager_enabled
+    // 同批执行（create 幂等，已存在直接 return）。
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     let app_clone = app.clone();
     app.run_on_main_thread(move || {
+        if enabled {
+            create_snap_panel(&app_clone);
+        }
         platform::do_set_window_manager_enabled(&app_clone, enabled);
         let _ = tx.send(());
     })

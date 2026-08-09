@@ -952,6 +952,325 @@ mod imp {
     pub fn do_set_snap_size(width: f64, height: f64) {
         super::super::window_snap::set_snap_size(width, height);
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// 构造屏：layout 区与全帧重合（布局算法只消费 layout_* 字段）。
+        fn mk_screen(lx: f64, ly: f64, lw: f64, lh: f64) -> ScreenInfo {
+            ScreenInfo {
+                x: lx,
+                y: ly,
+                width: lw,
+                height: lh,
+                is_main: lx.abs() < 1.0 && ly.abs() < 1.0,
+                layout_x: lx,
+                layout_y: ly,
+                layout_width: lw,
+                layout_height: lh,
+                ax_frame_x: lx,
+                ax_frame_y: ly,
+                ax_frame_width: lw,
+                ax_frame_height: lh,
+            }
+        }
+
+        /// 构造屏：仅 ax_frame_* 精确（选屏算法只消费 ax_frame_* 字段）。
+        fn mk_ax_screen(fx: f64, fy: f64, fw: f64, fh: f64, main: bool) -> ScreenInfo {
+            ScreenInfo {
+                x: fx,
+                y: fy,
+                width: fw,
+                height: fh,
+                is_main: main,
+                layout_x: fx,
+                layout_y: fy,
+                layout_width: fw,
+                layout_height: fh,
+                ax_frame_x: fx,
+                ax_frame_y: fy,
+                ax_frame_width: fw,
+                ax_frame_height: fh,
+            }
+        }
+
+        // —— compute_target：11 种布局在 1440×900 屏 ——
+
+        #[test]
+        fn compute_target_quadrants() {
+            let s = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            assert_eq!(
+                compute_target("top-left", &s, 0.0, 0.0),
+                (0.0, 0.0, 720.0, 450.0)
+            );
+            assert_eq!(
+                compute_target("top-right", &s, 0.0, 0.0),
+                (720.0, 0.0, 720.0, 450.0)
+            );
+            assert_eq!(
+                compute_target("bottom-left", &s, 0.0, 0.0),
+                (0.0, 450.0, 720.0, 450.0)
+            );
+            assert_eq!(
+                compute_target("bottom-right", &s, 0.0, 0.0),
+                (720.0, 450.0, 720.0, 450.0)
+            );
+        }
+
+        #[test]
+        fn compute_target_halves() {
+            let s = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            assert_eq!(
+                compute_target("top", &s, 0.0, 0.0),
+                (0.0, 0.0, 1440.0, 450.0)
+            );
+            assert_eq!(
+                compute_target("bottom", &s, 0.0, 0.0),
+                (0.0, 450.0, 1440.0, 450.0)
+            );
+            assert_eq!(
+                compute_target("left", &s, 0.0, 0.0),
+                (0.0, 0.0, 720.0, 900.0)
+            );
+            assert_eq!(
+                compute_target("right", &s, 0.0, 0.0),
+                (720.0, 0.0, 720.0, 900.0)
+            );
+        }
+
+        #[test]
+        fn compute_target_fullscreen() {
+            let s = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            assert_eq!(
+                compute_target("fullscreen", &s, 0.0, 0.0),
+                (0.0, 0.0, 1440.0, 900.0)
+            );
+        }
+
+        #[test]
+        fn compute_target_custom_centers_and_clamps() {
+            let s = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            // 居中：x=(1440-1200)/2=120, y=(900-800)/2=50
+            assert_eq!(
+                compute_target("custom", &s, 1200.0, 800.0),
+                (120.0, 50.0, 1200.0, 800.0)
+            );
+            // 超大：钳到 layout 边界
+            assert_eq!(
+                compute_target("custom", &s, 5000.0, 5000.0),
+                (0.0, 0.0, 1440.0, 900.0)
+            );
+            // 过小：钳到 floor 200，再居中
+            assert_eq!(
+                compute_target("custom", &s, 50.0, 50.0),
+                (620.0, 350.0, 200.0, 200.0)
+            );
+            // center 走同一分支
+            assert_eq!(
+                compute_target("center", &s, 1200.0, 800.0),
+                (120.0, 50.0, 1200.0, 800.0)
+            );
+        }
+
+        #[test]
+        fn compute_target_unknown_falls_back_to_custom() {
+            let s = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            assert_eq!(
+                compute_target("nonsense", &s, 1200.0, 800.0),
+                (120.0, 50.0, 1200.0, 800.0)
+            );
+        }
+
+        #[test]
+        fn compute_target_offset_screen_origin() {
+            // 副屏 layout 起点非原点
+            let s = mk_screen(1440.0, 0.0, 1920.0, 1080.0);
+            assert_eq!(
+                compute_target("top-left", &s, 0.0, 0.0),
+                (1440.0, 0.0, 960.0, 540.0)
+            );
+            assert_eq!(
+                compute_target("fullscreen", &s, 0.0, 0.0),
+                (1440.0, 0.0, 1920.0, 1080.0)
+            );
+        }
+
+        // —— clamp_to_layout：越界钳制 ——
+
+        #[test]
+        fn clamp_pulls_back_right_bottom_overflow() {
+            let s = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            assert_eq!(
+                clamp_to_layout(1500.0, 1000.0, 200.0, 200.0, &s),
+                (1240.0, 700.0, 200.0, 200.0)
+            );
+        }
+
+        #[test]
+        fn clamp_pulls_forward_left_top_underflow() {
+            let s = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            assert_eq!(
+                clamp_to_layout(-50.0, -50.0, 200.0, 200.0, &s),
+                (0.0, 0.0, 200.0, 200.0)
+            );
+        }
+
+        #[test]
+        fn clamp_unchanged_when_inside() {
+            let s = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            assert_eq!(
+                clamp_to_layout(100.0, 100.0, 200.0, 200.0, &s),
+                (100.0, 100.0, 200.0, 200.0)
+            );
+        }
+
+        #[test]
+        fn clamp_caps_oversize_to_layout() {
+            let s = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            assert_eq!(
+                clamp_to_layout(0.0, 0.0, 9999.0, 200.0, &s),
+                (0.0, 0.0, 1440.0, 200.0)
+            );
+        }
+
+        // —— clamp_custom_in_layout ——
+
+        #[test]
+        fn clamp_custom_centers_in_region() {
+            assert_eq!(
+                clamp_custom_in_layout(0.0, 0.0, 1440.0, 900.0, 1200.0, 800.0),
+                (120.0, 50.0, 1200.0, 800.0)
+            );
+        }
+
+        #[test]
+        fn clamp_custom_caps_to_region_min() {
+            // cap 4096 但 layout 更小，以 layout 为准
+            assert_eq!(
+                clamp_custom_in_layout(0.0, 0.0, 1440.0, 900.0, 5000.0, 5000.0),
+                (0.0, 0.0, 1440.0, 900.0)
+            );
+        }
+
+        #[test]
+        fn clamp_custom_floors_at_200() {
+            assert_eq!(
+                clamp_custom_in_layout(0.0, 0.0, 1440.0, 900.0, 50.0, 50.0),
+                (620.0, 350.0, 200.0, 200.0)
+            );
+        }
+
+        // —— map_window_to_screen：跨屏比例映射 ——
+
+        #[test]
+        fn map_scales_proportionally() {
+            let from = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            let to = mk_screen(1440.0, 0.0, 1920.0, 900.0);
+            // 左上四分 → 副屏等比
+            assert_eq!(
+                map_window_to_screen(0.0, 0.0, 720.0, 450.0, &from, &to),
+                (1440.0, 0.0, 960.0, 450.0)
+            );
+        }
+
+        #[test]
+        fn map_fullscreen_window_fills_target() {
+            let from = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            let to = mk_screen(1440.0, 0.0, 1920.0, 900.0);
+            assert_eq!(
+                map_window_to_screen(0.0, 0.0, 1440.0, 900.0, &from, &to),
+                (1440.0, 0.0, 1920.0, 900.0)
+            );
+        }
+
+        #[test]
+        fn map_result_stays_within_target_bounds() {
+            let from = mk_screen(0.0, 0.0, 1440.0, 900.0);
+            let to = mk_screen(1440.0, 0.0, 1920.0, 900.0);
+            let (nx, ny, nw, nh) = map_window_to_screen(100.0, 100.0, 800.0, 600.0, &from, &to);
+            assert!(nx >= to.layout_x - 0.5);
+            assert!(ny >= to.layout_y - 0.5);
+            assert!(nx + nw <= to.layout_x + to.layout_width + 0.5);
+            assert!(ny + nh <= to.layout_y + to.layout_height + 0.5);
+        }
+
+        // —— adjacent_screen：环移 ——
+
+        #[test]
+        fn adjacent_next_and_prev_wrap_around() {
+            let screens = [
+                mk_ax_screen(0.0, 0.0, 1440.0, 900.0, true),
+                mk_ax_screen(1440.0, 0.0, 1920.0, 1080.0, false),
+                mk_ax_screen(3360.0, 0.0, 1280.0, 800.0, false),
+            ];
+            let cur = &screens[0];
+            // next: 0 → 1
+            let next = adjacent_screen(&screens, cur, true).unwrap();
+            assert!((next.ax_frame_x - 1440.0).abs() < 1.0);
+            // prev: 0 → 末尾 2
+            let prev = adjacent_screen(&screens, cur, false).unwrap();
+            assert!((prev.ax_frame_x - 3360.0).abs() < 1.0);
+        }
+
+        #[test]
+        fn adjacent_single_screen_returns_none() {
+            let screens = [mk_ax_screen(0.0, 0.0, 1440.0, 900.0, true)];
+            assert!(adjacent_screen(&screens, &screens[0], true).is_none());
+            assert!(adjacent_screen(&screens, &screens[0], false).is_none());
+        }
+
+        // —— screen_for_ax_point / screen_for_window ——
+
+        #[test]
+        fn screen_for_point_selects_containing() {
+            let screens = [
+                mk_ax_screen(0.0, 0.0, 1440.0, 900.0, true),
+                mk_ax_screen(1440.0, 0.0, 1920.0, 1080.0, false),
+            ];
+            assert!(!screen_for_ax_point(&screens, 2000.0, 500.0).is_main);
+            assert!(screen_for_ax_point(&screens, 500.0, 500.0).is_main);
+        }
+
+        #[test]
+        fn screen_for_point_falls_back_to_main_on_miss() {
+            let screens = [
+                mk_ax_screen(0.0, 0.0, 1440.0, 900.0, true),
+                mk_ax_screen(1440.0, 0.0, 1920.0, 1080.0, false),
+            ];
+            assert!(screen_for_ax_point(&screens, -500.0, -500.0).is_main);
+        }
+
+        #[test]
+        fn screen_for_point_prefers_smaller_on_overlap() {
+            let screens = [
+                mk_ax_screen(0.0, 0.0, 1440.0, 900.0, true),
+                mk_ax_screen(0.0, 0.0, 800.0, 600.0, false),
+            ];
+            let s = screen_for_ax_point(&screens, 400.0, 300.0);
+            assert!((s.ax_frame_width - 800.0).abs() < 1.0);
+        }
+
+        #[test]
+        fn screen_for_window_uses_center_point() {
+            let screens = [
+                mk_ax_screen(0.0, 0.0, 1440.0, 900.0, true),
+                mk_ax_screen(1440.0, 0.0, 1920.0, 1080.0, false),
+            ];
+            // 中心 (2100, 600) 落副屏
+            let s = screen_for_window(&screens, Some((2000.0, 500.0)), Some((200.0, 200.0)));
+            assert!(!s.is_main);
+        }
+
+        #[test]
+        fn screen_for_window_defaults_main_without_geom() {
+            let screens = [
+                mk_ax_screen(0.0, 0.0, 1440.0, 900.0, true),
+                mk_ax_screen(1440.0, 0.0, 1920.0, 1080.0, false),
+            ];
+            assert!(screen_for_window(&screens, None, None).is_main);
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
