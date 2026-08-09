@@ -48,6 +48,7 @@ fn get_rusage_v1(pid: c_int) -> Option<RUsageInfoV1> {
     }
 }
 
+#[allow(dead_code)]
 fn seconds_to_ticks(secs: u64) -> u64 {
     let mut tb = TimebaseInfo::default();
     // SAFETY: mach_timebase_info 为 Mach C API，填充 TimebaseInfo 结构
@@ -59,13 +60,13 @@ fn seconds_to_ticks(secs: u64) -> u64 {
 /// 查找本 app 的 WebContent XPC 进程，返回其 physical footprint（字节）。
 ///
 /// WebKit XPC 进程由 launchd 托管（PPID=1），不能用 PPID 关联。
-/// 改用启动时间关联：与主进程启动时间差在 60s 内的 WebContent 进程视为本 app 的子进程
-/// （与 monitor 脚本的 ±10s 策略同理，取更宽窗口兼容 XPC 延迟启动）。
+/// 用启动时间下限关联：所有在主进程之后创建的 WebContent 进程视为本 app 的子进程。
+/// **不设上限**——navigate 重载或 crash 恢复后创建的新 WebContent 进程启动时间远晚于
+/// 主进程，上限窗口会漏检（曾导致 2.2G 进程不触发重载）。
 /// 取符合条件的 WebContent 中 footprint 最大的（多实例时取最重者）。
 pub fn webcontent_footprint() -> Option<u64> {
     let our_pid = std::process::id() as c_int;
     let our_start = get_rusage_v1(our_pid)?.ri_proc_start_abstime;
-    let threshold = seconds_to_ticks(60);
 
     let mut pid_buf = [0i32; 2048];
     let count = unsafe {
@@ -102,9 +103,7 @@ pub fn webcontent_footprint() -> Option<u64> {
         let Some(info) = get_rusage_v1(pid) else {
             continue;
         };
-        if info.ri_proc_start_abstime >= our_start
-            && info.ri_proc_start_abstime - our_start <= threshold
-        {
+        if info.ri_proc_start_abstime >= our_start {
             max_fp = max_fp.max(info.ri_phys_footprint);
         }
     }
