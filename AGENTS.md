@@ -169,6 +169,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - `hide_window` 命令入口幂等守卫 `is_window_visible()`——blur → hideWindow → resignKeyWindow → 派生 blur 反馈环在首轮 hide 后断开（原 auto 防抖 500ms 无法断环，窗口可见时间通常远超 500ms）
 - 隐藏时前端 `onWindowHiding` 清空 results DOM，`ContentView` 监听同一 `window-hiding` 事件将 KeepAlive 卸载重建（`keepAliveActive` 置 false → `nextTick` → forced layout flush → 置 true），释放扩展视图缓存 DOM + WKWebView compositing layer tiles（IOSurface backing store，PURGE=N 不可回收）；forced flush 统一在 `ContentView.clearCache` 的 `await nextTick` 后执行（Vue 批量 flush，覆盖 results 清空 + KeepAlive 卸载两项变更）；唤起时 `focusHandler` → `loadDefaultResults` 应用缓存毫秒级重载，KeepAlive 空缓存按需重建，无空闪
 - KeepAlive `max=3`（日常高频 agent/settings/proxy 不超过 3 个同时活跃），隐藏时全量清空
+- **WebContent 内存阈值重载**：`hide_window` 后 detached OS thread（不占 tokio worker）异步查 `platform/mem.rs::webcontent_footprint`（`proc_pid_rusage` 读 WebContent XPC 的 physical footprint，按启动时间关联主进程），超 350M 时 Rust 直接 `navigate("about:blank")` → 100ms → `navigate(原 URL)`——`reload()` 不释放 tile backing（IOSurface），必须先 blank 销毁旧 layer tree 再重建（等同 Safari 内存压力 tab 重建）。纯 Rust 闭环，无 command 注册、无前端事件
 - `hide_main` 走 `restore_captured()` 交还 first responder（`PREV_FRONT_PID` 唯一源在 `platform/focus.rs`）
 
 **焦点管理**——`is_app_active()` 三道判定：
@@ -321,6 +322,7 @@ src-tauri/src/
     ├── skylight.rs     # Space 迁移（私有 API）
     ├── focus.rs        # 焦点管理（PREV_FRONT_PID + is_app_active + restore_captured）
     ├── input.rs        # CGEvent 键盘注入（post_key + post_combo）
+    ├── mem.rs          # 进程内存查询（proc_pid_rusage → WebContent physical footprint）
     ├── pasteboard.rs   # NSPasteboard 原语统一
     ├── selection.rs    # AX 选中文本提取 + poll_clipboard
     ├── click_monitor.rs

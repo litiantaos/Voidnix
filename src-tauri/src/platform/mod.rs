@@ -7,6 +7,8 @@ pub mod frontmost_watcher;
 #[cfg(target_os = "macos")]
 pub mod input;
 #[cfg(target_os = "macos")]
+pub mod mem;
+#[cfg(target_os = "macos")]
 pub mod panel;
 pub mod pasteboard;
 pub mod path_guard;
