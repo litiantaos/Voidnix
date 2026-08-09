@@ -1,5 +1,6 @@
 import { watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { getAllWebviews } from '@tauri-apps/api/webview'
 import { CMD } from '@/commands'
 import { defineConfig } from '@/runtime/storage'
 
@@ -46,6 +47,19 @@ watch(
     invoke(CMD.setWindowManagerEnabled, { enabled }).catch((e: unknown) => {
       console.error('[window-manager] setWindowManagerEnabled failed:', e)
     })
+    // 禁用时销毁 snap-panel 窗口释放 WebContent 进程（Rust 端仅停止 drag monitor，
+    // 窗口销毁由前端发起——避免 Rust 端窗口操作在 LTO 布局变化下触发 WKWebView KVO 竞态）
+    if (!enabled) {
+      getAllWebviews()
+        .then((windows: ReadonlyArray<{ label: string; close(): Promise<void> }>) => {
+          for (const w of windows) {
+            if (w.label === 'snap-panel') {
+              w.close().catch(() => {})
+            }
+          }
+        })
+        .catch(() => {})
+    }
   },
   { immediate: true },
 )
