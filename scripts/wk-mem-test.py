@@ -83,17 +83,44 @@ ESC_DELAY = 0.3           # Escape 退出扩展后
 TOGGLE_GAP = 1.0          # toggle_window 后等待窗口拿到键盘焦点
 
 
-# ── 窗口状态追踪 ──────────────────────────────────────────────────────────────
+# ── 窗口可见性真实检测 ──────────────────────────────────────────────────────────
 # Voidnix 是 Accessory app（不 activate），窗口隐藏后键盘焦点回到前台 app。
 # CGEvent 是全局 HID 事件，发到当前 key window——如果 Voidnix 窗口不可见，
-# 按键会打到终端 / IDE。因此必须精确追踪窗口可见性，绝不盲发按键。
+# 按键会打到终端 / IDE。
+#
+# Voidnix hide 策略 = alpha=0 + ignoresMouse（不 orderOut），窗口仍在窗口服务器
+# 列表中但 kCGWindowAlpha=0。用此区分真实可见 / 隐藏，不依赖启发式追踪。
 
-_win_visible = False   # Voidnix 窗口是否可见
 _in_ext = False        # 是否在扩展视图内（决定 Esc 语义）
 
 
 def log(msg: str):
     print(msg, flush=True)
+
+
+def is_voidnix_visible() -> bool:
+    """检测 Voidnix 主窗口是否真正可见（alpha > 0 且有尺寸）。"""
+    wl = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID
+    )
+    for w in wl:
+        if w.get('kCGWindowOwnerName', '') != 'Voidnix':
+            continue
+        alpha = w.get('kCGWindowAlpha', 0)
+        bounds = w.get('kCGWindowBounds', {})
+        if alpha > 0.01 and bounds.get('Width', 0) > 300 and bounds.get('Height', 0) > 200:
+            return True
+    return False
+
+
+def _require_visible():
+    """按键前安全守卫：窗口不可见时立即中止，防注入到其他应用。"""
+    if not is_voidnix_visible():
+        raise RuntimeError(
+            'Voidnix 窗口意外隐藏，中止测试以防按键泄漏到其他应用。'
+            '常见原因：blur 失焦隐藏、_in_ext 失步致 Esc 在全局模式触发隐藏、'
+            'copyAndHide 延迟隐藏。'
+        )
 
 
 # ── 字符 → 键码映射 ───────────────────────────────────────────────────────────
@@ -171,28 +198,27 @@ def trigger_ext_shortcut(key_char: str):
 
 
 def show_window():
-    """确保窗口可见。仅在认为隐藏时 toggle。"""
-    global _win_visible
-    if _win_visible:
+    """确保窗口可见。基于真实可见性检测，不依赖启发式。"""
+    if is_voidnix_visible():
         return
     _shortcut_press()
     time.sleep(TOGGLE_GAP)
-    _win_visible = True
+    if not is_voidnix_visible():
+        raise RuntimeError('show_window: 快捷键未能显示窗口，可能被其他应用抢占焦点')
 
 
 def hide_window():
-    """确保窗口隐藏。仅在认为可见时 toggle。"""
-    global _win_visible
-    if not _win_visible:
+    """确保窗口隐藏。仅在真正可见时 toggle。"""
+    if not is_voidnix_visible():
         return
     _shortcut_press()
     time.sleep(TOGGLE_GAP)
-    _win_visible = False
 
 
 # ── 输入操作（仅在窗口可见时调用）────────────────────────────────────────────
 
 def type_text(s: str, delay: float = TYPE_DELAY):
+    _require_visible()
     for ch in s:
         kc = _char_to_keycode(ch)
         if kc:
@@ -201,6 +227,7 @@ def type_text(s: str, delay: float = TYPE_DELAY):
 
 
 def press_enter():
+    _require_visible()
     _post_key(KEY_ENTER)
 
 
@@ -209,22 +236,26 @@ def press_esc():
 
 
 def press_backspace():
+    _require_visible()
     _post_key(KEY_BACKSPACE)
 
 
 def press_down(n: int = 1, delay: float = NAV_DELAY):
+    _require_visible()
     for _ in range(n):
         _post_key(KEY_DOWN)
         time.sleep(delay)
 
 
 def press_up(n: int = 1, delay: float = NAV_DELAY):
+    _require_visible()
     for _ in range(n):
         _post_key(KEY_UP)
         time.sleep(delay)
 
 
 def select_all():
+    _require_visible()
     _post_key(_BASE['a'], flags=CMD)
 
 
@@ -255,13 +286,17 @@ def enter_ext(name: str, settle: float = SETTLE_DEFAULT):
 
 
 def exit_ext():
-    """退出扩展：Esc（仅当在扩展内时安全；全局模式下 Esc 会隐藏窗口）。"""
+    """退出扩展：Esc。若 _in_ext 失步（实际在全局模式），Esc 会隐藏窗口——
+    检测到隐藏则自动 show_window 恢复到全局模式，并输出警告。"""
     global _in_ext
     if not _in_ext:
         return
     press_esc()
     time.sleep(ESC_DELAY)
     _in_ext = False
+    if not is_voidnix_visible():
+        log('警告: exit_ext 后窗口隐藏（_in_ext 失步，Esc 在全局模式触发了 hide），自动恢复...')
+        show_window()
 
 
 # ── 鼠标操作 ──────────────────────────────────────────────────────────────────
@@ -295,6 +330,25 @@ def find_main_webcontent_pid() -> int:
         raise RuntimeError('未找到 WebContent 进程，Voidnix 是否已启动？')
     candidates.sort(key=lambda x: x[1], reverse=True)
     return candidates[0][0]
+
+
+# hide_window 后 Rust 端内存阈值重载（footprint > 350M → about:blank → reload）
+# 会替换 WebContent 进程，PID 变化。缓存失效时重新查找。
+_wc_pid = None
+
+
+def _pid_alive(pid: int) -> bool:
+    return subprocess.run(
+        ['kill', '-0', str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    ).returncode == 0
+
+
+def wc_pid(force: bool = False) -> int:
+    global _wc_pid
+    if not force and _wc_pid and _pid_alive(_wc_pid):
+        return _wc_pid
+    _wc_pid = find_main_webcontent_pid()
+    return _wc_pid
 
 
 def measure_footprint(pid: int) -> str:
@@ -338,9 +392,16 @@ def measure_graphics(pid: int) -> dict:
     return {'count': total, 'n_mb': n_mb, 'v_mb': v_mb}
 
 
-def measure_and_report(pid: int, label: str):
-    fp = measure_footprint(pid)
-    g = measure_graphics(pid)
+def measure_and_report(label: str):
+    pid = wc_pid()
+    try:
+        fp = measure_footprint(pid)
+        g = measure_graphics(pid)
+    except subprocess.CalledProcessError:
+        # WebContent 进程被内存阈值重载替换，重新解析 PID 重试
+        pid = wc_pid(force=True)
+        fp = measure_footprint(pid)
+        g = measure_graphics(pid)
     log(
         f'{label:>16}  {fp:>10}  {g["count"]:>8}  '
         f'{g["n_mb"]:>8.0f}MB  {g["v_mb"]:>8.0f}MB'
@@ -522,7 +583,7 @@ def phase_global_shortcuts():
     截屏（Alt+S）→ 截图 overlay 窗口（独立 WKWebView）→ Esc 退出
     扩展快捷键（Alt+C/T/A/F）→ 从隐藏唤起并激活扩展 → Esc 退出
     """
-    global _win_visible, _in_ext
+    global _in_ext
 
     # — 截屏快捷键：Alt+S 触发全屏截图 overlay（Rust hook 全权处理）—
     hide_window()
@@ -530,7 +591,7 @@ def phase_global_shortcuts():
     time.sleep(SETTLE_DEFAULT)   # 等截图 overlay 渲染 + CGImage 编码
     press_esc()                  # 截图 overlay Esc → exit_impl 退出，主窗不自动恢复
     time.sleep(0.8)              # fade-out 动画 + focus 恢复
-    _win_visible = False         # 主窗此时隐藏
+    # 主窗此时隐藏（screenshot overlay Esc 不恢复主窗）
 
     # — 扩展快捷键：从隐藏唤起 + 激活扩展 —
     for key in ['c', 't', 'a', 'f']:
@@ -538,7 +599,6 @@ def phase_global_shortcuts():
         trigger_ext_shortcut(key)
         time.sleep(TOGGLE_GAP + 0.3)
         _in_ext = True
-        _win_visible = True
         press_down(2)
         exit_ext()
         hide_window()
@@ -557,6 +617,7 @@ def phase_snap_panel():
     enter_ext('window', SETTLE_DEFAULT)
 
     # Tab 到第一个 toggle（启用窗口管理），Enter 切换为开
+    _require_visible()
     _post_key(KEY_TAB)
     time.sleep(0.2)
     press_enter()
@@ -580,6 +641,7 @@ def phase_snap_panel():
 
     # 禁用 WM：重新进入扩展，Tab 到 toggle，Enter 关闭
     enter_ext('window', SETTLE_DEFAULT)
+    _require_visible()
     _post_key(KEY_TAB)
     time.sleep(0.2)
     press_enter()
@@ -590,9 +652,7 @@ def phase_snap_panel():
 # ── 主流程 ────────────────────────────────────────────────────────────────────
 
 def run_test():
-    global _win_visible
-
-    pid = find_main_webcontent_pid()
+    pid = wc_pid(force=True)
     log(f'WebContent PID: {pid}')
     log(f'测试参数: {ROUNDS} 轮全场景{" (dev)" if DEV_MODE else ""}')
     log(f'每轮 = 全局搜索 + 工具列表 + 导航执行 + 扩展视图 + 全局快捷键 + snap-panel + hide/show')
@@ -620,7 +680,7 @@ def run_test():
             f'\n{"":>16}  {"FP":>10}  {"graphics":>8}  '
             f'{"PURGE=N":>10}  {"PURGE=V":>10}'
         )
-        measure_and_report(pid, '基线')
+        measure_and_report('基线')
 
         for r in range(1, ROUNDS + 1):
             log(f'\n── 第 {r}/{ROUNDS} 轮 ──────────────────────')
@@ -634,23 +694,23 @@ def run_test():
             show_window()
             phase_enter_extensions()
 
-            measure_and_report(pid, f'第{r}轮 扩展视图')
+            measure_and_report(f'第{r}轮 扩展视图')
 
             phase_global_shortcuts()
             show_window()
             phase_snap_panel()
 
-            measure_and_report(pid, f'第{r}轮 完成')
+            measure_and_report(f'第{r}轮 完成')
 
             hide_window()
             time.sleep(0.5)
             show_window()
             time.sleep(0.3)
-            measure_and_report(pid, f'第{r}轮 hide/show')
+            measure_and_report(f'第{r}轮 hide/show')
 
         hide_window()
         log('')
-        measure_and_report(pid, '最终')
+        measure_and_report('最终')
         log(f'\nhide 后回落 = 基线 vs 最终差值，反映非可回收层累积')
     finally:
         restore_input_source(saved_input)
