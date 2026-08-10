@@ -1,6 +1,5 @@
 import { watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { getAllWebviewWindows } from '@tauri-apps/api/webviewWindow'
 import { CMD } from '@/commands'
 import { defineConfig } from '@/runtime/storage'
 
@@ -43,26 +42,15 @@ watch(
 
 watch(
   () => config.enabled,
-  (enabled, prevEnabled) => {
+  (enabled) => {
     invoke(CMD.setWindowManagerEnabled, { enabled }).catch((e: unknown) => {
       console.error('[window-manager] setWindowManagerEnabled failed:', e)
     })
-    // 禁用时销毁 snap-panel 窗口释放 WebContent 进程（Rust 端仅停止 drag monitor，
-    // 窗口销毁由前端发起——避免 Rust 端窗口操作在 LTO 布局变化下触发 WKWebView KVO 竞态）
-    // 仅响应运行时显式 true→false 切换——defineConfig 异步回填磁盘值，启动期 immediate
-    // 的默认 false 与回填的 true 之间，getAllWebviewWindows 异步回调可能晚于 create_snap_panel，
-    // 误销毁刚创建的窗口（drag monitor 已 start 但 snap-panel 被销毁 → 拖窗吸附失效）
-    if (!enabled && prevEnabled === true) {
-      getAllWebviewWindows()
-        .then((windows: ReadonlyArray<{ label: string; close(): Promise<void> }>) => {
-          for (const w of windows) {
-            if (w.label === 'snap-panel') {
-              w.close().catch(() => {})
-            }
-          }
-        })
-        .catch(() => {})
-    }
+    // 禁用时不销毁 snap-panel 窗口：WKWebView teardown 触发 C++ foreign exception
+    //（非 ObjC NSException，objc2::exception::catch 无法拦截），前端 close()/destroy()
+    // 均 abort 进程。窗口保持存活（alpha=0 + ignoresMouseEvents），drag monitor 已停。
+    // 重新启用时 build_snap_panel 幂等跳过 + configure_snap_panel 重配置 + drag monitor 重启。
+    // 代价：一个空闲 WebContent 进程 ~30-50MB（可接受，优于崩溃）。
   },
   { immediate: true },
 )

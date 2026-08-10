@@ -19,8 +19,8 @@ impl Extension for WindowManagerExtension {
 
     // snap-panel 窗口创建 deferred 到 bootstrap 后（spawn_blocking 不阻塞 join_all）。
     // 读 config.json 判断 enabled：仅启用时创建（省一个常驻 WebContent 进程 ~30-50MB）。
-    // 不能在 set_window_manager_enabled 的 run_on_main_thread 闭包内创建——
-    // WebviewWindowBuilder::build() 内部会 dispatch 到主线程，与正在执行闭包的主线程死锁。
+    // build 与 configure 分两步：build 在 worker 线程（内部 dispatch 到空闲主线程，无死锁），
+    // configure 在 run_on_main_thread 闭包内（apply_mica_material 需 MainThreadMarker）。
     async fn setup(&self, app: &tauri::AppHandle) -> tauri::Result<()> {
         let app_clone = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
@@ -34,10 +34,11 @@ impl Extension for WindowManagerExtension {
             if !enabled {
                 return;
             }
+            build_snap_panel(&app_clone);
             let (tx, rx) = std::sync::mpsc::channel();
             let app2 = app_clone.clone();
             let _ = app_clone.run_on_main_thread(move || {
-                create_snap_panel(&app2);
+                configure_snap_panel(&app2);
                 let _ = tx.send(());
             });
             let _ = rx.recv_timeout(std::time::Duration::from_secs(10));
@@ -86,15 +87,19 @@ fn configure_snap_panel(app: &tauri::AppHandle) {
 #[cfg(not(target_os = "macos"))]
 fn configure_snap_panel(_app: &tauri::AppHandle) {}
 
-/// 按需创建 snap-panel 窗口（start 时调用）。已存在则跳过。
+/// 仅创建 snap-panel 窗口（WebviewWindowBuilder::build），不含材质/面板配置。
+/// 可在任意非主线程调用：build 内部 dispatch 到主线程，主线程 run loop 空闲时执行。
+/// **禁止**在 run_on_main_thread 同步闭包内调用——build 的 dispatch + 同步等待
+/// 会与正在执行该闭包的主线程死锁（主线程卡死 → 整个 UI 无响应）。
+/// 材质配置（configure_snap_panel）需 MainThreadMarker，须在主线程闭包内单独调用。
 #[cfg(target_os = "macos")]
-pub(crate) fn create_snap_panel(app: &tauri::AppHandle) {
+fn build_snap_panel(app: &tauri::AppHandle) {
     use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
     if app.get_webview_window("snap-panel").is_some() {
         return;
     }
     let url = WebviewUrl::App("snap-panel.html".into());
-    if WebviewWindowBuilder::new(app, "snap-panel", url)
+    let _ = WebviewWindowBuilder::new(app, "snap-panel", url)
         .title("")
         .inner_size(600.0, 300.0)
         .resizable(false)
@@ -103,15 +108,11 @@ pub(crate) fn create_snap_panel(app: &tauri::AppHandle) {
         .always_on_top(true)
         .skip_taskbar(true)
         .visible(false)
-        .build()
-        .is_ok()
-    {
-        configure_snap_panel(app);
-    }
+        .build();
 }
 
 #[cfg(not(target_os = "macos"))]
-pub(crate) fn create_snap_panel(_app: &tauri::AppHandle) {}
+fn build_snap_panel(_app: &tauri::AppHandle) {}
 
 /// 单屏几何。
 ///
@@ -307,15 +308,19 @@ pub async fn set_window_manager_enabled(
     app: tauri::AppHandle,
     enabled: bool,
 ) -> Result<(), String> {
-    // create_snap_panel 必须在主线程执行：configure_snap_panel → apply_mica_material
-    // 内 MainThreadMarker::new().expect() 在非主线程 panic。不能在 run_on_main_thread
-    // 闭包外调用（本命令跑在 tokio worker）。移入闭包与 do_set_window_manager_enabled
-    // 同批执行（create 幂等，已存在直接 return）。
+    // build 在 tokio worker（闭包外）：WebviewWindowBuilder::build 内部 dispatch 到
+    // 空闲主线程，无死锁。禁止放进 run_on_main_thread 同步闭包——build 的 dispatch +
+    // 同步等待会与正在执行闭包的主线程死锁（主线程卡死 → UI 无响应）。
+    if enabled {
+        build_snap_panel(&app);
+    }
+    // configure_snap_panel 需 MainThreadMarker（apply_mica_material），必须在主线程；
+    // do_set_window_manager_enabled 启停 drag monitor 也需主线程。
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     let app_clone = app.clone();
     app.run_on_main_thread(move || {
         if enabled {
-            create_snap_panel(&app_clone);
+            configure_snap_panel(&app_clone);
         }
         platform::do_set_window_manager_enabled(&app_clone, enabled);
         let _ = tx.send(());
