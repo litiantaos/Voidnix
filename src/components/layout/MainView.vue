@@ -19,6 +19,20 @@
     />
     <!-- chrome 渐隐：浅蓝 canvas，栏中线以上不透明（theme.css .chrome-fade） -->
     <div class="chrome-fade" :style="chromeFadeStyle" aria-hidden="true" />
+    <!-- 拖动手柄：覆盖 chrome 带的空白间隙（窗口左/右/上方边距）。
+         z-5 在 scrollContainer 之上、搜索栏（z-10）之下：搜索栏盖住自身区域，
+         空出的间隙即拖动区。手动 startDragging 替代 data-tauri-drag-region——
+         后者在 macOS 双击触发 internal_toggle_maximize，对 resizable:false 无标题栏
+         窗口会直接 setFrame 填满全屏（tao 无 Resizable+Titled styleMask 走 else 分支），
+         启动器不该最大化 -->
+    <div
+      absolute
+      inset-x-0
+      top-0
+      class="z-5"
+      :style="{ height: WINDOW.CHROME_HEIGHT + 'px' }"
+      @mousedown="onDragHandleMouseDown"
+    />
     <!--
       搜索栏拆层：毛玻璃底（backdrop-filter）与内容分离，
       避免 WKWebView 裁剪栏内按钮 box-shadow
@@ -127,12 +141,14 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useScroll } from '@/composables/events'
 import { getExtension } from '@/runtime/extension-registry'
 import { SEARCH, WINDOW } from '@/runtime/constants'
 import { getGroupKey } from '@/runtime/search-engine'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
+import { isTauri } from '@/utils/tauri'
 import type { SearchResult } from '@/runtime/types'
 import ContentView from '@/components/layout/ContentView.vue'
 import ResultActionPanel from '@/components/layout/ResultActionPanel.vue'
@@ -180,6 +196,13 @@ const actionPanelRef = ref<InstanceType<typeof ResultActionPanel>>()
 const results = ref<SearchResult[]>([])
 const selectedIndex = ref(0)
 const isTagHovered = ref(false)
+
+// chrome 带空白区拖动：仅左键单击（detail===1）触发系统拖动，双击不最大化
+function onDragHandleMouseDown(e: MouseEvent) {
+  if (!isTauri || e.button !== 0 || e.detail !== 1) return
+  e.preventDefault()
+  getCurrentWindow().startDragging()
+}
 
 const scrollContainer = computed(() => contentViewRef.value?.scrollContainer)
 const { y: scrollTop } = useScroll(scrollContainer)

@@ -181,7 +181,8 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - 不 `activate_app`（保持原前台 active，避免聚焦视图/菜单栏突变；代价是 macOS 26 上偶发下层 hover 穿透——产品优先不打断）
 - hit-test 靠 `capture_mouse_events` + SkyLight event shape；`present_on_cursor_screen` 中 **先 `capture_mouse_events` 再 `setAlphaValue`**（避免窗口可见但仍 ignoresMouseEvents 的间隙导致滚动穿透），`orderFront` 后重设 event shape；`show_main` 末尾延迟 150ms 再刷新一次（兜底菜单栏关闭后窗口服务器 hit-test 滞后）
 - `present_on_cursor_screen`：光标屏居中并写 `PLACEMENT_VIS`
-- `animate_frame` 只在 `PLACEMENT_VIS` 内改尺寸（忽略前端 x/y，高度立即生效）
+- `animate_frame` 在 `PLACEMENT_VIS` 内改尺寸，保留用户拖动后的水平位置（宽度变化以当前中心为轴），跨屏异常才复位居中
+- **窗口拖动**：chrome 带（搜索栏周围空白间隙）设透明拖动层（z-5，搜索栏 z-10 之下），手动 `startDragging()` 替代 `data-tauri-drag-region`——后者 macOS 双击触发 `internal_toggle_maximize`，对 resizable:false 无标题栏窗口会直接填满全屏；拖动仅影响当前显示期间，每次 show 经 `present_on_cursor_screen` 自动复位
 - 截图 overlay 等独占场景才显式 `activate_app`
 - **剪贴板填充**：主快捷键从隐藏唤起时派发 `window-invoked`（DOM 事件），`useSearchInput` 查剪贴板最新记录，文本类且 3 秒内则填充搜索框并 select（`disableSearchInput` 扩展跳过）
 
