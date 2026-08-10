@@ -112,8 +112,7 @@ async function clearCache() {
   keepAliveActive.value = false
   await nextTick()
   // 强制同步 layout：处理 DOM removal 产生的 render tree 变更，
-  // 让 WebCore 在 alpha=0 窗口仍完成 compositing layer 释放。
-  // 同时覆盖 useSearchInput 清 results 的变更（Vue 批量 flush，两者一次 patch）。
+  // 让 WebCore 在 alpha=0 窗口仍完成扩展视图 compositing layer 释放。
   void document.body.offsetHeight
   keepAliveActive.value = true
 }
