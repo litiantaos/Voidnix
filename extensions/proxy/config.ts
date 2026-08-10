@@ -1,3 +1,4 @@
+import { watch } from 'vue'
 import { defineConfig } from '@/runtime/storage'
 import { generateRequestId } from '@/utils/id'
 
@@ -38,6 +39,28 @@ export const config = defineConfig('extensions/proxy/config', {
   /// 空 = 无激活（回退首项）；由 normalizer watch 保证始终指向有效 id。
   activeSubscriptionId: '',
 })
+
+/// 端口变体归一化（模块级，app 启动即生效）。
+///
+/// config.json 可能残留对端变体默认端口（历史污染 / 手动复制 / defineConfig 异步
+/// backfill 覆盖正确默认值）。此处用 `flush: 'sync'` 确保端口变更（含 backfill 回填）
+/// 在同一同步执行栈内即时修正——消除 backfill 写入错误值到 normalizer 修正之间的窗口。
+/// Rust 侧 `correct_variant_ports`（cfg!(debug_assertions)）作权威兜底。
+watch(
+  () => [config.mixedPort, config.controllerPort] as const,
+  () => {
+    if (import.meta.env.DEV) {
+      if (config.mixedPort === DEFAULT_MIXED_PORT) config.mixedPort = DEFAULT_MIXED_PORT + 1
+      if (config.controllerPort === DEFAULT_CONTROLLER_PORT)
+        config.controllerPort = DEFAULT_CONTROLLER_PORT + 1
+    } else {
+      if (config.mixedPort === DEFAULT_MIXED_PORT + 1) config.mixedPort = DEFAULT_MIXED_PORT
+      if (config.controllerPort === DEFAULT_CONTROLLER_PORT + 1)
+        config.controllerPort = DEFAULT_CONTROLLER_PORT
+    }
+  },
+  { immediate: true, flush: 'sync' },
+)
 
 /// 规则模式选项
 export const MODE_OPTIONS = [

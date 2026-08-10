@@ -114,7 +114,13 @@ plist 的 `ProgramArguments` 指向 mihomo binary（绝对路径）+ `-d` 数据
 
 **TUN 是系统独占资源**（虚拟网卡 + 路由 `1.0.0.0/8` 等），两个 mihomo 实例不能同时占 TUN（`add route: file exists`）。`install_launchdaemon` 安装时**只清理自己的 mihomo**（按 binary 完整路径匹配，含 bundle-id 数据目录），不杀别的实例——dev/prod 默认端口隔离（dev +1 偏移），互不占用，可同时常驻。与第三方工具的冲突由三层诊断处理（见下）。
 
-**dev/prod 端口隔离**：dev 构建默认 `7891/9091`，prod 默认 `7890/9090`（`import.meta.env.DEV` 偏移 +1）。两个 mihomo 可同时常驻（idle/idle 或 idle/active）互不干扰；同一时刻仅一个能 active 占 TUN（TUN 独占，已开代理时再开另一个会诊断报错）。旧 dev config.json 存了 prod 端口时，前端 normalizer watch 自动迁移到 dev 端口。
+**dev/prod 端口隔离**：dev 构建默认 `7891/9091`，prod 默认 `7890/9090`（`import.meta.env.DEV` 偏移 +1）。两个 mihomo 可同时常驻（idle/idle 或 idle/active）互不干扰；同一时刻仅一个能 active 占 TUN（TUN 独占，已开代理时再开另一个会诊断报错）。
+
+**端口归一化（三层防御）**：config.json 可能残留对端变体默认端口（历史污染 / 手动复制 / `defineConfig` 异步 backfill 覆盖），需在多个层面修正：
+
+- **Rust 权威层**（`core::correct_variant_ports`）：`set_proxy_enabled` 命令入口 + `read_run_params`（reconnect 直读 config.json）处用 `cfg!(debug_assertions)` 静默修正——`cfg!` 与 Tauri bundle identifier 一致（debug 构建自动追加 `.dev`），是变体判定的权威源
+- **前端结构层**（`config.ts` 模块级 watch）：app 启动即注册（非 composable 内延后），`flush: 'sync'` 确保 `defineConfig` backfill 回填错误端口时在同一同步栈内即时修正，消除 backfill 到修正之间的窗口
+- **磁盘层**：前端 normalizer 修正后经 defineConfig 300ms 防抖持久化，后续 config.json 自动修正
 
 **idle config 无 tun 段、不占 TUN**：Voidnix mihomo 常驻 idle 时 TUN 空闲，不影响用户切到其他代理软件；只有开代理（active，占 TUN）时独占。但 idle 仍占 mixed-port/controller 端口，端口相同会与其他代理工具冲突（见下）。
 

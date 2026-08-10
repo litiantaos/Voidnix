@@ -33,12 +33,15 @@ pub async fn set_proxy_enabled(
     app: AppHandle,
     state: State<'_, ProxyState>,
     enabled: bool,
-    mixed_port: u16,
-    controller_port: u16,
+    mut mixed_port: u16,
+    mut controller_port: u16,
     secret: String,
     mode: String,
     active_sub_id: String,
 ) -> Result<bool, String> {
+    // 端口变体归一化（权威修正）：config.json 可能残留对端变体默认端口，
+    // 在命令入口处静默修正，确保 mihomo 绑定到正确端口。
+    core::correct_variant_ports(&mut mixed_port, &mut controller_port);
     if enabled {
         let params = RunParams {
             mixed_port,
