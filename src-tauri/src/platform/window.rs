@@ -189,8 +189,10 @@ pub fn make_key_window(window: &tauri::WebviewWindow) {
 
 /// 主窗高度/尺寸动画。
 ///
-/// 只在 `PLACEMENT_VIS`（show 时锁定的光标屏）内改尺寸，忽略前端 x/y 与
-/// NSWindow.screen——跨屏 show 后前端滞后坐标不会把窗拽回主屏；高度可立即生效。
+/// 在 `PLACEMENT_VIS`（show 时锁定的光标屏）内改尺寸，保留用户拖动后的水平位置
+/// （chrome 带透明拖动层可拖动，宽度变化以当前中心为轴）；跨屏异常
+/// （cur 不在 placement 屏）时才复位居中。每次 show 经 present_on_cursor_screen
+/// 重定位，故拖动仅影响当前显示期间，下次唤起自动复位。
 pub fn animate_frame(window: &tauri::WebviewWindow, _x: f64, _y: f64, w: f64, h: f64) {
     use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize};
     const DURATION_SECS: f64 = 0.26;
@@ -221,18 +223,18 @@ pub fn animate_frame(window: &tauri::WebviewWindow, _x: f64, _y: f64, w: f64, h:
     }
 
     let cur = ns_window.frame();
-    // 与 present 同策略：水平居中、顶边优先靠上；高度变化时尽量保顶边
-    let x = vis.origin.x + (vis.size.width - w) / 2.0;
     let top = cur.origin.y + cur.size.height;
-    let mut y = top - h;
     let top_on_screen = top >= vis.origin.y - 1.0 && top <= vis.origin.y + vis.size.height + 1.0;
     let x_overlap = cur.origin.x + cur.size.width > vis.origin.x
         && cur.origin.x < vis.origin.x + vis.size.width;
-    if !top_on_screen || !x_overlap || cur.size.width < 50.0 {
-        // 不在 placement 屏：重新按靠上规则放置
+    let (x, y) = if !top_on_screen || !x_overlap || cur.size.width < 50.0 {
+        // 不在 placement 屏：重新居中放置（跨屏异常复位）
         let placed = placement_frame_on_vis(vis, w, h);
-        y = placed.origin.y;
+        (placed.origin.x, placed.origin.y)
     } else {
+        // 在屏内：保留用户拖动后的水平位置（宽度变化以当前中心为轴），高度变化保顶边
+        let x = cur.origin.x + (cur.size.width - w) / 2.0;
+        let mut y = top - h;
         // 底部将出屏则上移；顶边不超过 visible 顶
         if y < vis.origin.y + BOTTOM_MARGIN {
             y = vis.origin.y + BOTTOM_MARGIN;
@@ -244,7 +246,8 @@ pub fn animate_frame(window: &tauri::WebviewWindow, _x: f64, _y: f64, w: f64, h:
         if y < vis.origin.y {
             y = vis.origin.y;
         }
-    }
+        (x, y)
+    };
 
     let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
     unsafe {
