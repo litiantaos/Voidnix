@@ -32,6 +32,8 @@ bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.t
 bun run check:agent-bounds   # CI 校验（agent 资源上限 policy.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:wm-bounds      # CI 校验（window-manager mod.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:extension-orders # CI 校验（非 hidden 扩展 meta.order 唯一）
+python3 scripts/smoke-test.py  # 全功能回归测试（部署前门禁，含应用自测 + 系统冒烟）
+bun run smoke-test             # 同上（package.json 别名）
 ```
 
 Rust 端代码质量：
@@ -61,6 +63,27 @@ cd src-tauri && cargo test --lib   # Rust
 测试报告：`bun run test` 跑完经自定义 reporter 自动写 `.test-report.md`（gitignore）到项目根，含价值分层（回归/并发/边界/正向）与失败明细，可看可不看。
 
 E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run test:e2e`）。原生窗口行为（快捷键/焦点/隐藏）仍需人工验证。
+
+## 全功能回归测试（标准化冒烟测试）
+
+`scripts/smoke-test.py` — 部署前必跑的全链路回归门禁，覆盖全部 23 扩展 + 框架行为，防止"修 A 坏 B"连锁回归。
+
+**两层架构**：
+
+- **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（23 扩展 / id 无重复 / order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 16 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）。报告经 plugin-store 写到 `config/test-report.json`。
+- **Layer 2（系统冒烟）**：CGEvent 驱动真实 UI，验证窗口显隐 / 全局快捷键 / snap-panel 全链路 / 搜索 UI / 扩展视图渲染 / 内存基线阈值。每步返回结构化 `TestResult`（pass/fail/skip），汇总为统一报告。CGEvent 基础设施（键盘映射 / 窗口检测 / 鼠标操作 / 内存测量）提取到 `scripts/voidnix_test_lib.py`，`wk-mem-test.py` 与 `smoke-test.py` 共享。
+
+```bash
+python3 scripts/smoke-test.py --self-test-only   # 仅 Layer 1（~30s，无需独占屏幕）
+python3 scripts/smoke-test.py                     # 完整测试（Layer 1 + 2）
+python3 scripts/smoke-test.py --dev               # dev 构建
+python3 scripts/smoke-test.py --build             # 含 release 构建
+python3 scripts/smoke-test.py --no-cgevent        # 跳过 Layer 2（CI/headless 友好）
+```
+
+自测触发机制：`runtime/test.rs::is_self_test_mode` 命令读 `VOIDNIX_SELF_TEST` 环境变量，`main.ts` 在扩展 setup 完成后检查，true 则动态 import `self-test.ts` 运行（动态 import 不进生产初始 chunk）。
+
+**内存基线持久化**：首次运行采集 footprint / graphics 后写入 `scripts/smoke-baselines.json`（提交到仓库，团队共享参考基线）。后续运行改用基线值 + drift 容忍度（footprint +25% / graphics +50%）对比，比硬编码绝对上限更灵敏地检测回归。drift 超容忍度时不更新基线（防 GC 抖动峰值固化）。报告 `scripts/smoke-test-report.md` gitignore，基线文件提交。
 
 ## 本地门禁
 
@@ -311,6 +334,7 @@ src-tauri/src/
 │   ├── shortcut.rs     # 快捷键 + 录制
 │   ├── menubar.rs      # 聚合菜单栏托盘（框架唯一图标 + 扩展贡献段注册）
 │   ├── storage.rs      # TempHandle RAII + ext_data_dir + save_png_safely
+│   ├── test.rs         # 自测模式判定薄壳（环境变量 VOIDNIX_SELF_TEST）
 │   ├── permission.rs   # 系统权限命令薄壳（同步；screen_recording 走 preflight 不截屏）
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap；单扩展 setup 失败隔离；阻塞 I/O 扩展自管 spawn_blocking）
 │   ├── pasteboard.rs   # 框架命令薄壳（write_text / paste_text；原语在 platform/pasteboard）
@@ -343,6 +367,7 @@ src/
 │   ├── types.ts        # Extension / SearchProvider / SearchResult（13 槽：10 能力 + 3 行为）
 │   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS / GROUP_ORDER / GROUP_TITLES / KEYWORD_EXTENSION_BOOST + LIMITS）
 │   ├── storage.ts      # defineConfig（reactive + watch 自动持久化 + race 保护 + 类型守卫 + 退出 flush）
+│   ├── self-test.ts    # 应用自测模块（环境变量驱动，搜索/扩展/命令/视图冒烟断言）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension
 │   ├── search-engine.ts       # dynamic 单通道 + keyword 合流 + dedupe + groupAndSort
 │   ├── ai-providers.ts        # 统一 AI 提供商/Key 中枢（agent/translate 消费）

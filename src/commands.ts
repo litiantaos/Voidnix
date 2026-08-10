@@ -18,6 +18,10 @@ export const CMD = {
   revealInFinder: 'reveal_in_finder',
   openPrivacySettings: 'open_privacy_settings',
 
+  // —— 自测模式（环境变量驱动，前端 main.ts 消费）——
+  isSelfTestMode: 'is_self_test_mode',
+  selfTestDiag: 'self_test_diag',
+
   // —— 开机自启（SMAppService Login Item，macOS 13+）——
   isAutostartEnabled: 'is_autostart_enabled',
   enableAutostart: 'enable_autostart',

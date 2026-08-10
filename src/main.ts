@@ -1,9 +1,12 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
+import { invoke } from '@tauri-apps/api/core'
 import { getAllExtensions } from '@/runtime/extension-registry'
 import { initTheme } from '@/runtime/theme'
 import { prewarmPinyin } from '@/utils/fuzzy'
 import { useSystemStore } from '@/stores/system'
+import { CMD } from '@/commands'
+import { isTauri } from '@/utils/tauri'
 import App from './App.vue'
 import 'virtual:uno.css'
 import './styles/theme.css'
@@ -32,7 +35,7 @@ document.addEventListener('contextmenu', (e) => e.preventDefault())
 
 // 异步执行扩展 setup 钩子（不阻塞 Vue 挂载与全局快捷键注册）
 // 每个扩展独立 try/catch：单个故障不拖垮其他扩展的初始化（扩展自治）
-Promise.all(
+const setupDone = Promise.all(
   getAllExtensions().map(async (e) => {
     try {
       await e.setup?.()
@@ -41,3 +44,18 @@ Promise.all(
     }
   }),
 )
+
+// 自测模式：扩展 setup 完成后触发（环境变量 VOIDNIX_SELF_TEST=1 驱动）。
+// 加 10s 超时保护——某个扩展 setup 可能因网络/二进制下载阻塞（如 video 等 ffmpeg），
+// 超时后仍触发自测（该扩展的视图冒烟会跳过/报错，不影响其余用例）。
+// 动态 import 避免自测代码进入生产 bundle 的初始 chunk
+if (isTauri) {
+  invoke<boolean>(CMD.isSelfTestMode)
+    .catch(() => false)
+    .then(async (selfTest) => {
+      if (!selfTest) return
+      await Promise.race([setupDone, new Promise<void>((r) => setTimeout(r, 10000))])
+      const { runSelfTest } = await import('./runtime/self-test')
+      await runSelfTest()
+    })
+}
