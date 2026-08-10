@@ -71,6 +71,29 @@ pub struct RunParams {
     pub tun: bool,
 }
 
+/// dev/prod 端口变体归一化（命令入口 + config.json 直读处的权威修正）。
+///
+/// config.json 可能残留对端变体默认端口（历史污染 / 手动复制 / backfill 竞态），
+/// 导致 mihomo 绑定错误端口与其他实例冲突。`cfg!(debug_assertions)` 与 Tauri
+/// bundle identifier 一致（debug 构建自动追加 `.dev`），是 dev/prod 变体判定的
+/// 权威源——前端 `import.meta.env.DEV` 与 Rust `cfg!` 在 Tauri 工作流中始终配对
+/// （`tauri dev` = debug+Vite dev，`tauri build` = release+Vite build）。
+///
+/// 仅修正「对端默认端口」→「本端默认端口」；用户自定义端口不动。
+pub(crate) fn correct_variant_ports(mixed_port: &mut u16, controller_port: &mut u16) {
+    let (this_m, this_c, other_m, other_c) = if cfg!(debug_assertions) {
+        (7891u16, 9091u16, 7890u16, 9090u16)
+    } else {
+        (7890u16, 9090u16, 7891u16, 9091u16)
+    };
+    if *mixed_port == other_m {
+        *mixed_port = this_m;
+    }
+    if *controller_port == other_c {
+        *controller_port = this_c;
+    }
+}
+
 /// mihomo binary 写盘路径（app_data_dir/extensions/proxy/mihomo）。
 fn bin_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(ext_data_dir(app, "proxy")?.join("mihomo"))
@@ -330,4 +353,34 @@ pub(crate) fn remove_core_files(app: &AppHandle) -> Result<(), String> {
     let _ = std::fs::remove_file(dir.join("mihomo"));
     let _ = std::fs::remove_file(dir.join("mihomo.version"));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn correct_variant_ports_fixes_mismatched_defaults() {
+        // 模拟对端变体默认端口（当前变体由 cfg!(debug_assertions) 决定）
+        let (this_m, this_c, other_m, other_c) = if cfg!(debug_assertions) {
+            (7891u16, 9091u16, 7890u16, 9090u16)
+        } else {
+            (7890u16, 9090u16, 7891u16, 9091u16)
+        };
+
+        // 对端默认端口 → 修正为本端默认
+        let (mut m, mut c) = (other_m, other_c);
+        correct_variant_ports(&mut m, &mut c);
+        assert_eq!((m, c), (this_m, this_c));
+
+        // 本端默认端口 → 不动
+        let (mut m, mut c) = (this_m, this_c);
+        correct_variant_ports(&mut m, &mut c);
+        assert_eq!((m, c), (this_m, this_c));
+
+        // 用户自定义端口 → 不动
+        let (mut m, mut c) = (7892u16, 9092u16);
+        correct_variant_ports(&mut m, &mut c);
+        assert_eq!((m, c), (7892, 9092));
+    }
 }

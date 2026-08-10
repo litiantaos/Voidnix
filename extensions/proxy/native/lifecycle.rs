@@ -453,9 +453,13 @@ fn read_run_params(app: &AppHandle) -> Option<RunParams> {
         .join("config.json");
     let text = std::fs::read_to_string(&path).ok()?;
     let v: Value = serde_json::from_str(&text).ok()?;
+    let mut mixed_port = v.get("mixedPort")?.as_u64()? as u16;
+    let mut controller_port = v.get("controllerPort")?.as_u64()? as u16;
+    // 端口变体归一化：config.json 可能残留对端变体端口，reconnect 前修正
+    core::correct_variant_ports(&mut mixed_port, &mut controller_port);
     Some(RunParams {
-        mixed_port: v.get("mixedPort")?.as_u64()? as u16,
-        controller_port: v.get("controllerPort")?.as_u64()? as u16,
+        mixed_port,
+        controller_port,
         secret: v.get("secret")?.as_str()?.to_string(),
         mode: v
             .get("mode")

@@ -10,8 +10,6 @@ import {
   type Subscription,
   config,
   MODE_OPTIONS,
-  DEFAULT_MIXED_PORT,
-  DEFAULT_CONTROLLER_PORT,
   addSubscription,
   updateSubscription,
   removeSubscription,
@@ -693,20 +691,6 @@ export function useProxyPanel() {
       const ids = config.subscriptions.map((s) => s.id)
       if (!ids.includes(config.activeSubscriptionId)) {
         config.activeSubscriptionId = ids[0] ?? ''
-      }
-    },
-    { immediate: true },
-  )
-
-  // 端口隔离迁移：dev 构建时，旧 config.json 可能存了 prod 默认端口（7890/9090），
-  // 自动偏移到 dev 端口（7891/9091）。已迁移或自定义端口不动。
-  watch(
-    () => [config.mixedPort, config.controllerPort] as const,
-    () => {
-      if (import.meta.env.DEV) {
-        if (config.mixedPort === DEFAULT_MIXED_PORT) config.mixedPort = DEFAULT_MIXED_PORT + 1
-        if (config.controllerPort === DEFAULT_CONTROLLER_PORT)
-          config.controllerPort = DEFAULT_CONTROLLER_PORT + 1
       }
     },
     { immediate: true },
