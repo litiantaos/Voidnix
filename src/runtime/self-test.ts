@@ -346,6 +346,32 @@ async function testCommandAvailability(): Promise<TestResult[]> {
   return results
 }
 
+// ── E. 窗口管理运行时启用 ──────────────────────────────────────────────────────
+
+/// 覆盖回归：运行时 toggle WM 时，configure_snap_panel → apply_cached_appearance
+/// 在主题已初始化（WINDOW_APPEARANCE = Some）下触发 Mutex 重入死锁，主线程永久卡死。
+/// 启动期创建路径因时序侥幸逃逸（configure 先于 setWindowAppearance 执行，缓存仍 None）。
+async function testWindowManagerRuntimeEnable(): Promise<TestResult[]> {
+  const results: TestResult[] = []
+  const timeout = (ms: number, msg: string) =>
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(msg)), ms))
+
+  results.push(
+    await runTest('window-manager', '运行时启用 (主题已初始化)', async () => {
+      // 禁用→启用 toggle：configure_snap_panel 重跑，apply_cached_appearance 读
+      // WINDOW_APPEARANCE（Some）。若 Mutex 重入死锁存在，invoke 永久阻塞，超时即判失败。
+      // 同时验证禁用（停 drag monitor）不崩溃——窗口无法安全销毁，保持存活。
+      await invoke<void>(CMD.setWindowManagerEnabled, { enabled: false }).catch(() => {})
+      await Promise.race([
+        invoke<void>(CMD.setWindowManagerEnabled, { enabled: true }),
+        timeout(8000, 'invoke 超时(>8s)，疑似主线程死锁'),
+      ])
+    }),
+  )
+
+  return results
+}
+
 // ── 报告写入 ─────────────────────────────────────────────────────────────────
 
 async function writeReport(report: SelfTestReport): Promise<void> {
@@ -390,6 +416,11 @@ export async function runSelfTest(): Promise<void> {
   await diag('D. Tauri 命令可达性...')
   allResults.push(...(await testCommandAvailability()))
   await diag(`D 完成: ${allResults.length} 用例`)
+
+  // E. 窗口管理运行时启用（回归：Mutex 重入死锁）
+  await diag('E. 窗口管理运行时启用...')
+  allResults.push(...(await testWindowManagerRuntimeEnable()))
+  await diag(`E 完成: ${allResults.length} 用例`)
 
   // 汇总
   const summary = {

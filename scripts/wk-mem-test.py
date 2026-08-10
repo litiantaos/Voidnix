@@ -244,12 +244,11 @@ def phase_global_shortcuts():
 
 
 def _wm_toggle():
-    """在 window-manager 扩展视图中 Tab 到启用开关并 Enter 切换。"""
+    """在窗口管理扩展视图中按 Enter 切换启用开关（BaseList onExecute → toggle update）。"""
     from voidnix_test_lib import require_visible
     require_visible()
-    post_key(KEY_TAB)
-    time.sleep(0.2)
     press_enter()
+    time.sleep(0.5)
 
 
 def wait_snap_panel_gone(timeout=4.0, interval=0.3):

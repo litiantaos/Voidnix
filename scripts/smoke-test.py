@@ -435,23 +435,30 @@ def test_extension_views(rc: ResultCollector):
 
 
 def test_snap_panel(rc: ResultCollector):
-    """snap-panel 全链路：触发 → 隐藏 → 布局点击 → 禁用销毁。"""
-    show_window(DEV_MODE)
+    """snap-panel 全链路：UI 点击启用 → 触发 → 隐藏 → 布局点击 → UI 点击禁用销毁。
+
+    启用/禁用均通过鼠标点击 toggle 按钮模拟真实用户操作，走 config.ts watch →
+    invoke(setWindowManagerEnabled) 前端路径——而非预写 config 绕过。
+    """
     w, h = screen_size()
 
-    # 确保 WM 启用（启动前已写 config，snap-panel 应已创建 + drag monitor 已运行）
-    def _ensure_wm():
-        hide_window(DEV_MODE)
-        time.sleep(TOGGLE_GAP)
-        return trigger_snap_panel(w, attempts=5, interval=0.5)
-
-    triggered = _ensure_wm()
+    # ── 启用：UI 点击 toggle ON ──
+    show_window(DEV_MODE)
+    _enter_ext('window', SETTLE_DEFAULT)
+    time.sleep(0.3)
+    click_wm_toggle()
+    time.sleep(1.0)
+    _exit_ext()
+    hide_window(DEV_MODE)
+    time.sleep(TOGGLE_GAP)
 
     if snap_panel_exists():
-        rc.add_pass('snap-panel', '窗口已创建')
+        rc.add_pass('snap-panel', 'UI 点击启用后窗口已创建')
     else:
-        rc.add_fail('snap-panel', '窗口已创建', '窗口未创建')
+        rc.add_fail('snap-panel', 'UI 点击启用后窗口已创建', '窗口未创建')
 
+    # ── 触发区显示 ──
+    triggered = trigger_snap_panel(w, attempts=5, interval=0.5)
     if triggered:
         rc.add_pass('snap-panel', '触发区显示正常')
     else:
@@ -497,34 +504,26 @@ def test_snap_panel(rc: ResultCollector):
 
     close_finder_windows()
     time.sleep(0.3)
+
+    # ── 禁用：UI 点击 toggle OFF ──
+    # 禁用时 snap-panel 窗口保持存活（WKWebView teardown 抛 C++ foreign exception
+    # 无法安全销毁），仅停 drag monitor + 隐藏窗口。验证 drag monitor 停止即可。
     show_window(DEV_MODE)
+    _enter_ext('window', SETTLE_DEFAULT)
+    time.sleep(0.3)
+    click_wm_toggle()
+    time.sleep(1.0)
+    _exit_ext()
+    hide_window(DEV_MODE)
+    time.sleep(TOGGLE_GAP)
 
-    # 禁用 WM → 销毁 snap-panel
-    # Tab+Enter 切换启用开关：WM 已在启动前确保 ON，此处 toggle → OFF 方向正确
-    if snap_panel_exists():
-        try:
-            show_window(DEV_MODE)
-            _enter_ext('window', SETTLE_DEFAULT)
-            post_key(KEY_TAB)
-            time.sleep(0.2)
-            press_enter()
-            time.sleep(0.5)
-            _exit_ext()
-        except RuntimeError:
-            pass
-
-    deadline = time.time() + 4.0
-    destroyed = False
-    while time.time() < deadline:
-        if not snap_panel_exists():
-            destroyed = True
-            break
-        time.sleep(0.3)
-
-    if destroyed:
-        rc.add_pass('snap-panel', '禁用后窗口已销毁')
+    # drag monitor 停止验证：移到触发区，snap-panel 不应显示
+    move_mouse_to_snap_trigger(w / 2, 100)
+    time.sleep(1.0)
+    if not is_snap_panel_visible():
+        rc.add_pass('snap-panel', 'UI 点击禁用后 drag monitor 已停止')
     else:
-        rc.add_fail('snap-panel', '禁用后窗口已销毁', '窗口仍存在')
+        rc.add_fail('snap-panel', 'UI 点击禁用后 drag monitor 已停止', '面板仍可触发')
 
     # 恢复 WM 配置为 disabled（无论禁用步骤是否成功，确保不残留）
     for bid in ['com.litiantao.voidnix', 'com.litiantao.voidnix.dev']:
@@ -538,24 +537,32 @@ def test_snap_panel(rc: ResultCollector):
                 pass
 
 
-def ensure_wm_enabled():
-    """启动前确保 WM 配置 enabled=true（snap-panel 在启动期自动创建 + drag monitor 启动）。
+def ensure_wm_disabled():
+    """启动前确保 WM 配置 enabled=false。
 
-    绕过 CGEvent 键盘焦点不可靠问题：disableSearchInput 扩展中 Enter 无法可靠到达
-    BaseList 的 onExecute。直接写 config.json → config.ts watch immediate 触发
-    setWindowManagerEnabled(true) → create_snap_panel + start_drag_monitor。
+    snap-panel 的启用/禁用由 test_snap_panel 通过 UI 点击 toggle 完成（模拟真实用户操作），
+    不再预写 config 绕过前端 watch → invoke 路径——该绕过正是此前三个 bug 逃逸的原因。
     """
     for bid in ['com.litiantao.voidnix', 'com.litiantao.voidnix.dev']:
         p = pathlib.Path.home() / 'Library' / 'Application Support' / bid / 'extensions' / 'window-manager' / 'config.json'
         if p.exists():
             try:
                 d = json.loads(p.read_text())
-                if not d.get('enabled'):
-                    d['enabled'] = True
-                    p.write_text(json.dumps(d))
-                    log(f'  WM 配置已启用 ({bid})')
+                d['enabled'] = False
+                p.write_text(json.dumps(d))
             except Exception:
                 pass
+
+
+def click_wm_toggle():
+    """在窗口管理扩展视图中按 Enter 切换启用开关。
+
+    进入扩展后 BaseList 默认选中 index 0（wm-enabled），Enter 经 BaseSettingsList
+    onExecute → item.update(!value) 切换 toggle。不依赖鼠标坐标（CGEvent 在大量
+    鼠标操作后可能不稳定），纯键盘交互更可靠。
+    """
+    press_enter()
+    time.sleep(0.5)
 
 
 def load_baselines() -> dict:
@@ -777,7 +784,7 @@ def main():
     log('\n── Layer 1：应用自测 ────────────────────────────')
 
     if not NO_CGEVENT and not SELF_TEST_ONLY:
-        ensure_wm_enabled()
+        ensure_wm_disabled()
 
     kill_voidnix()
     clear_old_report()

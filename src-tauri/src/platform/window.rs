@@ -418,7 +418,10 @@ pub fn apply_window_appearance(window: &tauri::WebviewWindow, mode: &str) {
 /// invisible 创建的子窗口（screenshot/snap-panel）调用：按缓存的 mode 设原生 appearance。
 /// pin 窗口 visible 创建不调此函数（setAppearance 死锁），改由前端 get_cached_appearance 读取。
 pub fn apply_cached_appearance(window: &tauri::WebviewWindow) {
-    if let Some(mode) = lock_or_recover(&WINDOW_APPEARANCE).clone() {
+    // mode 独立语句绑定：guard 在分号处 drop 释放锁，避免 if let scrutinee 临时值
+    // 生命周期延续到块结束、块内 apply_window_appearance 重入同一把锁自死锁。
+    let mode = lock_or_recover(&WINDOW_APPEARANCE).clone();
+    if let Some(mode) = mode {
         apply_window_appearance(window, &mode);
     }
 }
