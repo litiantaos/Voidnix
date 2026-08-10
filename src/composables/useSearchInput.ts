@@ -290,8 +290,10 @@ export function useSearchInput(opts: SearchInputOptions) {
       if (appStore.activeExtId) {
         // 搜索型扩展重跑；mainView 扩展不走 results 无需处理
         if (ext && !ext.mainView && ext.search) runExtensionSearch(appStore.searchQuery)
-      } else if (appStore.searchQuery.trim()) {
-        runExtensionSearch(appStore.searchQuery)
+      } else if (!appStore.searchQuery.startsWith('/')) {
+        // 全局搜索重跑。工具列表（/）/ 网页搜索（//）结果由 query 确定性生成，
+        // 隐藏期间不会过期且 DOM 已保留，走全局搜索会把工具列表替换成应用搜索结果
+        if (appStore.searchQuery.trim()) runExtensionSearch(appStore.searchQuery)
       }
     } else if (!appStore.activeExtId) {
       await loadDefaultResults()
