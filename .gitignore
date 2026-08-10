@@ -29,6 +29,9 @@ src-tauri/proptest-regressions/
 coverage/
 .test-report.md
 
+# 全功能回归测试产物（报告文件，gitignore；基线文件 smoke-baselines.json 提交到仓库）
+scripts/smoke-test-report.md
+
 # System files
 .DS_Store
 
