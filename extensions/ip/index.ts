@@ -17,13 +17,13 @@ interface IpInfo {
   asn?: string
 }
 
-// 短期 memoize：IP 信息秒级稳定，输入过程（如 1.1.1.1→8.8.8.8）每键不重复请求；
+// 仅缓存指定 IP 查询（IP 归属稳定）；本机 IP（null）不缓存——用户切换代理/网络后需拿最新值。
 // 失败结果不缓存，保留重试友好性
 const IP_CACHE_TTL = 60_000
-let ipCache: { query: string | null; data: IpInfo; ts: number } | null = null
+let ipCache: { query: string; data: IpInfo; ts: number } | null = null
 
 async function fetchIpInfo(ip: string | null): Promise<IpInfo> {
-  if (ipCache && ipCache.query === ip && Date.now() - ipCache.ts < IP_CACHE_TTL) {
+  if (ip && ipCache && ipCache.query === ip && Date.now() - ipCache.ts < IP_CACHE_TTL) {
     return ipCache.data
   }
   // 走框架 Rust http_get：绕过 webview 的 UA/Referer 反爬（ipwhois.app 对 WebKit+localhost 返回 403）与 CORS
@@ -32,7 +32,7 @@ async function fetchIpInfo(ip: string | null): Promise<IpInfo> {
     : 'https://ipwhois.app/json/?lang=zh-CN'
   const text = await invoke<string>(CMD.httpGet, { url })
   const data = JSON.parse(text) as IpInfo
-  if (data.success !== false) {
+  if (data.success !== false && ip) {
     ipCache = { query: ip, data, ts: Date.now() }
   }
   return data
