@@ -337,8 +337,8 @@ export function useSearchInput(opts: SearchInputOptions) {
    *  不清空 results：主快捷键由 Rust 直接 show 窗口（前端 IPC 回调在 show 之后），
    *  若 results 已清空则第一帧渲染空态，待 loadDefaultResults 异步完成才出列表——产生闪烁。
    *  保留 DOM 使唤起时列表立即可见，focusHandler 后台刷新补增量。
-   *  compositing layer 占用可忽略（单组 scroll container tiles），长期内存压力由
-   *  WebContent 350M 阈值 navigate 兜底。扩展视图缓存释放由 ContentView.clearCache 独立承担。 */
+   *  compositing layer 释放由 ContentView.clearCache 统一承担：content-visibility:hidden
+   *  跳过结果列表渲染并释放 tile backing（DOM 保留不闪烁），扩展视图经 KeepAlive 卸载释放。 */
   function onWindowHiding() {
     searchEngine.abort()
     if (searchTimeout) {

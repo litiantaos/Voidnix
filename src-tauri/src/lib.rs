@@ -5,6 +5,38 @@ mod runtime;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // panic hook：持久化 panic 消息 + location 到 ~/Library/Logs/Voidnix/。
+    // panic=abort 下默认仅打 stderr（常被 Popen PIPE 吞掉），macOS 崩溃报告对 stripped
+    // binary 只有地址无符号。panic location 经 #[track_caller] 编译时嵌入，不受 strip 影响。
+    std::panic::set_hook(Box::new(|info| {
+        let loc = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "?".into());
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| info.payload().downcast_ref::<String>().map(|s| s.as_str()))
+            .unwrap_or("<non-string panic>");
+        let msg = format!("[panic] {loc} {payload}\n");
+        eprint!("{msg}");
+        if let Some(home) = dirs::home_dir() {
+            let dir = home.join("Library/Logs/Voidnix");
+            let _ = std::fs::create_dir_all(&dir);
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(dir.join("panic.log"))
+                .and_then(|mut f| std::io::Write::write_all(&mut f, msg.as_bytes()));
+            let _ = ts;
+        }
+    }));
+
     // 自定义 tokio 运行时：4 worker 覆盖启动器峰值异步负载（agent 流式 + translate +
     // 搜索 + IPC 并发）。CPU 密集任务走 spawn_blocking 独立线程池，不占 worker。
     // 默认按逻辑核心数（10+）开 worker，对 idle-first 启动器纯属浪费——每 worker
