@@ -23,7 +23,7 @@
         ref="contentRef"
         :class="{ 'view-fixed': !isAutoHeight, 'view-auto': isAutoHeight }"
         flex="~ col"
-        :style="contentStyle"
+        :style="mergedContentStyle"
       >
         <!-- max=3：日常高频扩展（agent/settings/proxy）不超过 3 个同时活跃，超出按 LRU 驱逐。
              低频扩展重挂载毫秒级（KeepAlive activate/deactivate 语义已处理），换取 JS 堆削减。
@@ -108,14 +108,19 @@ const isMultiSelect = computed(() => !!props.extension?.listOptions?.multiSelect
 // 窗口隐藏时置 false 卸载 KeepAlive（Vue onBeforeUnmount 全量释放缓存 vnode + compositing layer），
 // nextTick 后置 true 重建空缓存（此时窗口即将 alpha=0，无视觉影响）。
 const keepAliveActive = ref(true)
+// 同期 toggle content-visibility:hidden 释放结果列表 tile backing（DOM 保留不闪烁）。
+// show 时 compositor 同步处理 pending 的 visible 变更，结果列表首帧即可见。
+const contentHidden = ref(false)
 
 async function clearCache() {
   keepAliveActive.value = false
+  contentHidden.value = true
   await nextTick()
-  // 强制同步 layout：处理 DOM removal 产生的 render tree 变更，
-  // 让 WebCore 在 alpha=0 窗口仍完成扩展视图 compositing layer 释放。
+  // 强制同步 layout：让 WebCore 在 alpha=0 窗口完成扩展视图卸载 +
+  // 结果列表 content-visibility:hidden 的 compositing layer tile backing 释放。
   void document.body.offsetHeight
   keepAliveActive.value = true
+  contentHidden.value = false
 }
 
 onMounted(() => {
@@ -159,6 +164,18 @@ const contentStyle = computed(() => {
     return { '--content-min-h': `${WINDOW.DEFAULT_HEIGHT - WINDOW.CHROME_HEIGHT}px` }
   }
   return { minHeight: '100%' }
+})
+
+/** contentStyle + 隐藏态 content-visibility 叠加。
+ *  content-visibility:hidden 跳过子树渲染，forced layout 释放 tile backing（IOSurface）。
+ *  contain-intrinsic-size:auto 保留上次渲染尺寸，防止隐藏时 scroll 位置丢失。 */
+const mergedContentStyle = computed(() => {
+  if (!contentHidden.value) return contentStyle.value
+  return {
+    ...(contentStyle.value ?? {}),
+    contentVisibility: 'hidden' as const,
+    containIntrinsicSize: `auto ${WINDOW.DEFAULT_HEIGHT - WINDOW.CHROME_HEIGHT}px`,
+  }
 })
 
 const scrollContainer = ref<HTMLElement>()
