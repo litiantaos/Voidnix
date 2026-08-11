@@ -61,6 +61,7 @@ macro_rules! configure_app {
             crate::extensions::finder_ext::finder_selected_paths,
             crate::extensions::homebrew::brew_info,
             crate::extensions::homebrew::brew_run,
+            crate::extensions::homebrew::brew_run_state,
             crate::extensions::homebrew::brew_services,
             crate::extensions::homebrew::brew_status,
             crate::extensions::image::image_copy_to_clipboard,

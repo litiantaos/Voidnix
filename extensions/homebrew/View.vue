@@ -40,7 +40,7 @@
                 :disabled="running"
                 @click.stop="run('update_upgrade')"
               >
-                {{ running ? '更新中' : '更新' }}
+                {{ running ? stepLabels[runningStep] || '处理中' : '更新' }}
               </BaseButton>
             </template>
           </BaseListItem>
@@ -124,8 +124,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { isTauri } from '@/utils/tauri'
 import { useAppStore } from '@/stores/app'
@@ -154,6 +155,10 @@ interface BrewService {
   name: string
   status: string
 }
+interface BrewRunState {
+  operation: string
+  step: string
+}
 type ListItem =
   | { type: 'status'; id: '__status__'; kind: '__status__' }
   | { type: 'service'; id: string; kind: '__service__'; name: string; status: string }
@@ -174,7 +179,19 @@ const services = ref<BrewService[]>([])
 const loading = ref(false)
 const error = ref('')
 const running = ref(false)
+const runningStep = ref('')
 const selectedIndex = ref(0)
+
+const stepLabels: Record<string, string> = {
+  update: '拉取更新',
+  upgrade: '升级中',
+  cleanup: '清理中',
+  autoremove: '清理依赖',
+  uninstall: '卸载中',
+  'services start': '启动中',
+  'services stop': '停止中',
+  'services restart': '重启中',
+}
 
 const hasQuery = computed(() => appStore.searchQuery.trim().length > 0)
 
@@ -266,8 +283,11 @@ async function fetchStatus() {
 async function run(operation: string) {
   if (!isTauri || running.value) return
   running.value = true
+  runningStep.value = ''
   const channel = new Channel<BrewEvent>()
-  channel.onmessage = () => {}
+  channel.onmessage = (e: BrewEvent) => {
+    if (e.kind === 'step') runningStep.value = e.text
+  }
 
   try {
     await invoke(CMD.brewRun, { operation, onEvent: channel })
@@ -278,14 +298,18 @@ async function run(operation: string) {
     appStore.showStatus(String(e ?? '未知错误'), { kind: 'error' })
   } finally {
     running.value = false
+    runningStep.value = ''
   }
 }
 
 async function runService(operation: string, name: string) {
   if (!isTauri || running.value) return
   running.value = true
+  runningStep.value = ''
   const channel = new Channel<BrewEvent>()
-  channel.onmessage = () => {}
+  channel.onmessage = (e: BrewEvent) => {
+    if (e.kind === 'step') runningStep.value = e.text
+  }
 
   try {
     await invoke(CMD.brewRun, { operation, target: name, onEvent: channel })
@@ -296,6 +320,7 @@ async function runService(operation: string, name: string) {
     appStore.showStatus(String(e ?? '未知错误'), { kind: 'error' })
   } finally {
     running.value = false
+    runningStep.value = ''
   }
 }
 
@@ -317,5 +342,36 @@ function onExecute(item: ListItem) {
   appStore.openSubview('detail', false)
 }
 
-onMounted(fetchStatus)
+let unlistenDone: (() => void) | null = null
+
+onMounted(async () => {
+  if (!isTauri) return
+  // 先注册监听再查状态，消除「查询返回 Some → 操作恰在此间隙结束 → 事件无人接收」的 TOCTOU 竞态
+  let done = false
+  const unlisten = await listen<BrewRunState | null>('brew-run-done', async () => {
+    done = true
+    unlisten()
+    unlistenDone = null
+    running.value = false
+    runningStep.value = ''
+    loading.value = false
+    await fetchStatus()
+  })
+  // 查状态：null = 操作已结束（事件可能已被上面的监听捕获），Some = 仍在运行
+  const state = await invoke<BrewRunState | null>(CMD.brewRunState)
+  if (state && !done) {
+    running.value = true
+    runningStep.value = state.step
+    loading.value = true
+    unlistenDone = unlisten
+  } else {
+    unlisten()
+    await fetchStatus()
+  }
+})
+
+onUnmounted(() => {
+  unlistenDone?.()
+  unlistenDone = null
+})
 </script>

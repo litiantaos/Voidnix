@@ -41,8 +41,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onActivated } from 'vue'
+import { ref, computed, watch, onActivated, onDeactivated } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { isTauri } from '@/utils/tauri'
 import { useAppStore } from '@/stores/app'
@@ -73,6 +74,11 @@ interface DetailTarget {
 interface BrewEvent {
   kind: string
   text: string
+}
+
+interface BrewRunState {
+  operation: string
+  step: string
 }
 
 interface InfoItem {
@@ -237,5 +243,46 @@ async function confirmUninstall() {
   }
 }
 
-onActivated(fetchInfo)
+let unlistenDone: (() => void) | null = null
+
+onActivated(async () => {
+  if (!isTauri) return fetchInfo()
+
+  // 先注册监听再查状态，消除 TOCTOU 竞态（操作恰好在查询与注册之间结束 → 事件丢失）
+  let done = false
+  const unlisten = await listen<BrewRunState | null>('brew-run-done', async (event) => {
+    done = true
+    unlisten()
+    unlistenDone = null
+    running.value = false
+    loading.value = false
+    if (event.payload?.operation === 'uninstall') {
+      appStore.closeSubview()
+    } else {
+      await fetchInfo()
+    }
+  })
+  // 查状态：null = 操作已结束，Some = 仍在运行
+  const state = await invoke<BrewRunState | null>(CMD.brewRunState)
+  if (!state || done) {
+    unlisten()
+    return fetchInfo()
+  }
+
+  // 操作进行中：读取目标包信息用于标题显示，不调 brew info（锁冲突会挂起）
+  const raw = sessionStorage.getItem('homebrew:detail')
+  if (raw) {
+    target.value = JSON.parse(raw) as DetailTarget
+    appStore.setSearchQuery('')
+  }
+  running.value = true
+  loading.value = true
+  error.value = ''
+  unlistenDone = unlisten
+})
+
+onDeactivated(() => {
+  unlistenDone?.()
+  unlistenDone = null
+})
 </script>

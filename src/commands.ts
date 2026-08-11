@@ -162,6 +162,7 @@ export const CMD = {
   // —— homebrew ——
   brewStatus: 'brew_status',
   brewRun: 'brew_run',
+  brewRunState: 'brew_run_state',
   brewServices: 'brew_services',
   brewInfo: 'brew_info',
 
