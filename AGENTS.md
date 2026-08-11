@@ -66,20 +66,24 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 ## 全功能回归测试（标准化冒烟测试）
 
-`scripts/smoke-test.py` — 部署前必跑的全链路回归门禁，覆盖全部 23 扩展 + 框架行为，防止"修 A 坏 B"连锁回归。
+`scripts/smoke-test.py` — 部署前必跑的全链路回归门禁，覆盖全部 23 扩展 + 框架行为 + 性能指标，防止"修 A 坏 B"连锁回归。
 
-**两层架构**：
+**三层架构**：
 
-- **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（23 扩展 / id 无重复 / order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 16 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）、窗口管理运行时启用（主题已初始化下 `setWindowManagerEnabled` disable→enable toggle，8s 超时检测 `configure_snap_panel → apply_cached_appearance` Mutex 重入死锁与禁用→启用不死锁）。报告经 plugin-store 写到 `config/test-report.json`。
-- **Layer 2（系统冒烟）**：CGEvent 驱动真实 UI，验证窗口显隐 / 全局快捷键 / snap-panel 全链路 / 搜索 UI / 扩展视图渲染 / 内存基线阈值。每步返回结构化 `TestResult`（pass/fail/skip），汇总为统一报告。CGEvent 基础设施（键盘映射 / 窗口检测 / 鼠标操作 / 内存测量）提取到 `scripts/voidnix_test_lib.py`，`wk-mem-test.py` 与 `smoke-test.py` 共享。
+- **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（23 扩展 / id 无重复 / order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 16 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）、窗口管理运行时启用（主题已初始化下 `setWindowManagerEnabled` disable→enable toggle，8s 超时检测 Mutex 重入死锁）、扩展功能正确性（clipboard 历史查询结构 / system-status 快照 / proxy 核心状态 / homebrew 状态 / video 核心状态 / awake·clean-mode 状态查询 / ip·time·uuid·currency 即时答案；网络依赖项失败 skip 不 fail）、搜索延迟基线（空查询 / keyword / calculator / base64 / 应用搜索代表性 query 耗时断言）。报告经 plugin-store 写到 `config/test-report.json`。
+- **Layer 2（系统冒烟）**：CGEvent 驱动真实 UI，验证窗口显隐 / 全局快捷键 / snap-panel 全链路 / 搜索 UI / 扩展视图渲染。每步返回结构化 `TestResult`（pass/fail/skip），汇总为统一报告。逐阶段内存采样输出趋势（非仅终点）。
+- **Layer 3（性能压测，`--perf [N]`）**：N 轮全场景工作负载循环（全局搜索 / 工具列表 / 扩展视图 / 快捷键 / hide/show），每轮逐阶段采内存快照，输出多轮趋势表 + drift 分析，定位 compositing layer 累积。合并自原 `wk-mem-test.py`。
 
 ```bash
 python3 scripts/smoke-test.py --self-test-only   # 仅 Layer 1（~30s，无需独占屏幕）
-python3 scripts/smoke-test.py                     # 完整测试（Layer 1 + 2）
+python3 scripts/smoke-test.py                     # 标准（Layer 1 + 2 + 逐阶段内存趋势）
+python3 scripts/smoke-test.py --perf              # 标准 + 5 轮内存压测趋势
 python3 scripts/smoke-test.py --dev               # dev 构建
 python3 scripts/smoke-test.py --build             # 含 release 构建
 python3 scripts/smoke-test.py --no-cgevent        # 跳过 Layer 2（CI/headless 友好）
 ```
+
+CGEvent 基础设施（键盘映射 / 窗口检测 / 鼠标操作 / 内存测量）提取到 `scripts/voidnix_test_lib.py`。
 
 自测触发机制：`runtime/test.rs::is_self_test_mode` 命令读 `VOIDNIX_SELF_TEST` 环境变量，`main.ts` 在扩展 setup 完成后检查，true 则动态 import `self-test.ts` 运行（动态 import 不进生产初始 chunk）。
 
@@ -116,11 +120,10 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时用 `top` 采主进程 Physical footprint（含被内核压缩的内存页；`ps rss` 不含致严重低估——WKWebView WebContent 进程 ps 报 47M 实际 footprint 175M）+ WebKit XPC 子进程 footprint 合计（按启动时间关联主进程 ±10s 的 `com.apple.WebKit.*` 进程），扩展子进程识别用 `ps -A` 全表扫描（按可执行路径 `comm` 匹配 `com.litiantao.voidnix/extensions/<id>/`，按扩展分组；不依赖 PPID 链——root 子进程如 mihomo 由 launchd LaunchDaemon 托管 PPID=1；用 `comm` 而非 `command`，从根上排除 grep/osascript 等仅在参数里引用该路径的进程，也避免采样器自身 fork 的 shell 被误匹配）。主进程 CPU >80% 时用 `sample <pid> 2 -mayDie -file` 抓 2 秒调用栈快照（5 分钟冷却防刷屏），快照存 `stacks/cpu-<时间戳>.txt`、主日志追加 `# [stack]` 关联行。日志与快照自动保留 30 天。
 - `voidnix-monitor-install.sh install|uninstall` — 安装/卸载 LaunchAgent（`com.litiantao.voidnix.monitor`，登录后自动生效）
 - `voidnix-analyze.sh [天数]` — 分析器：按天聚合主进程 footprint 区间/漂移/CPU 峰值/线程数/数据目录（漂移 >20MB 告警）、WebKit XPC 合计 footprint 区间/漂移（漂移 >50MB 告警 compositing layer 累积），并按扩展聚合子进程采样数/RSS 区间/CPU 峰值
-- `wk-mem-test.py [轮数] [--dev]` — WebKit 内存累积测试：用 CGEvent 模拟全路径使用（全局搜索覆盖 application/file/extension/web/即时答案结果类型 → 工具列表 `/` 过滤 → 结果键盘导航 → 进入全部 mainView 扩展视图 → 全局快捷键 Alt+S 截屏 overlay 独立窗口 + Alt+C/T/A/F 扩展唤起 → 窗口管理 snap-panel 全链路验证（启用/触发可见/移出隐藏/布局点击 Finder 移至右半屏/禁用停止 drag monitor，每步 CGWindowList 断言） → hide/show 循环释放），测试前自动切 ASCII 键盘布局避免中文输入法拦截按键，分阶段测量主 WebContent 进程的 Physical footprint + graphics 区域数 + PURGE 分类（N=不可回收 / V=可回收），定位 compositing layer 累积趋势。默认 5 轮全场景；`--dev` 叠加 Shift 匹配 debug 构建快捷键。依赖系统自带 pyobjc-framework-Quartz
 
 **日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`，主进程行（`time fp cpu threads data`）后跟 `& webkit fp_total`（WebKit XPC 合计，按启动时间关联）+ `@ ext/bin rss cpu vsz`（扩展子进程）；抓栈触发时追加 `# [stack] time cpu= -> stacks/cpu-时间戳.txt`（注释行，analyze 跳过），快照存 `~/Library/Logs/Voidnix/stacks/`
 
-**状态**：LaunchAgent 已安装运行，主进程已有 5 天数据；子进程采样维度已上线，CPU 阈值抓栈已上线。曾暴露两个问题：(1) proxy/mihomo CPU 持续 100%——根因为 gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）；(2) 主进程 CPU 100% 反馈环——blur → hideWindow → resignKeyWindow → 派生 blur 失控循环，已加 `hide_window` 的 `is_window_visible()` 幂等守卫断环。WKWebView 内存累积——搜索 compositing layer tiles 随搜索累积（PURGE=N 不可回收），已加 `ContentView.clearCache` 在窗口隐藏时卸载 KeepAlive 释放扩展视图 layer backing + toggle `content-visibility:hidden` 释放结果列表 tile backing（结果列表 DOM 保留以消除唤起空态闪烁），由 WebContent 350M 阈值 navigate 兜底。执行 `bash scripts/voidnix-analyze.sh` 分析趋势，`python3 scripts/wk-mem-test.py` 做内存累积压测（`python3 scripts/wk-mem-test.py 10 --dev` dev 构建 10 轮）。
+**状态**：LaunchAgent 已安装运行，主进程已有 5 天数据；子进程采样维度已上线，CPU 阈值抓栈已上线。曾暴露两个问题：(1) proxy/mihomo CPU 持续 100%——根因为 gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）；(2) 主进程 CPU 100% 反馈环——blur → hideWindow → resignKeyWindow → 派生 blur 失控循环，已加 `hide_window` 的 `is_window_visible()` 幂等守卫断环。WKWebView 内存累积——搜索 compositing layer tiles 随搜索累积（PURGE=N 不可回收），已加 `ContentView.clearCache` 在窗口隐藏时卸载 KeepAlive 释放扩展视图 layer backing + toggle `content-visibility:hidden` 释放结果列表 tile backing（结果列表 DOM 保留以消除唤起空态闪烁），由 WebContent 350M 阈值 navigate 兜底。执行 `bash scripts/voidnix-analyze.sh` 分析趋势，`python3 scripts/smoke-test.py --perf` 做内存累积压测（`python3 scripts/smoke-test.py --perf 10 --dev` dev 构建 10 轮）。
 
 ## 开发扩展
 
