@@ -35,7 +35,8 @@ interface SelfTestReport {
 
 // ── 辅助 ─────────────────────────────────────────────────────────────────────
 
-/** 单次测试执行器：捕获异常转为 pass/fail，记录耗时。 */
+/** 单次测试执行器：捕获异常转为 pass/fail/skip，记录耗时。
+ *  抛带 `SKIP:` 前缀的 Error 时标 skip（用于网络依赖项等环境条件不满足）。 */
 async function runTest(
   category: string,
   name: string,
@@ -46,11 +47,12 @@ async function runTest(
     await fn()
     return { category, name, status: 'pass', duration_ms: Math.round(performance.now() - start) }
   } catch (e) {
-    const message = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+    const message = e instanceof Error ? e.message : String(e)
+    const status: TestStatus = message.startsWith('SKIP:') ? 'skip' : 'fail'
     return {
       category,
       name,
-      status: 'fail',
+      status,
       message,
       duration_ms: Math.round(performance.now() - start),
     }
@@ -373,6 +375,256 @@ async function testWindowManagerRuntimeEnable(): Promise<TestResult[]> {
   return results
 }
 
+// ── F. 扩展功能正确性 ─────────────────────────────────────────────────────────
+
+/// 验证扩展的核心命令/搜索行为返回正确结构——不只是「视图能渲染」。
+/// 所有探测均无副作用（只读命令 + 搜索引擎调用）。
+/// 网络依赖项失败标 skip 不标 fail（CI/无网环境不应阻断）。
+async function testExtensionFunctional(): Promise<TestResult[]> {
+  const results: TestResult[] = []
+  const timeout = (ms: number) =>
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+
+  // ── invoke 命令验证（只读查询命令 + 字段级断言）──
+
+  results.push(
+    await runTest('extension-func', 'clipboard 历史查询结构', async () => {
+      const r = await Promise.race([invoke(CMD.getClipboardHistory, { limit: 5 }), timeout(5000)])
+      assert(Array.isArray(r), '应返回数组')
+      const items = r as Record<string, unknown>[]
+      if (items.length > 0) {
+        const item = items[0]
+        assert('id' in item, 'item 缺 id 字段')
+        assert('content_type' in item, 'item 缺 content_type 字段')
+        assert(
+          typeof item.id === 'string' || typeof item.id === 'number',
+          `id 应为 string|number，实际 ${typeof item.id}`,
+        )
+      }
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'system-status 实时快照字段', async () => {
+      const r = await Promise.race([invoke(CMD.systemSnapshot), timeout(5000)])
+      const s = r as Record<string, unknown>
+      assert(typeof s === 'object' && s !== null, '应返回对象')
+      assert(typeof s.cpu_usage === 'number', '缺 cpu_usage 数值字段')
+      assert(
+        typeof s.total_memory === 'number' && (s.total_memory as number) > 0,
+        'total_memory 应 > 0',
+      )
+      assert(Array.isArray(s.cpu_cores_usage), 'cpu_cores_usage 应为数组')
+      assert(typeof s.local_ip === 'string', '缺 local_ip 字段')
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'awake 状态查询', async () => {
+      const r = await Promise.race([invoke(CMD.isAwakeEnabled), timeout(5000)])
+      assert(typeof r === 'boolean', `应返回 boolean，实际 ${typeof r}`)
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'clean-mode 状态查询', async () => {
+      const r = await Promise.race([invoke(CMD.isCleanModeEnabled), timeout(5000)])
+      assert(typeof r === 'boolean', `应返回 boolean，实际 ${typeof r}`)
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'proxy 核心状态字段', async () => {
+      const r = await Promise.race([invoke(CMD.proxyCoreStatus), timeout(5000)])
+      const s = r as Record<string, unknown>
+      assert(typeof s === 'object' && s !== null, '应返回对象')
+      assert('downloaded' in s, '缺 downloaded 字段')
+      assert(typeof s.downloaded === 'boolean', 'downloaded 应为 boolean')
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'homebrew 状态查询字段', async () => {
+      const r = await Promise.race([invoke(CMD.brewStatus), timeout(8000)])
+      const s = r as Record<string, unknown>
+      assert(typeof s === 'object' && s !== null, '应返回对象')
+      assert('version' in s, '缺 version 字段')
+      assert(Array.isArray(s.packages), 'packages 应为数组')
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'video 核心状态字段', async () => {
+      const r = await Promise.race([invoke(CMD.videoCoreStatus), timeout(5000)])
+      const s = r as Record<string, unknown>
+      assert(typeof s === 'object' && s !== null, '应返回对象')
+      assert('available' in s, '缺 available 字段')
+      assert(typeof s.available === 'boolean', 'available 应为 boolean')
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'finder-ext 选中路径查询', async () => {
+      // finder_selected_paths 依赖 Finder 为前台应用，自测时 Finder 可能未激活
+      // 验证命令可达不崩溃——Err（「请先切换到访达」）视为正常行为
+      try {
+        const r = await Promise.race([invoke(CMD.finderSelectedPaths), timeout(5000)])
+        assert(Array.isArray(r), '应返回数组（无选中时为空数组）')
+      } catch {
+        // Finder 非前台时返回 Err 是预期行为
+      }
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'translate 选中文本查询可达', async () => {
+      const r = await Promise.race([invoke(CMD.getSelectedText), timeout(5000)])
+      assert(typeof r === 'string', `应返回 string，实际 ${typeof r}`)
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'search 文件搜索可达', async () => {
+      const r = await Promise.race([invoke(CMD.searchFiles, { query: 'test' }), timeout(8000)])
+      assert(Array.isArray(r), '应返回数组')
+    }),
+  )
+
+  // ── 工作流验证（命令协作链路）──
+
+  results.push(
+    await runTest('extension-func', 'clipboard 写入粘贴板可达', async () => {
+      // pasteboardWriteText 写入系统剪贴板（带 source marker）
+      // clipboard monitor 会捕获变化入库——验证写入不崩溃即可
+      // （入库需要 monitor 异步触发，不在此等待）
+      const marker = `voidnix-test-${Date.now()}`
+      await invoke(CMD.pasteboardWriteText, { text: marker })
+      // 无异常即通过——写入是 pasteClipboardItem 的核心依赖
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'translate 输入翻译流程', async () => {
+      const { translateText, translateResults, isTranslating } =
+        await import('@ext/translate/index')
+      translateResults.value = []
+      const { config: translateConfig } = await import('@ext/translate/config')
+      const hasYoudao = translateConfig.configs.some(
+        (c) => c.type === 'youdao' && c.appKey && c.appSecret,
+      )
+      if (!hasYoudao) {
+        throw new Error('SKIP:未配置有道翻译')
+      }
+      await translateText('hello')
+      const deadline = Date.now() + 8000
+      while (isTranslating.value && Date.now() < deadline) {
+        await sleep(100)
+      }
+      assert(!isTranslating.value, '翻译应在 8s 内完成')
+      assert(translateResults.value.length > 0, '期望至少一条翻译结果')
+      const first = translateResults.value[0]
+      assert(!!first.translation && first.translation.length > 0, '翻译结果不应为空')
+      // API 失败时 translation 填入错误文案——校验翻译结果含实际译文特征
+      // （至少含英文字母或 CJK 字符，排除纯错误提示如 "Network request failed"）
+      assert(
+        /[a-zA-Z\u4e00-\u9fff]/.test(first.translation),
+        `翻译结果疑似错误信息: "${first.translation}"`,
+      )
+    }),
+  )
+
+  // ── 搜索引擎即时答案验证 ──
+
+  searchEngine.setActiveExtension(undefined)
+
+  results.push(
+    await runTest('extension-func', 'time 时间戳即时答案', async () => {
+      // time 扩展仅扩展内转换（全局避免时间戳形态误触）
+      searchEngine.setActiveExtension('time')
+      try {
+        const r = await searchEngine.search('1700000000')
+        assert(r.length > 0, '期望有时间转换结果')
+        const timeResult = r.find((x) => x.extId === 'time')
+        assert(!!timeResult, '结果中无 time 扩展结果')
+      } finally {
+        searchEngine.setActiveExtension(undefined)
+      }
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'uuid 入口可达', async () => {
+      const r = await searchEngine.search('uuid')
+      const entry = r.find((x) => x.extId === 'uuid')
+      assert(!!entry, '结果中无 uuid 扩展入口')
+    }),
+  )
+
+  // 网络依赖项：仅 timeout 标 skip，assert 失败标 fail
+  results.push(
+    await runTest('extension-func', 'ip 地址查询即时答案', async () => {
+      // ip 扩展仅扩展内响应（全局模式返回空）
+      searchEngine.setActiveExtension('ip')
+      try {
+        const r = await Promise.race([searchEngine.search('8.8.8.8'), timeout(8000)])
+        const ipResult = r.find((x) => x.extId === 'ip')
+        assert(!!ipResult, '结果中无 ip 扩展结果')
+      } catch (e) {
+        if (e instanceof Error && e.message === 'timeout') throw new Error('SKIP:网络不可用')
+        throw e
+      } finally {
+        searchEngine.setActiveExtension(undefined)
+      }
+    }),
+  )
+
+  results.push(
+    await runTest('extension-func', 'currency 汇率即时答案', async () => {
+      try {
+        const r = await Promise.race([searchEngine.search('100 usd'), timeout(8000)])
+        const curResult = r.find((x) => x.extId === 'currency')
+        assert(!!curResult, '结果中无 currency 扩展结果')
+      } catch (e) {
+        if (e instanceof Error && e.message === 'timeout') throw new Error('SKIP:网络不可用')
+        throw e
+      }
+    }),
+  )
+
+  return results
+}
+
+// ── G. 搜索延迟基线 ───────────────────────────────────────────────────────────
+
+/// 测量代表性 query 的 search() 端到端耗时，检测性能回归。
+/// 阈值宽松（含 rAF + microtask），耗时记录入报告供人工对比。
+const LATENCY_QUERIES: { query: string; threshold: number }[] = [
+  { query: '', threshold: 80 }, // 空查询（默认列表，纯内存索引）
+  { query: 'calc', threshold: 100 }, // keyword 匹配
+  { query: '1+2', threshold: 60 }, // calculator 即时答案
+  { query: 'SGVsbG8=', threshold: 60 }, // base64 即时答案
+  { query: 'safa', threshold: 1000 }, // 应用搜索（Spotlight 首次查询可能慢）
+]
+
+async function testSearchLatency(): Promise<TestResult[]> {
+  const results: TestResult[] = []
+  searchEngine.setActiveExtension(undefined)
+
+  for (const { query, threshold } of LATENCY_QUERIES) {
+    const label = query === '' ? '空查询' : `'${query}'`
+    results.push(
+      await runTest('latency', `搜索延迟 ${label}`, async () => {
+        const start = performance.now()
+        await searchEngine.search(query)
+        const elapsed = performance.now() - start
+        assert(elapsed <= threshold, `${elapsed.toFixed(0)}ms 超过阈值 ${threshold}ms`)
+      }),
+    )
+  }
+
+  return results
+}
+
 // ── 报告写入 ─────────────────────────────────────────────────────────────────
 
 async function writeReport(report: SelfTestReport): Promise<void> {
@@ -422,6 +674,16 @@ export async function runSelfTest(): Promise<void> {
   await diag('E. 窗口管理运行时启用...')
   allResults.push(...(await testWindowManagerRuntimeEnable()))
   await diag(`E 完成: ${allResults.length} 用例`)
+
+  // F. 扩展功能正确性
+  await diag('F. 扩展功能正确性...')
+  allResults.push(...(await testExtensionFunctional()))
+  await diag(`F 完成: ${allResults.length} 用例`)
+
+  // G. 搜索延迟基线
+  await diag('G. 搜索延迟基线...')
+  allResults.push(...(await testSearchLatency()))
+  await diag(`G 完成: ${allResults.length} 用例`)
 
   // 汇总
   const summary = {

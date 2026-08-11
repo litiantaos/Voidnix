@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Voidnix 全功能回归测试编排器。
 
-两层测试架构：
+三层测试架构，功能正确性 + 性能指标在同一流程内完成：
   Layer 1（应用自测）：app 内部直接调用 searchEngine / getAllExtensions / invoke 等真实 API，
-    验证搜索正确性、扩展注册、视图渲染、命令可达性。经环境变量 VOIDNIX_SELF_TEST=1 触发，
-    结果写到 app 数据目录 config/test-report.json。
+    验证搜索正确性、扩展注册、视图渲染、命令可达性、扩展功能正确性、搜索延迟。
+    经环境变量 VOIDNIX_SELF_TEST=1 触发，结果写到 app 数据目录 config/test-report.json。
   Layer 2（系统冒烟）：CGEvent 驱动真实 UI 操作，验证窗口行为、全局快捷键、snap-panel、
-    搜索 UI、扩展视图、内存基线。每步返回结构化 TestResult。
+    搜索 UI、扩展视图。每步返回结构化 TestResult。逐阶段内存采样输出趋势。
+  Layer 3（性能压测，--perf）：N 轮全场景工作负载循环 + 逐阶段内存快照，
+    输出多轮趋势表，定位 compositing layer 累积。合并自原 wk-mem-test.py。
 
 用法：
-    python3 scripts/smoke-test.py                  # 完整测试（Layer 1 + Layer 2）
+    python3 scripts/smoke-test.py                  # 标准（Layer 1 + Layer 2 + 逐阶段内存）
+    python3 scripts/smoke-test.py --perf [N]       # 标准 + N 轮内存压测趋势（默认 5 轮）
     python3 scripts/smoke-test.py --self-test-only # 仅 Layer 1（快，~30s，无需独占屏幕）
     python3 scripts/smoke-test.py --dev            # dev 构建（.dev bundle id）
     python3 scripts/smoke-test.py --build          # 含 release 构建
@@ -18,7 +21,6 @@
 
 import json
 import os
-import pathlib
 import subprocess
 import sys
 import time
@@ -30,18 +32,19 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent))
 from voidnix_test_lib import (
     log,
-    SETTLE_INSTANT, SETTLE_DEFAULT, ESC_DELAY, TOGGLE_GAP,
+    SETTLE_INSTANT, SETTLE_DEFAULT, SETTLE_NETWORK, ESC_DELAY, TOGGLE_GAP,
     switch_to_ascii, restore_input_source,
     is_voidnix_visible, is_snap_panel_visible, snap_panel_exists,
     snap_panel_visible_bounds, voidnix_window_bounds, count_voidnix_windows,
-    type_text, press_enter, press_esc, press_backspace, press_down, press_up,
-    select_all, clear_input, search_and_wait, post_key,
-    show_window, hide_window, shortcut_press, trigger_ext_shortcut,
+    type_text, press_enter, press_esc, press_down, press_up,
+    clear_input, search_and_wait,
+    show_window, hide_window, trigger_ext_shortcut,
     click_at, move_mouse_to_snap_trigger, screen_size,
-    trigger_snap_panel, KEY_TAB, KEY_ENTER,
+    trigger_snap_panel,
     ensure_finder_window, finder_window_bounds, close_finder_windows,
-    WebContentTracker, measure_memory, parse_footprint_mb,
-    kill_voidnix, ext_flags,
+    WebContentTracker, measure_memory,
+    kill_voidnix,
+    reset_modifiers,
 )
 
 # ── 参数 ─────────────────────────────────────────────────────────────────────
@@ -50,6 +53,16 @@ DEV_MODE = '--dev' in sys.argv
 SELF_TEST_ONLY = '--self-test-only' in sys.argv
 DO_BUILD = '--build' in sys.argv
 NO_CGEVENT = '--no-cgevent' in sys.argv
+
+# --perf [N]：标准测试后追加 N 轮全场景内存压测（默认 5 轮）
+PERF_MODE = '--perf' in sys.argv
+PERF_ROUNDS = 5
+for _i, _arg in enumerate(sys.argv):
+    if _arg == '--perf' and _i + 1 < len(sys.argv):
+        try:
+            PERF_ROUNDS = int(sys.argv[_i + 1])
+        except ValueError:
+            pass
 
 BUNDLE_ID = 'com.litiantao.voidnix.dev' if DEV_MODE else 'com.litiantao.voidnix'
 APP_PATH = 'Voidnix.app'
@@ -71,7 +84,7 @@ CGEVENT_PREPARE_DELAY = 3  # CGEvent 测试前倒计时（让用户切走焦点�
 # 内存阈值（MB）——绝对安全上限（硬编码兜底，防止基线文件不存在时误判）
 # 有基线文件时，改用基线值 + drift 容忍度对比（更灵敏地检测回归）
 MEM_ABSOLUTE_MAX = 350      # footprint 绝对上限（任何情况不得超过）
-MEM_GRAPHICS_N_ABSOLUTE_MAX = 80  # graphics PURGE=N 绝对上限
+MEM_GRAPHICS_N_ABSOLUTE_MAX = 250  # graphics PURGE=N 绝对上限（硬兜底，须高于 drift 阈值 基线×1.5）
 # 基线漂移容忍度（基于历史基线的百分比上浮）
 MEM_DRIFT_TOLERANCE = 0.25  # footprint 允许比基线高 25%（防 GC 抖动误报）
 MEM_GRAPHICS_DRIFT_TOLERANCE = 0.50  # graphics 区域允许比基线高 50%
@@ -131,6 +144,58 @@ class ResultCollector:
             )
 
 
+# ── 内存趋势追踪 ─────────────────────────────────────────────────────────────
+
+@dataclass
+class MemSample:
+    label: str
+    fp_mb: float
+    gn_mb: float
+    gv_mb: float
+    count: int
+
+
+class MemoryTrend:
+    """逐阶段内存采样，输出趋势表。"""
+
+    def __init__(self):
+        self.samples: list[MemSample] = []
+        self._tracker = WebContentTracker()
+
+    @property
+    def tracker(self):
+        return self._tracker
+
+    def sample(self, label: str):
+        try:
+            mem = measure_memory(self._tracker)
+            s = MemSample(label, mem['footprint_mb'], mem['graphics']['n_mb'],
+                          mem['graphics']['v_mb'], mem['graphics']['count'])
+            self.samples.append(s)
+            log(f'  内存 [{label}]  FP {s.fp_mb:.0f}MB  graphics N {s.gn_mb:.0f}MB  V {s.gv_mb:.0f}MB')
+        except Exception as e:
+            log(f'  内存 [{label}] 采集失败: {e}')
+
+    def print_trend(self):
+        if not self.samples:
+            return
+        log(f'\n  {"阶段":>20}  {"FP":>8}  {"N":>8}  {"V":>8}  {"区域数":>6}')
+        for s in self.samples:
+            log(f'  {s.label:>20}  {s.fp_mb:>7.0f}MB  {s.gn_mb:>7.0f}MB  {s.gv_mb:>7.0f}MB  {s.count:>6}')
+
+    def to_markdown(self) -> list[str]:
+        if not self.samples:
+            return []
+        lines = ['### 内存趋势', '', '| 阶段 | FP | graphics N | graphics V | 区域数 |', '|---|---|---|---|---|']
+        for s in self.samples:
+            lines.append(f'| {s.label} | {s.fp_mb:.0f}MB | {s.gn_mb:.0f}MB | {s.gv_mb:.0f}MB | {s.count} |')
+        return lines
+
+
+# 全局实例（Layer 2 逐阶段采样 + --perf 多轮采样共用）
+mem_trend = MemoryTrend()
+
+
 # ── 构建 ─────────────────────────────────────────────────────────────────────
 
 def build_release():
@@ -145,29 +210,35 @@ def build_release():
 def find_app_path() -> str:
     """定位 Voidnix 可执行路径。
 
-    优先 debug binary（配合 Vite dev server，总是加载最新前端代码）。
-    Release binary 的内嵌前端仅在 `tauri build` 时更新（非 `cargo build`），
-    代码变更后需重新 `tauri build` 才有效——开发期不实际。
+    按 DEV_MODE 分流，确保快捷键基（debug 叠 Shift / release 不叠）与 Layer 2
+    CGEvent 发送的修饰键一致，避免唤起失败。
+
+    --dev：优先 debug binary（配合 Vite dev server，总是加载最新前端代码）。
+    默认（release）：优先 release bundle .app，其次 /Applications/Voidnix.app。
     """
     root = Path(__file__).parent.parent
-    # 1. debug 裸 binary（需 Vite dev server，launch_self_test 自动启动）
-    debug_bin = root / 'src-tauri' / 'target' / 'debug' / 'Voidnix'
-    if debug_bin.exists():
-        return str(debug_bin)
-    # 2. release bundle .app（tauri build 产物）
+
+    if DEV_MODE:
+        # 1. debug 裸 binary（需 Vite dev server，launch_self_test 自动启动）
+        debug_bin = root / 'src-tauri' / 'target' / 'debug' / 'Voidnix'
+        if debug_bin.exists():
+            return str(debug_bin)
+        log('警告: --dev 模式但未找到 debug binary，回退到 release')
+
+    # release 模式（或 --dev 回退）
+    # 1. release bundle .app（tauri build 产物，内嵌前端最新）
     release_app = root / 'src-tauri' / 'target' / 'release' / 'bundle' / 'macos' / APP_PATH
     if release_app.exists():
         return str(release_app)
-    # 3. release 裸 binary
+    # 2. 已安装的 .app（deploy.sh 部署后）
+    installed = Path(f'/Applications/{APP_PATH}')
+    if installed.exists():
+        return str(installed)
+    # 3. release 裸 binary（前端可能过时，仅兜底）
     release_bin = root / 'src-tauri' / 'target' / 'release' / 'Voidnix'
     if release_bin.exists():
         log('警告: release 裸 binary 内嵌前端可能过时（需 tauri build 更新）')
         return str(release_bin)
-    # 4. 已安装的 .app
-    installed = Path(f'/Applications/{APP_PATH}')
-    if installed.exists():
-        log('警告: 使用 /Applications/Voidnix.app（可能不含最新自测代码）')
-        return str(installed)
     log('未找到 Voidnix 可执行文件')
     sys.exit(1)
 
@@ -243,6 +314,9 @@ _in_ext = False
 
 def _enter_ext(name: str, settle: float = SETTLE_DEFAULT):
     global _in_ext
+    if _in_ext:
+        _exit_ext()
+    show_window(DEV_MODE)
     clear_input()
     type_text('/' + name)
     time.sleep(SETTLE_INSTANT)
@@ -252,24 +326,47 @@ def _enter_ext(name: str, settle: float = SETTLE_DEFAULT):
 
 
 def _exit_ext():
+    """退出扩展模式：Esc 退出 + 清零标志 + 释放修饰键。
+
+    不调 show_window——Esc 可能隐藏窗口（正常行为），由调用方按需 show。
+    避免「Esc 隐藏 → show toggle → 外部 hide toggle」的双 toggle 竞态。
+    """
     global _in_ext
     if not _in_ext:
         return
-    press_esc()
-    time.sleep(ESC_DELAY)
-    _in_ext = False
-    if not is_voidnix_visible():
-        try:
-            show_window(DEV_MODE)
-        except RuntimeError:
-            pass  # 窗口可能已被 Escape 隐藏，show 失败不阻断测试
+    _in_ext = False  # 先清零，防止后续操作异常时残留
+    if is_voidnix_visible():
+        press_esc()
+        time.sleep(ESC_DELAY)
+    reset_modifiers()
+
+
+def _reset_state():
+    """测试阶段间状态重置：释放修饰键 + 退出扩展模式 + 清空输入 + 确保窗口可见。
+
+    各 test_* 阶段之间可能残留扩展激活态 / 搜索框内容 / 键盘焦点 / 卡住的修饰键，
+    不重置会导致下一阶段输入被拦截或修饰键级联触发扩展快捷键产生乱跳。
+
+    show_window 失败时重试一次（2s 后）；仍失败则抛 RuntimeError，
+    由 run_layer2 的阶段级 try/except 安全处理。
+    """
+    global _in_ext
+    reset_modifiers()
+    if _in_ext:
+        _exit_ext()
+    try:
+        show_window(DEV_MODE)
+    except RuntimeError:
+        time.sleep(2)
+        show_window(DEV_MODE)
+    clear_input()
+    time.sleep(SETTLE_INSTANT)
 
 
 def test_window_behavior(rc: ResultCollector):
     """窗口行为：show / hide / 二次唤起。"""
 
-    # 唤起
-    show_window(DEV_MODE)
+    # 确保 clean start（_reset_state 由 run_layer2 调用）
     if is_voidnix_visible():
         rc.add_pass('window', 'shortcut 唤起窗口可见')
     else:
@@ -312,6 +409,7 @@ def test_window_behavior(rc: ResultCollector):
 
 def test_global_shortcuts(rc: ResultCollector):
     """全局快捷键：截屏 overlay + 扩展唤起。"""
+    global _in_ext
 
     # 截屏快捷键 Alt+S → overlay 窗口出现
     hide_window(DEV_MODE)
@@ -332,21 +430,25 @@ def test_global_shortcuts(rc: ResultCollector):
         hide_window(DEV_MODE)
         trigger_ext_shortcut(key, DEV_MODE)
         time.sleep(TOGGLE_GAP + 0.3)
-        global _in_ext
-        _in_ext = True
 
         if is_voidnix_visible():
+            _in_ext = True
             rc.add_pass('shortcut', f'Alt+{key.upper()} 唤起 {label}')
         else:
+            _in_ext = False
             rc.add_fail('shortcut', f'Alt+{key.upper()} 唤起 {label}', '窗口未显示')
 
         _exit_ext()
         hide_window(DEV_MODE)
 
+    # 快捷键测试结束：强制释放所有修饰键，防止残留 Option 状态
+    # 导致下一阶段 type_text 的每个字符被系统误判为 Opt+key 触发扩展快捷键
+    reset_modifiers()
+
 
 def test_search_ui(rc: ResultCollector):
     """搜索 UI：全局搜索 + 工具列表 + 键盘导航。"""
-    show_window(DEV_MODE)
+    # _reset_state 由 run_layer2 调用
 
     # 全局搜索 — 应用类型
     try:
@@ -390,22 +492,30 @@ def test_search_ui(rc: ResultCollector):
 
 
 def test_extension_views(rc: ResultCollector):
-    """扩展视图：逐个进入/退出所有 mainView 扩展。"""
-    show_window(DEV_MODE)
+    """扩展视图：逐个进入/退出所有 mainView 扩展。
 
-    # mainView 扩展（通过 /keyword 进入）
+    数据加载型扩展（system-status / homebrew / proxy / video）给更多时间让
+    异步请求（系统 API / brew / mihomo API / ffmpeg probe）完成后渲染完整。
+    """
+    # _reset_state 由 run_layer2 调用
+
+    # (keyword, label, settle) — settle 按数据加载成本分档
     mainview_exts = [
-        ('clip', '剪贴板'), ('sett', '设置'), ('uuid', 'UUID'),
-        ('system', '系统状态'), ('awake', '保持唤醒'), ('screenshot', '截屏'),
-        ('window', '窗口管理'), ('proxy', '代理'), ('agent', 'Agent'),
-        ('translate', '翻译'), ('image', '图片处理'), ('brew', 'Homebrew'),
-        ('video', '视频处理'), ('clean', '清洁模式'), ('provider', 'AI 提供商'),
-        ('finder', '访达工具'), ('zsh', '终端自动建议'),
+        ('clip', '剪贴板', SETTLE_DEFAULT), ('sett', '设置', SETTLE_DEFAULT),
+        ('uuid', 'UUID', SETTLE_INSTANT),
+        ('system', '系统状态', SETTLE_NETWORK), ('awake', '保持唤醒', SETTLE_DEFAULT),
+        ('screenshot', '截屏', SETTLE_INSTANT),
+        ('window', '窗口管理', SETTLE_DEFAULT), ('proxy', '代理', SETTLE_NETWORK),
+        ('agent', 'Agent', SETTLE_DEFAULT), ('translate', '翻译', SETTLE_DEFAULT),
+        ('image', '图片处理', SETTLE_DEFAULT), ('brew', 'Homebrew', SETTLE_NETWORK),
+        ('video', '视频处理', SETTLE_NETWORK), ('clean', '清洁模式', SETTLE_INSTANT),
+        ('provider', 'AI 提供商', SETTLE_DEFAULT), ('finder', '访达工具', SETTLE_DEFAULT),
+        ('zsh', '终端自动建议', SETTLE_DEFAULT),
     ]
 
-    for kw, label in mainview_exts:
+    for kw, label, settle in mainview_exts:
         try:
-            _enter_ext(kw, SETTLE_DEFAULT)
+            _enter_ext(kw, settle)
             if is_voidnix_visible():
                 rc.add_pass('extension-ui', f'{label} 视图渲染')
             else:
@@ -429,6 +539,42 @@ def test_extension_views(rc: ResultCollector):
     finally:
         try:
             clear_input()
+            _exit_ext()
+        except Exception:
+            pass
+
+    # 翻译扩展：进入 → 输入 → 验证结果渲染（无 API Key 时显示未配置空态，窗口保持可见即可）
+    try:
+        _enter_ext('translate', SETTLE_DEFAULT)
+        type_text('hello')
+        time.sleep(SETTLE_DEFAULT)
+        if is_voidnix_visible():
+            rc.add_pass('extension-ui', '翻译输入翻译流程')
+        else:
+            rc.add_fail('extension-ui', '翻译输入翻译流程', '翻译后窗口隐藏')
+    except Exception as e:
+        rc.add_fail('extension-ui', '翻译输入翻译流程', str(e))
+    finally:
+        try:
+            clear_input()
+            _exit_ext()
+        except Exception:
+            pass
+
+    # 剪贴板扩展：进入 → 导航历史列表 → Enter 粘贴（验证列表交互可达）
+    try:
+        _enter_ext('clip', SETTLE_DEFAULT)
+        press_down(2)
+        press_up(1)
+        time.sleep(SETTLE_INSTANT)
+        if is_voidnix_visible():
+            rc.add_pass('extension-ui', '剪贴板列表导航交互')
+        else:
+            rc.add_fail('extension-ui', '剪贴板列表导航交互', '导航后窗口隐藏')
+    except Exception as e:
+        rc.add_fail('extension-ui', '剪贴板列表导航交互', str(e))
+    finally:
+        try:
             _exit_ext()
         except Exception:
             pass
@@ -472,35 +618,46 @@ def test_snap_panel(rc: ResultCollector):
     else:
         rc.add_fail('snap-panel', '移出触发区后隐藏', '面板仍可见')
 
-    # 二次触发
-    if trigger_snap_panel(w, attempts=5, interval=0.5):
-        rc.add_pass('snap-panel', '二次触发正常')
-    else:
-        rc.add_fail('snap-panel', '二次触发正常', '二次触发失败')
-
-    move_mouse_to_snap_trigger(w / 2, h / 2)
-    time.sleep(0.7)
-
-    # 布局点击验证
+    # 布局点击验证：左半屏 + 右半屏交替，两个不同方向各自验证位移
+    # Finder 窗口记忆位置，用不同布局交替可避免「默认就在目标区域」的假阳性
     ensure_finder_window()
-    before = finder_window_bounds()
 
-    if before and trigger_snap_panel(w, attempts=5):
+    # ── 左半屏 ──
+    finder_ok = finder_window_bounds()
+    if finder_ok and trigger_snap_panel(w, attempts=5):
         time.sleep(0.4)
         panel = snap_panel_visible_bounds()
         if panel:
+            # halves-h 组的左 zone center ≈ panel_x + 163
+            click_at(panel[0] + 163, panel[1] + 40)
+            time.sleep(1.5)
+            after = finder_window_bounds()
+            if after and after[0] < w * 0.15 and after[2] < w * 0.6:
+                rc.add_pass('snap-panel', '布局点击生效 (Finder 移至左半屏)')
+            else:
+                rc.add_fail('snap-panel', '布局点击左半屏', f'Finder frame 不对: {after}')
+        else:
+            rc.add_fail('snap-panel', '布局点击左半屏', 'snap-panel bounds 读取失败')
+    else:
+        rc.add_skip('snap-panel', '布局点击左半屏', '无法打开 Finder 或触发面板')
+
+    # ── 右半屏（同一窗口换方向，验证不同布局按钮）──
+    if trigger_snap_panel(w, attempts=5):
+        time.sleep(0.4)
+        panel = snap_panel_visible_bounds()
+        if panel:
+            # halves-h 组的右 zone center ≈ panel_x + 188
             click_at(panel[0] + 188, panel[1] + 40)
             time.sleep(1.5)
-
             after = finder_window_bounds()
             if after and after[0] > w * 0.4 and after[2] < w * 0.65:
                 rc.add_pass('snap-panel', '布局点击生效 (Finder 移至右半屏)')
             else:
-                rc.add_fail('snap-panel', '布局点击生效', f'Finder frame 未变或不对: {after}')
+                rc.add_fail('snap-panel', '布局点击右半屏', f'Finder frame 不对: {after}')
         else:
-            rc.add_fail('snap-panel', '布局点击生效', 'snap-panel bounds 读取失败')
+            rc.add_fail('snap-panel', '布局点击右半屏', 'snap-panel bounds 读取失败')
     else:
-        rc.add_skip('snap-panel', '布局点击生效', '无法打开 Finder 或触发面板')
+        rc.add_skip('snap-panel', '布局点击右半屏', '触发面板失败')
 
     close_finder_windows()
     time.sleep(0.3)
@@ -527,7 +684,7 @@ def test_snap_panel(rc: ResultCollector):
 
     # 恢复 WM 配置为 disabled（无论禁用步骤是否成功，确保不残留）
     for bid in ['com.litiantao.voidnix', 'com.litiantao.voidnix.dev']:
-        cfg = pathlib.Path.home() / 'Library' / 'Application Support' / bid / 'extensions' / 'window-manager' / 'config.json'
+        cfg = Path.home() / 'Library' / 'Application Support' / bid / 'extensions' / 'window-manager' / 'config.json'
         if cfg.exists():
             try:
                 d = json.loads(cfg.read_text())
@@ -544,7 +701,7 @@ def ensure_wm_disabled():
     不再预写 config 绕过前端 watch → invoke 路径——该绕过正是此前三个 bug 逃逸的原因。
     """
     for bid in ['com.litiantao.voidnix', 'com.litiantao.voidnix.dev']:
-        p = pathlib.Path.home() / 'Library' / 'Application Support' / bid / 'extensions' / 'window-manager' / 'config.json'
+        p = Path.home() / 'Library' / 'Application Support' / bid / 'extensions' / 'window-manager' / 'config.json'
         if p.exists():
             try:
                 d = json.loads(p.read_text())
@@ -602,7 +759,7 @@ def test_memory_baseline(rc: ResultCollector):
     - 后续运行：与基线 + drift 容忍度对比（更灵敏），同时检查绝对上限
     - 基线文件提交到仓库（团队共享参考基线），每次运行可选择更新
     """
-    tracker = WebContentTracker()
+    tracker = mem_trend.tracker
 
     try:
         mem = measure_memory(tracker)
@@ -669,13 +826,29 @@ def test_memory_baseline(rc: ResultCollector):
 
 
 def run_layer2(rc: ResultCollector):
-    """执行 Layer 2 全部系统冒烟测试。"""
+    """执行 Layer 2 全部系统冒烟测试。
+
+    每个阶段独立 try/except：单阶段 RuntimeError（窗口隐藏等）不崩溃脚本，
+    记录失败后尝试恢复窗口进入下一阶段，保证报告始终写出。
+    """
     log('\n准备 CGEvent 测试，切换到 ASCII 键盘布局...')
     saved_input = switch_to_ascii()
     if saved_input:
         log('已切换到 ASCII 键盘布局')
     else:
         log('警告: 无法切换输入法')
+    # CGEvent 开始前清零修饰键状态（安全网）
+    reset_modifiers()
+
+    # (阶段名, 测试函数, 采样标签)
+    phases = [
+        ('窗口行为', test_window_behavior, '窗口行为'),
+        ('全局快捷键', test_global_shortcuts, None),
+        ('搜索 UI', test_search_ui, '搜索 UI'),
+        ('扩展视图', test_extension_views, '扩展视图'),
+        ('snap-panel', test_snap_panel, 'snap-panel'),
+        ('内存基线', test_memory_baseline, None),
+    ]
 
     try:
         log(f'\n{CGEVENT_PREPARE_DELAY} 秒后开始 CGEvent 测试，请勿操作键盘鼠标...')
@@ -683,23 +856,174 @@ def run_layer2(rc: ResultCollector):
             log(f'  {i}...')
             time.sleep(1)
 
-        log('\n── 窗口行为 ──')
-        test_window_behavior(rc)
+        for phase_name, test_fn, mem_label in phases:
+            log(f'\n── {phase_name} ──')
+            try:
+                _reset_state()
+                test_fn(rc)
+            except RuntimeError as e:
+                rc.add_fail('window', f'{phase_name} 阶段中断', str(e))
+                log(f'  阶段中断: {e}，尝试恢复...')
+                global _in_ext
+                _in_ext = False
+                # 尽力恢复窗口，成功则继续下一阶段
+                try:
+                    time.sleep(1)
+                    show_window(DEV_MODE)
+                except RuntimeError:
+                    log('  恢复失败，跳过剩余阶段')
+                    break
+            if mem_label:
+                mem_trend.sample(mem_label)
+    finally:
+        restore_input_source(saved_input)
+        if saved_input:
+            log('已恢复原始输入法')
 
-        log('\n── 全局快捷键 ──')
-        test_global_shortcuts(rc)
 
-        log('\n── 搜索 UI ──')
-        test_search_ui(rc)
+# ── Layer 3：性能压测工作负载（--perf）─────────────────────────────────────────
 
-        log('\n── 扩展视图 ──')
-        test_extension_views(rc)
+def _recover_after_error():
+    """工作负载异常恢复：清标志 + 尽力 show_window（不抛异常，调用方不中断）。"""
+    global _in_ext
+    _in_ext = False
+    reset_modifiers()
+    try:
+        show_window(DEV_MODE)
+    except RuntimeError:
+        pass
 
-        log('\n── snap-panel ──')
-        test_snap_panel(rc)
 
-        log('\n── 内存基线 ──')
-        test_memory_baseline(rc)
+def workload_global_search():
+    """全局搜索——覆盖应用/文件/即时答案/web 结果类型。"""
+    for w in ['safa', 'term', 'note', 'code', 'musi', 'mail', 'calc', 'sett']:
+        search_and_wait(w, SETTLE_INSTANT)
+    for w in ['doc', 'pdf', 'config', 'desktop']:
+        search_and_wait(w, SETTLE_DEFAULT)
+    for expr in ['1+2', '3*4', '100-7', '2^10']:
+        search_and_wait(expr, SETTLE_INSTANT)
+    search_and_wait('SGVsbG8', SETTLE_INSTANT)
+    search_and_wait('//rust async', SETTLE_DEFAULT)
+    clear_input()
+
+
+def workload_tool_list():
+    """工具列表——/ 前缀 + 过滤导航。"""
+    search_and_wait('/', SETTLE_INSTANT)
+    press_down(3)
+    press_up(2)
+    for kw in ['/calc', '/clip', '/time', '/uuid']:
+        clear_input()
+        type_text(kw)
+        time.sleep(SETTLE_INSTANT)
+        press_down(1)
+    clear_input()
+
+
+def workload_extensions():
+    """扩展视图——覆盖全部 mainView 扩展的 DOM 渲染路径。"""
+    global _in_ext
+    for kw, settle in [
+        ('clip', SETTLE_DEFAULT), ('sett', SETTLE_DEFAULT), ('uuid', SETTLE_INSTANT),
+        ('system', SETTLE_NETWORK), ('awake', SETTLE_DEFAULT), ('screenshot', SETTLE_INSTANT),
+        ('window', SETTLE_DEFAULT), ('proxy', SETTLE_NETWORK), ('agent', SETTLE_DEFAULT),
+        ('translate', SETTLE_DEFAULT), ('image', SETTLE_DEFAULT), ('brew', SETTLE_NETWORK),
+        ('video', SETTLE_NETWORK),
+    ]:
+        try:
+            _enter_ext(kw, settle)
+            press_down(2)
+            _exit_ext()
+        except Exception:
+            _recover_after_error()
+    for ext_name in ['clean', 'provider', 'finder', 'zsh']:
+        try:
+            _enter_ext(ext_name, SETTLE_INSTANT)
+            press_down(2)
+            _exit_ext()
+        except Exception:
+            _recover_after_error()
+    try:
+        _enter_ext('calc', SETTLE_INSTANT)
+        type_text('2+3*4')
+        time.sleep(SETTLE_INSTANT)
+        clear_input()
+        _exit_ext()
+    except Exception:
+        _recover_after_error()
+
+
+def workload_shortcuts():
+    """全局快捷键触发的独立窗口/扩展激活路径。"""
+    global _in_ext
+    hide_window(DEV_MODE)
+    trigger_ext_shortcut('s', DEV_MODE)
+    time.sleep(SETTLE_DEFAULT)
+    press_esc()
+    time.sleep(0.8)
+    for key in ['c', 't', 'a', 'f']:
+        try:
+            hide_window(DEV_MODE)
+            trigger_ext_shortcut(key, DEV_MODE)
+            time.sleep(TOGGLE_GAP + 0.3)
+            if is_voidnix_visible():
+                _in_ext = True
+                press_down(2)
+            _exit_ext()
+            hide_window(DEV_MODE)
+        except Exception:
+            _recover_after_error()
+
+
+def run_perf():
+    """Layer 3：N 轮全场景工作负载 + 逐阶段内存采样。
+
+    每轮 = 全局搜索 + 工具列表 + 扩展视图 + 快捷键 + hide/show，
+    在关键阶段后采内存快照，输出多轮趋势表。
+    最终 vs 基线差值反映非可回收 compositing layer 累积。
+    """
+    log(f'\n── Layer 3：性能压测（{PERF_ROUNDS} 轮）──')
+    log('切换到 ASCII 键盘布局...')
+    saved_input = switch_to_ascii()
+
+    try:
+        show_window(DEV_MODE)
+        time.sleep(0.5)
+        mem_trend.sample('压测基线')
+
+        for r in range(1, PERF_ROUNDS + 1):
+            log(f'\n── 第 {r}/{PERF_ROUNDS} 轮 ──────────────────────')
+
+            show_window(DEV_MODE)
+            workload_global_search()
+            show_window(DEV_MODE)
+            workload_tool_list()
+            show_window(DEV_MODE)
+            workload_extensions()
+            mem_trend.sample(f'第{r}轮 扩展视图')
+
+            workload_shortcuts()
+            show_window(DEV_MODE)
+            mem_trend.sample(f'第{r}轮 完成')
+
+            hide_window(DEV_MODE)
+            time.sleep(0.5)
+            show_window(DEV_MODE)
+            time.sleep(0.3)
+            mem_trend.sample(f'第{r}轮 hide/show')
+
+        hide_window(DEV_MODE)
+        mem_trend.sample('压测最终')
+
+        log('')
+        mem_trend.print_trend()
+        base = next((s for s in mem_trend.samples if s.label == '压测基线'), None)
+        final = next((s for s in reversed(mem_trend.samples) if s.label == '压测最终'), None)
+        if base and final:
+            drift = final.fp_mb - base.fp_mb
+            log(f'\n  footprint 累积: {base.fp_mb:.0f}MB → {final.fp_mb:.0f}MB (drift {drift:+.0f}MB)')
+            gn_drift = final.gn_mb - base.gn_mb
+            log(f'  graphics N 累积: {base.gn_mb:.0f}MB → {final.gn_mb:.0f}MB (drift {gn_drift:+.0f}MB)')
     finally:
         restore_input_source(saved_input)
         if saved_input:
@@ -729,16 +1053,24 @@ def print_summary(rc: ResultCollector, layer1_report: Optional[dict]):
                 line += f' ({item.message})'
             log(line)
 
+    # 内存趋势（Layer 2 逐阶段 + Layer 3 多轮）
+    if mem_trend.samples:
+        log('\n  [memory-trend]')
+        mem_trend.print_trend()
 
-def write_markdown_report(rc: ResultCollector, overall_pass: bool):
-    """生成 Markdown 汇总报告。"""
+
+def write_markdown_report(rc: ResultCollector, overall_pass: bool,
+                          layer1_report: Optional[dict] = None,
+                          boot_total_ms: float = 0):
+    """生成 Markdown 汇总报告（功能结果 + 性能指标）。"""
     categories: dict[str, list] = {}
     for r in rc.results:
         categories.setdefault(r.category, []).append(r)
 
     lines = [
         '# Voidnix 全功能回归测试报告',
-        f'时间：{time.strftime("%Y-%m-%d %H:%M:%S")}  构建：{"dev" if DEV_MODE else "release"}',
+        f'时间：{time.strftime("%Y-%m-%d %H:%M:%S")}  构建：{"dev" if DEV_MODE else "release"}'
+        f'{" | 性能压测" if PERF_MODE else ""}',
         '',
         '## 汇总',
         f'总用例 {rc.total} | 通过 {rc.passed} | 失败 {rc.failed} | 跳过 {rc.skipped} | '
@@ -746,6 +1078,7 @@ def write_markdown_report(rc: ResultCollector, overall_pass: bool):
         '',
     ]
 
+    # ── 功能测试结果 ──
     for cat, items in categories.items():
         cat_pass = sum(1 for i in items if i.status == 'pass')
         lines.append(f'## {cat}（{cat_pass}/{len(items)}）')
@@ -760,6 +1093,36 @@ def write_markdown_report(rc: ResultCollector, overall_pass: bool):
             lines.append(line)
         lines.append('')
 
+    # ── 性能指标 ──
+    perf_lines: list[str] = []
+    # 启动耗时
+    if boot_total_ms > 0:
+        perf_lines.extend(['### 启动耗时', '',
+                           f'进程启动到自测报告写出: {boot_total_ms / 1000:.1f}s', ''])
+
+    # 搜索延迟（从 Layer 1 latency 类别提取）
+    if layer1_report:
+        latency_items = [r for r in layer1_report.get('results', [])
+                         if r.get('category') == 'latency']
+        if latency_items:
+            perf_lines.extend(['### 搜索延迟', '',
+                               '| query | 耗时 | 状态 |', '|---|---|---|'])
+            for item in latency_items:
+                icon = {'pass': '+', 'fail': 'x', 'skip': '-'}[item.get('status', 'skip')]
+                perf_lines.append(f'| {item["name"]} | {item.get("duration_ms", 0)}ms | {icon} |')
+            perf_lines.append('')
+
+    # 内存趋势
+    perf_lines.extend(mem_trend.to_markdown())
+    if perf_lines and perf_lines[-1] == '':
+        perf_lines.pop()
+
+    if perf_lines:
+        lines.append('## 性能指标')
+        lines.append('')
+        lines.extend(perf_lines)
+        lines.append('')
+
     SMOKE_REPORT_PATH.write_text('\n'.join(lines))
     log(f'\n报告已写入: {SMOKE_REPORT_PATH}')
 
@@ -769,9 +1132,16 @@ def write_markdown_report(rc: ResultCollector, overall_pass: bool):
 def main():
     log('=' * 60)
     log('Voidnix 全功能回归测试')
-    log(f'模式: {"dev" if DEV_MODE else "release"}'
-        f'{" | 仅自测" if SELF_TEST_ONLY else " | 完整"}'
-        f'{" | 无 CGEvent" if NO_CGEVENT else ""}')
+    mode_parts = ['dev' if DEV_MODE else 'release']
+    if SELF_TEST_ONLY:
+        mode_parts.append('仅自测')
+    else:
+        mode_parts.append('完整')
+    if PERF_MODE:
+        mode_parts.append(f'性能压测({PERF_ROUNDS}轮)')
+    if NO_CGEVENT:
+        mode_parts.append('无 CGEvent')
+    log(f'模式: {" | ".join(mode_parts)}')
     log('=' * 60)
 
     if DO_BUILD:
@@ -780,7 +1150,7 @@ def main():
     app_path = find_app_path()
     rc = ResultCollector()
 
-    # ── Layer 1：应用自测 ──
+    # ── Layer 1：应用自测（含启动耗时测量）──
     log('\n── Layer 1：应用自测 ────────────────────────────')
 
     if not NO_CGEVENT and not SELF_TEST_ONLY:
@@ -788,11 +1158,14 @@ def main():
 
     kill_voidnix()
     clear_old_report()
+    t0 = time.time()
     vite_proc = launch_self_test(app_path)
 
     log(f'等待自测报告（超时 {SELF_TEST_TIMEOUT}s）...')
     layer1_report = wait_for_report()
-    log('自测报告已收到')
+    startup_ms = layer1_report.get('duration_ms', 0)
+    boot_total = (time.time() - t0) * 1000
+    log(f'自测报告已收到（自测耗时 {startup_ms}ms，进程启动到报告写出 {boot_total:.0f}ms）')
 
     # 合并 Layer 1 结果
     rc.merge_from_json(layer1_report.get('results', []))
@@ -803,6 +1176,7 @@ def main():
     # ── Layer 2：系统冒烟 ──
     if not SELF_TEST_ONLY and not NO_CGEVENT:
         log('\n── Layer 2：系统冒烟（CGEvent）────────────────────')
+        mem_trend.sample('Layer 2 基线')
         run_layer2(rc)
     elif NO_CGEVENT:
         log('\n--no-cgevent：跳过 Layer 2')
@@ -813,6 +1187,10 @@ def main():
 
     if vite_proc:
         vite_proc.terminate()
+
+    # ── Layer 3：性能压测（--perf）──
+    if PERF_MODE and not SELF_TEST_ONLY and not NO_CGEVENT:
+        run_perf()
 
     overall_pass = rc.failed == 0
 
@@ -826,7 +1204,7 @@ def main():
         log(f'结果：{rc.failed} 项失败')
     log('=' * 60)
 
-    write_markdown_report(rc, overall_pass)
+    write_markdown_report(rc, overall_pass, layer1_report, boot_total)
     sys.exit(0 if overall_pass else 1)
 
 

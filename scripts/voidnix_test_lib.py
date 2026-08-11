@@ -220,13 +220,78 @@ def _char_to_keycode(ch: str):
     return None
 
 
+# 修饰键 keycode
+_KC_SHIFT_L = 56
+_KC_SHIFT_R = 60
+_KC_OPTION_L = 58
+_KC_OPTION_R = 61
+_KC_CMD_L = 55
+_KC_CMD_R = 54
+_ALL_MOD_KEYCODES = [
+    _KC_SHIFT_L, _KC_SHIFT_R, _KC_OPTION_L, _KC_OPTION_R, _KC_CMD_L, _KC_CMD_R,
+]
+
+
+def _post_modifier_event(keycode: int, pressed: bool):
+    ev = Quartz.CGEventCreateKeyboardEvent(None, keycode, pressed)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
+
+
+def reset_modifiers():
+    """强制释放所有修饰键（安全网）。"""
+    for kc in _ALL_MOD_KEYCODES:
+        _post_modifier_event(kc, False)
+    time.sleep(0.03)
+
+
 def post_key(keycode: int, flags: int = 0):
-    down = Quartz.CGEventCreateKeyboardEvent(None, keycode, True)
-    Quartz.CGEventSetFlags(down, flags)
-    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
-    up = Quartz.CGEventCreateKeyboardEvent(None, keycode, False)
-    Quartz.CGEventSetFlags(up, flags)
-    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+    """发送按键事件，完全模拟物理键盘的事件序列。
+
+    物理键盘按 Opt+A 产生 4 个事件：
+    1. Option key-down  → 系统修饰键跟踪层标记 Option 按下
+    2. A key-down (flags=ALT) → 快捷键触发
+    3. A key-up (flags=ALT) → 主键释放
+    4. Option key-up → 系统修饰键跟踪层标记 Option 释放
+
+    只靠 CGEventSetFlags 设 ALT 标志（flags-only 方式）不发真实修饰键事件，
+    系统修饰键跟踪层无法感知 Option 按下与释放，后续 type_text 每个字符
+    被误判为 Alt+key 触发随机快捷键。显式修饰键事件序列彻底解决此问题。
+
+    Shift 走快速路径不降速 type_text。
+    """
+    explicit_mods = []
+    if flags & CMD:
+        explicit_mods.append(_KC_CMD_L)
+    if flags & ALT:
+        explicit_mods.append(_KC_OPTION_L)
+
+    if explicit_mods:
+        # 1. 修饰键 key-down
+        for mk in explicit_mods:
+            _post_modifier_event(mk, True)
+        time.sleep(0.02)
+        # 2. 主键 key-down
+        down = Quartz.CGEventCreateKeyboardEvent(None, keycode, True)
+        Quartz.CGEventSetFlags(down, flags)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+        time.sleep(0.02)
+        # 3. 主键 key-up
+        up = Quartz.CGEventCreateKeyboardEvent(None, keycode, False)
+        Quartz.CGEventSetFlags(up, flags)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+        time.sleep(0.02)
+        # 4. 修饰键 key-up（系统从此事件知道 Option 已释放）
+        for mk in reversed(explicit_mods):
+            _post_modifier_event(mk, False)
+        time.sleep(0.02)
+    else:
+        # 快速路径：普通字符 / Shift
+        down = Quartz.CGEventCreateKeyboardEvent(None, keycode, True)
+        Quartz.CGEventSetFlags(down, flags)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+        up = Quartz.CGEventCreateKeyboardEvent(None, keycode, False)
+        Quartz.CGEventSetFlags(up, flags)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
 
 
 def ext_flags(dev_mode: bool) -> int:
