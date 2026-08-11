@@ -61,11 +61,11 @@
       <BaseEmptyState
         v-if="!resolvedView && props.loading && props.results.length === 0"
         :loading="true"
-        title="加载中"
+        :title="t('common.loading')"
       />
       <BaseEmptyState
         v-else-if="!resolvedView && props.results.length === 0"
-        title="无结果"
+        :title="t('common.noResults')"
         :icon="extension ? extension.meta.icon : 'i-ri-search-line'"
       />
     </div>
@@ -79,6 +79,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { hideWindow } from '@/utils/tauri'
 import { WINDOW } from '@/runtime/constants'
+import { t } from '@/runtime/i18n'
 import type { Extension, SearchResult } from '@/runtime/types'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'

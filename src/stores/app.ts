@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { searchEngine } from '@/runtime/search-engine'
+import { t } from '@/runtime/i18n'
 import { hideWindow, showWindow } from '@/utils/tauri'
 import { writeText } from '@/utils/clipboard'
 import { showToast, type ToastOptions } from '@/composables/useToast'
@@ -165,9 +166,9 @@ export function toastAndHide(msg?: string, opts?: { duration?: number; label?: s
 }
 
 /** 复制文本到剪贴板 + toast 反馈 + 延迟隐藏主窗口（复制型结果回车通用动作）。 */
-export async function copyAndHide(value: string, label = '已复制') {
+export async function copyAndHide(value: string, label?: string) {
   await writeText(value)
-  toastAndHide(label)
+  toastAndHide(label ?? t('common.copied'))
 }
 
 /**

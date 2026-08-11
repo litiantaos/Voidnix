@@ -1,14 +1,19 @@
 <template>
   <BaseButton
     icon="i-ri-information-line"
-    title="配置说明"
-    aria-label="配置说明"
+    :title="t('ai-providers.configGuide')"
+    :aria-label="t('ai-providers.configGuide')"
     @click="showHelp = true"
   />
-  <BaseButton icon="i-ri-add-line" title="添加提供商" aria-label="添加提供商" @click="onAdd" />
+  <BaseButton
+    icon="i-ri-add-line"
+    :title="t('ai-providers.addProvider')"
+    :aria-label="t('ai-providers.addProvider')"
+    @click="onAdd"
+  />
   <BaseDialog
     v-if="showHelp"
-    title="使用说明"
+    :title="t('ai-providers.usageGuide')"
     size="lg"
     :show-cancel="false"
     @confirm="showHelp = false"
@@ -21,10 +26,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onDeactivated } from 'vue'
+import { ref, computed, onDeactivated } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import { renderMarkdown } from '@/utils/markdown'
+import { t } from '@/runtime/i18n'
 import { requestCreateProvider } from './bridge'
 
 const showHelp = ref(false)
@@ -38,12 +44,5 @@ function onAdd() {
   requestCreateProvider()
 }
 
-const helpMarkdown = renderMarkdown(`
-提供商配置保存后写入 \`~/.config/voidnix/ai.env\`，新开终端生效。
-
-- Key 导出为 \`VOIDNIX_*_API_KEY\`，端点导出为 \`VOIDNIX_*_BASE_URL\`
-- 智谱、DeepSeek 用固定后缀，如 \`VOIDNIX_ZHIPU_API_KEY\`，其余按名称推导
-- 外部工具须显式引用，如 OpenCode \`{env:VOIDNIX_ZHIPU_API_KEY}\`
-- 选中 Key 按下 **Cmd+Enter** 可粘贴 Key / 端点 / 模型名
-`)
+const helpMarkdown = computed(() => renderMarkdown(t('ai-providers.helpMarkdown')))
 </script>

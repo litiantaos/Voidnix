@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import { getAllExtensions } from '@/runtime/extension-registry'
 import { initTheme } from '@/runtime/theme'
+import { initI18n } from '@/runtime/i18n'
 import { prewarmPinyin } from '@/utils/fuzzy'
 import { useSystemStore } from '@/stores/system'
 import { CMD } from '@/commands'
@@ -11,6 +12,9 @@ import App from './App.vue'
 import 'virtual:uno.css'
 import './styles/theme.css'
 import './styles/markdown.css'
+
+// 注册框架级文案
+import '@/locales'
 
 // 自动发现并注册所有扩展：各 index.ts 顶层调 defineExtension({...}) 完成注册
 import.meta.glob(['@ext/*/index.ts'], { eager: true })
@@ -24,6 +28,9 @@ prewarmPinyin()
 
 // 主题：尽早 apply（窗口默认隐藏，呼出前已是正确主题，无可见闪烁）
 initTheme()
+
+// i18n：尽早初始化（扩展 setup 前完成，扩展 setup 可能读文案）
+initI18n()
 
 // 后台预查系统状态（权限 + 开机自启）：设置页只读缓存值，消除首帧「检查中…」跳变。
 // fire-and-forget 不阻塞启动；Rust 侧同步纳秒/微秒级，用户进设置页前早已就绪。

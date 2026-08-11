@@ -8,27 +8,27 @@ export type FinderAction = 'copy_path' | 'open_terminal' | 'new_file' | 'toggle_
 
 export const FINDER_ACTIONS: {
   id: FinderAction
-  title: string
+  titleKey: string
   icon: string
 }[] = [
   {
     id: 'copy_path',
-    title: '拷贝路径',
+    titleKey: 'finderExt.action.copyPath',
     icon: 'i-ri-file-copy-line',
   },
   {
     id: 'open_terminal',
-    title: '在终端中打开',
+    titleKey: 'finderExt.action.openTerminal',
     icon: 'i-ri-terminal-box-line',
   },
   {
     id: 'new_file',
-    title: '新建文件',
+    titleKey: 'finderExt.action.newFile',
     icon: 'i-ri-file-add-line',
   },
   {
     id: 'toggle_hidden',
-    title: '切换隐藏文件',
+    titleKey: 'finderExt.action.toggleHidden',
     icon: 'i-ri-eye-off-line',
   },
 ]

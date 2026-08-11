@@ -1,4 +1,5 @@
 import type { Component } from 'vue'
+import type { LocalizedText } from './i18n'
 
 // ─── 搜索结果─────────────────────────────────────────────────
 
@@ -71,14 +72,14 @@ export interface SearchProvider {
 
 export interface ExtensionMeta {
   id: string
-  name: string
+  name: LocalizedText
   icon: string
   /** 扩展列表排序权重（越小越靠前）。 */
   order: number
   /** 搜索关键词（keywordSearchAll 匹配用）。 */
   keywords?: string[]
   /** 描述（可选；进 keyword 搜索评分字段）。 */
-  description?: string
+  description?: LocalizedText
   /** 是否在扩展列表中隐藏。 */
   hidden?: boolean
 }
@@ -108,11 +109,11 @@ export interface Extension {
   searchBarAccessory?: () => Component
   /** 扩展私有命名子视图（如 screenshot 的 ocr、各扩展的 config）。 */
   subviews?: Record<string, () => Component>
-  /** 子视图显示名（id → 中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」。 */
-  subviewTitle?: Record<string, string>
+  /** 子视图显示名（id → 名称），激活子视图时搜索栏 placeholder 用「搜索{name}」。 */
+  subviewTitle?: Record<string, LocalizedText>
   globalShortcuts?: ShortcutBinding[]
   /** 搜索框占位提示（激活扩展时显示）。 */
-  placeholder?: string
+  placeholder?: LocalizedText
   /** 扩展激活时主窗口高度（逻辑像素）：number = 固定值（clamp 到 [MIN,MAX]）；'auto' = 随内容自适应；未声明 = 默认高度。
    *  mainView 与所有 subviews 共用此值（subview 可经 subviewHeights 覆盖）。 */
   windowHeight?: number | 'auto'

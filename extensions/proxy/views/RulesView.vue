@@ -19,7 +19,7 @@
       v-if="filtered.length === 0"
       icon="i-ri-ruler-line"
       :loading="loading"
-      :title="loading ? '加载中…' : '无规则'"
+      :title="loading ? t('common.loading') : t('proxy.noRules')"
     />
   </div>
 </template>
@@ -29,6 +29,7 @@ import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 

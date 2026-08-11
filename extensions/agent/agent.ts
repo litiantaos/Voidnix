@@ -9,6 +9,7 @@
 import { ref, computed } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
+import { t } from '@/runtime/i18n'
 import { generateRequestId } from '@/utils/id'
 import { showToast } from '@/composables/useToast'
 import { config as agentConfig, resolveAgentCredentials } from './config'
@@ -63,7 +64,7 @@ export function useAgentChat() {
           {
             type: 'notice',
             kind: 'error',
-            text: '请先在「AI 提供商」配置提供商（endpoint / API Key / 模型）。',
+            text: t('agent.noProviderConfigured'),
           },
         ],
       })
@@ -268,7 +269,7 @@ export function useAgentChat() {
     const streamingMsg = messages.value.find((m) => m.streaming)
     if (streamingMsg) {
       failInFlightTools(streamingMsg)
-      streamingMsg.parts.push({ type: 'notice', kind: 'aborted', text: '已中止' })
+      streamingMsg.parts.push({ type: 'notice', kind: 'aborted', text: t('agent.aborted') })
       finalizeStreamingMessage(streamingMsg.id)
     }
   }

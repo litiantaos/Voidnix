@@ -251,13 +251,16 @@
       class="pointer-events-none left-1/2 fixed -translate-x-1/2"
       style="bottom: 20%"
     >
-      <span class="text-xs ui-ctrl text-secondary px-3 py-1.5"> 已到底部，按 Enter 完成 </span>
+      <span class="text-xs ui-ctrl text-secondary px-3 py-1.5">
+        {{ t('screenshot.reachedBottom') }}
+      </span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { t } from '@/runtime/i18n'
 import AnnotationPalette from './AnnotationPalette.vue'
 import ScrollPreview from './ScrollPreview.vue'
 import SelectionChrome from './SelectionChrome.vue'
@@ -294,12 +297,12 @@ const hoveredHandle = ref<string | null>(null)
 /** 选区阶段底部快捷键提示（与 useOverlayEvents.onKeyDown 对齐） */
 const selectShortcutTips = computed(() => {
   const tips = [
-    { key: 'Esc', label: '取消' },
-    { key: 'F', label: '全屏' },
-    { key: 'C', label: '复制色值' },
+    { key: 'Esc', label: t('screenshot.cancel') },
+    { key: 'F', label: t('screenshot.fullscreen') },
+    { key: 'C', label: t('screenshot.copyColor') },
   ]
   if (props.initialScreenshot.last_selection) {
-    tips.splice(2, 0, { key: 'R', label: '恢复选区' })
+    tips.splice(2, 0, { key: 'R', label: t('screenshot.restoreSelection') })
   }
   return tips
 })

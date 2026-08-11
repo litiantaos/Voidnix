@@ -10,8 +10,8 @@
   <div v-if="userMessages.length > 0" ref="historyWrapRef" class="inline-flex">
     <BaseButton
       icon="i-ri-chat-history-line"
-      title="历史消息"
-      aria-label="历史消息"
+      :title="t('agent.history')"
+      :aria-label="t('agent.history')"
       aria-haspopup="listbox"
       :aria-expanded="isHistoryOpen"
       @click.stop="toggleHistory"
@@ -20,14 +20,16 @@
   <BaseButton
     v-if="userMessages.length > 0"
     icon="i-ri-add-line"
-    title="新会话"
-    aria-label="新会话"
+    :title="t('agent.newChat')"
+    :aria-label="t('agent.newChat')"
     @click="handleNewConversation"
   />
   <BaseButton
     :icon="appStore.activeSubview === 'config' ? 'i-ri-settings-3-fill' : 'i-ri-settings-3-line'"
-    :title="appStore.activeSubview === 'config' ? '关闭设置' : '设置'"
-    :aria-label="appStore.activeSubview === 'config' ? '关闭设置' : '设置'"
+    :title="appStore.activeSubview === 'config' ? t('agent.closeSettings') : t('agent.settings')"
+    :aria-label="
+      appStore.activeSubview === 'config' ? t('agent.closeSettings') : t('agent.settings')
+    "
     @click="toggleConfig"
   />
 
@@ -58,6 +60,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import { useAgentChat, focusInputTick } from './agent'
 import { setProviderModelKey, modelSelectOptions, effectiveProviderModelKey } from './config'
 import { getMessageText, buildHistoryLabel } from './view-logic'

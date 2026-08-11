@@ -1,3 +1,5 @@
+import { t } from '@/runtime/i18n'
+
 export function getParentPath(path: unknown): string {
   if (typeof path !== 'string' || !path) return ''
   const lastSlashIndex = path.lastIndexOf('/')
@@ -76,13 +78,14 @@ export function formatPathParts(path: unknown): { head: string; tail: string } {
 }
 
 /** 统一错误文案：Error.message / 字符串透传 / 其余 fallback（Tauri invoke reject 常为 string）。 */
-export function toErrorMessage(e: unknown, fallback = '未知错误'): string {
+export function toErrorMessage(e: unknown, fallback?: string): string {
+  const fb = fallback ?? t('common.unknownError')
   if (typeof e === 'string') {
     const s = e.trim()
-    return s || fallback
+    return s || fb
   }
-  if (e instanceof Error) return e.message || fallback
-  return fallback
+  if (e instanceof Error) return e.message || fb
+  return fb
 }
 
 export function providerLabelFromUrl(url: string, fallback: string): string {

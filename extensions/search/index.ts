@@ -78,8 +78,8 @@ async function getAppList(): Promise<ProviderResult[]> {
 export default defineExtension({
   meta: {
     id: 'search',
-    name: '搜索',
-    description: '应用与文件搜索',
+    name: { 'zh-CN': '搜索', en: 'Search' },
+    description: { 'zh-CN': '应用与文件搜索', en: 'App and file search' },
     icon: 'i-ri-search-line',
     hidden: true,
     order: 999,

@@ -1,6 +1,10 @@
 <template>
   <div class="flex-col-full-pb">
-    <BaseEmptyState v-if="keyRows.length === 0" title="请添加 AI 提供商" icon="i-ri-key-2-line" />
+    <BaseEmptyState
+      v-if="keyRows.length === 0"
+      :title="t('ai-providers.empty')"
+      icon="i-ri-key-2-line"
+    />
 
     <BaseList
       v-else
@@ -16,10 +20,14 @@
         <span class="flex-1 min-w-0 truncate">{{ groupTitle(group) }}</span>
         <BaseButton
           icon="i-ri-settings-3-line"
-          title="编辑提供商"
+          :title="t('ai-providers.editProvider')"
           @click.stop="openEditProvider(group)"
         />
-        <BaseButton icon="i-ri-add-line" title="添加 Key" @click.stop="openCreateKey(group)" />
+        <BaseButton
+          icon="i-ri-add-line"
+          :title="t('ai-providers.addKey')"
+          @click.stop="openCreateKey(group)"
+        />
       </template>
 
       <template #item="{ item }">
@@ -70,17 +78,21 @@
     <!-- 提供商：URL + 模型（创建时带首把 Key） -->
     <BaseDialog
       v-if="showProviderModal"
-      :title="providerModalMode === 'create' ? '添加提供商' : '编辑提供商'"
+      :title="
+        providerModalMode === 'create'
+          ? t('ai-providers.addProvider')
+          : t('ai-providers.editProvider')
+      "
       variant="form"
       size="md"
       show-footer
-      ok-label="保存"
+      :ok-label="t('common.save')"
       @confirm="saveProvider"
       @cancel="showProviderModal = false"
     >
       <div flex="~ col" gap="3">
         <div class="form-field">
-          <span class="form-label">名称</span>
+          <span class="form-label">{{ t('ai-providers.name') }}</span>
           <BaseInput v-model="providerForm.name" :placeholder="nameFieldPlaceholder" />
         </div>
 
@@ -90,10 +102,14 @@
         </div>
 
         <div class="form-field">
-          <span class="form-label">模型 ID</span>
+          <span class="form-label">{{ t('ai-providers.modelId') }}</span>
           <div flex="~ col" gap="1.5">
             <div v-for="(_, i) in providerForm.models" :key="i" flex gap="1.5" items="center">
-              <BaseInput v-model="providerForm.models[i]" placeholder="模型 ID" class="flex-1" />
+              <BaseInput
+                v-model="providerForm.models[i]"
+                :placeholder="t('ai-providers.modelId')"
+                class="flex-1"
+              />
               <BaseButton
                 v-if="i > 0"
                 class="text-danger"
@@ -107,8 +123,11 @@
 
         <template v-if="providerModalMode === 'create'">
           <div class="form-field">
-            <span class="form-label">备注</span>
-            <BaseInput v-model="providerForm.firstKeyLabel" placeholder="主号 / 备用" />
+            <span class="form-label">{{ t('ai-providers.label') }}</span>
+            <BaseInput
+              v-model="providerForm.firstKeyLabel"
+              :placeholder="t('ai-providers.labelPlaceholder')"
+            />
           </div>
           <div class="form-field">
             <span class="form-label">API Key</span>
@@ -136,7 +155,7 @@
           variant="danger"
           @click="removeProviderAndClose"
         >
-          删除
+          {{ t('common.delete') }}
         </BaseButton>
       </template>
     </BaseDialog>
@@ -144,18 +163,18 @@
     <!-- 单把 Key 编辑 -->
     <BaseDialog
       v-if="showKeyModal"
-      :title="keyModalMode === 'create' ? '添加 Key' : '编辑 Key'"
+      :title="keyModalMode === 'create' ? t('ai-providers.addKey') : t('ai-providers.editKey')"
       variant="form"
       size="sm"
       show-footer
-      ok-label="保存"
+      :ok-label="t('common.save')"
       @confirm="saveKey"
       @cancel="showKeyModal = false"
     >
       <div flex="~ col" gap="3">
         <div class="form-field">
-          <span class="form-label">备注</span>
-          <BaseInput v-model="keyForm.label" placeholder="主号 / 备用" />
+          <span class="form-label">{{ t('ai-providers.label') }}</span>
+          <BaseInput v-model="keyForm.label" :placeholder="t('ai-providers.labelPlaceholder')" />
         </div>
         <div class="form-field">
           <span class="form-label">API Key</span>
@@ -182,7 +201,7 @@
           variant="danger"
           @click="removeKeyAndClose"
         >
-          删除
+          {{ t('common.delete') }}
         </BaseButton>
       </template>
     </BaseDialog>
@@ -204,6 +223,7 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { showToast } from '@/composables/useToast'
 import { useActionPanel } from '@/composables/useActionPanel'
+import { t } from '@/runtime/i18n'
 import { CMD } from '@/commands'
 import {
   config,
@@ -295,7 +315,7 @@ watch(
 /** 分组标题 = 名称（空则域名） */
 function groupTitle(providerId: string): string {
   const p = getProviderById(providerId)
-  if (!p) return '未命名提供商'
+  if (!p) return t('ai-providers.unnamedProvider')
   return providerDisplayName(p)
 }
 
@@ -308,7 +328,7 @@ function itemTitle(row: KeyRow): string {
   const m = monitorOf(row)
   // 智谱档位进副标题（MAX · 5h…）；DeepSeek 余额不足仍挂标题
   if (m?.kind === 'deepseek' && !m.error && !m.isAvailable) {
-    return `${label} · 余额不足`
+    return `${label} · ${t('ai-providers.insufficientBalance')}`
   }
   return label
 }
@@ -318,8 +338,8 @@ function usageSegments(row: KeyRow): UsageSegment[] {
   const m = monitorOf(row)
   if (loadingByKey[row.id] && !m) {
     return [
-      { text: maskKey(row.slot.apiKey) || '无 Key', tone: 'muted' },
-      { text: '获取用量信息中…', tone: 'muted' },
+      { text: maskKey(row.slot.apiKey) || t('ai-providers.noKey'), tone: 'muted' },
+      { text: t('ai-providers.loadingUsage'), tone: 'muted' },
     ]
   }
   if (m?.kind === 'deepseek') return buildDeepseekUsageSegments(row.slot.apiKey, m)
@@ -365,15 +385,15 @@ const sparkMax = computed(() => {
 // ─── 粘贴 ───────────────────────────────────────────────────
 
 async function pasteField(text: string, label: string) {
-  const t = text.trim()
-  if (!t) {
-    showToast(`${label} 为空`, { kind: 'error' })
+  const value = text.trim()
+  if (!value) {
+    showToast(t('ai-providers.fieldEmpty', { name: label }), { kind: 'error' })
     return
   }
   try {
-    await pasteOut(t)
+    await pasteOut(value)
   } catch (e) {
-    showToast(toErrorMessage(e, '粘贴失败'), { kind: 'error' })
+    showToast(toErrorMessage(e, t('ai-providers.pasteFailed')), { kind: 'error' })
   }
 }
 
@@ -396,14 +416,14 @@ const actionMenuItems = computed<PanelItem[]>(() => {
     {
       type: 'item',
       key: 'paste-key',
-      label: '粘贴 Key',
+      label: t('ai-providers.paste', { name: 'Key' }),
       icon: 'i-ri-key-2-line',
       disabled: !row.slot.apiKey.trim(),
     },
     {
       type: 'item',
       key: 'paste-url',
-      label: '粘贴 URL',
+      label: t('ai-providers.paste', { name: 'URL' }),
       icon: 'i-ri-links-line',
       disabled: !p?.endpoint.trim(),
     },
@@ -412,7 +432,7 @@ const actionMenuItems = computed<PanelItem[]>(() => {
     items.push({
       type: 'item',
       key: 'paste-model',
-      label: '粘贴 模型',
+      label: t('ai-providers.paste', { name: t('ai-providers.modelLabel') }),
       icon: 'i-ri-cpu-line',
       disabled: true,
     })
@@ -421,7 +441,7 @@ const actionMenuItems = computed<PanelItem[]>(() => {
       items.push({
         type: 'item',
         key: `paste-model:${m}`,
-        label: `粘贴 ${m}`,
+        label: t('ai-providers.paste', { name: m }),
         icon: 'i-ri-cpu-line',
       })
     }
@@ -432,7 +452,7 @@ const actionMenuItems = computed<PanelItem[]>(() => {
       {
         type: 'item',
         key: 'delete-key',
-        label: '删除 Key',
+        label: t('ai-providers.deleteKey'),
         icon: 'i-ri-delete-bin-line',
         danger: true,
       },
@@ -466,10 +486,11 @@ const {
     const p = getProviderById(row.providerId)
     if (k === 'paste-key') void pasteField(row.slot.apiKey, 'Key')
     else if (k === 'paste-url' && p) void pasteField(p.endpoint, 'URL')
-    else if (k.startsWith('paste-model:')) void pasteField(k.slice('paste-model:'.length), '模型')
+    else if (k.startsWith('paste-model:'))
+      void pasteField(k.slice('paste-model:'.length), t('ai-providers.modelLabel'))
     else if (k === 'delete-key') {
       removeKeyFromProvider(row.providerId, row.slot.id)
-      showToast('已删除 Key')
+      showToast(t('ai-providers.keyDeleted'))
     }
   },
 })
@@ -484,7 +505,7 @@ const providerForm = ref({
   name: '',
   endpoint: '',
   models: [''] as string[],
-  firstKeyLabel: '默认',
+  firstKeyLabel: t('ai-providers.default'),
   firstKey: '',
 })
 
@@ -502,7 +523,7 @@ function openCreateProvider() {
     name: '',
     endpoint: '',
     models: [''],
-    firstKeyLabel: '默认',
+    firstKeyLabel: t('ai-providers.default'),
     firstKey: '',
   }
   showProviderModal.value = true
@@ -541,14 +562,14 @@ function saveProvider() {
   if (providerModalMode.value === 'create') {
     const apiKey = providerForm.value.firstKey.trim()
     if (!endpoint) {
-      showToast('请填写 API URL', { kind: 'error' })
+      showToast(t('ai-providers.urlRequired'), { kind: 'error' })
       return
     }
     if (!apiKey) {
-      showToast('请填写 API Key', { kind: 'error' })
+      showToast(t('ai-providers.keyRequired'), { kind: 'error' })
       return
     }
-    const label = providerForm.value.firstKeyLabel.trim() || '默认'
+    const label = providerForm.value.firstKeyLabel.trim() || t('ai-providers.default')
     const slot = newKeySlot(label, apiKey)
     addAiProvider({
       name,
@@ -558,7 +579,7 @@ function saveProvider() {
     })
   } else if (editingProviderId.value) {
     if (!endpoint) {
-      showToast('请填写 API URL', { kind: 'error' })
+      showToast(t('ai-providers.urlRequired'), { kind: 'error' })
       return
     }
     updateAiProvider(editingProviderId.value, { name, endpoint, models })

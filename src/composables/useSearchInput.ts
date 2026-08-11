@@ -4,6 +4,7 @@ import { useTauriListener } from '@/composables/useTauriListener'
 import { searchEngine } from '@/runtime/search-engine'
 import { getAllExtensions } from '@/runtime/extension-registry'
 import { scoreExtensionEntry } from '@/utils/fuzzy'
+import { resolveLocalized } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
 import { CMD } from '@/commands'
 import type { Extension, SearchResult } from '@/runtime/types'
@@ -103,7 +104,7 @@ export function useSearchInput(opts: SearchInputOptions) {
   function extToEntryResult(ext: Extension, score = 1000): SearchResult {
     return {
       id: `ext-entry-${ext.meta.id}`,
-      title: ext.meta.name,
+      title: resolveLocalized(ext.meta.name),
       icon: ext.meta.icon,
       extId: ext.meta.id,
       score,

@@ -3,7 +3,10 @@ import type { ProviderResult } from '@/runtime/types'
 import { copyAndHide } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
+import { t } from '@/runtime/i18n'
 import { isValidIpLike } from './logic'
+
+import './locales'
 
 interface IpInfo {
   ip?: string
@@ -41,14 +44,17 @@ async function fetchIpInfo(ip: string | null): Promise<IpInfo> {
 export default defineExtension({
   meta: {
     id: 'ip',
-    name: 'IP 信息',
-    description: '查询 IP 地址信息',
+    name: { 'zh-CN': 'IP 信息', en: 'IP Info' },
+    description: { 'zh-CN': '查询 IP 地址信息', en: 'Query IP address information' },
     icon: 'i-ri-global-line',
     keywords: ['ip', 'network', '网络', '地址'],
     order: 60,
   },
 
-  placeholder: '输入 IP 地址，留空查询本机',
+  placeholder: {
+    'zh-CN': '输入 IP 地址，留空查询本机',
+    en: 'Enter an IP address, leave empty for local',
+  },
 
   search: {
     dynamic: async (query, ctx): Promise<ProviderResult[]> => {
@@ -65,28 +71,28 @@ export default defineExtension({
             {
               id: 'ip-addr',
               title: data.ip,
-              description: 'IP 地址',
+              description: t('ip.address'),
               icon: 'i-ri-global-line',
               data: { kind: 'extension', isHighlight: true },
             },
             {
               id: 'ip-loc',
               title: location,
-              description: '地理位置',
+              description: t('ip.location'),
               icon: 'i-ri-map-pin-line',
               data: { kind: 'extension' },
             },
             {
               id: 'ip-isp',
               title: data.isp || '',
-              description: '运营商 (ISP)',
+              description: t('ip.isp'),
               icon: 'i-ri-router-line',
               data: { kind: 'extension' },
             },
             {
               id: 'ip-org',
               title: data.org || '',
-              description: '组织 (Org)',
+              description: t('ip.org'),
               icon: 'i-ri-building-line',
               data: { kind: 'extension' },
             },
@@ -96,8 +102,8 @@ export default defineExtension({
         return [
           {
             id: 'ip-err',
-            title: '查询失败',
-            description: data.message || '未知错误',
+            title: t('ip.queryFailed'),
+            description: data.message || t('common.unknownError'),
             icon: 'i-ri-error-warning-line',
             data: { kind: 'extension' },
           },
@@ -106,7 +112,7 @@ export default defineExtension({
         return [
           {
             id: 'ip-err',
-            title: '网络请求失败',
+            title: t('ip.networkFailed'),
             description: e instanceof Error ? e.message : String(e),
             icon: 'i-ri-error-warning-line',
             data: { kind: 'extension' },

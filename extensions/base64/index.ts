@@ -1,7 +1,10 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import type { ProviderResult } from '@/runtime/types'
 import { copyAndHide } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import { encodeBase64, tryDecodeBase64 } from './logic'
+
+import './locales'
 
 /** 全局即时答案 boost（>KEYWORD_EXTENSION_BOOST=500，穿透 groupAndSort 零分过滤） */
 const DECODE_BOOST = 1000
@@ -13,13 +16,13 @@ export default defineExtension({
   meta: {
     id: 'base64',
     name: 'Base64',
-    description: 'Base64 编解码工具',
+    description: { 'zh-CN': 'Base64 编解码工具', en: 'Base64 encode/decode tool' },
     icon: 'i-ri-code-s-slash-line',
     order: 80,
     keywords: ['编码', '解码', 'encode', 'decode', 'base64'],
   },
 
-  placeholder: '输入文本编解码 Base64',
+  placeholder: { 'zh-CN': '输入文本编解码 Base64', en: 'Enter text to encode/decode Base64' },
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {
@@ -35,7 +38,7 @@ export default defineExtension({
         results.push({
           id: 'base64-decode',
           title: decoded,
-          description: 'Base64 解码',
+          description: t('base64.decode'),
           icon: 'i-ri-text',
           boost: DECODE_BOOST,
           data: { kind: 'extension', value: decoded, isHighlight: true },
@@ -49,7 +52,7 @@ export default defineExtension({
           results.push({
             id: 'base64-encode',
             title: encoded,
-            description: 'Base64 编码',
+            description: t('base64.encode'),
             icon: 'i-ri-code-s-slash-line',
             boost: 999,
             data: { kind: 'extension', value: encoded },

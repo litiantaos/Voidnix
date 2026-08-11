@@ -1,7 +1,7 @@
 <template>
   <BaseEmptyState
     v-if="history.length === 0"
-    title="暂无剪贴板记录"
+    :title="t('clipboard.empty')"
     icon="i-ri-clipboard-line"
     :loading="loading"
   />
@@ -55,7 +55,7 @@
               w="48"
               object="cover top"
               loading="lazy"
-              alt="剪贴板图片"
+              :alt="t('clipboard.imageAlt')"
             />
             <div v-else truncate>
               {{ item.content.split('/').filter(Boolean).pop() || item.content }}
@@ -128,7 +128,7 @@
             max-h="full"
             object="contain"
             class="radius-ctrl"
-            alt="预览图片"
+            :alt="t('clipboard.previewImageAlt')"
           />
           <span
             v-else-if="previewType === 'image'"
@@ -145,11 +145,11 @@
   <!-- 编辑弹窗（仅文本）-->
   <BaseDialog
     v-if="editOpen"
-    title="编辑文本"
+    :title="t('clipboard.editTitle')"
     variant="form"
     size="md"
     show-footer
-    ok-label="保存"
+    :ok-label="t('common.save')"
     @confirm="saveEdit"
     @cancel="editOpen = false"
   >
@@ -160,7 +160,7 @@
         :max-height="0"
         :auto-resize="false"
         :submit-on-enter="false"
-        placeholder="编辑剪贴板文本"
+        :placeholder="t('clipboard.editPlaceholder')"
       />
     </div>
   </BaseDialog>
@@ -197,6 +197,7 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useActionPanel } from '@/composables/useActionPanel'
 import { useAppStore } from '@/stores/app'
 import { formatBytes, toErrorMessage } from '@/utils/format'
+import { t } from '@/runtime/i18n'
 
 const appStore = useAppStore()
 
@@ -235,7 +236,10 @@ async function handleExecute(item: ClipboardItem, _index: number, _e?: KeyboardE
     invalidateCache()
   } catch (e) {
     console.error('Failed to paste clipboard:', e)
-    appStore.showStatus(toErrorMessage(e, '粘贴失败'), { kind: 'error', duration: 4000 })
+    appStore.showStatus(toErrorMessage(e, t('clipboard.pasteFailed')), {
+      kind: 'error',
+      duration: 4000,
+    })
   }
 }
 
@@ -251,7 +255,7 @@ const actionMenuItems = computed<PanelItem[]>(() => {
       {
         type: 'item',
         key: 'delete',
-        label: `删除 ${selectedIds.value.size} 条`,
+        label: t('clipboard.deleteBatch', { count: selectedIds.value.size }),
         icon: 'i-ri-delete-bin-line',
         danger: true,
       },
@@ -262,21 +266,26 @@ const actionMenuItems = computed<PanelItem[]>(() => {
   const isText = item.content_type === 'text'
   const items: PanelItem[] = []
   if (item.content_type !== 'file') {
-    items.push({ type: 'item', key: 'preview', label: '预览', icon: 'i-ri-eye-line' })
+    items.push({
+      type: 'item',
+      key: 'preview',
+      label: t('clipboard.preview'),
+      icon: 'i-ri-eye-line',
+    })
   }
   items.push({
     type: 'item',
     key: 'favorite',
-    label: item.is_favorite ? '取消收藏' : '收藏',
+    label: item.is_favorite ? t('clipboard.unfavorite') : t('clipboard.favorite'),
     icon: item.is_favorite ? 'i-ri-star-fill text-warning' : 'i-ri-star-line',
   })
   if (isText) {
-    items.push({ type: 'item', key: 'edit', label: '编辑', icon: 'i-ri-edit-line' })
+    items.push({ type: 'item', key: 'edit', label: t('clipboard.edit'), icon: 'i-ri-edit-line' })
   }
   items.push({
     type: 'item',
     key: 'delete',
-    label: '删除',
+    label: t('common.delete'),
     icon: 'i-ri-delete-bin-line',
     danger: true,
   })
@@ -380,13 +389,13 @@ async function openPreview(item: ClipboardItem) {
     return
   }
   previewType.value = 'text'
-  previewText.value = '加载中…'
+  previewText.value = t('clipboard.loadingText')
   previewOpen.value = true
   try {
     previewText.value = (await invoke<string | null>(CMD.getClipboardText, { id: item.id })) ?? ''
   } catch (e) {
     console.error('Failed to load text:', e)
-    previewText.value = '加载失败'
+    previewText.value = t('clipboard.loadFailed')
   }
 }
 
@@ -397,7 +406,7 @@ const editingId = ref('')
 
 async function openEdit(item: ClipboardItem) {
   editingId.value = item.id
-  editText.value = '加载中…'
+  editText.value = t('clipboard.loadingText')
   editOpen.value = true
   try {
     editText.value = (await invoke<string | null>(CMD.getClipboardText, { id: item.id })) ?? ''
@@ -423,10 +432,13 @@ async function saveEdit() {
 async function deleteItems(ids: string[]) {
   if (ids.length === 0) return
   const confirmed = await appStore.showConfirm({
-    title: '删除剪贴板记录',
-    message: ids.length > 1 ? `确定要删除 ${ids.length} 条记录吗？` : '确定要删除这条记录吗？',
-    okLabel: '删除',
-    cancelLabel: '取消',
+    title: t('clipboard.deleteTitle'),
+    message:
+      ids.length > 1
+        ? t('clipboard.deleteConfirmMessageMulti', { count: ids.length })
+        : t('clipboard.deleteConfirmMessageSingle'),
+    okLabel: t('common.delete'),
+    cancelLabel: t('common.cancel'),
   })
   if (!confirmed) return
   try {

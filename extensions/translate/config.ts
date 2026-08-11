@@ -1,4 +1,5 @@
 import { defineConfig, whenConfigReady } from '@/runtime/storage'
+import { t } from '@/runtime/i18n'
 import {
   config as hubConfig,
   getProviderById,
@@ -191,7 +192,7 @@ export function resolveAiTargets(cfg: AiConfig): AiTranslateTarget[] {
       multiKey && sel.keyId
         ? provider?.keys.find((k) => k.id === sel.keyId)?.label?.trim()
         : undefined
-    const base = provider ? providerDisplayName(provider) : '环境变量'
+    const base = provider ? providerDisplayName(provider) : t('translate.envVars')
     out.push({
       endpoint,
       apiKey,
@@ -206,7 +207,7 @@ export function resolveAiTargets(cfg: AiConfig): AiTranslateTarget[] {
     const apiKey = env.apiKey.trim()
     const model = env.model.trim()
     if (endpoint && apiKey && model) {
-      out.push({ endpoint, apiKey, model, label: '环境变量' })
+      out.push({ endpoint, apiKey, model, label: t('translate.envVars') })
     }
   }
 

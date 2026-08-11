@@ -1,19 +1,21 @@
 import { scoreFields } from '@/utils/fuzzy'
+import { t } from '@/runtime/i18n'
 import type { ClipboardItem } from './index'
 
 export type ContentType = 'all' | 'text' | 'image' | 'file'
 
 /** 提取用于匹配/索引的文本（图片/文件给语义占位，便于按类型搜索）。 */
 export function matchText(item: ClipboardItem): string {
-  if (item.content_type === 'image') return '图片 image'
-  if (item.content_type === 'file') return `文件 file ${item.content}`
+  if (item.content_type === 'image') return t('clipboard.kind.image')
+  if (item.content_type === 'file') return `${t('clipboard.kind.file')} ${item.content}`
   return item.content
 }
 
 /** 列表标题：图片/文件给占位，文本截断 500 字符并压平换行。 */
 export function clipboardTitle(item: ClipboardItem): string {
-  if (item.content_type === 'image') return '[图片]'
-  if (item.content_type === 'file') return '[文件] ' + item.content.split('/').pop()
+  if (item.content_type === 'image') return t('clipboard.titleImage')
+  if (item.content_type === 'file')
+    return `${t('clipboard.titleFile')} ${item.content.split('/').pop()}`
   return item.content.substring(0, 500).replace(/\r?\n/g, ' ')
 }
 

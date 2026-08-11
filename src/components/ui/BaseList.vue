@@ -1,5 +1,5 @@
 <template>
-  <div p="x-3" pb="3" flex="~ col" gap="1.5" role="listbox" aria-label="搜索结果">
+  <div p="x-3" pb="3" flex="~ col" gap="1.5" role="listbox" :aria-label="t('search.resultsLabel')">
     <template v-for="(item, i) in items" :key="itemKey(item, i)">
       <div
         v-if="
@@ -33,6 +33,7 @@
 <script setup lang="ts" generic="T">
 import { ref, watch, nextTick, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
 import { onKeyStroke } from '@/composables/events'
+import { t } from '@/runtime/i18n'
 import { isComposing as isComposingCheck, isFormControl, wrapIndex } from '@/utils/dom'
 
 // KeepAlive 软禁用：deactivate 后监听仍在，用 isActive 抑制响应

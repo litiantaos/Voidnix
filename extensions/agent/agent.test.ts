@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { AgentEvent } from '@/types/agent'
+import './locales'
 
 const mocks = vi.hoisted(() => {
   type Handler = (e: AgentEvent) => void

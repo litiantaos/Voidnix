@@ -6,10 +6,10 @@ import { listen } from '@tauri-apps/api/event'
 import { isTauri } from '@/utils/tauri'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import {
   type Subscription,
   config,
-  MODE_OPTIONS,
   addSubscription,
   updateSubscription,
   removeSubscription,
@@ -42,16 +42,16 @@ export interface TrafficFrame {
 }
 
 export type ListItem =
-  | { type: 'enabled'; group: '代理' }
-  | { type: 'mode'; group: '代理' }
+  | { type: 'enabled'; group: string }
+  | { type: 'mode'; group: string }
   | {
       type: 'subscription'
-      group: '订阅'
+      group: string
       sub: Subscription
       active: boolean
     }
-  | { type: 'groupSelector'; group: '节点' }
-  | { type: 'node'; group: '节点'; node: NodeItem }
+  | { type: 'groupSelector'; group: string }
+  | { type: 'node'; group: string; node: NodeItem }
 
 /// 预加载代理运行状态：本模块随 index.ts eager 加载（app 启动早期）即触发 IPC 往返，
 /// useProxyPanel 创建时同步读缓存作 ref 初始值——首帧即真实值，消除默认 false→true 的渲染闪烁。
@@ -154,6 +154,12 @@ export function useProxyPanel() {
     userGroups.value.map((g) => ({ label: g.name, value: g.name })),
   )
 
+  /// 规则模式选项（localized label，响应 locale 切换）
+  const MODE_OPTIONS = computed(() => [
+    { label: t('proxy.mode.rule'), value: 'rule' as const },
+    { label: t('proxy.mode.global'), value: 'global' as const },
+  ])
+
   // 当前展示的分组：用户选中 > 首个 user selector。无 selector（无订阅）返回 null——
   // 不回退 GLOBAL（其 all 仅含 DIRECT/REJECT 内置策略，非真实代理节点，展示无意义）
   const mainGroup = computed(() => {
@@ -197,24 +203,28 @@ export function useProxyPanel() {
     const match = (s: string) => !q || s.toLowerCase().includes(q)
     const list: ListItem[] = []
     // 所有项（含控制项）按搜索过滤；节点在 nodes computed 已按名过滤
-    if (match('开启代理')) list.push({ type: 'enabled', group: '代理' })
-    if (match('规则模式')) list.push({ type: 'mode', group: '代理' })
+    if (match(t('proxy.enableProxy'))) list.push({ type: 'enabled', group: t('proxy.group.proxy') })
+    if (match(t('proxy.ruleMode'))) list.push({ type: 'mode', group: t('proxy.group.proxy') })
     list.push(
       ...config.subscriptions
         .filter((s) => match(s.name || s.url || ''))
         .map((s) => ({
           type: 'subscription' as const,
-          group: '订阅' as const,
+          group: t('proxy.group.subscription'),
           sub: s,
           active: s.id === config.activeSubscriptionId,
         })),
     )
     // 多 selector 分组：显示分组切换项（单分组或无分组时省略）
-    if (userGroups.value.length > 1 && match('节点分组')) {
-      list.push({ type: 'groupSelector', group: '节点' })
+    if (userGroups.value.length > 1 && match(t('proxy.nodeGroup'))) {
+      list.push({ type: 'groupSelector', group: t('proxy.group.nodes') })
     }
     list.push(
-      ...nodes.value.map((n) => ({ type: 'node' as const, group: '节点' as const, node: n })),
+      ...nodes.value.map((n) => ({
+        type: 'node' as const,
+        group: t('proxy.group.nodes'),
+        node: n,
+      })),
     )
     return list
   })
@@ -244,7 +254,10 @@ export function useProxyPanel() {
       await loadCoreStatus()
     } catch (e) {
       await loadCoreStatus() // 拉权威状态（失败时 downloading 复位为 false）
-      appStore.showStatus(`核心下载失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(toErrorMessage(e, t('proxy.coreDownloadFailed')), {
+        duration: 4000,
+        kind: 'error',
+      })
     }
   }
 
@@ -260,11 +273,14 @@ export function useProxyPanel() {
       // ready 事件驱动 loadCoreStatus；此处兜底 + 重新查更新
       await loadCoreStatus()
       await checkUpdate()
-      appStore.showStatus('核心已更新', { duration: 2000 })
+      appStore.showStatus(t('proxy.coreUpdated'), { duration: 2000 })
     } catch (e) {
       await loadCoreStatus()
       await checkUpdate()
-      appStore.showStatus(`核心更新失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(toErrorMessage(e, t('proxy.coreUpdateFailed')), {
+        duration: 4000,
+        kind: 'error',
+      })
     }
   }
 
@@ -293,11 +309,11 @@ export function useProxyPanel() {
   const downloadText = computed(() => {
     const { received, total } = coreProgress.value
     if (total != null) {
-      if (received >= total) return '解压中'
+      if (received >= total) return t('proxy.extracting')
       return `${Math.floor((received * 100) / total)}%`
     }
     if (progressStarted.value) return `${(received / 1048576).toFixed(1)}MB`
-    return '下载中'
+    return t('proxy.downloading')
   })
 
   const toggleEnabled = async () => {
@@ -329,7 +345,10 @@ export function useProxyPanel() {
       }
       // 关闭代理时保留节点列表显示（热重载 idle，不清空 proxiesData）
     } catch (e) {
-      appStore.showStatus(`切换失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(toErrorMessage(e, t('proxy.switchFailed')), {
+        duration: 4000,
+        kind: 'error',
+      })
     } finally {
       toggling.value = false
     }
@@ -343,12 +362,15 @@ export function useProxyPanel() {
     try {
       await invoke(CMD.proxyReconnect)
       coreError.value = ''
-      appStore.showStatus('代理已重连', { duration: 2000 })
+      appStore.showStatus(t('proxy.reconnected'), { duration: 2000 })
       await loadProxies()
       testAll()
       startTrafficStream()
     } catch (e) {
-      appStore.showStatus(`重连失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(toErrorMessage(e, t('proxy.reconnectFailed')), {
+        duration: 4000,
+        kind: 'error',
+      })
     } finally {
       toggling.value = false
     }
@@ -366,7 +388,10 @@ export function useProxyPanel() {
     } catch (e) {
       // 核心未运行（从未启用 / 进程已退出）时静默；已启用下加载失败才报错
       if (isEnabled.value) {
-        appStore.showStatus(`加载节点失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+        appStore.showStatus(toErrorMessage(e, t('proxy.loadNodesFailed')), {
+          duration: 4000,
+          kind: 'error',
+        })
       }
     }
   }
@@ -380,7 +405,10 @@ export function useProxyPanel() {
       selectedNodeName.value = node.name // 乐观更新，check 立即显示
       await loadProxies()
     } catch (e) {
-      appStore.showStatus(`切换节点失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(toErrorMessage(e, t('proxy.switchNodeFailed')), {
+        duration: 4000,
+        kind: 'error',
+      })
     }
   }
 
@@ -445,7 +473,10 @@ export function useProxyPanel() {
       try {
         await invoke(CMD.proxySetMode, { mode })
       } catch (e) {
-        appStore.showStatus(`切换模式失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+        appStore.showStatus(toErrorMessage(e, t('proxy.switchModeFailed')), {
+          duration: 4000,
+          kind: 'error',
+        })
       }
     }
   }
@@ -475,7 +506,7 @@ export function useProxyPanel() {
 
   // ── 订阅 ──
   function formatTime(ts: string): string {
-    if (!ts) return '未更新'
+    if (!ts) return t('proxy.notUpdated')
     return ts.slice(0, 10)
   }
 
@@ -490,7 +521,10 @@ export function useProxyPanel() {
       await invoke(CMD.proxySetActiveSubscription, { id })
       await loadProxies()
     } catch (e) {
-      appStore.showStatus(`切换订阅失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(toErrorMessage(e, t('proxy.switchSubscriptionFailed')), {
+        duration: 4000,
+        kind: 'error',
+      })
     }
   }
 
@@ -553,7 +587,7 @@ export function useProxyPanel() {
     try {
       const count = await invoke<number>(CMD.proxyUpdateSubscription, { id, url })
       updateSubscription(id, { proxyCount: count, updatedAt: new Date().toISOString() })
-      appStore.showStatus(`已更新 ${count} 个节点`, { duration: 2000 })
+      appStore.showStatus(t('proxy.nodesUpdated', { count }), { duration: 2000 })
       // 新建订阅拉取成功即自动激活（首次添加即用，内部 loadProxies）；编辑则直接刷新
       if (wasCreating && count > 0) {
         await setActiveSubscription(id)
@@ -561,7 +595,10 @@ export function useProxyPanel() {
         await loadProxies()
       }
     } catch (e) {
-      appStore.showStatus(`更新失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(toErrorMessage(e, t('proxy.updateFailed')), {
+        duration: 4000,
+        kind: 'error',
+      })
     }
   }
 
@@ -591,7 +628,10 @@ export function useProxyPanel() {
       // 热重启完成（含 wait_ready）后刷新，节点列表应用新激活订阅
       await loadProxies()
     } catch (e) {
-      appStore.showStatus(`清理订阅失败：${toErrorMessage(e)}`, { duration: 4000, kind: 'error' })
+      appStore.showStatus(toErrorMessage(e, t('proxy.cleanupSubscriptionFailed')), {
+        duration: 4000,
+        kind: 'error',
+      })
     }
   }
 

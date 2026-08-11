@@ -5,7 +5,7 @@
       v-if="error"
       icon="i-ri-error-warning-line"
       :title="error"
-      description="请检查系统权限或重启应用"
+      :description="t('systemStatus.permissionHint')"
     />
 
     <template v-else-if="staticInfo && snapshot">
@@ -13,15 +13,15 @@
       <section p="3" class="soft-card" flex flex-wrap gap="1.5" items="center">
         <span flex shrink="0" gap="2" items="center" mr="2">
           <i class="i-ri-computer-line text-xs text-secondary" />
-          <span text="xs secondary" font="medium">设备</span>
+          <span text="xs secondary" font="medium">{{ t('systemStatus.device') }}</span>
         </span>
         <span
           text="xs secondary"
           font="medium"
           truncate
           class="cursor-pointer hover:text-primary"
-          title="点击复制机型"
-          @click="copyField(resolveModel(staticInfo.model), '已复制机型')"
+          :title="t('systemStatus.clickToCopy')"
+          @click="copyField(resolveModel(staticInfo.model), t('systemStatus.copiedModel'))"
         >
           {{ resolveModel(staticInfo.model) }}
         </span>
@@ -34,16 +34,18 @@
           text="xs muted"
           shrink="0"
           class="cursor-pointer hover:text-primary"
-          title="点击复制主机名"
-          @click="copyField(staticInfo.hostname, '已复制主机名')"
+          :title="t('systemStatus.clickToCopy')"
+          @click="copyField(staticInfo.hostname, t('systemStatus.copiedHostname'))"
         >
           {{ staticInfo.hostname }}
         </span>
         <span text="muted">·</span>
-        <span text="xs muted" shrink="0">运行 {{ formatUptime(snapshot.uptime) }}</span>
+        <span text="xs muted" shrink="0">{{
+          t('systemStatus.uptime', { time: formatUptime(snapshot.uptime) })
+        }}</span>
         <span text="muted">·</span>
         <span text="xs" shrink="0" tabular-nums :class="loadColor(loadPct)">
-          负载 15m {{ loadPct.toFixed(0) }}%
+          {{ t('systemStatus.load', { pct: loadPct.toFixed(0) }) }}
         </span>
         <template v-if="snapshot.thermal !== 'nominal'">
           <span text="muted">·</span>
@@ -58,7 +60,7 @@
         </template>
         <template v-if="snapshot.low_power_mode">
           <span text="muted">·</span>
-          <span text="xs warning" shrink="0">低电量模式</span>
+          <span text="xs warning" shrink="0">{{ t('systemStatus.lowPowerMode') }}</span>
         </template>
       </section>
 
@@ -68,7 +70,7 @@
         <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-cpu-line text-xs text-secondary" />
-            <span text="xs secondary" font="medium">处理器</span>
+            <span text="xs secondary" font="medium">{{ t('systemStatus.cpu') }}</span>
           </div>
           <div mb="1.5" mt="2" flex gap="2" items="baseline">
             <span text="lg primary" font="semibold" tabular-nums>
@@ -112,7 +114,8 @@
           </div>
           <div text="xs muted" truncate tabular-nums>
             <span v-if="staticInfo.cpu_model">{{ staticInfo.cpu_model }} · </span
-            >{{ staticInfo.cpu_cores }} 核 CPU<span v-if="gpuLabel"> · {{ gpuLabel }}</span>
+            >{{ t('systemStatus.cpuCores', { cores: staticInfo.cpu_cores })
+            }}<span v-if="gpuLabel"> · {{ gpuLabel }}</span>
           </div>
         </section>
 
@@ -120,7 +123,7 @@
         <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-database-2-line text-xs text-secondary" />
-            <span text="xs secondary" font="medium">内存</span>
+            <span text="xs secondary" font="medium">{{ t('systemStatus.memory') }}</span>
           </div>
           <div mb="1.5" mt="2" flex items="baseline" justify="between">
             <span text="lg primary" font="semibold" tabular-nums>
@@ -143,14 +146,16 @@
               }"
             />
           </div>
-          <div text="xs muted" tabular-nums>可用 {{ formatBytes(snapshot.available_memory) }}</div>
+          <div text="xs muted" tabular-nums>
+            {{ t('systemStatus.available', { size: formatBytes(snapshot.available_memory) }) }}
+          </div>
           <div
             v-if="snapshot.total_swap > 0 || snapshot.used_swap > 0"
             text="xs muted"
             mt="0.5"
             tabular-nums
           >
-            交换
+            {{ t('systemStatus.swap') }}
             {{ formatBytes(snapshot.used_swap)
             }}<template v-if="snapshot.total_swap > 0">
               / {{ formatBytes(snapshot.total_swap) }}</template
@@ -165,7 +170,7 @@
         <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-hard-drive-3-line text-xs text-secondary" />
-            <span text="xs secondary" font="medium">磁盘</span>
+            <span text="xs secondary" font="medium">{{ t('systemStatus.disk') }}</span>
             <span v-if="diskFsLabel" text="xs muted" ml="auto" shrink="0" tabular-nums>{{
               diskFsLabel
             }}</span>
@@ -175,7 +180,7 @@
               <span text="xs secondary" font="medium" truncate min-w="0">
                 {{ d.name || d.mount_point }}
                 <span v-if="d.kind && d.kind !== 'Unknown'" text="muted"> · {{ d.kind }}</span>
-                <span v-if="d.removable" text="muted"> · 外置</span>
+                <span v-if="d.removable" text="muted"> · {{ t('systemStatus.external') }}</span>
               </span>
               <span text="xs muted" ml="2" shrink="0" tabular-nums>
                 {{ formatBytes(d.used) }} / {{ formatBytes(d.total) }}
@@ -203,7 +208,7 @@
               class="text-xs text-secondary"
             />
             <i v-else class="i-ri-plug-line text-xs text-secondary" />
-            <span text="xs secondary" font="medium">电池</span>
+            <span text="xs secondary" font="medium">{{ t('systemStatus.battery') }}</span>
             <span v-if="snapshot.battery" text="xs muted" ml="auto" shrink="0">
               {{ batteryStateText(snapshot.battery.state) }}
             </span>
@@ -214,7 +219,7 @@
                 {{ snapshot.battery.level }}<span text="xs muted">%</span>
               </span>
               <span v-if="snapshot.battery.health !== null" text="xs muted" tabular-nums>
-                健康 {{ snapshot.battery.health }}%
+                {{ t('systemStatus.health', { pct: snapshot.battery.health }) }}
               </span>
             </div>
             <div mb="2" rounded="full" class="fill-active" h="1.5" overflow="hidden">
@@ -229,23 +234,31 @@
             </div>
             <div text="xs muted" flex flex-wrap gap="1.5" tabular-nums>
               <span v-if="snapshot.battery.time_to_empty !== null">
-                剩余 {{ formatDuration(snapshot.battery.time_to_empty) }}
+                {{
+                  t('systemStatus.remaining', {
+                    time: formatDuration(snapshot.battery.time_to_empty),
+                  })
+                }}
               </span>
               <span v-if="snapshot.battery.time_to_full !== null">
-                充满 {{ formatDuration(snapshot.battery.time_to_full) }}
+                {{
+                  t('systemStatus.fullCharge', {
+                    time: formatDuration(snapshot.battery.time_to_full),
+                  })
+                }}
               </span>
               <span v-if="snapshot.battery.adapter_watts !== null">
                 {{ snapshot.battery.adapter_watts }}W
               </span>
               <span v-if="snapshot.battery.cycles !== null">
-                {{ snapshot.battery.cycles }} 循环
+                {{ t('systemStatus.cycles', { n: snapshot.battery.cycles }) }}
               </span>
               <span v-if="snapshot.battery.temperature !== null">
                 {{ snapshot.battery.temperature.toFixed(1) }}°C
               </span>
             </div>
           </template>
-          <div v-else text="xs muted" mt="2">无电池（台式机）</div>
+          <div v-else text="xs muted" mt="2">{{ t('systemStatus.noBattery') }}</div>
         </section>
       </div>
 
@@ -255,7 +268,7 @@
         <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-apps-2-line text-xs text-secondary" />
-            <span text="xs secondary" font="medium">进程</span>
+            <span text="xs secondary" font="medium">{{ t('systemStatus.processes') }}</span>
           </div>
           <div v-for="(p, i) in snapshot.processes" :key="i" mt="2" flex gap="2" items="center">
             <span text="xs muted" shrink="0" w="3" tabular-nums>{{ i + 1 }}</span>
@@ -284,7 +297,7 @@
         <section p="3" class="soft-card">
           <div flex gap="2" items="center" leading="none">
             <i class="i-ri-signal-tower-line text-xs text-secondary" />
-            <span text="xs secondary" font="medium">网络</span>
+            <span text="xs secondary" font="medium">{{ t('systemStatus.network') }}</span>
           </div>
           <div mb="1.5" mt="2" flex gap="2" items="center">
             <i class="i-ri-arrow-down-line text-xs text-muted" />
@@ -328,13 +341,13 @@
             </span>
           </div>
           <div text="xs muted" flex gap="1.5" truncate items="center">
-            <span text="muted" shrink="0">内网</span>
+            <span text="muted" shrink="0">{{ t('systemStatus.lan') }}</span>
             <span
               truncate
               tabular-nums
               class="cursor-pointer hover:text-primary"
-              title="点击复制内网 IP"
-              @click="copyField(snapshot.local_ip, '已复制内网 IP')"
+              :title="t('systemStatus.clickToCopy')"
+              @click="copyField(snapshot.local_ip, t('systemStatus.copiedLanIp'))"
             >
               {{ snapshot.local_ip || '—' }}
             </span>
@@ -354,6 +367,7 @@ import { useAppStore } from '@/stores/app'
 import { isTauri } from '@/utils/tauri'
 import { writeText } from '@/utils/clipboard'
 import { formatBytes, formatRate } from '@/utils/format'
+import { t } from '@/runtime/i18n'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 
 interface DiskStatic {
@@ -441,7 +455,7 @@ async function fetchStatic() {
   try {
     staticInfo.value = await invoke<SystemStaticInfo>(CMD.systemStaticInfo)
   } catch (e) {
-    error.value = `读取系统信息失败：${e ?? '未知错误'}`
+    error.value = t('systemStatus.readFailed', { error: String(e ?? t('common.unknownError')) })
   }
 }
 
@@ -524,7 +538,7 @@ const diskFsLabel = computed(() => {
 const gpuLabel = computed(() => {
   const g = staticInfo.value
   if (!g) return ''
-  if (g.gpu_cores !== null) return `${g.gpu_cores} 核 GPU`
+  if (g.gpu_cores !== null) return t('systemStatus.gpuCores', { n: g.gpu_cores })
   if (g.gpu_model) return g.gpu_model
   return ''
 })
@@ -537,11 +551,11 @@ const loadPct = computed(() => {
 
 // ── 交互 ──
 
-async function copyField(value: string, label = '已复制') {
+async function copyField(value: string, label?: string) {
   if (!value) return
   try {
     await writeText(value)
-    useAppStore().showStatus(label, { duration: 800 })
+    useAppStore().showStatus(label ?? t('common.copied'), { duration: 800 })
   } catch (e) {
     console.error('[system-status] copy failed:', e)
   }
@@ -550,21 +564,17 @@ async function copyField(value: string, label = '已复制') {
 function thermalText(state: string): string {
   return (
     {
-      fair: '轻微发热',
-      serious: '热节流',
-      critical: '严重过热',
+      fair: t('systemStatus.thermal.fair'),
+      serious: t('systemStatus.thermal.serious'),
+      critical: t('systemStatus.thermal.critical'),
     }[state] ?? state
   )
 }
 
 function thermalTitle(state: string): string {
-  return (
-    {
-      fair: '系统热状态：Fair',
-      serious: '系统热状态：Serious',
-      critical: '系统热状态：Critical',
-    }[state] ?? state
-  )
+  const label = t('systemStatus.thermalStateLabel')
+  const cap = state.charAt(0).toUpperCase() + state.slice(1)
+  return `${label}: ${cap}`
 }
 
 function thermalClass(state: string): string {
@@ -625,7 +635,13 @@ function batteryIcon(b: BatteryInfo): string {
 }
 
 function batteryStateText(state: string): string {
-  return { charging: '充电中', discharging: '使用中', full: '已充满' }[state] ?? state
+  return (
+    {
+      charging: t('systemStatus.batteryState.charging'),
+      discharging: t('systemStatus.batteryState.discharging'),
+      full: t('systemStatus.batteryState.full'),
+    }[state] ?? state
+  )
 }
 
 // 网络波形：历史数据不足时补占位，使波形条稳定显示

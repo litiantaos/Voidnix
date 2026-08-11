@@ -5,11 +5,11 @@
     <!-- 有道 -->
     <BaseDialog
       v-if="showYoudaoModal"
-      title="有道翻译"
+      :title="t('translate.youdao')"
       variant="form"
       size="md"
       show-footer
-      ok-label="保存"
+      :ok-label="t('common.save')"
       @confirm="saveYoudao"
       @cancel="showYoudaoModal = false"
     >
@@ -54,11 +54,11 @@
     <!-- AI：多选中枢模型 + 提示词 + 跳转提供商 -->
     <BaseDialog
       v-if="showAiModal"
-      title="AI 翻译"
+      :title="t('translate.ai')"
       variant="form"
       size="md"
       show-footer
-      ok-label="保存"
+      :ok-label="t('common.save')"
       @confirm="saveAi"
       @cancel="showAiModal = false"
     >
@@ -70,14 +70,14 @@
               v-if="modelOptions.length > 0"
               variant="ghost"
               icon="i-ri-settings-3-line"
-              title="管理提供商"
+              :title="t('translate.manageProviders')"
               @click="goAiProviders"
             />
           </div>
 
           <div v-if="modelOptions.length === 0">
             <BaseButton class="self-start" icon="i-ri-key-2-line" @click="goAiProviders">
-              打开 AI 提供商
+              {{ t('translate.openAiProviders') }}
             </BaseButton>
           </div>
 
@@ -86,7 +86,7 @@
             v-else
             role="listbox"
             aria-multiselectable="true"
-            aria-label="选择翻译模型"
+            :aria-label="t('translate.selectModel')"
             flex="~ col"
             gap="1.5"
             class="hide-scrollbar max-h-48 overflow-y-auto"
@@ -118,7 +118,7 @@
         </div>
 
         <div class="form-field">
-          <span class="form-label">提示词</span>
+          <span class="form-label">{{ t('translate.prompt') }}</span>
           <BaseTextarea
             v-model="aiForm.prompt"
             :rows="5"
@@ -153,6 +153,7 @@ import {
   hasMultiKeyProvider,
 } from '@/runtime/ai-providers'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -174,7 +175,7 @@ const handleTargetLangChange = async (val: string | number) => {
 
 function youdaoSubtitle(): string {
   const c = getYoudaoConfig()
-  return c.appKey && c.appSecret ? '已配置' : '未配置'
+  return c.appKey && c.appSecret ? t('translate.configured') : t('translate.notConfiguredStatus')
 }
 
 function formatAiSelectionSummary(s: {
@@ -190,11 +191,11 @@ function aiSubtitle(): string {
   void aiProvidersConfig.providers
   const selections = effectiveAiSelections(getAiConfig().selections)
   const n = selections.length
-  if (n === 0) return '未选择模型'
+  if (n === 0) return t('translate.noModelSelected')
   const labels = selections.map(formatAiSelectionSummary)
-  if (n === 1) return labels[0] || '未选择模型'
-  if (n <= 3) return labels.join('、')
-  return `${labels.slice(0, 2).join('、')} 等 ${n} 个`
+  if (n === 1) return labels[0] || t('translate.noModelSelected')
+  if (n <= 3) return labels.join(t('translate.listSeparator'))
+  return `${labels.slice(0, 2).join(t('translate.listSeparator'))}${t('translate.andMore', { count: n })}`
 }
 
 // ── 有道弹窗 ──────────────────────────────────────────────
@@ -264,7 +265,9 @@ const modelOptions = computed(() => {
 })
 
 /** 存在多 Key 时字段名点明凭证维度 */
-const modelFieldLabel = computed(() => (hasMultiKeyProvider() ? '模型与 Key' : '模型'))
+const modelFieldLabel = computed(() =>
+  hasMultiKeyProvider() ? t('translate.modelAndKey') : t('translate.model'),
+)
 
 function setModelBtnRef(el: Element | ComponentPublicInstance | null, index: number) {
   if (!el) {
@@ -379,43 +382,43 @@ const allItems = computed<SettingItem[]>(() => {
   return [
     {
       id: 'translate-shortcut',
-      title: '启动快捷键',
+      title: t('settings.shortcut'),
       type: 'shortcut',
-      group: '通用',
+      group: t('common.group.general'),
       value: translateShortcutValue.value,
       update: handleTranslateShortcutChange,
     },
     {
       id: 'translate-target-lang',
-      title: '目标语言',
+      title: t('translate.targetLanguage'),
       type: 'select',
-      group: '通用',
+      group: t('common.group.general'),
       value: translateConfig.targetLang,
       options: [
-        { label: '中文', value: 'zh' },
-        { label: '英文', value: 'en' },
-        { label: '日文', value: 'ja' },
-        { label: '韩文', value: 'ko' },
-        { label: '法文', value: 'fr' },
-        { label: '德文', value: 'de' },
-        { label: '西班牙文', value: 'es' },
+        { label: t('translate.lang.zh'), value: 'zh' },
+        { label: t('translate.lang.en'), value: 'en' },
+        { label: t('translate.lang.ja'), value: 'ja' },
+        { label: t('translate.lang.ko'), value: 'ko' },
+        { label: t('translate.lang.fr'), value: 'fr' },
+        { label: t('translate.lang.de'), value: 'de' },
+        { label: t('translate.lang.es'), value: 'es' },
       ],
       update: handleTargetLangChange,
     },
     {
       id: 'service-youdao',
-      title: '有道翻译',
+      title: t('translate.youdao'),
       subtitle: youdaoSubtitle(),
       type: 'action',
-      group: '翻译服务',
+      group: t('translate.group.service'),
       action: openYoudao,
     },
     {
       id: 'service-ai',
-      title: 'AI 翻译',
+      title: t('translate.ai'),
       subtitle: aiSubtitle(),
       type: 'action',
-      group: '翻译服务',
+      group: t('translate.group.service'),
       action: openAi,
     },
   ]

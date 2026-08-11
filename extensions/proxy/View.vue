@@ -11,22 +11,22 @@
       <template #group-title="{ group }">
         <span class="flex-1 min-w-0 truncate">{{ group }}</span>
         <BaseButton
-          v-if="group === '订阅'"
+          v-if="group === t('proxy.group.subscription')"
           icon="i-ri-add-line"
-          title="添加订阅"
+          :title="t('proxy.addSubscription')"
           @click.stop="openCreateModal"
         />
-        <template v-else-if="group === '节点'">
+        <template v-else-if="group === t('proxy.group.nodes')">
           <BaseButton
             icon="i-ri-focus-3-line"
             :disabled="!hasSelectedNode"
-            title="定位到选中节点"
+            :title="t('proxy.locateSelected')"
             @click.stop="locateSelected"
           />
           <BaseButton
             :icon="testing ? 'i-ri-loader-4-line animate-spin' : 'i-ri-flashlight-line'"
             :disabled="testing || nodes.length === 0"
-            title="全部测速"
+            :title="t('proxy.testAll')"
             @click.stop="testAll"
           />
         </template>
@@ -34,14 +34,14 @@
 
       <template #item="{ item }">
         <!-- 启用代理（合并核心状态） -->
-        <BaseListItem v-if="item.type === 'enabled'" title="开启代理">
+        <BaseListItem v-if="item.type === 'enabled'" :title="t('proxy.enableProxy')">
           <template #subtitle>
             <template v-if="!statusLoaded"></template>
             <template v-else-if="!coreStatus.downloaded">
-              {{ isDownloading ? '正在下载核心…' : '功能依赖 mihomo 核心，请先下载' }}
+              {{ isDownloading ? t('proxy.downloadingCore') : t('proxy.coreRequired') }}
             </template>
             <template v-else>
-              <span truncate>核心版本：mihomo {{ coreStatus.version }}</span>
+              <span truncate>{{ t('proxy.coreVersion', { version: coreStatus.version }) }}</span>
               <span v-if="isEnabled && traffic" text="muted" shrink="0" ml="3">·</span>
               <span
                 v-if="isEnabled && traffic"
@@ -57,10 +57,10 @@
                 ></span
               >
               <span v-if="coreError" text="danger" shrink="0" ml="2">{{ coreError }}</span>
-              <span v-else-if="updateInfo?.hasUpdate" text="success" shrink="0" ml="2"
-                >有新核心 {{ updateInfo.latest
-                }}{{ isEnabled ? '，请关闭代理后更新' : '，点击下载更新' }}</span
-              >
+              <span v-else-if="updateInfo?.hasUpdate" text="success" shrink="0" ml="2">{{
+                t('proxy.newCoreAvailable', { version: updateInfo.latest }) +
+                (isEnabled ? t('proxy.disableToUpdate') : t('proxy.clickToDownload'))
+              }}</span>
             </template>
           </template>
           <template #trailing>
@@ -73,23 +73,25 @@
             <!-- 已下载：开关 + 更新入口（仅关闭代理时显示，开启时走副标题绿色提示） -->
             <div v-else-if="coreStatus.downloaded" flex gap="2">
               <BaseButton :variant="isEnabled ? 'primary' : 'default'" @click.stop="toggleEnabled">
-                {{ isEnabled ? '已开启' : '已关闭' }}
+                {{ isEnabled ? t('common.enabled') : t('common.disabled') }}
               </BaseButton>
-              <BaseButton v-if="isEnabled && coreError" @click.stop="reconnect">重连</BaseButton>
-              <BaseButton v-if="!isEnabled && updateInfo?.hasUpdate" @click.stop="updateCore"
-                >下载更新</BaseButton
-              >
+              <BaseButton v-if="isEnabled && coreError" @click.stop="reconnect">{{
+                t('proxy.reconnect')
+              }}</BaseButton>
+              <BaseButton v-if="!isEnabled && updateInfo?.hasUpdate" @click.stop="updateCore">{{
+                t('proxy.downloadUpdate')
+              }}</BaseButton>
             </div>
             <!-- 未下载：下载入口 -->
-            <BaseButton v-else @click.stop="downloadCore">下载核心</BaseButton>
+            <BaseButton v-else @click.stop="downloadCore">{{ t('proxy.downloadCore') }}</BaseButton>
           </template>
         </BaseListItem>
 
         <!-- 规则模式 -->
         <BaseListItem
           v-else-if="item.type === 'mode'"
-          title="规则模式"
-          subtitle="规则按分流策略，全局代理所有流量"
+          :title="t('proxy.ruleMode')"
+          :subtitle="t('proxy.ruleModeHint')"
         >
           <template #trailing>
             <BaseSelect
@@ -104,18 +106,21 @@
         <!-- 订阅项（active=激活订阅，accent 强调；点击行切换激活，编辑按钮进编辑） -->
         <BaseListItem
           v-else-if="item.type === 'subscription'"
-          :title="item.sub.name || '未命名订阅'"
+          :title="item.sub.name || t('proxy.unnamedSubscription')"
           :tone="item.active ? 'accent' : undefined"
           :subtitle="
             item.sub.proxyCount
-              ? `${item.sub.proxyCount} 节点 · ${formatTime(item.sub.updatedAt)}`
-              : item.sub.url || '未配置'
+              ? t('proxy.subscriptionInfo', {
+                  count: item.sub.proxyCount,
+                  time: formatTime(item.sub.updatedAt),
+                })
+              : item.sub.url || t('proxy.notConfigured')
           "
         >
           <template #trailing>
             <BaseButton
               icon="i-ri-pencil-line"
-              title="编辑订阅"
+              :title="t('proxy.editSubscription')"
               @click.stop="openEditModal(item.sub)"
             />
           </template>
@@ -124,8 +129,8 @@
         <!-- 分组切换（多 selector 订阅） -->
         <BaseListItem
           v-else-if="item.type === 'groupSelector'"
-          title="节点分组"
-          subtitle="当前显示的 selector 分组"
+          :title="t('proxy.nodeGroup')"
+          :subtitle="t('proxy.nodeGroupHint')"
         >
           <template #trailing>
             <BaseSelect
@@ -155,22 +160,25 @@
     <!-- 订阅编辑弹窗 -->
     <BaseDialog
       v-if="showEditModal"
-      :title="isCreating ? '添加订阅' : '编辑订阅'"
+      :title="isCreating ? t('proxy.addSubscription') : t('proxy.editSubscription')"
       variant="form"
       size="md"
       show-footer
-      ok-label="保存"
+      :ok-label="t('common.save')"
       @confirm="saveSub"
       @cancel="closeEditModal"
     >
       <div flex="~ col" gap="3">
         <div class="form-field">
-          <span class="form-label">订阅名称</span>
-          <BaseInput v-model="editForm.name" placeholder="默认为订阅链接域名" />
+          <span class="form-label">{{ t('proxy.subscriptionName') }}</span>
+          <BaseInput
+            v-model="editForm.name"
+            :placeholder="t('proxy.subscriptionNamePlaceholder')"
+          />
         </div>
         <div class="form-field">
-          <span class="form-label">订阅链接</span>
-          <BaseInput v-model="editForm.url" placeholder="订阅 URL 或 Clash YAML URL" />
+          <span class="form-label">{{ t('proxy.subscriptionUrl') }}</span>
+          <BaseInput v-model="editForm.url" :placeholder="t('proxy.subscriptionUrlPlaceholder')" />
         </div>
       </div>
       <template #footer-start>
@@ -179,7 +187,7 @@
           variant="danger"
           @click="confirmRemoveFromModal"
         >
-          删除
+          {{ t('common.delete') }}
         </BaseButton>
       </template>
     </BaseDialog>
@@ -187,14 +195,16 @@
     <!-- 删除订阅确认 -->
     <BaseDialog
       v-if="deletingSub"
-      title="删除订阅"
+      :title="t('proxy.deleteSubscription')"
       size="sm"
       show-footer
-      ok-label="删除"
+      :ok-label="t('common.delete')"
       @confirm="doRemoveSub"
       @cancel="deletingSub = null"
     >
-      <div text="sm secondary">确定删除「{{ deletingSub.name || '未命名订阅' }}」？</div>
+      <div text="sm secondary">
+        {{ t('proxy.deleteConfirm', { name: deletingSub.name || t('proxy.unnamedSubscription') }) }}
+      </div>
     </BaseDialog>
   </div>
 </template>
@@ -207,6 +217,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import { useProxyPanel } from './useProxyPanel'
+import { t } from '@/runtime/i18n'
 
 // 不解构 template ref：解构后 vue-tsc 不识别 ref="" 为使用；整对象绑定模板也更稳
 const p = useProxyPanel()

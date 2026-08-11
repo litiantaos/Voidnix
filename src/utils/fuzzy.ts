@@ -1,4 +1,5 @@
 import { SEARCH } from '@/runtime/constants'
+import { resolveLocalized, type LocalizedText } from '@/runtime/i18n'
 
 const { prefix: SUBSTRING_PREFIX, contains: SUBSTRING_CONTAIN } = SEARCH.WEIGHTS
 const PINYIN_BASE = SEARCH.WEIGHTS.pinyinBase
@@ -136,11 +137,11 @@ export function keywordMatch(keywords: (string | undefined | null)[], query: str
 
 /** 扩展入口打分单一源：name/id/description 正向 + keywords 双向。全局 keyword 与 `/` 工具列表共用。 */
 export function scoreExtensionEntry(
-  meta: { name: string; id?: string; description?: string; keywords?: string[] },
+  meta: { name: LocalizedText; id?: string; description?: LocalizedText; keywords?: string[] },
   query: string,
 ): number {
   return Math.max(
-    scoreFields([meta.name, meta.id, meta.description], query),
+    scoreFields([resolveLocalized(meta.name), meta.id, resolveLocalized(meta.description)], query),
     keywordMatch(meta.keywords ?? [], query),
   )
 }

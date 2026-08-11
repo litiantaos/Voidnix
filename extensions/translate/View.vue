@@ -1,5 +1,9 @@
 <template>
-  <BaseEmptyState v-if="!isConfigured" icon="i-ri-settings-3-line" title="请先配置翻译服务" />
+  <BaseEmptyState
+    v-if="!isConfigured"
+    icon="i-ri-settings-3-line"
+    :title="t('translate.notConfigured')"
+  />
 
   <div v-else flex="~ col">
     <!-- 顶距交给 scrollContainer CHROME_HEIGHT（已含栏底 gap），勿再 p-t 叠双层 -->
@@ -8,7 +12,7 @@
         ref="textareaRef"
         v-model="inputText"
         rounded="panel"
-        placeholder="输入文本"
+        :placeholder="t('translate.inputPlaceholder')"
         :rows="1"
         :max-height="0"
         @submit="handleSubmit"
@@ -42,7 +46,7 @@
                 :icon="speakingIndex === index ? 'i-ri-volume-up-fill' : 'i-ri-volume-up-line'"
                 :active="speakingIndex === index"
                 class="!text-muted !px-1 !shrink-0 !h-auto"
-                title="朗读"
+                :title="t('translate.speak')"
                 @click.stop="toggleSpeak(item, index)"
               />
             </template>
@@ -61,6 +65,7 @@ import { translateResults, isTranslating, translateText, pendingText, inputText 
 import { config as translateConfig, resolveAiTargets } from './config'
 import { refreshEnvSnapshot } from '@/runtime/ai-providers'
 import { copyAndHide, useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import { CMD } from '@/commands'
 import { detectSpeechLang } from './logic'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -159,7 +164,7 @@ async function toggleSpeak(item: TranslateResult, index: number) {
     })
   } catch (e) {
     console.error('Failed to speak:', e)
-    appStore.showStatus('朗读失败', { kind: 'error' })
+    appStore.showStatus(t('translate.speakFailed'), { kind: 'error' })
   } finally {
     // 自然结束 / 被新朗读取代 → 复位（被取代时 index 已被新值覆盖，不误清）
     if (speakingIndex.value === index) speakingIndex.value = null

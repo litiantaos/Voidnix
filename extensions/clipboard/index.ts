@@ -7,6 +7,7 @@ import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { listen } from '@tauri-apps/api/event'
 import { toErrorMessage } from '@/utils/format'
+import { t } from '@/runtime/i18n'
 import {
   filterByQuery,
   filterByType,
@@ -14,6 +15,7 @@ import {
   clipboardIcon,
   type ContentType,
 } from './logic'
+import './locales'
 import ClipboardSettings from './Settings.vue'
 import ClipboardView from './View.vue'
 import ClipboardActions from './Actions.vue'
@@ -95,14 +97,14 @@ function mapClipboardResults(raw: ClipboardItem[], query: string): ProviderResul
 export default defineExtension({
   meta: {
     id: 'clipboard',
-    name: '剪贴板',
-    description: '剪贴板历史管理',
+    name: { 'zh-CN': '剪贴板', en: 'Clipboard' },
+    description: { 'zh-CN': '剪贴板历史管理', en: 'Clipboard history manager' },
     icon: 'i-ri-clipboard-line',
     keywords: ['clipboard', 'copy', 'paste', 'history', '剪贴板', '历史', '复制', '粘贴'],
     order: 10,
   },
 
-  placeholder: '搜索剪贴板记录',
+  placeholder: { 'zh-CN': '搜索剪贴板记录', en: 'Search clipboard history' },
   mainView: () => ClipboardView,
   searchBarAccessory: () => ClipboardActions,
   subviews: { config: () => ClipboardSettings },
@@ -160,7 +162,7 @@ export default defineExtension({
         invalidateCache()
       } catch (e) {
         console.error('Failed to paste clipboard item:', e)
-        useAppStore().showStatus(toErrorMessage(e, '粘贴失败'), {
+        useAppStore().showStatus(toErrorMessage(e, t('clipboard.pasteFailed')), {
           kind: 'error',
           duration: 4000,
         })

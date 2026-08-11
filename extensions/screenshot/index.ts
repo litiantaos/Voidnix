@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
 import { useAppStore } from '@/stores/app'
+import './locales'
 import ScreenshotView from './View.vue'
 import ScreenshotOcr from './OcrView.vue'
 
@@ -18,8 +19,8 @@ export const pendingOcrData = ref<{
 export default defineExtension({
   meta: {
     id: 'screenshot',
-    name: '截屏',
-    description: '截屏、标注、OCR',
+    name: { 'zh-CN': '截屏', en: 'Screenshot' },
+    description: { 'zh-CN': '截屏、标注、OCR', en: 'Screenshot, annotation, OCR' },
     icon: 'i-ri-screenshot-line',
     keywords: [
       'screenshot',

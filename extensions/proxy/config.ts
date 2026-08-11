@@ -62,11 +62,9 @@ watch(
   { immediate: true, flush: 'sync' },
 )
 
-/// 规则模式选项
-export const MODE_OPTIONS = [
-  { label: '规则', value: 'rule' as const },
-  { label: '全局', value: 'global' as const },
-]
+/// 模式值（rule=规则分流，global=全局代理）
+export const MODE_VALUES = ['rule', 'global'] as const
+export type ProxyMode = (typeof MODE_VALUES)[number]
 
 /// CRUD helpers（defineConfig reactive 数组变更自动持久化）
 export function addSubscription(name = '', url = ''): string {

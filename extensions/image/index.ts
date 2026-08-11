@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { defineExtension } from '@/runtime/extension-registry'
 import ImageView from './View.vue'
 import ImageActions from './Actions.vue'
+import './locales'
 
 /** 拼接文件列表（mainView 内共享）。 */
 export const stitchFiles = ref<string[]>([])
@@ -17,8 +18,8 @@ export const pendingInputPath = ref('')
 export default defineExtension({
   meta: {
     id: 'image',
-    name: '图片处理',
-    description: '移除背景、拼接长图',
+    name: { 'zh-CN': '图片处理', en: 'Image Tools' },
+    description: { 'zh-CN': '移除背景、拼接长图', en: 'Remove background and stitch images' },
     icon: 'i-ri-image-edit-line',
     order: 116,
     keywords: [

@@ -21,7 +21,11 @@
         </div>
       </template>
     </BaseList>
-    <BaseEmptyState v-if="filtered.length === 0" icon="i-ri-links-line" title="无活动连接" />
+    <BaseEmptyState
+      v-if="filtered.length === 0"
+      icon="i-ri-links-line"
+      :title="t('proxy.noActiveConnections')"
+    />
   </div>
 </template>
 
@@ -31,6 +35,7 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { formatBytes } from '@/utils/format'
+import { t } from '@/runtime/i18n'
 import BaseList from '@/components/ui/BaseList.vue'
 
 const fmtTraffic = (n: number) => formatBytes(n, { compact: true })

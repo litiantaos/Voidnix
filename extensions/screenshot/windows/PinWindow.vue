@@ -40,7 +40,7 @@
           shadow="lg"
           items="center"
           class="mica-bar"
-          title="透明度"
+          :title="t('screenshot.opacity')"
         >
           <BaseSlider
             v-model="opacity"
@@ -66,7 +66,7 @@
           <BaseButton
             variant="ghost"
             class="!rounded-none"
-            title="关闭 (Esc)"
+            :title="t('screenshot.closeEsc')"
             icon="i-ri-close-line"
             @click="handleClose"
           />
@@ -81,6 +81,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getCurrentWindow, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
+import { t } from '@/runtime/i18n'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSlider from '@/components/ui/BaseSlider.vue'
 

@@ -1,4 +1,5 @@
 import type { SearchResult } from '@/runtime/types'
+import { t } from '@/runtime/i18n'
 
 export interface WebSearchQuery {
   type: 'search' | 'url'
@@ -35,11 +36,10 @@ export function parseWebSearchQuery(rawQuery: string): WebSearchQuery {
 /// 构建 web 搜索结果项。
 export function buildWebSearchResult(parsed: WebSearchQuery): SearchResult {
   const engine = parsed.engine === 'bing' ? 'Bing' : 'Google'
-  const desc =
-    parsed.engine === 'bing' ? '在默认浏览器中打开' : '在默认浏览器中打开，//b 可使用 Bing 搜索'
+  const desc = parsed.engine === 'bing' ? t('web.openInBrowser') : t('web.openInBrowserBing')
   return {
     id: 'web-search',
-    title: `${engine} 搜索`,
+    title: t('web.search', { engine }),
     description: desc,
     icon: 'i-ri-earth-line',
     extId: 'system',
@@ -51,7 +51,7 @@ export function buildWebSearchResult(parsed: WebSearchQuery): SearchResult {
 export function buildOpenUrlResult(url: string): SearchResult {
   return {
     id: 'open-url',
-    title: '打开链接',
+    title: t('web.openLink'),
     description: url,
     icon: 'i-ri-links-line',
     extId: 'system',

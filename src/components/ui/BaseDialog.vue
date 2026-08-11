@@ -69,10 +69,10 @@
                 </div>
                 <div flex gap="2">
                   <BaseButton v-if="showCancel" :active="focusIndex === 0" @click="close('cancel')">
-                    {{ cancelLabel || '取消' }}
+                    {{ cancelLabel || t('common.cancel') }}
                   </BaseButton>
                   <BaseButton variant="primary" :active="focusIndex === 1" @click="requestConfirm">
-                    {{ okLabel || '确定' }}
+                    {{ okLabel || t('common.confirm') }}
                   </BaseButton>
                 </div>
               </div>
@@ -87,6 +87,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, onDeactivated, nextTick, useId } from 'vue'
 import BaseButton from './BaseButton.vue'
+import { t } from '@/runtime/i18n'
 import { getFocusableElements, isComposing, trapFocus } from '@/utils/dom'
 
 /** 弹窗关闭来源 */

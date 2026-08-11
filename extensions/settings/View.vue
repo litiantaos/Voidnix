@@ -2,7 +2,7 @@
   <div class="flex-col-full-pb">
     <BaseSettingsList v-if="visibleItems.length > 0" :items="visibleItems" shortcut-id="main" />
 
-    <BaseEmptyState v-else icon="i-ri-search-line" title="没有找到相关设置" />
+    <BaseEmptyState v-else icon="i-ri-search-line" :title="t('settings.noResultsFound')" />
   </div>
 </template>
 
@@ -16,9 +16,10 @@ import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { useSystemStore } from '@/stores/system'
-import type { Appearance } from '@/stores/settings'
+import type { Appearance, Language } from '@/stores/settings'
 import { isTauri } from '@/utils/tauri'
 import { scoreFields } from '@/utils/fuzzy'
+import { t } from '@/runtime/i18n'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import type { SettingItem } from '@/types/settings'
@@ -31,8 +32,6 @@ const systemStore = useSystemStore()
 const query = computed(() => appStore.searchQuery.toLowerCase().trim())
 const appVersion = ref('')
 
-// 权限/自启状态来自 systemStore（启动预查缓存）：设置页零 IPC、零首帧跳变。
-// 刷新仅限 handleOpenPrivacy（用户从系统设置返回）——权限变更的唯一入口。
 const permScreenRecording = computed(() => systemStore.permScreenRecording)
 const permAccessibility = computed(() => systemStore.permAccessibility)
 const permFullDiskAccess = computed(() => systemStore.permFullDiskAccess)
@@ -43,8 +42,9 @@ const handleAutostartToggle = async (val: boolean) => {
     await invoke<void>(val ? CMD.enableAutostart : CMD.disableAutostart)
     systemStore.autostartEnabled = val
   } catch (e) {
-    // 透传 macOS NSError 描述：dev 裸二进制无 bundle id / 系统拒绝等真实原因
-    await appStore.showStatus(`开机自启：${e ?? '操作失败'}`, { kind: 'error' })
+    await appStore.showStatus(`${t('settings.autostart')}：${e ?? t('common.operationFailed')}`, {
+      kind: 'error',
+    })
   }
 }
 
@@ -62,10 +62,10 @@ const handleGlobalShortcutChange = async (val: string | number) => {
 
 const handleQuitApp = async () => {
   const confirmed = await appStore.showConfirm({
-    title: '退出应用',
-    message: '确定要退出 Voidnix 吗？',
-    okLabel: '退出',
-    cancelLabel: '取消',
+    title: t('settings.quitConfirmTitle'),
+    message: t('settings.quitConfirmMessage'),
+    okLabel: t('settings.quitLabel'),
+    cancelLabel: t('common.cancel'),
   })
   if (confirmed) {
     await invoke(CMD.quitApp)
@@ -79,7 +79,6 @@ const handleOpenGitHub = async () => {
 }
 
 const handleCheckUpdate = async () => {
-  // 已知有更新（后台检查发现）/ 已下载 / 下载中：直接弹窗驱动后续交互
   if (updateStore.info) {
     updateStore.showDialog()
     return
@@ -87,28 +86,27 @@ const handleCheckUpdate = async () => {
   updateStore.reset()
   const hasUpdate = await updateStore.check()
   if (hasUpdate) {
-    // 发现更新即弹窗，下载与进度由 UpdateDialog 驱动（用户决定何时下载）
     updateStore.showDialog()
   } else if (!updateStore.error) {
     await appStore.showConfirm({
-      title: '检查更新',
-      message: `当前版本 v${appVersion.value} 已是最新版本。`,
+      title: t('settings.checkUpdate'),
+      message: t('settings.upToDate', { version: appVersion.value }),
       showCancel: false,
-      okLabel: '好的',
+      okLabel: t('settings.updateOK'),
     })
   } else {
     await appStore.showConfirm({
-      title: '检查更新失败',
-      message: updateStore.error ?? '网络错误，请稍后重试。',
+      title: t('settings.checkUpdate'),
+      message: updateStore.error ?? t('common.networkError'),
       showCancel: false,
-      okLabel: '好的',
+      okLabel: t('settings.updateOK'),
     })
   }
 }
 
 function permStatus(granted: boolean | null): string {
-  if (granted === null) return '检查中…'
-  return granted ? '已授权' : '未授权 — 点击前往系统设置'
+  if (granted === null) return t('settings.permChecking')
+  return granted ? t('settings.permGranted') : t('settings.permDenied')
 }
 
 async function handleRequestAccessibility() {
@@ -118,8 +116,6 @@ async function handleRequestAccessibility() {
 
 async function handleOpenPrivacy(kind: string) {
   if (!isTauri) return
-  // 打开系统设置面板；权限状态刷新由 useAppLifecycle 的窗口获焦钩子统一处理
-  // （用户改完权限返回时窗口重获焦点触发 refresh，比固定延时更可靠）
   await invoke(CMD.openPrivacySettings, { kind })
 }
 
@@ -128,15 +124,15 @@ const allSettingsItems = computed<SettingItem[]>(() => {
 
   items.push({
     id: 'appearance',
-    title: '外观',
+    title: t('settings.appearance'),
     type: 'select',
     icon: 'i-ri-contrast-2-line',
-    group: '应用',
+    group: t('settings.group.app'),
     value: settings.appearance,
     options: [
-      { label: '自动', value: 'auto' },
-      { label: '浅色', value: 'light' },
-      { label: '深色', value: 'dark' },
+      { label: t('settings.appearance.auto'), value: 'auto' },
+      { label: t('settings.appearance.light'), value: 'light' },
+      { label: t('settings.appearance.dark'), value: 'dark' },
     ],
     update: (v: string | number) => {
       settings.appearance = v as Appearance
@@ -144,37 +140,53 @@ const allSettingsItems = computed<SettingItem[]>(() => {
   })
 
   items.push({
+    id: 'language',
+    title: t('settings.language'),
+    type: 'select',
+    icon: 'i-ri-translate-2',
+    group: t('settings.group.app'),
+    value: settings.language,
+    options: [
+      { label: t('settings.language.zh-CN'), value: 'zh-CN' },
+      { label: t('settings.language.en'), value: 'en' },
+    ],
+    update: (v: string | number) => {
+      settings.language = v as Language
+    },
+  })
+
+  items.push({
     id: 'app-shortcut',
-    title: '启动快捷键',
+    title: t('settings.shortcut'),
     type: 'shortcut',
     icon: 'i-ri-keyboard-line',
-    group: '应用',
+    group: t('settings.group.app'),
     value: settings.globalShortcut,
     update: handleGlobalShortcutChange,
   })
 
   items.push({
     id: 'autostart',
-    title: '开机自启',
+    title: t('settings.autostart'),
     type: 'toggle',
     icon: 'i-ri-shut-down-line',
-    group: '应用',
+    group: t('settings.group.app'),
     value: systemStore.autostartEnabled,
     update: handleAutostartToggle,
   })
 
   const checkLabel = updateStore.checking
-    ? '检查中…'
+    ? t('settings.checking')
     : updateStore.downloading
-      ? '下载中…'
+      ? t('settings.downloading')
       : updateStore.downloaded
-        ? '安装新版本'
+        ? t('settings.installUpdate')
         : updateStore.info
-          ? '下载并安装'
-          : '检查更新'
-  let versionLabel = appVersion.value ? `当前版本：${appVersion.value}` : ''
+          ? t('settings.downloadAndInstall')
+          : t('settings.checkUpdate')
+  let versionLabel = appVersion.value ? `v${appVersion.value}` : ''
   if (updateStore.info) {
-    versionLabel = `新版本：${updateStore.info.newVersion}（当前版本：${updateStore.info.currentVersion}）`
+    versionLabel = `→ ${updateStore.info.newVersion}（v${updateStore.info.currentVersion}）`
   }
   items.push({
     id: 'check-update',
@@ -182,47 +194,46 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     subtitle: versionLabel,
     type: 'action',
     icon: updateStore.downloaded ? 'i-ri-arrow-up-circle-line' : 'i-ri-refresh-line',
-    group: '应用',
+    group: t('settings.group.app'),
     action: handleCheckUpdate,
   })
 
   items.push({
     id: 'about',
-    title: '关于',
+    title: t('settings.about'),
     type: 'action',
     icon: 'i-ri-information-line',
     subtitle: 'github.com/litiantaos/Voidnix',
-    group: '应用',
+    group: t('settings.group.app'),
     action: handleOpenGitHub,
   })
 
   items.push({
     id: 'quit-app',
-    title: '退出应用',
+    title: t('settings.quit'),
     type: 'action',
     icon: 'i-ri-logout-box-line',
-    group: '应用',
+    group: t('settings.group.app'),
     action: handleQuitApp,
   })
 
   items.push({
     id: 'perm-screen-recording',
-    title: '屏幕录制权限',
+    title: t('settings.privacy.screenRecording'),
     subtitle: permStatus(permScreenRecording.value),
     type: 'action',
     icon: permScreenRecording.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
-    group: '隐私权限',
+    group: t('settings.group.privacy'),
     action: () => handleOpenPrivacy('screen_recording'),
   })
   items.push({
     id: 'perm-accessibility',
-    title: '辅助功能权限',
+    title: t('settings.privacy.accessibility'),
     subtitle: permStatus(permAccessibility.value),
     type: 'action',
     icon: permAccessibility.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
-    group: '隐私权限',
+    group: t('settings.group.privacy'),
     action: async () => {
-      // 未授权时先触发系统把本应用注册进辅助功能列表（否则面板里找不到），再打开设置面板
       if (!permAccessibility.value) {
         await handleRequestAccessibility()
       }
@@ -231,11 +242,11 @@ const allSettingsItems = computed<SettingItem[]>(() => {
   })
   items.push({
     id: 'perm-full-disk-access',
-    title: '完全磁盘访问权限',
+    title: t('settings.privacy.fullDiskAccess'),
     subtitle: permStatus(permFullDiskAccess.value),
     type: 'action',
     icon: permFullDiskAccess.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
-    group: '隐私权限',
+    group: t('settings.group.privacy'),
     action: () => handleOpenPrivacy('full_disk_access'),
   })
 

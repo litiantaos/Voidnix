@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import './locales'
 import { cleanStreamResult, engineLabel, detectSpeechLang } from './logic'
 import type { TranslateApiConfig } from './config'
 
