@@ -14,6 +14,7 @@
 - `brew_status`（`CMD.brewStatus`）：版本号 + 全部已安装包（formula / cask，含当前版本、最新版本、描述）+ `has_update`
 - `brew_services`（`CMD.brewServices`）：服务列表（name + status）
 - `brew_info`（`CMD.brewInfo`，`name`）：包详情（desc + 依赖 + 被依赖，均含版本与描述）
+- `brew_run_state`（`CMD.brewRunState`）：查询当前 `brew_run` 运行态（`{ operation, step } | null`），不调 brew，零开销
 - `brew_run`（`CMD.brewRun`，`operation` / `target?` / `onEvent`）：流式执行 brew 子命令，stdout + stderr 逐行经 `Channel<BrewEvent>` 回传
 
 `brew_run` 的 `operation` 取值：`update_upgrade` / `uninstall` / `autoremove` / `services_start` / `services_stop` / `services_restart`。内部按 operation 展开为有序步骤（如 `update_upgrade` = 四步），逐步流式执行，任一步失败即终止。
@@ -22,11 +23,13 @@
 
 - **brew 路径探测**：硬探测 `/opt/homebrew/bin/brew`（Apple Silicon）→ `/usr/local/bin/brew`（Intel），不依赖 GUI 进程 PATH（GUI 启动的进程 PATH 可能不含 brew bin 目录）
 - **PATH 补全**：`ensure_brew_path` 在调用前将 Homebrew bin/sbin 及系统路径拼入 PATH，保证 brew 子命令（如 `brew update` 触发的 git）能找到依赖工具
-- **并发采集**：`brew_status` 用 `tokio::join!` 并发拉取版本号、formula 列表、cask 列表、过期检测，再并发批量拉取包摘要（`brew info --json=v2` 读本地缓存，不联网），最后组装
-- **过期检测**：`brew outdated --json=v2` → name → (installed, current) 映射，组装时填充 `new_version`（空 = 已是最新）
-- **摘要解析**：`parse_summaries` 统一处理 formulae（`name` + `versions.stable`）与 casks（`token` + `version`）两段 JSON
+- **禁止隐式自动更新**：所有 brew 命令经 `brew_command` 助手统一注入 `HOMEBREW_NO_AUTO_UPDATE=1`，消除 brew 隐式联网拉取元数据的等待（实测首次加载从 ~40s 降至 ~1s）；用户点「更新」时 `brew update` 仍是显式全量更新
+- **并发采集**：`brew_status` 用 `tokio::join!` 并发拉取版本号、全部已安装包（`brew info --json=v2 --installed` 一次取 formulae+casks 的名称/描述/已安装版本）、过期检测，共 3 次 brew 进程
+- **过期检测**：`brew outdated --json=v2` → name → (installed, current) 映射，组装时填充 `new_version`（空 = 已是最新）。不用 `brew info` 的版本对比替代——revision 后缀（如 `1.5.4_1`）会导致误报
+- **已安装版本**：`parse_installed` 从 `brew info --json=v2 --installed` 解析——formulae 读 `installed[0].version`（数组），casks 读 `installed`（字符串）
 - **流式执行**：`run_brew_step` spawn 子进程，stdout + stderr 各起一个 reader task，经 mpsc 合流后逐行 `on_event.send`；reader 结束（管道 EOF）= 子进程已退出，再 `wait` 取退出码
 - **kill_on_drop**：子进程带 `kill_on_drop(true)`，Channel 断开或任务取消时自动回收
+- **运行态持久化**：`BREW_RUNNING`（`LazyLock<Mutex<Option<BrewRunState>>>`）跨组件生命周期持久化。`brew_run` 经 RAII guard（`RunGuard`）占位 + 逐步 `set_step`，Drop 时自动清空 + emit `brew-run-done` 事件。guard 拒绝并发调用（返回错误「已有 Homebrew 操作正在运行」）。前端 `onMounted`/`onActivated` 先查 `brew_run_state`：有残留操作则显示进度 + 监听 `brew-run-done`，无则正常加载
 
 ## 子视图数据传递
 
@@ -39,7 +42,7 @@ extensions/homebrew/
 ├── index.ts          # defineExtension（mainView + subviews.detail）
 ├── View.vue          # 状态行 + 服务行 + 包列表（过滤 + 执行分派）
 ├── DetailView.vue    # 包详情（依赖 / 被依赖 / 卸载）
-└── native/mod.rs     # brew_status / brew_services / brew_info / brew_run + JSON 解析 + 流式执行
+└── native/mod.rs     # brew_status / brew_services / brew_info / brew_run_state / brew_run + JSON 解析 + 流式执行 + RunGuard
 ```
 
 ## 已知限制

@@ -28,7 +28,7 @@ export default defineExtension({
     order: 170,
   },
 
-  placeholder: '搜索已安装包',
+  placeholder: '搜索包名',
 
   mainView: () => HomebrewView,
   subviews: {
