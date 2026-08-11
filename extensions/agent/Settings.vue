@@ -5,11 +5,11 @@
     <!-- 搜索提供商编辑弹窗 -->
     <BaseDialog
       v-if="showSearchDialog"
-      title="编辑搜索提供商"
+      :title="t('agent.editSearchProvider')"
       variant="form"
       size="md"
       show-footer
-      ok-label="保存"
+      :ok-label="t('common.save')"
       @confirm="saveSearchModal"
       @cancel="closeSearchModal"
     >
@@ -37,11 +37,11 @@
     <!-- 系统提示词弹窗 -->
     <BaseDialog
       v-if="showSystemPromptDialog"
-      title="系统提示词"
+      :title="t('agent.systemPrompt')"
       variant="form"
       size="md"
       show-footer
-      ok-label="保存"
+      :ok-label="t('common.save')"
       @confirm="saveSystemPrompt"
       @cancel="showSystemPromptDialog = false"
     >
@@ -52,7 +52,7 @@
           :max-height="0"
           :auto-resize="false"
           :submit-on-enter="false"
-          placeholder="定义 Agent 角色、能力边界、工具使用规则、安全约束与输出风格"
+          :placeholder="t('agent.systemPromptPlaceholder')"
         />
       </div>
       <template #footer-start>
@@ -60,7 +60,7 @@
           v-if="systemPromptText !== DEFAULT_SYSTEM_PROMPT"
           variant="danger"
           @click="resetSystemPrompt"
-          >重置</BaseButton
+          >{{ t('agent.reset') }}</BaseButton
         >
       </template>
     </BaseDialog>
@@ -76,6 +76,7 @@ import {
   updateSearchProvider,
 } from './config'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -94,41 +95,41 @@ const { value: agentShortcutValue, update: handleAgentShortcutChange } = useShor
 /// 系统提示词预览（折叠换行），空则「未设置」
 const systemPromptPreview = computed(() => {
   const text = agentConfig.systemPrompt.trim()
-  if (!text) return '未设置'
+  if (!text) return t('agent.notSet')
   return text.replace(/\s+/g, ' ').trim()
 })
 
 const allItems = computed<SettingItem[]>(() => [
   {
     id: 'agent-shortcut',
-    title: '启动快捷键',
+    title: t('settings.shortcut'),
     type: 'shortcut',
-    group: '通用',
+    group: t('common.group.general'),
     value: agentShortcutValue.value,
     update: handleAgentShortcutChange,
   },
   {
     id: 'ai-providers-link',
     title: 'AI',
-    subtitle: '在「AI 提供商」中配置',
+    subtitle: t('agent.configureInAiProviders'),
     type: 'action',
-    group: '提供商',
+    group: t('agent.group.provider'),
     action: () => appStore.setActiveExtension('ai-providers'),
   },
   {
     id: 'search-provider',
     title: 'Tavily',
-    subtitle: agentConfig.searchProvider.apiKey ? '已配置' : '未配置',
+    subtitle: agentConfig.searchProvider.apiKey ? t('agent.configured') : t('agent.notConfigured'),
     type: 'action',
-    group: '提供商',
+    group: t('agent.group.provider'),
     action: () => openSearchModal(agentConfig.searchProvider),
   },
   {
     id: 'system-prompt',
-    title: '系统提示词',
+    title: t('agent.systemPrompt'),
     subtitle: systemPromptPreview.value,
     type: 'action',
-    group: '高级',
+    group: t('agent.group.advanced'),
     action: openSystemPromptDialog,
   },
 ])

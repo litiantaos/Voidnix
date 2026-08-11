@@ -1,12 +1,13 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import HomebrewView from './View.vue'
 import DetailView from './DetailView.vue'
+import './locales'
 
 export default defineExtension({
   meta: {
     id: 'homebrew',
     name: 'Homebrew',
-    description: '包管理与一键更新升级',
+    description: { 'zh-CN': '包管理与一键更新升级', en: 'Package manager and one-click update' },
     icon: 'i-ri-cup-fill',
     keywords: [
       'brew',
@@ -28,13 +29,13 @@ export default defineExtension({
     order: 170,
   },
 
-  placeholder: '搜索包名',
+  placeholder: { 'zh-CN': '搜索包名', en: 'Search packages' },
 
   mainView: () => HomebrewView,
   subviews: {
     detail: () => DetailView,
   },
   subviewTitle: {
-    detail: '包详情',
+    detail: { 'zh-CN': '包详情', en: 'Package Details' },
   },
 })

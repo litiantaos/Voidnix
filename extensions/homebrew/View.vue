@@ -30,7 +30,9 @@
               <span text="secondary">{{ caskCount }} cask</span>
               <template v-if="outdatedCount > 0">
                 <span text="muted" mx="1">·</span>
-                <span text="warning font-medium">{{ outdatedCount }} 更新</span>
+                <span text="warning font-medium">{{
+                  t('homebrew.updates', { count: outdatedCount })
+                }}</span>
               </template>
             </template>
             <template v-if="status.has_update" #trailing>
@@ -40,7 +42,11 @@
                 :disabled="running"
                 @click.stop="run('update_upgrade')"
               >
-                {{ running ? stepLabels[runningStep] || '处理中' : '更新' }}
+                {{
+                  running
+                    ? stepLabels[runningStep] || t('homebrew.processing')
+                    : t('homebrew.update')
+                }}
               </BaseButton>
             </template>
           </BaseListItem>
@@ -70,7 +76,7 @@
                   icon="i-ri-play-line"
                   :disabled="running"
                   class="flex-center !px-0 !w-7"
-                  title="启动"
+                  :title="t('homebrew.start')"
                   @click.stop="runService('services_start', item.name)"
                 />
                 <BaseButton
@@ -79,7 +85,7 @@
                   icon="i-ri-stop-line"
                   :disabled="running"
                   class="flex-center !px-0 !w-7"
-                  title="停止"
+                  :title="t('homebrew.stop')"
                   @click.stop="runService('services_stop', item.name)"
                 />
                 <BaseButton
@@ -87,7 +93,7 @@
                   icon="i-ri-restart-line"
                   :disabled="running"
                   class="flex-center !px-0 !w-7"
-                  title="重启"
+                  :title="t('homebrew.restart')"
                   @click.stop="runService('services_restart', item.name)"
                 />
               </div>
@@ -117,7 +123,7 @@
       <BaseEmptyState
         v-if="listItems.length === 0"
         :icon="hasQuery ? 'i-ri-search-eye-line' : 'i-ri-inbox-line'"
-        :title="hasQuery ? '无匹配包' : '无已安装包'"
+        :title="hasQuery ? t('homebrew.noMatch') : t('homebrew.noInstalled')"
       />
     </template>
   </div>
@@ -130,6 +136,7 @@ import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { isTauri } from '@/utils/tauri'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -182,16 +189,16 @@ const running = ref(false)
 const runningStep = ref('')
 const selectedIndex = ref(0)
 
-const stepLabels: Record<string, string> = {
-  update: '拉取更新',
-  upgrade: '升级中',
-  cleanup: '清理中',
-  autoremove: '清理依赖',
-  uninstall: '卸载中',
-  'services start': '启动中',
-  'services stop': '停止中',
-  'services restart': '重启中',
-}
+const stepLabels = computed<Record<string, string>>(() => ({
+  update: t('homebrew.step.update'),
+  upgrade: t('homebrew.step.upgrade'),
+  cleanup: t('homebrew.step.cleanup'),
+  autoremove: t('homebrew.step.autoremove'),
+  uninstall: t('homebrew.step.uninstall'),
+  'services start': t('homebrew.step.servicesStart'),
+  'services stop': t('homebrew.step.servicesStop'),
+  'services restart': t('homebrew.step.servicesRestart'),
+}))
 
 const hasQuery = computed(() => appStore.searchQuery.trim().length > 0)
 
@@ -243,7 +250,7 @@ const listItems = computed<ListItem[]>(() => {
 
 function groupTitle(g: string): string {
   if (g === '__status__') return ''
-  if (g === '__service__') return '服务'
+  if (g === '__service__') return t('homebrew.services')
   return g === 'cask' ? 'Casks' : 'Formulae'
 }
 
@@ -252,9 +259,9 @@ function serviceIcon(status: string): string {
 }
 
 function serviceStatusText(status: string): string {
-  if (status === 'started') return '运行中'
-  if (status === 'stopped') return '已停止'
-  if (status === 'error') return '错误'
+  if (status === 'started') return t('homebrew.running')
+  if (status === 'stopped') return t('homebrew.stopped')
+  if (status === 'error') return t('homebrew.error')
   return status
 }
 
@@ -274,7 +281,7 @@ async function fetchStatus() {
     status.value = s
     services.value = svc
   } catch (e) {
-    error.value = String(e ?? '未知错误')
+    error.value = String(e ?? t('common.unknownError'))
   } finally {
     loading.value = false
   }
@@ -293,9 +300,9 @@ async function run(operation: string) {
     await invoke(CMD.brewRun, { operation, onEvent: channel })
     running.value = false
     await fetchStatus()
-    appStore.showStatus('更新完成')
+    appStore.showStatus(t('homebrew.updateDone'))
   } catch (e) {
-    appStore.showStatus(String(e ?? '未知错误'), { kind: 'error' })
+    appStore.showStatus(String(e ?? t('common.unknownError')), { kind: 'error' })
   } finally {
     running.value = false
     runningStep.value = ''
@@ -314,10 +321,15 @@ async function runService(operation: string, name: string) {
   try {
     await invoke(CMD.brewRun, { operation, target: name, onEvent: channel })
     services.value = await invoke<BrewService[]>(CMD.brewServices).catch(() => [] as BrewService[])
+    const actionMap: Record<string, string> = {
+      start: t('homebrew.start'),
+      stop: t('homebrew.stop'),
+      restart: t('homebrew.restart'),
+    }
     const action = operation.replace('services_', '')
-    appStore.showStatus(`${action} ${name}`)
+    appStore.showStatus(`${actionMap[action] ?? action} ${name}`)
   } catch (e) {
-    appStore.showStatus(String(e ?? '未知错误'), { kind: 'error' })
+    appStore.showStatus(String(e ?? t('common.unknownError')), { kind: 'error' })
   } finally {
     running.value = false
     runningStep.value = ''

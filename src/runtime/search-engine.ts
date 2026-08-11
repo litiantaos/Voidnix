@@ -1,5 +1,6 @@
 import { getAllExtensions } from './extension-registry'
 import { SEARCH, LIMITS } from './constants'
+import { resolveLocalized } from './i18n'
 import { scoreFields, scoreExtensionEntry } from '@/utils/fuzzy'
 import type { Extension, SearchResult, SearchResultKind, ProviderResult } from './types'
 
@@ -183,7 +184,7 @@ class SearchEngine {
           r.icon ??
           (r.data?.icon as string | undefined) ??
           (isExtension ? ext.meta.icon : undefined),
-        ...(!extensionMode && isExtension ? { source: ext.meta.name } : {}),
+        ...(!extensionMode && isExtension ? { source: resolveLocalized(ext.meta.name) } : {}),
       } as SearchResult
     })
   }
@@ -259,8 +260,8 @@ class SearchEngine {
       .filter((x) => x.score > 0)
       .map(({ ext, score }) => ({
         id: `ext-entry-${ext.meta.id}`,
-        title: ext.meta.name,
-        description: ext.meta.description,
+        title: resolveLocalized(ext.meta.name),
+        description: resolveLocalized(ext.meta.description),
         icon: ext.meta.icon,
         extId: ext.meta.id,
         boost: SEARCH.KEYWORD_EXTENSION_BOOST,

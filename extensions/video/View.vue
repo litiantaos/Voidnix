@@ -11,24 +11,26 @@
           variant="primary"
           @click.stop="ensureCore"
         >
-          下载 FFmpeg
+          {{ t('video.downloadFFmpeg') }}
         </BaseButton>
         <div v-else-if="coreLoaded && core.available" flex gap="2">
-          <BaseButton :disabled="busy" @click.stop="pickInput">选择</BaseButton>
-          <BaseButton v-if="busy" @click.stop="cancelJob">取消</BaseButton>
+          <BaseButton :disabled="busy" @click.stop="pickInput">{{ t('video.select') }}</BaseButton>
+          <BaseButton v-if="busy" @click.stop="cancelJob">{{ t('video.cancel') }}</BaseButton>
           <BaseButton
             v-else-if="inputPath"
             variant="primary"
             :disabled="!canRun"
             @click.stop="startJob"
-            >开始</BaseButton
+            >{{ t('video.start') }}</BaseButton
           >
         </div>
       </template>
       <template #trailing-outputDir>
         <div flex gap="2">
-          <BaseButton v-if="outputDir" @click.stop="resetOutputDir">同目录</BaseButton>
-          <BaseButton @click.stop="pickOutputDir">选择</BaseButton>
+          <BaseButton v-if="outputDir" @click.stop="resetOutputDir">{{
+            t('video.sameDir')
+          }}</BaseButton>
+          <BaseButton @click.stop="pickOutputDir">{{ t('video.select') }}</BaseButton>
         </div>
       </template>
     </BaseSettingsList>
@@ -43,6 +45,7 @@ import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import { t } from '@/runtime/i18n'
 import type { SettingItem } from '@/types/settings'
 import { config } from './config'
 import { pendingInputPath } from './index'
@@ -103,7 +106,7 @@ const downloadText = computed(() => {
     return `${p}%`
   }
   if (downloadReceived.value > 0) return formatBytes(downloadReceived.value)
-  return '下载中…'
+  return t('video.downloading')
 })
 
 const formatsForMode = computed(() => FORMAT_BY_MODE[mode.value])
@@ -124,11 +127,11 @@ const progressText = computed(() => {
 
 /** 合并行副标题：未选文件才显示核心版本；已选仅元数据；进行中仅进度 */
 const sourceSubtitle = computed(() => {
-  if (isDownloading.value) return '正在下载核心…'
-  if (!coreLoaded.value) return '核心版本：FFmpeg —'
-  if (!core.value.available) return '功能依赖 FFmpeg 核心，请先下载'
-  if (busy.value) return `进度 ${progressText.value || '…'}`
-  if (!inputPath.value) return `核心版本：FFmpeg ${core.value.version || '—'}`
+  if (isDownloading.value) return t('video.downloadingCore')
+  if (!coreLoaded.value) return t('video.coreVersionNone')
+  if (!core.value.available) return t('video.dependencyHint')
+  if (busy.value) return t('video.progress', { value: progressText.value || '…' })
+  if (!inputPath.value) return t('video.coreVersion', { version: core.value.version || '—' })
   if (meta.value) return formatMetaLine(meta.value)
   return displayPath(inputPath.value)
 })
@@ -150,28 +153,28 @@ const items = computed<SettingItem[]>(() => {
     title:
       coreLoaded.value && core.value.available && inputPath.value
         ? fileNameFromPath(inputPath.value)
-        : '输入视频',
+        : t('video.inputVideo'),
     subtitle: sourceSubtitle.value,
     type: 'custom',
-    group: '文件',
+    group: t('video.group.file'),
   })
 
   list.push({
     id: 'mode',
-    title: '模式',
+    title: t('video.mode'),
     type: 'select',
     value: mode.value,
     options: [
-      { label: '压缩', value: 'compress' },
-      { label: '格式转换', value: 'convert' },
-      { label: '提取音频', value: 'extract-audio' },
+      { label: t('video.mode.compress'), value: 'compress' },
+      { label: t('video.mode.convert'), value: 'convert' },
+      { label: t('video.mode.extractAudio'), value: 'extract-audio' },
     ],
     update: (v) => {
       mode.value = v as VideoMode
       config.defaultMode = mode.value
       ensureFormatForMode(mode.value)
     },
-    group: '参数',
+    group: t('video.group.params'),
   })
 
   // ── 按模式参数 ──
@@ -180,27 +183,27 @@ const items = computed<SettingItem[]>(() => {
     list.push(
       {
         id: 'quality',
-        title: '质量',
+        title: t('video.quality'),
         type: 'select',
         value: quality.value,
         options: [
-          { label: '高质量', value: 'high' },
-          { label: '均衡', value: 'balanced' },
-          { label: '体积优先', value: 'small' },
+          { label: t('video.quality.high'), value: 'high' },
+          { label: t('video.quality.balanced'), value: 'balanced' },
+          { label: t('video.quality.small'), value: 'small' },
         ],
         update: (v) => {
           quality.value = v as Quality
           config.defaultQuality = quality.value
         },
-        group: '参数',
+        group: t('video.group.params'),
       },
       {
         id: 'scale',
-        title: '分辨率',
+        title: t('video.resolution'),
         type: 'select',
         value: scale.value,
         options: [
-          { label: '原始', value: 'original' },
+          { label: t('video.resolution.original'), value: 'original' },
           { label: '1080p', value: '1080' },
           { label: '720p', value: '720' },
           { label: '480p', value: '480' },
@@ -209,11 +212,11 @@ const items = computed<SettingItem[]>(() => {
           scale.value = v as Scale
           config.defaultScale = scale.value
         },
-        group: '参数',
+        group: t('video.group.params'),
       },
       {
         id: 'format',
-        title: '容器',
+        title: t('video.container'),
         type: 'select',
         value: format.value,
         options: formatsForMode.value.map((f) => ({ label: f.toUpperCase(), value: f })),
@@ -221,7 +224,7 @@ const items = computed<SettingItem[]>(() => {
           format.value = v as OutputFormat
           config.defaultFormat = format.value
         },
-        group: '参数',
+        group: t('video.group.params'),
       },
     )
   } else if (mode.value === 'convert') {
@@ -229,7 +232,7 @@ const items = computed<SettingItem[]>(() => {
     list.push(
       {
         id: 'format',
-        title: '目标格式',
+        title: t('video.targetFormat'),
         type: 'select',
         value: format.value,
         options: formatsForMode.value.map((f) => ({ label: f.toUpperCase(), value: f })),
@@ -237,31 +240,31 @@ const items = computed<SettingItem[]>(() => {
           format.value = v as OutputFormat
           config.defaultFormat = format.value
         },
-        group: '参数',
+        group: t('video.group.params'),
       },
       {
         id: 'quality',
-        title: format.value === 'gif' ? '帧率档' : '质量',
+        title: format.value === 'gif' ? t('video.frameRateTier') : t('video.quality'),
         type: 'select',
         value: quality.value,
         options: [
-          { label: '高质量', value: 'high' },
-          { label: '均衡', value: 'balanced' },
-          { label: '体积优先', value: 'small' },
+          { label: t('video.quality.high'), value: 'high' },
+          { label: t('video.quality.balanced'), value: 'balanced' },
+          { label: t('video.quality.small'), value: 'small' },
         ],
         update: (v) => {
           quality.value = v as Quality
           config.defaultQuality = quality.value
         },
-        group: '参数',
+        group: t('video.group.params'),
       },
       {
         id: 'scale',
-        title: '分辨率',
+        title: t('video.resolution'),
         type: 'select',
         value: scale.value,
         options: [
-          { label: '原始', value: 'original' },
+          { label: t('video.resolution.original'), value: 'original' },
           { label: '1080p', value: '1080' },
           { label: '720p', value: '720' },
           { label: '480p', value: '480' },
@@ -270,7 +273,7 @@ const items = computed<SettingItem[]>(() => {
           scale.value = v as Scale
           config.defaultScale = scale.value
         },
-        group: '参数',
+        group: t('video.group.params'),
       },
     )
   } else {
@@ -278,7 +281,7 @@ const items = computed<SettingItem[]>(() => {
     list.push(
       {
         id: 'format',
-        title: '音频格式',
+        title: t('video.audioFormat'),
         type: 'select',
         value: format.value,
         options: formatsForMode.value.map((f) => ({ label: f.toUpperCase(), value: f })),
@@ -286,33 +289,33 @@ const items = computed<SettingItem[]>(() => {
           format.value = v as OutputFormat
           config.defaultFormat = format.value
         },
-        group: '参数',
+        group: t('video.group.params'),
       },
       {
         id: 'quality',
-        title: '音质',
+        title: t('video.audioQuality'),
         type: 'select',
         value: quality.value,
         options: [
-          { label: '高（192k）', value: 'high' },
-          { label: '标准（128k）', value: 'balanced' },
-          { label: '省流（96k）', value: 'small' },
+          { label: t('video.audioQuality.high'), value: 'high' },
+          { label: t('video.audioQuality.balanced'), value: 'balanced' },
+          { label: t('video.audioQuality.small'), value: 'small' },
         ],
         update: (v) => {
           quality.value = v as Quality
           config.defaultQuality = quality.value
         },
-        group: '参数',
+        group: t('video.group.params'),
       },
     )
   }
 
   list.push({
     id: 'outputDir',
-    title: '输出目录',
-    subtitle: outputDir.value ? displayPath(outputDir.value) : '与源文件相同',
+    title: t('video.outputDir'),
+    subtitle: outputDir.value ? displayPath(outputDir.value) : t('video.sameAsSource'),
     type: 'custom',
-    group: '输出',
+    group: t('video.group.output'),
   })
 
   return list
@@ -335,9 +338,12 @@ async function ensureCore() {
   downloadTotal.value = null
   try {
     core.value = await invoke<CoreStatus>(CMD.videoEnsureCore)
-    appStore.showStatus('FFmpeg 已就绪')
+    appStore.showStatus(t('video.coreReady'))
   } catch (e) {
-    appStore.showStatus(`下载失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
+    appStore.showStatus(`${t('video.downloadFailed')}：${e ?? t('common.unknownError')}`, {
+      duration: 4000,
+      kind: 'error',
+    })
   } finally {
     isDownloading.value = false
     await refreshCore()
@@ -369,7 +375,10 @@ async function loadInput(path: string) {
   } catch (e) {
     if (seq !== loadInputSeq) return
     meta.value = null
-    appStore.showStatus(`无法读取视频：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
+    appStore.showStatus(`${t('video.cannotReadVideo')}：${e ?? t('common.unknownError')}`, {
+      duration: 4000,
+      kind: 'error',
+    })
   }
 }
 
@@ -425,7 +434,7 @@ function applyJobEvent(ev: VideoEvent, toast: boolean) {
         const key = `done:${ev.outputPath}`
         if (lastTerminalToastKey !== key) {
           lastTerminalToastKey = key
-          appStore.showStatus('处理完成')
+          appStore.showStatus(t('video.processComplete'))
         }
       }
       break
@@ -437,9 +446,12 @@ function applyJobEvent(ev: VideoEvent, toast: boolean) {
         if (lastTerminalToastKey !== key) {
           lastTerminalToastKey = key
           if (ev.message !== '已取消') {
-            appStore.showStatus(`失败：${ev.message}`, { duration: 5000, kind: 'error' })
+            appStore.showStatus(`${t('video.failed')}：${ev.message}`, {
+              duration: 5000,
+              kind: 'error',
+            })
           } else {
-            appStore.showStatus('已取消')
+            appStore.showStatus(t('video.canceled'))
           }
         }
       }
@@ -479,7 +491,10 @@ async function startJob() {
   } catch (e) {
     busy.value = false
     localRun = false
-    appStore.showStatus(`启动失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
+    appStore.showStatus(`${t('video.startFailed')}：${e ?? t('common.unknownError')}`, {
+      duration: 4000,
+      kind: 'error',
+    })
   }
 }
 

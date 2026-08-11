@@ -29,14 +29,14 @@
               :disabled="running"
               @click.stop="confirmUninstall"
             >
-              卸载
+              {{ t('homebrew.uninstall') }}
             </BaseButton>
           </template>
         </BaseListItem>
       </template>
     </BaseList>
 
-    <BaseEmptyState v-else icon="i-ri-search-eye-line" title="无匹配" />
+    <BaseEmptyState v-else icon="i-ri-search-eye-line" :title="t('homebrew.noMatchDetail')" />
   </div>
 </template>
 
@@ -47,6 +47,7 @@ import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { isTauri } from '@/utils/tauri'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -120,7 +121,7 @@ const allItems = computed<InfoItem[]>(() => {
   for (const dep of info.value.deps) {
     result.push({
       id: `dep:${dep.name}`,
-      section: '依赖',
+      section: t('homebrew.dependencies'),
       title: dep.name,
       subtitle: dep.version,
       subDesc: dep.desc,
@@ -132,7 +133,7 @@ const allItems = computed<InfoItem[]>(() => {
   for (const use of info.value.uses) {
     result.push({
       id: `use:${use.name}`,
-      section: '被依赖',
+      section: t('homebrew.dependents'),
       title: use.name,
       subtitle: use.version,
       subDesc: use.desc,
@@ -167,7 +168,7 @@ async function fetchInfo() {
   if (!isTauri) return
   const raw = sessionStorage.getItem('homebrew:detail')
   if (!raw) {
-    error.value = '缺少包信息'
+    error.value = t('homebrew.missingPackageInfo')
     return
   }
   target.value = JSON.parse(raw) as DetailTarget
@@ -179,7 +180,7 @@ async function fetchInfo() {
   try {
     info.value = await invoke<BrewInfo>(CMD.brewInfo, { name: target.value.name })
   } catch (e) {
-    error.value = String(e ?? '未知错误')
+    error.value = String(e ?? t('common.unknownError'))
   } finally {
     loading.value = false
   }
@@ -213,19 +214,24 @@ async function confirmUninstall() {
 
   const parts: string[] = []
   if (uses.length > 0) {
-    parts.push(`此包被 ${uses.length} 个包依赖（${uses.map((u) => u.name).join('、')}）`)
+    parts.push(
+      t('homebrew.uninstallDepMsg', {
+        count: uses.length,
+        names: uses.map((u) => u.name).join('、'),
+      }),
+    )
   }
   if (deps.length > 0) {
-    parts.push('孤立的依赖将自动清理')
+    parts.push(t('homebrew.uninstallOrphanMsg'))
   }
-  parts.push('确定要卸载此包吗？')
+  parts.push(t('homebrew.uninstallConfirm'))
   const message = parts.join('，')
 
   const ok = await appStore.showConfirm({
-    title: `卸载 ${name}？`,
+    title: t('homebrew.uninstallTitle', { name }),
     message,
-    okLabel: '确认',
-    cancelLabel: '取消',
+    okLabel: t('common.confirm'),
+    cancelLabel: t('common.cancel'),
   })
   if (!ok) return
 
@@ -234,10 +240,10 @@ async function confirmUninstall() {
   channel.onmessage = () => {}
   try {
     await invoke(CMD.brewRun, { operation: 'uninstall', target: name, onEvent: channel })
-    appStore.showStatus(`已卸载 ${name}`)
+    appStore.showStatus(t('homebrew.uninstalled', { name }))
     appStore.closeSubview()
   } catch (e) {
-    appStore.showStatus(String(e ?? '未知错误'), { kind: 'error' })
+    appStore.showStatus(String(e ?? t('common.unknownError')), { kind: 'error' })
   } finally {
     running.value = false
   }

@@ -1,4 +1,5 @@
 import { defineExtension } from '@/runtime/extension-registry'
+import './locales'
 import AiProvidersView from './View.vue'
 import AiProvidersActions from './Actions.vue'
 import { setupAiProvidersSync } from './sync'
@@ -6,8 +7,11 @@ import { setupAiProvidersSync } from './sync'
 export default defineExtension({
   meta: {
     id: 'ai-providers',
-    name: 'AI 提供商',
-    description: '统一管理 AI API Key，供本应用与外部工具共用',
+    name: { 'zh-CN': 'AI 提供商', en: 'AI Providers' },
+    description: {
+      'zh-CN': '统一管理 AI API Key，供本应用与外部工具共用',
+      en: 'Unified AI API key management for app and external tools',
+    },
     icon: 'i-ri-key-2-line',
     keywords: [
       'ai',

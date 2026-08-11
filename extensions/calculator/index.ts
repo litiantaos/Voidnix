@@ -7,14 +7,14 @@ import { config, appendHistory } from './config'
 export default defineExtension({
   meta: {
     id: 'calculator',
-    name: '计算器',
-    description: '数学表达式计算',
+    name: { 'zh-CN': '计算器', en: 'Calculator' },
+    description: { 'zh-CN': '数学表达式计算', en: 'Math expression calculator' },
     icon: 'i-ri-calculator-line',
     keywords: ['calc', 'calculator', 'math', '计算器', '数学'],
     order: 90,
   },
 
-  placeholder: '输入数学表达式',
+  placeholder: { 'zh-CN': '输入数学表达式', en: 'Enter a math expression' },
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {

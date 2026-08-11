@@ -10,6 +10,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import { config as awakeConfig } from './config'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import type { SettingItem } from '@/types/settings'
@@ -32,7 +33,10 @@ const toggleAwake = async (next: boolean) => {
     await invoke(CMD.setAwakeEnabled, { enabled: next })
     isEnabled.value = next
   } catch (e) {
-    appStore.showStatus(`切换失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
+    appStore.showStatus(`${t('common.operationFailed')}: ${e ?? t('common.unknownError')}`, {
+      duration: 4000,
+      kind: 'error',
+    })
   }
 }
 
@@ -59,25 +63,25 @@ onUnmounted(() => {
 const items = computed<SettingItem[]>(() => [
   {
     id: 'awake',
-    title: '启用唤醒',
-    subtitle: '通过虚拟外接显示器触发 Clamshell Mode，需接入电源',
+    title: t('awake.enable'),
+    subtitle: t('awake.enableHint'),
     type: 'toggle',
     value: isEnabled.value,
     update: toggleAwake,
-    group: '显示器',
+    group: t('awake.group.display'),
   },
   {
     id: 'mode',
-    title: '显示模式',
-    subtitle: '镜像与主屏显示相同画面，扩展提供独立桌面空间',
+    title: t('awake.displayMode'),
+    subtitle: t('awake.displayModeHint'),
     type: 'select',
     value: awakeConfig.displayMode,
     options: [
-      { label: '镜像', value: 'mirror' },
-      { label: '扩展', value: 'extend' },
+      { label: t('awake.mirror'), value: 'mirror' },
+      { label: t('awake.extend'), value: 'extend' },
     ],
     update: onModeChange,
-    group: '显示器',
+    group: t('awake.group.display'),
   },
 ])
 </script>

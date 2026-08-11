@@ -10,7 +10,11 @@
         </div>
       </template>
     </BaseList>
-    <BaseEmptyState v-if="filtered.length === 0" icon="i-ri-file-list-3-line" title="无日志" />
+    <BaseEmptyState
+      v-if="filtered.length === 0"
+      icon="i-ri-file-list-3-line"
+      :title="t('proxy.noLogs')"
+    />
   </div>
 </template>
 
@@ -29,6 +33,7 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 

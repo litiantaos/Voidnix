@@ -15,14 +15,14 @@
             :src="originalPreview"
             class="h-full w-full inset-0 absolute object-contain"
             :style="{ opacity: result ? 0 : 1, transition: 'opacity 600ms ease-in-out' }"
-            alt="原图"
+            :alt="t('image.original')"
           />
           <Transition name="result-fade">
             <img
               v-if="result"
               :src="result.previewDataUrl"
               class="h-full w-full inset-0 absolute object-contain"
-              alt="处理结果"
+              :alt="t('image.result')"
             />
           </Transition>
         </div>
@@ -89,14 +89,16 @@
       <!-- 移除背景：source 行 -->
       <template v-if="tool === 'removeBg'" #trailing-source>
         <div flex gap="2">
-          <BaseButton :disabled="processing" @click.stop="pickInput">选择</BaseButton>
-          <BaseButton v-if="processing" disabled>处理中…</BaseButton>
+          <BaseButton :disabled="processing" @click.stop="pickInput">{{
+            t('image.select')
+          }}</BaseButton>
+          <BaseButton v-if="processing" disabled>{{ t('image.processing') }}</BaseButton>
           <BaseButton
             v-else-if="inputPath && !result"
             variant="primary"
             :disabled="processing"
             @click.stop="removeBg"
-            >移除背景</BaseButton
+            >{{ t('image.removeBg') }}</BaseButton
           >
         </div>
       </template>
@@ -104,7 +106,9 @@
       <!-- 拼接：source 行 -->
       <template v-else #trailing-source>
         <div flex gap="2">
-          <BaseButton :disabled="processing" @click.stop="pickStitchFiles">添加</BaseButton>
+          <BaseButton :disabled="processing" @click.stop="pickStitchFiles">{{
+            t('image.add')
+          }}</BaseButton>
         </div>
       </template>
 
@@ -120,8 +124,10 @@
 
       <template #trailing-outputDir>
         <div flex gap="2">
-          <BaseButton v-if="config.outputDir" @click.stop="resetOutputDir">同目录</BaseButton>
-          <BaseButton @click.stop="pickOutputDir">选择</BaseButton>
+          <BaseButton v-if="config.outputDir" @click.stop="resetOutputDir">{{
+            t('image.sameDir')
+          }}</BaseButton>
+          <BaseButton @click.stop="pickOutputDir">{{ t('image.select') }}</BaseButton>
         </div>
       </template>
     </BaseSettingsList>
@@ -138,6 +144,7 @@ import { isTauri, hideWindow } from '@/utils/tauri'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import { t } from '@/runtime/i18n'
 import type { SettingItem } from '@/types/settings'
 import { config } from './config'
 import { stitchFiles, tool, pendingInputPath } from './index'
@@ -331,13 +338,15 @@ watch(
 
 // ── 设置列表 ──
 
-const resizeTitle = computed(() => (stitchDirection.value === 'vertical' ? '宽度' : '高度'))
+const resizeTitle = computed(() =>
+  stitchDirection.value === 'vertical' ? t('image.width') : t('image.height'),
+)
 
 const resizeOptions = computed(() => RESIZE_PRESETS.map((v) => ({ label: String(v), value: v })))
 
 const removeBgSourceSubtitle = computed(() => {
-  if (processing.value) return '正在分割前景…'
-  if (!inputPath.value) return '支持 PNG / JPEG / HEIC / WebP 等格式'
+  if (processing.value) return t('image.segmentingForeground')
+  if (!inputPath.value) return t('image.formatsHint')
   if (result.value) {
     return `${result.value.width}×${result.value.height} · ${formatBytes(result.value.sizeBytes)} · PNG`
   }
@@ -354,24 +363,24 @@ const items = computed<SettingItem[]>(() => {
     list.push(
       {
         id: 'act-up',
-        title: isVertical ? '上移' : '左移',
+        title: isVertical ? t('image.moveUp') : t('image.moveLeft'),
         type: 'action',
         action: moveUp,
-        group: '操作',
+        group: t('image.group.actions'),
       },
       {
         id: 'act-down',
-        title: isVertical ? '下移' : '右移',
+        title: isVertical ? t('image.moveDown') : t('image.moveRight'),
         type: 'action',
         action: moveDown,
-        group: '操作',
+        group: t('image.group.actions'),
       },
       {
         id: 'act-remove',
-        title: '移除',
+        title: t('image.remove'),
         type: 'action',
         action: removeSelected,
-        group: '操作',
+        group: t('image.group.actions'),
         tone: 'danger',
       },
     )
@@ -385,33 +394,36 @@ const items = computed<SettingItem[]>(() => {
   if (tool.value === 'removeBg') {
     list.push({
       id: 'source',
-      title: inputPath.value ? fileNameFromPath(inputPath.value) : '输入图片',
+      title: inputPath.value ? fileNameFromPath(inputPath.value) : t('image.inputImage'),
       subtitle: removeBgSourceSubtitle.value,
       type: 'custom',
-      group: '文件',
+      group: t('image.group.file'),
     })
   } else {
     list.push({
       id: 'source',
-      title: '输入图片',
-      subtitle: stitchFiles.value.length > 0 ? `${stitchFiles.value.length} 张图片` : undefined,
+      title: t('image.inputImage'),
+      subtitle:
+        stitchFiles.value.length > 0
+          ? t('image.imageCount', { count: stitchFiles.value.length })
+          : undefined,
       type: 'custom',
-      group: '文件',
+      group: t('image.group.file'),
     })
     list.push(
       {
         id: 'direction',
-        title: '方向',
+        title: t('image.direction'),
         type: 'select',
         value: stitchDirection.value,
         options: [
-          { label: '纵向', value: 'vertical' },
-          { label: '横向', value: 'horizontal' },
+          { label: t('image.direction.vertical'), value: 'vertical' },
+          { label: t('image.direction.horizontal'), value: 'horizontal' },
         ],
         update: (v) => {
           stitchDirection.value = v as StitchDirection
         },
-        group: '参数',
+        group: t('image.group.params'),
       },
       {
         id: 'resize',
@@ -422,23 +434,23 @@ const items = computed<SettingItem[]>(() => {
         update: (v) => {
           stitchResize.value = v as number
         },
-        group: '参数',
+        group: t('image.group.params'),
       },
       {
         id: 'gap',
-        title: '间距',
+        title: t('image.gap'),
         type: 'custom',
-        group: '参数',
+        group: t('image.group.params'),
       },
     )
   }
 
   list.push({
     id: 'outputDir',
-    title: '输出目录',
-    subtitle: config.outputDir ? displayPath(config.outputDir) : '与源文件相同',
+    title: t('image.outputDir'),
+    subtitle: config.outputDir ? displayPath(config.outputDir) : t('image.sameAsSource'),
     type: 'custom',
-    group: '输出',
+    group: t('image.group.output'),
   })
 
   return list
@@ -449,26 +461,26 @@ function resultActionItems(): SettingItem[] {
   const ops: SettingItem[] = [
     {
       id: 'act-copy',
-      title: '复制',
+      title: t('image.copy'),
       type: 'action',
       action: copyToClipboard,
-      group: '操作',
+      group: t('image.group.actions'),
     },
     {
       id: 'act-save',
-      title: '保存',
+      title: t('image.save'),
       type: 'action',
       action: saveToFile,
-      group: '操作',
+      group: t('image.group.actions'),
     },
   ]
   if (savedOutputPath.value) {
     ops.push({
       id: 'act-reveal',
-      title: '在访达中显示',
+      title: t('image.revealInFinder'),
       type: 'action',
       action: revealInFinder,
-      group: '操作',
+      group: t('image.group.actions'),
     })
   }
   return ops
@@ -537,7 +549,10 @@ async function removeBg() {
       inputPath: inputPath.value,
     })
   } catch (e) {
-    appStore.showStatus(`处理失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
+    appStore.showStatus(`${t('image.processFailed')}：${e ?? t('common.unknownError')}`, {
+      duration: 4000,
+      kind: 'error',
+    })
   } finally {
     processing.value = false
   }
@@ -612,7 +627,10 @@ async function ensureStitched(): Promise<ImageResult | null> {
     resultFingerprint = fp
     return r
   } catch (e) {
-    appStore.showStatus(`拼接失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
+    appStore.showStatus(`${t('image.stitchFailed')}：${e ?? t('common.unknownError')}`, {
+      duration: 4000,
+      kind: 'error',
+    })
     return null
   } finally {
     processing.value = false
@@ -649,9 +667,12 @@ async function copyToClipboard() {
   if (!r) return
   try {
     await invoke(CMD.imageCopyToClipboard, { tempPath: r.tempPath })
-    appStore.showStatus('已复制到剪贴板')
+    appStore.showStatus(t('image.copiedToClipboard'))
   } catch (e) {
-    appStore.showStatus(`复制失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
+    appStore.showStatus(`${t('image.copyFailed')}：${e ?? t('common.unknownError')}`, {
+      duration: 4000,
+      kind: 'error',
+    })
   }
 }
 
@@ -665,9 +686,12 @@ async function saveToFile() {
   try {
     await invoke(CMD.imageSaveResult, { tempPath: r.tempPath, outputPath })
     savedOutputPath.value = outputPath
-    appStore.showStatus('已保存')
+    appStore.showStatus(t('image.saved'))
   } catch (e) {
-    appStore.showStatus(`保存失败：${e ?? '未知错误'}`, { duration: 4000, kind: 'error' })
+    appStore.showStatus(`${t('image.saveFailed')}：${e ?? t('common.unknownError')}`, {
+      duration: 4000,
+      kind: 'error',
+    })
   }
 }
 

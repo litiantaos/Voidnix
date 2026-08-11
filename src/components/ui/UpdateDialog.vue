@@ -1,8 +1,8 @@
 <template>
   <BaseDialog
-    title="检查更新"
+    :title="t('settings.checkUpdate')"
     :ok-label="okLabel"
-    cancel-label="稍后"
+    :cancel-label="t('updateDialog.later')"
     :close-on-confirm="false"
     size="sm"
     @confirm="onConfirm"
@@ -10,7 +10,7 @@
   >
     <div flex="~ col" gap="3">
       <div text="xs secondary" flex gap="2" items="center">
-        <span>发现新版本</span>
+        <span>{{ t('updateDialog.newVersionFound') }}</span>
         <span font="mono">v{{ updateStore.info?.currentVersion }}</span>
         <span class="i-ri-arrow-right-line" text="muted"></span>
         <span text="accent" font="medium mono">v{{ updateStore.info?.newVersion }}</span>
@@ -37,6 +37,7 @@
 import { ref, computed } from 'vue'
 import { relaunch } from '@tauri-apps/plugin-process'
 import BaseDialog from './BaseDialog.vue'
+import { t } from '@/runtime/i18n'
 import { useUpdateStore } from '@/stores/update'
 
 const emit = defineEmits<{ close: [] }>()
@@ -47,9 +48,10 @@ const installing = ref(false)
 const pct = computed(() => Math.round((updateStore.progress ?? 0) * 100))
 
 const okLabel = computed(() => {
-  if (updateStore.downloading) return '下载中…'
-  if (updateStore.downloaded) return installing.value ? '安装中…' : '立即安装并重启'
-  return '下载并安装'
+  if (updateStore.downloading) return t('settings.downloading')
+  if (updateStore.downloaded)
+    return installing.value ? t('updateDialog.installing') : t('updateDialog.installNow')
+  return t('settings.downloadAndInstall')
 })
 
 async function onConfirm() {

@@ -12,6 +12,7 @@ import {
   streamLayoutKey,
   partKey,
 } from './view-logic'
+import './locales'
 import {
   renderMarkdown,
   renderCodeBlock,

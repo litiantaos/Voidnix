@@ -278,6 +278,29 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - 组间序 `GROUP_ORDER`：`application > extension > file > clipboard > web`
 - 组内限流：`LIMITS.maxGroupResults`（非 file）/ `maxFileResults`
 
+### 国际化（i18n）
+
+`runtime/i18n.ts`：零依赖自研轻量 i18n，基于 Vue 3 原生响应式（与 `theme.ts` 同范式）。两语言 zh-CN / en，无复数/日期格式化需求。
+
+**核心机制**：模块级 `locale: Ref<Locale>` + `t(key, params?)` 函数。`t()` 内部读 `locale.value`，在模板/computed 中调用时自动建立响应式依赖——切换语言时所有 `t()` 调用点自动重渲染。
+
+**API**：
+
+- `t(key, params?)` — 翻译，回退 zh-CN → key 本身；`{param}` 占位符插值
+- `resolveLocalized(text)` — 解析 `LocalizedText`（`string` 通用 / `Partial<Record<Locale, string>>` 按语言区分），回退 zh-CN → 首个可用值
+- `registerMessages(msgs)` — 注册文案（合并），与 `defineExtension()` 同范式——import side-effect 注册
+- `initI18n()` — main.ts 调用（与 `initTheme()` 同范式），从 settings 读取语言 + watch 驱动；子窗口读 localStorage + 监听 storage 事件
+
+**文案组织**：
+
+- **框架文案**：`src/locales/zh-CN.ts` + `en.ts`（搜索/设置/对话框/通用 toast/空态/更新弹窗等 ~90 条），`index.ts` 启动注册
+- **扩展文案**：每个扩展目录 `locales.ts`，`index.ts` 顶部 `import './locales'` 注册（import side-effect，与扩展注册同范式）
+- **扩展元数据**：`meta.name` / `meta.description` / `placeholder` 类型为 `LocalizedText`（纯 string 向后兼容）
+
+**语言切换**：`settings.ts` 的 `language: Locale` 字段（默认 zh-CN），设置页 select 切换。切换即生效——所有 `t()` 调用点响应式重渲染。
+
+**新增文案 key 约定**：框架级加到 `src/locales/`，扩展级加到自身 `locales.ts`。命名空间约定：`clipboard.empty`、`agent.placeholder` 等。复用 `common.*` 框架通用 key（cancel/confirm/copied/save/loading/noResults 等）。
+
 ### toast 提示
 
 自研轻量浮层（`composables/useToast.ts` + `components/ui/ToastOverlay.vue`）。
@@ -361,12 +384,14 @@ src-tauri/src/
 
 ```
 src/
-├── main.ts             # 入口（import.meta.glob eager 扫描扩展 + 并行 setup）
+├── main.ts             # 入口（import.meta.glob eager 扫描扩展 + 注册文案 + 并行 setup）
 ├── entries/            # 子窗口独立入口（screenshot/snap-panel/pin，只加载自身组件，不经扩展系统）
 ├── commands.ts         # 命令名常量（CMD.xxx，禁止裸 invoke）
+├── locales/            # 框架级文案（zh-CN.ts + en.ts + index.ts 注册）
 ├── runtime/            # 前端运行时
 │   ├── types.ts        # Extension / SearchProvider / SearchResult（13 槽：10 能力 + 3 行为）
-│   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS / GROUP_ORDER / GROUP_TITLES / KEYWORD_EXTENSION_BOOST + LIMITS）
+│   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS / GROUP_ORDER / KEYWORD_EXTENSION_BOOST + LIMITS）
+│   ├── i18n.ts         # 轻量 i18n（locale ref + t() + resolveLocalized() + registerMessages + initI18n）
 │   ├── storage.ts      # defineConfig（reactive + watch 自动持久化 + race 保护 + 类型守卫 + 退出 flush）
 │   ├── self-test.ts    # 应用自测模块（环境变量驱动，搜索/扩展/命令/视图冒烟断言）
 │   ├── extension-registry.ts  # defineExtension + getAllExtensions + getExtension

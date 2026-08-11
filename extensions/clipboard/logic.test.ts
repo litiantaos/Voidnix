@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { matchText, filterByQuery, filterByType } from './logic'
 import type { ClipboardItem } from './index'
+import './locales'
 
 function makeItem(partial: Partial<ClipboardItem>): ClipboardItem {
   return {

@@ -1,11 +1,15 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import SystemStatusView from './View.vue'
+import './locales'
 
 export default defineExtension({
   meta: {
     id: 'system-status',
-    name: '系统状态',
-    description: '硬件信息与系统实时状态',
+    name: { 'zh-CN': '系统状态', en: 'System Status' },
+    description: {
+      'zh-CN': '硬件信息与系统实时状态',
+      en: 'Hardware info and real-time system status',
+    },
     icon: 'i-ri-pulse-line',
     order: 135,
     keywords: [

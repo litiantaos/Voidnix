@@ -3,6 +3,7 @@
 
 import { marked, type Tokens } from 'marked'
 import DOMPurify from 'dompurify'
+import { t } from '@/runtime/i18n'
 
 function escapeHtml(raw: string): string {
   return raw
@@ -30,7 +31,11 @@ export function renderCodeBlock(text: string, lang?: string): string {
     '<div class="md-code">',
     '<div class="md-code-bar">',
     langHtml,
-    '<button type="button" class="md-code-copy" aria-label="复制代码" title="复制">',
+    '<button type="button" class="md-code-copy" aria-label="' +
+      t('markdown.copyCode') +
+      '" title="' +
+      t('markdown.copy') +
+      '">',
     '<i class="i-ri-file-copy-line" aria-hidden="true"></i>',
     '</button>',
     '</div>',

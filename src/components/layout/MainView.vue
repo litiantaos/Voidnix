@@ -26,9 +26,9 @@
          窗口会直接 setFrame 填满全屏（tao 无 Resizable+Titled styleMask 走 else 分支），
          启动器不该最大化 -->
     <div
-      absolute
       inset-x-0
       top-0
+      absolute
       class="z-5"
       :style="{ height: WINDOW.CHROME_HEIGHT + 'px' }"
       @mousedown="onDragHandleMouseDown"
@@ -75,7 +75,7 @@
               @click="onTagClose"
             />
           </span>
-          <span>{{ activeExtension.meta.name }}</span>
+          <span>{{ resolveLocalized(activeExtension.meta.name) }}</span>
         </div>
 
         <input
@@ -113,7 +113,7 @@
         <BaseButton
           v-if="updateStore.info"
           icon="i-ri-arrow-up-circle-line text-accent"
-          title="发现新版本，点击查看"
+          :title="t('search.newVersionHint')"
           @click="appStore.setActiveExtension('settings')"
         />
       </div>
@@ -144,8 +144,9 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useScroll } from '@/composables/events'
 import { getExtension } from '@/runtime/extension-registry'
-import { SEARCH, WINDOW } from '@/runtime/constants'
+import { WINDOW } from '@/runtime/constants'
 import { getGroupKey } from '@/runtime/search-engine'
+import { t, resolveLocalized } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { isTauri } from '@/utils/tauri'
@@ -219,18 +220,21 @@ const activeExtension = computed(() => {
 const placeholderText = computed(() => {
   const ext = activeExtension.value
   if (!ext) {
-    return '搜索应用、文件、扩展等'
+    return t('search.placeholder')
   }
   const subview = appStore.activeSubview
   if (subview && ext.subviewTitle?.[subview]) {
-    return `搜索${ext.subviewTitle[subview]}`
+    return t('search.searchIn', { name: resolveLocalized(ext.subviewTitle[subview]) })
   }
-  return ext.placeholder ?? (ext.disableSearchInput ? '' : `在 ${ext.meta.name} 中搜索`)
+  const ph = ext.placeholder
+  if (ph) return resolveLocalized(ph)
+  return ext.disableSearchInput
+    ? ''
+    : t('search.inExtension', { name: resolveLocalized(ext.meta.name) })
 })
 
-// 分组逻辑：getGroupKey 单一源（search-engine）；标题读 constants 单一源
-const groupTitle = (group: string) =>
-  SEARCH.GROUP_TITLES[group as keyof typeof SEARCH.GROUP_TITLES] || group
+// 分组逻辑：getGroupKey 单一源（search-engine）；标题读 i18n（t 函数响应式）
+const groupTitle = (group: string) => t(`group.${group}`)
 
 const {
   onInput,

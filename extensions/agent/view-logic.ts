@@ -2,6 +2,7 @@
 
 import type { AgentMessage, AgentPart } from '@/types/agent'
 import { renderMarkdown } from '@/utils/markdown'
+import { t } from '@/runtime/i18n'
 
 export function getMessageText(msg: AgentMessage): string {
   return msg.parts
@@ -92,11 +93,11 @@ export function toolIcon(name: string): string {
 export function toolLabel(name: string): string {
   switch (name) {
     case 'web_search':
-      return '搜索'
+      return t('agent.tool.search')
     case 'run_command':
-      return '命令'
+      return t('agent.tool.command')
     default:
-      return '工具'
+      return t('agent.tool.default')
   }
 }
 

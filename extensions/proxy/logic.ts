@@ -1,4 +1,5 @@
 /// proxy 扩展纯逻辑：延迟着色、节点过滤、模式标签、分组解析。
+import { t } from '@/runtime/i18n'
 
 /// mihomo controller /proxies 响应类型
 export interface ProxyHistory {
@@ -47,7 +48,7 @@ export function delayColor(ms: number): string {
 
 /// 延迟 → 显示文本（超时显示「超时」，未测速返回空串不占位）
 export function formatDelay(ms: number | null | undefined): string {
-  if (ms === DELAY_TIMEOUT) return '超时'
+  if (ms === DELAY_TIMEOUT) return t('proxy.timeout')
   if (ms == null || ms <= 0) return ''
   return `${ms}ms`
 }

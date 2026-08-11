@@ -1,6 +1,6 @@
 <template>
   <div v-if="!isConfigured" class="agent-setup">
-    <BaseEmptyState icon="i-ri-key-2-line" title="请先配置 AI 提供商" />
+    <BaseEmptyState icon="i-ri-key-2-line" :title="t('agent.setupTitle')" />
   </div>
 
   <div
@@ -11,8 +11,8 @@
   >
     <!-- 空态：居中（顶部留白补偿搜索栏）-->
     <div v-if="displayMessages.length === 0" class="agent-empty">
-      <h1 text="xl primary" font="bold">来点有意思的吧！</h1>
-      <p text="xs muted">日常问题、工作任务、搜索资料、跑命令...</p>
+      <h1 text="xl primary" font="bold">{{ t('agent.emptyTitle') }}</h1>
+      <p text="xs muted">{{ t('agent.emptyHint') }}</p>
     </div>
 
     <!-- 消息滚动区：KeepAlive 激活时渲染 DOM，deactivate 时卸载释放 WebKit 内存。
@@ -45,7 +45,9 @@
               min-w="0"
             >
               <span shrink="0" class="agent-step-icon i-ri-sparkling-2-line" text="accent" />
-              <span class="agent-step-label" shrink="0" font="medium">思考</span>
+              <span class="agent-step-label" shrink="0" font="medium">{{
+                t('agent.thinking')
+              }}</span>
               <span class="agent-step-dots" aria-hidden="true"> <i /><i /><i /> </span>
             </div>
 
@@ -106,8 +108,8 @@
               class="agent-float-scroll"
               :class="isFloatPair ? 'is-pair-side' : 'is-solo'"
               icon="i-ri-arrow-down-s-line"
-              title="滚到底部"
-              aria-label="滚到底部"
+              :title="t('agent.scrollBottom')"
+              :aria-label="t('agent.scrollBottom')"
               @click="scrollToBottom"
             />
           </Transition>
@@ -123,8 +125,8 @@
               class="agent-float-stop"
               :class="isFloatPair ? 'is-pair-side' : 'is-solo'"
               icon="i-ri-stop-mini-fill"
-              title="中止（Ctrl+C）"
-              aria-label="中止生成"
+              :title="t('agent.stopShortcut')"
+              :aria-label="t('agent.stop')"
               @click="agent.abort()"
             />
           </Transition>
@@ -135,7 +137,7 @@
         ref="textareaRef"
         v-model="inputText"
         rounded="panel"
-        placeholder="聊点什么..."
+        :placeholder="t('agent.placeholder')"
         :rows="1"
         :max-height="120"
         @submit="handleSubmit"
@@ -158,6 +160,7 @@ import {
 import { open } from '@tauri-apps/plugin-shell'
 import { isAgentProviderReady } from './config'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'

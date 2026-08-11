@@ -9,17 +9,19 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 
 /// 诊断入口（连接/规则/日志）：文字按钮 toggle 子视图。
 const appStore = useAppStore()
 
-const items = [
-  { id: 'connections', label: '连接' },
-  { id: 'rules', label: '规则' },
-  { id: 'logs', label: '日志' },
-] as const
+const items = computed(() => [
+  { id: 'connections', label: t('proxy.connections') },
+  { id: 'rules', label: t('proxy.rules') },
+  { id: 'logs', label: t('proxy.logs') },
+])
 
 function toggle(id: string) {
   if (appStore.activeSubview === id) appStore.closeSubview()

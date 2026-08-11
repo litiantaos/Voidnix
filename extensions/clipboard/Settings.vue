@@ -14,6 +14,7 @@ import { invalidateCache, fetchClipboardHistory, activeTab } from './index'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import type { SettingItem } from '@/types/settings'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
+import { t } from '@/runtime/i18n'
 
 const appStore = useAppStore()
 
@@ -30,10 +31,10 @@ const handleMaxDaysChange = async (val: string | number) => {
 
 const handleClearHistory = async () => {
   const confirmed = await appStore.showConfirm({
-    title: '清空剪贴板记录',
-    message: '确定要清空所有未收藏的剪贴板记录吗？',
-    okLabel: '确定',
-    cancelLabel: '取消',
+    title: t('clipboard.clearHistoryTitle'),
+    message: t('clipboard.clearHistoryMessage'),
+    okLabel: t('common.confirm'),
+    cancelLabel: t('common.cancel'),
   })
 
   if (confirmed) {
@@ -50,32 +51,32 @@ const handleClearHistory = async () => {
 const items = computed<SettingItem[]>(() => [
   {
     id: 'clipboard-shortcut',
-    title: '启动快捷键',
+    title: t('clipboard.settings.shortcut'),
     type: 'shortcut',
-    group: '通用',
+    group: t('clipboard.settings.groupGeneral'),
     value: clipboardShortcutValue.value,
     update: handleClipboardShortcutChange,
   },
   {
     id: 'clipboard-maxdays',
-    title: '记录保留时长',
+    title: t('clipboard.settings.retention'),
     type: 'select',
-    group: '通用',
+    group: t('clipboard.settings.groupGeneral'),
     value: clipboardConfig.maxDays,
     options: [
-      { label: '15 天', value: 15 },
-      { label: '30 天', value: 30 },
-      { label: '90 天', value: 90 },
-      { label: '永久', value: 0 },
+      { label: t('clipboard.settings.days15'), value: 15 },
+      { label: t('clipboard.settings.days30'), value: 30 },
+      { label: t('clipboard.settings.days90'), value: 90 },
+      { label: t('clipboard.settings.forever'), value: 0 },
     ],
     update: handleMaxDaysChange,
   },
   {
     id: 'clipboard-clear',
-    title: '清空未收藏记录',
+    title: t('clipboard.settings.clearUnfavorited'),
     type: 'button',
-    group: '数据',
-    label: '清空',
+    group: t('clipboard.settings.groupData'),
+    label: t('clipboard.settings.clear'),
     variant: 'danger',
     action: handleClearHistory,
   },

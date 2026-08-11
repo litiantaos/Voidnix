@@ -21,6 +21,7 @@ import { writeText } from '@/utils/clipboard'
 import { showToast } from '@/composables/useToast'
 import { renderMarkdown } from '@/utils/markdown'
 import { renderSolidMarkdown, streamView } from './view-logic'
+import { t } from '@/runtime/i18n'
 
 const props = defineProps<{
   text: string
@@ -47,13 +48,13 @@ async function onMarkdownClick(e: MouseEvent) {
     const icon = btn.querySelector('i')
     btn.classList.add('is-copied')
     if (icon) icon.className = 'i-ri-check-line'
-    showToast('已复制')
+    showToast(t('common.copied'))
     window.setTimeout(() => {
       btn.classList.remove('is-copied')
       if (icon) icon.className = 'i-ri-file-copy-line'
     }, 1500)
   } catch {
-    showToast('复制失败', { kind: 'error' })
+    showToast(t('agent.copyFailed'), { kind: 'error' })
   }
 }
 </script>

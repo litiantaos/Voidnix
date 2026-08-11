@@ -1,19 +1,25 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import type { ProviderResult } from '@/runtime/types'
 import { copyAndHide } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import { toLocalIso, parseTimestamp } from './logic'
+
+import './locales'
 
 export default defineExtension({
   meta: {
     id: 'time',
-    name: '时间戳',
-    description: 'Unix 时间戳与转换',
+    name: { 'zh-CN': '时间戳', en: 'Timestamp' },
+    description: { 'zh-CN': 'Unix 时间戳与转换', en: 'Unix timestamp conversion' },
     icon: 'i-ri-time-line',
     order: 50,
     keywords: ['时间', '时间戳', 'timestamp', 'date', 'unix', 'epoch'],
   },
 
-  placeholder: '输入 Unix 时间戳或日期进行转换',
+  placeholder: {
+    'zh-CN': '输入 Unix 时间戳或日期进行转换',
+    en: 'Enter Unix timestamp or date to convert',
+  },
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {
@@ -34,10 +40,10 @@ export default defineExtension({
         const now = Date.now()
         const sec = Math.floor(now / 1000)
         const d = new Date(now)
-        results.push(mk('time-now-sec', String(sec), 'Unix 时间戳（秒）'))
-        results.push(mk('time-now-ms', String(now), 'Unix 时间戳（毫秒）'))
-        results.push(mk('time-now-iso', toLocalIso(d), '本地时间（ISO）'))
-        results.push(mk('time-now-utc', d.toUTCString(), 'UTC 时间'))
+        results.push(mk('time-now-sec', String(sec), t('time.unixSec')))
+        results.push(mk('time-now-ms', String(now), t('time.unixMs')))
+        results.push(mk('time-now-iso', toLocalIso(d), t('time.localIso')))
+        results.push(mk('time-now-utc', d.toUTCString(), t('time.utc')))
         return results
       }
 
@@ -47,19 +53,19 @@ export default defineExtension({
       if (parsed) {
         date = new Date(parsed.ts)
         sourceDesc = /^\d{10}$/.test(trimmed)
-          ? `Unix 秒 ${trimmed}`
+          ? t('time.sourceSec', { value: trimmed })
           : /^\d{13}$/.test(trimmed)
-            ? `Unix 毫秒 ${trimmed}`
+            ? t('time.sourceMs', { value: trimmed })
             : trimmed
       }
 
       if (date) {
         const ms = date.getTime()
-        results.push(mk('ts-date', date.toLocaleString('zh-CN'), sourceDesc))
-        results.push(mk('ts-sec', String(Math.floor(ms / 1000)), '→ Unix 时间戳（秒）'))
-        results.push(mk('ts-ms', String(ms), '→ Unix 时间戳（毫秒）'))
-        results.push(mk('ts-iso', toLocalIso(date), '→ 本地 ISO'))
-        results.push(mk('ts-utc', date.toUTCString(), '→ UTC'))
+        results.push(mk('ts-date', date.toLocaleString(), sourceDesc))
+        results.push(mk('ts-sec', String(Math.floor(ms / 1000)), t('time.toUnixSec')))
+        results.push(mk('ts-ms', String(ms), t('time.toUnixMs')))
+        results.push(mk('ts-iso', toLocalIso(date), t('time.toLocalIso')))
+        results.push(mk('ts-utc', date.toUTCString(), t('time.toUtc')))
       }
 
       return results

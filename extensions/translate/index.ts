@@ -9,6 +9,7 @@ import { listen } from '@tauri-apps/api/event'
 import { toErrorMessage } from '@/utils/format'
 import { generateRequestId } from '@/utils/id'
 import { cleanStreamResult, engineLabel } from './logic'
+import './locales'
 import TranslateSettings from './Settings.vue'
 import TranslateView from './View.vue'
 import TranslateActions from './Actions.vue'
@@ -228,8 +229,8 @@ async function waitForSelectedText(): Promise<string> {
 export default defineExtension({
   meta: {
     id: 'translate',
-    name: '翻译',
-    description: '选词翻译',
+    name: { 'zh-CN': '翻译', en: 'Translate' },
+    description: { 'zh-CN': '选词翻译', en: 'Text translation' },
     icon: 'i-ri-translate-2',
     keywords: ['translate', '翻译', '翻譯', 'fanyi', 'youdao', '有道'],
     order: 20,

@@ -10,6 +10,7 @@ import { nextTick } from 'vue'
 import { CMD } from '@/commands'
 import { getAllExtensions } from './extension-registry'
 import { searchEngine } from './search-engine'
+import { resolveLocalized } from './i18n'
 import { isTauri } from '@/utils/tauri'
 import type { SearchResult } from './types'
 
@@ -235,7 +236,7 @@ async function testExtensionViews(): Promise<TestResult[]> {
 
   for (const extId of extIds) {
     const ext = getAllExtensions().find((e) => e.meta.id === extId)
-    const label = ext ? ext.meta.name : extId
+    const label = ext ? resolveLocalized(ext.meta.name) : extId
 
     await diag(`  C: 进入 ${extId}...`)
     results.push(

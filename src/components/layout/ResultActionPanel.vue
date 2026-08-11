@@ -8,7 +8,7 @@
         tabindex="-1"
         class="dropdown-panel outline-none max-w-96 min-w-64 bottom-3 right-3 fixed z-50"
         role="dialog"
-        aria-label="项目信息"
+        :aria-label="t('action.itemInfo')"
       >
         <div text="sm primary" font="medium" class="text-justify break-words" px="3" pt="3">
           {{ result?.title }}
@@ -38,6 +38,7 @@ import { hideWindow } from '@/utils/tauri'
 import BaseDropdownItems, { type PanelItem } from '@/components/ui/BaseDropdownItems.vue'
 import { useActionPanel } from '@/composables/useActionPanel'
 import { formatBytes } from '@/utils/format'
+import { t } from '@/runtime/i18n'
 import type { SearchResult } from '@/runtime/types'
 
 const props = defineProps<{
@@ -59,23 +60,23 @@ const data = ref<PathMetadata | null>(null)
 const result = ref<SearchResult | null>(null)
 
 const actionItems = computed<PanelItem[]>(() => [
-  { type: 'item', key: 'reveal', label: '在访达中打开', icon: 'i-ri-folder-open-line' },
-  { type: 'item', key: 'copyPath', label: '复制路径', icon: 'i-ri-file-copy-line' },
+  { type: 'item', key: 'reveal', label: t('action.openInFinder'), icon: 'i-ri-folder-open-line' },
+  { type: 'item', key: 'copyPath', label: t('action.copyPath'), icon: 'i-ri-file-copy-line' },
 ])
 
 const metaRows = computed<{ label: string; value: string }[]>(() => {
   if (!data.value) return []
   const isApp = result.value?.data?.kind === 'application'
   const r: { label: string; value: string }[] = [
-    { label: '大小', value: formatBytes(data.value.size, { empty: '—' }) },
+    { label: t('action.size'), value: formatBytes(data.value.size, { empty: '—' }) },
   ]
   if (isApp) {
-    r.push({ label: '版本', value: data.value.version || '—' })
+    r.push({ label: t('action.version'), value: data.value.version || '—' })
   }
   r.push(
-    { label: '创建时间', value: fmtDate(data.value.created) },
-    { label: '修改时间', value: fmtDate(data.value.modified) },
-    { label: '上次打开', value: fmtDate(data.value.last_used) },
+    { label: t('action.created'), value: fmtDate(data.value.created) },
+    { label: t('action.modified'), value: fmtDate(data.value.modified) },
+    { label: t('action.lastOpened'), value: fmtDate(data.value.last_used) },
   )
   return r
 })
@@ -122,7 +123,7 @@ function runAction(key: string | number) {
     hideWindow()
   } else if (key === 'copyPath') {
     invoke(CMD.pasteboardWriteText, { text: path })
-    appStore.showStatus('已复制路径')
+    appStore.showStatus(t('action.copiedPath'))
   }
 }
 

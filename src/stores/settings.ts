@@ -3,12 +3,15 @@ import { computed } from 'vue'
 import { defineConfig } from '@/runtime/storage'
 
 export type Appearance = 'auto' | 'light' | 'dark'
+export type Language = 'zh-CN' | 'en'
 
 interface SettingsSchema {
   globalShortcut: string
   shortcutOverrides: Record<string, string>
   /** 外观模式：auto 跟随系统 / light / dark（默认 auto） */
   appearance: Appearance
+  /** 语言：zh-CN / en（默认 zh-CN） */
+  language: Language
 }
 
 /// 框架级配置 store：仅管理全局快捷键。
@@ -19,6 +22,7 @@ export const useSettingsStore = defineStore('settings', () => {
     globalShortcut: 'Alt+Space',
     shortcutOverrides: {},
     appearance: 'auto',
+    language: 'zh-CN',
   })
 
   // ─── 字段（可写 computed：保持 store API 兼容） ───────────────
@@ -41,6 +45,12 @@ export const useSettingsStore = defineStore('settings', () => {
       config.appearance = v
     },
   })
+  const language = computed({
+    get: () => config.language,
+    set: (v: Language) => {
+      config.language = v
+    },
+  })
 
   // ─── Setters（直接 mutate reactive config；defineConfig 自动持久化） ────
 
@@ -60,6 +70,7 @@ export const useSettingsStore = defineStore('settings', () => {
     globalShortcut,
     shortcutOverrides,
     appearance,
+    language,
     setGlobalShortcut,
     getShortcutOverride,
     setShortcutOverride,

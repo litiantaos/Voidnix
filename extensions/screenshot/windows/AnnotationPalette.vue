@@ -15,7 +15,7 @@
     <template v-if="mode === 'scroll'">
       <BaseButton
         variant="ghost"
-        title="保存"
+        :title="t('screenshot.save')"
         icon="i-ri-save-line"
         @click="$emit('scroll-save')"
       />
@@ -26,7 +26,7 @@
       <!-- 工具按钮 -->
       <BaseButton
         v-for="t in tools"
-        :key="t.label"
+        :key="t.icon"
         variant="ghost"
         :active="activeTool === t.id"
         :title="t.label"
@@ -51,7 +51,7 @@
             background: color,
             borderColor: color === '#ffffff' ? 'var(--color-border)' : 'white',
           }"
-          title="颜色"
+          :title="t('screenshot.color')"
           @click="showColors = !showColors"
         />
 
@@ -101,7 +101,7 @@
         :model-value="fontSize"
         :min="12"
         :max="64"
-        title="字号"
+        :title="t('screenshot.fontSize')"
         @update:model-value="$emit('font-size', $event)"
       />
 
@@ -111,7 +111,7 @@
         :model-value="lineWidth"
         :min="1"
         :max="12"
-        title="线宽"
+        :title="t('screenshot.lineWidth')"
         @update:model-value="$emit('line-width', $event)"
       />
 
@@ -120,14 +120,14 @@
         <BaseButton
           variant="ghost"
           :active="blurMode === 'selection'"
-          title="模糊整个选区"
+          :title="t('screenshot.blurSelection')"
           icon="i-ri-checkbox-blank-line"
           @click="emit('blur-mode', 'selection')"
         />
         <BaseButton
           variant="ghost"
           :active="blurMode === 'text'"
-          title="模糊选区内文本"
+          :title="t('screenshot.blurText')"
           icon="i-ri-t-box-line"
           @click="emit('blur-mode', 'text')"
         />
@@ -139,30 +139,50 @@
         :model-value="blurAmount"
         :min="5"
         :max="50"
-        title="模糊度"
+        :title="t('screenshot.blurAmount')"
         @update:model-value="$emit('blur-amount', $event)"
       />
 
       <div class="mx-0.5 fill-active shrink-0 h-5 w-px" />
 
       <!-- 操作按钮 -->
-      <BaseButton variant="ghost" title="识别" icon="i-ri-qr-scan-2-line" @click="$emit('ocr')" />
       <BaseButton
         variant="ghost"
-        title="滚动截屏"
+        :title="t('screenshot.ocr')"
+        icon="i-ri-qr-scan-2-line"
+        @click="$emit('ocr')"
+      />
+      <BaseButton
+        variant="ghost"
+        :title="t('screenshot.scrollCapture')"
         icon="i-ri-arrow-down-double-line"
         @click="$emit('scroll-start')"
       />
-      <BaseButton variant="ghost" title="钉图" icon="i-ri-pushpin-line" @click="$emit('pin')" />
-      <BaseButton variant="ghost" title="保存" icon="i-ri-save-line" @click="$emit('save')" />
+      <BaseButton
+        variant="ghost"
+        :title="t('screenshot.pin')"
+        icon="i-ri-pushpin-line"
+        @click="$emit('pin')"
+      />
+      <BaseButton
+        variant="ghost"
+        :title="t('screenshot.save')"
+        icon="i-ri-save-line"
+        @click="$emit('save')"
+      />
     </template>
 
     <!-- 统一尾部：关闭 + 确定（复制并关闭），始终位于最右侧 -->
     <div class="mx-0.5 fill-active shrink-0 h-5 w-px" />
-    <BaseButton variant="ghost" title="关闭 (Esc)" icon="i-ri-close-line" @click="onClose" />
     <BaseButton
       variant="ghost"
-      title="复制并关闭 (Enter)"
+      :title="t('screenshot.closeEsc')"
+      icon="i-ri-close-line"
+      @click="onClose"
+    />
+    <BaseButton
+      variant="ghost"
+      :title="t('screenshot.copyAndClose')"
       icon="i-ri-check-line"
       @click="onConfirm"
     />
@@ -173,6 +193,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
+import { t } from '@/runtime/i18n'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSlider from '@/components/ui/BaseSlider.vue'
 
@@ -233,13 +254,13 @@ function onClose() {
 const paletteW = ref(380)
 const paletteH = ref(44)
 
-const tools: { id: Tool; label: string; icon: string }[] = [
-  { id: 'rect', label: '矩形', icon: 'i-ri-checkbox-blank-line' },
-  { id: 'line', label: '直线', icon: 'i-ri-subtract-line' },
-  { id: 'arrow', label: '箭头', icon: 'i-ri-arrow-right-line' },
-  { id: 'text', label: '文字', icon: 'i-ri-text' },
-  { id: 'blur', label: '模糊', icon: 'i-ri-drop-line' },
-]
+const tools = computed(() => [
+  { id: 'rect' as Tool, label: t('screenshot.tool.rect'), icon: 'i-ri-checkbox-blank-line' },
+  { id: 'line' as Tool, label: t('screenshot.tool.line'), icon: 'i-ri-subtract-line' },
+  { id: 'arrow' as Tool, label: t('screenshot.tool.arrow'), icon: 'i-ri-arrow-right-line' },
+  { id: 'text' as Tool, label: t('screenshot.tool.text'), icon: 'i-ri-text' },
+  { id: 'blur' as Tool, label: t('screenshot.tool.blur'), icon: 'i-ri-drop-line' },
+])
 
 const colors = [
   '#ff3b30',

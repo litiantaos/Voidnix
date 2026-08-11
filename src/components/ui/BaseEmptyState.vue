@@ -5,7 +5,7 @@
       <i v-else-if="icon" :class="icon" text="2xl" opacity="50"></i>
     </slot>
     <div v-if="title || $slots.default" text="sm" font="medium">
-      <slot>{{ loading ? '加载中' : title }}</slot>
+      <slot>{{ loading ? t('common.loading') : title }}</slot>
     </div>
     <div v-if="description" text="xs muted">
       {{ description }}
@@ -14,6 +14,8 @@
 </template>
 
 <script setup lang="ts">
+import { t } from '@/runtime/i18n'
+
 defineProps<{
   icon?: string
   title?: string

@@ -19,7 +19,7 @@
         w="full"
         h="full"
         object="cover left-top"
-        alt="截图预览"
+        :alt="t('screenshot.previewAlt')"
         @load="onPreviewLoad"
       />
       <Transition
@@ -52,7 +52,7 @@
           :rows="4"
           :max-height="0"
           :submit-on-enter="false"
-          placeholder="识别结果"
+          :placeholder="t('screenshot.ocrResult')"
         />
       </div>
 
@@ -61,7 +61,7 @@
         :items="ocrActions"
         v-model:selected-index="actionIndex"
         group-field="group"
-        :group-title="() => '操作'"
+        :group-title="() => t('screenshot.actions')"
         @execute="onAction"
       >
         <template #item="{ item }">
@@ -77,6 +77,7 @@ import { ref, computed, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { emit } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
+import { t } from '@/runtime/i18n'
 import { copyAndHide, useAppStore } from '@/stores/app'
 import { pendingOcrData } from './index'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -138,7 +139,7 @@ async function runOcr(data: NonNullable<typeof pendingOcrData.value>) {
     if (result.qr?.length) {
       ocrText.value = result.qr.join('\n')
     } else {
-      ocrText.value = result.text || '未识别到内容'
+      ocrText.value = result.text || t('screenshot.noContent')
     }
   } catch (e) {
     error.value = String(e)
@@ -192,11 +193,21 @@ function trimEmptyLines() {
 const ocrActions = computed<OcrAction[]>(() => {
   if (!ocrText.value.trim()) return []
   return [
-    { id: 'copy', label: '复制', group: '操作', run: handleCopy },
-    { id: 'translate', label: '翻译', group: '操作', run: handleTranslate },
-    { id: 'trimSpaces', label: '去空格', group: '操作', run: trimSpaces },
-    { id: 'trimNewlines', label: '去换行', group: '操作', run: trimNewlines },
-    { id: 'trimEmptyLines', label: '去空行', group: '操作', run: trimEmptyLines },
+    { id: 'copy', label: t('screenshot.copy'), group: 'actions', run: handleCopy },
+    { id: 'translate', label: t('screenshot.translate'), group: 'actions', run: handleTranslate },
+    { id: 'trimSpaces', label: t('screenshot.trimSpaces'), group: 'actions', run: trimSpaces },
+    {
+      id: 'trimNewlines',
+      label: t('screenshot.trimNewlines'),
+      group: 'actions',
+      run: trimNewlines,
+    },
+    {
+      id: 'trimEmptyLines',
+      label: t('screenshot.trimEmptyLines'),
+      group: 'actions',
+      run: trimEmptyLines,
+    },
   ]
 })
 

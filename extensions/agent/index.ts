@@ -3,12 +3,16 @@ import { makeToggleHandler } from '@/stores/app'
 import AgentSettings from './Settings.vue'
 import AgentView from './View.vue'
 import AgentActions from './Actions.vue'
+import './locales'
 
 export default defineExtension({
   meta: {
     id: 'agent',
     name: 'AI Agent',
-    description: '支持对话和操作的人工智能助手',
+    description: {
+      'zh-CN': '支持对话和操作的人工智能助手',
+      en: 'AI assistant with chat and tool-calling',
+    },
     icon: 'i-ri-chat-ai-line',
     keywords: ['agent', 'ai', 'gpt', '对话', '聊天', '助手', 'assistant', '搜索'],
     order: 30,

@@ -9,6 +9,7 @@ import { computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { withSuppressBlur } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import { config as screenshotConfig } from './config'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import type { SettingItem } from '@/types/settings'
@@ -34,19 +35,19 @@ function savePathDisplay(path: string): string {
 const items = computed<SettingItem[]>(() => [
   {
     id: 'screenshot-shortcut',
-    title: '启动快捷键',
+    title: t('settings.shortcut'),
     type: 'shortcut',
     value: screenshotShortcutValue.value,
     update: handleShortcutChange,
-    group: '通用',
+    group: t('common.group.general'),
   },
   {
     id: 'savePath',
-    title: '截图保存位置',
+    title: t('screenshot.savePath'),
     subtitle: savePathDisplay(screenshotConfig.savePath),
     type: 'action',
     action: pickSavePath,
-    group: '通用',
+    group: t('common.group.general'),
   },
 ])
 </script>

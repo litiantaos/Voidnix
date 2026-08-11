@@ -33,6 +33,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { focusSearchInput } from '@/stores/app'
+import { t } from '@/runtime/i18n'
 import { config as wmConfig, clampWidth, clampHeight } from './config'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -48,20 +49,20 @@ const focusedField = ref<'width' | 'height' | null>(null)
 const settingsItems = computed<SettingItem[]>(() => [
   {
     id: 'wm-enabled',
-    title: '启用窗口管理',
-    subtitle: '鼠标移至任意屏顶部中心激活；多屏可左右迁移窗口',
+    title: t('windowManager.enable'),
+    subtitle: t('windowManager.enableHint'),
     type: 'toggle',
     value: wmConfig.enabled,
     update: (v: boolean) => {
       wmConfig.enabled = v
     },
-    group: '通用',
+    group: t('common.group.general'),
   },
   {
     id: 'wm-custom-size',
-    title: '自定义尺寸',
+    title: t('windowManager.customSize'),
     type: 'custom',
-    group: '通用',
+    group: t('common.group.general'),
   },
 ])
 

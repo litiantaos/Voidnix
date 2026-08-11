@@ -4,17 +4,17 @@
 
     <BaseDialog
       v-if="naming"
-      title="新建文件"
+      :title="t('finderExt.newFile')"
       variant="form"
       size="sm"
       show-footer
-      ok-label="创建"
+      :ok-label="t('finderExt.create')"
       :close-on-confirm="false"
       @confirm="confirmNewFile"
       @cancel="cancelNaming"
     >
       <div class="form-field">
-        <span class="form-label">文件名</span>
+        <span class="form-label">{{ t('finderExt.fileName') }}</span>
         <BaseInput
           ref="nameInputRef"
           v-model="fileName"
@@ -37,6 +37,7 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import type { SettingItem } from '@/types/settings'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
+import { t } from '@/runtime/i18n'
 import { FINDER_SHORTCUT, FINDER_ACTIONS, type FinderAction } from './shortcuts'
 import { reactivateTick } from './index'
 
@@ -66,7 +67,7 @@ async function runAction(action: FinderAction, name?: string): Promise<boolean> 
     toastAndHide(msg || undefined)
     return true
   } catch (e) {
-    appStore.showStatus(String(e ?? '操作失败'), { duration: 4000, kind: 'error' })
+    appStore.showStatus(String(e ?? t('common.operationFailed')), { duration: 4000, kind: 'error' })
     return false
   }
 }
@@ -87,7 +88,7 @@ async function confirmNewFile() {
   if (submitting) return
   const name = fileName.value.trim()
   if (!name) {
-    appStore.showStatus('文件名不能为空', { kind: 'error' })
+    appStore.showStatus(t('finderExt.emptyFileName'), { kind: 'error' })
     return
   }
   submitting = true
@@ -226,7 +227,7 @@ const allItems = computed<SettingItem[]>(() => {
   if (videoPath.value) {
     list.push({
       id: 'video_process',
-      title: '视频处理',
+      title: t('finderExt.videoProcess'),
       subtitle: baseName(videoPath.value),
       icon: 'i-ri-video-line',
       type: 'action',
@@ -236,14 +237,14 @@ const allItems = computed<SettingItem[]>(() => {
         void emit('video-pending-input-path', p)
         appStore.setActiveExtension('video')
       },
-      group: '操作',
+      group: t('finderExt.operations'),
     })
   }
   // 选中图片时置顶「图片处理」入口（跨扩展跳转，带入路径）
   if (imagePath.value) {
     list.push({
       id: 'image_process',
-      title: '图片处理',
+      title: t('finderExt.imageProcess'),
       subtitle: baseName(imagePath.value),
       icon: 'i-ri-image-edit-line',
       type: 'action',
@@ -253,13 +254,13 @@ const allItems = computed<SettingItem[]>(() => {
         void emit('image-pending-input-path', p)
         appStore.setActiveExtension('image')
       },
-      group: '操作',
+      group: t('finderExt.operations'),
     })
   }
   list.push(
     ...FINDER_ACTIONS.map((a) => ({
       id: a.id,
-      title: a.title,
+      title: t(a.titleKey),
       icon: a.icon,
       type: 'action' as const,
       action: () => {
@@ -269,16 +270,16 @@ const allItems = computed<SettingItem[]>(() => {
         }
         void runAction(a.id)
       },
-      group: '操作',
+      group: t('finderExt.operations'),
     })),
   )
   list.push({
     id: FINDER_SHORTCUT.id,
-    title: '启动快捷键',
+    title: t('finderExt.shortcut'),
     type: 'shortcut',
     value: shortcutValue.value,
     update: (v) => updateShortcut(String(v)),
-    group: '通用',
+    group: t('finderExt.general'),
   })
   return list
 })

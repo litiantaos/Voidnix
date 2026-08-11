@@ -4,11 +4,12 @@
 
 <script setup lang="ts">
 import BaseSelect from '@/components/ui/BaseSelect.vue'
+import { t } from '@/runtime/i18n'
 import { tool, type Tool } from './index'
 
 const options = [
-  { label: '移除背景', value: 'removeBg' },
-  { label: '拼接长图', value: 'stitch' },
+  { label: t('image.removeBg'), value: 'removeBg' },
+  { label: t('image.stitch'), value: 'stitch' },
 ]
 
 function handleChange(val: string | number) {

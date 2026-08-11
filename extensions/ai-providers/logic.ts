@@ -1,5 +1,6 @@
 import type { AiProvider } from '@/runtime/ai-providers'
 import { providerDisplayName } from '@/runtime/ai-providers'
+import { t } from '@/runtime/i18n'
 
 export function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
@@ -270,7 +271,7 @@ export function buildZhipuUsageSegments(
 ): UsageSegment[] {
   const out: UsageSegment[] = []
   const masked = maskKey(apiKey)
-  out.push({ text: masked || '无 Key', tone: 'muted' })
+  out.push({ text: masked || t('ai-providers.noKey'), tone: 'muted' })
   if (!m || m.error) {
     if (m?.error) out.push({ text: m.error, tone: 'danger' })
     return out
@@ -316,19 +317,19 @@ export function buildDeepseekUsageSegments(
 ): UsageSegment[] {
   const out: UsageSegment[] = []
   const masked = maskKey(apiKey)
-  out.push({ text: masked || '无 Key', tone: 'muted' })
+  out.push({ text: masked || t('ai-providers.noKey'), tone: 'muted' })
   if (!m || m.error) {
     if (m?.error) out.push({ text: m.error, tone: 'danger' })
     return out
   }
-  if (!m.isAvailable) out.push({ text: '余额不足', tone: 'danger' })
+  if (!m.isAvailable) out.push({ text: t('ai-providers.insufficientBalance'), tone: 'danger' })
   for (const b of m.balanceInfos) {
     const cur =
       b.currency === 'CNY' ? '¥' : b.currency === 'USD' ? '$' : b.currency ? `${b.currency} ` : ''
     out.push({ text: `${cur}${b.totalBalance}`, tone: 'primary' })
   }
   if (m.balanceInfos.length === 0 && m.isAvailable) {
-    out.push({ text: '可用', tone: 'success' })
+    out.push({ text: t('ai-providers.available'), tone: 'success' })
   }
   return out
 }

@@ -13,7 +13,7 @@
         text="accent"
         aria-hidden="true"
       />
-      <span class="agent-step-label" shrink="0" font="medium">思考</span>
+      <span class="agent-step-label" shrink="0" font="medium">{{ t('agent.thinking') }}</span>
       <span v-if="streaming" class="agent-step-dots" aria-hidden="true"> <i /><i /><i /> </span>
     </div>
     <div v-if="text" class="agent-step-body" flex gap="1.5" min-w="0">
@@ -27,6 +27,7 @@
 
 <script setup lang="ts">
 import './agent-step.css'
+import { t } from '@/runtime/i18n'
 
 defineProps<{
   text: string

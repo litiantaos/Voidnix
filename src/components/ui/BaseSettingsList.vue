@@ -36,7 +36,7 @@
             :variant="item.value ? 'primary' : 'default'"
             @click.stop="item.update(!item.value)"
           >
-            {{ item.value ? '已开启' : '已关闭' }}
+            {{ item.value ? t('common.enabled') : t('common.disabled') }}
           </BaseButton>
         </template>
         <template v-else-if="item.type === 'button'" #trailing>
@@ -59,6 +59,7 @@ import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ShortcutInput from '@/components/ui/ShortcutInput.vue'
+import { t } from '@/runtime/i18n'
 import type { SettingItem } from '@/types/settings'
 
 const props = defineProps<{

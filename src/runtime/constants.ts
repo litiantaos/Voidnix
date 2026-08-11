@@ -15,14 +15,8 @@ export const SEARCH = {
   // 组间定序严格锁死；不设组级 GROUP_BOOST（GROUP_ORDER 已定组间序）。
   // 扩展用 per-item boost（SearchResult.boost）调整组内优先级。
   // 顺序按使用频率第一性推导：启动应用 / 扩展工具 / 查找文件 / 剪贴板辅助 / web 垫底。
+  // 组标题由 i18n 提供（t('group.application') 等），MainView 的 groupTitle() 回调消费。
   GROUP_ORDER: ['application', 'extension', 'file', 'clipboard', 'web'] as const,
-  GROUP_TITLES: {
-    application: '应用',
-    file: '文件', // file 与 folder 共用（同组，仅 kind 值区分）
-    extension: '扩展',
-    clipboard: '剪贴板',
-    web: '快捷操作',
-  },
   // keywordSearchAll 产出的扩展入口结果组内加权（原 ext-helpers.ts:45 魔数）
   KEYWORD_EXTENSION_BOOST: 500,
 } as const
