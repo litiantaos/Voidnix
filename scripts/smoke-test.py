@@ -884,12 +884,16 @@ def run_layer2(rc: ResultCollector):
 # ── Layer 3：性能压测工作负载（--perf）─────────────────────────────────────────
 
 def _recover_after_error():
-    """工作负载异常恢复：清标志 + 尽力 show_window（不抛异常，调用方不中断）。"""
+    """工作负载异常恢复：退出扩展 + 清空输入 + 释放修饰键 + 尽力 show_window。"""
     global _in_ext
+    if _in_ext and is_voidnix_visible():
+        press_esc()
+        time.sleep(ESC_DELAY)
     _in_ext = False
     reset_modifiers()
     try:
         show_window(DEV_MODE)
+        clear_input()
     except RuntimeError:
         pass
 
@@ -897,27 +901,48 @@ def _recover_after_error():
 def workload_global_search():
     """全局搜索——覆盖应用/文件/即时答案/web 结果类型。"""
     for w in ['safa', 'term', 'note', 'code', 'musi', 'mail', 'calc', 'sett']:
-        search_and_wait(w, SETTLE_INSTANT)
+        try:
+            search_and_wait(w, SETTLE_INSTANT)
+        except Exception:
+            _recover_after_error()
     for w in ['doc', 'pdf', 'config', 'desktop']:
-        search_and_wait(w, SETTLE_DEFAULT)
+        try:
+            search_and_wait(w, SETTLE_DEFAULT)
+        except Exception:
+            _recover_after_error()
     for expr in ['1+2', '3*4', '100-7', '2^10']:
-        search_and_wait(expr, SETTLE_INSTANT)
-    search_and_wait('SGVsbG8', SETTLE_INSTANT)
-    search_and_wait('//rust async', SETTLE_DEFAULT)
-    clear_input()
+        try:
+            search_and_wait(expr, SETTLE_INSTANT)
+        except Exception:
+            _recover_after_error()
+    try:
+        search_and_wait('SGVsbG8', SETTLE_INSTANT)
+        search_and_wait('//rust async', SETTLE_DEFAULT)
+        clear_input()
+    except Exception:
+        _recover_after_error()
 
 
 def workload_tool_list():
     """工具列表——/ 前缀 + 过滤导航。"""
-    search_and_wait('/', SETTLE_INSTANT)
-    press_down(3)
-    press_up(2)
+    try:
+        search_and_wait('/', SETTLE_INSTANT)
+        press_down(3)
+        press_up(2)
+    except Exception:
+        _recover_after_error()
     for kw in ['/calc', '/clip', '/time', '/uuid']:
+        try:
+            clear_input()
+            type_text(kw)
+            time.sleep(SETTLE_INSTANT)
+            press_down(1)
+        except Exception:
+            _recover_after_error()
+    try:
         clear_input()
-        type_text(kw)
-        time.sleep(SETTLE_INSTANT)
-        press_down(1)
-    clear_input()
+    except Exception:
+        _recover_after_error()
 
 
 def workload_extensions():
@@ -957,19 +982,33 @@ def workload_shortcuts():
     """全局快捷键触发的独立窗口/扩展激活路径。"""
     global _in_ext
     hide_window(DEV_MODE)
+    # 清空 workload_extensions 残留的搜索框内容（如 /calc），
+    # 全局快捷键打开扩展不经搜索框，Esc 退出后残留文本会持续可见
+    show_window(DEV_MODE)
+    clear_input()
+    hide_window(DEV_MODE)
+    log('  → Alt+S 截屏')
     trigger_ext_shortcut('s', DEV_MODE)
     time.sleep(SETTLE_DEFAULT)
     press_esc()
     time.sleep(0.8)
+    _ext_labels = {'c': '剪贴板', 't': '翻译', 'a': 'Agent', 'f': '访达工具'}
     for key in ['c', 't', 'a', 'f']:
         try:
             hide_window(DEV_MODE)
+            log(f'  → Alt+{key.upper()} {_ext_labels[key]}')
             trigger_ext_shortcut(key, DEV_MODE)
             time.sleep(TOGGLE_GAP + 0.3)
             if is_voidnix_visible():
                 _in_ext = True
                 press_down(2)
             _exit_ext()
+            # Esc 退出后清空搜索框（可能残留前一轮 workload 的文本），
+            # 再等窗口状态稳定后 hide（高内存下 Esc 处理慢，
+            # 不等会导致 hide 的 Alt+Space 与 Esc 竞态产生 toggle 错乱）
+            if is_voidnix_visible():
+                clear_input()
+            time.sleep(0.3)
             hide_window(DEV_MODE)
         except Exception:
             _recover_after_error()
@@ -978,9 +1017,13 @@ def workload_shortcuts():
 def run_perf():
     """Layer 3：N 轮全场景工作负载 + 逐阶段内存采样。
 
-    每轮 = 全局搜索 + 工具列表 + 扩展视图 + 快捷键 + hide/show，
+    每轮 = 全局搜索 + 工具列表 + 快捷键 + 扩展视图 + hide/show，
     在关键阶段后采内存快照，输出多轮趋势表。
-    最终 vs 基线差值反映非可回收 compositing layer 累积。
+
+    工作负载顺序刻意安排：快捷键在扩展视图之前——快捷键含 hide_window，
+    若 FP 已超 350M 阈值会触发 navigate 重载，重载期间 WKWebView 不可交互。
+    先跑快捷键（FP 低不触发重载），再跑扩展视图，避免中途重载打断工作负载。
+    AtomicBool 一次性守卫确保即使重载触发，自测也不会二次运行。
     """
     log(f'\n── Layer 3：性能压测（{PERF_ROUNDS} 轮）──')
     log('切换到 ASCII 键盘布局...')
@@ -999,17 +1042,22 @@ def run_perf():
             show_window(DEV_MODE)
             workload_tool_list()
             show_window(DEV_MODE)
+            workload_shortcuts()
+            show_window(DEV_MODE)
             workload_extensions()
             mem_trend.sample(f'第{r}轮 扩展视图')
 
-            workload_shortcuts()
             show_window(DEV_MODE)
             mem_trend.sample(f'第{r}轮 完成')
 
             hide_window(DEV_MODE)
-            time.sleep(0.5)
+            # 安全裕度：hide 后若 FP 超 350M，maybe_reload_webview 会 navigate
+            # 重载 WKWebView，JS 重新初始化 + 扩展 setup + 快捷键注册需数秒。
+            # AtomicBool 守卫确保自测不会二次触发，此等待保证重载后 WKWebView
+            # 恢复到可交互状态，下一轮输入不会打到未 ready 页面。
+            time.sleep(4.0)
             show_window(DEV_MODE)
-            time.sleep(0.3)
+            time.sleep(0.5)
             mem_trend.sample(f'第{r}轮 hide/show')
 
         hide_window(DEV_MODE)

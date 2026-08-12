@@ -119,8 +119,9 @@ pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
     let _ = app.clone().run_on_main_thread(move || {
         crate::runtime::window::hide_main(&app);
     });
-    // 窗口已隐藏（alpha=0），异步检查 WebContent 内存：超阈值 emit webview-reload，
-    // 前端 location.reload() 释放 WKWebView tile backing（PURGE=N 不可回收）。
+    // 窗口已隐藏（alpha=0），异步检查 WebContent 内存：超阈值 navigate 重载
+    // 释放 WKWebView tile backing（PURGE=N 不可回收）。
+    // 自测二次触发由 test.rs 的 AtomicBool 一次性守卫防御，reload 可安全执行。
     crate::runtime::window::maybe_reload_webview(&app_for_reload);
 }
 

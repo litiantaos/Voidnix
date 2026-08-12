@@ -72,7 +72,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 - **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（23 扩展 / id 无重复 / order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 16 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）、窗口管理运行时启用（主题已初始化下 `setWindowManagerEnabled` disable→enable toggle，8s 超时检测 Mutex 重入死锁）、扩展功能正确性（clipboard 历史查询结构 / system-status 快照 / proxy 核心状态 / homebrew 状态 / video 核心状态 / awake·clean-mode 状态查询 / ip·time·uuid·currency 即时答案；网络依赖项失败 skip 不 fail）、搜索延迟基线（空查询 / keyword / calculator / base64 / 应用搜索代表性 query 耗时断言）。报告经 plugin-store 写到 `config/test-report.json`。
 - **Layer 2（系统冒烟）**：CGEvent 驱动真实 UI，验证窗口显隐 / 全局快捷键 / snap-panel 全链路 / 搜索 UI / 扩展视图渲染。每步返回结构化 `TestResult`（pass/fail/skip），汇总为统一报告。逐阶段内存采样输出趋势（非仅终点）。
-- **Layer 3（性能压测，`--perf [N]`）**：N 轮全场景工作负载循环（全局搜索 / 工具列表 / 扩展视图 / 快捷键 / hide/show），每轮逐阶段采内存快照，输出多轮趋势表 + drift 分析，定位 compositing layer 累积。合并自原 `wk-mem-test.py`。
+- **Layer 3（性能压测，`--perf [N]`）**：N 轮全场景工作负载循环（全局搜索 / 工具列表 / 快捷键 / 扩展视图 / hide/show），每轮逐阶段采内存快照，输出多轮趋势表 + drift 分析，定位 compositing layer 累积与回收。工作负载顺序刻意安排：快捷键在扩展视图之前（快捷键含 hide_window，若此时 FP 已超 350M 阈值会触发 navigate 重载，重载期间 WKWebView 不可交互）。合并自原 `wk-mem-test.py`。
 
 ```bash
 python3 scripts/smoke-test.py --self-test-only   # 仅 Layer 1（~30s，无需独占屏幕）
@@ -83,9 +83,9 @@ python3 scripts/smoke-test.py --build             # 含 release 构建
 python3 scripts/smoke-test.py --no-cgevent        # 跳过 Layer 2（CI/headless 友好）
 ```
 
-CGEvent 基础设施（键盘映射 / 窗口检测 / 鼠标操作 / 内存测量）提取到 `scripts/voidnix_test_lib.py`。
+CGEvent 基础设施（键盘映射 / 窗口检测 / 鼠标操作 / 内存测量）提取到 `scripts/voidnix_test_lib.py`。修饰键仅通过 `CGEventSetFlags` 设在 event 上（flags-only），不发独立 modifier key-down/up 事件——IOHIDSystem 永远不记录 Option/Cmd 被按下，后续 `type_text` 的 flags=0 字符不可能被系统叠加 Option flag 误判为 Alt+key 触发随机扩展快捷键。Event source 用 `kCGEventSourceStateHIDSystemState`（模拟裸硬件输入，modifier 状态独立于 session 切换）。
 
-自测触发机制：`runtime/test.rs::is_self_test_mode` 命令读 `VOIDNIX_SELF_TEST` 环境变量，`main.ts` 在扩展 setup 完成后检查，true 则动态 import `self-test.ts` 运行（动态 import 不进生产初始 chunk）。
+自测触发机制：`runtime/test.rs::is_self_test_mode` 命令读 `VOIDNIX_SELF_TEST` 环境变量 + AtomicBool **一次性守卫**（`main.ts` 在扩展 setup 完成后检查，true 则动态 import `self-test.ts` 运行，动态 import 不进生产初始 chunk）。一次性守卫防止 WebContent 内存超 350M 触发 navigate 重载后 `main.ts` 重新执行导致自测**二次触发**——环境变量是进程级的不随页面重载消失，若无守卫二次触发的自测与外部 CGEvent 测试脚本并发争抢同一 Vue store / 窗口状态，导致第 2 轮起 UI 乱跳。
 
 **内存基线持久化**：首次运行采集 footprint / graphics 后写入 `scripts/smoke-baselines.json`（提交到仓库，团队共享参考基线）。后续运行改用基线值 + drift 容忍度（footprint +25% / graphics +50%）对比，比硬编码绝对上限更灵敏地检测回归。drift 超容忍度时不更新基线（防 GC 抖动峰值固化）。报告 `scripts/smoke-test-report.md` gitignore，基线文件提交。
 
@@ -196,7 +196,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - `hide_window` 命令入口幂等守卫 `is_window_visible()`——blur → hideWindow → resignKeyWindow → 派生 blur 反馈环在首轮 hide 后断开（原 auto 防抖 500ms 无法断环，窗口可见时间通常远超 500ms）
 - 隐藏时 `ContentView` 监听 `window-hiding` 事件将 KeepAlive 卸载重建（`keepAliveActive` 置 false → `nextTick` → forced layout flush → 置 true），释放扩展视图缓存 DOM + WKWebView compositing layer tiles（IOSurface backing store，PURGE=N 不可回收）；同期 toggle `content-visibility:hidden` on contentRef 释放结果列表 tile backing（DOM 保留，show 时 compositor 同步恢复 pending 变更不闪烁）；**不清空 results**——主快捷键由 Rust 直接 show 窗口（前端 IPC 回调在 show 之后），清空 results 会导致第一帧渲染空态产生闪烁，保留 DOM 使唤起时列表立即可见，`focusHandler` 后台 `loadDefaultResults` 刷新补增量
 - KeepAlive `max=3`（日常高频 agent/settings/proxy 不超过 3 个同时活跃），隐藏时全量清空
-- **WebContent 内存阈值重载**：`hide_window` 后 detached OS thread（不占 tokio worker）异步查 `platform/mem.rs::webcontent_footprint`（`proc_pid_rusage` 读 WebContent XPC 的 physical footprint，按启动时间下限关联主进程——不设上限，覆盖 navigate 重载/crash 恢复后创建的新进程），超 350M 时 Rust 直接 `navigate("about:blank")` → 100ms → `navigate(原 URL)`——`reload()` 不释放 tile backing（IOSurface），必须先 blank 销毁旧 layer tree 再重建（等同 Safari 内存压力 tab 重建）。纯 Rust 闭环，无 command 注册、无前端事件
+- **WebContent 内存阈值重载**：`hide_window` 后 detached OS thread（不占 tokio worker）异步查 `platform/mem.rs::webcontent_footprint`（`proc_pid_rusage` 读 WebContent XPC 的 physical footprint，按启动时间下限关联主进程——不设上限，覆盖 navigate 重载/crash 恢复后创建的新进程），超 350M 时 Rust 直接 `navigate("about:blank")` → 100ms → `navigate(原 URL)`——`reload()` 不释放 tile backing（IOSurface），必须先 blank 销毁旧 layer tree 再重建（等同 Safari 内存压力 tab 重建）。纯 Rust 闭环，无 command 注册、无前端事件。navigate 重载后 `main.ts` 重新执行，自测的二次触发由 `test.rs` 的 AtomicBool 一次性守卫防御
 - `hide_main` 走 `restore_captured()` 交还 first responder（`PREV_FRONT_PID` 唯一源在 `platform/focus.rs`）
 
 **焦点管理**——`is_app_active()` 三道判定：
@@ -361,7 +361,7 @@ src-tauri/src/
 │   ├── shortcut.rs     # 快捷键 + 录制
 │   ├── menubar.rs      # 聚合菜单栏托盘（框架唯一图标 + 扩展贡献段注册）
 │   ├── storage.rs      # TempHandle RAII + ext_data_dir + save_png_safely
-│   ├── test.rs         # 自测模式判定薄壳（环境变量 VOIDNIX_SELF_TEST）
+│   ├── test.rs         # 自测模式判定（环境变量 VOIDNIX_SELF_TEST + AtomicBool 一次性守卫防 navigate 重载后二次触发）
 │   ├── permission.rs   # 系统权限命令薄壳（同步；screen_recording 走 preflight 不截屏）
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap；单扩展 setup 失败隔离；阻塞 I/O 扩展自管 spawn_blocking）
 │   ├── pasteboard.rs   # 框架命令薄壳（write_text / paste_text；原语在 platform/pasteboard）
