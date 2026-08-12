@@ -1,16 +1,23 @@
 ---
 import '../styles/tokens.css'
 import '../styles/global.css'
+import { getDict, type Lang } from '../i18n/translations'
 
-const title = 'Voidnix - macOS 效率启动器'
-const description =
-  '模块化的 macOS 效率启动器。Rust + 原生原语，23 个一等公民扩展，常驻低占用。'
-const site = Astro.site ?? new URL('https://voidnix.app')
+interface Props {
+  lang?: Lang
+  isDemo?: boolean
+}
+const { lang = 'zh', isDemo = false } = Astro.props
+const t = getDict(lang)
+
+const title = isDemo ? t.layout.demoTitle : t.layout.title
+const description = t.layout.description
+const site = Astro.site ?? new URL('https://voidnix.litiantao.com')
 const og = new URL('/og-image.png', site)
 ---
 
 <!doctype html>
-<html lang="zh-CN">
+<html lang={t.layout.htmlLang}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -26,11 +33,17 @@ const og = new URL('/og-image.png', site)
     <meta property="og:description" content={description} />
     <meta property="og:image" content={og.href} />
     <meta property="og:url" content={site.href} />
-    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:locale" content={t.layout.ogLocale} />
+    {lang === 'en' && <meta property="og:locale:alternate" content="zh_CN" />}
+    {lang === 'zh' && <meta property="og:locale:alternate" content="en_US" />}
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={og.href} />
+
+    <!-- hreflang 双语互指 -->
+    <link rel="alternate" hreflang="zh-CN" href={new URL('/', site).href} />
+    <link rel="alternate" hreflang="en" href={new URL('/en/', site).href} />
 
     <!-- Remix Icon（与产品图标集一致） -->
     <link

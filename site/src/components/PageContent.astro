@@ -1,0 +1,76 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+import Hero from './Hero.astro'
+import Philosophy from './Philosophy.astro'
+import Capabilities from './Capabilities.astro'
+import ExtensionMatrix from './ExtensionMatrix.astro'
+import Footer from './Footer.astro'
+import { getDict, type Lang } from '../i18n/translations'
+
+interface Props {
+  lang?: Lang
+}
+const { lang = 'zh' } = Astro.props
+const t = getDict(lang)
+---
+
+<BaseLayout lang={lang}>
+  <main>
+    <Hero lang={lang} />
+    <Philosophy lang={lang} />
+    <Capabilities lang={lang} />
+    <ExtensionMatrix lang={lang} />
+  </main>
+  <Footer />
+
+  <!-- 回到顶部：滚动出现，克制 -->
+  <a href="#top" class="to-top" aria-label={t.layout.backToTop}>
+    <i class="ri-arrow-up-line"></i>
+  </a>
+</BaseLayout>
+
+<style>
+  .to-top {
+    position: fixed;
+    right: clamp(16px, 4vw, 32px);
+    bottom: clamp(16px, 4vw, 32px);
+    z-index: 50;
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-panel);
+    background: var(--mock-card-hover);
+    border: 1px solid var(--soft-chip-border);
+    color: var(--color-text-secondary);
+    font-size: 20px;
+    box-shadow: var(--shadow-float);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px);
+    transition:
+      opacity var(--duration-normal) var(--ease-out),
+      transform var(--duration-normal) var(--ease-out),
+      color var(--duration-fast) var(--ease-out);
+  }
+  .to-top.is-show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+  .to-top:hover {
+    color: var(--color-accent);
+    border-color: var(--accent-line);
+  }
+</style>
+
+<script>
+  const btn = document.querySelector<HTMLAnchorElement>('.to-top')
+  if (btn) {
+    const onScroll = () => {
+      btn.classList.toggle('is-show', window.scrollY > 600)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+  }
+</script>

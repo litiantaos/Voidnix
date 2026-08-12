@@ -422,7 +422,7 @@ src/
 
 ### 官网（site/）
 
-独立 Astro 子项目（单页落地页），token 自动同步产品 `theme.css` 全量 `:root`。首页 Hero 内嵌实时动画演示（`DemoStage.astro` 组件，非视频——6 个独立 demo 段（各 160–350 帧可变）JS 驱动的拟物 macOS 桌面舞台，统一入场节奏可单段切换或连续拼接；启动器窗口忠实复刻真实应用界面 720×480。首页与 `/demo` 预览页共用）。文档：[site/README.md](site/README.md)（概览 / 开发 / 部署）+ [site/demo.md](site/demo.md)（分段架构、统一节奏、启动器复刻细节、控制栏、可选视频导出）。
+独立 Astro 子项目（单页落地页），中英双语（`/` 中文 / `/en/` 英文，URL 前缀路由），token 自动同步产品 `theme.css` 全量 `:root`。首页 Hero 内嵌实时动画演示（`DemoStage.astro` 组件，非视频——6 个独立 demo 段（各 160–350 帧可变）JS 驱动的拟物 macOS 桌面舞台，统一入场节奏可单段切换或连续拼接；启动器窗口忠实复刻真实应用界面 720×480。首页与 `/demo` 预览页共用）。i18n 字典 `src/i18n/translations.ts`（页面级，zh 类型源 en 同构校验）+ `src/i18n/demo.ts`（动画级），各组件接收 `lang` prop。文档：[site/README.md](site/README.md)（概览 / i18n / 开发 / 部署）+ [site/demo.md](site/demo.md)（分段架构、统一节奏、启动器复刻细节、控制栏、可选视频导出）。
 
 ## UI 规范
 

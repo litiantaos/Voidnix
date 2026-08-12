@@ -1,29 +1,20 @@
 ---
-const items = [
-  {
-    icon: 'ri-stack-line',
-    title: '两层正交',
-    desc: 'runtime 调度核心与 platform 原语分离，换实现即跨平台，业务零泄漏。',
-  },
-  {
-    icon: 'ri-flashlight-line',
-    title: 'Rust + 原语',
-    desc: '常驻近乎零负担，LaunchAgent 长期采样背书其稳定与克制。',
-  },
-  {
-    icon: 'ri-leaf-line',
-    title: 'Mica 玻璃',
-    desc: '仅浅色，克制圆角与中性墨阴影。',
-  },
-]
+import { getDict, type Lang } from '../i18n/translations'
+
+interface Props {
+  lang?: Lang
+}
+const { lang = 'zh' } = Astro.props
+const t = getDict(lang)
+const items = t.philosophy.items
 ---
 
 <section class="section philosophy" id="philosophy">
   <div class="container">
     <div class="head reveal">
-      <p class="eyebrow">设计哲学</p>
-      <h2 class="section-title">结构清晰，性能克制</h2>
-      <p class="section-lead">复杂藏在结构里，不在界面上。</p>
+      <p class="eyebrow">{t.philosophy.eyebrow}</p>
+      <h2 class="section-title">{t.philosophy.title}</h2>
+      <p class="section-lead">{t.philosophy.lead}</p>
     </div>
 
     <div class="grid">
@@ -83,7 +74,7 @@ const items = [
   }
 
   .card-title {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 18px;
     font-weight: 600;
     margin-bottom: 10px;

@@ -1,6 +1,13 @@
 ---
 import Wordmark from './Wordmark.astro'
 import DemoStage from './DemoStage.astro'
+import { getDict, type Lang } from '../i18n/translations'
+
+interface Props {
+  lang?: Lang
+}
+const { lang = 'zh' } = Astro.props
+const t = getDict(lang)
 
 const GITHUB = 'https://github.com/litiantaos/Voidnix'
 const RELEASES = GITHUB + '/releases/latest'
@@ -16,36 +23,34 @@ const RELEASES = GITHUB + '/releases/latest'
 
   <header class="nav container">
     <Wordmark size={26} />
+    <a href={t.layout.langHref} class="lang-toggle" aria-label="Language">
+      {t.layout.langLabel}
+    </a>
   </header>
 
   <div class="hero-inner container">
     <div class="hero-copy">
-      <p class="eyebrow reveal"><span class="eyebrow-dot"></span>macOS 效率启动器</p>
-      <h1 class="hero-title display reveal">想到就到，<span class="title-accent">触手可及</span></h1>
+      <h1 class="hero-title display reveal">{lang === 'en' ? `${t.hero.titleLead} ` : t.hero.titleLead}<span class="title-accent">{t.hero.titleAccent}</span></h1>
 
-      <div class="hero-chips reveal">
-        <span class="chip"><i class="ri-stack-line"></i> 模块化</span>
-        <span class="chip"><i class="ri-flashlight-line"></i> 原生性能</span>
-        <span class="chip"><i class="ri-leaf-line"></i> 极简</span>
-      </div>
+      <p class="hero-slogan reveal">{t.hero.slogan}</p>
 
       <div class="hero-cta reveal">
         <a id="download-btn" href={RELEASES} class="btn btn-primary" target="_blank" rel="noopener">
-          <i class="ri-download-2-line"></i> 下载
+          <i class="ri-download-2-line"></i> {t.hero.download}
         </a>
         <a href={GITHUB} class="btn btn-ghost" target="_blank" rel="noopener">
           <i class="ri-github-fill"></i> GitHub
         </a>
       </div>
 
-      <p class="hero-cta-meta reveal">Apple Silicon · macOS 13+</p>
+      <p class="hero-cta-meta reveal">{t.hero.meta}</p>
     </div>
 
   </div>
 
   <!-- 产品演示：实时动画舞台 -->
   <div class="demo-section reveal">
-    <DemoStage controls={false} />
+    <DemoStage controls={false} lang={lang} />
   </div>
 </section>
 
@@ -139,6 +144,28 @@ const RELEASES = GITHUB + '/releases/latest'
     position: relative;
     z-index: 1;
     padding-top: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* 语言切换 */
+  .lang-toggle {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    padding: 6px 14px;
+    border-radius: var(--radius-ctrl);
+    border: 1px solid var(--soft-chip-border);
+    background: var(--soft-chip-fill);
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+  .lang-toggle:hover {
+    color: var(--color-accent);
+    border-color: var(--accent-line);
   }
 
   /* ── 主体 ── */
@@ -156,23 +183,9 @@ const RELEASES = GITHUB + '/releases/latest'
     max-width: 580px;
   }
 
-  /* eyebrow 视觉锚点：accent 实心圆点 */
-  .eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .eyebrow-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--color-accent);
-    box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 50%, transparent);
-  }
-
   .hero-title {
     font-size: clamp(38px, 5.5vw, 60px);
-    margin: 28px 0 0;
+    margin: 0;
     color: var(--color-text-primary);
   }
   /* 标题后半渐变着色，accent 提亮视觉重心 */
@@ -183,20 +196,12 @@ const RELEASES = GITHUB + '/releases/latest'
     -webkit-text-fill-color: transparent;
   }
 
-  .hero-sub {
+  .hero-slogan {
     font-size: clamp(15px, 1.4vw, 17px);
     color: var(--color-text-secondary);
-    max-width: 52ch;
+    max-width: 48ch;
     line-height: 1.7;
-    margin-top: 18px;
-  }
-
-  .hero-chips {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 10px;
-    margin: 28px 0 32px;
+    margin: 24px 0 32px;
   }
 
   .hero-cta {
@@ -206,19 +211,17 @@ const RELEASES = GITHUB + '/releases/latest'
   }
   .hero-cta-meta {
     margin-top: 14px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12.5px;
     color: var(--color-text-muted);
     letter-spacing: 0.01em;
   }
 
-  /* reveal 错峰入场（eyebrow → title → sub → chips → cta → meta） */
+  /* reveal 错峰入场（title → slogan → cta → meta） */
   .hero-copy > .reveal:nth-child(1) { transition-delay: 0ms; }
-  .hero-copy > .reveal:nth-child(2) { transition-delay: 70ms; }
-  .hero-copy > .reveal:nth-child(3) { transition-delay: 140ms; }
-  .hero-copy > .reveal:nth-child(4) { transition-delay: 210ms; }
-  .hero-copy > .reveal:nth-child(5) { transition-delay: 280ms; }
-  .hero-copy > .reveal:nth-child(6) { transition-delay: 350ms; }
+  .hero-copy > .reveal:nth-child(2) { transition-delay: 80ms; }
+  .hero-copy > .reveal:nth-child(3) { transition-delay: 160ms; }
+  .hero-copy > .reveal:nth-child(4) { transition-delay: 240ms; }
 
   /* ── Demo 舞台 ── */
   /* demo-section 与 .container 共用同一套横向盒模型（width / max-width / padding-inline），

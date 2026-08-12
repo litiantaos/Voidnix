@@ -4,6 +4,8 @@
 //  controls=false 时自动连续播放，跳过控制栏 DOM 接线（首页）
 // ═══════════════════════════════════════════════
 import { FPS, SEGMENTS, SEG_OFFSETS, globalToSeg, clamp } from './demo-utils'
+import { getDemoText, type DemoText } from '../../i18n/demo'
+import type { Lang } from '../../i18n/translations'
 import type { Renderer } from './demo-scenes'
 
 type El = HTMLElement
@@ -19,6 +21,11 @@ export function createPlayer({ renderer, $, controls = true }: PlayerOpts) {
   const { renderFrame } = renderer
   const stageEl = $('stage')!
   const stageFrame = $('stageFrame')!
+
+  // 语言文案
+  const langEl = document.querySelector('.demo-stage') as HTMLElement | null
+  const lang = (langEl?.dataset.lang as Lang) || 'zh'
+  const T: DemoText = getDemoText(lang)
 
   // ── 自适应缩放 ──
   function fitStage() {
@@ -184,7 +191,7 @@ export function createPlayer({ renderer, $, controls = true }: PlayerOpts) {
         paused = false
         updatePlayIcon()
         allBtn.classList.remove('active')
-        allBtn.textContent = '连续播放'
+        allBtn.textContent = T.btnPlayAll
       })
     })
 
@@ -192,12 +199,12 @@ export function createPlayer({ renderer, $, controls = true }: PlayerOpts) {
       if (playMode === 'all') {
         playMode = 'single'
         allBtn.classList.remove('active')
-        allBtn.textContent = '连续播放'
+        allBtn.textContent = T.btnPlayAll
         baseTime = performance.now()
       } else {
         playMode = 'all'
         allBtn.classList.add('active')
-        allBtn.textContent = '分段播放'
+        allBtn.textContent = T.btnPlaySeg
         // 从当前选中段开始（全局帧 = 该段起始偏移）
         baseTime = performance.now() - (SEG_OFFSETS[currentSeg] / FPS) * 1000
       }

@@ -1,19 +1,19 @@
 ---
-import '../styles/tokens.css'
-import '../styles/global.css'
-import DemoStage from '../components/DemoStage.astro'
-import { getDict } from '../i18n/translations'
+import '../../styles/tokens.css'
+import '../../styles/global.css'
+import DemoStage from '../../components/DemoStage.astro'
+import { getDict } from '../../i18n/translations'
 ---
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" />
-    <title>{getDict('zh').layout.demoTitle}</title>
+    <title>{getDict('en').layout.demoTitle}</title>
   </head>
   <body>
-    <DemoStage lang="zh" />
+    <DemoStage lang="en" />
   </body>
 </html>

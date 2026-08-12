@@ -11,14 +11,20 @@
 //
 // props:
 //   controls（默认 true）：是否渲染下方控制栏。首页传 false 自动连续播放，预览页默认 true
+//   lang（默认 zh）：演示语言，驱动 data-lang 属性 + 静态 HTML 文案
 import './demo/demo-stage.css'
+import { getDemoText } from '../i18n/demo'
+import type { Lang } from '../i18n/translations'
+
 interface Props {
   controls?: boolean
+  lang?: Lang
 }
-const { controls = true } = Astro.props
+const { controls = true, lang = 'zh' } = Astro.props
+const T = getDemoText(lang)
 ---
 
-<div class="demo-stage" data-scale="auto" data-controls={controls ? '1' : '0'}>
+<div class="demo-stage" data-scale="auto" data-controls={controls ? '1' : '0'} data-lang={lang}>
   <div class="stage-frame" id="stageFrame">
     <div class="stage" id="stage">
       <!-- ══ 桌面舞台（始终在场）══ -->
@@ -118,8 +124,8 @@ const { controls = true } = Astro.props
         <div class="fw-body">
           <div class="fw-side">
             <span class="fw-side-item active"><i class="ri-folder-3-line"></i> extensions</span>
-            <span class="fw-side-item"><i class="ri-download-2-line"></i> 下载</span>
-            <span class="fw-side-item"><i class="ri-file-list-3-line"></i> 文稿</span>
+            <span class="fw-side-item"><i class="ri-download-2-line"></i> {T.finderSidebar[0]}</span>
+            <span class="fw-side-item"><i class="ri-file-list-3-line"></i> {T.finderSidebar[1]}</span>
           </div>
           <div class="fw-list">
             <div class="fw-row sel"><i class="ri-folder-fill fw-folder"></i><span class="fw-name">search</span></div>
@@ -142,10 +148,10 @@ const { controls = true } = Astro.props
             <div class="search-bar-content">
               <div class="ext-tag" style="display:flex">
                 <span class="ext-tag-icon ri-folder-open-line"></span>
-                <span class="ext-tag-name">访达工具</span>
+                <span class="ext-tag-name">{T.finderTag}</span>
               </div>
               <span class="search-field">
-                <span class="search-text" style="color:var(--color-text-muted)">在 访达工具 中搜索</span>
+                <span class="search-text" style="color:var(--color-text-muted)">{T.finderSearch}</span>
               </span>
             </div>
           </div>
@@ -154,20 +160,20 @@ const { controls = true } = Astro.props
               <div class="result-list">
                 <div class="fp-row active">
                   <span class="fp-icon"><i class="ri-file-copy-line"></i></span>
-                  <span class="fp-title">拷贝路径</span>
+                  <span class="fp-title">{T.finderActions[0]}</span>
                   <span class="fp-key">↵</span>
                 </div>
                 <div class="fp-row">
                   <span class="fp-icon"><i class="ri-terminal-box-line"></i></span>
-                  <span class="fp-title">在终端中打开</span>
+                  <span class="fp-title">{T.finderActions[1]}</span>
                 </div>
                 <div class="fp-row">
                   <span class="fp-icon"><i class="ri-file-add-line"></i></span>
-                  <span class="fp-title">新建文件</span>
+                  <span class="fp-title">{T.finderActions[2]}</span>
                 </div>
                 <div class="fp-row">
                   <span class="fp-icon"><i class="ri-eye-off-line"></i></span>
-                  <span class="fp-title">切换隐藏文件</span>
+                  <span class="fp-title">{T.finderActions[3]}</span>
                 </div>
               </div>
             </div>
@@ -200,7 +206,7 @@ const { controls = true } = Astro.props
             <!-- 搜索结果面板 -->
             <div class="panel" id="panelSearch">
               <div class="result-list">
-                <div class="group-header" id="grpApp">应用</div>
+                <div class="group-header" id="grpApp">{T.grpApp}</div>
                 <div class="result-item" id="rowVSCode">
                   <div class="result-item-inner">
                     <div class="result-icon icon-app"><i class="ri-code-s-slash-line"></i></div>
@@ -220,7 +226,7 @@ const { controls = true } = Astro.props
                     </div>
                   </div>
                 </div>
-                <div class="group-header" id="grpFile">文件</div>
+                <div class="group-header" id="grpFile">{T.grpFile}</div>
                 <div class="result-item" id="rowVoidnix">
                   <div class="result-item-inner">
                     <div class="result-icon icon-folder"><i class="ri-folder-3-line"></i></div>
@@ -309,11 +315,11 @@ const { controls = true } = Astro.props
                   <div class="ocr-preview-skel"></div>
                 </div>
                 <div class="ocr-text-area" id="ocrTextArea"></div>
-                <div class="group-header">操作</div>
+                <div class="group-header">{T.grpOps}</div>
                 <div class="result-item" id="ocrAction">
                   <div class="result-item-inner">
                     <div class="result-icon"><i class="ri-file-copy-line"></i></div>
-                    <div class="result-text"><div class="result-title">复制</div></div>
+                    <div class="result-text"><div class="result-title">{T.ocrAction}</div></div>
                     <div class="result-key">↵</div>
                   </div>
                 </div>
@@ -336,7 +342,7 @@ const { controls = true } = Astro.props
                       </span>
                       <div class="agent-step-body" id="agentResult">
                         <span class="agent-step-gutter"><span class="agent-step-rail"></span></span>
-                        <pre class="agent-step-out">23 个 index.ts，含 native 的 16 个</pre>
+                        <pre class="agent-step-out">{T.agentToolOut}</pre>
                       </div>
                     </div>
                     <div class="agent-text" id="agentText"></div>
@@ -345,7 +351,7 @@ const { controls = true } = Astro.props
               </div>
               <div class="agent-footer" id="agentFooter">
                 <div class="agent-input-shell">
-                  <span class="agent-input-text">聊点什么...</span>
+                  <span class="agent-input-text">{T.agentInputPlaceholder}</span>
                 </div>
               </div>
             </div>
@@ -369,21 +375,21 @@ const { controls = true } = Astro.props
           <div class="shot-mag-cross-v"></div>
         </div>
         <div class="shot-toolbar" id="shotToolbar">
-          <span class="shot-tool" id="shotRectBtn" title="矩形"><i class="ri-checkbox-blank-line"></i></span>
-          <span class="shot-tool" title="直线"><i class="ri-subtract-line"></i></span>
-          <span class="shot-tool" title="箭头"><i class="ri-arrow-right-line"></i></span>
-          <span class="shot-tool" title="文字"><i class="ri-text"></i></span>
-          <span class="shot-tool" title="模糊"><i class="ri-drop-line"></i></span>
+          <span class="shot-tool" id="shotRectBtn" title={T.shotTools.rect}><i class="ri-checkbox-blank-line"></i></span>
+          <span class="shot-tool" title={T.shotTools.line}><i class="ri-subtract-line"></i></span>
+          <span class="shot-tool" title={T.shotTools.arrow}><i class="ri-arrow-right-line"></i></span>
+          <span class="shot-tool" title={T.shotTools.text}><i class="ri-text"></i></span>
+          <span class="shot-tool" title={T.shotTools.blur}><i class="ri-drop-line"></i></span>
           <span class="shot-sep"></span>
           <span class="shot-color-dot"></span>
           <span class="shot-sep"></span>
-          <span class="shot-tool" id="shotOcrBtn" title="识别"><i class="ri-qr-scan-2-line"></i></span>
-          <span class="shot-tool" id="shotScrollBtn" title="滚动截屏"><i class="ri-arrow-down-double-line"></i></span>
-          <span class="shot-tool" title="钉图"><i class="ri-pushpin-line"></i></span>
-          <span class="shot-tool" title="保存"><i class="ri-save-line"></i></span>
+          <span class="shot-tool" id="shotOcrBtn" title={T.shotTools.ocr}><i class="ri-qr-scan-2-line"></i></span>
+          <span class="shot-tool" id="shotScrollBtn" title={T.shotTools.scroll}><i class="ri-arrow-down-double-line"></i></span>
+          <span class="shot-tool" title={T.shotTools.pin}><i class="ri-pushpin-line"></i></span>
+          <span class="shot-tool" title={T.shotTools.save}><i class="ri-save-line"></i></span>
           <span class="shot-sep"></span>
-          <span class="shot-tool" title="关闭"><i class="ri-close-line"></i></span>
-          <span class="shot-tool" title="复制并关闭"><i class="ri-check-line"></i></span>
+          <span class="shot-tool" title={T.shotTools.close}><i class="ri-close-line"></i></span>
+          <span class="shot-tool" title={T.shotTools.copy}><i class="ri-check-line"></i></span>
         </div>
         <!-- 滚动截屏：右侧实时预览面板 -->
         <div class="shot-scroll-preview" id="shotScrollPreview">
@@ -410,7 +416,7 @@ const { controls = true } = Astro.props
       </div>
 
       <!-- 操作反馈 toast -->
-      <div class="demo-toast" id="demoToast"><i class="ri-check-line"></i> 已粘贴</div>
+      <div class="demo-toast" id="demoToast"><i class="ri-check-line"></i> {T.toastPasted}</div>
 
       <!-- 快捷键键帽 -->
       <div class="kbd-pop" id="kbdPop"></div>
@@ -423,16 +429,13 @@ const { controls = true } = Astro.props
   {controls && (
     <div class="demo-controls" id="demoControls">
     <div class="seg-btns" id="segBtns">
-      <button class="seg-btn active" data-i="0">搜索</button>
-      <button class="seg-btn" data-i="1">剪贴板</button>
-      <button class="seg-btn" data-i="2">Agent</button>
-      <button class="seg-btn" data-i="3">截屏</button>
-      <button class="seg-btn" data-i="4">窗口管理</button>
-      <button class="seg-btn" data-i="5">访达工具</button>
+      {T.segBtns.map((label, i) => (
+        <button class={`seg-btn ${i === 0 ? 'active' : ''}`} data-i={i}>{label}</button>
+      ))}
     </div>
     <span class="ctrl-sep"></span>
-    <button class="seg-btn all-btn" id="allBtn">连续播放</button>
-    <button class="icon-btn" id="playBtn" aria-label="暂停/播放"><i class="ri-pause-fill"></i></button>
+    <button class="seg-btn all-btn" id="allBtn">{T.btnPlayAll}</button>
+    <button class="icon-btn" id="playBtn" aria-label={T.playAria}><i class="ri-pause-fill"></i></button>
     <div class="prog-track" id="progTrack"><div class="prog-fill" id="progFill"></div></div>
   </div>
   )}
