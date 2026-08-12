@@ -1,6 +1,6 @@
 [package]
 name = "Voidnix"
-version = "0.1.5"
+version = "0.1.6"
 description = "A Voidnix launcher for macOS"
 authors = ["litiantao"]
 edition = "2021"
