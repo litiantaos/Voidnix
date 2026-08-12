@@ -1,13 +1,22 @@
 ---
-import { clusters, totalExtensions } from '../data/extensions.ts'
+import { getDict, totalExtensions, type Lang } from '../i18n/translations'
+import { getClusters } from '../data/extensions'
+
+interface Props {
+  lang?: Lang
+}
+const { lang = 'zh' } = Astro.props
+const t = getDict(lang)
+const clusters = getClusters(lang)
+const titleText = t.extensions.title.replace('{n}', String(totalExtensions))
 ---
 
 <section class="section matrix" id="extensions">
   <div class="container">
     <div class="head reveal">
-      <p class="eyebrow">扩展矩阵</p>
-      <h2 class="section-title">{totalExtensions} 个扩展，统一架构</h2>
-      <p class="section-lead">都是一等公民，声明即用。</p>
+      <p class="eyebrow">{t.extensions.eyebrow}</p>
+      <h2 class="section-title">{titleText}</h2>
+      <p class="section-lead">{t.extensions.lead}</p>
     </div>
 
     <div class="clusters">
@@ -53,7 +62,7 @@ import { clusters, totalExtensions } from '../data/extensions.ts'
     display: flex;
     align-items: center;
     gap: 12px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 15px;
     font-weight: 500;
     color: var(--color-text-secondary);

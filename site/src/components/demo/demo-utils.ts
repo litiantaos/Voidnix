@@ -8,17 +8,16 @@ export interface Segment {
   id: string
   dur: number
   kbd: string[] | null
-  cap: string
 }
 
-// ── 段定义（每段独立时长）──
+// ── 段定义（每段独立时长，字幕由 renderer 从 i18n 取）──
 export const SEGMENTS: Segment[] = [
-  { id: 'search', dur: 160, kbd: ['⌥', 'Space'], cap: '全局搜索：应用、文件、扩展' },
-  { id: 'clipboard', dur: 190, kbd: ['⌥', 'C'], cap: '扩展模式：剪贴板历史' },
-  { id: 'agent', dur: 200, kbd: ['⌥', 'A'], cap: 'Agent：自然语言驱动工具' },
-  { id: 'shot', dur: 350, kbd: ['⌥', 'S'], cap: '截屏：标注 + 滚动截屏 + OCR' },
-  { id: 'snap', dur: 160, kbd: null, cap: '窗口管理：鼠标顶部触发分屏' },
-  { id: 'finder', dur: 160, kbd: ['⌥', 'F'], cap: '访达工具：快捷键操作 Finder' },
+  { id: 'search', dur: 160, kbd: ['⌥', 'Space'] },
+  { id: 'clipboard', dur: 190, kbd: ['⌥', 'C'] },
+  { id: 'agent', dur: 200, kbd: ['⌥', 'A'] },
+  { id: 'shot', dur: 350, kbd: ['⌥', 'S'] },
+  { id: 'snap', dur: 160, kbd: null },
+  { id: 'finder', dur: 160, kbd: ['⌥', 'F'] },
 ]
 
 // 累计偏移（capture / all 模式用）

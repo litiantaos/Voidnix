@@ -54,7 +54,12 @@ const lightTokens = extractBlock(themeSrc, /:root\s*\{/)
 const darkTokens = extractBlock(themeSrc, /:root\[data-theme=["']dark["']\]\s*\{/)
 
 // ── 官网专属 token（产品无对应，或需覆盖产品值）──
-const SITE_ONLY_LIGHT = `  /* 布局（官网落地页专属，产品无） */
+const SITE_ONLY_LIGHT = `  /* 字体：系统 sans 优先（拉丁走 SF Pro），CJK 仍走 PingFang SC。不继承 mono */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue',
+    'Segoe UI', sans-serif, 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+
+  /* 布局（官网落地页专属，产品无） */
   --content-max: 1100px;
   --content-pad: clamp(20px, 5vw, 48px);
 

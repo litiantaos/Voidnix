@@ -1,69 +1,21 @@
 ---
-// 6 旗舰能力。每个配一个纯 CSS 复刻的微场景（替代截图，无外部资源即高级）。
-const capabilities = [
-  {
-    id: 'search',
-    icon: 'ri-search-line',
-    title: '全局搜索',
-    tag: 'Option + Space',
-    desc: '一次按键召回一切，快结果不等慢结果。',
-    bullets: ['流式增量召回', '拼音 / 全拼 / 缩写', '应用 / 文件 / 扩展分组'],
-    scene: 'search',
-  },
-  {
-    id: 'agent',
-    icon: 'ri-robot-2-line',
-    title: 'AI Agent',
-    tag: 'Option + A',
-    desc: '对话即操作，过程全程可见。',
-    bullets: ['工具调用循环', '联网搜索 + 执行命令', '统一 Key 中枢'],
-    scene: 'agent',
-  },
-  {
-    id: 'screenshot',
-    icon: 'ri-screenshot-line',
-    title: '截屏',
-    tag: 'Option + S',
-    desc: '截屏即标注、识别、钉图，存盘路径可配。',
-    bullets: ['标注 / OCR / 二维码', '钉图常驻', '滚动长截图'],
-    scene: 'screenshot',
-  },
-  {
-    id: 'window',
-    icon: 'ri-layout-grid-line',
-    title: '窗口管理',
-    tag: '鼠标至屏顶',
-    desc: '鼠标移至屏顶中心唤起面板，多屏下布局相对当前屏计算。',
-    bullets: ['顶部分屏面板', '自定义尺寸', '跨屏迁移'],
-    scene: 'window',
-  },
-  {
-    id: 'proxy',
-    icon: 'ri-signal-tower-line',
-    title: '代理',
-    tag: 'TUN 模式',
-    desc: '内置 mihomo 系统级接管，菜单栏一键断开。',
-    bullets: ['TUN 系统级接管', '节点测速切换', '连接 / 规则 / 日志'],
-    scene: 'proxy',
-  },
-  {
-    id: 'terminal',
-    icon: 'ri-terminal-box-line',
-    title: '终端建议',
-    tag: 'zsh',
-    desc: '输入即建议，→ 接受。',
-    bullets: ['frecency 智能补全', '→ 接受 / Tab 切换', '零侵入 zsh'],
-    scene: 'terminal',
-  },
-]
+import { getDict, type Lang } from '../i18n/translations'
+
+interface Props {
+  lang?: Lang
+}
+const { lang = 'zh' } = Astro.props
+const t = getDict(lang)
+const capabilities = t.capabilities.items
+const sc = t.capabilities.scenes
 ---
 
 <section class="section capabilities" id="capabilities">
   <div class="container">
     <div class="head reveal">
-      <p class="eyebrow">核心能力</p>
-      <h2 class="section-title">六块拼图</h2>
-      <p class="section-lead">默认配齐，按需开关。</p>
+      <p class="eyebrow">{t.capabilities.eyebrow}</p>
+      <h2 class="section-title">{t.capabilities.title}</h2>
+      <p class="section-lead">{t.capabilities.lead}</p>
     </div>
 
     <div class="rows">
@@ -84,14 +36,14 @@ const capabilities = [
               </ul>
             </div>
             <div class="cap-scene">
-              {c.scene === 'search' && (
+              {c.id === 'search' && (
                 <div class="scene soft-card">
                   <div class="sc-search"><i class="ri-search-line" /><span>void</span></div>
                   <div class="sc-row is-active">
                     <span class="sc-ico accent"><i class="ri-terminal-box-fill" /></span>
                     <span class="sc-m"><b>Voidnix</b><small>/Applications</small></span>
                   </div>
-                  <div class="sc-group">文件</div>
+                  <div class="sc-group">{sc.groupFile}</div>
                   <div class="sc-row">
                     <span class="sc-ico folder"><i class="ri-folder-3-line" /></span>
                     <span class="sc-m"><b>Voidnix</b><small>~/Code</small></span>
@@ -102,17 +54,17 @@ const capabilities = [
                   </div>
                 </div>
               )}
-              {c.scene === 'agent' && (
+              {c.id === 'agent' && (
                 <div class="scene soft-card">
-                  <div class="bubble user">列出 extensions 目录里的 ts 文件</div>
+                  <div class="bubble user">{sc.agentUser}</div>
                   <div class="bubble bot">
                     <div class="tool-step"><i class="ri-terminal-line" /><span>run_command · ls</span></div>
-                    <div class="tool-out">23 个 index.ts，含 native 的 16 个</div>
+                    <div class="tool-out">{sc.agentToolOut}</div>
                   </div>
-                  <div class="bubble user"><i class="ri-arrow-right-s-line" /> 复制路径</div>
+                  <div class="bubble user"><i class="ri-arrow-right-s-line" /> {sc.agentAction}</div>
                 </div>
               )}
-              {c.scene === 'screenshot' && (
+              {c.id === 'screenshot' && (
                 <div class="scene scene-shot soft-card">
                   <div class="shot-area">
                     <span class="shot-handle tl" />
@@ -130,7 +82,7 @@ const capabilities = [
                   </div>
                 </div>
               )}
-              {c.scene === 'window' && (
+              {c.id === 'window' && (
                 <div class="scene scene-win soft-card">
                   <div class="snap-grid">
                     <div class="snap-cell" />
@@ -140,19 +92,19 @@ const capabilities = [
                     <div class="snap-cell" />
                     <div class="snap-cell" />
                   </div>
-                  <div class="snap-label"><i class="ri-drag-move-2-line" /> 右半屏</div>
+                  <div class="snap-label"><i class="ri-drag-move-2-line" /> {sc.snapLabel}</div>
                 </div>
               )}
-              {c.scene === 'proxy' && (
+              {c.id === 'proxy' && (
                 <div class="scene soft-card">
-                  <div class="px-status"><span class="px-dot" /> 已连接 · 12 节点</div>
-                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">香港 01</span><span class="px-ms good">38ms</span></div>
-                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">东京 02</span><span class="px-ms good">62ms</span></div>
-                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">新加坡 01</span><span class="px-ms">98ms</span></div>
-                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">洛杉矶 03</span><span class="px-ms mid">180ms</span></div>
+                  <div class="px-status"><span class="px-dot" /> {sc.proxyConnected}</div>
+                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">{sc.proxyNodes[0]}</span><span class="px-ms good">38ms</span></div>
+                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">{sc.proxyNodes[1]}</span><span class="px-ms good">62ms</span></div>
+                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">{sc.proxyNodes[2]}</span><span class="px-ms">98ms</span></div>
+                  <div class="px-row"><i class="ri-server-line" /><span class="px-name">{sc.proxyNodes[3]}</span><span class="px-ms mid">180ms</span></div>
                 </div>
               )}
-              {c.scene === 'terminal' && (
+              {c.id === 'terminal' && (
                 <div class="scene scene-term soft-card">
                   <div class="term-bar"><span class="tdot r" /><span class="tdot y" /><span class="tdot g" /><b>zsh</b></div>
                   <div class="term-body">
@@ -211,7 +163,7 @@ const capabilities = [
     border: 1px solid var(--accent-line-soft);
   }
   .cap-tag {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
     color: var(--color-text-muted);
     padding: 4px 10px;
@@ -220,7 +172,7 @@ const capabilities = [
     border: 1px solid var(--color-divider);
   }
   .cap-title {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: clamp(24px, 3vw, 32px);
     font-weight: 600;
     letter-spacing: -0.02em;
@@ -286,7 +238,7 @@ const capabilities = [
     background: var(--mock-input-fill);
     border: 1px solid var(--soft-surface-border);
     color: var(--color-text-muted);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 13px;
     margin-bottom: 10px;
   }
@@ -325,13 +277,13 @@ const capabilities = [
   .sc-m small {
     font-size: 11px;
     color: var(--color-text-muted);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
   }
   .sc-row.is-active .sc-m b {
     color: var(--color-accent);
   }
   .sc-group {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 10px;
     color: var(--color-text-muted);
     padding: 8px 8px 4px;
@@ -364,13 +316,13 @@ const capabilities = [
     display: flex;
     align-items: center;
     gap: 7px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
     color: var(--color-accent);
     margin-bottom: 6px;
   }
   .tool-out {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
     color: var(--color-text-secondary);
   }
@@ -403,7 +355,7 @@ const capabilities = [
     position: absolute;
     top: 8px;
     left: 8px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 10px;
     color: var(--shot-badge-ink);
     background: var(--shot-badge-fill);
@@ -454,7 +406,7 @@ const capabilities = [
     display: flex;
     align-items: center;
     gap: 7px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
     color: var(--color-text-secondary);
   }
@@ -464,7 +416,7 @@ const capabilities = [
     display: flex;
     align-items: center;
     gap: 8px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
     color: var(--color-text-secondary);
     margin-bottom: 12px;
@@ -495,7 +447,7 @@ const capabilities = [
     color: var(--color-text-primary);
   }
   .px-ms {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
     color: var(--color-text-muted);
   }
@@ -514,7 +466,7 @@ const capabilities = [
     padding: 9px 12px;
     background: rgb(var(--cool) / 0.06);
     border-bottom: 1px solid var(--color-divider);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 12px;
     color: var(--color-text-muted);
   }
@@ -531,7 +483,7 @@ const capabilities = [
   .tdot.g { background: var(--color-success); }
   .term-body {
     padding: 14px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 13px;
     line-height: 1.7;
   }

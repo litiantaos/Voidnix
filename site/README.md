@@ -16,12 +16,33 @@ site/
 │   ├── og-source.html        # OG 源稿（浏览器渲染 1200×630）
 │   └── render-og.mjs         # Playwright 截图脚本
 └── src/
-    ├── components/           # Hero / DemoStage / Philosophy / Capabilities / ExtensionMatrix / Footer / Wordmark
-    ├── data/extensions.ts    # 22 扩展元数据 + 领域分簇
+    ├── components/           # PageContent / Hero / DemoStage / Philosophy / Capabilities / ExtensionMatrix / Footer / Wordmark
+    ├── data/extensions.ts    # 扩展矩阵便捷访问器（数据在 i18n 字典）
+    ├── i18n/
+    │   ├── translations.ts   # 页面级双语字典（zh 类型源，en 同构校验）
+    │   └── demo.ts           # Demo 动画双语文案
     ├── layouts/BaseLayout.astro
-    ├── pages/index.astro     # 单页章节编排
+    ├── pages/
+    │   ├── index.astro       # 中文首页（/）
+    │   ├── demo.astro        # 中文 demo（/demo）
+    │   └── en/               # 英文路由（/en/、/en/demo）
     └── styles/{tokens,global}.css
 ```
+
+## 国际化（i18n）
+
+中英双语，URL 前缀路由：`/`（中文，默认）与 `/en/`（英文）。
+
+**架构**：
+
+- `src/i18n/translations.ts` — 页面级文案单一源。`zh` 对象为类型源，`en: typeof zh` 编译期保证完整性。`getDict(lang)` 返回该语言全部文案。
+- `src/i18n/demo.ts` — Demo 动画专属文案（字幕 / 搜索框 / Agent 对话 / 控制按钮等），浏览器端按 `data-lang` 属性取值。
+- 各组件接收 `lang` prop，内部 `const t = getDict(lang)` 取文案。
+- DemoStage 设 `data-lang` 属性，demo-scenes / demo-player 读此属性选择语言。
+- 语言切换：Hero nav 内链接，中文页显示「EN」指向 `/en/`，英文页显示「中文」指向 `/`。
+- SEO：`<html lang>` / `og:locale` / `hreflang` 双语互指均按语言输出。
+
+**新增/修改文案**：统一改 `translations.ts`（页面级）或 `demo.ts`（动画级）。`en` 缺 key 时 TS 报错。
 
 ## 开发
 

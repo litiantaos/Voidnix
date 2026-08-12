@@ -17,6 +17,8 @@ import {
   spring,
   typeSlice,
 } from './demo-utils'
+import { getDemoText, type DemoText } from '../../i18n/demo'
+import type { Lang } from '../../i18n/translations'
 
 type El = HTMLElement
 type Getter = (id: string) => El | null
@@ -27,6 +29,10 @@ export interface Renderer {
 }
 
 export function createRenderer($: Getter): Renderer {
+  // 从舞台元素 data-lang 取语言
+  const stageEl = document.querySelector('.demo-stage') as HTMLElement | null
+  const lang = (stageEl?.dataset.lang as Lang) || 'zh'
+  const T: DemoText = getDemoText(lang)
   // ── 元素引用 ──
   const fogA = $('fogA')!,
     fogB = $('fogB')!
@@ -240,7 +246,7 @@ export function createRenderer($: Getter): Renderer {
   function renderCaption(segIdx: number, f: number) {
     const seg = SEGMENTS[segIdx]
     const dis = _segCtx.dis
-    const text = f >= 32 && f < dis ? seg.cap : ''
+    const text = f >= 32 && f < dis ? T.caps[seg.id] : ''
     const fadeIn = clamp((f - 34) / 8, 0, 1)
     const fadeOut = f > dis - 10 ? 1 - clamp((f - dis + 10) / 10, 0, 1) : 1
     const op = text ? fadeIn * fadeOut : 0
@@ -297,7 +303,7 @@ export function createRenderer($: Getter): Renderer {
   function renderSearch(f: number) {
     renderKbd(f, '⌥', 'Space')
     const op = applyLauncher(f)
-    if (f < 54) setSbText('搜索应用、文件、扩展等', 'var(--color-text-muted)')
+    if (f < 54) setSbText(T.searchPlaceholder, 'var(--color-text-muted)')
     else if (f <= 72) setSbText(typeSlice(f, 54, 72, 'code'), 'var(--color-text-primary)')
     else setSbText('code', 'var(--color-text-primary)')
 
@@ -346,12 +352,12 @@ export function createRenderer($: Getter): Renderer {
     editorWin.style.opacity = String(edIn * edOut)
 
     extTagIcon.className = 'ext-tag-icon ri-clipboard-line'
-    extTagName.textContent = '剪贴板'
+    extTagName.textContent = T.clipboardTag
     extTag.style.display = 'flex'
     const tagOp = clamp((f - APP) / 10, 0, 1) * clamp(1 - (f > 116 ? (f - 116) / 8 : 0), 0, 1)
     extTag.style.opacity = String(tagOp)
 
-    setSbText('在 剪贴板 中搜索', 'var(--color-text-muted)')
+    setSbText(T.clipboardSearch, 'var(--color-text-muted)')
     searchCursor.style.opacity = '0'
 
     panelClipboard.style.opacity = String(op)
@@ -366,7 +372,7 @@ export function createRenderer($: Getter): Renderer {
 
     if (f >= 134) {
       ewPasted.style.opacity = String(clamp((f - 134) / 4, 0, 1))
-      ewPasted.textContent = 'const FPS = 30'
+      ewPasted.textContent = T.clipboardPasted
       ewCursor.style.opacity = Math.floor(f / 15) % 2 === 0 ? '1' : '0'
     } else {
       ewPasted.style.opacity = '0'
@@ -390,19 +396,19 @@ export function createRenderer($: Getter): Renderer {
     const op = applyLauncher(f, 168)
 
     extTagIcon.className = 'ext-tag-icon ri-robot-2-line'
-    extTagName.textContent = 'Agent'
+    extTagName.textContent = T.agentTag
     extTag.style.display = 'flex'
     const tagOp = clamp((f - APP) / 10, 0, 1) * clamp(1 - (f > 168 ? (f - 168) / 8 : 0), 0, 1)
     extTag.style.opacity = String(tagOp)
 
-    setSbText('在 Agent 中搜索', 'var(--color-text-muted)')
+    setSbText(T.agentSearch, 'var(--color-text-muted)')
     searchCursor.style.opacity = '0'
 
     panelAgent.style.opacity = String(op)
     panelAgent.style.transform = `translateY(${(1 - clamp((f - 54) / 10, 0, 1)) * 6}px)`
 
     agentUserRow.style.opacity = String(spring(f, 54, 100, 16) * op)
-    agentUserBubble.textContent = '列出 extensions 目录下的 ts 文件'
+    agentUserBubble.textContent = T.agentUser
 
     const toolS = spring(f, 66, 100, 16)
     agentCard.style.opacity = String(toolS * op)
@@ -411,12 +417,7 @@ export function createRenderer($: Getter): Renderer {
 
     const textS = spring(f, 92, 100, 16)
     agentText.style.opacity = String(textS * op)
-    agentText.textContent = typeSlice(
-      f,
-      92,
-      132,
-      '找到 23 个 index.ts，含 native 的 16 个。\n\n这些文件分布在 extensions/ 下的每个扩展目录中，纯 TS 扩展（calculator、ip 等）同样包含 index.ts。还需要其他帮助吗？',
-    )
+    agentText.textContent = typeSlice(f, 92, 132, T.agentResult)
 
     const footerS = clamp((f - APP_END) / 8, 0, 1) * clamp(1 - (f > 168 ? (f - 168) / 8 : 0), 0, 1)
     agentFooter.style.opacity = String(footerS)
@@ -442,7 +443,7 @@ export function createRenderer($: Getter): Renderer {
       shotFlash.style.opacity = '0'
 
       // 字幕
-      setShotCaption(f, 0, '截屏标注：拉出选区 + 标注工具')
+      setShotCaption(f, 0, T.shotCapA)
 
       const SEL_X = 160,
         SEL_Y = 120,
@@ -515,7 +516,7 @@ export function createRenderer($: Getter): Renderer {
       shotOcrBtn.classList.remove('active')
 
       // 字幕
-      setShotCaption(f, 120, '滚动截屏：长内容连续捕获')
+      setShotCaption(f, 120, T.shotCapB)
 
       // 红框消失
       const rectOut = clamp(1 - (f - 120) / 8, 0, 1)
@@ -572,7 +573,7 @@ export function createRenderer($: Getter): Renderer {
       shotScrollPreview.style.opacity = '0'
 
       // 字幕
-      setShotCaption(f, 225, '截图 OCR：文字识别与复制')
+      setShotCaption(f, 225, T.shotCapC)
 
       // 滚动截屏结束后留 10f 停顿（215-225），再激活 OCR 按钮
       shotOcrBtn.classList.toggle('active', f >= 225 && f < 238)
@@ -607,10 +608,10 @@ export function createRenderer($: Getter): Renderer {
         winTerm.style.opacity = String(laOut * 0.96)
 
         extTagIcon.className = 'ext-tag-icon ri-scan-2-line'
-        extTagName.textContent = 'OCR'
+        extTagName.textContent = T.ocrTag
         extTag.style.display = 'flex'
         extTag.style.opacity = String(laIn)
-        setSbText('识别结果', 'var(--color-text-muted)')
+        setSbText(T.ocrSearch, 'var(--color-text-muted)')
         searchCursor.style.opacity = '0'
 
         panelOcr.style.opacity = String(laIn)
@@ -618,8 +619,7 @@ export function createRenderer($: Getter): Renderer {
         // 预览 + 文本整体出现（不逐字）
         ocrPreview.style.opacity = '1'
         ocrTextArea.style.opacity = String(clamp((f - 254) / 8, 0, 1))
-        ocrTextArea.textContent =
-          'Voidnix — macOS 效率启动器\n模块化扩展架构\nRust + Vue 3 + Tauri 2'
+        ocrTextArea.textContent = T.ocrText
         ocrAction.style.opacity = String(clamp((f - 262) / 8, 0, 1))
 
         // 选中复制项

@@ -212,6 +212,11 @@
 
 /* ══ SITE_ONLY：官网专属 token（产品无对应或需覆盖）══ */
 :root {
+  /* 字体：系统 sans 优先（拉丁走 SF Pro），CJK 仍走 PingFang SC。不继承 mono */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue',
+    'Segoe UI', sans-serif, 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+
   /* 布局（官网落地页专属，产品无） */
   --content-max: 1100px;
   --content-pad: clamp(20px, 5vw, 48px);
