@@ -145,7 +145,7 @@ try {
   const opts = (await resolveConfig(outPath)) ?? {}
   writeFileSync(outPath, await format(output, { ...opts, filepath: outPath }))
 } catch {
-  // 无 prettier 环境：产物语法仍正确，格式由本地 precheck 保证
+  // 无 prettier 环境：产物语法仍正确，格式由本地 precommit 保证
 }
 
 process.stdout.write('sync-tokens: site/src/styles/tokens.css 已同步\n')

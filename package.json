@@ -23,7 +23,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "smoke-test": "python3 scripts/smoke-test.py",
-    "precheck": "bun run lint:check && cargo fmt --manifest-path src-tauri/Cargo.toml --check && bun run typecheck && cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings && bun run check:drift && bun run test && cargo test --manifest-path src-tauri/Cargo.toml --lib"
+    "precommit": "bun run lint && cargo fmt --manifest-path src-tauri/Cargo.toml && bun run typecheck && cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings && bun run check:drift && bun run test && cargo test --manifest-path src-tauri/Cargo.toml --lib"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.8.0",

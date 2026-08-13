@@ -91,11 +91,13 @@ CGEvent 基础设施（键盘映射 / 窗口检测 / 鼠标操作 / 内存测量
 
 ## 本地门禁
 
-**每次 `git commit` 前必须先跑 `bun run precheck` 并全绿**，否则不得提交（AI agent 同样遵守，不得跳过）：
+**每次 `git commit` 前必须先跑 `bun run precommit` 并全绿**，否则不得提交（AI agent 同样遵守，不得跳过）：
 
 ```bash
-bun run precheck   # CI 同款全量门禁（不含 e2e）：lint:check → cargo fmt --check → typecheck → cargo clippy --lib -D warnings → check:drift → test → cargo test --lib
+bun run precommit   # 提交前门禁（不含 e2e）：lint（写盘修复）→ cargo fmt（写盘）→ typecheck → cargo clippy --lib -D warnings → check:drift → test → cargo test --lib
 ```
+
+precommit 会自动修复格式（`prettier --write` + `cargo fmt`），跑完后 `git diff` 检查是否有非预期格式化，确认后一起提交。
 
 e2e（`bun run test:e2e`，需起 Vite dev server + 浏览器）不在本地门禁，交 CI 兜底。
 
@@ -536,6 +538,6 @@ icon 缓存纯内存（首次提取后按 bundle mtime 增量复用，零磁盘�
 - UnoCSS Attributify：不确定的工具类语法先用 context7 查 UnoCSS 文档确认，勿靠翻 dist 源码或试错猜语法
 - TypeScript 严格模式：`noUnusedLocals` + `noUnusedParameters`
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`，自定义 tokio 运行时 4 worker（默认按逻辑核心数）
-- Git commit：`<type>(<scope>): <中文描述>`，描述力求最简，不写详情，不主动执行 git 操作；**提交前必须先跑 `bun run precheck` 且全绿**
+- Git commit：`<type>(<scope>): <中文描述>`，描述力求最简，不写详情，不主动执行 git 操作；**提交前必须先跑 `bun run precommit` 且全绿**
 - 语言：注释和回复用中文，禁止在任何地方使用 emoji
 - 文档：不用表格，言简意赅，修改代码后必须同步更新 AGENTS.md 或对应 docs/ 文档中相关描述
