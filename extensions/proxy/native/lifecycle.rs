@@ -7,8 +7,10 @@ use super::stream::StreamRegistry;
 use super::subscription;
 use super::tun;
 use serde_json::Value;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 /// 代理运行状态：enabled（流量是否被代理）+ tun_active（root mihomo 进程是否在跑，常驻）
@@ -32,14 +34,75 @@ pub(crate) struct ProxyStatus {
     pub msg: String,
 }
 
-/// 写 config.yaml + PUT /configs 热重载（active/idle 切换、订阅变更共用）。
+/// 检测系统是否已有其他 TUN 代理工具的路由冲突。
+/// mihomo auto-route 创建 0.0.0.0/1 + 128.0.0.0/1 半路由覆盖默认路由，
+/// 若已存在（其他代理工具创建），mihomo TUN 必然失败——提前拦截给出明确提示。
+/// 仅 start_core（idle→active 切换）调用，mihomo 自身 TUN 路由不会误判（idle 无 TUN 路由）。
+fn tun_route_conflict() -> Option<String> {
+    let Ok(out) = std::process::Command::new("netstat").args(["-rn"]).output() else {
+        return None; // 检测失败不阻塞（让 mihomo 尝试 + verify 兜底）
+    };
+    let routes = String::from_utf8_lossy(&out.stdout);
+    let has_half_route = routes.lines().any(|line| {
+        let dest = line.split_whitespace().next().unwrap_or("");
+        dest == "0/1" || dest == "128/1"
+    });
+    if has_half_route {
+        Some("系统已有其他代理工具的 TUN 路由，请先关闭它".into())
+    } else {
+        None
+    }
+}
+
+/// 回滚 idle config：先写磁盘（不经 API，确保 config.yaml 更新为 idle），再短超时热重载。
+/// verify_tun_active 失败时调用——即使热重载失败（controller 卡住），磁盘已是 idle config，
+/// mihomo 下次重启（launchd KeepAlive / 崩溃自愈）时自动加载 idle → 不再崩溃循环 → controller 恢复。
+pub(crate) async fn rollback_to_idle(app: &AppHandle, params: &RunParams) {
+    let idle = RunParams {
+        mode: "direct".into(),
+        tun: false,
+        ..params.clone()
+    };
+    if let Ok(path) = write_run_config(app, &idle) {
+        let base = format!("http://127.0.0.1:{}", params.controller_port);
+        let _ = controller::reload_config(
+            &base,
+            &params.secret,
+            &path.to_string_lossy(),
+            Duration::from_secs(3),
+            1,
+        )
+        .await;
+    }
+}
+
+/// 写 config 到磁盘，返回路径。active→config-active.yaml（热重载专用），
+/// idle→config.yaml（mihomo 启动配置，永不含 TUN 段——崩溃后 launchd 重启只加载 idle）。
+fn write_run_config(app: &AppHandle, params: &RunParams) -> Result<PathBuf, String> {
+    let yaml = subscription::build_run_config(app, params)?;
+    let path = if params.tun {
+        core::active_config_path(app)?
+    } else {
+        core::run_config_path(app)?
+    };
+    std::fs::write(&path, yaml).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
+/// 写 config 到磁盘 + PUT /configs 热重载（active/idle 切换、订阅变更共用）。
+/// active→config-active.yaml，idle→config.yaml（路径由 write_run_config 按 tun 字段路由）。
 /// TUN 模式下 root mihomo 常驻，代理开关 = 热重载 active/idle config，免 spawn 免提权。
 pub(crate) async fn reload_config_yaml(app: &AppHandle, params: &RunParams) -> Result<(), String> {
-    let yaml = subscription::build_run_config(app, params)?;
-    let path = core::run_config_path(app)?;
-    std::fs::write(&path, yaml).map_err(|e| e.to_string())?;
+    let path = write_run_config(app, params)?;
     let base = format!("http://127.0.0.1:{}", params.controller_port);
-    controller::reload_config(&base, &params.secret, &path.to_string_lossy()).await
+    controller::reload_config(
+        &base,
+        &params.secret,
+        &path.to_string_lossy(),
+        Duration::from_secs(10),
+        3,
+    )
+    .await
 }
 
 /// 读 mihomo.log 当前字节大小。reload 前快照，供 verify_tun_active 区分新增行。
@@ -74,7 +137,7 @@ fn tail_after(content: &str, since: u64) -> &str {
 ///
 /// **200ms buffer**：PUT /configs 同步完成 config 热重载（含 TUN 创建），返回时日志已写入
 /// （实测 PUT active 37ms，返回即 `tun.enable=True` + 日志就绪）。200ms 是文件系统刷新保守
-/// buffer，非等待 mihomo 处理。start_core 中后台调用不阻塞 enabled 翻转。
+/// buffer，非等待 mihomo 处理。
 pub(crate) async fn verify_tun_active(app: &AppHandle, since: u64) -> Result<(), String> {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let Ok(dir) = crate::runtime::storage::ext_data_dir(app, "proxy") else {
@@ -83,8 +146,11 @@ pub(crate) async fn verify_tun_active(app: &AppHandle, since: u64) -> Result<(),
     let content = std::fs::read_to_string(dir.join("mihomo.log")).unwrap_or_default();
     for line in tail_after(&content, since).lines().rev().take(15) {
         let l = line.to_lowercase();
-        // 正常日志 "[TUN] Tun adapter listening at: utun4" 无 error 关键词不会误报
-        if l.contains("tun") && (l.contains("error") || l.contains("exist")) {
+        // 正常日志 "[TUN] Tun adapter listening at: utun4" 无 error 关键词不会误报。
+        // route 错误（"route: file exists"）也需捕获——auto-route 路由冲突是 TUN 失败的主因。
+        if (l.contains("tun") || l.contains("route"))
+            && (l.contains("error") || l.contains("exist") || l.contains("fail"))
+        {
             return Err("TUN 网卡或路由被其他代理工具占用，请先关闭它".into());
         }
     }
@@ -137,57 +203,110 @@ pub(crate) async fn start_core(
     if state.enabled.load(Ordering::Relaxed) {
         return Ok(()); // 幂等：已开启
     }
+    // Pre-flight：其他代理工具已创建 TUN 半路由时，mihomo TUN 必然失败——提前拦截
+    if let Some(msg) = tun_route_conflict() {
+        return Err(msg);
+    }
     // 确保 root mihomo 在跑（launchd 托管：复用/等拉起/首次安装），安装后跑 idle config。
     // 统一热重载 active config 开启代理——install 后从 idle 切 active，复用时确认状态，免提权。
     ensure_root_mihomo(app, state, &params).await?;
     let log_before = log_size(app); // reload 前快照，供 verify_tun_active 区分新增行
     reload_config_yaml(app, &params).await?;
-    // TUN 静默失效检测后台化：PUT /configs 同步完成 TUN 创建（实测返回时日志已写入），
-    // verify 读日志检测静默失败（别的工具占 TUN 时 mihomo API 仍 204）。后台化不阻塞
-    // enabled 翻转——正常路径零感知，仅 TUN 被占（极少）时经事件回滚 enabled + toast。
-    let app2 = app.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = verify_tun_active(&app2, log_before).await {
-            let st = app2.state::<ProxyState>();
-            // 竞态保护：用户可能在 verify 期间关闭重开，仅当前仍 enabled 才回滚
-            if st.enabled.swap(false, Ordering::Relaxed) {
-                let _ = app2.emit("proxy-enabled", false);
-                let _ = app2.emit(
-                    "proxy-status",
-                    ProxyStatus {
-                        kind: "error".into(),
-                        msg: e,
-                    },
-                );
-                crate::runtime::menubar::refresh(&app2);
-            }
-        }
-    });
+    // 同步 TUN 验证：PUT /configs 返回 204 不代表 TUN 创建成功（别的工具占路由时静默失败）。
+    // 同步检测不阻塞 UX（200ms + reload < 500ms），且失败时即时回滚 idle config 清理 mihomo
+    // 状态——避免遗留 broken active config 致 controller 逐渐无响应、后续重开走 osascript 重装。
+    if let Err(e) = verify_tun_active(app, log_before).await {
+        rollback_to_idle(app, &params).await;
+        return Err(e);
+    }
     *state.run_params.lock().map_err(|e| e.to_string())? = Some(params);
     state.enabled.store(true, Ordering::Relaxed);
     ensure_monitor(app); // 启动健康监测（幂等：已在跑则跳过）
     Ok(())
 }
 
-/// 停止代理（流量切直通）。
+/// 停止代理（流量切直通）。乐观关闭——成功/后台重试均立即返回 Ok，UI 即时显示关闭。
+///
+/// controller 卡住时的容错策略（解决其他代理工具断开等网络风暴场景下关不掉的问题）：
+/// 1. 先写 idle config.yaml 到磁盘（即使 API 卡住，mihomo 重启后自动加载 idle）
+/// 2. 短超时（3s）单次尝试 API 热重载，成功则 TUN 即时释放
+/// 3. 失败 + mihomo 已死 → 视为已关闭
+/// 4. 失败 + mihomo 在跑 → 乐观返回 Ok，后台异步重试释放 TUN，全部失败才通知用户
 pub(crate) async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
-    state.monitor_alive.store(false, Ordering::Relaxed); // 用户主动关闭，停健康监测
-    app.state::<StreamRegistry>().cancel_all(); // 停所有 WS 流（traffic/connections/logs）
+    state.monitor_alive.store(false, Ordering::Relaxed);
+    app.state::<StreamRegistry>().cancel_all();
     if state.tun_active.load(Ordering::Relaxed) {
         let idle = state.run_params.lock().map_err(|e| e.to_string())?.clone();
         if let Some(mut p) = idle {
             p.mode = "direct".into();
             p.tun = false;
-            // 热重载 idle 撤销 TUN、流量直通（mihomo 进程保留，launchd 继续托管）。
-            if let Err(e) = reload_config_yaml(app, &p).await {
-                // controller 不可达时区分两种情况：
-                // - mihomo 在但 controller 卡死 → 无法热重载也无法杀（KeepAlive 会拉起），返回 Err
-                //   让前端 catch 通知用户（不 emit proxy-status 避免与 catch 双重 toast）
-                if root_mihomo_running(app) {
-                    return Err(format!("关闭代理失败：{e}"));
+            match write_run_config(app, &p) {
+                Ok(path) => {
+                    let base = format!("http://127.0.0.1:{}", p.controller_port);
+                    let path_str = path.to_string_lossy().to_string();
+                    // tun_active 语义 = root mihomo 进程是否在跑（非 TUN 设备是否占用），
+                    // 成功/后台重试时进程仍常驻跑 idle config，故保持 true；仅进程退出才置 false。
+                    match controller::reload_config(
+                        &base,
+                        &p.secret,
+                        &path_str,
+                        Duration::from_secs(3),
+                        1,
+                    )
+                    .await
+                    {
+                        Ok(()) => {}
+                        Err(_) if !root_mihomo_running(app) => {
+                            // mihomo 已死：TUN 随进程退出释放。
+                            state.tun_active.store(false, Ordering::Relaxed);
+                        }
+                        Err(_) => {
+                            // controller 卡住但进程在跑：config.yaml 已写 idle，后台异步重试释放
+                            // TUN，不阻塞用户关闭开关。active/idle 是独立文件，后台重试加载
+                            // config.yaml（idle）与用户重开时写 config-active.yaml 不冲突。
+                            let app2 = app.clone();
+                            let secret = p.secret.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let st = app2.state::<ProxyState>();
+                                for delay in [3u64, 6, 10, 15] {
+                                    tokio::time::sleep(Duration::from_secs(delay)).await;
+                                    // 用户已重新开代理则停止释放尝试（active config 已接管 TUN）
+                                    if st.enabled.load(Ordering::Relaxed) {
+                                        return;
+                                    }
+                                    if controller::reload_config(
+                                        &base,
+                                        &secret,
+                                        &path_str,
+                                        Duration::from_secs(3),
+                                        1,
+                                    )
+                                    .await
+                                    .is_ok()
+                                    {
+                                        return;
+                                    }
+                                }
+                                let _ = app2.emit(
+                                    "proxy-status",
+                                    ProxyStatus {
+                                        kind: "error".into(),
+                                        msg: "代理关闭超时，TUN 可能仍占用，建议重新开启后再关闭"
+                                            .into(),
+                                    },
+                                );
+                            });
+                        }
+                    }
                 }
-                // - mihomo 已死（崩溃/launchd 未拉起）→ 代理本就不在跑，视为已关闭
-                state.tun_active.store(false, Ordering::Relaxed);
+                Err(_) => {
+                    // 写盘失败（极端情况：磁盘满/权限）。config.yaml 残留上次 idle（永不含 active），
+                    // 但无法保证内容与当前订阅一致，保守返回错误让用户感知。
+                    if root_mihomo_running(app) {
+                        return Err("关闭代理失败：无法写入配置文件".to_string());
+                    }
+                    state.tun_active.store(false, Ordering::Relaxed);
+                }
             }
         }
     }

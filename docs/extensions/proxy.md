@@ -134,7 +134,7 @@ plist 的 `ProgramArguments` 指向 mihomo binary（绝对路径）+ `-d` 数据
 
 **第三层 · fatal 回收 + 循环抑制**（install 脚本内，同一提权 session）：bootstrap 后 `curl` 轮询验 controller /version（secret 匹配，0.2s 间隔 ×10，首次成功即 break）——mihomo 绑定端口失败时**不退出**（降级运行无监听），`pgrep` 误判成功；controller API 健康检查才能识别降级实例。检测到不可用则在**同一提权 session** 内 `bootout` + 删 plist——从根源消除 KeepAlive 反复拉起刷日志，一次提权完成「装 + 验证 + 失败回收」。`ThrottleInterval=30` 与 KeepAlive 配合进一步降低极端情况下拉起频率。条件 kill（有匹配 pid 才 sleep 1）+ curl 轮询替代固定 sleep，首次安装从 ~4s 降至 ~1s。install 返回前再从 Voidnix 进程 `wait_ready` 复验 controller（curl 在 osascript root shell，与 Voidnix 的 reqwest 不同执行上下文；mihomo 刚 bootstrap 后 providers/geo 初始化有短暂抖动窗口，root shell curl 命中不代表本进程首次连接必达，wait_ready 用同一 CONTROLLER client 确认连接就绪为紧随的 reload 铺路）。
 
-**热重载路径 TUN 静默失效检测**（`verify_tun_active`，覆盖 install 三层之外的场景）：mihomo PUT /configs 成功不代表 TUN 创建成功——别的工具占着 TUN 时 mihomo 创建静默失败（API 仍 204），用户以为代理开了但实际裸奔。idle config 无 TUN 段不产生 TUN error 日志，故热重载 active 后读 mihomo.log 检测 TUN error（`Start TUN listening error` / `file exists`）。热重载不重启进程、日志不截断，故 reload 前记录日志字节偏移（`log_size`），只检测新增行（`tail_after`）——避免上次失败尝试的陈旧 TUN error 残留误报。**start_core 后台调用**（不阻塞 enabled 翻转——PUT 同步完成 TUN 创建，返回时日志已写入，200ms buffer 后读日志检测；检测到 TUN error 经 `proxy-enabled:false` + `proxy-status:error` 事件回滚），**proxy_reconnect 同步调用**（用户主动重连需确认结果，检测到则返回 Err）。
+**热重载路径 TUN 冲突防护**（三层）：(1) **路由预检**（`tun_route_conflict`，start_core 前置）：`netstat -rn` 检测 `0.0.0.0/1` + `128.0.0.0/1` 半路由——其他代理工具的 TUN auto-route 必创建此路由，存在则直接拒绝不尝试。(2) **同步 TUN 验证**（`verify_tun_active`，热重载后 200ms）：mihomo PUT /configs 返回 204 不代表 TUN 创建成功（别的工具占路由时静默失败），读 mihomo.log 新增行检测 TUN/route error。start_core 和 proxy_reconnect 均**同步调用**（失败时即时回滚 idle config 清理 mihomo 状态，避免遗留 broken active config 致 controller 无响应、后续重开走 osascript 重装）。(3) 预检漏过 + verify 也漏过时，健康监测 30s 探针兜底。
 
 ### 进程管理
 
@@ -154,8 +154,8 @@ mihomo 生命周期由 launchd 托管（KeepAlive 保活），无裸进程 spawn
 
 osascript 每次提权都弹系统密码框。launchd 托管把提权收敛到「**首次安装 plist 一次**」，之后进程永驻、开关走热重载：
 
-- **首次开代理**：`ensure_root_mihomo` 检测 plist 未装 → `install_launchdaemon`（提权 1 次：端口预探测 + 只杀自己的旧 mihomo + 装 plist + bootstrap，mihomo 启动跑 idle config）→ `start_core` 热重载 active config 开启代理
-- **关代理**：`stop_core` 热重载 **idle config**（`mode=direct + 无 tun 段`）→ mihomo 撤销 utun、流量直通（符合「关闭」语义），**进程保留**（launchd 继续托管）。热重载失败（controller 卡死）不杀进程（kill 需 root 且会被 KeepAlive 拉起），emit error 让用户感知 + enabled 保持 true，可重试或 `proxy_reconnect`
+- **首次开代理**：`ensure_root_mihomo` 检测 plist 未装 → `install_launchdaemon`（提权 1 次：端口预探测 + 只杀自己的旧 mihomo + 装 plist + bootstrap，mihomo 启动跑 idle config）→ `start_core` **TUN 路由预检**（`netstat -rn` 检测其他代理工具的 `0/1` + `128/1` 半路由，冲突则直接拒绝）→ 热重载 active config → **同步 TUN 验证**（读 mihomo.log 检测静默失败，失败时回滚 idle config 清理状态）
+- **关代理**：`stop_core` 先写 **idle config.yaml** 到磁盘（即使 controller 卡住，mihomo 重启后自动加载 idle），再短超时（3s）单次热重载。成功则 TUN 即时释放；失败 + mihomo 在跑时**乐观返回成功**（UI 即时显示关闭），后台异步重试释放 TUN（全部失败才 toast）；失败 + mihomo 已死则视为已关闭。**进程保留**（launchd 继续托管），可 `proxy_reconnect` 重试
 - **再开代理 / 开机后首次**：`ensure_root_mihomo` 命中「plist 已装」→ controller 可达则直接复用，不可达则等 launchd 拉起（KeepAlive）→ 热重载 active config，**免提权**
 
 **效果**：密码从「每次开关 / 开机后首次都要弹」→「首次安装 1 次，之后永久 0 次」（仅 binary 升级/卸载再提权）。
@@ -318,7 +318,8 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 - **`config.json`** —— 扩展配置（mode/mixedPort/controllerPort/secret/subscriptions/activeSubscriptionId）
 - **`mihomo`** —— 运行时下载的核心 binary
 - **`mihomo.version`** —— 已下载 binary 版本号（check_update 比对依据；update_core 删除触发重下）
-- **`config.yaml`** —— mihomo 运行配置（active/idle 切换时重写）
+- **`config.yaml`** —— mihomo 启动配置（**恒 idle**，永不含 TUN 段——崩溃后 launchd 重启只加载 idle，避免循环崩溃）
+- **`config-active.yaml`** —— active 运行配置（含 TUN 段），仅经 PUT /configs 热重载加载，不作为启动配置
 - **`subs/<id>.yaml`** —— 各订阅原始 Clash YAML
 - **`mihomo.log`** —— mihomo 运行日志（launchd 接管 stdout/stderr 写入，启动失败可查）
 - **`mihomo-daemon.plist`** —— LaunchDaemon plist 临时副本（install 时生成，提权 cat 到 `/Library/LaunchDaemons/`）
@@ -327,6 +328,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 ## 限制
 
 - **提权**：launchd LaunchDaemon 托管，首次开代理 `install_launchdaemon` 提权一次安装 plist，之后开机自启 + 崩溃自愈 + 开关热重载，日常永久零密码框；仅 binary 升级/卸载（`uninstall_launchdaemon` bootout）再提权
-- **关闭可靠性**：关代理走热重载 idle config（撤销 TUN + 直通），进程保留不杀（launchd 托管）。热重载失败（controller 卡死）emit error 不静默假装关闭，用户可 `proxy_reconnect` 重试
+- **关闭可靠性**：关代理走热重载 idle config（撤销 TUN + 直通），进程保留不杀（launchd 托管）。controller 卡死时乐观返回成功（不阻塞用户关闭开关，config.yaml 已写 idle 保证 mihomo 重启后直通），后台异步重试释放 TUN，全部失败才 toast。用户可 `proxy_reconnect` 重试
 - **进程常驻**：mihomo 由 launchd 托管永久常驻（idle ~50MB，不代理流量，用户无感；idle 无 tun 段不占 TUN）。app 退出/重启不影响（launchd 跨 app 生命周期保活），下次启动 `reconnect_root_mihomo` 验 secret 复用。secret 不匹配（旧残留）不提权清理，下次开代理 install 接管
 - **端口占用**：mihomo 常驻占 mixed-port/controller 端口（idle 也占）；idle 不占 TUN 故 TUN 层可与其他代理软件共存，但端口相同时冲突——install 前端口探测会拦截并提示用户先关闭别的工具或改端口
+- **TUN 冲突**：开代理时（idle→active 切换）预检 `netstat -rn` 的 `0/1` + `128/1` 半路由——其他代理工具已开 TUN 时直接拒绝（明确提示「请先关闭它」），不盲目尝试致 mihomo 残留 broken active config。预检漏过时同步 verify 兜底（检测到 TUN/route error 即回滚 idle config）。**不要同时开两个 TUN 代理工具**
