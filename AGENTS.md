@@ -111,6 +111,10 @@ e2e（`bun run test:e2e`，需起 Vite dev server + 浏览器）不在本地门�
 6. 单测：`bun run test`（Vitest）+ `cargo test --lib`
 7. E2E：`bun run test:e2e`（Playwright，含浏览器安装）
 
+## 发布管道与代码签名
+
+正式版发布走 `.github/workflows/release.yml`（`git tag v*` 触发，`tauri-action` 打包）。CI 与本地 `deploy.sh` 必须用同一 Apple 证书签名——adhoc 签名的 cdhash 每次编译都变，TCC 按其匹配系统权限会导致每次更新权限失效。CI 签名凭证走 GitHub secrets（`APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY`，同 `.env`），本地 `deploy.sh` 已内置 adhoc 拦截（断言 `TeamIdentifier=27869WH3RZ`）。
+
 ## Prod 资源监控（长期采样）
 
 LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 RSS/CPU/线程/数据目录，用于长期跟踪内存与占用趋势、定位泄漏；主进程瞬时 CPU 超阈值时自动抓调用栈快照，定位高占用根因。**仅监控 prod（release）进程**，dev/debug 不采样。
