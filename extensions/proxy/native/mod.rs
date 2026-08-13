@@ -300,7 +300,11 @@ pub async fn proxy_reconnect(app: AppHandle, state: State<'_, ProxyState>) -> Re
     params.tun = true;
     let log_before = lifecycle::log_size(&app); // reload 前快照，供 verify_tun_active 区分新增行
     reload_config_yaml(&app, &params).await?;
-    lifecycle::verify_tun_active(&app, log_before).await?; // TUN 静默失效检测（同 start_core）
+    // 同步 TUN 验证：失败时回滚 idle config 清理 mihomo 状态（同 start_core）
+    if let Err(e) = lifecycle::verify_tun_active(&app, log_before).await {
+        lifecycle::rollback_to_idle(&app, &params).await;
+        return Err(e);
+    }
     state.enabled.store(true, Ordering::Relaxed);
     state.tun_active.store(true, Ordering::Relaxed);
     ensure_monitor(&app);

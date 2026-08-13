@@ -97,17 +97,25 @@ pub async fn set_mode(base: &str, secret: &str, mode: &str) -> Result<(), String
 
 /// PUT /configs {path} → 从磁盘 config.yaml 热重载（用于 root 运行时切换 tun，免重启免提权）。
 ///
-/// **重试**：install 路径中 mihomo 刚 bootstrap，providers/geo 初始化期间首次连接可能瞬时
-/// 失败（controller 已 bind 但处理抖动）。短间隔重试 3 次自愈，避免用户看到"重载配置失败"。
+/// **重试**（attempts > 1）：install 路径中 mihomo 刚 bootstrap，providers/geo 初始化期间首次
+/// 连接可能瞬时失败（controller 已 bind 但处理抖动）。短间隔重试自愈，避免用户看到"重载配置失败"。
 /// localhost 每次新建连接（pool_max_idle_per_host(0)），重试无 stale 连接复用风险。
 /// HTTP 错误码（如 400）不重试——是 config 内容问题，重试无意义。
-pub async fn reload_config(base: &str, secret: &str, config_path: &str) -> Result<(), String> {
+/// **超时**：install 路径传 10s + 3 次重试；stop 路径传 3s 单发，controller 卡死时不阻塞用户关闭。
+pub async fn reload_config(
+    base: &str,
+    secret: &str,
+    config_path: &str,
+    timeout: Duration,
+    attempts: u32,
+) -> Result<(), String> {
     let url = format!("{base}/configs");
     let body = serde_json::json!({ "path": config_path });
     let mut last_err: Option<reqwest::Error> = None;
-    for attempt in 0..3u32 {
+    for attempt in 0..attempts {
         match CONTROLLER
             .put(&url)
+            .timeout(timeout)
             .bearer_auth(secret)
             .json(&body)
             .send()
@@ -121,7 +129,7 @@ pub async fn reload_config(base: &str, secret: &str, config_path: &str) -> Resul
             }
             Err(e) => {
                 last_err = Some(e);
-                if attempt < 2 {
+                if attempt + 1 < attempts {
                     tokio::time::sleep(Duration::from_millis(300)).await;
                 }
             }

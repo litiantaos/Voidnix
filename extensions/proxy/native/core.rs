@@ -104,6 +104,13 @@ pub(crate) fn run_config_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(ext_data_dir(app, "proxy")?.join("config.yaml"))
 }
 
+/// active config 独立文件（含 TUN 段）。mihomo 启动只读 config.yaml（idle），
+/// active 仅经 PUT /configs 热重载加载——避免 active config 残留 config.yaml 致
+/// mihomo 崩溃后 launchd 重启循环加载 active 再崩溃（TUN 冲突/创建失败时）。
+pub(crate) fn active_config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(ext_data_dir(app, "proxy")?.join("config-active.yaml"))
+}
+
 /// 确保 mihomo binary 就绪：已存在则直接复用，否则下载。
 ///
 /// 不做版本强校验——避免「binary 已在但因 version 文件缺失/不匹配而强制重下」导致的网络卡死。
