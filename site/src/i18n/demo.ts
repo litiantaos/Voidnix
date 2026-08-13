@@ -130,7 +130,8 @@ const en: DemoText = {
     'Found 23 index.ts files, 16 with native code.\n\nThese files are in each extension directory under extensions/. Pure-TS extensions (calculator, ip, etc.) also contain index.ts. Need anything else?',
   ocrTag: 'OCR',
   ocrSearch: 'Recognition result',
-  ocrText: 'Voidnix — macOS Productivity Launcher\nModular extension architecture\nRust + Vue 3 + Tauri 2',
+  ocrText:
+    'Voidnix — macOS Productivity Launcher\nModular extension architecture\nRust + Vue 3 + Tauri 2',
   ocrAction: 'Copy',
   shotCapA: 'Screenshot annotation: drag selection + tools',
   shotCapB: 'Scrolling capture: continuous long content',
