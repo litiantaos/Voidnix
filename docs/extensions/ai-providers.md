@@ -1,6 +1,6 @@
 # AI 提供商
 
-统一维护 OpenAI 兼容 **URL / 多 Key / 模型**。只做配置中枢，**不维护「使用中」**；谁用哪套由消费者自选。
+统一维护 OpenAI 兼容 **URL（chat / 可选 Responses）/ 多 Key / 模型**。只做配置中枢，**不维护「使用中」**；谁用哪套由消费者自选。
 
 ## 职责边界
 
@@ -27,7 +27,7 @@
 - **分组标题右侧**：编辑提供商 · 添加 Key
 - **添加提供商**：搜索栏右侧 `+`（`searchBarAccessory`）
 
-弹窗：添加/编辑提供商（名称 / API URL / 模型；创建时含首把 Key）；添加/编辑 Key。无「选用 / 使用中」。
+弹窗：添加/编辑提供商（名称 / API URL / 模型 / 可选 Responses URL；创建时含首把 Key）；添加/编辑 Key。无「选用 / 使用中」。
 
 ## 多 Key
 
@@ -102,13 +102,14 @@
 - **多 Key 命名**：第一把非空写规范名（`VOIDNIX_DEEPSEEK_API_KEY` 等）；其余按备注 ASCII 后缀（`VOIDNIX_DEEPSEEK_BACKUP_API_KEY`），纯中文备注回退 `VOIDNIX_DEEPSEEK_KEY2_API_KEY`，碰撞递增，不静默丢 Key
 - **单 Key 规范名冲突**（两套同端点提供商）：第二套序号兜底（`VOIDNIX_DEEPSEEK_KEY1_API_KEY`），不静默丢
 - **`VOIDNIX_*_BASE_URL`**：按**提供商**输出（endpoint 是提供商级属性），每提供商仅一条，不随 Key 重复
+- **`VOIDNIX_*_RESPONSES_URL`**：Responses 线协议端点，提供商声明了 `responsesEndpoint`（非空）才输出，每提供商一条。语义是「Responses 端点与 chat 端点**不同**时的那个 URL」：分立端点（智谱 Responses `https://open.bigmodel.cn/api/v1` 与 chat `/api/coding/paas/v4`）才需要填；同端点用路径/参数区分协议的提供商（DeepSeek 等）留空即可，工具直接用 `*_BASE_URL` + 自身协议开关（如 Grok Build `api_backend`）。`endpoint` 始终存 chat 端点（内部消费者 agent/translate 走 chat completions，不受影响）
 
 ### 外部工具
 
 中枢只写 env（`VOIDNIX_*` 私有名，key + url）；各工具自管模型选用（模型定义在工具配置里，含上下文长度/定价等元数据，不由中枢投射）。
 
 - **OpenCode**：`opencode.json` 的 `provider.*.options.apiKey` 用 `{env:VOIDNIX_ZHIPU_API_KEY}` 等显式引用；baseURL 写在 `options.baseURL`。模型：`zhipuai-coding-plan/glm-5.2`、`deepseek/deepseek-v4-pro` 等
-- **Grok Build**：`~/.grok/config.toml` 的 `[model.*]` 用 `env_key = "VOIDNIX_ZHIPU_API_KEY"` 等 + `base_url`；切模型 `/model glm-5-2-1m` 等
+- **Grok Build**：`~/.grok/config.toml` 的 `[model.*]` 用 `env_key = "VOIDNIX_ZHIPU_API_KEY"` 等 + `base_url`；GLM 走 `api_backend = "responses"`、`base_url` 取 `VOIDNIX_ZHIPU_RESPONSES_URL` 值（`https://open.bigmodel.cn/api/v1`），DeepSeek 走 `chat_completions`；切模型 `/model glm-5-2-1m` 等
 
 ## 命令
 

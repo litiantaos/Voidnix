@@ -156,6 +156,7 @@ describe('resolveCredentials', () => {
       keys: undefined as unknown as [],
       usageKind: '',
       envKey: '',
+      responsesEndpoint: '',
       // @ts-expect-error legacy field
       apiKey: 'from-disk',
     })

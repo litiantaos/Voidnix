@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   shellSingleQuote,
   baseUrlEnvName,
+  responsesUrlEnvName,
   buildExportPayload,
   resolveEnvKey,
   isZhipuCodingEndpoint,
@@ -31,6 +32,7 @@ function p(
     keys,
     usageKind: '',
     envKey: '',
+    responsesEndpoint: '',
   }
 }
 
@@ -201,12 +203,38 @@ describe('buildExportPayload', () => {
     // 不应出现每 key 派生的 BASE_URL
     expect(envText).not.toContain('VOIDNIX_ZHIPU_177_BASE_URL')
     expect(envText).not.toContain('VOIDNIX_ZHIPU_193_BASE_URL')
-    // 顺序：BASE_URL 在该提供商所有 KEY 之前
-    expect(envText.indexOf('VOIDNIX_ZHIPU_BASE_URL')).toBeLessThan(
-      envText.indexOf('VOIDNIX_ZHIPU_API_KEY'),
+  })
+
+  it('Responses 端点：声明才导出 `VOIDNIX_*_RESPONSES_URL`（提供商级一条，先于 Key）', () => {
+    const zhipu = p(
+      'z',
+      'https://open.bigmodel.cn/api/coding/paas/v4',
+      [
+        { id: 'k1', label: '195', apiKey: 'k195' },
+        { id: 'k2', label: '177', apiKey: 'k177' },
+      ],
+      ['glm-5.2'],
     )
+    zhipu.responsesEndpoint = 'https://open.bigmodel.cn/api/v1'
+    const { envText } = buildExportPayload({
+      providers: [
+        zhipu,
+        p('d', 'https://api.deepseek.com', [{ id: 'k', label: '默认', apiKey: 'sk-ds' }], ['chat']),
+      ],
+    })
+    expect(envText).toContain(
+      "export VOIDNIX_ZHIPU_RESPONSES_URL='https://open.bigmodel.cn/api/v1'",
+    )
+    // 未声明（空）不导出
+    expect(envText).not.toContain('VOIDNIX_DEEPSEEK_RESPONSES_URL')
+    // 提供商级一条（不随 key 重复）
+    expect((envText.match(/VOIDNIX_ZHIPU_RESPONSES_URL/g) ?? []).length).toBe(1)
+    // 顺序：BASE_URL → RESPONSES_URL → KEY
     expect(envText.indexOf('VOIDNIX_ZHIPU_BASE_URL')).toBeLessThan(
-      envText.indexOf('VOIDNIX_ZHIPU_177_API_KEY'),
+      envText.indexOf('VOIDNIX_ZHIPU_RESPONSES_URL'),
+    )
+    expect(envText.indexOf('VOIDNIX_ZHIPU_RESPONSES_URL')).toBeLessThan(
+      envText.indexOf('VOIDNIX_ZHIPU_API_KEY'),
     )
   })
 })
@@ -215,6 +243,8 @@ describe('helpers', () => {
   it('shell / mask / remain / compact', () => {
     expect(shellSingleQuote("a'b")).toBe(`'a'\\''b'`)
     expect(baseUrlEnvName('VOIDNIX_DEEPSEEK_API_KEY')).toBe('VOIDNIX_DEEPSEEK_BASE_URL')
+    expect(responsesUrlEnvName('VOIDNIX_ZHIPU_API_KEY')).toBe('VOIDNIX_ZHIPU_RESPONSES_URL')
+    expect(responsesUrlEnvName('')).toBe('')
     expect(maskKey('sk-abcdefghij')).toMatch(/…/)
     expect(maskKey('sk-abcdefghijklmnop')).toMatch(/^sk-abc…mnop$/)
     expect(formatWindowRemain(Date.now() + 2.3 * 3_600_000, 'h')).toBe('2.3h')

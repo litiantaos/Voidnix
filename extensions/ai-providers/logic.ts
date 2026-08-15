@@ -7,10 +7,22 @@ export function shellSingleQuote(value: string): string {
 }
 
 export function baseUrlEnvName(apiKeyEnv: string): string {
+  const prefix = envPrefix(apiKeyEnv)
+  return prefix ? `${prefix}_BASE_URL` : ''
+}
+
+/** Responses 端点导出名：与 `*_BASE_URL` 同前缀，后缀 `_RESPONSES_URL`。 */
+export function responsesUrlEnvName(apiKeyEnv: string): string {
+  const prefix = envPrefix(apiKeyEnv)
+  return prefix ? `${prefix}_RESPONSES_URL` : ''
+}
+
+/** API Key env 名 → 变量前缀（`VOIDNIX_ZHIPU_API_KEY` → `VOIDNIX_ZHIPU`）；不匹配返回空。 */
+function envPrefix(apiKeyEnv: string): string {
   const k = apiKeyEnv.trim()
   if (!k) return ''
-  if (k.endsWith('_API_KEY')) return `${k.slice(0, -'_API_KEY'.length)}_BASE_URL`
-  if (k.endsWith('_KEY')) return `${k.slice(0, -'_KEY'.length)}_BASE_URL`
+  if (k.endsWith('_API_KEY')) return k.slice(0, -'_API_KEY'.length)
+  if (k.endsWith('_KEY')) return k.slice(0, -'_KEY'.length)
   return ''
 }
 
@@ -122,7 +134,8 @@ export function assignKeyEnvNames(
 }
 
 /**
- * 写出全部已配置凭证：每提供商一条 `VOIDNIX_*_BASE_URL`（先）+ 各 `VOIDNIX_*_API_KEY`（后）。
+ * 写出全部已配置凭证：每提供商一条 `VOIDNIX_*_BASE_URL`（先）+ 可选一条 `VOIDNIX_*_RESPONSES_URL`
+ * + 各 `VOIDNIX_*_API_KEY`（后）。
  * 全量私有前缀——不抢占外部工具约定的通用变量名，外部工具须显式引用。中枢不借用、不猜默认。
  */
 export function buildExportPayload(input: ExportInput): ExportPayload {
@@ -145,6 +158,13 @@ export function buildExportPayload(input: ExportInput): ExportPayload {
     if (baseEnv && p.endpoint.trim() && !seen.has(baseEnv)) {
       seen.add(baseEnv)
       named.push(`export ${baseEnv}=${shellSingleQuote(p.endpoint.trim())}`)
+    }
+    // Responses 端点同为提供商级：声明了（非空）才输出，命名与 BASE_URL 同规则（按主 Key 前缀派生）
+    const responsesUrl = (p.responsesEndpoint ?? '').trim()
+    const responsesEnv = primaryEnv ? responsesUrlEnvName(primaryEnv) : ''
+    if (responsesUrl && responsesEnv && !seen.has(responsesEnv)) {
+      seen.add(responsesEnv)
+      named.push(`export ${responsesEnv}=${shellSingleQuote(responsesUrl)}`)
     }
     for (const slot of p.keys ?? []) {
       if (!slot.apiKey.trim()) continue
