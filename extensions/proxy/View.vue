@@ -118,11 +118,23 @@
           "
         >
           <template #trailing>
-            <BaseButton
-              icon="i-ri-pencil-line"
-              :title="t('proxy.editSubscription')"
-              @click.stop="openEditModal(item.sub)"
-            />
+            <div flex gap="2">
+              <BaseButton
+                :icon="
+                  updatingSubId === item.sub.id
+                    ? 'i-ri-loader-4-line animate-spin'
+                    : 'i-ri-refresh-line'
+                "
+                :disabled="!item.sub.url || updatingSubId !== ''"
+                :title="t('proxy.updateSubscription')"
+                @click.stop="refreshSub(item.sub)"
+              />
+              <BaseButton
+                icon="i-ri-pencil-line"
+                :title="t('proxy.editSubscription')"
+                @click.stop="openEditModal(item.sub)"
+              />
+            </div>
           </template>
         </BaseListItem>
 
@@ -258,6 +270,8 @@ const {
   saveSub,
   editForm,
   openEditModal,
+  refreshSub,
+  updatingSubId,
   confirmRemoveFromModal,
   deletingSub,
   doRemoveSub,

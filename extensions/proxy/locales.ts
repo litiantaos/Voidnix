@@ -30,6 +30,7 @@ registerMessages({
   },
   'proxy.addSubscription': { 'zh-CN': '添加订阅', en: 'Add Subscription' },
   'proxy.editSubscription': { 'zh-CN': '编辑订阅', en: 'Edit Subscription' },
+  'proxy.updateSubscription': { 'zh-CN': '更新订阅', en: 'Update Subscription' },
   'proxy.locateSelected': { 'zh-CN': '定位到选中节点', en: 'Locate Selected' },
   'proxy.testAll': { 'zh-CN': '全部测速', en: 'Test All' },
   'proxy.unnamedSubscription': { 'zh-CN': '未命名订阅', en: 'Unnamed Subscription' },

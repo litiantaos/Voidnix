@@ -136,6 +136,8 @@ export function useProxyPanel() {
   const editForm = ref({ name: '', url: '' })
   // 订阅删除确认
   const deletingSub = ref<Subscription | null>(null)
+  /// 正在行内更新的订阅 id（空 = 无更新进行中）：该行按钮转 spinner，单飞禁用其余行更新按钮
+  const updatingSubId = ref('')
 
   // ── 节点 ──
   // 全部用户可切的 selector 分组（排除 mihomo 隐式 GLOBAL）。多分组订阅时用户可在列表内切换。
@@ -569,6 +571,13 @@ export function useProxyPanel() {
     },
   )
 
+  /// 拉取订阅并回填元数据（节点数/更新时间）。saveSub（弹窗保存）与 refreshSub（行内更新）共用。
+  async function fetchSub(id: string, url: string): Promise<number> {
+    const count = await invoke<number>(CMD.proxyUpdateSubscription, { id, url })
+    updateSubscription(id, { proxyCount: count, updatedAt: new Date().toISOString() })
+    return count
+  }
+
   /// 保存：新建则 add，编辑则 update；url 非空则拉取（含热重启 + 节点刷新）
   async function saveSub() {
     const name = editForm.value.name.trim()
@@ -585,8 +594,7 @@ export function useProxyPanel() {
     closeEditModal()
     if (!url) return
     try {
-      const count = await invoke<number>(CMD.proxyUpdateSubscription, { id, url })
-      updateSubscription(id, { proxyCount: count, updatedAt: new Date().toISOString() })
+      const count = await fetchSub(id, url)
       appStore.showStatus(t('proxy.nodesUpdated', { count }), { duration: 2000 })
       // 新建订阅拉取成功即自动激活（首次添加即用，内部 loadProxies）；编辑则直接刷新
       if (wasCreating && count > 0) {
@@ -599,6 +607,30 @@ export function useProxyPanel() {
         duration: 4000,
         kind: 'error',
       })
+    }
+  }
+
+  /// 行内更新订阅：按现有 URL 重新拉取（Rust 拉取 + 保存 + 热重载一体）。更新的是激活订阅时
+  /// 节点列表整体替换，清空乐观选中与测速缓存（同 setActiveSubscription）；非激活订阅仅回填
+  /// 元数据（不参与合并，节点列表不变）。单飞：任一更新中其余行更新按钮禁用。
+  async function refreshSub(s: Subscription) {
+    if (!s.url || updatingSubId.value) return
+    updatingSubId.value = s.id
+    try {
+      const count = await fetchSub(s.id, s.url)
+      appStore.showStatus(t('proxy.nodesUpdated', { count }), { duration: 2000 })
+      if (s.id === config.activeSubscriptionId) {
+        selectedNodeName.value = ''
+        delayMap.value = {}
+        await loadProxies()
+      }
+    } catch (e) {
+      appStore.showStatus(toErrorMessage(e, t('proxy.updateFailed')), {
+        duration: 4000,
+        kind: 'error',
+      })
+    } finally {
+      updatingSubId.value = ''
     }
   }
 
@@ -776,6 +808,8 @@ export function useProxyPanel() {
     saveSub,
     editForm,
     openEditModal,
+    refreshSub,
+    updatingSubId,
     setActiveSubscription,
     confirmRemoveFromModal,
     deletingSub,
