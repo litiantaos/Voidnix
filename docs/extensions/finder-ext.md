@@ -19,14 +19,15 @@
 
 路径均经 `platform/path_guard`。
 
-## 上下文入口（视频处理）
+## 上下文入口（视频 / 图片处理）
 
-当选中视频文件时，操作列表顶部动态出现「视频处理」项（副标题显示文件名），回车即跳转 video 扩展并带入路径。
+当选中视频或图片文件时，操作列表顶部动态出现「视频处理」/「图片处理」项（副标题显示文件名），回车即跳转对应扩展并带入路径。
 
-- 探测：面板 `onActivated` 调 `finder_selected_paths` 读访达选区，按视频扩展名白名单过滤首个命中；快捷键重入（窗口隐藏后再呼出，KeepAlive 下 `onActivated` 不触发）由 `reactivateTick` 信号驱动重新探测
-- 白名单：与 video 扩展 `VIDEO_EXTENSIONS` 基本一致，**去除 `.ts`**（与 TypeScript 源码歧义）；此处仅作 UI 入口提示，真正处理以 video 扩展 ffprobe 为准
-- 跨扩展通信：`emit('video-pending-input-path', path)` + `setActiveExtension('video')`；video 扩展 setup 监听该事件写入 `pendingInputPath`，View watch 后加载路径并 probe（与 screenshot→translate 同一事件总线模式）
-- 访达非前台 / 权限缺失 / 无视频选中 → 入口不出现（静默，不报错）
+- 探测：面板 `onActivated` 调 `finder_selected_paths` 读访达选区，同一 `detectSelection` 分别按视频 / 图片扩展名白名单过滤首个命中；快捷键重入（KeepAlive 下 `onActivated` 不触发）由 `reactivateTick` 信号驱动重新探测
+- 视频白名单：与 video 扩展 `VIDEO_EXTENSIONS` 基本一致，**去除 `.ts`**（与 TypeScript 源码歧义）；此处仅作 UI 入口提示，真正处理以 video 扩展 ffprobe 为准
+- 图片白名单：`IMAGE_EXT_SET`（png/jpg/jpeg/heic/heif/webp/tiff/tif/bmp/gif），镜像自 image 扩展 `IMAGE_EXTENSIONS`（新增格式双向同步）
+- 跨扩展通信：`emit('video-pending-input-path' / 'image-pending-input-path', path)` + `setActiveExtension('video' / 'image')`；对应扩展 setup 监听事件写入各自 `pendingInputPath`，View watch 后加载路径（与 screenshot→translate 同一事件总线模式）
+- 访达非前台 / 权限缺失 / 无视频或图片选中 → 入口不出现（静默，不报错）
 
 ## 命令
 
@@ -51,8 +52,9 @@
 ```
 extensions/finder-ext/
 ├── index.ts          # defineExtension + globalShortcuts
+├── locales.ts        # 扩展文案（i18n 注册）
 ├── shortcuts.ts      # 快捷键 id/默认值 + 动作列表
-├── View.vue          # BaseSettingsList（操作 + 快捷键）+ 选区视频探测
+├── View.vue          # BaseSettingsList（操作 + 快捷键）+ 选区视频 / 图片探测
 └── native/mod.rs     # finder_run_action + finder_selected_paths + JXA 上下文 + 动作实现
 ```
 

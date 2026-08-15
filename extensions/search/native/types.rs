@@ -41,7 +41,7 @@ pub(super) struct CachedApp {
 pub(super) struct CachedFile {
     pub name: String,
     pub name_lower: String,
-    /// CJK 文件名拼音键（"首字母 全拼"），非 CJK 为空串。
+    /// CJK 文件名拼音键（"首字母串\x1f全拼串"，不可打印分隔符隔离两段），非 CJK 为空串。
     pub pinyin_key: String,
     pub path: String,
     pub parent: Option<String>,

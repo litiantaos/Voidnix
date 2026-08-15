@@ -334,7 +334,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - **窗口按需创建**：screenshot 窗口首次截图时懒创建（`setup` 内 `WebviewWindowBuilder`，WKWebView 预加载页面）；snap-panel 窗口在 `set_window_manager_enabled(true)` 时懒创建，分两步避免主线程死锁：`build_snap_panel`（仅 `WebviewWindowBuilder::build`）在 worker 线程调用（build 内部 dispatch 到空闲主线程；**禁止**放进 `run_on_main_thread` 同步闭包——build 的 dispatch + 同步等待与执行闭包的主线程死锁，导致 UI 无响应），`configure_snap_panel`（`apply_mica_material` 需 `MainThreadMarker`）在 `run_on_main_thread` 闭包内调用；`false` 时**不销毁窗口**——WKWebView teardown 抛 C++ foreign exception（非 ObjC NSException，`objc2::exception::catch` 无法拦截），前端 `close()`/`destroy()` 均 abort 进程，改为仅停 drag monitor + 隐藏窗口（alpha=0），窗口保持存活，重新启用时 `build_snap_panel` 幂等跳过 + `configure_snap_panel` 重配置）；pin 窗口每次钉图创建、关闭时销毁
 - **子窗口主题**：独立入口窗口用 `runtime/child-theme.ts::initChildTheme`（无 Pinia 依赖，读 `get_cached_appearance` + 监听 `appearance-changed`），不初始化扩展系统
 - **vendor 分包 + pinyin 延迟加载**：`manualChunks` 拆 vendor(vue) / markdown(marked+dompurify) / pinyin 独立 chunk；pinyin-pro（拼音字典 289KB）改为首次 CJK 查询时 `import()` 异步加载，首屏零开销
-- `ContentView` 用 `KeepAlive`（max=5，LRU 驱逐）缓存已访问扩展，切换走 activate/deactivate 而非重挂载
+- `ContentView` 用 `KeepAlive`（max=3，LRU 驱逐）缓存已访问扩展，切换走 activate/deactivate 而非重挂载
 
 ### LLM 基础设施
 
@@ -371,6 +371,8 @@ src-tauri/src/
 │   ├── permission.rs   # 系统权限命令薄壳（同步；screen_recording 走 preflight 不截屏）
 │   ├── registry.rs     # Extension trait + ExtensionRegistry（concurrent bootstrap；单扩展 setup 失败隔离；阻塞 I/O 扩展自管 spawn_blocking）
 │   ├── pasteboard.rs   # 框架命令薄壳（write_text / paste_text；原语在 platform/pasteboard）
+│   ├── binary_fetch.rs # 外部 binary 下载管线（流式落盘 + sha256 + 多 URL 回退；proxy/video 共用）
+│   ├── speech.rs       # 语音朗读命令（say CLI 封装；translate 消费）
 │   ├── shell_rc.rs     # .zshrc 注入约定（# voidnix <scope> marker）
 │   └── llm/            # LLM 基础设施（types / client / parser）
 └── platform/           # macOS 原生桥（零业务语义）
@@ -386,6 +388,7 @@ src-tauri/src/
     ├── frontmost_watcher.rs  # NSWorkspace 激活观察器（系统弹窗后恢复焦点）
     ├── distributed.rs  # NSDistributedNotificationCenter 跨进程事件总线（proxy TUN 让渡即时对账）
     ├── permission.rs
+    ├── window_list.rs  # CGWindowList 共享封装（screenshot / window-manager 共用）
     ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel + appearance 缓存）
     └── path_guard.rs   # 统一路径校验
 ```
@@ -451,7 +454,7 @@ src/
 ### 颜色
 
 - canvas=surface / accent / 文本阶；fill 阶派生 cool
-- 语义 `danger|warning|success`（soft 统一 12%）
+- 语义 `danger|warning|success`（soft 浅色 12% / 深色 16%）
 - **禁止**裸 hex 结构色、`black/*`、状态用 red-500（`mask-smoke`、标注调色板、文件类型 palette 除外）
 
 ### 材质

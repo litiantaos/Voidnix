@@ -29,6 +29,7 @@ loop 结束（含 error）时 `SessionRegistry::unregister` 清会话；用户 a
 事件流（`AgentEvent` 枚举）：
 
 - `TextDelta { text }`：LLM 文本增量
+- `ReasoningDelta { text }`：LLM 思考模式增量（`reasoning_content`，行为见「思考模式」节；属前端 `CONTENT_EVENTS` 内容事件）
 - `ToolCallStart { id, name }`：工具调用开始
 - `ToolCallArgs { id, args }`：完整参数（JSON）
 - `ToolResult { id, ok, output }`：工具结果（已净化；`run_command` 非 0 退出 `ok=false`，output 仍为完整命令输出）
@@ -70,7 +71,7 @@ Tavily 搜索（专为 AI 设计，返回含 `answer` 字段的结构化 JSON）
 `config.systemPrompt` 即 system message 本体（不再区分「默认 harness + 用户追加」）。
 
 - 默认值在 `config.ts` 的 `defineConfig` 内（描述 agent 角色、工具规则、安全约束、输出风格），用户可全量改写。
-- `agent_run` 收到后直接注入 `messages[0]`（空串跳过）；Rust 端不内置默认提示词。
+- 注入在 `agent_run` spawn 的后台 task（`run_loop_inner`）内：首条已是 `system` 则不重复注入，否则插到 `messages[0]`（空串跳过）；Rust 端不内置默认提示词。
 
 ## 配置
 
@@ -174,6 +175,7 @@ defineConfig('extensions/agent/config', {
 ```
 extensions/agent/
 ├── index.ts               # 注册
+├── locales.ts             # 扩展文案（i18n 注册）
 ├── config.ts              # defineConfig + 选用 helpers
 ├── agent.ts               # useAgentChat composable（前端状态机）
 ├── view-logic.ts          # View 纯函数（streamView / showToolBody / buildHistoryLabel 等）

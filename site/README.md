@@ -17,6 +17,7 @@ site/
 │   └── render-og.mjs         # Playwright 截图脚本
 └── src/
     ├── components/           # PageContent / Hero / DemoStage / Philosophy / Capabilities / ExtensionMatrix / Footer / Wordmark
+    │   └── demo/             # DemoStage 实现主体（demo-utils.ts 常量与数学工具 / demo-scenes.ts 分段渲染器 / demo-player.ts 播放器 / demo-stage.css 舞台样式）
     ├── data/extensions.ts    # 扩展矩阵便捷访问器（数据在 i18n 字典）
     ├── i18n/
     │   ├── translations.ts   # 页面级双语字典（zh 类型源，en 同构校验）
@@ -57,7 +58,7 @@ bun run preview    # 预览构建产物
 
 ## 重新生成 OG 图
 
-`og-image.png` 由 Playwright 渲染 `scripts/og-source.html` 截图得到，依赖主仓库已安装的 `playwright` 与 chromium：
+`og-image.png` 由 Playwright 对 `scripts/og-source.html` 截图得到，`playwright` 是 site 自身 devDependency（独立 bun.lock / node_modules，`bun install` 即装），另需已安装 chromium：
 
 ```bash
 node scripts/render-og.mjs
@@ -67,7 +68,7 @@ node scripts/render-og.mjs
 
 ## 设计
 
-token 从产品 `src/styles/theme.css` 自动同步（`scripts/sync-tokens.mjs`）：`dev` / `build` 前置自动运行，提取 `:root` + `:root[data-theme="dark"]` 的 CSS 自定义属性，产品深色选择器转为官网 `@media (prefers-color-scheme: dark)`。官网专属 token（布局 `--content-max` / DemoStage mock 场景 / 雾团透明度补偿）在 `tokens.css` 末尾 SITE_ONLY 区块维护。产品改色/圆角/阴影，官网自动跟。
+token 从产品 `src/styles/theme.css` 自动同步（`scripts/sync-tokens.mjs`）：`dev` / `build` 前置自动运行，提取 `:root` + `:root[data-theme="dark"]` 的 CSS 自定义属性，产品深色选择器转为官网 `@media (prefers-color-scheme: dark)`。官网专属 token（布局 `--content-max` / DemoStage mock 场景 / 雾团透明度补偿）在 `tokens.css` 末尾 SITE_ONLY 区块维护。
 
 ## 部署
 
@@ -77,5 +78,3 @@ token 从产品 `src/styles/theme.css` 自动同步（`scripts/sync-tokens.mjs`�
 - **域名**：`https://voidnix.litiantao.com`（CNAME 指向 Vercel）
 - **配置**：`vercel.json`（Astro / `astro build` / `dist`）
 - 项目地址：https://vercel.com/litiantao/voidnix
-
-本地预览构建产物用 `bun run preview`。

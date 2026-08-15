@@ -5,6 +5,7 @@
 ## 能力
 
 - 开关：`config.enabled`（watch immediate → `set_window_manager_enabled`）
+- **snap-panel 窗口生命周期**：`setup` 读 config.json，`enabled=true` 才懒创建窗口（省一个常驻 WebContent 进程）；禁用不销毁——WKWebView teardown 抛 C++ foreign exception，仅停 drag monitor + 隐藏（alpha=0）；重新启用时 build 幂等跳过 + 重配置
 - 自定义尺寸：`customWidth` / `customHeight`（floor/cap 权威在 `native/mod.rs`，CI `check:wm-bounds` 镜像 TS `BOUNDS`）
 - 布局：四角 / 上下半 / 左右半 / 全屏 / 居中 / 自定义居中尺寸
 - **多屏**：布局相对窗口所在屏；多屏时面板末组提供 prev/next display（相对几何映射到邻屏）

@@ -6,7 +6,8 @@ Clash 风格代理扩展（统一 TUN 模式）。运行时按需下载 mihomo�
 
 ```
 前端（Vue，单主界面分组列表）        Rust（native/）
-View.vue（模板）+ useProxyPanel.ts（状态/动作）
+View.vue（模板）+ useProxyPanel.ts（状态/动作）+ logic.ts / config.ts
+Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规则/日志）
   ├ 代理组：开启/模式    ──invoke──→ mod.rs 命令入口
   ├ 订阅组：导入/更新/删除           ├ lifecycle.rs  状态机（启停/热重载/健康监测/启动复用）
   └ 节点组：列表/切换/测速/分组切    ├ menu.rs       菜单栏贡献
@@ -34,9 +35,9 @@ View.vue（模板）+ useProxyPanel.ts（状态/动作）
 **诊断入口**（搜索栏右侧，toggle 切换）：连接/规则/日志三个子视图：
 
 - 分别接 mihomo **`/connections`**（实时连接列表）、**`/rules`**（分流规则只读列表）、**`/logs`**（实时日志，环形缓冲 500 行，全级别推送由搜索过滤）
-- 三个子视图均用 BaseList + 主搜索栏统一过滤
+- 三个子视图均用 BaseList
 
-**菜单栏**：图标仅在已连接时显示（打开扩展 + 已连接状态可点断开）；断开隐藏，其余控制全部在扩展视图。
+**菜单栏**：图标仅在已连接时显示（打开扩展 + 已连接状态可点断开）；其余控制全部在扩展视图。
 
 ## mihomo binary 下载（运行时按需）
 
@@ -48,7 +49,7 @@ View.vue（模板）+ useProxyPanel.ts（状态/动作）
 
 **并发保护**：并发触发时（双击/开代理 spawn），用 **tokio Mutex + double-check** 串行化——仅一个真正下载、其余抢锁后复用，防多流写同一 `mihomo.gz` 损坏致 sha256 失败、binary 无法产出。
 
-**`download_core_async`** 经专用 **`http::download_client`**（reqwest 流式拉取）：
+**`download_core_async`** 仅组装 BinaryFetch spec，下载走共享管线 **`runtime/binary_fetch`**（与 video 共用：多 URL 回退 + sha256 校验 + gunzip + chmod；内部经专用 `http::download_client` reqwest 流式拉取）：
 
 - **无整体超时**，仅建连 30s——慢网络下 15MB gz 下载耗时不可控，全局 `HTTP_CLIENT` 的 120s 整体超时含 body 读取会中途掐断流
 - 国内镜像 **`gh-proxy.com`** 前缀（镜像仅代理转发，sha256 保证内容一致）
@@ -79,7 +80,7 @@ asset 名精确串等 **`mihomo-darwin-{arch}-{tag}.gz`**，排除 go120/go122/g
 
 1. 进视图时 **`proxy_check_update`** 后台拉 latest 比对本地 `mihomo.version`
 2. 有新版时副标题显示「核心 vX.Y.Z（最新 vZ，可更新）」+ 出现「更新」按钮
-3. 点击触发 **`proxy_update_core`**：`stop_root`（若在跑）→ 删 binary + version → `ensure_bin` 重下最新 → `start_core` 恢复（若之前 enabled）
+3. 点击触发 **`proxy_update_core`**：`tun_active` 时先 `uninstall_launchdaemon`（bootout + 删 plist，停进程）→ 删 binary + version → `ensure_bin` 重下最新 → 之前 enabled 则 `start_core` 重新安装恢复
 4. 中途下载失败：文件已删，下次 `ensure_bin` 自动重试
 
 ### 下载状态
@@ -88,9 +89,9 @@ asset 名精确串等 **`mihomo-darwin-{arch}-{tag}.gz`**，排除 go120/go122/g
 
 - **`DOWNLOADING`** 原子标记下载中，`core_status` 据此返回
 - 前端 `isDownloading` = `coreStatus.downloading`（computed）
-- 重新进入界面 `loadCoreStatus` 反映下载中/已下载/未下载
+- 重新进入视图不调 `loadCoreStatus`（调用点仅 downloadCore/updateCore 成败与 `proxy-core-ready` 事件）：KeepAlive 命中靠 ref 保留乐观值，LRU 驱逐重挂载读模块级启动快照（preloaded），据此反映下载中/已下载/未下载
 
-**进度数值不持久化**（下载是低频一次性操作，不值得为之维护快照）——退出重进时若仍在下载，按钮显示「下载中」，收到下一个 `proxy-core-progress` 事件即恢复具体百分比。
+**进度数值不持久化**（低频一次性操作）——退出重进时若仍在下载，按钮显示「下载中」，收到下一个 `proxy-core-progress` 事件即恢复具体百分比。
 
 **就绪信号**：gunzip/chmod/version 全部就绪后 Rust emit **`proxy-core-ready`**，前端事件驱动 `loadCoreStatus` 刷新——不依赖 `invoke(proxyEnsureCore)` 的 resolve 时序（sha256/gunzip 同步阻塞可能延迟 IPC 响应，曾导致前端乐观标记的 `downloading=true` 不被刷新、UI 卡在「解压中」）。
 
@@ -100,11 +101,11 @@ asset 名精确串等 **`mihomo-darwin-{arch}-{tag}.gz`**，排除 go120/go122/g
 
 **`ensure_geo_files`**：mihomo 加载含 GEOIP/GEOSITE 规则的 config 时需 **`geoip.metadb`** + **`geosite.dat`**，缺失触发同步下载（直连 GitHub 国内不可达 → EOF → config 加载失败/控制器不启动 → 开代理超时）。
 
-`restart_root` 前置 `ensure_geo_files` 经 gh-proxy 镜像预下载——已存在跳过，失败不阻塞（mihomo 经 `geox-url` 自行重试）。
+`install_launchdaemon` 前置 `ensure_geo_files` 经 gh-proxy 镜像预下载——已存在跳过，失败不阻塞（mihomo 经 `geox-url` 自行重试）。
 
 ## 运行模式（统一 TUN）
 
-mihomo 以 root 经 **launchd LaunchDaemon 托管**（`/Library/LaunchDaemons/<bundle-id>.mihomo.plist`）常驻——TUN 需 root 创建虚拟网卡 + auto-route，接管全部 IP 流量。首次开启代理时 `tun::install_launchdaemon` 经 `osascript ... with administrator privileges` 提权**一次**安装 plist 并 bootstrap 启动；之后 mihomo 由 launchd 托管（RunAtLoad 开机自启 + KeepAlive 崩溃自愈），Voidnix 全程经 controller API 热重载 active/idle config 控制，**日常零提权**。
+mihomo 以 root 经 **launchd LaunchDaemon 托管**（`/Library/LaunchDaemons/<bundle-id>.mihomo.plist`）常驻——TUN 需 root 创建虚拟网卡 + auto-route，接管全部 IP 流量。首次开启代理时 `tun::install_launchdaemon` 经 `osascript ... with administrator privileges` 提权**一次**安装 plist 并 bootstrap 启动；之后 RunAtLoad 开机自启 + KeepAlive 崩溃自愈，Voidnix 全程经 controller API 热重载 active/idle config 控制，**日常零提权**。
 
 ### LaunchDaemon plist
 
@@ -112,7 +113,7 @@ plist 的 `ProgramArguments` 指向 mihomo binary（绝对路径）+ `-d` 数据
 
 ### TUN 独占与进程清理（install 时一次性）
 
-**TUN 是系统独占资源**（虚拟网卡 + 路由 `1.0.0.0/8` 等），两个 mihomo 实例不能同时占 TUN（`add route: file exists`）。`install_launchdaemon` 安装时**只清理自己的 mihomo**（按 binary 完整路径匹配，含 bundle-id 数据目录），不杀别的实例——dev/prod 默认端口隔离（dev +1 偏移），互不占用，可同时常驻。与第三方工具的冲突由三层诊断处理（见下）。
+**TUN 是系统独占资源**（虚拟网卡 + 路由 `1.0.0.0/8` 等），两个 mihomo 实例不能同时占 TUN（`add route: file exists`）。`install_launchdaemon` 安装时**只清理自己的 mihomo**（按 binary 完整路径匹配，含 bundle-id 数据目录），不杀别的实例——dev/prod 端口隔离互不占用，可同时常驻。与第三方工具的冲突由三层诊断处理（见下）。
 
 **dev/prod 端口隔离**：dev 构建默认 `7891/9091`，prod 默认 `7890/9090`（`import.meta.env.DEV` 偏移 +1）。两个 mihomo 可同时常驻（idle/idle 或 idle/active）互不干扰。
 
@@ -124,13 +125,13 @@ plist 的 `ProgramArguments` 指向 mihomo binary（绝对路径）+ `-d` 数据
 - **前端结构层**（`config.ts` 模块级 watch）：app 启动即注册（非 composable 内延后），`flush: 'sync'` 确保 `defineConfig` backfill 回填错误端口时在同一同步栈内即时修正，消除 backfill 到修正之间的窗口
 - **磁盘层**：前端 normalizer 修正后经 defineConfig 300ms 防抖持久化，后续 config.json 自动修正
 
-**idle config 无 tun 段、不占 TUN**：Voidnix mihomo 常驻 idle 时 TUN 空闲，不影响用户切到其他代理软件；只有开代理（active，占 TUN）时独占。但 idle 仍占 mixed-port/controller 端口，端口相同会与其他代理工具冲突（见下）。
+**idle 不占 TUN**：Voidnix mihomo 常驻 idle 时 TUN 空闲，不影响切到其他代理软件，仅开代理（active）时独占；但 idle 仍占 mixed-port/controller 端口，端口相同会与其他代理工具冲突（见下）。
 
 ### 冲突处理（三层）
 
 与 Clash Verge / Mihomo Party / ClashX 等其他代理工具共存时，端口（7890/9090 行业默认）与 TUN（系统独占）会冲突。三层处理把「静默强杀别人 + 笼统失败」变为「探测识别 + 明确反馈 + 用户决策」：
 
-**第一层 · 端口预探测**（install 前，免提权）：`port_occupant` 经 `lsof -iTCP:<port> -sTCP:LISTEN` 查 mixed-port/controller 占用者。被**别的程序**占 → 直接报错（`7890 端口被 mihomo（PID 1234）占用，请先关闭它或修改端口`），不进 osascript 不强杀。dev/prod 默认端口隔离互不占用。
+**第一层 · 端口预探测**（install 前，免提权）：`port_occupant` 经 `lsof -iTCP:<port> -sTCP:LISTEN` 查 mixed-port/controller 占用者。被**别的程序**占 → 直接报错（`7890 端口被 mihomo（PID 1234）占用，请先关闭它或修改端口`），不进 osascript 不强杀。
 
 **第二层 · 启动失败诊断**（wait_ready 超时后，免提权）：`diagnose_launch_failure` 读 `mihomo.log` 尾部识别已知错误模式（`address already in use` / TUN `file exists`）+ 再跑一次 `lsof` 查端口占用者，拼成可操作提示（`TUN 网卡或路由被其他代理工具占用`），而非笼统的「启动失败」。
 
@@ -156,7 +157,7 @@ mihomo 生命周期由 launchd 托管（KeepAlive 保活），无裸进程 spawn
 
 osascript 每次提权都弹系统密码框。launchd 托管把提权收敛到「**首次安装 plist 一次**」，之后进程永驻、开关走热重载：
 
-- **首次开代理**：`ensure_root_mihomo` 检测 plist 未装 → `install_launchdaemon`（提权 1 次：端口预探测 + 只杀自己的旧 mihomo + 装 plist + bootstrap，mihomo 启动跑 idle config）→ `start_core` **TUN 路由预检**（`netstat -rn` 检测 TUN auto-route 路由（两代风格），占用者是 Voidnix 对端变体则让渡接管，第三方则直接拒绝）→ 热重载 active config → **同步 TUN 验证**（读 mihomo.log 检测静默失败，失败时回滚 idle config 清理状态）
+- **首次开代理**：`ensure_root_mihomo` 检测 plist 未装 → `install_launchdaemon`（提权 1 次：端口预探测 + 只杀自己的旧 mihomo + 装 plist + bootstrap，mihomo 启动跑 idle config）→ `start_core` **TUN 路由预检**（对端变体占用则让渡接管，第三方则直接拒绝）→ 热重载 active config → **同步 TUN 验证**（失败时回滚 idle config）
 - **关代理**：`stop_core` 先写 **idle config.yaml** 到磁盘（即使 controller 卡住，mihomo 重启后自动加载 idle），再短超时（3s）单次热重载。成功则 TUN 即时释放；失败 + mihomo 在跑时**乐观返回成功**（UI 即时显示关闭），后台异步重试释放 TUN（全部失败才 toast）；失败 + mihomo 已死则视为已关闭。**进程保留**（launchd 继续托管），可 `proxy_reconnect` 重试
 - **再开代理 / 开机后首次**：`ensure_root_mihomo` 命中「plist 已装」→ controller 可达则直接复用，不可达则等 launchd 拉起（KeepAlive）→ 热重载 active config，**免提权**
 
@@ -171,7 +172,7 @@ app 启动时 **`reconnect_root_mihomo`** 检测 launchd 托管的 mihomo（按 
 - 先 **`GET /version`** 验 secret——匹配后 **`GET /configs`** 按运行 config 的 `tun.enable` 分流：
   - **active**（app 退出前开着、launchd 保活至今）→ **恢复 `enabled` + `run_params` + 重启健康监测 + emit `proxy-enabled:true`** 同步前端/菜单——常驻设计的意图是 app 退出不影响代理，重启 app 静默切直连等于无提示的流量裸奔（mode 以运行 config 为权威）。前端挂载时再查一次 `is_proxy_enabled` 兜底（reconnect 在 Rust setup 异步跑，可能晚于模块预加载，emit 时面板未挂载会丢失）
   - **idle** → 热重载 idle 幂等复位直通，成功才标记 `tun_active` + 设 `run_params`（子视图诊断只需 controller 可达，不依赖代理开启）
-- secret 不匹配（401 = 不可控，如旧 osascript 残留）**不提权清理**（避免 app 启动弹窗），下次开代理时 `install_launchdaemon` 会清理所有 mihomo 并接管
+- secret 不匹配（401 = 不可控，如旧 osascript 残留）**不提权清理**（避免 app 启动弹窗），下次开代理时 `install_launchdaemon` 会清理本端路径的 mihomo 实例并接管
 
 ### `ensure_root_mihomo` 三分支信任
 
@@ -179,15 +180,15 @@ app 启动时 **`reconnect_root_mihomo`** 检测 launchd 托管的 mihomo（按 
 
 1. **controller 可达 + secret 匹配** → 复用（reconnect 成功 / 本 session 已开），置 `tun_active`，免提权
 2. **plist 已装但 controller 不可达**（开机后/崩溃重启中）→ `wait_ready` 等 launchd 拉起（KeepAlive），免提权；等不到（plist 损坏/加载失败）回退 3
-3. **plist 未装** → `install_launchdaemon` 提权一次（清理所有 mihomo + 装 plist + bootstrap）
+3. **plist 未装** → `install_launchdaemon` 提权一次（清理本端路径的 mihomo 实例 + 装 plist + bootstrap）
 
 mihomo 输出重定向到 **mihomo.log**（启动失败可查日志）。
 
-> 历史上有过 user 模式（系统代理，仅覆盖遵守系统代理的应用）+ TUN 模式双选；因 user 模式覆盖不全（命令行/Docker/部分原生应用不走代理）非完整代理，已移除，统一为 TUN。早期 TUN 经 osascript `restart_root` 每次 spawn/kill 裸进程，密码框频繁；现改为 launchd 托管，提权收敛到首次安装一次。
+> 历史上有过 user 模式（系统代理）+ TUN 模式双选；因 user 模式仅覆盖遵守系统代理的应用（命令行/Docker/部分原生应用不走代理）非完整代理，已移除，统一为 TUN。早期 TUN 经 osascript 每次提权 spawn/kill 裸进程，密码框频繁；现改为 launchd 托管，提权收敛到首次安装一次。
 
 ## 健康监测 + 自动热重载恢复
 
-root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「假死」——内存状态（enabled/tun_active）与实际脱节：UI 仍显示已开启，用户靠测速才发现全超时；关闭重开还因热重载失败走 stop_root + restart_root 双提权。
+root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「假死」——内存状态（enabled/tun_active）与实际脱节：UI 仍显示已开启，用户靠测速才发现全超时；历史上关闭重开还因热重载失败需两次提权重启进程，launchd 托管后虽免提权，仍需手动操作且中断代理。
 
 ### 监测机制
 
@@ -201,15 +202,15 @@ root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「
 
 ### 恢复动作
 
-- **进程已退出**（`!root_mihomo_running`）或 controller 不可达 → **`reset_dead_state`**：重置 enabled/tun_active/监测代际 + 清残留 pidfile + emit `proxy-enabled:false` + emit `proxy-status{kind:error}`（前端状态栏提醒 + 开启项红色提示）+ menubar 隐藏图标。**不自动提权重启**（避免突兀弹密码框），由用户手动重新开启
+- **进程已退出**（`!root_mihomo_running`）或 controller 不可达 → **`reset_dead_state`**：复位 enabled/tun_active 两标志 + `invalidate_monitor`（监测代际失效）+ `StreamRegistry::cancel_all` 停流 + emit `proxy-enabled:false` + emit `proxy-status{kind:error}`（前端状态栏提醒 + 开启项红色提示）+ menubar refresh 隐藏图标。**不自动提权重启**（避免突兀弹密码框），由用户手动重新开启
 - **进程在 + controller 在 但出站死** → **免提权热重载 active config**（`reload_config_yaml`，PUT /configs 让 mihomo 重建 TUN 栈/连接池/接口绑定，对症「重启就好」）；热重载失败 emit `proxy-status{kind:error}` 通知，下轮重试
 - **状态脱节 / 被对端变体接管**（enabled 但运行 config `tun.enable=false`）→ `reset_dead_state`——本端 mihomo 已被热重载 idle 或核心重启回退 idle，流量实际直通。让渡路径经分布式通知即时发现（文案「TUN 已被另一版本 Voidnix 接管」），其余路径由 30s 对账发现（文案「代理已断开（TUN 未生效）」）
 
 ### 手动重连
 
-用户亦可手动触发 **`proxy_reconnect`**（免提权软重启，UI 开启项「重连」按钮）：进程在 + controller 可达时一键热重载 active config，规避关闭→开启的 stop_root 提权。进程已退出则报错提示需关闭重开（会提权）。
+用户亦可手动触发 **`proxy_reconnect`**（免提权软重启，UI 开启项「重连」按钮）：进程在 + controller 可达时一键热重载 active config——launchd 托管下关闭重开虽免提权，但热重启更快且不中断代理。进程已退出则报错提示需关闭重开（会提权）。
 
-`stop_core` 置 `monitor_alive=false` 停监测（用户主动关闭无需监测）。
+`stop_core` 经 `invalidate_monitor` 停监测（用户主动关闭无需监测）。
 
 ## 订阅合并（subscription.rs）
 
@@ -224,7 +225,7 @@ root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「
 **`merge_yaml(texts, params)`**（纯函数）：
 
 - 多文本 **proxies** 按 name 去重拼接（单激活模型下通常仅 1 份，去重作单订阅内重名防御）
-- **proxy-groups / rules** 取首个非空文本，否则自动生成（`节点选择` select + `自动选择` url-test + `MATCH,节点选择`）
+- **proxy-groups / rules** 取首个非空文本，否则自动生成（groups 为 `节点选择` select + `自动选择` url-test；rules 为 `GEOIP,CN,DIRECT` + `MATCH,节点选择` 两条）
 
 订阅自带顶层字段被丢弃（仅取 proxies/groups/rules）。
 
@@ -232,7 +233,7 @@ root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「
 
 框架恒注入以下全局性能开关（订阅自带顶层字段被丢弃，故这些开关必须由框架注入而非依赖订阅）：
 
-- **`unified-delay: true`**：测速减去握手耗时 DNS+TCP+TLS+协议握手，只留 HTTP RTT，对齐 Clash Verge Rev / Mihomo Party 等默认——缺失此项致 ANYTLS 等 TLS 协议握手 300-600ms 被计入延迟，数值偏高一个数量级
+- **`unified-delay: true`**：测速扣除 DNS+TCP+TLS+协议握手耗时，只留 HTTP RTT，对齐 Clash Verge Rev / Mihomo Party 等默认——缺失此项致 ANYTLS 等 TLS 协议握手 300-600ms 被计入延迟，数值偏高一个数量级
 - **`tcp-concurrent`**：多 IP 节点并发建连取最快
 - **`keep-alive-interval: 30`**：连接保活，降重复握手与测速波动
 
@@ -270,7 +271,7 @@ config 含 **`geox-url`**（geoip/geosite 镜像 URL，国内直连 GitHub 不�
 
 - `GET /proxies`（节点列表）
 - `PUT /proxies/{group}`（选节点）
-- `GET /proxies/{name}/delay`（单节点测速：流式批量测速 `proxy_test_group_delay_stream` 并发对全组每个节点调它、测完一个即经 Channel 推送；健康探针 `probe_health` 亦复用。替代 mihomo 批量端点 `/group/{group}/delay`——后者需等全组结算才一次返回，被死节点拖累）
+- `GET /proxies/{name}/delay`（单节点测速；流式批量测速 `proxy_test_group_delay_stream` 与健康探针 `probe_health` 均复用此端点，替代批量端点 `/group/{group}/delay`——后者需等全组结算一次返回，被死节点拖累）
 - `PATCH /configs`（切模式）
 - `PUT /configs {path}`（热重载配置，**重试 3 次间隔 300ms**——install 路径 mihomo 刚 bootstrap 首次连接撞初始化抖动窗口时自愈；HTTP 错误码不重试）
 - `GET /rules`（分流规则只读快照）
@@ -288,7 +289,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 - WS 鉴权用 **`?token={secret}`** query（mihomo 支持，bearer 不适用于 WS Upgrade）
 - 三条流均本地回环，连接失败静默退出（前端可见时才开，无感重开）
 
-前端子视图经 KeepAlive 缓存（切子视图走 activate/deactivate 而非重挂载），流生命周期绑 `onActivated`/`onDeactivated`：切走子视图即停 WS、切回即重开（避免不可见时空转）。
+前端子视图经 KeepAlive 缓存（activate/deactivate 而非重挂载），流生命周期绑 `onActivated`/`onDeactivated`：切走即停 WS、切回即重开（避免不可见时空转）。
 
 ### 四条流
 
@@ -306,7 +307,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 - **打开扩展**（Item，点击打开代理视图）
 - **已连接：节点**（CheckItem 勾选，点击断开 → 图标隐藏，重连走扩展视图）
 
-状态行当前节点名由 **`refresh_proxy_menu`** 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `reload_running_config` 触发刷新。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步视图 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展视图。
+状态行当前节点名由 **`refresh_proxy_menu`** 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `proxy_update_subscription` / `proxy_remove_subscription` / `proxy_set_active_subscription` 五个命令入口在调用后 spawn 刷新（`reload_running_config` 本身不触发）。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步视图 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展视图。
 
 ## 命令（19 个）
 
@@ -314,10 +315,10 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 - **核心下载**：`proxy_core_status` / `proxy_ensure_core`（核心版本查询与运行时按需下载）
 - **版本升级**：`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）
 - **订阅**：`proxy_update_subscription`（订阅 + 热重载）/ `proxy_remove_subscription`（删订阅 + 切新激活 + 热重载，传 `new_active_sub_id`）/ `proxy_set_active_subscription`（切激活订阅 + 热重载）
-- **节点与测速**：`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_group_delay_stream`（流式测速：并发对全组每个节点调 `/proxies/{name}/delay`，测完一个即经 Channel 推送，前端增量更新；替代 mihomo 批量端点需等全组结算才一次返回的旧实现）
+- **节点与测速**：`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_group_delay_stream`（流式测速：并发对全组每个节点调 `/proxies/{name}/delay`，测完一个即经 Channel 推送，前端增量更新）
 - **模式切换**：`proxy_set_mode`（controller 转发，切模式后回写 run_params 防重启回退；含「未变跳过」守卫 + emit 同步前端）
-- **软重启**：`proxy_reconnect`（免提权软重启：热重载 active config 重建 TUN 栈/连接池，出站异常时一键恢复，规避关闭→开启的 stop_root 提权）
-- **诊断流**：`proxy_traffic_stream` / `proxy_connections_stream` / `proxy_logs_stream`（开 WS 流，Channel 推流量速率/连接快照/日志行；mihomo 未运行时静默返回不 spawn，前端显示「无记录」）
+- **软重启**：`proxy_reconnect`（免提权软重启：热重载 active config 重建 TUN 栈/连接池，出站异常时一键恢复）
+- **诊断流**：`proxy_traffic_stream` / `proxy_connections_stream` / `proxy_logs_stream`（开 WS 流，Channel 推流量速率/连接快照/日志行；mihomo 未运行时静默返回不 spawn，前端三子视图分别显示「无活动连接 / 无规则 / 无日志」）
 - **诊断控制**：`proxy_stop_stream`（StreamRegistry CancellationToken 停指定流）/ `proxy_get_rules`（GET /rules 只读快照，未运行返回空）
 
 ## 文件布局
