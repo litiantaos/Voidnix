@@ -7,23 +7,30 @@ use super::stream::StreamRegistry;
 use super::subscription;
 use super::tun;
 use serde_json::Value;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 /// 代理运行状态：enabled（流量是否被代理）+ tun_active（root mihomo 进程是否在跑，常驻）
-/// + run_params（最近一次 active 参数，供热重载/复用）+ monitor_alive（健康监测 task 运行标志）。
+/// + run_params（最近一次 active 参数，供热重载/复用）+ 健康监测代际（见 monitor_gen 字段）。
 pub struct ProxyState {
     pub enabled: AtomicBool,
     pub run_params: Mutex<Option<RunParams>>,
     pub tun_active: AtomicBool,
     /// 菜单栏状态行当前节点名缓存；由 refresh_proxy_menu 异步拉取填充。
     pub current_node: Mutex<Option<String>>,
-    /// 健康监测 task 运行标志（协作式退出）：true=监测中。start_core 置 true 并 spawn；
-    /// stop_core / 进程退出重置时置 false，task 自行退出。
-    pub monitor_alive: AtomicBool,
+    /// 健康监测代际：stop/reset 自增使在跑 task 代际失配而退出。替代共享 bool 标志——
+    /// bool 下旧 task 醒来读到新 task 置位的 true 会「复活」（stop 后 30s 内重开 → 双
+    /// monitor 并存，重复探针/重复恢复 reload/重复 toast，且旧 task 退出还会清掉新标志）。
+    pub monitor_gen: AtomicU64,
+    /// 已 spawn task 的代际（ensure_monitor 幂等跳过依据）。
+    pub monitor_spawned_gen: AtomicU64,
+    /// TUN 释放重试代际：stop_core 的后台重试捕获注册时的代际，start_core 入口自增使
+    /// 旧重试作废——在源头消灭「重试 PUT idle 落在重开的 PUT active 之后」的竞态窗口
+    /// （enabled 标志在 start_core 末尾才置位，靠它拦截存在缝隙）。
+    pub release_gen: AtomicU64,
 }
 
 /// 健康事件 payload（emit "proxy-status"，前端 showStatus 反馈）。
@@ -34,23 +41,180 @@ pub(crate) struct ProxyStatus {
     pub msg: String,
 }
 
-/// 检测系统是否已有其他 TUN 代理工具的路由冲突。
-/// mihomo auto-route 创建 0.0.0.0/1 + 128.0.0.0/1 半路由覆盖默认路由，
-/// 若已存在（其他代理工具创建），mihomo TUN 必然失败——提前拦截给出明确提示。
+/// netstat 路由表中是否已有 TUN auto-route 路由。
+/// 两代风格均须识别：老版半路由 `0/1` + `128/1`；新版路由树分解 `1` + `2/7` + `4/6` +
+/// `8/5` + `16/4` + `32/3` + `64/2` + `128.0/1`（覆盖 1.0.0.0–255.255.255.255，避开
+/// 0.0.0.0/8）。两者均为代理工具 auto-route 专属目标，常规网络不会出现（`127` 回环、
+/// `169.254` 链路本地等不在标记集）。只匹配 IPv4 行（IPv6 分解树与运营商原生 v6 路由
+/// 难区分，保守不匹配）。
+fn has_tun_routes(routes: &str) -> bool {
+    const MARKERS: [&str; 10] = [
+        "0/1", "128/1", "1", "2/7", "4/6", "8/5", "16/4", "32/3", "64/2", "128.0/1",
+    ];
+    routes.lines().any(|line| {
+        let dest = line.split_whitespace().next().unwrap_or("");
+        MARKERS.contains(&dest)
+    })
+}
+
+/// 查系统 TUN auto-route 路由。`Some(true)`=存在，`Some(false)`=不存在，`None`=netstat 失败
+/// （预检路径降级放行——让 mihomo 尝试 + verify 兜底；让渡轮询按「未撤除」继续等）。
+fn tun_routes() -> Option<bool> {
+    let out = std::process::Command::new("netstat")
+        .args(["-rn"])
+        .output()
+        .ok()?;
+    Some(has_tun_routes(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// 检测系统是否已有 TUN auto-route 路由（老版半路由 / 新版路由树分解，见 `has_tun_routes`）。
+/// mihomo 创建 TUN 必然与既有 auto-route 冲突（add route: file exists）——提前拦截给出明确提示。
 /// 仅 start_core（idle→active 切换）调用，mihomo 自身 TUN 路由不会误判（idle 无 TUN 路由）。
 fn tun_route_conflict() -> Option<String> {
-    let Ok(out) = std::process::Command::new("netstat").args(["-rn"]).output() else {
-        return None; // 检测失败不阻塞（让 mihomo 尝试 + verify 兜底）
-    };
-    let routes = String::from_utf8_lossy(&out.stdout);
-    let has_half_route = routes.lines().any(|line| {
-        let dest = line.split_whitespace().next().unwrap_or("");
-        dest == "0/1" || dest == "128/1"
-    });
-    if has_half_route {
-        Some("系统已有其他代理工具的 TUN 路由，请先关闭它".into())
+    tun_routes()
+        .filter(|&conflict| conflict)
+        .map(|_| "系统已有其他代理工具的 TUN 路由，请先关闭它".into())
+}
+
+// ── 对端变体（dev/prod）TUN 让渡 ──
+
+/// 由 bundle identifier 推导对端变体 identifier：dev 恒以 `.dev` 结尾
+/// （tauri.dev.conf.json），prod 恒不带；dev→prod 去后缀，prod→dev 加后缀。
+fn sibling_identifier(ident: &str, is_dev: bool) -> Option<String> {
+    if is_dev {
+        ident.strip_suffix(".dev").map(String::from)
     } else {
-        None
+        Some(format!("{ident}.dev"))
+    }
+}
+
+/// 对端变体 proxy 数据目录（`~/Library/Application Support/<sibling-id>/extensions/proxy`）。
+fn sibling_proxy_dir(app: &AppHandle) -> Option<PathBuf> {
+    let data = app.path().app_data_dir().ok()?;
+    let sibling = sibling_identifier(&app.config().identifier, cfg!(debug_assertions))?;
+    Some(
+        data.parent()?
+            .join(sibling)
+            .join("extensions")
+            .join("proxy"),
+    )
+}
+
+/// 读对端 config.json 的 controller 凭证（端口 + secret），供让渡热重载。
+/// 端口按对端视角归一化（对端 config.json 可能残留本端默认端口，同本端污染场景）。
+fn sibling_controller_creds(dir: &Path) -> Option<(u16, String)> {
+    let text = std::fs::read_to_string(dir.join("config.json")).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    let mut mixed_port = v.get("mixedPort")?.as_u64()? as u16;
+    let mut controller_port = v.get("controllerPort")?.as_u64()? as u16;
+    core::correct_ports_toward(
+        &mut mixed_port,
+        &mut controller_port,
+        !cfg!(debug_assertions),
+    );
+    Some((controller_port, v.get("secret")?.as_str()?.to_string()))
+}
+
+/// TUN 让渡分布式通知名（NSDistributedNotificationCenter，发布者 object = 变体 bundle id）。
+/// 对端 app 在跑时毫秒级收到推送、即时对账复位——轮询只能做到秒级且需常驻循环。
+pub(crate) const TUN_TAKEN_NOTIFY: &str = "com.litiantao.voidnix.proxy.tun-taken";
+
+/// 对端变体 TUN 让渡：占用者是 Voidnix 对端变体的 mihomo 时，经其 controller API
+/// 热重载其磁盘上的恒 idle `config.yaml`（免提权），TUN 随之拆除，本端随后接管。
+/// 让渡成功即发布分布式通知（见 `TUN_TAKEN_NOTIFY`），对端 app 若在跑则即时对账复位。
+///
+/// TUN 系统独占，但 dev/prod 互为「自家可控实例」（数据目录/端口/secret 全部可推导读取），
+/// 对端残留 active（app 退出后 launchd 继续托管）占住 TUN 时不应按第三方工具报错让用户
+/// 手动处理——app 退出后对端 UI 已不在，用户恰恰无从关闭。对端不可控（凭证缺失/secret
+/// 不匹配）或占用者是第三方工具时返回 `fallback_msg`（原冲突提示）。
+///
+/// 占有判定用 `GET /configs` 的 `tun.enable` 而非仅看进程在跑：对端 idle 常驻是常态
+/// （不占 TUN），进程在跑不等于占用者；字段缺失/读取失败不视为占用者（走第三方报错路径）。
+async fn release_sibling_tun(app: &AppHandle, fallback_msg: String) -> Result<(), String> {
+    let Some(dir) = sibling_proxy_dir(app) else {
+        return Err(fallback_msg);
+    };
+    if !mihomo_running(&dir) {
+        return Err(fallback_msg); // 对端未跑 → 占用者是第三方工具
+    }
+    let variant = if cfg!(debug_assertions) {
+        "正式版"
+    } else {
+        "dev 版"
+    };
+    let Some((port, secret)) = sibling_controller_creds(&dir) else {
+        return Err(format!(
+            "{variant} Voidnix 的代理仍占用 TUN，请打开 {variant} 关闭代理后重试"
+        ));
+    };
+    let base = format!("http://127.0.0.1:{port}");
+    match controller::check_auth(&base, &secret).await {
+        Ok(true) => {}
+        _ => {
+            return Err(format!(
+                "{variant} Voidnix 的代理核心不可控，请打开 {variant} 关闭代理后重试"
+            ))
+        }
+    }
+    let holds_tun = controller::get_configs(&base, &secret)
+        .await
+        .ok()
+        .and_then(|v| {
+            v.get("tun")
+                .and_then(|t| t.get("enable"))
+                .and_then(Value::as_bool)
+        })
+        == Some(true);
+    if !holds_tun {
+        return Err(fallback_msg); // 对端 idle 常驻 → 占用者是第三方工具
+    }
+    // 让渡：PUT 对端磁盘上的恒 idle config.yaml（本端只读访问对端目录，不写不删）
+    let idle = dir.join("config.yaml").display().to_string();
+    controller::reload_config(&base, &secret, &idle, Duration::from_secs(5), 1).await?;
+    // 轮询等 auto-route 路由撤除（PUT 同步应用 TUN 拆除，netstat 刷新有滞后）
+    for _ in 0..15 {
+        if tun_routes() != Some(true) {
+            // 推送对端即时对账（object = 本端 bundle id，对端按 object 过滤观察、自收排除）
+            crate::platform::distributed::post(TUN_TAKEN_NOTIFY, &app.config().identifier);
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    Err(format!("{variant} Voidnix 释放 TUN 超时，请稍后重试"))
+}
+
+/// setup 内注册对端让渡通知观察（进程生命周期）：收到推送 → 异步对账（验证真相后复位，
+/// 通知可能伪造/陈旧，一律以运行 config 为准）。
+pub(crate) fn observe_tun_taken(app: &AppHandle) {
+    let Some(sibling) = sibling_identifier(&app.config().identifier, cfg!(debug_assertions)) else {
+        return;
+    };
+    let app2 = app.clone();
+    crate::platform::distributed::observe_on_main(
+        app,
+        TUN_TAKEN_NOTIFY,
+        &sibling,
+        std::sync::Arc::new(move || {
+            let app3 = app2.clone();
+            tauri::async_runtime::spawn(async move {
+                reconcile_after_takeover(&app3).await;
+            });
+        }),
+    );
+}
+
+/// 让渡通知对账：enabled 且运行 config 的 tun.enable 已关闭 → 复位 + 精确提示。
+pub(crate) async fn reconcile_after_takeover(app: &AppHandle) {
+    let state = app.state::<ProxyState>();
+    if !state.enabled.load(Ordering::Relaxed) {
+        return;
+    }
+    let Some((port, secret)) = controller_creds_opt(&state) else {
+        return;
+    };
+    let base = format!("http://127.0.0.1:{port}");
+    if tun_disabled(&base, &secret).await {
+        reset_dead_state(app, "TUN 已被另一版本 Voidnix 接管，代理已断开，请重新开启");
     }
 }
 
@@ -114,14 +278,53 @@ pub(crate) fn log_size(app: &AppHandle) -> u64 {
         .unwrap_or(0)
 }
 
-/// 从 `since` 字节偏移之后取新增内容（跳到下一个换行确保完整行）。
-/// `\n` 是 ASCII 单字节，在 UTF-8 字节流中直接搜索不与多字节字符冲突；
-/// 换行后的位置天然是字符边界，`&content[pos..]` 不会 panic。
-fn tail_after(content: &str, since: u64) -> &str {
-    let start = (since as usize).min(content.len());
-    match content.as_bytes()[start..].iter().position(|&b| b == b'\n') {
-        Some(i) => &content[start + i + 1..],
-        None => "", // since 之后无换行 = 无新增完整行
+/// mihomo.log 尾读窗口（字节）：TUN 诊断只需 reload 后新增的十几行；日志无轮转、可无限
+/// 增长（info 级别每连接一行），全量 read_to_string 会随体积线性放大每次开关代理的内存尖峰。
+const LOG_TAIL_WINDOW: u64 = 64 * 1024;
+
+/// mihomo.log 体积上限：超限时 stop_core（低频、用户主动关代理）截断为空——launchd 以
+/// O_APPEND 持有 fd，截断后写入继续追加到新 EOF，无需重启进程。
+const LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+
+/// 读 `since` 字节偏移之后的新增完整行；自 `since` 起超出窗口时退化为最后窗口内的完整行
+/// （连接风暴下新增超 64KB 时只看最新一段，TUN error 必在尾部）。
+/// 语义对齐旧 `tail_after`：丢弃 since 起的首个行段（快照时该行可能尚未写完）。
+pub(crate) fn read_log_tail(path: &Path, since: u64) -> Vec<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return Vec::new();
+    };
+    let Ok(len) = f.metadata().map(|m| m.len()) else {
+        return Vec::new();
+    };
+    if len <= since {
+        return Vec::new(); // 无新增（或已被截断/轮转）
+    }
+    let start = since.max(len.saturating_sub(LOG_TAIL_WINDOW));
+    if f.seek(SeekFrom::Start(start)).is_err() {
+        return Vec::new();
+    }
+    let mut bytes = Vec::new();
+    if f.read_to_end(&mut bytes).is_err() {
+        return Vec::new();
+    }
+    // 窗口起点可能落在多字节 UTF-8 序列中间，lossy 换替换符（残行随首行段一并丢弃）
+    let buf = String::from_utf8_lossy(&bytes);
+    let body = match buf.find('\n') {
+        Some(i) => &buf[i + 1..],
+        None => return Vec::new(), // since 之后无完整行
+    };
+    body.lines().map(str::to_string).collect()
+}
+
+/// mihomo.log 超限截断（stop_core 低频点调用，见 `LOG_MAX_BYTES`）。
+fn truncate_log_if_large(dir: &Path) {
+    let log = dir.join("mihomo.log");
+    if std::fs::metadata(&log)
+        .map(|m| m.len() > LOG_MAX_BYTES)
+        .unwrap_or(false)
+    {
+        let _ = std::fs::File::create(&log);
     }
 }
 
@@ -143,8 +346,8 @@ pub(crate) async fn verify_tun_active(app: &AppHandle, since: u64) -> Result<(),
     let Ok(dir) = crate::runtime::storage::ext_data_dir(app, "proxy") else {
         return Ok(()); // 路径异常不阻塞（reload 已成功为前提）
     };
-    let content = std::fs::read_to_string(dir.join("mihomo.log")).unwrap_or_default();
-    for line in tail_after(&content, since).lines().rev().take(15) {
+    let lines = read_log_tail(&dir.join("mihomo.log"), since);
+    for line in lines.iter().rev().take(15) {
         let l = line.to_lowercase();
         // 正常日志 "[TUN] Tun adapter listening at: utun4" 无 error 关键词不会误报。
         // route 错误（"route: file exists"）也需捕获——auto-route 路由冲突是 TUN 失败的主因。
@@ -203,9 +406,15 @@ pub(crate) async fn start_core(
     if state.enabled.load(Ordering::Relaxed) {
         return Ok(()); // 幂等：已开启
     }
-    // Pre-flight：其他代理工具已创建 TUN 半路由时，mihomo TUN 必然失败——提前拦截
+    // 作废挂起的 TUN 释放重试（stop 的乐观后台路径）：重试按 release_gen 比对自弃，
+    // 从源头消灭「重试 PUT idle 落在本轮 PUT active 之后」的竞态窗口（enabled 在
+    // start_core 末尾才置位，靠它拦截存在缝隙）。
+    state.release_gen.fetch_add(1, Ordering::Relaxed);
+    // Pre-flight：TUN auto-route 路由已存在时 mihomo TUN 必然失败。占用者若是 Voidnix 对端变体
+    // （dev/prod）残留的 active mihomo（app 退出后 launchd 继续托管），先经其 controller
+    // 优雅让渡（热重载 idle 释放 TUN，免提权）再继续；第三方工具不可控，维持报错。
     if let Some(msg) = tun_route_conflict() {
-        return Err(msg);
+        release_sibling_tun(app, msg).await?;
     }
     // 确保 root mihomo 在跑（launchd 托管：复用/等拉起/首次安装），安装后跑 idle config。
     // 统一热重载 active config 开启代理——install 后从 idle 切 active，复用时确认状态，免提权。
@@ -233,9 +442,13 @@ pub(crate) async fn start_core(
 /// 3. 失败 + mihomo 已死 → 视为已关闭
 /// 4. 失败 + mihomo 在跑 → 乐观返回 Ok，后台异步重试释放 TUN，全部失败才通知用户
 pub(crate) async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
-    state.monitor_alive.store(false, Ordering::Relaxed);
+    invalidate_monitor(state);
     app.state::<StreamRegistry>().cancel_all();
     if state.tun_active.load(Ordering::Relaxed) {
+        // 日志超限截断（低频点：用户主动关代理；mihomo 继续跑，O_APPEND 追加到新 EOF）
+        if let Ok(dir) = crate::runtime::storage::ext_data_dir(app, "proxy") {
+            truncate_log_if_large(&dir);
+        }
         let idle = state.run_params.lock().map_err(|e| e.to_string())?.clone();
         if let Some(mut p) = idle {
             p.mode = "direct".into();
@@ -266,12 +479,17 @@ pub(crate) async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(),
                             // config.yaml（idle）与用户重开时写 config-active.yaml 不冲突。
                             let app2 = app.clone();
                             let secret = p.secret.clone();
+                            // 捕获重试代际：start_core 入口自增后旧重试自弃（enabled 置位
+                            // 前的缝隙期竞态由它消灭）
+                            let retry_gen = state.release_gen.load(Ordering::Relaxed);
                             tauri::async_runtime::spawn(async move {
                                 let st = app2.state::<ProxyState>();
                                 for delay in [3u64, 6, 10, 15] {
                                     tokio::time::sleep(Duration::from_secs(delay)).await;
-                                    // 用户已重新开代理则停止释放尝试（active config 已接管 TUN）
-                                    if st.enabled.load(Ordering::Relaxed) {
+                                    // 用户已重新开代理（重开已开始或已完成）则停止释放尝试
+                                    if st.release_gen.load(Ordering::Relaxed) != retry_gen
+                                        || st.enabled.load(Ordering::Relaxed)
+                                    {
                                         return;
                                     }
                                     if controller::reload_config(
@@ -316,26 +534,53 @@ pub(crate) async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(),
 
 // ── 健康监测 + 自动热重载恢复 ──
 
-/// 启动健康监测 task（幂等：已在跑则跳过）。start_core 成功后调用。
+/// 使在跑的健康监测 task 失效（代际自增，task 醒来比对失配即退出）。
+/// stop_core / reset_dead_state 调用。
+fn invalidate_monitor(state: &ProxyState) {
+    state.monitor_gen.fetch_add(1, Ordering::Relaxed);
+}
+
+/// 启动健康监测 task（幂等：当前代际已有 task 则跳过）。start_core 成功后调用。
 pub(crate) fn ensure_monitor(app: &AppHandle) {
     let state = app.state::<ProxyState>();
-    if state.monitor_alive.swap(true, Ordering::Relaxed) {
-        return; // 已在跑
+    let cur = state.monitor_gen.load(Ordering::Relaxed);
+    if state.monitor_spawned_gen.load(Ordering::Relaxed) == cur {
+        return; // 当前代际已在跑
     }
+    state.monitor_spawned_gen.store(cur, Ordering::Relaxed);
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
-        health_monitor(&app2).await;
+        health_monitor(&app2, cur).await;
     });
 }
 
-/// 健康监测主循环。协作式退出（monitor_alive=false 即停）。
-async fn health_monitor(app: &AppHandle) {
+/// 运行 config 的 tun.enable 是否已被关闭（enabled 前提下的状态脱节判定）。
+/// 读失败/字段缺失返回 false（不动作），不误判。
+async fn tun_disabled(base: &str, secret: &str) -> bool {
+    controller::get_configs(base, secret)
+        .await
+        .ok()
+        .and_then(|v| {
+            v.get("tun")
+                .and_then(|t| t.get("enable"))
+                .and_then(Value::as_bool)
+        })
+        == Some(false)
+}
+
+/// 健康监测主循环（每 30s 一轮）。代际失配即退出（stop/reset 作废，见 `invalidate_monitor`）。
+///
+/// 单频两职：先做**不变式对账**（enabled ⇒ tun.enable，违例即复位——覆盖无通知推送的
+/// 脱节路径：核心崩溃后 KeepAlive 重启进 idle、外部持 secret 改动配置；让渡路径有分布式
+/// 通知即时对账，此处仅兜底），再跑**出站探针**（controller 可达 + 主节点 delay test，
+/// 连续 2 轮异常才恢复动作）。
+async fn health_monitor(app: &AppHandle, gen: u64) {
     let state = app.state::<ProxyState>();
     let mut fail_streak = 0u32;
     let mut notified_error = false;
-    while state.monitor_alive.load(Ordering::Relaxed) {
-        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-        if !state.monitor_alive.load(Ordering::Relaxed) {
+    while state.monitor_gen.load(Ordering::Relaxed) == gen {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        if state.monitor_gen.load(Ordering::Relaxed) != gen {
             break;
         }
         if !state.enabled.load(Ordering::Relaxed) {
@@ -346,6 +591,15 @@ async fn health_monitor(app: &AppHandle) {
         };
         let base = format!("http://127.0.0.1:{}", p.controller_port);
 
+        // 不变式对账：enabled 但 tun.enable=false = 状态脱节（核心重启回退 idle / 外部
+        // 改动 / 让渡未及通知），流量实际直通。controller/测速探针对此无感（idle config
+        // 仍含全部节点），半路由也无感（接管后路由仍在只是换了主人）——读运行 config 才能识别。
+        if tun_disabled(&base, &p.secret).await {
+            reset_dead_state(app, "代理已断开（TUN 未生效），请重新开启");
+            break;
+        }
+
+        // 出站探针 + 异常恢复。
         if probe_health(&base, &p.secret).await {
             if notified_error {
                 let _ = app.emit(
@@ -374,7 +628,9 @@ async fn health_monitor(app: &AppHandle) {
             reset_dead_state(app, "代理核心异常退出，请重新开启");
             break;
         }
-        if !state.monitor_alive.load(Ordering::Relaxed) || !state.enabled.load(Ordering::Relaxed) {
+        if state.monitor_gen.load(Ordering::Relaxed) != gen
+            || !state.enabled.load(Ordering::Relaxed)
+        {
             break;
         }
         let mut active = p;
@@ -390,7 +646,6 @@ async fn health_monitor(app: &AppHandle) {
             );
         }
     }
-    state.monitor_alive.store(false, Ordering::Relaxed);
 }
 
 /// 健康探针：controller 可达（GET /version）+ 当前主节点出站可达（delay test）。
@@ -412,12 +667,12 @@ async fn probe_health(base: &str, secret: &str) -> bool {
     }
 }
 
-/// 进程已退出/不可控：重置内存状态 + 通知前端 + 清理残留 pidfile + 停监测。
+/// 进程已退出/不可控：重置内存状态 + 通知前端 + 清理残留 pidfile + 停监测（代际失效）。
 fn reset_dead_state(app: &AppHandle, msg: &str) {
     let state = app.state::<ProxyState>();
     state.enabled.store(false, Ordering::Relaxed);
     state.tun_active.store(false, Ordering::Relaxed);
-    state.monitor_alive.store(false, Ordering::Relaxed);
+    invalidate_monitor(&state);
     app.state::<StreamRegistry>().cancel_all();
     let _ = app.emit("proxy-enabled", false);
     let _ = app.emit(
@@ -507,6 +762,8 @@ pub(crate) fn parse_current_node(val: &Value) -> Option<String> {
 }
 
 /// app 启动复用上次退出遗留的 root mihomo（常驻方案下进程在 app 退出后仍跑）。
+/// 运行 config 仍 active（tun.enable=true）则恢复 enabled 并 emit 同步 UI/菜单；idle 则
+/// 幂等复位直通。secret 不匹配/不可达不提权清理（避免启动弹窗），下次开代理 install 接管。
 pub(crate) async fn reconnect_root_mihomo(app: &AppHandle) {
     if !root_mihomo_running(app) {
         return;
@@ -525,22 +782,53 @@ pub(crate) async fn reconnect_root_mihomo(app: &AppHandle) {
             log::debug!("[proxy] 残留 mihomo secret 不匹配，跳过复用（下次开代理时清理接管）");
         }
         Ok(true) => {
-            let idle = RunParams {
-                mixed_port: p.mixed_port,
-                controller_port: p.controller_port,
-                secret: p.secret,
-                mode: "direct".into(),
-                active_sub_id: p.active_sub_id,
-                tun: false,
-            };
-            match reload_config_yaml(app, &idle).await {
-                Ok(()) => {
-                    state.tun_active.store(true, Ordering::Relaxed);
-                    if let Ok(mut g) = state.run_params.lock() {
-                        *g = Some(idle);
-                    }
+            // 运行 config 的 tun.enable 判定实际状态。active（app 退出前开着、launchd 保活
+            // 至今）→ 恢复 enabled + emit 同步前端/菜单 + 重启监测：常驻设计意图是 app 退出
+            // 不影响代理，重启 app 静默切直连等于无提示的流量裸奔。idle → 热重载 idle 幂等
+            // 复位直通（config.yaml 语义不变）。
+            let live = controller::get_configs(&base, &p.secret).await.ok();
+            let tun_on = live
+                .as_ref()
+                .and_then(|v| v.get("tun"))
+                .and_then(|t| t.get("enable"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if tun_on {
+                let mut active = p.clone();
+                active.tun = true;
+                // mode 以运行 config 为准（权威），读取失败回退 config.json 持久值
+                if let Some(mode) = live
+                    .as_ref()
+                    .and_then(|v| v.get("mode"))
+                    .and_then(Value::as_str)
+                {
+                    active.mode = mode.to_string();
                 }
-                Err(e) => log::debug!("[proxy] 复用残留 mihomo、热重载 idle 失败: {e}"),
+                if let Ok(mut g) = state.run_params.lock() {
+                    *g = Some(active);
+                }
+                state.enabled.store(true, Ordering::Relaxed);
+                state.tun_active.store(true, Ordering::Relaxed);
+                ensure_monitor(app);
+                let _ = app.emit("proxy-enabled", true);
+            } else {
+                let idle = RunParams {
+                    mixed_port: p.mixed_port,
+                    controller_port: p.controller_port,
+                    secret: p.secret,
+                    mode: "direct".into(),
+                    active_sub_id: p.active_sub_id,
+                    tun: false,
+                };
+                match reload_config_yaml(app, &idle).await {
+                    Ok(()) => {
+                        state.tun_active.store(true, Ordering::Relaxed);
+                        if let Ok(mut g) = state.run_params.lock() {
+                            *g = Some(idle);
+                        }
+                    }
+                    Err(e) => log::debug!("[proxy] 复用残留 mihomo、热重载 idle 失败: {e}"),
+                }
             }
         }
         Err(e) => log::debug!("[proxy] 残留 mihomo controller 不可达，跳过复用: {e}"),
@@ -548,11 +836,10 @@ pub(crate) async fn reconnect_root_mihomo(app: &AppHandle) {
     crate::runtime::menubar::refresh(app);
 }
 
-/// 按 mihomo binary 完整路径 ps 查是否有 root 实例在跑。
-pub(crate) fn root_mihomo_running(app: &AppHandle) -> bool {
-    let Ok(dir) = crate::runtime::storage::ext_data_dir(app, "proxy") else {
-        return false;
-    };
+/// 按 mihomo binary 完整路径 ps 查指定数据目录是否有实例在跑（本端/对端共用）。
+/// 匹配 = 命令行以 binary 完整路径开头 + 边界（空格/行尾）——launchd 以绝对路径启动，
+/// args 首段即 binary 路径。子串包含会把 `tail -f <dir>/mihomo.log` 等命令行误判为在跑。
+fn mihomo_running(dir: &Path) -> bool {
     let bin = dir.join("mihomo").display().to_string();
     let Ok(out) = std::process::Command::new("ps")
         .args(["-eo", "args"])
@@ -560,9 +847,17 @@ pub(crate) fn root_mihomo_running(app: &AppHandle) -> bool {
     else {
         return false;
     };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .any(|l| l.contains(&bin))
+    String::from_utf8_lossy(&out.stdout).lines().any(|l| {
+        l.strip_prefix(bin.as_str())
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
+    })
+}
+
+/// 按 mihomo binary 完整路径 ps 查是否有 root 实例在跑。
+pub(crate) fn root_mihomo_running(app: &AppHandle) -> bool {
+    crate::runtime::storage::ext_data_dir(app, "proxy")
+        .map(|d| mihomo_running(&d))
+        .unwrap_or(false)
 }
 
 /// 读 extensions/proxy/config.json 构造 RunParams。
@@ -592,4 +887,97 @@ fn read_run_params(app: &AppHandle) -> Option<RunParams> {
             .to_string(),
         tun: true,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sibling_identifier_swaps_dev_suffix() {
+        // prod → dev：加后缀
+        assert_eq!(
+            sibling_identifier("com.litiantao.voidnix", false),
+            Some("com.litiantao.voidnix.dev".into())
+        );
+        // dev → prod：去后缀
+        assert_eq!(
+            sibling_identifier("com.litiantao.voidnix.dev", true),
+            Some("com.litiantao.voidnix".into())
+        );
+        // dev 判定但 identifier 缺 .dev 后缀（配置异常）：无法推导对端，返回 None
+        assert_eq!(sibling_identifier("com.litiantao.voidnix", true), None);
+    }
+
+    #[test]
+    fn read_log_tail_reads_new_complete_lines_since_offset() {
+        let dir = std::env::temp_dir().join(format!("voidnix-logtail-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("mihomo.log");
+        std::fs::write(&log, "old1\nold2\n").unwrap();
+        let since = std::fs::metadata(&log).unwrap().len();
+
+        // since 后无换行（行未写完）→ 无完整新增行
+        std::fs::write(&log, "old1\nold2\npartial-no-newline").unwrap();
+        assert!(read_log_tail(&log, since).is_empty());
+
+        // 首个行段丢弃（快照时可能未写完），取其后完整行——与旧 tail_after 语义一致
+        std::fs::write(&log, "old1\nold2\npartial-no-newline\n[TUN] error\nlater\n").unwrap();
+        assert_eq!(
+            read_log_tail(&log, since),
+            vec!["[TUN] error".to_string(), "later".to_string()]
+        );
+
+        // 文件被截断/轮转（len <= since）→ 无新增
+        std::fs::write(&log, "x\n").unwrap();
+        assert!(read_log_tail(&log, since).is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_log_tail_degrades_to_window_when_oversized() {
+        let dir = std::env::temp_dir().join(format!("voidnix-logtail2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("mihomo.log");
+        let mut content = String::new();
+        let filler = "x".repeat(96);
+        for i in 0..3000 {
+            content.push_str(&format!("{i:05} {filler}\n")); // ~102B/行，共 ~300KB
+        }
+        std::fs::write(&log, &content).unwrap();
+        // since=0 且体积远超 64KB 窗口 → 只取尾部窗口内的完整行（首段丢弃），末行完整保留
+        let lines = read_log_tail(&log, 0);
+        let last = content.lines().next_back().unwrap().to_string();
+        assert_eq!(lines.last().unwrap(), &last);
+        assert!(lines.len() > 0 && lines.len() < 1000);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn has_tun_routes_detects_both_generations() {
+        // 老版半路由（0.0.0.0/1 + 128.0.0.0/1）
+        assert!(has_tun_routes("0/1  10.255.255.1  UGSc  utun4\n"));
+        assert!(has_tun_routes("128/1  10.255.255.1  UGSc  utun4\n"));
+        // 新版路由树分解（1 + 2/7 + … + 128.0/1，避开 0.0.0.0/8）
+        let modern = "default  192.168.31.1  UGScg  en0\n\
+                      1  198.18.0.1  UGSc  utun4\n\
+                      2/7  198.18.0.1  UGSc  utun4\n\
+                      4/6  198.18.0.1  UGSc  utun4\n\
+                      8/5  198.18.0.1  UGSc  utun4\n\
+                      16/4  198.18.0.1  UGSc  utun4\n\
+                      32/3  198.18.0.1  UGSc  utun4\n\
+                      64/2  198.18.0.1  UGSc  utun4\n\
+                      128.0/1  198.18.0.1  UGSc  utun4\n";
+        assert!(has_tun_routes(modern));
+        // 普通路由不匹配（default / 回环 127 / 链路本地 169.254 / 子网 / IPv6 分解树）
+        assert!(!has_tun_routes(
+            "default  192.168.1.1  UGSc  en0\n115.28/16  link#4  UCS  en0\n\
+             127  127.0.0.1  UCS  lo0\n169.254  link#14  UCS  en0\n\
+             100::/8  fdfe:dcba:9876::1  UGSc  utun4\n"
+        ));
+        // 空表
+        assert!(!has_tun_routes(""));
+    }
 }

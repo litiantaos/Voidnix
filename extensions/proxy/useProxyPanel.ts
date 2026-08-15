@@ -470,11 +470,13 @@ export function useProxyPanel() {
 
   async function onModeChange(value: string | number) {
     const mode = value as typeof config.mode
+    const prev = config.mode
     config.mode = mode
     if (isEnabled.value) {
       try {
         await invoke(CMD.proxySetMode, { mode })
       } catch (e) {
+        config.mode = prev // 失败回滚：持久化偏好与运行态保持一致（否则重启后才生效）
         appStore.showStatus(toErrorMessage(e, t('proxy.switchModeFailed')), {
           duration: 4000,
           kind: 'error',
@@ -714,6 +716,16 @@ export function useProxyPanel() {
       downloading: preloaded.coreDownloading,
     }
     statusLoaded.value = true
+    // 重连恢复竞态兜底：Rust setup 的 reconnect_root_mihomo 异步跑，可能晚于模块预加载
+    // 把 enabled 恢复为 true（启动时代理仍在生效）。挂载时再查一次权威值——单条原子读
+    // IPC，statusLoaded 已置位不阻塞首帧渲染。
+    try {
+      const fresh = await invoke<boolean>(CMD.isProxyEnabled)
+      isEnabled.value = fresh
+      preloaded.enabled = fresh
+    } catch {
+      /* ignore */
+    }
     // 核心已下载即加载节点列表（idle 常驻下 controller 仍可查询；
     // 核心未运行时 loadProxies 静默失败，不报错）
     if (coreStatus.value.downloaded) {

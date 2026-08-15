@@ -384,6 +384,7 @@ src-tauri/src/
     ├── selection.rs    # AX 选中文本提取 + poll_clipboard
     ├── click_monitor.rs
     ├── frontmost_watcher.rs  # NSWorkspace 激活观察器（系统弹窗后恢复焦点）
+    ├── distributed.rs  # NSDistributedNotificationCenter 跨进程事件总线（proxy TUN 让渡即时对账）
     ├── permission.rs
     ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel + appearance 缓存）
     └── path_guard.rs   # 统一路径校验
