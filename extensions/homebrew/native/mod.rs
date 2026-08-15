@@ -15,6 +15,12 @@
 //! `brew_status` 用 `brew info --json=v2 --installed` 一次取全部已安装包（名称/描述/已安装版本），
 //! 并发 `brew outdated --json=v2` 做过期检测，共 3 次 brew 进程（原先 6 次）。
 //!
+//! **后台元数据刷新**：`HOMEBREW_NO_AUTO_UPDATE=1` 的代价是 `brew outdated` 只对比本地 api 缓存，
+//! 元数据陈旧时进入视图永远查不到新版本。`brew_status` 检测 api 元数据 mtime 超 24h（brew 自身
+//! auto-update 同款节律与判定源）时后台 spawn `brew update`（复用 RunGuard 占用 BREW_RUNNING，
+//! 完成时 Drop 发 `brew-run-done` 驱动前端重拉），快路径立即返回缓存态 + `refreshing` 标志；
+//! 失败重试受 10min 冷却约束（完成事件驱动的重拉若 mtime 未变会无限再 spawn）。
+//!
 //! **运行态持久化**：`BREW_RUNNING`（LazyLock<Mutex<Option<BrewRunState>>>）跨组件生命周期持久化，
 //! `brew_run` 经 RAII guard（`RunGuard`）占位 + 逐步更新 step，Drop 时自动清空 + emit `brew-run-done`
 //! 事件。前端组件因窗口隐藏被 KeepAlive 卸载后，重开时经 `brew_run_state` 查询残留态，
@@ -22,8 +28,10 @@
 
 use crate::runtime::registry::Extension;
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -74,6 +82,8 @@ pub struct BrewStatus {
     pub version: String,
     pub packages: Vec<InstalledPackage>,
     pub has_update: bool,
+    /// 元数据陈旧，后台 `brew update` 已发起或进行中（完成经 `brew-run-done` 驱动前端重拉）
+    pub refreshing: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -195,6 +205,104 @@ fn brew_command(brew: &str, path: &str) -> Command {
     let mut cmd = Command::new(brew);
     cmd.env("PATH", path).env("HOMEBREW_NO_AUTO_UPDATE", "1");
     cmd
+}
+
+// ============================================================================
+// 后台元数据刷新
+// ============================================================================
+
+/// api 元数据最大年龄（对齐 brew auto-update 默认 24h 节律）
+const METADATA_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+/// 后台 `brew update` 超时上限（网络挂死防 BREW_RUNNING 永久占用）
+const METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(120);
+/// 失败重试冷却：完成事件驱动前端重拉会立刻再调 `brew_status`，mtime 未变（上次 update 失败）时
+/// 无冷却将形成 spawn → 失败 → brew-run-done → 重拉 → 再 spawn 的无限环。
+/// 成功路径不受影响（mtime 已被触碰刷新，实测 `Already up-to-date` 也触碰）。
+const REFRESH_RETRY_COOLDOWN: Duration = Duration::from_secs(10 * 60);
+/// 上次刷新发起时刻（进程内）
+static LAST_REFRESH_ATTEMPT: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
+
+/// 是否处于失败重试冷却窗口内
+fn refresh_in_cooldown() -> bool {
+    LAST_REFRESH_ATTEMPT
+        .lock()
+        .unwrap()
+        .map(|t| t.elapsed() < REFRESH_RETRY_COOLDOWN)
+        .unwrap_or(false)
+}
+
+/// 记账一次刷新发起（真正占位成功后调用）
+fn note_refresh_attempt() {
+    *LAST_REFRESH_ATTEMPT.lock().unwrap() = Some(Instant::now());
+}
+
+/// api 元数据 mtime → 是否陈旧（None = 从未 update，视为陈旧；时钟异常 elapsed Err 也强制刷新）。
+fn metadata_stale_since(mtime: Option<SystemTime>) -> bool {
+    mtime
+        .map(|t| {
+            t.elapsed()
+                .map(|age| age > METADATA_MAX_AGE)
+                .unwrap_or(true)
+        })
+        .unwrap_or(true)
+}
+
+/// 探测 api 元数据最新 mtime：brew 6 起 `internal/packages.<arch>.jws.json`（arch 随系统后缀变化），
+/// brew 4/5 为根目录 `formula.jws.json`，取所有候选中的最新值。
+fn api_metadata_mtime(api_dir: &Path) -> Option<SystemTime> {
+    let mut newest = std::fs::metadata(api_dir.join("formula.jws.json"))
+        .and_then(|m| m.modified())
+        .ok();
+    if let Ok(entries) = std::fs::read_dir(api_dir.join("internal")) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("packages.") && name.ends_with(".jws.json") {
+                if let Ok(t) = entry.metadata().and_then(|m| m.modified()) {
+                    newest = Some(newest.map_or(t, |n: SystemTime| n.max(t)));
+                }
+            }
+        }
+    }
+    newest
+}
+
+/// 元数据陈旧则后台 spawn `brew update`。返回 true = 有刷新在途（本次发起或已在进行）。
+/// 复用 RunGuard：占 BREW_RUNNING（brew_run_state 可查、brew_run 拒并发），
+/// Drop 时 emit `brew-run-done` → 前端统一重拉拿到新元数据，无需新增事件。
+fn spawn_metadata_refresh(app: &AppHandle, brew: &'static str, path: &str) -> bool {
+    let home = std::env::var("HOME").unwrap_or_default();
+    if home.is_empty() {
+        return false;
+    }
+    let api_dir = Path::new(&home).join("Library/Caches/Homebrew/api");
+    if !metadata_stale_since(api_metadata_mtime(&api_dir)) {
+        return false;
+    }
+    // 冷却判定（记账在成功占位之后：并发竞争失败不消耗冷却窗口）
+    if refresh_in_cooldown() {
+        return false;
+    }
+    let Some(guard) = RunGuard::try_acquire(app.clone(), "update") else {
+        return true; // 已有 brew 操作（含刷新）进行中
+    };
+    note_refresh_attempt();
+    let path = path.to_string();
+    tokio::spawn(async move {
+        guard.set_step("update");
+        let _ = tokio::time::timeout(
+            METADATA_REFRESH_TIMEOUT,
+            brew_command(brew, &path)
+                .arg("update")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await;
+        // guard Drop → BREW_RUNNING 清空 + emit brew-run-done → 前端重拉
+    });
+    true
 }
 
 /// 解析 brew outdated --json=v2 输出 → name → (installed, current) 映射。
@@ -405,7 +513,7 @@ async fn brew_version(brew: &str, path: &str) -> String {
 // ============================================================================
 
 #[tauri::command]
-pub async fn brew_status() -> Result<BrewStatus, String> {
+pub async fn brew_status(app: AppHandle) -> Result<BrewStatus, String> {
     let brew = brew_path().ok_or_else(|| "未找到 Homebrew（请先安装 brew）".to_string())?;
     let path = ensure_brew_path();
 
@@ -451,11 +559,14 @@ pub async fn brew_status() -> Result<BrewStatus, String> {
     }
 
     let has_update = !outdated.is_empty();
+    // 元数据陈旧则后台刷新（不阻塞本次返回，完成经 brew-run-done 驱动前端重拉）
+    let refreshing = spawn_metadata_refresh(&app, brew, &path);
 
     Ok(BrewStatus {
         version,
         packages,
         has_update,
+        refreshing,
     })
 }
 
@@ -872,6 +983,57 @@ mod tests {
         let pkgs = parse_installed(json);
         assert_eq!(pkgs.len(), 1);
         assert_eq!(pkgs[0].version, "");
+    }
+
+    // ── metadata_stale_since ──
+
+    #[test]
+    fn metadata_stale_since_none_is_stale() {
+        // 从未 update（无 api 缓存）→ 需要刷新
+        assert!(metadata_stale_since(None));
+    }
+
+    #[test]
+    fn metadata_stale_since_recent_is_fresh() {
+        let now = SystemTime::now();
+        assert!(!metadata_stale_since(Some(now)));
+        assert!(!metadata_stale_since(
+            now.checked_sub(Duration::from_secs(3600))
+        ));
+    }
+
+    #[test]
+    fn metadata_stale_since_old_is_stale() {
+        let now = SystemTime::now();
+        assert!(metadata_stale_since(
+            now.checked_sub(Duration::from_secs(24 * 3600 + 60))
+        ));
+    }
+
+    #[test]
+    fn metadata_stale_since_future_is_stale() {
+        // 时钟异常（mtime 在未来，elapsed Err）→ 强制刷新防节流卡死
+        let now = SystemTime::now();
+        assert!(metadata_stale_since(
+            now.checked_add(Duration::from_secs(3600))
+        ));
+    }
+
+    // ── 刷新失败冷却（防 done→重拉→再 spawn 无限环）──
+
+    #[test]
+    fn refresh_cooldown_blocks_rapid_retry() {
+        *LAST_REFRESH_ATTEMPT.lock().unwrap() = None;
+        // 从未发起 → 放行
+        assert!(!refresh_in_cooldown());
+        note_refresh_attempt();
+        // 刚发起 → 冷却内拦截
+        assert!(refresh_in_cooldown());
+        // 冷却过期 → 放行
+        *LAST_REFRESH_ATTEMPT.lock().unwrap() =
+            Some(Instant::now() - REFRESH_RETRY_COOLDOWN - Duration::from_secs(1));
+        assert!(!refresh_in_cooldown());
+        *LAST_REFRESH_ATTEMPT.lock().unwrap() = None; // 清零防影响其他测试
     }
 
     // ── BREW_RUNNING 并发防互斥 ──
