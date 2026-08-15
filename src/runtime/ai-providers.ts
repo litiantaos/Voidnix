@@ -26,6 +26,8 @@ export interface AiProvider {
   /** 显示名；空则从 endpoint hostname 推导 */
   name: string
   endpoint: string
+  /** Responses 线协议端点（供外部工具如 Grok Build `api_backend="responses"`）；空 = 未声明不导出 */
+  responsesEndpoint: string
   models: string[]
   /** 多 Key；至少 1 项（CRUD 保底） */
   keys: AiKeySlot[]
@@ -70,6 +72,7 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
   const id = typeof raw.id === 'string' ? raw.id : generateRequestId()
   const name = typeof raw.name === 'string' ? raw.name : ''
   const endpoint = typeof raw.endpoint === 'string' ? raw.endpoint : ''
+  const responsesEndpoint = typeof raw.responsesEndpoint === 'string' ? raw.responsesEndpoint : ''
   const models = Array.isArray(raw.models) ? (raw.models as string[]).map(String) : []
   const envKey = typeof raw.envKey === 'string' ? raw.envKey : ''
   const usageKind = (raw.usageKind as AiUsageKind) || ''
@@ -80,7 +83,7 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
       label: k.label || 'Key',
       apiKey: k.apiKey || '',
     }))
-    return { id, name, endpoint, models, keys, usageKind, envKey }
+    return { id, name, endpoint, responsesEndpoint, models, keys, usageKind, envKey }
   }
 
   // legacy single apiKey
@@ -90,6 +93,7 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
     id,
     name,
     endpoint,
+    responsesEndpoint,
     models,
     keys: [{ id: kid, label: '默认', apiKey: legacyKey }],
     usageKind,
@@ -284,6 +288,7 @@ export function addAiProvider(
     id,
     name: partial?.name ?? '',
     endpoint: partial?.endpoint ?? '',
+    responsesEndpoint: partial?.responsesEndpoint ?? '',
     models: partial?.models ? [...partial.models] : [],
     keys,
     usageKind: partial?.usageKind ?? '',

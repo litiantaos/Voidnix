@@ -61,6 +61,7 @@ beforeEach(async () => {
     keys: [{ id: 'k1', label: '默认', apiKey: 'sk-test' }],
     usageKind: '',
     envKey: '',
+    responsesEndpoint: '',
   })
   agentConfig.providerModelKey = ''
   setProviderModelKey('p1::k1::m1')

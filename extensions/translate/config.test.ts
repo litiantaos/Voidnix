@@ -73,6 +73,7 @@ describe('resolveAiTargets', () => {
         keys: [{ id: 'k', label: '默认', apiKey: 'k1' }],
         usageKind: '',
         envKey: '',
+        responsesEndpoint: '',
       },
       {
         id: 'p2',
@@ -82,6 +83,7 @@ describe('resolveAiTargets', () => {
         keys: [{ id: 'k', label: '默认', apiKey: 'k2' }],
         usageKind: '',
         envKey: '',
+        responsesEndpoint: '',
       },
     )
     const targets = resolveAiTargets({
@@ -110,6 +112,7 @@ describe('resolveAiTargets', () => {
       ],
       usageKind: '',
       envKey: '',
+      responsesEndpoint: '',
     })
     const targets = resolveAiTargets({
       id: SERVICE_AI_ID,
@@ -134,6 +137,7 @@ describe('resolveAiTargets', () => {
       ],
       usageKind: '',
       envKey: '',
+      responsesEndpoint: '',
     })
     const targets = resolveAiTargets({
       id: SERVICE_AI_ID,
@@ -164,6 +168,7 @@ describe('resolveAiTargets', () => {
       keys: [{ id: 'k', label: '默认', apiKey: 'k1' }],
       usageKind: '',
       envKey: '',
+      responsesEndpoint: '',
     })
     const targets = resolveAiTargets({
       id: SERVICE_AI_ID,
