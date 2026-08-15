@@ -35,7 +35,8 @@
                 }}</span>
               </template>
             </template>
-            <template v-if="status.has_update" #trailing>
+            <!-- refreshing：后台元数据刷新中也显示（旋转禁用态），完成后按新状态显隐 -->
+            <template v-if="status.has_update || refreshing" #trailing>
               <BaseButton
                 variant="primary"
                 :icon="running ? 'i-ri-loader-4-line animate-spin' : 'i-ri-arrow-up-circle-line'"
@@ -130,7 +131,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onActivated, onUnmounted } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
@@ -153,6 +154,8 @@ interface BrewStatus {
   version: string
   packages: InstalledPackage[]
   has_update: boolean
+  /** 元数据陈旧，后台 brew update 进行中（完成经 brew-run-done 驱动重拉） */
+  refreshing: boolean
 }
 interface BrewEvent {
   kind: string
@@ -187,6 +190,7 @@ const loading = ref(false)
 const error = ref('')
 const running = ref(false)
 const runningStep = ref('')
+const refreshing = ref(false)
 const selectedIndex = ref(0)
 
 const stepLabels = computed<Record<string, string>>(() => ({
@@ -280,6 +284,14 @@ async function fetchStatus() {
     ])
     status.value = s
     services.value = svc
+    if (s.refreshing) {
+      // 后台 brew update 在途：进入运行态（按钮旋转禁用），完成事件统一重拉
+      refreshing.value = true
+      running.value = true
+      runningStep.value = 'update'
+    } else {
+      refreshing.value = false
+    }
   } catch (e) {
     error.value = String(e ?? t('common.unknownError'))
   } finally {
@@ -354,30 +366,31 @@ function onExecute(item: ListItem) {
   appStore.openSubview('detail', false)
 }
 
+// KeepAlive（ContentView max=3）缓存下重进走 onActivated 而非 onMounted，数据拉取统一收口于此
 let unlistenDone: (() => void) | null = null
 
-onMounted(async () => {
-  if (!isTauri) return
-  // 先注册监听再查状态，消除「查询返回 Some → 操作恰在此间隙结束 → 事件无人接收」的 TOCTOU 竞态
-  let done = false
-  const unlisten = await listen<BrewRunState | null>('brew-run-done', async () => {
-    done = true
-    unlisten()
-    unlistenDone = null
+async function ensureDoneListener() {
+  if (unlistenDone) return
+  // 常驻到组件卸载：先注册监听再查状态，消除「查询返回 Some → 操作恰在此间隙结束 → 事件无人接收」的 TOCTOU 竞态
+  unlistenDone = await listen<BrewRunState | null>('brew-run-done', async () => {
     running.value = false
     runningStep.value = ''
+    refreshing.value = false
     loading.value = false
     await fetchStatus()
   })
-  // 查状态：null = 操作已结束（事件可能已被上面的监听捕获），Some = 仍在运行
+}
+
+onActivated(async () => {
+  if (!isTauri || running.value) return
+  await ensureDoneListener()
+  // 查状态：null = 无操作（含后台元数据刷新）进行中；Some = 仍在运行（LRU 驱逐/窗口隐藏后重挂载恢复进度）
   const state = await invoke<BrewRunState | null>(CMD.brewRunState)
-  if (state && !done) {
+  if (state) {
     running.value = true
     runningStep.value = state.step
     loading.value = true
-    unlistenDone = unlisten
   } else {
-    unlisten()
     await fetchStatus()
   }
 })
