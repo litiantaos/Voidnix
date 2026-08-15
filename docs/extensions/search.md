@@ -5,13 +5,14 @@
 ## 缓存
 
 - `APP_CACHE` / `FILE_CACHE` 进程内全局 `RwLock`，双检锁懒加载；`prewarm_cache` 启动并发预热两者
-- 应用先返回无图标列表，后台 `spawn_blocking` 提取图标后替换 cache 并 emit `app-cache-updated`；重建时按 `.app` bundle mtime 增量复用旧图标（未变则跳过 NSWorkspace 提取）
+- 应用先返回无图标列表，后台提取图标后替换 cache 并 emit `app-icons-updated`；重建时按 `.app` bundle mtime 增量复用旧图标（未变则跳过 NSWorkspace 提取）
+- 事件分工：`app-cache-updated` 仅在 metadata 就绪与 watcher 重建后发出，前端失效 metadata 缓存；`app-icons-updated` 仅在图标替换 cache 后发出，前端只失效图标缓存
 - `notify` 监听应用目录与文件目录**分离**（两个独立 watcher，各 5s 防抖 + 60s 最小重建间隔）：应用目录变更仅重建 app 缓存，文件目录变更仅重建文件索引——避免 ~/Downloads 等频繁变更触发不必要的 app 图标重提取。文件 watcher 额外做事件路径预过滤（变更全在 `FILE_IGNORE_DIRS` 内则跳过重建，消除 cargo build / npm install 写入 target/node_modules 的空转）
 - 会话内 `launch_app` 使用次数走 `SEARCH_SESSION.session_use_deltas`（内存 HashMap），重建时合并回 `use_count`
 
 ## 应用扫描
 
-`mdfind "kMDItemContentType == 'com.apple.application-bundle' ..."` 扫 `/Applications`、`/System/Applications`、`~/Applications`；`scan_apps_from_dir`（递归 .app，深度 5）兜底。元数据优先 `mdls`，回退 `Info.plist`。
+`mdfind "kMDItemContentType == 'com.apple.application-bundle' ..."` 扫 `/Applications`、`/System/Applications`、`/System/Library/CoreServices/Applications`、`~/Applications`（Finder.app 另有专门兜底追加）；`scan_apps_from_dir`（递归 .app，深度 5）兜底。元数据经同一 `mdfind -attr kMDItemDisplayName/kMDItemLastUsedDate/kMDItemUseCount` 顺带拉取，回退 Info.plist 直读（不走 mdls 子进程，消除启动期 fallback 风暴；use_count/last_used 回退置 0/None）。`mdls` 仅剩信息面板 `get_path_metadata` 按需使用。
 
 ## 文件搜索
 
@@ -23,7 +24,7 @@
 
 **name_lower 预计算**：扫描时 `to_lowercase` 一次，搜索时零分配 `String::find`。
 
-**拼音索引预计算**：扫描时为 CJK 文件名生成 `pinyin_key`（`pinyin.rs`，编译期内嵌 U+4E00..U+9FFF 拼音首字母表 + 无声调全拼表，由 pinyin-pro 生成），格式 `"首字母串 全拼串"`（如 `设计文档` → `sjwd shejiwendang`）。ASCII 查询额外对此键做 substring 匹配，召回拼音命中——首字母（`sjwd`）与全拼（`sheji`）均可命中。
+**拼音索引预计算**：扫描时为 CJK 文件名生成 `pinyin_key`（`pinyin.rs`，编译期内嵌 U+4E00..U+9FFF 拼音首字母表 + 无声调全拼表，由 pinyin-pro 生成），格式 `"首字母串\x1f全拼串"`（如 `设计文档` → `sjwd\x1fshejiwendang`）；分隔符 \x1f 不可打印，ASCII 查询不含、不会跨段匹配，额外对此键 substring 匹配即可独立命中首字母（`sjwd`）与全拼（`sheji`）。
 
 **use_count / last_used**：索引构建时一次 `mdfind "kMDItemUseCount > 0"` 批量拉目标目录下被打开过的文件元数据（远少于全量），合并进 `CachedFile`。`last_used` 的 Spotlight 日期字符串经 `parse_epoch_hours`（Howard Hinnant days-from-civil）预解析为 epoch hours 存入 `last_used_hours`，搜索时纯整数减法算 hours_ago 做 recency 分桶——零日期解析热路径开销。
 
@@ -31,4 +32,4 @@
 
 ## 图标
 
-实时提取（`NSWorkspace.iconForFile`），无磁盘缓存。系统自带 NSCache 加速，实测 <1ms/应用。启动时并行预热常用应用图标。
+实时提取（`NSWorkspace.iconForFile`），无磁盘缓存。系统自带 NSCache 加速，实测 <1ms/应用。启动时对缓存中全部应用分块（CHUNK=20）并行 spawn_blocking 提取，不区分常用与否。

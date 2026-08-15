@@ -40,7 +40,7 @@
 
 ### 快捷键
 
-- 快捷键当下即 **`activate_app`**
+- 分发路径**禁止提前 `activate_app`**（会让前台 app resign active 可见失焦）；activation 延迟到 capture 完成后 enter 阶段的 `voidnix_screenshot_claim_key`（activate → makeKey，此时 overlay 已全屏可见，失焦被遮住用户无感）
 - 会话中再按截屏快捷键 = **取消/解卡**
 
 ### 智能吸附
@@ -65,7 +65,7 @@
 **顶部固定元素去重（差分掩码）**：选区内不随滚动的顶部固定元素（Chrome 工具栏、网页 sticky header）自动检测，避免 toolbar 在拼接图中重复堆叠。底部 footer 不做去重（会随 append 自然重复，保持可预测的完整段落）。
 
 - `update_static_mask`：帧间存在位移（k>0）时，行哈希帧间精确匹配的行累计投票（+2/-1），达阈值（≥2）标记为固定区域。
-- `append_frame`：每帧追加末尾 k 行（保持 buf 对齐）；末尾刷新逐行跳过固定行——固定行号位置不被刷成最新帧的固定元素，顶部 toolbar 不会被贴到 buf 末尾堆叠。
+- `append_frame`：每帧追加末尾 k 行（保持 buf 对齐）；末尾刷新逐行跳过固定行——固定行号位置不被刷成最新帧的固定元素。
 - 预览实时性由末尾刷新保证（每帧刷新 buf 末尾 h 行）。
 
 **自动停止检测**：`capture_loop` 追踪 `static_streak`（连续无位移帧数），达到 20 帧（~240ms）时发 `screenshot-scroll-stopped` 事件，前端显示"已到底部"提示。

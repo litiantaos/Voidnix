@@ -2,17 +2,21 @@
 
 首页 Hero 区域内嵌一段实时动画演示（非视频），由 `DemoStage.astro` 组件驱动——一个 1280×720 的拟物 macOS 桌面舞台 + 下方控制栏。
 
-**分段架构**：6 个独立 demo 段（搜索 / 剪贴板 / Agent / 截图 / 窗口管理 / 访达工具），各段 160–350 帧可变（5–12s），共用统一入场节奏（快捷键 → 窗口出现 → 交互 → 关闭 → 桌面静默）。通过控制栏按钮单段切换播放，也可连续拼接播放。首尾帧均为干净桌面，段间可无缝衔接。
+**分段架构**：6 个独立 demo 段（搜索 / 剪贴板 / Agent / 截图 / 窗口管理 / 访达工具），各段 160–350 帧可变（5–12s），共用统一入场节奏（快捷键 → 窗口出现 → 交互 → 关闭 → 桌面静默）。通过控制栏按钮单段切换播放，也可连续拼接播放。
 
 ## 架构
 
 ```
-src/components/DemoStage.astro   动画组件（HTML + CSS + JS 自包含）
-src/pages/demo.astro             独立预览页（壳子 + <DemoStage />）
-src/components/Hero.astro        首页（文案区 + <DemoStage /> 全宽展示）
+src/components/DemoStage.astro           动画组件（舞台 HTML + 组装）
+src/components/demo/demo-utils.ts       常量 + 数学工具（零 DOM 依赖）
+src/components/demo/demo-scenes.ts      分段渲染器（createRenderer → renderFrame / resetStage）
+src/components/demo/demo-player.ts      播放器（播放循环 + 键盘 + UI 控件）
+src/components/demo/demo-stage.css      舞台样式（.demo-stage 作用域）
+src/pages/demo.astro                    独立预览页（壳子 + <DemoStage />）
+src/components/Hero.astro               首页（文案区 + <DemoStage /> 全宽展示）
 ```
 
-`DemoStage.astro` 包含舞台全部 HTML、CSS（`.demo-stage` 作用域前缀）、JS（分段引擎 + 播放器）。CSS 用 `<style is:global>` 但所有选择器限定在 `.demo-stage` 下。
+`DemoStage.astro` 只含舞台 HTML 与组装，无 `<style>` 块——CSS 独立为 `demo/demo-stage.css` 经 import 引入（选择器限定 `.demo-stage` 作用域），JS 拆为上述 `demo/` 三模块。
 
 ## 独立预览页
 
@@ -33,7 +37,7 @@ src/components/Hero.astro        首页（文案区 + <DemoStage /> 全宽展示
 
 Hero.astro 文案区（标题 + chips + 下载按钮）居中布局，DemoStage 在下方展示，max-width 与正文一致（`--content-max: 1100px`），圆角 + 阴影裁切。舞台 + 控制栏自适应缩放到容器宽度。
 
-首页传 `controls={false}` 不渲染控制栏，播放器自动走连续播放模式（6 段循环）。预览页默认 `controls={true}`（段按钮 + 连续播放 + 暂停 + 进度条）。
+首页传 `controls={false}` 不渲染控制栏，播放器自动走连续播放模式（6 段循环）。预览页默认 `controls={true}`。
 
 ## 统一节奏
 
@@ -82,9 +86,9 @@ DISMISS      dismiss–dur 功能窗口 / 浮层消失
 启动器窗口忠实复刻产品真实界面（`src/components/layout/MainView.vue` + `ContentView.vue` + `BaseList.vue` + `BaseListItem.vue`）：
 
 - **尺寸**：720×480（与产品 `WINDOW.WIDTH` / `DEFAULT_HEIGHT` 一致）
-- **窗壳**（`.launcher-shell`）：`soft-surface-fill` + `backdrop-filter blur(40px) saturate(1.35)` + `radius-window: 16px` + `mica-ring-shadow`
+- **窗壳**（`.launcher-shell`）：`background: var(--color-canvas)` 实底 + `--soft-surface-border` + `radius-window: 16px` + `mica-ring-shadow`
 - **chrome-fade**：顶部 76px 渐隐遮罩（`CHROME_HEIGHT` = search bar top 12 + height 52 + gap 12）
-- **搜索栏**（复刻 `acrylic-bar`）：`absolute top-3 inset-x-3 h-13`，毛玻璃底 + `radius-panel` + `shadow-bar`；内含扩展标签（`ext-tag`：`fill-5` + `h-7` + `text-xs`）和输入文本
+- **搜索栏**（复刻 `acrylic-bar`）：`absolute top-3 inset-x-3 h-13`，`.search-bar-surface` 毛玻璃底（`soft-surface-fill` + `backdrop-filter blur(40px) saturate(1.35)`）+ `radius-panel` + `shadow-bar`；内含扩展标签（`ext-tag`：`fill-5` + `h-7` + `text-xs`）和输入文本
 - **结果列表**（复刻 `BaseList` + `BaseListItem`）：`px-3 pb-3 gap-1.5`；每项 `radius-panel` wrapper + `p-3 gap-3` 内部；图标 `h-9 w-9 radius-ctrl fill-mist`；标题 `text-sm`；副标题 `text-xs muted`
 - **分组标题**（复刻 `group-header`）：`text-xs muted font-medium px-3 min-h-7`
 - **选中态**（复刻 `ui-active`）：`background: var(--ui-active-fill)` + accent 文字色
@@ -159,11 +163,11 @@ Agent 段额外复刻：用户气泡（`accent` 浅染实底）、助手卡（`s
 ### 5. 窗口管理（光标驱动 → snap 面板 → 分屏）
 
 ```
-8–22    VS Code + 终端窗口淡入
+8–22    VS Code 窗口淡入
 28–48   光标 easeInOut 上移至屏幕顶部
 42–50   snap 面板滑下
 58–66   光标下移到「左右半」分区
-68–88   双窗口弹性吸附分屏（lerp + easeOut）
+68–88   VS Code 弹性吸附至左半屏（lerp + easeOut）
 86–92   snap 面板 + 光标淡出
 112–128 窗口淡出
 ```
@@ -183,9 +187,9 @@ Agent 段额外复刻：用户气泡（`accent` 浅染实底）、助手卡（`s
 画布下方（不缩放），提供段切换与播放控制：
 
 - **段按钮**（6 个）：点击切换单段循环播放，当前段 accent 高亮
-- **连续播放**：切换单段 / 全段连续播放模式（全段顺序播放，末段结束自动循环回首段）
-- **暂停 / 播放**：暂停切换（暂停态下 ←→ 逐帧步进）
-- **进度条**：当前段内进度，可拖动定位（点击 / 拖拽跳转到段内任意帧，自动暂停）
+- **连续播放**：切换单段 / 连续播放模式（顺序播放全部段，末段结束循环回首段）
+- **暂停 / 播放**：暂停切换
+- **进度条**：当前段内进度，点击 / 拖拽跳转任意帧（自动暂停）
 
 ## 段切换重置
 

@@ -20,7 +20,7 @@
 
 - **行**（标准列表项）：
   - 标题 = 备注
-  - 副标题 = `sk-… · MAX · 5h 12% / 2.3h · 7d 34% / 2.3d · 30d 1.2B tokens`（重置缺失为 `—`）
+  - 副标题 = `sk-… · MAX · 5h 12% (2.3h) · 7d 34% (2.3d) · 30d 1.2B`（重置缺失为 `—`）
   - 右侧 = **30d 曲线**（智谱）
 - **回车**：打开编辑 Key 弹窗
 - **Cmd+Enter / 右键**：统一「粘贴 Key / 粘贴 URL / 粘贴 {模型}」、删除 Key（经 `useActionPanel` 统一 `toggleOpen`，二次触发关闭）
@@ -78,7 +78,7 @@
 
 按 endpoint 自动识别（或 `usageKind` 显式指定）：
 
-- **智谱 Coding Plan**（`bigmodel.cn` / `zhipuai`）：副标题 `sk-… · MAX · 5h 12% / 2.3h · 7d 34% / 2.3d · 30d 1.2B tokens`（重置无则 `—`），右侧 30d 曲线（对齐 [tokens-monitor](https://github.com/litiantaos/tokens-monitor)）。命令 `ai_providers_zhipu_quota`。
+- **智谱 Coding Plan**（`bigmodel.cn` / `zhipuai`）：副标题与右侧 30d 曲线格式见「界面」（曲线对齐 [tokens-monitor](https://github.com/litiantaos/tokens-monitor)）。命令 `ai_providers_zhipu_quota`。
 - **DeepSeek**（`deepseek.com`）：账户余额 `GET {origin}/user/balance`（Bearer Key）。列表副标题展示 `¥/ $` 总余额；无 5h/7d 窗口、无 30d 曲线。命令 `ai_providers_deepseek_balance`。
 
 ## CLI / env
@@ -105,7 +105,7 @@
 
 ### 外部工具
 
-中枢只写 env（`VOIDNIX_*` 私有名，key + url）；各工具自管模型选用（模型定义在工具配置里，含上下文长度/定价等元数据，不由中枢投射），不在此维护「使用中」。外部工具须显式引用 Voidnix 私有变量名。
+中枢只写 env（`VOIDNIX_*` 私有名，key + url）；各工具自管模型选用（模型定义在工具配置里，含上下文长度/定价等元数据，不由中枢投射）。
 
 - **OpenCode**：`opencode.json` 的 `provider.*.options.apiKey` 用 `{env:VOIDNIX_ZHIPU_API_KEY}` 等显式引用；baseURL 写在 `options.baseURL`。模型：`zhipuai-coding-plan/glm-5.2`、`deepseek/deepseek-v4-pro` 等
 - **Grok Build**：`~/.grok/config.toml` 的 `[model.*]` 用 `env_key = "VOIDNIX_ZHIPU_API_KEY"` 等 + `base_url`；切模型 `/model glm-5-2-1m` 等

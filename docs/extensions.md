@@ -45,7 +45,7 @@ export default defineExtension({
 - `subviews`：扩展私有命名子视图（6：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{connections/rules/logs}、homebrew{detail}）
 - `subviewTitle`：子视图显示名（id→中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」（2：proxy、homebrew）
 - `globalShortcuts`：全局快捷键绑定（5：clipboard/screenshot/agent/translate/finder-ext）
-- `placeholder`：搜索框占位提示，激活扩展时显示（6：clipboard/currency/ip/time/base64/calculator）
+- `placeholder`：搜索框占位提示，激活扩展时显示（7：clipboard/currency/ip/time/base64/calculator/homebrew）
 - `windowHeight`：扩展激活时主窗口高度，三种声明语义：
   - **`number`**：固定高度，clamp `[MIN,MAX]`
   - **`'auto'`**：随内容自适应
@@ -79,7 +79,7 @@ export default defineExtension({
 - **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免扩展列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / ai-providers=35 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / screenshot=110 / video=115 / image=116 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160 / homebrew=170；hidden 扩展 settings=998 / search=999。
 - **`disableSearchInput` 决策**：与 `mainView` 独立——mainView 扩展若仍用主搜索框过滤列表（如 clipboard）则不声明；自管输入或无需搜索框（agent/translate/settings 等）声明 `true`。uuid 有 search 但 disableSearchInput（进入后只展示即时结果）。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
-- **View 根禁止与 ContentView 竞争的纵向双滚**：经 ContentView 渲染的 View（mainView/subviews）根及主内容流不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是页面级唯一滚动容器——View 根再设 overflow 会形成双层滚动，`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中失效内层 → 选中框出视口。固定高度媒体预览等局部区域（如 OCR 图预览）可自滚。独立窗口（screenshot/snap-panel/pin，经各自 HTML 入口加载）不经 ContentView，不受此约束。
+- **View 根禁止与 ContentView 竞争的纵向双滚**：经 ContentView 渲染的 View（mainView/subviews）根及主内容流不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是页面级唯一滚动容器，再设 overflow 形成双层滚动，`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中内层失效 → 选中框出视口。固定高度媒体预览等局部区域（如 OCR 图预览）可自滚。独立窗口（screenshot/snap-panel/pin，经各自 HTML 入口加载）不经 ContentView，不受此约束。
 
 ## 搜索集成
 
@@ -101,8 +101,8 @@ interface SearchContext {
 
   流程：**流式增量召回**——并发启动所有扩展 dynamic，每个扩展的 `emit`/`resolve` 都同步触发增量重排（keyword 合流 → dedupe → groupAndSort），`onUpdate` 经 rAF 批量合帧回调（同帧多 emit 合并为一次渲染）。快结果（应用缓存/同步扩展）秒出，慢结果（内存索引文件/网络）增量补充，不再 `Promise.all` barrier 等全部。finalScore 仍只预算一次（emit 时打分，groupAndSort 复用）。
 
-  - **流式**：扩展可选调用 `ctx.emit(partial)` 多次产出部分结果（如 search 扩展应用 emit 秒出、文件 return 后补），不调用的扩展走一次性 return 行为不变。框架按 `extId:id` 去重，emit 与 return 重叠不会产生重复项；但扩展应遵循「emit 产出首批、return 产出补充」的语义分工——已 emit 的内容不放入 return，避免多余打分计算
-  - **keyword 合流**：`scoreExtensionEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；每次 flush 重算（纯同步、扩展数少），keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）
+  - **流式**：扩展可选调用 `ctx.emit(partial)` 多次产出部分结果（如 search 扩展应用 emit 秒出、文件 return 后补），不调用的扩展走一次性 return 行为不变。框架按 `extId:id` 去重，emit 与 return 重叠不产生重复项；但已 emit 的内容不应放入 return——emit 产首批、return 补充，避免多余打分计算
+  - **keyword 合流**：`scoreExtensionEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；按 query 记忆化（`kwCacheQ`/`kwCache`）——同 query 结果不变，增量 flush 复用缓存免重算；keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）
   - **入口抑制**：dynamic 产出相关 tool 型结果（kind=extension，finalScore > 0）的扩展抑制其入口（即时答案优先）；clipboard 等数据型 kind≠extension 不抑制
   - **过滤规则**：空 query 按 `finalScore>0`；非空 query 查找型需 `fuzzy>0`，extension 类即时答案靠 `finalScore>0` 穿透
 
@@ -143,7 +143,7 @@ interface SearchContext {
 
 ### 管道层次（不可破坏）
 
-去重 → 分组 → 组内排序 → 组间定序 → 组内限流。组间序由 `constants.GROUP_ORDER` 锁死（`application → extension → file → clipboard → web`），不开放给扩展调整。扩展调整相关性的唯一通道：`data.kind` 归组（组间位）+ `boost`（组内位）。
+去重 → 分组（带过滤）→ 组间定序 → 组内排序 → 组内限流。组间序由 `constants.GROUP_ORDER` 锁死（`application → extension → file → clipboard → web`），不开放给扩展调整。扩展调整相关性的唯一通道：`data.kind` 归组（组间位）+ `boost`（组内位）。
 
 ## 扩展配置（defineConfig）
 
@@ -160,7 +160,7 @@ config.maxDays = 60 // 自动写盘
 - 第一参数为完整 plugin-store path（不含 `.json` 后缀），扩展用 `extensions/<id>/config`，框架级用 `config/settings`。
 - backfill 类型守卫：磁盘值类型与 default 不符则丢弃；`isStillDefault` 走递归 deepEqual（顺序无关）。
 - 启动期 `isLoading` 抑制 watch 冗余写；退出 `onCloseRequested` flush 防抖窗口内变更。
-- 不订阅 plugin-store `onChange`：plugin-store 的 set 会向本进程回放 `store://change`（无来源标识），回灌会以旧快照覆盖 emit 到达前已 mutate 的新值（实测复现）；所有 config 仅在 main 窗口持有（子窗口纯内存 reactive），无跨窗口同步需求。
+- 不订阅 plugin-store `onChange`：其 `set` 会向本进程回放 `store://change`（无来源标识），回灌会以旧快照覆盖 emit 到达前已 mutate 的新值（实测复现）；所有 config 仅在 main 窗口持有（子窗口纯内存 reactive），无跨窗口同步需求。
 - schema 变更：自开发自用不维护迁移，改 schema 时手动删磁盘 config.json 即可。
 - store 实例缓存（文件级 `Map<storePath, Store>`），watch 回调复用，禁止每次保存重新 `load()`。
 - 加载异步竞态：`load()` 异步，扩展 setup 早期可能读 defaults。安全参数由 Rust clamp 兜底。

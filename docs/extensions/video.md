@@ -34,7 +34,7 @@
 - 版本 `b6.1.1`，arm64/x64，sha256 校验
 - 先 `gh-proxy.com` 镜像，失败回退直连 GitHub
 - ffmpeg + ffprobe 两段进度累计上报
-- 写入 `ext_data_dir/video/`；网络读 async、落盘 `spawn_blocking`
+- 写入 `ext_data_dir/video/`；下载走 `runtime/binary_fetch` 统一流式落盘——async 任务内逐 chunk 同步 write_all，避免整包读入内存（旧实现 ffmpeg gz ~100MB 常驻 Vec）
 
 ### 编码策略
 
@@ -65,7 +65,7 @@
 
 ```
 extensions/video/
-├── index.ts / config.ts / logic.ts / View.vue
+├── index.ts / config.ts / logic.ts / locales.ts / View.vue
 └── native/
     ├── mod.rs    # 命令入口
     ├── core.rs   # 解析 / 下载 ffmpeg

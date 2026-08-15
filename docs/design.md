@@ -1,6 +1,6 @@
 # Voidnix 设计系统
 
-浅色 / 深色双轨（`runtime/theme.ts` 写 `<html data-theme="dark|light">`，`auto` 跟随系统；原生 NSWindow appearance 经 `set_window_appearance` 同步驱动 WKWebView prefers-color-scheme）。**视觉已定型**：调参结果以当前界面为准；改规范/代码时优先**复用 token**，禁止再堆零散相近值。
+浅色 / 深色双轨（`runtime/theme.ts` 写 `<html data-theme="dark|light">`，`auto` 跟随系统；原生 NSWindow appearance 经 `set_window_appearance` 同步驱动 WKWebView prefers-color-scheme）。**视觉已定型**：调参结果以当前界面为准；改规范/代码优先**复用 token**，禁止堆零散相近值。
 
 参数源：`src/styles/theme.css`（`:root` 基元 + 面类）· `uno.config.ts`（组合）· 业务 scoped 只编排，不发明新色/阴影数。
 
@@ -43,7 +43,7 @@
 
 ## 色
 
-深色模式：`:root[data-theme="dark"]` 覆盖（浅色值仍为 `:root` 默认）。与浅色同 token 体系：文本反相、fill 档改白色基底、阴影 ink→纯黑并提对比（第一层用白环衬边界）、语义色略提亮、accent 浅染提高饱和。accent `#3d82f0` 与 mist 冷相双轨不变。
+深色模式：`:root[data-theme="dark"]` 覆盖（浅色值仍为 `:root` 默认）。与浅色同 token 体系：文本反相、fill 档改白色基底、阴影 ink→纯黑并提对比（第一层用白环衬边界）、语义色略提亮（soft 档 12% → 16%）、accent 浅染提高饱和。accent `#3d82f0` 与 mist 冷相双轨不变。
 
 ### 基础与派生
 
@@ -54,7 +54,7 @@
 
 ### 语义色
 
-- danger / warning / success + soft（soft 统一 12%）
+- danger / warning / success + soft（soft 浅色 12% / 深色 16%）
 
 ### 特化
 

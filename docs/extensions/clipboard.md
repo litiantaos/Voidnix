@@ -1,13 +1,13 @@
 # clipboard
 
-剪贴板历史。NSPasteboard 500ms 轮询（`changeCount` 对比），文本/图片/文件持久化到 SQLite；支持收藏、一键粘贴（写入 + 模拟 Cmd+V）。
+剪贴板历史。NSPasteboard 800ms 轮询（`changeCount` 对比），文本/图片/文件持久化到 SQLite；支持收藏、一键粘贴（写入 + 模拟 Cmd+V）。
 
 monitor 的 pasteboard 访问全部委托至 `platform::pasteboard`（change_count / marker / 文本 / PNG / TIFF / file URL 解析）。Cmd+V 模拟通过 `platform::input::post_combo("cmd+v", None)`。
 
 ### 源 app 识别
 
 - **自身写入标记**：`pasteboard_write_text`（copyAndHide / 复制路径等 Voidnix 内部写入）带 source marker（`com.litiantao.voidnix.source`），monitor 据此标记 `source_app = "Voidnix"`（仍入库）
-- **外部复制识别**：无 marker，用 `NSWorkspace.frontmostApplication` 取真实来源（Voidnix 是 accessory app，frontmostApplication 不返回自身，故外部复制能正确标记真实 app）
+- **外部复制识别**：无 marker，用 `NSWorkspace.frontmostApplication` 取真实来源（Voidnix 是 accessory app，frontmostApplication 不返回自身）
 
 ## 配置
 
@@ -42,7 +42,7 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 - **主线程**：只做 changeCount + marker/类型 + file URL 路径解析 + pasteboard 位图/文本轻读
 - **监控线程**：做 `fs::read` / base64 / 入库
 - **HEIC→PNG 编码**：需 AppKit，单独 hop 回主线程
-- **启动基准**：启动时只建立 changeCount 基准，不入库当前剪贴板已有内容（只记录启动后变化）
+- **启动基准**：启动时只建立 changeCount 基准，不入库启动前已有内容
 
 ### 防回环与跳过
 
@@ -76,13 +76,12 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 
 - 遍历 `NSPasteboard.pasteboardItems` 取所有 file URL（`read_file_urls`）
 - 每个文件入库一条（单次复制产生多条记录）
-- file reference URL `file:///.file/id=...` 经 `NSURL.filePathURL` 解析为实际路径
 - 批量复制 >10 个直接丢弃整批
 
 ### 粘贴
 
 - **图片**：先 `encode_image_to_png` 再 `clear` + marker + `set_png_bytes`（解码失败不触碰剪贴板、不模拟 Cmd+V，命令返回 Err）
-- **统一转 PNG**：任意 `data:image/*;base64,` 经 NSImage 统一转 PNG（JPEG/GIF/WebP/BMP/HEIC 等）
+- **统一转 PNG**：任意 `data:image/*;base64,`（JPEG/GIF/WebP/BMP/HEIC 等）经 NSImage 转换
 - **多选序**：按前端 `ids` 选择序
 - **全 text**：换行拼接
 - **全 file**：写多 item pasteboard（`set_file_urls(..., Some(marker))`）
@@ -90,9 +89,9 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 
 ### 清理与上限
 
-- **按天删**：config `maxDays` >0 按 UTC `datetime('now', '-N days')` 删
-- **按上限裁剪**：`maxDays` <=0 按上限 5000 裁剪（仅非收藏）
-- **拉取上限**：默认拉取上限 500 条（全局搜索 dynamic 与模块列表）
+- **按天删**：config `maxDays` >0 按 UTC `datetime('now', '-N days')` 删；限频——每 50 次实际写入才执行一次过期 DELETE 扫描（monitor.rs `CLEANUP_INTERVAL`）
+- **按上限裁剪**：`maxDays` <=0 裁剪至 5000（仅非收藏）
+- **拉取上限**：默认 500 条（全局搜索 dynamic 与模块列表）
 
 ## 动作菜单
 
@@ -102,5 +101,5 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 
 ## 删除
 
-- **手动**：`⌘⌫`（`View.vue` `onKeyStroke` → `triggerDelete` → `handleDelete`），多选优先否则取光标项，二次确认后调 `delete_clipboard_items`
+- **手动**：动作菜单删除项，`View.vue` `deleteItems` 经 `showConfirm` 二次确认后调 `delete_clipboard_items`
 - **清空 / 自动清理**：均 `WHERE is_favorite = 0`，保留收藏

@@ -4,7 +4,7 @@
 
 ## 能力
 
-- **移除背景**：macOS Vision 前景实例分割（`VNGenerateForegroundInstanceMaskRequest`，macOS 14+ 内置模型，与「照片」抬起主体同一引擎），对任意前景物体（人 / 物 / 动物）生成高质量分割，背景置透明
+- **移除背景**：macOS Vision 前景实例分割（`VNGenerateForegroundInstanceMaskRequest`，macOS 14+ 内置模型，与「照片」抬起主体同一引擎），对任意前景物体（人 / 物 / 动物）分割，背景置透明
 - **拼接长图**：横向 / 纵向合成，支持间距（正值）与重叠（负值，如电影截图台词拼接避免截断字幕），统一尺寸（宽度 / 高度等比缩放，消除异型图参差）
 - 支持 macOS 原生解码格式：PNG / JPEG / HEIC / HEIF / WebP / TIFF / BMP / GIF
 - 预览（棋盘格背景直观展示透明区域）、复制到剪贴板、保存到文件、在访达中显示
@@ -19,7 +19,7 @@
 
 ## 核心
 
-零外部依赖：模型内置于系统，GPU 加速，移除背景通常 <1s。所有 ObjC 操作在 `autoreleasepool` 内执行，命令在 `spawn_blocking` 中调用（Vision `performRequests` 与 CoreGraphics 位图合成均同步阻塞）。
+模型内置于系统，GPU 加速，移除背景通常 <1s。所有 ObjC 操作在 `autoreleasepool` 内执行，命令在 `spawn_blocking` 中调用（Vision `performRequests` 与 CoreGraphics 位图合成均同步阻塞）。
 
 ### 移除背景（remove_bg.rs）
 
@@ -27,7 +27,7 @@ NSImage 加载 → CGImage → `VNImageRequestHandler` → `VNGenerateForeground
 
 ### 拼接（stitch.rs）
 
-逐张加载 →（可选）统一尺寸等比缩放 → 计算布局（纵向宽度取最大值水平居中，横向高度取最大值垂直居中）→ RGBA 位图上下文逐张绘制 → PNG。`gap` 正值=间距、负值=重叠。**逆序绘制**（painter's algorithm 后绘制者覆盖先绘制者，逆序使首张图最后绘制 = 最上层，重叠时后续图仅露出底部台词）。
+逐张加载 →（可选）统一尺寸等比缩放 → 计算布局（纵向宽度取最大值水平居中，横向高度取最大值垂直居中）→ RGBA 位图上下文逐张绘制 → PNG。`gap` 正值=间距、负值=重叠。**逆序绘制**（painter's algorithm 后绘制者覆盖先绘制者——首张图最后绘制 = 最上层，重叠时后续图仅露出底部台词）。
 
 ### 共用（shared.rs）
 
@@ -55,7 +55,7 @@ NSImage 加载 → CGImage → `VNImageRequestHandler` → `VNGenerateForeground
 
 ```
 extensions/image/
-├── index.ts / config.ts / logic.ts / View.vue / Actions.vue
+├── index.ts / config.ts / logic.ts / locales.ts / View.vue / Actions.vue
 └── native/
     ├── mod.rs       # 命令入口 + BUSY 锁
     ├── remove_bg.rs # Vision 前景分割

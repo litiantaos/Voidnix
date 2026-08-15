@@ -41,7 +41,7 @@ defineConfig('extensions/translate/config', {
 ## 结果交互
 
 - **回车 / 双击**：复制译文并隐藏窗口（`copyAndHide`）
-- **朗读按钮**：每条译文右侧喇叭图标，点击用系统 TTS（框架 `say` 命令）朗读译文，再次点击停止。朗读中图标转 fill + 主色高亮，读完或切换结果自动复位；切走扩展 / 新一轮翻译自动停止。语种按译文字符脚本推断（`detectSpeechLang`：假名→ja、谚文→ko、汉字→zh、西里尔→ru、阿拉伯→ar、泰文→th、天城文→hi、越南文拉丁扩展→vi、其余→en），映射 `say -v` 系统预装语音
+- **朗读按钮**：每条译文右侧喇叭图标，点击用系统 TTS 朗读（框架 `speak_text` / `stop_speech` 命令，底层 `runtime/speech.rs` 的 say CLI 封装），再次点击停止。朗读中图标转 fill + 主色高亮，读完或切换结果自动复位；切走扩展 / 新一轮翻译自动停止。语种按译文字符脚本推断（`detectSpeechLang`：假名→ja、谚文→ko、汉字→zh、西里尔→ru、阿拉伯→ar、泰文→th、天城文→hi、越南文拉丁扩展→vi、其余→en），映射 `say -v` 系统预装语音
 
 ## Rust 端
 
@@ -52,4 +52,4 @@ defineConfig('extensions/translate/config', {
 
 划词取词流程：快捷键触发 → `platform::selection::try_ax()`（AX 直取）→ 失败则 `platform::input::post_combo("cmd+c", Some(pid))` → `platform::selection::poll_clipboard(snap)`（轮询 + `platform::pasteboard` 快照恢复）。
 
-**文件场景排除**：Finder 选中文件时 AX 取不到文本，`cmd+c` 兜底会让 Finder 把文件写入剪贴板（含 `public.file-url`，顺带写入文件名纯文本）。取词链路在 `poll_clipboard` 与 `get_selected_text` 命令两处均经 `pasteboard::has_file_url()` 判定——剪贴板含文件 URL 即视为非文本选中，返回空，不进入翻译（避免把文件名当文本翻译的无意义调用）。
+**文件场景排除**：Finder 选中文件时 AX 取不到文本，`cmd+c` 兜底会让 Finder 把文件写入剪贴板（含 `public.file-url`，顺带写入文件名纯文本）。取词链路在 `poll_clipboard` 与 `get_selected_text` 命令两处均经 `pasteboard::has_file_url()` 判定——剪贴板含文件 URL 即视为非文本选中，返回空、不进入翻译（避免文件名被当文本翻译）。

@@ -18,7 +18,7 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 - 默认无菜单栏图标；代理已连接、保持系统唤醒已开启时显示
 - `Option+Space` 唤起 / 隐藏主窗口，失焦自动隐藏
 - `↑↓` 选择列表项，`Enter` 执行，`Escape` 退出当前层（子视图 → 模块 → 隐藏窗口）
-- `Cmd+Enter` 显示结果菜单，如应用、文件/夹、剪贴板记录等
+- `Cmd+Enter` 显示结果菜单（应用、文件/文件夹）
 - 有右侧操作区时，`Tab` 在搜索栏与操作区控件间切换
 
 ### 全局搜索
@@ -26,7 +26,7 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 - 默认列表显示按使用频率排序的应用
 - 输入关键字搜索应用、文件/夹、扩展等，结果按 应用 → 扩展 → 文件 → 剪贴板 → 快捷操作 分组
 - 输入 `/` 显示扩展列表
-- 输入 `//关键词` Google、输入 `//b 关键词` Bing、输入 `//example.com` 打开链接
+- 输入 `//关键词` Google、`//b 关键词` Bing、`//example.com` 打开链接
 
 ### 计算器
 
@@ -62,7 +62,7 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
 ### 翻译
 
-`Option+T` 抓取当前选中文本进行翻译，或模块内直接输入，中英方向自动反转，可配置有道或 AI 引擎（多引擎并排）。
+`Option+T` 抓取当前选中文本翻译，或模块内直接输入，中英方向自动反转，可配置有道或 AI 引擎（多引擎并排）。
 
 ### AI Agent
 
