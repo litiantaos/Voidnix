@@ -170,7 +170,7 @@ osascript 每次提权都弹系统密码框。launchd 托管把提权收敛到�
 app 启动时 **`reconnect_root_mihomo`** 检测 launchd 托管的 mihomo（按 binary 路径 ps 查）：
 
 - 先 **`GET /version`** 验 secret——匹配后 **`GET /configs`** 按运行 config 的 `tun.enable` 分流：
-  - **active**（app 退出前开着、launchd 保活至今）→ **恢复 `enabled` + `run_params` + 重启健康监测 + emit `proxy-enabled:true`** 同步前端/菜单——常驻设计的意图是 app 退出不影响代理，重启 app 静默切直连等于无提示的流量裸奔（mode 以运行 config 为权威）。前端挂载时再查一次 `is_proxy_enabled` 兜底（reconnect 在 Rust setup 异步跑，可能晚于模块预加载，emit 时面板未挂载会丢失）
+  - **active**（app 退出前开着、launchd 保活至今）→ **恢复 `enabled` + `run_params` + 重启健康监测 + emit `proxy-enabled:true`** 同步前端/菜单，并异步拉取当前节点名填充菜单状态行（与开启路径对齐，best-effort）——常驻设计的意图是 app 退出不影响代理，重启 app 静默切直连等于无提示的流量裸奔（mode 以运行 config 为权威）。前端挂载时再查一次 `is_proxy_enabled` 兜底（reconnect 在 Rust setup 异步跑，可能晚于模块预加载，emit 时面板未挂载会丢失）
   - **idle** → 热重载 idle 幂等复位直通，成功才标记 `tun_active` + 设 `run_params`（子视图诊断只需 controller 可达，不依赖代理开启）
 - secret 不匹配（401 = 不可控，如旧 osascript 残留）**不提权清理**（避免 app 启动弹窗），下次开代理时 `install_launchdaemon` 会清理本端路径的 mihomo 实例并接管
 
