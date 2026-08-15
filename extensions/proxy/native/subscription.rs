@@ -18,7 +18,16 @@ fn sub_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// 订阅 id 合法性：非空且不含路径分隔符（id 来自命令参数，防 `../` 逃出 subs/ 目录；
+/// 前端自生成 id 不会违规，此为命令边界防御）。
+fn valid_sub_id(id: &str) -> bool {
+    !id.is_empty() && !id.contains('/') && !id.contains('\\')
+}
+
 fn sub_yaml_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+    if !valid_sub_id(id) {
+        return Err(format!("非法订阅 id: {id}"));
+    }
     Ok(sub_dir(app)?.join(format!("{id}.yaml")))
 }
 
@@ -280,6 +289,15 @@ mod tests {
             active_sub_id: String::new(),
             tun: false,
         }
+    }
+
+    #[test]
+    fn valid_sub_id_rejects_traversal() {
+        assert!(valid_sub_id("a1b2c3"));
+        assert!(!valid_sub_id(""));
+        assert!(!valid_sub_id("../evil"));
+        assert!(!valid_sub_id("a/b"));
+        assert!(!valid_sub_id("a\\b"));
     }
 
     #[test]

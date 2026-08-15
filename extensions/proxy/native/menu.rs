@@ -62,7 +62,14 @@ fn on_proxy_event(app: &AppHandle, id: &str) {
             tauri::async_runtime::spawn(async move {
                 let state = app.state::<ProxyState>();
                 if let Err(e) = stop_core(&app, &state).await {
-                    eprintln!("[proxy] 菜单关闭代理失败: {e}");
+                    // 经 proxy-status 事件反馈（前端面板监听显示 toast），不再只 eprintln 静默
+                    let _ = app.emit(
+                        "proxy-status",
+                        super::lifecycle::ProxyStatus {
+                            kind: "error".into(),
+                            msg: e,
+                        },
+                    );
                     return;
                 }
                 let _ = app.emit("proxy-enabled", false);

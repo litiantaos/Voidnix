@@ -71,7 +71,29 @@ pub struct RunParams {
     pub tun: bool,
 }
 
-/// dev/prod 端口变体归一化（命令入口 + config.json 直读处的权威修正）。
+/// 变体默认端口 (mixed, controller)：dev 7891/9091，prod 7890/9090。
+pub(crate) fn variant_ports(is_dev: bool) -> (u16, u16) {
+    if is_dev {
+        (7891, 9091)
+    } else {
+        (7890, 9090)
+    }
+}
+
+/// 把「对端变体默认端口」修正为 `is_dev` 变体的默认端口；用户自定义端口不动。
+/// 本端归一化（`correct_variant_ports`）与对端凭证读取（sibling 让渡）共用。
+pub(crate) fn correct_ports_toward(mixed_port: &mut u16, controller_port: &mut u16, is_dev: bool) {
+    let (this_m, this_c) = variant_ports(is_dev);
+    let (other_m, other_c) = variant_ports(!is_dev);
+    if *mixed_port == other_m {
+        *mixed_port = this_m;
+    }
+    if *controller_port == other_c {
+        *controller_port = this_c;
+    }
+}
+
+/// dev/prod 端口变体归一化（命令入口 + config.json 直读处的权威修正，本端视角）。
 ///
 /// config.json 可能残留对端变体默认端口（历史污染 / 手动复制 / backfill 竞态），
 /// 导致 mihomo 绑定错误端口与其他实例冲突。`cfg!(debug_assertions)` 与 Tauri
@@ -81,17 +103,7 @@ pub struct RunParams {
 ///
 /// 仅修正「对端默认端口」→「本端默认端口」；用户自定义端口不动。
 pub(crate) fn correct_variant_ports(mixed_port: &mut u16, controller_port: &mut u16) {
-    let (this_m, this_c, other_m, other_c) = if cfg!(debug_assertions) {
-        (7891u16, 9091u16, 7890u16, 9090u16)
-    } else {
-        (7890u16, 9090u16, 7891u16, 9091u16)
-    };
-    if *mixed_port == other_m {
-        *mixed_port = this_m;
-    }
-    if *controller_port == other_c {
-        *controller_port = this_c;
-    }
+    correct_ports_toward(mixed_port, controller_port, cfg!(debug_assertions));
 }
 
 /// mihomo binary 写盘路径（app_data_dir/extensions/proxy/mihomo）。
@@ -389,5 +401,21 @@ mod tests {
         let (mut m, mut c) = (7892u16, 9092u16);
         correct_variant_ports(&mut m, &mut c);
         assert_eq!((m, c), (7892, 9092));
+    }
+
+    #[test]
+    fn correct_ports_toward_supports_sibling_view() {
+        // 对端视角：is_dev 与本端相反，把本端默认修正为对端默认
+        let (mut m, mut c) = variant_ports(cfg!(debug_assertions)); // 本端默认 = 对端的「污染值」
+        correct_ports_toward(&mut m, &mut c, !cfg!(debug_assertions));
+        assert_eq!((m, c), variant_ports(!cfg!(debug_assertions)));
+
+        // 目标变体自身默认 → 不动；自定义 → 不动
+        let (mut m, mut c) = variant_ports(false);
+        correct_ports_toward(&mut m, &mut c, false);
+        assert_eq!((m, c), variant_ports(false));
+        let (mut m, mut c) = (7893u16, 9093u16);
+        correct_ports_toward(&mut m, &mut c, true);
+        assert_eq!((m, c), (7893, 9093));
     }
 }

@@ -162,7 +162,7 @@ pub async fn install_launchdaemon(
          fi"
     );
     let script = format!("do shell script \"{cmd}\" with administrator privileges");
-    let stdout = run_osascript(app, &script)?;
+    let stdout = run_osascript(app, &script).await?;
 
     // 第三层：脚本检测到 fatal 已回收 plist，返回精确诊断
     if stdout.contains("MIHOMO_LAUNCH_FAILED") {
@@ -181,12 +181,12 @@ pub async fn install_launchdaemon(
 }
 
 /// 卸载 LaunchDaemon（osascript 提权）：bootout 停 mihomo + 删 plist。core 升级/卸载用。
-pub fn uninstall_launchdaemon(app: &AppHandle) -> Result<(), String> {
+pub async fn uninstall_launchdaemon(app: &AppHandle) -> Result<(), String> {
     let label = daemon_label(app);
     let dest_q = shell_quote(&plist_install_path(&label).display().to_string());
     let cmd = format!("launchctl bootout system/{label} 2>/dev/null; rm -f {dest_q}");
     let script = format!("do shell script \"{cmd}\" with administrator privileges");
-    run_osascript(app, &script)?;
+    run_osascript(app, &script).await?;
     Ok(())
 }
 
@@ -257,25 +257,22 @@ fn diagnose_launch_failure(app: &AppHandle, params: &super::core::RunParams) -> 
         }
     }
 
-    // 读 mihomo.log 尾部识别已知错误模式
+    // 读 mihomo.log 尾部识别已知错误模式（尾读窗口防无限增长日志的全量读取）
     if let Ok(dir) = ext_data_dir(app, "proxy") {
-        if let Ok(log) = std::fs::read_to_string(dir.join("mihomo.log")) {
-            for line in log.lines().rev().take(30) {
-                let l = line.to_lowercase();
-                if l.contains("address already in use") {
-                    if !reasons.iter().any(|r| r.contains("端口")) {
-                        reasons.push("监听端口已被占用".into());
-                    }
-                    break;
+        let lines = super::lifecycle::read_log_tail(&dir.join("mihomo.log"), 0);
+        for line in lines.iter().rev().take(30) {
+            let l = line.to_lowercase();
+            if l.contains("address already in use") {
+                if !reasons.iter().any(|r| r.contains("端口")) {
+                    reasons.push("监听端口已被占用".into());
                 }
-                if (l.contains("tun") || l.contains("route"))
-                    && (l.contains("file exists")
-                        || l.contains("exists")
-                        || l.contains("permission"))
-                {
-                    reasons.push("TUN 网卡或路由被其他代理工具占用".into());
-                    break;
-                }
+                break;
+            }
+            if (l.contains("tun") || l.contains("route"))
+                && (l.contains("file exists") || l.contains("exists") || l.contains("permission"))
+            {
+                reasons.push("TUN 网卡或路由被其他代理工具占用".into());
+                break;
             }
         }
     }
@@ -289,21 +286,25 @@ fn diagnose_launch_failure(app: &AppHandle, params: &super::core::RunParams) -> 
 
 /// 执行 osascript，识别用户取消（-128）。
 ///
-/// 调用期间暂停 click-outside 检测 + 置位 OSASCRIPT_RUNNING：`with administrator
-/// privileges` 弹出的 SecurityAgent 授权框在主窗口外，用户点击（输密码/确认）会被判为
-/// click-outside 触发 hideWindow；授权完成后 SecurityAgent 关闭，shell 命令仍跑 2-3s
-/// 期间 frontmost 已还给原 app，is_app_active 会返 false 触发 blur hide——两类都会
-/// 导致窗口被意外关闭。置位 OSASCRIPT_RUNNING 让 is_app_active 期间返 true 抑制 blur hide。
+/// 阻塞体经 `spawn_blocking` 执行——`with administrator privileges` 的 SecurityAgent 授权
+/// 等待可达分钟级，同步阻塞会钉死一个 tokio worker（仅 4 个），期间其余异步任务挤占剩余。
+///
+/// 调用期间暂停 click-outside 检测 + 置位 OSASCRIPT_RUNNING：授权框在主窗口外，用户点击
+/// （输密码/确认）会被判为 click-outside 触发 hideWindow；授权完成后 SecurityAgent 关闭，
+/// shell 命令仍跑 2-3s 期间 frontmost 已还给原 app，is_app_active 会返 false 触发 blur
+/// hide——两类都会导致窗口被意外关闭。置位 OSASCRIPT_RUNNING 让 is_app_active 期间返
+/// true 抑制 blur hide。
 ///
 /// 收尾在主线程：make_key 恢复 panel 焦点（用户输完密码大概率想继续操作），再清 flag。
 /// 与 is_app_active 的 run_on_main_thread 同线程串行，无竞态：key 未恢复前 is_app_active
 /// 仍走 OSASCRIPT_RUNNING 分支返 true，blur hide 持续被抑制。
-fn run_osascript(app: &AppHandle, script: &str) -> Result<String, String> {
+async fn run_osascript(app: &AppHandle, script: &str) -> Result<String, String> {
     crate::platform::click_monitor::suppress(true);
     crate::platform::focus::set_osascript_running(true);
-    let result = (|| {
+    let owned = script.to_string();
+    let result = tokio::task::spawn_blocking(move || {
         let out = Command::new("osascript")
-            .args(["-e", script])
+            .args(["-e", &owned])
             .output()
             .map_err(|e| format!("osascript 调用失败: {e}"))?;
         if out.status.success() {
@@ -314,7 +315,9 @@ fn run_osascript(app: &AppHandle, script: &str) -> Result<String, String> {
             return Err("已取消授权".to_string());
         }
         Err(err.trim().to_string())
-    })();
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("osascript 执行失败: {e}")));
     // 主线程收尾：make_key 恢复焦点（panel 可见时）+ 清 flag
     let app_clone = app.clone();
     let scheduled = app.run_on_main_thread(move || {

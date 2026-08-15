@@ -12,7 +12,7 @@ mod tun;
 use crate::runtime::registry::Extension;
 use serde::Serialize;
 use serde_json::Value;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -97,7 +97,7 @@ pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> 
     let was_enabled = state.enabled.load(Ordering::Relaxed);
     let params = state.run_params.lock().map_err(|e| e.to_string())?.clone();
     if state.tun_active.load(Ordering::Relaxed) {
-        tun::uninstall_launchdaemon(&app)?;
+        tun::uninstall_launchdaemon(&app).await?;
         state.tun_active.store(false, Ordering::Relaxed);
     }
     state.enabled.store(false, Ordering::Relaxed);
@@ -404,10 +404,13 @@ impl Extension for ProxyExtension {
             run_params: Mutex::new(None),
             tun_active: AtomicBool::new(false),
             current_node: Mutex::new(None),
-            monitor_alive: AtomicBool::new(false),
+            monitor_gen: AtomicU64::new(0),
+            monitor_spawned_gen: AtomicU64::new(u64::MAX), // 初始无 task：任意代都不等于「已 spawn」
+            release_gen: AtomicU64::new(0),
         });
         app.manage(StreamRegistry::default());
         menu::register();
+        lifecycle::observe_tun_taken(app);
         let app2 = app.clone();
         tauri::async_runtime::spawn(async move {
             lifecycle::reconnect_root_mihomo(&app2).await;

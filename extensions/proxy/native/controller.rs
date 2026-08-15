@@ -81,6 +81,21 @@ pub async fn test_delay(base: &str, secret: &str, name: &str) -> Result<u32, Str
         .unwrap_or(0))
 }
 
+/// GET /configs → 当前运行配置快照（含 tun.enable）。sibling 让渡前判定对端是否真占 TUN 用。
+pub async fn get_configs(base: &str, secret: &str) -> Result<Value, String> {
+    CONTROLLER
+        .get(format!("{base}/configs"))
+        .bearer_auth(secret)
+        .send()
+        .await
+        .map_err(|e| format!("controller 请求失败: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("controller 响应错误: {e}"))?
+        .json::<Value>()
+        .await
+        .map_err(|e| format!("解析 configs 失败: {e}"))
+}
+
 /// PATCH /configs → 切换规则模式（rule | global | direct）。
 pub async fn set_mode(base: &str, secret: &str, mode: &str) -> Result<(), String> {
     CONTROLLER
