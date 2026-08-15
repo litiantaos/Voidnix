@@ -811,6 +811,11 @@ pub(crate) async fn reconnect_root_mihomo(app: &AppHandle) {
                 state.tun_active.store(true, Ordering::Relaxed);
                 ensure_monitor(app);
                 let _ = app.emit("proxy-enabled", true);
+                // 拉取当前节点名填充菜单状态行（与 set_proxy_enabled 开启路径对齐）
+                let app2 = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    super::menu::refresh_proxy_menu(&app2).await;
+                });
             } else {
                 let idle = RunParams {
                     mixed_port: p.mixed_port,
