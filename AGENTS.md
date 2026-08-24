@@ -79,7 +79,7 @@ python3 scripts/smoke-test.py --self-test-only   # 仅 Layer 1（~30s，无需�
 python3 scripts/smoke-test.py                     # 标准（Layer 1 + 2 + 逐阶段内存趋势）
 python3 scripts/smoke-test.py --perf              # 标准 + 5 轮内存压测趋势
 python3 scripts/smoke-test.py --dev               # dev 构建
-python3 scripts/smoke-test.py --build             # 含 release 构建
+python3 scripts/smoke-test.py --build             # 含 release 构建（同 deploy.sh 加载 .env 签名凭证，防 adhoc 退化）
 python3 scripts/smoke-test.py --no-cgevent        # 跳过 Layer 2（CI/headless 友好）
 ```
 

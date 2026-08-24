@@ -200,7 +200,10 @@ mem_trend = MemoryTrend()
 
 def build_release():
     log('开始 release 构建...')
-    result = subprocess.run(['bun', 'run', 'tauri', 'build'], capture_output=False)
+    root = Path(__file__).parent.parent
+    # 与 deploy.sh 同源：加载 .env（codesign 身份 + updater 私钥），防产物退化 adhoc 或 updater sig 失败
+    cmd = f'set -a; source "{root / ".env"}" 2>/dev/null; exec bun run tauri build'
+    result = subprocess.run(['bash', '-c', cmd], capture_output=False, cwd=root)
     if result.returncode != 0:
         log('构建失败')
         sys.exit(1)
