@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { displayPath, fileNameFromPath, formatBytes, formatDuration, formatMetaLine } from './logic'
+import {
+  displayPath,
+  fileNameFromPath,
+  formatBytes,
+  formatDuration,
+  formatMetaLine,
+  summarizeMetas,
+} from './logic'
 
 describe('video logic', () => {
   it('path helpers', () => {
@@ -26,5 +33,22 @@ describe('video logic', () => {
     expect(line).toContain('1920×1080')
     expect(line).toContain('1:30')
     expect(line).toContain('h264')
+  })
+
+  it('summarizeMetas', () => {
+    const mk = (durationSecs: number, sizeBytes: number) => ({
+      path: '',
+      durationSecs,
+      width: 1920,
+      height: 1080,
+      videoCodec: 'h264',
+      audioCodec: 'aac',
+      sizeBytes,
+      container: 'mp4',
+    })
+    // 汇总已探测项，跳过 null
+    expect(summarizeMetas([mk(60, 1024 * 1024), null, mk(60, 1024 * 1024)])).toBe('2:00 · 2 MB')
+    // 全未探测 → 空串
+    expect(summarizeMetas([null, null])).toBe('')
   })
 })

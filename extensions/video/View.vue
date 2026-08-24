@@ -14,10 +14,12 @@
           {{ t('video.downloadFFmpeg') }}
         </BaseButton>
         <div v-else-if="coreLoaded && core.available" flex gap="2">
-          <BaseButton :disabled="busy" @click.stop="pickInput">{{ t('video.select') }}</BaseButton>
-          <BaseButton v-if="busy" @click.stop="cancelJob">{{ t('video.cancel') }}</BaseButton>
+          <BaseButton :disabled="st.busy" @click.stop="pickInput">{{
+            t('video.select')
+          }}</BaseButton>
+          <BaseButton v-if="st.busy" @click.stop="cancelJob">{{ t('video.cancel') }}</BaseButton>
           <BaseButton
-            v-else-if="inputPath"
+            v-else-if="st.paths.length > 0"
             variant="primary"
             :disabled="!canRun"
             @click.stop="startJob"
@@ -37,8 +39,56 @@
   </div>
 </template>
 
+<script lang="ts">
+import { reactive } from 'vue'
+
+/** 批量状态跨组件实例存活：窗口隐藏 KeepAlive 卸载后队列继续跑，重开面板时
+ *  index/total/done/failed 与 busy/percent 不丢（组件 ref 会随卸载与队列断链）。
+ *  类型 import 统一在下方 setup 块（SFC 双 script 共享模块作用域，重复 import 报重复标识符）。 */
+const st = reactive({
+  /** 已选输入（单元素即单文件语义，批处理统一走队列） */
+  paths: [] as string[],
+  /** 与 paths 平行的探测结果；null = 未探测 / 探测失败（startJob 时 Rust 端自 probe 兜底） */
+  metas: [] as (VideoMeta | null)[],
+  busy: false,
+  percent: 0,
+  /** 队列存活：终态推进以本面板 Channel 事件为准，全局 video-job-event 让路（双投递去重） */
+  queueActive: false,
+  /** 用户请求取消整批 */
+  cancelled: false,
+  total: 0,
+  index: 0,
+  done: 0,
+  failed: 0,
+})
+
+/** 队列发起时的参数快照（批量中途改 UI 参数不影响后续文件；startJob 时整体覆写） */
+const batchSnapshot: {
+  outputDir: string | null
+  params: {
+    mode: VideoMode
+    format: OutputFormat
+    quality: Quality
+    scale: Scale
+    preferHardware: boolean
+  }
+} = {
+  outputDir: null,
+  params: {
+    mode: 'compress',
+    format: 'mp4',
+    quality: 'balanced',
+    scale: 'original',
+    preferHardware: true,
+  },
+}
+
+/** 最近一次失败详情（单文件批次失败 toast） */
+let lastErrorMessage = ''
+</script>
+
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
@@ -48,12 +98,13 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import { t } from '@/runtime/i18n'
 import type { SettingItem } from '@/types/settings'
 import { config } from './config'
-import { pendingInputPath } from './index'
+import { pendingInputPaths } from './index'
 import {
   displayPath,
   fileNameFromPath,
   formatBytes,
   formatMetaLine,
+  summarizeMetas,
   FORMAT_BY_MODE,
   type OutputFormat,
   type Quality,
@@ -80,25 +131,15 @@ const isDownloading = ref(false)
 const downloadReceived = ref(0)
 const downloadTotal = ref<number | null>(null)
 
-const inputPath = ref('')
-const meta = ref<VideoMeta | null>(null)
-
 const mode = ref<VideoMode>(config.defaultMode)
 const quality = ref<Quality>(config.defaultQuality)
 const format = ref<OutputFormat>(config.defaultFormat)
 const scale = ref<Scale>(config.defaultScale)
 const outputDir = ref(config.outputDir)
 
-const busy = ref(false)
-const percent = ref(0)
-
 let unlistenProgress: (() => void) | undefined
 let unlistenReady: (() => void) | undefined
 let unlistenJob: (() => void) | undefined
-/** 本面板发起的 run 进行中：全局 video-job-event 不重复 toast */
-let localRun = false
-/** 终态 toast 去重（Channel 与 video-job-event 双投递，invoke resolve 先后不确定） */
-let lastTerminalToastKey: string | null = null
 
 const downloadText = computed(() => {
   if (downloadTotal.value && downloadTotal.value > 0) {
@@ -115,25 +156,35 @@ const canRun = computed(
   () =>
     coreLoaded.value &&
     core.value.available &&
-    !!inputPath.value &&
-    !busy.value &&
+    st.paths.length > 0 &&
+    !st.busy &&
     !isDownloading.value,
 )
 
 const progressText = computed(() => {
-  if (percent.value <= 0) return ''
-  return `${Math.round(percent.value)}%`
+  if (st.percent <= 0) return ''
+  return `${Math.round(st.percent)}%`
 })
 
-/** 合并行副标题：未选文件才显示核心版本；已选仅元数据；进行中仅进度 */
+/** 合并行副标题：未选文件才显示核心版本；已选仅文件信息；进行中仅进度 */
 const sourceSubtitle = computed(() => {
   if (isDownloading.value) return t('video.downloadingCore')
   if (!coreLoaded.value) return t('video.coreVersionNone')
   if (!core.value.available) return t('video.dependencyHint')
-  if (busy.value) return t('video.progress', { value: progressText.value || '…' })
-  if (!inputPath.value) return t('video.coreVersion', { version: core.value.version || '—' })
-  if (meta.value) return formatMetaLine(meta.value)
-  return displayPath(inputPath.value)
+  if (st.busy) {
+    if (st.total > 1)
+      return t('video.batchProgress', {
+        i: st.index + 1,
+        n: st.total,
+        value: progressText.value || '…',
+      })
+    return t('video.progress', { value: progressText.value || '…' })
+  }
+  if (st.paths.length === 0) return t('video.coreVersion', { version: core.value.version || '—' })
+  if (st.paths.length === 1) {
+    return st.metas[0] ? formatMetaLine(st.metas[0]) : displayPath(st.paths[0])
+  }
+  return summarizeMetas(st.metas) || '—'
 })
 
 function ensureFormatForMode(next: VideoMode) {
@@ -151,8 +202,10 @@ const items = computed<SettingItem[]>(() => {
   list.push({
     id: 'source',
     title:
-      coreLoaded.value && core.value.available && inputPath.value
-        ? fileNameFromPath(inputPath.value)
+      coreLoaded.value && core.value.available && st.paths.length > 0
+        ? st.paths.length === 1
+          ? fileNameFromPath(st.paths[0])
+          : t('video.fileCount', { n: st.paths.length })
         : t('video.inputVideo'),
     subtitle: sourceSubtitle.value,
     type: 'custom',
@@ -353,32 +406,44 @@ async function ensureCore() {
 async function pickInput() {
   await withSuppressBlur(async () => {
     const paths = await invoke<string[]>(CMD.pickFiles, {
-      allowsMultiple: false,
+      allowsMultiple: true,
       allowedExtensions: [...VIDEO_EXTENSIONS],
     })
-    if (paths[0]) await loadInput(paths[0])
+    if (paths.length > 0) await loadInputs(paths)
   })
 }
 
-/** loadInput 单调序号：并发探测时丢弃过期结果，避免 inputPath 与 meta 错位（错位会让 startJob 拿到错误时长，影响进度估算）。 */
-let loadInputSeq = 0
+/** loadInputs 单调序号：并发探测时丢弃过期结果，避免 paths 与 metas 错位（错位会让队列拿到错误时长，影响进度估算）。 */
+let loadSeq = 0
 
-/** 设置输入路径并探测元数据（失败 toast）。pickInput 与跨扩展投递共用。 */
-async function loadInput(path: string) {
-  const seq = ++loadInputSeq
-  inputPath.value = path
-  try {
-    const probed = await invoke<VideoMeta>(CMD.videoProbe, { path })
-    // 过期：探测期间已有更新的路径投递，丢弃以免 meta 与当前 inputPath 错位
-    if (seq !== loadInputSeq) return
-    meta.value = probed
-  } catch (e) {
-    if (seq !== loadInputSeq) return
-    meta.value = null
-    appStore.showStatus(`${t('video.cannotReadVideo')}：${e ?? t('common.unknownError')}`, {
-      duration: 4000,
-      kind: 'error',
-    })
+/** 清空选择（同时作废进行中的探测循环，防止越界回写已清空的 metas）。 */
+function resetSelection() {
+  loadSeq++
+  st.paths = []
+  st.metas = []
+}
+
+/** 设置输入列表并逐个探测元数据。单文件失败 toast；多文件静默跳过（汇总行缺省、startJob 时 Rust 自 probe 兜底）。 */
+async function loadInputs(paths: string[]) {
+  const seq = ++loadSeq
+  st.paths = paths
+  st.metas = paths.map(() => null)
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const probed = await invoke<VideoMeta>(CMD.videoProbe, { path: paths[i] })
+      // 过期：探测期间已有更新的选择，丢弃以免 metas 与当前 paths 错位
+      if (seq !== loadSeq) return
+      st.metas[i] = probed
+    } catch (e) {
+      if (seq !== loadSeq) return
+      console.error(`[video] probe 失败: ${paths[i]}`, e)
+      if (paths.length === 1) {
+        appStore.showStatus(`${t('video.cannotReadVideo')}：${e ?? t('common.unknownError')}`, {
+          duration: 4000,
+          kind: 'error',
+        })
+      }
+    }
   }
 }
 
@@ -408,97 +473,157 @@ function onSettingsExecute(item: SettingItem) {
       void ensureCore()
       return
     }
-    if (busy.value) {
+    if (st.busy) {
       void cancelJob()
       return
     }
-    if (canRun.value) void startJob()
+    if (canRun.value) startJob()
     else void pickInput()
   }
 }
 
-function applyJobEvent(ev: VideoEvent, toast: boolean) {
+// ─── 批量队列：逐文件复用单任务 video_run，终态经 Channel 事件推进 ───
+// Rust 端保持单任务模型（BUSY 互斥）；队列在前端串行发起，失败跳过继续下一个。
+
+function startJob() {
+  if (!canRun.value) return
+  // 提取音频时分辨率无意义，固定 original；Rust 端仍接收
+  const runScale: Scale = mode.value === 'extract-audio' ? 'original' : scale.value
+  batchSnapshot.outputDir = outputDir.value || null
+  batchSnapshot.params = {
+    mode: mode.value,
+    format: format.value,
+    quality: quality.value,
+    scale: runScale,
+    preferHardware: config.preferHardware,
+  }
+  st.total = st.paths.length
+  st.index = 0
+  st.done = 0
+  st.failed = 0
+  st.cancelled = false
+  st.queueActive = true
+  st.busy = true
+  runFile(0)
+}
+
+/** 发起第 i 个文件。invoke resolve 不区分成败（错误也走 Ok 返回），终态只认 Channel 事件。 */
+function runFile(i: number) {
+  st.index = i
+  st.percent = 0
+  const channel = new Channel<VideoEvent>()
+  channel.onmessage = (ev) => onRunEvent(ev, true)
+  invoke(CMD.videoRun, {
+    request: {
+      inputPath: st.paths[i],
+      outputDir: batchSnapshot.outputDir,
+      durationSecs: st.metas[i]?.durationSecs ?? 0,
+      params: batchSnapshot.params,
+    },
+    onEvent: channel,
+  }).catch((e) => {
+    // 启动即失败（ensure_bins 等 invoke reject）：按该文件失败收尾
+    lastErrorMessage = String(e)
+    onFileFailed()
+  })
+}
+
+/** Channel（队列驱动）与全局 video-job-event（孤儿观察）共用事件处理。 */
+function onRunEvent(ev: VideoEvent, fromQueue: boolean) {
+  // 队列存活时全局事件让路：同一终态 Channel + 全局双投递，以 Channel 为准驱动队列
+  if (!fromQueue && st.queueActive) return
   switch (ev.type) {
     case 'started':
-      busy.value = true
+      st.busy = true
       break
     case 'progress':
-      busy.value = true
-      percent.value = ev.percent
+      st.busy = true
+      st.percent = ev.percent
       break
     case 'done':
-      percent.value = 100
-      busy.value = false
-      localRun = false
-      if (toast) {
-        const key = `done:${ev.outputPath}`
-        if (lastTerminalToastKey !== key) {
-          lastTerminalToastKey = key
-          appStore.showStatus(t('video.processComplete'))
-        }
+      if (fromQueue) {
+        st.done++
+        advanceQueue()
+      } else {
+        st.busy = false
+        appStore.showStatus(t('video.processComplete'))
       }
       break
     case 'error':
-      busy.value = false
-      localRun = false
-      if (toast) {
-        const key = `error:${ev.message}`
-        if (lastTerminalToastKey !== key) {
-          lastTerminalToastKey = key
-          if (ev.message !== '已取消') {
-            appStore.showStatus(`${t('video.failed')}：${ev.message}`, {
-              duration: 5000,
-              kind: 'error',
-            })
-          } else {
-            appStore.showStatus(t('video.canceled'))
-          }
+      if (fromQueue) {
+        if (ev.message === '已取消' || st.cancelled) finishBatch(true)
+        else {
+          lastErrorMessage = ev.message
+          onFileFailed()
+        }
+      } else {
+        st.busy = false
+        if (ev.message !== '已取消') {
+          appStore.showStatus(`${t('video.failed')}：${ev.message}`, {
+            duration: 5000,
+            kind: 'error',
+          })
+        } else {
+          appStore.showStatus(t('video.canceled'))
         }
       }
       break
   }
 }
 
-async function startJob() {
-  if (!canRun.value) return
-  busy.value = true
-  percent.value = 0
-  localRun = true
-  lastTerminalToastKey = null
+function onFileFailed() {
+  st.failed++
+  console.error(
+    `[video] 批量第 ${st.index + 1}/${st.total} 个失败：${st.paths[st.index]}`,
+    lastErrorMessage,
+  )
+  advanceQueue()
+}
 
-  const channel = new Channel<VideoEvent>()
-  channel.onmessage = (ev) => applyJobEvent(ev, true)
+function advanceQueue() {
+  if (st.cancelled) {
+    finishBatch(true)
+    return
+  }
+  if (st.index + 1 < st.total) runFile(st.index + 1)
+  else finishBatch(false)
+}
 
-  // 提取音频时分辨率无意义，固定 original；Rust 端仍接收
-  const runScale: Scale = mode.value === 'extract-audio' ? 'original' : scale.value
-
-  try {
-    await invoke(CMD.videoRun, {
-      request: {
-        inputPath: inputPath.value,
-        outputDir: outputDir.value || null,
-        durationSecs: meta.value?.durationSecs ?? 0,
-        params: {
-          mode: mode.value,
-          format: format.value,
-          quality: quality.value,
-          scale: runScale,
-          preferHardware: config.preferHardware,
-        },
+/** 收束整批：单文件保持原文案，多文件汇总（取消不区分）。 */
+function finishBatch(cancelled: boolean) {
+  st.queueActive = false
+  st.busy = false
+  if (cancelled) {
+    appStore.showStatus(t('video.canceled'))
+    return
+  }
+  // 全部成功即清空选择回到初始态；失败/取消保留列表便于重试或继续处理剩余
+  if (st.failed === 0) resetSelection()
+  if (st.total === 1) {
+    if (st.failed === 0) appStore.showStatus(t('video.processComplete'))
+    else {
+      appStore.showStatus(`${t('video.failed')}：${lastErrorMessage || t('common.unknownError')}`, {
+        duration: 5000,
+        kind: 'error',
+      })
+    }
+    return
+  }
+  if (st.failed === 0) {
+    appStore.showStatus(t('video.batchDone', { n: st.done }))
+  } else {
+    appStore.showStatus(
+      t('video.batchDonePartial', { done: st.done, n: st.total, failed: st.failed }),
+      {
+        duration: 5000,
+        kind: 'error',
       },
-      onEvent: channel,
-    })
-  } catch (e) {
-    busy.value = false
-    localRun = false
-    appStore.showStatus(`${t('video.startFailed')}：${e ?? t('common.unknownError')}`, {
-      duration: 4000,
-      kind: 'error',
-    })
+    )
   }
 }
 
 async function cancelJob() {
+  if (st.queueActive) st.cancelled = true
   try {
     await invoke(CMD.videoCancel)
   } catch (e) {
@@ -509,8 +634,11 @@ async function cancelJob() {
 async function restoreJobStatus() {
   try {
     const snap = await invoke<JobSnapshot>(CMD.videoJobStatus)
-    busy.value = snap.busy
-    percent.value = snap.lastPercent
+    // 队列存活时本模块状态即权威（Channel 持续推送）；仅孤儿任务（队列随页面重载丢失）对齐快照
+    if (!st.queueActive) {
+      st.busy = snap.busy
+      st.percent = snap.lastPercent
+    }
   } catch {
     /* ignore */
   }
@@ -520,10 +648,19 @@ async function restoreJobStatus() {
 // 时序证明（无需 onMounted 兜底）：emit 走 IPC 往返（macrotask），setActiveExtension
 // 同步改 ref 触发 Vue flush（microtask）；microtask 必先于 macrotask 清空，故 View
 // 挂载 + watch 注册恒先于 IPC 回调到达，watch 不会漏触发。
-watch(pendingInputPath, (path) => {
-  if (!path) return
-  pendingInputPath.value = ''
-  void loadInput(path)
+watch(pendingInputPaths, (paths) => {
+  if (!paths.length) return
+  pendingInputPaths.value = []
+  // 队列进行中不接受新投递（paths 是队列索引基准，中途替换会错位；实际不可达——面板互斥，防御）
+  if (st.busy) return
+  void loadInputs(paths)
+})
+
+// 重新进入扩展即新会话：未在处理中的选择清空重置（含 Escape 切走再进、窗口隐藏重唤起
+// 后重挂载——onMounted 后必触发 onActivated）。队列运行中（busy）保留进度上下文。
+// 首次挂载时选择本为空，清空无副作用；finder-ext 投递经 IPC（macrotask）必晚于此处。
+onActivated(() => {
+  if (!st.busy) resetSelection()
 })
 
 onMounted(async () => {
@@ -544,7 +681,7 @@ onMounted(async () => {
     refreshCore()
   })
   unlistenJob = await listen<VideoEvent>('video-job-event', (e) => {
-    applyJobEvent(e.payload, !localRun)
+    onRunEvent(e.payload, false)
   })
 })
 

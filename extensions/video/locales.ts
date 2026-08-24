@@ -25,6 +25,7 @@ registerMessages({
 
   // 输入
   'video.inputVideo': { 'zh-CN': '输入视频', en: 'Input Video' },
+  'video.fileCount': { 'zh-CN': '{n} 个视频', en: '{n} Videos' },
   'video.group.file': { 'zh-CN': '文件', en: 'File' },
 
   // 模式
@@ -57,11 +58,19 @@ registerMessages({
 
   // 进度/状态
   'video.progress': { 'zh-CN': '进度 {value}', en: 'Progress {value}' },
+  'video.batchProgress': {
+    'zh-CN': '进度 {i}/{n} · {value}',
+    en: 'Progress {i}/{n} · {value}',
+  },
 
   // 处理结果
   'video.cannotReadVideo': { 'zh-CN': '无法读取视频', en: 'Cannot read video' },
   'video.processComplete': { 'zh-CN': '处理完成', en: 'Processing complete' },
+  'video.batchDone': { 'zh-CN': '已完成 {n} 个视频', en: 'Processed {n} videos' },
+  'video.batchDonePartial': {
+    'zh-CN': '完成 {done}/{n}，{failed} 个失败',
+    en: '{done}/{n} done, {failed} failed',
+  },
   'video.canceled': { 'zh-CN': '已取消', en: 'Canceled' },
   'video.failed': { 'zh-CN': '失败', en: 'Failed' },
-  'video.startFailed': { 'zh-CN': '启动失败', en: 'Failed to start' },
 })
