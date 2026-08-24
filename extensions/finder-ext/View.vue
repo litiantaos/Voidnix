@@ -180,15 +180,15 @@ const IMAGE_EXT_SET = new Set([
   'gif',
 ])
 
-const videoPath = ref<string | null>(null)
+const videoPaths = ref<string[]>([])
 const imagePath = ref<string | null>(null)
 
-function pickByExt(paths: string[], set: Set<string>): string | null {
-  for (const p of paths) {
+/** 按扩展名过滤（video 收集全部支持批量；image 取第一个）。 */
+function filterByExt(paths: string[], set: Set<string>): string[] {
+  return paths.filter((p) => {
     const ext = p.split('.').pop()?.toLowerCase()
-    if (ext && set.has(ext)) return p
-  }
-  return null
+    return !!ext && set.has(ext)
+  })
 }
 
 /** 探测进行中标志：onActivated 与 reactivateTick 可能同帧触发（快捷键呼出同时切扩展），合并为单次 osascript。 */
@@ -198,15 +198,15 @@ async function detectSelection() {
   if (detectInFlight) return
   detectInFlight = true
   // 先清空：避免 KeepAlive 重激活瞬间显示上次过期选区，探测完成再赋新值
-  videoPath.value = null
+  videoPaths.value = []
   imagePath.value = null
   try {
     const paths = await invoke<string[]>(CMD.finderSelectedPaths)
-    videoPath.value = pickByExt(paths, VIDEO_EXT_SET)
-    imagePath.value = pickByExt(paths, IMAGE_EXT_SET)
+    videoPaths.value = filterByExt(paths, VIDEO_EXT_SET)
+    imagePath.value = filterByExt(paths, IMAGE_EXT_SET)[0] ?? null
   } catch {
     // 访达非前台 / 权限缺失 → 不显示入口
-    videoPath.value = null
+    videoPaths.value = []
     imagePath.value = null
   } finally {
     detectInFlight = false
@@ -223,18 +223,21 @@ function baseName(path: string): string {
 
 const allItems = computed<SettingItem[]>(() => {
   const list: SettingItem[] = []
-  // 选中视频时置顶「视频处理」入口（跨扩展跳转，带入路径）
-  if (videoPath.value) {
+  // 选中视频时置顶「视频处理」入口（跨扩展跳转，带入路径；多选区全量带入批量处理）
+  if (videoPaths.value.length > 0) {
     list.push({
       id: 'video_process',
       title: t('finderExt.videoProcess'),
-      subtitle: baseName(videoPath.value),
+      subtitle:
+        videoPaths.value.length === 1
+          ? baseName(videoPaths.value[0])
+          : t('finderExt.videoCount', { n: videoPaths.value.length }),
       icon: 'i-ri-video-line',
       type: 'action',
       action: () => {
-        const p = videoPath.value
-        if (!p) return
-        void emit('video-pending-input-path', p)
+        const ps = videoPaths.value
+        if (!ps.length) return
+        void emit('video-pending-input-path', ps)
         appStore.setActiveExtension('video')
       },
       group: t('finderExt.operations'),

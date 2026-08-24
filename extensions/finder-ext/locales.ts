@@ -6,6 +6,7 @@ registerMessages({
   'finderExt.fileName': { 'zh-CN': '文件名', en: 'File Name' },
   'finderExt.emptyFileName': { 'zh-CN': '文件名不能为空', en: 'File name cannot be empty' },
   'finderExt.videoProcess': { 'zh-CN': '视频处理', en: 'Video Processing' },
+  'finderExt.videoCount': { 'zh-CN': '{n} 个视频', en: '{n} Videos' },
   'finderExt.imageProcess': { 'zh-CN': '图片处理', en: 'Image Processing' },
   'finderExt.operations': { 'zh-CN': '操作', en: 'Actions' },
   'finderExt.shortcut': { 'zh-CN': '启动快捷键', en: 'Launch Shortcut' },

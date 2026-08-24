@@ -4,8 +4,8 @@ import { defineExtension } from '@/runtime/extension-registry'
 import VideoView from './View.vue'
 import './locales'
 
-/** 跨扩展投递的待处理视频路径（finder-ext 等经事件总线写入，View 消费后清空）。 */
-export const pendingInputPath = ref('')
+/** 跨扩展投递的待处理视频路径列表（finder-ext 等经事件总线写入，View 消费后清空）。 */
+export const pendingInputPaths = ref<string[]>([])
 
 export default defineExtension({
   meta: {
@@ -37,9 +37,9 @@ export default defineExtension({
   windowHeight: 'auto',
   mainView: () => VideoView,
   setup: async () => {
-    // 跨扩展通信：finder-ext 等通过事件总线投递待处理视频路径
-    await listen<string>('video-pending-input-path', (e) => {
-      pendingInputPath.value = e.payload || ''
+    // 跨扩展通信：finder-ext 等通过事件总线投递待处理视频路径（多选区全量带入）
+    await listen<string[]>('video-pending-input-path', (e) => {
+      pendingInputPaths.value = Array.isArray(e.payload) ? e.payload.filter(Boolean) : []
     })
   },
 })

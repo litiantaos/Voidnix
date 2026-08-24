@@ -71,6 +71,15 @@ export function formatMetaLine(meta: {
   return parts.join(' · ')
 }
 
+/** 多文件汇总副标题：总时长 · 总大小（按已探测项累计；全未探测返回空串）。 */
+export function summarizeMetas(metas: (VideoMeta | null)[]): string {
+  const known = metas.filter((m): m is VideoMeta => !!m)
+  if (known.length === 0) return ''
+  const totalSecs = known.reduce((s, m) => s + m.durationSecs, 0)
+  const totalBytes = known.reduce((s, m) => s + m.sizeBytes, 0)
+  return `${formatDuration(totalSecs)} · ${formatBytes(totalBytes)}`
+}
+
 // ─── IPC 边界类型（与 Rust 端 serde 序列化对应）──
 
 /** video_core_status 命令返回。 */
