@@ -273,8 +273,12 @@ watch(listItems, (list) => {
   if (selectedIndex.value >= list.length) selectedIndex.value = 0
 })
 
+// 拉取竞态守卫：重挂载恢复态的拉取与 brew-run-done 重拉可能并发，仅最新一轮可落盘
+let fetchSeq = 0
+
 async function fetchStatus() {
-  if (!isTauri || running.value) return
+  if (!isTauri) return
+  const seq = ++fetchSeq
   loading.value = true
   error.value = ''
   try {
@@ -282,20 +286,20 @@ async function fetchStatus() {
       invoke<BrewStatus>(CMD.brewStatus),
       invoke<BrewService[]>(CMD.brewServices).catch(() => [] as BrewService[]),
     ])
+    if (seq !== fetchSeq) return
     status.value = s
     services.value = svc
-    if (s.refreshing) {
-      // 后台 brew update 在途：进入运行态（按钮旋转禁用），完成事件统一重拉
-      refreshing.value = true
+    refreshing.value = s.refreshing
+    if (s.refreshing && !running.value) {
+      // 后台 brew update 在途（本次拉取刚发起）：进入运行态（按钮旋转禁用），完成事件统一重拉；
+      // 已在运行态（重挂载恢复）则不覆盖现有 step
       running.value = true
       runningStep.value = 'update'
-    } else {
-      refreshing.value = false
     }
   } catch (e) {
-    error.value = String(e ?? t('common.unknownError'))
+    if (seq === fetchSeq) error.value = String(e ?? t('common.unknownError'))
   } finally {
-    loading.value = false
+    if (seq === fetchSeq) loading.value = false
   }
 }
 
@@ -368,11 +372,15 @@ function onExecute(item: ListItem) {
 
 // KeepAlive（ContentView max=3）缓存下重进走 onActivated 而非 onMounted，数据拉取统一收口于此
 let unlistenDone: (() => void) | null = null
+// brew-run-done 已触发标记：事件与 invoke 响应投递通道不同、无顺序保证，查询返回过期
+// Some（操作在 Rust 侧读取后结束、done 先于响应到达）时丢弃恢复，防运行态卡死
+let doneSeen = false
 
 async function ensureDoneListener() {
   if (unlistenDone) return
   // 常驻到组件卸载：先注册监听再查状态，消除「查询返回 Some → 操作恰在此间隙结束 → 事件无人接收」的 TOCTOU 竞态
   unlistenDone = await listen<BrewRunState | null>('brew-run-done', async () => {
+    doneSeen = true
     running.value = false
     runningStep.value = ''
     refreshing.value = false
@@ -384,15 +392,16 @@ async function ensureDoneListener() {
 onActivated(async () => {
   if (!isTauri || running.value) return
   await ensureDoneListener()
+  doneSeen = false
   // 查状态：null = 无操作（含后台元数据刷新）进行中；Some = 仍在运行（LRU 驱逐/窗口隐藏后重挂载恢复进度）
   const state = await invoke<BrewRunState | null>(CMD.brewRunState)
-  if (state) {
+  if (state && !doneSeen) {
+    // 仍在运行：恢复运行态（按钮旋转禁用）并照常拉数据渲染列表（brew_status 只读命令，
+    // 与运行中操作并发安全），完成事件统一重拉——不阻断为加载态等后台操作结束
     running.value = true
     runningStep.value = state.step
-    loading.value = true
-  } else {
-    await fetchStatus()
   }
+  await fetchStatus()
 })
 
 onUnmounted(() => {

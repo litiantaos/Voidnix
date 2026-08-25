@@ -31,7 +31,7 @@
 - **已安装版本**：`parse_installed` 从 `brew info --json=v2 --installed` 解析——formulae 读 `installed[0].version`（数组），casks 读 `installed`（字符串）
 - **流式执行**：`run_brew_step` spawn 子进程，stdout + stderr 各起一个 reader task，经 mpsc 合流后逐行 `on_event.send`；reader 结束（管道 EOF）= 子进程已退出，再 `wait` 取退出码
 - **kill_on_drop**：子进程带 `kill_on_drop(true)`，Channel 断开或任务取消时自动回收
-- **运行态持久化**：`BREW_RUNNING`（`LazyLock<Mutex<Option<BrewRunState>>>`）跨组件生命周期持久化。`brew_run` 经 RAII guard（`RunGuard`）占位 + 逐步 `set_step`，Drop 时自动清空 + emit `brew-run-done` 事件。guard 拒绝并发调用（返回错误「已有 Homebrew 操作正在运行」）。前端 `onActivated` 先查 `brew_run_state`：有残留操作则显示进度 + 监听 `brew-run-done`（常驻到卸载），无则正常加载
+- **运行态持久化**：`BREW_RUNNING`（`LazyLock<Mutex<Option<BrewRunState>>>`）跨组件生命周期持久化。`brew_run` 经 RAII guard（`RunGuard`）占位 + 逐步 `set_step`，Drop 时自动清空 + emit `brew-run-done` 事件。guard 拒绝并发调用（返回错误「已有 Homebrew 操作正在运行」）。前端 `onActivated` 先查 `brew_run_state`：有残留操作则恢复运行态（按钮旋转禁用显示当前步骤）并照常拉数据渲染列表——`brew_status` 三条只读命令与运行中 brew 操作并发安全，不阻断为加载态等操作结束，完成经 `brew-run-done` 统一重拉；无则正常加载。查询响应与完成事件的到达竞态（两条投递通道无顺序保证）经 `doneSeen` 标记丢弃过期 Some，防恢复已结束的操作态卡死运行态。状态拉取带 seq 竞态守卫（恢复态拉取与完成重拉并发时仅最新一轮落盘）
 
 ## 子视图数据传递
 
