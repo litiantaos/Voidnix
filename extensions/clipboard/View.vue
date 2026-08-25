@@ -134,7 +134,8 @@
             v-else-if="previewType === 'image'"
             class="i-ri-loader-4-line text-2xl text-muted animate-spin"
           />
-          <div v-else text="sm primary" leading="relaxed" whitespace="pre-wrap" break="words">
+          <!-- anywhere（非 break-word）参与 min-content 计算：flex 居中容器下长 URL 才能收缩换行，否则溢出窗口 -->
+          <div v-else text="sm primary" leading="relaxed" whitespace="pre-wrap" wrap-anywhere>
             {{ previewText }}
           </div>
         </div>
