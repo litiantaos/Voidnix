@@ -431,11 +431,20 @@ const actionMenuItems = computed<PanelItem[]>(() => {
     {
       type: 'item',
       key: 'paste-url',
-      label: t('ai-providers.paste', { name: 'URL' }),
+      label: t('ai-providers.paste', { name: 'API URL' }),
       icon: 'i-ri-links-line',
       disabled: !p?.endpoint.trim(),
     },
   ]
+  // 声明了 Responses 端点（与 API URL 分立）才出现对应粘贴项
+  if (p?.responsesEndpoint.trim()) {
+    items.push({
+      type: 'item',
+      key: 'paste-responses-url',
+      label: t('ai-providers.paste', { name: 'Responses URL' }),
+      icon: 'i-ri-links-line',
+    })
+  }
   if (models.length === 0) {
     items.push({
       type: 'item',
@@ -493,7 +502,8 @@ const {
     const k = String(key)
     const p = getProviderById(row.providerId)
     if (k === 'paste-key') void pasteField(row.slot.apiKey, 'Key')
-    else if (k === 'paste-url' && p) void pasteField(p.endpoint, 'URL')
+    else if (k === 'paste-url' && p) void pasteField(p.endpoint, 'API URL')
+    else if (k === 'paste-responses-url' && p) void pasteField(p.responsesEndpoint, 'Responses URL')
     else if (k.startsWith('paste-model:'))
       void pasteField(k.slice('paste-model:'.length), t('ai-providers.modelLabel'))
     else if (k === 'delete-key') {
@@ -520,8 +530,8 @@ const providerForm = ref({
 
 /** 与列表展示一致：名称留空时 = URL 推导域名（空 URL 用示例 endpoint → OPENAI） */
 const EXAMPLE_ENDPOINT = 'https://api.openai.com/v1'
-/** Responses 线协议端点示例（可选字段，空 = 不导出；智谱 chat 与 Responses 端点分立） */
-const EXAMPLE_RESPONSES_ENDPOINT = 'https://open.bigmodel.cn/api/v1'
+/** Responses 线协议端点示例（OpenAI Responses 完整端点；可选字段，空 = 不导出） */
+const EXAMPLE_RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses'
 const nameFieldPlaceholder = computed(() =>
   providerLabelFromUrl(providerForm.value.endpoint.trim() || EXAMPLE_ENDPOINT, 'OPENAI'),
 )
