@@ -360,13 +360,6 @@ export interface ZhipuMonitor {
   expired: boolean
   fiveHour?: { percentage: number; nextResetTime: number }
   weekly?: { percentage: number; nextResetTime: number }
-  mcp?: {
-    usage: number
-    total: number
-    remaining: number
-    percentage: number
-    nextResetTime: number
-  }
   totalCalls: number
   totalTokens: number
   tokensSeries: number[]

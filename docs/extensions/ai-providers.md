@@ -76,10 +76,10 @@
 
 ## 额度 / 余额监控
 
-按 endpoint 自动识别（或 `usageKind` 显式指定）：
+按 endpoint 自动识别（或 `usageKind` 显式指定）。Rust 侧全部在 `native/usage/`（每提供商一文件 + 共享原语 `fetch_text` / `json_i64` / `json_f64`；获取协议差异大，不做配置驱动的统一抽象），新增提供商 = `usage/` 下新文件（`#[tauri::command]` 由 `sync:extensions` 自动注册）+ 前端 `resolveUsageKind` 分支与拉取函数：
 
-- **智谱 Coding Plan**（`bigmodel.cn` / `zhipuai`）：副标题与右侧 30d 曲线格式见「界面」（曲线对齐 [tokens-monitor](https://github.com/litiantaos/tokens-monitor)）。命令 `ai_providers_zhipu_quota`。
-- **DeepSeek**（`deepseek.com`）：账户余额 `GET {origin}/user/balance`（Bearer Key）。列表副标题展示 `¥/ $` 总余额；无 5h/7d 窗口、无 30d 曲线。命令 `ai_providers_deepseek_balance`。
+- **智谱 Coding Plan**（`bigmodel.cn` / `zhipuai`，`usage/zhipu.rs`）：副标题与右侧 30d 曲线格式见「界面」（曲线对齐 [tokens-monitor](https://github.com/litiantaos/tokens-monitor)）。命令 `ai_providers_zhipu_quota`，配额 `GET https://open.bigmodel.cn/api/monitor/usage/quota/limit`（Authorization = 裸 Key，最小请求头），与 30d 用量请求（`bigmodel.cn/api/monitor/usage/model-usage`，叠加浏览器请求面 UA/Referer/Origin 防网关拒）并发。HTTP 401 与信封 `code` 401/1001 均判无效 Key（401 判定先于 shape 分支）。响应兼容两种 shape：`{data:{limits,level}}` 信封（V2 `TOKENS_LIMIT`）与 V3（2026-07-30 积分制）顶层数组（`CREDIT_LIMIT`），均映射 5h（unit 3）/7d（unit 6）窗，非配额类型（如 `TIME_LIMIT`）跳过。`nextResetTime` 为毫秒。
+- **DeepSeek**（`deepseek.com`，`usage/deepseek.rs`）：账户余额 `GET {origin}/user/balance`（Bearer Key）。列表副标题展示 `¥/ $` 总余额；无 5h/7d 窗口、无 30d 曲线。命令 `ai_providers_deepseek_balance`。
 
 ## CLI / env
 
