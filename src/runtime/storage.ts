@@ -3,6 +3,12 @@ import { load, type Store } from '@tauri-apps/plugin-store'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '@/utils/tauri'
 
+/// 自动保存防抖窗口：变更停止后落盘
+const SAVE_DEBOUNCE_MS = 300
+/// 持续变更下的落盘间隔上限：变更不断会一直重置防抖饿死写盘
+/// （agent 流式增量等场景），pending 超此上限时强制 flush
+const SAVE_MAX_WAIT_MS = 2000
+
 // store 实例缓存：避免每次防抖保存重新 load()。
 // 缓存 Promise<Store> 而非 Store，并发 getStore 共享同一 in-flight load，避免重复加载。
 // 失败时清缓存：避免单次 IO 抖动演变为永久故障（rejected Promise 被缓存）。
@@ -121,8 +127,10 @@ export function defineConfig<T extends object>(storePath: string, defaults: T): 
       console.error(`[config:${storePath}] load failed:`, e)
     })
 
-  // 变更自动持久化（deep watch + 防抖 300ms + isLoading 抑制启动期冗余写）
+  // 变更自动持久化（deep watch + 防抖 + 持续变更防饿死 + isLoading 抑制启动期冗余写）
   let saveTimer: ReturnType<typeof setTimeout> | null = null
+  // 首个未落盘变更的时刻：flushSave 后由下一次变更重新起算
+  let dirtySince = 0
   async function flushSave() {
     if (saveTimer) {
       clearTimeout(saveTimer)
@@ -142,8 +150,18 @@ export function defineConfig<T extends object>(storePath: string, defaults: T): 
     config,
     () => {
       if (isLoading) return
-      if (saveTimer) clearTimeout(saveTimer)
-      saveTimer = setTimeout(flushSave, 300)
+      const now = Date.now()
+      if (saveTimer) {
+        // 防饿死：pending 中的变更持续不断、距首个未落盘变更已超上限 → 立即 flush
+        if (now - dirtySince >= SAVE_MAX_WAIT_MS) {
+          void flushSave()
+          return
+        }
+        clearTimeout(saveTimer)
+      } else {
+        dirtySince = now
+      }
+      saveTimer = setTimeout(flushSave, SAVE_DEBOUNCE_MS)
     },
     { deep: true },
   )

@@ -6,13 +6,14 @@
 /// - Channel.onmessage 处理增量事件，更新 messages
 /// - 用户中断通过 abort()
 
-import { ref, computed } from 'vue'
+import { ref, computed, toRef } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { t } from '@/runtime/i18n'
 import { generateRequestId } from '@/utils/id'
 import { showToast } from '@/composables/useToast'
-import { config as agentConfig, resolveAgentCredentials } from './config'
+import { whenConfigReady } from '@/runtime/storage'
+import { config as agentConfig, AGENT_CONFIG_PATH, resolveAgentCredentials } from './config'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 import { toLlmMessages, tryParseSearchAnswer } from './logic'
 
@@ -35,10 +36,12 @@ const CONTENT_EVENTS = new Set<AgentEvent['type']>([
   'toolResult',
 ])
 
-/// 单例式状态（一个 agent session 一次只跑一个）
-const messages = ref<AgentMessage[]>([])
+/// 单例式状态（一个 agent session 一次只跑一个）。
+/// messages / sessionId 落扩展 config（defineConfig 自动持久化）：hide_window 触发的
+/// WebContent 内存超阈值 navigate 重载会清零模块单例，boot 回填 config 后恢复会话。
+const messages = toRef(agentConfig, 'messages')
+const sessionId = toRef(agentConfig, 'sessionId')
 const status = ref<AgentStatus>('ready')
-const sessionId = ref('')
 
 /**
  * accessory 操作后要求主输入框聚焦的信号（自增触发）。
@@ -46,6 +49,59 @@ const sessionId = ref('')
  * 且选原值时 config 不变、watch 值变化会漏掉——以 BaseSelect focusout（焦点离开）为信号才准确。
  */
 export const focusInputTick = ref(0)
+
+function findMessage(id: string): AgentMessage | undefined {
+  return messages.value.find((m) => m.id === id)
+}
+
+/** 进行中的工具标 failed，避免中止/错误后残留 shimmer */
+function failInFlightTools(msg: AgentMessage) {
+  for (const p of msg.parts) {
+    if (p.type === 'toolCall' && (p.state === 'streaming' || p.state === 'running')) {
+      p.state = 'failed'
+    }
+  }
+}
+
+function finalizeStreamingMessage(id: string) {
+  const msg = findMessage(id)
+  if (msg) {
+    msg.streaming = false
+    // 移除空 text parts（streaming 但没收到任何内容）；notice / tool 保留
+    msg.parts = msg.parts.filter((p) => {
+      if (p.type === 'text' || p.type === 'reasoning') return p.text.length > 0
+      return true
+    })
+  }
+}
+
+/// 写入中止 notice 并终结 streaming（用户中止 / 重载恢复共用）
+function finalizeAbortedMessage(msg: AgentMessage) {
+  failInFlightTools(msg)
+  msg.parts.push({ type: 'notice', kind: 'aborted', text: t('agent.aborted') })
+  finalizeStreamingMessage(msg.id)
+}
+
+/**
+ * 会话恢复：hide_window 触发的 WebContent 内存超阈值 navigate 重载清零 JS 单例后，
+ * boot 回填 config 在此收尾——运行中 run 的 Channel 已断（事件永久丢失），
+ * 终结残留 streaming 消息并 abort Rust 侧孤儿 run（可能仍在执行工具；已结束则 no-op）。
+ * 应用重启冷启动走同一路径，语义一致。导出供测试。
+ */
+export async function restorePersistedSession() {
+  const orphanId = sessionId.value
+  if (orphanId) {
+    sessionId.value = ''
+    try {
+      await invoke(CMD.agentAbort, { sessionId: orphanId })
+    } catch {
+      /* ignore */
+    }
+  }
+  const streamingMsg = messages.value.find((m) => m.streaming)
+  if (streamingMsg) finalizeAbortedMessage(streamingMsg)
+}
+void whenConfigReady(AGENT_CONFIG_PATH).then(restorePersistedSession)
 
 export function useAgentChat() {
   const isGenerating = computed(() => status.value === 'streaming')
@@ -220,10 +276,6 @@ export function useAgentChat() {
     }
   }
 
-  function findMessage(id: string): AgentMessage | undefined {
-    return messages.value.find((m) => m.id === id)
-  }
-
   function findToolPart(
     msg: AgentMessage,
     toolCallId: string,
@@ -232,27 +284,6 @@ export function useAgentChat() {
       (p): p is Extract<AgentPart, { type: 'toolCall' }> =>
         p.type === 'toolCall' && p.id === toolCallId,
     )
-  }
-
-  /** 进行中的工具标 failed，避免中止/错误后残留 shimmer */
-  function failInFlightTools(msg: AgentMessage) {
-    for (const p of msg.parts) {
-      if (p.type === 'toolCall' && (p.state === 'streaming' || p.state === 'running')) {
-        p.state = 'failed'
-      }
-    }
-  }
-
-  function finalizeStreamingMessage(id: string) {
-    const msg = findMessage(id)
-    if (msg) {
-      msg.streaming = false
-      // 移除空 text parts（streaming 但没收到任何内容）；notice / tool 保留
-      msg.parts = msg.parts.filter((p) => {
-        if (p.type === 'text' || p.type === 'reasoning') return p.text.length > 0
-        return true
-      })
-    }
   }
 
   /// 中断当前 agent run
@@ -267,11 +298,7 @@ export function useAgentChat() {
     sessionId.value = ''
 
     const streamingMsg = messages.value.find((m) => m.streaming)
-    if (streamingMsg) {
-      failInFlightTools(streamingMsg)
-      streamingMsg.parts.push({ type: 'notice', kind: 'aborted', text: t('agent.aborted') })
-      finalizeStreamingMessage(streamingMsg.id)
-    }
+    if (streamingMsg) finalizeAbortedMessage(streamingMsg)
   }
 
   /// 清空对话
