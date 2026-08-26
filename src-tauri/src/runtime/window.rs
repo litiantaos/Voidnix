@@ -240,6 +240,10 @@ const WC_RELOAD_THRESHOLD: u64 = 350 * 1024 * 1024;
 /// 必须先 navigate 到空白页销毁旧 layer tree，再 navigate 回原 URL 重建。
 /// 等同 Safari 内存压力下的 tab 重建。用 detached OS thread（不占 tokio worker）。
 /// 500ms 等 hide_main 设 alpha=0 完成，再读 footprint。
+///
+/// 二次确认：超阈值先等 3s 复测——agent 流式等场景的易失性合成面（volatile
+/// IOSurface 峰值）数秒内自行回收，不应触发进程重建；期间窗口重新可见则放弃
+/// （重载会打断用户）。navigate 前再守卫一次可见性，覆盖 hide → show → 重载的竞态。
 pub fn maybe_reload_webview(app: &tauri::AppHandle) {
     #[cfg(target_os = "macos")]
     {
@@ -249,12 +253,35 @@ pub fn maybe_reload_webview(app: &tauri::AppHandle) {
             std::thread::sleep(std::time::Duration::from_millis(500));
             if let Some(fp) = crate::platform::mem::webcontent_footprint() {
                 if fp > WC_RELOAD_THRESHOLD {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    if crate::runtime::shortcut::is_window_visible() {
+                        log::info!(
+                            "[mem] WebContent {:.0} MB > {} MB 但窗口已重新可见，跳过 reload",
+                            fp as f64 / 1_048_576.0,
+                            WC_RELOAD_THRESHOLD / 1_048_576
+                        );
+                        return;
+                    }
+                    let Some(fp2) = crate::platform::mem::webcontent_footprint() else {
+                        return;
+                    };
+                    if fp2 <= WC_RELOAD_THRESHOLD {
+                        log::info!(
+                            "[mem] WebContent {:.0} MB 峰值已自行回收至 {:.0} MB，跳过 reload",
+                            fp as f64 / 1_048_576.0,
+                            fp2 as f64 / 1_048_576.0
+                        );
+                        return;
+                    }
                     log::info!(
                         "[mem] WebContent {:.0} MB > {} MB → reload webview",
-                        fp as f64 / 1_048_576.0,
+                        fp2 as f64 / 1_048_576.0,
                         WC_RELOAD_THRESHOLD / 1_048_576
                     );
                     if let Some(win) = app.get_webview_window("main") {
+                        if crate::runtime::shortcut::is_window_visible() {
+                            return;
+                        }
                         if let Ok(url) = win.url() {
                             // blank 销毁旧 layer tree（释放 tile backing），再导回原 URL 重建
                             let _ = win.navigate(tauri::Url::parse("about:blank").unwrap());
