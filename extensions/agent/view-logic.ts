@@ -1,7 +1,6 @@
 /// Agent View 纯函数（无 DOM / 无 Vue 响应式），便于单测。
 
 import type { AgentMessage, AgentPart } from '@/types/agent'
-import { renderMarkdown } from '@/utils/markdown'
 import { t } from '@/runtime/i18n'
 
 export function getMessageText(msg: AgentMessage): string {
@@ -30,11 +29,11 @@ export function isStreamingText(msg: AgentMessage, partIndex: number): boolean {
   return false
 }
 
-export type StreamView = { text: string; solid: string; tail: string; lineKey: number }
+export type StreamView = { text: string; blocks: string[]; tail: string; lineKey: number }
 
 let streamViewCache: StreamView | null = null
 
-/** 一次拆 solid/tail/lineKey；同 text 同 tick 多次调用命中缓存 */
+/** 一次拆 blocks/tail/lineKey；同 text 同 tick 多次调用命中缓存 */
 export function streamView(text: string): StreamView {
   if (streamViewCache?.text === text) return streamViewCache
   const idx = text.lastIndexOf('\n')
@@ -44,7 +43,7 @@ export function streamView(text: string): StreamView {
   for (let i = 0; i < text.length; i++) {
     if (text[i] === '\n') lineKey++
   }
-  streamViewCache = { text, solid, tail, lineKey }
+  streamViewCache = { text, blocks: splitStreamBlocks(solid), tail, lineKey }
   return streamViewCache
 }
 
@@ -53,19 +52,70 @@ export function resetStreamViewCache(): void {
   streamViewCache = null
 }
 
-let solidMdCache: { solid: string; html: string } | null = null
+const FENCE_LINE_RE = /^\s{0,3}(`{3,}|~{3,})/
+const LIST_ITEM_RE = /^\s{0,3}([-*+]|\d{1,9}[.)])(\s|$)/
+const QUOTE_LINE_RE = /^\s{0,3}>/
+const INDENT_CONT_RE = /^\s{2,}\S/
 
-/** solid 段 markdown 缓存：solid 前缀稳定时不重复 parse+sanitize */
-export function renderSolidMarkdown(solid: string): string {
-  if (solidMdCache?.solid === solid) return solidMdCache.html
-  const html = renderMarkdown(solid)
-  solidMdCache = { solid, html }
-  return html
+/** 行的顶层构造类别（宽松列表 / 引用的延续判定用） */
+function constructKind(line: string): 'list' | 'quote' | '' {
+  if (LIST_ITEM_RE.test(line)) return 'list'
+  if (QUOTE_LINE_RE.test(line)) return 'quote'
+  return ''
 }
 
-/** 测试用：清空 solid markdown 缓存 */
-export function resetSolidMdCache(): void {
-  solidMdCache = null
+/** kind 构造的延续行：同类标记或缩进续行（lazy continuation） */
+function continuesConstruct(kind: 'list' | 'quote', line: string): boolean {
+  if (constructKind(line) === kind) return true
+  return INDENT_CONT_RE.test(line)
+}
+
+/**
+ * 顶层分块（流式增量渲染的基础）：块边界 = fence 外的空行；
+ * 宽松列表 / 多段引用经空行延续时保持一块（序号不断、语义完整）。
+ * 流式文本只追加不回改——已完成块的文本此后恒定，按块缓存 markdown HTML 后
+ * 每个增量只需 parse 末块、写末块 DOM（旧实现每行全量重 parse + innerHTML 整替）。
+ */
+export function splitStreamBlocks(text: string): string[] {
+  if (!text) return []
+  const lines = text.split('\n')
+  const bounds: number[] = []
+  let fence = false
+  let kind: 'list' | 'quote' | '' = ''
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!
+    if (FENCE_LINE_RE.test(line)) {
+      fence = !fence
+      if (!fence) kind = ''
+      continue
+    }
+    if (line.trim() !== '') {
+      // 无空行分隔的构造切换视为延续（markdown lazy continuation）
+      if (kind === '') kind = constructKind(line)
+      else if (!continuesConstruct(kind, line)) kind = constructKind(line)
+      continue
+    }
+    if (fence) continue
+    // 顶层空行：后续首个非空行若延续当前列表/引用构造则不切，否则切块
+    let j = i + 1
+    while (j < lines.length && lines[j]!.trim() === '') j++
+    const next = lines[j]
+    if (kind !== '' && next !== undefined && continuesConstruct(kind, next)) {
+      continue
+    }
+    bounds.push(i + 1)
+    kind = ''
+  }
+  const blocks: string[] = []
+  let start = 0
+  for (const b of bounds) {
+    const seg = lines.slice(start, b).join('\n')
+    if (seg.trim() !== '') blocks.push(seg.replace(/\n+$/, ''))
+    start = b
+  }
+  const rest = lines.slice(start).join('\n')
+  if (rest.trim() !== '') blocks.push(rest.replace(/\n+$/, ''))
+  return blocks
 }
 
 /** 工具结果区：web_search 成功展示 answer 摘要 / 失败展示 output；其它工具有 output */

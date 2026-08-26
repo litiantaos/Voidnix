@@ -5,13 +5,17 @@
     leading="relaxed"
     @click="onMarkdownClick"
   >
-    <template v-if="streaming">
-      <div v-if="view.solid" class="md-solid" v-html="renderSolidMarkdown(view.solid)" />
-      <div class="md-tail" :key="view.lineKey">
-        <span class="md-tail-text">{{ view.tail }}</span>
-      </div>
-    </template>
-    <div v-else class="md-full" v-html="renderMarkdown(text)" />
+    <!-- 统一 v-for：流式/收尾共用同一节点序列（仅 class 与末块 HTML 变化），
+         收尾时前缀块零 DOM 写；容器 display:contents，子块直接参与 markdown-body 的 gap 布局 -->
+    <div
+      v-for="(b, i) in blocks"
+      :key="i"
+      :class="streaming ? 'md-solid' : 'md-full'"
+      v-html="renderBlock(b)"
+    />
+    <div v-if="streaming" class="md-tail" :key="view.lineKey">
+      <span class="md-tail-text">{{ view.tail }}</span>
+    </div>
   </div>
 </template>
 
@@ -20,7 +24,7 @@ import { computed } from 'vue'
 import { writeText } from '@/utils/clipboard'
 import { showToast } from '@/composables/useToast'
 import { renderMarkdown } from '@/utils/markdown'
-import { renderSolidMarkdown, streamView } from './view-logic'
+import { streamView, splitStreamBlocks } from './view-logic'
 import { t } from '@/runtime/i18n'
 
 const props = defineProps<{
@@ -30,6 +34,20 @@ const props = defineProps<{
 }>()
 
 const view = computed(() => streamView(props.text))
+/** 统一分块：流式取 solid 块（末块活跃），收尾取全量块——前缀块文本一致，
+    收尾仅末块 v-html 变化 + tail 卸载，已渲染 DOM 全保留（无整树重建尖峰） */
+const blocks = computed(() => (props.streaming ? view.value.blocks : splitStreamBlocks(props.text)))
+
+/// 块级 markdown 缓存：块文本恒定即命中；流式增量与收尾共用（旧实现每行全量重 parse）
+const blockCache = new Map<string, string>()
+function renderBlock(b: string): string {
+  let html = blockCache.get(b)
+  if (html === undefined) {
+    html = renderMarkdown(b)
+    blockCache.set(b, html)
+  }
+  return html
+}
 
 /** 代码块复制：事件委托，读 pre code 文本 */
 async function onMarkdownClick(e: MouseEvent) {
@@ -62,9 +80,11 @@ async function onMarkdownClick(e: MouseEvent) {
 <style scoped>
 /* markdown-body 基础样式已下沉为全局（src/styles/markdown.css），此处仅保留 agent 流式专属 */
 
-/* 入场：略上移淡入（仅挂载一次） */
+/* 入场：略上移淡入（仅挂载一次）。
+   backwards 而非 both：both 会把结束帧 transform 永久驻留（有 transform 即合成层），
+   每个文本块常驻一个 IOSurface——轻量会话也不经济 */
 .agent-text-in {
-  animation: agent-md-in 0.35s var(--ease-out) both;
+  animation: agent-md-in 0.35s var(--ease-out) backwards;
 }
 
 /*
@@ -78,7 +98,7 @@ async function onMarkdownClick(e: MouseEvent) {
   margin: 0;
   min-height: 1.65em;
   line-height: 1.65;
-  animation: agent-md-line-in 0.38s var(--ease-out) both;
+  animation: agent-md-line-in 0.38s var(--ease-out) backwards;
 }
 
 .md-tail-text {
