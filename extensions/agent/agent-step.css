@@ -1,7 +1,9 @@
 /* 思考占位 / 工具步骤共用（View + AgentToolStep 导入，非 scoped） */
 
 .agent-step {
-  animation: agent-step-in 0.3s var(--ease-out) both;
+  /* backwards：延迟期显示起始帧，结束后无驻留样式——both 会把结束帧 transform
+     永久留在元素上（有 transform 即合成层），每个步骤常驻一个 IOSurface */
+  animation: agent-step-in 0.3s var(--ease-out) backwards;
 }
 
 .agent-step-label {
@@ -84,7 +86,7 @@
   min-width: 0;
   margin: 0;
   padding: 0;
-  animation: agent-step-out-in 0.25s var(--ease-out) both;
+  animation: agent-step-out-in 0.25s var(--ease-out) backwards;
 }
 
 /* step 内摘要文本：最多三行省略（web_search answer / reasoning 共用） */

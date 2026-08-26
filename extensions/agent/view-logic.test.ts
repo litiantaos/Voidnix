@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   streamView,
+  splitStreamBlocks,
   resetStreamViewCache,
   showToolBody,
   toolIcon,
@@ -41,27 +42,95 @@ beforeEach(() => {
 
 describe('streamView', () => {
   it('无换行时全部为 tail', () => {
-    expect(streamView('hello')).toEqual({
-      text: 'hello',
-      solid: '',
-      tail: 'hello',
-      lineKey: 0,
-    })
+    expect(streamView('hello')).toEqual({ text: 'hello', blocks: [], tail: 'hello', lineKey: 0 })
   })
 
-  it('含换行时 solid 含末尾 \\n，tail 为末行', () => {
-    expect(streamView('a\nb')).toEqual({
-      text: 'a\nb',
-      solid: 'a\n',
-      tail: 'b',
-      lineKey: 1,
-    })
+  it('含换行时 blocks 为 solid 分块，tail 为末行', () => {
+    const v = streamView('a\nb')
+    expect(v.blocks).toEqual(['a'])
+    expect(v.tail).toBe('b')
+    expect(v.lineKey).toBe(1)
   })
 
   it('同 text 返回同一缓存引用', () => {
     const a = streamView('x\ny')
     const b = streamView('x\ny')
     expect(a).toBe(b)
+  })
+})
+
+describe('splitStreamBlocks（流式增量分块）', () => {
+  it('空串与纯空白无块', () => {
+    expect(splitStreamBlocks('')).toEqual([])
+    expect(splitStreamBlocks('\n\n\n')).toEqual([])
+  })
+
+  it('段落按顶层空行分块', () => {
+    expect(splitStreamBlocks('a\n\nb\n')).toEqual(['a', 'b'])
+  })
+
+  it('连续空行不产生空块', () => {
+    expect(splitStreamBlocks('a\n\n\n\nb\n\n')).toEqual(['a', 'b'])
+  })
+
+  it('无空行分隔的整体为一块（含紧凑列表）', () => {
+    expect(splitStreamBlocks('- a\n- b\ntail text')).toEqual(['- a\n- b\ntail text'])
+  })
+
+  it('宽松列表经空行延续保持一块（序号不断）', () => {
+    expect(splitStreamBlocks('- a\n\n- b')).toEqual(['- a\n\n- b'])
+    expect(splitStreamBlocks('1. a\n\n2. b')).toEqual(['1. a\n\n2. b'])
+  })
+
+  it('嵌套缩进延续不切列表', () => {
+    expect(splitStreamBlocks('- a\n  - sub\n\n- b')).toEqual(['- a\n  - sub\n\n- b'])
+  })
+
+  it('多段引用保持一块', () => {
+    expect(splitStreamBlocks('> a\n\n> b')).toEqual(['> a\n\n> b'])
+  })
+
+  it('fence 内空行不切块，fence 结束后新块', () => {
+    expect(splitStreamBlocks('```ts\na\n\nb\n```\n\nafter')).toEqual([
+      '```ts\na\n\nb\n```',
+      'after',
+    ])
+  })
+
+  it('波浪线 fence 同样生效', () => {
+    expect(splitStreamBlocks('~~~\nx\n\ny\n~~~\n\nz')).toEqual(['~~~\nx\n\ny\n~~~', 'z'])
+  })
+
+  it('列表项的缩进续行不切块', () => {
+    expect(splitStreamBlocks('- a\n  wrapped\n  more\n\n- b')).toEqual([
+      '- a\n  wrapped\n  more\n\n- b',
+    ])
+  })
+
+  it('流式尾行并入末块：宽松列表项收尾时与前块合并', () => {
+    // 流式态：solid 到 '1. a\n\n'，tail 为 '2. b'
+    const sv = streamView('1. a\n\n2. b')
+    expect(sv.blocks).toEqual(['1. a'])
+    expect(sv.tail).toBe('2. b')
+    // 收尾态：尾行并入，整列表成一块（序号连续）
+    expect(splitStreamBlocks('1. a\n\n2. b')).toEqual(['1. a\n\n2. b'])
+  })
+
+  it('列表后接非延续段落切两块', () => {
+    expect(splitStreamBlocks('- a\n\nplain')).toEqual(['- a', 'plain'])
+  })
+
+  it('流式尾段（无收尾空行）保留为末块', () => {
+    expect(splitStreamBlocks('a\n\nb')).toEqual(['a', 'b'])
+  })
+
+  it('分块重组无损：join 后与原文一致', () => {
+    const text = '# t\n\n- a\n\n- b\n\n```rs\nlet x = 1;\n\nlet y = 2;\n```\n\n> q\n\n> r\n'
+    const rejoined = splitStreamBlocks(text)
+      .map((b) => b + '\n\n')
+      .join('')
+      .trimEnd()
+    expect(rejoined).toBe(text.trimEnd())
   })
 })
 
