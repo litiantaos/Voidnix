@@ -28,7 +28,7 @@ vi.mock('@tauri-apps/plugin-store', () => ({
 // 模拟 isTauri 为 false（避免 dynamic import @tauri-apps/api/window）
 vi.mock('@/utils/tauri', () => ({ isTauri: false }))
 
-const { defineConfig } = await import('./storage')
+const { defineConfig, whenConfigReady } = await import('./storage')
 
 describe('defineConfig', () => {
   beforeEach(() => {
@@ -180,5 +180,35 @@ describe('defineConfig', () => {
 
     // 期望：旧快照不得覆盖新值
     expect(config.items).toEqual(['a', 'b', 'c'])
+  })
+
+  // ─── 回归：持续变更防饿死（agent 流式增量场景） ──────────────
+
+  it('持续变更防饿死：pending 超 2s 强制落盘', async () => {
+    vi.useFakeTimers()
+    try {
+      storeGet.mockResolvedValue(null)
+      const config = defineConfig('cfg-maxwait', { items: ['a'] as string[] })
+      await whenConfigReady('cfg-maxwait')
+      storeSet.mockClear()
+      storeSave.mockClear()
+
+      // 持续变更：每 250ms 一次，一直重置防抖（单凭防抖永不落盘）
+      config.items.push('b')
+      await nextTick()
+      for (let i = 0; i < 8; i++) {
+        vi.advanceTimersByTime(250)
+        config.items.push(`m${i}`)
+        await nextTick()
+      }
+
+      // t=2000 的变更触发强制 flush（flushSave 内 await 后 set）
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(storeSet).toHaveBeenCalledWith('items', config.items)
+      expect(storeSave).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

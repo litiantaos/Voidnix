@@ -44,7 +44,7 @@ vi.mock('@tauri-apps/plugin-store', () => {
 
 vi.mock('@/utils/tauri', () => ({ isTauri: false }))
 
-import { useAgentChat } from './agent'
+import { useAgentChat, restorePersistedSession } from './agent'
 import { config as agentConfig, setProviderModelKey } from './config'
 import { config as aiProvidersConfig } from '@/runtime/ai-providers'
 
@@ -283,5 +283,63 @@ describe('useAgentChat session 守卫', () => {
     const t1 = m1?.parts.find((p) => p.type === 'toolCall' && p.id === 't1')
     expect(t1 && t1.type === 'toolCall' && t1.output?.includes('已截断')).toBe(true)
     expect(t1 && t1.type === 'toolCall' && (t1.output?.length ?? 0) < 1700).toBe(true)
+  })
+})
+
+describe('会话持久化与重载恢复', () => {
+  it('消息与 sessionId 随 config 持久化（toRef 别名），新会话清空', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('hi')
+
+    expect(agentConfig.messages).toHaveLength(2) // user + streaming assistant
+    expect(agentConfig.sessionId).not.toBe('')
+
+    await agent.newConversation()
+    expect(agentConfig.messages).toHaveLength(0)
+    expect(agentConfig.sessionId).toBe('')
+  })
+
+  it('restorePersistedSession：终结残留 streaming 并 abort 孤儿 run', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('hi')
+    const ch = mocks.channels[mocks.channels.length - 1]!
+    ch.onmessage?.({ type: 'textDelta', text: 'partial' })
+
+    const orphanId = agentConfig.sessionId
+    await restorePersistedSession()
+
+    // 孤儿 session 已 abort，sessionId 清空
+    expect(mocks.invoke).toHaveBeenCalledWith('agent_abort', { sessionId: orphanId })
+    expect(agentConfig.sessionId).toBe('')
+
+    // 残留 streaming 消息收尾：partial 文本保留 + aborted notice
+    const assistant = agentConfig.messages.find((m) => m.role === 'assistant')
+    expect(assistant?.streaming).toBeFalsy()
+    expect(assistant?.parts).toEqual([
+      { type: 'text', text: 'partial' },
+      { type: 'notice', kind: 'aborted', text: '已中止' },
+    ])
+
+    // 幂等：二次恢复不再 abort / 加 notice
+    mocks.invoke.mockClear()
+    await restorePersistedSession()
+    expect(mocks.invoke).not.toHaveBeenCalledWith('agent_abort', expect.anything())
+    expect(assistant?.parts).toHaveLength(2)
+  })
+
+  it('restorePersistedSession：无 sessionId 时也终结残留 streaming（completed 落盘竞态）', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('hi')
+    const ch = mocks.channels[mocks.channels.length - 1]!
+    ch.onmessage?.({ type: 'textDelta', text: 'partial' })
+    // 模拟竞态：completed 已清 sessionId 落盘，但 streaming 标记的旧快照先写盘
+    agentConfig.sessionId = ''
+    agentConfig.messages[agentConfig.messages.length - 1]!.streaming = true
+
+    await restorePersistedSession()
+
+    const assistant = agentConfig.messages.find((m) => m.role === 'assistant')
+    expect(assistant?.streaming).toBeFalsy()
+    expect(assistant?.parts.some((p) => p.type === 'notice' && p.kind === 'aborted')).toBe(true)
   })
 })

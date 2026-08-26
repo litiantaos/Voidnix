@@ -2,6 +2,7 @@ import { computed } from 'vue'
 import { load } from '@tauri-apps/plugin-store'
 import { defineConfig, whenConfigReady } from '@/runtime/storage'
 import { isTauri } from '@/utils/tauri'
+import type { AgentMessage } from '@/types/agent'
 import {
   config as aiProvidersConfig,
   modelSelectOptions,
@@ -51,9 +52,12 @@ export const DEFAULT_SYSTEM_PROMPT = [
 // 再导出中枢工具；选用状态在 agent 本扩展 config
 export { modelSelectOptions, type AiProviderConfig }
 
+/// 扩展 config 存储路径（agent.ts 会话恢复依赖 whenConfigReady 回填时序）
+export const AGENT_CONFIG_PATH = 'extensions/agent/config'
+
 /// agent 扩展自管配置（持久化至 extensions/agent/config.json）。
 /// AI 凭证条目在 `config/ai-providers`；**本扩展自选** provider/key/model。
-export const config = defineConfig('extensions/agent/config', {
+export const config = defineConfig(AGENT_CONFIG_PATH, {
   // 资源上限（Rust 端强制 clamp，config.json 越界无效；BOUNDS 见下方）
   maxCpuSeconds: 30,
   maxMemoryMb: 512,
@@ -71,6 +75,10 @@ export const config = defineConfig('extensions/agent/config', {
     type: 'tavily',
     apiKey: '',
   } as SearchProviderConfig,
+  /** 对话消息（随会话持久化）：hide_window 触发的 WebContent 内存超阈值 navigate 重载会清零 JS 单例，boot 回填后由 agent.ts 恢复；新会话清空 */
+  messages: [] as AgentMessage[],
+  /** 进行中 run 的 sessionId：重载恢复时 abort Rust 侧孤儿 run（run 已结束则 no-op） */
+  sessionId: '',
 })
 
 /// 资源上限 floor/cap 镜像（权威在 native/policy.rs，须手动同步）。
@@ -182,26 +190,25 @@ export function pruneAgentSelection() {
 }
 
 // 一次性：旧 activeProviderModelKey → providerModelKey；加载后冷 prune
-void Promise.all([
-  whenConfigReady('extensions/agent/config'),
-  whenConfigReady('config/ai-providers'),
-]).then(async () => {
-  if (!config.providerModelKey.trim() && isTauri) {
-    try {
-      const store = await load('extensions/agent/config.json')
-      const active = await store.get<unknown>('activeProviderModelKey')
-      if (typeof active === 'string' && active.trim()) {
-        config.providerModelKey = active.trim()
-        try {
-          await store.delete('activeProviderModelKey')
-          await store.save()
-        } catch {
-          /* ignore */
+void Promise.all([whenConfigReady(AGENT_CONFIG_PATH), whenConfigReady('config/ai-providers')]).then(
+  async () => {
+    if (!config.providerModelKey.trim() && isTauri) {
+      try {
+        const store = await load(`${AGENT_CONFIG_PATH}.json`)
+        const active = await store.get<unknown>('activeProviderModelKey')
+        if (typeof active === 'string' && active.trim()) {
+          config.providerModelKey = active.trim()
+          try {
+            await store.delete('activeProviderModelKey')
+            await store.save()
+          } catch {
+            /* ignore */
+          }
         }
+      } catch (e) {
+        console.warn('[agent] legacy selection migrate skipped:', e)
       }
-    } catch (e) {
-      console.warn('[agent] legacy selection migrate skipped:', e)
     }
-  }
-  pruneAgentSelection()
-})
+    pruneAgentSelection()
+  },
+)
