@@ -83,6 +83,7 @@
 
 - 用户 bubble（`--color-bubble` accent 浅染 + `--accent-line-soft` 描边）· 助手 `soft-card` · step/notice `--space-soft` + mist/语义 soft
 - 输入岛 `ui-field` + `--shadow-bar` · 浮钮 soft-surface + `--shadow-float*` + aurora
+- 消息入场动画 `fill-mode: backwards`（禁 `both`：结束帧 transform 驻留 = 每块常驻合成层/IOSurface）
 
 ## 速查
 

@@ -79,11 +79,13 @@ agent 配置通过 `defineConfig` 自管，持久化至 `extensions/agent/config
 
 ```typescript
 // extensions/agent/config.ts
-defineConfig('extensions/agent/config', {
+defineConfig(AGENT_CONFIG_PATH, {
   systemPrompt: '你是全能的 AI Agent…',
   searchProvider: { type: 'tavily', apiKey: '' },
   // 资源上限默认值（maxCpuSeconds/maxMemoryMb/maxOpenFiles/executionTimeout/maxOutputBytes/maxTurns）
   // BOUNDS 仅 CI 镜像 policy.rs，无 Settings UI；运行时 Rust clamp
+  messages: [], // 对话消息（随会话持久化，见「会话恢复」）
+  sessionId: '', // 进行中 run 的 sessionId（重载恢复 abort 孤儿用）
 })
 ```
 
@@ -100,6 +102,16 @@ defineConfig('extensions/agent/config', {
 - 详见 [ai-providers.md](./ai-providers.md)
 
 ## 对话 UI
+
+### 流式渲染（增量分块）
+
+长回答的流式 markdown 若每行完成都全量 re-parse + `innerHTML` 整替，是 O(n²) 的 DOM 拆建 churn（WebContent footprint 随输出长度近线性爬升、收尾整树重建产生数百 MB 峰值）。改用**顶层分块增量渲染**：
+
+- **分块**（`splitStreamBlocks`）：块边界 = fence 外的空行；宽松列表（空行分隔的同类列表项）与多段引用经延续判定保持一块（序号不断、语义完整）
+- **不变式**：流式文本只追加不回改——已完成块的文本恒定，按块缓存 markdown HTML（组件级 `Map`），流式每个增量只 parse 末块 + 只写末块 DOM
+- **收尾零尖峰**：收尾分块与流式期前缀完全一致（缓存命中），仅补渲染末块；不再全量 `renderMarkdown(全文)` 整树重建
+- **容器**：每块一个 `display:contents` 容器（`.md-solid` / `.md-full`），子块直接参与 `markdown-body` 的 gap 布局，与单容器渲染同构
+- **拖尾**：最后未完成行仍是纯文本 `.md-tail`（渐隐 mask），不进 markdown
 
 ### 贴底滚动
 
@@ -137,8 +149,16 @@ defineConfig('extensions/agent/config', {
 `AgentPart.type = 'notice'`，不进 LLM：
 
 - **error**：气泡 danger 底 + toast
-- **aborted**：muted「已中止」
+- **aborted**：muted「已中止」（用户中止 / 重载恢复收尾共用）
 - **副作用**：中止/错误时进行中工具标 `failed`
+
+### 会话恢复（跨 WebContent 重载）
+
+`hide_window` 后 WebContent footprint 超 350M 阈值时框架会 navigate 重载整个 WKWebView（释放 tile backing），JS 模块单例全部清零——对话状态必须落盘才能存活：
+
+- **持久化**：`messages` / `sessionId` 经 `toRef` 直接落在扩展 config（`defineConfig` 深度 watch 自动防抖落盘）；storage 层防抖带 2s 强制落盘上限，流式增量持续重置防抖也不会饿死写盘
+- **恢复**：boot 回填 config 后 `restorePersistedSession` 收尾——运行中 run 的 Channel 已断（事件永久丢失），残留 streaming 消息写入 aborted notice 终结，并 `agent_abort` Rust 侧孤儿 run（run 已结束则 no-op；Rust 端 `SessionRegistry` 不随 webview 重载重建）
+- **应用重启冷启动**走同一路径，语义一致；「新会话」清空落盘数据
 
 ### 未配置
 
@@ -178,7 +198,7 @@ extensions/agent/
 ├── locales.ts             # 扩展文案（i18n 注册）
 ├── config.ts              # defineConfig + 选用 helpers
 ├── agent.ts               # useAgentChat composable（前端状态机）
-├── view-logic.ts          # View 纯函数（streamView / showToolBody / buildHistoryLabel 等）
+├── view-logic.ts          # View 纯函数（streamView / splitStreamBlocks / showToolBody 等）
 ├── logic.ts               # 纯逻辑（消息序列化等，便于测试）
 ├── View.vue               # 布局 + 贴底滚动 + 悬浮操作 + notice
 ├── AgentTextPart.vue      # 流式/完成 markdown 文本 part
