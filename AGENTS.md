@@ -72,7 +72,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 - **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（23 扩展 / id 无重复 / order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 16 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）、窗口管理运行时启用（主题已初始化下 `setWindowManagerEnabled` disable→enable toggle，8s 超时检测 Mutex 重入死锁）、扩展功能正确性（clipboard 历史查询结构 / system-status 快照 / proxy 核心状态 / homebrew 状态 / video 核心状态 / awake·clean-mode 状态查询 / ip·time·uuid·currency 即时答案；网络依赖项失败 skip 不 fail）、搜索延迟基线（空查询 / keyword / calculator / base64 / 应用搜索代表性 query 耗时断言）。报告经 plugin-store 写到 `config/test-report.json`。
 - **Layer 2（系统冒烟）**：CGEvent 驱动真实 UI，验证窗口显隐 / 全局快捷键 / snap-panel 全链路 / 搜索 UI / 扩展视图渲染。每步返回结构化 `TestResult`（pass/fail/skip），汇总为统一报告。逐阶段内存采样输出趋势（非仅终点）。
-- **Layer 3（性能压测，`--perf [N]`）**：N 轮全场景工作负载循环（全局搜索 / 工具列表 / 快捷键 / 扩展视图 / hide/show），每轮逐阶段采内存快照，输出多轮趋势表 + drift 分析，定位 compositing layer 累积与回收。工作负载顺序刻意安排：快捷键在扩展视图之前（快捷键含 hide_window，若此时 FP 已超 350M 阈值会触发 navigate 重载，重载期间 WKWebView 不可交互）。合并自原 `wk-mem-test.py`。
+- **Layer 3（性能压测，`--perf [N]`）**：N 轮全场景工作负载循环（全局搜索 / 工具列表 / 快捷键 / 扩展视图 / hide/show），每轮逐阶段采内存快照，输出多轮趋势表 + drift 分析，定位 compositing layer 累积与回收。工作负载顺序刻意安排：快捷键在扩展视图之前（快捷键含 hide_window，若此时 FP 已超 350M 阈值会触发 navigate 重载，重载期间 WKWebView 不可交互）。合并自原 `wk-mem-test.py`。**内存结论只看 release 模式**：dev 模式下 Vite HMR / UnoCSS 开发态样式注入使每次视图变更重建整页合成树，WebContent graphics 可虚高至 GB 级（实测 5 轮 1.6G），release 同负载零累积（FP/graphics 全程持平甚至净降）——`--dev --perf` 只用于功能/时序验证，内存数据无效。
 
 ```bash
 python3 scripts/smoke-test.py --self-test-only   # 仅 Layer 1（~30s，无需独占屏幕）
@@ -129,7 +129,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`，主进程行（`time fp cpu threads data`）后跟 `& webkit fp_total`（WebKit XPC 合计，按启动时间关联）+ `@ ext/bin rss cpu vsz`（扩展子进程）；抓栈触发时追加 `# [stack] time cpu= -> stacks/cpu-时间戳.txt`（注释行，analyze 跳过），快照存 `~/Library/Logs/Voidnix/stacks/`
 
-**状态**：LaunchAgent 已安装运行，主进程已有 5 天数据；子进程采样维度已上线，CPU 阈值抓栈已上线。曾暴露两个问题：(1) proxy/mihomo CPU 持续 100%——根因为 gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）；(2) 主进程 CPU 100% 反馈环——blur → hideWindow → resignKeyWindow → 派生 blur 失控循环，已加 `hide_window` 的 `is_window_visible()` 幂等守卫断环。WKWebView 内存累积——搜索 compositing layer tiles 随搜索累积（PURGE=N 不可回收），已加 `ContentView.clearCache` 在窗口隐藏时卸载 KeepAlive 释放扩展视图 layer backing + toggle `content-visibility:hidden` 释放结果列表 tile backing（结果列表 DOM 保留以消除唤起空态闪烁），由 WebContent 350M 阈值 navigate 兜底。执行 `bash scripts/voidnix-analyze.sh` 分析趋势，`python3 scripts/smoke-test.py --perf` 做内存累积压测（`python3 scripts/smoke-test.py --perf 10 --dev` dev 构建 10 轮）。
+**状态**：LaunchAgent 已安装运行，主进程已有 5 天数据；子进程采样维度已上线，CPU 阈值抓栈已上线。曾暴露两个问题：(1) proxy/mihomo CPU 持续 100%——根因为 gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）；(2) 主进程 CPU 100% 反馈环——blur → hideWindow → resignKeyWindow → 派生 blur 失控循环，已加 `hide_window` 的 `is_window_visible()` 幂等守卫断环。WKWebView 内存累积——搜索 compositing layer tiles 随搜索累积（PURGE=N 不可回收），已加 `ContentView.clearCache` 在窗口隐藏时卸载 KeepAlive 释放扩展视图 layer backing + toggle `content-visibility:hidden` 释放结果列表 tile backing（结果列表 DOM 保留以消除唤起空态闪烁），由 WebContent 350M 阈值 navigate 兜底。执行 `bash scripts/voidnix-analyze.sh` 分析趋势，`python3 scripts/smoke-test.py --perf` 做内存累积压测（内存结论只看 release；dev 模式 graphics 虚高见冒烟测试节）。
 
 ## 开发扩展
 
@@ -202,7 +202,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - `hide_window` 命令入口幂等守卫 `is_window_visible()`——blur → hideWindow → resignKeyWindow → 派生 blur 反馈环在首轮 hide 后断开（原 auto 防抖 500ms 无法断环，窗口可见时间通常远超 500ms）
 - 隐藏时 `ContentView` 监听 `window-hiding` 事件将 KeepAlive 卸载重建（`keepAliveActive` 置 false → `nextTick` → forced layout flush → 置 true），释放扩展视图缓存 DOM + WKWebView compositing layer tiles（IOSurface backing store，PURGE=N 不可回收）；同期 toggle `content-visibility:hidden` on contentRef 释放结果列表 tile backing（DOM 保留，show 时 compositor 同步恢复 pending 变更不闪烁）；**不清空 results**——主快捷键由 Rust 直接 show 窗口（前端 IPC 回调在 show 之后），清空 results 会导致第一帧渲染空态产生闪烁，保留 DOM 使唤起时列表立即可见，`focusHandler` 后台 `loadDefaultResults` 刷新补增量
 - KeepAlive `max=3`（日常高频 agent/settings/proxy 不超过 3 个同时活跃），隐藏时全量清空
-- **WebContent 内存阈值重载**：`hide_window` 后 detached OS thread（不占 tokio worker）异步查 `platform/mem.rs::webcontent_footprint`（`proc_pid_rusage` 读 WebContent XPC 的 physical footprint，按启动时间下限关联主进程——不设上限，覆盖 navigate 重载/crash 恢复后创建的新进程），超 350M 时 Rust 直接 `navigate("about:blank")` → 100ms → `navigate(原 URL)`——`reload()` 不释放 tile backing（IOSurface），必须先 blank 销毁旧 layer tree 再重建（等同 Safari 内存压力 tab 重建）。纯 Rust 闭环，无 command 注册、无前端事件。navigate 重载后 `main.ts` 重新执行，自测的二次触发由 `test.rs` 的 AtomicBool 一次性守卫防御
+- **WebContent 内存阈值重载**：`hide_window` 后 detached OS thread（不占 tokio worker）异步查 `platform/mem.rs::webcontent_footprint`（`proc_pid_rusage` 读 WebContent XPC 的 physical footprint，按启动时间下限关联主进程——不设上限，覆盖 navigate 重载/crash 恢复后创建的新进程），超 350M 时 Rust 直接 `navigate("about:blank")` → 100ms → `navigate(原 URL)`——`reload()` 不释放 tile backing（IOSurface），必须先 blank 销毁旧 layer tree 再重建（等同 Safari 内存压力 tab 重建）。纯 Rust 闭环，无 command 注册、无前端事件。超阈值先等 3s 复测（agent 流式的易失性合成面峰值会自行回收，不该触发进程重建）且窗口仍隐藏才重载（hide → show → 重载竞态守卫）。navigate 重载后 `main.ts` 重新执行，自测的二次触发由 `test.rs` 的 AtomicBool 一次性守卫防御；重载清零全部 JS 模块单例，需跨重载存活的扩展状态须自行落盘（agent 会话：messages/sessionId 落扩展 config，boot 回填后恢复并 abort 孤儿 run，见 [agent.md](docs/extensions/agent.md)）
 - `hide_main` 走 `restore_captured()` 交还 first responder（`PREV_FRONT_PID` 唯一源在 `platform/focus.rs`）
 
 **焦点管理**——`is_app_active()` 三道判定：
@@ -502,6 +502,7 @@ src/
 - **方向变体**（如 `BaseSelect` 上下展开）直接用 `transition`（UnoCSS 默认 property 列表已含 `translate,scale,opacity,transform`，覆盖 Wind4 独立属性的 from/to）；**禁止** `transition-[a,b,c]` 方括号多值语法——Wind4 不生成该规则，类为空致无过渡瞬时跳变。单属性可用 `transition-[opacity]`
 - **数值走基元**：自定义过渡的时长 / 曲线一律 `var(--duration-*)` / `var(--ease-*)`（`--duration-fast` 150 / `--duration-normal` 200），禁止裸 `0.2s` / `cubic-bezier(...)`。布局伸缩等 CSS 无法表达的用 JS hooks（`image` 扩展 `expandHooks`）
 - **仅 GPU 合成属性**：过渡只用 `transform` / `opacity` / `translate` / `scale`（独立属性），禁用 `box-shadow` / `background-color` 等 paint 类属性（每帧重绘致顿）。`ui-popup` 用 `transform` 属性——与 UnoCSS `translate-*`/`scale-*`（Wind4 落独立属性）正交叠加，带 `-translate-x-1/2` 居中定位也不冲突
+- **入场动画 fill-mode 用 `backwards` 禁 `both`**：`both` 把结束帧 transform 永久驻留，「有 transform」即合成层，列表/消息级元素会每项常驻一个 IOSurface（agent 会话曾因此 +80MB/十条消息）；`backwards` 延迟期显起始帧、结束后零驻留，层随动画结束降级
 - **玻璃材质 + opacity**：`opacity` 落在带 `backdrop-filter` 元素**自身**安全（毛玻璃先采样背景再整体降透明）；落在**祖先**则形成 group opacity 隔断背景采样、材质失效（进出场先透明后跳变）。故 `mica-bar`/`acrylic-bar` 等玻璃控件的淡入走自身 `opacity`，根层只走 `transform`（见 `PinWindow`）
 
 ### 写法
@@ -525,7 +526,7 @@ src/
     ├── screenshot/config.json
     ├── window-manager/config.json
     ├── translate/config.json
-    ├── agent/config.json             # 资源上限 + systemPrompt + 搜索 Provider（AI Key 见 ai-providers.json）
+    ├── agent/config.json             # 资源上限 + systemPrompt + 搜索 Provider + 会话消息/ sessionId（AI Key 见 ai-providers.json）
     ├── video/{ffmpeg,ffprobe,ffmpeg.version,config.json}  # 按需下载的静态 ffmpeg/ffprobe + 配置
     ├── image/config.json             # 输出目录配置（移除背景/拼接结果）
     └── proxy/{mihomo, mihomo.log, mihomo-daemon.plist, geoip.metadb, geosite.dat, config.yaml, subs/, config.json}  # TUN 模式 launchd 托管（plist 装于 /Library/LaunchDaemons）
@@ -533,7 +534,7 @@ src/
 
 icon 缓存纯内存（首次提取后按 bundle mtime 增量复用，零磁盘文件）。dev 镜像 `com.litiantao.voidnix.dev` 同构。
 
-所有 config.json 均走 `defineConfig`（`src/runtime/storage.ts`）：reactive + watch + 300ms 防抖 + 深克隆 + race 保护 + 类型守卫 + 退出 flush。不订阅 plugin-store `onChange`（set 会向本进程回放 `store://change` 无来源标识，实测复现：回灌旧快照覆盖 emit 到达前已 mutate 的新值）；所有 config 仅在 main 窗口持有，无跨窗口同步需求。schema 变更优先删磁盘 config.json；AI 中枢对旧 agent/translate 凭证字段做一次性 best-effort 导入（见 ai-providers）。
+所有 config.json 均走 `defineConfig`（`src/runtime/storage.ts`）：reactive + watch + 300ms 防抖（持续变更 2s 强制落盘防饿死）+ 深克隆 + race 保护 + 类型守卫 + 退出 flush。不订阅 plugin-store `onChange`（set 会向本进程回放 `store://change` 无来源标识，实测复现：回灌旧快照覆盖 emit 到达前已 mutate 的新值）；所有 config 仅在 main 窗口持有，无跨窗口同步需求。schema 变更优先删磁盘 config.json；AI 中枢对旧 agent/translate 凭证字段做一次性 best-effort 导入（见 ai-providers）。
 
 ## 约定
 
