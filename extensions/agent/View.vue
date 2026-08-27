@@ -235,6 +235,15 @@ const appStore = useAppStore()
  * - 从设置子视图返回（config → null；KeepAlive deactivate 下 watch 仍触发，nextTick 等 DOM 重插后 focus）
  */
 watch(focusInputTick, () => nextTick(() => textareaRef.value?.focus()))
+// 窗口获焦（Focused(true)）后聚焦输入框：mount 时窗口尚隐藏则跳过聚焦——
+// 未激活应用内聚焦可编辑元素会触发 WebKit activateIgnoringOtherApps 抢走前台，
+// 与「show 不抢 active」的设计相悖且干扰 frontmost 捕获时序
+function onWinFocused() {
+  if (appStore.activeExtId !== 'agent' || appStore.activeSubview || appStore.isDialogOpen) return
+  textareaRef.value?.focus()
+}
+onMounted(() => window.addEventListener('window-focused', onWinFocused))
+onUnmounted(() => window.removeEventListener('window-focused', onWinFocused))
 watch(
   () => appStore.activeSubview,
   (sub, prev) => {
@@ -314,7 +323,12 @@ async function onContentClick(e: MouseEvent) {
   }
 }
 
-onMounted(() => nextTick(() => textareaRef.value?.focus()))
+// 窗口隐藏（未 key）时跳过 mount 聚焦（见 onWinFocused 注释），由窗口获焦事件补聚焦
+onMounted(() =>
+  nextTick(() => {
+    if (document.hasFocus()) textareaRef.value?.focus()
+  }),
+)
 
 /// Ctrl+C 中止当前 agent run（macOS 复制是 Cmd+C，Ctrl+C 不冲突）
 function onKeydown(e: KeyboardEvent) {

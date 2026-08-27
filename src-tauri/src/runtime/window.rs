@@ -137,7 +137,23 @@ pub fn set_main_frame(
         .get_webview_window("main")
         .ok_or("main window not found")?;
     #[cfg(target_os = "macos")]
-    crate::platform::window::animate_frame(&win, x, y, width, height);
+    {
+        crate::platform::window::animate_frame(&win, x, y, width, height);
+        // animator 扩高（顶边固定向下生长）后，窗口服务器 hit-test 表可能停留在
+        // 动画前矩形——新增的底部区域点击穿透到下层应用，激活对方触发 blur 藏窗。
+        // 动画（0.26s）完成后重刷 event capture，使 hit-test 对齐最终 frame。
+        let delayed = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            let main_app = delayed.clone();
+            let _ = delayed.run_on_main_thread(move || {
+                use tauri::Manager;
+                if let Some(win) = main_app.get_webview_window("main") {
+                    crate::platform::window::refresh_event_capture_if_visible(&win);
+                }
+            });
+        });
+    }
     #[cfg(not(target_os = "macos"))]
     {
         let _ = win.set_position(tauri::LogicalPosition::new(x, y));

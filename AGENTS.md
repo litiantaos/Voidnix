@@ -32,7 +32,7 @@ bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.t
 bun run check:agent-bounds   # CI 校验（agent 资源上限 policy.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:wm-bounds      # CI 校验（window-manager mod.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:extension-orders # CI 校验（非 hidden 扩展 meta.order 唯一）
-python3 scripts/smoke-test.py  # 全功能回归测试（部署前门禁，含应用自测 + 系统冒烟）
+python3 scripts/smoke-test.py  # 全功能回归测试（含应用自测 + 系统冒烟）
 bun run smoke-test             # 同上（package.json 别名）
 ```
 
@@ -66,7 +66,7 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 ## 全功能回归测试（标准化冒烟测试）
 
-`scripts/smoke-test.py` — 部署前必跑的全链路回归门禁，覆盖全部 23 扩展 + 框架行为 + 性能指标，防止"修 A 坏 B"连锁回归。
+`scripts/smoke-test.py` — 全链路回归门禁，覆盖全部 23 扩展 + 框架行为 + 性能指标，防止"修 A 坏 B"连锁回归。仅用户明确要求时运行。
 
 **三层架构**：
 
@@ -205,24 +205,28 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - **WebContent 内存阈值重载**：`hide_window` 后 detached OS thread（不占 tokio worker）异步查 `platform/mem.rs::webcontent_footprint`（`proc_pid_rusage` 读 WebContent XPC 的 physical footprint，按启动时间下限关联主进程——不设上限，覆盖 navigate 重载/crash 恢复后创建的新进程），超 350M 时 Rust 直接 `navigate("about:blank")` → 100ms → `navigate(原 URL)`——`reload()` 不释放 tile backing（IOSurface），必须先 blank 销毁旧 layer tree 再重建（等同 Safari 内存压力 tab 重建）。纯 Rust 闭环，无 command 注册、无前端事件。超阈值先等 3s 复测（agent 流式的易失性合成面峰值会自行回收，不该触发进程重建）且窗口仍隐藏才重载（hide → show → 重载竞态守卫）。navigate 重载后 `main.ts` 重新执行，自测的二次触发由 `test.rs` 的 AtomicBool 一次性守卫防御；重载清零全部 JS 模块单例，需跨重载存活的扩展状态须自行落盘（agent 会话：messages/sessionId 落扩展 config，boot 回填后恢复并 abort 孤儿 run，见 [agent.md](docs/extensions/agent.md)）
 - `hide_main` 走 `restore_captured()` 交还 first responder（`PREV_FRONT_PID` 唯一源在 `platform/focus.rs`）
 
-**焦点管理**——`is_app_active()` 三道判定：
+**焦点管理**——`is_app_active()` 四道判定：
 
 1. NSApp keyWindow 非空 → 焦点在我们
 2. frontmost bundle 路径 `/System/` 开头（授权弹窗、keychain 对话框等）→ 交互流未中断
-3. `OSASCRIPT_RUNNING` 标志（osascript 授权后续 shell 命令执行期间 frontmost 已还给原 app 但仍抑制 blur hide）
+3. frontmost 为 Voidnix 自身（WKWebView 聚焦可编辑元素触发的自我激活瞬态）→ 交互流在自己身上，不触发 blur hide
+4. `OSASCRIPT_RUNNING` 标志（osascript 授权后续 shell 命令执行期间 frontmost 已还给原 app 但仍抑制 blur hide）
 
 焦点恢复细节：
 
 - `restore_captured()` 还原前查 frontmost：第三方已接管（系统弹窗/用户切到其他 app）则不抢回
-- 系统弹窗关闭后由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove）处理：
+- 系统弹窗关闭后由 `platform/frontmost_watcher`（NSWorkspace 激活通知观察器，随 show/hide 生命周期 add/remove，回调转主线程执行）处理：
   - frontmost == 原前台 PID → `makeKeyWindow` 恢复
+  - frontmost == Voidnix 自身 → 激活事务可能短暂夺走 panel key，`makeKeyWindow` 恢复（置于 is_app_active 守卫之前，自我激活时守卫恒真）
   - frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss
+- **WKWebView 可编辑元素聚焦会激活应用**：应用未激活时对 textarea 等执行 focus() 触发 `activateIgnoringOtherApps` 抢走前台（违背 show 不抢 active）；激活事务的 key 重评估偶发夺走 panel key → 派生 blur 藏窗（agent 快捷键直开后约 0.5~1.5s 自行隐藏的根因，曾误报为「点击输入框隐藏」）。三重防线：`is_app_active` 判定 3 拦截自伤 blur 的藏窗；watcher 自身激活分支恢复 key；disableSearchInput 扩展（agent/translate）不在窗口隐藏时聚焦（mount 时 `document.hasFocus()` 为假跳过，`window-focused` 事件补聚焦）。配套 `capture_frontmost()` 遇 frontmost=自身时保留上次记录（不写 0），防 prev 失效误判
 
 **窗口高度**——扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖：
 
 - `useExtensionHeight`（MainView 全局唯一调用）读 `activeExtension` + `activeSubview` 解析模式
 - **adjust 可见性守卫**：`windowVisible`（focus/blur 驱动，初始 false）为 false 时 adjust 跳过 `set_main_frame`——不可见时提前改高度会让 WKWebView viewport 与 NSWindow frame 不匹配（present 后 footer 仍按旧 viewport 底部定位、悬在窗口中间）。守卫后 present 用上次稳定高度（viewport 匹配），show 后 focus 触发 adjust，渐进 animate 到目标高度——animator `display:YES` 逐帧驱动 NSView resize，WKWebView viewport 有时间每帧跟随同步，footer 始终贴底（视觉连续的撑大动画，而非瞬间跳变）。adjust 读 `outerSize` 实际高度，fixed/default 已等于目标则跳过 invoke（回填 `lastApplied`），消除多余 reflow
 - 一次 invoke 触发 Rust `set_main_frame` → `animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS rAF 逐帧）
+- **动画后延迟重刷 event capture**：animator 扩高（顶边固定向下生长）后窗口服务器 hit-test 表可能停留在动画前矩形——新增的底部区域点击穿透到下层应用，激活对方触发 blur 藏窗（agent 快捷键直开后点击输入框隐藏窗口的根因）。`set_main_frame` 自 invoke 起 400ms（动画 0.26s + 余量）后经 `refresh_event_capture_if_visible` 重设 ignoresMouseEvents + event shape 对齐最终 frame
 - `auto` 模式：ResizeObserver 监听 `contentRef`，窗口高 = `CHROME_HEIGHT`（搜索栏 + 间距）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`
 - 屏幕尺寸走 `currentMonitor`（WKWebView 下 `window.screen` 仅返回 webview 视口）
 - 底部将出屏（含 40px 间距）则同步上移；离开 auto 还原进入前位置
