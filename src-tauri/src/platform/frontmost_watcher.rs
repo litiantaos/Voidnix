@@ -35,7 +35,10 @@ mod inner {
 
         let app_handle = app.clone();
         let block: block2::RcBlock<dyn Fn(*mut AnyObject)> = block2::RcBlock::new(move |_| {
-            handle_frontmost_change(&app_handle);
+            // NSWorkspace 通知 queue=NULL 在发送线程回调；ns_window / is_app_active /
+            // makeKeyWindow 均主线程限定，统一转主线程（镜像 shortcut::is_app_active 的 H4 修复）
+            let app = app_handle.clone();
+            let _ = app_handle.run_on_main_thread(move || handle_frontmost_change(&app));
         });
 
         unsafe {
@@ -80,6 +83,15 @@ mod inner {
             })
             .unwrap_or(false);
         if !visibly_shown {
+            return;
+        }
+
+        // frontmost == Voidnix 自身（WKWebView 聚焦可编辑元素触发的自我激活）：
+        // 交互流在自己身上,不构成用户切换。激活事务可能短暂夺走 panel key——
+        // 若已丢失则恢复,否则窗口停留在「可见但无键」状态（打字无响应）。
+        // 置于 is_app_active 守卫之前：自我激活时该守卫恒真,后续分支不可达
+        if crate::platform::focus::current_frontmost_pid().is_none() {
+            crate::platform::window::make_key_window(&window);
             return;
         }
 

@@ -60,6 +60,11 @@ pub fn is_app_active() -> bool {
         if is_system_frontmost() {
             return true;
         }
+        // frontmost 为 Voidnix 自身（WKWebView 聚焦可编辑元素触发的自我激活,
+        // 激活事务可能短暂夺走 panel key）:交互流在自己身上,同样不触发 blur hide
+        if frontmost_is_self() {
+            return true;
+        }
         if OSASCRIPT_RUNNING.load(Ordering::SeqCst) {
             return true;
         }
@@ -94,6 +99,14 @@ pub fn current_frontmost_pid() -> Option<i32> {
     }
 }
 
+/// frontmost 是否为 Voidnix 自身（WKWebView 聚焦可编辑元素触发的自我激活瞬态）。
+fn frontmost_is_self() -> bool {
+    let ws = NSWorkspace::sharedWorkspace();
+    ws.frontmostApplication()
+        .map(|a| a.processIdentifier() == std::process::id() as i32)
+        .unwrap_or(false)
+}
+
 /// 把 key window 状态/前台 app 切换回指定 PID 进程，
 /// 用于 Voidnix 隐藏时把焦点（含输入法 first responder）原样交还给原应用。
 pub fn activate_app_by_pid(pid: i32) {
@@ -111,11 +124,20 @@ pub fn activate_app_by_pid(pid: i32) {
     }
 }
 
-/// 记录当前前台 app PID（排除自身），存入唯一源。
+/// 记录当前前台 app PID，存入唯一源。
+///
+/// frontmost 是 Voidnix 自身时**不覆盖**（保留上次记录）：WKWebView 在应用未激活时
+/// 聚焦可编辑元素会激活本应用（textarea.focus() → activateIgnoringOtherApps），
+/// 若此刻恰好被 capture，写入 0 会让 frontmost_watcher 把后续任何 app 激活都
+/// 判为「用户主动切换」而 dismiss 窗口。自身 frontmost 是瞬态，跳过即可。
 pub fn capture_frontmost() -> i32 {
-    let pid = current_frontmost_pid().unwrap_or(0);
-    PREV_FRONT_PID.store(pid, Ordering::SeqCst);
-    pid
+    match current_frontmost_pid() {
+        Some(pid) => {
+            PREV_FRONT_PID.store(pid, Ordering::SeqCst);
+            pid
+        }
+        None => PREV_FRONT_PID.load(Ordering::SeqCst),
+    }
 }
 
 /// 存入显式 PID 到唯一源（调用方已持有 pid，避免重复查询 frontmost）。

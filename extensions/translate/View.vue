@@ -58,7 +58,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onActivated, onDeactivated } from 'vue'
+import {
+  ref,
+  computed,
+  watch,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  onActivated,
+  onDeactivated,
+} from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
@@ -175,12 +184,22 @@ async function toggleSpeak(item: TranslateResult, index: number) {
 // 注：选词翻译的焦点让出由 pendingText watch 的 blur 兜底（pendingText 由快捷键
 // 异步取词后设置，远晚于 onActivated，无法在激活时判定）
 function maybeFocusInput() {
-  if (!isTranslating.value) {
-    nextTick(() => textareaRef.value?.focus())
-  }
+  if (isTranslating.value) return
+  // 窗口隐藏（未 key）时跳过聚焦：未激活应用内聚焦可编辑元素会触发 WebKit
+  // activateIgnoringOtherApps 抢走前台，干扰 frontmost 捕获时序；由 onWinFocused 补聚焦
+  if (!document.hasFocus()) return
+  nextTick(() => textareaRef.value?.focus())
 }
 onMounted(maybeFocusInput)
 onActivated(maybeFocusInput)
+// 窗口获焦（Focused(true)）后聚焦输入框：覆盖「隐藏时 mount/activate 跳过聚焦」的路径
+function onWinFocused() {
+  if (appStore.activeExtId !== 'translate' || appStore.activeSubview || appStore.isDialogOpen)
+    return
+  maybeFocusInput()
+}
+onMounted(() => window.addEventListener('window-focused', onWinFocused))
+onUnmounted(() => window.removeEventListener('window-focused', onWinFocused))
 // 切走扩展：停止朗读（KeepAlive 下视图未卸载，仅 deactivate）
 onDeactivated(() => {
   if (speakingIndex.value !== null) {
