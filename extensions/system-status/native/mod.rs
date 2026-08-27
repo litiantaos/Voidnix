@@ -252,9 +252,10 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
     };
 
     // 网络速率：基于上次采样的字节差值 / 时间
+    // refresh_list 而非 refresh：refresh 只更新已有条目，捕获不到接口增删（TUN/VPN 启停、Wi-Fi 切换）
     let (net_up, net_down) = {
         let mut nets = crate::runtime::lock_or_recover(&state.networks);
-        nets.refresh();
+        nets.refresh_list();
         let cur_rx: u64 = nets.list().values().map(|n| n.total_received()).sum();
         let cur_tx: u64 = nets.list().values().map(|n| n.total_transmitted()).sum();
         let mut stats = crate::runtime::lock_or_recover(&state.net_stats);
@@ -563,11 +564,12 @@ impl Extension for SystemStatusExtension {
         // 立即 manage 空 collector（SystemState 仅用户打开模块时消费，无需启动时阻塞）。
         // 重采集（refresh_processes(All) + Disks/Networks/Components 全量刷新 ~100ms+）
         // 下沉后台 spawn_blocking，不阻塞 bootstrap join_all。
-        // Disks::new_with_refreshed_list：sysinfo 0.32+ 的 new() 返回空列表，refresh() 只更新已有条目（空列表上为 no-op）。
+        // Disks/Networks::new_with_refreshed_list：sysinfo 0.32+ 的 new() 返回空列表，
+        // refresh() 只更新已有条目（空列表上为 no-op，接口增删也捕获不到）。
         app.manage(SystemState {
             sys: Mutex::new(System::new()),
             disks: Mutex::new(Disks::new_with_refreshed_list()),
-            networks: Mutex::new(Networks::new()),
+            networks: Mutex::new(Networks::new_with_refreshed_list()),
             components: Mutex::new(Components::new()),
             net_stats: Mutex::new(NetStats {
                 last_time: None,
@@ -593,7 +595,7 @@ impl Extension for SystemStatusExtension {
                     );
                 }
                 state.disks.lock().unwrap().refresh();
-                state.networks.lock().unwrap().refresh();
+                state.networks.lock().unwrap().refresh_list();
                 state.components.lock().unwrap().refresh();
             }
         });
