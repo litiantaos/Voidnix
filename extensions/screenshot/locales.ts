@@ -17,6 +17,8 @@ registerMessages({
   'screenshot.save': { 'zh-CN': '保存', en: 'Save' },
   'screenshot.color': { 'zh-CN': '颜色', en: 'Color' },
   'screenshot.fontSize': { 'zh-CN': '字号', en: 'Font size' },
+  'screenshot.textPlain': { 'zh-CN': '纯文本', en: 'Plain text' },
+  'screenshot.textBg': { 'zh-CN': '底色模式', en: 'Background mode' },
   'screenshot.lineWidth': { 'zh-CN': '线宽', en: 'Line width' },
   'screenshot.blurSelection': { 'zh-CN': '模糊整个选区', en: 'Blur entire selection' },
   'screenshot.blurText': { 'zh-CN': '模糊选区内文本', en: 'Blur text in selection' },

@@ -6,6 +6,10 @@
 
 - 截图渲染走 ObjC++ 桥（`screenshot_overlay.mm`）把 CGImage 直接设为 `CALayer.contents`，按键到显示 ~20-30ms
 - 标注/选区/工具栏走 Vue（`windows/Operation.vue` + `composables/`）
+- 文字标注双样式：纯文本 / 底色模式（`input-method-line/fill` 字母图标切换，位于颜色选择器之前，后接字号滑杆；状态 `annotTextBg` 落 `Shape.textBg`），选中已有标注时参数（字号/颜色/底色）回灌、切换即改形（同 blurMode 范式，颜色实时作用于编辑中占位 shape）
+- 底色模式：整块圆角底（宽度 = max(换行盒宽, 实际最大行宽) + 内边距——自适应时贴合内容，手动拉宽后保留手动宽度），文字按底色亮度自动取黑/白对比色；编辑态 textarea 同步底色/内边距/对比色所见即所得，外侧虚线拖动框圆角统一按「底色块圆角 + 4px 间隙」随字号缩放（底色模式与色块同心，纯文本同公式，两模式切换圆角不跳变），右侧控制点贴住虚线编辑框右边框（含内边距 + 触控边距，垂直中心按实时内容行数跟随）
+- 文字框宽度自适应：初始 40（`TEXT_MIN_WIDTH`）、下限 16（`TEXT_AUTO_MIN_WIDTH`），measureText 实测最大行宽、直读 textarea 值使拼音组词期间实时跟随；宽度变化联动高度重算，拖手柄改宽时换行与编辑框实时贴合，编辑器挂载帧即校正高度（多行不闪单行），字号变化后宽度按实时内容重自适应并同步编辑输入框（提交用输入框宽度，不同步会造成进/出编辑态底色宽度跳变）；拖手柄手动调宽后自适应让位（重开编辑复位）；文字原点建框/拖动时取整（小数坐标下 DOM 与 canvas 栅格取整不同，会产生提交偏移）
+- 编辑态↔提交态零位移：提交文字由 DOM 呈现层渲染（`pre-wrap` div，与编辑态 textarea 同渲染管线）；仅导出（复制/保存/钉图/OCR）时经 canvasText begin/end 临时烧录进标注 canvas（`alphabetic` 基线 + CSS 行盒 max 公式 + 实测基线补偿 `Shape.baselineAdjust`）
 - 工具条 / 色板：`acrylic-bar`（与主搜索框同款，soft-surface 材质 + `--shadow-bar`）；贴图悬停条：`mica-bar`
 - 放大镜底图：capture 成功后与 enter **并行** ImageIO 编码 `picker.jpg`（任务独立 Retain CGImage；原子 rename）；前端 `loadPickerImage` 轮询就绪（主屏 Retina 编码更慢，禁止单次读空即放弃）
 - 选区阶段（`phase === 'select'`，尚无工具栏）底部居中轻量快捷键提示：`Esc` 取消 / `F` 全屏 / `C` 复制色值；有上次选区时追加 `R` 恢复（`mica-panel` + kbd 样式，与 `onKeyDown` 对齐）

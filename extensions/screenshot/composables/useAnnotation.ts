@@ -8,6 +8,7 @@ export function useAnnotation() {
   const annotFontSize = ref(24)
   const annotBlurAmount = ref(15)
   const annotBlurMode = ref<BlurMode>('selection')
+  const annotTextBg = ref(false)
 
   // ── 形状数据 ──────────────────────────────────────────────
   const shapes = ref<Shape[]>([])
@@ -100,6 +101,7 @@ export function useAnnotation() {
     annotFontSize,
     annotBlurAmount,
     annotBlurMode,
+    annotTextBg,
     shapes,
     currentShape,
     isDrawing,

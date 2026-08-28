@@ -12,10 +12,17 @@ export function useScreenshotActions(options: {
   bgImage: Ref<HTMLImageElement | null>
   rootEl: Ref<HTMLElement | undefined>
   emit: (e: 'close', noRestoreFocus?: boolean) => void
+  // 导出前把 DOM 呈现的文字临时烧录进标注 canvas（begin 后 canvas 含文字，end 恢复 DOM 呈现）
+  canvasText?: { begin: () => Promise<void>; end: () => void }
 }) {
   async function getAnnotationPng(): Promise<string> {
-    if (!options.annotateCanvas.value || options.shapes.value.length === 0) return ''
-    return options.annotateCanvas.value.toDataURL('image/png')
+    await options.canvasText?.begin()
+    try {
+      if (!options.annotateCanvas.value || options.shapes.value.length === 0) return ''
+      return options.annotateCanvas.value.toDataURL('image/png')
+    } finally {
+      options.canvasText?.end()
+    }
   }
 
   /// 持久化当前选区为「上次选区」，供下次截图 R 键恢复。fire-and-forget，失败不影响主流程。
@@ -65,41 +72,49 @@ export function useScreenshotActions(options: {
   }
 
   async function doOcr() {
-    const ann = await getAnnotationPng()
+    await options.canvasText?.begin()
+    try {
+      const ann =
+        options.annotateCanvas.value && options.shapes.value.length > 0
+          ? options.annotateCanvas.value.toDataURL('image/png')
+          : ''
 
-    // 前端合成预览图（底图 + 标注层）
-    let previewPng = ''
-    const bg = options.bgImage.value
-    const ac = options.annotateCanvas.value
-    if (bg && ac) {
-      const canvas = document.createElement('canvas')
-      const dpr = options.dpr.value
-      const { x, y, w, h } = options.sel.value
-      const cw = Math.round(w * dpr)
-      const ch = Math.round(h * dpr)
-      canvas.width = cw
-      canvas.height = ch
-      const ctx = canvas.getContext('2d')!
-      ctx.drawImage(bg, x * dpr, y * dpr, cw, ch, 0, 0, cw, ch)
-      ctx.drawImage(ac, 0, 0, cw, ch, 0, 0, cw, ch)
-      previewPng = canvas.toDataURL('image/png')
+      // 前端合成预览图（底图 + 标注层）
+      let previewPng = ''
+      const bg = options.bgImage.value
+      const ac = options.annotateCanvas.value
+      if (bg && ac) {
+        const canvas = document.createElement('canvas')
+        const dpr = options.dpr.value
+        const { x, y, w, h } = options.sel.value
+        const cw = Math.round(w * dpr)
+        const ch = Math.round(h * dpr)
+        canvas.width = cw
+        canvas.height = ch
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(bg, x * dpr, y * dpr, cw, ch, 0, 0, cw, ch)
+        ctx.drawImage(ac, 0, 0, cw, ch, 0, 0, cw, ch)
+        previewPng = canvas.toDataURL('image/png')
+      }
+
+      await invoke(CMD.openExtensionSubview, {
+        extId: 'screenshot',
+        subviewId: 'ocr',
+        payload: {
+          selX: options.sel.value.x,
+          selY: options.sel.value.y,
+          selW: options.sel.value.w,
+          selH: options.sel.value.h,
+          scale: options.dpr.value,
+          annotationPng: ann,
+          previewPng,
+        },
+      })
+      persistLastSelection()
+      doCancel(true)
+    } finally {
+      options.canvasText?.end()
     }
-
-    await invoke(CMD.openExtensionSubview, {
-      extId: 'screenshot',
-      subviewId: 'ocr',
-      payload: {
-        selX: options.sel.value.x,
-        selY: options.sel.value.y,
-        selW: options.sel.value.w,
-        selH: options.sel.value.h,
-        scale: options.dpr.value,
-        annotationPng: ann,
-        previewPng,
-      },
-    })
-    persistLastSelection()
-    doCancel(true)
   }
 
   async function doPin() {
