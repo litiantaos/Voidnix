@@ -8,7 +8,7 @@
   Layer 2（系统冒烟）：CGEvent 驱动真实 UI 操作，验证窗口行为、全局快捷键、snap-panel、
     搜索 UI、扩展视图。每步返回结构化 TestResult。逐阶段内存采样输出趋势。
   Layer 3（性能压测，--perf）：N 轮全场景工作负载循环 + 逐阶段内存快照，
-    输出多轮趋势表，定位 compositing layer 累积。合并自原 wk-mem-test.py。
+    输出多轮趋势表，定位 compositing layer 累积。
 
 用法：
     python3 scripts/smoke-test.py                  # 标准（Layer 1 + Layer 2 + 逐阶段内存）

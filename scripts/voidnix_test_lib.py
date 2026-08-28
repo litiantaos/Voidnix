@@ -1,7 +1,7 @@
 """Voidnix 测试共享基础设施。
 
-wk-mem-test.py（内存压测）与 smoke-test.py（全功能回归）共用的 CGEvent I/O、
-窗口检测、内存测量等基础设施。纯工具函数，不含测试逻辑。
+smoke-test.py（全功能回归）使用的 CGEvent I/O、窗口检测、内存测量等基础设施。
+纯工具函数，不含测试逻辑。
 
 设计：所有函数接受 dev_mode 参数（而非读全局），调用方在启动时确定模式后传入。
 _in_ext 状态由 TestContext 类封装，避免模块级可变全局。
