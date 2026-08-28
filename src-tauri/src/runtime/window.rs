@@ -1,3 +1,10 @@
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, LazyLock, Mutex,
+};
+
+use crate::runtime::lock_or_recover;
+
 /// 显示主窗口。
 ///
 /// 编排：可见性状态 → 捕获原前台 PID → Space 迁移 + 前置 → makeKey →
@@ -250,6 +257,31 @@ pub fn quit_app(app_handle: tauri::AppHandle) {
 /// 超此值说明 tile backing 大量累积（密集扩展视图遍历），reload 是唯一回收手段。
 const WC_RELOAD_THRESHOLD: u64 = 350 * 1024 * 1024;
 
+// ── WebContent 重载守卫（扩展贡献）──────────────────────────────────────────
+// 镜像 menubar.rs 注册范式（LazyLock<Mutex<Vec>> + free function）。
+// 扩展 setup 内注册守卫：返回 true = webview 正承载不可中断的流式工作
+// （如 agent run 的 Channel 事件流，navigate 即断），重载延迟到守卫解除。
+
+type ReloadGuard = Arc<dyn Fn() -> bool + Send + Sync>;
+
+static RELOAD_GUARDS: LazyLock<Mutex<Vec<ReloadGuard>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+
+/// 注册重载守卫（扩展 setup 内调用）。
+pub fn register_reload_guard(guard: ReloadGuard) {
+    lock_or_recover(&RELOAD_GUARDS).push(guard);
+}
+
+/// 是否有守卫否决重载。锁内仅克隆句柄、锁外调用（防守卫回调内重入注册死锁）。
+fn reload_deferred() -> bool {
+    let guards: Vec<ReloadGuard> = lock_or_recover(&RELOAD_GUARDS).clone();
+    guards.iter().any(|g| g())
+}
+
+/// 重载检查线程代次：每次 hide 自增。守卫等待期可长达整个 agent run，
+/// 期间多次 hide/show 循环会叠加多个等待线程——代次过期（有更新的 hide 接管）即退出，
+/// 最新线程独占重载职责，避免多线程连环 navigate。
+static RELOAD_GEN: AtomicU64 = AtomicU64::new(0);
+
 /// 窗口隐藏后异步检查 WebContent footprint，超阈值时 navigate blank → 原 URL。
 ///
 /// WKWebView 的 `reload()` / `location.reload()` 不释放 tile backing（IOSurface），
@@ -257,55 +289,68 @@ const WC_RELOAD_THRESHOLD: u64 = 350 * 1024 * 1024;
 /// 等同 Safari 内存压力下的 tab 重建。用 detached OS thread（不占 tokio worker）。
 /// 500ms 等 hide_main 设 alpha=0 完成，再读 footprint。
 ///
-/// 二次确认：超阈值先等 3s 复测——agent 流式等场景的易失性合成面（volatile
-/// IOSurface 峰值）数秒内自行回收，不应触发进程重建；期间窗口重新可见则放弃
-/// （重载会打断用户）。navigate 前再守卫一次可见性，覆盖 hide → show → 重载的竞态。
+/// 超阈值后进入确认循环：3s 复测——agent 流式等场景的易失性合成面（volatile
+/// IOSurface 峰值）数秒内自行回收，不应触发进程重建；守卫否决期间（agent run
+/// 进行中）持续等待至 run 结束；窗口重新可见则放弃（重载会打断用户）。
+/// navigate 前再守卫一次可见性，覆盖 hide → show → 重载的竞态。
 pub fn maybe_reload_webview(app: &tauri::AppHandle) {
     #[cfg(target_os = "macos")]
     {
         use tauri::Manager;
         let app = app.clone();
+        let gen = RELOAD_GEN.fetch_add(1, Ordering::AcqRel);
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(500));
-            if let Some(fp) = crate::platform::mem::webcontent_footprint() {
-                if fp > WC_RELOAD_THRESHOLD {
-                    std::thread::sleep(std::time::Duration::from_secs(3));
-                    if crate::runtime::shortcut::is_window_visible() {
-                        log::info!(
-                            "[mem] WebContent {:.0} MB > {} MB 但窗口已重新可见，跳过 reload",
-                            fp as f64 / 1_048_576.0,
-                            WC_RELOAD_THRESHOLD / 1_048_576
-                        );
-                        return;
-                    }
-                    let Some(fp2) = crate::platform::mem::webcontent_footprint() else {
-                        return;
-                    };
-                    if fp2 <= WC_RELOAD_THRESHOLD {
-                        log::info!(
-                            "[mem] WebContent {:.0} MB 峰值已自行回收至 {:.0} MB，跳过 reload",
-                            fp as f64 / 1_048_576.0,
-                            fp2 as f64 / 1_048_576.0
-                        );
-                        return;
-                    }
+            let Some(fp) = crate::platform::mem::webcontent_footprint() else {
+                return;
+            };
+            if fp <= WC_RELOAD_THRESHOLD {
+                return;
+            }
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                if RELOAD_GEN.load(Ordering::Acquire) != gen {
+                    return;
+                }
+                if crate::runtime::shortcut::is_window_visible() {
                     log::info!(
-                        "[mem] WebContent {:.0} MB > {} MB → reload webview",
-                        fp2 as f64 / 1_048_576.0,
+                        "[mem] WebContent {:.0} MB > {} MB 但窗口已重新可见，跳过 reload",
+                        fp as f64 / 1_048_576.0,
                         WC_RELOAD_THRESHOLD / 1_048_576
                     );
-                    if let Some(win) = app.get_webview_window("main") {
-                        if crate::runtime::shortcut::is_window_visible() {
-                            return;
-                        }
-                        if let Ok(url) = win.url() {
-                            // blank 销毁旧 layer tree（释放 tile backing），再导回原 URL 重建
-                            let _ = win.navigate(tauri::Url::parse("about:blank").unwrap());
-                            std::thread::sleep(std::time::Duration::from_millis(100));
-                            let _ = win.navigate(url);
-                        }
+                    return;
+                }
+                if reload_deferred() {
+                    continue;
+                }
+                let Some(fp2) = crate::platform::mem::webcontent_footprint() else {
+                    return;
+                };
+                if fp2 <= WC_RELOAD_THRESHOLD {
+                    log::info!(
+                        "[mem] WebContent {:.0} MB 峰值已自行回收至 {:.0} MB，跳过 reload",
+                        fp as f64 / 1_048_576.0,
+                        fp2 as f64 / 1_048_576.0
+                    );
+                    return;
+                }
+                log::info!(
+                    "[mem] WebContent {:.0} MB > {} MB → reload webview",
+                    fp2 as f64 / 1_048_576.0,
+                    WC_RELOAD_THRESHOLD / 1_048_576
+                );
+                if let Some(win) = app.get_webview_window("main") {
+                    if crate::runtime::shortcut::is_window_visible() {
+                        return;
+                    }
+                    if let Ok(url) = win.url() {
+                        // blank 销毁旧 layer tree（释放 tile backing），再导回原 URL 重建
+                        let _ = win.navigate(tauri::Url::parse("about:blank").unwrap());
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        let _ = win.navigate(url);
                     }
                 }
+                return;
             }
         });
     }

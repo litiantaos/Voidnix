@@ -161,7 +161,11 @@ impl Extension for AgentExtension {
     async fn setup(&self, app: &tauri::AppHandle) -> tauri::Result<()> {
         use tauri::Manager;
         // 扩展级共享 State（agent_run / agent_abort 命令消费）
-        app.manage(engine::cancellation::SessionRegistry::default());
+        let sessions = SessionRegistry::default();
+        app.manage(sessions.clone());
+        // run 进行中否决 WebContent 内存重载：navigate 即断 Channel，流式事件永久
+        // 丢失、run 沦为孤儿（只能被 boot 恢复逻辑 abort）——隐藏窗口不打断输出
+        crate::runtime::window::register_reload_guard(Arc::new(move || sessions.has_active()));
         Ok(())
     }
 }

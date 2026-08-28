@@ -7,6 +7,7 @@ describe('app store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     clearToasts()
+    sessionStorage.clear()
   })
 
   it('初始状态', () => {
@@ -15,6 +16,20 @@ describe('app store', () => {
     expect(store.searchQuery).toBe('')
     expect(store.isComposing).toBe(false)
     expect(store.isDialogOpen).toBe(false)
+  })
+
+  it('激活扩展写入 sessionStorage（WebContent navigate 重载恢复源）', () => {
+    const store = useAppStore()
+    store.setActiveExtension('agent')
+    expect(sessionStorage.getItem('voidnix.active-ext')).toBe('agent')
+    store.setActiveExtension(null)
+    expect(sessionStorage.getItem('voidnix.active-ext')).toBeNull()
+  })
+
+  it('store 创建时从 sessionStorage 恢复激活扩展（重载后回到隐藏前视图）', () => {
+    sessionStorage.setItem('voidnix.active-ext', 'agent')
+    const store = useAppStore()
+    expect(store.activeExtId).toBe('agent')
   })
 
   describe('setActiveExtension', () => {

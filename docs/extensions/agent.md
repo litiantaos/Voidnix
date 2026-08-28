@@ -156,6 +156,8 @@ defineConfig(AGENT_CONFIG_PATH, {
 
 `hide_window` 后 WebContent footprint 超 350M 阈值时框架会 navigate 重载整个 WKWebView（释放 tile backing），JS 模块单例全部清零——对话状态必须落盘才能存活：
 
+- **重载守卫**：run 进行中时扩展在 Rust setup 注册的重载守卫（`window::register_reload_guard` → `SessionRegistry::has_active`）否决重载，框架延迟到 run 结束——隐藏窗口不打断输出
+- **视图恢复**：激活扩展经 app store 写入 sessionStorage（同浏览会话跨导航存活），重载后首个 show 帧回到隐藏前视图；应用冷启动是新会话不恢复
 - **持久化**：`messages` / `sessionId` 经 `toRef` 直接落在扩展 config（`defineConfig` 深度 watch 自动防抖落盘）；storage 层防抖带 2s 强制落盘上限，流式增量持续重置防抖也不会饿死写盘
 - **恢复**：boot 回填 config 后 `restorePersistedSession` 收尾——运行中 run 的 Channel 已断（事件永久丢失），残留 streaming 消息写入 aborted notice 终结，并 `agent_abort` Rust 侧孤儿 run（run 已结束则 no-op；Rust 端 `SessionRegistry` 不随 webview 重载重建）
 - **应用重启冷启动**走同一路径，语义一致；「新会话」清空落盘数据

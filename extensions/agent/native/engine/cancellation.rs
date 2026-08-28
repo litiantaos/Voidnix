@@ -86,6 +86,15 @@ impl SessionRegistry {
             .is_some()
     }
 
+    /// 是否存在进行中的 run（WebContent 重载守卫消费：run 进行中延迟 webview 重载）。
+    pub fn has_active(&self) -> bool {
+        !self
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+    }
+
     /// 当前注册会话数（测试 / 诊断用）。
     #[cfg(test)]
     fn len(&self) -> usize {
@@ -116,6 +125,16 @@ mod tests {
     fn cancel_unknown_session_returns_false() {
         let reg = SessionRegistry::default();
         assert!(!reg.cancel("missing"));
+    }
+
+    #[test]
+    fn has_active_reflects_lifecycle() {
+        let reg = SessionRegistry::default();
+        assert!(!reg.has_active());
+        reg.register("s1".to_string(), CancellationToken::new());
+        assert!(reg.has_active());
+        reg.unregister("s1");
+        assert!(!reg.has_active());
     }
 
     #[test]
