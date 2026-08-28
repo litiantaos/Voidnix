@@ -3,7 +3,7 @@ import { writeText } from '@/utils/clipboard'
 import { showToast } from '@/composables/useToast'
 import { t } from '@/runtime/i18n'
 import type { Sel, Shape, Tool, Phase, WindowRect, BlurMode } from './useTypes'
-import { DRAG_THRESHOLD } from './useTypes'
+import { DRAG_THRESHOLD, textBgHPad } from './useTypes'
 import { findShapeAt as findShapeAtShapes } from './shapeHitTest'
 
 export function useOverlayEvents(options: {
@@ -52,6 +52,7 @@ export function useOverlayEvents(options: {
     canvasY: number
     width: number
     editingIndex: number | null
+    manualWidth: boolean
   }>
   isDraggingTextInput: Ref<boolean>
   textInputDragStart: Ref<{ mx: number; my: number; canvasX: number; canvasY: number }>
@@ -192,13 +193,16 @@ export function useOverlayEvents(options: {
       const s = options.shapes.value[idx]
       const tw = s.textWidth ?? 160
       const fontSize = s.fontSize ?? Math.max(14, s.lineWidth * 6)
+      // 右缘扣 padX：底色块右缘 = 原点 + 内容宽 + padX，防越出选区（导出被 canvas 裁剪）
+      const padX = s.textBg ? textBgHPad(fontSize) : 0
       const lines = s.textLines ?? (s.text ? s.text.split('\n') : [''])
       const lineH = Math.round(fontSize * 1.3)
       const th = lineH * lines.length
       const newX = options.textInputDragStart.value.canvasX + dx
       const newY = options.textInputDragStart.value.canvasY + dy
-      s.x1 = Math.max(0, Math.min(options.sel.value.w - tw, newX))
-      s.y1 = Math.max(0, Math.min(options.sel.value.h - th, newY))
+      // 与建框同规取整：小数原点在 DOM 与 canvas 栅格取整不同，会产生提交偏移
+      s.x1 = Math.round(Math.max(0, Math.min(options.sel.value.w - tw - padX, newX)))
+      s.y1 = Math.round(Math.max(0, Math.min(options.sel.value.h - th, newY)))
       s.x2 = s.x1
       s.y2 = s.y1
       options.textInput.value.canvasX = s.x1
@@ -243,12 +247,13 @@ export function useOverlayEvents(options: {
         const newX1 = options.shapeDragStart.value.x1 + dx
         const newY1 = options.shapeDragStart.value.y1 + dy
         const fontSize = s.fontSize ?? Math.max(14, s.lineWidth * 6)
+        const padX = s.textBg ? textBgHPad(fontSize) : 0
         const lines = s.textLines ?? (s.text ? s.text.split('\n') : [''])
         const lineH = Math.round(fontSize * 1.3)
         const th = lineH * lines.length
 
-        s.x1 = Math.max(0, Math.min(options.sel.value.w - tw, newX1))
-        s.y1 = Math.max(0, Math.min(options.sel.value.h - th, newY1))
+        s.x1 = Math.round(Math.max(0, Math.min(options.sel.value.w - tw - padX, newX1)))
+        s.y1 = Math.round(Math.max(0, Math.min(options.sel.value.h - th, newY1)))
         s.x2 = s.x1
         s.y2 = s.y1
 

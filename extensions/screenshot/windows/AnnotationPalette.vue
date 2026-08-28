@@ -36,6 +36,24 @@
 
       <div m="x-0.5" class="fill-active" shrink="0" h="5" w="px" />
 
+      <!-- 文字样式切换（仅 text 工具时显示，在颜色选择器之前）：纯文本 / 底色模式 -->
+      <div v-if="activeTool === 'text'" flex gap="1.5">
+        <BaseButton
+          variant="ghost"
+          :active="!textBg"
+          :title="t('screenshot.textPlain')"
+          icon="i-ri-input-method-line"
+          @click="emit('text-bg', false)"
+        />
+        <BaseButton
+          variant="ghost"
+          :active="textBg"
+          :title="t('screenshot.textBg')"
+          icon="i-ri-input-method-fill"
+          @click="emit('text-bg', true)"
+        />
+      </div>
+
       <!-- 颜色选择器（模糊工具时不显示） -->
       <div v-if="activeTool !== 'blur'" flex h="7" items="center" relative>
         <button
@@ -207,6 +225,7 @@ const props = defineProps<{
   color: string
   lineWidth: number
   fontSize: number
+  textBg: boolean
   blurAmount: number
   blurMode: BlurMode
   screenHeight: number
@@ -219,6 +238,7 @@ const emit = defineEmits<{
   color: [c: string]
   'line-width': [n: number]
   'font-size': [n: number]
+  'text-bg': [b: boolean]
   'blur-amount': [n: number]
   'blur-mode': [m: BlurMode]
   ocr: []

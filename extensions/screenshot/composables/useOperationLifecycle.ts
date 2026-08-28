@@ -1,8 +1,9 @@
 import { nextTick, onMounted, onUnmounted, watch, type Ref, type ComputedRef } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
-import type { Phase, Shape, Tool, BlurMode, ScreenshotData, TextRegion } from './useTypes'
-import { wrapText } from './wrapText'
+import type { Phase, Shape, Tool, BlurMode, Sel, ScreenshotData, TextRegion } from './useTypes'
+import { TEXT_AUTO_MIN_WIDTH } from './useTypes'
+import { wrapText, textMaxLineWidth } from './wrapText'
 
 /** 覆盖层挂载/卸载 + 标注参数 watch（字号/线宽/模糊/文本检测预热）。 */
 export function useOperationLifecycle(options: {
@@ -24,12 +25,20 @@ export function useOperationLifecycle(options: {
   selectedShape: ComputedRef<Shape | null>
   shapes: Ref<Shape[]>
   selectedShapeIndex: Ref<number | null>
+  sel: Ref<Sel>
   annotBlurAmount: Ref<number>
   annotFontSize: Ref<number>
+  annotColor: Ref<string>
   annotLineWidth: Ref<number>
   annotBlurMode: Ref<BlurMode>
+  annotTextBg: Ref<boolean>
   activeTool: Ref<Tool>
-  textInput: Ref<{ visible: boolean; editingIndex: number | null }>
+  textInput: Ref<{
+    visible: boolean
+    value: string
+    width: number
+    editingIndex: number | null
+  }>
   autoResizeTextInput: () => void
   detectText: () => void
   textRegions: Ref<TextRegion[]>
@@ -108,18 +117,29 @@ export function useOperationLifecycle(options: {
 
   watch(options.annotFontSize, (v) => {
     const s = options.selectedShape.value
-    if (s && s.type === 'text') {
-      s.fontSize = v
-      if (s.text) {
-        const font = `${v}px -apple-system, sans-serif`
-        s.textLines = wrapText(s.text, s.textWidth ?? 160, font)
-      }
-      options.redraw()
-      const ti = options.textInput.value
-      if (ti.visible && ti.editingIndex === options.selectedShapeIndex.value) {
-        nextTick(() => options.autoResizeTextInput())
-      }
-    }
+    if (!s || s.type !== 'text') return
+    // 选中回灌同值时跳过：宽度重自适应会覆写手动调宽的换行布局
+    if (s.fontSize === v) return
+    s.fontSize = v
+    // 旧字号实测的基线补偿已失效，回退公式基线（下次提交重测）
+    s.baselineAdjust = undefined
+    const ti = options.textInput.value
+    const editing = ti.visible && ti.editingIndex === options.selectedShapeIndex.value
+    // 字号变化后宽度重自适应：编辑中以实时输入内容为准（新文本的占位 shape 尚未写入 text），
+    // 并同步输入框宽度——提交用 textInput.width，不同步会造成进/出编辑态底色宽度跳变
+    const content = editing ? ti.value : (s.text ?? '')
+    const font = `${v}px -apple-system, sans-serif`
+    const paras = content.split('\n')
+    const avail = Math.max(TEXT_AUTO_MIN_WIDTH, options.sel.value.w - s.x1 - 10)
+    const fit = Math.min(
+      Math.max(Math.ceil(textMaxLineWidth(paras, font)), TEXT_AUTO_MIN_WIDTH),
+      avail,
+    )
+    s.textWidth = fit
+    if (editing) ti.width = fit
+    if (s.text) s.textLines = wrapText(s.text, fit, font)
+    options.redraw()
+    if (editing) nextTick(() => options.autoResizeTextInput())
   })
 
   watch(options.annotLineWidth, (v) => {
@@ -140,8 +160,10 @@ export function useOperationLifecycle(options: {
       options.annotBlurMode.value = mode
       if (mode === 'text') options.detectText()
     }
-    if (s.type === 'text' && typeof s.fontSize === 'number') {
-      options.annotFontSize.value = s.fontSize
+    if (s.type === 'text') {
+      if (typeof s.fontSize === 'number') options.annotFontSize.value = s.fontSize
+      options.annotTextBg.value = s.textBg ?? false
+      options.annotColor.value = s.color
     }
     if (s.type === 'rect' || s.type === 'line' || s.type === 'arrow') {
       options.annotLineWidth.value = s.lineWidth
@@ -155,6 +177,23 @@ export function useOperationLifecycle(options: {
       options.redraw()
     }
     if (mode === 'text') options.detectText()
+  })
+
+  watch(options.annotTextBg, (v) => {
+    const s = options.selectedShape.value
+    if (s && s.type === 'text') {
+      s.textBg = v
+      options.redraw()
+    }
+  })
+
+  // 颜色实时作用于选中文字（含编辑中占位 shape，textarea 样式随之响应）
+  watch(options.annotColor, (v) => {
+    const s = options.selectedShape.value
+    if (s && s.type === 'text') {
+      s.color = v
+      options.redraw()
+    }
   })
 
   watch(options.activeTool, (tool) => {

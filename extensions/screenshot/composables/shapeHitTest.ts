@@ -1,4 +1,5 @@
 import type { Shape } from './useTypes'
+import { textBgHPad } from './useTypes'
 
 const HIT = 8
 
@@ -49,10 +50,13 @@ export function hitTestShape(shape: Shape, px: number, py: number): boolean {
   if (type === 'text') {
     const w = textWidth ?? 160
     const fontSize = shape.fontSize ?? Math.max(14, shape.lineWidth * 6)
+    const padX = shape.textBg ? textBgHPad(fontSize) : 0
     const lines = shape.textLines ?? (shape.text ? shape.text.split('\n') : [''])
     const lineH = Math.round(fontSize * 1.3)
     const h = lineH * lines.length
-    return px >= x1 - HIT && px <= x1 + w + HIT && py >= y1 - HIT && py <= y1 + h + HIT
+    return (
+      px >= x1 - HIT - padX && px <= x1 + w + HIT + padX && py >= y1 - HIT && py <= y1 + h + HIT
+    )
   }
   return false
 }

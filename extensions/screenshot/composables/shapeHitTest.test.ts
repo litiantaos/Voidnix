@@ -53,6 +53,26 @@ describe('hitTestShape', () => {
     expect(hitTestShape(s, 25, 25)).toBe(true)
     expect(hitTestShape(s, 60, 60)).toBe(false)
   })
+
+  it('标签底色文字：命中区随底色内边距外扩', () => {
+    const s: Shape = {
+      type: 'text',
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 0,
+      color: '#ff3b30',
+      lineWidth: 1,
+      fontSize: 20,
+      text: '标签',
+      textLines: ['标签'],
+      textWidth: 40,
+      textBg: true,
+    }
+    // fontSize 20 → padX = 7，底色左边缘在 x1-7；HIT=8 外的 -10 仅底色模式命中
+    expect(hitTestShape(s, -10, 13)).toBe(true)
+    expect(hitTestShape({ ...s, textBg: undefined }, -10, 13)).toBe(false)
+  })
 })
 
 describe('findShapeAt', () => {

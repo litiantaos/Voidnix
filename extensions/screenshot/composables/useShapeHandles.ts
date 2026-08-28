@@ -1,6 +1,6 @@
 import { ref, computed, type Ref } from 'vue'
 import type { Shape, Sel, ShapeHandle } from './useTypes'
-import { TEXT_MIN_WIDTH, TEXT_DRAG_PAD } from './useTypes'
+import { TEXT_MIN_WIDTH, TEXT_DRAG_PAD, textBgHPad } from './useTypes'
 import { wrapText } from './wrapText'
 
 export function useShapeHandles(options: {
@@ -9,8 +9,10 @@ export function useShapeHandles(options: {
   selectedShapeIndex: Ref<number | null>
   textInput: Ref<{
     visible: boolean
+    value: string
     editingIndex: number | null
     width: number
+    manualWidth: boolean
   }>
   fromLocal: (s: Shape, localX: number, localY: number) => { x: number; y: number }
   redraw: () => void
@@ -85,8 +87,15 @@ export function useShapeHandles(options: {
 
     if (s.type === 'text') {
       const fontSize = s.fontSize ?? Math.max(14, s.lineWidth * 6)
-      const lines = s.textLines ?? (s.text ? s.text.split('\n') : [''])
       const lineH = Math.round(fontSize * 1.3)
+
+      // 编辑中按 textarea 实时内容（v-model）现场换行，控制点随块高实时垂直居中；
+      // 非编辑态用已提交的换行结果
+      const ti = options.textInput.value
+      const editingThis = ti.visible && ti.editingIndex === options.selectedShapeIndex.value
+      const lines = editingThis
+        ? wrapText(ti.value, ti.width, `${fontSize}px -apple-system, sans-serif`)
+        : (s.textLines ?? (s.text ? s.text.split('\n') : ['']))
       const th = lineH * Math.max(1, lines.length)
 
       const tempCanvas = document.createElement('canvas')
@@ -98,7 +107,8 @@ export function useShapeHandles(options: {
       })
       const tw = Math.max(s.textWidth ?? 160, maxTextWidth)
 
-      const rx = x1 + tw + TEXT_DRAG_PAD
+      // 控制点贴住虚线编辑框右边框：内容宽 + (底色模式追加内边距) + 触控边距
+      const rx = x1 + tw + TEXT_DRAG_PAD + (s.textBg ? textBgHPad(fontSize) : 0)
       const my = y1 + th / 2
 
       return [{ id: 'e', style: hpStyle(rx, my) }]
@@ -265,12 +275,15 @@ export function useShapeHandles(options: {
       }
     } else if (s.type === 'text') {
       if (hid === 'e') {
-        const handleStartX = options.sel.value.x + x1 + tw
+        // 与显示位置同一基准：底色模式控制点在内容宽 + 底色内边距处
+        const padX = s.textBg ? textBgHPad(s.fontSize ?? Math.max(14, s.lineWidth * 6)) : 0
+        const handleStartX = options.sel.value.x + x1 + tw + padX
         const handleNewX = handleStartX + dxScreen
-        const minHandleX = options.sel.value.x + x1 + TEXT_MIN_WIDTH
-        const maxHandleX = options.sel.value.x + options.sel.value.w - 10
+        const minHandleX = options.sel.value.x + x1 + TEXT_MIN_WIDTH + padX
+        // 右缘扣 padX：底色块右缘 = 原点 + 内容宽 + padX，防越出选区（屏显与导出不一致）
+        const maxHandleX = options.sel.value.x + options.sel.value.w - 10 - padX
         const clampedHandleX = Math.max(minHandleX, Math.min(maxHandleX, handleNewX))
-        const newWidth = clampedHandleX - (options.sel.value.x + x1)
+        const newWidth = clampedHandleX - (options.sel.value.x + x1) - padX
 
         s.textWidth = newWidth
         if (
@@ -278,6 +291,8 @@ export function useShapeHandles(options: {
           options.textInput.value.editingIndex === options.selectedShapeIndex.value
         ) {
           options.textInput.value.width = newWidth
+          // 手动调宽后，本次编辑会话内自适应宽度不再覆盖
+          options.textInput.value.manualWidth = true
         }
 
         const fontSize = s.fontSize ?? Math.max(14, s.lineWidth * 6)

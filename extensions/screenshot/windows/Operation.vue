@@ -128,6 +128,17 @@
       :style="blurFrameStyle"
     />
 
+    <!-- 提交文字的 DOM 呈现层：与编辑态 textarea 同渲染管线（导出时 v-show 隐藏、烧录进 canvas） -->
+    <div
+      v-for="(t, i) in textShapes"
+      :key="`text${i}`"
+      v-show="!textOnCanvas"
+      class="overlay-abs pointer-events-none"
+      :style="domTextStyle(t)"
+    >
+      {{ t.text }}
+    </div>
+
     <ShapeHandlesOverlay
       :shape="effectiveShape"
       :phase="phase"
@@ -144,13 +155,12 @@
       :style="textInputWrapperStyle"
       @mousedown="onTextInputWrapperMouseDown"
     >
-      <!-- 拖动边框：点击可拖动文本框 -->
+      <!-- 拖动边框：点击可拖动文本框（圆角与底色块同心） -->
       <div
-        rounded="sm"
         cursor="move"
         inset="0"
         absolute
-        :style="{ padding: '1px', border: '1px dashed var(--color-accent)' }"
+        :style="textInputFrameStyle"
         @mousedown.stop="startTextInputDrag($event)"
       />
       <textarea
@@ -181,6 +191,7 @@
         :color="annotColor"
         :line-width="annotLineWidth"
         :font-size="annotFontSize"
+        :text-bg="annotTextBg"
         :blur-amount="annotBlurAmount"
         :blur-mode="annotBlurMode"
         :screen-height="screenH"
@@ -191,6 +202,7 @@
         @color="annotColor = $event"
         @line-width="annotLineWidth = $event"
         @font-size="annotFontSize = $event"
+        @text-bg="annotTextBg = $event"
         @blur-amount="annotBlurAmount = $event"
         @blur-mode="annotBlurMode = $event"
         @ocr="doOcr"
@@ -259,14 +271,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, type CSSProperties } from 'vue'
 import { t } from '@/runtime/i18n'
 import AnnotationPalette from './AnnotationPalette.vue'
 import ScrollPreview from './ScrollPreview.vue'
 import SelectionChrome from './SelectionChrome.vue'
 import ShapeHandlesOverlay from './ShapeHandlesOverlay.vue'
-import type { ScreenshotData, Phase } from '../composables/useTypes'
-import { MAGNIFIER_SIZE } from '../composables/useTypes'
+import type { ScreenshotData, Phase, Shape } from '../composables/useTypes'
+import { MAGNIFIER_SIZE, contrastInk, textBgHPad, textBgRadius } from '../composables/useTypes'
+import { textMaxLineWidth } from '../composables/wrapText'
 import { useSelection } from '../composables/useSelection'
 import { useAnnotation } from '../composables/useAnnotation'
 import { useTextInput } from '../composables/useTextInput'
@@ -347,21 +360,34 @@ const effectiveShape = computed(() => {
   return annotation.selectedShape.value
 })
 
+// 屏幕上提交文字由 DOM 层呈现（与编辑态同渲染管线，结构上无位移）；
+// 导出时临时烧录进 canvas（begin/end 由 useScreenshotActions 调用）
+const textOnCanvas = ref(false)
 const drawing = useDrawing({
   annotateCanvas,
   dpr,
   sel: selection.sel,
   bgImage: magnifier.bgImage,
   shapes: annotation.shapes,
-  textInput: ref({ visible: false, editingIndex: null }),
+  textOnCanvas,
   textRegions: textDetection.textRegions,
 })
+const beginCanvasText = async () => {
+  textOnCanvas.value = true
+  await nextTick()
+  drawing.redraw()
+}
+const endCanvasText = () => {
+  textOnCanvas.value = false
+  nextTick(() => drawing.redraw())
+}
 
 const textInputComposable = useTextInput({
   sel: selection.sel,
   annotColor: annotation.annotColor,
   annotLineWidth: annotation.annotLineWidth,
   annotFontSize: annotation.annotFontSize,
+  annotTextBg: annotation.annotTextBg,
   shapes: annotation.shapes,
   selectedShapeIndex: annotation.selectedShapeIndex,
   isHoveringSelectedShape: annotation.isHoveringSelectedShape,
@@ -377,6 +403,7 @@ const actions = useScreenshotActions({
   bgImage: magnifier.bgImage,
   rootEl,
   emit,
+  canvasText: { begin: beginCanvasText, end: endCanvasText },
 })
 
 const shapeHandlesComposable = useShapeHandles({
@@ -487,6 +514,7 @@ const {
   annotColor,
   annotLineWidth,
   annotFontSize,
+  annotTextBg,
   annotBlurAmount,
   annotBlurMode,
   handleCursor,
@@ -496,6 +524,7 @@ const {
   textInput,
   textInputWrapperStyle,
   textInputInnerStyle,
+  textInputFrameStyle,
   startTextInputDrag,
   onTextInputWrapperMouseDown,
   onTextInputInput,
@@ -617,11 +646,46 @@ const blurFrameStyle = computed(() => {
   }
 })
 
+// 提交文字的 DOM 呈现层（编辑中的形状由 textarea 呈现，跳过）
+const textShapes = computed(() => {
+  if (phase.value === 'select') return []
+  const ti = textInputComposable.textInput.value
+  return annotation.shapes.value.filter(
+    (s, i) => s.type === 'text' && !!s.text && !(ti.visible && ti.editingIndex === i),
+  )
+})
+
+// 与 drawShape 的几何/样式保持一致（底色块宽 = max(换行盒宽, 最大行宽) + 内边距，手动调宽保留）
+function domTextStyle(s: Shape): CSSProperties {
+  const fontSize = s.fontSize ?? Math.max(14, s.lineWidth * 6)
+  const lineH = Math.round(fontSize * 1.3)
+  const padX = s.textBg ? textBgHPad(fontSize) : 0
+  const font = `${fontSize}px -apple-system, sans-serif`
+  const maxLineW = s.textBg
+    ? textMaxLineWidth(s.textLines ?? (s.text ? s.text.split('\n') : []), font)
+    : 0
+  return {
+    left: `${sel.value.x + s.x1 - padX}px`,
+    top: `${sel.value.y + s.y1}px`,
+    width: `${Math.max(s.textWidth ?? 0, maxLineW) + padX * 2}px`,
+    fontFamily: '-apple-system, sans-serif',
+    fontSize: `${fontSize}px`,
+    lineHeight: `${lineH}px`,
+    color: s.textBg ? contrastInk(s.color) : s.color,
+    background: s.textBg ? s.color : 'transparent',
+    borderRadius: s.textBg ? `${textBgRadius(fontSize, lineH)}px` : '0px',
+    padding: s.textBg ? `0 ${padX}px` : '0px',
+    whiteSpace: 'pre-wrap',
+    pointerEvents: 'none',
+  }
+}
+
 useOperationLifecycle({
   initialScreenshot: props.initialScreenshot,
   rootEl,
   annotateCanvas,
   phase,
+  sel: selection.sel,
   crossX,
   crossY,
   hoverWindow: selection.hoverWindow,
@@ -637,8 +701,10 @@ useOperationLifecycle({
   selectedShapeIndex: annotation.selectedShapeIndex,
   annotBlurAmount: annotation.annotBlurAmount,
   annotFontSize: annotation.annotFontSize,
+  annotColor: annotation.annotColor,
   annotLineWidth: annotation.annotLineWidth,
   annotBlurMode: annotation.annotBlurMode,
+  annotTextBg: annotation.annotTextBg,
   activeTool: annotation.activeTool,
   textInput: textInputComposable.textInput,
   autoResizeTextInput: textInputComposable.autoResizeTextInput,

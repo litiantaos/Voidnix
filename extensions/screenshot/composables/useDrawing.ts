@@ -1,6 +1,53 @@
 import type { Ref } from 'vue'
 import type { Shape, Sel, TextRegion } from './useTypes'
-import { measureTextMetrics } from './wrapText'
+import { contrastInk, textBgHPad, textBgRadius } from './useTypes'
+
+/// 字体度量缓存（画布文字与 CSS 行盒对齐用）
+const fontMetricCache = new Map<string, { ascent: number; descent: number }>()
+const CJK_CHAR_RE = /[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF60]/
+
+function probeMetrics(
+  ctx: CanvasRenderingContext2D,
+  fontSize: number,
+  family: string,
+  sample: string,
+): { ascent: number; descent: number } {
+  const key = `${fontSize}|${family}`
+  let m = fontMetricCache.get(key)
+  if (!m) {
+    ctx.font = `${fontSize}px ${family}`
+    const mm = ctx.measureText(sample)
+    m = {
+      ascent:
+        (mm as unknown as { fontBoundingBoxAscent?: number }).fontBoundingBoxAscent ??
+        mm.actualBoundingBoxAscent,
+      descent:
+        (mm as unknown as { fontBoundingBoxDescent?: number }).fontBoundingBoxDescent ??
+        mm.actualBoundingBoxDescent,
+    }
+    fontMetricCache.set(key, m)
+  }
+  return m
+}
+
+/// CSS 行盒基线偏移（行盒顶 → 基线）：max((lineH + ascent - descent) / 2) over 行内字体。
+/// SF 支柱恒在；行含 CJK 时计入 PingFang 回退的贡献。
+export function lineBaselineOffset(
+  ctx: CanvasRenderingContext2D,
+  fontSize: number,
+  line: string,
+  lineH: number,
+): number {
+  const sf = probeMetrics(ctx, fontSize, '-apple-system', 'Äg')
+  let above = (lineH + sf.ascent - sf.descent) / 2
+  if (CJK_CHAR_RE.test(line)) {
+    const cjk = probeMetrics(ctx, fontSize, "'PingFang SC'", '中')
+    above = Math.max(above, (lineH + cjk.ascent - cjk.descent) / 2)
+  }
+  // probe 污染了 ctx.font，恢复绘制字体
+  ctx.font = `${fontSize}px -apple-system, sans-serif`
+  return above
+}
 
 export function useDrawing(options: {
   annotateCanvas: Ref<HTMLCanvasElement | undefined>
@@ -8,10 +55,8 @@ export function useDrawing(options: {
   sel: Ref<Sel>
   bgImage: Ref<HTMLImageElement | null>
   shapes: Ref<Shape[]>
-  textInput: Ref<{
-    visible: boolean
-    editingIndex: number | null
-  }>
+  // 屏幕上文字由 DOM 层呈现（与编辑态同管线，零位移）；导出前临时置 true 烧录进 canvas
+  textOnCanvas: Ref<boolean>
   textRegions: Ref<TextRegion[]>
 }) {
   function redraw(preview?: Shape | null) {
@@ -21,7 +66,10 @@ export function useDrawing(options: {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.save()
     ctx.scale(options.dpr.value, options.dpr.value)
-    for (const shape of options.shapes.value) drawShape(ctx, shape)
+    for (const shape of options.shapes.value) {
+      if (shape.type === 'text' && !options.textOnCanvas.value) continue
+      drawShape(ctx, shape)
+    }
     if (preview) drawShape(ctx, preview)
     ctx.restore()
   }
@@ -37,6 +85,8 @@ export function useDrawing(options: {
       lineWidth,
       text,
       textLines,
+      textWidth,
+      textBg,
       cornerRadius: cr,
       rotation,
     } = shape
@@ -86,25 +136,34 @@ export function useDrawing(options: {
     } else if (type === 'arrow') {
       drawArrow(ctx, x1, y1, x2, y2, lineWidth)
     } else if (type === 'text' && (text || textLines)) {
-      if (
-        options.textInput.value.visible &&
-        options.textInput.value.editingIndex !== null &&
-        options.shapes.value[options.textInput.value.editingIndex] === shape
-      ) {
-        return
-      }
       const fontSize = shape.fontSize ?? Math.max(14, lineWidth * 6)
       const lineH = Math.round(fontSize * 1.3)
       const font = `${fontSize}px -apple-system, sans-serif`
       ctx.font = font
-      ctx.textBaseline = 'top'
+      // 逐行计算 CSS 行盒基线偏移（同 max 公式）后用 alphabetic 直接放基线，
+      // 与编辑态 textarea 的行盒模型一致，消除提交瞬间的位置抖动。
+      // 中文行由 PingFang 回退渲染，其行盒贡献高于 SF 支柱，需计入 max。
+      ctx.textBaseline = 'alphabetic'
       const lines = textLines ?? (text ? text.split('\n') : [])
-      // 精确补偿：Canvas textBaseline='top' 对应字体 ascent 顶部，
-      // CSS line-box 顶部到 ascent 顶部的距离 = halfLeading。
-      // 用 Canvas measureText 实测 ascent/descent，避免按 fontSize 估算的误差。
-      const { halfLeading } = measureTextMetrics(fontSize, lineH, font)
+      // 底色模式：整块圆角底（宽度 = max(换行盒宽, 实际最大行宽) + 内边距——
+      // 自适应时换行盒即内容宽（贴合），手动调宽后保留手动宽度），文字换亮度对比色
+      if (textBg && lines.length > 0) {
+        const padX = textBgHPad(fontSize)
+        let maxLineW = 0
+        for (const line of lines) maxLineW = Math.max(maxLineW, ctx.measureText(line).width)
+        const boxW = Math.max(textWidth ?? 0, maxLineW) + padX * 2
+        ctx.fillStyle = color
+        ctx.beginPath()
+        ctx.roundRect(x1 - padX, y1, boxW, lineH * lines.length, textBgRadius(fontSize, lineH))
+        ctx.fill()
+        ctx.fillStyle = contrastInk(color)
+      }
       lines.forEach((line, i) => {
-        ctx.fillText(line, x1, y1 + halfLeading + i * lineH)
+        if (!line) return
+        const baseline = lineBaselineOffset(ctx, fontSize, line, lineH)
+        // baselineAdjust：提交时实测的编辑态基线补偿（DOM 与 canvas 度量口径差）
+        const dy = shape.baselineAdjust ?? 0
+        ctx.fillText(line, x1, y1 + baseline + dy + i * lineH)
       })
     } else if (type === 'blur') {
       const bw = Math.abs(x2 - x1),

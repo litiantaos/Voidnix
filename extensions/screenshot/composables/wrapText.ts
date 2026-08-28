@@ -2,9 +2,10 @@
  * 基于 Canvas measureText 的文本换行，行为模拟
  * white-space: pre-wrap; overflow-wrap: break-word;
  */
+const sharedCanvas = document.createElement('canvas')
+
 export function wrapText(text: string, maxWidth: number, font: string): string[] {
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')!
+  const ctx = sharedCanvas.getContext('2d')!
   ctx.font = font
 
   const lines: string[] = []
@@ -32,41 +33,11 @@ export function wrapText(text: string, maxWidth: number, font: string): string[]
   return lines
 }
 
-export interface TextMetrics {
-  fontSize: number
-  lineHeight: number
-  ascent: number
-  descent: number
-  halfLeading: number
-}
-
-/**
- * 精确测量字体 metrics，计算 CSS half-leading。
- * Canvas textBaseline='top' 的 y 坐标 + halfLeading = CSS line-box 内的 ascent 顶部。
- */
-export function measureTextMetrics(
-  fontSize: number,
-  lineHeight: number,
-  font: string,
-): TextMetrics {
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')!
+/// 逐行实测最大行宽（DOM 呈现层与画布底色块共用同一宽度来源）
+export function textMaxLineWidth(lines: string[], font: string): number {
+  const ctx = sharedCanvas.getContext('2d')!
   ctx.font = font
-
-  // 用包含升部/降部的字符测量，fallback 到 actualBoundingBox
-  const m = ctx.measureText('Äg')
-  const ascent =
-    (m as unknown as { fontBoundingBoxAscent?: number }).fontBoundingBoxAscent ??
-    m.actualBoundingBoxAscent
-  const descent =
-    (m as unknown as { fontBoundingBoxDescent?: number }).fontBoundingBoxDescent ??
-    m.actualBoundingBoxDescent
-
-  return {
-    fontSize,
-    lineHeight,
-    ascent,
-    descent,
-    halfLeading: (lineHeight - ascent - descent) / 2,
-  }
+  let maxW = 0
+  for (const line of lines) maxW = Math.max(maxW, ctx.measureText(line).width)
+  return maxW
 }
