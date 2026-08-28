@@ -15,8 +15,31 @@ export interface ConfirmOptions {
   showCancel?: boolean
 }
 
+/// WebContent 内存阈值触发的 navigate 重载会清零全部 JS 单例；sessionStorage 在同一
+/// 浏览会话内跨导航存活——激活扩展写入此处，重载后据此恢复隐藏前视图。
+/// 应用冷启动是全新会话（sessionStorage 为空），不恢复。
+const ACTIVE_EXT_KEY = 'voidnix.active-ext'
+
+function persistActiveExt(id: string | null) {
+  try {
+    if (id) sessionStorage.setItem(ACTIVE_EXT_KEY, id)
+    else sessionStorage.removeItem(ACTIVE_EXT_KEY)
+  } catch {
+    /* 存储不可用仅损失重载恢复，静默降级 */
+  }
+}
+
+function restoreActiveExt(): string | null {
+  try {
+    return sessionStorage.getItem(ACTIVE_EXT_KEY)
+  } catch {
+    return null
+  }
+}
+
 export const useAppStore = defineStore('app', () => {
-  const activeExtId = ref<string | null>(null)
+  const restoredExtId = restoreActiveExt()
+  const activeExtId = ref<string | null>(restoredExtId)
   const searchQuery = ref('')
   // 进入扩展时的入口 query 快照：ESC 退出据此决定返回目标（/ → 工具列表，其余 → 主界面）
   const entryQuery = ref('')
@@ -57,6 +80,7 @@ export const useAppStore = defineStore('app', () => {
     }
     // ext→ext（如 OCR→translate）：保留原入口，ESC 回到最初进入点
     activeExtId.value = id
+    persistActiveExt(id)
     activeSubview.value = null
     subviewExternal.value = false
     // 模式切换：激活扩展时 searchEngine 只调该扩展 dynamic；null 恢复全局聚合。
@@ -64,6 +88,10 @@ export const useAppStore = defineStore('app', () => {
     // 扩展内 BaseDialog 由自身 onDeactivated(dismiss) 关窗。
     searchEngine.setActiveExtension(id ?? undefined)
   }
+
+  // navigate 重载后恢复：store 创建时若已有持久化激活扩展（重载前活跃），
+  // 搜索引擎同步进扩展模式，首个 show 帧即回到隐藏前视图
+  if (restoredExtId) searchEngine.setActiveExtension(restoredExtId)
 
   function setSearchQuery(query: string) {
     searchQuery.value = query
