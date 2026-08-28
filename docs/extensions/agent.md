@@ -111,7 +111,7 @@ defineConfig(AGENT_CONFIG_PATH, {
 - **不变式**：流式文本只追加不回改——已完成块的文本恒定，按块缓存 markdown HTML（组件级 `Map`），流式每个增量只 parse 末块 + 只写末块 DOM
 - **收尾零尖峰**：收尾分块与流式期前缀完全一致（缓存命中），仅补渲染末块；不再全量 `renderMarkdown(全文)` 整树重建
 - **容器**：每块一个 `display:contents` 容器（`.md-solid` / `.md-full`），子块直接参与 `markdown-body` 的 gap 布局，与单容器渲染同构
-- **拖尾**：最后未完成行仍是纯文本 `.md-tail`（渐隐 mask），不进 markdown
+- **拖尾**：最后未完成行仍是纯文本 `.md-tail`（渐隐 mask + 末端轻模糊 + 新行下移淡入），不进 markdown；样式本体在 `agent-step.css`，思考正文（AgentReasoningPart）共用
 
 ### 贴底滚动
 
@@ -134,13 +134,13 @@ defineConfig(AGENT_CONFIG_PATH, {
 `AgentPart.type = 'reasoning'`：
 
 - **来源**：LLM 思考模式输出（`reasoning_content`，DeepSeek-R1 / 智谱 GLM / Kimi 等）流式累积成 reasoning part
-- **展示**：三行省略（sparkling 图标 + 「思考」标签 + secondary 文本）
+- **展示**：贴底末三行（sparkling 图标 + 「思考」标签 + secondary 文本；`agent-step-clamp` flex 列 justify-end，流式增量实时跟随末尾输出而非冻结在前三行）；流式拖尾复用回复正文 `.md-tail`（末行渐隐 + 轻模糊 + 新行下移淡入，`streamView` 拆已定行/末行），完成后回落单一纯文本；pre-wrap 保留真实换行
 - **不回灌 LLM**：`toLlmMessages` 只取 text，reasoning 仅 UI 可见
 - **多轮分段**：每轮独立成段（reasoningDelta 累积到最后一个 reasoning part 或新建）
 
 ### 工具结果
 
-- **web_search 成功**：展示 answer 摘要（三行省略）
+- **web_search 成功**：展示 answer 摘要（贴底末三行，同 reasoning clamp）
 - **web_search 失败**：展示 `output` 错误串
 - **run_command 等**：展示 `output` 原文
 
@@ -168,7 +168,7 @@ defineConfig(AGENT_CONFIG_PATH, {
 
 ### 悬浮操作
 
-- **锚点**：输入框上方零宽中线锚点
+- **锚点**：输入框上方零宽中线锚点，距输入框间距与消息区一致（`--space`）
 - **滚底按钮显隐**：滚底非贴底即显
 - **中止按钮显隐**：仅输出中显示
 - **双钮布局**：两钮 absolute；solo = `translate -50%` 居中；pair = 分居中线两侧（半槽 4px）
@@ -204,9 +204,9 @@ extensions/agent/
 ├── logic.ts               # 纯逻辑（消息序列化等，便于测试）
 ├── View.vue               # 布局 + 贴底滚动 + 悬浮操作 + notice
 ├── AgentTextPart.vue      # 流式/完成 markdown 文本 part
-├── AgentReasoningPart.vue # 思考模式 part（三行省略，不回灌 LLM）
+├── AgentReasoningPart.vue # 思考模式 part（贴底末三行 + md-tail 拖尾，不回灌 LLM）
 ├── AgentToolStep.vue      # 工具步骤行 + output
-├── agent-step.css         # 思考/工具步骤共用样式
+├── agent-step.css         # 流式共用样式（step 思考/工具步骤 + md-tail 拖尾，回复正文共用）
 ├── Settings.vue           # Provider + Agent 配置
 ├── Actions.vue            # 模型切换 + 历史跳转 + 新会话 + 设置
 └── native/

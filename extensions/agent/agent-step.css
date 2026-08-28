@@ -1,4 +1,5 @@
-/* 思考占位 / 工具步骤共用（View + AgentToolStep 导入，非 scoped） */
+/* Agent 流式共用样式（step 思考/工具步骤 + md-tail 拖尾；
+   View / AgentReasoningPart / AgentToolStep / AgentTextPart 导入，非 scoped） */
 
 .agent-step {
   /* backwards：延迟期显示起始帧，结束后无驻留样式——both 会把结束帧 transform
@@ -89,12 +90,83 @@
   animation: agent-step-out-in 0.25s var(--ease-out) backwards;
 }
 
-/* step 内摘要文本：最多三行省略（web_search answer / reasoning 共用） */
+/* step 内摘要文本：只显末三行，贴底对齐（web_search answer / reasoning 共用）。
+   line-clamp 恒锚顶部——流式增量下视觉冻结在前三行，无法跟随末尾输出；
+   改 flex 列 + justify-end：内容超三行时顶部溢出被裁、末三行贴底可见，
+   流式期间实时跟随末尾。子项必须 flex:none——flex 收缩会把裁切边改回底部。
+   pre-wrap 保留真实换行（拖尾按行渲染的前提） */
 .agent-step-clamp {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  max-height: 4.125em; /* 3 行 × leading-snug 1.375 */
   overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-step-clamp > * {
+  flex: none;
+}
+
+/*
+ * 流式末行拖尾（回复正文 AgentTextPart 与思考正文 AgentReasoningPart 共用）
+ * - mask：末端透明渐隐
+ * - ::after：仅末尾一截轻模糊
+ * - 新行 key 变化：下移淡入（transform 不占布局）
+ * 行距随上下文继承（回复 relaxed / 思考 snug）；1lh 兜底空拖尾占位高度
+ */
+.md-tail {
+  position: relative;
+  margin: 0;
+  min-height: 1.65em;
+  min-height: 1lh;
+  animation: agent-md-line-in 0.38s var(--ease-out) backwards;
+}
+
+.md-tail-text {
+  display: inline;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    #000 0%,
+    #000 max(0%, calc(100% - 3.5em)),
+    rgba(0, 0, 0, 0.45) calc(100% - 1.4em),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    #000 0%,
+    #000 max(0%, calc(100% - 3.5em)),
+    rgba(0, 0, 0, 0.45) calc(100% - 1.4em),
+    transparent 100%
+  );
+}
+
+.md-tail::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(2.8em, 40%);
+  pointer-events: none;
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 80%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 80%);
+}
+
+@keyframes agent-md-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.45em);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes agent-step-in {

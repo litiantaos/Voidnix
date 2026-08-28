@@ -30,7 +30,7 @@
         <span class="agent-step-rail" />
       </div>
       <p v-if="answer" class="agent-step-out agent-step-clamp" text="secondary" leading="snug">
-        {{ answer }}
+        <span>{{ answer }}</span>
       </p>
       <pre
         v-else-if="part.output"
