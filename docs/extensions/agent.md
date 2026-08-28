@@ -124,10 +124,10 @@ defineConfig(AGENT_CONFIG_PATH, {
 
 - **布局**：`agent-footer` absolute 贴底（左右/底 12），不占 flex 流
 - **消息区**：铺满并可滚入 footer 下方
-- **底部预留**：滚动区 `padding-bottom` + `chrome-fade-bottom` 高度，由 ResizeObserver 跟踪 footer 实际高度动态驱动（`--agent-footer-reserve`）
-- **恒定间距**：末条消息距输入岛恒为 `--space`
+- **底部预留**：滚动区末尾 spacer 元素（高度 `--agent-footer-reserve`，由 ResizeObserver 跟踪 footer 实际高度动态驱动）+ `chrome-fade-bottom`。必须用真实元素而非容器 `padding-bottom`：WebKit 滚轮路由只认内容溢出，padding 产生的 scrollHeight 超出在内容未超 padding box 时滚轮不生效（消息被输入岛遮挡但未超窗时滚不动）
+- **恒定间距**：末条消息距输入岛恒为 `--space`（gap 提供）
 - **渐隐贴合**：渐隐精确贴合 footer 区域
-- **同步增长**：textarea 自动撑高时三者（padding / 渐隐 / textarea）同步增长
+- **同步增长**：textarea 自动撑高时三者（spacer / 渐隐 / textarea）同步增长
 
 ### 思考模式
 
