@@ -6,8 +6,10 @@
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fastest: 100ms; /* 退场 / 微交互（ui-popup leave、ext-tag 图标切换） */
   --duration-fast: 150ms;
   --duration-normal: 200ms;
+  --duration-slow: 300ms; /* 数据条填充等慢一拍的进度型过渡 */
   --space: 12px; /* 全局 p-3 */
   --space-soft: 6px 10px; /* step / notice 内垫 */
 
@@ -16,7 +18,6 @@
   --color-canvas: var(--color-surface);
   --color-accent: #3d82f0;
   --color-mist: rgb(var(--cool) / 0.12);
-  --color-mist-solid: #e6eaf3;
   --color-text-primary: rgba(30, 35, 50, 0.92);
   --color-text-secondary: rgba(80, 90, 115, 0.88);
   --color-text-muted: rgba(110, 120, 145, 0.72);
@@ -60,7 +61,6 @@
   --soft-surface-border: rgb(255 255 255 / 0.98);
   --soft-surface-blur: 40px;
   --soft-surface-saturate: 1.35; /* 卡片 / acrylic / 浮钮同一轨 */
-  --color-card: var(--soft-surface-fill);
 
   --soft-chip-fill: rgb(255 255 255 / 0.94);
   --soft-chip-border: rgb(var(--cool-deep) / 0.16);
@@ -77,15 +77,11 @@
   --shadow-panel: 0 4px 24px rgb(var(--shadow-ink) / 0.1), 0 2px 6px rgb(var(--shadow-ink) / 0.06);
   --shadow-dialog:
     0 8px 32px rgb(var(--shadow-ink) / 0.14), 0 2px 8px rgb(var(--shadow-ink) / 0.08);
-  --soft-bar-shadow: var(--shadow-bar);
-  --soft-panel-shadow: var(--shadow-panel);
-  --dialog-shadow: var(--shadow-dialog);
 
   /* 卡片：微环 + 近乎无偏移的柔和扩散（衬边界，不造抬升） */
   --shadow-card:
     0 0 0 1px color-mix(in srgb, var(--color-text-primary) 5%, transparent),
     0 0 16px rgb(var(--shadow-ink) / 0.06), 0 1px 4px rgb(var(--shadow-ink) / 0.03);
-  --agent-card-shadow: var(--shadow-card);
 
   /*
    * 浮钮：3 层同结构（ring + 远 + 近）便于 hover 插值；墨色走 shadow-ink
@@ -100,9 +96,6 @@
   --shadow-float-active:
     0 0 0 1px color-mix(in srgb, var(--color-border) 28%, transparent),
     0 3px 12px rgb(var(--shadow-ink) / 0.07), 0 1px 3px rgb(var(--shadow-ink) / 0.05);
-  --agent-float-shadow: var(--shadow-float);
-  --agent-float-shadow-hover: var(--shadow-float-hover);
-  --agent-float-shadow-active: var(--shadow-float-active);
 
   --agent-aurora-warm: #ffb089;
   --agent-aurora-warm-hi: #ffc4a0;
@@ -146,7 +139,6 @@
 :root[data-theme='dark'] {
   --color-surface: #1c1c1e;
   --color-mist: rgb(120 140 175 / 0.16);
-  --color-mist-solid: #2a2d33;
   --color-text-primary: rgba(245, 245, 247, 0.92);
   --color-text-secondary: rgba(212, 216, 226, 0.76);
   --color-text-muted: rgba(178, 184, 198, 0.54);
@@ -277,6 +269,17 @@ body {
 }
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* 紧凑数值输入（挂在 BaseInput 包裹层）：去原生 spin 箭头 + 文本居中，window-manager / image 共用。
+   居中须直接命中 input——Blink 表单控件不继承祖先 text-align */
+.bare-number-input input {
+  text-align: center;
+}
+.bare-number-input input::-webkit-inner-spin-button,
+.bare-number-input input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /*
@@ -615,7 +618,7 @@ body {
 .ext-tag.is-hovered .ext-tag-icon {
   opacity: 0;
   scale: 0.5;
-  transition-duration: 100ms !important;
+  transition-duration: var(--duration-fastest) !important;
   transition-timing-function: var(--ease-in) !important;
 }
 

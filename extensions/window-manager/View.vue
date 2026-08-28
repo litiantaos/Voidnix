@@ -2,7 +2,7 @@
   <div class="flex-col-full">
     <BaseSettingsList :items="settingsItems">
       <template #trailing-wm-custom-size>
-        <div class="no-number-spin" flex gap="1.5" items="center" @click.stop>
+        <div class="bare-number-input" flex gap="1.5" items="center" @click.stop>
           <BaseInput
             ref="widthInputRef"
             type="number"
@@ -99,14 +99,3 @@ function onInputKeydown(e: KeyboardEvent, field: 'width' | 'height') {
   }
 }
 </script>
-
-<style scoped>
-.no-number-spin :deep(input[type='number']::-webkit-inner-spin-button),
-.no-number-spin :deep(input[type='number']::-webkit-outer-spin-button) {
-  -webkit-appearance: none;
-  margin: 0;
-}
-.no-number-spin :deep(input[type='number']) {
-  text-align: center;
-}
-</style>

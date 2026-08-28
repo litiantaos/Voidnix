@@ -84,8 +84,7 @@
             <div
               h="full"
               w="full"
-              class="transition-transform duration-300 ease-out"
-              style="transform-origin: left"
+              class="origin-left transition-transform duration-[var(--duration-slow)] ease-out"
               :class="usageColor(snapshot.cpu_usage)"
               :style="{ transform: `scaleX(${clamp(snapshot.cpu_usage) / 100})` }"
             />
@@ -105,7 +104,7 @@
               <div
                 w="full"
                 h="full"
-                class="transition-transform duration-300 ease-out"
+                class="transition-transform duration-[var(--duration-slow)] ease-out"
                 style="transform-origin: bottom"
                 :class="usageColor(u)"
                 :style="{ transform: `scaleY(${clamp(u) / 100})` }"
@@ -138,7 +137,7 @@
             <div
               h="full"
               w="full"
-              class="transition-transform duration-300 ease-out"
+              class="transition-transform duration-[var(--duration-slow)] ease-out"
               style="transform-origin: left"
               :class="usageColor(pct(snapshot.used_memory, snapshot.total_memory))"
               :style="{
@@ -190,7 +189,7 @@
               <div
                 h="full"
                 w="full"
-                class="transition-transform duration-300 ease-out"
+                class="transition-transform duration-[var(--duration-slow)] ease-out"
                 style="transform-origin: left"
                 :class="usageColor(pct(d.used, d.total))"
                 :style="{ transform: `scaleX(${clamp(pct(d.used, d.total)) / 100})` }"
@@ -226,7 +225,7 @@
               <div
                 h="full"
                 w="full"
-                class="transition-transform duration-300 ease-out"
+                class="transition-transform duration-[var(--duration-slow)] ease-out"
                 style="transform-origin: left"
                 :class="batteryColor(snapshot.battery.level)"
                 :style="{ transform: `scaleX(${snapshot.battery.level / 100})` }"
@@ -283,7 +282,7 @@
                 <div
                   h="full"
                   w="full"
-                  class="transition-transform duration-300 ease-out"
+                  class="transition-transform duration-[var(--duration-slow)] ease-out"
                   style="transform-origin: left"
                   :class="usageColor(p.cpu)"
                   :style="{ transform: `scaleX(${clamp(p.cpu) / 100})` }"
@@ -312,7 +311,7 @@
                 h-full
                 min-w="0.5"
                 style="transform-origin: bottom"
-                class="transition-transform duration-300"
+                class="transition-transform duration-[var(--duration-slow)]"
                 :style="{ transform: `scaleY(${sparkHeight(v, downHistory) / 100})` }"
               />
             </div>
@@ -332,7 +331,7 @@
                 h-full
                 min-w="0.5"
                 style="transform-origin: bottom"
-                class="bg-warning transition-transform duration-300"
+                class="bg-warning transition-transform duration-[var(--duration-slow)]"
                 :style="{ transform: `scaleY(${sparkHeight(v, upHistory) / 100})` }"
               />
             </div>

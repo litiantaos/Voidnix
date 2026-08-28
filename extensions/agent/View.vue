@@ -597,7 +597,7 @@ onUnmounted(() => {
   box-sizing: border-box;
   height: 30px;
   border: 1px solid var(--soft-surface-border);
-  border-radius: 999px;
+  border-radius: 9999px;
   background: var(--soft-surface-fill);
   backdrop-filter: blur(var(--soft-surface-blur)) saturate(var(--soft-surface-saturate));
   -webkit-backdrop-filter: blur(var(--soft-surface-blur)) saturate(var(--soft-surface-saturate));

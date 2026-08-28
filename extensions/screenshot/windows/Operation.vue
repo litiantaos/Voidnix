@@ -249,7 +249,7 @@
     <div
       v-if="phase === 'scroll' && scrollCapture.atBottom.value"
       class="pointer-events-none left-1/2 fixed -translate-x-1/2"
-      style="bottom: 20%"
+      bottom="[20%]"
     >
       <span class="text-xs ui-ctrl text-secondary px-3 py-1.5">
         {{ t('screenshot.reachedBottom') }}

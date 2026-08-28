@@ -6,13 +6,13 @@
 
 **禁止**：业务裸 hex 当结构色、`black/*` / `white/*` 硬边硬底、状态语义写 `red-500` / `green-500`、业务侧再 `color-mix(accent …)` 浅染。
 
-**例外**：功能遮罩 `mask-smoke`；标注调色板；文件类型/收藏等**内容辨识色**（palette）。
+**例外**：功能遮罩 `mask-smoke`；标注调色板；文件类型/收藏等**内容辨识色**（palette）；图片预览叠加标识（image 序号徽标，主题无关的内容叠色）。
 
 ## 基元（先改这里）
 
 - `--cool` / `--cool-deep`：冷相填充与 chip 描边
 - `--shadow-ink`：elevation 中性墨
-- `--ease-out` / `--ease-in` / `--ease-spring` · `--duration-fast`（150）/ `--duration-normal`（200）
+- `--ease-out` / `--ease-in` / `--ease-spring` · `--duration-fastest`（100，退场/微交互）/ `--duration-fast`（150）/ `--duration-normal`（200）/ `--duration-slow`（300，进度型）
 - `--space`（12 = 全局 p-3）· `--space-soft`（6px 10px，step/notice）
 
 ## 分层
@@ -33,8 +33,6 @@
 - `--shadow-dialog`：弹窗
 - `--shadow-card`：微环 + 近无偏移柔和扩散（助手卡 / system-status，衬边界不抬升）
 - `--shadow-float` / `-hover` / `-active`：浮钮 3 层同结构（可插值）
-
-旧名 `--soft-bar-shadow` 等别名到上述档，新代码用 `shadow-*`。
 
 ### accent 浅染（markdown 等）
 
