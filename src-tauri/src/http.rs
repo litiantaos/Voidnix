@@ -3,13 +3,17 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::LazyLock;
 use std::time::Duration;
 
-/// 构建 client：`request_timeout = None` 表示不设整体超时（流式大文件下载用，仅建连超时兜底）。
+/// 构建 client：`request_timeout = None` 表示不设整体超时（长耗时流式用，仅建连超时兜底）。
 /// 复用 SSRF 重定向逐跳校验：外部 URL `evil.com → 302 → 169.254.169.254` 的链式绕过在跟随前被拦截。
 /// 简单 `Policy::limited(3)` 只限次数、不校验目标，已被证可绕过。
 fn build_client(request_timeout: Option<Duration>) -> Client {
     let mut builder = Client::builder()
         // 建连超时（TCP+TLS），独立于整体 timeout：建连卡死时 30s 快速失败，不必等整体超时
         .connect_timeout(Duration::from_secs(30))
+        // 读间隙超时：单次读等待 120s 无任何字节 → 判死连接。整体超时的互补面——
+        // 长耗时流（LLM 流式 / 大文件下载）总时长不可控不能设整体超时，
+        // 但健康流不会有 120s 零字节间隙，靠它兜底 stalled 连接
+        .read_timeout(Duration::from_secs(120))
         .redirect(reqwest::redirect::Policy::custom(move |attempt| {
             match validate_url(attempt.url().as_str()) {
                 Ok(()) => {
@@ -35,16 +39,18 @@ fn build_client(request_timeout: Option<Duration>) -> Client {
 static HTTP_CLIENT: LazyLock<Client> =
     LazyLock::new(|| build_client(Some(Duration::from_secs(120))));
 
-/// 流式大文件下载 client：无整体超时（慢网络下大文件总耗时不可控，整体超时会中途掐断流），
-/// 仅建连 30s 超时。复用全局 client 的 SSRF 重定向防护。
-static DOWNLOAD_CLIENT: LazyLock<Client> = LazyLock::new(|| build_client(None));
+/// 长耗时流式 client：无整体超时（LLM 流式响应 / 大文件下载总耗时不可控，整体超时会
+/// 中途掐断健康流），读间隙超时兜底死连接。
+static STREAM_CLIENT: LazyLock<Client> = LazyLock::new(|| build_client(None));
 
 pub fn client() -> &'static Client {
     &HTTP_CLIENT
 }
 
-pub fn download_client() -> &'static Client {
-    &DOWNLOAD_CLIENT
+/// LLM 流式（`llm/client.rs::stream_openai_request`）与大文件下载共用：同属
+/// 「总时长不可控 + 必须读到流自然结束」的形态。
+pub fn stream_client() -> &'static Client {
+    &STREAM_CLIENT
 }
 
 // ── URL 安全校验原语（agent/translate/http_get 共享，单一真相源）────────

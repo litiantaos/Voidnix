@@ -34,7 +34,7 @@ loop 结束（含 error）时 `SessionRegistry::unregister` 清会话；用户 a
 - `ToolCallArgs { id, args }`：完整参数（JSON）
 - `ToolResult { id, ok, output }`：工具结果（已净化；`run_command` 非 0 退出 `ok=false`，output 仍为完整命令输出）
 - `Completed`：本轮结束
-- `Error { message }`：错误终止（前端写入当前 assistant 气泡）
+- `Error { message }`：错误终止（前端写入当前 assistant 气泡，保留已流出的 partial 文本；含服务端错误负载上抛——GLM 内容审查 1301 等中断会显示真实原因；以及 SSE 无信号断流——无 `[DONE]` 无 `finish_reason` 时截断输出以错误收尾而非静默完成）
 
 前端手写类型 `src/types/agent.ts`，经 `invoke(CMD.agentRun / CMD.agentAbort)` 调用。
 
@@ -226,5 +226,5 @@ extensions/agent/
 
 ## 测试
 
-- Rust 单元测试：`cargo test --lib`（含 run_command 断路器测试 + policy 资源 clamp 测试 + LLM security 测试）
+- Rust 单元测试：`cargo test --lib`（含 run_command 断路器测试 + policy 资源 clamp 测试 + LLM security 测试 + SSE 断流回归（本地 mock server 回放事件））
 - 前端测试：`bun run test`

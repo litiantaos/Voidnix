@@ -81,7 +81,7 @@ async fn download_one(
 ) -> Result<(), String> {
     use futures_util::StreamExt;
 
-    let resp = crate::http::download_client()
+    let resp = crate::http::stream_client()
         .get(url)
         .send()
         .await

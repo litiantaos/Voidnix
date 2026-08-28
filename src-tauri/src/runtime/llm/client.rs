@@ -129,9 +129,10 @@ pub struct StreamOutcome {
     pub tool_calls: Vec<FinalizedToolCall>,
 }
 
-/// SSE 流式请求配置
-pub struct StreamConfig<'a> {
-    pub app: &'a tauri::AppHandle,
+/// SSE 流式请求配置。
+/// `R` 泛型仅为测试注入 mock runtime（`tauri::test`），默认 Wry，调用方零改动。
+pub struct StreamConfig<'a, R: tauri::Runtime = tauri::Wry> {
+    pub app: &'a tauri::AppHandle<R>,
     pub endpoint: &'a str,
     pub api_key: &'a str,
     pub model: &'a str,
@@ -149,7 +150,9 @@ pub struct StreamConfig<'a> {
 }
 
 /// 发起 OpenAI 兼容的流式请求。
-pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOutcome, String> {
+pub async fn stream_openai_request<R: tauri::Runtime>(
+    config: StreamConfig<'_, R>,
+) -> Result<StreamOutcome, String> {
     let url = format!("{}/chat/completions", config.endpoint.trim_end_matches('/'));
 
     let messages_json = messages_to_json(config.messages);
@@ -166,7 +169,9 @@ pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOut
         body["tool_choice"] = serde_json::Value::String(choice.to_string());
     }
 
-    let response = crate::http::client()
+    // LLM 流式总时长不可控（长推理 + 工具轮次 + 长输出远超 120s），走无整体超时的
+    // 流式 client；读间隙超时兜底 stalled 连接
+    let response = crate::http::stream_client()
         .post(&url)
         .header("Authorization", format!("Bearer {}", config.api_key.trim()))
         .header("Content-Type", "application/json")
@@ -250,6 +255,11 @@ pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOut
             }
 
             if data_content.is_empty() {
+                // 裸 JSON 行（无 data: 前缀）也可能是服务端错误负载（GLM 1301 内容审查等）
+                if let Some(msg) = extract_stream_error(&event_data) {
+                    log::error!("LLM stream error payload: {msg}");
+                    return Err(msg);
+                }
                 continue;
             }
 
@@ -270,6 +280,12 @@ pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOut
                 continue;
             };
             let Some(choice) = chunk.choices.into_iter().next() else {
+                // choices 为空的事件可能是 `{"error":{...}}` 负载（Chunk 宽松反序列化
+                // 下 choices 默认空，错误负载会被当 keepalive 静默吞掉）——提取后上抛
+                if let Some(msg) = extract_stream_error(&data_content) {
+                    log::error!("LLM stream error payload: {msg}");
+                    return Err(msg);
+                }
                 continue;
             };
 
@@ -311,8 +327,51 @@ pub async fn stream_openai_request(config: StreamConfig<'_>) -> Result<StreamOut
         }
     }
 
+    // 流在此自然结束（EOF）= 服务端未发 [DONE]（[DONE] 分支已提前 return）。
+    // 先查残留 buffer：服务端中断常以错误负载收尾（GLM 内容审查 1301 等以裸 JSON 行
+    // 下发，无 data: 前缀也无终止空行，构不成完整事件）——提取出真实原因上抛，
+    // 而非笼统的 premature。若连 finish_reason 也没收到，才是无信号的提前断流——
+    // 曾按正常完成静默收尾，截断的 partial 文本以 Completed 终结（表现为「输出莫名
+    // 其妙中断」）。必须显式 Err：前端保留已流出的 partial 文本并以 error notice 收尾
+    if let Some(msg) = extract_stream_error(&buffer) {
+        log::error!("LLM stream error payload: {msg}");
+        return Err(msg);
+    }
+    if finish_reason.is_empty() {
+        log::error!("SSE stream ended without [DONE] or finish_reason, treating as truncated");
+        return Err("Stream ended prematurely. The reply may be incomplete.".to_string());
+    }
     emit_done(config.app, config.done_event, config.request_id);
     Ok(finalize_stream(finish_reason, full_text, tool_acc))
+}
+
+/// 从 SSE 原始文本提取服务端错误负载（`{"error":{"code","message"}}`）。
+/// 兼容三种形态：完整事件的 data 体、无 data: 前缀的裸 JSON 行、EOF 残留 buffer。
+/// 逐候选（整体 / 倒序逐行）尝试解析，命中返回 `[code] message`，无错误负载返回 None。
+fn extract_stream_error(raw: &str) -> Option<String> {
+    let candidates = std::iter::once(raw.trim()).chain(
+        raw.lines()
+            .rev()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty()),
+    );
+    for candidate in candidates {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(candidate) else {
+            continue;
+        };
+        let Some(err) = v.get("error") else {
+            continue;
+        };
+        let msg = err
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("LLM stream error");
+        return Some(match err.get("code").and_then(|c| c.as_str()) {
+            Some(code) => format!("[{code}] {msg}"),
+            None => msg.to_string(),
+        });
+    }
+    None
 }
 
 fn finalize_stream(
@@ -351,7 +410,7 @@ fn finalize_stream(
     }
 }
 
-fn emit_done(app: &tauri::AppHandle, done_event: &str, request_id: &str) {
+fn emit_done<R: tauri::Runtime>(app: &tauri::AppHandle<R>, done_event: &str, request_id: &str) {
     if done_event.is_empty() {
         return;
     }
@@ -403,5 +462,146 @@ mod tests {
         let t = truncate_message(&long);
         assert!(t.ends_with("[消息过长，已截断]"));
         assert!(t.len() < long.len());
+    }
+
+    // ── SSE 断流回归测试（本地 mock server 回放事件后关连接）──────────────────
+
+    /// 起一个一次性 SSE mock：接受单连接、丢弃请求、原样回放 events、关闭连接。
+    /// 返回 endpoint（http://127.0.0.1:port/v1）。
+    async fn spawn_sse_server(events: &str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = events.to_string();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 8192];
+            let _ = sock.read(&mut buf).await;
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{body}"
+            );
+            let _ = sock.write_all(resp.as_bytes()).await;
+            let _ = sock.shutdown().await;
+        });
+        format!("http://{addr}/v1")
+    }
+
+    async fn run_stream(
+        endpoint: &str,
+        on_text: &mut (dyn FnMut(&str) + Send),
+    ) -> Result<StreamOutcome, String> {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        stream_openai_request(StreamConfig {
+            app: &handle,
+            endpoint,
+            api_key: "k",
+            model: "m",
+            messages: &[LlmMessage::user("hi")],
+            tools: None,
+            tool_choice: None,
+            on_text_delta: Some(on_text),
+            on_reasoning_delta: None,
+            on_tool_calls_delta: None,
+            chunk_event: "",
+            done_event: "",
+            request_id: "",
+            abort_flag: None,
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn stream_eof_without_done_or_finish_is_error() {
+        // 服务端/代理中途断流：只有 content 增量，无 [DONE] 无 finish_reason
+        let url =
+            spawn_sse_server("data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n").await;
+        let mut got = String::new();
+        let res = run_stream(&url, &mut |d: &str| got.push_str(d)).await;
+        assert!(res.is_err(), "premature EOF must be Err, got Ok: {res:?}");
+        // partial 文本仍须经回调流出（前端气泡保留已生成内容）
+        assert_eq!(got, "你好");
+    }
+
+    #[tokio::test]
+    async fn stream_with_done_is_ok() {
+        let url = spawn_sse_server(concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        ))
+        .await;
+        let mut got = String::new();
+        let outcome = run_stream(&url, &mut |d: &str| got.push_str(d))
+            .await
+            .unwrap();
+        assert_eq!(outcome.full_text, "你好");
+        assert_eq!(got, "你好");
+    }
+
+    #[tokio::test]
+    async fn stream_eof_with_finish_reason_is_ok() {
+        // finish_reason 已收到即生成完成，[DONE] 丢失不影响正确性
+        let url = spawn_sse_server(concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+        ))
+        .await;
+        let mut got = String::new();
+        let outcome = run_stream(&url, &mut |d: &str| got.push_str(d))
+            .await
+            .unwrap();
+        assert_eq!(outcome.full_text, "你好");
+        assert_eq!(got, "你好");
+    }
+
+    #[tokio::test]
+    async fn stream_error_event_yields_server_message() {
+        // 服务端错误负载走完整事件（data: 前缀 + 终止空行）——真实原因上抛，partial 保留
+        let url = spawn_sse_server(concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"部分\"}}]}\n\n",
+            "data: {\"error\":{\"code\":\"1301\",\"message\":\"系统检测到敏感内容\"}}\n\n",
+        ))
+        .await;
+        let mut got = String::new();
+        let res = run_stream(&url, &mut |d: &str| got.push_str(d)).await;
+        let err = res.err().expect("error payload must surface");
+        assert!(
+            err.contains('[') && err.contains("1301") && err.contains("敏感内容"),
+            "{err}"
+        );
+        assert_eq!(got, "部分");
+    }
+
+    #[tokio::test]
+    async fn stream_bare_error_line_at_eof_yields_server_message() {
+        // GLM 形态：错误以裸 JSON 行下发（无 data: 前缀、无终止空行），残留在 EOF buffer
+        let url = spawn_sse_server(concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"部分\"}}]}\n\n",
+            "{\"error\":{\"code\":\"1301\",\"message\":\"系统检测到敏感内容\"}}\n",
+        ))
+        .await;
+        let mut got = String::new();
+        let res = run_stream(&url, &mut |d: &str| got.push_str(d)).await;
+        let err = res.err().expect("bare error line must surface");
+        assert!(err.contains("1301") && err.contains("敏感内容"), "{err}");
+        assert_eq!(got, "部分");
+    }
+
+    #[tokio::test]
+    async fn stream_keepalive_empty_choices_is_not_error() {
+        // 空 choices 事件（keepalive 等）不误判为错误
+        let url = spawn_sse_server(concat!(
+            "data: {\"choices\":[]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        ))
+        .await;
+        let mut got = String::new();
+        let outcome = run_stream(&url, &mut |d: &str| got.push_str(d))
+            .await
+            .unwrap();
+        assert_eq!(outcome.full_text, "你好");
     }
 }

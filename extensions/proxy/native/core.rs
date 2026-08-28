@@ -162,9 +162,9 @@ pub async fn ensure_geo_files(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 通用文件下载（download_client 无整体超时，适合大文件）。
+/// 通用文件下载（stream_client 无整体超时，适合大文件）。
 async fn download_file(url: &str, dest: &Path) -> Result<(), String> {
-    let resp = crate::http::download_client()
+    let resp = crate::http::stream_client()
         .get(url)
         .send()
         .await

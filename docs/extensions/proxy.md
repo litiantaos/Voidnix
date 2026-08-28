@@ -49,7 +49,7 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
 
 **并发保护**：并发触发时（双击/开代理 spawn），用 **tokio Mutex + double-check** 串行化——仅一个真正下载、其余抢锁后复用，防多流写同一 `mihomo.gz` 损坏致 sha256 失败、binary 无法产出。
 
-**`download_core_async`** 仅组装 BinaryFetch spec，下载走共享管线 **`runtime/binary_fetch`**（与 video 共用：多 URL 回退 + sha256 校验 + gunzip + chmod；内部经专用 `http::download_client` reqwest 流式拉取）：
+**`download_core_async`** 仅组装 BinaryFetch spec，下载走共享管线 **`runtime/binary_fetch`**（与 video 共用：多 URL 回退 + sha256 校验 + gunzip + chmod；内部经专用 `http::stream_client` reqwest 流式拉取）：
 
 - **无整体超时**，仅建连 30s——慢网络下 15MB gz 下载耗时不可控，全局 `HTTP_CLIENT` 的 120s 整体超时含 body 读取会中途掐断流
 - 国内镜像 **`gh-proxy.com`** 前缀（镜像仅代理转发，sha256 保证内容一致）

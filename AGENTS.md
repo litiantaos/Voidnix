@@ -345,7 +345,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 `runtime/llm/`，agent + translate 扩展共享：
 
 - `types.rs`：LlmMessage
-- `client.rs`：StreamConfig / `stream_openai_request` + SSRF 防护 `validate_ai_request` + 消息截断 + 请求管道常量
+- `client.rs`：StreamConfig / `stream_openai_request` + SSRF 防护 `validate_ai_request` + 消息截断 + 请求管道常量 + SSE 断流检测（服务端错误负载提取——GLM 内容审查 1301 等以裸 JSON 行下发，无 data: 前缀无终止空行，须从事件体 / EOF 残留 buffer 提取真实原因上抛；流 EOF 且无 `[DONE]` 无 `finish_reason` 才判 premature，不把截断输出当正常完成）
 - `parser.rs`：tool_calls 解析
 
 ### AI 凭证中枢
@@ -397,7 +397,7 @@ src-tauri/src/
     └── path_guard.rs   # 统一路径校验
 ```
 
-`http.rs` 细节：`HTTP_CLIENT` 整体 120s 超时；`DOWNLOAD_CLIENT` 无整体超时仅建连 30s（供流式大文件下载）；`http_get` 命令含浏览器 UA 伪装 + SSRF 防护 + 重定向限制 + 共享 `parse_scheme_host`/`is_blocked_host` 原语（ip/currency 等纯 TS 扩展消费）。
+`http.rs` 细节：`HTTP_CLIENT` 整体 120s 超时；`STREAM_CLIENT` 无整体超时、仅建连 30s + 读间隙 120s（总时长不可控的长流共用：LLM 流式响应 + 大文件下载；读间隙超时兜底 stalled 连接）；`http_get` 命令含浏览器 UA 伪装 + SSRF 防护 + 重定向限制 + 共享 `parse_scheme_host`/`is_blocked_host` 原语（ip/currency 等纯 TS 扩展消费）。
 
 ```
 src/
