@@ -81,6 +81,11 @@
           </div>
         </div>
       </template>
+
+      <!-- 底部 footer 预留：必须是真实元素——WebKit 滚轮路由只认内容溢出，
+           容器 end-padding 产生的 scrollHeight 超出在内容未超 padding box 时滚轮不生效（程序化滚动却可滚）。
+           gap 提供末条距输入岛的 --space 间距，spacer 补 footer 高度预留 -->
+      <div class="agent-footer-spacer" aria-hidden="true" />
     </div>
 
     <!-- 底栏渐隐：内容滚入输入岛下方时自下而上软透 -->
@@ -390,7 +395,7 @@ onUnmounted(() => {
 /*
  * 消息滚动区：铺满 layout，底被悬浮输入盖住
  * - 顶 padding = chrome-fade，消息可滚入搜索栏下层
- * - 底 padding = footer 预留 + 消息间距（末条距输入岛恒 --space，与消息间距一致）
+ * - 底预留 = 末尾 spacer 元素（见模板注释），不用 padding-bottom
  */
 .agent-scroll {
   flex: 1 1 0%;
@@ -399,9 +404,15 @@ onUnmounted(() => {
   gap: var(--space);
   min-height: 0;
   overflow-y: auto;
-  padding: var(--chrome-fade-height) var(--space) calc(var(--agent-footer-reserve) + var(--space));
+  padding: var(--chrome-fade-height) var(--space) 0;
   /* scrollIntoView（block:start）对齐到 padding-top 内侧，避免消息被搜索栏 chrome-fade 遮挡 */
   scroll-padding-top: var(--chrome-fade-height);
+}
+
+/* 底部预留高度 = footer 实际高 + 底边距(--space)，与 chrome-fade-bottom 对齐 */
+.agent-footer-spacer {
+  flex: none;
+  height: var(--agent-footer-reserve);
 }
 
 /* 消息行：用户右 / 助手左 */
