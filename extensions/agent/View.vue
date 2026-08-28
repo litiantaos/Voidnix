@@ -511,7 +511,8 @@ onUnmounted(() => {
   left: 50%;
   width: 0;
   height: 30px;
-  margin-bottom: 8px;
+  /* 与消息区距输入岛的恒定间距一致（--space，gap 提供） */
+  margin-bottom: var(--space);
   z-index: 10;
 }
 

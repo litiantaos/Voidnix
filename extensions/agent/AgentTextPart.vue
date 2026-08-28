@@ -26,6 +26,8 @@ import { showToast } from '@/composables/useToast'
 import { renderMarkdown } from '@/utils/markdown'
 import { streamView, splitStreamBlocks } from './view-logic'
 import { t } from '@/runtime/i18n'
+// 拖尾样式本体在共享 agent-step.css（与思考正文共用），自持导入不依赖父级
+import './agent-step.css'
 
 const props = defineProps<{
   text: string
@@ -87,70 +89,16 @@ async function onMarkdownClick(e: MouseEvent) {
   animation: agent-md-in 0.35s var(--ease-out) backwards;
 }
 
-/*
- * 流式末行拖尾（只在 .md-tail 上）
- * - mask：末端透明渐隐
- * - ::after：仅末尾一截轻模糊
- * - 新行 key 变化：下移淡入（transform 不占布局）
- */
+/* 拖尾本体（mask 渐隐 / 末端轻模糊 / 新行下移淡入）在共享 agent-step.css，
+   与思考正文（AgentReasoningPart）共用；此处仅覆盖回复正文的行距微调 */
 .md-tail {
-  position: relative;
-  margin: 0;
-  min-height: 1.65em;
   line-height: 1.65;
-  animation: agent-md-line-in 0.38s var(--ease-out) backwards;
-}
-
-.md-tail-text {
-  display: inline;
-  white-space: pre-wrap;
-  word-break: break-word;
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    #000 0%,
-    #000 max(0%, calc(100% - 3.5em)),
-    rgba(0, 0, 0, 0.45) calc(100% - 1.4em),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    90deg,
-    #000 0%,
-    #000 max(0%, calc(100% - 3.5em)),
-    rgba(0, 0, 0, 0.45) calc(100% - 1.4em),
-    transparent 100%
-  );
-}
-
-.md-tail::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(2.8em, 40%);
-  pointer-events: none;
-  backdrop-filter: blur(1.5px);
-  -webkit-backdrop-filter: blur(1.5px);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 80%);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 80%);
 }
 
 @keyframes agent-md-in {
   from {
     opacity: 0;
     transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* 新行：自上下移就位（不改布局高度） */
-@keyframes agent-md-line-in {
-  from {
-    opacity: 0;
-    transform: translateY(-0.45em);
   }
   to {
     opacity: 1;
