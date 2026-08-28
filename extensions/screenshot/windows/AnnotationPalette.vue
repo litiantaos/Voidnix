@@ -383,8 +383,8 @@ defineExpose({ reportToolbarRect })
  */
 .palette-surface {
   --soft-surface-fill: rgb(246 246 248 / 0.92);
-  /* 工具栏激活态比全局列表选中更深，保证叠在截图上可读 */
-  --ui-active-fill: rgb(var(--cool) / 0.16);
+  /* 工具栏激活态比全局列表选中更深，保证叠在截图上可读（= fill-12 档） */
+  --ui-active-fill: var(--color-fill-12);
 }
 
 .palette-popup-enter-active,

@@ -304,13 +304,14 @@ onUnmounted(() => {
 
 <style scoped>
 .backdrop-active {
-  transition: background-color var(--duration-normal) var(--ease-out);
+  /* 仅 opacity（GPU 合成）；遮罩色常驻，靠透明度淡入 */
+  transition: opacity var(--duration-normal) var(--ease-out);
 }
 .backdrop-to {
   background-color: var(--color-dialog-overlay);
 }
 .backdrop-from {
-  background-color: transparent;
+  opacity: 0;
 }
 
 .dialog-active {
@@ -329,7 +330,7 @@ onUnmounted(() => {
   border: 1px solid var(--dialog-border);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  box-shadow: var(--dialog-shadow);
+  box-shadow: var(--shadow-dialog);
   /* 标题 / 底栏浮层预留（与 .dialog-chrome 高度对齐） */
   --dialog-chrome-top: 52px;
   --dialog-chrome-bottom: 16px;

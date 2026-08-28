@@ -1,4 +1,5 @@
 import { defineConfig, presetAttributify, presetIcons, presetWind4 } from 'unocss'
+import { ACCENT_HEX } from './src/runtime/constants'
 
 export default defineConfig({
   presets: [
@@ -16,12 +17,10 @@ export default defineConfig({
       surface: { DEFAULT: 'var(--color-surface)' },
       canvas: { DEFAULT: 'var(--color-canvas)' },
       // 字面 hex：Wind4 对纯 CSS 变量做 color-mix 时，text/bg-accent 在 WK 下不可靠；
-      // 与 theme.css --color-accent 同值（改色两处同步）。实心底按钮优先 .ui-btn-primary。
-      accent: { DEFAULT: '#3d82f0' },
-      mist: {
-        DEFAULT: 'var(--color-mist)',
-        solid: 'var(--color-mist-solid)',
-      },
+      // 单一 TS 源 = constants.ts ACCENT_HEX（与 theme.css --color-accent 双源同步）。
+      // 实心底按钮优先 .ui-btn-primary。
+      accent: { DEFAULT: ACCENT_HEX },
+      mist: { DEFAULT: 'var(--color-mist)' },
       bubble: { DEFAULT: 'var(--color-bubble)' },
       primary: 'var(--color-text-primary)',
       secondary: 'var(--color-text-secondary)',

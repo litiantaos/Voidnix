@@ -1,6 +1,12 @@
 // 语义常量单一真相源（仅前端；Rust 端无常量文件）。
 // 不可配置；可调参数走 config 系统（stores/settings.ts + defineConfig）。
 
+/**
+ * accent 主色 hex。全链路仅两个源：theme.css --color-accent 与此常量（WKWebView 下
+ * SVG 属性与 UnoCSS color-mix 需字面值，无法走 var() 串联）。改色两处同步。
+ */
+export const ACCENT_HEX = '#3d82f0'
+
 export const SEARCH = {
   // fuzzy 权重（utils/fuzzy.ts 消费）
   WEIGHTS: {

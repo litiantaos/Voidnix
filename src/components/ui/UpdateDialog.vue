@@ -80,6 +80,6 @@ async function onConfirm() {
   height: 100%;
   background: var(--color-accent);
   border-radius: 9999px;
-  transition: width 150ms ease-out;
+  transition: width var(--duration-fast) var(--ease-out);
 }
 </style>

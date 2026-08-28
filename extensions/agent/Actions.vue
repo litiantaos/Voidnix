@@ -39,7 +39,10 @@
       <div
         v-if="isHistoryOpen"
         ref="historyDropdownRef"
-        class="agent-history-panel dropdown-panel"
+        class="dropdown-panel"
+        w="[min(420px,92vw)]"
+        max-h="[min(340px,60vh)]"
+        overflow="y-auto"
         role="listbox"
         aria-label="历史消息"
         tabindex="-1"
@@ -236,12 +239,3 @@ onUnmounted(() => {
   document.removeEventListener('mousedown', onHistoryClickOutside)
 })
 </script>
-
-<style scoped>
-/* 历史浮层：dropdown-panel 已自带面/阴影/圆角；这里只限宽与最大高度 */
-.agent-history-panel {
-  width: min(420px, 92vw);
-  max-height: min(340px, 60vh);
-  overflow-y: auto;
-}
-</style>

@@ -13,8 +13,8 @@
           <img
             v-if="originalPreview"
             :src="originalPreview"
-            class="h-full w-full inset-0 absolute object-contain"
-            :style="{ opacity: result ? 0 : 1, transition: 'opacity 600ms ease-in-out' }"
+            class="img-fade h-full w-full inset-0 absolute object-contain"
+            :class="{ 'img-fade-out': result }"
             :alt="t('image.original')"
           />
           <Transition name="result-fade">
@@ -74,11 +74,9 @@
               <div v-else class="flex-center h-12 w-full">
                 <i class="i-ri-loader-4-line text-sm text-muted animate-spin"></i>
               </div>
-              <span
-                class="text-xs text-white px-0.5 bg-black/40 left-0 top-0 absolute"
-                style="z-index: 1"
-                >{{ i + 1 }}</span
-              >
+              <span class="text-xs text-white px-0.5 bg-black/40 left-0 top-0 absolute z-1">{{
+                i + 1
+              }}</span>
             </div>
           </div>
         </div>
@@ -117,7 +115,7 @@
         <BaseInput
           :model-value="String(stitchGap)"
           type="number"
-          class="text-center w-16"
+          class="bare-number-input w-16"
           @update:model-value="onGapInput"
         />
       </template>
@@ -723,24 +721,21 @@ async function revealInFinder() {
     -8px 0;
 }
 
-/* 隐藏 number input 的上下箭头 */
-:deep(input[type='number']::-webkit-inner-spin-button),
-:deep(input[type='number']::-webkit-outer-spin-button) {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
 /* 选中态：outline 不占布局空间，不被图片遮挡 */
 .stitch-selected {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
 }
 
-/* 结果图淡入 */
-.result-fade-enter-active {
+/* 原图/结果图交叉淡入：两侧必须同值成对（600ms 为定制交叉时长，无基元档） */
+.result-fade-enter-active,
+.img-fade {
   transition: opacity 600ms ease-in-out;
 }
 .result-fade-enter-from {
+  opacity: 0;
+}
+.img-fade-out {
   opacity: 0;
 }
 </style>

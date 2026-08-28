@@ -892,45 +892,15 @@
   opacity: 0;
   will-change: opacity, transform;
 }
-.demo-stage .fp-search {
+/* 访达面板静态初始态：ext-tag / 内层面板常显（默认隐藏系动画初始态）、搜索词 muted */
+.demo-stage .finder-panel .ext-tag {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: var(--radius-panel);
-  background: var(--mock-input-fill);
-  border: 1px solid var(--soft-surface-border);
-  margin-bottom: 8px;
 }
-.demo-stage .fp-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border-radius: var(--radius-ctrl);
-  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  color: var(--color-accent);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 500;
-}
-.demo-stage .fp-tag i {
-  font-size: 14px;
-}
-.demo-stage .fp-kbd {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 12px;
+.demo-stage .finder-panel .search-text {
   color: var(--color-text-muted);
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--color-fill-8);
 }
-.demo-stage .fp-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0;
+.demo-stage .finder-panel .panel {
+  opacity: 1;
 }
 .demo-stage .fp-row {
   display: flex;

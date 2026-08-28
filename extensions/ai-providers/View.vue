@@ -232,6 +232,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { showToast } from '@/composables/useToast'
 import { useActionPanel } from '@/composables/useActionPanel'
 import { t } from '@/runtime/i18n'
+import { ACCENT_HEX } from '@/runtime/constants'
 import { CMD } from '@/commands'
 import {
   config,
@@ -356,14 +357,14 @@ function usageSegments(row: KeyRow): UsageSegment[] {
 }
 
 /**
- * 片段 tone → CSS color；走 theme.css 变量，accent 用字面值对齐 SparkLine（SVG var 不可靠）。
- * 与 theme.css / uno.config.ts 同源，改 accent 色时同步。
+ * 片段 tone → CSS color；走 theme.css 变量，accent 用字面值对齐 SparkLine
+ * （SVG var 不可靠；单一 TS 源 constants.ts ACCENT_HEX）。
  */
 const TONE_COLOR: Record<UsageTone, string> = {
   muted: 'var(--color-text-muted)',
   secondary: 'var(--color-text-secondary)',
   primary: 'var(--color-text-primary)',
-  accent: '#3d82f0',
+  accent: ACCENT_HEX,
   warning: 'var(--color-warning)',
   danger: 'var(--color-danger)',
   success: 'var(--color-success)',

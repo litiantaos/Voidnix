@@ -7,19 +7,18 @@
     class="shrink-0 block"
     aria-hidden="true"
   >
-    <!-- 裸 hex 不走 CSS 变量：WKWebView 下 SVG stroke/stop-color 的 var() 常失效；
-         值 = theme.css --color-accent / uno accent（#3d82f0），改 accent 色时同步 -->
+    <!-- SVG stroke/stop-color 在 WKWebView 下 var() 常失效，走 ACCENT_HEX 字面值（单一 TS 源） -->
     <defs>
       <linearGradient :id="gradId" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" :stop-color="ACCENT" stop-opacity="0.22" />
-        <stop offset="100%" :stop-color="ACCENT" stop-opacity="0" />
+        <stop offset="0%" :stop-color="ACCENT_HEX" stop-opacity="0.22" />
+        <stop offset="100%" :stop-color="ACCENT_HEX" stop-opacity="0" />
       </linearGradient>
     </defs>
     <path :d="areaD" :fill="`url(#${gradId})`" />
     <path
       :d="lineD"
       fill="none"
-      :stroke="ACCENT"
+      :stroke="ACCENT_HEX"
       stroke-width="1.5"
       stroke-linecap="round"
       stroke-linejoin="round"
@@ -29,10 +28,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-
-/// accent 色（= theme.css --color-accent / uno accent）。SVG 在 WKWebView 下 var()
-/// 不可靠，故内联字面值；改 accent 色时同步 theme.css + uno.config.ts + 此常量。
-const ACCENT = '#3d82f0'
+import { ACCENT_HEX } from '@/runtime/constants'
 
 const props = withDefaults(
   defineProps<{
