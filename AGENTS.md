@@ -66,11 +66,11 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 ## 全功能回归测试（标准化冒烟测试）
 
-`scripts/smoke-test.py` — 全链路回归门禁，覆盖全部 23 扩展 + 框架行为 + 性能指标，防止"修 A 坏 B"连锁回归。仅用户明确要求时运行。
+`scripts/smoke-test.py` — 全链路回归门禁，覆盖全部 24 扩展 + 框架行为 + 性能指标，防止"修 A 坏 B"连锁回归。仅用户明确要求时运行。
 
 **三层架构**：
 
-- **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（23 扩展 / id 无重复 / order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 16 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）、窗口管理运行时启用（主题已初始化下 `setWindowManagerEnabled` disable→enable toggle，8s 超时检测 Mutex 重入死锁）、扩展功能正确性（clipboard 历史查询结构 / system-status 快照 / proxy 核心状态 / homebrew 状态 / video 核心状态 / awake·clean-mode 状态查询 / ip·time·uuid·currency 即时答案；网络依赖项失败 skip 不 fail）、搜索延迟基线（空查询 / keyword / calculator / base64 / 应用搜索代表性 query 耗时断言）。报告经 plugin-store 写到 `config/test-report.json`。
+- **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（24 扩展 / id 无重复 / order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 17 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）、窗口管理运行时启用（主题已初始化下 `setWindowManagerEnabled` disable→enable toggle，8s 超时检测 Mutex 重入死锁）、扩展功能正确性（clipboard 历史查询结构 / system-status 快照 / proxy 核心状态 / homebrew 状态 / video 核心状态 / awake·clean-mode 状态查询 / ip·time·uuid·currency 即时答案；网络依赖项失败 skip 不 fail）、搜索延迟基线（空查询 / keyword / calculator / base64 / 应用搜索代表性 query 耗时断言）。报告经 plugin-store 写到 `config/test-report.json`。
 - **Layer 2（系统冒烟）**：CGEvent 驱动真实 UI，验证窗口显隐 / 全局快捷键 / snap-panel 全链路 / 搜索 UI / 扩展视图渲染。每步返回结构化 `TestResult`（pass/fail/skip），汇总为统一报告。逐阶段内存采样输出趋势（非仅终点）。
 - **Layer 3（性能压测，`--perf [N]`）**：N 轮全场景工作负载循环（全局搜索 / 工具列表 / 快捷键 / 扩展视图 / hide/show），每轮逐阶段采内存快照，输出多轮趋势表 + drift 分析，定位 compositing layer 累积与回收。工作负载顺序刻意安排：快捷键在扩展视图之前（快捷键含 hide_window，若此时 FP 已超 350M 阈值会触发 navigate 重载，重载期间 WKWebView 不可交互）。合并自原 `wk-mem-test.py`。**内存结论只看 release 模式**：dev 模式下 Vite HMR / UnoCSS 开发态样式注入使每次视图变更重建整页合成树，WebContent graphics 可虚高至 GB 级（实测 5 轮 1.6G），release 同负载零累积（FP/graphics 全程持平甚至净降）——`--dev --perf` 只用于功能/时序验证，内存数据无效。
 
@@ -137,7 +137,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 含 native/（16）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers、image、homebrew
 
-纯 TS（7）：calculator、settings、ip、base64、time、uuid、currency
+纯 TS（8）：calculator、settings、ip、base64、time、uuid、currency、notes
 
 复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[ai-providers](docs/extensions/ai-providers.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[image](docs/extensions/image.md)、[finder-ext](docs/extensions/finder-ext.md)、[window-manager](docs/extensions/window-manager.md)、[homebrew](docs/extensions/homebrew.md)。
 
