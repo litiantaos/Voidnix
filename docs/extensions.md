@@ -50,7 +50,7 @@ export default defineExtension({
   - **`number`**：固定高度，clamp `[MIN,MAX]`
   - **`'auto'`**：随内容自适应
   - **未声明**：默认高度
-  - 共 8 消费者：agent/proxy=840、translate/system-status/video/finder-ext/image/notes='auto'
+  - 共 7 消费者：agent/proxy=840、translate/system-status/video/finder-ext/image='auto'（notes 固定默认高度，输入区内部滚动）
 - `subviewHeights`：subview 级高度覆盖，key→语义同 windowHeight（1：screenshot{ocr:'auto'}）
 
 **高度机制**：统一由 `useExtensionHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管。
@@ -79,7 +79,7 @@ export default defineExtension({
 - **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免扩展列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / ai-providers=35 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / notes=105 / screenshot=110 / video=115 / image=116 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160 / homebrew=170；hidden 扩展 settings=998 / search=999。
 - **`disableSearchInput` 决策**：与 `mainView` 独立——mainView 扩展若仍用主搜索框过滤列表（如 clipboard）则不声明；自管输入或无需搜索框（agent/translate/settings 等）声明 `true`。uuid 有 search 但 disableSearchInput（进入后只展示即时结果）。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
-- **View 根禁止与 ContentView 竞争的纵向双滚**：经 ContentView 渲染的 View（mainView/subviews）根及主内容流不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是页面级唯一滚动容器，再设 overflow 形成双层滚动，`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中内层失效 → 选中框出视口。固定高度媒体预览等局部区域（如 OCR 图预览）可自滚。独立窗口（screenshot/snap-panel/pin，经各自 HTML 入口加载）不经 ContentView，不受此约束。
+- **View 根禁止与 ContentView 竞争的纵向双滚**：经 ContentView 渲染的 View（mainView/subviews）根及主内容流不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是页面级唯一滚动容器，再设 overflow 形成双层滚动，`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中内层失效 → 选中框出视口。固定高度局部区域可自滚（如 OCR 图预览、notes 输入区——固定窗高下 ContentView 恒不滚，无竞争）。独立窗口（screenshot/snap-panel/pin，经各自 HTML 入口加载）不经 ContentView，不受此约束。
 
 ## 搜索集成
 

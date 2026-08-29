@@ -1,12 +1,19 @@
 // 记事本动效核心纯逻辑:code point 拆分 + 前后缀 diff + code unit/point 索引映射。
 // 渲染与测量在 View.vue,此处保持零 DOM 依赖(co-location 测试)。
 
-/** 字符级动画(逐字 pop/ghost/FLIP)的启用上限;超过后降级为纯文本直更,光标动效保留。 */
-export const ANIM_MAX_CHARS = 1200
+/** 单次编辑字符级动画(pop/ghost/FLIP)的启用上限:编辑规模(增+删)超过即降级为
+ *  静态直更(大批量粘贴/全选清空,逐字 stagger 无意义),光标动效保留。
+ *  门槛只看单次编辑,与文档总长无关——长文日常键入/删除照常动效。 */
+export const ANIM_MAX_DIFF = 1200
 
 /** 批量新增(粘贴/IME 提交)时逐字 stagger 步长与总延迟上限(ms)。 */
 export const STAGGER_STEP = 16
 export const STAGGER_CAP = 160
+
+/** FLIP 后缀动画窗口:编辑行区(编辑点至行尾,重排非均匀)逐字符动画的字符上限。
+ *  下方完整行的刚性整体纵移不占此窗口——由尾块单元素 transform 过渡承接(O(1)),
+ *  任意文档长度全量动画。窗口只兜超长逻辑行的重排区(超出部分瞬时落位)。 */
+export const FLIP_WINDOW = 200
 
 /// 按 Unicode code point 拆分(代理对不拆半,emoji 完整显示)。
 export function toChars(text: string): string[] {
