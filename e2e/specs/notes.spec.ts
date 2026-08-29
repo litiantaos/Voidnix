@@ -43,20 +43,26 @@ test.describe('notes 记事本', () => {
     // 光标随输入右移
     const left = await page.locator('.caret').evaluate((el) => parseFloat(el.style.left))
     expect(left).toBeGreaterThan(4)
-    // IME 锚:textarea 壳跟随自绘光标位置(候选栏定位依据),内部滚动同步拉回 caret
+    // IME 锚:textarea 壳几何镜像渲染层(候选栏定位依据 = 壳内原生 caret 几何)——
+    // 盒重合 + 滚动同步 + 换行重合(scrollHeight 相等即内部行数与渲染层一致)
     const anchor = await page.evaluate(() => {
       const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
       const layer = document.querySelector('.notes-layer') as HTMLElement
-      const caret = document.querySelector('.caret') as HTMLElement
+      const tr = ta.getBoundingClientRect()
+      const lr = layer.getBoundingClientRect()
       return {
-        taLeft: parseFloat(ta.style.left),
-        taScrollLeft: ta.scrollLeft,
-        layerLeft: layer.offsetLeft,
-        caretLeft: parseFloat(caret.style.left),
+        dx: tr.left - lr.left,
+        dy: tr.top - lr.top,
+        dw: tr.width - lr.width,
+        scrollSync: ta.scrollTop === layer.scrollTop,
+        wrapMatch: ta.scrollHeight === layer.scrollHeight,
       }
     })
-    expect(Math.abs(anchor.taLeft - (anchor.layerLeft + anchor.caretLeft))).toBeLessThan(1)
-    expect(Math.abs(anchor.taScrollLeft - anchor.caretLeft)).toBeLessThanOrEqual(1)
+    expect(Math.abs(anchor.dx)).toBeLessThan(1)
+    expect(Math.abs(anchor.dy)).toBeLessThan(1)
+    expect(Math.abs(anchor.dw)).toBeLessThan(1)
+    expect(anchor.scrollSync).toBe(true)
+    expect(anchor.wrapMatch).toBe(true)
   })
 
   test('光标垂直稳定:动画态与稳定态字符间测量不跳动', async ({ page }) => {
@@ -74,11 +80,10 @@ test.describe('notes 记事本', () => {
     expect(top2).toBe('3px')
   })
 
-  test('光标移动 Q 弹:三段 squash-stretch 形变,到位后清空', async ({ page }) => {
+  test('光标移动 Q 弹:三段形变含宽度增粗,到位后清空', async ({ page }) => {
     await page.locator('.notes-layer').click()
     await page.keyboard.type('ab')
-    // 移动瞬间 caret-core 存在 WAAPI 形变动画(排除 CSS 闪烁),且为三段形变(拉伸→反弹→回正),
-    // 首帧幅度 ≥1.25 保证逐字输入也可感知(2px 宽光标的微幅 scale 不可见)
+    // 移动瞬间 caret-core 存在 WAAPI 形变动画(排除 CSS 闪烁),且为三段形变(拉伸→反弹→回正)
     const frames = await page.locator('.caret-core').evaluate((el) =>
       el
         .getAnimations()
@@ -89,9 +94,11 @@ test.describe('notes 记事本', () => {
     expect(frames.length).toBeGreaterThanOrEqual(3)
     const scaleFrames = frames.filter((k) => String(k.transform ?? '').includes('scale'))
     expect(scaleFrames.length).toBeGreaterThanOrEqual(2)
-    const m = String(frames[0]?.transform ?? '').match(/scale[XY]\(([\d.]+)\)/)
+    // 横向位移首帧(恒 scaleY 在前):高度压扁(< 1)+ 宽度增粗(≥ 1.5,2px 基宽的可感知变宽)
+    const m = String(frames[0]?.transform ?? '').match(/scaleY\(([\d.]+)\) scaleX\(([\d.]+)\)/)
     expect(m).toBeTruthy()
-    expect(Number(m![1])).toBeGreaterThanOrEqual(1.25)
+    expect(Number(m![1])).toBeLessThan(1)
+    expect(Number(m![2])).toBeGreaterThanOrEqual(1.5)
     // 形变结束后仅剩 CSS 闪烁,无 WAAPI 残留
     await page.waitForTimeout(450)
     const rest = await page
@@ -101,6 +108,34 @@ test.describe('notes 记事本', () => {
     // 垂直位置不受形变影响(quantified 网格)
     const top = await page.locator('.caret').evaluate((el) => el.style.top)
     expect(top).toBe('3px')
+  })
+
+  test('光标拖尾:位移路径渐隐细条,右移左删各自向新位收缩', async ({ page }) => {
+    await page.locator('.notes-layer').click()
+    await page.keyboard.type('a')
+    const trail = page.locator('.caret-trail').first()
+    // 键入(右移):横向拖尾覆盖旧→新路径,origin 在新位端(right)
+    const geo = await trail.evaluate((el) => ({
+      cls: el.className,
+      w: el.offsetWidth,
+      h: el.offsetHeight,
+      origin: el.style.transformOrigin,
+    }))
+    expect(geo.cls).toContain('caret-trail-x')
+    // 光标全高(18)的运动模糊条,宽 ≥ 位移;渐变方向类 r = 新位在右(旧端透明 → 新端 accent)
+    expect(geo.cls).toContain('caret-trail-r')
+    expect(geo.w).toBeGreaterThanOrEqual(6)
+    expect(geo.h).toBe(18)
+    expect(geo.origin).toContain('right')
+    // 动画结束自移除,不残留
+    await expect(page.locator('.caret-trail')).toHaveCount(0, { timeout: 2000 })
+    // 删除(左移):拖尾 origin 在左端(新位)
+    await page.keyboard.press('Backspace')
+    const origin2 = await page.evaluate(
+      () => (document.querySelector('.caret-trail') as HTMLElement)?.style.transformOrigin ?? '',
+    )
+    expect(origin2).toContain('left')
+    await expect(page.locator('.caret-trail')).toHaveCount(0, { timeout: 2000 })
   })
 
   test('上下键行导航:按渲染层行移动,即时匹配最近列', async ({ page }) => {
@@ -290,6 +325,43 @@ test.describe('notes 记事本', () => {
     await expect(page.locator('.caret-on')).toBeVisible()
   })
 
+  test('IME 锚随输入区滚动:壳镜像层盒 + 软换行重合,滚动即时同步', async ({ page }) => {
+    await page.locator('.notes-layer').click()
+    await page.evaluate(() => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      // 长行软换行夹具:壳内换行须与渲染层逐行重合(wrap=off 旧方案的内部逻辑行
+      // 与渲染层软换行行数错位,中段 caret 行号错位即候选栏漂移,末行靠钳制碰巧正确)
+      ta.value = `${'长'.repeat(120)}\n${Array.from({ length: 20 }, (_, i) => `line${i}`).join('\n')}`
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+      // 光标落软换行段中部(非末行)
+      ta.setSelectionRange(80, 80)
+      ta.dispatchEvent(new Event('select', { bubbles: true }))
+    })
+    await page.waitForTimeout(400)
+    const state = await page.evaluate(async () => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      const layer = document.querySelector('.notes-layer') as HTMLElement
+      const box = () => {
+        const tr = ta.getBoundingClientRect()
+        const lr = layer.getBoundingClientRect()
+        return { dx: tr.left - lr.left, dy: tr.top - lr.top }
+      }
+      // scrollHeight 相等 = 壳内行数与渲染层一致(换行逐行重合的数值代理)
+      const before = { ...box(), wrapDiff: ta.scrollHeight - layer.scrollHeight }
+      layer.scrollTop = 40 // 滚动且不发任何输入/选区事件
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
+      return { ...before, after: { ...box(), scrollSync: ta.scrollTop === layer.scrollTop } }
+    })
+    // 盒重合 + 换行重合:内部 caret 布局位 == caretPos,中段不再随折行差漂移
+    expect(Math.abs(state.dx)).toBeLessThan(1)
+    expect(Math.abs(state.dy)).toBeLessThan(1)
+    expect(Math.abs(state.wrapDiff)).toBeLessThanOrEqual(2)
+    // 滚动即时同步镜像(scroll 事件内,不等下一次输入)
+    expect(Math.abs(state.after.dx)).toBeLessThan(1)
+    expect(Math.abs(state.after.dy)).toBeLessThan(1)
+    expect(state.after.scrollSync).toBe(true)
+  })
+
   test('点击定位:点击行中偏右处光标落到字符间', async ({ page }) => {
     await page.locator('.notes-layer').click()
     await page.keyboard.type('abcdef')
@@ -322,7 +394,7 @@ test.describe('notes 记事本', () => {
     await expect(page.locator('.notes-layer')).toBeVisible({ timeout: 5000 })
   })
 
-  test('长文滚动跟随:光标行保持在可视区', async ({ page }) => {
+  test('长文滚动跟随:输入区内部滚动,光标行保持可视', async ({ page }) => {
     await page.locator('.notes-layer').click()
     await page.evaluate(() => {
       const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
@@ -330,21 +402,26 @@ test.describe('notes 记事本', () => {
       ta.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await page.waitForTimeout(500)
-    // 光标跳到文末(Cmd+Down 原生文档尾导航):滚动容器须跟随滚到光标行
+    // 光标跳到文末(Cmd+Down 原生文档尾导航):渲染层自身滚动跟随到光标行(固定窗高)
     await page.keyboard.press('Meta+ArrowDown')
     await page.waitForTimeout(100)
     const state = await page.evaluate(() => {
-      const scroller = document.querySelector('.overflow-y-auto') as HTMLElement
+      const layer = document.querySelector('.notes-layer') as HTMLElement
       const caret = document.querySelector('.caret') as HTMLElement
       const cr = caret.getBoundingClientRect()
-      const sr = scroller.getBoundingClientRect()
+      const lr = layer.getBoundingClientRect()
+      // 文档序在 notes-layer 之前的 .overflow-y-auto = ContentView 页面级容器
+      const page = document.querySelector('.overflow-y-auto') as HTMLElement
       return {
-        scrollTop: scroller.scrollTop,
-        inView: cr.bottom <= sr.bottom - 8 && cr.top >= sr.top + 76,
+        scrollTop: layer.scrollTop,
+        inView: cr.bottom <= lr.bottom + 1 && cr.top >= lr.top - 1,
+        pageScroll: page.scrollTop,
       }
     })
+    // 渲染层内部滚动消化长文,页面级容器不滚
     expect(state.scrollTop).toBeGreaterThan(0)
     expect(state.inView).toBe(true)
+    expect(state.pageScroll).toBe(0)
   })
 
   test('长文本降级:超阈值仍有渲染与光标', async ({ page }) => {
@@ -358,5 +435,107 @@ test.describe('notes 记事本', () => {
     // 降级路径无进场动画标记
     await expect(page.locator('.ch.anim')).toHaveCount(0)
     await expect(page.locator('.caret-on')).toBeVisible()
+  })
+
+  test('长文编辑仍有动效:门槛按单次编辑规模,非文档长度', async ({ page }) => {
+    await page.locator('.notes-layer').click()
+    await page.evaluate(() => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      ta.value = 'x'.repeat(1500)
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await expect(page.locator('.ch')).toHaveCount(1500)
+    await expect(page.locator('.ch.anim')).toHaveCount(0)
+    // 键入:单字符编辑照常 pop 进场
+    await page.keyboard.type('a')
+    await expect(page.locator('.ch.anim')).toHaveCount(1)
+    await expect(page.locator('.ch.anim')).toHaveCount(0, { timeout: 3000 })
+    // 删除:照常 ghost 离场
+    await page.keyboard.press('Backspace')
+    await expect(page.locator('.ch.ghost')).toHaveCount(1)
+    await expect(page.locator('.ch')).toHaveCount(1500, { timeout: 3000 })
+  })
+
+  test('长文中段回车:编辑行逐字符 FLIP + 尾块单元素整体平移', async ({ page }) => {
+    await page.locator('.notes-layer').click()
+    await page.evaluate(() => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      ta.value = Array.from({ length: 30 }, (_, i) => `第${i}行内容填充,`.repeat(8)).join('\n')
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+      // 光标落文档中部(约第 12 行行内)
+      ta.setSelectionRange(800, 800)
+      ta.dispatchEvent(new Event('select', { bubbles: true }))
+    })
+    await page.waitForTimeout(400)
+    // 深部参照字符(尾块内):回车后 ti 整体 +1
+    const deepTopBefore = await page.evaluate(
+      () => (document.querySelector(".notes-layer .ch[data-ti='2000']") as HTMLElement).offsetTop,
+    )
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(40) // 过渡进行中
+    const mid = await page.evaluate(() => {
+      const layer = document.querySelector('.notes-layer') as HTMLElement
+      const tail = document.querySelector('.flow-tail') as HTMLElement
+      // 逐字符过渡进行中 inline transform 已清空(过渡由 transition 插值),以 getAnimations 计
+      let moving = 0
+      for (const el of layer.querySelectorAll('.ch')) {
+        if (el.getAnimations().length > 0) moving++
+      }
+      return { moving, tailGlide: tail.getAnimations().some((a) => a instanceof CSSTransition) }
+    })
+    // 尾块滑移期间 transform 使其成为内部字符 offsetParent,位置断言须待落定
+    await page.waitForTimeout(400)
+    const state = await page.evaluate(() => {
+      const layer = document.querySelector('.notes-layer') as HTMLElement
+      const deep = document.querySelector(".notes-layer .ch[data-ti='2001']") as HTMLElement
+      return { deepTop: deep.offsetTop, chCount: layer.querySelectorAll('.ch').length }
+    })
+    // 逐字符动画限编辑行区(≤200);下方全量行由尾块单过渡整体平移(无接缝、O(1))
+    expect(mid.moving).toBeLessThanOrEqual(200)
+    expect(mid.tailGlide).toBe(true)
+    expect(state.deepTop).toBe(deepTopBefore + 24)
+    // 原文 2109 字符(2080 内容 + 29 换行),回车后 2110
+    expect(state.chCount).toBe(2110)
+  })
+
+  test('长文恢复:重挂载停在顶部,光标在开头', async ({ page }) => {
+    await page.locator('.notes-layer').click()
+    await page.evaluate(() => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      ta.value = Array.from({ length: 40 }, (_, i) => `line${i}`).join('\n')
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await expect(page.locator('.ch')).toHaveCount(269)
+    const input = page.locator('#main-search-input')
+    // 离开 notes 并依次激活 3 个其它扩展视图:KeepAlive max=3 按 LRU 驱逐 notes,
+    // 再次进入即全新挂载,走 config 恢复路径(onMounted → initText)
+    for (const kw of ['/translate', '/image', '/agent']) {
+      await input.press('Escape')
+      await page.waitForTimeout(200)
+      await input.fill(kw)
+      await page.waitForTimeout(200)
+      await input.press('Enter')
+      await page.waitForTimeout(250)
+    }
+    await input.press('Escape')
+    await page.waitForTimeout(200)
+    await input.fill('/notes')
+    await page.waitForTimeout(200)
+    await input.press('Enter')
+    await page.locator('.notes-layer').waitFor({ timeout: 5000 })
+    await page.waitForTimeout(300)
+    const state = await page.evaluate(() => {
+      const layer = document.querySelector('.notes-layer') as HTMLElement
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      return {
+        chCount: layer.querySelectorAll('.ch').length,
+        scrollTop: layer.scrollTop,
+        selStart: ta.selectionStart,
+      }
+    })
+    // 长文完整恢复,但停留在顶部、选区在开头(编程置 value 默认选区落文末会滚底)
+    expect(state.chCount).toBe(269)
+    expect(state.scrollTop).toBe(0)
+    expect(state.selStart).toBe(0)
   })
 })
