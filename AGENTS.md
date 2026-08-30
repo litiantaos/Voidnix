@@ -219,7 +219,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
   - frontmost == 原前台 PID → `makeKeyWindow` 恢复
   - frontmost == Voidnix 自身 → 激活事务可能短暂夺走 panel key，`makeKeyWindow` 恢复（置于 is_app_active 守卫之前，自我激活时守卫恒真）
   - frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss
-- **WKWebView 可编辑元素聚焦会激活应用**：应用未激活时对 textarea 等执行 focus() 触发 `activateIgnoringOtherApps` 抢走前台（违背 show 不抢 active）；激活事务的 key 重评估偶发夺走 panel key → 派生 blur 藏窗（agent 快捷键直开后约 0.5~1.5s 自行隐藏的根因，曾误报为「点击输入框隐藏」）。三重防线：`is_app_active` 判定 3 拦截自伤 blur 的藏窗；watcher 自身激活分支恢复 key；disableSearchInput 扩展（agent/translate）不在窗口隐藏时聚焦（mount 时 `document.hasFocus()` 为假跳过，`window-focused` 事件补聚焦）。配套 `capture_frontmost()` 遇 frontmost=自身时保留上次记录（不写 0），防 prev 失效误判
+- **WKWebView 可编辑元素聚焦会激活应用**：应用未激活时对 textarea 等执行 focus() 触发 `activateIgnoringOtherApps` 抢走前台（违背 show 不抢 active）；激活事务的 key 重评估偶发夺走 panel key → 派生 blur 藏窗（agent 快捷键直开后约 0.5~1.5s 自行隐藏的根因，曾误报为「点击输入框隐藏」）。三重防线：`is_app_active` 判定 3 拦截自伤 blur 的藏窗；watcher 自身激活分支恢复 key；disableSearchInput 扩展（agent/notes/translate）不在窗口隐藏时聚焦（mount 时 `document.hasFocus()` 为假跳过，`window-focused` 事件补聚焦；补聚焦不设 hasFocus 守卫——事件先于 WebKit 页面焦点状态翻转到达，查则快捷键唤起路径永久错过，事件语义即窗口已 key 聚焦安全）。配套 `capture_frontmost()` 遇 frontmost=自身时保留上次记录（不写 0），防 prev 失效误判
 
 **窗口高度**——扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖：
 

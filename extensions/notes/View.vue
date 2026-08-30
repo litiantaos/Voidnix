@@ -888,12 +888,23 @@ function maybeFocus() {
   if (!document.hasFocus()) return
   nextTick(() => inputEl.value?.focus())
 }
+/// 窗口获焦后聚焦输入区:此处不经 maybeFocus 的 hasFocus 守卫——window-focused
+/// 事件先于 WebKit 页面焦点状态翻转到达(实测 show 后数十 ms 内 hasFocus 仍为 false),
+/// 守卫会让快捷键唤起路径永久错过聚焦;事件语义即窗口已 key,聚焦无激活风险(agent 同范式)
 function onWinFocused() {
-  if (appStore.activeExtId !== 'notes' || appStore.activeSubview) return
-  maybeFocus()
+  if (appStore.activeExtId !== 'notes' || appStore.activeSubview || appStore.isDialogOpen) return
+  inputEl.value?.focus()
 }
 onMounted(maybeFocus)
 onActivated(maybeFocus)
+// 设置子视图返回时回焦输入区:MainView 子视图退出 watch 会聚焦只读搜索框,对
+// disableSearchInput 扩展无意义,此处接管(agent 同范式)
+watch(
+  () => appStore.activeSubview,
+  (sub, prev) => {
+    if (prev === 'config' && !sub) nextTick(() => inputEl.value?.focus())
+  },
+)
 onDeactivated(() => {
   inputEl.value?.blur()
 })
