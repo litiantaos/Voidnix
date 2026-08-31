@@ -7,7 +7,7 @@ export type Lang = 'zh' | 'en'
 const zh = {
   layout: {
     title: 'Voidnix - macOS 效率启动器',
-    description: '模块化的 macOS 效率启动器。Rust + 原生原语，23 个一等公民扩展，常驻低占用。',
+    description: '模块化的 macOS 效率启动器。Rust + 原生原语，24 个一等公民扩展，常驻低占用。',
     htmlLang: 'zh-CN',
     ogLocale: 'zh_CN',
     demoTitle: 'Voidnix Demo',
@@ -55,7 +55,15 @@ const zh = {
         title: '全局搜索',
         tag: 'Option + Space',
         desc: '一次按键召回一切，快结果不等慢结果。',
-        bullets: ['流式增量召回', '拼音 / 全拼 / 缩写', '应用 / 文件 / 扩展分组'],
+        bullets: ['流式增量召回', '拼音 / 全拼 / 缩写', '即时答案：计算 / 汇率 / 时间戳'],
+      },
+      {
+        id: 'clipboard',
+        icon: 'ri-clipboard-line',
+        title: '剪贴板',
+        tag: 'Option + C',
+        desc: '复制过的都在，搜索即达，回车即粘贴。',
+        bullets: ['文本 / 图片 / 文件全记录', '搜索 · 收藏 · 编辑', '多选批量粘贴'],
       },
       {
         id: 'agent',
@@ -82,14 +90,6 @@ const zh = {
         bullets: ['顶部分屏面板', '自定义尺寸', '跨屏迁移'],
       },
       {
-        id: 'proxy',
-        icon: 'ri-signal-tower-line',
-        title: '代理',
-        tag: 'TUN 模式',
-        desc: '内置 mihomo 系统级接管，菜单栏一键断开。',
-        bullets: ['TUN 系统级接管', '节点测速切换', '连接 / 规则 / 日志'],
-      },
-      {
         id: 'terminal',
         icon: 'ri-terminal-box-line',
         title: '终端建议',
@@ -98,15 +98,13 @@ const zh = {
         bullets: ['frecency 智能补全', '→ 接受 / Tab 切换', '零侵入 zsh'],
       },
     ],
-    // capabilities 微场景文案（search 场景的分组标题、agent 场景的对话、proxy 场景的节点等）
+    // capabilities 微场景文案（search 场景的分组标题、agent 场景的对话等）
     scenes: {
       groupFile: '文件',
       agentUser: '列出 extensions 目录里的 ts 文件',
-      agentToolOut: '23 个 index.ts，含 native 的 16 个',
+      agentToolOut: '24 个 index.ts，含 native 的 16 个',
       agentAction: '复制路径',
       snapLabel: '右半屏',
-      proxyConnected: '已连接 · 12 节点',
-      proxyNodes: ['香港 01', '东京 02', '新加坡 01', '洛杉矶 03'],
     },
   },
   extensions: {
@@ -147,13 +145,13 @@ const zh = {
           {
             id: 'agent',
             name: 'AI Agent',
-            desc: '对话与工具调用，联网搜索与执行命令',
+            desc: '对话与工具调用，联网搜索与执行命令，会话自动留存',
             icon: 'ri-robot-2-line',
           },
           {
             id: 'translate',
             name: '翻译',
-            desc: '选中文本即译，中英方向自动反转',
+            desc: '选中文本即译，中英方向自动反转，可朗读',
             icon: 'ri-translate-2',
           },
           {
@@ -170,13 +168,13 @@ const zh = {
           {
             id: 'clipboard',
             name: '剪贴板',
-            desc: '后台记录文本 / 图片 / 文件，搜索与收藏',
+            desc: '后台记录文本 / 图片 / 文件，搜索、收藏与编辑',
             icon: 'ri-clipboard-line',
           },
           {
             id: 'screenshot',
             name: '截屏',
-            desc: '标注 / OCR / 二维码 / 钉图 / 滚动长截图',
+            desc: '全屏 / 标注 / OCR / 二维码 / 钉图 / 滚动长截图 / 取色',
             icon: 'ri-screenshot-line',
           },
           {
@@ -207,6 +205,12 @@ const zh = {
             name: '访达工具',
             desc: '拷贝路径 / 终端打开 / 新建文件 / 隐藏文件',
             icon: 'ri-folder-add-line',
+          },
+          {
+            id: 'notes',
+            name: '记事本',
+            desc: '随手记录，逐字动效，自动暂存',
+            icon: 'ri-sticky-note-line',
           },
           {
             id: 'system-status',
@@ -242,7 +246,7 @@ const zh = {
           {
             id: 'settings',
             name: '设置',
-            desc: '快捷键 / 权限 / 更新',
+            desc: '外观 / 快捷键 / 自启 / 权限 / 更新',
             icon: 'ri-settings-3-line',
           },
         ],
@@ -257,7 +261,7 @@ const en: Dict = {
   layout: {
     title: 'Voidnix - macOS Productivity Launcher',
     description:
-      'A modular macOS productivity launcher. Rust + native primitives, 23 first-class extensions, minimal footprint.',
+      'A modular macOS productivity launcher. Rust + native primitives, 24 first-class extensions, minimal footprint.',
     htmlLang: 'en',
     ogLocale: 'en_US',
     demoTitle: 'Voidnix Demo',
@@ -309,7 +313,19 @@ const en: Dict = {
         bullets: [
           'Streaming incremental recall',
           'Pinyin / full / abbreviation',
-          'Apps / files / extensions grouping',
+          'Instant answers: math / currency / time',
+        ],
+      },
+      {
+        id: 'clipboard',
+        icon: 'ri-clipboard-line',
+        title: 'Clipboard',
+        tag: 'Option + C',
+        desc: 'Everything you copied, one search away. Enter to paste.',
+        bullets: [
+          'Text / image / file history',
+          'Search · favorites · edit',
+          'Multi-select batch paste',
         ],
       },
       {
@@ -337,18 +353,6 @@ const en: Dict = {
         bullets: ['Top snap panel', 'Custom sizes', 'Cross-screen migration'],
       },
       {
-        id: 'proxy',
-        icon: 'ri-signal-tower-line',
-        title: 'Proxy',
-        tag: 'TUN mode',
-        desc: 'Built-in mihomo system-level interception. One-click disconnect from the menu bar.',
-        bullets: [
-          'TUN system-level interception',
-          'Node speed test & switching',
-          'Connections / rules / logs',
-        ],
-      },
-      {
         id: 'terminal',
         icon: 'ri-terminal-box-line',
         title: 'Terminal Suggestions',
@@ -360,11 +364,9 @@ const en: Dict = {
     scenes: {
       groupFile: 'Files',
       agentUser: 'List the .ts files in the extensions directory',
-      agentToolOut: '23 index.ts files, 16 with native code',
+      agentToolOut: '24 index.ts files, 16 with native code',
       agentAction: 'Copy path',
       snapLabel: 'Right half',
-      proxyConnected: 'Connected · 12 nodes',
-      proxyNodes: ['Hong Kong 01', 'Tokyo 02', 'Singapore 01', 'Los Angeles 03'],
     },
   },
   extensions: {
@@ -420,13 +422,13 @@ const en: Dict = {
           {
             id: 'agent',
             name: 'AI Agent',
-            desc: 'Conversational tool calling, web search & command execution',
+            desc: 'Conversational tool calling, web search & commands, persistent sessions',
             icon: 'ri-robot-2-line',
           },
           {
             id: 'translate',
             name: 'Translate',
-            desc: 'Select text to translate, auto-detect direction',
+            desc: 'Select text to translate, auto-detect direction, speak',
             icon: 'ri-translate-2',
           },
           {
@@ -443,13 +445,13 @@ const en: Dict = {
           {
             id: 'clipboard',
             name: 'Clipboard',
-            desc: 'Background text / image / file recording, search & favorites',
+            desc: 'Background text / image / file recording, search, favorites & edit',
             icon: 'ri-clipboard-line',
           },
           {
             id: 'screenshot',
             name: 'Screenshot',
-            desc: 'Annotate / OCR / QR code / pin / scrolling capture',
+            desc: 'Fullscreen / annotate / OCR / QR code / pin / scrolling capture / pick color',
             icon: 'ri-screenshot-line',
           },
           {
@@ -480,6 +482,12 @@ const en: Dict = {
             name: 'Finder Tools',
             desc: 'Copy path / open terminal / new file / toggle hidden',
             icon: 'ri-folder-add-line',
+          },
+          {
+            id: 'notes',
+            name: 'Notes',
+            desc: 'Quick notes, per-character motion, auto-saved',
+            icon: 'ri-sticky-note-line',
           },
           {
             id: 'system-status',
@@ -520,7 +528,7 @@ const en: Dict = {
           {
             id: 'settings',
             name: 'Settings',
-            desc: 'Shortcuts / permissions / updates',
+            desc: 'Appearance / shortcuts / autostart / permissions / updates',
             icon: 'ri-settings-3-line',
           },
         ],

@@ -71,9 +71,9 @@ const zh: DemoText = {
   agentTag: 'Agent',
   agentSearch: '在 Agent 中搜索',
   agentUser: '列出 extensions 目录下的 ts 文件',
-  agentToolOut: '23 个 index.ts，含 native 的 16 个',
+  agentToolOut: '24 个 index.ts，含 native 的 16 个',
   agentResult:
-    '找到 23 个 index.ts，含 native 的 16 个。\n\n这些文件分布在 extensions/ 下的每个扩展目录中，纯 TS 扩展（calculator、ip 等）同样包含 index.ts。还需要其他帮助吗？',
+    '找到 24 个 index.ts，含 native 的 16 个。\n\n这些文件分布在 extensions/ 下的每个扩展目录中，纯 TS 扩展（calculator、ip 等）同样包含 index.ts。还需要其他帮助吗？',
   ocrTag: 'OCR',
   ocrSearch: '识别结果',
   ocrText: 'Voidnix — macOS 效率启动器\n模块化扩展架构\nRust + Vue 3 + Tauri 2',
@@ -125,9 +125,9 @@ const en: DemoText = {
   agentTag: 'Agent',
   agentSearch: 'Search in Agent',
   agentUser: 'List the .ts files in the extensions directory',
-  agentToolOut: '23 index.ts files, 16 with native code',
+  agentToolOut: '24 index.ts files, 16 with native code',
   agentResult:
-    'Found 23 index.ts files, 16 with native code.\n\nThese files are in each extension directory under extensions/. Pure-TS extensions (calculator, ip, etc.) also contain index.ts. Need anything else?',
+    'Found 24 index.ts files, 16 with native code.\n\nThese files are in each extension directory under extensions/. Pure-TS extensions (calculator, ip, etc.) also contain index.ts. Need anything else?',
   ocrTag: 'OCR',
   ocrSearch: 'Recognition result',
   ocrText:

@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════
 //  播放器——播放循环 + 键盘控制 + UI 交互 + 自适应缩放
 //  createPlayer({ renderFrame, $, controls }) 完成全部接线
-//  controls=false 时自动连续播放，跳过控制栏 DOM 接线（首页）
+//  controls=false 时自动连续播放，跳过控制栏 DOM 接线
 // ═══════════════════════════════════════════════
 import { FPS, SEGMENTS, SEG_OFFSETS, globalToSeg, clamp } from './demo-utils'
 import { getDemoText, type DemoText } from '../../i18n/demo'
@@ -124,6 +124,9 @@ export function createPlayer({ renderer, $, controls = true }: PlayerOpts) {
 
     document.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLButtonElement) return
+      // 仅舞台在视口内接管空格/方向键，滚出视口后交还页面默认行为
+      const rect = stageFrame.getBoundingClientRect()
+      if (rect.bottom < 0 || rect.top > window.innerHeight) return
       if (e.key === ' ') {
         e.preventDefault()
         togglePause()

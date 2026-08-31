@@ -37,7 +37,7 @@ src/components/Hero.astro               首页（文案区 + <DemoStage /> 全�
 
 Hero.astro 文案区（标题 + chips + 下载按钮）居中布局，DemoStage 在下方展示，max-width 与正文一致（`--content-max: 1100px`），圆角 + 阴影裁切。舞台 + 控制栏自适应缩放到容器宽度。
 
-首页传 `controls={false}` 不渲染控制栏，播放器自动走连续播放模式（6 段循环）。预览页默认 `controls={true}`。
+首页与预览页均渲染控制栏（`controls` 默认 true），默认单段自动循环，可按钮切换或连播。`controls={false}` 时无控制栏、自动连续播放（6 段循环）。键盘快捷键（空格暂停 / 方向键逐帧）仅在舞台位于视口内时接管，滚出视口交还页面默认行为。
 
 ## 统一节奏
 

@@ -10,7 +10,7 @@
 //   demo-stage.css  全部舞台样式（.demo-stage 作用域）
 //
 // props:
-//   controls（默认 true）：是否渲染下方控制栏。首页传 false 自动连续播放，预览页默认 true
+//   controls（默认 true）：是否渲染下方控制栏（段切换 / 连播 / 暂停 / 进度）。false 时自动连续播放
 //   lang（默认 zh）：演示语言，驱动 data-lang 属性 + 静态 HTML 文案
 import './demo/demo-stage.css'
 import { getDemoText } from '../i18n/demo'
@@ -425,7 +425,7 @@ const T = getDemoText(lang)
     </div>
   </div>
 
-  <!-- 控制栏（在缩放画布下方，不缩放；首页不渲染） -->
+  <!-- 控制栏（在缩放画布下方，不缩放） -->
   {controls && (
     <div class="demo-controls" id="demoControls">
     <div class="seg-btns" id="segBtns">
