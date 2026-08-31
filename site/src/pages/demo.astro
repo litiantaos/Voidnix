@@ -2,6 +2,7 @@
 import '../styles/tokens.css'
 import '../styles/global.css'
 import DemoStage from '../components/DemoStage.astro'
+import ThemeInit from '../components/ThemeInit.astro'
 import { getDict } from '../i18n/translations'
 ---
 <!doctype html>
@@ -12,6 +13,7 @@ import { getDict } from '../i18n/translations'
     <meta name="robots" content="noindex" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" />
     <title>{getDict('zh').layout.demoTitle}</title>
+    <ThemeInit />
   </head>
   <body>
     <DemoStage lang="zh" />

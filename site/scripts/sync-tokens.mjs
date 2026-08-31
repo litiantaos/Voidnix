@@ -5,8 +5,8 @@
  * 从 src/styles/theme.css 提取 :root / :root[data-theme="dark"] 的 CSS 自定义属性，
  * 写入 site/src/styles/tokens.css。产品改色/圆角/阴影，官网自动跟。
  *
- * 产品深色走 :root[data-theme="dark"]（runtime/theme.ts 写 data-theme 属性），
- * 官网无 JS 主题层，改为 @media (prefers-color-scheme: dark) 跟随系统。
+ * 深色选择器与产品同构保留 :root[data-theme="dark"]，由 ThemeInit 内联脚本写入
+ * data-theme（三态：auto 跟随系统 / light / dark，localStorage 持久化）。
  *
  * 官网专属 token（布局 / DemoStage mock / 雾团透明度补偿）在末尾 SITE_ONLY 区块，
  * 由本脚本维护——产品无对应或不适用官网场景。
@@ -38,15 +38,6 @@ function extractBlock(css, pattern) {
     .split('\n')
     .map((l) => l.replace(/\s+$/, '')) // 仅去行尾空白，保留行首缩进（多行值续行的额外缩进）
     .filter((l) => l.trim().length > 0) // 过滤空行
-    .join('\n')
-}
-
-/** 块整体加 N 空格缩进（嵌套进 @media > :root 时用）；空行不加（Prettier 要求空行无尾随空白） */
-function indentBlock(block, n) {
-  const pad = ' '.repeat(n)
-  return block
-    .split('\n')
-    .map((l) => (l.trim() ? pad + l : l))
     .join('\n')
 }
 
@@ -82,7 +73,9 @@ const SITE_ONLY_LIGHT = `  /* 字体：系统 sans 优先（拉丁走 SF Pro）�
   --color-folder: #5a8def;
   --color-file: #7aa2c8;`
 
-const SITE_ONLY_DARK = `  /* Hero 渐变标题深色提亮 */
+const SITE_ONLY_DARK = `  color-scheme: dark;
+
+  /* Hero 渐变标题深色提亮 */
   --color-accent-deep: color-mix(in srgb, var(--color-accent) 88%, #fff);
 
   /* Mica 雾团 */
@@ -105,8 +98,8 @@ const output = `/*
  * 官网设计 token——从产品 src/styles/theme.css 自动同步（勿手改）。
  * bun run sync:tokens 重新生成。
  *
- * 产品深色走 :root[data-theme="dark"]（runtime/theme.ts 写 data-theme 属性），
- * 官网无 JS 主题层，改为 @media (prefers-color-scheme: dark) 跟随系统。
+ * 深色与产品同构走 :root[data-theme="dark"]，由 ThemeInit 内联脚本写入
+ * data-theme（三态：auto 跟随系统 / light / dark，localStorage 持久化）。
  * 官网专属 token（布局 / DemoStage mock / 雾团补偿）在末尾 SITE_ONLY 区块。
  */
 
@@ -116,10 +109,8 @@ const output = `/*
 ${lightTokens}
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-${indentBlock(darkTokens, 2)}
-  }
+:root[data-theme='dark'] {
+${darkTokens}
 }
 
 /* ══ SITE_ONLY：官网专属 token（产品无对应或需覆盖）══ */
@@ -127,19 +118,22 @@ ${indentBlock(darkTokens, 2)}
 ${SITE_ONLY_LIGHT}
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-${indentBlock(SITE_ONLY_DARK, 2)}
-  }
+/* 手动主题下原生控件配色跟随（覆盖 :root 的 light dark 双声明；auto 态由脚本解析为二值） */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+${SITE_ONLY_DARK}
 }
 `
 
 const outPath = resolve(repoRoot, 'site/src/styles/tokens.css')
 writeFileSync(outPath, output)
 
-// @media 嵌套使缩进深度从 2→4，Prettier 折行阈值（printWidth）随之变化——
-// theme.css 顶层单行的属性（如 --shadow-*）在 4 空格下越界折多行，保留源缩进无法精确复现。
-// 生成后用 Prettier 二次格式化兜底；本地有根 prettier，独立部署无则跳过（不影响构建）。
+// 产品块为顶层 2 空格缩进，与官网选择器层级一致直接复用；但 Prettier 折行阈值
+// 随上下文微变，生成后用 Prettier 二次格式化兜底；本地有根 prettier，独立部署无则
+// 跳过（不影响构建，格式由本地 precommit 保证）。
 try {
   const { format, resolveConfig } = await import('prettier')
   const opts = (await resolveConfig(outPath)) ?? {}
