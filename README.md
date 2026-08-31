@@ -1,124 +1,126 @@
 # Voidnix
 
-macOS 效率启动器。模块化架构，极简设计，原生性能。
+**English** | [简体中文](./README.zh-CN.md)
 
-## 技术栈
+A launcher for macOS. Modular architecture, minimal design, native performance.
+
+## Tech Stack
 
 Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
-## 使用说明
+## User Guide
 
-### 首次安装
+### Installation
 
-从 Release 下载 `.dmg`，拖入 `/Applications`。首次打开若被 Gatekeeper 拦截：右键应用图标选「打开」，或前往「系统设置 → 隐私与安全性」点击「仍要打开」。应用已签名但未做 Apple 公证，此为预期行为。
+Download the `.dmg` from the [latest Release](https://github.com/litiantaos/Voidnix/releases/latest) and drag the app to `/Applications`. If Gatekeeper blocks the first launch: open **System Settings → Privacy & Security** and click **Open Anyway**. The app is signed but not notarized; this is expected.
 
-### 基本
+### Basics
 
-- 启动后常驻后台，无 Dock 图标
-- 默认无菜单栏图标；代理已连接、保持系统唤醒已开启时显示
-- `Option+Space` 唤起 / 隐藏主窗口，失焦自动隐藏
-- `↑↓` 选择列表项，`Enter` 执行，`Escape` 退出当前层（子视图 → 模块 → 隐藏窗口）
-- `Cmd+Enter` 显示结果菜单（应用、文件/文件夹）
-- 有右侧操作区时，`Tab` 在搜索栏与操作区控件间切换
+- Runs in the background after launch, no Dock icon
+- No menu bar icon by default; one appears while the proxy is connected or keep-awake is on
+- `Option+Space` toggles the main window; it hides automatically on focus loss
+- `↑↓` move through the list, `Enter` run, `Escape` back out one level (subview → module → hide window)
+- `Cmd+Enter` shows the result action menu (apps, files/folders)
+- When a right-side accessory area is present, `Tab` moves focus between the search bar and its controls
 
-### 全局搜索
+### Global Search
 
-- 默认列表显示按使用频率排序的应用
-- 输入关键字搜索应用、文件/夹、扩展等，结果按 应用 → 扩展 → 文件 → 剪贴板 → 快捷操作 分组
-- 输入 `/` 显示扩展列表
-- 输入 `//关键词` Google、`//b 关键词` Bing、`//example.com` 打开链接
+- The default list shows apps ranked by usage frequency
+- As you type, apps, files/folders and extensions are searched; results are grouped apps → extensions → files → clipboard → quick actions
+- Type `/` to list extensions
+- `//query` searches Google, `//b query` Bing, `//example.com` opens a link
 
-### 计算器
+### Calculator
 
-全局输入数学表达式即时计算（如 `1+2*3`），回车复制结果，模块内查看历史。
+Type a math expression anywhere for an instant answer (e.g. `1+2*3`); `Enter` copies the result; open the module for history.
 
-### 汇率
+### Currency
 
-全局输入金额与币种即时换算（如 `100 USD`、`1万美元`），模块内查看全部币种与参考汇率。
+Type an amount and currency for instant conversion (e.g. `100 USD`, `20000 JPY`); the module shows all currencies and reference rates.
 
 ### IP
 
-进入模块后：空查本机公网，输入 IP 查归属。
+Inside the module: an empty query shows your public IP; type an IP to look up its location.
 
-### 时间戳
+### Timestamp
 
-进入模块后：空显示当前时间，输入 Unix / 日期互转。
+Inside the module: an empty query shows the current time; enter a Unix timestamp or a date to convert both ways.
 
 ### UUID
 
-进入模块后生成 UUID v4 / NanoID。
+Generates UUID v4 / NanoID inside the module.
 
 ### Base64
 
-进入模块后文本编解码。
+Encode and decode text inside the module.
 
-### 记事本
+### Notes
 
-`Option+N` 呼出记事本，随手记录，内容自动暂存，重启后恢复，设置中可清空。字符级动效：落字弹入、删除飘散、重排滑移、光标弹滑拖尾，中文输入法组合同样逐字呈现。
+`Option+N` opens a scratchpad. Content is saved as you type and restored on relaunch; it can be cleared in Settings. Every character is animated — typed characters pop in, deleted ones drift away, reflows slide into place, and the cursor trails elastically — including during IME composition.
 
-### 剪贴板
+### Clipboard
 
-后台自动记录文本、图片、文件；`Option+C` 打开历史，支持搜索、收藏、多选与编辑，回车粘贴，可配置保留天数。
+Text, images and files are recorded automatically in the background. `Option+C` opens the history with search, favorites, multi-select and editing; `Enter` pastes; retention is configurable in days.
 
-### AI 提供商
+### AI Providers
 
-统一管理 OpenAI 兼容 URL / Key / 模型，供翻译、Agent 与外部工具（OpenCode、Grok Build 等）共用。同一提供商支持多 Key，智谱显示 5h / 7d / 30d 额度曲线、DeepSeek 显示账户余额；保存后写 `ai.env` 并幂等注入 shell rc，全量私有命名空间（`VOIDNIX_ZHIPU_*` / `VOIDNIX_DEEPSEEK_*`），不抢占外部工具约定的通用变量名。
+Manage OpenAI-compatible URL / key / model entries in one place, shared by Translate, Agent and external tools (OpenCode, Grok Build, etc.). Multiple keys per provider; Zhipu shows its 5h / 7d / 30d quota curves, DeepSeek shows the account balance. Saving writes `ai.env` and idempotently injects it into your shell rc files under a fully private namespace (`VOIDNIX_ZHIPU_*` / `VOIDNIX_DEEPSEEK_*`), never taking over the generic variable names other tools rely on.
 
-### 翻译
+### Translate
 
-`Option+T` 抓取当前选中文本翻译，或模块内直接输入，中英方向自动反转，结果可朗读，可配置有道或 AI 引擎（多引擎并排）。
+`Option+T` grabs the current selection and translates it, or you can type directly inside the module. Chinese↔English direction flips automatically; results can be spoken aloud; Youdao or AI engines can be configured, with multiple engines side by side.
 
 ### AI Agent
 
-`Option+A` 支持对话与工具调用（联网搜索、执行命令），会话自动保存、重启恢复，可配置提供商与模型，命令默认直接执行。
+`Option+A` opens chat with tool calling (web search, command execution). Sessions are saved and restored across restarts; provider and model are configurable; commands run without confirmation by default.
 
-### 截屏
+### Screenshot
 
-`Option+S` 区域截屏后支持标注、OCR 与二维码识别、钉图、滚动长截图，选区阶段按 `F` 全屏、`C` 取色复制色值，默认保存到下载目录，路径可配置。需屏幕录制权限。
+`Option+S` captures a region, then annotate, run OCR and QR recognition, pin to screen, or take a scrolling screenshot. In the selection stage, press `F` for full screen or `C` to pick and copy a color. Saves to Downloads by default; the path is configurable. Requires Screen Recording permission.
 
-### 访达工具
+### Finder Tools
 
-`Option+F` 在访达中拷贝路径、终端打开、新建文件、切换隐藏文件。需辅助功能权限。
+`Option+F` copies paths, opens in Terminal, creates new files, and toggles hidden files — inside Finder. Requires Accessibility permission.
 
-### 窗口管理
+### Window Management
 
-启用后，鼠标移至任意屏顶部中心唤起分屏面板，支持自定义尺寸；多屏环境下面板末组提供跨屏迁移，布局相对窗口所在屏计算。
+Once enabled, moving the pointer to the top center of any screen summons the snap panel with custom sizes; in multi-screen setups the last group of the panel migrates windows across screens, with layouts computed relative to the window's screen.
 
-### 代理
+### Proxy
 
-下载 mihomo 核心 → 添加订阅 → 开启（默认 TUN 模式，首次需管理员密码，之后常驻免提权）。支持节点切换、测速、规则模式，搜索栏右侧查看连接 / 规则 / 日志，连接后菜单栏可快速断开。
+Download the mihomo core → add subscriptions → enable (TUN mode by default; the first enable asks for the admin password, after which it runs without re-prompting). Switch nodes, test latency, and pick rule modes; connections / rules / logs are available from the search-bar accessory; while connected, the menu bar offers a quick disconnect.
 
-### 视频处理
+### Video Processing
 
-压缩 / 转格式 / 抽音频，无系统 FFmpeg 时按需下载静态核心。
+Compress, convert, or extract audio; a static FFmpeg core is downloaded on demand when the system has none.
 
-### 图片处理
+### Image Processing
 
-移除背景（macOS Vision 前景分割，与「照片」抬起主体同引擎）与拼接长图（横向 / 纵向、支持间距与重叠、统一尺寸），结果可复制、保存或在访达中显示。
+Remove backgrounds (macOS Vision foreground segmentation — the same engine behind Photos' Lift Subject) and stitch images into long strips (horizontal / vertical, with spacing and overlap, unified sizing); copy, save, or reveal results in Finder.
 
-### 终端自动建议
+### Terminal Autosuggestions
 
-开启后，zsh 输入时显示历史 frecency 建议，`→` 接受、`Tab` 切换备选、`Ctrl+X` 开关、`Ctrl+C` 清空。
+Once enabled, zsh shows frecency-ranked suggestions from your history as you type: `→` accepts, `Tab` cycles alternatives, `Ctrl+X` toggles, `Ctrl+C` clears.
 
-### 保持系统唤醒
+### Keep Awake
 
-通过外接虚拟显示器实现 MacBook 合盖熄屏不休眠，仅在接入电源时可用。
+A virtual external display keeps a MacBook awake with the lid closed and the display off. Available only on AC power.
 
-### 系统状态
+### System Status
 
-查看 CPU / 内存 / 磁盘 / 网络等概览。
+An overview of CPU / memory / disk / network.
 
-### 清洁模式
+### Clean Mode
 
-开启后，全屏黑屏并锁定键鼠，**长按鼠标左键 2 秒**退出。
+Blanks the screen and locks keyboard and mouse. **Press and hold the left mouse button for 2 seconds** to exit.
 
 ### Homebrew
 
-包管理面板：查看已安装的 formula / cask 与可升级列表，一键更新升级并自动清理，支持服务启停、包详情（依赖 / 被依赖）与卸载。
+A package panel: browse installed formulae / casks and available upgrades, update with one click and automatic cleanup, start/stop services, view package details (dependencies / dependents), and uninstall.
 
-### 设置
+### Settings
 
-外观与界面语言、启动快捷键、开机自启、检查更新、退出，隐私权限入口（屏幕录制、辅助功能、完全磁盘访问），一键跳转系统设置。
+Appearance and UI language, launch shortcut, launch at login, check for updates, quit; privacy permission entries (Screen Recording, Accessibility, Full Disk Access) with one-click jumps into System Settings.
 
 ## License
 
