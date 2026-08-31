@@ -70,6 +70,8 @@ node scripts/render-og.mjs
 
 token 从产品 `src/styles/theme.css` 自动同步（`scripts/sync-tokens.mjs`）：`dev` / `build` 前置自动运行，提取 `:root` + `:root[data-theme="dark"]` 的 CSS 自定义属性，产品深色选择器转为官网 `@media (prefers-color-scheme: dark)`。官网专属 token（布局 `--content-max` / DemoStage mock 场景 / 雾团透明度补偿）在 `tokens.css` 末尾 SITE_ONLY 区块维护。
 
+排版：正文走系统 sans（SITE_ONLY 覆写 `--font-sans`，不继承产品 mono 优先）；技术性内容显式 `--font-mono`——快捷键标签、路径与文件名、终端与命令输出、尺寸标注、数值徽标、Hero 规格行。
+
 ## 部署
 
 静态输出，`dist/` 可直接托管。已接入 Vercel（GitHub 集成自动部署）：

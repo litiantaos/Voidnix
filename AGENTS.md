@@ -235,7 +235,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 `runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。
 
-- 默认 Option 基：`Option+Space` 呼出，`Option+C/S/T/A/F` = 剪贴板 / 截屏 / 翻译 / Agent / 访达工具
+- 默认 Option 基：`Option+Space` 呼出，`Option+C/S/T/A/F/N` = 剪贴板 / 截屏 / 翻译 / Agent / 访达工具 / 记事本
 - dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存
 - dev/prod 数据目录按 bundle id 隔离，配置默认值一致
 
@@ -525,6 +525,7 @@ src/
 └── extensions/
     ├── clipboard/{clipboard.db, clipboard.db-wal, config.json}   # SQLite WAL（写入达 200 触发 wal_checkpoint）+ 配置
     ├── calculator/config.json        # 计算器历史（history key，10 条上限）
+    ├── notes/config.json             # 记事本内容（content key，自动暂存）
     ├── zsh-autosuggestions/{bin/, index.zsh, signals.log, bin.version, config.json}  # zsh 补全
     ├── awake/{Display Wakelock, config.json}   # awake binary + 配置
     ├── screenshot/config.json
