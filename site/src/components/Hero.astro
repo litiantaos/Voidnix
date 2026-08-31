@@ -23,9 +23,27 @@ const RELEASES = GITHUB + '/releases/latest'
 
   <header class="nav container">
     <Wordmark size={26} />
-    <a href={t.layout.langHref} class="lang-toggle" aria-label="Language">
-      {t.layout.langLabel}
-    </a>
+    <div class="nav-actions">
+      <button
+        type="button"
+        class="theme-toggle"
+        id="themeToggle"
+        aria-label={t.layout.themeAuto}
+        title={t.layout.themeAuto}
+        data-labels={JSON.stringify({
+          auto: t.layout.themeAuto,
+          light: t.layout.themeLight,
+          dark: t.layout.themeDark,
+        })}
+      >
+        <i class="ri-computer-line" data-icon="auto"></i>
+        <i class="ri-sun-line" data-icon="light"></i>
+        <i class="ri-moon-line" data-icon="dark"></i>
+      </button>
+      <a href={t.layout.langHref} class="lang-toggle" aria-label="Language">
+        {t.layout.langLabel}
+      </a>
+    </div>
   </header>
 
   <div class="hero-inner container">
@@ -71,6 +89,45 @@ const RELEASES = GITHUB + '/releases/latest'
         }
       })
       .catch(() => {})
+  }
+
+  // 主题三态切换：auto（跟随系统）→ light → dark 循环，与 ThemeInit 共用存储键
+  const themeBtn = document.getElementById('themeToggle') as HTMLButtonElement | null
+  if (themeBtn) {
+    const labels = JSON.parse(themeBtn.dataset.labels ?? '{}') as Record<string, string>
+    const mq = matchMedia('(prefers-color-scheme: dark)')
+    const NEXT: Record<string, 'auto' | 'light' | 'dark'> = {
+      auto: 'light',
+      light: 'dark',
+      dark: 'auto',
+    }
+    type Pref = 'auto' | 'light' | 'dark'
+    const pref = (): Pref => {
+      try {
+        return (localStorage.getItem('voidnix-site-theme') as Pref) || 'auto'
+      } catch {
+        return 'auto'
+      }
+    }
+    const apply = (p: Pref) => {
+      try {
+        localStorage.setItem('voidnix-site-theme', p)
+      } catch {}
+      const dark = p === 'dark' || (p !== 'light' && mq.matches)
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+      const meta = document.querySelector('meta[name="theme-color"]')
+      if (meta) meta.content = dark ? '#1c1c1e' : '#f8f8f9'
+      themeBtn.dataset.state = p
+      const label = labels[p] ?? p
+      themeBtn.title = label
+      themeBtn.setAttribute('aria-label', label)
+    }
+    themeBtn.dataset.state = pref()
+    themeBtn.addEventListener('click', () => apply(NEXT[pref()] ?? 'auto'))
+    // auto 态下系统外观切换即时跟随
+    mq.addEventListener('change', () => {
+      if (pref() === 'auto') apply('auto')
+    })
   }
 </script>
 
@@ -149,8 +206,14 @@ const RELEASES = GITHUB + '/releases/latest'
     justify-content: space-between;
   }
 
-  /* 语言切换 */
-  .lang-toggle {
+  /* 语言切换 + 主题切换 */
+  .nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .lang-toggle,
+  .theme-toggle {
     font-family: var(--font-sans);
     font-size: 13px;
     font-weight: 500;
@@ -163,9 +226,29 @@ const RELEASES = GITHUB + '/releases/latest'
       color var(--duration-fast) var(--ease-out),
       border-color var(--duration-fast) var(--ease-out);
   }
-  .lang-toggle:hover {
+  .lang-toggle:hover,
+  .theme-toggle:hover {
     color: var(--color-accent);
     border-color: var(--accent-line);
+  }
+  .theme-toggle {
+    width: 34px;
+    height: 31px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  /* 三态图标随当前偏好切换显示 */
+  .theme-toggle i {
+    display: none;
+    line-height: 1;
+  }
+  .theme-toggle[data-state='auto'] i[data-icon='auto'],
+  .theme-toggle[data-state='light'] i[data-icon='light'],
+  .theme-toggle[data-state='dark'] i[data-icon='dark'] {
+    display: block;
   }
 
   /* ── 主体 ── */

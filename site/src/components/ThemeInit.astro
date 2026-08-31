@@ -1,0 +1,22 @@
+---
+// 首屏主题初始化：置于 <head> 内，须在首帧之前同步执行，防深色偏好下闪白。
+// 三态偏好存 localStorage('voidnix-site-theme')：auto（默认，跟随系统）/ light / dark。
+// data-theme 由本脚本解析为二值写入 <html>，token 深色块（:root[data-theme='dark']）随之生效。
+// 无 JS 环境不写 data-theme，页面回退浅色。
+---
+
+<meta name="theme-color" content="#f8f8f9" />
+<script is:inline>
+  ;(() => {
+    let pref = 'auto'
+    try {
+      pref = localStorage.getItem('voidnix-site-theme') || 'auto'
+    } catch {}
+    const dark =
+      pref === 'dark' || (pref !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+    const theme = dark ? 'dark' : 'light'
+    document.documentElement.dataset.theme = theme
+    const meta = document.querySelector('meta[name="theme-color"]')
+    if (meta) meta.content = theme === 'dark' ? '#1c1c1e' : '#f8f8f9'
+  })()
+</script>

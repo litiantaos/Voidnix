@@ -14,6 +14,9 @@ const zh = {
     backToTop: '回到顶部',
     langLabel: 'EN',
     langHref: '/en/',
+    themeAuto: '主题：跟随系统',
+    themeLight: '主题：浅色',
+    themeDark: '主题：深色',
   },
   hero: {
     titleLead: '想到就到，',
@@ -268,6 +271,9 @@ const en: Dict = {
     backToTop: 'Back to top',
     langLabel: '中文',
     langHref: '/',
+    themeAuto: 'Theme: Auto',
+    themeLight: 'Theme: Light',
+    themeDark: 'Theme: Dark',
   },
   hero: {
     titleLead: 'From thought',
