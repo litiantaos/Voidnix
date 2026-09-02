@@ -38,7 +38,6 @@
             <!-- refreshing：后台元数据刷新中也显示（旋转禁用态），完成后按新状态显隐 -->
             <template v-if="status.has_update || refreshing" #trailing>
               <BaseButton
-                variant="primary"
                 :icon="running ? 'i-ri-loader-4-line animate-spin' : 'i-ri-arrow-up-circle-line'"
                 :disabled="running"
                 @click.stop="run('update_upgrade')"
