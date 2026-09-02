@@ -13,12 +13,12 @@
 
 tap 注册到 **main run loop + `kCFRunLoopCommonModes`**（参照 Hammerspoon / Scroll Reverser，不挂独立线程——`kCFRunLoopDefaultMode` 会在 event-tracking / modal 切换时饿死 source 导致 tap 被判定慢而静默禁用）。poll 线程兼作 watchdog，每 2s 检查 `CGEventTapIsEnabled`，被禁用则 `CGEventTapEnable` 重启。
 
-## 光标冻结
+## 光标
 
-- `CGAssociateMouseAndMouseCursorPosition(0)`：解除鼠标硬件与光标位移的关联
-- poll 线程周期 `CGWarpMouseCursorPosition`：钉回主屏中心（CGAssociate 兜底）
-- `CGDisplayHideCursor`：隐藏指针
+- **可见性（样式式）**：NSCursor 设为 1×1 全透明位图（`TRANSPARENT_PNG` → NSImage → `NSCursor(initWithImage:hotSpot:)`，主线程首次构建后缓存）。进入时 set 两次（上屏前 + 上屏后兜底），poll 每拍幂等强化。不用 `CGDisplayHideCursor`/`CGDisplayShowCursor`——计数式 hide/show 要求全生命周期精确配对，poll 补隐、warp / orderFront 触发的系统重显都会破坏平衡，残余计数随 Voidnix 下次激活（如 screenshot overlay 激活）重新生效，光标凭空消失。样式式 `set` 幂等无状态：app 失活（系统弹窗）自动恢复系统箭头是正确行为，重激活后 poll 下一拍自愈；多屏一致（每屏黑窗均在 app 名下）
+- **位置冻结**：`CGAssociateMouseAndMouseCursorPosition(0)` 解除鼠标硬件与光标位移的关联（幂等开关，与退出时 `(1)` 天然配对）；poll 线程周期 `CGWarpMouseCursorPosition` 钉回主屏中心（CGAssociate 失效兜底）
 - 吞 `MouseMoved` 会被系统强制重新关联光标，必须放行，靠 CGAssociate 冻结
+- 退出：关窗 → `CGAssociate(1)` → `arrowCursor set` → `hide_main`（失活时系统接管光标，双保险）
 
 ## 修饰键处理
 
