@@ -12,8 +12,9 @@
 //! `disable_clean_mode` 优雅关闭（关窗 / 停 tap / 解冻光标，**app 继续运行**），
 //! 并 `emit("clean-mode-exit")` 通知前端同步状态。
 //!
-//! 光标冻结：`CGAssociateMouseAndMouseCursorPosition(0)` 补充 tap 吞不掉的
-//! 光标位移（tap 只能吞事件，光标位置由 WindowServer 直接更新）。
+//! 光标：位置冻结 `CGAssociateMouseAndMouseCursorPosition(0)`（tap 吞不掉的位移
+//! 由 WindowServer 直接更新）+ poll 周期 warp 钉回主屏中心；可见性走 NSCursor
+//! 样式式隐形（幂等 set，选型动机见 docs/extensions/clean-mode.md「光标」节）。
 
 use crate::runtime::registry::Extension;
 use objc2::runtime::AnyObject;
@@ -66,8 +67,6 @@ extern "C" {
     fn CGEventTapIsEnabled(tap: *mut c_void) -> u32;
     fn CGEventSetFlags(event: *mut c_void, flags: u64);
     fn CGAssociateMouseAndMouseCursorPosition(active: u32) -> i32;
-    fn CGDisplayHideCursor(display: u32) -> i32;
-    fn CGDisplayShowCursor(display: u32) -> i32;
     fn CGMainDisplayID() -> u32;
     fn CGDisplayPixelsWide(display: u32) -> usize;
     fn CGDisplayPixelsHigh(display: u32) -> usize;
@@ -114,6 +113,13 @@ const COLLECTION_BEHAVIOR: usize = 1 | (1 << 8);
 /// 黑窗不透明度（测试用半透明调 0.8，正式 1.0 全黑）
 const BLACK_ALPHA: f64 = 1.0;
 
+/// 1×1 全透明 PNG（隐形光标位图源；68 字节，IHDR 1×1 RGBA8 + 单过滤行全零 + 空 IEND）
+const TRANSPARENT_PNG: &[u8] = &[
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0,
+    0, 0, 31, 21, 196, 137, 0, 0, 0, 11, 73, 68, 65, 84, 120, 156, 99, 96, 0, 2, 0, 0, 5, 0, 1,
+    122, 94, 171, 63, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+];
+
 // ============================================================================
 // 全局状态
 // ============================================================================
@@ -143,6 +149,14 @@ static POLL_STOP: AtomicBool = AtomicBool::new(true);
 
 /// poll 线程检测到长按达标后，通过此 handle 派发 disable 到主线程。
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+/// 隐形光标（1×1 全透明位图 NSCursor，首次使用时主线程构建）。
+/// NSCursor 非 Send/Sync，但构建后仅主线程访问（enable/disable/poll 派发均主线程）。
+struct SendCursor(objc2::rc::Retained<objc2_app_kit::NSCursor>);
+unsafe impl Send for SendCursor {}
+unsafe impl Sync for SendCursor {}
+
+static INVISIBLE_CURSOR: OnceLock<SendCursor> = OnceLock::new();
 
 // ============================================================================
 // NSView 子类化（mouseDown / mouseUp → 设 / 清 LEFT_DOWN_AT）
@@ -347,12 +361,42 @@ fn stop_keyboard_tap() {
 // 开启 / 关闭
 // ============================================================================
 
-fn enable_clean_mode() -> Result<(), String> {
-    unsafe {
-        // 提前冻结 + 隐藏光标（先于窗口上屏，避免进入瞬间可见）
-        CGAssociateMouseAndMouseCursorPosition(0);
-        CGDisplayHideCursor(CGMainDisplayID());
+/// 光标样式设为 1×1 全透明位图（须主线程，幂等）。
+/// 样式式而非 `CGDisplayHideCursor` 计数：幂等无配对失衡，失活恢复箭头属预期、
+/// 重激活由 poll 自愈（完整动机见 docs/extensions/clean-mode.md「光标」节）。
+fn set_cursor_invisible() {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSCursor, NSImage};
+    use objc2_foundation::NSData;
 
+    let cursor = INVISIBLE_CURSOR.get_or_init(|| {
+        let mtm = MainThreadMarker::new().expect("光标构建须主线程");
+        let data = NSData::with_bytes(TRANSPARENT_PNG);
+        let cursor = match NSImage::initWithData(mtm.alloc::<NSImage>(), &data) {
+            Some(image) => NSCursor::initWithImage_hotSpot(
+                mtm.alloc::<NSCursor>(),
+                &image,
+                NSPoint::new(0.0, 0.0),
+            ),
+            // 解码失败降级为箭头（可见），不阻断清洁模式（硬编码合法 PNG 实际不可达）
+            None => NSCursor::arrowCursor(),
+        };
+        SendCursor(cursor)
+    });
+    cursor.0.set();
+}
+
+/// 光标样式复位为系统箭头（须主线程，幂等；后续 hide_main 失活时系统接管，双保险）。
+fn set_cursor_arrow() {
+    objc2_app_kit::NSCursor::arrowCursor().set();
+}
+
+fn enable_clean_mode() -> Result<(), String> {
+    // 提前冻结光标位置 + 隐形样式（先于窗口上屏，避免进入瞬间可见）
+    unsafe { CGAssociateMouseAndMouseCursorPosition(0) };
+    set_cursor_invisible();
+
+    let windows = unsafe {
         let screens: *mut AnyObject = msg_send![class!(NSScreen), screens];
         let count: usize = msg_send![screens, count];
         let black: *mut AnyObject = msg_send![class!(NSColor), colorWithSRGBRed: 0.0f64, green: 0.0f64, blue: 0.0f64, alpha: BLACK_ALPHA];
@@ -400,25 +444,26 @@ fn enable_clean_mode() -> Result<(), String> {
                 let _: () = msg_send![*w, orderOut: std::ptr::null::<AnyObject>()];
                 let _: () = msg_send![*w, release];
             }
-            // 恢复光标（抵消提前的冻结 + 隐藏）
+            // 恢复光标（抵消提前的冻结 + 隐形）
             CGAssociateMouseAndMouseCursorPosition(1);
-            CGDisplayShowCursor(CGMainDisplayID());
+            set_cursor_arrow();
             return Err(
                 "需要辅助功能权限：系统设置 → 隐私与安全性 → 辅助功能 → Voidnix".to_string(),
             );
         }
+        windows
+    };
 
-        // 窗口已上屏，再次隐藏兜底（orderFront 可能触发系统重显光标）
-        CGDisplayHideCursor(CGMainDisplayID());
+    // 窗口已上屏，再次隐形兜底（orderFront 可能触发系统重置光标样式）
+    set_cursor_invisible();
 
-        LEFT_DOWN_AT.store(0, Ordering::Relaxed);
-        POLL_STOP.store(false, Ordering::Relaxed);
-        start_poll_thread();
+    LEFT_DOWN_AT.store(0, Ordering::Relaxed);
+    POLL_STOP.store(false, Ordering::Relaxed);
+    start_poll_thread();
 
-        let mut s = STATE.lock().map_err(|e| e.to_string())?;
-        s.windows = windows;
-        s.active = true;
-    }
+    let mut s = STATE.lock().map_err(|e| e.to_string())?;
+    s.windows = windows;
+    s.active = true;
     Ok(())
 }
 
@@ -438,10 +483,8 @@ fn disable_clean_mode(app: &AppHandle) -> Result<(), String> {
         s.active = false;
     }
     stop_keyboard_tap();
-    unsafe {
-        CGAssociateMouseAndMouseCursorPosition(1);
-        CGDisplayShowCursor(CGMainDisplayID());
-    }
+    unsafe { CGAssociateMouseAndMouseCursorPosition(1) };
+    set_cursor_arrow();
     crate::runtime::window::hide_main(app);
     Ok(())
 }
@@ -468,8 +511,10 @@ fn start_poll_thread() {
                 }
                 // 光标钉回中心（CGAssociate 阻止硬件位移，warp 兜底 CGAssociate 失效）
                 unsafe { CGWarpMouseCursorPosition(center) };
-                // 重新隐藏光标（warp / 窗口前置 / 系统 UI 可能触发指针重新显示）
-                unsafe { CGDisplayHideCursor(display) };
+                // 光标样式幂等强化为隐形（NSCursor 须主线程），样式被重置后本拍自愈
+                if let Some(app) = APP_HANDLE.get() {
+                    let _ = app.run_on_main_thread(set_cursor_invisible);
+                }
                 // 长按达标 → 派发到主线程优雅关闭清洁模式（app 继续运行）
                 let down_at = LEFT_DOWN_AT.load(Ordering::Relaxed);
                 if down_at > 0 && now_ms().saturating_sub(down_at) >= HOLD_MS {
