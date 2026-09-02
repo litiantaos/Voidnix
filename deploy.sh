@@ -23,8 +23,8 @@ echo "==> [2/3] 校验产物签名（覆盖 /Applications 前拦截 adhoc 回归
 codesign --verify --deep --strict "$APP_SRC"
 SIG_DUMP="$(codesign -dvv "$APP_SRC" 2>&1)"
 echo "$SIG_DUMP" | grep -E "Identifier|TeamIdentifier|flags"
-echo "$SIG_DUMP" | grep -q "TeamIdentifier=27869WH3RZ" \
-  || { echo "错误：签名退化为 adhoc（缺少 TeamIdentifier=27869WH3RZ），TCC 权限将失效，已中止"; exit 1; }
+echo "$SIG_DUMP" | grep -q "TeamIdentifier=NB22FJ9QD3" \
+  || { echo "错误：签名退化为 adhoc（缺少 TeamIdentifier=NB22FJ9QD3），TCC 权限将失效，已中止"; exit 1; }
 
 echo "==> [3/3] 替换 /Applications/Voidnix.app"
 pkill -9 -f "Voidnix\.app" 2>/dev/null || true
