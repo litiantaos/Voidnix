@@ -16,7 +16,7 @@ site/
 │   ├── og-source.html        # OG 源稿（浏览器渲染 1200×630）
 │   └── render-og.mjs         # Playwright 截图脚本
 └── src/
-    ├── components/           # PageContent / Hero / DemoStage / Philosophy / Capabilities / ExtensionMatrix / Footer / Wordmark
+    ├── components/           # PageContent / Hero / DemoStage / Philosophy / Capabilities / ExtensionMatrix / InstallNotes / Footer / Wordmark
     │   └── demo/             # DemoStage 实现主体（demo-utils.ts 常量与数学工具 / demo-scenes.ts 分段渲染器 / demo-player.ts 播放器 / demo-stage.css 舞台样式）
     ├── data/extensions.ts    # 扩展矩阵便捷访问器（数据在 i18n 字典）
     ├── i18n/

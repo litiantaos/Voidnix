@@ -23,7 +23,8 @@ const zh = {
     titleAccent: '触手可及',
     slogan: '极速、轻量的效率启动器。按下快捷键，搜索、翻译、截屏、剪贴板，随叫随到。',
     download: '下载',
-    meta: 'Apple Silicon · macOS 13+',
+    meta: 'Apple Silicon · macOS 26+',
+    installLink: '安装说明',
   },
   philosophy: {
     eyebrow: '设计哲学',
@@ -256,6 +257,28 @@ const zh = {
       },
     ],
   },
+  install: {
+    eyebrow: '安装说明',
+    title: '三步上手',
+    lead: '下载、放行、按需联网。',
+    items: [
+      {
+        icon: 'ri-download-2-line',
+        title: '下载安装',
+        desc: '从 GitHub Releases 下载 .dmg，打开后将 Voidnix 拖入「应用程序」文件夹。',
+      },
+      {
+        icon: 'ri-shield-check-line',
+        title: '首次打开',
+        desc: '应用已签名但未做 Apple 公证，首次打开被系统拦截属预期。前往「系统设置 → 隐私与安全性」点击「仍要打开」，仅需一次。',
+      },
+      {
+        icon: 'ri-global-line',
+        title: '大陆网络',
+        desc: '安装包与部分扩展依赖（代理核心 mihomo、视频处理 ffmpeg 等）首次启用时从 GitHub 下载，请注意网络环境。',
+      },
+    ],
+  },
 }
 
 type Dict = typeof zh
@@ -281,7 +304,8 @@ const en: Dict = {
     slogan:
       'A blazing-fast, lightweight productivity launcher. Search, translate, screenshot, clipboard — one shortcut away.',
     download: 'Download',
-    meta: 'Apple Silicon · macOS 13+',
+    meta: 'Apple Silicon · macOS 26+',
+    installLink: 'Installation',
   },
   philosophy: {
     eyebrow: 'Design Philosophy',
@@ -538,6 +562,28 @@ const en: Dict = {
             icon: 'ri-settings-3-line',
           },
         ],
+      },
+    ],
+  },
+  install: {
+    eyebrow: 'Installation',
+    title: 'Three steps to start',
+    lead: 'Download, allow, connect as needed.',
+    items: [
+      {
+        icon: 'ri-download-2-line',
+        title: 'Download',
+        desc: 'Grab the .dmg from GitHub Releases, open it and drag Voidnix into the /Applications folder.',
+      },
+      {
+        icon: 'ri-shield-check-line',
+        title: 'First launch',
+        desc: 'The app is signed but not notarized, so macOS blocks the first launch by design. Open System Settings → Privacy & Security and click "Open Anyway" — once is enough.',
+      },
+      {
+        icon: 'ri-global-line',
+        title: 'Mainland network',
+        desc: 'The installer and some extension dependencies (proxy core mihomo, video ffmpeg, etc.) download from GitHub on first use; mind your network environment.',
       },
     ],
   },

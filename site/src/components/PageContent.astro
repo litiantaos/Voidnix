@@ -4,6 +4,7 @@ import Hero from './Hero.astro'
 import Philosophy from './Philosophy.astro'
 import Capabilities from './Capabilities.astro'
 import ExtensionMatrix from './ExtensionMatrix.astro'
+import InstallNotes from './InstallNotes.astro'
 import Footer from './Footer.astro'
 import { getDict, type Lang } from '../i18n/translations'
 
@@ -20,6 +21,7 @@ const t = getDict(lang)
     <Philosophy lang={lang} />
     <Capabilities lang={lang} />
     <ExtensionMatrix lang={lang} />
+    <InstallNotes lang={lang} />
   </main>
   <Footer />
 

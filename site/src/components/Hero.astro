@@ -61,7 +61,11 @@ const RELEASES = GITHUB + '/releases/latest'
         </a>
       </div>
 
-      <p class="hero-cta-meta reveal">{t.hero.meta}</p>
+      <p class="hero-cta-meta reveal">
+        {t.hero.meta}
+        <span class="meta-sep">·</span>
+        <a class="meta-link" href="#install">{t.hero.installLink}</a>
+      </p>
     </div>
 
   </div>
@@ -298,6 +302,16 @@ const RELEASES = GITHUB + '/releases/latest'
     font-size: 12.5px;
     color: var(--color-text-muted);
     letter-spacing: 0.01em;
+  }
+  .meta-sep {
+    margin-inline: 6px;
+  }
+  .meta-link {
+    color: var(--color-accent);
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+  .meta-link:hover {
+    color: var(--color-accent-deep);
   }
 
   /* reveal 错峰入场（title → slogan → cta → meta） */

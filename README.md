@@ -12,7 +12,10 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
 ### Installation
 
-Download the `.dmg` from the [latest Release](https://github.com/litiantaos/Voidnix/releases/latest) and drag the app to `/Applications`. If Gatekeeper blocks the first launch: open **System Settings → Privacy & Security** and click **Open Anyway**. The app is signed but not notarized; this is expected.
+- Requires Apple Silicon and macOS 26 or later
+- Download the `.dmg` from the [latest Release](https://github.com/litiantaos/Voidnix/releases/latest), open it and drag `Voidnix` into the `/Applications` folder
+- The app is signed but not notarized, so Gatekeeper blocks the first launch by design: open **System Settings → Privacy & Security** and click **Open Anyway** — once is enough
+- The installer and some extension dependencies (proxy core mihomo, video ffmpeg, etc.) download from GitHub on first use; mind your network environment
 
 ### Basics
 
