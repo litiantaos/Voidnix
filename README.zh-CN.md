@@ -12,7 +12,10 @@ Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite
 
 ### 首次安装
 
-从 [最新 Release](https://github.com/litiantaos/Voidnix/releases/latest) 下载 `.dmg`，拖入 `/Applications`。首次打开若被 Gatekeeper 拦截：前往「系统设置 → 隐私与安全性」点击「仍要打开」。应用已签名但未做 Apple 公证，此为预期行为。
+- 系统要求：Apple Silicon，macOS 26 及以上
+- 从 [最新 Release](https://github.com/litiantaos/Voidnix/releases/latest) 下载 `.dmg`，打开后将 `Voidnix` 拖入「应用程序」文件夹
+- 应用已签名但未做 Apple 公证，首次打开被 Gatekeeper 拦截属预期：前往「系统设置 → 隐私与安全性」点击「仍要打开」，仅需一次
+- 安装包与部分扩展依赖（代理核心 mihomo、视频处理 ffmpeg 等）首次启用时从 GitHub 下载，请注意网络环境
 
 ### 基本
 

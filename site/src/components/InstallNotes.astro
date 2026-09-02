@@ -1,0 +1,95 @@
+---
+import { getDict, type Lang } from '../i18n/translations'
+
+interface Props {
+  lang?: Lang
+}
+const { lang = 'zh' } = Astro.props
+const t = getDict(lang)
+const items = t.install.items
+---
+
+<section class="section install" id="install">
+  <div class="container">
+    <div class="head reveal">
+      <p class="eyebrow">{t.install.eyebrow}</p>
+      <h2 class="section-title">{t.install.title}</h2>
+      <p class="section-lead">{t.install.lead}</p>
+    </div>
+
+    <div class="grid">
+      {items.map((it, i) => (
+        <article class="card soft-card reveal" style={`transition-delay:${i * 70}ms`}>
+          <span class="card-icon">
+            <i class={it.icon}></i>
+          </span>
+          <h3 class="card-title">{it.title}</h3>
+          <p class="card-desc">{it.desc}</p>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .head {
+    max-width: 640px;
+    margin-bottom: 56px;
+  }
+  .head .section-title {
+    margin: 16px 0 18px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+
+  .card {
+    padding: 32px 28px;
+    transition:
+      transform var(--duration-normal) var(--ease-out),
+      box-shadow var(--duration-normal) var(--ease-out),
+      opacity var(--duration-normal) var(--ease-out);
+  }
+  .card:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-text-primary) 6%, transparent),
+      0 12px 32px rgb(var(--shadow-ink) / 0.1);
+  }
+
+  .card-icon {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 11px;
+    background: var(--accent-wash);
+    color: var(--color-accent);
+    font-size: 22px;
+    margin-bottom: 22px;
+    border: 1px solid var(--accent-line-soft);
+  }
+
+  .card-title {
+    font-family: var(--font-sans);
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    letter-spacing: -0.01em;
+  }
+
+  .card-desc {
+    color: var(--color-text-secondary);
+    font-size: 14.5px;
+    line-height: 1.75;
+  }
+
+  @media (max-width: 880px) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
