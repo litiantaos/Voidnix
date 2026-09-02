@@ -115,7 +115,7 @@ e2e（`bun run test:e2e`，需起 Vite dev server + 浏览器）不在本地门�
 
 ## 发布管道与代码签名
 
-正式版发布走 `.github/workflows/release.yml`（`git tag v*` 触发，`tauri-action` 打包）。CI 与本地 `deploy.sh` 必须用同一 Apple 证书签名——adhoc 签名的 cdhash 每次编译都变，TCC 按其匹配系统权限会导致每次更新权限失效。CI 签名凭证走 GitHub secrets（`APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY`，同 `.env`），本地 `deploy.sh` 已内置 adhoc 拦截（断言 `TeamIdentifier=27869WH3RZ`）。
+正式版发布走 `.github/workflows/release.yml`（`git tag v*` 触发，`tauri-action` 打包）。CI 与本地 `deploy.sh` 必须用同一 Apple 证书签名——adhoc 签名的 cdhash 每次编译都变，TCC 按其匹配系统权限会导致每次更新权限失效。CI 签名凭证走 GitHub secrets（`APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY`，同 `.env`），本地 `deploy.sh` 已内置 adhoc 拦截（断言 `TeamIdentifier=NB22FJ9QD3`）。
 
 ## Prod 资源监控（长期采样）
 
