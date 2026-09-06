@@ -149,10 +149,10 @@ defineConfig(AGENT_CONFIG_PATH, {
 
 ### 命令审批
 
-- 审批开启（默认）时 run_command 执行前，工具步骤转 `awaitApproval` 态：命令明细旁渲染「放行 / 拒绝」按钮
-- 快捷键 Enter 放行 / Esc 拒绝（View capture 阶段拦截，先于输入框 Enter 与全局 Escape 退出扩展；IME 组态、弹窗/子视图/其它扩展时不介入）
+- 审批开启（默认）时 run_command 执行前，工具步骤转 `awaitApproval` 态：步骤行保持原布局（标签 shimmer + 三点等待），同时弹全局 `showConfirm` 确认弹窗（App.vue Teleport，BaseDialog confirm 模式）：标题「执行命令确认」+ 命令明细，聚焦放行钮
+- 键盘：Enter 放行 / Esc·遮罩·取消钮拒绝（BaseDialog confirm 模式自带）；切换扩展由 `setActiveExtension` 按拒绝收束
 - 放行乐观转执行中（命令极快时 ToolResult 先到由 guard 防回退）；拒绝由 Rust `ToolResult(ok=false)` 收尾——步骤标 failed、输出含拒绝说明，结果回灌 LLM 并告知不要原样重试
-- 决策经 `agent_approve` 回填 `SessionRegistry` 上的 per-call oneshot；abort / 会话移除时 sender drop 即拒绝，等待审批的工具随中止标 failed
+- 决策经 `agent_approve` 回填 `SessionRegistry` 上的 per-call oneshot（仅精确 true 视为送达，默认拒绝）；abort / 会话移除时 sender drop 即拒绝，等待审批的工具随中止标 failed；中止/完成清空等待项时同步收掉残留弹窗（不回填）
 
 ### 状态 notice
 

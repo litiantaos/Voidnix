@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { nextTick } from 'vue'
+import { setActivePinia, createPinia } from 'pinia'
 import type { AgentEvent } from '@/types/agent'
 import './locales'
 
@@ -48,8 +50,10 @@ vi.mock('@/utils/tauri', () => ({ isTauri: false }))
 import { useAgentChat, restorePersistedSession } from './agent'
 import { config as agentConfig, setProviderModelKey } from './config'
 import { config as aiProvidersConfig } from '@/runtime/ai-providers'
+import { useAppStore } from '@/stores/app'
 
 beforeEach(async () => {
+  setActivePinia(createPinia())
   mocks.channels.length = 0
   mocks.invoke.mockReset()
   mocks.invoke.mockResolvedValue(undefined)
@@ -292,6 +296,55 @@ describe('useAgentChat session 守卫', () => {
       .find((m) => m.streaming)
       ?.parts.find((p) => p.type === 'toolCall' && p.id === 'c1')
     expect(part && part.type === 'toolCall' && part.state).toBe('failed')
+  })
+
+  it('审批：approvalRequest 弹全局确认弹窗，放行回填 agent_approve', async () => {
+    const agent = useAgentChat()
+    const store = useAppStore()
+    await agent.sendMessage('run ls')
+    const ch = mocks.channels[0]!
+    ch.onmessage?.({ type: 'toolCallStart', id: 'c1', name: 'run_command' })
+    ch.onmessage?.({ type: 'toolCallArgs', id: 'c1', args: { cmd: 'ls', args: ['-la'] } })
+    ch.onmessage?.({ type: 'approvalRequest', id: 'c1' })
+    await nextTick()
+
+    expect(store.isDialogOpen).toBe(true)
+    expect(store.dialogOptions?.message).toBe('ls -la')
+    expect(store.dialogOptions?.okLabel).toBe('放行')
+    expect(store.dialogOptions?.cancelLabel).toBe('拒绝')
+
+    mocks.invoke.mockResolvedValue(true)
+    store.resolveConfirm(true)
+    await vi.waitFor(() => {
+      expect(mocks.invoke).toHaveBeenCalledWith('agent_approve', {
+        sessionId: expect.any(String),
+        callId: 'c1',
+        approved: true,
+      })
+    })
+    const part = agent.messages.value
+      .find((m) => m.streaming)
+      ?.parts.find((p) => p.type === 'toolCall' && p.id === 'c1')
+    expect(part && part.type === 'toolCall' && part.state).toBe('running')
+
+    ch.onmessage?.({ type: 'completed' })
+  })
+
+  it('审批：中止时收掉残留审批弹窗且不回填', async () => {
+    const agent = useAgentChat()
+    const store = useAppStore()
+    await agent.sendMessage('run ls')
+    const ch = mocks.channels[0]!
+    ch.onmessage?.({ type: 'toolCallStart', id: 'c1', name: 'run_command' })
+    ch.onmessage?.({ type: 'toolCallArgs', id: 'c1', args: { cmd: 'ls' } })
+    ch.onmessage?.({ type: 'approvalRequest', id: 'c1' })
+    await nextTick()
+    expect(store.isDialogOpen).toBe(true)
+
+    await agent.abort()
+    await nextTick()
+    expect(store.isDialogOpen).toBe(false)
+    expect(mocks.invoke).not.toHaveBeenCalledWith('agent_approve', expect.anything())
   })
 
   it('abort 写入 aborted notice 并结束 streaming', async () => {

@@ -6,14 +6,16 @@
 /// - Channel.onmessage 处理增量事件，更新 messages
 /// - 用户中断通过 abort()
 
-import { ref, computed, toRef } from 'vue'
+import { ref, computed, toRef, watch } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { t } from '@/runtime/i18n'
 import { generateRequestId } from '@/utils/id'
 import { showToast } from '@/composables/useToast'
 import { whenConfigReady } from '@/runtime/storage'
+import { useAppStore } from '@/stores/app'
 import { config as agentConfig, AGENT_CONFIG_PATH, resolveAgentCredentials } from './config'
+import { toolDetail } from './view-logic'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 import { toLlmMessages, tryParseSearchAnswer } from './logic'
 
@@ -106,6 +108,79 @@ export async function restorePersistedSession() {
   if (streamingMsg) finalizeAbortedMessage(streamingMsg)
 }
 void whenConfigReady(AGENT_CONFIG_PATH).then(restorePersistedSession)
+
+function findToolPart(
+  msg: AgentMessage,
+  toolCallId: string,
+): Extract<AgentPart, { type: 'toolCall' }> | undefined {
+  return msg.parts.find(
+    (p): p is Extract<AgentPart, { type: 'toolCall' }> =>
+      p.type === 'toolCall' && p.id === toolCallId,
+  )
+}
+
+/// 当前等待审批的工具（streaming 气泡内首个 awaitApproval 态 toolCall）
+const pendingApproval = computed(() => {
+  const streamingMsg = messages.value.find((m) => m.streaming)
+  if (!streamingMsg) return undefined
+  return streamingMsg.parts.find(
+    (p): p is Extract<AgentPart, { type: 'toolCall' }> =>
+      p.type === 'toolCall' && p.state === 'awaitApproval',
+  )
+})
+
+/// 审批决策回填（审批弹窗结果消费）。
+/// 仅 streaming 气泡中 awaitApproval 态的工具可回填；放行转 running，
+/// 拒绝由 Rust 的 ToolResult(ok=false) 收尾（此处乐观置 failed 即时反馈）；
+/// 回填未送达（delivered=false，等待项已消失 = 命令不会执行）一律收尾 failed。
+async function respondApproval(toolCallId: string, approved: boolean) {
+  if (!sessionId.value) return
+  const streamingMsg = messages.value.find((m) => m.streaming)
+  const part = streamingMsg ? findToolPart(streamingMsg, toolCallId) : undefined
+  if (!part || part.state !== 'awaitApproval') return
+  try {
+    // 仅精确 true 视为送达（默认拒绝；回填通道异常/未注册一律按未送达收尾）
+    const delivered =
+      (await invoke<boolean>(CMD.agentApprove, {
+        sessionId: sessionId.value,
+        callId: toolCallId,
+        approved,
+      })) === true
+    // 命令极快时 ToolResult 可能先到并已改态，guard 防止回退
+    if (part.state === 'awaitApproval') part.state = approved && delivered ? 'running' : 'failed'
+  } catch {
+    /* 回填失败（run 已结束等）保持现状 */
+  }
+}
+
+/**
+ * 审批弹窗：pendingApproval 出现即弹全局 showConfirm（App.vue Teleport 的 BaseDialog
+ * confirm 模式：聚焦放行钮，Enter 放行 / Esc·遮罩·取消钮拒绝；切扩展由
+ * setActiveExtension 按拒绝收束）。中止/完成清空等待项时收掉残留弹窗（不再回填）。
+ */
+let approvingId: string | null = null
+watch(pendingApproval, async (part, prev) => {
+  if (!part) {
+    if (prev && approvingId === prev.id) {
+      approvingId = null
+      const appStore = useAppStore()
+      if (appStore.isDialogOpen) appStore.resolveConfirm(false)
+    }
+    return
+  }
+  if (approvingId === part.id) return
+  approvingId = part.id
+  const approved = await useAppStore().showConfirm({
+    title: t('agent.approvalDialog'),
+    message: toolDetail(part) || part.name,
+    okLabel: t('agent.approve'),
+    cancelLabel: t('agent.deny'),
+  })
+  // 等待期间已被中止/收束（approvingId 重置或换人了），本次结果不再回填
+  if (approvingId !== part.id) return
+  approvingId = null
+  await respondApproval(part.id, approved)
+})
 
 export function useAgentChat() {
   const isGenerating = computed(() => status.value === 'streaming')
@@ -287,16 +362,6 @@ export function useAgentChat() {
     }
   }
 
-  function findToolPart(
-    msg: AgentMessage,
-    toolCallId: string,
-  ): Extract<AgentPart, { type: 'toolCall' }> | undefined {
-    return msg.parts.find(
-      (p): p is Extract<AgentPart, { type: 'toolCall' }> =>
-        p.type === 'toolCall' && p.id === toolCallId,
-    )
-  }
-
   /// 中断当前 agent run
   async function abort() {
     if (!sessionId.value) return
@@ -311,40 +376,6 @@ export function useAgentChat() {
     const streamingMsg = messages.value.find((m) => m.streaming)
     if (streamingMsg) finalizeAbortedMessage(streamingMsg)
   }
-
-  /// 审批决策回填（放行/拒绝按钮与 Enter/Esc 调用）。
-  /// 仅 streaming 气泡中 awaitApproval 态的工具可回填；放行转 running，
-  /// 拒绝由 Rust 的 ToolResult(ok=false) 收尾（此处乐观置 failed 即时反馈）；
-  /// 回填未送达（delivered=false，等待项已消失 = 命令不会执行）一律收尾 failed。
-  async function respondApproval(toolCallId: string, approved: boolean) {
-    if (!sessionId.value) return
-    const streamingMsg = messages.value.find((m) => m.streaming)
-    const part = streamingMsg ? findToolPart(streamingMsg, toolCallId) : undefined
-    if (!part || part.state !== 'awaitApproval') return
-    try {
-      // 仅精确 true 视为送达（默认拒绝；回填通道异常/未注册一律按未送达收尾）
-      const delivered =
-        (await invoke<boolean>(CMD.agentApprove, {
-          sessionId: sessionId.value,
-          callId: toolCallId,
-          approved,
-        })) === true
-      // 命令极快时 ToolResult 可能先到并已改态，guard 防止回退
-      if (part.state === 'awaitApproval') part.state = approved && delivered ? 'running' : 'failed'
-    } catch {
-      /* 回填失败（run 已结束等）保持现状 */
-    }
-  }
-
-  /// 当前等待审批的工具（streaming 气泡内首个 awaitApproval 态 toolCall；键盘快捷键消费）
-  const pendingApproval = computed(() => {
-    const streamingMsg = messages.value.find((m) => m.streaming)
-    if (!streamingMsg) return undefined
-    return streamingMsg.parts.find(
-      (p): p is Extract<AgentPart, { type: 'toolCall' }> =>
-        p.type === 'toolCall' && p.state === 'awaitApproval',
-    )
-  })
 
   /// 清空对话
   async function newConversation() {
