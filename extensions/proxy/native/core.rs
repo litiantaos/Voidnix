@@ -38,6 +38,8 @@ pub struct CoreStatus {
     pub downloaded: bool,
     pub version: String,
     pub downloading: bool,
+    /// LaunchDaemon 是否已安装（首次启用 TUN 的确认判据）。
+    pub daemon_installed: bool,
 }
 
 /// mihomo release asset：版本号 + 下载 URL（已拼镜像）+ sha256（纯 hex）。
@@ -184,11 +186,13 @@ async fn download_file(url: &str, dest: &Path) -> Result<(), String> {
 /// 查询核心状态：下载中 / 已下载（含版本号）/ 未下载。
 /// 版本优先读 mihomo.version 缓存，缺失则跑 `mihomo -v` 解析并回写缓存。
 pub fn core_status(app: &AppHandle) -> CoreStatus {
+    let daemon_installed = super::tun::plist_installed(app);
     if DOWNLOADING.load(Ordering::Relaxed) {
         return CoreStatus {
             downloaded: false,
             version: String::new(),
             downloading: true,
+            daemon_installed,
         };
     }
     let bin = match bin_path(app) {
@@ -198,6 +202,7 @@ pub fn core_status(app: &AppHandle) -> CoreStatus {
                 downloaded: false,
                 version: String::new(),
                 downloading: false,
+                daemon_installed,
             }
         }
     };
@@ -206,6 +211,7 @@ pub fn core_status(app: &AppHandle) -> CoreStatus {
             downloaded: false,
             version: String::new(),
             downloading: false,
+            daemon_installed,
         };
     }
     let version = core_version(app, &bin).unwrap_or_default();
@@ -213,6 +219,7 @@ pub fn core_status(app: &AppHandle) -> CoreStatus {
         downloaded: true,
         version,
         downloading: false,
+        daemon_installed,
     }
 }
 
@@ -371,6 +378,25 @@ pub(crate) fn remove_core_files(app: &AppHandle) -> Result<(), String> {
     let dir = ext_data_dir(app, "proxy")?;
     let _ = std::fs::remove_file(dir.join("mihomo"));
     let _ = std::fs::remove_file(dir.join("mihomo.version"));
+    Ok(())
+}
+
+/// 完全卸载清理：删除全部核心运行文件（binary/版本/geo/日志/启动配置/临时 plist）。
+/// 保留 config.json 与 subs/（用户数据：订阅与端口偏好，重装无需重配）。
+pub(crate) fn remove_runtime_files(app: &AppHandle) -> Result<(), String> {
+    let dir = ext_data_dir(app, "proxy")?;
+    for name in [
+        "mihomo",
+        "mihomo.version",
+        "geoip.metadb",
+        "geosite.dat",
+        "mihomo.log",
+        "mihomo-daemon.plist",
+        "config.yaml",
+        "config-active.yaml",
+    ] {
+        let _ = std::fs::remove_file(dir.join(name));
+    }
     Ok(())
 }
 

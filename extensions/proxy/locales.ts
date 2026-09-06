@@ -23,6 +23,31 @@ registerMessages({
   'proxy.downloadUpdate': { 'zh-CN': '下载更新', en: 'Download Update' },
   'proxy.downloadCore': { 'zh-CN': '下载核心', en: 'Download Core' },
   'proxy.reconnect': { 'zh-CN': '重连', en: 'Reconnect' },
+
+  // ─── 首次启用 TUN 确认 ─────────────────────
+  'proxy.tunConfirmTitle': { 'zh-CN': '开启代理（TUN 全局模式）', en: 'Enable Proxy (TUN Mode)' },
+  'proxy.tunConfirmMessage': {
+    'zh-CN':
+      '首次开启将安装系统级组件，需要输入管理员密码（仅此一次）：\n· 安装 LaunchDaemon（/Library/LaunchDaemons/…mihomo.plist），mihomo 代理核心以 root 常驻运行：开机自启、崩溃自愈\n· 开启后 TUN 虚拟网卡接管本机全部 IP 流量（含终端、Docker 等原生应用），关闭代理即恢复直通\n· 关闭代理不卸载常驻组件，可在代理列表「完全卸载」彻底移除',
+    en: 'First-time setup installs system-level components and asks for your administrator password (once only):\n· A LaunchDaemon (/Library/LaunchDaemons/…mihomo.plist) is installed; the mihomo core runs as a persistent root process (starts at login, auto-restarts on crash)\n· Once enabled, a TUN virtual interface takes over all IP traffic (terminal, Docker and native apps included); disabling restores direct connection\n· Disabling keeps the resident components; use Full Uninstall in the proxy list to remove them entirely',
+  },
+  'proxy.tunConfirmOk': { 'zh-CN': '安装并开启', en: 'Install & Enable' },
+
+  // ─── 完全卸载 ───────────────────────────────
+  'proxy.uninstall': { 'zh-CN': '完全卸载', en: 'Full Uninstall' },
+  'proxy.uninstallHint': {
+    'zh-CN': '移除 root 常驻进程、LaunchDaemon 与核心文件（需管理员密码）',
+    en: 'Remove the root process, LaunchDaemon and core files (admin password required)',
+  },
+  'proxy.uninstallTitle': { 'zh-CN': '完全卸载代理核心', en: 'Full Uninstall' },
+  'proxy.uninstallConfirmMessage': {
+    'zh-CN':
+      '将停止代理并以管理员身份移除：\n· /Library/LaunchDaemons 下的 mihomo LaunchDaemon（root 常驻、开机自启）\n· mihomo 核心与全部运行文件（数据目录内）\n订阅与端口配置保留，重新下载核心即可恢复使用。',
+    en: 'This stops the proxy and removes with administrator privileges:\n· The mihomo LaunchDaemon in /Library/LaunchDaemons (persistent root process, starts at login)\n· The mihomo core and all runtime files (in the data directory)\nSubscriptions and port settings are kept; download the core again to reuse.',
+  },
+  'proxy.uninstallConfirmOk': { 'zh-CN': '卸载', en: 'Uninstall' },
+  'proxy.uninstalled': { 'zh-CN': '已完全卸载代理核心', en: 'Proxy core fully uninstalled' },
+  'proxy.uninstallFailed': { 'zh-CN': '卸载失败', en: 'Uninstall failed' },
   'proxy.ruleMode': { 'zh-CN': '规则模式', en: 'Rule Mode' },
   'proxy.ruleModeHint': {
     'zh-CN': '规则按分流策略，全局代理所有流量',

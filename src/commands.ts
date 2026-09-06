@@ -134,6 +134,7 @@ export const CMD = {
   proxyEnsureCore: 'proxy_ensure_core',
   proxyCheckUpdate: 'proxy_check_update',
   proxyUpdateCore: 'proxy_update_core',
+  proxyUninstall: 'proxy_uninstall',
   proxyUpdateSubscription: 'proxy_update_subscription',
   proxyRemoveSubscription: 'proxy_remove_subscription',
   proxySetActiveSubscription: 'proxy_set_active_subscription',

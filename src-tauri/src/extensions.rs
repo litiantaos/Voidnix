@@ -86,6 +86,7 @@ macro_rules! configure_app {
             crate::extensions::proxy::proxy_stop_stream,
             crate::extensions::proxy::proxy_test_group_delay_stream,
             crate::extensions::proxy::proxy_traffic_stream,
+            crate::extensions::proxy::proxy_uninstall,
             crate::extensions::proxy::proxy_update_core,
             crate::extensions::proxy::proxy_update_subscription,
             crate::extensions::proxy::set_proxy_enabled,
