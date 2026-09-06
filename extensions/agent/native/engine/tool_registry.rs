@@ -39,6 +39,12 @@ pub trait AgentTool: Send + Sync {
     /// OpenAI tools schema（`{type:"function", function:{name, description, parameters}}`）
     fn schema(&self) -> serde_json::Value;
 
+    /// 执行前是否需用户审批（有副作用的工具声明 true，如 run_command；
+    /// 仅当 run 开启审批时生效，loop_runner 在执行点前等用户放行）。
+    fn requires_approval(&self) -> bool {
+        false
+    }
+
     /// 执行工具。args 已经过 JSON parse；返回结果（ok/err）。
     async fn call(&self, args: serde_json::Value) -> ToolResult;
 }

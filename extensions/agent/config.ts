@@ -38,6 +38,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '',
   '# 安全约束',
   '',
+  '- 命令分两类：只读类（ls、cat、grep、git status 等查看与查询）可直接执行，无需询问；写类（创建/修改/删除/移动文件、安装/卸载软件、结束进程、修改系统设置、git commit/push 等改变本机或远端状态的操作）执行前必须先把完整命令告知用户并征得明确同意，同意后才执行，否则改用其他方式或说明原因',
   '- 不要执行破坏性操作（如 `rm -rf /`），这类命令会被断路器拦截',
   '- 不要读取或外泄用户敏感数据（API key、SSH key、密码等），输出会被自动打码',
   '',
@@ -46,7 +47,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '- 简洁直接，避免冗长铺垫',
   '- 代码/命令用 markdown 代码块包裹',
   '- 中文为主（除非用户用英文提问）',
-  '- 禁用 emoji',
+  '- 尽量少用 emoji',
 ].join('\n')
 
 // 再导出中枢工具；选用状态在 agent 本扩展 config
@@ -65,6 +66,11 @@ export const config = defineConfig(AGENT_CONFIG_PATH, {
   executionTimeout: 30,
   maxOutputBytes: 1048576,
   maxTurns: 10,
+  /**
+   * run_command 执行前需人工审批（防 prompt 注入引导执行恶意命令）；
+   * 关闭即「免审批」直接执行（断路器与资源 clamp 恒生效）。默认开审批。
+   */
+  requireApproval: true,
   /**
    * 本扩展选用的模型：`providerId::keyId::model`（或旧式 `providerId::model`）。
    * 中枢不存 active；换消费者互不影响。

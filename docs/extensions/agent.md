@@ -15,7 +15,7 @@ AI 助手扩展，整合对话、网络搜索、命令执行。
 │  AgentTool trait: name/schema/call               │
 ├──────────────────┬───────────────────────────────┤
 │  web_search      │  run_command                   │
-│  (Tavily API)    │  (断路器 + 资源约束)          │
+│  (Tavily API)    │  (审批门 + 断路器 + 资源约束)  │
 └──────────────────┴───────────────────────────────┘
 ```
 
@@ -32,11 +32,12 @@ loop 结束（含 error）时 `SessionRegistry::unregister` 清会话；用户 a
 - `ReasoningDelta { text }`：LLM 思考模式增量（`reasoning_content`，行为见「思考模式」节；属前端 `CONTENT_EVENTS` 内容事件）
 - `ToolCallStart { id, name }`：工具调用开始
 - `ToolCallArgs { id, args }`：完整参数（JSON）
+- `ApprovalRequest { id }`：工具执行前等待用户审批（仅审批开启且工具声明需审批时发，如 run_command；前端放行/拒绝经 `agent_approve` 命令回填）
 - `ToolResult { id, ok, output }`：工具结果（已净化；`run_command` 非 0 退出 `ok=false`，output 仍为完整命令输出）
 - `Completed`：本轮结束
 - `Error { message }`：错误终止（前端写入当前 assistant 气泡，保留已流出的 partial 文本；含服务端错误负载上抛——GLM 内容审查 1301 等中断会显示真实原因；以及 SSE 无信号断流——无 `[DONE]` 无 `finish_reason` 时截断输出以错误收尾而非静默完成）
 
-前端手写类型 `src/types/agent.ts`，经 `invoke(CMD.agentRun / CMD.agentAbort)` 调用。
+前端手写类型 `src/types/agent.ts`，经 `invoke(CMD.agentRun / CMD.agentAbort / CMD.agentApprove)` 调用。
 
 `handleEvent` 写入规则：
 
@@ -56,7 +57,7 @@ Tavily 搜索（专为 AI 设计，返回含 `answer` 字段的结构化 JSON）
 
 ### run_command
 
-命令无白名单/黑名单拦截——所有命令直接放行。仅以下机制兜底：
+命令无白名单/黑名单拦截。默认（`requireApproval: true`）执行前经人工审批：loop 在执行点前发 `ApprovalRequest { id }` 并 await `SessionRegistry` 上的 per-call oneshot，前端回填决策（`agent_approve`）；abort / 会话移除时 sender drop 即拒绝。拒绝结果回灌 LLM 并告知不要原样重试。设置关闭「命令执行审批」即免审批直接执行（Rust 端默认 true，不信任前端漏传）；免审批时默认 system prompt 仍约束写类命令先征得用户同意（prompt 层软约束，见 System Prompt）。放行后仅以下机制兜底：
 
 1. shell 元字符注入免疫：`tokio::process::Command` 不经 shell
 2. 断路器（`rm -rf /` / `rm -rf ~` 等灾难性全局操作拦截，不可放宽）
@@ -71,6 +72,7 @@ Tavily 搜索（专为 AI 设计，返回含 `answer` 字段的结构化 JSON）
 `config.systemPrompt` 即 system message 本体（不再区分「默认 harness + 用户追加」）。
 
 - 默认值在 `config.ts` 的 `defineConfig` 内（描述 agent 角色、工具规则、安全约束、输出风格），用户可全量改写。
+- 默认安全约束含命令分类规则：写类操作（改文件、装卸软件、结束进程、改系统设置、git commit/push 等改变本机或远端状态）执行前须先以文本向用户展示完整命令并征得明确同意，只读操作直接执行——免审批模式下这是执行前的最后一道防线（prompt 层软约束，非机制强制）。
 - 注入在 `agent_run` spawn 的后台 task（`run_loop_inner`）内：首条已是 `system` 则不重复注入，否则插到 `messages[0]`（空串跳过）；Rust 端不内置默认提示词。
 
 ## 配置
@@ -84,6 +86,7 @@ defineConfig(AGENT_CONFIG_PATH, {
   searchProvider: { type: 'tavily', apiKey: '' },
   // 资源上限默认值（maxCpuSeconds/maxMemoryMb/maxOpenFiles/executionTimeout/maxOutputBytes/maxTurns）
   // BOUNDS 仅 CI 镜像 policy.rs，无 Settings UI；运行时 Rust clamp
+  requireApproval: true, // run_command 执行前需人工审批（设置「命令执行审批」开关；关闭即免审批）
   messages: [], // 对话消息（随会话持久化，见「会话恢复」）
   sessionId: '', // 进行中 run 的 sessionId（重载恢复 abort 孤儿用）
 })
@@ -143,6 +146,13 @@ defineConfig(AGENT_CONFIG_PATH, {
 - **web_search 成功**：展示 answer 摘要（贴底末三行，同 reasoning clamp）
 - **web_search 失败**：展示 `output` 错误串
 - **run_command 等**：展示 `output` 原文
+
+### 命令审批
+
+- 审批开启（默认）时 run_command 执行前，工具步骤转 `awaitApproval` 态：命令明细旁渲染「放行 / 拒绝」按钮
+- 快捷键 Enter 放行 / Esc 拒绝（View capture 阶段拦截，先于输入框 Enter 与全局 Escape 退出扩展；IME 组态、弹窗/子视图/其它扩展时不介入）
+- 放行乐观转执行中（命令极快时 ToolResult 先到由 guard 防回退）；拒绝由 Rust `ToolResult(ok=false)` 收尾——步骤标 failed、输出含拒绝说明，结果回灌 LLM 并告知不要原样重试
+- 决策经 `agent_approve` 回填 `SessionRegistry` 上的 per-call oneshot；abort / 会话移除时 sender drop 即拒绝，等待审批的工具随中止标 failed
 
 ### 状态 notice
 
@@ -210,12 +220,12 @@ extensions/agent/
 ├── Settings.vue           # Provider + Agent 配置
 ├── Actions.vue            # 模型切换 + 历史跳转 + 新会话 + 设置
 └── native/
-    ├── mod.rs             # agent_run / agent_abort + Extension impl
+    ├── mod.rs             # agent_run / agent_abort / agent_approve + Extension impl
     ├── policy.rs          # 资源上限 floor/cap 权威源（6 项 clamp）
     ├── engine/            # agent 引擎（从框架层下沉）
     │   ├── mod.rs         # AgentEvent 枚举
-    │   ├── loop_runner.rs # 主循环（max_turns/system_prompt 由 LoopInput 注入）
-    │   ├── cancellation.rs # SessionRegistry（CancellationToken）
+    │   ├── loop_runner.rs # 主循环（max_turns/system_prompt 由 LoopInput 注入；run_command 审批门）
+    │   ├── cancellation.rs # SessionRegistry（CancellationToken + per-call 审批 oneshot）
     │   ├── trim.rs        # 历史消息裁剪
     │   ├── secret_scrub.rs # gitleaks 正则打码
     │   └── tool_registry.rs # AgentTool trait + ToolRegistry
@@ -226,5 +236,5 @@ extensions/agent/
 
 ## 测试
 
-- Rust 单元测试：`cargo test --lib`（含 run_command 断路器测试 + policy 资源 clamp 测试 + LLM security 测试 + SSE 断流回归（本地 mock server 回放事件））
-- 前端测试：`bun run test`
+- Rust 单元测试：`cargo test --lib`（含 run_command 断路器测试 + policy 资源 clamp 测试 + SessionRegistry 审批 oneshot 测试 + LLM security 测试 + SSE 断流回归（本地 mock server 回放事件））
+- 前端测试：`bun run test`（含审批事件流转 / respondApproval 回填 / abort 收尾用例）

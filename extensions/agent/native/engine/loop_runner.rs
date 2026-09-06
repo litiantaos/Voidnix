@@ -21,6 +21,7 @@ use tauri::ipc::Channel;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 
+use crate::extensions::agent::engine::cancellation::SessionRegistry;
 use crate::extensions::agent::engine::tool_registry::ToolRegistry;
 use crate::extensions::agent::engine::AgentEvent;
 use crate::runtime::llm::parser::FinalizedToolCall;
@@ -43,6 +44,12 @@ pub struct LoopInput {
     pub tool_registry: Arc<ToolRegistry>,
     pub channel: Channel<AgentEvent>,
     pub cancel: CancellationToken,
+    /// 会话 id（审批决策通道挂到 SessionRegistry 的键）。
+    pub session_id: String,
+    /// 会话注册中心（审批回填；cheap clone）。
+    pub sessions: SessionRegistry,
+    /// 需审批工具（run_command）执行前等用户放行（设置「免审批」= false）。
+    pub require_approval: bool,
 }
 
 /// 主循环。所有错误通过 `AgentEvent::Error` 推给前端后退出。
@@ -196,6 +203,43 @@ async fn process_tool_call(
         messages.push(LlmMessage::tool_result(&call.id, msg));
         return;
     };
+
+    // 审批门：需审批工具在执行点前等用户放行（防 prompt 注入执行恶意命令）。
+    // 决策经 SessionRegistry 上的 oneshot 回填；abort / 会话移除时 sender drop
+    // → rx err → 视为拒绝。拒绝结果照常回灌 LLM（告知不要原样重试）。
+    if input.require_approval && tool.requires_approval() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        input
+            .sessions
+            .register_approval(&input.session_id, &call.id, tx);
+        let _ = input.channel.send(AgentEvent::ApprovalRequest {
+            id: call.id.clone(),
+        });
+        let approved = select! {
+            r = rx => r.unwrap_or(false),
+            _ = input.cancel.cancelled() => {
+                let msg = "工具调用已被用户中断".to_string();
+                let _ = input.channel.send(AgentEvent::ToolResult {
+                    id: call.id.clone(),
+                    ok: false,
+                    output: msg.clone(),
+                });
+                messages.push(LlmMessage::tool_result(&call.id, msg));
+                return;
+            }
+        };
+        if !approved {
+            let msg = "用户拒绝了本次命令执行。不要原样重试该命令，请改用其他方式或向用户说明。"
+                .to_string();
+            let _ = input.channel.send(AgentEvent::ToolResult {
+                id: call.id.clone(),
+                ok: false,
+                output: msg.clone(),
+            });
+            messages.push(LlmMessage::tool_result(&call.id, msg));
+            return;
+        }
+    }
 
     // 执行工具（取消感知：abort 时 drop future，run_command 的 kill_on_drop 终结子进程）
     let result = select! {

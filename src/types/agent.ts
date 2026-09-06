@@ -9,6 +9,7 @@ export type AgentEvent =
   | { type: 'reasoningDelta'; text: string }
   | { type: 'toolCallStart'; id: string; name: string }
   | { type: 'toolCallArgs'; id: string; args: unknown }
+  | { type: 'approvalRequest'; id: string }
   | { type: 'toolResult'; id: string; ok: boolean; output: string }
   | { type: 'completed' }
   | { type: 'error'; message: string }
@@ -34,8 +35,8 @@ export type AgentPart =
       output?: string
       /** web_search 成功解析出的 answer 摘要（UI 渲染用） */
       parsed?: string
-      /** 工具执行状态 */
-      state: 'streaming' | 'running' | 'done' | 'failed'
+      /** 工具执行状态（awaitApproval = 审批开启时执行前等用户放行） */
+      state: 'streaming' | 'running' | 'awaitApproval' | 'done' | 'failed'
     }
   /** UI 专属状态行（不进 LLM 上下文）：错误 / 用户中止 */
   | { type: 'notice'; kind: 'error' | 'aborted'; text: string }

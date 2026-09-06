@@ -32,6 +32,8 @@ pub enum AgentEvent {
     ToolCallStart { id: String, name: String },
     /// 工具调用参数完整到达（已 parse 的 JSON）
     ToolCallArgs { id: String, args: serde_json::Value },
+    /// 工具执行前等待用户审批（仅审批开启且工具声明需审批时发；前端放行经 agent_approve 回填）
+    ApprovalRequest { id: String },
     /// 工具执行结果（已净化 secret）
     ToolResult {
         id: String,

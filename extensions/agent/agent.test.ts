@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => {
   const channels: { onmessage: Handler | null }[] = []
   return {
     channels,
-    invoke: vi.fn(async () => undefined),
+    // 返回类型放宽 boolean | undefined：agent_approve 回填（boolean）与其它命令（忽略返回值）共用
+    invoke: vi.fn(async () => undefined as boolean | undefined),
     Channel: class {
       onmessage: Handler | null = null
       constructor() {
@@ -182,6 +183,115 @@ describe('useAgentChat session 守卫', () => {
     expect(part && part.type === 'toolCall' && part.parsed).toBe('A')
 
     ch.onmessage?.({ type: 'completed' })
+  })
+
+  it('审批：runConfig 透传 requireApproval，approvalRequest 转 awaitApproval', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('run ls')
+
+    // 配置默认开审批，随 agent_run 透传
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      'agent_run',
+      expect.objectContaining({ config: expect.objectContaining({ requireApproval: true }) }),
+    )
+
+    const ch = mocks.channels[0]!
+    ch.onmessage?.({ type: 'toolCallStart', id: 'c1', name: 'run_command' })
+    ch.onmessage?.({ type: 'toolCallArgs', id: 'c1', args: { cmd: 'ls', args: ['-la'] } })
+    ch.onmessage?.({ type: 'approvalRequest', id: 'c1' })
+
+    expect(agent.pendingApproval.value?.id).toBe('c1')
+    ch.onmessage?.({ type: 'completed' })
+  })
+
+  it('审批：放行走 agent_approve 并转 running；拒绝转 failed 由 ToolResult 收尾', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('run ls')
+    const ch = mocks.channels[0]!
+    ch.onmessage?.({ type: 'toolCallStart', id: 'c1', name: 'run_command' })
+    ch.onmessage?.({ type: 'toolCallArgs', id: 'c1', args: { cmd: 'ls' } })
+    ch.onmessage?.({ type: 'approvalRequest', id: 'c1' })
+
+    // agent_approve 回填送达（true）
+    mocks.invoke.mockResolvedValue(true)
+    await agent.respondApproval('c1', true)
+    expect(mocks.invoke).toHaveBeenCalledWith('agent_approve', {
+      sessionId: expect.any(String),
+      callId: 'c1',
+      approved: true,
+    })
+    expect(
+      agent.pendingApproval.value === undefined &&
+        agent.messages.value
+          .find((m) => m.streaming)
+          ?.parts.some((p) => p.type === 'toolCall' && p.state === 'running'),
+    ).toBe(true)
+
+    // 拒绝：乐观置 failed，随后 Rust ToolResult(ok=false) 带拒绝说明收尾
+    ch.onmessage?.({ type: 'toolCallStart', id: 'c2', name: 'run_command' })
+    ch.onmessage?.({ type: 'toolCallArgs', id: 'c2', args: { cmd: 'rm' } })
+    ch.onmessage?.({ type: 'approvalRequest', id: 'c2' })
+    await agent.respondApproval('c2', false)
+    expect(mocks.invoke).toHaveBeenCalledWith('agent_approve', {
+      sessionId: expect.any(String),
+      callId: 'c2',
+      approved: false,
+    })
+    ch.onmessage?.({
+      type: 'toolResult',
+      id: 'c2',
+      ok: false,
+      output: '用户拒绝了本次命令执行。',
+    })
+    const parts = agent.messages.value.find((m) => m.streaming)?.parts
+    expect(
+      parts?.some(
+        (p) =>
+          p.type === 'toolCall' &&
+          p.id === 'c2' &&
+          p.state === 'failed' &&
+          p.output?.includes('拒绝'),
+      ),
+    ).toBe(true)
+
+    ch.onmessage?.({ type: 'completed' })
+  })
+
+  it('审批：非 awaitApproval 态不回填；abort 时等待审批的工具标 failed', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('run ls')
+    const ch = mocks.channels[0]!
+    ch.onmessage?.({ type: 'toolCallStart', id: 'c1', name: 'run_command' })
+    ch.onmessage?.({ type: 'toolCallArgs', id: 'c1', args: { cmd: 'ls' } })
+
+    // 无 approvalRequest（免审批模式）时仍为 running，respondApproval no-op
+    mocks.invoke.mockClear()
+    await agent.respondApproval('c1', true)
+    expect(mocks.invoke).not.toHaveBeenCalledWith('agent_approve', expect.anything())
+
+    ch.onmessage?.({ type: 'approvalRequest', id: 'c1' })
+    await agent.abort()
+    const part = agent.messages.value
+      .find((m) => m.role === 'assistant')
+      ?.parts.find((p) => p.type === 'toolCall' && p.id === 'c1')
+    expect(part && part.type === 'toolCall' && part.state).toBe('failed')
+  })
+
+  it('审批：回填未送达（delivered=false）不转 running，收尾 failed', async () => {
+    const agent = useAgentChat()
+    await agent.sendMessage('run ls')
+    const ch = mocks.channels[0]!
+    ch.onmessage?.({ type: 'toolCallStart', id: 'c1', name: 'run_command' })
+    ch.onmessage?.({ type: 'toolCallArgs', id: 'c1', args: { cmd: 'ls' } })
+    ch.onmessage?.({ type: 'approvalRequest', id: 'c1' })
+
+    // 等待项已消失（run 结束/决策已被消费）：默认 mock resolve undefined（非 true）
+    // → 视为未送达，命令不会执行，收尾 failed 而非 running
+    await agent.respondApproval('c1', true)
+    const part = agent.messages.value
+      .find((m) => m.streaming)
+      ?.parts.find((p) => p.type === 'toolCall' && p.id === 'c1')
+    expect(part && part.type === 'toolCall' && part.state).toBe('failed')
   })
 
   it('abort 写入 aborted notice 并结束 streaming', async () => {

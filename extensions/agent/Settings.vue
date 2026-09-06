@@ -132,6 +132,17 @@ const allItems = computed<SettingItem[]>(() => [
     group: t('agent.group.advanced'),
     action: openSystemPromptDialog,
   },
+  {
+    id: 'command-approval',
+    title: t('agent.approvalTitle'),
+    subtitle: t('agent.approvalSubtitle'),
+    type: 'toggle',
+    value: agentConfig.requireApproval,
+    update: (v: boolean) => {
+      agentConfig.requireApproval = v
+    },
+    group: t('agent.group.advanced'),
+  },
 ])
 
 // ─── 搜索提供商编辑（固定 Tavily 单项，不可新增/删除）───

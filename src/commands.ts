@@ -111,6 +111,7 @@ export const CMD = {
   // —— agent ——
   agentRun: 'agent_run',
   agentAbort: 'agent_abort',
+  agentApprove: 'agent_approve',
 
   // —— ai-providers ——
   aiProvidersExport: 'ai_providers_export',

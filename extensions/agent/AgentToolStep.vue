@@ -2,7 +2,8 @@
   <div
     class="agent-step"
     :class="{
-      'agent-step--active': part.state === 'streaming' || part.state === 'running',
+      'agent-step--active':
+        part.state === 'streaming' || part.state === 'running' || part.state === 'awaitApproval',
       'agent-step--failed': part.state === 'failed',
     }"
     text="xs"
@@ -16,8 +17,27 @@
       <span v-if="detail" shrink-1 min-w="0" font="mono" text="secondary" truncate>{{
         detail
       }}</span>
+      <!-- 审批开启：执行前等用户放行/拒绝（Enter / Esc） -->
+      <template v-if="part.state === 'awaitApproval'">
+        <BaseButton
+          variant="primary"
+          class="!px-2.5 !h-6"
+          :title="t('agent.approveHint')"
+          @click="agent.respondApproval(part.id, true)"
+        >
+          {{ t('agent.approve') }}
+        </BaseButton>
+        <BaseButton
+          variant="ghost"
+          class="!px-2.5 !h-6"
+          :title="t('agent.denyHint')"
+          @click="agent.respondApproval(part.id, false)"
+        >
+          {{ t('agent.deny') }}
+        </BaseButton>
+      </template>
       <span
-        v-if="part.state === 'streaming' || part.state === 'running'"
+        v-else-if="part.state === 'streaming' || part.state === 'running'"
         class="agent-step-dots"
         aria-hidden="true"
       >
@@ -49,6 +69,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { AgentPart } from '@/types/agent'
+import { t } from '@/runtime/i18n'
+import BaseButton from '@/components/ui/BaseButton.vue'
+import { useAgentChat } from './agent'
 import { showToolBody, toolDetail, toolIcon, toolLabel } from './view-logic'
 import './agent-step.css'
 
@@ -57,6 +80,8 @@ const props = defineProps<{
   /** part 在消息内的序号，用于入场 stagger */
   index: number
 }>()
+
+const agent = useAgentChat()
 
 const label = computed(() => toolLabel(props.part.name))
 const detail = computed(() => toolDetail(props.part))
