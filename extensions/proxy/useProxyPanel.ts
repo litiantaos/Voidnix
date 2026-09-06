@@ -51,7 +51,6 @@ export type ListItem =
       active: boolean
     }
   | { type: 'groupSelector'; group: string }
-  | { type: 'uninstall'; group: string }
   | { type: 'node'; group: string; node: NodeItem }
 
 /// 预加载代理运行状态：本模块随 index.ts eager 加载（app 启动早期）即触发 IPC 往返，
@@ -106,8 +105,6 @@ export function useProxyPanel() {
   /// 完成后翻 true。false 时 View 开启代理项不渲染 trailing/subtitle（避免错误态闪烁）。
   const statusLoaded = ref(preloaded.done)
   const toggling = ref(false)
-  /// 完全卸载进行中（提权 bootout 期间防重入 + 行内 spinner）
-  const uninstalling = ref(false)
   const proxiesData = ref<ProxiesResponse | null>(null)
   const delayMap = ref<Record<string, number>>({})
   const testing = ref(false)
@@ -223,15 +220,6 @@ export function useProxyPanel() {
     // 所有项（含控制项）按搜索过滤；节点在 nodes computed 已按名过滤
     if (match(t('proxy.enableProxy'))) list.push({ type: 'enabled', group: t('proxy.group.proxy') })
     if (match(t('proxy.ruleMode'))) list.push({ type: 'mode', group: t('proxy.group.proxy') })
-    // 完全卸载入口：核心已下载或 daemon 已装才展示（无系统足迹可清理时省略）。
-    // 须紧随代理组其余项（BaseList 按连续分组渲染，插入订阅/节点组之后会拆散分组）
-    if (
-      statusLoaded.value &&
-      (coreStatus.value.downloaded || coreStatus.value.daemonInstalled) &&
-      match(t('proxy.uninstall'))
-    ) {
-      list.push({ type: 'uninstall', group: t('proxy.group.proxy') })
-    }
     list.push(
       ...config.subscriptions
         .filter((s) => match(s.name || s.url || ''))
@@ -354,6 +342,10 @@ export function useProxyPanel() {
       const confirmed = await appStore.showConfirm({
         title: t('proxy.tunConfirmTitle'),
         message: t('proxy.tunConfirmMessage'),
+        // lg：首条要点的 /Library/LaunchDaemons/…mihomo.plist 行内代码约 280px，
+        // md（~400px 内容宽）下与中文前缀合计溢出致路径中间断行
+        size: 'lg',
+        markdown: true,
         okLabel: t('proxy.tunConfirmOk'),
       })
       if (!confirmed) return
@@ -415,42 +407,6 @@ export function useProxyPanel() {
       })
     } finally {
       toggling.value = false
-    }
-  }
-
-  /// 完全卸载：停代理 + 提权卸载 LaunchDaemon + 清理核心运行文件（订阅/端口配置保留）。
-  /// 与「关闭代理」（热重载 idle，进程常驻）互补——卸载后回到未下载状态，重装走下载入口。
-  async function uninstall() {
-    // 下载中禁触：remove_runtime_files 删掉半成品后，在飞下载完成会把 binary 写回来（卸载失效）
-    if (uninstalling.value || isDownloading.value) return
-    const confirmed = await appStore.showConfirm({
-      title: t('proxy.uninstallTitle'),
-      message: t('proxy.uninstallConfirmMessage'),
-      okLabel: t('proxy.uninstallConfirmOk'),
-    })
-    if (!confirmed) return
-    uninstalling.value = true
-    try {
-      await invoke(CMD.proxyUninstall)
-      isEnabled.value = false
-      preloaded.enabled = false
-      coreError.value = ''
-      updateInfo.value = null // 核心已删，版本比较提示随之失效
-      proxiesData.value = null
-      selectedNodeName.value = ''
-      delayMap.value = {}
-      stopTrafficStream()
-      await loadCoreStatus()
-      appStore.showStatus(t('proxy.uninstalled'), { duration: 3000 })
-    } catch (e) {
-      // 提权取消/失败：核心文件可能仍在，刷新权威状态
-      await loadCoreStatus()
-      appStore.showStatus(toErrorMessage(e, t('proxy.uninstallFailed')), {
-        duration: 4000,
-        kind: 'error',
-      })
-    } finally {
-      uninstalling.value = false
     }
   }
 
@@ -575,8 +531,7 @@ export function useProxyPanel() {
     } else if (it.type === 'groupSelector') {
       groupSelectRef.value?.focus()
       groupSelectRef.value?.toggleOpen()
-    } else if (it.type === 'uninstall') uninstall()
-    else if (it.type === 'node') selectNode(it.node)
+    } else if (it.type === 'node') selectNode(it.node)
     else if (it.type === 'subscription') {
       // 有节点的订阅：点击切换激活（主操作，仅激活订阅的节点入 mihomo）；
       // 空订阅（未配置/未拉取）：点击打开编辑配置
@@ -819,6 +774,15 @@ export function useProxyPanel() {
   // 同时恢复流量流（切子视图时 onDeactivated 停止，切回时重启；startTrafficStream 有防重入守卫）。
   onActivated(() => {
     checkUpdate()
+    // 设置子视图可能已完全卸载（跨视图状态对账）：重激活拉权威核心状态，
+    // 核心已删则清残留节点列表（enabled 已由 proxy-enabled 事件同步为 false）
+    void loadCoreStatus().then(() => {
+      if (!coreStatus.value.downloaded) {
+        proxiesData.value = null
+        selectedNodeName.value = ''
+        delayMap.value = {}
+      }
+    })
     if (isEnabled.value) startTrafficStream()
   })
 
@@ -881,8 +845,6 @@ export function useProxyPanel() {
     downloadCore,
     downloadText,
     toggleEnabled,
-    uninstall,
-    uninstalling,
     config,
     MODE_OPTIONS,
     onModeChange,

@@ -24,7 +24,7 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
 - mihomo 监听 **`external-controller`**（RESTful API，bearer secret 鉴权）
 - 扩展**不解析代理协议**，proxies/proxy-groups/rules 原样合并自订阅 Clash YAML
 
-**UI 结构**：无独立设置子视图，全部控制内联在主界面的三个分组中：
+**UI 结构**：主界面三个分组（代理/订阅/节点）+ 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，完全卸载入口）：
 
 - **代理分组**：含开启/规则模式两项；开启项副标题经 `/traffic` WS 实时显示上下行速率
 - **订阅分组**：导入/更新/删除；多订阅时仅激活订阅生效（点击有节点的订阅行切换激活，accent 强调当前激活项；空订阅点击进编辑，编辑按钮随时进编辑）。行内「更新」按钮按现有 URL 重新拉取（与弹窗保存共用 `proxy_update_subscription`；激活订阅更新后节点列表整体替换并清测速缓存，非激活订阅仅回填元数据），新建订阅拉取成功自动激活
@@ -111,8 +111,8 @@ mihomo 以 root 经 **launchd LaunchDaemon 托管**（`/Library/LaunchDaemons/<b
 
 TUN 是全部扩展中最重的系统侵入面（系统目录 LaunchDaemon + root 常驻进程 + 接管全部流量），用户必须在安装前知情：
 
-- **首次启用确认**：前端 `toggleEnabled` 在 daemon 未安装（`proxy_core_status` 返回 `daemon_installed`）时先弹确认对话框，明确告知——需要管理员密码（仅首次安装一次）、安装什么（`/Library/LaunchDaemons/…mihomo.plist`，mihomo 以 root 常驻：开机自启 + 崩溃自愈）、流量走向（TUN 虚拟网卡接管全部 IP 流量，关闭即恢复直通）、卸载入口（代理列表「完全卸载」）。daemon 已装（重开/开机复用）不重复打扰
-- **完全卸载**（`proxy_uninstall` 命令，代理列表 danger 项，核心已下载或 daemon 已装才展示）：`stop_core` 停代理（热重载 idle 释放 TUN + 停监测/流）→ 作废乐观释放重试（`release_gen` 自增，bootout 后 controller 必不可达，防陈旧重试误报）→ `uninstall_launchdaemon` 提权 bootout + 删 plist → 清空 enabled/tun_active/run_params → `remove_runtime_files` 删全部运行文件（binary/版本/geo/日志/启动配置/临时 plist）。**订阅与端口配置保留**（config.json + subs/，用户数据，重装无需重配）；卸载后回到未下载状态，重装走下载入口
+- **首次启用确认**：前端 `toggleEnabled` 在 daemon 未安装（`proxy_core_status` 返回 `daemon_installed`）时先弹确认对话框，明确告知——需要管理员密码（仅首次安装一次）、安装什么（`/Library/LaunchDaemons/…mihomo.plist`，mihomo 以 root 常驻：开机自启 + 崩溃自愈）、流量走向（TUN 虚拟网卡接管全部 IP 流量，关闭即恢复直通）、卸载入口（代理设置子视图「完全卸载」）。daemon 已装（重开/开机复用）不重复打扰
+- **完全卸载**（`proxy_uninstall` 命令，设置子视图 danger 项，核心已下载且未在下载中才展示，无足迹显示空态）：`stop_core` 停代理（热重载 idle 释放 TUN + 停监测/流）→ 作废乐观释放重试（`release_gen` 自增，bootout 后 controller 必不可达，防陈旧重试误报）→ `uninstall_launchdaemon` 提权 bootout + 删 plist → 清空 enabled/tun_active/run_params → `remove_runtime_files` 删全部运行文件（binary/版本/geo/日志/启动配置/临时 plist）。**订阅与端口配置保留**（config.json + subs/，用户数据，重装无需重配）；卸载后回到未下载状态，重装走下载入口。子视图自管核心状态（激活时拉权威值），主视图经 `proxy-enabled` 事件同步 enabled、`onActivated` 对账核心状态并清残留节点
 
 ### LaunchDaemon plist
 
