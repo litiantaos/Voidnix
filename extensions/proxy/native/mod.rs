@@ -111,6 +111,27 @@ pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> 
     Ok(())
 }
 
+/// 完全卸载：停代理 → 卸载 LaunchDaemon（提权一次，bootout 停 root mihomo + 删 plist）→
+/// 清理核心运行文件。前端「完全卸载」入口；订阅与端口配置保留（重装无需重配）。
+#[tauri::command]
+pub async fn proxy_uninstall(app: AppHandle, state: State<'_, ProxyState>) -> Result<(), String> {
+    if state.enabled.load(Ordering::Relaxed) {
+        stop_core(&app, &state).await?; // 热重载 idle 释放 TUN + 停监测/流（idle 诊断流随进程退出自灭）
+    }
+    // 作废 stop_core 乐观释放重试：bootout 后 controller 必不可达，防陈旧重试误报
+    state.release_gen.fetch_add(1, Ordering::Relaxed);
+    if tun::plist_installed(&app) {
+        tun::uninstall_launchdaemon(&app).await?;
+    }
+    state.tun_active.store(false, Ordering::Relaxed);
+    state.enabled.store(false, Ordering::Relaxed);
+    *state.run_params.lock().map_err(|e| e.to_string())? = None;
+    core::remove_runtime_files(&app)?;
+    crate::runtime::menubar::refresh(&app);
+    let _ = app.emit("proxy-enabled", false);
+    Ok(())
+}
+
 /// 拉取订阅并持久化（subs/<id>.yaml），返回节点数；核心运行中则热重载。
 #[tauri::command]
 pub async fn proxy_update_subscription(

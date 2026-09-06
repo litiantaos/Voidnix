@@ -107,6 +107,13 @@ asset 名精确串等 **`mihomo-darwin-{arch}-{tag}.gz`**，排除 go120/go122/g
 
 mihomo 以 root 经 **launchd LaunchDaemon 托管**（`/Library/LaunchDaemons/<bundle-id>.mihomo.plist`）常驻——TUN 需 root 创建虚拟网卡 + auto-route，接管全部 IP 流量。首次开启代理时 `tun::install_launchdaemon` 经 `osascript ... with administrator privileges` 提权**一次**安装 plist 并 bootstrap 启动；之后 RunAtLoad 开机自启 + KeepAlive 崩溃自愈，Voidnix 全程经 controller API 热重载 active/idle config 控制，**日常零提权**。
 
+### 首次启用确认 + 完全卸载（系统侵入面告知）
+
+TUN 是全部扩展中最重的系统侵入面（系统目录 LaunchDaemon + root 常驻进程 + 接管全部流量），用户必须在安装前知情：
+
+- **首次启用确认**：前端 `toggleEnabled` 在 daemon 未安装（`proxy_core_status` 返回 `daemon_installed`）时先弹确认对话框，明确告知——需要管理员密码（仅首次安装一次）、安装什么（`/Library/LaunchDaemons/…mihomo.plist`，mihomo 以 root 常驻：开机自启 + 崩溃自愈）、流量走向（TUN 虚拟网卡接管全部 IP 流量，关闭即恢复直通）、卸载入口（代理列表「完全卸载」）。daemon 已装（重开/开机复用）不重复打扰
+- **完全卸载**（`proxy_uninstall` 命令，代理列表 danger 项，核心已下载或 daemon 已装才展示）：`stop_core` 停代理（热重载 idle 释放 TUN + 停监测/流）→ 作废乐观释放重试（`release_gen` 自增，bootout 后 controller 必不可达，防陈旧重试误报）→ `uninstall_launchdaemon` 提权 bootout + 删 plist → 清空 enabled/tun_active/run_params → `remove_runtime_files` 删全部运行文件（binary/版本/geo/日志/启动配置/临时 plist）。**订阅与端口配置保留**（config.json + subs/，用户数据，重装无需重配）；卸载后回到未下载状态，重装走下载入口
+
 ### LaunchDaemon plist
 
 plist 的 `ProgramArguments` 指向 mihomo binary（绝对路径）+ `-d` 数据目录；mihomo 以 root 跑、读数据目录的 `config.yaml`。`KeepAlive=true`（进程退出即重启）+ `ThrottleInterval=30`（限制崩溃重启频率，降低极端情况下拉起刷日志）。plist 须 `chown root:wheel` + `chmod 644`，否则 launchd 拒绝加载。label 按 bundle identifier 区分 dev/prod。
@@ -309,9 +316,9 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 状态行当前节点名由 **`refresh_proxy_menu`** 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `proxy_update_subscription` / `proxy_remove_subscription` / `proxy_set_active_subscription` 五个命令入口在调用后 spawn 刷新（`reload_running_config` 本身不触发）。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步视图 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展视图。
 
-## 命令（19 个）
+## 命令（20 个）
 
-- **启停**：`set_proxy_enabled`（launchd 托管 mihomo——首次 install_launchdaemon 提权一次，之后开关走热重载 active/idle config 免提权；传 `active_sub_id` 指定激活订阅）/ `is_proxy_enabled`
+- **启停**：`set_proxy_enabled`（launchd 托管 mihomo——首次 install_launchdaemon 提权一次，之后开关走热重载 active/idle config 免提权；传 `active_sub_id` 指定激活订阅）/ `is_proxy_enabled` / `proxy_uninstall`（完全卸载：停代理 + 提权卸载 LaunchDaemon + 清理运行文件，订阅保留）
 - **核心下载**：`proxy_core_status` / `proxy_ensure_core`（核心版本查询与运行时按需下载）
 - **版本升级**：`proxy_check_update` / `proxy_update_core`（拉 GitHub API latest 比对版本 / 停代理 + 删旧 + 重下 + 恢复）
 - **订阅**：`proxy_update_subscription`（订阅 + 热重载）/ `proxy_remove_subscription`（删订阅 + 切新激活 + 热重载，传 `new_active_sub_id`）/ `proxy_set_active_subscription`（切激活订阅 + 热重载）
@@ -337,7 +344,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 ## 限制
 
-- **提权**：launchd LaunchDaemon 托管，首次开代理 `install_launchdaemon` 提权一次安装 plist，之后开机自启 + 崩溃自愈 + 开关热重载，日常永久零密码框；仅 binary 升级/卸载（`uninstall_launchdaemon` bootout）再提权
+- **提权**：launchd LaunchDaemon 托管，首次开代理 `install_launchdaemon` 提权一次安装 plist（前端先弹首次启用确认，见上），之后开机自启 + 崩溃自愈 + 开关热重载，日常永久零密码框；仅 binary 升级/完全卸载（`uninstall_launchdaemon` bootout）再提权
 - **关闭可靠性**：关代理走热重载 idle config（撤销 TUN + 直通），进程保留不杀（launchd 托管）。controller 卡死时乐观返回成功（不阻塞用户关闭开关，config.yaml 已写 idle 保证 mihomo 重启后直通），后台异步重试释放 TUN，全部失败才 toast。用户可 `proxy_reconnect` 重试
 - **进程常驻**：mihomo 由 launchd 托管永久常驻（idle ~50MB，不代理流量，用户无感；idle 无 tun 段不占 TUN）。app 退出不影响（launchd 跨 app 生命周期保活）；重启后 `reconnect_root_mihomo` 验 secret 复用——运行 config 仍 active 则**恢复 enabled 并同步 UI**（代理延续，不静默切直连），idle 则复位直通。secret 不匹配（旧残留）不提权清理，下次开代理 install 接管
 - **端口占用**：mihomo 常驻占 mixed-port/controller 端口（idle 也占）；idle 不占 TUN 故 TUN 层可与其他代理软件共存，但端口相同时冲突——install 前端口探测会拦截并提示用户先关闭别的工具或改端口

@@ -51,6 +51,7 @@ export type ListItem =
       active: boolean
     }
   | { type: 'groupSelector'; group: string }
+  | { type: 'uninstall'; group: string }
   | { type: 'node'; group: string; node: NodeItem }
 
 /// 预加载代理运行状态：本模块随 index.ts eager 加载（app 启动早期）即触发 IPC 往返，
@@ -64,6 +65,7 @@ const preloaded = {
   coreDownloaded: false,
   coreDownloading: false,
   version: '',
+  daemonInstalled: false,
 }
 let preloadPromise: Promise<void> | null = null
 if (isTauri) {
@@ -73,11 +75,17 @@ if (isTauri) {
         preloaded.enabled = v
       })
       .catch(() => {}),
-    invoke<{ downloaded: boolean; version: string; downloading: boolean }>(CMD.proxyCoreStatus)
+    invoke<{
+      downloaded: boolean
+      version: string
+      downloading: boolean
+      daemonInstalled: boolean
+    }>(CMD.proxyCoreStatus)
       .then((s) => {
         preloaded.coreDownloaded = s.downloaded
         preloaded.coreDownloading = s.downloading
         preloaded.version = s.version
+        preloaded.daemonInstalled = s.daemonInstalled
       })
       .catch(() => {}),
   ])
@@ -98,6 +106,8 @@ export function useProxyPanel() {
   /// 完成后翻 true。false 时 View 开启代理项不渲染 trailing/subtitle（避免错误态闪烁）。
   const statusLoaded = ref(preloaded.done)
   const toggling = ref(false)
+  /// 完全卸载进行中（提权 bootout 期间防重入 + 行内 spinner）
+  const uninstalling = ref(false)
   const proxiesData = ref<ProxiesResponse | null>(null)
   const delayMap = ref<Record<string, number>>({})
   const testing = ref(false)
@@ -105,10 +115,16 @@ export function useProxyPanel() {
   const baseListRef = ref<{ reveal: (i: number) => void } | null>(null)
   const modeSelectRef = ref<InstanceType<typeof BaseSelect> | null>(null)
   const groupSelectRef = ref<InstanceType<typeof BaseSelect> | null>(null)
-  const coreStatus = ref<{ downloaded: boolean; version: string; downloading: boolean }>({
+  const coreStatus = ref<{
+    downloaded: boolean
+    version: string
+    downloading: boolean
+    daemonInstalled: boolean
+  }>({
     downloaded: preloaded.coreDownloaded,
     version: preloaded.version,
     downloading: preloaded.coreDownloading,
+    daemonInstalled: preloaded.daemonInstalled,
   })
   const coreProgress = ref<{ received: number; total: number | null }>({ received: 0, total: null })
   /// 首个进度事件是否到达：未收到事件时显示「下载中」，收到后显示具体进度
@@ -207,6 +223,15 @@ export function useProxyPanel() {
     // 所有项（含控制项）按搜索过滤；节点在 nodes computed 已按名过滤
     if (match(t('proxy.enableProxy'))) list.push({ type: 'enabled', group: t('proxy.group.proxy') })
     if (match(t('proxy.ruleMode'))) list.push({ type: 'mode', group: t('proxy.group.proxy') })
+    // 完全卸载入口：核心已下载或 daemon 已装才展示（无系统足迹可清理时省略）。
+    // 须紧随代理组其余项（BaseList 按连续分组渲染，插入订阅/节点组之后会拆散分组）
+    if (
+      statusLoaded.value &&
+      (coreStatus.value.downloaded || coreStatus.value.daemonInstalled) &&
+      match(t('proxy.uninstall'))
+    ) {
+      list.push({ type: 'uninstall', group: t('proxy.group.proxy') })
+    }
     list.push(
       ...config.subscriptions
         .filter((s) => match(s.name || s.url || ''))
@@ -237,8 +262,10 @@ export function useProxyPanel() {
         downloaded: boolean
         version: string
         downloading: boolean
+        daemonInstalled: boolean
       }>(CMD.proxyCoreStatus)
       preloaded.coreDownloaded = coreStatus.value.downloaded
+      preloaded.daemonInstalled = coreStatus.value.daemonInstalled
     } catch {
       /* ignore */
     }
@@ -321,6 +348,16 @@ export function useProxyPanel() {
   const toggleEnabled = async () => {
     if (toggling.value) return
     const newState = !isEnabled.value
+    // 首次启用确认：TUN 是全部扩展中最重的系统侵入面（LaunchDaemon + root 常驻进程 +
+    // 接管全部 IP 流量），安装前明确告知。daemon 已装（重开/开机复用）不重复打扰。
+    if (newState && !coreStatus.value.daemonInstalled) {
+      const confirmed = await appStore.showConfirm({
+        title: t('proxy.tunConfirmTitle'),
+        message: t('proxy.tunConfirmMessage'),
+        okLabel: t('proxy.tunConfirmOk'),
+      })
+      if (!confirmed) return
+    }
     if (newState && !config.secret) {
       config.secret = generateRequestId()
     }
@@ -339,6 +376,8 @@ export function useProxyPanel() {
       preloaded.enabled = newState
       coreError.value = '' // 切换成功清异常提示
       if (newState) {
+        // 首启安装后刷新 daemonInstalled（否则关掉再开会重复弹首启确认）
+        void loadCoreStatus()
         await loadProxies()
         testAll() // 全量测速（fire-and-forget，批量端点 mihomo 内部并发）
         startTrafficStream() // 开启实时流量监测
@@ -347,6 +386,7 @@ export function useProxyPanel() {
       }
       // 关闭代理时保留节点列表显示（热重载 idle，不清空 proxiesData）
     } catch (e) {
+      await loadCoreStatus() // 安装半程失败时 plist 可能已装（install 成功但 reload 失败），拿权威值防重复首启确认
       appStore.showStatus(toErrorMessage(e, t('proxy.switchFailed')), {
         duration: 4000,
         kind: 'error',
@@ -375,6 +415,42 @@ export function useProxyPanel() {
       })
     } finally {
       toggling.value = false
+    }
+  }
+
+  /// 完全卸载：停代理 + 提权卸载 LaunchDaemon + 清理核心运行文件（订阅/端口配置保留）。
+  /// 与「关闭代理」（热重载 idle，进程常驻）互补——卸载后回到未下载状态，重装走下载入口。
+  async function uninstall() {
+    // 下载中禁触：remove_runtime_files 删掉半成品后，在飞下载完成会把 binary 写回来（卸载失效）
+    if (uninstalling.value || isDownloading.value) return
+    const confirmed = await appStore.showConfirm({
+      title: t('proxy.uninstallTitle'),
+      message: t('proxy.uninstallConfirmMessage'),
+      okLabel: t('proxy.uninstallConfirmOk'),
+    })
+    if (!confirmed) return
+    uninstalling.value = true
+    try {
+      await invoke(CMD.proxyUninstall)
+      isEnabled.value = false
+      preloaded.enabled = false
+      coreError.value = ''
+      updateInfo.value = null // 核心已删，版本比较提示随之失效
+      proxiesData.value = null
+      selectedNodeName.value = ''
+      delayMap.value = {}
+      stopTrafficStream()
+      await loadCoreStatus()
+      appStore.showStatus(t('proxy.uninstalled'), { duration: 3000 })
+    } catch (e) {
+      // 提权取消/失败：核心文件可能仍在，刷新权威状态
+      await loadCoreStatus()
+      appStore.showStatus(toErrorMessage(e, t('proxy.uninstallFailed')), {
+        duration: 4000,
+        kind: 'error',
+      })
+    } finally {
+      uninstalling.value = false
     }
   }
 
@@ -499,7 +575,8 @@ export function useProxyPanel() {
     } else if (it.type === 'groupSelector') {
       groupSelectRef.value?.focus()
       groupSelectRef.value?.toggleOpen()
-    } else if (it.type === 'node') selectNode(it.node)
+    } else if (it.type === 'uninstall') uninstall()
+    else if (it.type === 'node') selectNode(it.node)
     else if (it.type === 'subscription') {
       // 有节点的订阅：点击切换激活（主操作，仅激活订阅的节点入 mihomo）；
       // 空订阅（未配置/未拉取）：点击打开编辑配置
@@ -714,6 +791,7 @@ export function useProxyPanel() {
       downloaded: preloaded.coreDownloaded,
       version: preloaded.version,
       downloading: preloaded.coreDownloading,
+      daemonInstalled: preloaded.daemonInstalled,
     }
     statusLoaded.value = true
     // 重连恢复竞态兜底：Rust setup 的 reconnect_root_mihomo 异步跑，可能晚于模块预加载
@@ -803,6 +881,8 @@ export function useProxyPanel() {
     downloadCore,
     downloadText,
     toggleEnabled,
+    uninstall,
+    uninstalling,
     config,
     MODE_OPTIONS,
     onModeChange,

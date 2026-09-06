@@ -154,6 +154,24 @@
           </template>
         </BaseListItem>
 
+        <!-- 完全卸载（danger：提权卸载 LaunchDaemon + 清理核心文件；按钮触发，行点击仅选中） -->
+        <BaseListItem
+          v-else-if="item.type === 'uninstall'"
+          :title="t('proxy.uninstall')"
+          tone="danger"
+          :subtitle="t('proxy.uninstallHint')"
+        >
+          <template #trailing>
+            <BaseButton
+              :icon="uninstalling ? 'i-ri-loader-4-line animate-spin' : 'i-ri-delete-bin-line'"
+              variant="danger"
+              :title="t('proxy.uninstall')"
+              :disabled="uninstalling"
+              @click.stop="uninstall"
+            />
+          </template>
+        </BaseListItem>
+
         <!-- 节点项 -->
         <BaseListItem
           v-else-if="item.type === 'node'"
@@ -255,6 +273,8 @@ const {
   downloadCore,
   downloadText,
   toggleEnabled,
+  uninstall,
+  uninstalling,
   config,
   MODE_OPTIONS,
   onModeChange,
