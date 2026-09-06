@@ -23,11 +23,21 @@ test.describe('系统侵入面清理入口', () => {
     await expect(page.getByText('.zshrc / .zprofile 注入块与 ai.env 凭证文件')).toBeVisible()
   })
 
-  test('proxy 视图：无核心/daemon 时完全卸载行不渲染', async ({ page }) => {
+  test('proxy 主视图无卸载项；设置子视图空态（无核心/daemon）', async ({ page }) => {
     await openExtension(page, '/proxy')
     await expect(page.getByText('开启代理')).toBeVisible({ timeout: 5000 })
     await expect(page.getByText('规则模式')).toBeVisible()
-    // 纯浏览器无核心状态（downloaded=false 且 daemonInstalled=false）→ 卸载入口省略
+    // 完全卸载已移至设置子视图，主列表不再出现
     await expect(page.getByText('完全卸载')).toHaveCount(0)
+
+    // 搜索栏齿轮 → config 子视图；纯浏览器无核心状态（downloaded/daemonInstalled 均 false）→ 空态
+    await page.locator('button:has(.i-ri-settings-3-line)').click()
+    await page.waitForTimeout(300)
+    await expect(page.getByText('未安装核心或系统组件')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('开启代理')).toHaveCount(0) // mainView 让位
+    // 再点齿轮（激活态 fill 图标）返回主视图
+    await page.locator('button:has(.i-ri-settings-3-fill)').click()
+    await page.waitForTimeout(300)
+    await expect(page.getByText('开启代理')).toBeVisible({ timeout: 5000 })
   })
 })
