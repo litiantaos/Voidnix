@@ -64,6 +64,18 @@ export const enMessages: Msgs = {
   'settings.permChecking': { en: 'Checking…' },
   'settings.permGranted': { en: 'Granted' },
   'settings.permDenied': { en: 'Not granted — click to open System Settings' },
+  'settings.clearInjections': { en: 'Clear Voidnix Injections' },
+  'settings.clearInjectionsHint': {
+    en: 'Remove injected blocks from .zshrc / .zprofile and the ai.env file',
+  },
+  'settings.clearInjectionsConfirmTitle': { en: 'Clear Voidnix Injections' },
+  'settings.clearInjectionsConfirmMessage': {
+    en: 'Removes all Voidnix blocks from ~/.zshrc and ~/.zprofile (AI credential source hook, zsh completions, etc.) and deletes ~/.config/voidnix[/dev]/ai.env (contains plaintext API keys).\nThey will be re-created on demand if you keep using the features.',
+  },
+  'settings.clearInjectionsOk': { en: 'Clear' },
+  'settings.clearInjectionsDone': { en: 'Cleared {count} injection(s)' },
+  'settings.clearInjectionsNone': { en: 'No Voidnix injections found' },
+  'settings.clearInjectionsFailed': { en: 'Failed to clear injections' },
 
   // ─── action panel ────────────────────────────
   'action.openInFinder': { en: 'Reveal in Finder' },

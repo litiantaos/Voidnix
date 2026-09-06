@@ -64,6 +64,19 @@ export const zhCNMessages: Msgs = {
   'settings.permChecking': { 'zh-CN': '检查中…' },
   'settings.permGranted': { 'zh-CN': '已授权' },
   'settings.permDenied': { 'zh-CN': '未授权 — 点击前往系统设置' },
+  'settings.clearInjections': { 'zh-CN': '清除 Voidnix 注入' },
+  'settings.clearInjectionsHint': {
+    'zh-CN': '移除 .zshrc / .zprofile 注入块与 ai.env 凭证文件',
+  },
+  'settings.clearInjectionsConfirmTitle': { 'zh-CN': '清除 Voidnix 注入' },
+  'settings.clearInjectionsConfirmMessage': {
+    'zh-CN':
+      '将从 ~/.zshrc 与 ~/.zprofile 摘除全部 Voidnix 注入块（AI 凭证 source 钩子、zsh 补全等），并删除 ~/.config/voidnix[/dev]/ai.env（含明文 API Key）。\n继续使用相关功能时会按需重新写入。',
+  },
+  'settings.clearInjectionsOk': { 'zh-CN': '清除' },
+  'settings.clearInjectionsDone': { 'zh-CN': '已清除 {count} 处注入' },
+  'settings.clearInjectionsNone': { 'zh-CN': '未发现 Voidnix 注入' },
+  'settings.clearInjectionsFailed': { 'zh-CN': '清除注入失败' },
 
   // ─── action panel ────────────────────────────
   'action.openInFinder': { 'zh-CN': '在访达中打开' },

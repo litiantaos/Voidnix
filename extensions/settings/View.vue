@@ -78,6 +78,36 @@ const handleOpenGitHub = async () => {
   }
 }
 
+/// 清除 Voidnix shell 注入（.zshrc/.zprofile 注入块 + ai.env 凭证投影）。卸载导向的清理入口。
+const handleClearInjections = async () => {
+  if (!isTauri) return
+  const confirmed = await appStore.showConfirm({
+    title: t('settings.clearInjectionsConfirmTitle'),
+    message: t('settings.clearInjectionsConfirmMessage'),
+    okLabel: t('settings.clearInjectionsOk'),
+  })
+  if (!confirmed) return
+  try {
+    const cleared = await invoke<string[]>(CMD.clearVoidnixInjections)
+    await appStore.showConfirm({
+      title: t('settings.clearInjectionsConfirmTitle'),
+      message:
+        cleared.length > 0
+          ? t('settings.clearInjectionsDone', { count: cleared.length })
+          : t('settings.clearInjectionsNone'),
+      showCancel: false,
+      okLabel: t('settings.updateOK'),
+    })
+  } catch (e) {
+    await appStore.showStatus(
+      `${t('settings.clearInjectionsFailed')}：${e ?? t('common.unknownError')}`,
+      {
+        kind: 'error',
+      },
+    )
+  }
+}
+
 const handleCheckUpdate = async () => {
   if (updateStore.info) {
     updateStore.showDialog()
@@ -248,6 +278,15 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     icon: permFullDiskAccess.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
     group: t('settings.group.privacy'),
     action: () => handleOpenPrivacy('full_disk_access'),
+  })
+  items.push({
+    id: 'clear-injections',
+    title: t('settings.clearInjections'),
+    subtitle: t('settings.clearInjectionsHint'),
+    type: 'action',
+    icon: 'i-ri-eraser-line',
+    group: t('settings.group.privacy'),
+    action: handleClearInjections,
   })
 
   return items
