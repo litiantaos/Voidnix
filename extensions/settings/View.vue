@@ -84,6 +84,8 @@ const handleClearInjections = async () => {
   const confirmed = await appStore.showConfirm({
     title: t('settings.clearInjectionsConfirmTitle'),
     message: t('settings.clearInjectionsConfirmMessage'),
+    size: 'md',
+    markdown: true,
     okLabel: t('settings.clearInjectionsOk'),
   })
   if (!confirmed) return

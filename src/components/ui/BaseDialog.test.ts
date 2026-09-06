@@ -164,6 +164,28 @@ describe('BaseDialog', () => {
     expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
   })
 
+  it('markdown 模式：列表 / 加粗 / 行内代码经 renderMarkdown 渲染', () => {
+    const wrapper = mountDialog({
+      message: '移除以下内容：\n\n- `/Library/LaunchDaemons` 下的 plist\n- **核心**与运行文件',
+      markdown: true,
+    })
+    const body = wrapper.find('.markdown-body')
+    expect(body.exists()).toBe(true)
+    // 自定义 renderer 的列表类 + 两项
+    expect(body.findAll('ul.md-list li')).toHaveLength(2)
+    expect(body.text()).toContain('/Library/LaunchDaemons')
+    expect(body.find('ul.md-list li code').exists()).toBe(true)
+    expect(body.find('ul.md-list li strong').exists()).toBe(true)
+    // 不再走 pre-wrap 纯文本分支
+    expect(body.attributes('class')).not.toContain('whitespace-pre-wrap')
+  })
+
+  it('非 markdown 模式：消息保持纯文本分支', () => {
+    const wrapper = mountDialog({ message: '第一行\n\n- 不是列表' })
+    expect(wrapper.find('.markdown-body').exists()).toBe(false)
+    expect(wrapper.text()).toContain('- 不是列表')
+  })
+
   it('role="dialog" 和 aria-modal', () => {
     const wrapper = mountDialog()
     const dialog = wrapper.find('[role="dialog"]')

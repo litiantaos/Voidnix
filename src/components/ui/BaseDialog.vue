@@ -35,8 +35,18 @@
           <!-- 内容区通铺；顶/底 chrome 浮层盖住，滚动时形成延伸感 -->
           <div class="dialog-body hide-scrollbar" overflow="auto" flex="1" min-h="0">
             <slot>
+              <!-- markdown 模式：与 agent / ai-providers 的 .markdown-body 同范式 -->
+              <div
+                v-if="message && markdown"
+                :id="descId"
+                class="markdown-body"
+                text="sm primary"
+                leading="relaxed"
+              >
+                <div class="md-full" v-html="renderedMarkdown" />
+              </div>
               <p
-                v-if="message"
+                v-else-if="message"
                 :id="descId"
                 text="xs secondary"
                 leading="relaxed"
@@ -87,6 +97,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, onDeactivated, nextTick, useId } from 'vue'
 import BaseButton from './BaseButton.vue'
+import { renderMarkdown } from '@/utils/markdown'
 import { t } from '@/runtime/i18n'
 import { getFocusableElements, isComposing, trapFocus } from '@/utils/dom'
 
@@ -108,6 +119,8 @@ export type CloseReason = 'cancel' | 'escape' | 'overlay' | 'dismiss'
 interface Props {
   title: string
   message?: string
+  /** message 以 markdown 渲染（列表/加粗/行内代码，sanitize 走 renderMarkdown） */
+  markdown?: boolean
   variant?: 'confirm' | 'form'
   size?: 'sm' | 'md' | 'lg'
   okLabel?: string
@@ -125,6 +138,8 @@ const props = withDefaults(defineProps<Props>(), {
   showFooter: null,
   closeOnConfirm: true,
 })
+
+const renderedMarkdown = computed(() => (props.markdown ? renderMarkdown(props.message) : ''))
 
 const emit = defineEmits<{
   confirm: []

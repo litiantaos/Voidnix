@@ -70,7 +70,9 @@ export const enMessages: Msgs = {
   },
   'settings.clearInjectionsConfirmTitle': { en: 'Clear Voidnix Injections' },
   'settings.clearInjectionsConfirmMessage': {
-    en: 'Removes all Voidnix blocks from ~/.zshrc and ~/.zprofile (AI credential source hook, zsh completions, etc.) and deletes ~/.config/voidnix[/dev]/ai.env (contains plaintext API keys).\nThey will be re-created on demand if you keep using the features.',
+    en: `Removes all Voidnix blocks from \`~/.zshrc\` and \`~/.zprofile\` (AI credential source hook, zsh completions, etc.) and deletes \`~/.config/voidnix[/dev]/ai.env\` (contains plaintext API keys).
+
+They will be re-created on demand if you keep using the features.`,
   },
   'settings.clearInjectionsOk': { en: 'Clear' },
   'settings.clearInjectionsDone': { en: 'Cleared {count} injection(s)' },
