@@ -1,6 +1,8 @@
-//! run_command 工具：命令直接放行 + 断路器兜底 + 资源约束。
+//! run_command 工具：执行前人工审批 + 断路器兜底 + 资源约束。
 //!
-//! 命令无白名单/黑名单拦截——所有命令直接执行，仅以下机制兜底：
+//! 命令无白名单/黑名单拦截——审批开启时（默认）执行前经用户放行（防 prompt 注入
+//! 引导执行恶意命令；审批门在 loop_runner，本工具只声明 requires_approval），
+//! 放行后直接执行，仅以下机制兜底：
 //! - shell 元字符注入免疫：tokio::process::Command 不经 shell
 //! - 断路器：rm -rf / 等灾难性全局操作拦截（不可放宽）
 //! - 环境变量隔离：env_clear() + 白名单 env（防父进程 API key 进子进程）
@@ -133,6 +135,11 @@ impl RunCommandTool {
 impl AgentTool for RunCommandTool {
     fn name(&self) -> &'static str {
         "run_command"
+    }
+
+    /// 命令有任意副作用，审批开启时执行前需用户放行
+    fn requires_approval(&self) -> bool {
+        true
     }
 
     fn schema(&self) -> serde_json::Value {

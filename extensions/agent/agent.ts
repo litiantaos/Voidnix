@@ -33,6 +33,7 @@ const CONTENT_EVENTS = new Set<AgentEvent['type']>([
   'reasoningDelta',
   'toolCallStart',
   'toolCallArgs',
+  'approvalRequest',
   'toolResult',
 ])
 
@@ -54,10 +55,13 @@ function findMessage(id: string): AgentMessage | undefined {
   return messages.value.find((m) => m.id === id)
 }
 
-/** 进行中的工具标 failed，避免中止/错误后残留 shimmer */
+/** 进行中的工具标 failed，避免中止/错误后残留 shimmer（含等待审批中的工具） */
 function failInFlightTools(msg: AgentMessage) {
   for (const p of msg.parts) {
-    if (p.type === 'toolCall' && (p.state === 'streaming' || p.state === 'running')) {
+    if (
+      p.type === 'toolCall' &&
+      (p.state === 'streaming' || p.state === 'running' || p.state === 'awaitApproval')
+    ) {
       p.state = 'failed'
     }
   }
@@ -166,6 +170,7 @@ export function useAgentChat() {
       executionTimeout: agentConfig.executionTimeout,
       maxOutputBytes: agentConfig.maxOutputBytes,
       maxTurns: agentConfig.maxTurns,
+      requireApproval: agentConfig.requireApproval,
       systemPrompt: agentConfig.systemPrompt,
     }
 
@@ -229,9 +234,15 @@ export function useAgentChat() {
         const part = findToolPart(msg, event.id)
         if (part) {
           part.args = event.args
-          // 参数就绪 → 进入执行中（直接执行，无审批）
+          // 参数就绪 → 进入执行中（审批开启时随后的 approvalRequest 会转为 awaitApproval）
           part.state = 'running'
         }
+        break
+      }
+      case 'approvalRequest': {
+        // Rust 审批门在执行点前发（仅 run_command 等需审批工具）：等用户放行/拒绝
+        const part = findToolPart(msg, event.id)
+        if (part) part.state = 'awaitApproval'
         break
       }
       case 'toolResult': {
@@ -301,6 +312,40 @@ export function useAgentChat() {
     if (streamingMsg) finalizeAbortedMessage(streamingMsg)
   }
 
+  /// 审批决策回填（放行/拒绝按钮与 Enter/Esc 调用）。
+  /// 仅 streaming 气泡中 awaitApproval 态的工具可回填；放行转 running，
+  /// 拒绝由 Rust 的 ToolResult(ok=false) 收尾（此处乐观置 failed 即时反馈）；
+  /// 回填未送达（delivered=false，等待项已消失 = 命令不会执行）一律收尾 failed。
+  async function respondApproval(toolCallId: string, approved: boolean) {
+    if (!sessionId.value) return
+    const streamingMsg = messages.value.find((m) => m.streaming)
+    const part = streamingMsg ? findToolPart(streamingMsg, toolCallId) : undefined
+    if (!part || part.state !== 'awaitApproval') return
+    try {
+      // 仅精确 true 视为送达（默认拒绝；回填通道异常/未注册一律按未送达收尾）
+      const delivered =
+        (await invoke<boolean>(CMD.agentApprove, {
+          sessionId: sessionId.value,
+          callId: toolCallId,
+          approved,
+        })) === true
+      // 命令极快时 ToolResult 可能先到并已改态，guard 防止回退
+      if (part.state === 'awaitApproval') part.state = approved && delivered ? 'running' : 'failed'
+    } catch {
+      /* 回填失败（run 已结束等）保持现状 */
+    }
+  }
+
+  /// 当前等待审批的工具（streaming 气泡内首个 awaitApproval 态 toolCall；键盘快捷键消费）
+  const pendingApproval = computed(() => {
+    const streamingMsg = messages.value.find((m) => m.streaming)
+    if (!streamingMsg) return undefined
+    return streamingMsg.parts.find(
+      (p): p is Extract<AgentPart, { type: 'toolCall' }> =>
+        p.type === 'toolCall' && p.state === 'awaitApproval',
+    )
+  })
+
   /// 清空对话
   async function newConversation() {
     if (isGenerating.value) await abort()
@@ -356,5 +401,7 @@ export function useAgentChat() {
     sendMessage,
     abort,
     newConversation,
+    respondApproval,
+    pendingApproval,
   }
 }

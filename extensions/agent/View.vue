@@ -345,7 +345,29 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
+/// 审批快捷键：有等待审批的命令时 Enter 放行 / Esc 拒绝。
+/// capture 阶段拦截——先于 BaseTextarea 的 Enter submit（生成中被 isGenerating 挡住，
+/// 但须吞掉按键避免插入换行）与全局 Escape（退出扩展）；弹窗/子视图/其它扩展时不介入。
+function onApprovalKeydown(e: KeyboardEvent) {
+  const pending = agent.pendingApproval.value
+  if (!pending) return
+  if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
+  if (appStore.activeExtId !== 'agent' || appStore.activeSubview || appStore.isDialogOpen) return
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    e.stopPropagation()
+    agent.respondApproval(pending.id, true)
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    e.stopPropagation()
+    agent.respondApproval(pending.id, false)
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('keydown', onApprovalKeydown, true)
+})
 onActivated(() => {
   isViewActive.value = true
 })
@@ -354,6 +376,7 @@ onDeactivated(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('keydown', onApprovalKeydown, true)
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
 })
 </script>

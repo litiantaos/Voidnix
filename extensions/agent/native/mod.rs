@@ -39,6 +39,9 @@ pub struct AgentRunConfig {
     pub execution_timeout: Option<u64>,
     #[serde(default)]
     pub max_output_bytes: Option<usize>,
+    /// run_command 执行前是否需用户审批（None = 默认审批开；安全默认不信任前端漏传）。
+    #[serde(default)]
+    pub require_approval: Option<bool>,
 }
 
 /// 默认 system prompt 由前端 config 自管（defineConfig 默认值），Rust 端只消费。
@@ -95,6 +98,7 @@ pub async fn agent_run(
         .max_turns
         .unwrap_or(policy::DEFAULT_MAX_TURNS)
         .clamp(policy::MAX_TURNS.0, policy::MAX_TURNS.1);
+    let require_approval = config.require_approval.unwrap_or(true);
 
     // 构造本次的 ToolRegistry（工具始终启用）
     let tool_registry = {
@@ -122,6 +126,9 @@ pub async fn agent_run(
         tool_registry,
         channel: on_event,
         cancel: cancel.clone(),
+        session_id: session_id.clone(),
+        sessions: sessions.inner().clone(),
+        require_approval,
     };
 
     // 先 register token，使 abort 在 spawn 后立刻可 cancel；再 spawn；set_handle 若发现
@@ -147,6 +154,18 @@ pub async fn agent_abort(
     session_id: String,
 ) -> Result<bool, String> {
     Ok(sessions.cancel(&session_id))
+}
+
+/// 回填工具审批决策（前端放行/拒绝按钮与 Enter/Esc 调用）。
+/// run 正在等待该 tool_call 审批并完成投递返回 true；无等待项返回 false。
+#[tauri::command]
+pub async fn agent_approve(
+    sessions: tauri::State<'_, SessionRegistry>,
+    session_id: String,
+    call_id: String,
+    approved: bool,
+) -> Result<bool, String> {
+    Ok(sessions.respond(&session_id, &call_id, approved))
 }
 
 /// Agent 扩展。

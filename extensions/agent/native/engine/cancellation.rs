@@ -7,6 +7,7 @@ use crate::runtime::lock_or_recover;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::async_runtime::JoinHandle;
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 /// 单个 agent 会话的状态。
@@ -15,6 +16,9 @@ struct Session {
     handle: Option<JoinHandle<()>>,
     /// 取消令牌
     token: CancellationToken,
+    /// 等待用户审批的 tool_call（call_id → 决策 sender）。
+    /// session 被 cancel/unregister 移除时 sender 随之 drop → loop 侧 rx err → 视为拒绝。
+    pending_approvals: HashMap<String, oneshot::Sender<bool>>,
 }
 
 /// 全局 session 注册器（作为 Tauri State 注入）。
@@ -38,6 +42,7 @@ impl SessionRegistry {
                 Session {
                     handle: None,
                     token,
+                    pending_approvals: HashMap::new(),
                 },
             );
         token_clone
@@ -84,6 +89,31 @@ impl SessionRegistry {
             .unwrap_or_else(|e| e.into_inner())
             .remove(session_id)
             .is_some()
+    }
+
+    /// 挂起一个待审批 tool_call 的决策通道（loop_runner 审批门调用）。
+    /// session 不存在（已 cancel/结束）时 sender 直接 drop → loop 侧视为拒绝。
+    pub fn register_approval(&self, session_id: &str, call_id: &str, tx: oneshot::Sender<bool>) {
+        let mut map = lock_or_recover(&self.sessions);
+        if let Some(s) = map.get_mut(session_id) {
+            s.pending_approvals.insert(call_id.to_string(), tx);
+        }
+    }
+
+    /// 回填审批决策（agent_approve 命令调用）。存在等待项并完成投递返回 true。
+    pub fn respond(&self, session_id: &str, call_id: &str, approved: bool) -> bool {
+        let mut map = lock_or_recover(&self.sessions);
+        let Some(s) = map.get_mut(session_id) else {
+            return false;
+        };
+        match s.pending_approvals.remove(call_id) {
+            Some(tx) => {
+                // loop 侧已超时/取消（rx dropped）时 send err，忽略
+                let _ = tx.send(approved);
+                true
+            }
+            None => false,
+        }
     }
 
     /// 是否存在进行中的 run（WebContent 重载守卫消费：run 进行中延迟 webview 重载）。
@@ -156,6 +186,44 @@ mod tests {
         assert!(reg.cancel("s1"));
         assert!(!reg.unregister("s1"));
         assert_eq!(reg.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn approval_register_and_respond() {
+        let reg = SessionRegistry::default();
+        reg.register("s1".to_string(), CancellationToken::new());
+
+        let (tx, rx) = oneshot::channel();
+        reg.register_approval("s1", "call1", tx);
+        // 重复回填同一 call：第二次无等待项
+        assert!(reg.respond("s1", "call1", true));
+        assert!(!reg.respond("s1", "call1", true));
+        assert_eq!(rx.await, Ok(true));
+
+        // 未知 call / 未知 session
+        let (tx2, rx2) = oneshot::channel();
+        reg.register_approval("s1", "call2", tx2);
+        assert!(!reg.respond("missing", "call2", false));
+        assert!(!reg.respond("s1", "missing", false));
+        // 无人回填的等待项仍在（loop 侧继续等）；drop rx2 防 clippy 未读警告
+        drop(rx2);
+    }
+
+    #[tokio::test]
+    async fn approval_session_removed_denies_pending() {
+        // cancel/unregister 移除 session → pending sender drop → loop 侧 rx err（视为拒绝）
+        let reg = SessionRegistry::default();
+        reg.register("s1".to_string(), CancellationToken::new());
+
+        let (tx, rx) = oneshot::channel();
+        reg.register_approval("s1", "call1", tx);
+        assert!(reg.cancel("s1"));
+        assert!(rx.await.is_err());
+
+        // session 已不存在时挂审批：sender 直接 drop，loop 侧同样收到 err
+        let (tx2, rx2) = oneshot::channel();
+        reg.register_approval("s1", "call1", tx2);
+        assert!(rx2.await.is_err());
     }
 
     #[tokio::test]

@@ -36,6 +36,7 @@ macro_rules! configure_app {
             crate::runtime::window::set_window_appearance,
             crate::runtime::window::show_window,
             crate::extensions::agent::agent_abort,
+            crate::extensions::agent::agent_approve,
             crate::extensions::agent::agent_run,
             crate::extensions::ai_providers::ai_providers_env_snapshot,
             crate::extensions::ai_providers::ai_providers_export,
