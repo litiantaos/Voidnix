@@ -54,6 +54,9 @@ shell_rc::remove_block(&zshrc_path, "zsh-autosuggestions")?;
 shell_rc::has_marker(&content, "ai-providers");
 shell_rc::marker_line("ai-providers"); // → "# voidnix ai-providers"
 shell_rc::quote_shell(path);           // POSIX 单引号
+
+// 摘除全部 voidnix 块（任意 scope，卸载清理用）
+shell_rc::filter_all_voidnix(&content);
 ```
 
 落盘：`*.voidnix-bak` 备份 + tmp+rename 原子写。
@@ -72,8 +75,10 @@ shell_rc::quote_shell(path);           // POSIX 单引号
 
 ## 用户侧摘除
 
+设置页「清除 Voidnix 注入」（框架命令 `clear_voidnix_injections`）：摘除 `~/.zshrc` / `~/.zprofile` 中全部 `# voidnix` 块 + 旧版成对 marker，删 `*.voidnix-bak` 备份，并删除 `~/.config/voidnix[/dev]/ai.env`（AI 凭证明文投影）。卸载导向入口——继续使用相关功能时会按需重新写入。
+
 ```bash
-# 搜 marker
+# 手动搜 marker
 grep -n 'voidnix' ~/.zshrc
 # 或关扩展（zsh-as 会 remove_block）；ai 钩子随 upsert 自愈
 ```

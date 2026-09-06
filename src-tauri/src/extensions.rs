@@ -18,6 +18,7 @@ macro_rules! configure_app {
             crate::runtime::permission::check_screen_recording_permission,
             crate::runtime::permission::open_privacy_settings,
             crate::runtime::permission::request_accessibility_permission,
+            crate::runtime::shell_rc::clear_voidnix_injections,
             crate::runtime::shortcut::hide_window,
             crate::runtime::shortcut::is_app_active,
             crate::runtime::shortcut::register_global_shortcut,

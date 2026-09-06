@@ -101,6 +101,9 @@ export const CMD = {
   // —— zsh-autosuggestions ——
   setZshAutosuggestionsEnabled: 'set_zsh_autosuggestions_enabled',
 
+  // —— shell rc 注入清理（框架，卸载导向）——
+  clearVoidnixInjections: 'clear_voidnix_injections',
+
   // —— translate ——
   getSelectedText: 'get_selected_text',
   getSelectedTextCached: 'get_selected_text_cached',

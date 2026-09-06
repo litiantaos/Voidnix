@@ -132,6 +132,49 @@ pub fn upsert_block(rc_path: &Path, scope: &str, body: &str) -> Result<bool, Str
     Ok(true)
 }
 
+/// 判断行（已 trim）是否为任意 scope 的 voidnix marker（`# voidnix <scope>`，scope 非空）。
+fn is_voidnix_marker(trimmed: &str) -> bool {
+    trimmed.starts_with("# voidnix ") && trimmed.len() > "# voidnix ".len()
+}
+
+/// 摘除 content 中**全部** `# voidnix <scope>` 块（任意 scope，含相邻空行）。
+/// 卸载清理用：不依赖 scope 清单，未来新增扩展注入自动覆盖。
+pub fn filter_all_voidnix(content: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut keep = vec![true; lines.len()];
+
+    let mut i = 0;
+    while i < lines.len() {
+        if !is_voidnix_marker(lines[i].trim()) {
+            i += 1;
+            continue;
+        }
+        // 与 filter_scope 同构：上空行 + marker + 连续非空 body + 下空行
+        if i > 0 && lines[i - 1].trim().is_empty() {
+            keep[i - 1] = false;
+        }
+        keep[i] = false;
+        let mut j = i + 1;
+        while j < lines.len() && !lines[j].trim().is_empty() {
+            keep[j] = false;
+            j += 1;
+        }
+        if j < lines.len() && lines[j].trim().is_empty() {
+            keep[j] = false;
+            j += 1;
+        }
+        i = j;
+    }
+
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| keep[*idx])
+        .map(|(_, l)| *l)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// 摘除 scope 块。返回 `true` 表示有删除。
 pub fn remove_block(rc_path: &Path, scope: &str) -> Result<bool, String> {
     if !rc_path.exists() {
@@ -229,6 +272,88 @@ pub fn filter_legacy_pair_markers(content: &str, tag: &str) -> String {
         .join("\n")
 }
 
+/// 提取 content 中出现过的 legacy pair tag（`# >>> voidnix-<tag> >>>` 行）。
+fn legacy_pair_tags(content: &str) -> Vec<String> {
+    let mut tags: Vec<String> = Vec::new();
+    for line in content.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("# >>> voidnix-") {
+            if let Some(tag) = rest.strip_suffix(" >>>") {
+                if !tag.is_empty() && !tags.iter().any(|x| x == tag) {
+                    tags.push(tag.to_string());
+                }
+            }
+        }
+    }
+    tags
+}
+
+/// 清理单个 rc 文件：摘除全部 `# voidnix` 块 + legacy pair 块，有变更才落盘（留 bak）。
+/// 同时删除 `*.voidnix-bak` 备份。返回 `true` 表示该文件有清理动作。
+fn clear_rc_file(rc_path: &Path) -> Result<bool, String> {
+    let mut touched = false;
+    if rc_path.exists() {
+        let existing = std::fs::read_to_string(rc_path)
+            .map_err(|e| format!("读取 {} 失败: {e}", rc_path.display()))?;
+        let mut cleaned = filter_all_voidnix(&existing);
+        for tag in legacy_pair_tags(&existing) {
+            cleaned = filter_legacy_pair_markers(&cleaned, &tag);
+        }
+        if cleaned != existing {
+            // 保尾换行（镜像 remove_block）：POSIX 文本文件以换行结尾；
+            // 幂等比较用最终内容（cleaned 与 existing 的尾换行差异不构成变更）
+            let new_content = if existing.ends_with('\n') && !cleaned.is_empty() {
+                format!("{cleaned}\n")
+            } else {
+                cleaned
+            };
+            if new_content != existing {
+                atomic_write_rc(rc_path, &new_content)?;
+                touched = true;
+            }
+        }
+    }
+    // 备份路径镜像 atomic_write_rc 的拼接（dotfile 如 .zshrc 的 extension() 为 None）
+    let file_name = rc_path.file_name().and_then(|s| s.to_str()).unwrap_or("rc");
+    let bak = rc_path.with_file_name(format!("{file_name}.voidnix-bak"));
+    if bak.exists() && std::fs::remove_file(&bak).is_ok() {
+        touched = true;
+    }
+    Ok(touched)
+}
+
+/// 清除 Voidnix 在用户 shell 环境的全部注入（设置页「清除 Voidnix 注入」）：
+/// - `~/.zshrc` / `~/.zprofile`：摘除全部 `# voidnix <scope>` 块 + 旧版成对 marker，删 `*.voidnix-bak` 备份
+/// - `~/.config/voidnix[/dev]/ai.env`：AI 凭证明文投影（0600，含 API Key）
+///
+/// 卸载导向的清理入口：继续使用相关功能时会重新写入（保存提供商配置重导出 ai.env 并
+/// 重装 source 钩子，zsh 补全重新启用）。返回被清理的文件路径列表（供前端反馈）。
+#[tauri::command]
+pub fn clear_voidnix_injections() -> Result<Vec<String>, String> {
+    let Some(home) = dirs::home_dir() else {
+        return Err("无法解析 home 目录".into());
+    };
+    let mut cleared: Vec<String> = Vec::new();
+    for name in [".zshrc", ".zprofile"] {
+        let path = home.join(name);
+        match clear_rc_file(&path) {
+            Ok(true) => cleared.push(path.display().to_string()),
+            Ok(false) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    for suffix in ["voidnix", "voidnix.dev"] {
+        let dir = home.join(".config").join(suffix);
+        let env = dir.join("ai.env");
+        if env.exists() && std::fs::remove_file(&env).is_ok() {
+            cleared.push(env.display().to_string());
+            // 目录仅含 ai.env 时一并移除空壳（非空则 remove_dir 失败，忽略）
+            let _ = std::fs::remove_dir(&dir);
+        }
+    }
+    Ok(cleared)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,6 +366,65 @@ mod tests {
             marker_line("zsh-autosuggestions"),
             "# voidnix zsh-autosuggestions"
         );
+    }
+
+    #[test]
+    fn filter_all_voidnix_removes_every_scope() {
+        let raw = "export A=1\n\
+                   \n\
+                   # voidnix ai-providers\n\
+                   source ~/.config/voidnix/ai.env\n\
+                   \n\
+                   # user comment mentions voidnix marker\n\
+                   export B=2\n\
+                   \n\
+                   # voidnix zsh-autosuggestions\n\
+                   export ZSH_AS_DIR=/x\n\
+                   \n\
+                   export C=3\n";
+        let out = filter_all_voidnix(raw);
+        assert!(!out.contains("# voidnix"));
+        assert!(!out.contains("ai.env"));
+        assert!(!out.contains("ZSH_AS_DIR"));
+        // 用户内容与提及 marker 的普通注释不受影响
+        assert!(out.contains("export A=1"));
+        assert!(out.contains("# user comment mentions voidnix marker"));
+        assert!(out.contains("export B=2"));
+        assert!(out.contains("export C=3"));
+    }
+
+    #[test]
+    fn legacy_pair_tags_extraction() {
+        let raw = "# >>> voidnix-ai >>>\nold\n# <<< voidnix-ai <<<\n# >>> voidnix-zsh >>>\n";
+        // 缺 end 的 begin 也提取（filter_legacy_pair_markers 自身缺 end 保留整段，安全）
+        assert_eq!(
+            legacy_pair_tags(raw),
+            vec!["ai".to_string(), "zsh".to_string()]
+        );
+    }
+
+    #[test]
+    fn clear_rc_file_strips_all_and_bak() {
+        let dir = std::env::temp_dir().join(format!("voidnix-shell-clear-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join(".zshrc");
+        fs::write(
+            &rc,
+            "export A=1\n\n# voidnix ai-providers\nsource x\n\n# >>> voidnix-ai >>>\nold\n# <<< voidnix-ai <<<\n",
+        )
+        .unwrap();
+        fs::write(dir.join(".zshrc.voidnix-bak"), "backup").unwrap();
+
+        assert!(clear_rc_file(&rc).unwrap());
+        let text = fs::read_to_string(&rc).unwrap();
+        // 用户内容保留 + 尾部换行保持
+        assert_eq!(text, "export A=1\n");
+        assert!(!dir.join(".zshrc.voidnix-bak").exists());
+        // 幂等：再次清理无动作
+        assert!(!clear_rc_file(&rc).unwrap());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
