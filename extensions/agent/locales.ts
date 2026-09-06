@@ -21,10 +21,9 @@ registerMessages({
   'agent.copyFailed': { 'zh-CN': '复制失败', en: 'Copy failed' },
 
   // ─── 命令审批 ────────────────────────────────
+  'agent.approvalDialog': { 'zh-CN': '执行命令确认', en: 'Run command' },
   'agent.approve': { 'zh-CN': '放行', en: 'Allow' },
   'agent.deny': { 'zh-CN': '拒绝', en: 'Deny' },
-  'agent.approveHint': { 'zh-CN': '放行（Enter）', en: 'Allow (Enter)' },
-  'agent.denyHint': { 'zh-CN': '拒绝（Esc）', en: 'Deny (Esc)' },
 
   // ─── 工具语义 label ─────────────────────────
   'agent.tool.search': { 'zh-CN': '搜索', en: 'Search' },
@@ -42,8 +41,8 @@ registerMessages({
   'agent.notSet': { 'zh-CN': '未设置', en: 'Not set' },
   'agent.approvalTitle': { 'zh-CN': '命令执行审批', en: 'Command approval' },
   'agent.approvalSubtitle': {
-    'zh-CN': '执行命令前需要确认放行；关闭即免审批直接执行',
-    en: 'Confirm before running commands; turn off to skip approval',
+    'zh-CN': '执行命令前需要确认放行，关闭即免审批直接执行',
+    en: 'Confirm before running commands, turn off to skip approval',
   },
   'agent.configureInAiProviders': {
     'zh-CN': '在「AI 提供商」中配置',

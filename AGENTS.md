@@ -275,7 +275,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **命令执行**：默认逐条人工审批（防 prompt 注入引导执行恶意命令），无白/黑名单。
 
-- 审批门在 `loop_runner` 执行点前：发 `AgentEvent::ApprovalRequest` 并 await `SessionRegistry` 上的 per-call oneshot，前端工具步骤渲染「放行 / 拒绝」（Enter / Esc），`agent_approve` 命令回填；abort / 会话移除即拒绝，拒绝结果回灌 LLM 告知不要原样重试
+- 审批门在 `loop_runner` 执行点前：发 `AgentEvent::ApprovalRequest` 并 await `SessionRegistry` 上的 per-call oneshot，前端弹全局 showConfirm 审批弹窗（Enter 放行 / Esc·取消拒绝，切扩展按拒绝收束），`agent_approve` 命令回填；abort / 会话移除即拒绝，拒绝结果回灌 LLM 告知不要原样重试
 - 免审批时默认 system prompt 仍约束写类命令先征得用户文本同意、只读直接执行（prompt 层软防线，非机制强制）
 - `extensions/agent/native/policy.rs` 是资源上限 floor/cap 权威源（CPU/内存/文件描述符/超时/输出/轮次 clamp）
 - `agent_run` 入口强制 clamp（不信任前端传值）；`requireApproval` 前端透传但 Rust 默认 true（漏传即审批开）
