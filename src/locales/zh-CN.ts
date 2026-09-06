@@ -70,8 +70,9 @@ export const zhCNMessages: Msgs = {
   },
   'settings.clearInjectionsConfirmTitle': { 'zh-CN': '清除 Voidnix 注入' },
   'settings.clearInjectionsConfirmMessage': {
-    'zh-CN':
-      '将从 ~/.zshrc 与 ~/.zprofile 摘除全部 Voidnix 注入块（AI 凭证 source 钩子、zsh 补全等），并删除 ~/.config/voidnix[/dev]/ai.env（含明文 API Key）。\n继续使用相关功能时会按需重新写入。',
+    'zh-CN': `将从 \`~/.zshrc\` 与 \`~/.zprofile\` 摘除全部 Voidnix 注入块（AI 凭证 source 钩子、zsh 补全等），并删除 \`~/.config/voidnix[/dev]/ai.env\`（含明文 API Key）。
+
+继续使用相关功能时会按需重新写入。`,
   },
   'settings.clearInjectionsOk': { 'zh-CN': '清除' },
   'settings.clearInjectionsDone': { 'zh-CN': '已清除 {count} 处注入' },

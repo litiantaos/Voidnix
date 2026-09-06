@@ -6,6 +6,7 @@
     v-if="appStore.isDialogOpen && appStore.dialogOptions"
     :title="appStore.dialogOptions.title"
     :message="appStore.dialogOptions.message"
+    :markdown="appStore.dialogOptions.markdown"
     :size="appStore.dialogOptions.size"
     :ok-label="appStore.dialogOptions.okLabel"
     :cancel-label="appStore.dialogOptions.cancelLabel"

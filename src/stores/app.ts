@@ -9,6 +9,8 @@ import { showToast, type ToastOptions } from '@/composables/useToast'
 export interface ConfirmOptions {
   title: string
   message?: string
+  /** message 以 markdown 渲染（BaseDialog markdown 模式） */
+  markdown?: boolean
   size?: 'sm' | 'md' | 'lg'
   okLabel?: string
   cancelLabel?: string
