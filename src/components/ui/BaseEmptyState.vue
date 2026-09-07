@@ -10,6 +10,7 @@
     <div v-if="description" text="xs muted">
       {{ description }}
     </div>
+    <slot name="action" />
   </div>
 </template>
 

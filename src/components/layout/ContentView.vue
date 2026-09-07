@@ -26,10 +26,12 @@
         :style="mergedContentStyle"
       >
         <!-- max=3：日常高频扩展（agent/settings/proxy）不超过 3 个同时活跃，超出按 LRU 驱逐。
-             低频扩展重挂载毫秒级（KeepAlive activate/deactivate 语义已处理），换取 JS 堆削减。
-             窗口隐藏时 keepAliveActive 置 false 卸载 KeepAlive 释放全部缓存 DOM + compositing layer。 -->
-        <KeepAlive v-if="resolvedView && keepAliveActive" :max="3">
+             KeepAlive 常驻（v-if 下沉到动态组件）：经主界面往返（如设置页重看引导）走
+             activate/deactivate 保留视图状态（选中/滚动），仅窗口隐藏 keepAliveActive 置 false
+             卸载 KeepAlive 释放全部缓存 DOM + compositing layer。 -->
+        <KeepAlive v-if="keepAliveActive" :max="3">
           <component
+            v-if="resolvedView"
             :is="resolvedView"
             :key="`${props.extension?.meta.id ?? 'main'}-${appStore.activeSubview ?? 'view'}`"
           />
@@ -37,7 +39,7 @@
 
         <!-- Standard list -->
         <BaseList
-          v-else-if="props.results.length > 0"
+          v-if="!resolvedView && props.results.length > 0"
           :items="props.results"
           :selected-index="props.selectedIndex"
           :multi-select="isMultiSelect"
