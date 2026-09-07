@@ -3,6 +3,7 @@ import type { ProviderResult } from '@/runtime/types'
 import { copyAndHide } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
+import { t } from '@/runtime/i18n'
 import {
   CURRENCIES,
   parseCurrencyInput,
@@ -11,6 +12,7 @@ import {
   formatWithChineseUnit,
   CURRENCY_CODE_TO_NAME,
 } from './logic'
+import './locales'
 
 /** 换算结果 title 为纯数值、与 query 无 fuzzy 命中；
  *  全局 groupAndSort 零分过滤会丢弃，boost 保证其出现并优先于扩展入口（KEYWORD_EXTENSION_BOOST=500）。 */
@@ -59,8 +61,27 @@ export default defineExtension({
       // 扩展内空 query 展示参考汇率
       if (!trimmed && !ctx?.extensionMode) return []
 
+      const parsed = trimmed ? parseCurrencyInput(query) : null
+
       const rates = await fetchRates()
-      if (!rates) return []
+      if (!rates) {
+        // 网络失败且无缓存：仅在用户明确发起货币查询（或扩展内空 query 参考列表）时报错，
+        // 避免全局任意查询被离线错误刷屏
+        if (parsed || (!trimmed && ctx?.extensionMode)) {
+          return [
+            {
+              id: 'rates-err',
+              title: t('currency.fetchFailed'),
+              description: t('common.networkError'),
+              icon: 'i-ri-error-warning-line',
+              boost: DYNAMIC_BOOST,
+              // 回车激活 currency（扩展模式重跑 dynamic 即重试拉取），防静默藏窗
+              data: { kind: 'extension', extId: 'currency' },
+            },
+          ]
+        }
+        return []
+      }
 
       // 空 query：展示以 USD 为基准的参考汇率，避免进扩展见空
       if (!trimmed) {
@@ -79,7 +100,6 @@ export default defineExtension({
         })
       }
 
-      const parsed = parseCurrencyInput(query)
       if (!parsed) return []
 
       const { amount, fromCurrency } = parsed
