@@ -245,6 +245,7 @@ const {
   activateExtension,
   goHome,
   exitExtension,
+  openToolList,
 } = useSearchInput({
   searchInput,
   results,
@@ -261,6 +262,7 @@ const { handleExecute } = useResultNavigation({
   activateExtension,
   goHome,
   exitExtension,
+  openToolList,
 })
 
 useExtensionHeight({

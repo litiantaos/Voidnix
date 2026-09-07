@@ -25,6 +25,15 @@ export const enMessages: Msgs = {
   'search.inExtension': { en: 'Search in {name}' },
   'search.searchIn': { en: 'Search {name}' },
   'search.newVersionHint': { en: 'New version available, click to view' },
+  'search.browseToolsHint': { en: 'Type / to browse all tools' },
+
+  // ─── shortcut conflict（注册失败改键引导）─────
+  'shortcut.conflictTitle': { en: 'Shortcut registration failed' },
+  'shortcut.conflictBody': {
+    en: 'These shortcuts may be taken by other apps (Raycast, input methods, etc.). Rebind them in Settings:',
+  },
+  'shortcut.conflictOpenSettings': { en: 'Open Settings' },
+  'shortcut.conflictLater': { en: 'Later' },
 
   // ─── group titles ────────────────────────────
   'group.application': { en: 'Apps' },
@@ -42,6 +51,7 @@ export const enMessages: Msgs = {
   'settings.language.zh-CN': { en: '中文' },
   'settings.language.en': { en: 'English' },
   'settings.shortcut': { en: 'Shortcut' },
+  'settings.shortcutConflictHint': { en: 'Registration failed — may be taken by another app' },
   'settings.autostart': { en: 'Launch at Login' },
   'settings.checkUpdate': { en: 'Check for Updates' },
   'settings.downloadAndInstall': { en: 'Download & Install' },

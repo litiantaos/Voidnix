@@ -25,6 +25,15 @@ export const zhCNMessages: Msgs = {
   'search.inExtension': { 'zh-CN': '在 {name} 中搜索' },
   'search.searchIn': { 'zh-CN': '搜索{name}' },
   'search.newVersionHint': { 'zh-CN': '发现新版本，点击查看' },
+  'search.browseToolsHint': { 'zh-CN': '输入 / 浏览全部工具' },
+
+  // ─── shortcut conflict（注册失败改键引导）─────
+  'shortcut.conflictTitle': { 'zh-CN': '快捷键注册失败' },
+  'shortcut.conflictBody': {
+    'zh-CN': '以下快捷键可能已被其它应用占用（如 Raycast、输入法等），请在设置中改为其它组合：',
+  },
+  'shortcut.conflictOpenSettings': { 'zh-CN': '打开设置' },
+  'shortcut.conflictLater': { 'zh-CN': '稍后' },
 
   // ─── group titles ────────────────────────────
   'group.application': { 'zh-CN': '应用' },
@@ -42,6 +51,7 @@ export const zhCNMessages: Msgs = {
   'settings.language.zh-CN': { 'zh-CN': '中文' },
   'settings.language.en': { 'zh-CN': 'English' },
   'settings.shortcut': { 'zh-CN': '启动快捷键' },
+  'settings.shortcutConflictHint': { 'zh-CN': '注册失败，可能已被其它应用占用' },
   'settings.autostart': { 'zh-CN': '开机自启' },
   'settings.checkUpdate': { 'zh-CN': '检查更新' },
   'settings.downloadAndInstall': { 'zh-CN': '下载并安装' },

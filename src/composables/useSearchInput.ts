@@ -4,9 +4,10 @@ import { useTauriListener } from '@/composables/useTauriListener'
 import { searchEngine } from '@/runtime/search-engine'
 import { getAllExtensions } from '@/runtime/extension-registry'
 import { scoreExtensionEntry } from '@/utils/fuzzy'
-import { resolveLocalized } from '@/runtime/i18n'
+import { resolveLocalized, t } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
 import { CMD } from '@/commands'
+import { SEARCH } from '@/runtime/constants'
 import type { Extension, SearchResult } from '@/runtime/types'
 import { isTauri } from '@/utils/tauri'
 import { buildOpenUrlResult, buildWebSearchResult, parseWebSearchQuery } from '@/utils/web-search'
@@ -136,26 +137,54 @@ export function useSearchInput(opts: SearchInputOptions) {
       .map(({ ext, score }) => extToEntryResult(ext, score))
   }
 
+  /** 空查询默认列表尾部固定提示行：引导发现 `/` 工具列表（kind=extension 入扩展组，
+   *  无 extId 不走扩展激活；回车分派见 useResultNavigation）。 */
+  function toolsHintResult(): SearchResult {
+    return {
+      id: SEARCH.TOOLS_HINT_ID,
+      title: t('search.browseToolsHint'),
+      icon: 'i-ri-apps-2-line',
+      extId: 'voidnix',
+      data: { kind: 'extension' },
+    }
+  }
+
+  /** 打开 `/` 工具列表（提示行回车入口）：等价于输入 / 的完整链路。 */
+  function openToolList() {
+    ++currentSearchId
+    searchEngine.abort()
+    if (searchTimeout) clearTimeout(searchTimeout)
+    clearSearch('/')
+    results.value = buildToolListResults('/')
+    selectedIndex.value = 0
+    searchInput.value?.focus()
+    searchInput.value?.select()
+  }
+
   async function loadDefaultResults(resetSelection = false) {
     if (!isTauri) return
     const searchId = ++currentSearchId
     // 转移入口（退出扩展/回主页/清空输入）显式归首项；后台刷新（图标就绪/缓存变更/窗口获焦）
     // 保留用户已有导航，由 clampSelected 在结果到达时兜底越界。
     if (resetSelection) selectedIndex.value = 0
+    // 尾部固定提示行：随每次默认列表刷新（增量与最终）追加
+    const withHint = (list: SearchResult[]) => [...list, toolsHintResult()]
     try {
       const defaultResults = await searchEngine.search('', (partial) => {
         if (searchId === currentSearchId) {
-          results.value = partial
-          clampSelected(partial.length)
+          const list = withHint(partial)
+          results.value = list
+          clampSelected(list.length)
         }
       })
       if (searchId === currentSearchId) {
-        results.value = defaultResults
-        clampSelected(defaultResults.length)
+        const list = withHint(defaultResults)
+        results.value = list
+        clampSelected(list.length)
       }
     } catch {
       if (searchId === currentSearchId) {
-        results.value = []
+        results.value = [toolsHintResult()]
         selectedIndex.value = 0
       }
     }
@@ -302,10 +331,11 @@ export function useSearchInput(opts: SearchInputOptions) {
   }
 
   /** 窗口唤起（主快捷键从隐藏呼出）时检查剪贴板：最新记录为文本且 3 秒内 → 填充搜索框。
-   *  搜索框禁用（disableSearchInput 扩展激活）时跳过。 */
+   *  搜索框禁用（disableSearchInput 扩展 readonly）时跳过，防止 query 被污染。 */
   async function maybeFillFromClipboard() {
     if (!isTauri) return
     if (activeExtension.value?.disableSearchInput) return
+    if (!searchInput.value || searchInput.value.readOnly) return
     try {
       // previewOnly 截断至 200 字符：搜索框不宜承载超长文本，避免模糊匹配 O(n×m) 开销
       const items = await invoke<
@@ -393,5 +423,6 @@ export function useSearchInput(opts: SearchInputOptions) {
     handleTagClose,
     refreshExtension,
     exitExtension,
+    openToolList,
   }
 }

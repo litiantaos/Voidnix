@@ -7,6 +7,9 @@ import { useAppStore } from '@/stores/app'
 import { useUpdateStore } from '@/stores/update'
 import { useSystemStore } from '@/stores/system'
 import { UPDATE } from '@/runtime/constants'
+import { whenConfigReady } from '@/runtime/storage'
+import { t, resolveLocalized } from '@/runtime/i18n'
+import { formatShortcutKeys } from '@/utils/format'
 import { isTauri, hideWindow, showWindow } from '@/utils/tauri'
 import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 
@@ -73,6 +76,34 @@ export function useAppLifecycle(win: Win) {
     }
   }
 
+  /// 启动注册失败（快捷键被 Raycast 等占用）改键引导：列出失败项，一键直达设置。
+  /// 任何失败均 show 窗口承载引导——扩展快捷键冲突同样静默失效（用户无感知），
+  /// 且隐藏窗口中的弹窗会被「切扩展按取消收束」路径（如扩展快捷键唤起）静默吞掉。
+  async function guideShortcutConflicts() {
+    const entries = Object.entries(appStore.shortcutErrors)
+    if (entries.length === 0) return
+    void showWindow()
+    const lines = entries.map(([id]) => {
+      if (id === 'main') {
+        return `- ${formatShortcutKeys(settings.globalShortcut).join(' ')} — ${t('settings.shortcut')}`
+      }
+      const owner = getAllExtensions().find((e) => e.globalShortcuts?.some((s) => s.id === id))
+      const binding = owner?.globalShortcuts?.find((s) => s.id === id)
+      const keys = formatShortcutKeys(effectiveShortcut(id, binding?.default)).join(' ')
+      const name = owner ? resolveLocalized(owner.meta.name) : id
+      return `- ${keys || id} — ${name}`
+    })
+    const ok = await appStore.showConfirm({
+      title: t('shortcut.conflictTitle'),
+      message: `${t('shortcut.conflictBody')}\n\n${lines.join('\n')}`,
+      markdown: true,
+      size: 'md',
+      okLabel: t('shortcut.conflictOpenSettings'),
+      cancelLabel: t('shortcut.conflictLater'),
+    })
+    if (ok) appStore.setActiveExtension('settings')
+  }
+
   // 唤起节流：窗口获焦触发，冷却期内秒退。lastCheckAt 先记后查防并发重入。
   // 仅静默检查（发现更新后显示搜索栏入口按钮，下载由设置页弹窗驱动）；
   // 已知有更新则不再重复检查。check() 内部已 catch，外层仅兜底。失败也计入冷却。
@@ -91,12 +122,15 @@ export function useAppLifecycle(win: Win) {
     // settings store 走 defineConfig，启动时自动异步加载（无需显式 loadSettings）
 
     if (isTauri) {
+      // 等配置回填完成再注册快捷键：注册一次即为最终值（避免「默认值注册 → 回填再注册」抖动），
+      // 注册失败检测（guideShortcutConflicts）也因此读到确定结果
+      await whenConfigReady('config/settings')
+      const selfTest = await invoke<boolean>(CMD.isSelfTestMode).catch(() => false)
+
       updateTimer = setTimeout(() => {
         void maybeCheckUpdate()
       }, 3000)
-    }
 
-    if (isTauri) {
       await setupGlobalShortcut('main', settings.globalShortcut)
 
       allGlobalShortcuts = getAllExtensions()
@@ -106,6 +140,9 @@ export function useAppLifecycle(win: Win) {
       for (const sc of allGlobalShortcuts) {
         await setupGlobalShortcut(sc.id, effectiveShortcut(sc.id, sc.default))
       }
+
+      // 关键快捷键注册失败 → 改键引导（自测模式下窗口由测试脚本驱动，跳过）
+      if (!selfTest) void guideShortcutConflicts()
 
       watchStops.push(
         watch(
