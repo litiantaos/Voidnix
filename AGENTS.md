@@ -170,7 +170,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **过滤规则**：
 
-- 空 query：默认列表按 `finalScore>0`（boost>0，主要是应用）
+- 空 query：默认列表按 `finalScore>0`（boost>0，主要是应用）；尾部由 `useSearchInput` 固定追加一行「输入 / 浏览全部工具」提示行（框架合成，id=`SEARCH.TOOLS_HINT_ID`，回车经 `useResultNavigation` 分派打开 `/` 工具列表）
 - 非空 query：查找型结果需 `fuzzy>0`，extension 类即时答案靠 `finalScore>0` 穿透
 
 **扩展入口打分**：keyword / `/` 工具列表共用 `scoreExtensionEntry`（name/id/description 正向 + keywords 双向）。
@@ -238,6 +238,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - 默认 Option 基：`Option+Space` 呼出，`Option+C/S/T/A/F/N` = 剪贴板 / 截屏 / 翻译 / Agent / 访达工具 / 记事本
 - dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存
 - dev/prod 数据目录按 bundle id 隔离，配置默认值一致
+- **注册失败引导**：`useAppLifecycle` 等 `config/settings` 回填后一次性注册全部快捷键，失败项记入 `appStore.shortcutErrors`；启动即有失败时弹改键引导（markdown 列出失败键位，确认直达设置；设置页主快捷键行标红提示）。任何失败（含仅扩展快捷键冲突）都自动 show 窗口承载引导——扩展快捷键冲突同样静默失效，且隐藏窗口中的弹窗会被「切扩展按取消收束」路径吞掉；自测模式跳过（窗口由测试脚本驱动）
 
 ### 菜单栏
 

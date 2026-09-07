@@ -7,7 +7,23 @@ import {
   formatRate,
   toErrorMessage,
   providerLabelFromUrl,
+  formatShortcutKeys,
 } from './format'
+
+describe('formatShortcutKeys', () => {
+  it('修饰键映射为符号', () => {
+    expect(formatShortcutKeys('Alt+Space')).toEqual(['⌥', 'Space'])
+    expect(formatShortcutKeys('CommandOrControl+Shift+S')).toEqual(['⌘', '⇧', 'S'])
+    expect(formatShortcutKeys('Ctrl+C')).toEqual(['⌃', 'C'])
+    expect(formatShortcutKeys('Option+A')).toEqual(['⌥', 'A'])
+  })
+
+  it('普通键大写、空串返回空数组', () => {
+    expect(formatShortcutKeys('F1')).toEqual(['F1'])
+    expect(formatShortcutKeys('a')).toEqual(['A'])
+    expect(formatShortcutKeys('')).toEqual([])
+  })
+})
 
 describe('getParentPath', () => {
   it('正常路径返回父目录', () => {

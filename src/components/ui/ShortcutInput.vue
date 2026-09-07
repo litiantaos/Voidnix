@@ -48,6 +48,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useTauriListener } from '@/composables/useTauriListener'
 import { useAppStore } from '@/stores/app'
+import { formatShortcutKeys } from '@/utils/format'
 
 const appStore = useAppStore()
 
@@ -87,29 +88,7 @@ function blur() {
 
 defineExpose({ focus, blur, startRecording })
 
-const keys = computed(() => {
-  if (!props.modelValue) return []
-  return props.modelValue.split('+').map((k) => {
-    switch (k) {
-      case 'CommandOrControl':
-      case 'Command':
-      case 'Cmd':
-        return '⌘'
-      case 'Control':
-      case 'Ctrl':
-        return '⌃'
-      case 'Alt':
-      case 'Option':
-        return '⌥'
-      case 'Shift':
-        return '⇧'
-      case 'Space':
-        return 'Space'
-      default:
-        return k.toUpperCase()
-    }
-  })
-})
+const keys = computed(() => formatShortcutKeys(props.modelValue))
 
 async function startRecording() {
   isRecording.value = true

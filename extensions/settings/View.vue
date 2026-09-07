@@ -190,6 +190,9 @@ const allSettingsItems = computed<SettingItem[]>(() => {
   items.push({
     id: 'app-shortcut',
     title: t('settings.shortcut'),
+    // 注册失败（被其它应用占用）时标红提示，配合启动时的改键引导
+    subtitle: appStore.shortcutErrors.main ? t('settings.shortcutConflictHint') : undefined,
+    tone: appStore.shortcutErrors.main ? 'danger' : undefined,
     type: 'shortcut',
     icon: 'i-ri-keyboard-line',
     group: t('settings.group.app'),

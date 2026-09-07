@@ -25,6 +25,9 @@ export const SEARCH = {
   GROUP_ORDER: ['application', 'extension', 'file', 'clipboard', 'web'] as const,
   // keywordSearchAll 产出的扩展入口结果组内加权（原 ext-helpers.ts:45 魔数）
   KEYWORD_EXTENSION_BOOST: 500,
+  // 空查询默认列表尾部「输入 / 浏览全部工具」提示行 id（框架合成，非扩展产出；
+  // useSearchInput 注入、useResultNavigation 按此分派回车打开工具列表）
+  TOOLS_HINT_ID: 'voidnix:tools-hint',
 } as const
 
 /** 更新检查：唤起节流（窗口获焦时检查，距上次 ≥ 此间隔才真正执行；失败也计入冷却）。 */

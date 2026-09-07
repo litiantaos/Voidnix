@@ -88,6 +88,24 @@ export function toErrorMessage(e: unknown, fallback?: string): string {
   return fb
 }
 
+const SHORTCUT_KEY_SYMBOLS: Record<string, string> = {
+  CommandOrControl: '⌘',
+  Command: '⌘',
+  Cmd: '⌘',
+  Control: '⌃',
+  Ctrl: '⌃',
+  Alt: '⌥',
+  Option: '⌥',
+  Shift: '⇧',
+  Space: 'Space',
+}
+
+/** 快捷键串（`Alt+Space`）→ 显示键列表（`['⌥', 'Space']`）。ShortcutInput 与首启引导卡共用。 */
+export function formatShortcutKeys(shortcut: string): string[] {
+  if (!shortcut) return []
+  return shortcut.split('+').map((k) => SHORTCUT_KEY_SYMBOLS[k] ?? k.toUpperCase())
+}
+
 export function providerLabelFromUrl(url: string, fallback: string): string {
   if (!url) return fallback
   try {

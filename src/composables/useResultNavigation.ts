@@ -3,6 +3,7 @@ import { onKeyStroke } from '@/composables/events'
 import { open } from '@tauri-apps/plugin-shell'
 import { getExtension } from '@/runtime/extension-registry'
 import { useAppStore } from '@/stores/app'
+import { SEARCH } from '@/runtime/constants'
 import type { Extension, SearchResult } from '@/runtime/types'
 import { hideWindow } from '@/utils/tauri'
 import { buildSearchUrl, parseWebSearchQuery } from '@/utils/web-search'
@@ -16,6 +17,8 @@ interface ResultNavOptions {
   activateExtension: (extId: string) => void
   goHome: () => void
   exitExtension: () => void
+  /** 打开 `/` 工具列表（useSearchInput 提供；默认列表尾部提示行回车分派） */
+  openToolList?: () => void
 }
 
 /// 结果键盘导航：ArrowUp/Down 移动、Enter 执行分派、Escape 返回主界面/关闭窗口。
@@ -30,12 +33,18 @@ export function useResultNavigation(opts: ResultNavOptions) {
     activateExtension,
     goHome,
     exitExtension,
+    openToolList,
   } = opts
 
   // --- execute ---
 
   async function handleExecute(result: SearchResult, _index?: number, e?: KeyboardEvent) {
     if (e) e.preventDefault()
+    // 框架合成提示行（空查询默认列表尾部）：打开 / 工具列表
+    if (result.id === SEARCH.TOOLS_HINT_ID) {
+      openToolList?.()
+      return
+    }
     if (result.data?.kind === 'extension' && result.data.extId) {
       activateExtension(result.data.extId as string)
       return

@@ -109,6 +109,41 @@ describe('useResultNavigation', () => {
       expect(activateExtension).toHaveBeenCalledWith('calculator')
     })
 
+    it('工具提示行（TOOLS_HINT_ID）触发 openToolList，不走扩展激活', async () => {
+      const openToolList = vi.fn()
+      const hint: SearchResult = {
+        id: 'voidnix:tools-hint',
+        title: '输入 / 浏览全部工具',
+        extId: 'voidnix',
+        data: { kind: 'extension' },
+      }
+      const results = ref<SearchResult[]>([hint])
+      const selectedIndex = ref(0)
+
+      const TestComp = defineComponent({
+        setup() {
+          const nav = useResultNavigation({
+            results,
+            selectedIndex,
+            activeExtension: computed(() => null),
+            clearSearch: vi.fn(),
+            loadDefaultResults: vi.fn().mockResolvedValue(undefined),
+            activateExtension: vi.fn(),
+            goHome: vi.fn(),
+            exitExtension: vi.fn(),
+            openToolList,
+          })
+          return { nav }
+        },
+        render: () => h('div'),
+      })
+      const wrapper = mount(TestComp)
+      mountedWrappers.push(wrapper)
+
+      await wrapper.vm.nav.handleExecute(hint)
+      expect(openToolList).toHaveBeenCalledOnce()
+    })
+
     it('kind=file 调用扩展 onExecute', async () => {
       const onExecute = vi.fn()
       mockExtensions.set('clipboard', { onExecute })
