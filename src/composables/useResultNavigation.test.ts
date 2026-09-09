@@ -187,6 +187,56 @@ describe('useResultNavigation', () => {
     })
   })
 
+  describe('整窗视图接管：正常层键盘整体让位', () => {
+    function makeFullscreenWrapper() {
+      const results = ref<SearchResult[]>([
+        { id: 'app', title: 'App', extId: 'search', data: { kind: 'application' } },
+      ])
+      const selectedIndex = ref(0)
+
+      const TestComp = defineComponent({
+        setup() {
+          const nav = useResultNavigation({
+            results,
+            selectedIndex,
+            activeExtension: computed(() => null),
+            clearSearch: vi.fn(),
+            loadDefaultResults: vi.fn().mockResolvedValue(undefined),
+            activateExtension: vi.fn(),
+            goHome: vi.fn(),
+            exitExtension: vi.fn(),
+          })
+          return { nav }
+        },
+        render: () => h('div'),
+      })
+      const wrapper = mount(TestComp)
+      mountedWrappers.push(wrapper)
+      const store = useAppStore()
+      return { store }
+    }
+
+    it('fullscreenView 激活时 Enter/Esc 不触发导航与藏窗', () => {
+      const { store } = makeFullscreenWrapper()
+      store.setFullscreenView(defineComponent({ render: () => h('div') }))
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+
+      expect(hideWindow).not.toHaveBeenCalled()
+    })
+
+    it('fullscreenView 清空后键盘恢复响应（Esc 藏窗）', () => {
+      const { store } = makeFullscreenWrapper()
+      store.setFullscreenView(defineComponent({ render: () => h('div') }))
+      store.setFullscreenView(null)
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      expect(hideWindow).toHaveBeenCalledOnce()
+    })
+  })
+
   describe('Escape：统一退出当前层', () => {
     // esc 统一退出当前层：事件到达即退出（输入框聚焦也直接退出，不先失焦）。
     function makeEscapeDispatcher() {

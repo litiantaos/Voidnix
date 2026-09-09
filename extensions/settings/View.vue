@@ -60,6 +60,15 @@ const handleGlobalShortcutChange = async (val: string | number) => {
   await settings.setGlobalShortcut(val as string)
 }
 
+/// 重看首启引导：置回 onboarded=false + 清 query + 回主界面（fullscreen 槽策略 watch
+/// 据此激活）；写完结恢复目标（fullscreenReturnExtId）使引导 Esc/Enter 后回设置页
+const handleShowWelcome = () => {
+  appStore.fullscreenReturnExtId = 'settings'
+  settings.onboarded = false
+  appStore.setSearchQuery('')
+  appStore.setActiveExtension(null)
+}
+
 const handleQuitApp = async () => {
   const confirmed = await appStore.showConfirm({
     title: t('settings.quitConfirmTitle'),
@@ -208,6 +217,15 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     group: t('settings.group.app'),
     value: systemStore.autostartEnabled,
     update: handleAutostartToggle,
+  })
+
+  items.push({
+    id: 'show-welcome',
+    title: t('settings.showWelcome'),
+    type: 'action',
+    icon: 'i-ri-guide-line',
+    group: t('settings.group.app'),
+    action: handleShowWelcome,
   })
 
   const checkLabel = updateStore.checking

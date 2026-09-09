@@ -17,121 +17,142 @@
       absolute
       class="z-20 -translate-x-1/2"
     />
-    <!-- chrome 渐隐：浅蓝 canvas，栏中线以上不透明（theme.css .chrome-fade） -->
-    <div class="chrome-fade" :style="chromeFadeStyle" aria-hidden="true" />
-    <!-- 拖动手柄：覆盖 chrome 带的空白间隙（窗口左/右/上方边距）。
-         z-5 在 scrollContainer 之上、搜索栏（z-10）之下：搜索栏盖住自身区域，
-         空出的间隙即拖动区。手动 startDragging 替代 data-tauri-drag-region——
-         后者在 macOS 双击触发 internal_toggle_maximize，对 resizable:false 无标题栏
-         窗口会直接 setFrame 填满全屏（tao 无 Resizable+Titled styleMask 走 else 分支），
-         启动器不该最大化 -->
-    <div
-      inset-x-0
-      top-0
-      absolute
-      class="z-5"
-      :style="{ height: WINDOW.CHROME_HEIGHT + 'px' }"
-      @mousedown="onDragHandleMouseDown"
-    />
-    <!--
-      搜索栏拆层：毛玻璃底（backdrop-filter）与内容分离，
-      避免 WKWebView 裁剪栏内按钮 box-shadow
-    -->
-    <div ref="searchBarRef" class="search-bar h-13 inset-x-3 top-3 absolute z-10">
-      <div class="search-bar-surface acrylic-bar" aria-hidden="true" />
-      <div class="search-bar-content px-3 flex gap-3 h-full min-w-0 items-center relative z-1">
-        <!-- 扩展标签 -->
-        <div
-          v-if="activeExtension"
-          text="xs secondary"
-          p="x-3"
-          flex="~ none"
-          gap="1.5"
-          h="7"
-          select="none"
-          items="center"
-          class="ext-tag radius-ctrl"
-          :class="{ 'is-hovered': isTagHovered }"
-          @mouseenter="isTagHovered = true"
-          @mouseleave="isTagHovered = false"
-        >
-          <span shrink="0" h="4" w="4" relative>
-            <!-- 缩放交叉全在 theme.css（.ext-tag.is-hovered），避免 ui-ctrl/Uno 抢 transition -->
-            <span
-              text="xs muted"
-              h="3.5"
-              w="3.5"
-              inset="0"
-              m="auto"
-              absolute
-              class="ext-tag-icon flex-center"
-              :class="activeExtension.meta.icon"
-              aria-hidden="true"
-            />
-            <BaseButton
-              class="ext-tag-close flex-center inset-0 absolute !p-0 !rounded-full !h-4 !w-4"
-              :tabindex="isTagHovered ? undefined : -1"
-              icon="i-ri-close-line text-xs text-secondary"
-              @click="onTagClose"
-            />
-          </span>
-          <span>{{ resolveLocalized(activeExtension.meta.name) }}</span>
+    <!-- 正常层：搜索栏 chrome + 内容区。整窗视图（fullscreenView）激活时整体让位——
+         v-show 保留 DOM 状态（扩展 KeepAlive 缓存 / results；滚动位走 scrollKey watch
+         既有语义：主界面路径不变即保留，扩展往返按其规则归顶），absolute inset-0
+         复刻 mica-shell 布局（搜索栏 absolute 定位 + ContentView flex-1），不扰动 flex 流 -->
+    <div v-show="!fullscreenActive" class="flex flex-col inset-0 absolute">
+      <!-- chrome 渐隐：浅蓝 canvas，栏中线以上不透明（theme.css .chrome-fade） -->
+      <div class="chrome-fade" :style="chromeFadeStyle" aria-hidden="true" />
+      <!-- 拖动手柄：覆盖 chrome 带的空白间隙（窗口左/右/上方边距）。
+           z-5 在 scrollContainer 之上、搜索栏（z-10）之下：搜索栏盖住自身区域，
+           空出的间隙即拖动区。手动 startDragging 替代 data-tauri-drag-region——
+           后者在 macOS 双击触发 internal_toggle_maximize，对 resizable:false 无标题栏
+           窗口会直接 setFrame 填满全屏（tao 无 Resizable+Titled styleMask 走 else 分支），
+           启动器不该最大化 -->
+      <div
+        inset-x-0
+        top-0
+        absolute
+        class="z-5"
+        :style="{ height: WINDOW.CHROME_HEIGHT + 'px' }"
+        @mousedown="onDragHandleMouseDown"
+      />
+      <!--
+        搜索栏拆层：毛玻璃底（backdrop-filter）与内容分离，
+        避免 WKWebView 裁剪栏内按钮 box-shadow
+      -->
+      <div ref="searchBarRef" class="search-bar h-13 inset-x-3 top-3 absolute z-10">
+        <div class="search-bar-surface acrylic-bar" aria-hidden="true" />
+        <div class="search-bar-content px-3 flex gap-3 h-full min-w-0 items-center relative z-1">
+          <!-- 扩展标签 -->
+          <div
+            v-if="activeExtension"
+            text="xs secondary"
+            p="x-3"
+            flex="~ none"
+            gap="1.5"
+            h="7"
+            select="none"
+            items="center"
+            class="ext-tag radius-ctrl"
+            :class="{ 'is-hovered': isTagHovered }"
+            @mouseenter="isTagHovered = true"
+            @mouseleave="isTagHovered = false"
+          >
+            <span shrink="0" h="4" w="4" relative>
+              <!-- 缩放交叉全在 theme.css（.ext-tag.is-hovered），避免 ui-ctrl/Uno 抢 transition -->
+              <span
+                text="xs muted"
+                h="3.5"
+                w="3.5"
+                inset="0"
+                m="auto"
+                absolute
+                class="ext-tag-icon flex-center"
+                :class="activeExtension.meta.icon"
+                aria-hidden="true"
+              />
+              <BaseButton
+                class="ext-tag-close flex-center inset-0 absolute !p-0 !rounded-full !h-4 !w-4"
+                :tabindex="isTagHovered ? undefined : -1"
+                icon="i-ri-close-line text-xs text-secondary"
+                @click="onTagClose"
+              />
+            </span>
+            <span>{{ resolveLocalized(activeExtension.meta.name) }}</span>
+          </div>
+
+          <input
+            ref="searchInput"
+            id="main-search-input"
+            data-list-execute
+            :value="appStore.searchQuery"
+            :readonly="activeExtension?.disableSearchInput"
+            text="base primary"
+            outline="none"
+            bg="transparent"
+            flex="1"
+            min-w="0"
+            :class="'placeholder:text-muted'"
+            :placeholder="placeholderText"
+            @input="onInput"
+            @compositionstart="appStore.setComposing(true)"
+            @compositionend="appStore.setComposing(false)"
+          />
+
+          <!-- 扩展附加区：勿 overflow-hidden，否则裁按钮阴影；data 供 Tab 圈定右侧控件 -->
+          <div
+            v-if="activeExtension?.searchBarAccessory"
+            ref="accessoryRef"
+            data-search-bar-accessory
+            flex
+            gap="2"
+            min-w="0"
+            items="center"
+            shrink="0"
+          >
+            <component :is="activeExtension.searchBarAccessory()" />
+          </div>
+
+          <BaseButton
+            v-if="updateStore.info"
+            icon="i-ri-arrow-up-circle-line text-accent"
+            :title="t('search.newVersionHint')"
+            @click="appStore.setActiveExtension('settings')"
+          />
         </div>
-
-        <input
-          ref="searchInput"
-          id="main-search-input"
-          data-list-execute
-          :value="appStore.searchQuery"
-          :readonly="activeExtension?.disableSearchInput"
-          text="base primary"
-          outline="none"
-          bg="transparent"
-          flex="1"
-          min-w="0"
-          :class="'placeholder:text-muted'"
-          :placeholder="placeholderText"
-          @input="onInput"
-          @compositionstart="appStore.setComposing(true)"
-          @compositionend="appStore.setComposing(false)"
-        />
-
-        <!-- 扩展附加区：勿 overflow-hidden，否则裁按钮阴影；data 供 Tab 圈定右侧控件 -->
-        <div
-          v-if="activeExtension?.searchBarAccessory"
-          ref="accessoryRef"
-          data-search-bar-accessory
-          flex
-          gap="2"
-          min-w="0"
-          items="center"
-          shrink="0"
-        >
-          <component :is="activeExtension.searchBarAccessory()" />
-        </div>
-
-        <BaseButton
-          v-if="updateStore.info"
-          icon="i-ri-arrow-up-circle-line text-accent"
-          :title="t('search.newVersionHint')"
-          @click="appStore.setActiveExtension('settings')"
-        />
       </div>
+
+      <!-- 内容区 -->
+      <ContentView
+        ref="contentViewRef"
+        :extension="activeExtension"
+        :results="results"
+        :loading="isLoading"
+        :selected-index="selectedIndex"
+        :on-execute="activeExtension ? undefined : handleExecute"
+        :group-field="getGroupKey"
+        :group-title="groupTitle"
+        @update:selected-index="(i: number) => (selectedIndex = i)"
+        @contextmenu="() => actionPanelRef?.toggleOpen()"
+      />
     </div>
 
-    <!-- 内容区 -->
-    <ContentView
-      ref="contentViewRef"
-      :extension="activeExtension"
-      :results="results"
-      :loading="isLoading"
-      :selected-index="selectedIndex"
-      :on-execute="activeExtension ? undefined : handleExecute"
-      :group-field="getGroupKey"
-      :group-title="groupTitle"
-      @update:selected-index="(i: number) => (selectedIndex = i)"
-      @contextmenu="() => actionPanelRef?.toggleOpen()"
-    />
+    <!-- 整窗视图层（框架级）：fullscreenView 激活时接管整个窗口。
+         框架统一提供顶部拖动带（视图自身无需处理窗口拖动）；
+         视图以 done 事件请求完结，激活/退出由供给方策略驱动（首启引导见 setup） -->
+    <div v-if="fullscreenActive" class="flex flex-col inset-0 absolute z-20">
+      <div
+        inset-x-0
+        top-0
+        absolute
+        class="z-5"
+        :style="{ height: WINDOW.CHROME_HEIGHT + 'px' }"
+        @mousedown="onDragHandleMouseDown"
+      />
+      <component :is="appStore.fullscreenView" @done="onFullscreenDone" />
+    </div>
   </div>
 
   <UpdateDialog v-if="updateStore.dialogVisible" @close="updateStore.closeDialog()" />
@@ -145,6 +166,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useScroll } from '@/composables/events'
 import { getExtension } from '@/runtime/extension-registry'
 import { WINDOW } from '@/runtime/constants'
+import { whenConfigReady } from '@/runtime/storage'
 import { getGroupKey } from '@/runtime/search-engine'
 import { t, resolveLocalized } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
@@ -153,6 +175,7 @@ import { isTauri } from '@/utils/tauri'
 import type { SearchResult } from '@/runtime/types'
 import ContentView from '@/components/layout/ContentView.vue'
 import ResultActionPanel from '@/components/layout/ResultActionPanel.vue'
+import WelcomeView from '@/components/layout/WelcomeView.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import UpdateDialog from '@/components/ui/UpdateDialog.vue'
 
@@ -161,9 +184,11 @@ import { useSearchInput } from '@/composables/useSearchInput'
 import { useResultNavigation } from '@/composables/useResultNavigation'
 import { useExtensionHeight } from '@/composables/useExtensionHeight'
 import { getFocusableElements, cycleFocus, isFormControl } from '@/utils/dom'
+import { useSettingsStore } from '@/stores/settings'
 
 const isDev = import.meta.env.DEV
 const appStore = useAppStore()
+const settings = useSettingsStore()
 const updateStore = useUpdateStore()
 
 /** 窗壳雾：仅显示时播一轮，避免 blur 常驻动画占 GPU */
@@ -213,6 +238,41 @@ const activeExtension = computed(() => {
   const id = appStore.activeExtId
   return (id ? getExtension(id) : null) ?? null
 })
+
+/// 整窗视图（框架级 fullscreen 槽）是否接管中
+const fullscreenActive = computed(() => appStore.fullscreenView !== null)
+
+/// 配置回填就绪标志：backfill 落定前 onboarded 仍是默认 false，策略据此静默
+///（防老用户每次启动瞬时挂载引导再撤除）；selfTestMode 时序细节见 AGENTS.md
+const settingsReady = ref(false)
+void whenConfigReady('config/settings').then(() => {
+  settingsReady.value = true
+})
+
+/// 首启引导策略：fullscreen 槽的供给方——未完结 onboarding 且处于主界面时激活 WelcomeView
+/// （纯浏览器预览不展示）；扩展激活时自动让位，退出回主界面再现。
+/// 自测模式跳过：整窗接管会藏起搜索输入，CGEvent 打字进不去（窗口由测试脚本驱动）。
+/// 机制（渲染层 / 键盘让位 / 拖动带）归框架，激活条件归策略，此 watch 是两者唯一粘合点。
+watch(
+  [
+    settingsReady,
+    () => settings.onboarded,
+    () => appStore.activeExtId,
+    () => appStore.selfTestMode,
+  ],
+  () => {
+    const show =
+      settingsReady.value &&
+      isTauri &&
+      !appStore.selfTestMode &&
+      !settings.onboarded &&
+      !appStore.activeExtId
+    appStore.setFullscreenView(show ? WelcomeView : null)
+    // 槽被让位等路径清空时，完结恢复目标一并失效（done 路径已先消费，此处幂等）
+    if (!show) appStore.fullscreenReturnExtId = null
+  },
+  { immediate: true },
+)
 
 // placeholder：搜索说明
 // disableSearchInput 扩展仅当显式声明 placeholder 才显示（如 uuid），否则空
@@ -264,6 +324,24 @@ const { handleExecute } = useResultNavigation({
   exitExtension,
   openToolList,
 })
+
+/// 整窗视图完结（视图 emit done）：恢复目标（fullscreenReturnExtId，如设置页重看引导）
+/// 存在则回该扩展，否则回主界面——重载默认列表（覆盖「程序化退出设置扩展后 results
+/// 残留设置项」场景）+ 搜索栏重现回焦输入框。完结落盘（如 onboarded）归供给方自持，
+/// 槽清空由其策略 watch 驱动（状态单向流动）。
+function onFullscreenDone() {
+  // 槽被扩展让位后的离场淡出窗内残留按键触发的 done 已过期：回主界面收尾会覆盖
+  // results 并抢走扩展输入焦点，忽略
+  if (appStore.activeExtId) return
+  const returnExtId = appStore.fullscreenReturnExtId
+  appStore.fullscreenReturnExtId = null
+  if (returnExtId) {
+    appStore.setActiveExtension(returnExtId)
+    return
+  }
+  loadDefaultResults(true)
+  nextTick(() => searchInput.value?.focus())
+}
 
 useExtensionHeight({
   activeExtension,
@@ -335,6 +413,8 @@ watch(
 // 对话框：完全自管。
 function onTabKeydown(e: KeyboardEvent) {
   if (e.key !== 'Tab') return
+  // 整窗视图接管：正常层 Tab 环让位
+  if (appStore.fullscreenView) return
   const ext = activeExtension.value
   if (!ext?.searchBarAccessory) return
   if (appStore.isDialogOpen) return

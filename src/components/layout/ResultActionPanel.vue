@@ -92,6 +92,8 @@ const { open, menuIndex, close, toggleOpen, onMenuClick } = useActionPanel({
   getItems: () => actionItems.value,
   onSelect: runAction,
   canOpen: () => {
+    // 整窗视图接管不让位面板，与其余键盘通道守卫对齐
+    if (appStore.fullscreenView) return false
     if (appStore.activeExtId || appStore.isDialogOpen) return false
     const r = props.results[props.selectedIndex]
     const kind = r?.data?.kind

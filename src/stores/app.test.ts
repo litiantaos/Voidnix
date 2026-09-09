@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import type { Component } from 'vue'
 import { useAppStore } from './app'
 import { toasts, clearToasts } from '@/composables/useToast'
 
@@ -185,6 +186,17 @@ describe('app store', () => {
       expect(store.shortcutRecording).toBe(true)
       store.setShortcutRecording(false)
       expect(store.shortcutRecording).toBe(false)
+    })
+
+    it('fullscreenView 槽：setFullscreenView 置换 / 清空', () => {
+      const store = useAppStore()
+      expect(store.fullscreenView).toBeNull()
+      const view = { render: () => null } as unknown as Component
+      store.setFullscreenView(view)
+      // store 为 reactive：读回是代理对象，断言槽语义（非空接管 / null 让位）
+      expect(store.fullscreenView).toBeTruthy()
+      store.setFullscreenView(null)
+      expect(store.fullscreenView).toBeNull()
     })
 
     it('setShortcutError / clearShortcutError 管理错误', () => {

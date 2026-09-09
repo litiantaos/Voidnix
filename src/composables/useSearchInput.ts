@@ -331,9 +331,11 @@ export function useSearchInput(opts: SearchInputOptions) {
   }
 
   /** 窗口唤起（主快捷键从隐藏呼出）时检查剪贴板：最新记录为文本且 3 秒内 → 填充搜索框。
-   *  搜索框禁用（disableSearchInput 扩展 readonly）时跳过，防止 query 被污染。 */
+   *  搜索框不可输入（整窗视图接管——搜索栏仅 v-show 隐藏元素仍在 / disableSearchInput
+   *  扩展 readonly）时跳过，防止 query 被污染到视图退出后。 */
   async function maybeFillFromClipboard() {
     if (!isTauri) return
+    if (appStore.fullscreenView) return
     if (activeExtension.value?.disableSearchInput) return
     if (!searchInput.value || searchInput.value.readOnly) return
     try {

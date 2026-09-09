@@ -12,6 +12,8 @@ interface SettingsSchema {
   appearance: Appearance
   /** 语言：zh-CN / en（默认 zh-CN） */
   language: Language
+  /** 首启引导已完结（WelcomeView 完结后置 true） */
+  onboarded: boolean
 }
 
 /// 框架级配置 store：仅管理全局快捷键。
@@ -23,6 +25,7 @@ export const useSettingsStore = defineStore('settings', () => {
     shortcutOverrides: {},
     appearance: 'auto',
     language: 'zh-CN',
+    onboarded: false,
   })
 
   // ─── 字段（可写 computed：保持 store API 兼容） ───────────────
@@ -51,6 +54,12 @@ export const useSettingsStore = defineStore('settings', () => {
       config.language = v
     },
   })
+  const onboarded = computed({
+    get: () => config.onboarded,
+    set: (v: boolean) => {
+      config.onboarded = v
+    },
+  })
 
   // ─── Setters（直接 mutate reactive config；defineConfig 自动持久化） ────
 
@@ -71,6 +80,7 @@ export const useSettingsStore = defineStore('settings', () => {
     shortcutOverrides,
     appearance,
     language,
+    onboarded,
     setGlobalShortcut,
     getShortcutOverride,
     setShortcutOverride,

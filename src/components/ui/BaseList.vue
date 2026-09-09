@@ -34,6 +34,7 @@
 import { ref, watch, nextTick, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
 import { onKeyStroke } from '@/composables/events'
 import { t } from '@/runtime/i18n'
+import { useAppStore } from '@/stores/app'
 import { isComposing as isComposingCheck, isFormControl, wrapIndex } from '@/utils/dom'
 
 // KeepAlive 软禁用：deactivate 后监听仍在，用 isActive 抑制响应
@@ -44,6 +45,11 @@ onActivated(() => {
 onDeactivated(() => {
   isActive.value = false
 })
+
+// 整窗视图让位在列表层强制执行（不依赖调用方 keyboardActive 巧合为 false）：
+// 同 isModalDialogOpen 一样属全局模态让位，集中防御优于散布到全部调用点。
+// 契约：挂载需 active Pinia（读 appStore；子窗口入口不经 BaseList）
+const appStore = useAppStore()
 
 const props = withDefaults(
   defineProps<{
@@ -200,9 +206,10 @@ function isModalDialogOpen(): boolean {
   return !!document.querySelector('[role="dialog"][aria-modal="true"]')
 }
 
-/// 公共守卫：未激活 / IME 合成中 / 模态弹窗打开 不响应
+/// 公共守卫：未激活 / 整窗视图接管 / IME 合成中 / 模态弹窗打开 不响应
 function canNavigate(e: KeyboardEvent): boolean {
   if (!isActive.value || !props.keyboardActive) return false
+  if (appStore.fullscreenView) return false
   if (props.composing || isComposingCheck(e)) return false
   if (isModalDialogOpen()) return false
   return true
