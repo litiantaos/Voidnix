@@ -27,6 +27,18 @@ export const zhCNMessages: Msgs = {
   'search.newVersionHint': { 'zh-CN': '发现新版本，点击查看' },
   'search.browseToolsHint': { 'zh-CN': '输入 / 浏览全部工具' },
 
+  // ─── welcome（首启引导）─────────────────────
+  'welcome.isoModifier': { 'zh-CN': '修饰键' },
+  'welcome.isoAction': { 'zh-CN': '唤起窗口' },
+  'welcome.fnAgent': { 'zh-CN': 'Agent' },
+  'welcome.fnScreenshot': { 'zh-CN': '截屏' },
+  'welcome.fnFinder': { 'zh-CN': '访达' },
+  'welcome.fnClipboard': { 'zh-CN': '剪贴板' },
+  'welcome.fnNotes': { 'zh-CN': '记事本' },
+  'welcome.tagline': { 'zh-CN': '想到就到，触手可及' },
+  'welcome.noteTools': { 'zh-CN': '输入/显示扩展' },
+  'welcome.noteSearch': { 'zh-CN': '输入//快速搜索' },
+
   // ─── shortcut conflict（注册失败改键引导）─────
   'shortcut.conflictTitle': { 'zh-CN': '快捷键注册失败' },
   'shortcut.conflictBody': {
@@ -52,6 +64,7 @@ export const zhCNMessages: Msgs = {
   'settings.language.en': { 'zh-CN': 'English' },
   'settings.shortcut': { 'zh-CN': '启动快捷键' },
   'settings.shortcutConflictHint': { 'zh-CN': '注册失败，可能已被其它应用占用' },
+  'settings.showWelcome': { 'zh-CN': '显示新手引导' },
   'settings.autostart': { 'zh-CN': '开机自启' },
   'settings.checkUpdate': { 'zh-CN': '检查更新' },
   'settings.downloadAndInstall': { 'zh-CN': '下载并安装' },

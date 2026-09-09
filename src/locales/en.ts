@@ -27,6 +27,18 @@ export const enMessages: Msgs = {
   'search.newVersionHint': { en: 'New version available, click to view' },
   'search.browseToolsHint': { en: 'Type / to browse all tools' },
 
+  // ─── welcome（首启引导）─────────────────────
+  'welcome.isoModifier': { en: 'Modifier' },
+  'welcome.isoAction': { en: 'Summon' },
+  'welcome.fnAgent': { en: 'Agent' },
+  'welcome.fnScreenshot': { en: 'Screenshot' },
+  'welcome.fnFinder': { en: 'Finder' },
+  'welcome.fnClipboard': { en: 'Clipboard' },
+  'welcome.fnNotes': { en: 'Notes' },
+  'welcome.tagline': { en: 'Think it, launch it' },
+  'welcome.noteTools': { en: 'Type / to show extensions' },
+  'welcome.noteSearch': { en: 'Type // for quick search' },
+
   // ─── shortcut conflict（注册失败改键引导）─────
   'shortcut.conflictTitle': { en: 'Shortcut registration failed' },
   'shortcut.conflictBody': {
@@ -52,6 +64,7 @@ export const enMessages: Msgs = {
   'settings.language.en': { en: 'English' },
   'settings.shortcut': { en: 'Shortcut' },
   'settings.shortcutConflictHint': { en: 'Registration failed — may be taken by another app' },
+  'settings.showWelcome': { en: 'Show Welcome Guide' },
   'settings.autostart': { en: 'Launch at Login' },
   'settings.checkUpdate': { en: 'Check for Updates' },
   'settings.downloadAndInstall': { en: 'Download & Install' },

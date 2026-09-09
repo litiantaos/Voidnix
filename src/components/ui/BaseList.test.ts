@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import BaseList from './BaseList.vue'
 
 interface Item {
@@ -13,6 +14,11 @@ function items(count: number): Item[] {
 }
 
 describe('BaseList', () => {
+  beforeEach(() => {
+    // BaseList 读 app store（整窗视图让位守卫）：挂载需 active pinia
+    setActivePinia(createPinia())
+  })
+
   it('结果缩短时释放已卸载的 DOM 引用并裁掉尾部空槽', async () => {
     const wrapper = mount(BaseList<Item>, {
       props: { items: items(100) },

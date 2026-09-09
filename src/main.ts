@@ -6,6 +6,7 @@ import { initTheme } from '@/runtime/theme'
 import { initI18n } from '@/runtime/i18n'
 import { prewarmPinyin } from '@/utils/fuzzy'
 import { useSystemStore } from '@/stores/system'
+import { useAppStore } from '@/stores/app'
 import { CMD } from '@/commands'
 import { isTauri } from '@/utils/tauri'
 import App from './App.vue'
@@ -60,6 +61,8 @@ if (isTauri) {
   invoke<boolean>(CMD.isSelfTestMode)
     .catch(() => false)
     .then(async (selfTest) => {
+      // 置位一次性标志：接管式 UI（首启引导等）据此让位，窗口由测试脚本驱动
+      useAppStore().selfTestMode = selfTest
       if (!selfTest) return
       await Promise.race([setupDone, new Promise<void>((r) => setTimeout(r, 10000))])
       const { runSelfTest } = await import('./runtime/self-test')

@@ -60,6 +60,8 @@ export function useResultNavigation(opts: ResultNavOptions) {
 
   function onKeydown(e: KeyboardEvent) {
     if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
+    // 整窗视图（框架级 fullscreen）接管中：正常层键盘导航整体让位，视图自管按键
+    if (appStore.fullscreenView) return
 
     switch (e.key) {
       case 'ArrowDown':

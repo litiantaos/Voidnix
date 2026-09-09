@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { markRaw, ref, type Component } from 'vue'
 import { searchEngine } from '@/runtime/search-engine'
 import { t } from '@/runtime/i18n'
 import { hideWindow, showWindow } from '@/utils/tauri'
@@ -59,6 +59,18 @@ export const useAppStore = defineStore('app', () => {
   // 内部打开（从扩展 mainView 进入 config 等）ESC 返回 mainView。
   const subviewExternal = ref(false)
   const shortcutRecording = ref(false)
+
+  /// 整窗视图（框架级）：非 null 时接管整个主窗口（搜索栏 + 内容区让位，MainView 统一渲染）。
+  /// 视图组件以 done 事件请求完结；激活/退出策略由供给方（如首启引导）经 watch 驱动。
+  const fullscreenView = ref<Component | null>(null)
+
+  /// 整窗视图完结时恢复的扩展 id：供给方写入（如设置页重看引导），框架 done 处理消费并清空；
+  /// 槽被其它路径清空（扩展激活让位）时同样清空防过期
+  const fullscreenReturnExtId = ref<string | null>(null)
+
+  /// 自测模式一次性标志（main.ts 查询 is_self_test_mode 后置位）：接管式 UI（首启引导等）
+  /// 据此让位——整窗接管会藏起搜索输入，CGEvent 打字进不去；窗口由测试脚本驱动。
+  const selfTestMode = ref(false)
 
   const shortcutErrors = ref<Record<string, string>>({})
 
@@ -134,6 +146,11 @@ export const useAppStore = defineStore('app', () => {
     shortcutRecording.value = value
   }
 
+  function setFullscreenView(view: Component | null) {
+    // markRaw：组件入 reactive store 防代理（Vue 对 reactive 组件有性能警告）
+    fullscreenView.value = view ? markRaw(view) : null
+  }
+
   function setShortcutError(id: string, error: string) {
     shortcutErrors.value = { ...shortcutErrors.value, [id]: error }
   }
@@ -165,6 +182,10 @@ export const useAppStore = defineStore('app', () => {
     closeSubview,
     shortcutRecording,
     setShortcutRecording,
+    fullscreenView,
+    setFullscreenView,
+    fullscreenReturnExtId,
+    selfTestMode,
     shortcutErrors,
     setShortcutError,
     clearShortcutError,

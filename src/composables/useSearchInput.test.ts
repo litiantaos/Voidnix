@@ -36,6 +36,7 @@ vi.mock('@/runtime/extension-registry', () => ({
 import { useSearchInput } from './useSearchInput'
 import { useAppStore } from '@/stores/app'
 import { SEARCH } from '@/runtime/constants'
+import { invoke } from '@tauri-apps/api/core'
 import type { SearchResult } from '@/runtime/types'
 
 const appResult: SearchResult = {
@@ -119,5 +120,24 @@ describe('useSearchInput 默认列表提示行', () => {
     expect(searchInput.value?.value).toBe('/')
     // 工具列表 = 可见扩展入口（不含提示行）
     expect(results.value.map((r) => r.id)).toEqual(['ext-entry-ext-a', 'ext-entry-ext-b'])
+  })
+
+  it('整窗视图接管时 window-invoked 不触发剪贴板填充（防 query 污染）', async () => {
+    const appStore = useAppStore()
+    makeWrapper()
+    await flushPromises()
+    vi.mocked(invoke).mockClear()
+
+    // fullscreen 激活：搜索栏仅 v-show 隐藏，元素仍在——须由 fullscreenView 守卫拦截
+    appStore.setFullscreenView(defineComponent({ render: () => null }))
+    window.dispatchEvent(new CustomEvent('window-invoked'))
+    await flushPromises()
+    expect(vi.mocked(invoke)).not.toHaveBeenCalled()
+
+    // 退出接管后恢复填充链路（invoke 被调用）
+    appStore.setFullscreenView(null)
+    window.dispatchEvent(new CustomEvent('window-invoked'))
+    await flushPromises()
+    expect(vi.mocked(invoke)).toHaveBeenCalled()
   })
 })

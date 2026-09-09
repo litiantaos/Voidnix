@@ -240,6 +240,25 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - dev/prod 数据目录按 bundle id 隔离，配置默认值一致
 - **注册失败引导**：`useAppLifecycle` 等 `config/settings` 回填后一次性注册全部快捷键，失败项记入 `appStore.shortcutErrors`；启动即有失败时弹改键引导（markdown 列出失败键位，确认直达设置；设置页主快捷键行标红提示）。任何失败（含仅扩展快捷键冲突）都自动 show 窗口承载引导——扩展快捷键冲突同样静默失效，且隐藏窗口中的弹窗会被「切扩展按取消收束」路径吞掉；自测模式跳过（窗口由测试脚本驱动）
 
+### 整窗视图（fullscreen 槽）
+
+框架级「整窗接管」机制：`appStore.fullscreenView`（Component | null，`setFullscreenView` 写入，markRaw 防代理）。非 null 时 MainView 的 fullscreen-layer（absolute inset-0 z-20，v-if 直接挂卸、无进出场过渡）接管整个窗口；正常层（搜索栏 chrome + ContentView）整体 `v-show` 让位（`absolute inset-0 flex flex-col` 包裹复刻 mica-shell 布局，保留扩展 KeepAlive 缓存 / results，退出零重建；滚动位走 scrollKey watch 既有语义——主界面路径不变即保留，扩展往返按其规则归顶）。
+
+**框架承担**：渲染层 + 顶部拖动带（视图无需处理窗口拖动）+ 键盘让位（`useResultNavigation` / MainView Tab 环 / BaseList `canNavigate` 遇 `fullscreenView` 整体 return，视图自治按键；槽清空即组件卸载，无残留监听）；视图以 `done` 事件请求完结。完结恢复目标 `appStore.fullscreenReturnExtId`（槽级框架状态）：供给方写入（如设置页重看引导），done 时框架消费并回该扩展（无则回主界面），槽被让位等路径清空时目标一并失效。
+
+**供给方策略**：激活/退出条件由供给方经 watch 驱动（状态单向流动——条件变 → 槽值变）。首个消费者是首启引导（见下节）；后续更新引导 / 教程等整窗场景复用同槽。
+
+### 首启引导
+
+新用户第一分钟闭环（`settings.onboarded` 标记，确认前每次启动生效），整窗视图槽的首个供给方：
+
+- **自动唤出**：未完成 onboarding 时启动自动 show 主窗口（新用户不知晓呼出快捷键）；自测门控读 `appStore.selfTestMode`——`is_self_test_mode` 是一次性命令，首次 invoke 已被 main.ts 消费，不可二次 invoke（配置回填等多轮 IPC 后必已置位）
+- **激活策略**（MainView 策略 watch，机制与策略唯一粘合点）：`settingsReady && isTauri && !selfTestMode && !onboarded && !activeExtId` → 激活 `WelcomeView`——扩展激活自动让位，退出回主界面再现；纯浏览器预览不展示。`settingsReady` 是 `whenConfigReady('config/settings')` 落定标志：backfill 前 onboarded 仍是默认 false，策略据此静默（防老用户每次启动瞬时挂载引导再撤除）；selfTestMode 置位是独立异步链、不保证先于回填落定，自测 + 全新数据目录下可能瞬时激活后自愈（窗口隐藏由脚本驱动，零后果）。`selfTestMode` 是 app store 一次性标志（main.ts 查询 `is_self_test_mode` 后置位），自测模式下整窗接管会让搜索输入不可聚焦、CGEvent 打字进不去，故一并跳过
+- **视图**（`components/layout/WelcomeView.vue`）：极简单幕，**键盘键位图**（图纸纯信息展示零交互，按 QWERTY 相对位置排布，无装饰性内容）——图纸主体居上（点阵坐标网底 + SVG 键帽板阵：键盘网格坐标系 `pos(col,row)`（U 沿排 / V 纵向步进含缝）；三排——A/S/F home 排（S→F 隔无功能的 D 位）、C/N 字母底排、⌥/⌘/Space 修饰底排（Space 沿排跨 3.3 格；主键板阵按完整 token 派生——修饰键依次落 col0/col1、末位动作键落宽板：双修饰占满两槽（⌘ 让位）、单修饰 col1 为 ⌘ 弱化占位（与单键同尺寸）、单键双槽均弱化占位（⌥⌘ ghost，真实键盘示意、修饰键标注不渲染）、第 3+ 修饰无处安放并入宽板键名（信息完整）；dev 构建注册统一叠加 Shift（shortcut.rs），板阵始终读 Alt 基——用户配置的组合才进板阵，构建态叠加不进板阵也不在图上标注）；全部键心对齐网格（格边界在半格处，线居缝中不穿板），平面网格矩形化（横排键距 74、排距 64≈0.86 键距同真实键盘，两轴方向不变仅步进模长分离）：排间为整体平移（C 对 S、N 对 F 偏移同为 U+V = 10px，勿按屏幕垂直线对齐个别键）、N 悬于 Space 右段上方且右缘与 Space 齐平；Space 半宽 137.5 与列位 col 3.4324（微离半格位 5px）联合取值，同时满足 ⌘–Space 水平重叠与单键间一致（横向间距均匀）+ N 齐平 + C/N 整数格心；板面写键名（贴面透视：matrix 沿 u 轴阅读、竖笔平行 v 边 54° 右上倾，x 列按 u/v 轴投影长度比 1.63 拉伸补偿横向压扁，随改键 override 联动，未改用各扩展默认——运行时经扩展注册表读 `globalShortcuts[].default`，不在框架组件镜像第二份；id 失效板与引出线整组跳过；占位板不参与标注）；描述全部经引出线标注（一律工程折线、统一经 `callout()` 计算（含修饰键 / Space 两条主键线）：斜段 + 水平段，文字对齐水平段尾端（左拉段 start 于左端、右拉段 end 于右端）、居线上方（全单级，基线离线 −8；水平段长度按词宽取（功能键 28~64））——A/S/F 斜段 (−12,−28) 向左折；端点统一锚板远侧边中心——平面 q=−b 边（投影为 back→right 上缘边）中点沿法向外移 6px（`CO_FAR`）；Space 锚右侧边中点沿边法向（屏幕垂直于 front→right 边）外移 12px——正对边中心且脱出壁带（板厚 PLATE_T=12，厚壁键帽纵向视觉补偿：顶面轮廓随俯角锁死，壁竖直下沉直接加高整体轮廓至含壁 ≈1.19:1，等边与机位不动）（`coRight(a)` 按板半宽参数化）斜段下行右折（转折开口向上）、N 锚顶部远侧边中心（`CO_FAR`）斜段上行右折（右邻「/」语法键，引出线走键上方空域）、C 锚左侧边中点（`CO_LEFT`，p=−a 边）折线拉到左侧空档（A 板下方与 ⌥ 板上方之间）；单级 mono 主词：修饰键、唤起窗口）；`plate()` 生成：等距投影（轴 u=(2,`KU`)/v=(-2,`KV`)，轴坡由机位反解：u 坡 = cosφ·tanθ、v 坡 = cosφ·cotθ，φ 为仰角（俯角 = 90°−φ））。当前机位：方位角 θ=25°（右前方）、俯角 40°（仰角 50°）、歪头 0° → KU=0.5995/KV=2.7569（u 坡 16.7°/v 坡 54.0°，顶面轮廓 ≈1.26:1）。已知取舍：方位角偏离 45° 产生轴不对称（等距感以对称为前提），此档不对称观感可接受，要消除须 θ=45°；`isoCorners`）顶面四角圆弧轮廓 + 左右壁（可见侧壁 = 顶面轮廓外法线朝下部分，竖直挤出，弧段经 de Casteljau 半分割（`arcSplit`）与顶面共享控制点全程共线；侧壁剖切线均右上向，左壁 45°/线距 6、右壁 70°/线距 5（右壁缘线陡升 54°，同 45° 会近并行显平，提陡避开并稍加密））+ 顶面高光棱线；板按平面 row/col 升序绘制（painter 序，近者后画覆盖远者的壁））。板下层铺等距网格线（仅横向线族，沿 u 轴——每排键底面（柱体，顶面缘竖直下沉板厚 `PLATE_T`）上下外侧缘线的延长、对齐底面占位，段长稀疏横跨键间距，灰色坐标网 `--color-border`（与 accent 线系区分）；穿板部分按板 u 占位几何断开——顶面半透明渐变、壁 hatch 无底色，覆盖式隐藏会穿透显影；仅缝隙与外围可见；右界按排带自治——各层止于本排最右板切边 + 0.2 格外露（行 0/1 层再钳图纸右缘 x≤714，为「/」键引出线让出上方空域），修饰排收进 Space 右角右段不出（避让 Space 引出线））。图纸撑满整窗（viewBox 720×480 随窗口等比缩放），左下角应用名图签（mono 主文本色，入场序列末位）+ 品牌口号小字（`welcome.tagline`，名字下方，同宽约束仅 zh——en 词形长自然宽防挤字距；图签不随整图旋转保持水平，底部对齐旋转后的板阵最低点）；底排 N 右侧隔一格「/」语法键（col 6，fn tone，键帽 `/`，框架查询语法非扩展快捷键不读注册表，引出线双行右对齐词块（行距 13）「输入/显示扩展」/「输入//快速搜索」（/ 工具列表、// 网页搜索，动词与快捷键的名词标注区分；顶部锚定、斜段上行后短水平段右拉，双行控宽不横跨半幅图纸），无按钮，纯信息展示。板主次分层（tone）：main（主快捷键 ⌥/Space）重笔实面 / fn（功能键）常态 / ghost（⌘ 占位）弱化描边浅染。SVG 颜色全走 token 深浅色自适配，整图 accent 蓝线系（板描边 `--color-accent` + stroke-opacity，顶面浅色 accent 渐变浅染 / 深色 `--accent-line` 实底，渐变强度供 tone 经 fill-opacity 调制分层，剖切线与引出标注同 accent；键名仍走文本阶、⌘ 板键名弱化）。单键半宽：b 按等边条件取值、a 加大——横边（u 边）65.8 / 纵边（v 边）59.7，边比 1.10（水平方向的边更长，键帽横长观感）。入场 stagger（逐板弹簧沉降 → 标注淡入 → 图签，fill-mode backwards；`prefers-reduced-motion` 关闭）。屏幕录制 / 完全磁盘等其余权限不进引导，用到时再各自提示（与扩展「零默认值」一致）
+- **完结**：Enter / Esc（视图自治 onKeyStroke，Enter 焦点在按钮上时让位给按钮自身激活，防双发；全局 confirm 弹窗的容器 stopPropagation 先于视图监听，不误触）——经视图内 `requestDone`（双重守卫：一次性——重复按键不二次 emit；槽已让位不落盘不 emit——done 会被框架入口守卫忽略，先行落盘会让引导未经确认即永久跳过）自持落盘 `onboarded` 后 emit done → MainView `onFullscreenDone` 通用收尾（有 `fullscreenReturnExtId` 恢复目标则回该扩展，否则重载默认列表 + 搜索栏重现回焦输入框；入口守卫 `activeExtId`——槽被扩展让位后到达的 done 已过期，忽略防覆盖 results / 抢扩展焦点）→ onboarded 变化经策略 watch 自动清槽（完结语义归供给方，框架层零业务泄漏）
+- **剪贴板自动填充**：fullscreen 期直接跳过（搜索栏仅 v-show 隐藏、元素仍在 DOM，readonly 守卫拦不住程序化填充，须查 `appStore.fullscreenView`）；`ResultActionPanel` canOpen 同查 fullscreenView（防 Cmd+Enter 在整窗视图上开面板）
+- 设置页「显示新手引导」可重看：置回 `onboarded=false` + 回主界面 + 写入 `fullscreenReturnExtId='settings'`，复用同一显示条件；引导 Esc/Enter 完结后回设置页（首启路径无恢复目标，回主界面）
+
 ### 菜单栏
 
 `runtime/menubar.rs`，框架唯一托盘图标（`public/bar_icon.png` + `icon_as_template` 深浅色自适应），左键弹聚合菜单。
@@ -341,7 +360,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - **窗口按需创建**：screenshot 窗口首次截图时懒创建（`setup` 内 `WebviewWindowBuilder`，WKWebView 预加载页面）；snap-panel 窗口在 `set_window_manager_enabled(true)` 时懒创建，分两步避免主线程死锁：`build_snap_panel`（仅 `WebviewWindowBuilder::build`）在 worker 线程调用（build 内部 dispatch 到空闲主线程；**禁止**放进 `run_on_main_thread` 同步闭包——build 的 dispatch + 同步等待与执行闭包的主线程死锁，导致 UI 无响应），`configure_snap_panel`（`apply_mica_material` 需 `MainThreadMarker`）在 `run_on_main_thread` 闭包内调用；`false` 时**不销毁窗口**——WKWebView teardown 抛 C++ foreign exception（非 ObjC NSException，`objc2::exception::catch` 无法拦截），前端 `close()`/`destroy()` 均 abort 进程，改为仅停 drag monitor + 隐藏窗口（alpha=0），窗口保持存活，重新启用时 `build_snap_panel` 幂等跳过 + `configure_snap_panel` 重配置）；pin 窗口每次钉图创建、关闭时销毁
 - **子窗口主题**：独立入口窗口用 `runtime/child-theme.ts::initChildTheme`（无 Pinia 依赖，读 `get_cached_appearance` + 监听 `appearance-changed`），不初始化扩展系统
 - **vendor 分包 + pinyin 延迟加载**：`manualChunks` 拆 vendor(vue) / markdown(marked+dompurify) / pinyin 独立 chunk；pinyin-pro（拼音字典 289KB）改为首次 CJK 查询时 `import()` 异步加载，首屏零开销
-- `ContentView` 用 `KeepAlive`（max=3，LRU 驱逐）缓存已访问扩展，切换走 activate/deactivate 而非重挂载；KeepAlive 常驻（`v-if` 下沉到动态组件上），经主界面往返同样保留视图状态（选中/滚动位），仅窗口隐藏 `keepAliveActive` 置 false 卸载或 LRU 超限驱逐时清缓存
+- `ContentView` 用 `KeepAlive`（max=3，LRU 驱逐）缓存已访问扩展，切换走 activate/deactivate 而非重挂载；KeepAlive 常驻（`v-if` 下沉到动态组件上），经主界面往返（如设置页重看引导的进出）同样保留视图状态（选中/滚动位），仅窗口隐藏 `keepAliveActive` 置 false 卸载或 LRU 超限驱逐时清缓存
 
 ### LLM 基础设施
 
@@ -523,7 +542,7 @@ src/
 
 ```
 ~/Library/Application Support/com.litiantao.voidnix/
-├── config/settings.json              # 框架级配置（全局快捷键 + 外观模式，defineConfig 扁平 schema）
+├── config/settings.json              # 框架级配置（全局快捷键 + 外观/语言 + 首启 onboarded 标记，defineConfig 扁平 schema）
 ├── config/ai-providers.json          # 统一 AI 提供商/Key（agent/translate/外部工具共用）
 └── extensions/
     ├── clipboard/{clipboard.db, clipboard.db-wal, config.json}   # SQLite WAL（写入达 200 触发 wal_checkpoint）+ 配置

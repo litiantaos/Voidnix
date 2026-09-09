@@ -125,11 +125,15 @@ export function useAppLifecycle(win: Win) {
       // 等配置回填完成再注册快捷键：注册一次即为最终值（避免「默认值注册 → 回填再注册」抖动），
       // 注册失败检测（guideShortcutConflicts）也因此读到确定结果
       await whenConfigReady('config/settings')
-      const selfTest = await invoke<boolean>(CMD.isSelfTestMode).catch(() => false)
 
       updateTimer = setTimeout(() => {
         void maybeCheckUpdate()
       }, 3000)
+
+      // 首启引导：未完成 onboarding 时自动唤出主窗口展示引导卡（新用户不知晓呼出快捷键）。
+      // 自测门控读 appStore.selfTestMode：is_self_test_mode 是一次性命令，首次 invoke 已被
+      // main.ts 消费（再 invoke 恒 false）；置位经单次 IPC，先于多轮 IPC 的配置回填落定
+      if (!appStore.selfTestMode && !settings.onboarded) void showWindow()
 
       await setupGlobalShortcut('main', settings.globalShortcut)
 
@@ -142,7 +146,7 @@ export function useAppLifecycle(win: Win) {
       }
 
       // 关键快捷键注册失败 → 改键引导（自测模式下窗口由测试脚本驱动，跳过）
-      if (!selfTest) void guideShortcutConflicts()
+      if (!appStore.selfTestMode) void guideShortcutConflicts()
 
       watchStops.push(
         watch(
