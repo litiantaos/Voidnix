@@ -91,7 +91,7 @@ describe('MainView 整窗视图完结路由', () => {
     await nextTick()
     expect(appStore.fullscreenView).toBeTruthy()
 
-    // 模拟设置页「显示新手引导」写入的完结恢复目标
+    // 模拟设置页「使用引导」写入的完结恢复目标
     appStore.fullscreenReturnExtId = 'settings'
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
