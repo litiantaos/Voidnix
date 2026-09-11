@@ -24,6 +24,8 @@ const og = new URL(lang === 'en' ? '/og-image-en.png' : '/og-image.png', site)
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/png" href="/favicon.png" />
+    <!-- 内置 Noto Sans（拉丁正文）：preload 使首帧即可用，避免 swap 闪换 -->
+    <link rel="preload" href="/fonts/noto-sans-var.woff2" as="font" type="font/woff2" crossorigin />
     <title>{title}</title>
     <meta name="description" content={description} />
     <ThemeInit />

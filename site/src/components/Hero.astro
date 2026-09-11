@@ -287,8 +287,9 @@ const RELEASES = GITHUB + '/releases/latest'
     font-size: clamp(15px, 1.4vw, 17px);
     color: var(--color-text-secondary);
     max-width: 48ch;
+    /* 限宽块默认锚左缘，text-align 只在盒内居中行——须 auto 边距与标题同轴居中 */
+    margin: 24px auto 32px;
     line-height: 1.7;
-    margin: 24px 0 32px;
   }
 
   .hero-cta {
