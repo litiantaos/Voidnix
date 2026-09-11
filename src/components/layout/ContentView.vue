@@ -115,6 +115,11 @@ const keepAliveActive = ref(true)
 const contentHidden = ref(false)
 
 async function clearCache() {
+  // scrollTop 兜底回填：hidden 帧 forced layout 期间若引擎未按 last remembered size
+  // 保留高度（实现差异），scroll 容器内容收缩被 clamp 且恢复后无人回填。常驻声明
+  // contain-intrinsic-size 已根治记录问题，此处兜底 WKWebView 等实现差异，零成本。
+  const sc = scrollContainer.value
+  const savedTop = sc?.scrollTop ?? 0
   keepAliveActive.value = false
   contentHidden.value = true
   await nextTick()
@@ -123,6 +128,8 @@ async function clearCache() {
   void document.body.offsetHeight
   keepAliveActive.value = true
   contentHidden.value = false
+  await nextTick()
+  if (sc && savedTop > 0 && sc.scrollTop !== savedTop) sc.scrollTop = savedTop
 }
 
 onMounted(() => {
@@ -170,14 +177,18 @@ const contentStyle = computed(() => {
 
 /** contentStyle + 隐藏态 content-visibility 叠加。
  *  content-visibility:hidden 跳过子树渲染，forced layout 释放 tile backing（IOSurface）。
- *  contain-intrinsic-size:auto 保留上次渲染尺寸，防止隐藏时 scroll 位置丢失。 */
+ *  contain-intrinsic-size 常驻声明（未隐藏帧同样生效）：last remembered size 仅在
+ *  「已声明 auto 值且正常渲染」的帧记录——若只与 hidden 同帧声明则从未记录，skip 时
+ *  高度回退兜底值，forced layout 使 scroll 容器 clamp scrollTop（唤起后滚动归顶根因）。
+ *  常驻声明下 skip 占位 = 上次真实尺寸，内容高度不变则滚动天然保留；
+ *  未 skip 时无 size containment 配合，该属性对布局零副作用。 */
 const mergedContentStyle = computed(() => {
-  if (!contentHidden.value) return contentStyle.value
-  return {
+  const style = {
     ...(contentStyle.value ?? {}),
-    contentVisibility: 'hidden' as const,
     containIntrinsicSize: `auto ${WINDOW.DEFAULT_HEIGHT - WINDOW.CHROME_HEIGHT}px`,
   }
+  if (!contentHidden.value) return style
+  return { ...style, contentVisibility: 'hidden' as const }
 })
 
 const scrollContainer = ref<HTMLElement>()

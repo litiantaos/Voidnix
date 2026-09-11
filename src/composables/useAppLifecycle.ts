@@ -1,5 +1,6 @@
 import { onMounted, onUnmounted, watch, type WatchStopHandle } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { CMD } from '@/commands'
 import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from '@/stores/settings'
@@ -251,6 +252,13 @@ export function useAppLifecycle(win: Win) {
         ({ payload: focused }: { payload: boolean }) => {
           if (focused) {
             window.dispatchEvent(new CustomEvent('window-focused'))
+            // 主动接完 responder 链（wry: makeFirstResponder(webview)，不 activate_app）：
+            // 无激活唤起下窗口 key 聚焦后 WKWebView 页面焦点状态要迟些才自然翻转，
+            // 显式落位使其当帧翻转——输入框聚焦/唤起全选（selectAllWhenPageFocused 双通道
+            // 探测）随即就位，消除「窗口已显示、选中/输入稍后才到」的滞后
+            void getCurrentWebview()
+              .setFocus()
+              .catch(() => {})
             // 系统对话框（文件选择器 / 授权弹窗）返回时解除抑制
             appStore.suppressBlur = false
             // 刷新系统状态（权限/自启）：覆盖用户从系统设置改完权限返回的场景。

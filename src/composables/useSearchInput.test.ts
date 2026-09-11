@@ -14,15 +14,20 @@ vi.mock('@/utils/tauri', () => ({
   hideWindow: vi.fn(),
   showWindow: vi.fn().mockResolvedValue(undefined),
 }))
-// 搜索引擎打桩：默认列表内容完全可控，聚焦提示行注入与 openToolList 行为
+// 搜索引擎打桩：默认列表内容完全可控，聚焦提示行注入与 openToolList 行为。
+// 其余纯函数（getGroupKey 等）保留真实实现（stableMerge 消费）
 const searchMock = vi.fn()
-vi.mock('@/runtime/search-engine', () => ({
-  searchEngine: {
-    search: (...args: unknown[]) => searchMock(...args),
-    setActiveExtension: vi.fn(),
-    abort: vi.fn(),
-  },
-}))
+vi.mock('@/runtime/search-engine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/runtime/search-engine')>()
+  return {
+    ...actual,
+    searchEngine: {
+      search: (...args: unknown[]) => searchMock(...args),
+      setActiveExtension: vi.fn(),
+      abort: vi.fn(),
+    },
+  }
+})
 // 扩展表打桩：两个可见扩展（工具列表断言用）
 const mockExts = [
   { meta: { id: 'ext-a', name: 'Ext A', icon: 'i-a', order: 1 } },
@@ -139,5 +144,339 @@ describe('useSearchInput 默认列表提示行', () => {
     window.dispatchEvent(new CustomEvent('window-invoked'))
     await flushPromises()
     expect(vi.mocked(invoke)).toHaveBeenCalled()
+  })
+})
+
+describe('useSearchInput 窗口重新获焦重跑', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    searchMock.mockReset()
+  })
+  afterEach(() => {
+    while (mountedWrappers.length) mountedWrappers.pop()!.unmount()
+  })
+
+  function fileResults(prefix: string, n: number): SearchResult[] {
+    return Array.from({ length: n }, (_, i) => ({
+      id: `${prefix}-${i}`,
+      title: `${prefix} ${i}`,
+      extId: 'search',
+      data: { kind: 'file' },
+    }))
+  }
+
+  it('静默重跑：增量 partial 不替换已显示列表，最终结果一次性到达且选中保留', async () => {
+    const appStore = useAppStore()
+    const { results, selectedIndex } = makeWrapper()
+    await flushPromises()
+
+    // 模拟隐藏前的文件搜索状态：8 项结果、选中第 6 项（文件组区域，部分 partial 会越界）
+    appStore.setSearchQuery('re')
+    results.value = fileResults('old', 8)
+    selectedIndex.value = 5
+
+    // 重跑 mock：先吐较短 partial（应用组），最终异步返回完整列表
+    let resolveFinal!: (r: SearchResult[]) => void
+    const finalList = fileResults('new', 8)
+    searchMock.mockImplementation(async (_q: string, onUpdate?: (r: SearchResult[]) => void) => {
+      // partial 比旧列表短：若被应用，clampSelected 会把选中归零（回归即失败）
+      onUpdate?.([appResult])
+      return new Promise<SearchResult[]>((res) => (resolveFinal = res))
+    })
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+
+    // 重跑不携带 onUpdate（无增量替换）：partial 到达时旧列表原样保留，滚动/选中不受扰
+    const rerunCall = searchMock.mock.calls.find((c) => c[0] === 're')
+    expect(rerunCall?.[1]).toBeUndefined()
+    expect(results.value.map((r) => r.id)).toEqual(fileResults('old', 8).map((r) => r.id))
+    expect(selectedIndex.value).toBe(5)
+
+    resolveFinal(finalList)
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(finalList.map((r) => r.id))
+    expect(selectedIndex.value).toBe(5)
+  })
+
+  it('上次结果为空时获焦重跑退回流式（loading 占位链路可用）', async () => {
+    const appStore = useAppStore()
+    const { results } = makeWrapper()
+    await flushPromises()
+
+    appStore.setSearchQuery('re')
+    results.value = []
+    searchMock.mockImplementation(async (_q: string, onUpdate?: (r: SearchResult[]) => void) => {
+      onUpdate?.([appResult])
+      return [appResult]
+    })
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+
+    const rerunCall = searchMock.mock.calls.find((c) => c[0] === 're')
+    expect(typeof rerunCall?.[1]).toBe('function')
+    expect(results.value).toHaveLength(1)
+  })
+
+  it('同 query 重跑零重排：usage/recency 升位不改当前会话排序，选中原地不跳位', async () => {
+    const appStore = useAppStore()
+    const { results, selectedIndex } = makeWrapper()
+    await flushPromises()
+
+    // 隐藏前：8 项，选中 f-5
+    appStore.setSearchQuery('re')
+    results.value = fileResults('f', 8)
+    selectedIndex.value = 5
+
+    // 重跑返回重排列表（模拟 increment_use_count 后 f-5 frequency 升位到第 2）
+    const reordered = [...fileResults('f', 8)]
+    const [picked] = reordered.splice(5, 1)
+    reordered.splice(1, 0, picked)
+    searchMock.mockResolvedValue(reordered)
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+
+    // 顺序保持隐藏前列表（内容刷新、顺序稳定），选中原地
+    expect(results.value.map((r) => r.id)).toEqual(fileResults('f', 8).map((r) => r.id))
+    expect(selectedIndex.value).toBe(5)
+    expect(results.value[selectedIndex.value]?.id).toBe('f-5')
+  })
+
+  it('重跑新增条目注入同组尾部：不扰动现有序与选中', async () => {
+    const appStore = useAppStore()
+    const { results, selectedIndex } = makeWrapper()
+    await flushPromises()
+
+    appStore.setSearchQuery('re')
+    results.value = fileResults('f', 8)
+    selectedIndex.value = 5
+
+    // 重跑结果：原有 8 项 + 新文件项 + 新组条目（隐藏期间新增的剪贴板记录）
+    const newFile: SearchResult = {
+      id: 'f-new',
+      title: 'New',
+      extId: 'search',
+      data: { kind: 'file' },
+    }
+    const newClip: SearchResult = {
+      id: 'clip-1',
+      title: 'Clip',
+      extId: 'clipboard',
+      data: { kind: 'clipboard' },
+    }
+    searchMock.mockResolvedValue([newFile, ...fileResults('f', 8), newClip])
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+
+    // 新文件项插到 file 组末尾、新组条目追加尾部；现有序与选中不动
+    expect(results.value.map((r) => r.id)).toEqual([
+      ...fileResults('f', 8).map((r) => r.id),
+      'f-new',
+      'clip-1',
+    ])
+    expect(selectedIndex.value).toBe(5)
+  })
+
+  it('选中条目从新列表消失时回退 clamp（索引有效保留，越界归零）', async () => {
+    const appStore = useAppStore()
+    const { results, selectedIndex } = makeWrapper()
+    await flushPromises()
+
+    appStore.setSearchQuery('re')
+    results.value = fileResults('f', 8)
+    selectedIndex.value = 7
+
+    // 重跑结果不含 f-7 且更短（越界归零）
+    searchMock.mockResolvedValue(fileResults('f', 5))
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+
+    expect(selectedIndex.value).toBe(0)
+  })
+
+  it('空 query 获焦刷新默认列表：重排被稳定合并抑制、partial 缺席不收缩列表', async () => {
+    const appStore = useAppStore()
+    const { results, selectedIndex } = makeWrapper()
+    await flushPromises()
+
+    const appA: SearchResult = {
+      id: 'app-a',
+      title: 'A',
+      extId: 'search',
+      data: { kind: 'application' },
+    }
+    const appB: SearchResult = {
+      id: 'app-b',
+      title: 'B',
+      extId: 'search',
+      data: { kind: 'application' },
+    }
+    appStore.setSearchQuery('')
+    results.value = [appA, appB]
+    selectedIndex.value = 0
+
+    // 刷新：partial 只到 B（A 未到达，不收缩），final 返回 recency 重排（B 升首位）
+    let afterPartial: () => void = () => {}
+    const partialSeen = new Promise<void>((res) => (afterPartial = res))
+    searchMock.mockImplementation(async (_q: string, onUpdate?: (r: SearchResult[]) => void) => {
+      onUpdate?.([appB])
+      afterPartial()
+      return [appB, appA]
+    })
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await partialSeen
+    await flushPromises()
+
+    // partial 阶段：A 未到不视为消失，列表序保持 [app-a, app-b, hint]
+    expect(results.value.map((r) => r.id)).toEqual(['app-a', 'app-b', SEARCH.TOOLS_HINT_ID])
+    // final 阶段：重排被抑制，顺序仍保持隐藏前
+    expect(results.value.map((r) => r.id)).toEqual(['app-a', 'app-b', SEARCH.TOOLS_HINT_ID])
+    expect(selectedIndex.value).toBe(0)
+    expect(results.value[selectedIndex.value]?.id).toBe('app-a')
+  })
+
+  it('后台刷新失败保留现有列表（不闪空态）；转移入口失败落提示行兜底', async () => {
+    const appStore = useAppStore()
+    const { wrapper, results } = makeWrapper()
+    await flushPromises()
+
+    appStore.setSearchQuery('')
+    results.value = fileResults('f', 3)
+    searchMock.mockRejectedValue(new Error('boom'))
+
+    // 获焦刷新（后台，resetSelection=false）失败：列表原样保留
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(fileResults('f', 3).map((r) => r.id))
+
+    // 转移入口（resetSelection=true）失败：清为提示行单行（不残留旧上下文列表）
+    await wrapper.vm.api.loadDefaultResults(true)
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual([SEARCH.TOOLS_HINT_ID])
+  })
+})
+
+describe('useSearchInput 唤起全选时序', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    searchMock.mockReset()
+    searchMock.mockResolvedValue([])
+  })
+  afterEach(() => {
+    while (mountedWrappers.length) mountedWrappers.pop()!.unmount()
+    vi.restoreAllMocks()
+  })
+
+  it('页面焦点未落定时延迟全选：原生 focus 事件（页面获焦）到达才 select，避免灰→蓝跳变', async () => {
+    const appStore = useAppStore()
+    const { searchInput } = makeWrapper()
+    await flushPromises()
+    const el = searchInput.value!
+    el.value = 're'
+    appStore.setSearchQuery('re')
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+    // 页面未获焦不 select——此刻 select 会以非聚焦选中色（灰）绘制，获焦后翻蓝
+    expect(el.selectionStart).toBe(el.selectionEnd)
+
+    // 原生 focus = 页面获得焦点：blur → 全选 → focus 三步同步落位（无动画），一次到位
+    const focusSpy = vi.spyOn(el, 'focus')
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    expect(el.selectionStart).toBe(0)
+    expect(el.selectionEnd).toBe(2)
+    // 回焦断言：三步落位末位 el.focus()（不丢输入焦点，后续输入直接替换全选内容）
+    expect(focusSpy).toHaveBeenCalled()
+  })
+
+  it('focus 事件迟发时 rAF 轮询兜底：hasFocus 状态翻转即落位，不等事件', async () => {
+    const appStore = useAppStore()
+    const { searchInput } = makeWrapper()
+    await flushPromises()
+    const el = searchInput.value!
+    el.value = 're'
+    appStore.setSearchQuery('re')
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+    expect(el.selectionStart).toBe(el.selectionEnd)
+
+    // 键盘输入可达 = 焦点状态已翻转（事件迟发）：轮询通道在下一帧捕获并落位
+    hasFocus.mockReturnValue(true)
+    for (let i = 0; i < 3 && el.selectionStart === el.selectionEnd; i++) {
+      await new Promise<void>((r) => requestAnimationFrame(() => r()))
+    }
+    expect(el.selectionStart).toBe(0)
+    expect(el.selectionEnd).toBe(2)
+  })
+
+  it('show 过程的瞬时页面 blur 不取消待定全选（取消只归 window-hiding）', async () => {
+    const appStore = useAppStore()
+    const { searchInput } = makeWrapper()
+    await flushPromises()
+    const el = searchInput.value!
+    el.value = 're'
+    appStore.setSearchQuery('re')
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+    // 面板 key 迁移产生的瞬时页面 blur（此前版本会误杀待定全选）
+    window.dispatchEvent(new Event('blur'))
+    await flushPromises()
+
+    hasFocus.mockReturnValue(true)
+    for (let i = 0; i < 3 && el.selectionStart === el.selectionEnd; i++) {
+      await new Promise<void>((r) => requestAnimationFrame(() => r()))
+    }
+    expect(el.selectionStart).toBe(0)
+    expect(el.selectionEnd).toBe(2)
+  })
+
+  it('页面已聚焦走快路径立即全选（用户交互路径无延迟）', async () => {
+    const appStore = useAppStore()
+    const { searchInput } = makeWrapper()
+    await flushPromises()
+    const el = searchInput.value!
+    el.value = 're'
+    appStore.setSearchQuery('re')
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+    expect(el.selectionStart).toBe(0)
+    expect(el.selectionEnd).toBe(2)
+  })
+
+  it('隐藏折叠残留选中并取消待定全选：隐藏后 focus 不再触发 select', async () => {
+    const appStore = useAppStore()
+    const { searchInput } = makeWrapper()
+    await flushPromises()
+    const el = searchInput.value!
+    el.value = 're'
+    appStore.setSearchQuery('re')
+    el.setSelectionRange(0, 2)
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+
+    // 待定全选挂起 + 残留全选存在
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('window-hiding'))
+    // 残留选中折叠为光标（防下次唤起首帧灰绘制）
+    expect(el.selectionStart).toBe(el.selectionEnd)
+
+    // 待定全选已取消：隐藏后到达的 focus 不触发 select
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    expect(el.selectionStart).toBe(el.selectionEnd)
   })
 })

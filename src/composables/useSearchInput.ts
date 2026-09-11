@@ -1,7 +1,7 @@
 import { ref, watch, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useTauriListener } from '@/composables/useTauriListener'
-import { searchEngine } from '@/runtime/search-engine'
+import { searchEngine, getGroupKey } from '@/runtime/search-engine'
 import { getAllExtensions } from '@/runtime/extension-registry'
 import { scoreExtensionEntry } from '@/utils/fuzzy'
 import { resolveLocalized, t } from '@/runtime/i18n'
@@ -19,6 +19,50 @@ interface SearchInputOptions {
   selectedIndex: Ref<number>
   activeExtension: ComputedRef<Extension | null>
   reset: () => void
+}
+
+/** 全选但不触发系统选中动画：macOS 26 WKWebView 对聚焦元素的选区变更播放选中动画
+ *  （从当前光标位展开，唤起场景锚点在末端 → 蓝色从右到左扫过）。先 blur 使选区变更
+ *  落在元素未聚焦态（不动画），同步设全选后回焦；三步同一任务内完成，下一帧直接
+ *  以最终态（聚焦蓝全选）呈现。 */
+function selectAllWithoutAnimation(el: HTMLInputElement) {
+  el.blur()
+  el.setSelectionRange(0, el.value.length)
+  el.focus()
+}
+
+/** 同 query 刷新的稳定合并：内容取 next（新对象/新数据），顺序以 prev 为基——
+ *  本次搜索的排序已定，usage/recency 加权变化不改当前会话排序（打开条目触发的
+ *  increment_use_count 升位在下次输入的新搜索生效），唤起时零重排、选中零跳位。
+ *  新条目插到同组末尾（组头按相邻组值渲染，天然连续），无同组项追加尾部。
+ *  dropMissing：final 精确对齐（next 缺席 = 已消失，移除）；增量 partial 的缺席
+ *  = 未到达，prev 条目保留（防子集 partial 收缩列表引发闪烁）。 */
+function stableMerge(
+  prev: SearchResult[],
+  next: SearchResult[],
+  dropMissing: boolean,
+): SearchResult[] {
+  const key = (r: SearchResult) => `${r.extId}:${r.id}`
+  const nextMap = new Map(next.map((r) => [key(r), r]))
+  const known = new Set(prev.map(key))
+  const merged = prev
+    .filter((r) => !dropMissing || nextMap.has(key(r)))
+    .map((r) => nextMap.get(key(r)) ?? r)
+  for (const item of next) {
+    if (known.has(key(item))) continue
+    const group = getGroupKey(item)
+    let at = -1
+    for (let i = merged.length - 1; i >= 0; i--) {
+      if (getGroupKey(merged[i]) === group) {
+        at = i + 1
+        break
+      }
+    }
+    if (at < 0) at = merged.length
+    merged.splice(at, 0, item)
+    known.add(key(item))
+  }
+  return merged
 }
 
 /// 搜索输入处理：query 防抖、web 搜索/工具列表解析、默认结果加载、清空与回退。
@@ -164,28 +208,32 @@ export function useSearchInput(opts: SearchInputOptions) {
   async function loadDefaultResults(resetSelection = false) {
     if (!isTauri) return
     const searchId = ++currentSearchId
-    // 转移入口（退出扩展/回主页/清空输入）显式归首项；后台刷新（图标就绪/缓存变更/窗口获焦）
-    // 保留用户已有导航，由 clampSelected 在结果到达时兜底越界。
+    // 转移入口（退出扩展/回主页/清空输入）显式归首项、规范序；后台刷新（图标就绪/缓存变更/
+    // 窗口获焦）同 query 稳定合并（旧序为基 + 选中身份跟随），usage/recency 加权变化
+    // 不改当前会话排序，唤起时零重排零跳位。
+    const prevList = resetSelection ? [] : results.value
+    const prevSel = resetSelection ? undefined : results.value[selectedIndex.value]
     if (resetSelection) selectedIndex.value = 0
     // 尾部固定提示行：随每次默认列表刷新（增量与最终）追加
     const withHint = (list: SearchResult[]) => [...list, toolsHintResult()]
+    const apply = (list: SearchResult[], final: boolean) => {
+      const applied = resetSelection ? list : stableMerge(prevList, list, final)
+      results.value = applied
+      applyListWithSelection(applied, prevSel)
+    }
     try {
       const defaultResults = await searchEngine.search('', (partial) => {
-        if (searchId === currentSearchId) {
-          const list = withHint(partial)
-          results.value = list
-          clampSelected(list.length)
-        }
+        if (searchId === currentSearchId) apply(withHint(partial), false)
       })
-      if (searchId === currentSearchId) {
-        const list = withHint(defaultResults)
-        results.value = list
-        clampSelected(list.length)
-      }
+      if (searchId === currentSearchId) apply(withHint(defaultResults), true)
     } catch {
       if (searchId === currentSearchId) {
-        results.value = [toolsHintResult()]
-        selectedIndex.value = 0
+        // 后台刷新失败保留现有列表（不闪空态）；转移入口（resetSelection）或本就为空
+        // 才落提示行单行兜底
+        if (resetSelection || results.value.length === 0) {
+          results.value = [toolsHintResult()]
+          selectedIndex.value = 0
+        }
       }
     }
   }
@@ -224,6 +272,47 @@ export function useSearchInput(opts: SearchInputOptions) {
     const ext = activeExtension.value
     if (!ext || ext.mainView || !ext.search) return
     runExtensionSearch(appStore.searchQuery)
+  }
+
+  /** 后台刷新应用新列表时的选中策略：按条目身份（extId+id）跟随而非钉死索引。
+   *  稳定合并下条目不动、选中天然不动；此策略兜底移除场景（上方条目消失使索引前移错位）。
+   *  条目不在新列表（增量未到/已消失）时仅 clamp 越界，索引原地等后续增量补到再跟随。 */
+  function applyListWithSelection(list: SearchResult[], prev?: SearchResult) {
+    if (prev) {
+      const idx = list.findIndex((r) => r.id === prev.id && r.extId === prev.extId)
+      if (idx >= 0) {
+        selectedIndex.value = idx
+        return
+      }
+    }
+    clampSelected(list.length)
+  }
+
+  /** 焦点重跑（窗口重新唤起刷新数据）：不传 onUpdate —— 增量 partial 会把已显示的完整列表
+   *  先替换为较短中间态（应用缓存先 flush、文件索引后至），文件组瞬间消失再恢复：
+   *  列表闪烁 + scrollTop 随内容收缩被 clamp + 选中越界被 clampSelected 归零。
+   *  静默重跑仅在最终结果就绪时经 stableMerge 稳定合并一次性应用：内容刷新（新缓存/剪贴板/
+   *  文件）、顺序保持隐藏前列表（query 不变排序不变，usage/recency 升位等下次输入的新搜索
+   *  生效），行 DOM 按 id 复用零重排零跳位；上次结果为空（搜索失败/中断）退回流式 + loading 占位。 */
+  async function rerunSearch(query: string) {
+    if (results.value.length === 0) {
+      runExtensionSearch(query)
+      return
+    }
+    const searchId = ++currentSearchId
+    // 身份捕获于 await 前：await 期间用户输入会开新搜索（searchId 守卫），prev 不受影响
+    const prevList = results.value
+    const prevSel = prevList[selectedIndex.value]
+    try {
+      const res = await searchEngine.search(query)
+      if (searchId === currentSearchId) {
+        const merged = stableMerge(prevList, res, true)
+        results.value = merged
+        applyListWithSelection(merged, prevSel)
+      }
+    } catch {
+      // 重跑失败保留现有结果（不空屏）
+    }
   }
 
   // --- input ---
@@ -310,20 +399,65 @@ export function useSearchInput(opts: SearchInputOptions) {
     searchInput.value?.focus()
   }
 
+  /** 唤起路径的输入框全选。三重时序约束（macOS 26 WKWebView，show 不 activate_app）：
+   *  1) 页面获焦前 select：以非聚焦选中色（灰）绘制，获焦后翻系统蓝——灰→蓝跳变；
+   *  2) 页面获焦后对聚焦元素 select：系统选中动画从当前光标位展开（锚点=隐藏时折叠的
+   *     末端 → 蓝色从右到左扫过）；
+   *  3) 原生 focus 事件在无激活唤起下迟发/被 show 过程的瞬时页面 blur 打断（实测约 2s
+   *     后由激活链路稳态的二次 onFocusChanged 补发）——不能只等事件。
+   *  解法：hasFocus 已真立即三步落位；未真则「原生 focus 事件 + rAF 轮询 hasFocus 状态」
+   *  双通道探测，状态翻转即落位（键盘输入可达 = 状态已翻转，事件迟发不影响）。落位一律经
+   *  selectAllWithoutAnimation（blur → 全选 → focus 同任务三步）：选区变更落在元素未聚焦
+   *  态不触发动画，下一帧直接以聚焦蓝完整呈现。清理只由 window-hiding / 卸载 / 下次调用
+   *  触发，瞬时页面 blur 不取消（否则待定全选被杀、迟至二次触发才选中）。 */
+  let cancelPendingSelect: (() => void) | null = null
+  function selectAllWhenPageFocused() {
+    cancelPendingSelect?.()
+    const el = searchInput.value
+    if (!el) return
+    if (document.hasFocus()) {
+      selectAllWithoutAnimation(el)
+      return
+    }
+    let settled = false
+    let rafId: number | null = null
+    const cleanup = () => {
+      window.removeEventListener('focus', onFocus)
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      cancelPendingSelect = null
+    }
+    const settle = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      selectAllWithoutAnimation(el)
+    }
+    const onFocus = () => settle()
+    const poll = () => {
+      if (settled) return
+      if (document.hasFocus()) return settle()
+      rafId = requestAnimationFrame(poll)
+    }
+    cancelPendingSelect = cleanup
+    window.addEventListener('focus', onFocus)
+    rafId = requestAnimationFrame(poll)
+  }
+
   const focusHandler = async () => {
     if (activeExtension.value?.disableSearchInput) return
     searchInput.value?.focus()
     if (appStore.searchQuery) {
-      searchInput.value?.select()
-      // 重跑搜索刷新数据（results 虽保留可见，但隐藏期间可能有新缓存/剪贴板记录）
+      selectAllWhenPageFocused()
+      // 重跑搜索刷新数据（results 虽保留可见，但隐藏期间可能有新缓存/剪贴板记录）。
+      // 一律走 rerunSearch 静默重跑：无增量 partial 替换，唤起时滚动/选中与隐藏前一致
       const ext = activeExtension.value
       if (appStore.activeExtId) {
         // 搜索型扩展重跑；mainView 扩展不走 results 无需处理
-        if (ext && !ext.mainView && ext.search) runExtensionSearch(appStore.searchQuery)
+        if (ext && !ext.mainView && ext.search) rerunSearch(appStore.searchQuery)
       } else if (!appStore.searchQuery.startsWith('/')) {
         // 全局搜索重跑。工具列表（/）/ 网页搜索（//）结果由 query 确定性生成，
         // 隐藏期间不会过期且 DOM 已保留，走全局搜索会把工具列表替换成应用搜索结果
-        if (appStore.searchQuery.trim()) runExtensionSearch(appStore.searchQuery)
+        if (appStore.searchQuery.trim()) rerunSearch(appStore.searchQuery)
       }
     } else if (!appStore.activeExtId) {
       await loadDefaultResults()
@@ -354,11 +488,12 @@ export function useSearchInput(opts: SearchInputOptions) {
       const createdAt = new Date(latest.created_at.replace(' ', 'T') + 'Z').getTime()
       if (Date.now() - createdAt > 3000) return
       // 设值后派发 input 事件，复用 onInput 完整搜索链路（防抖/搜索引擎/结果更新）；
-      // select 使后续输入直接替换填充内容（focusHandler 在 IPC 往返前已执行，此时 query 仍空不会 select）
+      // select 使后续输入直接替换填充内容（focusHandler 在 IPC 往返前已执行，此时 query 仍空不会 select）。
+      // 同样经 selectAllWhenPageFocused：window-invoked 与 window-focused 同源先于页面焦点翻转
       if (searchInput.value) {
         searchInput.value.value = latest.content
         searchInput.value.dispatchEvent(new Event('input', { bubbles: true }))
-        searchInput.value.select()
+        selectAllWhenPageFocused()
       }
     } catch {
       // 剪贴板不可用时静默降级
@@ -369,6 +504,8 @@ export function useSearchInput(opts: SearchInputOptions) {
    *  不清空 results：主快捷键由 Rust 直接 show 窗口（前端 IPC 回调在 show 之后），
    *  若 results 已清空则第一帧渲染空态，待 loadDefaultResults 异步完成才出列表——产生闪烁。
    *  保留 DOM 使唤起时列表立即可见，focusHandler 后台刷新补增量。
+   *  输入框折叠残留选中并取消待定全选：唤起首帧页面焦点未落定，残留选中以非聚焦灰绘制、
+   *  获焦后翻蓝（灰→蓝跳变）；折叠后唤起由 selectAllWhenPageFocused 在获焦时一次到位。
    *  compositing layer 释放由 ContentView.clearCache 统一承担：content-visibility:hidden
    *  跳过结果列表渲染并释放 tile backing（DOM 保留不闪烁），扩展视图经 KeepAlive 卸载释放。 */
   function onWindowHiding() {
@@ -376,6 +513,13 @@ export function useSearchInput(opts: SearchInputOptions) {
     if (searchTimeout) {
       clearTimeout(searchTimeout)
       searchTimeout = null
+    }
+    cancelPendingSelect?.()
+    cancelPendingSelect = null
+    const el = searchInput.value
+    if (el && el.selectionStart !== el.selectionEnd) {
+      const end = el.value.length
+      el.setSelectionRange(end, end)
     }
   }
 
@@ -393,6 +537,8 @@ export function useSearchInput(opts: SearchInputOptions) {
     clearTimeout(iconTimer)
     if (searchTimeout) clearTimeout(searchTimeout)
     searchEngine.abort()
+    cancelPendingSelect?.()
+    cancelPendingSelect = null
     window.removeEventListener('window-focused', focusHandler)
     window.removeEventListener('window-invoked', maybeFillFromClipboard)
     window.removeEventListener('window-hiding', onWindowHiding)
