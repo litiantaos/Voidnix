@@ -74,7 +74,7 @@ token 从产品 `src/styles/theme.css` 自动同步（`scripts/sync-tokens.mjs`�
 
 深色模式：`ThemeInit.astro` 内联脚本在首帧前解析三态偏好（`localStorage('voidnix-site-theme')`：auto 跟随系统 / light / dark）写入 `<html data-theme>`，Hero 导航栏按钮循环切换并联动 `theme-color` meta；无 JS 环境回退浅色。
 
-排版：正文走系统 sans（SITE_ONLY 覆写 `--font-sans`，不继承产品 mono 优先）；技术性内容显式 `--font-mono`——快捷键标签、路径与文件名、终端与命令输出、尺寸标注、数值徽标、Hero 规格行。
+排版：正文走内置 Noto Sans（`site/public/fonts/` 拉丁可变字体单文件，@font-face 在 `global.css`，SITE_ONLY 覆写 `--font-sans` 不继承产品 mono 优先），CJK 回退系统 PingFang SC；技术性内容显式 `--font-mono`——快捷键标签、路径与文件名、终端与命令输出、尺寸标注、数值徽标、Hero 规格行（DemoStage 启动器 mock 复刻产品 mono，由 `demo-stage.css` 显式声明）。
 
 ## 部署
 
