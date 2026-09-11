@@ -39,6 +39,7 @@ function registerFnStubs(skip?: string) {
   for (const [id, def] of [
     ['agent', 'Alt+A'],
     ['screenshot', 'Alt+S'],
+    ['translate', 'Alt+T'],
     ['finder-ext', 'Alt+F'],
     ['clipboard', 'Alt+C'],
     ['notes', 'Alt+N'],
@@ -67,20 +68,23 @@ describe('WelcomeView 首启引导视图', () => {
   it('键位图（图纸区纯信息展示）：主快捷键板 + ⌘ 占位弱化板 + 五颗功能键板 + 等距网格 + 全引出线标注 + 左下角图签', () => {
     const wrapper = mountView()
     const text = wrapper.text()
-    // 图纸：两块主快捷键板（修饰键/Space）+ ⌘ 占位板 + 五块功能键板 + 「/」语法键；底层横向网格线
-    expect(wrapper.findAll('g.w-plate').length).toBe(9)
-    // 网格线：贴键底缘的横向线族（三排键上下底缘 6 层，沿 u 轴）——全部段合并单 path
+    // 图纸：顶排 T 板 + 两块主快捷键板（修饰键/Space）+ ⌘ 占位板 + 六块功能键板 + 「/」语法键；底层横向网格线
+    expect(wrapper.findAll('g.w-plate').length).toBe(10)
+    // 网格线：贴键底缘的横向线族（四排键上下底缘 8 层，沿 u 轴）——全部段合并单 path
     const gridD = wrapper.find('path.w-grid').attributes('d') ?? ''
-    expect((gridD.match(/M /g) ?? []).length).toBeGreaterThanOrEqual(6)
+    expect((gridD.match(/M /g) ?? []).length).toBeGreaterThanOrEqual(8)
     expect(wrapper.find('g.w-plate-ghost').text()).toContain('⌘')
+    // 修饰键板特殊色（mod tone）：与 main/fn 的 accent 蓝线系区分，标注「都要按」
+    expect(wrapper.find('g.w-plate-mod').text()).toContain('⌥')
     expect(wrapper.find('svg.w-iso').attributes('aria-label')).toBe('唤起窗口 ⌥ + Space')
-    // 标注全部经引出线：修饰键/唤起窗口 + 五个功能词 + 「/」语法键，共 8 组
-    expect(wrapper.findAll('g.w-callout').length).toBe(8)
+    // 标注全部经引出线：修饰键/唤起窗口 + 六个功能词 + 「/」语法键，共 9 组
+    expect(wrapper.findAll('g.w-callout').length).toBe(9)
     expect(text).toContain('修饰键')
     expect(text).toContain('唤起窗口')
     expect(text).toContain('Agent')
     expect(text).toContain('截屏')
-    expect(text).toContain('访达')
+    expect(text).toContain('翻译')
+    expect(text).toContain('访达工具')
     expect(text).toContain('剪贴板')
     expect(text).toContain('记事本')
     // 图纸态底部单句按键提示（右下角）：Enter / → 下一步 · ← 上一步；无 ↩ 键帽
@@ -183,7 +187,7 @@ describe('WelcomeView 首启引导视图', () => {
     expect(hatchR.attributes('width')).toBe('5')
 
     const groups = wrapper.findAll('g.w-callout')
-    expect(groups.length).toBe(8)
+    expect(groups.length).toBe(9)
     // 标注词定位走 transform（x/y attribute 变化触发 SVG text 重排，动画帧预算关键）
     const coPos = (el: { attributes: (n: string) => unknown }) => {
       const m = String(el.attributes('transform') ?? '').match(
@@ -216,13 +220,17 @@ describe('WelcomeView 首启引导视图', () => {
         expect(fx).toBeCloseTo(tx0)
         expect(fy).toBeCloseTo(y2 - 8 - 13)
       }
-      // Space 组：斜段下行（肘点为全线最低点），转折开口向上；N 组：斜段自顶部上行
+      // Space 组：斜段下行（肘点为全线最低点），转折开口向上；N 组：斜段自顶部上行；
+      // T（翻译）组：斜段下行右折（转折开口向上，同 Space 折角）
       if (g.text().includes('唤起窗口')) {
         expect(y2).toBeGreaterThan(y1)
         expect(y2).toBeGreaterThanOrEqual(Math.max(y1, y3))
       }
       if (g.text().includes('记事本')) {
         expect(y2).toBeLessThan(y1)
+      }
+      if (g.text().includes('翻译')) {
+        expect(y2).toBeGreaterThan(y1)
       }
     }
   })
@@ -282,8 +290,9 @@ describe('WelcomeView 首启引导视图', () => {
     const B_SLOTS = 17.53 / VX // v 半宽
     const WALL_T = 8 / (UY + VY) // 壁垂直挤出在网格平面的 (P,Q) 同增量
     const TOL = 0.05 // ~3px：断开端点贴切边（浮点抖动），深入超过容差才算穿透
-    // 板 (col, row, u 半宽) 布局表
+    // 板 (col, row, u 半宽) 布局表（含顶排 T 板 row −1）
     const plates: Array<[number, number, number]> = [
+      [4, -1, A_SLOTS],
       [0, 0, A_SLOTS],
       [1, 0, A_SLOTS],
       [3, 0, A_SLOTS],
@@ -354,8 +363,9 @@ describe('WelcomeView 首启引导视图', () => {
     expect(symbols).toContain('⌃')
     expect(symbols).toContain('⌥')
     expect(symbols).toContain('Space')
-    // 双修饰占满修饰槽，无弱化占位板
+    // 双修饰占满修饰槽，无弱化占位板；两块修饰板均琥珀（都要按标记）
     expect(wrapper.find('g.w-plate-ghost').exists()).toBe(false)
+    expect(wrapper.findAll('g.w-plate-mod').length).toBe(2)
     expect(wrapper.find('svg.w-iso').attributes('aria-label')).toBe('唤起窗口 ⌃ + ⌥ + Space')
   })
 
@@ -364,8 +374,8 @@ describe('WelcomeView 首启引导视图', () => {
     const wrapper = mountView()
     const ghosts = wrapper.findAll('g.w-plate-ghost').map((g) => g.text())
     expect(ghosts.sort()).toEqual(['⌘', '⌥'])
-    // 标注仅剩 唤起窗口 + 五个功能词 + 「/」语法键（无修饰键可标）
-    expect(wrapper.findAll('g.w-callout').length).toBe(7)
+    // 标注仅剩 唤起窗口 + 六个功能词 + 「/」语法键（无修饰键可标）
+    expect(wrapper.findAll('g.w-callout').length).toBe(8)
     expect(wrapper.text()).not.toContain('修饰键')
     expect(wrapper.find('svg.w-iso').attributes('aria-label')).toBe('唤起窗口 F1')
     // 单键落宽板（main tone）
@@ -388,12 +398,13 @@ describe('WelcomeView 首启引导视图', () => {
   it('dev 构建叠加不进板阵：⌥/⌘ 占位/Space 保持 Alt 基布局示意（回归锚点）', () => {
     // dev 注册态的 Shift 叠加在 Rust shortcut.rs 侧，板阵恒读 store 原值（Alt 基）
     const wrapper = mountView()
-    // dev 注册叠加的 ⇧ 不挤占键盘布局示意：⌥ main + ⌘ 弱化占位 + Space（「/」非快捷键不受影响）
+    // dev 注册叠加的 ⇧ 不挤占键盘布局示意：⌥ mod 琥珀 + ⌘ 弱化占位 + Space（「/」非快捷键不受影响）
     const symbols = wrapper.findAll('text.w-cap').map((c) => c.text())
     expect(symbols).toContain('⌥')
     expect(symbols).toContain('⌘')
     expect(symbols).toContain('Space')
     expect(symbols).toContain('/')
+    expect(wrapper.find('g.w-plate-mod').text()).toContain('⌥')
     expect(wrapper.find('g.w-plate-ghost').text()).toContain('⌘')
     expect(wrapper.find('svg.w-iso').attributes('aria-label')).toBe('唤起窗口 ⌥ + Space')
   })
@@ -405,9 +416,9 @@ describe('WelcomeView 首启引导视图', () => {
     const symbols = wrapper.findAll('text.w-cap').map((c) => c.text())
     expect(symbols).not.toContain('N')
     expect(wrapper.text()).not.toContain('记事本')
-    // 其余四颗功能键板照常（+「/」语法键不受注册表影响）
-    for (const s of ['A', 'S', 'F', 'C']) expect(symbols).toContain(s)
-    expect(wrapper.findAll('g.w-plate').length).toBe(8)
+    // 其余五颗功能键板照常（+「/」语法键不受注册表影响）
+    for (const s of ['A', 'S', 'T', 'F', 'C']) expect(symbols).toContain(s)
+    expect(wrapper.findAll('g.w-plate').length).toBe(9)
   })
 
   it('Enter 两段式：图纸态展开权限面板（不完结），展开态完结落盘；重复按键不二次 emit', async () => {
@@ -457,11 +468,11 @@ describe('WelcomeView 首启引导视图', () => {
       expect(wrapper.find('g.w-zoom').attributes('transform') ?? '').toMatch(/scale\(0\.8000\)/),
     )
     expect(wrapper.find('.welcome-view').classes()).toContain('w-expanded')
-    // 图纸几何内容整体等比缩小：俯视终点 scale 0.8、中心补偿平移 (72, 48)
-    ///（360/240 × 0.2；attribute transform 随 expandF 逐帧插值，等距 1）
+    // 图纸几何内容整体等比缩小：俯视终点 scale 0.8、平移补偿 (72, 23)（水平中心 360、
+    /// 垂直中心 ZOOM_CY 115 上提让位权限面板；attribute transform 随 expandF 逐帧插值）
     const zoom = wrapper.find('g.w-zoom').attributes('transform') ?? ''
     expect(zoom).toMatch(/scale\(0\.8000\)/)
-    expect(zoom).toMatch(/translate\(72\.00 48\.00\)/)
+    expect(zoom).toMatch(/translate\(72\.00 23\.00\)/)
     // 图签在缩放层外：位置恒定不随缩小移动（展开时原地渐隐）
     expect(wrapper.find('text.w-title').attributes('x')).toBe('53')
     for (const p of wrapper.findAll('g.w-plate')) {

@@ -47,6 +47,46 @@
             <stop offset="0" stop-color="var(--color-accent)" stop-opacity="0.12" />
             <stop offset="1" stop-color="var(--color-accent)" stop-opacity="0.045" />
           </linearGradient>
+          <!-- 修饰键特殊色（warning 琥珀）：全部快捷键共用的必按修饰，与 accent 蓝线系
+               区分——渐变/剖切几何与强度完全同款，仅换色相 -->
+          <linearGradient id="w-top-grad-mod" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="var(--color-warning)" stop-opacity="0.12" />
+            <stop offset="1" stop-color="var(--color-warning)" stop-opacity="0.045" />
+          </linearGradient>
+          <pattern
+            id="w-hatch-l-mod"
+            width="6"
+            height="6"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"
+          >
+            <line
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="6"
+              stroke="var(--color-warning)"
+              stroke-opacity="0.4"
+              stroke-width="1"
+            />
+          </pattern>
+          <pattern
+            id="w-hatch-r-mod"
+            width="5"
+            height="5"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(20)"
+          >
+            <line
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="5"
+              stroke="var(--color-warning)"
+              stroke-opacity="0.4"
+              stroke-width="1"
+            />
+          </pattern>
         </defs>
 
         <!-- 缩放层：展开时几何内容整体等比缩小（viewBox 中心原地收缩）；图签在层外，
@@ -57,7 +97,8 @@
           <path class="w-grid" :d="gridPath" />
 
           <!-- 键帽板（painter 序：平面 row/col 升序，近者后画覆盖远者的壁）。
-             tone 分层：main 主快捷键重笔 / fn 功能键常态 / ghost ⌘ 占位弱化 -->
+             tone 分层：mod 修饰键琥珀（必按标记）/ main 主快捷键重笔 / fn 功能键常态
+             / ghost ⌘ 占位弱化 -->
           <g
             v-for="k in allPlates"
             :key="k.id"
@@ -76,8 +117,13 @@
           </g>
 
           <!-- 修饰键引出线：端点在 col0 修饰板远侧边中心，文字对齐水平段左端（左拉）。
-             与其余引出线同经 callout() 计算；单键组合无修饰键不渲染 -->
-          <g v-if="modifierCallout" class="w-callout w-fade" :style="{ animationDelay: '420ms' }">
+             与其余引出线同经 callout() 计算；单键组合无修饰键不渲染。线系随板用
+             琥珀（与修饰板成组，标注即「都要按」的特殊键） -->
+          <g
+            v-if="modifierCallout"
+            class="w-callout w-callout-mod w-fade"
+            :style="{ animationDelay: '420ms' }"
+          >
             <circle :cx="modifierCallout.dot[0]" :cy="modifierCallout.dot[1]" r="3" />
             <path :d="modifierCallout.d" />
             <!-- 标注词定位走 transform（x/y attribute 变化会触发 SVG text 逐帧重排，
@@ -263,11 +309,15 @@ onUnmounted(() => cancelAnimationFrame(expandRaf))
 /// 展开态图纸整体等比缩小（为权限面板让位）：几何内容经根 g attribute transform
 /// 缩放，scale 随 expandF 逐帧插值、与投影几何同帧同步（attribute 几何无法 CSS
 /// 过渡，同「布局伸缩用 JS hooks」合规场景）。attribute scale 围绕 viewBox 原点，
-/// 平移补偿到中心 (360, 240)（meet 居中即视觉中心）实现原地收缩；图签在缩放层外
+/// 平移补偿实现收缩——水平中心 360（meet 居中即视觉中心）；垂直中心 ZOOM_CY 自
+/// 240 上提：顶排 T 板使俯视内容整体下移（TOP.oy 140），Space 板底缘 attr 387.6
+/// 经 0.8 缩放后 358 会压进权限面板（面板顶缘 ≈ 337），上提中心把内容收进面板
+/// 上方区域（保持 0.8 缩放不缩图，比降 TOP_SCALE 到 ~0.67 保画面尺寸）；图签在层外
 const TOP_SCALE = 0.8 // 俯视终点整体缩放（等距 1）
+const ZOOM_CY = 115 // 俯视收缩垂直中心（水平恒 360）
 const stageZoom = computed(() => {
   const s = 1 - (1 - TOP_SCALE) * expandF.value
-  return `translate(${(360 * (1 - s)).toFixed(2)} ${(240 * (1 - s)).toFixed(2)}) scale(${s.toFixed(4)})`
+  return `translate(${(360 * (1 - s)).toFixed(2)} ${(ZOOM_CY * (1 - s)).toFixed(2)}) scale(${s.toFixed(4)})`
 })
 
 /// 权限页条目（功能 ↔ 权限映射）：granted null（检查中）按未授权渲染，
@@ -361,10 +411,13 @@ const lerp = (x: number, y: number, t: number): number => x + (y - x) * t
 /// 65.8、键纵高 = 2b·kv = 等距 v 边视觉长 59.7、排距 = 等距 |V| 108.9、行错位 =
 /// 等距屏幕错位 +10px、字符视觉轴长不变。转变中变化的只有投影形状（菱形→矩形）、
 /// 侧壁（厚度收敛 0）、col 向 y 下沉（排转平）与原点平移（俯视内容在面板上方区域
-/// 居中——x 向板阵与右侧词块对称配重、y 向可见区中心）
+/// 居中——x 向板阵与右侧词块对称配重；y 向因顶排 T 板整体下移，收尾经 ZOOM_CY
+/// 上提让位权限面板，见 stageZoom）
 const ISO = { u1: 1, ku: KU / 2, kx: -1, kxr: -1, kv: KV / 2, kvr: KV / 2, ox: 230, oy: 119 }
 /// VIS = 各轴等距视觉缩放因子（√(4+K²)/2）：u 边 1.0444 / v 边 1.7023
 const VIS = Math.sqrt(4 + KV * KV) / 2
+/// 俯视原点：顶排 T 板（row −1）需整段排距 108.9 的画布预算，oy 自 104 下移至 140
+///（T 板顶缘贴 y≈1）；底部由 stageZoom 垂直中心上提补偿
 const TOP = {
   u1: Math.sqrt(4 + KU * KU) / 2,
   ku: 0,
@@ -373,7 +426,7 @@ const TOP = {
   kv: VIS,
   kvr: VIS,
   ox: 111,
-  oy: 104,
+  oy: 140,
 }
 
 const ax = computed(() => {
@@ -557,11 +610,22 @@ const FN_LAYOUT = [
     co: { corner: 'far' as const, diag: [-12, -28] as Pt, h: -28 },
   },
   {
+    extId: 'translate',
+    labelKey: 'welcome.fnTranslate',
+    col: 4,
+    row: -1,
+    // 顶排真实位（T 在 QWERT 顶排，仅 T 有功能故整排只画一颗板，网格横线
+    // 暗示排的存在——与 D 空位同款语言）。引出线锚右侧边中点（coRight 同
+    // Space 范式），斜段下行右折（转折开口向上，同 Space 折角）——两投影同款
+    co: { corner: 'right' as const, diag: [16, 16] as Pt, h: 40 },
+  },
+  {
     extId: 'finder-ext',
     labelKey: 'welcome.fnFinder',
     col: 3,
     row: 0,
-    co: { corner: 'far' as const, diag: [-12, -28] as Pt, h: -28 },
+    // 水平段按词宽取（访达工具 4 CJK ≈ 47px，与 Agent 同款左拉）
+    co: { corner: 'far' as const, diag: [-12, -28] as Pt, h: -48 },
   },
   {
     extId: 'clipboard',
@@ -583,10 +647,12 @@ const FN_LAYOUT = [
   },
 ]
 
-/// 引出锚点表（标记 → 当前投影下的向量）
-const anchors = computed<Record<'far' | 'left', Pt>>(() => ({
+/// 引出锚点表（标记 → 当前投影下的向量）。right = 单键半宽侧边中点（Space 宽板
+/// 专用 coRight(SPACE_A) 不入表）
+const anchors = computed<Record<'far' | 'left' | 'right', Pt>>(() => ({
   far: CO_FAR.value,
   left: CO_LEFT.value,
+  right: coRight(KEY_A),
 }))
 
 /** 扩展默认键位（override 缺省时）；id 失效或未声明 default 时返回 undefined（跳过该板） */
@@ -616,18 +682,27 @@ const fnSpecs = computed(() =>
 
 /// 主快捷键板阵静态描述：按完整 token 派生（ShortcutInput 允许 1~4 段）——修饰键
 /// 依次落 col0/col1，空槽渲染弱化占位板；末位动作键落宽板，第 3+ 修饰无处安放
-/// 并入宽板键名。主次分层：main 重笔 / ghost 弱化。派生规则详见 AGENTS.md
+/// 并入宽板键名。分层：mod 修饰键琥珀（全部快捷键共用的必按标记）/ main 动作键
+/// 重笔 / ghost 弱化。派生规则详见 AGENTS.md
 const mainSpecs = computed(() => {
   const keys = shortcutKeys.value
   if (keys.length === 0) return []
   const mods = keys.slice(0, -1)
   const shown = mods.slice(0, 2)
   const wide = [...mods.slice(2), keys[keys.length - 1]!].join('')
-  const specs = [0, 1].map((col) => {
+  const specs: {
+    id: string
+    tone: 'mod' | 'main' | 'ghost'
+    col: number
+    row: number
+    a: number
+    b: number
+    symbol: string
+  }[] = [0, 1].map((col) => {
     const sym = shown[col]
     return {
       id: sym ? `mod${col}` : `ghost${col}`,
-      tone: (sym ? 'main' : 'ghost') as 'main' | 'ghost',
+      tone: (sym ? 'mod' : 'ghost') as 'mod' | 'ghost',
       col,
       row: 2,
       a: KEY_A,
@@ -772,8 +847,15 @@ const gridPath = computed(() => {
     if (v >= 1.5) return hi
     return Math.min(hi + GRID_MARGIN, (GRID_X_MAX - A.ox - 64 * A.kxr * v) / (74 * A.u1))
   }
-  // 每层扫描断开区间，串出保留段；起点按层钳 x ≥ 6（俯视行偏移下 u=−1 可能出左界）
-  const uStart = (v: number) => Math.max(GRID_U_MIN, (6 - A.ox - 64 * A.kxr * v) / (74 * A.u1))
+  // 每层扫描断开区间，串出保留段；起点按层钳 x ≥ 6（俯视行偏移下 u=−1 可能出左界），
+  // 等距下再钳 y ≥ 6——顶排层（v < 0）沿 u 轴向左上是上行，左端会出画布顶
+  //（ku>0.05 守卫：俯视 ku=0 层线水平，y 与 u 无关由 v 决定、天然在界内）
+  const uStart = (v: number) =>
+    Math.max(
+      GRID_U_MIN,
+      (6 - A.ox - 64 * A.kxr * v) / (74 * A.u1),
+      ...(A.ku > 0.05 ? [(6 - A.oy - 64 * A.kvr * v) / (74 * A.ku)] : []),
+    )
   const out: string[] = []
   for (const [vk, list] of cuts) {
     const v = vk / 1e3
@@ -889,7 +971,8 @@ const gridPath = computed(() => {
 :root[data-theme='dark'] .w-top {
   fill: var(--accent-line);
 }
-/* 主次分层：main（主快捷键）重笔实面 / fn（功能键）常态 / ghost（⌘ 占位）弱化 */
+/* 主次分层：mod（修饰键）琥珀实面 / main（主快捷键动作键）重笔实面 / fn（功能键）
+   常态 / ghost（⌘ 占位）弱化 */
 .w-plate-main .w-top {
   fill-opacity: 1;
   stroke-opacity: 0.9;
@@ -897,6 +980,25 @@ const gridPath = computed(() => {
 .w-plate-main .w-wall-l,
 .w-plate-main .w-wall-r {
   stroke-opacity: 0.85;
+}
+/* 修饰键特殊色（warning 琥珀）：全部快捷键共用的必按修饰——与 accent 蓝线系
+   区分（渐变/剖切几何同款仅换色，视觉重量与 main 一致） */
+.w-plate-mod .w-top {
+  fill: url(#w-top-grad-mod);
+  fill-opacity: 1;
+  stroke: var(--color-warning);
+  stroke-opacity: 0.9;
+}
+.w-plate-mod .w-wall-l,
+.w-plate-mod .w-wall-r {
+  stroke: var(--color-warning);
+  stroke-opacity: 0.85;
+}
+.w-plate-mod .w-wall-l {
+  fill: url(#w-hatch-l-mod);
+}
+.w-plate-mod .w-wall-r {
+  fill: url(#w-hatch-r-mod);
 }
 .w-plate-ghost .w-top {
   fill-opacity: 0.22;
@@ -921,6 +1023,10 @@ const gridPath = computed(() => {
 .w-plate-main .w-sheen {
   stroke-opacity: 0.4;
 }
+.w-plate-mod .w-sheen {
+  stroke: var(--color-warning);
+  stroke-opacity: 0.4;
+}
 .w-plate-ghost .w-sheen {
   opacity: 0;
 }
@@ -929,6 +1035,13 @@ const gridPath = computed(() => {
 }
 :root[data-theme='dark'] .w-plate-main .w-sheen {
   stroke-opacity: 0.5;
+}
+:root[data-theme='dark'] .w-plate-mod .w-sheen {
+  stroke-opacity: 0.5;
+}
+/* 深色：底色提为 warning-soft（渐变浅染在深底不可见，对齐 accent 深轨范式） */
+:root[data-theme='dark'] .w-plate-mod .w-top {
+  fill: var(--color-warning-soft);
 }
 
 /* 图签（左下角应用名）：mono 主文本色，字号居键名与标注之上；
@@ -1089,6 +1202,16 @@ const gridPath = computed(() => {
   fill: var(--color-accent);
   font-size: 11px;
   letter-spacing: 0.06em;
+}
+/* 修饰键标注随板换琥珀：线系与词同色成组，指认「都要按」的特殊键 */
+.w-callout-mod circle {
+  fill: var(--color-warning);
+}
+.w-callout-mod path {
+  stroke: var(--color-warning);
+}
+.w-callout-mod .w-co-main {
+  fill: var(--color-warning);
 }
 
 /* 板入场：弹簧沉降（逐板 stagger 经内联 animationDelay） */
