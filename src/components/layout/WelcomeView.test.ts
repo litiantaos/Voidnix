@@ -1,17 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import { invoke } from '@tauri-apps/api/core'
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
 }))
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: () => ({ label: 'main', onCloseRequested: () => Promise.resolve(() => {}) }),
+}))
 vi.mock('@tauri-apps/plugin-store', () => ({
   load: vi.fn().mockRejectedValue(new Error('no store')),
 }))
+// isTauri=true 打开权限 chip 的点击链路（组件内仅 handlePerm 消费）
+vi.mock('@/utils/tauri', () => ({ isTauri: true }))
 
 import WelcomeView from './WelcomeView.vue'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
+import { useSystemStore } from '@/stores/system'
 import { defineExtension, _resetForTest } from '@/runtime/extension-registry'
 import { locale } from '@/runtime/i18n'
 import '@/locales'
@@ -56,13 +64,14 @@ describe('WelcomeView 首启引导视图', () => {
     _resetForTest()
   })
 
-  it('键位图（纯信息展示）：主快捷键板 + ⌘ 占位弱化板 + 五颗功能键板 + 等距网格 + 全引出线标注 + 左下角图签', () => {
+  it('键位图（图纸区纯信息展示）：主快捷键板 + ⌘ 占位弱化板 + 五颗功能键板 + 等距网格 + 全引出线标注 + 左下角图签', () => {
     const wrapper = mountView()
     const text = wrapper.text()
     // 图纸：两块主快捷键板（修饰键/Space）+ ⌘ 占位板 + 五块功能键板 + 「/」语法键；底层横向网格线
     expect(wrapper.findAll('g.w-plate').length).toBe(9)
-    // 网格线：贴键底缘的横向线族（三排键上下底缘 6 层，沿 u 轴；板占位内断开成多段）
-    expect(wrapper.findAll('path.w-grid').length).toBeGreaterThanOrEqual(6)
+    // 网格线：贴键底缘的横向线族（三排键上下底缘 6 层，沿 u 轴）——全部段合并单 path
+    const gridD = wrapper.find('path.w-grid').attributes('d') ?? ''
+    expect((gridD.match(/M /g) ?? []).length).toBeGreaterThanOrEqual(6)
     expect(wrapper.find('g.w-plate-ghost').text()).toContain('⌘')
     expect(wrapper.find('svg.w-iso').attributes('aria-label')).toBe('唤起窗口 ⌥ + Space')
     // 标注全部经引出线：修饰键/唤起窗口 + 五个功能词 + 「/」语法键，共 8 组
@@ -74,6 +83,13 @@ describe('WelcomeView 首启引导视图', () => {
     expect(text).toContain('访达')
     expect(text).toContain('剪贴板')
     expect(text).toContain('记事本')
+    // 图纸态底部单句按键提示（右下角）：Enter / → 下一步 · ← 上一步；无 ↩ 键帽
+    expect(wrapper.find('.w-footer .w-note').text()).toBe('Enter / → 下一步 · ← 上一步')
+    // 图纸初始等比缩放 1（展开态随 expandF 插值到 0.8；缩放层不含图签）
+    expect(wrapper.find('g.w-zoom').attributes('transform')).toMatch(/scale\(1\.0000\)/)
+    const caps = wrapper.findAll('text.w-cap').map((c) => c.text())
+    expect(caps).not.toContain('↩')
+    expect(caps).not.toContain('⌘↩')
     // 图签：左下角应用名（入场序列末位）+ 品牌口号（名字下方）；纯信息展示无按钮
     const title = wrapper.find('text.w-title')
     expect(title.text()).toBe('Voidnix')
@@ -89,7 +105,7 @@ describe('WelcomeView 首启引导视图', () => {
     expect(parseFloat(tagline.attributes('x')!)).toBe(parseFloat(title.attributes('x')!))
     expect(parseFloat(tagline.attributes('y')!)).toBeGreaterThan(parseFloat(title.attributes('y')!))
     expect(tagline.attributes('textLength')).toBe(title.attributes('textLength'))
-    // 标题底部与图纸按键底部对齐：口号底缘（基线 + 中文下降 ≈2）≈ 板阵最低点
+    // 标题块整体下沉 12px：口号底缘（基线 + 中文下降 ≈2）沉到板阵最低点下方（不再齐平）
     const plateBottom = Math.max(
       ...wrapper
         .findAll('g.w-plate path')
@@ -99,8 +115,10 @@ describe('WelcomeView 首启引导视图', () => {
           ),
         ),
     )
-    expect(Math.abs(parseFloat(tagline.attributes('y')!) + 2 - plateBottom)).toBeLessThan(3)
-    expect(wrapper.findAll('button').length).toBe(0)
+    expect(parseFloat(tagline.attributes('y')!) + 2 - plateBottom).toBeGreaterThan(10)
+    // 图纸区零交互元素；权限面板常驻 DOM 但未展开（w-expanded 未挂、不可交互）
+    expect(wrapper.find('.welcome-view').classes()).not.toContain('w-expanded')
+    expect(wrapper.findAll('.w-perm-row button')).toHaveLength(3)
   })
 
   it('en 口号不设 textLength（词形自然宽，防同宽挤压字距）；图签标题恒设', () => {
@@ -111,6 +129,8 @@ describe('WelcomeView 首启引导视图', () => {
     // 「/」语法键引出线同语言切换（双行词块，含 // 搜索文案）
     expect(wrapper.text()).toContain('Type / to show extensions')
     expect(wrapper.text()).toContain('Type // for quick search')
+    // 底部按键提示同语言切换（图纸态右下角单句）
+    expect(wrapper.find('.w-footer .w-note').text()).toBe('Enter / → next · ← back')
   })
 
   it('画布不溢出：全部图形元素坐标（板/网格路径、引出线锚点、图签）落在 viewBox 720×480 内', () => {
@@ -127,7 +147,7 @@ describe('WelcomeView 首启引导视图', () => {
       }
     }
     for (const p of wrapper.findAll('g.w-plate path')) check(nums(p.attributes('d') ?? ''), 'plate')
-    for (const p of wrapper.findAll('path.w-grid')) check(nums(p.attributes('d') ?? ''), 'grid')
+    check(nums(wrapper.find('path.w-grid').attributes('d') ?? ''), 'grid')
     for (const g of wrapper.findAll('g.w-callout')) {
       check(nums(g.find('path').attributes('d') ?? ''), 'callout path')
       const c = g.find('circle')
@@ -164,6 +184,13 @@ describe('WelcomeView 首启引导视图', () => {
 
     const groups = wrapper.findAll('g.w-callout')
     expect(groups.length).toBe(8)
+    // 标注词定位走 transform（x/y attribute 变化触发 SVG text 重排，动画帧预算关键）
+    const coPos = (el: { attributes: (n: string) => unknown }) => {
+      const m = String(el.attributes('transform') ?? '').match(
+        /translate\((-?[\d.]+) (-?[\d.]+)\)/,
+      )!
+      return [parseFloat(m[1]!), parseFloat(m[2]!)] as const
+    }
     for (const g of groups) {
       const m = (g.find('path').attributes('d') ?? '').match(
         /^M (-?[\d.]+) (-?[\d.]+) L (-?[\d.]+) (-?[\d.]+) L (-?[\d.]+) (-?[\d.]+)$/,
@@ -177,17 +204,17 @@ describe('WelcomeView 首启引导视图', () => {
       const texts = g.findAll('text')
       expect(texts.length).toBeLessThanOrEqual(2)
       const tx = texts[texts.length - 1]!
+      const [tx0, ty0] = coPos(tx)
       expect(tx.attributes('text-anchor') ?? 'start').toBe(goesRight ? 'end' : 'start')
-      expect(parseFloat(tx.attributes('x')!)).toBeCloseTo(
-        goesRight ? Math.max(x2, x3) : Math.min(x2, x3),
-      )
-      expect(parseFloat(tx.attributes('y')!)).toBeCloseTo(y2 - 8)
+      expect(tx0).toBeCloseTo(goesRight ? Math.max(x2, x3) : Math.min(x2, x3))
+      expect(ty0).toBeCloseTo(y2 - 8)
       // 「/」语法键双行词块：首行同锚右对齐、整体上移一行（行距 13）
       if (texts.length === 2) {
         const first = texts[0]!
+        const [fx, fy] = coPos(first)
         expect(first.attributes('text-anchor')).toBe(tx.attributes('text-anchor'))
-        expect(parseFloat(first.attributes('x')!)).toBeCloseTo(parseFloat(tx.attributes('x')!))
-        expect(parseFloat(first.attributes('y')!)).toBeCloseTo(y2 - 8 - 13)
+        expect(fx).toBeCloseTo(tx0)
+        expect(fy).toBeCloseTo(y2 - 8 - 13)
       }
       // Space 组：斜段下行（肘点为全线最低点），转折开口向上；N 组：斜段自顶部上行
       if (g.text().includes('唤起窗口')) {
@@ -279,13 +306,15 @@ describe('WelcomeView 首启引导视图', () => {
           Math.abs(p - col) < a - TOL && Math.abs(q - row) < B_SLOTS + WALL_T - TOL,
       )
     }
-    const segs = wrapper.findAll('path.w-grid')
+    // 单 path 合并的网格段拆回子路径逐段校验
+    const segs =
+      (wrapper.find('path.w-grid').attributes('d') ?? '').match(
+        /M -?[\d.]+ -?[\d.]+ L -?[\d.]+ -?[\d.]+/g,
+      ) ?? []
     expect(segs.length).toBeGreaterThan(0)
     for (const seg of segs) {
-      const m = (seg.attributes('d') ?? '').match(
-        /^M (-?[\d.]+) (-?[\d.]+) L (-?[\d.]+) (-?[\d.]+)$/,
-      )
-      expect(m, `网格段无法解析: ${seg.attributes('d')}`).not.toBeNull()
+      const m = seg.match(/^M (-?[\d.]+) (-?[\d.]+) L (-?[\d.]+) (-?[\d.]+)$/)
+      expect(m, `网格段无法解析: ${seg}`).not.toBeNull()
       const x1 = parseFloat(m![1]!)
       const y1 = parseFloat(m![2]!)
       const x2 = parseFloat(m![3]!)
@@ -295,10 +324,7 @@ describe('WelcomeView 首启引导视图', () => {
         [x2, y2],
         [(x1 + x2) / 2, (y1 + y2) / 2],
       ]) {
-        expect(
-          insidePlate(px, py),
-          `网格段 ${seg.attributes('d')} 采样点 (${px},${py}) 深入板内`,
-        ).toBe(false)
+        expect(insidePlate(px, py), `网格段 ${seg} 采样点 (${px},${py}) 深入板内`).toBe(false)
       }
     }
   })
@@ -384,21 +410,101 @@ describe('WelcomeView 首启引导视图', () => {
     expect(wrapper.findAll('g.w-plate').length).toBe(8)
   })
 
-  it('Enter / Escape 键盘路径 emit done（组件自治按键，一次性）并落盘 onboarded', () => {
-    // 生产中组件仅在 fullscreen 槽激活期间挂载（requestDone 据槽判定完结有效性）
+  it('Enter 两段式：图纸态展开权限面板（不完结），展开态完结落盘；重复按键不二次 emit', async () => {
     useAppStore().setFullscreenView(WelcomeView)
     const wrapper = mountView()
     const settings = useSettingsStore()
+
+    // 图纸态：Enter 展开权限面板（图纸缩小左移 + 右侧面板滑入），不完结不落盘
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await nextTick()
+    expect(wrapper.emitted('done')).toBeUndefined()
+    expect(settings.onboarded).toBe(false)
+    expect(wrapper.find('.welcome-view').classes()).toContain('w-expanded')
+
+    // 展开态：Enter 完结，自持落盘 onboarded
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(wrapper.emitted('done')).toHaveLength(1)
-    // 完结落盘归供给方自持
     expect(settings.onboarded).toBe(true)
     // 完结一次性：done 之后的重复按键不再 emit
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     expect(wrapper.emitted('done')).toHaveLength(1)
   })
 
-  it('Escape 始终完结（焦点残留不拦截）', () => {
+  it('方向键：ArrowRight 展开权限面板 / ArrowLeft 收起回图纸，不触发完结', async () => {
+    useAppStore().setFullscreenView(WelcomeView)
+    const wrapper = mountView()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.welcome-view').classes()).toContain('w-expanded')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.welcome-view').classes()).not.toContain('w-expanded')
+    expect(wrapper.find('svg.w-iso').exists()).toBe(true)
+    expect(wrapper.emitted('done')).toBeUndefined()
+    // 收起后底部提示切回下一步引导
+    expect(wrapper.find('.w-footer .w-note').text()).toBe('Enter / → 下一步 · ← 上一步')
+  })
+
+  it('展开转变：投影因子驱动等距→俯视连续插值，动画完成后顶面塌缩为轴对齐矩形、整图等比缩小 0.8 且不出 viewBox', async () => {
+    useAppStore().setFullscreenView(WelcomeView)
+    const wrapper = mountView()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await nextTick()
+    // rAF 驱动 300ms 插值，轮询至收敛（f=1 纯俯视：u 轴水平、壁厚 0）——固定
+    // sleep 在 CI 高负载下帧延迟超余量即偶发失败
+    await vi.waitFor(() =>
+      expect(wrapper.find('g.w-zoom').attributes('transform') ?? '').toMatch(/scale\(0\.8000\)/),
+    )
+    expect(wrapper.find('.welcome-view').classes()).toContain('w-expanded')
+    // 图纸几何内容整体等比缩小：俯视终点 scale 0.8、中心补偿平移 (72, 48)
+    ///（360/240 × 0.2；attribute transform 随 expandF 逐帧插值，等距 1）
+    const zoom = wrapper.find('g.w-zoom').attributes('transform') ?? ''
+    expect(zoom).toMatch(/scale\(0\.8000\)/)
+    expect(zoom).toMatch(/translate\(72\.00 48\.00\)/)
+    // 图签在缩放层外：位置恒定不随缩小移动（展开时原地渐隐）
+    expect(wrapper.find('text.w-title').attributes('x')).toBe('53')
+    for (const p of wrapper.findAll('g.w-plate')) {
+      const d = p.find('path.w-top').attributes('d') ?? ''
+      // 四个角圆弧的 Q 控制点即四角：俯视矩形 x/y 各自仅两取值（等距菱形 y 有四取值）
+      const ctrl = [...d.matchAll(/Q (-?[\d.]+) (-?[\d.]+)/g)].map((m) => [
+        parseFloat(m[1]!),
+        parseFloat(m[2]!),
+      ])
+      expect(ctrl).toHaveLength(4)
+      expect(new Set(ctrl.map((c) => Math.round(c[0]! * 2))).size).toBe(2)
+      expect(new Set(ctrl.map((c) => Math.round(c[1]! * 2))).size).toBe(2)
+      // 单键俯视尺寸 = 等距视觉尺寸（视角转正不改键盘）：横宽 2a·u1 = 等距 u 边
+      // 视觉长 65.8、纵高 2b·kv = 等距 v 边视觉长 59.7（Space 宽板跳过）
+      const xs = ctrl.map((c) => c[0]!)
+      const ys = ctrl.map((c) => c[1]!)
+      const width = Math.max(...xs) - Math.min(...xs)
+      const height = Math.max(...ys) - Math.min(...ys)
+      if (width < 100) {
+        expect(Math.abs(width - 63 * 1.0444)).toBeLessThan(1)
+        expect(Math.abs(height - 35.06 * 1.7023)).toBeLessThan(1)
+      }
+    }
+    // 俯视图整体仍在 viewBox 内（含壁厚 0 的网格/引出线随动）
+    const nums = (s: string) => [...s.matchAll(/-?[\d.]+/g)].flatMap((m) => [parseFloat(m[0]!)])
+    for (const path of wrapper.findAll('g.w-plate path, path.w-grid, g.w-callout path')) {
+      const v = nums(path.attributes('d') ?? '')
+      for (let i = 0; i < v.length; i += 2) {
+        expect(v[i]).toBeGreaterThanOrEqual(-1)
+        expect(v[i]).toBeLessThanOrEqual(721)
+        expect(v[i + 1]).toBeGreaterThanOrEqual(-1)
+        expect(v[i + 1]).toBeLessThanOrEqual(481)
+      }
+    }
+    // 板阵水平居中（中心 ≈ viewBox 360，词块在右侧作视觉配重允许微偏）
+    const plateXs = wrapper
+      .findAll('g.w-plate path.w-top')
+      .flatMap((p) => nums(p.attributes('d') ?? '').filter((_, i) => i % 2 === 0))
+    const centerX = (Math.max(...plateXs) + Math.min(...plateXs)) / 2
+    expect(Math.abs(centerX - 360)).toBeLessThan(20)
+  })
+
+  it('Escape 始终完结（任意页，焦点残留不拦截）', () => {
     useAppStore().setFullscreenView(WelcomeView)
     const wrapper = mountView()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -411,5 +517,76 @@ describe('WelcomeView 首启引导视图', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(wrapper.emitted('done')).toBeUndefined()
     expect(useSettingsStore().onboarded).toBe(false)
+  })
+
+  it('权限面板：功能 ↔ 权限映射渲染，三项未授权可点直达系统设置，辅助功能先经系统弹窗请求再跳', async () => {
+    useAppStore().setFullscreenView(WelcomeView)
+    const wrapper = mountView()
+    // 展开权限面板
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await nextTick()
+
+    // 底部提示同一元素同一位置：展开态内容切换为收尾导航（面板无标题行，任何标题写法都不得出现）
+    expect(
+      wrapper
+        .find(
+          '.w-perm-panel h1, .w-perm-panel h2, .w-perm-panel h3, .w-perm-panel h4, .w-perm-panel h5, .w-perm-panel h6, .w-perm-panel [role="heading"]',
+        )
+        .exists(),
+    ).toBe(false)
+    expect(wrapper.find('.w-footer .w-note').text()).toBe('← 上一步 · Enter 开始使用')
+    const rows = wrapper.findAll('.w-perm-row')
+    expect(rows.map((r) => r.find('.w-perm-name').text())).toEqual([
+      '屏幕录制',
+      '辅助功能',
+      '完全磁盘',
+    ])
+    expect(rows.map((r) => r.find('.w-perm-use').text())).toEqual([
+      '截屏标注 · 窗口管理',
+      '划词翻译 · 访达隐藏文件切换',
+      '下载/图片等保存免弹窗',
+    ])
+
+    const buttons = wrapper.findAll('.w-perm-row button')
+    expect(buttons.map((b) => b.text())).toEqual(['授权', '授权', '授权'])
+
+    await buttons[0]!.trigger('click')
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith('open_privacy_settings', {
+      kind: 'screen_recording',
+    })
+
+    vi.mocked(invoke).mockClear()
+    await buttons[1]!.trigger('click')
+    expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'request_accessibility_permission')
+    expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'open_privacy_settings', {
+      kind: 'accessibility',
+    })
+
+    vi.mocked(invoke).mockClear()
+    await buttons[2]!.trigger('click')
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith('open_privacy_settings', {
+      kind: 'full_disk_access',
+    })
+  })
+
+  it('已授权项渲染为静态完成态（非按钮），状态经获焦刷新链路实时反映', async () => {
+    useSystemStore().permScreenRecording = true
+    useAppStore().setFullscreenView(WelcomeView)
+    const wrapper = mountView()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await nextTick()
+    expect(wrapper.findAll('.w-perm-row button')).toHaveLength(2)
+    // 屏幕录制行转静默完成态（勾 + 已授权），名称仍在行首
+    const firstRow = wrapper.findAll('.w-perm-row')[0]!
+    expect(firstRow.find('.w-perm-name').text()).toBe('屏幕录制')
+    expect(firstRow.find('.w-perm-done').exists()).toBe(true)
+
+    // 剩余项授权完成后（系统设置返回 → 窗口获焦 → refresh）全部转静默完成态
+    const systemStore = useSystemStore()
+    systemStore.permAccessibility = true
+    systemStore.permFullDiskAccess = true
+    await nextTick()
+    expect(wrapper.findAll('.w-perm-row button')).toHaveLength(0)
+    expect(wrapper.findAll('.w-perm-done')).toHaveLength(3)
   })
 })

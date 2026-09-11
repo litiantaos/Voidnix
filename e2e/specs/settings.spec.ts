@@ -23,9 +23,9 @@ test.describe('系统侵入面清理入口', () => {
     await expect(page.getByText('.zshrc / .zprofile 注入块与 ai.env 凭证文件')).toBeVisible()
   })
 
-  test('设置页「显示新手引导」回主界面（onboarded 置回）', async ({ page }) => {
+  test('设置页「使用引导」回主界面（onboarded 置回）', async ({ page }) => {
     await openExtension(page, '/settings')
-    await expect(page.getByText('显示新手引导')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('使用引导')).toBeVisible({ timeout: 5000 })
 
     // 设置页禁用搜索输入（纯键盘导航）：方向键移到目标行后回车触发 action
     const input = page.locator('#main-search-input')
@@ -33,7 +33,7 @@ test.describe('系统侵入面清理入口', () => {
     const total = await rows.count()
     let targetIndex = -1
     for (let i = 0; i < total; i++) {
-      if ((await rows.nth(i).textContent())?.includes('显示新手引导')) {
+      if ((await rows.nth(i).textContent())?.includes('使用引导')) {
         targetIndex = i
         break
       }
