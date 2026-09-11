@@ -459,7 +459,7 @@ src/
 
 ### 官网（site/）
 
-独立 Astro 子项目（单页落地页），中英双语（`/` 中文 / `/en/` 英文，URL 前缀路由），token 自动同步产品 `theme.css` 全量 `:root`。首页 Hero 内嵌实时动画演示（`DemoStage.astro` 组件，非视频——6 个独立 demo 段（各 160–350 帧可变）JS 驱动的拟物 macOS 桌面舞台，统一入场节奏可单段切换或连续拼接；启动器窗口忠实复刻真实应用界面 720×480。首页与 `/demo` 预览页共用）。i18n 字典 `src/i18n/translations.ts`（页面级，zh 类型源 en 同构校验）+ `src/i18n/demo.ts`（动画级），各组件接收 `lang` prop。文档：[site/README.md](site/README.md)（概览 / i18n / 开发 / 部署）+ [site/demo.md](site/demo.md)（分段架构、统一节奏、启动器复刻细节、控制栏、可选视频导出）。
+独立 Astro 子项目（单页落地页），中英双语（`/` 中文 / `/en/` 英文，URL 前缀路由），token 自动同步产品 `theme.css` 全量 `:root`。首页 Hero 内嵌实时动画演示（`DemoStage.astro` 组件，非视频——6 个独立 demo 段（各 160–350 帧可变）JS 驱动的拟物 macOS 桌面舞台，统一入场节奏可单段切换或连续拼接；启动器窗口忠实复刻真实应用界面 720×480。首页与 `/demo` 预览页共用）。i18n 字典 `src/i18n/translations.ts`（页面级，zh 类型源 en 同构校验）+ `src/i18n/demo.ts`（动画级），各组件接收 `lang` prop。OG 分享图双语双版本（`public/og-image.png` 中文 / `og-image-en.png` 英文，`render-og.mjs` 渲染前注入 en 文案，BaseLayout 按语言引用）：背景为首启引导三维键盘图纸（大幅右置，左→右透明渐变在文字下方淡出，起点留 10% 浅水印），`scripts/gen-og-keyboard.mjs` 逐函数移植 `WelcomeView.vue` 等距几何（默认 Alt 基键位、颜色读 tokens.css 烘焙）生成 `og-keyboard.svg`，`bun run generate:og` 一键重生成（改键盘几何/默认键位须同步移植）。文档：[site/README.md](site/README.md)（概览 / i18n / 开发 / 部署）+ [site/demo.md](site/demo.md)（分段架构、统一节奏、启动器复刻细节、控制栏、可选视频导出）。
 
 ## UI 规范
 

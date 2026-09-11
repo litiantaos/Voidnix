@@ -4,6 +4,10 @@
 
 macOS 效率启动器。模块化架构，极简设计，原生性能。
 
+官网：<https://voidnix.app>
+
+![Voidnix](site/public/og-image.png)
+
 ## 技术栈
 
 Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite

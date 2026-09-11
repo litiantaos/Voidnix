@@ -13,8 +13,9 @@ const t = getDict(lang)
 
 const title = isDemo ? t.layout.demoTitle : t.layout.title
 const description = t.layout.description
-const site = Astro.site ?? new URL('https://voidnix.litiantao.com')
-const og = new URL('/og-image.png', site)
+const site = Astro.site ?? new URL('https://voidnix.app')
+// OG 分享图按语言双版本（render-og.mjs 生成）
+const og = new URL(lang === 'en' ? '/og-image-en.png' : '/og-image.png', site)
 ---
 
 <!doctype html>
