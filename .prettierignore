@@ -8,3 +8,6 @@ node_modules
 site/.astro
 site/dist
 site/node_modules
+
+# site 生成但提交的产物（gen-og-keyboard.mjs 生成，保持确定性输出）
+site/scripts/og-keyboard.svg

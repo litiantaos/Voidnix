@@ -9,11 +9,13 @@ site/
 ├── astro.config.mjs          # 静态输出，inlineStylesheets: auto
 ├── public/
 │   ├── favicon.png           # 站点图标
-│   └── og-image.png          # 1200×630 社交分享图（脚本生成）
+│   ├── og-image.png          # 1200×630 社交分享图·中文（脚本生成）
+│   └── og-image-en.png       # 同上·英文（render-og.mjs 注入 en 文案）
 ├── scripts/
 │   ├── sync-tokens.mjs      # 产品 theme.css → tokens.css token 同步（dev/build 前置）
 │   ├── capture-demo.mjs     # Demo 动画逐帧捕获 → MP4/WebM（可选，社交分享用）
-│   ├── og-source.html        # OG 源稿（浏览器渲染 1200×630）
+│   ├── og-source.html        # OG 源稿（浏览器渲染 1200×630，右侧键盘图纸背景）
+│   ├── gen-og-keyboard.mjs  # 首启引导等距键盘几何移植 → og-keyboard.svg（OG 背景素材）
 │   └── render-og.mjs         # Playwright 截图脚本
 └── src/
     ├── components/           # PageContent / Hero / DemoStage / Philosophy / Capabilities / ExtensionMatrix / InstallNotes / Footer / Wordmark
@@ -58,13 +60,13 @@ bun run preview    # 预览构建产物
 
 ## 重新生成 OG 图
 
-`og-image.png` 由 Playwright 对 `scripts/og-source.html` 截图得到，`playwright` 是 site 自身 devDependency（独立 bun.lock / node_modules，`bun install` 即装），另需已安装 chromium：
+`og-image.png`（中文）与 `og-image-en.png`（英文，`render-og.mjs` 渲染前注入文案替换——英文标题经 `<br>` 两行，与 site i18n hero 对齐；`BaseLayout` 按语言引用）由 Playwright 对 `scripts/og-source.html` 截图得到，信息行两行纵排（desc / feats）为双语共用的源稿布局。背景是首启引导三维键盘图纸（大幅右置、墨迹贴画布右缘），叠加左→右透明渐变（CSS mask，起点保留 10% 浅水印不降至全透、右侧全显）：`gen-og-keyboard.mjs` 逐函数移植 `src/components/layout/WelcomeView.vue` 的等距几何（f=0 等距终态、默认 Alt 基键位），颜色读 `tokens.css` 烘焙，生成 `scripts/og-keyboard.svg`（生成物但提交，加入 `.prettierignore` 保持确定性）；改动键盘几何或默认键位时同步移植。一键重生成（含 token 同步，双语两图）：
 
 ```bash
-node scripts/render-og.mjs
+bun run generate:og
 ```
 
-改了 OG 源稿或 Wordmark 后重跑一次。
+`playwright` 是 site 自身 devDependency（独立 bun.lock / node_modules，`bun install` 即装），另需已安装 chromium。改了 OG 源稿或 Wordmark 后重跑一次。
 
 ## 设计
 
@@ -79,6 +81,6 @@ token 从产品 `src/styles/theme.css` 自动同步（`scripts/sync-tokens.mjs`�
 静态输出，`dist/` 可直接托管。已接入 Vercel（GitHub 集成自动部署）：
 
 - **触发**：`git push origin main`（仅 `site/` 内改动）自动触发 Vercel 构建
-- **域名**：`https://voidnix.litiantao.com`（CNAME 指向 Vercel）
+- **域名**：`https://voidnix.app`（CNAME 指向 Vercel）
 - **配置**：`vercel.json`（Astro / `astro build` / `dist`）
 - 项目地址：https://vercel.com/litiantao/voidnix

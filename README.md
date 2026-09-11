@@ -4,6 +4,10 @@
 
 A launcher for macOS. Modular architecture, minimal design, native performance.
 
+Website: <https://voidnix.app>
+
+![Voidnix](site/public/og-image-en.png)
+
 ## Tech Stack
 
 Tauri + Rust | Vue 3 + Vite + Bun | UnoCSS | Pinia | SQLite

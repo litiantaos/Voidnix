@@ -10,6 +10,7 @@
     "preview": "astro preview",
     "check": "astro check",
     "sync:tokens": "node scripts/sync-tokens.mjs",
+    "generate:og": "node scripts/sync-tokens.mjs && node scripts/gen-og-keyboard.mjs && node scripts/render-og.mjs",
     "generate:demo": "node scripts/capture-demo.mjs"
   },
   "dependencies": {

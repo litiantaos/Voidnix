@@ -8,7 +8,6 @@
         --cool: 100 120 160;
         --ink: rgba(30, 35, 50, 0.92);
         --sec: rgba(80, 90, 115, 0.82);
-        --mute: rgba(110, 120, 145, 0.6);
       }
       * {
         margin: 0;
@@ -27,7 +26,6 @@
         position: relative;
         display: flex;
         flex-direction: column;
-        justify-content: center;
         padding: 64px 84px;
         color: var(--ink);
         -webkit-font-smoothing: antialiased;
@@ -61,9 +59,31 @@
         background: rgb(205 218 245 / 0.48);
       }
 
+      /* 三维键盘图纸（首启引导同款，og-keyboard.svg 由 gen-og-keyboard.mjs 生成）：
+           大幅右置（宽 950，约为初版右置小图的 1.5 倍），墨迹右缘贴画布右缘，
+           从左到右透明渐变（mask）使其在文字列下方淡出、右侧全显 */
+      .iso {
+        position: absolute;
+        top: 50%;
+        /* 宽度与右偏按 viewBox 墨迹域（x 10~674）换算；+16px 按墨迹域垂直居中 */
+        right: -61px;
+        width: 950px;
+        transform: translateY(calc(-50% + 16px));
+        /* 起点 10% 起步（不降至全透，左侧保留浅水印）→ 右侧全显 */
+        -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 0.1) 15%, black 85%);
+        mask-image: linear-gradient(to right, rgba(0, 0, 0, 0.1) 15%, black 85%);
+        z-index: 0;
+        pointer-events: none;
+      }
+
+      /* 文字列三层垂直两端对齐：品牌（顶部）/ 大字（居中）/ 小字（钉底） */
       .stage {
         position: relative;
         z-index: 1;
+        flex: 1 1 0%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
       }
 
       /* ── 品牌 ── */
@@ -84,26 +104,25 @@
         color: var(--ink);
       }
 
-      /* ── 标题：主体 ── */
+      /* ── 标题：主体（space-between 居中位，间距由分布承担）── */
       .title {
         font-family: ui-monospace, 'PingFang SC', sans-serif;
         font-size: 64px;
         font-weight: 600;
         letter-spacing: -0.035em;
         line-height: 1.24;
-        margin-top: 52px;
       }
       .title em {
         font-style: normal;
         color: var(--accent);
       }
 
-      /* ── 标题下一行：定位 + 功能 ── */
+      /* ── 标题下一行：定位 + 功能（两行纵排：desc / feats，space-between 钉底）── */
       .info {
         display: flex;
-        align-items: center;
-        gap: 16px;
-        margin-top: 36px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
         font-size: 16px;
         font-family: 'PingFang SC', sans-serif;
         letter-spacing: 0.02em;
@@ -111,12 +130,6 @@
       .info .desc {
         color: var(--accent);
         white-space: nowrap;
-      }
-      .info .div {
-        width: 1px;
-        height: 14px;
-        background: rgb(var(--cool) / 0.22);
-        flex-shrink: 0;
       }
       .info .feats {
         color: var(--sec);
@@ -126,6 +139,7 @@
   </head>
   <body>
     <div class="fog"><span class="a"></span><span class="b"></span></div>
+    <img class="iso" src="og-keyboard.svg" alt="" />
 
     <div class="stage">
       <div class="brand">
@@ -137,8 +151,7 @@
 
       <div class="info">
         <span class="desc">macOS 效率启动器</span>
-        <span class="div"></span>
-        <span class="feats"> 剪贴板 · 截屏 · 翻译 · AI 助手 · 窗口管理 等 </span>
+        <span class="feats">剪贴板 · 截屏 · 翻译 · AI 助手 · 窗口管理 等</span>
       </div>
     </div>
   </body>
