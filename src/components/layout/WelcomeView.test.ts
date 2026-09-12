@@ -130,11 +130,48 @@ describe('WelcomeView 首启引导视图', () => {
     const wrapper = mountView()
     expect(wrapper.find('text.w-tagline').attributes('textLength')).toBeUndefined()
     expect(wrapper.find('text.w-title').attributes('textLength')).toBe('96')
-    // 「/」语法键引出线同语言切换（双行词块，含 // 搜索文案）
-    expect(wrapper.text()).toContain('Type / to show extensions')
+    // 「/」语法键引出线同语言切换（双行词块，含 // 搜索文案；首行收短防压 N 线）
+    expect(wrapper.text()).toContain('Type / for extensions')
     expect(wrapper.text()).toContain('Type // for quick search')
     // 底部按键提示同语言切换（图纸态右下角单句）
     expect(wrapper.find('.w-footer .w-note').text()).toBe('Enter / → next · ← back')
+  })
+
+  it('en 长词形：水平段按词宽撑开（词尾不越肘点）、右拉段尾钳图纸右缘；zh 手调段长不回归', () => {
+    // 段几何：path = M dot → elbow → end（末段水平）；测试环境无 canvas 2d，
+    // 词宽走组件同款估算表（CJK 11.66 / 拉丁 7.26 + 字距）
+    const segOf = (wrapper: ReturnType<typeof mountView>, word: string) => {
+      const g = wrapper.findAll('g.w-callout').find((gg) => gg.text().includes(word))!
+      const m = (g.find('path').attributes('d') ?? '').match(
+        /^M (-?[\d.]+) (-?[\d.]+) L (-?[\d.]+) (-?[\d.]+) L (-?[\d.]+) (-?[\d.]+)$/,
+      )!
+      const nums = m.map(Number)
+      return { elbow: nums[3]!, end: nums[5]! }
+    }
+    const estWidth = (s: string) =>
+      [...s].reduce((w, ch) => w + (ch.charCodeAt(0) > 0xff ? 11.66 : 7.26), 0)
+
+    locale.value = 'en'
+    const en = mountView()
+    // 左拉段（Finder Tools 12ch ≈ 87px > zh 下限 48）：段长撑开至 ≥ 词宽
+    let seg = segOf(en, 'Finder Tools')
+    expect(seg.elbow - seg.end).toBeGreaterThanOrEqual(estWidth('Finder Tools') - 1)
+    // 右拉段（Translate 9ch）：撑开后段尾钳图纸右缘（GRID_X_MAX）不越画布
+    seg = segOf(en, 'Translate')
+    expect(seg.end).toBeLessThanOrEqual(714)
+    expect(seg.end - seg.elbow).toBeGreaterThanOrEqual(estWidth('Translate') - 1)
+    // 「/」双行词块右缘不越图纸右缘
+    seg = segOf(en, 'quick search')
+    expect(seg.end).toBeLessThanOrEqual(714)
+    en.unmount()
+
+    // zh：手调值为下限，段长不随实测收窄（视觉定型不回归）
+    locale.value = 'zh-CN'
+    const zh = mountView()
+    seg = segOf(zh, '截屏')
+    expect(seg.elbow - seg.end).toBeCloseTo(28, 0)
+    seg = segOf(zh, '翻译')
+    expect(seg.end - seg.elbow).toBeCloseTo(40, 0)
   })
 
   it('画布不溢出：全部图形元素坐标（板/网格路径、引出线锚点、图签）落在 viewBox 720×480 内', () => {
