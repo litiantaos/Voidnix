@@ -14,7 +14,8 @@
 - 放大镜底图：capture 成功后与 enter **并行** ImageIO 编码 `picker.jpg`（任务独立 Retain CGImage；原子 rename）；前端 `loadPickerImage` 轮询就绪（主屏 Retina 编码更慢，禁止单次读空即放弃）
 - 选区阶段（`phase === 'select'`，尚无工具栏）底部居中轻量快捷键提示：`Esc` 取消 / `F` 全屏 / `C` 复制色值；有上次选区时追加 `R` 恢复（`mica-panel` + kbd 样式，与 `onKeyDown` 对齐）
 - 提示条与标注工具栏进出场：`Transition` + 浮层范式（进 150ms `ease-out` opacity/translate-y/scale，出 100ms `ease-in` 反向；`appear` 首次挂载亦进场）
-- `native/` 按职责分：session（截图会话）、ocr（Vision 调用）、pin（钉图窗口）、scroll_capture/（滚动长截图：state / encode / stitch / mouse / 命令）、crop（裁剪）、ffi（ObjC++ 桥）、setup（启动钩子）
+- crop 两条路径（PNG / CGImage）均整体包 `objc2::rc::autoreleasepool`——compose 与编码链上的便捷构造对象（NSGraphicsContext/NSDictionary/NSData/rep.CGImage）均 autoreleased，worker 线程无 pool 时 autorelease 永不执行，实测每次 OCR 泄漏约 12MB（40 次累计 475MB）；pool 修复后零增长。`compose_annotated_rep` 与 `detect_text_regions` 借用会话 CGImage 期间均 `CGImageRetain` 防合成/识别中 `store_cg_image` 换图释放旧图（use-after-free），出口配对 Release
+- `native/` 按职责分：session（截图会话）、ocr（Vision 进程内识别）、pin（钉图窗口）、scroll_capture/（滚动长截图：state / encode / stitch / mouse / 命令）、crop（裁剪 + 标注合成：`compose_annotated_rep` 统一合成，PNG 路径供 copy/save、CGImage 路径供 OCR）、ffi（ObjC++ 桥）、setup（启动钩子）
 
 ## 约束
 
@@ -53,7 +54,10 @@
 
 ### OCR / 跨 Space
 
-- Vision OCR 通过 `swift -e` 执行 `VNRecognizeTextRequest` + `VNDetectBarcodesRequest`（zh-Hans/Hant/en/ja 文字 + QR/条码），一次请求同时返回文字和二维码内容（`OcrResult { text, qr }`）
+- Vision OCR 经 `objc2-vision` 进程内调用 `VNRecognizeTextRequest` + `VNDetectBarcodesRequest`（zh-Hans/Hant/en/ja 文字 + QR/条码），一次请求同时返回文字和二维码内容（`OcrResult { text, qr }`）。原实现 `swift -e` 子进程每次要启动 Swift 解释器 + 编译脚本 + 冷加载 Vision/AppKit（实测 0.3s 起步）叠加 PNG 编码落盘/解码往返；进程内 `crop_cg_with_annotation` 直接产出合成标注的 CGImage 喂 `VNImageRequestHandler`，零子进程零落盘。`detect_text_regions` 直接消费截屏会话的原始 CGImage（不再绕道 picker.jpg 磁盘解码——原落盘仅为跨进程传图）
+- OCR 会话状态（预览图/识别文本/错误/加载态）存模块级 `ocrSession`（index.ts 导出，OcrView 绑定而非组件局部）：窗口隐藏时 KeepAlive 整体卸载、缓存超限 LRU 驱逐都会销毁视图，重挂载直接从会话恢复现场（识别进行中隐藏亦然，invoke 回调写会话）；新 OCR 数据注入（`pendingOcrData`）时经视图 watch 重置。跨 navigate 重载不存活（重载后 `activeSubview` 已丢，无恢复入口）
+- 结果窗口高度封顶（subview `auto` 高度）：输入框高度弹性——内容自然撑高、超限框内滚动；上限从 `get_window_max_height` 命令推导（placement/光标屏 visibleFrame × 0.9，与 `set_main_frame` 的 Rust clamp 同源）− 固定部分（chrome + 预览 h-44 + 操作列表 ≈ 568）− 余量，内容恒不超窗，窗口级零滚动
+- 识别期间预览区覆磨砂加载遮罩（浅色磨砂底 `--mica-shell-fill` + `backdrop-blur-xs` + `BaseEmptyState` loading 居中，进出场 opacity 过渡；`ocrSession.loading` 驱动，识别中隐藏窗口重挂载遮罩仍在）：预览图即时显示（注入 `pendingOcrData` 即写 `ocrSession.imageUrl`），结果到达即卸载遮罩渲染文本与操作列表
 - Skylight `move_window_to_active_space` 跨 Space
 
 ## 数据存储

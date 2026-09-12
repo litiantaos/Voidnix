@@ -59,6 +59,21 @@ pub fn cancel_pending_present() {
     *lock_or_recover(&PLACEMENT_VIS) = None;
 }
 
+/// 主窗口高度天花板：placement 屏（show 时锁定）优先、否则光标屏的 visibleFrame × 0.9。
+/// animate_frame 的 set_main_frame clamp 与前端 get_window_max_height 命令同源共用——
+/// 前端若按整屏高（monitor 尺寸，含菜单栏/Dock）推导内容上限，会撑过 clamp 产生窗口级滚动。
+pub fn main_window_height_ceiling() -> Option<f64> {
+    let vis = load_placement()
+        .map(|p| p.to_ns())
+        .or_else(cursor_visible_frame)?;
+    Some(height_ceiling(vis))
+}
+
+/// 天花板公式（单一源）：visibleFrame × 0.9，下限 100。
+fn height_ceiling(vis: NSRect) -> f64 {
+    (vis.size.height * 0.9).max(100.0)
+}
+
 /// 光标所在屏的 visibleFrame（Cocoa）。
 fn cursor_visible_frame() -> Option<NSRect> {
     use objc2_app_kit::{NSEvent, NSScreen};
@@ -214,7 +229,7 @@ pub fn animate_frame(window: &tauri::WebviewWindow, _x: f64, _y: f64, w: f64, h:
     };
 
     let mut w = w.clamp(100.0, vis.size.width.max(100.0));
-    let mut h = h.clamp(100.0, (vis.size.height * 0.9).max(100.0));
+    let mut h = h.clamp(100.0, height_ceiling(vis));
     if w > vis.size.width {
         w = vis.size.width;
     }

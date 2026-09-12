@@ -122,7 +122,9 @@ function growToFit() {
 }
 
 watch(
-  () => props.modelValue,
+  // maxHeight 亦触发重测：动态上限（如 OCR 按 get_window_max_height 推导）在
+  // 首次 growToFit 后才到达时，已渲染高度仍卡旧上限，需按新上限重算
+  [() => props.modelValue, () => props.maxHeight],
   () => {
     if (props.autoResize) nextTick(() => growToFit())
   },

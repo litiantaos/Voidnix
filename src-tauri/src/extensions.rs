@@ -31,6 +31,7 @@ macro_rules! configure_app {
             crate::runtime::test::self_test_diag,
             crate::runtime::window::get_cached_appearance,
             crate::runtime::window::get_home_dir,
+            crate::runtime::window::get_window_max_height,
             crate::runtime::window::pick_directory,
             crate::runtime::window::pick_files,
             crate::runtime::window::quit_app,
