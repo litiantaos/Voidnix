@@ -1,9 +1,10 @@
 # zsh-as — Voidnix 终端命令补全
 #
 # 数据流（无 daemon、无 socket、无 SQLite）：
-#   启动：source $ZSH_AS_CACHE → 内存 assoc + sorted 数组
-#   按键：纯内存前缀匹配（sorted 数组扫描，前 N 命中即停）
-#   precmd：append signal log + 检测 $HISTFILE 新于 cache 时后台 rebuild
+#   启动：source $ZSH_AS_CACHE → 内存 sorted 数组 + 目录索引（assoc）+ 目录段数组
+#   按键：纯内存前缀匹配（当前目录及祖先目录专属列表优先，不足再扫全局 sorted 数组）
+#   preexec：记录命令 + 执行时 PWD（cd 类命令归属其发起目录）
+#   precmd：append signal log（每条命令一行，5 字段 TSV）+ cache 过期时后台 rebuild
 #
 # 路径契约：.zshrc 行注入 ZSH_AS_DIR（扩展数据目录），下方 derive 三个子路径。
 #   ZSH_AS_DIR      扩展数据目录（.zshrc 注入）
@@ -32,9 +33,11 @@ ZSH_AS_SIGNALS="$ZSH_AS_DIR/signals.log"
 : ${ZSH_AS_ORIGINAL_WIDGET_PREFIX:=zsh-as-orig-}
 
 typeset -ga _zsh_autosuggestions_sorted
+typeset -gA _zsh_autosuggestions_dir_index
 typeset -gi _ZSH_AUTOSUGGESTIONS_IDX_VERSION=0
 
 typeset -g _ZSH_AUTOSUGGESTIONS_LAST_CMD=""
+typeset -g _ZSH_AUTOSUGGESTIONS_LAST_PWD=""
 typeset -g _ZSH_AUTOSUGGESTIONS_LAST_ACCEPTED=0
 typeset -g _ZSH_AUTOSUGGESTIONS_LAST_SUGGESTED=0
 typeset -g _ZSH_AUTOSUGGESTIONS_CURRENT_SUGGESTION=""
@@ -108,10 +111,21 @@ _ZSH_AUTOSUGGESTIONS_BUILTIN_ACTIONS=(clear fetch suggest accept execute enable 
 
 _zsh_autosuggestions_load_cache() {
   [[ -r "$ZSH_AS_CACHE" ]] || return 1
-  # source 前重置版本，防残留；source 后校验格式版本匹配
+  # source 前重置版本与目录索引，防残留：旧 cache 已缩减的目录不得存活过
+  # reload（索引值即段名，连带清上一代段数组，防段数收缩后孤儿数组常驻）
   _ZSH_AUTOSUGGESTIONS_IDX_VERSION=0
+  local seg
+  for seg in "${_zsh_autosuggestions_dir_index[@]}"; do
+    unset "_zsh_autosuggestions_dir_$seg"
+  done
+  unset _zsh_autosuggestions_dir_index
+  typeset -gA _zsh_autosuggestions_dir_index
   source "$ZSH_AS_CACHE"
-  (( _ZSH_AUTOSUGGESTIONS_IDX_VERSION == 1 )) || return 1
+  # source 后校验格式版本匹配；不匹配视为格式错误，版本归零使 match 拒绝服务直到 rebuild
+  if (( _ZSH_AUTOSUGGESTIONS_IDX_VERSION != 2 )); then
+    _ZSH_AUTOSUGGESTIONS_IDX_VERSION=0
+    return 1
+  fi
   return 0
 }
 
@@ -160,7 +174,7 @@ _zsh_autosuggestions_histfile() {
 }
 
 #--------------------------------------------------------------------#
-# 3. In-memory match (sorted 数组扫描)                              #
+# 3. In-memory match (目录优先 + sorted 数组扫描)                    #
 #--------------------------------------------------------------------#
 
 _zsh_autosuggestions_match() {
@@ -168,20 +182,40 @@ _zsh_autosuggestions_match() {
   (( _ZSH_AUTOSUGGESTIONS_IDX_VERSION )) || return
   local buf="$1"
 
-  # 空 buffer（新提示符）：返回 top-1 作为默认建议，不打扰。
+  # 目录专属列表：PWD 起逐级上溯，各级命中按近→远合并（子目录继承项目根的
+  # 常用命令；根 / 不参与——命中即等价全局，无目录语义）
+  local -a dir_list=()
+  local d="$PWD"
+  while [[ "$d" == /* && "$d" != "/" ]]; do
+    if (( ${+_zsh_autosuggestions_dir_index[$d]} )); then
+      local dref="_zsh_autosuggestions_dir_${_zsh_autosuggestions_dir_index[$d]}"
+      dir_list+=("${(@P)dref}")
+    fi
+    d="${d:h}"
+  done
+
+  # 空 buffer（新提示符）：目录 top-1 优先，无目录数据回落全局 top-1。
   if [[ -z "$buf" ]]; then
+    if (( ${#dir_list} )); then
+      REPLY="${dir_list[1]}"
+      return
+    fi
     (( ${#_zsh_autosuggestions_sorted} )) || return
     REPLY="${_zsh_autosuggestions_sorted[1]}"
     return
   fi
 
-  # ${(b)buf} 转义 glob 元字符，保证字面前缀匹配
+  # ${(b)buf} 转义 glob 元字符，保证字面前缀匹配。
+  # 目录命中在前、全局补足在后（两列表各自按 frecency 降序），
+  # 共有命令经 (re) 精确下标去重。
   local buf_esc="${(b)buf}"
   local -a results=()
   local cmd
-  for cmd in "${_zsh_autosuggestions_sorted[@]}"; do
-    [[ "$cmd" == "$buf_esc"* ]] && results+=("$cmd")
+  for cmd in "${dir_list[@]}" "${_zsh_autosuggestions_sorted[@]}"; do
     (( $#results >= $ZSH_AS_CYCLE_N )) && break
+    [[ "$cmd" == "$buf_esc"* ]] || continue
+    [[ -n "${results[(re)$cmd]}" ]] && continue
+    results+=("$cmd")
   done
 
   (( $#results )) || return
@@ -525,46 +559,53 @@ zmodload zsh/stat 2>/dev/null
 
 _zsh_autosuggestions_preexec() {
   _ZSH_AUTOSUGGESTIONS_LAST_CMD="$1"
+  # PWD 取 preexec 时刻：命令在哪个目录敲的就归哪个目录（cd 归属发起目录）
+  _ZSH_AUTOSUGGESTIONS_LAST_PWD="$PWD"
 }
 
 _zsh_autosuggestions_precmd() {
   local -i exit_code=$?
 
-  # append signal（3 字段 TSV：<exit>\t<state>\t<cmd>）。
-  # 仅在有信息量时记录（失败 或 suggestion 互动），控制文件体积。
-  if [[ -n "$_ZSH_AUTOSUGGESTIONS_LAST_CMD" ]]; then
-    # strip 所有控制字符（与 Rust 端 is_safe 对齐：拒绝 <0x20 + 0x7f）
-    local safe_cmd="${_ZSH_AUTOSUGGESTIONS_LAST_CMD//[[:cntrl:]]/ }"
-    local state=0
-    (( _ZSH_AUTOSUGGESTIONS_LAST_SUGGESTED )) && state=2
-    (( _ZSH_AUTOSUGGESTIONS_LAST_ACCEPTED )) && state=1
-    if (( exit_code != 0 )) || (( state != 0 )); then
-      print -r -- "$exit_code"$'\t'"$state"$'\t'"$safe_cmd" >> "$ZSH_AS_SIGNALS" 2>/dev/null
+  _zsh_autosuggestions_histfile
+  local hf="$REPLY"
+
+  # append signal（5 字段 TSV：<ts>\t<exit>\t<state>\t<pwd>\t<cmd>）。
+  # 每条执行过的命令都记录（目录频次需要正向信号）；空白前缀命令跳过
+  # （对齐 HIST_IGNORE_SPACE 的隐私语义）；pwd 异常（相对路径/含控制字符）跳过；
+  # histfile 不可读时跳过——signals 唯一消费方 rebuild（含 rotate）以可读
+  # history 为前提，此时记录无人消费且永不 rotate，只会无限增长。
+  if [[ -n "$hf" && -r "$hf" && -n "$_ZSH_AUTOSUGGESTIONS_LAST_CMD" && "$_ZSH_AUTOSUGGESTIONS_LAST_CMD" != [[:space:]]* ]]; then
+    local rec_pwd="$_ZSH_AUTOSUGGESTIONS_LAST_PWD"
+    if [[ "$rec_pwd" == /* && "$rec_pwd" != *[[:cntrl:]]* ]]; then
+      # strip 所有控制字符（与 Rust 端 is_safe 对齐：拒绝 <0x20 + 0x7f）
+      local safe_cmd="${_ZSH_AUTOSUGGESTIONS_LAST_CMD//[[:cntrl:]]/ }"
+      local state=0
+      (( _ZSH_AUTOSUGGESTIONS_LAST_SUGGESTED )) && state=2
+      (( _ZSH_AUTOSUGGESTIONS_LAST_ACCEPTED )) && state=1
+      print -r -- "$EPOCHSECONDS"$'\t'"$exit_code"$'\t'"$state"$'\t'"$rec_pwd"$'\t'"$safe_cmd" >> "$ZSH_AS_SIGNALS" 2>/dev/null
     fi
   fi
   _ZSH_AUTOSUGGESTIONS_LAST_CMD=""
+  _ZSH_AUTOSUGGESTIONS_LAST_PWD=""
   _ZSH_AUTOSUGGESTIONS_LAST_ACCEPTED=0
   _ZSH_AUTOSUGGESTIONS_LAST_SUGGESTED=0
 
-  # stale 检测：HISTFILE 比 cache 新 → 后台 rebuild
-  # 节流：5 秒内不重复触发，避免高频回车 fork bomb
-  if [[ -n "$ZSH_AS_BIN" && -x "$ZSH_AS_BIN" ]]; then
-    _zsh_autosuggestions_histfile
-    local hf="$REPLY"
-    if [[ -n "$hf" && -r "$hf" ]] && \
-       (( EPOCHSECONDS - _ZSH_AUTOSUGGESTIONS_LAST_REBUILD_AT > 5 )) && \
-       { [[ ! -r "$ZSH_AS_CACHE" ]] || [[ "$hf" -nt "$ZSH_AS_CACHE" ]] }; then
-      _ZSH_AUTOSUGGESTIONS_LAST_REBUILD_AT=$EPOCHSECONDS
-      (
-        "$ZSH_AS_BIN" rebuild \
-          --out "$ZSH_AS_CACHE" \
-          --history "$hf" \
-          --signals "$ZSH_AS_SIGNALS" \
-          --half-life-days "$ZSH_AS_HALF_LIFE_DAYS" \
-          --fail-penalty "$ZSH_AS_FAIL_PENALTY" \
-          >/dev/null 2>&1
-      ) &!
-    fi
+  # stale 检测：HISTFILE 或 signals.log 比 cache 新 → 后台 rebuild。
+  # signals 每条命令都 append（目录频次靠它更新），节流 5 秒防高频回车 fork bomb。
+  if [[ -n "$ZSH_AS_BIN" && -x "$ZSH_AS_BIN" ]] && \
+     [[ -n "$hf" && -r "$hf" ]] && \
+     (( EPOCHSECONDS - _ZSH_AUTOSUGGESTIONS_LAST_REBUILD_AT > 5 )) && \
+     { [[ ! -r "$ZSH_AS_CACHE" ]] || [[ "$hf" -nt "$ZSH_AS_CACHE" ]] || [[ "$ZSH_AS_SIGNALS" -nt "$ZSH_AS_CACHE" ]] }; then
+    _ZSH_AUTOSUGGESTIONS_LAST_REBUILD_AT=$EPOCHSECONDS
+    (
+      "$ZSH_AS_BIN" rebuild \
+        --out "$ZSH_AS_CACHE" \
+        --history "$hf" \
+        --signals "$ZSH_AS_SIGNALS" \
+        --half-life-days "$ZSH_AS_HALF_LIFE_DAYS" \
+        --fail-penalty "$ZSH_AS_FAIL_PENALTY" \
+        >/dev/null 2>&1
+    ) &!
   fi
 
   # reload cache：rebuild 是 atomic rename，检测 mtime 变化时重新 source
