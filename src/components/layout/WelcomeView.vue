@@ -539,6 +539,9 @@ const KEY_A = 31.5 // > 等边值 28.59（横边加长）
 /// 齐平 + C/N 保持整数格心——补偿两轴步进分离（U≠V）引入的约束冲突
 const SPACE_A = 137.5
 
+/** 图纸右缘（网格线与右拉引出线段尾共用的视口钳制） */
+const GRID_X_MAX = 714
+
 /** 引出端点统一锚「远侧边中心」：平面 q=−b 边（投影为 back→right 上缘边）中点
  * −b·V̂，沿边法向（Û 旋转 −90°，等距朝右上、俯视正上）外移 6px。随投影插值 */
 const CO_FAR = computed<Pt>(() => {
@@ -570,14 +573,47 @@ interface CoSpec {
   corner: Pt
   /** 斜引出段向量 */
   diag: Pt
-  /** 水平段长度（带方向：负左拉 / 正右拉） */
+  /** 水平段方向与 zh 定型下限（负左拉 / 正右拉；实际长度按词宽派生取 max） */
   h: number
+}
+
+// ── 标注词宽实测：水平段长度按词宽派生 ──
+// zh 段长为手调定型值（下限，视觉不回归）；en 等长词形按实测词宽撑开，词全程落在
+// 段内（不越肘点、不压引出斜段）。字体栈读 --font-mono 单一源，letter-spacing
+//（.w-co-main 0.06em @ 11px）逐字符附加；canvas 不可用（测试环境）时按
+// CJK 1em / 拉丁 0.6em 估算。结果按词缓存（computed 每帧重算只做查表）
+const CO_PAD = 3 // 词尾与肘点最小余量
+const CO_LS = 0.66 // 11px × 0.06em 字距
+const coWidths = new Map<string, number>()
+let coCtx: CanvasRenderingContext2D | null = null
+let coFont = ''
+
+function labelWidth(text: string): number {
+  const hit = coWidths.get(text)
+  if (hit !== undefined) return hit
+  let w = CO_LS * text.length
+  if (coCtx === null) coCtx = document.createElement('canvas').getContext('2d')
+  if (coCtx) {
+    coFont ||= `11px ${getComputedStyle(document.documentElement).getPropertyValue('--font-mono')}`
+    coCtx.font = coFont
+    w += coCtx.measureText(text).width
+  } else {
+    for (const ch of text) w += ch.charCodeAt(0) > 0xff ? 11 : 6.6
+  }
+  coWidths.set(text, w)
+  return w
+}
+
+/** 水平段长度：按词宽派生，手调值为 zh 定型下限；方向由声明值承载（负左拉 / 正右拉） */
+function coSpan(text: string, declared: number): number {
+  return Math.sign(declared) * Math.max(Math.abs(declared), labelWidth(text) + CO_PAD)
 }
 
 function callout(cx: number, cy: number, co: CoSpec) {
   const dot: Pt = [cx + co.corner[0], cy + co.corner[1]]
   const elbow: Pt = [dot[0] + co.diag[0], dot[1] + co.diag[1]]
-  const end: Pt = [elbow[0] + co.h, elbow[1]]
+  // 右拉段尾钳图纸右缘：en 长词形撑开 h 后不越画布（zh 恒不触发）
+  const end: Pt = [co.h > 0 ? Math.min(elbow[0] + co.h, GRID_X_MAX) : elbow[0] + co.h, elbow[1]]
   // 词与水平段尾端对齐（左拉段锚线尾即左端，右拉段锚线尾即右端），基线离线 8px
   const anchor = co.h < 0 ? 'start' : 'end'
   const lx = co.h < 0 ? Math.min(elbow[0], end[0]) : Math.max(elbow[0], end[0])
@@ -763,7 +799,8 @@ const allPlates = computed(() =>
   }),
 )
 
-/// 功能键引出线（几何每帧随投影插值；词与 stagger 序自静态 fnSpecs 派生）
+/// 功能键引出线（几何每帧随投影插值；词与 stagger 序自静态 fnSpecs 派生）。
+/// 水平段长度按词宽派生（zh 手调值为下限）：en 长词形自动撑开，词不越肘点
 const fnCallouts = computed(() =>
   fnSpecs.value.map((fn, fi) => {
     const [cx, cy] = pos(fn.col, fn.row)
@@ -771,7 +808,11 @@ const fnCallouts = computed(() =>
       id: fn.id,
       labelKey: fn.labelKey,
       fi,
-      co: callout(cx, cy, { ...fn.co, corner: anchors.value[fn.co.corner] }),
+      co: callout(cx, cy, {
+        ...fn.co,
+        corner: anchors.value[fn.co.corner],
+        h: coSpan(t(fn.labelKey), fn.co.h),
+      }),
     }
   }),
 )
@@ -785,7 +826,11 @@ const coText = (x: number, y: number) => `translate(${x.toFixed(2)} ${y.toFixed(
 const modifierCallout = computed(() => {
   if (shortcutKeys.value.length < 2) return null
   const [cx, cy] = pos(0, 2)
-  return callout(cx, cy, { corner: CO_FAR.value, diag: [-22, -22], h: -40 })
+  return callout(cx, cy, {
+    corner: CO_FAR.value,
+    diag: [-22, -22],
+    h: coSpan(t('welcome.isoModifier'), -40),
+  })
 })
 
 /// Space（动作宽板）引出线：锚宽板右侧边中点沿边法向外移 12px（正对边中心）。
@@ -797,7 +842,9 @@ const spaceCallout = computed(() => {
   const [cx, cy] = pos(3.4324, 2)
   const f = expandF.value
   const diag: Pt = [lerp(16, 10, f), lerp(16, -40, f)]
-  return callout(cx, cy, { corner: coRight(SPACE_A), diag, h: lerp(60, 52, f) })
+  // 段长按词宽派生（zh 定型 60 为下限），俯视对冲收窄同款插值（−8）
+  const base = coSpan(t('welcome.isoAction'), 60)
+  return callout(cx, cy, { corner: coRight(SPACE_A), diag, h: lerp(base, base - 8, f) })
 })
 
 /// 「/」语法键引出线（几何随投影插值 → computed）
@@ -817,7 +864,6 @@ const stageAria = computed(() => `${t('welcome.isoAction')} ${shortcutKeys.value
 /// 全部段合并为单 path（dash 每子路径重启，与分段 path 渲染等价）
 const GRID_STEP = 74 // u 平面步进（横排键距）；v 行层换算按 |V.x 平面|=64
 const GRID_U_MIN = -1
-const GRID_X_MAX = 714 // 图纸右缘（视口钳制）
 const GRID_MARGIN = 0.2 // 排带右界外露（格）
 const gridPath = computed(() => {
   const specs = plateSpecs.value
