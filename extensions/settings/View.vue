@@ -119,31 +119,8 @@ const handleClearInjections = async () => {
   }
 }
 
-const handleCheckUpdate = async () => {
-  if (updateStore.info) {
-    updateStore.showDialog()
-    return
-  }
-  updateStore.reset()
-  const hasUpdate = await updateStore.check()
-  if (hasUpdate) {
-    updateStore.showDialog()
-  } else if (!updateStore.error) {
-    await appStore.showConfirm({
-      title: t('settings.checkUpdate'),
-      message: t('settings.upToDate', { version: appVersion.value }),
-      showCancel: false,
-      okLabel: t('settings.updateOK'),
-    })
-  } else {
-    await appStore.showConfirm({
-      title: t('settings.checkUpdate'),
-      message: updateStore.error ?? t('common.networkError'),
-      showCancel: false,
-      okLabel: t('settings.updateOK'),
-    })
-  }
-}
+/// 检查更新：立即弹 UpdateDialog、弹窗内检查（菜单栏「检查更新」与搜索角标同源入口）
+const handleCheckUpdate = () => updateStore.startCheck()
 
 function permStatus(granted: boolean | null): string {
   if (granted === null) return t('settings.permChecking')

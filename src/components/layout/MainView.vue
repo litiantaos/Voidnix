@@ -119,7 +119,7 @@
             v-if="updateStore.info"
             icon="i-ri-arrow-up-circle-line text-accent"
             :title="t('search.newVersionHint')"
-            @click="appStore.setActiveExtension('settings')"
+            @click="updateStore.startCheck()"
           />
         </div>
       </div>
@@ -183,7 +183,7 @@ import { useScrollPosition } from '@/composables/useScrollPosition'
 import { useSearchInput } from '@/composables/useSearchInput'
 import { useResultNavigation } from '@/composables/useResultNavigation'
 import { useExtensionHeight } from '@/composables/useExtensionHeight'
-import { getFocusableElements, cycleFocus, isFormControl } from '@/utils/dom'
+import { getFocusableElements, cycleFocus, isFormControl, isModalDialogOpen } from '@/utils/dom'
 import { useSettingsStore } from '@/stores/settings'
 
 const isDev = import.meta.env.DEV
@@ -417,7 +417,8 @@ function onTabKeydown(e: KeyboardEvent) {
   if (appStore.fullscreenView) return
   const ext = activeExtension.value
   if (!ext?.searchBarAccessory) return
-  if (appStore.isDialogOpen) return
+  // 模态弹窗打开（全局 confirm / UpdateDialog / 扩展 BaseDialog）：Tab 由弹窗焦点陷阱自管
+  if (isModalDialogOpen()) return
 
   const active = document.activeElement as HTMLElement | null
   const inBar = !!searchBarRef.value?.contains(active)

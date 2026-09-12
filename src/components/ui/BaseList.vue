@@ -35,7 +35,12 @@ import { ref, watch, nextTick, onActivated, onDeactivated, onBeforeUnmount } fro
 import { onKeyStroke } from '@/composables/events'
 import { t } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
-import { isComposing as isComposingCheck, isFormControl, wrapIndex } from '@/utils/dom'
+import {
+  isComposing as isComposingCheck,
+  isFormControl,
+  isModalDialogOpen,
+  wrapIndex,
+} from '@/utils/dom'
 
 // KeepAlive 软禁用：deactivate 后监听仍在，用 isActive 抑制响应
 const isActive = ref(true)
@@ -201,12 +206,7 @@ function onItemContextMenu(index: number, e: MouseEvent) {
 
 // ── Keyboard 守卫 ──
 
-/** 模态弹窗打开时列表让出全部快捷键（设置页 BaseDialog 等；焦点在 BUTTON 上也不会再抢 ↑↓） */
-function isModalDialogOpen(): boolean {
-  return !!document.querySelector('[role="dialog"][aria-modal="true"]')
-}
-
-/// 公共守卫：未激活 / 整窗视图接管 / IME 合成中 / 模态弹窗打开 不响应
+/// 公共守卫：未激活 / 整窗视图接管 / IME 合成中 / 模态弹窗打开（焦点在 BUTTON 上也不会再抢 ↑↓） 不响应
 function canNavigate(e: KeyboardEvent): boolean {
   if (!isActive.value || !props.keyboardActive) return false
   if (appStore.fullscreenView) return false

@@ -12,6 +12,7 @@ import type { Extension, SearchResult } from '@/runtime/types'
 import { isTauri } from '@/utils/tauri'
 import { buildOpenUrlResult, buildWebSearchResult, parseWebSearchQuery } from '@/utils/web-search'
 import { probeMem, trackResults } from '@/utils/mem-probe'
+import { isModalDialogOpen } from '@/utils/dom'
 
 interface SearchInputOptions {
   searchInput: Ref<HTMLInputElement | undefined>
@@ -445,9 +446,12 @@ export function useSearchInput(opts: SearchInputOptions) {
 
   const focusHandler = async () => {
     if (activeExtension.value?.disableSearchInput) return
-    searchInput.value?.focus()
+    // 模态弹窗打开（如菜单栏「检查更新」唤起同时弹 UpdateDialog）：焦点归弹窗
+    //（mount 时已落位按钮），不抢搜索框、不启动唤起全选轮询；数据刷新照旧
+    const modalOpen = isModalDialogOpen()
+    if (!modalOpen) searchInput.value?.focus()
     if (appStore.searchQuery) {
-      selectAllWhenPageFocused()
+      if (!modalOpen) selectAllWhenPageFocused()
       // 重跑搜索刷新数据（results 虽保留可见，但隐藏期间可能有新缓存/剪贴板记录）。
       // 一律走 rerunSearch 静默重跑：无增量 partial 替换，唤起时滚动/选中与隐藏前一致
       const ext = activeExtension.value
@@ -471,6 +475,8 @@ export function useSearchInput(opts: SearchInputOptions) {
     if (!isTauri) return
     if (appStore.fullscreenView) return
     if (activeExtension.value?.disableSearchInput) return
+    // 模态弹窗打开：不填充（query 不被污染）、不启动会抢焦点全选轮询
+    if (isModalDialogOpen()) return
     if (!searchInput.value || searchInput.value.readOnly) return
     try {
       // previewOnly 截断至 200 字符：搜索框不宜承载超长文本，避免模糊匹配 O(n×m) 开销

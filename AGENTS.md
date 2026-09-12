@@ -248,6 +248,8 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **框架承担**：渲染层 + 顶部拖动带（视图无需处理窗口拖动）+ 键盘让位（`useResultNavigation` / MainView Tab 环 / BaseList `canNavigate` 遇 `fullscreenView` 整体 return，视图自治按键；槽清空即组件卸载，无残留监听）；视图以 `done` 事件请求完结。完结恢复目标 `appStore.fullscreenReturnExtId`（槽级框架状态）：供给方写入（如设置页重看引导），done 时框架消费并回该扩展（无则回主界面），槽被让位等路径清空时目标一并失效。
 
+**模态弹窗键盘让位**（与 fullscreen 让位同族，判据 `utils/dom.ts::isModalDialogOpen`——DOM 探测 `[role="dialog"][aria-modal="true"]`，所有 BaseDialog 通用；ResultActionPanel 等 role=dialog 但无 aria-modal 的非模态浮层不算）：弹窗打开期间 `useResultNavigation`（回车不执行列表项）、`useSearchInput.focusHandler`（唤起不抢搜索框焦点、不启动全选轮询，数据刷新照旧）、`maybeFillFromClipboard`（不填充不抢焦）、MainView Tab 环整体让位——焦点与回车归弹窗。防「菜单栏检查更新唤起同时弹 UpdateDialog，唤起全选链路抢走焦点、回车落到搜索框执行列表项」。
+
 **供给方策略**：激活/退出条件由供给方经 watch 驱动（状态单向流动——条件变 → 槽值变）。首个消费者是首启引导（见下节）；后续更新引导 / 教程等整窗场景复用同槽。
 
 ### 首启引导
@@ -272,7 +274,11 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - `on_event`：收点击 id 自行过滤
 - 状态变更后调 `menubar::refresh(&app)` 触发重建
 
-**渲染规则**：菜单首项恒为框架基础项「打开 Voidnix」（`show_main`），扩展段按需追加（每段前插 disabled 标题项，段间分隔线）。
+**渲染规则**：菜单首组恒为框架基础项「打开 Voidnix」（`show_main`）+「检查更新」（emit `check-update`，`useAppLifecycle` 接收：唤起窗口 + `updateStore.startCheck()`），扩展段居中按需追加（每段前插 disabled 标题项，段间分隔线），尾部框架基础项「退出」（复用 `quit_app`）垫底。
+
+### 检查更新
+
+`stores/update.ts` 统一：三入口（菜单栏 / 设置页 / 搜索栏角标）均走 `updateStore.startCheck()`——**立即弹 UpdateDialog、弹窗内检查**（不等网络返回），弹窗承载全状态机（检查中不定进度跑条 / 已是最新 / 失败重试 / 发现新版本下载安装进度）；已有结果或下载进行中仅重新弹窗呈现，不重复发起检查。静默检查（启动 3s + 获焦节流 `maybeCheckUpdate`）只置 `info` 出搜索栏角标，不弹窗。
 
 **可见性**：图标常驻显示，设置开关 `menubarIconVisible`（settings.json，默认 true）控制——`useAppLifecycle` 配置回填后 watch 调 `set_menubar_visible` 同步（Rust `AtomicBool` 生效值，初始 false：设置值到位前任何 refresh 不建托盘，防配置关闭时启动闪现）；关闭后即使有扩展贡献也隐藏。
 
@@ -513,6 +519,7 @@ src/
 ### 弹窗
 
 - `BaseDialog` Teleport 到 body；标题/底栏为绝对定位浮层 + 透明渐变，内容通铺可滚入
+- 内容形态切换高度平滑重排（JS FLIP：CSS transition 感知不到 auto 高度的内容变化——height 声明恒 auto、computed 值不变，`interpolate-size` 也只解决显式声明切换。`ResizeObserver` 侦测自然高度变化 → 锁旧显示高（px）→ reflow → 写新自然高（px）由常驻 `transition: height` 插值 → 结束清回 auto 并重新观察；动画期间 unobserve 防自触发，settle 时内容又变则以过渡终点续动画。`.dialog-to` 显式 `box-sizing: border-box` 使写入值与 `getBoundingClientRect` 同量纲）
 - KeepAlive 切扩展时 `onDeactivated` 以 `dismiss` 关窗（父级 `@cancel` 卸 v-if）；全局 `showConfirm` 由 `setActiveExtension` 按取消收束
 - 控件 focus 只改边框色 `--focus-ring-color`（`BaseInput` 挂 `ui-input` 走 `:focus-within`，无 active 按下态；有 suffix 时 `pr-1`）
 

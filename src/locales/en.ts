@@ -137,9 +137,12 @@ They will be re-created on demand if you keep using the features.`,
 
   // ─── update dialog ──────────────────────────
   'updateDialog.later': { en: 'Later' },
+  'updateDialog.checking': { en: 'Checking for updates…' },
+  'updateDialog.upToDate': { en: 'Already up to date.' },
   'updateDialog.newVersionFound': { en: 'New version available' },
   'updateDialog.installing': { en: 'Installing…' },
   'updateDialog.installNow': { en: 'Install & Restart' },
+  'updateDialog.retry': { en: 'Retry' },
 
   // ─── search results ─────────────────────────
   'search.resultsLabel': { en: 'Search results' },

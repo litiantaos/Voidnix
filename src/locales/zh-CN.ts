@@ -137,9 +137,12 @@ export const zhCNMessages: Msgs = {
 
   // ─── update dialog ──────────────────────────
   'updateDialog.later': { 'zh-CN': '稍后' },
+  'updateDialog.checking': { 'zh-CN': '正在检查更新…' },
+  'updateDialog.upToDate': { 'zh-CN': '已是最新版本。' },
   'updateDialog.newVersionFound': { 'zh-CN': '发现新版本' },
   'updateDialog.installing': { 'zh-CN': '安装中…' },
   'updateDialog.installNow': { 'zh-CN': '立即安装并重启' },
+  'updateDialog.retry': { 'zh-CN': '重试' },
 
   // ─── search results ─────────────────────────
   'search.resultsLabel': { 'zh-CN': '搜索结果' },

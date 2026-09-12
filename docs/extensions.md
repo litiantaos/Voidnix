@@ -72,7 +72,7 @@ export default defineExtension({
 - `build: Arc<dyn Fn(&AppHandle) -> Vec<MenuEntry>>`：返回当前菜单快照。空 `Vec` = 该扩展当前不贡献（不参与菜单、不影响图标可见性）。
 - `on_event: Arc<dyn Fn(&AppHandle, &str)>`：收到所有点击的 item id，扩展自行过滤归属项（约定 id 以扩展 id 为前缀避免碰撞，如 `proxy_toggle`）。
 
-`MenuEntry` 四态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Submenu{label,items}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。菜单首项恒为框架基础项「打开 Voidnix」，扩展段按需追加。**图标常驻显示**，设置开关 `menubarIconVisible`（settings.json，默认 true）控制——关闭后即使有扩展贡献也隐藏；生效值到位前（前端 watch 同步前）不建托盘，防配置关闭时启动闪现。与快捷键 hook 同范式（`LazyLock<Mutex<Vec>>` + free function）。现 2 消费者：awake（保持系统唤醒：打开扩展 + 启用开关 + 显示模式二级菜单）、proxy（代理：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后贡献段消失（图标常驻），重连走扩展面板，其余控制全部在面板）。
+`MenuEntry` 四态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Submenu{label,items}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。菜单首组恒为框架基础项「打开 Voidnix / 检查更新」，扩展段居中按需追加，尾部框架基础项「退出」垫底（检查更新 emit `check-update` 由前端 `useAppLifecycle` 接收并调 `updateStore.startCheck()`；退出复用 `quit_app`）。**图标常驻显示**，设置开关 `menubarIconVisible`（settings.json，默认 true）控制——关闭后即使有扩展贡献也隐藏；生效值到位前（前端 watch 同步前）不建托盘，防配置关闭时启动闪现。与快捷键 hook 同范式（`LazyLock<Mutex<Vec>>` + free function）。现 2 消费者：awake（保持系统唤醒：打开扩展 + 启用开关 + 显示模式二级菜单）、proxy（代理：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后贡献段消失（图标常驻），重连走扩展面板，其余控制全部在面板）。
 
 ### UI 规约补充
 

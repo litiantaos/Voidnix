@@ -23,7 +23,7 @@
 - **ext-tag**：搜索栏只读扩展名
 - **ui-active**：列表选中色块 + 轻 blur
 - **ui-btn-***：BaseButton variant 面类（primary 实心主钮 / ghost 透明 / danger 淡红底 + 红字 + 红边，hover 加深边色、active 加深底与边）
-- **dialog-\***：弹窗近实白（非 soft-surface）；标题/底栏为浮层 + 透明渐变，内容可滚入
+- **dialog-\***：弹窗近实白（非 soft-surface）；标题/底栏为浮层 + 透明渐变，内容可滚入；高度随内容形态切换平滑重排（JS FLIP + `transition: height`）
 - **fill-ctrl**：实底填充（进度轨 / kbd 等，非卡片壳）
 
 ### elevation（仅三档 + 两特化）

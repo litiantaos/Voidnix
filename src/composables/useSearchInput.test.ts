@@ -480,3 +480,55 @@ describe('useSearchInput 唤起全选时序', () => {
     expect(el.selectionStart).toBe(el.selectionEnd)
   })
 })
+
+describe('useSearchInput 唤起聚焦让位（模态弹窗打开）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    searchMock.mockReset()
+  })
+  afterEach(() => {
+    while (mountedWrappers.length) mountedWrappers.pop()!.unmount()
+    document.querySelectorAll('[role="dialog"]').forEach((el) => el.remove())
+  })
+
+  it('模态弹窗打开时 window-focused 不抢搜索框焦点（弹窗按钮持有焦点），弹窗移除后恢复', async () => {
+    // 场景：菜单栏「检查更新」唤起窗口的同时弹 UpdateDialog——弹窗 mount 时聚焦按钮，
+    // 唤起链路（window-focused → focusHandler）不得把焦点抢回搜索框
+    const searchInput = ref<HTMLInputElement>()
+    const TestComp = defineComponent({
+      setup() {
+        useSearchInput({
+          searchInput,
+          results: ref<SearchResult[]>([]),
+          selectedIndex: ref(0),
+          activeExtension: computed(() => null),
+          reset: () => {},
+        })
+        return {}
+      },
+      render: () => h('input', { ref: searchInput }),
+    })
+    mountedWrappers.push(mount(TestComp, { attachTo: document.body }))
+    await flushPromises()
+
+    // 模拟 BaseDialog：Teleport body + role=dialog + aria-modal，mount 时已聚焦确认按钮
+    const modal = document.createElement('div')
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-modal', 'true')
+    const btn = document.createElement('button')
+    modal.appendChild(btn)
+    document.body.appendChild(modal)
+    btn.focus()
+    expect(document.activeElement).toBe(btn)
+
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+    expect(document.activeElement).toBe(btn)
+
+    // 弹窗移除后唤起链路恢复聚焦搜索框
+    modal.remove()
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+    expect(document.activeElement).toBe(searchInput.value)
+  })
+})

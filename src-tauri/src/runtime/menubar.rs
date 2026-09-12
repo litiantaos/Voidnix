@@ -4,8 +4,8 @@
 // 扩展在 setup 内 `register` 一个贡献段，状态变化后 `refresh` 触发重建。
 // 图标常驻显示，显隐由设置开关 `set_menubar_visible` 驱动（前端 settings watch 同步，
 // 生效值到位前不显示——启动 bootstrap 期扩展 setup 的 refresh 不建托盘，避免配置为
-// 关闭时启动闪现）：菜单首项恒为框架基础项「打开 Voidnix」，扩展段按需追加；
-// 扩展开/关状态反映在 build 返回空/非空。
+// 关闭时启动闪现）：菜单首组恒为框架基础项「打开 Voidnix / 检查更新」，扩展段居中按需
+// 追加，尾部框架基础项「退出」垫底；扩展开/关状态反映在 build 返回空/非空。
 // 托盘用 Tauri 跨平台 tray API（非裸 NSStatusItem），故归 runtime（平台无关）而非 platform。
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,8 +23,14 @@ use crate::runtime::lock_or_recover;
 /// 框架唯一的菜单栏托盘 id。
 const TRAY_ID: &str = "voidnix_menubar";
 
-/// 框架基础项 id（打开主窗口，常驻菜单首项）。
+/// 框架基础项 id（打开主窗口，菜单首组）。
 const OPEN_APP_ID: &str = "__open_app";
+
+/// 框架基础项 id（检查更新，与打开主窗口同组；updater 在前端，emit 事件驱动）。
+const CHECK_UPDATE_ID: &str = "__check_update";
+
+/// 框架基础项 id（退出，菜单尾部；复用 quit_app 命令路径）。
+const QUIT_APP_ID: &str = "__quit_app";
 
 /// 生效的图标显示开关（前端设置同步，默认 false：设置值到位前不建托盘）。
 /// false 时即使有扩展贡献也隐藏。
@@ -119,12 +125,20 @@ fn rebuild(app: &AppHandle) {
         return;
     };
 
-    // 首项恒为框架基础项「打开 Voidnix」（图标常驻的最小出口），扩展段按需追加
-    let mut entries: Vec<MenuEntry> = vec![MenuEntry::Item {
-        id: OPEN_APP_ID.to_string(),
-        label: "打开 Voidnix".to_string(),
-        enabled: true,
-    }];
+    // 首组恒为框架基础项「打开 Voidnix / 检查更新」，扩展段居中按需追加，
+    // 尾部框架基础项「退出」垫底（macOS 菜单惯例：退出居末）
+    let mut entries: Vec<MenuEntry> = vec![
+        MenuEntry::Item {
+            id: OPEN_APP_ID.to_string(),
+            label: "打开 Voidnix".to_string(),
+            enabled: true,
+        },
+        MenuEntry::Item {
+            id: CHECK_UPDATE_ID.to_string(),
+            label: "检查更新".to_string(),
+            enabled: true,
+        },
+    ];
     for (i, (title, items)) in sections.iter().enumerate() {
         entries.push(MenuEntry::Separator);
         entries.push(MenuEntry::Item {
@@ -134,6 +148,12 @@ fn rebuild(app: &AppHandle) {
         });
         entries.extend(items.iter().cloned());
     }
+    entries.push(MenuEntry::Separator);
+    entries.push(MenuEntry::Item {
+        id: QUIT_APP_ID.to_string(),
+        label: "退出".to_string(),
+        enabled: true,
+    });
 
     match build_menu(app, &entries) {
         Ok(menu) => {
@@ -162,19 +182,28 @@ fn ensure_tray(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 菜单点击分派：框架基础项直接处理，其余锁内克隆 on_event 句柄，锁外逐个调用（防重入死锁）。
+/// 菜单点击分派：框架基础项直接处理（打开窗口 / 检查更新 emit 前端 / 退出），
+/// 其余锁内克隆 on_event 句柄，锁外逐个调用（防重入死锁）。
 fn dispatch_event(app: &AppHandle, event: MenuEvent) {
+    use tauri::Emitter;
+
     let id = event.id().as_ref();
-    if id == OPEN_APP_ID {
-        crate::runtime::window::show_main(app);
-        return;
-    }
-    let handlers: Vec<MenuOnEvent> = lock_or_recover(&CONTRIBUTIONS)
-        .iter()
-        .map(|c| c.on_event.clone())
-        .collect();
-    for h in handlers {
-        h(app, id);
+    match id {
+        OPEN_APP_ID => crate::runtime::window::show_main(app),
+        // updater 插件在前端：emit 事件由 useAppLifecycle 接收（唤起窗口 + 走检查流程）
+        CHECK_UPDATE_ID => {
+            let _ = app.emit("check-update", ());
+        }
+        QUIT_APP_ID => crate::runtime::window::quit_app(app.clone()),
+        _ => {
+            let handlers: Vec<MenuOnEvent> = lock_or_recover(&CONTRIBUTIONS)
+                .iter()
+                .map(|c| c.on_event.clone())
+                .collect();
+            for h in handlers {
+                h(app, id);
+            }
+        }
     }
 }
 
