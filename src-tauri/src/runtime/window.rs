@@ -169,6 +169,17 @@ pub fn set_main_frame(
     Ok(())
 }
 
+/// 返回主窗口高度天花板（placement/光标屏 visibleFrame × 0.9），与 set_main_frame
+/// 的 Rust clamp 同源。内容封顶型扩展视图（如 screenshot OCR 输入框）据此推导内容上限，
+/// 保证内容恒不超窗（窗口级零滚动）。
+#[tauri::command]
+pub fn get_window_max_height() -> Option<f64> {
+    #[cfg(target_os = "macos")]
+    return crate::platform::window::main_window_height_ceiling();
+    #[cfg(not(target_os = "macos"))]
+    None
+}
+
 /// 打开目录选择器（NSOpenPanel），作为独立浮窗运行，不附着主窗口。
 /// 返回用户选择的目录路径，取消则返回空字符串。
 #[tauri::command]

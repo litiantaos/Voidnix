@@ -10,6 +10,7 @@ export const CMD = {
   pickDirectory: 'pick_directory',
   pickFiles: 'pick_files',
   setMainFrame: 'set_main_frame',
+  getWindowMaxHeight: 'get_window_max_height',
   setWindowAppearance: 'set_window_appearance',
   getCachedAppearance: 'get_cached_appearance',
   setMenubarVisible: 'set_menubar_visible',

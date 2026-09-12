@@ -1,9 +1,9 @@
 <template>
   <!-- 顶距交给 scrollContainer CHROME_HEIGHT（已含栏底 gap），勿再 p-t 叠双层 -->
-  <div flex="~ col" gap="3" :class="{ 'pb-3': !ocrText && !error }">
-    <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动；识别中遮罩覆盖 -->
+  <div flex="~ col" gap="3" :class="{ 'pb-3': !session.ocrText && !session.error }">
+    <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动 -->
     <div
-      v-if="imageUrl"
+      v-if="session.imageUrl"
       ref="previewRef"
       m="x-3"
       relative
@@ -13,7 +13,7 @@
       overflow="auto"
     >
       <img
-        :src="imageUrl"
+        :src="session.imageUrl"
         block
         max-w="none"
         w="full"
@@ -22,6 +22,7 @@
         :alt="t('screenshot.previewAlt')"
         @load="onPreviewLoad"
       />
+      <!-- 识别中加载遮罩：磨砂 + 居中空态 -->
       <Transition
         enter-active-class="transition duration-[var(--duration-fast)] ease-out"
         enter-from-class="opacity-0"
@@ -30,27 +31,30 @@
         leave-from-class="opacity-100"
         leave-to-class="opacity-0"
       >
-        <div v-if="isLoading" class="fill-strong flex inset-0 absolute backdrop-blur-xs">
+        <div
+          v-if="session.loading"
+          class="bg-[var(--mica-shell-fill)] flex inset-0 absolute backdrop-blur-xs"
+        >
           <BaseEmptyState loading />
         </div>
       </Transition>
     </div>
 
     <!-- 错误 -->
-    <div v-if="error" p="x-3 b-3" shrink="0">
+    <div v-if="session.error" p="x-3 b-3" shrink="0">
       <div text="sm danger" p="3" class="radius-ctrl bg-danger-soft">
-        {{ error }}
+        {{ session.error }}
       </div>
     </div>
 
     <!-- 结果 -->
-    <template v-else-if="ocrText">
+    <template v-else-if="session.ocrText">
       <div p="x-3">
         <BaseTextarea
-          v-model="ocrText"
+          v-model="session.ocrText"
           rounded="panel"
           :rows="4"
-          :max-height="0"
+          :max-height="textMaxHeight"
           :submit-on-enter="false"
           :placeholder="t('screenshot.ocrResult')"
         />
@@ -73,13 +77,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { emit } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { t } from '@/runtime/i18n'
+import { isTauri } from '@/utils/tauri'
 import { copyAndHide, useAppStore } from '@/stores/app'
-import { pendingOcrData } from './index'
+import { pendingOcrData, ocrSession } from './index'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -98,12 +103,27 @@ interface OcrAction {
 }
 
 const appStore = useAppStore()
-const imageUrl = ref('')
-const ocrText = ref('')
-const isLoading = ref(false)
-const error = ref('')
+// 会话状态提升至模块级 ocrSession（见 index.ts）：组件销毁（窗口隐藏卸载 KeepAlive /
+// LRU 驱逐）后重挂载恢复现场；此处仅 previewRef / actionIndex 留组件局部
+const session = ocrSession
 const previewRef = ref<HTMLElement>()
 const actionIndex = ref(0)
+
+// 输入框高度弹性上限：内容自然撑高、超限框内滚动。上限从 get_window_max_height
+// 命令推导（placement/光标屏 visibleFrame × 0.9，与 set_main_frame 的 Rust clamp
+// 同源）− 固定部分（chrome 76 + 预览 176 + 间距 24 + 边框 2 + 操作列表 290 = 568）
+// − 12px 余量，内容恒不超窗（窗口级零滚动）。必须同源——按整屏高（monitor 尺寸
+// ÷ scale，含菜单栏/Dock）推导会撑过 clamp 重引窗口级滚动。非 Tauri / 查询失败
+// 回退 224（10 行），下限 144（6 行）防短屏算出退化值。每次唤起都是新挂载
+// （隐藏清 KeepAlive），无需监听屏变化；上限晚到由 BaseTextarea watch maxHeight 重测补齐
+const textMaxHeight = ref(224)
+
+onMounted(async () => {
+  if (!isTauri) return
+  const maxWin = await invoke<number | null>(CMD.getWindowMaxHeight).catch(() => null)
+  if (!maxWin) return
+  textMaxHeight.value = Math.max(144, Math.round(maxWin) - 568 - 12)
+})
 
 // 截图 cover 缩放：短边撑满容器、长边溢出（容器 overflow-auto 可上下/左右滚动）
 // 双阶段：加载前用 CSS object-fit:cover（object-position:left top 对齐 scroll 0,0）
@@ -124,9 +144,9 @@ function onPreviewLoad(e: Event) {
 }
 
 async function runOcr(data: NonNullable<typeof pendingOcrData.value>) {
-  isLoading.value = true
-  error.value = ''
-  ocrText.value = ''
+  session.value.loading = true
+  session.value.error = ''
+  session.value.ocrText = ''
   try {
     const result = await invoke<OcrResult>(CMD.ocrImage, {
       selX: data.selX,
@@ -137,14 +157,14 @@ async function runOcr(data: NonNullable<typeof pendingOcrData.value>) {
       annotationPng: data.annotationPng,
     })
     if (result.qr?.length) {
-      ocrText.value = result.qr.join('\n')
+      session.value.ocrText = result.qr.join('\n')
     } else {
-      ocrText.value = result.text || t('screenshot.noContent')
+      session.value.ocrText = result.text || t('screenshot.noContent')
     }
   } catch (e) {
-    error.value = String(e)
+    session.value.error = String(e)
   } finally {
-    isLoading.value = false
+    session.value.loading = false
     // 操作列表接管键盘：默认选中首项（复制），回车直接复制；点击 textarea 可编辑
     actionIndex.value = 0
   }
@@ -154,7 +174,7 @@ watch(
   pendingOcrData,
   (data) => {
     if (!data) return
-    imageUrl.value = data.previewPng || ''
+    session.value.imageUrl = data.previewPng || ''
     runOcr(data)
     pendingOcrData.value = null
   },
@@ -162,28 +182,28 @@ watch(
 )
 
 async function handleCopy() {
-  if (!ocrText.value.trim()) return
-  await copyAndHide(ocrText.value)
+  if (!session.value.ocrText.trim()) return
+  await copyAndHide(session.value.ocrText)
 }
 
 async function handleTranslate() {
-  if (!ocrText.value.trim()) return
+  if (!session.value.ocrText.trim()) return
   // 跨扩展通信走事件总线（C9）：screenshot 不再直依赖 translate 内部状态。
   // translate 扩展 setup 监听 'translate-pending-text'，写入自身 pendingText。
-  await emit('translate-pending-text', ocrText.value)
+  await emit('translate-pending-text', session.value.ocrText)
   appStore.setActiveExtension('translate')
 }
 
 function trimSpaces() {
-  ocrText.value = ocrText.value.replace(/[ \t\u3000]+/g, '')
+  session.value.ocrText = session.value.ocrText.replace(/[ \t\u3000]+/g, '')
 }
 
 function trimNewlines() {
-  ocrText.value = ocrText.value.replace(/[\r\n]+/g, '')
+  session.value.ocrText = session.value.ocrText.replace(/[\r\n]+/g, '')
 }
 
 function trimEmptyLines() {
-  ocrText.value = ocrText.value
+  session.value.ocrText = session.value.ocrText
     .split('\n')
     .filter((line) => line.trim() !== '')
     .join('\n')
@@ -191,7 +211,7 @@ function trimEmptyLines() {
 
 // 操作列表（原按钮组改为列表项）：识别完成后默认选中首项（复制），回车触发
 const ocrActions = computed<OcrAction[]>(() => {
-  if (!ocrText.value.trim()) return []
+  if (!session.value.ocrText.trim()) return []
   return [
     { id: 'copy', label: t('screenshot.copy'), group: 'actions', run: handleCopy },
     { id: 'translate', label: t('screenshot.translate'), group: 'actions', run: handleTranslate },

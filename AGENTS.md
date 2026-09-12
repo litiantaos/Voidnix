@@ -229,6 +229,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - 一次 invoke 触发 Rust `set_main_frame` → `animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS rAF 逐帧）
 - **动画后延迟重刷 event capture**：animator 扩高（顶边固定向下生长）后窗口服务器 hit-test 表可能停留在动画前矩形——新增的底部区域点击穿透到下层应用，激活对方触发 blur 藏窗（agent 快捷键直开后点击输入框隐藏窗口的根因）。`set_main_frame` 自 invoke 起 400ms（动画 0.26s + 余量）后经 `refresh_event_capture_if_visible` 重设 ignoresMouseEvents + event shape 对齐最终 frame
 - `auto` 模式：ResizeObserver 监听 `contentRef`，窗口高 = `CHROME_HEIGHT`（搜索栏 + 间距）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`
+- **高度天花板权威源在 Rust**：`animate_frame` clamp 为 placement/光标屏 **visibleFrame × 0.9**（扣菜单栏/Dock，非整屏高），`get_window_max_height` 命令同源输出；内容封顶型扩展视图（如 screenshot OCR 输入框）据此推导内容上限，双端同源防「内容撑过 clamp 产生窗口级滚动」
 - 屏幕尺寸走 `currentMonitor`（WKWebView 下 `window.screen` 仅返回 webview 视口）
 - 底部将出屏（含 40px 间距）则同步上移；离开 auto 还原进入前位置
 
