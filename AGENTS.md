@@ -42,7 +42,7 @@ Rust 端代码质量：
 cargo fmt --manifest-path src-tauri/Cargo.toml --check    # 格式检查（CI 门禁）
 cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings   # lint（CI 门禁）
 # zsh binary 是独立 crate（与 Voidnix package 分离 + 独立 target 目录，避免 Voidnix 编译截断 binary）
-cargo clippy --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml -- -D warnings
+cargo clippy --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml --all-targets -- -D warnings
 ```
 
 内部命令（tauri.conf.json 自动调用）：`bun run dev`（Vite）、`bun run build`（check:drift → lint → typecheck → vite build）。
@@ -94,7 +94,7 @@ CGEvent 基础设施（键盘映射 / 窗口检测 / 鼠标操作 / 内存测量
 **每次 `git commit` 前必须先跑 `bun run precommit` 并全绿**，否则不得提交（AI agent 同样遵守，不得跳过）：
 
 ```bash
-bun run precommit   # 提交前门禁（不含 e2e）：lint（写盘修复）→ cargo fmt（写盘）→ typecheck → cargo clippy --lib -D warnings → check:drift → test → cargo test --lib
+bun run precommit   # 提交前门禁（不含 e2e）：lint（写盘修复）→ cargo fmt（写盘，src-tauri + zsh crate）→ typecheck → cargo clippy（src-tauri lib + zsh crate --all-targets，-D warnings）→ check:drift → test → cargo test --lib → cargo test（zsh crate，含 init.zsh 真实 zsh 集成断言）
 ```
 
 precommit 会自动修复格式（`prettier --write` + `cargo fmt`），跑完后 `git diff` 检查是否有非预期格式化，确认后一起提交。
@@ -110,7 +110,7 @@ e2e（`bun run test:e2e`，需起 Vite dev server + 浏览器）不在本地门�
 3. `bun run typecheck`（vue-tsc 严格）
 4. Rust `cargo clippy --lib -- -D warnings`
 5. 漂移校验：`check:extensions` / `check:commands` / `check:agent-bounds` / `check:wm-bounds` / `check:extension-orders`
-6. 单测：`bun run test`（Vitest）+ `cargo test --lib`
+6. 单测：`bun run test`（Vitest）+ `cargo test --lib` + `cargo test`（zsh crate）
 7. E2E：`bun run test:e2e`（Playwright，含浏览器安装）
 
 ## 发布管道与代码签名

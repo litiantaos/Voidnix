@@ -48,7 +48,7 @@ jobs:
       - name: Rust clippy（-D warnings）
         run: |
           cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings
-          cargo clippy --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml -- -D warnings
+          cargo clippy --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml --all-targets -- -D warnings
 
       # ── 漂移校验 ──
       - name: 扩展同步产物校验（extensions.rs + windowViews 漂移）
@@ -71,7 +71,9 @@ jobs:
         run: bun run test
 
       - name: Rust 单元测试
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib
+          cargo test --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml
 
       # ── E2E（Playwright，纯 web 场景对 Vite dev server）──
       - name: 安装 Playwright 浏览器
