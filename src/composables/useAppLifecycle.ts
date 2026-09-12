@@ -127,6 +127,18 @@ export function useAppLifecycle(win: Win) {
       // 注册失败检测（guideShortcutConflicts）也因此读到确定结果
       await whenConfigReady('config/settings')
 
+      // 菜单栏图标显隐：回填后应用当前值（Rust 生效值到位前不建托盘，惰性创建由此触发）
+      // + watch 设置页实时切换
+      watchStops.push(
+        watch(
+          () => settings.menubarIconVisible,
+          (v) => {
+            void invoke(CMD.setMenubarVisible, { visible: v }).catch(() => {})
+          },
+          { immediate: true },
+        ),
+      )
+
       updateTimer = setTimeout(() => {
         void maybeCheckUpdate()
       }, 3000)

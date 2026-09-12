@@ -271,16 +271,16 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - `on_event`：收点击 id 自行过滤
 - 状态变更后调 `menubar::refresh(&app)` 触发重建
 
-**渲染规则**：菜单按扩展 `title` 分组（每段前插 disabled 标题项，段间分隔线）。
+**渲染规则**：菜单首项恒为框架基础项「打开 Voidnix」（`show_main`），扩展段按需追加（每段前插 disabled 标题项，段间分隔线）。
 
-**可见性**：`Σ build() 项数 > 0`（空快照 = 该扩展当前不贡献；扩展全关图标自动隐藏）。
+**可见性**：图标常驻显示，设置开关 `menubarIconVisible`（settings.json，默认 true）控制——`useAppLifecycle` 配置回填后 watch 调 `set_menubar_visible` 同步（Rust `AtomicBool` 生效值，初始 false：设置值到位前任何 refresh 不建托盘，防配置关闭时启动闪现）；关闭后即使有扩展贡献也隐藏。
 
 **实现范式**：镜像 `shortcut.rs`（`LazyLock<Mutex<Vec>>` + free function，`Arc<dyn Fn>` 锁外调用防 `on_event→refresh` 重入死锁）。Rust 侧能力（非 TS `Extension` 槽——菜单构建依赖 Rust State，纯 TS 扩展无此需求）。
 
 **消费者**（2 个）：
 
 - **awake**：打开扩展 + 启用开关 + 显示模式二级菜单
-- **proxy**：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后图标隐藏，重连走扩展视图（详见 [proxy.md](docs/extensions/proxy.md)）
+- **proxy**：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后贡献段消失（图标常驻），重连走扩展视图（详见 [proxy.md](docs/extensions/proxy.md)）
 
 ### Agent 引擎
 
@@ -392,7 +392,7 @@ src-tauri/src/
 │   ├── autostart.rs   # 开机自启命令薄壳（SMAppService Login Item 注册/查询）
 │   ├── window.rs       # 主窗口 show/hide
 │   ├── shortcut.rs     # 快捷键 + 录制
-│   ├── menubar.rs      # 聚合菜单栏托盘（框架唯一图标 + 扩展贡献段注册）
+│   ├── menubar.rs      # 聚合菜单栏托盘（框架唯一图标常驻 + 设置显隐开关 + 扩展贡献段注册）
 │   ├── storage.rs      # TempHandle RAII + ext_data_dir + save_png_safely
 │   ├── test.rs         # 自测模式判定（环境变量 VOIDNIX_SELF_TEST + AtomicBool 一次性守卫防 navigate 重载后二次触发）
 │   ├── permission.rs   # 系统权限命令薄壳（同步；screen_recording 走 preflight 不截屏）
@@ -543,7 +543,7 @@ src/
 
 ```
 ~/Library/Application Support/com.litiantao.voidnix/
-├── config/settings.json              # 框架级配置（全局快捷键 + 外观/语言 + 首启 onboarded 标记，defineConfig 扁平 schema）
+├── config/settings.json              # 框架级配置（全局快捷键 + 外观/语言 + 菜单栏图标开关 + 首启 onboarded 标记，defineConfig 扁平 schema）
 ├── config/ai-providers.json          # 统一 AI 提供商/Key（agent/translate/外部工具共用）
 └── extensions/
     ├── clipboard/{clipboard.db, clipboard.db-wal, config.json}   # SQLite WAL（写入达 200 触发 wal_checkpoint）+ 配置

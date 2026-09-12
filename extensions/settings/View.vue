@@ -220,6 +220,18 @@ const allSettingsItems = computed<SettingItem[]>(() => {
   })
 
   items.push({
+    id: 'menubar-icon',
+    title: t('settings.menubarIcon'),
+    type: 'toggle',
+    icon: 'i-ri-layout-top-line',
+    group: t('settings.group.app'),
+    value: settings.menubarIconVisible,
+    update: (v: boolean) => {
+      settings.menubarIconVisible = v
+    },
+  })
+
+  items.push({
     id: 'show-welcome',
     title: t('settings.showWelcome'),
     type: 'action',

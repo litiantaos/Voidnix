@@ -2,9 +2,13 @@
 //
 // 镜像 `shortcut.rs` 的扩展钩子注册范式（LazyLock<Mutex<Vec>> + free function）。
 // 扩展在 setup 内 `register` 一个贡献段，状态变化后 `refresh` 触发重建。
-// 图标可见性 = Σ 各段 build() 项数 > 0（无需 active flag，扩展开/关状态天然反映在 build 返回空/非空）。
+// 图标常驻显示，显隐由设置开关 `set_menubar_visible` 驱动（前端 settings watch 同步，
+// 生效值到位前不显示——启动 bootstrap 期扩展 setup 的 refresh 不建托盘，避免配置为
+// 关闭时启动闪现）：菜单首项恒为框架基础项「打开 Voidnix」，扩展段按需追加；
+// 扩展开/关状态反映在 build 返回空/非空。
 // 托盘用 Tauri 跨平台 tray API（非裸 NSStatusItem），故归 runtime（平台无关）而非 platform。
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use tauri::menu::{
@@ -18,6 +22,13 @@ use crate::runtime::lock_or_recover;
 
 /// 框架唯一的菜单栏托盘 id。
 const TRAY_ID: &str = "voidnix_menubar";
+
+/// 框架基础项 id（打开主窗口，常驻菜单首项）。
+const OPEN_APP_ID: &str = "__open_app";
+
+/// 生效的图标显示开关（前端设置同步，默认 false：设置值到位前不建托盘）。
+/// false 时即使有扩展贡献也隐藏。
+static ICON_VISIBLE: AtomicBool = AtomicBool::new(false);
 
 /// 扩展供给的菜单项描述（框架不定义业务语义）。
 #[derive(Clone)]
@@ -68,12 +79,26 @@ pub fn register(contribution: MenuBarContribution) {
     lock_or_recover(&CONTRIBUTIONS).push(contribution);
 }
 
-/// 重建聚合菜单 + 按总项数显隐图标（扩展状态变化后调用）。
+/// 重建聚合菜单 + 应用图标显示开关（扩展状态变化后调用）。
 pub fn refresh(app: &AppHandle) {
     rebuild(app);
 }
 
+/// 设置开关：菜单栏图标显隐（前端 settings watch 同步，Rust 侧不读配置文件）。
+#[tauri::command]
+pub fn set_menubar_visible(app: AppHandle, visible: bool) {
+    ICON_VISIBLE.store(visible, Ordering::Relaxed);
+    rebuild(&app);
+}
+
 fn rebuild(app: &AppHandle) {
+    if !ICON_VISIBLE.load(Ordering::Relaxed) {
+        if let Some(tray) = app.tray_by_id(TRAY_ID) {
+            let _ = tray.set_visible(false);
+        }
+        return;
+    }
+
     // 锁内仅克隆 title + build 句柄，锁外调用 build 闭包（防 build/on_event → refresh 重入死锁）
     let specs: Vec<(&'static str, MenuBuild)> = {
         let guard = lock_or_recover(&CONTRIBUTIONS);
@@ -86,14 +111,6 @@ fn rebuild(app: &AppHandle) {
         .filter(|(_, items)| !items.is_empty())
         .collect();
 
-    if sections.is_empty() {
-        // 无扩展贡献：隐藏图标（托盘未创建则无需操作）
-        if let Some(tray) = app.tray_by_id(TRAY_ID) {
-            let _ = tray.set_visible(false);
-        }
-        return;
-    }
-
     if let Err(e) = ensure_tray(app) {
         eprintln!("[menubar] ensure tray: {e}");
         return;
@@ -102,12 +119,14 @@ fn rebuild(app: &AppHandle) {
         return;
     };
 
-    // 按扩展名称分组：每段前插 disabled 标题项，段间加分隔线
-    let mut entries: Vec<MenuEntry> = Vec::new();
+    // 首项恒为框架基础项「打开 Voidnix」（图标常驻的最小出口），扩展段按需追加
+    let mut entries: Vec<MenuEntry> = vec![MenuEntry::Item {
+        id: OPEN_APP_ID.to_string(),
+        label: "打开 Voidnix".to_string(),
+        enabled: true,
+    }];
     for (i, (title, items)) in sections.iter().enumerate() {
-        if i > 0 {
-            entries.push(MenuEntry::Separator);
-        }
+        entries.push(MenuEntry::Separator);
         entries.push(MenuEntry::Item {
             id: format!("__section_{i}"),
             label: title.to_string(),
@@ -143,9 +162,13 @@ fn ensure_tray(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 菜单点击分派：锁内克隆 on_event 句柄，锁外逐个调用（防重入死锁）。
+/// 菜单点击分派：框架基础项直接处理，其余锁内克隆 on_event 句柄，锁外逐个调用（防重入死锁）。
 fn dispatch_event(app: &AppHandle, event: MenuEvent) {
     let id = event.id().as_ref();
+    if id == OPEN_APP_ID {
+        crate::runtime::window::show_main(app);
+        return;
+    }
     let handlers: Vec<MenuOnEvent> = lock_or_recover(&CONTRIBUTIONS)
         .iter()
         .map(|c| c.on_event.clone())

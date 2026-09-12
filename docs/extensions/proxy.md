@@ -209,7 +209,7 @@ root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「
 
 ### 恢复动作
 
-- **进程已退出**（`!root_mihomo_running`）或 controller 不可达 → **`reset_dead_state`**：复位 enabled/tun_active 两标志 + `invalidate_monitor`（监测代际失效）+ `StreamRegistry::cancel_all` 停流 + emit `proxy-enabled:false` + emit `proxy-status{kind:error}`（前端状态栏提醒 + 开启项红色提示）+ menubar refresh 隐藏图标。**不自动提权重启**（避免突兀弹密码框），由用户手动重新开启
+- **进程已退出**（`!root_mihomo_running`）或 controller 不可达 → **`reset_dead_state`**：复位 enabled/tun_active 两标志 + `invalidate_monitor`（监测代际失效）+ `StreamRegistry::cancel_all` 停流 + emit `proxy-enabled:false` + emit `proxy-status{kind:error}`（前端状态栏提醒 + 开启项红色提示）+ menubar refresh 撤下贡献段。**不自动提权重启**（避免突兀弹密码框），由用户手动重新开启
 - **进程在 + controller 在 但出站死** → **免提权热重载 active config**（`reload_config_yaml`，PUT /configs 让 mihomo 重建 TUN 栈/连接池/接口绑定，对症「重启就好」）；热重载失败 emit `proxy-status{kind:error}` 通知，下轮重试
 - **状态脱节 / 被对端变体接管**（enabled 但运行 config `tun.enable=false`）→ `reset_dead_state`——本端 mihomo 已被热重载 idle 或核心重启回退 idle，流量实际直通。让渡路径经分布式通知即时发现（文案「TUN 已被另一版本 Voidnix 接管」），其余路径由 30s 对账发现（文案「代理已断开（TUN 未生效）」）
 
@@ -307,7 +307,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 ## 聚合菜单栏贡献（mod.rs）
 
-代理已连接时向框架统一菜单栏托盘（`runtime/menubar.rs`，`public/bar_icon.png` 模板图）贡献两项——极简 + 唯一（控制逻辑全部在扩展视图，菜单不重复）；断开后 `build` 返回空，图标自动隐藏。`setup` 内 **`menubar::register`** 声明 `build`/`on_event`，状态变更后 **`menubar::refresh`** 重建。
+代理已连接时向框架统一菜单栏托盘（`runtime/menubar.rs`，`public/bar_icon.png` 模板图）贡献两项——极简 + 唯一（控制逻辑全部在扩展视图，菜单不重复）；断开后 `build` 返回空，贡献段从菜单消失（托盘图标常驻，见框架菜单栏节）。`setup` 内 **`menubar::register`** 声明 `build`/`on_event`，状态变更后 **`menubar::refresh`** 重建。
 
 **两项贡献**：
 

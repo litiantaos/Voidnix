@@ -12,6 +12,8 @@ interface SettingsSchema {
   appearance: Appearance
   /** 语言：zh-CN / en（默认 zh-CN） */
   language: Language
+  /** 菜单栏图标：常驻显示（默认 true，关闭后隐藏托盘） */
+  menubarIconVisible: boolean
   /** 首启引导已完结（WelcomeView 完结后置 true） */
   onboarded: boolean
 }
@@ -25,6 +27,7 @@ export const useSettingsStore = defineStore('settings', () => {
     shortcutOverrides: {},
     appearance: 'auto',
     language: 'zh-CN',
+    menubarIconVisible: true,
     onboarded: false,
   })
 
@@ -54,6 +57,12 @@ export const useSettingsStore = defineStore('settings', () => {
       config.language = v
     },
   })
+  const menubarIconVisible = computed({
+    get: () => config.menubarIconVisible,
+    set: (v: boolean) => {
+      config.menubarIconVisible = v
+    },
+  })
   const onboarded = computed({
     get: () => config.onboarded,
     set: (v: boolean) => {
@@ -80,6 +89,7 @@ export const useSettingsStore = defineStore('settings', () => {
     shortcutOverrides,
     appearance,
     language,
+    menubarIconVisible,
     onboarded,
     setGlobalShortcut,
     getShortcutOverride,
