@@ -227,3 +227,57 @@ describe('BaseDialog', () => {
     expect(reason.value).toBe('dismiss')
   })
 })
+
+describe('BaseDialog 内容驱动高度动画', () => {
+  // happy-dom 无布局引擎（getBoundingClientRect 恒 0）：stub ResizeObserver + mock 测量值，
+  // 手动派发回调驱动 FLIP 流程（锁旧高 → 写目标高 → settle 清回 auto 并重新观察）
+  const roInstances: Array<{
+    callback: ResizeObserverCallback
+    observed: Element[]
+  }> = []
+  const FakeRO = class {
+    callback: ResizeObserverCallback
+    observed: Element[] = []
+    constructor(cb: ResizeObserverCallback) {
+      this.callback = cb
+      roInstances.push(this as unknown as { callback: ResizeObserverCallback; observed: Element[] })
+    }
+    observe(el: Element) {
+      this.observed.push(el)
+    }
+    unobserve(el: Element) {
+      this.observed = this.observed.filter((e) => e !== el)
+    }
+    disconnect() {
+      this.observed = []
+    }
+  }
+
+  it('自然高度变化：写显式目标高 → settle 后清回 auto 并重新观察', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('ResizeObserver', FakeRO)
+    const wrapper = mountDialog()
+    const el = wrapper.find('.dialog-to').element as HTMLElement
+    expect(roInstances).toHaveLength(1)
+    expect(roInstances[0]!.observed).toContain(el)
+
+    // 内容撑高（挂载基线 0 → 120）：mock 测量后派发 RO 回调
+    const spy = vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({ height: 120 } as DOMRect)
+    roInstances[0]!.callback([], undefined as unknown as ResizeObserver)
+    await nextTick()
+
+    // 目标高显式写入（transition 端点），动画期间 unobserve 防自触发
+    expect(el.style.height).toBe('120px')
+    expect(roInstances[0]!.observed).not.toContain(el)
+
+    vi.advanceTimersByTime(230)
+    expect(el.style.height).toBe('')
+    expect(roInstances[0]!.observed).toContain(el)
+
+    spy.mockRestore()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+    roInstances.length = 0
+    wrapper.unmount()
+  })
+})

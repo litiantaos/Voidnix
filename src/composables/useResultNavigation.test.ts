@@ -237,6 +237,45 @@ describe('useResultNavigation', () => {
     })
   })
 
+  describe('模态弹窗打开：正常层键盘导航让位', () => {
+    // 场景：弹窗打开但焦点不在弹窗内（如菜单栏「检查更新」唤起时被搜索框聚焦链路抢占），
+    // 回车不得执行列表选中项——让位给弹窗（焦点在弹窗内时 BaseDialog 自身 stopPropagation）
+    function mountModal() {
+      const el = document.createElement('div')
+      el.setAttribute('role', 'dialog')
+      el.setAttribute('aria-modal', 'true')
+      document.body.appendChild(el)
+      return () => el.remove()
+    }
+
+    it('模态期间 Enter 不执行列表项、ArrowDown 不动选中、Escape 不藏窗；弹窗移除后恢复', () => {
+      const ctx = makeWrapper({
+        results: [
+          {
+            id: 'm1',
+            title: 'M',
+            extId: 'calculator',
+            data: { kind: 'extension', extId: 'calculator' },
+          },
+        ],
+        selectedIndex: 0,
+      })
+      const removeModal = mountModal()
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+      expect(ctx.activateExtension).not.toHaveBeenCalled()
+      expect(ctx.selectedIndex.value).toBe(0)
+      expect(hideWindow).not.toHaveBeenCalled()
+
+      removeModal()
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      expect(hideWindow).toHaveBeenCalledOnce()
+    })
+  })
+
   describe('Escape：统一退出当前层', () => {
     // esc 统一退出当前层：事件到达即退出（输入框聚焦也直接退出，不先失焦）。
     function makeEscapeDispatcher() {

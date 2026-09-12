@@ -106,7 +106,7 @@ export function useAppLifecycle(win: Win) {
   }
 
   // 唤起节流：窗口获焦触发，冷却期内秒退。lastCheckAt 先记后查防并发重入。
-  // 仅静默检查（发现更新后显示搜索栏入口按钮，下载由设置页弹窗驱动）；
+  // 仅静默检查（发现更新后显示搜索栏角标，点击经 startCheck 弹 UpdateDialog 承载下载安装）；
   // 已知有更新则不再重复检查。check() 内部已 catch，外层仅兜底。失败也计入冷却。
   async function maybeCheckUpdate() {
     if (updateStore.info) return
@@ -232,6 +232,14 @@ export function useAppLifecycle(win: Win) {
         hideWindow(true)
       })
       track(unlistenClickOutside)
+
+      // 菜单栏「检查更新」：唤起主窗口承载 UpdateDialog（立即弹窗、弹窗内检查）
+      const unlistenCheckUpdate = await listen('check-update', () => {
+        markSkip()
+        void showWindow()
+        updateStore.startCheck()
+      })
+      track(unlistenCheckUpdate)
 
       // 系统弹窗关闭后用户切到其他 app（frontmost ≠ 原前台 app）→ dismiss
       const unlistenFrontmostChanged = await listen('frontmost-changed', () => {

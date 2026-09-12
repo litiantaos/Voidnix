@@ -15,6 +15,13 @@ export function isComposing(e: KeyboardEvent): boolean {
   return !!(e.isComposing || e.keyCode === 229)
 }
 
+/** 模态弹窗（BaseDialog，Teleport body + role=dialog + aria-modal）是否打开。
+ *  结果键盘导航 / 唤起聚焦链路 / Tab 环据此让位——模态期间焦点与回车归弹窗；
+ *  ResultActionPanel 等浮层 role=dialog 但无 aria-modal，不算模态。 */
+export function isModalDialogOpen(): boolean {
+  return !!document.querySelector('[role="dialog"][aria-modal="true"]')
+}
+
 export function isFormControl(
   el: Element | null | undefined,
   extraChecks?: { settingsControl?: boolean },

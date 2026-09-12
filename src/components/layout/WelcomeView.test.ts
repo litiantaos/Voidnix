@@ -500,16 +500,19 @@ describe('WelcomeView 首启引导视图', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await nextTick()
     // rAF 驱动 300ms 插值，轮询至收敛（f=1 纯俯视：u 轴水平、壁厚 0）——固定
-    // sleep 在 CI 高负载下帧延迟超余量即偶发失败
+    // sleep 在 CI 高负载下帧延迟超余量即偶发失败。收敛判据取完整终点 transform：
+    // scale 4 位小数先命中而 translate 2 位仍未到 72.00 的中间帧（f≈0.9998）存在，
+    // 分开断言会在高负载下偶发失败
     await vi.waitFor(() =>
-      expect(wrapper.find('g.w-zoom').attributes('transform') ?? '').toMatch(/scale\(0\.8000\)/),
+      expect(wrapper.find('g.w-zoom').attributes('transform') ?? '').toMatch(
+        /translate\(72\.00 23\.00\) scale\(0\.8000\)/,
+      ),
     )
     expect(wrapper.find('.welcome-view').classes()).toContain('w-expanded')
     // 图纸几何内容整体等比缩小：俯视终点 scale 0.8、平移补偿 (72, 23)（水平中心 360、
     /// 垂直中心 ZOOM_CY 115 上提让位权限面板；attribute transform 随 expandF 逐帧插值）
     const zoom = wrapper.find('g.w-zoom').attributes('transform') ?? ''
-    expect(zoom).toMatch(/scale\(0\.8000\)/)
-    expect(zoom).toMatch(/translate\(72\.00 23\.00\)/)
+    expect(zoom).toMatch(/translate\(72\.00 23\.00\) scale\(0\.8000\)/)
     // 图签在缩放层外：位置恒定不随缩小移动（展开时原地渐隐）
     expect(wrapper.find('text.w-title').attributes('x')).toBe('53')
     for (const p of wrapper.findAll('g.w-plate')) {

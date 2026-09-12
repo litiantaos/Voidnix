@@ -7,6 +7,7 @@ import { SEARCH } from '@/runtime/constants'
 import type { Extension, SearchResult } from '@/runtime/types'
 import { hideWindow } from '@/utils/tauri'
 import { buildSearchUrl, parseWebSearchQuery } from '@/utils/web-search'
+import { isModalDialogOpen } from '@/utils/dom'
 
 interface ResultNavOptions {
   results: Ref<SearchResult[]>
@@ -62,6 +63,9 @@ export function useResultNavigation(opts: ResultNavOptions) {
     if (appStore.isComposing || e.isComposing || e.keyCode === 229) return
     // 整窗视图（框架级 fullscreen）接管中：正常层键盘导航整体让位，视图自管按键
     if (appStore.fullscreenView) return
+    // 模态弹窗（全局 confirm / UpdateDialog / 扩展 BaseDialog）打开：焦点与回车归弹窗，
+    // 不执行列表项（焦点不在弹窗内时回车会落到搜索框，经此让位防误触）
+    if (isModalDialogOpen()) return
 
     switch (e.key) {
       case 'ArrowDown':
@@ -108,10 +112,8 @@ export function useResultNavigation(opts: ResultNavOptions) {
         break
 
       case 'Escape': {
-        if (appStore.isDialogOpen) return
-
         // 统一「退出当前层」：esc 到达即退出扩展/子视图/窗口（输入框聚焦也直接退出，
-        // 不先失焦；弹窗/下拉/录制态由各自组件 stopPropagation 自行关闭，不冒泡到此）。
+        // 不先失焦；模态弹窗期已在顶部让位，非模态弹窗/下拉/录制态由各自组件 stopPropagation 自行关闭，不冒泡到此）。
         if (appStore.activeSubview) {
           e.preventDefault()
           if (appStore.subviewExternal) {

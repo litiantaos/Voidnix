@@ -10,13 +10,7 @@
       >
         <div v-if="visible" class="backdrop-to" inset="0" absolute @click="onOverlayClick" />
       </Transition>
-      <Transition
-        appear
-        enter-from-class="dialog-from"
-        enter-active-class="dialog-active"
-        leave-active-class="dialog-active"
-        leave-to-class="dialog-from"
-      >
+      <Transition appear enter-from-class="dialog-from" leave-to-class="dialog-from">
         <div
           v-if="visible"
           ref="dialogRef"
@@ -184,6 +178,56 @@ function close(reason?: CloseReason) {
   }, 200)
 }
 
+// ── 内容驱动高度动画（FLIP）──
+// CSS transition 感知不到 auto 高度的内容变化（height 声明恒 auto、computed 值不变，
+// interpolate-size 也只解决显式声明切换的插值），必须 JS 测量：RO 侦测自然高度变化
+// → 锁旧显示高（px）→ reflow 提交起点 → 写新自然高（px）由 transition 插值 →
+// 结束清回 auto。RO 回调在布局后、绘制前，锁回旧高同帧生效不闪帧；
+// 动画期间 unobserve 防自触发（设 height 本身会再派发 RO）。
+const HEIGHT_ANIM_MS = 230 // = transition --duration-normal 200ms + 余量
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+let heightObserver: ResizeObserver | null = null
+let heightSettleTimer: ReturnType<typeof setTimeout> | null = null
+let lastNaturalHeight = 0
+
+function onDialogResize() {
+  const el = dialogRef.value
+  if (!el || closing || !visible.value) return
+  const target = el.getBoundingClientRect().height
+  if (target === lastNaturalHeight) return
+  if (reducedMotion) {
+    lastNaturalHeight = target
+    return
+  }
+  heightObserver!.unobserve(el)
+  el.style.height = `${lastNaturalHeight}px`
+  void el.offsetHeight
+  el.style.height = `${target}px`
+  scheduleHeightSettle(el, target)
+}
+
+/** 过渡结束后清回 auto；窗口期内内容再变则以过渡终点为起点续动画（不闪帧）。 */
+function scheduleHeightSettle(el: HTMLElement, from: number) {
+  if (heightSettleTimer) clearTimeout(heightSettleTimer)
+  heightSettleTimer = setTimeout(() => {
+    heightSettleTimer = null
+    // 关窗淡出中不再续动画/重挂观察（组件即将卸载，onUnmounted 会 disconnect）
+    if (closing) return
+    el.style.height = ''
+    const natural = el.getBoundingClientRect().height
+    if (natural !== from) {
+      heightObserver!.unobserve(el)
+      el.style.height = `${from}px`
+      void el.offsetHeight
+      el.style.height = `${natural}px`
+      scheduleHeightSettle(el, natural)
+      return
+    }
+    lastNaturalHeight = natural
+    heightObserver!.observe(el)
+  }, HEIGHT_ANIM_MS)
+}
+
 const sizeClass = computed(() => {
   const sizeMap: Record<string, string> = {
     sm: 'w-40% max-h-80vh',
@@ -281,6 +325,14 @@ function onOverlayClick() {
 
 onMounted(() => {
   previousFocusEl = document.activeElement as HTMLElement
+  // 高度动画基线：挂载时记录自然高（appear 过渡只动 opacity/transform，高度即终值）
+  if (dialogRef.value) {
+    lastNaturalHeight = dialogRef.value.getBoundingClientRect().height
+    if (!reducedMotion && typeof ResizeObserver !== 'undefined') {
+      heightObserver = new ResizeObserver(onDialogResize)
+      heightObserver.observe(dialogRef.value)
+    }
+  }
   nextTick(() => {
     const el = dialogRef.value
     if (!el) return
@@ -311,6 +363,11 @@ onUnmounted(() => {
     clearTimeout(closeTimer)
     closeTimer = null
   }
+  if (heightSettleTimer) {
+    clearTimeout(heightSettleTimer)
+    heightSettleTimer = null
+  }
+  heightObserver?.disconnect()
   if (previousFocusEl && typeof previousFocusEl.focus === 'function') {
     previousFocusEl.focus()
   }
@@ -329,16 +386,17 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-.dialog-active {
-  /* 仅 opacity + transform（GPU 合成）；box-shadow 带 32px 大模糊，过渡每帧光栅化致顿，
-     且 none→具体阴影插值跨引擎不一致。阴影改为始终在场，靠整体 opacity 淡入出现 */
-  transition:
-    opacity var(--duration-normal) var(--ease-out),
-    transform var(--duration-normal) var(--ease-out);
-}
 .dialog-to {
   opacity: 1;
   transform: scale(1);
+  /* 进出场（opacity/transform，GPU 合成；box-shadow 带 32px 大模糊不过渡——每帧光栅化致顿
+     且跨引擎插值不一致，阴影始终在场靠整体 opacity 淡入）+ 内容形态切换时高度平滑重排
+     （起点/终点由 JS 显式写入 px，见 script 高度动画；auto 高度的内容变化 CSS 感知不到）。
+     transition 常驻：进出场 from/to 类只供起止值，无需 active 类 */
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out),
+    height var(--duration-normal) var(--ease-out);
   /* 独立 dialog 面（非 soft-surface）：近实白 + 中性描边 + elevation；内容通铺，chrome 浮层渐隐 */
   overflow: hidden;
   background: var(--dialog-fill);
@@ -346,6 +404,9 @@ onUnmounted(() => {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-dialog);
+  /* 高度动画写入显式 height：border-box 使其与 getBoundingClientRect（含边框）同一量纲，
+     锁高/写目标不产生边框厚度偏移；max-h 亦按同框约束 */
+  box-sizing: border-box;
   /* 标题 / 底栏浮层预留（与 .dialog-chrome 高度对齐） */
   --dialog-chrome-top: 52px;
   --dialog-chrome-bottom: 16px;

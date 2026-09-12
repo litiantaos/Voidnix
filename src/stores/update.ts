@@ -18,6 +18,8 @@ export const useUpdateStore = defineStore('update', () => {
   const info = ref<UpdateInfo | null>(null)
   const dialogVisible = ref(false)
   const progress = ref(0) // 0..1 下载进度（contentLength 未知时保持 0）
+  // 当前应用版本：check() 时填充（无论有无更新），弹窗「已是最新版本」展示用
+  const currentVersion = ref('')
 
   let _updater: TauriUpdate | null = null
 
@@ -27,11 +29,12 @@ export const useUpdateStore = defineStore('update', () => {
     error.value = null
     try {
       const { check: checkUpdate } = await import('@tauri-apps/plugin-updater')
+      currentVersion.value = await getVersion()
       const update = await checkUpdate()
       if (update?.available) {
         _updater = update
         info.value = {
-          currentVersion: await getVersion(),
+          currentVersion: currentVersion.value,
           newVersion: update.version,
           body: update.body ?? null,
         }
@@ -82,8 +85,17 @@ export const useUpdateStore = defineStore('update', () => {
     }
   }
 
-  function showDialog() {
+  /** 主动检查更新统一入口（菜单栏 / 设置页 / 搜索角标 / 弹窗内重试共用）：
+   *  立即弹窗承载全流程（检查中 → 结果），不阻塞等待网络检查；
+   *  已有结果（发现更新/已下载）或下载进行中仅重新弹窗呈现，不重复发起检查。 */
+  function startCheck() {
+    if (checking.value || downloading.value || downloaded.value || info.value) {
+      dialogVisible.value = true
+      return
+    }
+    reset()
     dialogVisible.value = true
+    void check()
   }
 
   function closeDialog() {
@@ -97,6 +109,7 @@ export const useUpdateStore = defineStore('update', () => {
     error.value = null
     info.value = null
     progress.value = 0
+    currentVersion.value = ''
     _updater = null
     dialogVisible.value = false
   }
@@ -109,10 +122,11 @@ export const useUpdateStore = defineStore('update', () => {
     info,
     progress,
     dialogVisible,
+    currentVersion,
     check,
+    startCheck,
     download,
     install,
-    showDialog,
     closeDialog,
     reset,
   }

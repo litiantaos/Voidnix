@@ -37,6 +37,7 @@
 <script setup lang="ts">
 import { computed, ref, toRef, useSlots } from 'vue'
 import { useInputControl } from '@/composables/useInputControl'
+import { isModalDialogOpen } from '@/utils/dom'
 
 interface Props {
   modelValue?: string
@@ -100,7 +101,7 @@ function onKeydownHandler(e: KeyboardEvent) {
     return
   }
   if (e.key === 'Escape') {
-    if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+    if (isModalDialogOpen()) return
     e.preventDefault()
     e.stopPropagation()
     emit('update:modelValue', valueBeforeEdit.value)
