@@ -77,6 +77,7 @@ export const enMessages: Msgs = {
   'settings.shortcutConflictHint': { en: 'Registration failed — may be taken by another app' },
   'settings.showWelcome': { en: 'Usage Guide' },
   'settings.autostart': { en: 'Launch at Login' },
+  'settings.menubarIcon': { en: 'Menu Bar Icon' },
   'settings.checkUpdate': { en: 'Check for Updates' },
   'settings.downloadAndInstall': { en: 'Download & Install' },
   'settings.installUpdate': { en: 'Install Update' },

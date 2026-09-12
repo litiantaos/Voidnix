@@ -77,6 +77,7 @@ export const zhCNMessages: Msgs = {
   'settings.shortcutConflictHint': { 'zh-CN': '注册失败，可能已被其它应用占用' },
   'settings.showWelcome': { 'zh-CN': '使用引导' },
   'settings.autostart': { 'zh-CN': '开机自启' },
+  'settings.menubarIcon': { 'zh-CN': '菜单栏图标' },
   'settings.checkUpdate': { 'zh-CN': '检查更新' },
   'settings.downloadAndInstall': { 'zh-CN': '下载并安装' },
   'settings.installUpdate': { 'zh-CN': '安装新版本' },

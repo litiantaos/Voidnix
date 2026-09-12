@@ -12,6 +12,7 @@ export const CMD = {
   setMainFrame: 'set_main_frame',
   setWindowAppearance: 'set_window_appearance',
   getCachedAppearance: 'get_cached_appearance',
+  setMenubarVisible: 'set_menubar_visible',
   httpGet: 'http_get',
   openExtensionSubview: 'open_extension_subview',
   quitApp: 'quit_app',
