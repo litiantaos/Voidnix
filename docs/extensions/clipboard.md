@@ -98,6 +98,7 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 - **触发**：`Cmd+Enter` 或结果项右键（经 `useActionPanel` 统一 `toggleOpen`，二次触发关闭）
 - **单项菜单**：预览（非 file）/ 收藏·取消收藏 / 编辑（仅文本）/ 删除
 - **多选菜单**：多选状态下触发 → 批量删除（`删除 N 条`）
+- **收藏态可视**：已收藏项副标题末尾经点分隔显示空心小星（`i-ri-star-line`，色随副标题文字），随收藏切换即时增删
 
 ## 删除
 
