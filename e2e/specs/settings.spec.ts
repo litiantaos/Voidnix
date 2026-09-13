@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-// 设置页新增「清除 Voidnix 注入」入口 + proxy 完全卸载行的门控渲染。
+// 设置页新增「清除系统注入」入口 + proxy 完全卸载行的门控渲染。
 // 纯浏览器环境（Vite dev server）：非 Tauri 下清除动作与卸载行均不生效/不展示，
 // 断言的是渲染层与状态门控（核心未下载且 daemon 未装 → 无卸载入口）。
 test.describe('系统侵入面清理入口', () => {
@@ -16,9 +16,9 @@ test.describe('系统侵入面清理入口', () => {
     await input.press('Enter')
   }
 
-  test('设置页「清除 Voidnix 注入」项渲染', async ({ page }) => {
+  test('设置页「清除系统注入」项渲染', async ({ page }) => {
     await openExtension(page, '/settings')
-    await expect(page.getByText('清除 Voidnix 注入')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('清除系统注入')).toBeVisible({ timeout: 5000 })
     // 副标题说明注入范围
     await expect(page.getByText('.zshrc / .zprofile 注入块与 ai.env 凭证文件')).toBeVisible()
   })

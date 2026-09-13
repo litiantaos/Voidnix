@@ -297,7 +297,7 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     subtitle: t('settings.clearInjectionsHint'),
     type: 'action',
     icon: 'i-ri-eraser-line',
-    group: t('settings.group.privacy'),
+    group: t('settings.group.advanced'),
     action: handleClearInjections,
   })
 

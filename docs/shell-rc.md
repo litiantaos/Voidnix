@@ -75,7 +75,7 @@ shell_rc::filter_all_voidnix(&content);
 
 ## 用户侧摘除
 
-设置页「清除 Voidnix 注入」（框架命令 `clear_voidnix_injections`）：摘除 `~/.zshrc` / `~/.zprofile` 中全部 `# voidnix` 块 + 旧版成对 marker，删 `*.voidnix-bak` 备份，并删除 `~/.config/voidnix[/dev]/ai.env`（AI 凭证明文投影）。卸载导向入口——继续使用相关功能时会按需重新写入。
+设置页「清除系统注入」（高级组，框架命令 `clear_voidnix_injections`）：摘除 `~/.zshrc` / `~/.zprofile` 中全部 `# voidnix` 块 + 旧版成对 marker，删 `*.voidnix-bak` 备份，并删除 `~/.config/voidnix[/dev]/ai.env`（AI 凭证明文投影）。卸载导向入口——继续使用相关功能时会按需重新写入。
 
 ```bash
 # 手动搜 marker
