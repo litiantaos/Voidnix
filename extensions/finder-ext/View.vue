@@ -29,7 +29,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { emit } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { useAppStore, toastAndHide } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
@@ -237,7 +236,9 @@ const allItems = computed<SettingItem[]>(() => {
       action: () => {
         const ps = videoPaths.value
         if (!ps.length) return
-        void emit('video-pending-input-path', ps)
+        // 同页 CustomEvent 同步投递：目标视图首帧渲染即收到路径（经 IPC 往返会晚一拍，
+        // 空输入状态的回车是「选择文件」而非「开始处理」，快速连按会误触）
+        window.dispatchEvent(new CustomEvent('video-pending-input-path', { detail: ps }))
         appStore.setActiveExtension('video')
       },
       group: t('finderExt.operations'),
@@ -254,7 +255,8 @@ const allItems = computed<SettingItem[]>(() => {
       action: () => {
         const p = imagePath.value
         if (!p) return
-        void emit('image-pending-input-path', p)
+        // 同上：同步投递先于跳转首帧（image 的 operations 行按时插入，列表形状稳定）
+        window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: p }))
         appStore.setActiveExtension('image')
       },
       group: t('finderExt.operations'),

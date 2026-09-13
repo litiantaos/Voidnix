@@ -79,7 +79,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { emit } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { t } from '@/runtime/i18n'
 import { isTauri } from '@/utils/tauri'
@@ -188,9 +187,10 @@ async function handleCopy() {
 
 async function handleTranslate() {
   if (!session.value.ocrText.trim()) return
-  // 跨扩展通信走事件总线（C9）：screenshot 不再直依赖 translate 内部状态。
-  // translate 扩展 setup 监听 'translate-pending-text'，写入自身 pendingText。
-  await emit('translate-pending-text', session.value.ocrText)
+  // 跨扩展同页投递（C9）：screenshot 不直依赖 translate 内部状态。
+  // translate 扩展 setup 监听 'translate-pending-text'（window CustomEvent，同步达），
+  // 写入自身 pendingText——跳转首帧即进入翻译中状态。
+  window.dispatchEvent(new CustomEvent('translate-pending-text', { detail: session.value.ocrText }))
   appStore.setActiveExtension('translate')
 }
 

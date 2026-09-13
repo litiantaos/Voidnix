@@ -327,17 +327,8 @@ onActivated(refreshScreenHeight)
 onMounted(() => window.addEventListener('window-focused', refreshScreenHeightIfActive))
 onUnmounted(() => window.removeEventListener('window-focused', refreshScreenHeightIfActive))
 
-// 跨扩展进入：finder-ext 等经事件总线投递的待处理图片路径，写入即加载。
-// 时序同 video 扩展：emit 走 IPC 往返（macrotask），setActiveExtension 同步改 ref 触发
-// Vue flush（microtask），microtask 必先于 macrotask 清空，故 View 挂载 + watch 注册恒先于
-// IPC 回调到达，watch 不会漏触发。单张投递按抠图意图直达 removeBg（只改本地不落盘默认）。
-watch(pendingInputPath, (path) => {
-  if (!path) return
-  pendingInputPath.value = ''
-  tool.value = 'removeBg'
-  addImage(path)
-  void setInput(path)
-})
+// 跨扩展进入的投递消费见下方 setInput 之后的 watch（依赖 inputMeta / previewToken 等声明，
+// immediate 回调会在注册点同步执行，须置于全部依赖声明之后）。
 
 // ── 缩略图加载 ──
 
@@ -577,6 +568,25 @@ async function setInput(path: string) {
   result.value = null
   await loadPreview(path)
 }
+
+// 跨扩展进入：finder-ext 等经同页 CustomEvent 投递的待处理图片路径，写入即加载。
+// 投递与 setActiveExtension 同步发生：缓存态（KeepAlive 存活）watch 在同一 flush 内
+// 先于渲染执行、inputPath 同步置位——跳转首帧列表即含 operations 行（形状定型）；
+// LRU 驱逐重挂载场景经 immediate 在 mount 时消费（watch 注册晚于投递写入，immediate 补齐）。
+// 单张投递按抠图意图直达 removeBg（只改本地不落盘默认）。
+// 位置约束：immediate 回调在注册点同步执行，须置于全部依赖（inputMeta / previewToken /
+// addImage / setInput）声明之后。
+watch(
+  pendingInputPath,
+  (path) => {
+    if (!path) return
+    pendingInputPath.value = ''
+    tool.value = 'removeBg'
+    addImage(path)
+    void setInput(path)
+  },
+  { immediate: true },
+)
 
 async function removeBg() {
   if (!inputPath.value || processing.value) return

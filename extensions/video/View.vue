@@ -644,23 +644,34 @@ async function restoreJobStatus() {
   }
 }
 
-// 跨扩展进入：finder-ext 等经事件总线投递的待处理路径，写入即加载。
-// 时序证明（无需 onMounted 兜底）：emit 走 IPC 往返（macrotask），setActiveExtension
-// 同步改 ref 触发 Vue flush（microtask）；microtask 必先于 macrotask 清空，故 View
-// 挂载 + watch 注册恒先于 IPC 回调到达，watch 不会漏触发。
-watch(pendingInputPaths, (paths) => {
-  if (!paths.length) return
-  pendingInputPaths.value = []
-  // 队列进行中不接受新投递（paths 是队列索引基准，中途替换会错位；实际不可达——面板互斥，防御）
-  if (st.busy) return
-  void loadInputs(paths)
-})
+// 跨扩展进入：finder-ext 等经同页 CustomEvent 投递的待处理路径，写入即加载。
+// 投递与 setActiveExtension 同步发生：watch（immediate 覆盖 LRU 驱逐重挂载时注册晚
+// 于写入的场景）先于本视图 activated 执行，loadInputs 置位后由 holdSelection 让
+// onActivated 的新会话清空放行本次投递。
+let holdSelection = false
+watch(
+  pendingInputPaths,
+  (paths) => {
+    if (!paths.length) return
+    pendingInputPaths.value = []
+    // 队列进行中不接受新投递（paths 是队列索引基准，中途替换会错位；实际不可达——面板互斥，防御）
+    if (st.busy) return
+    holdSelection = true
+    void loadInputs(paths)
+  },
+  { immediate: true },
+)
 
 // 重新进入扩展即新会话：未在处理中的选择清空重置（含 Escape 切走再进、窗口隐藏重唤起
 // 后重挂载——onMounted 后必触发 onActivated）。队列运行中（busy）保留进度上下文。
-// 首次挂载时选择本为空，清空无副作用；finder-ext 投递经 IPC（macrotask）必晚于此处。
+// 同页投递（同步早于 activated）置位 holdSelection：跳转进入不是新会话，放行投递。
 onActivated(() => {
-  if (!st.busy) resetSelection()
+  if (st.busy) return
+  if (holdSelection) {
+    holdSelection = false
+    return
+  }
+  resetSelection()
 })
 
 onMounted(async () => {

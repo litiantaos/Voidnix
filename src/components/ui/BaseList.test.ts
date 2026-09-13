@@ -37,6 +37,7 @@ describe('BaseList', () => {
     ).setupState.itemRefs
     expect(refs.filter(Boolean)).toHaveLength(3)
     expect(refs).toHaveLength(3)
+    wrapper.unmount()
   })
 
   it('卸载时清空全部 DOM 引用', () => {
@@ -86,5 +87,41 @@ describe('BaseList', () => {
     await nextTick()
     expect(controlled.emitted('select')).toBeUndefined()
     expect(controlled.emitted('update:selectedIndex')).toBeUndefined()
+    // 卸载清 document 键盘监听：残留监听会消费后续用例派发的按键（Enter 执行即消费）
+    selfManaged.unmount()
+    controlled.unmount()
+  })
+
+  it('Enter auto-repeat 不执行行项：跨扩展跳转按住回车的 repeat 不得落到目标视图首行', async () => {
+    const wrapper = mount(BaseList<Item>, {
+      props: { items: items(3) },
+      slots: { item: ({ item }: { item: Item }) => item.title },
+    })
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, repeat: true }),
+    )
+    await nextTick()
+    expect(wrapper.emitted('execute')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('Enter 执行即消费：同一按键不再触发后续 document 监听', () => {
+    const wrapper = mount(BaseList<Item>, {
+      props: { items: items(3) },
+      slots: { item: ({ item }: { item: Item }) => item.title },
+    })
+    // 注册在 BaseList（先 mount）之后的 document 监听，模拟 useResultNavigation 等后续消费者
+    let laterSawEnter = false
+    const later = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') laterSawEnter = true
+    }
+    document.addEventListener('keydown', later)
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    document.removeEventListener('keydown', later)
+    expect(wrapper.emitted('execute')).toHaveLength(1)
+    expect(laterSawEnter).toBe(false)
+    wrapper.unmount()
   })
 })

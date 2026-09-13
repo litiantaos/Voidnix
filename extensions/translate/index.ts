@@ -248,10 +248,10 @@ export default defineExtension({
         translateReadyResolver = null
       }
     })
-    // 跨扩展通信（C9）：screenshot OCR 等通过事件总线投递待翻译文本，
-    // 避免扩展之间直 import 内部状态。
-    await listen<string>('translate-pending-text', (e) => {
-      pendingText.value = e.payload || ''
+    // 跨扩展同页投递（C9）：screenshot OCR 等经 window CustomEvent 同步投递待翻译文本，
+    // 避免扩展之间直 import 内部状态。同步达使跳转首帧即进入翻译中状态（焦点让位正确）。
+    window.addEventListener('translate-pending-text', (e) => {
+      pendingText.value = String((e as CustomEvent<string>).detail || '')
     })
     await initStreamListeners()
   },

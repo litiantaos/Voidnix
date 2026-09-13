@@ -5,7 +5,7 @@
 ## 能力
 
 - 选输入视频（框架 `pick_files` 多选，扩展名白名单），多文件批量处理
-- **跨扩展接收**：finder-ext 等经事件总线 `video-pending-input-path` 投递路径数组（访达多选区全量带入），`pendingInputPaths` watch 后自动加载并逐个 probe
+- **跨扩展接收**：finder-ext 等经同页 window CustomEvent `video-pending-input-path` 同步投递路径数组（访达多选区全量带入），`pendingInputPaths` watch（immediate）后自动加载并逐个 probe
 - 探测元数据（时长 / 分辨率 / 编码 / 体积）；多文件副标题汇总总时长 · 总大小
 - **压缩**：质量预设 high / balanced / small
 - **格式转换**：mp4 / mov / mkv / webm / gif

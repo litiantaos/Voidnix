@@ -62,7 +62,7 @@ export default defineExtension({
 
 ### 跨扩展通信
 
-禁止扩展之间直 import 内部状态（如 `import { x } from '@ext/other'`）。需要跨扩展投递数据时走 Tauri 事件总线：发送方 `emit('ext-<event>', payload)`，接收方在 `setup()` 内 `listen('ext-<event>', ...)`。约定事件名前缀以目标扩展 id 开头（如 `translate-pending-text`），避免冲突。screenshot OCR → translate 待翻译文本即此模式。
+禁止扩展之间直 import 内部状态（如 `import { x } from '@ext/other'`）。同页跨扩展投递数据走 window CustomEvent：发送方 `window.dispatchEvent(new CustomEvent('ext-<event>', { detail: payload }))`，接收方在 `setup()` 内 `window.addEventListener('ext-<event>', ...)` 读 `event.detail`。约定事件名前缀以目标扩展 id 开头（如 `translate-pending-text`），避免冲突。**同步投递是硬要求**：跨扩展跳转（投递 + `setActiveExtension`）必须让 payload 先于目标视图首帧渲染就位——经 Tauri 事件总线的 IPC 往返会晚一拍，期间列表形状未定型（如有图才显示的操作行未插入），用户快速 ↓+Enter 会击中占位行误触（image 的 source 行即文件选择器入口）。接收方 View 的 pending watch 须带 `immediate: true`（LRU 驱逐重挂载时 watch 注册晚于写入）。消费者：finder-ext → image / video（选区路径）、screenshot OCR → translate（待翻译文本）。Rust → 前端或跨窗口投递仍走 Tauri 事件总线（`app.emit` + `listen`）。
 
 ### 菜单栏贡献（Rust 侧）
 
