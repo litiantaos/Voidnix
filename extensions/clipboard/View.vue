@@ -74,6 +74,11 @@
                 <span text="muted">·</span>
                 <span>{{ item.image_width }}×{{ item.image_height }}</span>
               </template>
+              <!-- 收藏标记：副标题末尾点分隔小星，色与尺寸随副标题文字继承 -->
+              <template v-if="item.is_favorite">
+                <span text="muted">·</span>
+                <i class="i-ri-star-line"></i>
+              </template>
             </div>
           </template>
         </BaseListItem>
