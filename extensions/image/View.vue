@@ -1,46 +1,39 @@
 <template>
   <div class="flex-col-full-pb">
-    <!-- ── 移除背景：预览区 ── -->
-    <Transition :css="false" v-bind="expandHooks">
-      <div v-if="tool === 'removeBg' && previewUrl" p="x-3 b-3" shrink="0" flex="~ col" gap="2">
-        <div
-          class="checkerboard border border-divider radius-panel border-solid"
-          relative
-          shrink="0"
-          h="48"
-          overflow="hidden"
-        >
-          <img
-            v-if="originalPreview"
-            :src="originalPreview"
-            class="img-fade h-full w-full inset-0 absolute object-contain"
-            :class="{ 'img-fade-out': result }"
-            :alt="t('image.original')"
-          />
-          <Transition name="result-fade">
-            <img
-              v-if="result"
-              :src="result.previewDataUrl"
-              class="h-full w-full inset-0 absolute object-contain"
-              :alt="t('image.result')"
-            />
-          </Transition>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- ── 拼接：实时预览 = 列表合二为一 ── -->
-    <Transition :css="false" v-bind="expandHooks">
+    <!-- ── 移除背景：预览区（高度屏高比例，直接渲染无布局动画）── -->
+    <div v-if="tool === 'removeBg' && previewUrl" p="x-3 b-3" shrink="0">
       <div
-        v-if="tool === 'stitch' && stitchFiles.length"
-        p="x-3 b-3"
+        class="checkerboard border border-divider radius-panel border-solid"
+        relative
         shrink="0"
-        flex="~ col"
-        gap="2"
+        overflow="hidden"
+        :style="previewStyle"
       >
+        <img
+          v-if="originalPreview"
+          :src="originalPreview"
+          class="img-fade h-full w-full inset-0 absolute object-contain"
+          :class="[{ 'img-loaded': imgLoaded }, { 'img-fade-out': result }]"
+          :alt="t('image.original')"
+          @load="imgLoaded = true"
+        />
+        <Transition name="result-fade">
+          <img
+            v-if="result"
+            :src="result.previewDataUrl"
+            class="h-full w-full inset-0 absolute object-contain"
+            :alt="t('image.result')"
+          />
+        </Transition>
+      </div>
+    </div>
+
+    <!-- ── 拼接：实时预览 = 列表合二为一（高度屏高比例，直接渲染）── -->
+    <div v-if="tool === 'stitch' && imageFiles.length" p="x-3 b-3" shrink="0">
+      <div relative shrink="0">
+        <!-- z-0 收纳缩略图内联 z-index（首张 = 图片总数）：防拼接 11 张以上首张盖过悬浮操作条 z-10 -->
         <div
-          class="hide-scrollbar border border-divider radius-panel border-solid fill-ctrl"
-          relative
+          class="hide-scrollbar border border-divider radius-panel border-solid fill-ctrl relative z-0"
           shrink="0"
           :style="[previewStyle, overflowStyle]"
           @click="selectedFile = -1"
@@ -50,7 +43,7 @@
             :class="stitchDirection === 'vertical' ? 'flex flex-col' : 'flex flex-row items-center'"
           >
             <div
-              v-for="(file, i) in stitchFiles"
+              v-for="(file, i) in imageFiles"
               :key="file"
               shrink="0"
               class="cursor-pointer relative"
@@ -80,25 +73,70 @@
             </div>
           </div>
         </div>
+        <!-- 选中图悬浮操作条：预览区底部中心（挂 wrapper 不随内容滚动；ui-popup 浮层过渡非布局动画） -->
+        <Transition name="ui-popup">
+          <div
+            v-if="selectedFile >= 0"
+            class="p-1 acrylic-bar radius-panel flex gap-1 bottom-2 left-1/2 absolute z-10 -translate-x-1/2"
+            @click.stop
+          >
+            <BaseButton
+              :icon="stitchDirection === 'vertical' ? 'i-ri-arrow-up-line' : 'i-ri-arrow-left-line'"
+              :title="stitchDirection === 'vertical' ? t('image.moveUp') : t('image.moveLeft')"
+              @click.stop="moveUp"
+            />
+            <BaseButton
+              :icon="
+                stitchDirection === 'vertical' ? 'i-ri-arrow-down-line' : 'i-ri-arrow-right-line'
+              "
+              :title="stitchDirection === 'vertical' ? t('image.moveDown') : t('image.moveRight')"
+              @click.stop="moveDown"
+            />
+            <BaseButton
+              icon="i-ri-close-line"
+              :title="t('image.remove')"
+              @click.stop="removeSelected"
+            />
+          </div>
+        </Transition>
       </div>
-    </Transition>
+    </div>
 
     <BaseSettingsList :items="items" @execute="onExecute">
+      <!-- 操作行：有图才显示，回车执行主按钮动作（removeBg 未处理=移除背景 / 其余=保存）。
+           removeBg 有结果后移除背景按钮去掉，主按钮换保存 -->
+      <template v-if="tool === 'removeBg'" #trailing-operations>
+        <div flex gap="2">
+          <template v-if="result">
+            <BaseButton :disabled="processing" @click.stop="copyToClipboard">{{
+              t('image.copy')
+            }}</BaseButton>
+            <BaseButton variant="primary" :disabled="processing" @click.stop="saveToFile">{{
+              t('image.save')
+            }}</BaseButton>
+          </template>
+          <BaseButton v-else variant="primary" :disabled="processing" @click.stop="removeBg">{{
+            processing ? t('image.processing') : t('image.removeBg')
+          }}</BaseButton>
+        </div>
+      </template>
+
+      <template v-else #trailing-operations>
+        <div flex gap="2">
+          <BaseButton :disabled="processing" @click.stop="copyToClipboard">{{
+            t('image.copy')
+          }}</BaseButton>
+          <BaseButton variant="primary" :disabled="processing" @click.stop="saveToFile">{{
+            t('image.save')
+          }}</BaseButton>
+        </div>
+      </template>
+
       <!-- 移除背景：source 行 -->
       <template v-if="tool === 'removeBg'" #trailing-source>
-        <div flex gap="2">
-          <BaseButton :disabled="processing" @click.stop="pickInput">{{
-            t('image.select')
-          }}</BaseButton>
-          <BaseButton v-if="processing" disabled>{{ t('image.processing') }}</BaseButton>
-          <BaseButton
-            v-else-if="inputPath && !result"
-            variant="primary"
-            :disabled="processing"
-            @click.stop="removeBg"
-            >{{ t('image.removeBg') }}</BaseButton
-          >
-        </div>
+        <BaseButton :disabled="processing" @click.stop="pickInput">{{
+          t('image.select')
+        }}</BaseButton>
       </template>
 
       <!-- 拼接：source 行 -->
@@ -133,94 +171,49 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onDeactivated, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { currentMonitor } from '@tauri-apps/api/window'
 import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
-import { isTauri, hideWindow } from '@/utils/tauri'
+import { isTauri } from '@/utils/tauri'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import { t } from '@/runtime/i18n'
 import type { SettingItem } from '@/types/settings'
 import { config } from './config'
-import { stitchFiles, tool, pendingInputPath } from './index'
+import { pendingInputPath } from './index'
 import {
   IMAGE_EXTENSIONS,
   RESIZE_PRESETS,
+  bytesFromDataUrl,
   displayPath,
   fileNameFromPath,
   formatBytes,
+  imageSizeOf,
   buildOutputPath,
   type ImageResult,
   type Resize,
   type StitchDirection,
+  type Tool,
 } from './logic'
 
 const appStore = useAppStore()
 
-// ── 高度展开过渡：v-if 块平滑伸缩（maxHeight 0 → scrollHeight），避免下方布局跳变 ──
-// 曲线/时长统一走设计基元（--ease-* / --duration-*），不发明新值。
-// scrollHeight 不受 maxHeight 约束，始终反映完整内容高度；结束后清空内联样式恢复自然流。
-// 回调定时常量与 theme.css 的 --duration-* 同步（改 CSS 时一并更新）：
-const EXPAND_MS = 200 // = --duration-normal
-const COLLAPSE_MS = 150 // = --duration-fast
-const expandHooks = {
-  onBeforeEnter(el: Element) {
-    const e = el as HTMLElement
-    e.style.maxHeight = '0'
-    e.style.opacity = '0'
-    e.style.overflow = 'hidden'
-  },
-  onEnter(el: Element, done: () => void) {
-    const e = el as HTMLElement
-    e.style.transition =
-      'max-height var(--duration-normal) var(--ease-spring), opacity var(--duration-fast) var(--ease-out)'
-    void e.offsetHeight // 强制 reflow：提交 maxHeight:0 起始态后再过渡到目标高度
-    e.style.maxHeight = `${e.scrollHeight}px`
-    e.style.opacity = '1'
-    setTimeout(done, EXPAND_MS)
-  },
-  onAfterEnter(el: Element) {
-    clearExpandStyles(el as HTMLElement)
-  },
-  onBeforeLeave(el: Element) {
-    const e = el as HTMLElement
-    e.style.maxHeight = `${e.scrollHeight}px`
-    e.style.opacity = '1'
-    e.style.overflow = 'hidden'
-  },
-  onLeave(el: Element, done: () => void) {
-    const e = el as HTMLElement
-    void e.offsetHeight // 强制 reflow：提交起始高度后再过渡到 0
-    e.style.transition =
-      'max-height var(--duration-fast) var(--ease-in), opacity var(--duration-fast) var(--ease-in)'
-    e.style.maxHeight = '0'
-    e.style.opacity = '0'
-    setTimeout(done, COLLAPSE_MS)
-  },
-  onAfterLeave(el: Element) {
-    clearExpandStyles(el as HTMLElement)
-  },
-}
-
-function clearExpandStyles(e: HTMLElement) {
-  e.style.maxHeight = ''
-  e.style.transition = ''
-  e.style.overflow = ''
-  e.style.opacity = ''
-}
-
 const processing = ref(false)
 const result = ref<ImageResult | null>(null)
-const savedOutputPath = ref('')
+
+/** 当前工具：初始读持久化默认，用户主动切换时写回 config（投递直达只改本地不落盘）。 */
+const tool = ref<Tool>(config.defaultTool)
 
 // ── 移除背景 ──
 const inputPath = ref('')
 const originalPreview = ref('')
 
 // ── 拼接 ──
+/** 共享图片集合：两工具单一输入源——removeBg 处理其中「当前张」，拼接消费全列表。 */
+const imageFiles = ref<string[]>([])
 const stitchDirection = ref<StitchDirection>('vertical')
 const stitchGap = ref(0)
 const stitchResize = ref<number>(RESIZE_PRESETS[0])
@@ -228,23 +221,31 @@ const selectedFile = ref(-1)
 /// 拼接缩略图 LRU 缓存：base64 data URL 单张可达数十 KB，无上限时拼接大量图片致内存膨胀
 const THUMB_CACHE_MAX = 20
 const thumbCache = ref<Map<string, string>>(new Map())
+/// 各图字节数（从缩略图 data URL 推算）：数字 Map 不随 LRU 驱逐，总大小汇总不因缓存上限失真
+const stitchSizes = ref<Map<string, number>>(new Map())
 
-// ── 屏幕高度（预览区 = 75%） ──
+// ── 屏幕高度：预览区按屏高比例（统一 30%）──
+// 进入扩展（onActivated）+ 窗口获焦时刷新：窗口每次 show 定位光标屏，
+// 扩展保持激活下跨屏唤起不触发 deactivate/activate 周期，须靠获焦事件换新屏基数
 const screenHeight = ref(800)
 
-if (isTauri) {
-  currentMonitor()
-    .then((m) => {
-      if (m) screenHeight.value = m.size.height / m.scaleFactor
-    })
-    .catch(() => {})
+async function refreshScreenHeight() {
+  if (!isTauri) return
+  try {
+    const m = await currentMonitor()
+    if (m) screenHeight.value = m.size.height / m.scaleFactor
+  } catch {
+    /* ignore */
+  }
 }
 
-const previewStyle = computed(() => {
-  if (tool.value !== 'stitch') return {}
-  const ratio = stitchDirection.value === 'vertical' ? 0.35 : 0.25
-  return { height: `${Math.round(screenHeight.value * ratio)}px` }
-})
+// 获焦回调仅在本扩展激活时刷新（KeepAlive deactivated 期间监听器常驻，跳过无关唤起）
+function refreshScreenHeightIfActive() {
+  if (appStore.activeExtId === 'image') void refreshScreenHeight()
+}
+
+// 预览高度统一单一比例：模式/方向切换预览区零高度跳变（布局动画已移除，等高是防跳手段）
+const previewStyle = computed(() => ({ height: `${Math.round(screenHeight.value * 0.3)}px` }))
 
 // 横向仅横向滚动，纵向仅纵向滚动
 const overflowStyle = computed(() =>
@@ -255,6 +256,13 @@ const overflowStyle = computed(() =>
 
 const previewUrl = computed(() => (originalPreview.value || result.value?.previewDataUrl) ?? '')
 
+/** 原图就绪淡入：src 变化重置、@load（解码完成）置位——预览框先出后图片平滑淡入，
+ * 消除「框突现、图后跳」两步感（元素插入即带终态 class 不会触发 transition，须经状态翻转驱动）。 */
+const imgLoaded = ref(false)
+watch(originalPreview, () => {
+  imgLoaded.value = false
+})
+
 /**
  * 每张图的间距/重叠样式 + z-index。
  * gap > 0：正值 margin（间距）；gap < 0：负值 margin（重叠）。
@@ -264,9 +272,9 @@ const previewUrl = computed(() => (originalPreview.value || result.value?.previe
 function itemStyle(index: number): Record<string, string> {
   const g = stitchGap.value
   const isVertical = stitchDirection.value === 'vertical'
-  const last = index === stitchFiles.value.length - 1
+  const last = index === imageFiles.value.length - 1
   const style: Record<string, string> = {
-    zIndex: String(stitchFiles.value.length - index),
+    zIndex: String(imageFiles.value.length - index),
   }
   if (g === 0 || last) return style
   const key = isVertical ? 'marginBottom' : 'marginRight'
@@ -280,42 +288,61 @@ function reset() {
   result.value = null
   originalPreview.value = ''
   inputPath.value = ''
-  savedOutputPath.value = ''
+  inputMeta.value = ''
   selectedFile.value = -1
-  stitchFiles.value = []
+  imageFiles.value = []
   thumbCache.value.clear()
+  stitchSizes.value.clear()
 }
 
-// 工具切换：清空当前状态
+// 工具切换：清操作结果（结果属于特定工具），共享集合与 removeBg 当前张保留
 watch(tool, () => {
   result.value = null
-  originalPreview.value = ''
-  inputPath.value = ''
-  savedOutputPath.value = ''
-  selectedFile.value = -1
+  if (tool.value === 'removeBg') {
+    // 当前张解析：仍在集合则保持；否则取拼接选中项、首张兜底（selectedFile 清除前取值）
+    const files = imageFiles.value
+    const target =
+      inputPath.value && files.includes(inputPath.value)
+        ? inputPath.value
+        : files[selectedFile.value >= 0 ? selectedFile.value : 0]
+    selectedFile.value = -1
+    if (target && target !== inputPath.value) {
+      void setInput(target)
+    } else if (!target) {
+      inputPath.value = ''
+      originalPreview.value = ''
+      inputMeta.value = ''
+    }
+  }
 })
 
-// 退出扩展（KeepAlive deactivate）：自动清空重置
+// 退出扩展（KeepAlive deactivate）：自动清空重置（工具选择保留，同 video 模式语义）
 onDeactivated(() => {
   reset()
-  tool.value = 'removeBg'
 })
+
+// 屏高刷新：进入扩展时触发（KeepAlive 树内首挂载即触发 activated）；跨屏唤起经
+// window-focused 补刷（获焦回调自带激活判断，deactivated 期间跳过）
+onActivated(refreshScreenHeight)
+onMounted(() => window.addEventListener('window-focused', refreshScreenHeightIfActive))
+onUnmounted(() => window.removeEventListener('window-focused', refreshScreenHeightIfActive))
 
 // 跨扩展进入：finder-ext 等经事件总线投递的待处理图片路径，写入即加载。
 // 时序同 video 扩展：emit 走 IPC 往返（macrotask），setActiveExtension 同步改 ref 触发
 // Vue flush（microtask），microtask 必先于 macrotask 清空，故 View 挂载 + watch 注册恒先于
-// IPC 回调到达，watch 不会漏触发。onDeactivated 已将 tool 复位为 removeBg，此处确保即可。
+// IPC 回调到达，watch 不会漏触发。单张投递按抠图意图直达 removeBg（只改本地不落盘默认）。
 watch(pendingInputPath, (path) => {
   if (!path) return
   pendingInputPath.value = ''
   tool.value = 'removeBg'
+  addImage(path)
   void setInput(path)
 })
 
 // ── 缩略图加载 ──
 
 watch(
-  stitchFiles,
+  imageFiles,
   async (files) => {
     for (const file of files) {
       if (thumbCache.value.has(file)) continue
@@ -326,6 +353,8 @@ watch(
           if (first) thumbCache.value.delete(first)
         }
         thumbCache.value.set(file, url)
+        const bytes = bytesFromDataUrl(url)
+        if (bytes !== null) stitchSizes.value.set(file, bytes)
       } catch {
         /* ignore */
       }
@@ -348,45 +377,53 @@ const removeBgSourceSubtitle = computed(() => {
   if (result.value) {
     return `${result.value.width}×${result.value.height} · ${formatBytes(result.value.sizeBytes)} · PNG`
   }
-  return displayPath(inputPath.value)
+  return inputMeta.value || displayPath(inputPath.value)
+})
+
+/** 拼接总大小副标题：按当前列表已推算项累计（随缩略图加载渐进），全未推算返回 undefined。 */
+const stitchTotalSubtitle = computed(() => {
+  let total = 0
+  let known = false
+  for (const file of imageFiles.value) {
+    const bytes = stitchSizes.value.get(file)
+    if (bytes === undefined) continue
+    total += bytes
+    known = true
+  }
+  return known ? t('image.totalSize', { size: formatBytes(total) }) : undefined
 })
 
 const items = computed<SettingItem[]>(() => {
   const list: SettingItem[] = []
 
-  // ── 操作（列表最前、紧贴预览区；原按钮组改为列表项，回车触发；无图标）──
-  // 选中图片时只显示上移/下移/移除；未选中时显示结果操作（复制/保存/访达）
-  if (tool.value === 'stitch' && selectedFile.value >= 0) {
-    const isVertical = stitchDirection.value === 'vertical'
-    list.push(
-      {
-        id: 'act-up',
-        title: isVertical ? t('image.moveUp') : t('image.moveLeft'),
-        type: 'action',
-        action: moveUp,
-        group: t('image.group.actions'),
-      },
-      {
-        id: 'act-down',
-        title: isVertical ? t('image.moveDown') : t('image.moveRight'),
-        type: 'action',
-        action: moveDown,
-        group: t('image.group.actions'),
-      },
-      {
-        id: 'act-remove',
-        title: t('image.remove'),
-        type: 'action',
-        action: removeSelected,
-        group: t('image.group.actions'),
-        tone: 'danger',
-      },
-    )
-  } else {
-    const hasResult =
-      (tool.value === 'removeBg' && !!result.value) ||
-      (tool.value === 'stitch' && stitchFiles.value.length >= 2)
-    if (hasResult) list.push(...resultActionItems())
+  // 模式选择：列表第一项（通用组——两工具共享的全局设置，区别于模式特有参数）
+  list.push({
+    id: 'tool',
+    title: t('image.mode'),
+    type: 'select',
+    value: tool.value,
+    options: [
+      { label: t('image.removeBg'), value: 'removeBg' },
+      { label: t('image.stitch'), value: 'stitch' },
+    ],
+    update: (v) => {
+      tool.value = v as Tool
+      config.defaultTool = v as Tool
+    },
+    group: t('image.group.common'),
+  })
+
+  // 操作：通用组第二项，有图才显示（拼接需两张起——按钮零数量禁用，可操作性与显示同步）；
+  // 回车执行主按钮动作（removeBg 未处理=移除背景 / 其余=保存），按钮经 trailing 插槽
+  // （removeBg 的复制/保存等有结果后再显示）
+  const hasImage = tool.value === 'removeBg' ? !!inputPath.value : imageFiles.value.length >= 2
+  if (hasImage) {
+    list.push({
+      id: 'operations',
+      title: t('image.operations'),
+      type: 'custom',
+      group: t('image.group.common'),
+    })
   }
 
   if (tool.value === 'removeBg') {
@@ -400,14 +437,20 @@ const items = computed<SettingItem[]>(() => {
   } else {
     list.push({
       id: 'source',
-      title: t('image.inputImage'),
+      title:
+        imageFiles.value.length === 0
+          ? t('image.inputImage')
+          : imageFiles.value.length === 1
+            ? fileNameFromPath(imageFiles.value[0])
+            : t('image.imageCount', { count: imageFiles.value.length }),
       subtitle:
-        stitchFiles.value.length > 0
-          ? t('image.imageCount', { count: stitchFiles.value.length })
-          : undefined,
+        imageFiles.value.length === 0 ? t('image.formatsHintMulti') : stitchTotalSubtitle.value,
       type: 'custom',
       group: t('image.group.file'),
     })
+  }
+
+  if (tool.value === 'stitch') {
     list.push(
       {
         id: 'direction',
@@ -454,46 +497,20 @@ const items = computed<SettingItem[]>(() => {
   return list
 })
 
-/** 结果操作项（复制 / 保存 / 在访达中显示）：移除背景与拼接共用，供 items 复用。 */
-function resultActionItems(): SettingItem[] {
-  const ops: SettingItem[] = [
-    {
-      id: 'act-copy',
-      title: t('image.copy'),
-      type: 'action',
-      action: copyToClipboard,
-      group: t('image.group.actions'),
-    },
-    {
-      id: 'act-save',
-      title: t('image.save'),
-      type: 'action',
-      action: saveToFile,
-      group: t('image.group.actions'),
-    },
-  ]
-  if (savedOutputPath.value) {
-    ops.push({
-      id: 'act-reveal',
-      title: t('image.revealInFinder'),
-      type: 'action',
-      action: revealInFinder,
-      group: t('image.group.actions'),
-    })
-  }
-  return ops
-}
-
 function onExecute(item: SettingItem) {
+  if (item.id === 'operations') {
+    // 回车 = 主按钮动作：removeBg 未处理时移除背景，其余（已处理 / 拼接）保存
+    if (tool.value === 'removeBg' && !result.value) void removeBg()
+    else void saveToFile()
+    return
+  }
   if (item.id === 'outputDir') {
     void pickOutputDir()
     return
   }
   if (item.id === 'source') {
     if (tool.value === 'removeBg') {
-      if (processing.value) return
-      if (inputPath.value) void removeBg()
-      else void pickInput()
+      if (!processing.value) void pickInput()
     } else {
       void pickStitchFiles()
     }
@@ -513,11 +530,27 @@ function sortByFileName(files: string[]): string[] {
 
 // ── 移除背景 ──
 
+/** 输入图元数据（`宽×高 · 大小`）：从预览 data URL 前端推算，零 probe 命令。 */
+const inputMeta = ref('')
+
+/// 预览请求令牌：快速换图时旧请求后到（大图解码慢）直接丢弃，防旧图元数据错配覆盖到新文件
+let previewToken = 0
+
 async function loadPreview(path: string) {
+  inputMeta.value = ''
+  const token = ++previewToken
   try {
-    originalPreview.value = await invoke<string>(CMD.imageReadPreview, { inputPath: path })
+    const url = await invoke<string>(CMD.imageReadPreview, { inputPath: path })
+    if (token !== previewToken) return
+    originalPreview.value = url
+    const bytes = bytesFromDataUrl(url)
+    const dim = await imageSizeOf(url)
+    if (token !== previewToken) return
+    inputMeta.value = [dim, bytes !== null ? formatBytes(bytes) : ''].filter(Boolean).join(' · ')
   } catch {
+    if (token !== previewToken) return
     originalPreview.value = ''
+    inputMeta.value = ''
   }
 }
 
@@ -527,14 +560,21 @@ async function pickInput() {
       allowsMultiple: false,
       allowedExtensions: [...IMAGE_EXTENSIONS],
     })
-    if (paths[0]) await setInput(paths[0])
+    if (paths[0]) {
+      addImage(paths[0])
+      await setInput(paths[0])
+    }
   })
+}
+
+/** 图片进共享集合（去重，追加末尾）：removeBg 单选 / 跨扩展投递与拼接添加同源。 */
+function addImage(path: string) {
+  if (!imageFiles.value.includes(path)) imageFiles.value.push(path)
 }
 
 async function setInput(path: string) {
   inputPath.value = path
   result.value = null
-  savedOutputPath.value = ''
   await loadPreview(path)
 }
 
@@ -566,15 +606,14 @@ async function pickStitchFiles() {
     })
     if (paths.length) {
       result.value = null
-      savedOutputPath.value = ''
-      const seen = new Set(stitchFiles.value)
+      const seen = new Set(imageFiles.value)
       const fresh = paths.filter((p) => !seen.has(p))
-      if (stitchFiles.value.length === 0) {
+      if (imageFiles.value.length === 0) {
         // 首次添加：按文件名升序
-        stitchFiles.value = sortByFileName(fresh)
+        imageFiles.value = sortByFileName(fresh)
       } else {
         // 后续添加：追加到末尾
-        stitchFiles.value = [...stitchFiles.value, ...fresh]
+        imageFiles.value = [...imageFiles.value, ...fresh]
       }
     }
   })
@@ -583,14 +622,14 @@ async function pickStitchFiles() {
 function moveUp() {
   const i = selectedFile.value
   if (i <= 0) return
-  const list = stitchFiles.value
+  const list = imageFiles.value
   ;[list[i - 1], list[i]] = [list[i], list[i - 1]]
   selectedFile.value = i - 1
 }
 
 function moveDown() {
   const i = selectedFile.value
-  const list = stitchFiles.value
+  const list = imageFiles.value
   if (i >= list.length - 1) return
   ;[list[i + 1], list[i]] = [list[i], list[i + 1]]
   selectedFile.value = i + 1
@@ -599,13 +638,23 @@ function moveDown() {
 function removeSelected() {
   const i = selectedFile.value
   if (i < 0) return
-  stitchFiles.value.splice(i, 1)
+  const removed = imageFiles.value[i]
+  imageFiles.value.splice(i, 1)
   selectedFile.value = -1
+  if (removed === inputPath.value) {
+    // removeBg 当前张被移除：清其侧状态（切回时经 watch(tool) 兜底取集合剩余首张）
+    inputPath.value = ''
+    originalPreview.value = ''
+    inputMeta.value = ''
+    result.value = null
+  }
 }
 
 /** 生成拼接结果（复制/保存时惰性调用，文件或参数变更后自动重新生成）。 */
 async function ensureStitched(): Promise<ImageResult | null> {
-  if (stitchFiles.value.length < 2) return null
+  // processing 守卫：回车路径可绕过按钮 disabled，重复触发会打到 Rust BUSY 锁
+  if (processing.value) return null
+  if (imageFiles.value.length < 2) return null
   // 已有结果且指纹未变：复用
   const fp = stitchFingerprint()
   if (result.value && resultFingerprint === fp) return result.value
@@ -616,7 +665,7 @@ async function ensureStitched(): Promise<ImageResult | null> {
         ? { mode: 'width', value: stitchResize.value }
         : { mode: 'height', value: stitchResize.value }
     const r = await invoke<ImageResult>(CMD.imageStitch, {
-      inputPaths: stitchFiles.value,
+      inputPaths: imageFiles.value,
       direction: stitchDirection.value,
       gap: stitchGap.value,
       resize,
@@ -638,7 +687,7 @@ async function ensureStitched(): Promise<ImageResult | null> {
 /** 拼接参数指纹（变更时触发重新生成）。 */
 function stitchFingerprint(): string {
   return [
-    stitchFiles.value.join('\0'),
+    imageFiles.value.join('\0'),
     stitchDirection.value,
     stitchGap.value,
     stitchResize.value,
@@ -677,30 +726,18 @@ async function copyToClipboard() {
 async function saveToFile() {
   const r = tool.value === 'stitch' ? await ensureStitched() : result.value
   if (!r) return
-  const sourcePath = tool.value === 'removeBg' ? inputPath.value : stitchFiles.value[0]
+  const sourcePath = tool.value === 'removeBg' ? inputPath.value : imageFiles.value[0]
   if (!sourcePath) return
   const suffix = tool.value === 'removeBg' ? 'nobg' : 'stitch'
   const outputPath = buildOutputPath(sourcePath, config.outputDir || undefined, suffix)
   try {
     await invoke(CMD.imageSaveResult, { tempPath: r.tempPath, outputPath })
-    savedOutputPath.value = outputPath
     appStore.showStatus(t('image.saved'))
   } catch (e) {
     appStore.showStatus(`${t('image.saveFailed')}：${e ?? t('common.unknownError')}`, {
       duration: 4000,
       kind: 'error',
     })
-  }
-}
-
-async function revealInFinder() {
-  const path = savedOutputPath.value
-  if (!path) return
-  try {
-    await invoke(CMD.revealInFinder, { path })
-    hideWindow()
-  } catch (e) {
-    console.error(e)
   }
 }
 </script>
@@ -727,7 +764,9 @@ async function revealInFinder() {
   outline-offset: -2px;
 }
 
-/* 原图/结果图交叉淡入：两侧必须同值成对（600ms 为定制交叉时长，无基元档） */
+/* 原图/结果图交叉淡入：两侧必须同值成对（600ms 为定制交叉时长，无基元档）。
+ * 原图起步 opacity 0，@load 解码完成经 img-loaded 翻转淡入（首次/换图不突现）；
+ * img-fade-out 为结果淡出语义，须胜过 img-loaded（!important）。 */
 .result-fade-enter-active,
 .img-fade {
   transition: opacity 600ms ease-in-out;
@@ -735,7 +774,13 @@ async function revealInFinder() {
 .result-fade-enter-from {
   opacity: 0;
 }
-.img-fade-out {
+.img-fade {
   opacity: 0;
+}
+.img-loaded {
+  opacity: 1;
+}
+.img-fade-out {
+  opacity: 0 !important;
 }
 </style>

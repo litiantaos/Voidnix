@@ -5,6 +5,7 @@ import {
   displayPath,
   formatBytes,
   buildOutputPath,
+  bytesFromDataUrl,
 } from './logic'
 
 describe('image/logic', () => {
@@ -32,6 +33,18 @@ describe('image/logic', () => {
     it('正常值格式化', () => {
       expect(formatBytes(1024)).toBe('1 KB')
       expect(formatBytes(1048576)).toBe('1 MB')
+    })
+  })
+
+  describe('bytesFromDataUrl', () => {
+    it('按 base64 长度推算字节数（无 padding 精确）', () => {
+      expect(bytesFromDataUrl('data:image/png;base64,QUJD')).toBe(3) // 'ABC'
+      expect(bytesFromDataUrl('data:image/png;base64,QUJDRA==')).toBe(4) // 'ABCD'
+      expect(bytesFromDataUrl('data:image/png;base64,QUJDREU=')).toBe(5) // 'ABCDE'
+    })
+    it('非 base64 data URL 或普通字符串返回 null', () => {
+      expect(bytesFromDataUrl('data:text/plain,hello')).toBeNull()
+      expect(bytesFromDataUrl('/Users/a.png')).toBeNull()
     })
   })
 

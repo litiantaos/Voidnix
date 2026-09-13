@@ -23,6 +23,10 @@ registerMessages({
     'zh-CN': '支持 PNG / JPEG / HEIC / WebP 等格式',
     en: 'Supports PNG / JPEG / HEIC / WebP, etc.',
   },
+  'image.formatsHintMulti': {
+    'zh-CN': '支持 PNG / JPEG / HEIC / WebP 等格式，选择多张',
+    en: 'Supports PNG / JPEG / HEIC / WebP, etc. Select multiple images.',
+  },
   'image.moveUp': { 'zh-CN': '上移', en: 'Move Up' },
   'image.moveLeft': { 'zh-CN': '左移', en: 'Move Left' },
   'image.moveDown': { 'zh-CN': '下移', en: 'Move Down' },
@@ -31,6 +35,9 @@ registerMessages({
 
   // 列表项
   'image.inputImage': { 'zh-CN': '输入图片', en: 'Input Image' },
+  'image.mode': { 'zh-CN': '模式', en: 'Mode' },
+  'image.totalSize': { 'zh-CN': '共 {size}', en: '{size} total' },
+  'image.group.common': { 'zh-CN': '通用', en: 'General' },
   'image.group.file': { 'zh-CN': '文件', en: 'File' },
   'image.imageCount': { 'zh-CN': '{count} 张图片', en: '{count} images' },
   'image.direction': { 'zh-CN': '方向', en: 'Direction' },
@@ -45,8 +52,7 @@ registerMessages({
   'image.group.output': { 'zh-CN': '输出', en: 'Output' },
   'image.copy': { 'zh-CN': '复制', en: 'Copy' },
   'image.save': { 'zh-CN': '保存', en: 'Save' },
-  'image.revealInFinder': { 'zh-CN': '在访达中显示', en: 'Reveal in Finder' },
-  'image.group.actions': { 'zh-CN': '操作', en: 'Actions' },
+  'image.operations': { 'zh-CN': '操作', en: 'Actions' },
 
   // 状态
   'image.processFailed': { 'zh-CN': '处理失败', en: 'Processing failed' },

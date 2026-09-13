@@ -30,6 +30,25 @@ export function formatBytes(n: number): string {
   return formatBytesShared(n, { empty: '—' })
 }
 
+/** 从完整文件 data URL（image_read_preview 原样 base64）推算字节数；非 data URL 返回 null。 */
+export function bytesFromDataUrl(dataUrl: string): number | null {
+  const comma = dataUrl.indexOf(',')
+  if (comma < 0 || !dataUrl.slice(0, comma).includes('base64')) return null
+  const b64 = dataUrl.slice(comma + 1)
+  const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0
+  return Math.floor((b64.length * 3) / 4) - padding
+}
+
+/** 解码 data URL 取 `宽×高`；解码失败（格式不受当前引擎支持）返回空串。 */
+export function imageSizeOf(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve(img.naturalWidth ? `${img.naturalWidth}×${img.naturalHeight}` : '')
+    img.onerror = () => resolve('')
+    img.src = dataUrl
+  })
+}
+
 /** 净化文件名片段（去控制字符与路径分隔）。 */
 function sanitizeStem(stem: string): string {
   return stem.replace(/[\x00-\x1f\x7f/\\]/g, '_').trim()
@@ -68,6 +87,9 @@ export interface ImageResult {
   height: number
   sizeBytes: number
 }
+
+/** 工具（参数组模式行选择）。 */
+export type Tool = 'removeBg' | 'stitch'
 
 /** 拼接方向。 */
 export type StitchDirection = 'vertical' | 'horizontal'
