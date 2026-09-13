@@ -6,6 +6,7 @@ registerMessages({
   'video.select': { 'zh-CN': '选择', en: 'Select' },
   'video.cancel': { 'zh-CN': '取消', en: 'Cancel' },
   'video.start': { 'zh-CN': '开始', en: 'Start' },
+  'video.operations': { 'zh-CN': '操作', en: 'Actions' },
   'video.sameDir': { 'zh-CN': '同目录', en: 'Same Folder' },
 
   // 核心下载
@@ -29,6 +30,7 @@ registerMessages({
   'video.group.file': { 'zh-CN': '文件', en: 'File' },
 
   // 模式
+  'video.group.common': { 'zh-CN': '通用', en: 'General' },
   'video.mode': { 'zh-CN': '模式', en: 'Mode' },
   'video.mode.compress': { 'zh-CN': '压缩', en: 'Compress' },
   'video.mode.convert': { 'zh-CN': '格式转换', en: 'Convert Format' },
