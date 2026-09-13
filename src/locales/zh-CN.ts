@@ -87,6 +87,7 @@ export const zhCNMessages: Msgs = {
   'settings.quit': { 'zh-CN': '退出应用' },
   'settings.group.app': { 'zh-CN': '应用' },
   'settings.group.privacy': { 'zh-CN': '隐私权限' },
+  'settings.group.advanced': { 'zh-CN': '高级' },
   'settings.privacy.screenRecording': { 'zh-CN': '屏幕录制权限' },
   'settings.privacy.accessibility': { 'zh-CN': '辅助功能权限' },
   'settings.privacy.fullDiskAccess': { 'zh-CN': '完全磁盘访问权限' },
@@ -99,11 +100,11 @@ export const zhCNMessages: Msgs = {
   'settings.permChecking': { 'zh-CN': '检查中…' },
   'settings.permGranted': { 'zh-CN': '已授权' },
   'settings.permDenied': { 'zh-CN': '未授权 — 点击前往系统设置' },
-  'settings.clearInjections': { 'zh-CN': '清除 Voidnix 注入' },
+  'settings.clearInjections': { 'zh-CN': '清除系统注入' },
   'settings.clearInjectionsHint': {
     'zh-CN': '移除 .zshrc / .zprofile 注入块与 ai.env 凭证文件',
   },
-  'settings.clearInjectionsConfirmTitle': { 'zh-CN': '清除 Voidnix 注入' },
+  'settings.clearInjectionsConfirmTitle': { 'zh-CN': '清除系统注入' },
   'settings.clearInjectionsConfirmMessage': {
     'zh-CN': `将从 \`~/.zshrc\` 与 \`~/.zprofile\` 摘除全部 Voidnix 注入块（AI 凭证 source 钩子、zsh 补全等），并删除 \`~/.config/voidnix[/dev]/ai.env\`（含明文 API Key）。
 

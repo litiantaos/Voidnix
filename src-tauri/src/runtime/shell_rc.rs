@@ -322,7 +322,7 @@ fn clear_rc_file(rc_path: &Path) -> Result<bool, String> {
     Ok(touched)
 }
 
-/// 清除 Voidnix 在用户 shell 环境的全部注入（设置页「清除 Voidnix 注入」）：
+/// 清除 Voidnix 在用户 shell 环境的全部注入（设置页「清除系统注入」）：
 /// - `~/.zshrc` / `~/.zprofile`：摘除全部 `# voidnix <scope>` 块 + 旧版成对 marker，删 `*.voidnix-bak` 备份
 /// - `~/.config/voidnix[/dev]/ai.env`：AI 凭证明文投影（0600，含 API Key）
 ///

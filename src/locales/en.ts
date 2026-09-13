@@ -87,6 +87,7 @@ export const enMessages: Msgs = {
   'settings.quit': { en: 'Quit' },
   'settings.group.app': { en: 'App' },
   'settings.group.privacy': { en: 'Privacy & Permissions' },
+  'settings.group.advanced': { en: 'Advanced' },
   'settings.privacy.screenRecording': { en: 'Screen Recording' },
   'settings.privacy.accessibility': { en: 'Accessibility' },
   'settings.privacy.fullDiskAccess': { en: 'Full Disk Access' },
@@ -99,11 +100,11 @@ export const enMessages: Msgs = {
   'settings.permChecking': { en: 'Checking…' },
   'settings.permGranted': { en: 'Granted' },
   'settings.permDenied': { en: 'Not granted — click to open System Settings' },
-  'settings.clearInjections': { en: 'Clear Voidnix Injections' },
+  'settings.clearInjections': { en: 'Clear System Injections' },
   'settings.clearInjectionsHint': {
     en: 'Remove injected blocks from .zshrc / .zprofile and the ai.env file',
   },
-  'settings.clearInjectionsConfirmTitle': { en: 'Clear Voidnix Injections' },
+  'settings.clearInjectionsConfirmTitle': { en: 'Clear System Injections' },
   'settings.clearInjectionsConfirmMessage': {
     en: `Removes all Voidnix blocks from \`~/.zshrc\` and \`~/.zprofile\` (AI credential source hook, zsh completions, etc.) and deletes \`~/.config/voidnix[/dev]/ai.env\` (contains plaintext API keys).
 
