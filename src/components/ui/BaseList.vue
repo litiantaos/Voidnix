@@ -298,7 +298,13 @@ onKeyStroke('Enter', (e) => {
   if (shouldYieldExecution()) return
   // 按钮聚焦时 Enter 由按钮自身 click 处理
   if (document.activeElement?.tagName === 'BUTTON') return
+  // 按住回车的 auto-repeat 不执行行项：跨扩展跳转的回车若被按住，repeat 会落到
+  // 目标视图首行执行其动作（曾致 video 首行「选择文件」直接弹系统面板）
+  if (e.repeat) return
   e.preventDefault()
+  // 执行即消费：一次回车至多执行一个列表的项（与 useResultNavigation 全局模式对齐），
+  // 防 KeepAlive 并存监听重复响应同一按键
+  e.stopImmediatePropagation()
   if (props.items.length > 0) {
     emit('execute', props.items[localIndex.value], localIndex.value, e)
     if (props.multiSelect) emitIds(new Set())
