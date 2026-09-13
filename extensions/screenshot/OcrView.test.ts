@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
 
-// OcrView 状态提升回归：窗口隐藏时 ContentView 卸载 KeepAlive（组件销毁，局部状态丢失），
-// 再唤起重挂载应从模块级 ocrSession 恢复现场（预览图 + 识别文本），而非空白。
+// OcrView 状态提升回归：KeepAlive 卸载（LRU 驱逐 / navigate 重载）时组件销毁、局部状态
+// 丢失，重挂载应从模块级 ocrSession 恢复现场（预览图 + 识别文本），而非空白。
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   emit: vi.fn(),
@@ -51,8 +51,8 @@ function injectPending(overrides: Partial<NonNullable<typeof pendingOcrData.valu
   }
 }
 
-/// 模拟 ContentView：v-if 写在 KeepAlive 自身（keepAliveActive 置 false 即卸载 KeepAlive、
-/// 组件真销毁——写在 slot 内只会 deactivate 缓存，销毁路径永远走不到）
+/// 模拟卸载宿主：v-if 写在 KeepAlive 自身（组件真销毁——写在 slot 内只会 deactivate
+/// 缓存，销毁路径永远走不到；对应 LRU 驱逐 / navigate 重载）
 function mountHost() {
   const alive = ref(true)
   const wrapper = mount(
@@ -90,7 +90,7 @@ describe('screenshot OcrView 会话状态跨 KeepAlive 卸载保留', () => {
     wrapper.unmount()
   })
 
-  it('回归：KeepAlive 卸载（窗口隐藏）后重挂载，现场从模块级会话恢复且不重新识别', async () => {
+  it('回归：KeepAlive 卸载（LRU 驱逐）后重挂载，现场从模块级会话恢复且不重新识别', async () => {
     injectPending()
     const { wrapper, alive } = mountHost()
     await flush()
@@ -98,7 +98,7 @@ describe('screenshot OcrView 会话状态跨 KeepAlive 卸载保留', () => {
     const ocrCalls = () => mocks.invoke.mock.calls.filter(([cmd]) => cmd === 'ocr_image').length
     expect(ocrCalls()).toBe(1)
 
-    // 窗口隐藏：keepAliveActive=false 卸载 KeepAlive，组件销毁
+    // 卸载 KeepAlive（对应 LRU 驱逐 / navigate 重载），组件销毁
     alive.value = false
     await flush()
     expect(wrapper.findComponent(OcrView).exists()).toBe(false)

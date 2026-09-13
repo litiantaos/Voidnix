@@ -55,9 +55,9 @@
 ### OCR / 跨 Space
 
 - Vision OCR 经 `objc2-vision` 进程内调用 `VNRecognizeTextRequest` + `VNDetectBarcodesRequest`（zh-Hans/Hant/en/ja 文字 + QR/条码），一次请求同时返回文字和二维码内容（`OcrResult { text, qr }`）。原实现 `swift -e` 子进程每次要启动 Swift 解释器 + 编译脚本 + 冷加载 Vision/AppKit（实测 0.3s 起步）叠加 PNG 编码落盘/解码往返；进程内 `crop_cg_with_annotation` 直接产出合成标注的 CGImage 喂 `VNImageRequestHandler`，零子进程零落盘。`detect_text_regions` 直接消费截屏会话的原始 CGImage（不再绕道 picker.jpg 磁盘解码——原落盘仅为跨进程传图）
-- OCR 会话状态（预览图/识别文本/错误/加载态）存模块级 `ocrSession`（index.ts 导出，OcrView 绑定而非组件局部）：窗口隐藏时 KeepAlive 整体卸载、缓存超限 LRU 驱逐都会销毁视图，重挂载直接从会话恢复现场（识别进行中隐藏亦然，invoke 回调写会话）；新 OCR 数据注入（`pendingOcrData`）时经视图 watch 重置。跨 navigate 重载不存活（重载后 `activeSubview` 已丢，无恢复入口）
+- OCR 会话状态（预览图/识别文本/错误/加载态）存模块级 `ocrSession`（index.ts 导出，OcrView 绑定而非组件局部）：KeepAlive 缓存超限 LRU 驱逐会销毁视图，重挂载直接从会话恢复现场（识别进行中被驱逐亦然，invoke 回调写会话；窗口隐藏走 content-visibility 冻结，状态原样保留）；新 OCR 数据注入（`pendingOcrData`）时经视图 watch 重置。跨 navigate 重载不存活（重载后 `activeSubview` 已丢，无恢复入口）
 - 结果窗口高度封顶（subview `auto` 高度）：输入框高度弹性——内容自然撑高、超限框内滚动；上限从 `get_window_max_height` 命令推导（placement/光标屏 visibleFrame × 0.9，与 `set_main_frame` 的 Rust clamp 同源）− 固定部分（chrome + 预览 h-44 + 操作列表 ≈ 568）− 余量，内容恒不超窗，窗口级零滚动
-- 识别期间预览区覆磨砂加载遮罩（浅色磨砂底 `--mica-shell-fill` + `backdrop-blur-xs` + `BaseEmptyState` loading 居中，进出场 opacity 过渡；`ocrSession.loading` 驱动，识别中隐藏窗口重挂载遮罩仍在）：预览图即时显示（注入 `pendingOcrData` 即写 `ocrSession.imageUrl`），结果到达即卸载遮罩渲染文本与操作列表
+- 识别期间预览区覆磨砂加载遮罩（浅色磨砂底 `--mica-shell-fill` + `backdrop-blur-xs` + `BaseEmptyState` loading 居中，进出场 opacity 过渡；`ocrSession.loading` 驱动，识别中被 LRU 驱逐重挂载遮罩仍在）：预览图即时显示（注入 `pendingOcrData` 即写 `ocrSession.imageUrl`），结果到达即卸载遮罩渲染文本与操作列表
 - Skylight `move_window_to_active_space` 跨 Space
 
 ## 数据存储

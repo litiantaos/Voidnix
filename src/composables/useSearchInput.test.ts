@@ -145,6 +145,25 @@ describe('useSearchInput 默认列表提示行', () => {
     await flushPromises()
     expect(vi.mocked(invoke)).toHaveBeenCalled()
   })
+
+  it('扩展激活时 window-invoked 不触发剪贴板填充（query 是扩展过滤参数，显隐不改内容状态）', async () => {
+    const appStore = useAppStore()
+    makeWrapper()
+    await flushPromises()
+    vi.mocked(invoke).mockClear()
+
+    // 扩展激活（含 disableSearchInput 与否）：填充会污染扩展 query 过滤浏览上下文
+    appStore.setActiveExtension('agent')
+    window.dispatchEvent(new CustomEvent('window-invoked'))
+    await flushPromises()
+    expect(vi.mocked(invoke)).not.toHaveBeenCalled()
+
+    // 回主界面恢复填充链路
+    appStore.setActiveExtension(null)
+    window.dispatchEvent(new CustomEvent('window-invoked'))
+    await flushPromises()
+    expect(vi.mocked(invoke)).toHaveBeenCalled()
+  })
 })
 
 describe('useSearchInput 窗口重新获焦重跑', () => {

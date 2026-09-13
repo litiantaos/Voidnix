@@ -23,8 +23,8 @@
 //!
 //! **运行态持久化**：`BREW_RUNNING`（LazyLock<Mutex<Option<BrewRunState>>>）跨组件生命周期持久化，
 //! `brew_run` 经 RAII guard（`RunGuard`）占位 + 逐步更新 step，Drop 时自动清空 + emit `brew-run-done`
-//! 事件。前端组件因窗口隐藏被 KeepAlive 卸载后，重开时经 `brew_run_state` 查询残留态，
-//! 防止重复触发 + 恢复进度显示。guard 拒绝并发 `brew_run` 调用。
+//! 事件。前端组件被 KeepAlive 卸载（LRU 驱逐 / navigate 重载）后，重开时经
+//! `brew_run_state` 查询残留态，防止重复触发 + 恢复进度显示。guard 拒绝并发 `brew_run` 调用。
 
 use crate::runtime::registry::Extension;
 use std::collections::HashMap;

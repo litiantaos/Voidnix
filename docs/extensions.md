@@ -80,6 +80,7 @@ export default defineExtension({
 - **`disableSearchInput` 决策**：与 `mainView` 独立——mainView 扩展若仍用主搜索框过滤列表（如 clipboard）则不声明；自管输入或无需搜索框（agent/translate/settings 等）声明 `true`。uuid 有 search 但 disableSearchInput（进入后只展示即时结果）。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
 - **View 根禁止与 ContentView 竞争的纵向双滚**：经 ContentView 渲染的 View（mainView/subviews）根及主内容流不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是页面级唯一滚动容器，再设 overflow 形成双层滚动，`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中内层失效 → 选中框出视口。固定高度局部区域可自滚（如 OCR 图预览、notes 输入区——固定窗高下 ContentView 恒不滚，无竞争）。独立窗口（screenshot/snap-panel/pin，经各自 HTML 入口加载）不经 ContentView，不受此约束。
+- **列表选中状态三态语义（BaseList 组件层统一承载）**：`ui-active` 高亮由 BaseList 内部 `localIndex` 驱动，跨会话转移（进入/退出/切换扩展，`watch(appStore.activeExtId)` 变化）统一归首项并 emit 同步父级镜像——仅作用于 KeepAlive 树内的自管列表（首次 activated 标记）；同扩展内 subview 往返（activeExtId 不变）与窗口隐藏唤起（hide/show 不动 activeExtId）保留导航位置——滚动侧对应 scrollKey watch 的 save/restore 与 `clearCache` 不卸载视图（content-visibility 释放 layer，DOM 冻结状态保留）。标准列表（KeepAlive 外，受控于 MainView）不参与归零：其 selectedIndex 转移链（exitExtension 的 savedToolIndex 恢复）自洽，子组件回写会覆盖同步恢复值。自管列表的 View 传 `v-model:selected-index`（或 `:selected-index` + `@select`）保持镜像传导——只接事件不传 prop 时父级镜像会与高亮错位（菜单/执行读镜像分裂）。设置类列表用 `BaseSettingsList`（内部已闭环）。items 替换时的越界/归零策略属各 View 数据语义（身份跟随或归零），BaseList 不介入。
 
 ## 搜索集成
 

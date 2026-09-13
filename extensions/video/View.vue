@@ -42,7 +42,7 @@
 <script lang="ts">
 import { reactive } from 'vue'
 
-/** 批量状态跨组件实例存活：窗口隐藏 KeepAlive 卸载后队列继续跑，重开面板时
+/** 批量状态跨组件实例存活：KeepAlive LRU 驱逐卸载后队列继续跑，重开面板时
  *  index/total/done/failed 与 busy/percent 不丢（组件 ref 会随卸载与队列断链）。
  *  类型 import 统一在下方 setup 块（SFC 双 script 共享模块作用域，重复 import 报重复标识符）。 */
 const st = reactive({
