@@ -69,8 +69,23 @@ pub fn main_window_height_ceiling() -> Option<f64> {
     Some(height_ceiling(vis))
 }
 
+/// 主窗当前 frame（Cocoa 逻辑）+ placement/光标屏 visibleFrame。前端高度管理
+/// （useExtensionHeight）的位置单一真相源：全 Cocoa 语义、零转换——Tauri 的
+/// outerPosition 经 tao 转成 top-left（y 向下、参照主屏物理高）语义，与 NSWindow
+/// setFrame（Cocoa、y 向上底边）错位，不可混用。
+pub fn main_frame_and_vis(window: &tauri::WebviewWindow) -> Option<(NSRect, NSRect)> {
+    let ptr = window.ns_window().ok()?;
+    let raw = ptr.cast::<NSWindow>();
+    let ns_window = (unsafe { raw.as_ref() })?;
+    let frame = ns_window.frame();
+    let vis = load_placement()
+        .map(|p| p.to_ns())
+        .or_else(cursor_visible_frame)?;
+    Some((frame, vis))
+}
+
 /// 天花板公式（单一源）：visibleFrame × 0.9，下限 100。
-fn height_ceiling(vis: NSRect) -> f64 {
+pub fn height_ceiling(vis: NSRect) -> f64 {
     (vis.size.height * 0.9).max(100.0)
 }
 
@@ -204,11 +219,12 @@ pub fn make_key_window(window: &tauri::WebviewWindow) {
 
 /// 主窗高度/尺寸动画。
 ///
-/// 在 `PLACEMENT_VIS`（show 时锁定的光标屏）内改尺寸，保留用户拖动后的水平位置
-/// （chrome 带透明拖动层可拖动，宽度变化以当前中心为轴）；跨屏异常
-/// （cur 不在 placement 屏）时才复位居中。每次 show 经 present_on_cursor_screen
-/// 重定位，故拖动仅影响当前显示期间，下次唤起自动复位。
-pub fn animate_frame(window: &tauri::WebviewWindow, _x: f64, _y: f64, w: f64, h: f64) {
+/// 位置（x/y）以前端 useExtensionHeight 为单一真相源（顶边锚定：fixed/default 保顶边、
+/// auto 增高出屏上移、离开 auto 还原进入前顶边），本函数直接采用传入坐标并 clamp 进
+/// `PLACEMENT_VIS`（show 时锁定的光标屏，扣菜单栏/Dock 的 visibleFrame）。
+/// 跨屏异常（cur 不在 placement 屏）时仍复位居中。每次 show 经
+/// present_on_cursor_screen 重定位，故拖动仅影响当前显示期间，下次唤起自动复位。
+pub fn animate_frame(window: &tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f64) {
     use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize};
     const DURATION_SECS: f64 = 0.26;
     const BOTTOM_MARGIN: f64 = 40.0;
@@ -247,10 +263,13 @@ pub fn animate_frame(window: &tauri::WebviewWindow, _x: f64, _y: f64, w: f64, h:
         let placed = placement_frame_on_vis(vis, w, h);
         (placed.origin.x, placed.origin.y)
     } else {
-        // 在屏内：保留用户拖动后的水平位置（宽度变化以当前中心为轴），高度变化保顶边
-        let x = cur.origin.x + (cur.size.width - w) / 2.0;
-        let mut y = top - h;
-        // 底部将出屏则上移；顶边不超过 visible 顶
+        // 在屏内：采用前端目标坐标（屏几何整屏近似，底部/顶边越界由 visibleFrame clamp 拉正）。
+        // clamp 顺序沿旧策略：底部 40px 间距优先于顶边
+        let x = x.clamp(
+            vis.origin.x,
+            (vis.origin.x + vis.size.width - w).max(vis.origin.x),
+        );
+        let mut y = y;
         if y < vis.origin.y + BOTTOM_MARGIN {
             y = vis.origin.y + BOTTOM_MARGIN;
         }
@@ -260,6 +279,10 @@ pub fn animate_frame(window: &tauri::WebviewWindow, _x: f64, _y: f64, w: f64, h:
         }
         if y < vis.origin.y {
             y = vis.origin.y;
+        }
+        // 顶边 clamp 可能把底边压进 margin 内（屏太矮装不下），以底部间距为最终约束
+        if y < vis.origin.y + BOTTOM_MARGIN {
+            y = vis.origin.y + BOTTOM_MARGIN;
         }
         (x, y)
     };

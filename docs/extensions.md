@@ -56,7 +56,7 @@ export default defineExtension({
 **高度机制**：统一由 `useExtensionHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管。
 
 - **动画**：高度变化一次 IPC 触发 Rust → `platform/window.rs::animate_frame` 用 macOS `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS 逐帧）
-- **auto 模式**：ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`，底部将出屏则上移，离开 auto 还原原位
+- **auto 模式**：ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, Rust 同源天花板]`，底部将出屏则上移顶边，离开 auto 还原进入前顶边（位置单一真相源在前端，见 AGENTS.md 窗口高度节）
 
 生命周期：`setup?()`（启动钩子，无参）。3 行为槽：`disableSearchInput`（扩展自管输入，禁用主搜索框）、`listOptions.multiSelect`（标准列表多选）、`onOpenSubview`（子视图打开回调，如 OCR payload 转交）。三者与能力槽同等地位（见 `runtime/types.ts`）。
 

@@ -190,7 +190,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - 不 `activate_app`（保持原前台 active，避免聚焦视图/菜单栏突变；代价是 macOS 26 上偶发下层 hover 穿透——产品优先不打断）
 - hit-test 靠 `capture_mouse_events` + SkyLight event shape；`present_on_cursor_screen` 中 **先 `capture_mouse_events` 再 `setAlphaValue`**（避免窗口可见但仍 ignoresMouseEvents 的间隙导致滚动穿透），`orderFront` 后重设 event shape；`show_main` 末尾延迟 150ms 再刷新一次（兜底菜单栏关闭后窗口服务器 hit-test 滞后）
 - `present_on_cursor_screen`：光标屏居中并写 `PLACEMENT_VIS`
-- `animate_frame` 在 `PLACEMENT_VIS` 内改尺寸，保留用户拖动后的水平位置（宽度变化以当前中心为轴），跨屏异常才复位居中
+- `animate_frame` 在 `PLACEMENT_VIS` 内 clamp，位置（x/y）采用前端传入值（`useExtensionHeight` 顶边锚定模型为单一真相源），跨屏异常才复位居中
 - **窗口拖动**：chrome 带（搜索栏周围空白间隙）设透明拖动层（z-5，搜索栏 z-10 之下），手动 `startDragging()` 替代 `data-tauri-drag-region`——后者 macOS 双击触发 `internal_toggle_maximize`，对 resizable:false 无标题栏窗口会直接填满全屏；拖动仅影响当前显示期间，每次 show 经 `present_on_cursor_screen` 自动复位
 - 截图 overlay 等独占场景才显式 `activate_app`
 - **剪贴板填充**：主快捷键从隐藏唤起时派发 `window-invoked`（DOM 事件），`useSearchInput` 查剪贴板最新记录，文本类且 3 秒内则填充搜索框并 select（`disableSearchInput` 扩展跳过）
@@ -225,13 +225,14 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 **窗口高度**——扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖：
 
 - `useExtensionHeight`（MainView 全局唯一调用）读 `activeExtension` + `activeSubview` 解析模式
-- **adjust 可见性守卫**：`windowVisible`（focus/blur 驱动，初始 false）为 false 时 adjust 跳过 `set_main_frame`——不可见时提前改高度会让 WKWebView viewport 与 NSWindow frame 不匹配（present 后 footer 仍按旧 viewport 底部定位、悬在窗口中间）。守卫后 present 用上次稳定高度（viewport 匹配），show 后 focus 触发 adjust，渐进 animate 到目标高度——animator `display:YES` 逐帧驱动 NSView resize，WKWebView viewport 有时间每帧跟随同步，footer 始终贴底（视觉连续的撑大动画，而非瞬间跳变）。adjust 读 `outerSize` 实际高度，fixed/default 已等于目标则跳过 invoke（回填 `lastApplied`），消除多余 reflow
+- **adjust 可见性守卫**：`windowVisible`（focus/blur 驱动，初始 false）为 false 时 adjust 跳过 `set_main_frame`——不可见时提前改高度会让 WKWebView viewport 与 NSWindow frame 不匹配（present 后 footer 仍按旧 viewport 底部定位、悬在窗口中间）。守卫后 present 用上次稳定高度（viewport 匹配），show 后 focus 触发 adjust，渐进 animate 到目标高度——animator `display:YES` 逐帧驱动 NSView resize，WKWebView viewport 有时间每帧跟随同步，footer 始终贴底（视觉连续的撑大动画，而非瞬间跳变）。focus 事件序列不可靠（show 过程瞬时页面 blur 会打掉置位、二次补发迟至数秒甚至丢失），假阴性拦截时经 `is_main_window_visible`（Rust `WINDOW_VISIBLE` 权威状态）复核自愈——fixed/default 模式无 RO，切换后若无自愈则再无机制触发 adjust，高度/位置将停留在旧扩展的设定值（「切到默认高度界面回不去」的根因）。adjust 读 `outerSize` 实际高度，fixed/default 已等于目标则跳过 invoke（回填 `lastApplied`），消除多余 reflow
 - 一次 invoke 触发 Rust `set_main_frame` → `animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS rAF 逐帧）
+- **位置单一真相源在前端（顶边锚定模型，全 Cocoa 语义）**：`useExtensionHeight` 维护逻辑顶边 `targetTop`，fixed/default 保顶边（高度变化视觉连续）、auto 增高底边将出屏（含 40px 间距）则上移顶边、离开 auto 还原进入前顶边、用户拖动后以实际位置重锚（`onMoved` 丢弃逻辑坐标缓存，`set_main_frame` 后 400ms 内的位移为自身动画中间态、忽略——否则小幅拖动落在容差内被缓存拽回原位）；`animate_frame` 直接采用传入 x/y 并 clamp 进 `PLACEMENT_VIS`（底部 40px 间距优先于顶边），不自行按保顶边覆写。位置真值走 `get_main_frame` 命令（NSWindow frame + placement/visibleFrame，一次 IPC）——**禁止用 Tauri outerPosition/currentMonitor 推导主窗位置**：tao 将其转为 top-left 语义（y 向下、参照主屏物理高），与 NSWindow setFrame（Cocoa、y 向上底边）坐标系相反
 - **动画后延迟重刷 event capture**：animator 扩高（顶边固定向下生长）后窗口服务器 hit-test 表可能停留在动画前矩形——新增的底部区域点击穿透到下层应用，激活对方触发 blur 藏窗（agent 快捷键直开后点击输入框隐藏窗口的根因）。`set_main_frame` 自 invoke 起 400ms（动画 0.26s + 余量）后经 `refresh_event_capture_if_visible` 重设 ignoresMouseEvents + event shape 对齐最终 frame
-- `auto` 模式：ResizeObserver 监听 `contentRef`，窗口高 = `CHROME_HEIGHT`（搜索栏 + 间距）+ 内容高，clamp `[DEFAULT_HEIGHT, 屏幕高 90%]`
-- **高度天花板权威源在 Rust**：`animate_frame` clamp 为 placement/光标屏 **visibleFrame × 0.9**（扣菜单栏/Dock，非整屏高），`get_window_max_height` 命令同源输出；内容封顶型扩展视图（如 screenshot OCR 输入框）据此推导内容上限，双端同源防「内容撑过 clamp 产生窗口级滚动」
-- 屏幕尺寸走 `currentMonitor`（WKWebView 下 `window.screen` 仅返回 webview 视口）
-- 底部将出屏（含 40px 间距）则同步上移；离开 auto 还原进入前位置
+- `auto` 模式：ResizeObserver 监听 `contentRef`，窗口高 = `CHROME_HEIGHT`（搜索栏 + 间距）+ 内容高，clamp `[DEFAULT_HEIGHT, Rust 同源天花板]`
+- **高度天花板权威源在 Rust**：`animate_frame` clamp 为 placement/光标屏 **visibleFrame × 0.9**（扣菜单栏/Dock，非整屏高），`get_window_max_height` 命令同源输出，前端 auto 的 maxH 直接读该命令（缓存进 monitor bounds，同源防 target 被 clamp 截短后逻辑值与实际脱钩）；内容封顶型扩展视图（如 screenshot OCR 输入框）据此推导内容上限，双端同源防「内容撑过 clamp 产生窗口级滚动」
+- 屏几何（visibleFrame + auto 天花板）与窗口 frame 均走 `get_main_frame` 命令（Cocoa 语义单一源，替代 currentMonitor/outerPosition 的 top-left 坐标）
+- 底部将出屏（含 40px 间距）则上移顶边；离开 auto 还原进入前顶边（经位置单一真相源真实生效）
 
 ### 全局快捷键
 
