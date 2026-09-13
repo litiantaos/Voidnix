@@ -11,6 +11,8 @@ export const CMD = {
   pickFiles: 'pick_files',
   setMainFrame: 'set_main_frame',
   getWindowMaxHeight: 'get_window_max_height',
+  getMainFrame: 'get_main_frame',
+  isMainWindowVisible: 'is_main_window_visible',
   setWindowAppearance: 'set_window_appearance',
   getCachedAppearance: 'get_cached_appearance',
   setMenubarVisible: 'set_menubar_visible',

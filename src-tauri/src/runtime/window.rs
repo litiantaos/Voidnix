@@ -180,6 +180,59 @@ pub fn get_window_max_height() -> Option<f64> {
     None
 }
 
+/// 主窗口业务可见性（show_main/hide_main 维护的权威状态）。alpha=0 隐藏时 NSWindow
+/// isVisible 仍可能为 true，勿用 Tauri is_visible 判定。前端高度管理在 focus 事件序列
+/// 被 show 过程瞬时 blur 打乱时据此复核自愈（windowVisible 假阴性会令后续全部
+/// adjust 被拦截，切换扩展后高度/位置停留旧值）。
+#[tauri::command]
+pub fn is_main_window_visible() -> bool {
+    crate::runtime::shortcut::is_window_visible()
+}
+
+/// 主窗当前 frame 与 placement/光标屏 visibleFrame（均 Cocoa 逻辑坐标，y 向上、
+/// origin 为底边）。前端高度管理（useExtensionHeight）的位置单一真相源：与
+/// set_main_frame / animate_frame 同坐标系，避免 Tauri outerPosition（tao 转成
+/// top-left 语义）与 NSWindow setFrame（Cocoa）的错位。maxHeight 为 auto 高度
+/// 天花板（visibleFrame × 0.9，与 animate_frame clamp 同源）。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MainFrameInfo {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    /// visibleFrame 底边 y（数值小的一方，扣菜单栏/Dock）
+    pub vis_bottom_y: f64,
+    /// visibleFrame 顶边 y（数值大的一方）
+    pub vis_top_y: f64,
+    pub max_height: f64,
+}
+
+#[tauri::command]
+pub fn get_main_frame(app: tauri::AppHandle) -> Option<MainFrameInfo> {
+    use tauri::Manager;
+    let win = app.get_webview_window("main")?;
+    #[cfg(target_os = "macos")]
+    {
+        // sync command 在主线程执行，NSWindow 读取安全
+        let (frame, vis) = crate::platform::window::main_frame_and_vis(&win)?;
+        Some(MainFrameInfo {
+            x: frame.origin.x,
+            y: frame.origin.y,
+            width: frame.size.width,
+            height: frame.size.height,
+            vis_bottom_y: vis.origin.y,
+            vis_top_y: vis.origin.y + vis.size.height,
+            max_height: crate::platform::window::height_ceiling(vis),
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = win;
+        None
+    }
+}
+
 /// 打开目录选择器（NSOpenPanel），作为独立浮窗运行，不附着主窗口。
 /// 返回用户选择的目录路径，取消则返回空字符串。
 #[tauri::command]
