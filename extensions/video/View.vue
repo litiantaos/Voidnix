@@ -1,7 +1,14 @@
 <template>
   <div class="flex-col-full-pb">
     <BaseSettingsList :items="items" @execute="onSettingsExecute">
-      <!-- 第一项：核心 / 选文件 / 开始·取消 合一（双按钮） -->
+      <!-- 操作行：有视频或处理中显示，回车执行主按钮动作（取消 / 开始） -->
+      <template #trailing-operations>
+        <BaseButton v-if="st.busy" @click.stop="cancelJob">{{ t('video.cancel') }}</BaseButton>
+        <BaseButton v-else variant="primary" :disabled="!canRun" @click.stop="startJob">{{
+          t('video.start')
+        }}</BaseButton>
+      </template>
+      <!-- 「输入视频」行：核心下载/进度 + 选文件 -->
       <template #trailing-source>
         <BaseButton v-if="isDownloading" class="min-w-12 tabular-nums" disabled>{{
           downloadText
@@ -13,19 +20,9 @@
         >
           {{ t('video.downloadFFmpeg') }}
         </BaseButton>
-        <div v-else-if="coreLoaded && core.available" flex gap="2">
-          <BaseButton :disabled="st.busy" @click.stop="pickInput">{{
-            t('video.select')
-          }}</BaseButton>
-          <BaseButton v-if="st.busy" @click.stop="cancelJob">{{ t('video.cancel') }}</BaseButton>
-          <BaseButton
-            v-else-if="st.paths.length > 0"
-            variant="primary"
-            :disabled="!canRun"
-            @click.stop="startJob"
-            >{{ t('video.start') }}</BaseButton
-          >
-        </div>
+        <BaseButton v-else :disabled="st.busy" @click.stop="pickInput">{{
+          t('video.select')
+        }}</BaseButton>
       </template>
       <template #trailing-outputDir>
         <div flex gap="2">
@@ -198,20 +195,7 @@ function ensureFormatForMode(next: VideoMode) {
 const items = computed<SettingItem[]>(() => {
   const list: SettingItem[] = []
 
-  // ── 输入视频 ⇌ 核心 ⇌ 开始（右侧双按钮，见 trailing-source）──
-  list.push({
-    id: 'source',
-    title:
-      coreLoaded.value && core.value.available && st.paths.length > 0
-        ? st.paths.length === 1
-          ? fileNameFromPath(st.paths[0])
-          : t('video.fileCount', { n: st.paths.length })
-        : t('video.inputVideo'),
-    subtitle: sourceSubtitle.value,
-    type: 'custom',
-    group: t('video.group.file'),
-  })
-
+  // 模式选择：列表第一项（通用组，同 image 扩展——模式决定参数组形态）
   list.push({
     id: 'mode',
     title: t('video.mode'),
@@ -227,7 +211,33 @@ const items = computed<SettingItem[]>(() => {
       config.defaultMode = mode.value
       ensureFormatForMode(mode.value)
     },
-    group: t('video.group.params'),
+    group: t('video.group.common'),
+  })
+
+  // 操作：通用组第二项，有视频或处理中才显示——孤儿观察态（页面重载后重开面板）
+  // paths 为空但 busy 置起，取消是唯一可达动作，不能失去入口（busy 态 Start 恒禁用，
+  // 该行仅渲染 Cancel）；回车执行主按钮动作（取消 / 开始），按钮经 trailing-operations 插槽
+  if (st.paths.length > 0 || st.busy) {
+    list.push({
+      id: 'operations',
+      title: t('video.operations'),
+      type: 'custom',
+      group: t('video.group.common'),
+    })
+  }
+
+  // ── 输入视频 ⇌ 核心（右侧按钮见 trailing-source）──
+  list.push({
+    id: 'source',
+    title:
+      coreLoaded.value && core.value.available && st.paths.length > 0
+        ? st.paths.length === 1
+          ? fileNameFromPath(st.paths[0])
+          : t('video.fileCount', { n: st.paths.length })
+        : t('video.inputVideo'),
+    subtitle: sourceSubtitle.value,
+    type: 'custom',
+    group: t('video.group.file'),
   })
 
   // ── 按模式参数 ──
@@ -462,23 +472,27 @@ function resetOutputDir() {
 }
 
 function onSettingsExecute(item: SettingItem) {
+  // 操作行回车 = 主按钮动作：取消 / 开始（未就绪禁用态不触发）
+  if (item.id === 'operations') {
+    if (st.busy) {
+      void cancelJob()
+      return
+    }
+    if (canRun.value) startJob()
+    return
+  }
   if (item.id === 'outputDir') {
     void pickOutputDir()
     return
   }
-  // 第一项回车：下载 / 取消 / 开始 / 选择
+  // 「输入视频」行回车跟随右侧按钮：下载 / 选择
   if (item.id === 'source') {
     if (isDownloading.value || !coreLoaded.value) return
     if (!core.value.available) {
       void ensureCore()
       return
     }
-    if (st.busy) {
-      void cancelJob()
-      return
-    }
-    if (canRun.value) startJob()
-    else void pickInput()
+    if (!st.busy) void pickInput()
   }
 }
 
@@ -530,8 +544,13 @@ function runFile(i: number) {
 
 /** Channel（队列驱动）与全局 video-job-event（孤儿观察）共用事件处理。 */
 function onRunEvent(ev: VideoEvent, fromQueue: boolean) {
-  // 队列存活时全局事件让路：同一终态 Channel + 全局双投递，以 Channel 为准驱动队列
-  if (!fromQueue && st.queueActive) return
+  // 同一终态 Channel + 全局双投递去重，全局事件仅服务孤儿观察（队列随页面重载丢失，
+  // 重开面板经 restoreJobStatus 置起 busy 后由全局事件驱动）：
+  // - 队列存活（queueActive）让路，Channel 驱动队列
+  // - 队列收束后让路——Channel 终态先到已消费（finishBatch 同步清 queueActive/busy），
+  //   迟到的全局终态不得再走孤儿分支重复弹 toast；孤儿态 busy 恒为 true，
+  //   busy=false 的全局事件必是已消费的重复投递
+  if (!fromQueue && (st.queueActive || !st.busy)) return
   switch (ev.type) {
     case 'started':
       st.busy = true
