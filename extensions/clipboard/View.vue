@@ -9,6 +9,7 @@
   <div v-else>
     <BaseList
       :items="history"
+      :selected-index="selectedIndex"
       multi-select
       :selected-ids="selectedIds"
       :keyboard-active="!open && !previewOpen && !editOpen"
@@ -57,6 +58,17 @@
               loading="lazy"
               :alt="t('clipboard.imageAlt')"
             />
+            <!-- 缩略图占位（仅加载中态）：与 img 同尺寸同边框（Wind4 preflight 将 img
+                 reset 为 block，占位同为块级精确等高）。无占位时图片项走下方文本回退
+                 （矮一行），懒加载完成后条目变高，已滚动到位的选中项（如按上键 wrap
+                 到末项）被推出视口；加载失败（图片文件被清理 / invoke 异常）记入
+                 failedImages 回落文本分支，不滞留空白块 -->
+            <div
+              v-else-if="item.content_type === 'image' && !failedImages.has(item.id)"
+              class="border border-divider radius-ctrl border-solid fill-ctrl"
+              h="32"
+              w="48"
+            ></div>
             <div v-else truncate>
               {{ item.content.split('/').filter(Boolean).pop() || item.content }}
             </div>
@@ -460,6 +472,8 @@ async function deleteItems(ids: string[]) {
 onActivated(() => {
   activeTab.value = 'all'
   activeType.value = 'all'
+  // 选中归首项由 BaseList 统一承载（watch activeExtId 跨会话转移归零）；
+  // 此处不重置：subview（config）往返也触发 onActivated，重置会破坏往返保留语义
   fetchClipboardHistory('', false)
 })
 
@@ -468,12 +482,16 @@ onDeactivated(() => {
   // 不清 tabCache/history：tabCache 经 previewOnly 截断（~200 字符/条），
   // 重新进入直接命中缓存秒出，避免「空列表 → 异步 IPC → 补全」的空闪。
   colorCache.clear()
+  failedImages.clear()
 })
 
 // ── 图片懒加载 ──
 const IMAGE_CACHE_MAX = 30
 const imageCache = shallowReactive(new Map<string, string>())
 const pendingImages = new Set<string>()
+// 加载失败（Rust 返回 null——图片文件已被外部清理，或 invoke reject）的条目集合：
+// 响应式驱动模板回落文本分支，占位仅覆盖加载中态
+const failedImages = shallowReactive(new Set<string>())
 
 function cacheImage(id: string, data: string) {
   if (imageCache.size >= IMAGE_CACHE_MAX) {
@@ -490,10 +508,16 @@ const observer = new IntersectionObserver(
       const id = (entry.target as HTMLElement).dataset.imageId
       if (id && !imageCache.has(id) && !pendingImages.has(id)) {
         pendingImages.add(id)
-        invoke<string | null>(CMD.getClipboardImage, { id }).then((data) => {
-          if (data) cacheImage(id, data)
-          pendingImages.delete(id)
-        })
+        invoke<string | null>(CMD.getClipboardImage, { id })
+          .then((data) => {
+            if (data) cacheImage(id, data)
+            else failedImages.add(id)
+            pendingImages.delete(id)
+          })
+          .catch(() => {
+            failedImages.add(id)
+            pendingImages.delete(id)
+          })
       }
       observer.unobserve(entry.target)
     }
@@ -503,7 +527,7 @@ const observer = new IntersectionObserver(
 
 function setImageRef(el: unknown, item: { id: string; content_type: string }) {
   if (item.content_type !== 'image') return
-  if (imageCache.has(item.id) || pendingImages.has(item.id)) return
+  if (imageCache.has(item.id) || pendingImages.has(item.id) || failedImages.has(item.id)) return
   const htmlEl = (el as { $el?: HTMLElement })?.$el ?? (el as HTMLElement | null)
   if (!htmlEl) return
   htmlEl.dataset.imageId = item.id

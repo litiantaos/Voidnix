@@ -26,10 +26,10 @@
         :style="mergedContentStyle"
       >
         <!-- max=3：日常高频扩展（agent/settings/proxy）不超过 3 个同时活跃，超出按 LRU 驱逐。
-             KeepAlive 常驻（v-if 下沉到动态组件）：经主界面往返（如设置页重看引导）走
-             activate/deactivate 保留视图状态（选中/滚动），仅窗口隐藏 keepAliveActive 置 false
-             卸载 KeepAlive 释放全部缓存 DOM + compositing layer。 -->
-        <KeepAlive v-if="keepAliveActive" :max="3">
+             KeepAlive 常驻（v-if 下沉到动态组件）：切换/往返/窗口隐藏唤起一律保留视图
+             状态（选中/滚动/会话）——隐藏时的 layer 释放由 contentRef 的
+             content-visibility:hidden 承担（clearCache），不卸载 DOM。 -->
+        <KeepAlive :max="3">
           <component
             v-if="resolvedView"
             :is="resolvedView"
@@ -107,11 +107,11 @@ const appStore = useAppStore()
 const selectedIds = ref(new Set<string>())
 const isMultiSelect = computed(() => !!props.extension?.listOptions?.multiSelect)
 
-// 窗口隐藏时置 false 卸载 KeepAlive（Vue onBeforeUnmount 全量释放缓存 vnode + compositing layer），
-// nextTick 后置 true 重建空缓存（此时窗口即将 alpha=0，无视觉影响）。
-const keepAliveActive = ref(true)
-// 同期 toggle content-visibility:hidden 释放结果列表 tile backing（DOM 保留不闪烁）。
-// show 时 compositor 同步处理 pending 的 visible 变更，结果列表首帧即可见。
+// 窗口隐藏时 toggle content-visibility:hidden：跳过 contentRef 全子树渲染
+// （标准列表 + 扩展视图），forced layout 释放 compositing layer tile backing。
+// DOM 保留不闪烁；show 时 compositor 同步处理 pending 的 visible 变更，首帧即可见。
+// 不卸载 KeepAlive：窗口隐藏唤起是无缝继续（任何列表的滚动/选中/会话状态冻结），
+// 卸载重建会清空扩展视图状态。
 const contentHidden = ref(false)
 
 async function clearCache() {
@@ -120,13 +120,11 @@ async function clearCache() {
   // contain-intrinsic-size 已根治记录问题，此处兜底 WKWebView 等实现差异，零成本。
   const sc = scrollContainer.value
   const savedTop = sc?.scrollTop ?? 0
-  keepAliveActive.value = false
   contentHidden.value = true
   await nextTick()
-  // 强制同步 layout：让 WebCore 在 alpha=0 窗口完成扩展视图卸载 +
-  // 结果列表 content-visibility:hidden 的 compositing layer tile backing 释放。
+  // 强制同步 layout：让 WebCore 在 alpha=0 窗口完成 content-visibility:hidden
+  // 子树（结果列表 + 扩展视图）的 compositing layer tile backing 释放。
   void document.body.offsetHeight
-  keepAliveActive.value = true
   contentHidden.value = false
   await nextTick()
   if (sc && savedTop > 0 && sc.scrollTop !== savedTop) sc.scrollTop = savedTop

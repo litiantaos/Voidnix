@@ -70,15 +70,24 @@ describe('ContentView KeepAlive 缓存语义', () => {
     expect(wrapper.find('#probe').text()).toBe('1')
   })
 
-  it('窗口隐藏事件卸载 KeepAlive 缓存（重进扩展重挂载）', async () => {
+  it('窗口隐藏不卸载视图（无缝继续）：仅 content-visibility 释放 layer，状态与实例冻结', async () => {
     const wrapper = mountView()
     await nextTick()
     expect(probeMounts).toBe(1)
+    expect(wrapper.find('#probe').text()).toBe('0')
 
+    bumpProbe!()
+    await nextTick()
+    expect(wrapper.find('#probe').text()).toBe('1')
+
+    // 隐藏（clearCache）：视图实例保持挂载（滚动/选中/会话状态随 DOM 冻结保留），
+    // layer 释放走 contentRef 的 content-visibility:hidden，不卸载 KeepAlive
     window.dispatchEvent(new Event('window-hiding'))
     await nextTick()
     await nextTick()
-    expect(probeMounts).toBe(2)
+    await nextTick()
+    expect(probeMounts).toBe(1)
     expect(wrapper.find('#probe').exists()).toBe(true)
+    expect(wrapper.find('#probe').text()).toBe('1')
   })
 })

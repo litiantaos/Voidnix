@@ -14,7 +14,7 @@
 - 输出默认与源同目录，命名 `{stem}.{compressed|converted|audio}.{ext}`；可改输出目录
 - 批量队列：单文件失败跳过继续下一个，结束汇总 toast（`完成 x/n，y 个失败`）；取消终止整批；全部成功后清空选择回到初始态，失败/取消保留列表可重试（重试重跑全部文件，输出冲突自动加 `-1/-2` 后缀）
 - 重新进入扩展即新会话：未在处理中的文件选择清空重置（处理中保留进度上下文）
-- Rust 端保持单任务模型（BUSY 互斥）；队列在前端串行发起（复用 `video_run`，终态经 Channel 事件推进——invoke resolve 不区分成败）。批量状态（paths / metas / busy / 进度计数）放 View.vue 模块级 reactive，窗口隐藏 KeepAlive 卸载后队列继续跑、重开面板计数不丢；WebContent navigate 重载会丢队列（当前文件跑完即止，重开面板退化为孤儿观察模式）
+- Rust 端保持单任务模型（BUSY 互斥）；队列在前端串行发起（复用 `video_run`，终态经 Channel 事件推进——invoke resolve 不区分成败）。批量状态（paths / metas / busy / 进度计数）放 View.vue 模块级 reactive，KeepAlive LRU 驱逐卸载后队列继续跑、重开面板计数不丢（窗口隐藏走 content-visibility 冻结，状态原样保留）；WebContent navigate 重载会丢队列（当前文件跑完即止，重开面板退化为孤儿观察模式）
 - 可取消；窗口隐藏后任务继续
 
 ## UI

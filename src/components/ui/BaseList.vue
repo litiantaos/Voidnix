@@ -42,10 +42,14 @@ import {
   wrapIndex,
 } from '@/utils/dom'
 
-// KeepAlive 软禁用：deactivate 后监听仍在，用 isActive 抑制响应
+// KeepAlive 软禁用：deactivate 后监听仍在，用 isActive 抑制响应。
+// inKeepAliveTree：首次 activated 即标记（KeepAlive 树内组件挂载即触发 activated；
+// 标准列表在 ContentView 的 KeepAlive 外，永不触发）——用于区分自管/受控列表。
 const isActive = ref(true)
+const inKeepAliveTree = ref(false)
 onActivated(() => {
   isActive.value = true
+  inKeepAliveTree.value = true
 })
 onDeactivated(() => {
   isActive.value = false
@@ -105,6 +109,19 @@ function setSelectedIndex(index: number) {
   emit('update:selectedIndex', index)
   emit('select', index)
 }
+
+// 跨会话转移（进入/退出/切换扩展）统一归首项；同扩展内 subview 往返（activeExtId
+// 不变）与窗口唤起（focus 不动 activeExtId）保留导航位置。仅作用于 KeepAlive 树内的
+// 自管列表（emit 同步父级镜像，deactivate 不销毁 watch——离开扩展时归零，回来首帧
+// 即首项）；标准列表受控于 MainView 不参与：其 selectedIndex 转移链（exitExtension
+// 的 savedToolIndex 恢复 / 进入扩展 watch 的捕获）自洽，子组件归零回写会覆盖同步
+// 恢复值，破坏受控单向数据流。
+watch(
+  () => appStore.activeExtId,
+  () => {
+    if (inKeepAliveTree.value) setSelectedIndex(0)
+  },
+)
 
 // ── Refs ──
 // 函数 ref 在节点卸载时会收到 null；必须同步释放旧 DOM 引用，否则搜索结果

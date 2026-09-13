@@ -117,7 +117,7 @@ test.describe('Voidnix 启动器', () => {
     expect(scrolled).toBe(true)
 
     // 模拟窗口隐藏（Tauri 下 hideWindow 派发；浏览器模式手动派发同一事件触发 clearCache：
-    // KeepAlive 卸载重建 + content-visibility:hidden forced layout 释放 tile backing）
+    // content-visibility:hidden forced layout 释放 tile backing，DOM 与视图状态冻结保留不卸载）
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('window-hiding')))
     await page.waitForTimeout(200)
 

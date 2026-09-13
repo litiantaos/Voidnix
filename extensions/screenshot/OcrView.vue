@@ -103,8 +103,8 @@ interface OcrAction {
 }
 
 const appStore = useAppStore()
-// 会话状态提升至模块级 ocrSession（见 index.ts）：组件销毁（窗口隐藏卸载 KeepAlive /
-// LRU 驱逐）后重挂载恢复现场；此处仅 previewRef / actionIndex 留组件局部
+// 会话状态提升至模块级 ocrSession（见 index.ts）：组件销毁（KeepAlive LRU 驱逐 /
+// navigate 重载）后重挂载恢复现场；此处仅 previewRef / actionIndex 留组件局部
 const session = ocrSession
 const previewRef = ref<HTMLElement>()
 const actionIndex = ref(0)

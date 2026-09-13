@@ -93,6 +93,12 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 - **按上限裁剪**：`maxDays` <=0 裁剪至 5000（仅非收藏）
 - **拉取上限**：默认 500 条（全局搜索 dynamic 与模块列表）
 
+## 列表渲染
+
+- **缩略图懒加载**：IntersectionObserver（rootMargin 200px 预载）按需 `invoke(get_clipboard_image)`，LRU 上限 30 条（`imageCache`）
+- **恒高占位**：加载前渲染与缩略图同尺寸同边框的块级占位（Wind4 preflight 将 img reset 为 block，占位同为块级精确等高）。无占位时图片项走文本回退（矮一行），懒加载完成后条目变高，已滚动到位的选中项（如按上键 wrap 到末项）会被推出视口
+- **进入重置**：跨会话转移（进入/退出/切换扩展）的选中归首项由 BaseList 组件层统一承载（watch activeExtId，所有列表共用），View 侧 `v-model:selected-index` 保持镜像传导；subview（config）往返与窗口隐藏唤起保留导航位置与滚动（scrollKey save/restore + clearCache 不卸载视图、DOM 冻结）。`onActivated` 只重置 tab/type 并重拉列表
+
 ## 动作菜单
 
 - **触发**：`Cmd+Enter` 或结果项右键（经 `useActionPanel` 统一 `toggleOpen`，二次触发关闭）

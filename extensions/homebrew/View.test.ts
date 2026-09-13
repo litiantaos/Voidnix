@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
 
 // View.vue 的 onActivated 恢复流依赖 Tauri invoke / 事件监听 / app store，全部 mock。
-// 场景核心：升级中退出（窗口隐藏 → KeepAlive 整体卸载、组件销毁）后重进，
+// 场景核心：升级中退出（KeepAlive LRU 驱逐 → 组件销毁）后重进，
 // brew_run_state 返回 Some 时应渲染列表 + 恢复运行态，而非阻断为加载态等操作结束。
 const mocks = vi.hoisted(() => {
   const listeners = new Map<string, (e: { payload: unknown }) => void>()
@@ -115,7 +115,7 @@ describe('homebrew View 运行态恢复', () => {
     await flush()
     first.wrapper.unmount()
 
-    // 第二阶段：后台升级仍在进行，重进（全新实例，模拟窗口隐藏后 KeepAlive 整体卸载）
+    // 第二阶段：后台升级仍在进行，重进（全新实例，模拟 KeepAlive LRU 驱逐卸载）
     runState = { operation: 'update_upgrade', step: 'upgrade' }
     const second = mountHost()
     await flush()

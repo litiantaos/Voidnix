@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { mount, type VueWrapper } from '@vue/test-utils'
+import { nextTick, h, KeepAlive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import { useAppStore } from '@/stores/app'
 import BaseList from './BaseList.vue'
 
 interface Item {
@@ -50,5 +51,40 @@ describe('BaseList', () => {
     expect(refs.filter(Boolean)).toHaveLength(20)
     wrapper.unmount()
     expect(refs.filter(Boolean)).toHaveLength(0)
+  })
+
+  it('跨会话转移（activeExtId 变化）统一归首项并同步父级镜像；受控列表（KeepAlive 外）不参与', async () => {
+    const appStore = useAppStore()
+    // KeepAlive 包裹：自管列表场景（挂载即 activated，inKeepAliveTree 置位）
+    const selfManaged = mount({
+      setup: () => () => h(KeepAlive, () => h(BaseList, { items: items(10) })),
+    })
+    // 泛型组件 findComponent 类型推断退化为 DOMWrapper，断言回 VueWrapper
+    const list = selfManaged.findComponent(BaseList) as unknown as VueWrapper
+    ;(
+      list.vm.$ as unknown as { setupState: { setSelectedIndex: (i: number) => void } }
+    ).setupState.setSelectedIndex(5)
+    expect(list.emitted('select')?.at(-1)).toEqual([5])
+
+    // 进入扩展（null → ext）：归零 + emit 同步镜像
+    appStore.setActiveExtension('clipboard')
+    await nextTick()
+    expect(list.emitted('select')?.at(-1)).toEqual([0])
+
+    // 退出扩展（ext → null）：再次归零
+    appStore.setActiveExtension(null)
+    await nextTick()
+    expect(list.emitted('select')?.at(-1)).toEqual([0])
+
+    // 受控列表（KeepAlive 外，标准列表场景）：activeExtId 变化不归零不回写——
+    // exitExtension 同步恢复的 savedToolIndex 不被覆盖
+    const controlled = mount(BaseList<Item>, {
+      props: { items: items(10), selectedIndex: 5 },
+      slots: { item: ({ item }: { item: Item }) => item.title },
+    })
+    appStore.setActiveExtension('clipboard')
+    await nextTick()
+    expect(controlled.emitted('select')).toBeUndefined()
+    expect(controlled.emitted('update:selectedIndex')).toBeUndefined()
   })
 })

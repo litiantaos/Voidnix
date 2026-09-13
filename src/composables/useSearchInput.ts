@@ -469,15 +469,16 @@ export function useSearchInput(opts: SearchInputOptions) {
   }
 
   /** 窗口唤起（主快捷键从隐藏呼出）时检查剪贴板：最新记录为文本且 3 秒内 → 填充搜索框。
-   *  搜索框不可输入（整窗视图接管——搜索栏仅 v-show 隐藏元素仍在 / disableSearchInput
-   *  扩展 readonly）时跳过，防止 query 被污染到视图退出后。 */
+   *  仅主界面填充（「快速搜刚复制内容」特性，query 变化属内容切换）；整窗视图接管 /
+   *  扩展激活时跳过——扩展内 query 是列表过滤参数，填充会破坏浏览上下文（剪贴板等
+   *  用搜索框过滤的扩展），窗口显隐不得改变扩展内容状态。 */
   async function maybeFillFromClipboard() {
     if (!isTauri) return
     if (appStore.fullscreenView) return
-    if (activeExtension.value?.disableSearchInput) return
+    if (appStore.activeExtId) return
     // 模态弹窗打开：不填充（query 不被污染）、不启动会抢焦点全选轮询
     if (isModalDialogOpen()) return
-    if (!searchInput.value || searchInput.value.readOnly) return
+    if (!searchInput.value) return
     try {
       // previewOnly 截断至 200 字符：搜索框不宜承载超长文本，避免模糊匹配 O(n×m) 开销
       const items = await invoke<
@@ -513,7 +514,7 @@ export function useSearchInput(opts: SearchInputOptions) {
    *  输入框折叠残留选中并取消待定全选：唤起首帧页面焦点未落定，残留选中以非聚焦灰绘制、
    *  获焦后翻蓝（灰→蓝跳变）；折叠后唤起由 selectAllWhenPageFocused 在获焦时一次到位。
    *  compositing layer 释放由 ContentView.clearCache 统一承担：content-visibility:hidden
-   *  跳过结果列表渲染并释放 tile backing（DOM 保留不闪烁），扩展视图经 KeepAlive 卸载释放。 */
+   *  跳过子树渲染并释放 tile backing，结果列表与扩展视图的 DOM/状态冻结保留。 */
   function onWindowHiding() {
     searchEngine.abort()
     if (searchTimeout) {

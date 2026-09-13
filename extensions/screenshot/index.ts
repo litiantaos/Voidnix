@@ -16,8 +16,8 @@ export const pendingOcrData = ref<{
   previewPng: string
 } | null>(null)
 
-/// OCR 会话状态（模块级单例）：窗口隐藏时 KeepAlive 整体卸载、缓存超限 LRU 驱逐都会
-/// 销毁 OcrView 组件，局部状态随之丢失（关闭窗口再唤起内容空白）——提升到模块级，
+/// OCR 会话状态（模块级单例）：KeepAlive 缓存超限 LRU 驱逐 / navigate 重载都会
+/// 销毁 OcrView 组件，局部状态随之丢失（卸载后重进内容空白）——提升到模块级，
 /// 组件重挂载直接恢复现场；识别进行中隐藏亦然（invoke 回调写模块级 ref）。
 export const ocrSession = ref({
   imageUrl: '',
