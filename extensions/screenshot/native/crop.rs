@@ -145,8 +145,10 @@ pub(super) fn crop_with_annotation(
         let rep =
             unsafe { compose_annotated_rep(sel_x, sel_y, sel_w, sel_h, scale, annotation_png)? };
 
-        // SAFETY: rep 已 null 检查；representationUsingType:/dictionary/release 均为
-        // NSBitmapImageRep/NSDictionary 标准选择子；ns_data 释放前 length/bytes 拷贝出数据
+        // SAFETY: rep 已 null 检查；representationUsingType:/dictionary 均为
+        // NSBitmapImageRep/NSDictionary 标准选择子；ns_data 为 autoreleased（+0，
+        // 禁止手动 release，否则 pool drain 二次释放已析构对象致 SIGSEGV），
+        // 由外层 autoreleasepool 统一释放，length/bytes 拷贝后即失效
         let result = unsafe {
             let props_cls = objc2::class!(NSDictionary);
             let props: *mut AnyObject = objc2::msg_send![props_cls, dictionary];
@@ -159,9 +161,7 @@ pub(super) fn crop_with_annotation(
             }
             let length: usize = objc2::msg_send![ns_data, length];
             let bytes: *const u8 = objc2::msg_send![ns_data, bytes];
-            let png = std::slice::from_raw_parts(bytes, length).to_vec();
-            let _: () = objc2::msg_send![ns_data, release];
-            png
+            std::slice::from_raw_parts(bytes, length).to_vec()
         };
         Ok(result)
     })

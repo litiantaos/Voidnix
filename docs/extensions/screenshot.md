@@ -14,7 +14,7 @@
 - 放大镜底图：capture 成功后与 enter **并行** ImageIO 编码 `picker.jpg`（任务独立 Retain CGImage；原子 rename）；前端 `loadPickerImage` 轮询就绪（主屏 Retina 编码更慢，禁止单次读空即放弃）
 - 选区阶段（`phase === 'select'`，尚无工具栏）底部居中轻量快捷键提示：`Esc` 取消 / `F` 全屏 / `C` 复制色值；有上次选区时追加 `R` 恢复（`mica-panel` + kbd 样式，与 `onKeyDown` 对齐）
 - 提示条与标注工具栏进出场：`Transition` + 浮层范式（进 150ms `ease-out` opacity/translate-y/scale，出 100ms `ease-in` 反向；`appear` 首次挂载亦进场）
-- crop 两条路径（PNG / CGImage）均整体包 `objc2::rc::autoreleasepool`——compose 与编码链上的便捷构造对象（NSGraphicsContext/NSDictionary/NSData/rep.CGImage）均 autoreleased，worker 线程无 pool 时 autorelease 永不执行，实测每次 OCR 泄漏约 12MB（40 次累计 475MB）；pool 修复后零增长。`compose_annotated_rep` 与 `detect_text_regions` 借用会话 CGImage 期间均 `CGImageRetain` 防合成/识别中 `store_cg_image` 换图释放旧图（use-after-free），出口配对 Release
+- crop 两条路径（PNG / CGImage）均整体包 `objc2::rc::autoreleasepool`——compose 与编码链上的便捷构造对象（NSGraphicsContext/NSDictionary/NSData/rep.CGImage）均 autoreleased，worker 线程无 pool 时 autorelease 永不执行，实测每次 OCR 泄漏约 12MB（40 次累计 475MB）；pool 修复后零增长。autoreleased（+0）对象一律交 pool 释放、禁止手动 release——`representationUsingType:properties:` 返回的 PNG NSData 曾被手动 release，加 pool 后变成过度释放，pool drain 二次释放已析构对象，走 PNG 路径的复制/保存/钉图即 SIGSEGV 崩溃（alloc+init 自持有的 rep/NSImage 除外，仍配对手动 release；OCR 走 CGImage 路径不受影响）。`compose_annotated_rep` 与 `detect_text_regions` 借用会话 CGImage 期间均 `CGImageRetain` 防合成/识别中 `store_cg_image` 换图释放旧图（use-after-free），出口配对 Release
 - `native/` 按职责分：session（截图会话）、ocr（Vision 进程内识别）、pin（钉图窗口）、scroll_capture/（滚动长截图：state / encode / stitch / mouse / 命令）、crop（裁剪 + 标注合成：`compose_annotated_rep` 统一合成，PNG 路径供 copy/save、CGImage 路径供 OCR）、ffi（ObjC++ 桥）、setup（启动钩子）
 
 ## 约束
