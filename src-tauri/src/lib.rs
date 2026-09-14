@@ -50,8 +50,13 @@ pub fn run() {
     std::mem::forget(runtime);
 
     let builder = tauri::Builder::default()
+        // single-instance 回调在 tokio worker 执行；show_main 全链路是 NSWindow/
+        // AppKit 主线程限定操作，直接调用会在 makeKeyWindow 触发主线程断言崩溃
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            crate::runtime::window::show_main(app);
+            let app = app.clone();
+            let _ = app.clone().run_on_main_thread(move || {
+                crate::runtime::window::show_main(&app);
+            });
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::default().build())
