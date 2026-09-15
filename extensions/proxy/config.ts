@@ -38,6 +38,9 @@ export const config = defineConfig('extensions/proxy/config', {
   /// 当前激活订阅 id：同一时刻仅一个订阅生效，build_run_config 仅合并此订阅的 YAML。
   /// 空 = 无激活（回退首项）；由 normalizer watch 保证始终指向有效 id。
   activeSubscriptionId: '',
+  /// TUN 首次启用确认标记：用户确认过一次首启告知弹窗即置 true，此后不再弹
+  /// （含 daemon 因更新核心/完全卸载被移除后的重装路径——重装时的系统密码弹窗仍提供感知）。
+  tunConfirmed: false,
 })
 
 /// 端口变体归一化（模块级，app 启动即生效）。

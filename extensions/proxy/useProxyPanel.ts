@@ -64,7 +64,6 @@ const preloaded = {
   coreDownloaded: false,
   coreDownloading: false,
   version: '',
-  daemonInstalled: false,
 }
 let preloadPromise: Promise<void> | null = null
 if (isTauri) {
@@ -78,13 +77,11 @@ if (isTauri) {
       downloaded: boolean
       version: string
       downloading: boolean
-      daemonInstalled: boolean
     }>(CMD.proxyCoreStatus)
       .then((s) => {
         preloaded.coreDownloaded = s.downloaded
         preloaded.coreDownloading = s.downloading
         preloaded.version = s.version
-        preloaded.daemonInstalled = s.daemonInstalled
       })
       .catch(() => {}),
   ])
@@ -116,12 +113,10 @@ export function useProxyPanel() {
     downloaded: boolean
     version: string
     downloading: boolean
-    daemonInstalled: boolean
   }>({
     downloaded: preloaded.coreDownloaded,
     version: preloaded.version,
     downloading: preloaded.coreDownloading,
-    daemonInstalled: preloaded.daemonInstalled,
   })
   const coreProgress = ref<{ received: number; total: number | null }>({ received: 0, total: null })
   /// 首个进度事件是否到达：未收到事件时显示「下载中」，收到后显示具体进度
@@ -250,10 +245,8 @@ export function useProxyPanel() {
         downloaded: boolean
         version: string
         downloading: boolean
-        daemonInstalled: boolean
       }>(CMD.proxyCoreStatus)
       preloaded.coreDownloaded = coreStatus.value.downloaded
-      preloaded.daemonInstalled = coreStatus.value.daemonInstalled
     } catch {
       /* ignore */
     }
@@ -337,8 +330,9 @@ export function useProxyPanel() {
     if (toggling.value) return
     const newState = !isEnabled.value
     // 首次启用确认：TUN 是全部扩展中最重的系统侵入面（LaunchDaemon + root 常驻进程 +
-    // 接管全部 IP 流量），安装前明确告知。daemon 已装（重开/开机复用）不重复打扰。
-    if (newState && !coreStatus.value.daemonInstalled) {
+    // 接管全部 IP 流量），安装前明确告知。以持久化确认标记为据只弹一次——daemon 安装态
+    // 不可作判据（更新核心/完全卸载/提权取消都会移除 daemon，已确认用户会被重复打扰）。
+    if (newState && !config.tunConfirmed) {
       const confirmed = await appStore.showConfirm({
         title: t('proxy.tunConfirmTitle'),
         message: t('proxy.tunConfirmMessage'),
@@ -349,6 +343,7 @@ export function useProxyPanel() {
         okLabel: t('proxy.tunConfirmOk'),
       })
       if (!confirmed) return
+      config.tunConfirmed = true // 确认即置位：同意安装后重试（提权取消/安装失败）不再弹
     }
     if (newState && !config.secret) {
       config.secret = generateRequestId()
@@ -368,8 +363,6 @@ export function useProxyPanel() {
       preloaded.enabled = newState
       coreError.value = '' // 切换成功清异常提示
       if (newState) {
-        // 首启安装后刷新 daemonInstalled（否则关掉再开会重复弹首启确认）
-        void loadCoreStatus()
         await loadProxies()
         testAll() // 全量测速（fire-and-forget，批量端点 mihomo 内部并发）
         startTrafficStream() // 开启实时流量监测
@@ -378,7 +371,6 @@ export function useProxyPanel() {
       }
       // 关闭代理时保留节点列表显示（热重载 idle，不清空 proxiesData）
     } catch (e) {
-      await loadCoreStatus() // 安装半程失败时 plist 可能已装（install 成功但 reload 失败），拿权威值防重复首启确认
       appStore.showStatus(toErrorMessage(e, t('proxy.switchFailed')), {
         duration: 4000,
         kind: 'error',
@@ -746,7 +738,6 @@ export function useProxyPanel() {
       downloaded: preloaded.coreDownloaded,
       version: preloaded.version,
       downloading: preloaded.coreDownloading,
-      daemonInstalled: preloaded.daemonInstalled,
     }
     statusLoaded.value = true
     // 重连恢复竞态兜底：Rust setup 的 reconnect_root_mihomo 异步跑，可能晚于模块预加载
