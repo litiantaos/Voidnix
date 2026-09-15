@@ -191,7 +191,12 @@ pub async fn stream_openai_request<R: tauri::Runtime>(
     }
 
     let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
+    // SSE 字节缓冲：网络分片边界可能切在多字节 UTF-8 序列中间，chunk 级
+    // from_utf8_lossy 会把切开的字符替换成 U+FFFD 损坏字符。必须在字节层缓冲、
+    // 按事件边界（\n\n）分割后才解码——事件内容是语义完整的 JSON 文本行，
+    // \n 是 ASCII 字节不会出现在多字节序列内部（UTF-8 自同步），事件不会在
+    // 字符中间被切断
+    let mut buffer: Vec<u8> = Vec::new();
     let mut full_text = String::new();
     let mut tool_acc = ToolCallAccumulator::default();
     let mut finish_reason = String::new();
@@ -214,9 +219,8 @@ pub async fn stream_openai_request<R: tauri::Runtime>(
             log::error!("Stream read error: {e}");
             "Stream connection interrupted.".to_string()
         })?;
-        let text = String::from_utf8_lossy(&chunk);
 
-        if buffer.len() + text.len() > MAX_SSE_BUFFER {
+        if buffer.len() + chunk.len() > MAX_SSE_BUFFER {
             log::error!(
                 "SSE buffer exceeded {} bytes, dropping connection.",
                 MAX_SSE_BUFFER
@@ -228,20 +232,19 @@ pub async fn stream_openai_request<R: tauri::Runtime>(
             });
         }
 
-        // 大部分 SSE 服务器不发 \r，跳过两次 String 分配
-        if text.contains('\r') {
-            buffer.push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
-        } else {
-            buffer.push_str(&text);
-        }
+        push_sse_chunk(&mut buffer, &chunk);
 
-        while let Some(event_end) = buffer.find("\n\n") {
-            let event_data = buffer[..event_end].to_string();
+        while let Some(event_end) = buffer.windows(2).position(|w| w == b"\n\n") {
+            let event_data = String::from_utf8_lossy(&buffer[..event_end]).into_owned();
             buffer.drain(..event_end + 2);
 
             let mut data_content = String::new();
             for line in event_data.lines() {
-                if let Some(rest) = line.strip_prefix("data: ") {
+                // SSE 规范：冒号后单个空格可选（"data:{}" 与 "data: {}" 等价），只剥一个
+                if let Some(rest) = line
+                    .strip_prefix("data:")
+                    .map(|r| r.strip_prefix(' ').unwrap_or(r))
+                {
                     if !data_content.is_empty() {
                         data_content.push('\n');
                     }
@@ -333,7 +336,7 @@ pub async fn stream_openai_request<R: tauri::Runtime>(
     // 而非笼统的 premature。若连 finish_reason 也没收到，才是无信号的提前断流——
     // 曾按正常完成静默收尾，截断的 partial 文本以 Completed 终结（表现为「输出莫名
     // 其妙中断」）。必须显式 Err：前端保留已流出的 partial 文本并以 error notice 收尾
-    if let Some(msg) = extract_stream_error(&buffer) {
+    if let Some(msg) = extract_stream_error(&String::from_utf8_lossy(&buffer)) {
         log::error!("LLM stream error payload: {msg}");
         return Err(msg);
     }
@@ -343,6 +346,30 @@ pub async fn stream_openai_request<R: tauri::Runtime>(
     }
     emit_done(config.app, config.done_event, config.request_id);
     Ok(finalize_stream(finish_reason, full_text, tool_acc))
+}
+
+/// 追加网络分片到 SSE 字节缓冲，归一化 `\r\n` / `\r` 为 `\n`。
+/// 字节层处理：UTF-8 自同步，多字节序列不含 ASCII 字节，`\r` 不会误伤中文字符；
+/// 跨分片的 `\r`（尾缀）归一化为 `\n` 后与后续分片首字节 `\n` 组成 `\n\n`，仍是有效行界
+fn push_sse_chunk(buffer: &mut Vec<u8>, chunk: &[u8]) {
+    if !chunk.contains(&b'\r') {
+        buffer.extend_from_slice(chunk);
+        return;
+    }
+    let mut normalized = Vec::with_capacity(chunk.len());
+    let mut i = 0;
+    while i < chunk.len() {
+        if chunk[i] == b'\r' {
+            if chunk.get(i + 1) == Some(&b'\n') {
+                i += 1;
+            }
+            normalized.push(b'\n');
+        } else {
+            normalized.push(chunk[i]);
+        }
+        i += 1;
+    }
+    buffer.extend_from_slice(&normalized);
 }
 
 /// 从 SSE 原始文本提取服务端错误负载（`{"error":{"code","message"}}`）。
@@ -469,18 +496,28 @@ mod tests {
     /// 起一个一次性 SSE mock：接受单连接、丢弃请求、原样回放 events、关闭连接。
     /// 返回 endpoint（http://127.0.0.1:port/v1）。
     async fn spawn_sse_server(events: &str) -> String {
+        spawn_sse_server_segments(vec![events.as_bytes().to_vec()]).await
+    }
+
+    /// 分段回放版：每段 write + flush 后间隔 100ms，确保客户端 bytes_stream
+    /// 按段分多次 yield（模拟 TCP 分片边界切在任意字节处的真实网络）。
+    async fn spawn_sse_server_segments(segments: Vec<Vec<u8>>) -> String {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let body = events.to_string();
         tokio::spawn(async move {
             let (mut sock, _) = listener.accept().await.unwrap();
             let mut buf = [0u8; 8192];
             let _ = sock.read(&mut buf).await;
-            let resp = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{body}"
-            );
-            let _ = sock.write_all(resp.as_bytes()).await;
+            let head =
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n";
+            let _ = sock.write_all(head.as_bytes()).await;
+            let _ = sock.flush().await;
+            for seg in segments {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                let _ = sock.write_all(&seg).await;
+                let _ = sock.flush().await;
+            }
             let _ = sock.shutdown().await;
         });
         format!("http://{addr}/v1")
@@ -598,6 +635,102 @@ mod tests {
             "data: [DONE]\n\n",
         ))
         .await;
+        let mut got = String::new();
+        let outcome = run_stream(&url, &mut |d: &str| got.push_str(d))
+            .await
+            .unwrap();
+        assert_eq!(outcome.full_text, "你好");
+    }
+
+    #[tokio::test]
+    async fn stream_multibyte_char_split_across_chunks_stays_intact() {
+        // 回归：TCP 分片边界切在多字节 UTF-8 序列中间（"你" 的 3 字节切成 1+2）。
+        // 旧实现 chunk 级 from_utf8_lossy 会把切开的两半各替换成 U+FFFD
+        // 损坏字符（"你" → "���"），JSON 仍合法故静默流到前端
+        let raw = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let prefix = "data: {\"choices\":[{\"delta\":{\"content\":\"";
+        // 切在 "你" 首字节之后：前段以 E4 结尾、后段以 BD A0 开头（字节层切割，
+        // str 切片会因非字符边界 panic）
+        let bytes = raw.as_bytes();
+        let split = prefix.len() + 1;
+        let url =
+            spawn_sse_server_segments(vec![bytes[..split].to_vec(), bytes[split..].to_vec()]).await;
+        let mut got = String::new();
+        let outcome = run_stream(&url, &mut |d: &str| got.push_str(d))
+            .await
+            .unwrap();
+        assert_eq!(outcome.full_text, "你好");
+        assert_eq!(got, "你好");
+    }
+
+    #[tokio::test]
+    async fn stream_tiny_chunks_stays_intact() {
+        // 极端网络：整个响应按 4 字节一段慢放（\n\n 分隔符、多字节字符、
+        // JSON 结构全部被切开），任意切割点下事件组装与解码必须无损
+        let raw = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好世界\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let segments: Vec<Vec<u8>> = raw.as_bytes().chunks(4).map(<[u8]>::to_vec).collect();
+        let url = spawn_sse_server_segments(segments).await;
+        let mut got = String::new();
+        let outcome = run_stream(&url, &mut |d: &str| got.push_str(d))
+            .await
+            .unwrap();
+        assert_eq!(outcome.full_text, "你好世界");
+        assert_eq!(got, "你好世界");
+    }
+
+    #[tokio::test]
+    async fn stream_data_field_without_space_is_accepted() {
+        // SSE 规范：冒号后单个空格可选——"data:{}" 与 "data: {}" 等价
+        let url = spawn_sse_server(concat!(
+            "data:{\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n",
+            "data:{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data:[DONE]\n\n",
+        ))
+        .await;
+        let mut got = String::new();
+        let outcome = run_stream(&url, &mut |d: &str| got.push_str(d))
+            .await
+            .unwrap();
+        assert_eq!(outcome.full_text, "你好");
+    }
+
+    #[tokio::test]
+    async fn stream_crlf_line_endings_are_normalized() {
+        // \r\n 行尾的服务器：事件分割与 data 提取不受影响
+        let url = spawn_sse_server(concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\r\n\r\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\r\n\r\n",
+            "data: [DONE]\r\n\r\n",
+        ))
+        .await;
+        let mut got = String::new();
+        let outcome = run_stream(&url, &mut |d: &str| got.push_str(d))
+            .await
+            .unwrap();
+        assert_eq!(outcome.full_text, "你好");
+    }
+
+    #[tokio::test]
+    async fn stream_crlf_split_across_chunks_is_handled() {
+        // \r\n 跨分片：前段以 \r 结尾、后段以 \n 开头。\r 归一化为 \n 后与后段
+        // 首 \n 组成 \n\n，仍是有效事件分隔（与旧 String 层实现行为一致）
+        let raw = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\r\n\r\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\r\n\r\n",
+            "data: [DONE]\r\n\r\n",
+        );
+        let split = raw.find('\r').unwrap() + 1; // 前段恰以孤立 \r 结尾
+        let bytes = raw.as_bytes();
+        let url =
+            spawn_sse_server_segments(vec![bytes[..split].to_vec(), bytes[split..].to_vec()]).await;
         let mut got = String::new();
         let outcome = run_stream(&url, &mut |d: &str| got.push_str(d))
             .await

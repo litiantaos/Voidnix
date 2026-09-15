@@ -236,5 +236,5 @@ extensions/agent/
 
 ## 测试
 
-- Rust 单元测试：`cargo test --lib`（含 run_command 断路器测试 + policy 资源 clamp 测试 + SessionRegistry 审批 oneshot 测试 + LLM security 测试 + SSE 断流回归（本地 mock server 回放事件））
+- Rust 单元测试：`cargo test --lib`（含 run_command 断路器测试 + policy 资源 clamp 测试 + SessionRegistry 审批 oneshot 测试 + LLM security 测试 + SSE 断流回归（本地 mock server 回放事件）+ SSE 多字节切割回归（TCP 分段 mock 把中文字符切成两半，事件级解码须无损））
 - 前端测试：`bun run test`（含审批事件流转 / respondApproval 回填 / abort 收尾用例）

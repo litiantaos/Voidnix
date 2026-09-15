@@ -11,13 +11,24 @@ export function getMessageText(msg: AgentMessage): string {
 }
 
 /**
+ * code-point 安全截断：切点落在代理对（emoji 等 4 字节字符）中间时丢弃末尾
+ * 孤立高代理。孤立代理对 UI 渲染为 �，且经 IPC 传 Rust 时 serde_json 拒收
+ * （JSON.stringify 产出 \udXXX 转义，serde_json 视为非法）会使整个调用失败。
+ */
+export function sliceSafe(s: string, end: number): string {
+  const out = s.slice(0, end)
+  const last = out.charCodeAt(out.length - 1)
+  return last >= 0xd800 && last <= 0xdbff ? out.slice(0, -1) : out
+}
+
+/**
  * 历史浮层单行 label：折叠空白 + 截断到 maxLen，空文本回退序号占位。
  * 入参 ordinal 从 1 起（仅用于空消息兜底，不在正常 label 前加序号，避免噪音）。
  */
 export function buildHistoryLabel(text: string, ordinal: number, maxLen = 60): string {
   const flat = text.replace(/\s+/g, ' ').trim()
   if (!flat) return `#${ordinal}`
-  return flat.length > maxLen ? flat.slice(0, maxLen) + '…' : flat
+  return flat.length > maxLen ? sliceSafe(flat, maxLen) + '…' : flat
 }
 
 /** 是否为该消息中最后一个 text part 且仍在流式输出 */

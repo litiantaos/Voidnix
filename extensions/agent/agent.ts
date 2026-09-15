@@ -15,7 +15,7 @@ import { showToast } from '@/composables/useToast'
 import { whenConfigReady } from '@/runtime/storage'
 import { useAppStore } from '@/stores/app'
 import { config as agentConfig, AGENT_CONFIG_PATH, resolveAgentCredentials } from './config'
-import { toolDetail } from './view-logic'
+import { sliceSafe, toolDetail } from './view-logic'
 import type { AgentEvent, AgentMessage, AgentPart, LlmMessage } from '@/types/agent'
 import { toLlmMessages, tryParseSearchAnswer } from './logic'
 
@@ -413,13 +413,15 @@ export function useAgentChat() {
         if (total <= MAX_HISTORY_CHARS) break
         if (isLast) continue
         if (p.type === 'toolCall' && p.output && p.output.length > TRUNCATED_OUTPUT_KEEP) {
-          const removed = p.output.length - TRUNCATED_OUTPUT_KEEP
-          p.output = p.output.slice(0, TRUNCATED_OUTPUT_KEEP) + `\n…[已截断 ${removed} 字符]`
-          total -= removed
+          const before = p.output.length
+          const kept = sliceSafe(p.output, TRUNCATED_OUTPUT_KEEP)
+          p.output = kept + `\n…[已截断 ${before - kept.length} 字符]`
+          total -= before - kept.length
         } else if (p.type === 'reasoning' && p.text.length > TRUNCATED_OUTPUT_KEEP) {
-          const removed = p.text.length - TRUNCATED_OUTPUT_KEEP
-          p.text = p.text.slice(0, TRUNCATED_OUTPUT_KEEP) + `\n…[已截断 ${removed} 字符]`
-          total -= removed
+          const before = p.text.length
+          const kept = sliceSafe(p.text, TRUNCATED_OUTPUT_KEEP)
+          p.text = kept + `\n…[已截断 ${before - kept.length} 字符]`
+          total -= before - kept.length
         }
       }
     }

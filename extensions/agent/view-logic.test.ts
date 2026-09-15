@@ -10,6 +10,7 @@ import {
   isStreamingText,
   getMessageText,
   buildHistoryLabel,
+  sliceSafe,
   streamLayoutKey,
   partKey,
 } from './view-logic'
@@ -210,6 +211,23 @@ describe('isStreamingText / getMessageText', () => {
   })
 })
 
+describe('sliceSafe', () => {
+  it('BMP 字符与普通切点原样保留', () => {
+    expect(sliceSafe('abc', 2)).toBe('ab')
+    expect(sliceSafe('中文截断', 2)).toBe('中文')
+    expect(sliceSafe('', 5)).toBe('')
+  })
+
+  it('切点落在代理对中间时丢弃孤立高代理', () => {
+    // 😀 = 高代理 + 低代理（2 code units）；切点 60 恰在高代理位
+    expect(sliceSafe('a'.repeat(59) + '😀b', 60)).toBe('a'.repeat(59))
+  })
+
+  it('切点恰在代理对之后时完整保留', () => {
+    expect(sliceSafe('😀'.repeat(30) + 'b', 60)).toBe('😀'.repeat(30))
+  })
+})
+
 describe('buildHistoryLabel', () => {
   it('折叠空白并保留短文本', () => {
     expect(buildHistoryLabel('  hello   world  ', 1)).toBe('hello world')
@@ -220,6 +238,20 @@ describe('buildHistoryLabel', () => {
     const out = buildHistoryLabel(long, 1, 60)
     expect(out).toHaveLength(61)
     expect(out.endsWith('…')).toBe(true)
+  })
+
+  it('截断边界落在 emoji 代理对中间时不产生孤立代理对', () => {
+    // 第 60 code unit 恰为 emoji 高代理：label 须丢弃它（孤立代理渲染为 �，
+    // 且回灌 LLM 时 serde_json 拒收）
+    const out = buildHistoryLabel('a'.repeat(59) + '😀' + 'b'.repeat(10), 1, 60)
+    expect(out).toBe('a'.repeat(59) + '…')
+    // 逐字符验证无孤立高代理
+    for (let i = 0; i < out.length; i++) {
+      const c = out.charCodeAt(i)
+      if (c >= 0xd800 && c <= 0xdbff) {
+        expect(out.charCodeAt(i + 1) >= 0xdc00).toBe(true)
+      }
+    }
   })
 
   it('空文本回退序号占位', () => {

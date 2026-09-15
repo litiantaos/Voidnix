@@ -377,7 +377,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 `runtime/llm/`，agent + translate 扩展共享：
 
 - `types.rs`：LlmMessage
-- `client.rs`：StreamConfig / `stream_openai_request` + SSRF 防护 `validate_ai_request` + 消息截断 + 请求管道常量 + SSE 断流检测（服务端错误负载提取——GLM 内容审查 1301 等以裸 JSON 行下发，无 data: 前缀无终止空行，须从事件体 / EOF 残留 buffer 提取真实原因上抛；流 EOF 且无 `[DONE]` 无 `finish_reason` 才判 premature，不把截断输出当正常完成）
+- `client.rs`：StreamConfig / `stream_openai_request` + SSRF 防护 `validate_ai_request` + 消息截断 + 请求管道常量 + SSE 字节缓冲（网络分片边界可能切在多字节 UTF-8 序列中间，chunk 级 lossy 解码会把切开的字符替换成 U+FFFD 损坏字符——按 `\n\n` 事件边界分割后才解码，UTF-8 自同步保证事件不会在字符中间被切断）+ SSE 断流检测（服务端错误负载提取——GLM 内容审查 1301 等以裸 JSON 行下发，无 data: 前缀无终止空行，须从事件体 / EOF 残留 buffer 提取真实原因上抛；流 EOF 且无 `[DONE]` 无 `finish_reason` 才判 premature，不把截断输出当正常完成）
 - `parser.rs`：tool_calls 解析
 
 ### AI 凭证中枢
