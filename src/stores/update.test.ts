@@ -6,8 +6,9 @@ import { flushPromises } from '@vue/test-utils'
 // spyOn store 属性拦不到内部调用，断言一律落在 store 状态上）
 vi.mock('@/utils/tauri', () => ({ isTauri: true }))
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn().mockResolvedValue('9.9.9') }))
-const { checkUpdate } = vi.hoisted(() => ({ checkUpdate: vi.fn() }))
+const { checkUpdate, invoke } = vi.hoisted(() => ({ checkUpdate: vi.fn(), invoke: vi.fn() }))
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: checkUpdate }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
 import { useUpdateStore } from './update'
 
@@ -15,6 +16,7 @@ describe('update store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     checkUpdate.mockReset()
+    invoke.mockReset().mockResolvedValue(undefined)
   })
 
   it('初始状态', () => {
@@ -55,6 +57,8 @@ describe('update store', () => {
     expect(store.progress).toBe(0)
     expect(store.dialogVisible).toBe(false)
     expect(store.currentVersion).toBe('')
+    // 菜单栏「检查更新」项文案还原
+    expect(invoke).toHaveBeenCalledWith('set_update_version', { version: null })
   })
 
   it('check 发现更新：填 info + currentVersion，返回 true', async () => {
@@ -67,6 +71,8 @@ describe('update store', () => {
     expect(store.info).toEqual({ currentVersion: '9.9.9', newVersion: '2.0.0', body: 'fixes' })
     expect(store.currentVersion).toBe('9.9.9')
     expect(store.checking).toBe(false)
+    // 菜单栏项切换为「更新到新版本（2.0.0）」
+    expect(invoke).toHaveBeenCalledWith('set_update_version', { version: '2.0.0' })
   })
 
   it('check 无更新：返回 false 不填 info；失败：error 置位', async () => {
@@ -76,6 +82,7 @@ describe('update store', () => {
     expect(await store.check()).toBe(false)
     expect(store.info).toBeNull()
     expect(store.error).toBeNull()
+    expect(invoke).not.toHaveBeenCalled()
 
     checkUpdate.mockRejectedValue(new Error('network down'))
     expect(await store.check()).toBe(false)
@@ -87,6 +94,7 @@ describe('startCheck（主动检查统一入口：立即弹窗、弹窗内检查
   beforeEach(() => {
     setActivePinia(createPinia())
     checkUpdate.mockReset()
+    invoke.mockReset().mockResolvedValue(undefined)
   })
 
   it('无已有结果时立即弹窗并发起检查，无更新则弹窗停留结果态', async () => {

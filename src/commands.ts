@@ -16,6 +16,7 @@ export const CMD = {
   setWindowAppearance: 'set_window_appearance',
   getCachedAppearance: 'get_cached_appearance',
   setMenubarVisible: 'set_menubar_visible',
+  setUpdateVersion: 'set_update_version',
   httpGet: 'http_get',
   openExtensionSubview: 'open_extension_subview',
   quitApp: 'quit_app',

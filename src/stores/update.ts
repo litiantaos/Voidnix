@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
 import { isTauri } from '@/utils/tauri'
 import { getVersion } from '@tauri-apps/api/app'
 import type { Update as TauriUpdate, DownloadEvent } from '@tauri-apps/plugin-updater'
@@ -23,6 +25,12 @@ export const useUpdateStore = defineStore('update', () => {
 
   let _updater: TauriUpdate | null = null
 
+  /** 同步菜单栏「检查更新」项文案：有新版本显示「更新到新版本（x.x.x）」，null 还原。 */
+  function syncMenuLabel(version: string | null) {
+    if (!isTauri) return
+    invoke(CMD.setUpdateVersion, { version }).catch(() => {})
+  }
+
   async function check(): Promise<boolean> {
     if (!isTauri) return false
     checking.value = true
@@ -38,6 +46,7 @@ export const useUpdateStore = defineStore('update', () => {
           newVersion: update.version,
           body: update.body ?? null,
         }
+        syncMenuLabel(update.version)
         return true
       }
       return false
@@ -112,6 +121,7 @@ export const useUpdateStore = defineStore('update', () => {
     currentVersion.value = ''
     _updater = null
     dialogVisible.value = false
+    syncMenuLabel(null)
   }
 
   return {

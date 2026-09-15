@@ -12,6 +12,7 @@ macro_rules! configure_app {
             crate::runtime::autostart::enable_autostart,
             crate::runtime::autostart::is_autostart_enabled,
             crate::runtime::menubar::set_menubar_visible,
+            crate::runtime::menubar::set_update_version,
             crate::runtime::pasteboard::pasteboard_paste_text,
             crate::runtime::pasteboard::pasteboard_write_text,
             crate::runtime::permission::check_accessibility_permission,

@@ -36,6 +36,10 @@ const QUIT_APP_ID: &str = "__quit_app";
 /// false 时即使有扩展贡献也隐藏。
 static ICON_VISIBLE: AtomicBool = AtomicBool::new(false);
 
+/// 检查更新项当前的新版本号（None = 显示「检查更新」，Some = 显示「更新到新版本（x.x.x）」）。
+/// updater 在前端：update store 检测到新版本后经 `set_update_version` 命令同步。
+static UPDATE_VERSION: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
+
 /// 扩展供给的菜单项描述（框架不定义业务语义）。
 #[derive(Clone)]
 pub enum MenuEntry {
@@ -97,6 +101,13 @@ pub fn set_menubar_visible(app: AppHandle, visible: bool) {
     rebuild(&app);
 }
 
+/// 同步检查更新项的新版本号（Some = 显示「更新到新版本（x.x.x）」，None = 还原「检查更新」）。
+#[tauri::command]
+pub fn set_update_version(app: AppHandle, version: Option<String>) {
+    *lock_or_recover(&UPDATE_VERSION) = version;
+    rebuild(&app);
+}
+
 fn rebuild(app: &AppHandle) {
     if !ICON_VISIBLE.load(Ordering::Relaxed) {
         if let Some(tray) = app.tray_by_id(TRAY_ID) {
@@ -127,6 +138,10 @@ fn rebuild(app: &AppHandle) {
 
     // 首组恒为框架基础项「打开 Voidnix / 检查更新」，扩展段居中按需追加，
     // 尾部框架基础项「退出」垫底（macOS 菜单惯例：退出居末）
+    let update_label = lock_or_recover(&UPDATE_VERSION)
+        .as_ref()
+        .map(|v| format!("更新到新版本（{v}）"))
+        .unwrap_or_else(|| "检查更新".to_string());
     let mut entries: Vec<MenuEntry> = vec![
         MenuEntry::Item {
             id: OPEN_APP_ID.to_string(),
@@ -135,7 +150,7 @@ fn rebuild(app: &AppHandle) {
         },
         MenuEntry::Item {
             id: CHECK_UPDATE_ID.to_string(),
-            label: "检查更新".to_string(),
+            label: update_label,
             enabled: true,
         },
     ];

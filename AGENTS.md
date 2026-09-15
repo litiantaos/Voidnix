@@ -275,11 +275,11 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - `on_event`：收点击 id 自行过滤
 - 状态变更后调 `menubar::refresh(&app)` 触发重建
 
-**渲染规则**：菜单首组恒为框架基础项「打开 Voidnix」（`show_main`）+「检查更新」（emit `check-update`，`useAppLifecycle` 接收：唤起窗口 + `updateStore.startCheck()`），扩展段居中按需追加（每段前插 disabled 标题项，段间分隔线），尾部框架基础项「退出」（复用 `quit_app`）垫底。
+**渲染规则**：菜单首组恒为框架基础项「打开 Voidnix」（`show_main`）+「检查更新」（emit `check-update`，`useAppLifecycle` 接收：唤起窗口 + `updateStore.startCheck()`；update store 检测到新版本后经 `set_update_version` 命令同步，项文案切换为「更新到新版本（x.x.x）」，reset 还原），扩展段居中按需追加（每段前插 disabled 标题项，段间分隔线），尾部框架基础项「退出」（复用 `quit_app`）垫底。
 
 ### 检查更新
 
-`stores/update.ts` 统一：三入口（菜单栏 / 设置页 / 搜索栏角标）均走 `updateStore.startCheck()`——**立即弹 UpdateDialog、弹窗内检查**（不等网络返回），弹窗承载全状态机（检查中不定进度跑条 / 已是最新 / 失败重试 / 发现新版本下载安装进度）；已有结果或下载进行中仅重新弹窗呈现，不重复发起检查。静默检查（启动 3s + 获焦节流 `maybeCheckUpdate`）只置 `info` 出搜索栏角标，不弹窗。
+`stores/update.ts` 统一：三入口（菜单栏 / 设置页 / 搜索栏角标）均走 `updateStore.startCheck()`——**立即弹 UpdateDialog、弹窗内检查**（不等网络返回），弹窗承载全状态机（检查中不定进度跑条 / 已是最新 / 失败重试 / 发现新版本下载安装进度）；已有结果或下载进行中仅重新弹窗呈现，不重复发起检查。静默检查（启动 3s + 获焦节流 `maybeCheckUpdate`）只置 `info` 出搜索栏角标，不弹窗。`check()` 发现新版本 / `reset()` 时同步菜单栏检查更新项文案（`set_update_version`：新版本号 → 「更新到新版本（x.x.x）」，null → 「检查更新」）。
 
 **可见性**：图标常驻显示，设置开关 `menubarIconVisible`（settings.json，默认 true）控制——`useAppLifecycle` 配置回填后 watch 调 `set_menubar_visible` 同步（Rust `AtomicBool` 生效值，初始 false：设置值到位前任何 refresh 不建托盘，防配置关闭时启动闪现）；关闭后即使有扩展贡献也隐藏。
 
