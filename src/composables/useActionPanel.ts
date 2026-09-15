@@ -1,4 +1,12 @@
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import {
+  ref,
+  computed,
+  onMounted,
+  onBeforeUnmount,
+  onActivated,
+  onDeactivated,
+  nextTick,
+} from 'vue'
 import type { Ref } from 'vue'
 import { wrapIndex } from '@/utils/dom'
 import type { PanelItem } from '@/components/ui/BaseDropdownItems.vue'
@@ -31,6 +39,21 @@ export function useActionPanel(opts: UseActionPanelOptions) {
   const open = ref(false)
   const menuIndex = ref(-1)
 
+  // KeepAlive 感知：deactivate（退出扩展回主界面）即关面板并让位文档级监听。Teleport
+  // 到 body 的内容不随宿主 deactivate 移除，open 残留会跨界面显示（与主界面面板同屏
+  // 双开）；监听注销在 onBeforeUnmount（deactivate 不触发 unmount），不守卫则
+  // Cmd+Enter / Enter / 外点关闭会在其它界面上响应（抢按键、抢焦点）。非 KeepAlive
+  // 树内消费者（ResultActionPanel 在 MainView）不触发这对钩子，恒激活。
+  let viewActive = true
+  onActivated(() => {
+    viewActive = true
+  })
+  onDeactivated(() => {
+    viewActive = false
+    // 不走 close()：deactivate 不回焦搜索框，进入的扩展视图可能自带输入框
+    open.value = false
+  })
+
   const selectableIndices = computed(() =>
     opts
       .getItems()
@@ -40,6 +63,9 @@ export function useActionPanel(opts: UseActionPanelOptions) {
 
   async function openFor() {
     if (opts.beforeOpen) await opts.beforeOpen()
+    // beforeOpen 异步边界后宿主可能已 deactivate（切换扩展）：放弃打开，防面板
+    // 在其它界面弹出（与 loadDefaultResults 的 searchId 世代守卫同思想）
+    if (!viewActive) return
     menuIndex.value = selectableIndices.value[0] ?? -1
     open.value = true
     nextTick(() => opts.panelRef.value?.focus())
@@ -80,6 +106,7 @@ export function useActionPanel(opts: UseActionPanelOptions) {
   }
 
   function onDocKey(e: KeyboardEvent) {
+    if (!viewActive) return
     if (e.isComposing) return
     if (open.value) {
       if (e.key === 'Escape' || (e.key === 'Enter' && e.metaKey)) {
@@ -109,6 +136,7 @@ export function useActionPanel(opts: UseActionPanelOptions) {
   }
 
   function onDocMouseDown(e: MouseEvent) {
+    if (!viewActive) return
     // 右键由 contextmenu 通道处理（结果项右键重定向面板），不在此关闭
     if (e.button === 2) return
     if (open.value && opts.panelRef.value && !opts.panelRef.value.contains(e.target as Node)) {

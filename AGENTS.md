@@ -360,6 +360,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 - **`BaseDropdownItems`**（`components/ui/`）：通用行渲染器，4 行类型 `item | header | divider | meta`（`selectableIndices` 仅算 item，键盘导航天然跳过其余）；消费者传 `PanelItem[]` + `activeIndex`，emit `select/hover`
 - **`ResultActionPanel`**（`components/layout/`）：全局模式对 application/file/folder 结果的合并面板（上方详情 meta 行 + 下方动作 item 行——在 Finder 中显示 / 复制路径）；`Cmd+Enter` 与结果项右键双触发，经 `useActionPanel` 统一的 `toggleOpen`（已开则关），打开即默认选中首项可连续 Enter 触发
+- **`useActionPanel`**（`composables/`）KeepAlive 感知：宿主 deactivate（退出扩展回主界面）即关面板（Teleport 到 body 的内容不随宿主移除，open 残留会与主界面面板同屏双开）并让位文档级监听（deactivate 不触发 unmount，监听注销在 onBeforeUnmount——不守卫则 Cmd+Enter/Enter/外点关闭在其它界面上响应，抢按键抢焦点）；关闭不回焦搜索框（进入的扩展可能自带输入框）。非 KeepAlive 树内消费者（ResultActionPanel 在 MainView）不触发这对钩子，恒激活
 - **Markdown 渲染**：`utils/markdown.ts`（`renderMarkdown`：marked + 自定义 renderer + DOMPurify）+ 全局 `styles/markdown.css`（`.markdown-body` 容器类），agent / ai-providers 等扩展共用
 
 ### 扩展视图加载（切换性能 + 内存）

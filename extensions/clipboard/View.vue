@@ -483,6 +483,9 @@ onDeactivated(() => {
   // 重新进入直接命中缓存秒出，避免「空列表 → 异步 IPC → 补全」的空闪。
   colorCache.clear()
   failedImages.clear()
+  // 预览覆盖层经 Teleport 挂 body（不随宿主 deactivate 移除）：不关会盖住目标界面，
+  // 且残留 previewOpen 使 onPreviewKey 的 capture Esc 在其它界面被吞（首按只静默关预览）
+  previewOpen.value = false
 })
 
 // ── 图片懒加载 ──

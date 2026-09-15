@@ -192,11 +192,16 @@ function maybeFocusInput() {
 }
 onMounted(maybeFocusInput)
 onActivated(maybeFocusInput)
-// 窗口获焦（Focused(true)）后聚焦输入框：覆盖「隐藏时 mount/activate 跳过聚焦」的路径
+// 窗口获焦（Focused(true)）后聚焦输入框：覆盖「隐藏时 mount/activate 跳过聚焦」的路径。
+// 不经 maybeFocusInput 的 hasFocus 守卫——window-focused 事件先于 WebKit 页面焦点状态
+// 翻转到达（实测 show 后数十 ms 内 hasFocus 仍为 false），守卫会使快捷键唤起路径永久
+// 错过聚焦（输入框无焦，回车落到 body 被结果列表执行误触关窗）；事件语义即窗口已 key
+// 聚焦，聚焦可编辑元素无激活风险（agent/notes 同范式）
 function onWinFocused() {
   if (appStore.activeExtId !== 'translate' || appStore.activeSubview || appStore.isDialogOpen)
     return
-  maybeFocusInput()
+  if (isTranslating.value) return
+  textareaRef.value?.focus()
 }
 onMounted(() => window.addEventListener('window-focused', onWinFocused))
 onUnmounted(() => window.removeEventListener('window-focused', onWinFocused))
