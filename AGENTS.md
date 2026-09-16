@@ -551,6 +551,6 @@ icon 缓存纯内存（首次提取后按 bundle mtime 增量复用，零磁盘�
 - UnoCSS Attributify：不确定的工具类语法先用 context7 查 UnoCSS 文档确认，勿靠翻 dist 源码或试错猜语法
 - TypeScript 严格模式：`noUnusedLocals` + `noUnusedParameters`
 - Release：`strip=true`, `lto=true`, `codegen-units=1`, `panic=abort`，自定义 tokio 运行时 4 worker（默认按逻辑核心数）
-- Git commit：`<type>(<scope>): <中文描述>`，描述力求最简，不写详情，不主动执行 git 操作；**提交前必须先跑 `bun run precommit` 且全绿**
+- Git commit：`<type>(<scope>): <中文描述>`，描述力求最简，不写详情，不主动执行 git 操作；**提交前必须先跑 `bun run precommit` 且全绿**。描述标点一律全角（，、（）：「」），禁止半角 `,` `(` `)` 与中文混排；英文、数字、版本号保持半角，与中文之间留一个空格（例：`移除 autoreleased PNG 的手动 release，防截屏确认过度释放崩溃`）
 - 语言：注释和回复用中文，禁止在任何地方使用 emoji
 - 文档：不用表格，言简意赅，修改代码后必须同步更新 AGENTS.md 或对应 docs/ 文档中相关描述
