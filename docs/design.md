@@ -71,7 +71,7 @@
 
 ## 组件
 
-- 原子组件 `@/components/ui/`；BaseButton default = `ui-ctrl` + `soft-chip`，其余 variant 走 `.ui-btn-*` 面类（见分层）
+- 原子组件 `@/components/ui/`；BaseButton default = `ui-ctrl` + `soft-chip`（outline 与 default 同面），其余 variant 走 `.ui-btn-*` 面类（见分层）
 - `ui-field`：大输入；`BaseInput panel`：soft-surface 白边（非 field）
 - 图标井 `fill-mist`；仪表盘卡 `fill-ctrl`
 - 搜索栏拆层 `search-bar` / `search-bar-surface` / `search-bar-content`

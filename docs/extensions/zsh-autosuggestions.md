@@ -25,7 +25,7 @@ frecency（`(count+1)^0.7 * exp(-dt/half_life)` + K=10 归一，半衰期默认 
 `~/Library/Application Support/<bundle-id>/extensions/zsh-autosuggestions/`：
 
 - `index.zsh` —— sourceable zsh（v2）：`typeset -ga _zsh_autosuggestions_sorted`（全局按 score 降序）+ `typeset -gA _zsh_autosuggestions_dir_index`（pwd → 段名，**字面量整体赋值**——zsh 5.9 下标赋值 `m['k']=v` 会把引号字符存进 key）+ 每目录 `typeset -ga _zsh_autosuggestions_dir_dN` 数组 + `typeset -gi _ZSH_AUTOSUGGESTIONS_IDX_VERSION`（zsh 端 source 后校验 `==2`，不匹配则视为格式错误且版本归零使 match fail-closed）
-- `signals.log` —— append-only TSV：`<ts>\t<exit>\t<state>\t<pwd>\t<cmd>`（5 字段；ts=precmd 时刻 EPOCHSECONDS；state：0=无 suggestion 互动，1=accepted，2=rejected；pwd=preexec 时刻 $PWD，须为不含控制字符的绝对路径；**每条执行过的命令都 append**——目录频次需要正向信号，zsh 端跳过空白前缀命令对齐 HIST_IGNORE_SPACE 隐私语义；histfile 不可读时跳过——signals 唯一消费方 rebuild（含 rotate）以可读 history 为前提，防明文 log 无消费方无限增长；rebuild 入口 rotate+compact：>1MB 或含无效行（含旧 3 字段格式）时保留最后 10000 有效行 atomic 写回，10000 行滚动窗口天然淘汰冷目录）
+- `signals.log` —— append-only TSV：`<ts>\t<exit>\t<state>\t<pwd>\t<cmd>`（5 字段；ts=precmd 时刻 EPOCHSECONDS；state：0=无 suggestion 互动，1=accepted，2=rejected；pwd=preexec 时刻 $PWD，须为不含控制字符的绝对路径；采集规则见「信号采集」）。rebuild 入口 rotate+compact：>1MB 或含无效行（含旧 3 字段格式）时保留最后 10000 有效行 atomic 写回，10000 行滚动窗口天然淘汰冷目录
 - `bin/zsh-autosuggestions` —— binary（版本号比对复制，见「分发」）
 - `bin.version` —— 已部署 binary 版本号（在扩展数据根目录，binary 在其下 `bin/` 子目录；缺失视为 0）
 - `config.json` —— 开关 UI 状态落盘（`defineConfig` 的 `enabled` 字段，View.vue toggle 显式 invoke 更新）；启用判据是 `.zshrc` marker 行（`is_zshrc_enabled()` 经 `shell_rc::has_marker`），无独立标志文件
@@ -42,7 +42,7 @@ zsh precmd 用 `zstat +mtime` 检测 cache 变化，变化才重新 source（sou
 
 ## 信号采集（signals.log）
 
-`_zsh_autosuggestions_suggest` 显示 suggestion 时置 `_ZSH_AUTOSUGGESTIONS_LAST_SUGGESTED=1`（空 suggestion 置 0）；`_zsh_autosuggestions_accept` / `_zsh_autosuggestions_execute` 置 `_ZSH_AUTOSUGGESTIONS_LAST_ACCEPTED=1`。preexec 捕获命令文本与执行时 `$PWD`；precmd 推导 state（suggested→2，accepted 覆盖→1），每条执行过的命令都 append 一行 5 字段 TSV（cmd 经 `[[:cntrl:]]` strip 与 Rust `is_safe` 对齐；pwd 非绝对路径或含控制字符整行跳过；空白前缀命令跳过对齐 HIST_IGNORE_SPACE 隐私语义；histfile 不可读时跳过——唯一消费方 rebuild 以可读 history 为前提），写后清零。zsh 调用 `precmd_functions` 链中每个钩子前都恢复链前 `$?`（lastval），本钩子位于链中任意位置（含 oh-my-zsh 等框架钩子之后）都能捕获真实退出码。精确区分"显示但拒绝"vs"未显示 suggestion"；同一行同时服务全局反馈聚合（fail/accept/reject，不消费 pwd）与目录频次聚合。
+`_zsh_autosuggestions_suggest` 显示 suggestion 时置 `_ZSH_AUTOSUGGESTIONS_LAST_SUGGESTED=1`（空 suggestion 置 0）；`_zsh_autosuggestions_accept` / `_zsh_autosuggestions_execute` 置 `_ZSH_AUTOSUGGESTIONS_LAST_ACCEPTED=1`。preexec 捕获命令文本与执行时 `$PWD`；precmd 推导 state（suggested→2，accepted 覆盖→1），每条执行过的命令都 append 一行 5 字段 TSV（cmd 经 `[[:cntrl:]]` strip 与 Rust `is_safe` 对齐；pwd 非绝对路径或含控制字符整行跳过；空白前缀命令跳过对齐 HIST_IGNORE_SPACE 隐私语义；histfile 不可读时跳过——唯一消费方 rebuild 以可读 history 为前提，防明文 log 无消费方无限增长），写后清零。zsh 调用 `precmd_functions` 链中每个钩子前都恢复链前 `$?`（lastval），本钩子位于链中任意位置（含 oh-my-zsh 等框架钩子之后）都能捕获真实退出码。精确区分"显示但拒绝"vs"未显示 suggestion"；同一行同时服务全局反馈聚合（fail/accept/reject，不消费 pwd）与目录频次聚合。
 
 ## 分发
 

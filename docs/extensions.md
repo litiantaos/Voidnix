@@ -18,7 +18,7 @@ extensions/<id>/
     └── ...                # 子模块（commands.rs / engine/ 等）
 ```
 
-24 个扩展：含 native/ 的 16 个（clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers、image、homebrew），纯 TS 的 8 个（calculator、settings、ip、base64、time、uuid、currency、notes）。
+24 个扩展（16 含 native/ + 8 纯 TS，完整清单见 [AGENTS.md](../AGENTS.md)「开发扩展」）。
 
 ## 前端注册
 
@@ -53,10 +53,7 @@ export default defineExtension({
   - 共 7 消费者：agent/proxy=840、translate/system-status/video/finder-ext/image='auto'（notes 固定默认高度，输入区内部滚动）
 - `subviewHeights`：subview 级高度覆盖，key→语义同 windowHeight（1：screenshot{ocr:'auto'}）
 
-**高度机制**：统一由 `useExtensionHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管。
-
-- **动画**：高度变化一次 IPC 触发 Rust → `platform/window.rs::animate_frame` 用 macOS `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS 逐帧）
-- **auto 模式**：ResizeObserver 监听内容根，窗口高 = chrome + 内容高，clamp `[DEFAULT_HEIGHT, Rust 同源天花板]`，底部将出屏则上移顶边，离开 auto 还原进入前顶边（位置单一真相源在前端，见 AGENTS.md 窗口高度节）
+**高度机制**：统一由 `useExtensionHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管——高度解析、系统级动画与顶边锚定位置模型见 [AGENTS.md](../AGENTS.md)「窗口高度」。
 
 生命周期：`setup?()`（启动钩子，无参）。3 行为槽：`disableSearchInput`（扩展自管输入，禁用主搜索框）、`listOptions.multiSelect`（标准列表多选）、`onOpenSubview`（子视图打开回调，如 OCR payload 转交）。三者与能力槽同等地位（见 `runtime/types.ts`）。
 
@@ -66,13 +63,13 @@ export default defineExtension({
 
 ### 菜单栏贡献（Rust 侧）
 
-框架唯一菜单栏托盘图标（`runtime/menubar.rs`，`public/bar_icon.png` 模板图），左键弹聚合菜单。含 native/ 的扩展在 Rust `setup` 内 `menubar::register(MenuBarContribution)` 声明贡献段：
+含 native/ 的扩展在 Rust `setup` 内 `menubar::register(MenuBarContribution)` 声明贡献段：
 
-- `title: &'static str`：分组标题（disabled 项渲染，如「保持唤醒」/「代理」）。菜单按 `title` 分组——每段贡献前插标题项，段间分隔线。
-- `build: Arc<dyn Fn(&AppHandle) -> Vec<MenuEntry>>`：返回当前菜单快照。空 `Vec` = 该扩展当前不贡献（不参与菜单、不影响图标可见性）。
-- `on_event: Arc<dyn Fn(&AppHandle, &str)>`：收到所有点击的 item id，扩展自行过滤归属项（约定 id 以扩展 id 为前缀避免碰撞，如 `proxy_toggle`）。
+- `title: &'static str`：分组标题（disabled 项渲染，如「保持唤醒」/「代理」）
+- `build: Arc<dyn Fn(&AppHandle) -> Vec<MenuEntry>>`：返回当前菜单快照。空 `Vec` = 该扩展当前不贡献（不参与菜单、不影响图标可见性）
+- `on_event: Arc<dyn Fn(&AppHandle, &str)>`：收到所有点击的 item id，扩展自行过滤归属项（约定 id 以扩展 id 为前缀避免碰撞，如 `proxy_toggle`）
 
-`MenuEntry` 四态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Submenu{label,items}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。菜单首组恒为框架基础项「打开 Voidnix / 检查更新」，扩展段居中按需追加，尾部框架基础项「退出」垫底（检查更新 emit `check-update` 由前端 `useAppLifecycle` 接收并调 `updateStore.startCheck()`；退出复用 `quit_app`）。**图标常驻显示**，设置开关 `menubarIconVisible`（settings.json，默认 true）控制——关闭后即使有扩展贡献也隐藏；生效值到位前（前端 watch 同步前）不建托盘，防配置关闭时启动闪现。与快捷键 hook 同范式（`LazyLock<Mutex<Vec>>` + free function）。现 2 消费者：awake（保持系统唤醒：打开扩展 + 启用开关 + 显示模式二级菜单）、proxy（代理：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后贡献段消失（图标常驻），重连走扩展面板，其余控制全部在面板）。
+`MenuEntry` 四态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Submenu{label,items}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。菜单渲染规则、托盘图标可见性开关与现有消费者（awake / proxy）见 [AGENTS.md](../AGENTS.md)「菜单栏」节。
 
 ### UI 规约补充
 
@@ -99,20 +96,16 @@ interface SearchContext {
 }
 ```
 
-- **全局模式**（`searchEngine.search`）：
-
-  流程：**流式增量召回**——并发启动所有扩展 dynamic，每个扩展的 `emit`/`resolve` 都同步触发增量重排（keyword 合流 → dedupe → groupAndSort），`onUpdate` 经 rAF 批量合帧回调（同帧多 emit 合并为一次渲染）。快结果（应用缓存/同步扩展）秒出，慢结果（内存索引文件/网络）增量补充，不再 `Promise.all` barrier 等全部。finalScore 仍只预算一次（emit 时打分，groupAndSort 复用）。
+- **全局模式**（`searchEngine.search`）：召回管道（流式增量、rAF 合帧、dedupe/groupAndSort）与过滤规则（空 query `finalScore>0` / 非空 query 查找型 `fuzzy>0`，即时答案靠 `finalScore>0` 穿透）见 AGENTS.md「搜索引擎」。扩展侧约定：
 
   - **流式**：扩展可选调用 `ctx.emit(partial)` 多次产出部分结果（如 search 扩展应用 emit 秒出、文件 return 后补），不调用的扩展走一次性 return 行为不变。框架按 `extId:id` 去重，emit 与 return 重叠不产生重复项；但已 emit 的内容不应放入 return——emit 产首批、return 补充，避免多余打分计算
-  - **keyword 合流**：`scoreExtensionEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；按 query 记忆化（`kwCacheQ`/`kwCache`）——同 query 结果不变，增量 flush 复用缓存免重算；keyword 入口 finalScore 复用内部 score（含 keywordMatch 反向贡献）
+  - **keyword 合流**：入口打分 `scoreExtensionEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；按 query 记忆化——同 query 结果不变，增量 flush 复用缓存免重算
   - **入口抑制**：dynamic 产出相关 tool 型结果（kind=extension，finalScore > 0）的扩展抑制其入口（即时答案优先）；clipboard 等数据型 kind≠extension 不抑制
-  - **过滤规则**：空 query 按 `finalScore>0`；非空 query 查找型需 `fuzzy>0`，extension 类即时答案靠 `finalScore>0` 穿透
 
 - **扩展模式**（同一 `searchEngine.search`，`setActiveExtension` 后）：
 
   - **召回**：只调激活扩展 dynamic，bypass groupAndSort 保留扩展返回序
-  - **超时/abort**：同样受 `searchTimeoutMs` 超时与 abort 保护；每扩展独立 child `AbortSignal`（超时只 abort 该扩展，父 abort 同步取消）
-  - **模式快照**：`search()` 入口快照 `activeExtension`，await 期间切换不影响本次后处理
+  - **超时/abort/模式快照**：同样受保护，机制见 AGENTS.md「搜索引擎」
   - **UX**：外壳（`useSearchInput`）延迟 50ms 显示 loading，同步 dynamic 不闪、网络型才占位
 
 - `extensionMode` 区分调用场景：**全局即时答案 calculator / currency / base64**（base64 仅解码，设 minLength 门槛过滤短词误触）；ip / time / uuid 等须 `if (!ctx?.extensionMode) return []`，仅扩展内响应。网络型（currency）全局空 query 仍应跳过请求返回 `[]`，避免拖慢默认列表。
@@ -161,7 +154,7 @@ config.maxDays = 60 // 自动写盘
 
 - 第一参数为完整 plugin-store path（不含 `.json` 后缀），扩展用 `extensions/<id>/config`，框架级用 `config/settings`。
 - backfill 类型守卫：磁盘值类型与 default 不符则丢弃；`isStillDefault` 走递归 deepEqual（顺序无关）。
-- 启动期 `isLoading` 抑制 watch 冗余写；退出 `onCloseRequested` flush 防抖窗口内变更。
+- 写盘深克隆 + race 保护：序列化与并发变更互不竞争；启动期 `isLoading` 抑制 watch 冗余写；退出 `onCloseRequested` flush 防抖窗口内变更。
 - 不订阅 plugin-store `onChange`：其 `set` 会向本进程回放 `store://change`（无来源标识），回灌会以旧快照覆盖 emit 到达前已 mutate 的新值（实测复现）；所有 config 仅在 main 窗口持有（子窗口纯内存 reactive），无跨窗口同步需求。
 - schema 变更：自开发自用不维护迁移，改 schema 时手动删磁盘 config.json 即可。
 - store 实例缓存（文件级 `Map<storePath, Store>`），watch 回调复用，禁止每次保存重新 `load()`。
