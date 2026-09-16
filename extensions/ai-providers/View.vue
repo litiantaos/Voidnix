@@ -230,6 +230,7 @@ import {
   type Ref,
 } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { useAppStore } from '@/stores/app'
 import { showToast } from '@/composables/useToast'
 import { useActionPanel } from '@/composables/useActionPanel'
 import { t } from '@/runtime/i18n'
@@ -280,12 +281,13 @@ interface KeyRow {
 }
 
 const selectedIndex = ref(0)
+const appStore = useAppStore()
 /** 缓存 key = `${providerId}:${slotId}`，避免跨提供商 slot.id 碰撞 */
 const monitorByKeyId = reactive<Record<string, KeyMonitor>>({})
 const loadingByKey = reactive<Record<string, boolean>>({})
 const nowMs = ref(Date.now())
 let countdownTimer: ReturnType<typeof setInterval> | null = null
-/** 监控拉取世代：快速改配置时丢弃过期响应 */
+/** 监控拉取世代：进入/获焦/改配置并发重拉时丢弃过期响应 */
 let monitorFetchGen = 0
 
 function monitorCacheKey(providerId: string, slotId: string): string {
@@ -678,7 +680,6 @@ function saveKey() {
     }
   }
   showKeyModal.value = false
-  void refreshAllMonitors()
 }
 
 function removeKeyAndClose() {
@@ -777,6 +778,7 @@ async function refreshAllMonitors() {
   await Promise.all(tasks)
 }
 
+// 配置指纹变化（改 Key / 端点）重拉；初次与重进统一走 onActivated（用量是实时数据，进来看最新）
 watch(
   () =>
     config.providers
@@ -789,7 +791,6 @@ watch(
   () => {
     void refreshAllMonitors()
   },
-  { immediate: true },
 )
 
 watch(
@@ -799,17 +800,29 @@ watch(
   },
 )
 
+/**
+ * 用量是实时数据：每次进入扩展拉最新（KeepAlive 首挂载/重进均触发 activated，不沿用缓存）；
+ * 窗口唤起获焦补刷（获焦回调自带激活判断，deactivated 期间跳过）。拉取期间旧值原地保留
+ * 静默替换，无缓存（首次进入）才显示加载态。
+ */
+function refreshMonitorsIfActive() {
+  if (appStore.activeExtId === 'ai-providers') void refreshAllMonitors()
+}
+
 onMounted(() => {
   startCountdown()
+  window.addEventListener('window-focused', refreshMonitorsIfActive)
 })
 onActivated(() => {
   startCountdown()
+  void refreshAllMonitors()
 })
 onDeactivated(() => {
   stopCountdown()
 })
 onUnmounted(() => {
   stopCountdown()
+  window.removeEventListener('window-focused', refreshMonitorsIfActive)
 })
 
 function startCountdown() {
