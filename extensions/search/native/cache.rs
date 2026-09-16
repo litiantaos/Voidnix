@@ -15,17 +15,28 @@ static INIT_GUARD: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| 
 static FILE_INIT_GUARD: std::sync::LazyLock<Mutex<()>> =
     std::sync::LazyLock::new(|| Mutex::new(()));
 
-/// 文件索引扫描目标子目录（家目录下）
-const FILE_SCAN_DIRS: &[&str] = &[
+/// 文件索引扫描目标子目录（家目录下），按 TCC「文件与文件夹」管辖分组：
+/// 受保护目录首次触碰（读目录/FSEvents 监听）会触发系统询问弹窗，
+/// 仅全磁盘权限就绪后才纳入扫描与监听（启动零弹窗，授权后 watcher 自愈补齐）。
+const FILE_SCAN_DIRS: &[&str] = &["Projects", "Code"];
+const FILE_SCAN_TCC_DIRS: &[&str] = &[
     "Desktop",
     "Documents",
     "Downloads",
     "Pictures",
     "Music",
     "Movies",
-    "Projects",
-    "Code",
 ];
+
+/// 本进程当前可扫描的目录名集合：不受管辖组恒定，受管辖组随全磁盘权限门控。
+fn scan_dir_names(tcc_allowed: bool) -> impl Iterator<Item = &'static str> {
+    FILE_SCAN_DIRS.iter().copied().chain(
+        FILE_SCAN_TCC_DIRS
+            .iter()
+            .copied()
+            .filter(move |_| tcc_allowed),
+    )
+}
 
 /// 递归扫描时跳过的目录名（依赖/构建产物/缓存，文件数巨大且无搜索价值）
 const FILE_IGNORE_DIRS: &[&str] = &[
@@ -211,7 +222,9 @@ pub(super) async fn init_file_cache() -> Arc<Vec<CachedFile>> {
         tokio::task::spawn_blocking(|| {
             let mut files = Vec::new();
             if let Some(home) = dirs::home_dir() {
-                for dir_name in FILE_SCAN_DIRS {
+                // 受 TCC 管辖目录仅在全磁盘权限就绪后扫描，避免首次触碰触发系统弹窗
+                let tcc_allowed = crate::platform::permission::check_full_disk_access();
+                for dir_name in scan_dir_names(tcc_allowed) {
                     let dir = home.join(dir_name);
                     if dir.exists() {
                         scan_files_recursive(&dir, &mut files, 0);
@@ -567,8 +580,10 @@ async fn app_dir_watcher() {
     }
 }
 
-/// 监听文件扫描目录（~/Desktop、~/Documents 等），变更经 5s 防抖 + 60s 最小重建间隔后重建文件索引。
+/// 监听文件扫描目录（~/Projects、~/Code，及全磁盘权限就绪后的 ~/Desktop 等
+/// TCC 管辖目录），变更经 5s 防抖 + 60s 最小重建间隔后重建文件索引。
 /// 事件路径预过滤：变更全部落在 FILE_IGNORE_DIRS 内时跳过（消除 target/node_modules 写入空转重建）。
+/// 管辖目录另有 60s 轮询全磁盘状态的自愈：授权后（无→有）补监听并立即重建一次。
 async fn file_dir_watcher() {
     use notify::{recommended_watcher, RecursiveMode, Watcher};
     use std::time::{Duration, Instant};
@@ -596,9 +611,16 @@ async fn file_dir_watcher() {
     let Ok(mut watcher) = watcher_res else {
         return;
     };
-    if let Some(home) = dirs::home_dir() {
-        for dir in FILE_SCAN_DIRS {
-            let path = home.join(dir);
+
+    // 受 TCC 管辖目录仅在全磁盘权限就绪后监听（首次触碰触发系统「访问文件夹」弹窗，
+    // 启动期零触碰；授权后经下方轮询自愈补齐）
+    let home = dirs::home_dir();
+    let mut tcc_watched = false;
+    if let Some(home) = &home {
+        let tcc_allowed = crate::platform::permission::check_full_disk_access();
+        tcc_watched = tcc_allowed;
+        for dir_name in scan_dir_names(tcc_allowed) {
+            let path = home.join(dir_name);
             if path.exists() {
                 let _ = watcher.watch(&path, RecursiveMode::NonRecursive);
             }
@@ -607,30 +629,64 @@ async fn file_dir_watcher() {
 
     const DEBOUNCE: Duration = Duration::from_secs(5);
     const MIN_INTERVAL: Duration = Duration::from_secs(60);
+    const FDA_POLL: Duration = Duration::from_secs(60);
     let mut last_rebuild: Option<Instant> = None;
+    // 绝对截止时间而非 select 内联 sleep：后者随每轮循环重建，事件分支耗时/抢跑会
+    // 反复重置 60s 计时，持续文件事件下轮询分支被饿死（授权后永不自愈）
+    let mut next_fda_poll = tokio::time::Instant::now() + FDA_POLL;
 
     loop {
-        if rx.recv().await.is_some() {
-            sleep(DEBOUNCE).await;
-            while rx.try_recv().is_ok() {}
-
-            // 最小重建间隔：活跃开发下 cargo build / npm install 持续产生文件事件，
-            // 60s 间隔将重建次数从每 7s 一次降至每 60s 一次（~85% 降幅），
-            // 用户对文件搜索索引延迟不敏感。
-            if let Some(last) = last_rebuild {
-                let elapsed = last.elapsed();
-                if elapsed < MIN_INTERVAL {
-                    sleep(MIN_INTERVAL - elapsed).await;
-                    while rx.try_recv().is_ok() {}
+        tokio::select! {
+            // 全磁盘授权自愈：无→有时补监听受管辖目录并立即重建一次索引。
+            // open 系统 TCC 数据库探测免弹窗、微秒级，60s 轮询开销可忽略。
+            _ = tokio::time::sleep_until(next_fda_poll), if !tcc_watched => {
+                next_fda_poll += FDA_POLL;
+                if !crate::platform::permission::check_full_disk_access() {
+                    continue;
                 }
+                tcc_watched = true;
+                if let Some(home) = &home {
+                    for dir_name in FILE_SCAN_TCC_DIRS {
+                        let path = home.join(dir_name);
+                        if path.exists() {
+                            let _ = watcher.watch(&path, RecursiveMode::NonRecursive);
+                        }
+                    }
+                }
+                log::info!("Full disk access granted, rescanning protected dirs...");
+                let new_files = init_file_cache().await;
+                {
+                    let mut cache = FILE_CACHE.write().await;
+                    *cache = Some(new_files);
+                }
+                // 与事件分支同源记账：紧随的文件事件受 MIN_INTERVAL 保护，防背靠背全量重建
+                last_rebuild = Some(Instant::now());
             }
-            last_rebuild = Some(Instant::now());
+            maybe = rx.recv() => {
+                if maybe.is_none() {
+                    break;
+                }
+                sleep(DEBOUNCE).await;
+                while rx.try_recv().is_ok() {}
 
-            log::info!("File directory changes detected, rebuilding file cache...");
-            let new_files = init_file_cache().await;
-            {
-                let mut cache = FILE_CACHE.write().await;
-                *cache = Some(new_files);
+                // 最小重建间隔：活跃开发下 cargo build / npm install 持续产生文件事件，
+                // 60s 间隔将重建次数从每 7s 一次降至每 60s 一次（~85% 降幅），
+                // 用户对文件搜索索引延迟不敏感。
+                if let Some(last) = last_rebuild {
+                    let elapsed = last.elapsed();
+                    if elapsed < MIN_INTERVAL {
+                        sleep(MIN_INTERVAL - elapsed).await;
+                        while rx.try_recv().is_ok() {}
+                    }
+                }
+                last_rebuild = Some(Instant::now());
+
+                log::info!("File directory changes detected, rebuilding file cache...");
+                let new_files = init_file_cache().await;
+                {
+                    let mut cache = FILE_CACHE.write().await;
+                    *cache = Some(new_files);
+                }
             }
         }
     }

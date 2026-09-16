@@ -13,6 +13,7 @@ pub mod mem;
 pub mod panel;
 pub mod pasteboard;
 pub mod path_guard;
+pub mod perm_drag;
 pub mod permission;
 #[cfg(target_os = "macos")]
 pub mod selection;

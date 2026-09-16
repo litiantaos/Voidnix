@@ -21,6 +21,7 @@ export function useAppLifecycle(win: Win) {
   const settings = useSettingsStore()
   const appStore = useAppStore()
   const updateStore = useUpdateStore()
+  const systemStore = useSystemStore()
 
   function effectiveShortcut(id: string, fallback?: string): string {
     return settings.getShortcutOverride(id) || fallback || ''
@@ -117,6 +118,33 @@ export function useAppLifecycle(win: Win) {
     } catch (e) {
       console.error('Update check failed:', e)
     }
+  }
+
+  // 授权会话钉住（blur/frontmost/click-outside 让位）：会话期为 permGrantKind，
+  // 授权后为 linger（防系统重启确认弹窗的失焦路径藏窗）。linger 滑动续期——弹窗
+  // 链路（出现/点击/关闭）每次触发被让位的事件都续 15s，静默 15s 解除；不随 focus
+  // 事件解除（弹窗期点击主窗/自动聚焦都会产生 focus，误解除会让藏窗路径复活）
+  let permLinger = false
+  let permLingerKind: string | null = null
+  let permLingerTimer: ReturnType<typeof setTimeout> | null = null
+
+  function armPermLinger(kind: string) {
+    permLinger = true
+    permLingerKind = kind
+    if (permLingerTimer) clearTimeout(permLingerTimer)
+    permLingerTimer = setTimeout(() => {
+      permLingerTimer = null
+      permLinger = false
+      if (permLingerKind && systemStore.permGrantKind === permLingerKind) {
+        systemStore.permGrantKind = null
+      }
+      permLingerKind = null
+    }, 15000)
+  }
+
+  /// linger 期间每次让位续期（被保护事件持续发生则不解除）
+  function bumpPermLinger() {
+    if (permLinger && permLingerKind) armPermLinger(permLingerKind)
   }
 
   onMounted(async () => {
@@ -229,6 +257,11 @@ export function useAppLifecycle(win: Win) {
       track(unlistenOpenExtension)
 
       const unlistenClickOutside = await listen('click-outside', () => {
+        // 授权会话钉住（含授权后 linger）：设置界面授权期间点击外部不隐藏
+        if (systemStore.permGrantKind || permLinger) {
+          bumpPermLinger()
+          return
+        }
         hideWindow(true)
       })
       track(unlistenClickOutside)
@@ -241,11 +274,45 @@ export function useAppLifecycle(win: Win) {
       })
       track(unlistenCheckUpdate)
 
-      // 系统弹窗关闭后用户切到其他 app（frontmost ≠ 原前台 app）→ dismiss
+      // 系统弹窗关闭后用户切到其他 app（frontmost ≠ 原前台 app）→ dismiss。
+      // 授权会话钉住（含授权后 linger）：用户在系统设置授权/处理重启确认期间不隐藏
       const unlistenFrontmostChanged = await listen('frontmost-changed', () => {
+        if (systemStore.permGrantKind || permLinger) {
+          bumpPermLinger()
+          return
+        }
         hideWindow(true)
       })
       track(unlistenFrontmostChanged)
+
+      // Rust 直发的授权会话（finder-ext 辅助功能引导无前端入口置钉）：经事件统一
+      // 置 permGrantKind 并显示拖拽指引浮窗，与 startPermGrant 共享钉住/linger
+      // 链路；仅空位时置钉，不覆盖更新的前端会话
+      const unlistenPermSession = await listen<string>('perm-session', (e) => {
+        if (systemStore.permGrantKind === null) systemStore.permGrantKind = e.payload
+        invoke(CMD.showPermDragHint, { text: t('common.permDragHint') }).catch(() => {})
+      })
+      track(unlistenPermSession)
+
+      // 授权会话结束（授权完成 / 10min 超时，Rust open_privacy_settings 会话发出）：
+      // 收起拖拽指引浮窗 + 完成即刷新权限状态（引导面板/设置页状态即时翻转，不等
+      // 获焦刷新）。授权后钉住不立即解除——完全访问/录屏授权会弹系统重启确认，
+      // 弹窗失焦与其关闭后的 frontmost-changed 藏窗路径须继续让位（滑动续期，见
+      // armPermLinger）
+      const unlistenPermFlow = await listen<{ kind: string; granted: boolean }>(
+        'perm-flow',
+        (e) => {
+          const { kind, granted } = e.payload
+          invoke(CMD.hidePermDragHint).catch(() => {})
+          if (!granted) {
+            if (systemStore.permGrantKind === kind) systemStore.permGrantKind = null
+            return
+          }
+          void systemStore.refresh()
+          armPermLinger(kind)
+        },
+      )
+      track(unlistenPermFlow)
 
       // 通用扩展子视图事件：任何扩展都可以通过 Rust `open_extension_subview` 触发
       const unlistenSubview = await listen<{
@@ -283,7 +350,7 @@ export function useAppLifecycle(win: Win) {
             appStore.suppressBlur = false
             // 刷新系统状态（权限/自启）：覆盖用户从系统设置改完权限返回的场景。
             // 权限变更唯一入口是系统设置，返回必经窗口获焦；Rust 侧 preflight 纳秒级，单次开销可忽略。
-            useSystemStore().refresh()
+            systemStore.refresh()
             // 唤起节流：冷却期内秒退，无网络开销
             void maybeCheckUpdate()
           } else if (
@@ -292,14 +359,19 @@ export function useAppLifecycle(win: Win) {
             !appStore.isDialogOpen &&
             !appStore.suppressBlur
           ) {
-            invoke<boolean>(CMD.isAppActive)
-              .then((active) => {
-                if (active) return
-                hideWindow(true)
-              })
-              .catch(() => {
-                hideWindow(true)
-              })
+            // 授权会话钉住（含授权后 linger）：设置/重启弹窗链路的失焦不隐藏，且续期
+            if (systemStore.permGrantKind || permLinger) {
+              bumpPermLinger()
+            } else {
+              invoke<boolean>(CMD.isAppActive)
+                .then((active) => {
+                  if (active) return
+                  hideWindow(true)
+                })
+                .catch(() => {
+                  hideWindow(true)
+                })
+            }
           }
         },
       )
@@ -317,6 +389,10 @@ export function useAppLifecycle(win: Win) {
     if (updateTimer) {
       clearTimeout(updateTimer)
       updateTimer = null
+    }
+    if (permLingerTimer) {
+      clearTimeout(permLingerTimer)
+      permLingerTimer = null
     }
     if (isTauri) {
       unlistenList.forEach((fn) => {

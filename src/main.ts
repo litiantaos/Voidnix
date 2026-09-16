@@ -34,7 +34,8 @@ initTheme()
 initI18n()
 
 // 后台预查系统状态（权限 + 开机自启）：设置页只读缓存值，消除首帧「检查中…」跳变。
-// fire-and-forget 不阻塞启动；Rust 侧同步纳秒/微秒级，用户进设置页前早已就绪。
+// fire-and-forget 不阻塞启动；权限检查纳秒/微秒级、公证检测首次为 xcrun 子进程
+// （命令已 async + spawn_blocking，不占主线程），用户进设置页前早已就绪。
 useSystemStore().refresh()
 
 // 全局禁用 WKWebView 原生右键菜单（应用无任何右键交互场景，

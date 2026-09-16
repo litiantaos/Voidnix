@@ -127,14 +127,27 @@ function permStatus(granted: boolean | null): string {
   return granted ? t('settings.permGranted') : t('settings.permDenied')
 }
 
+/// 设备控制（辅助功能）API 请求（公证分流由唯一调用点承载：未公证直接发起授权会话）
 async function handleRequestAccessibility() {
   if (!isTauri) return
   systemStore.permAccessibility = await invoke<boolean>(CMD.requestAccessibilityPermission)
 }
 
-async function handleOpenPrivacy(kind: string) {
+/// 录屏：未公证直接发起授权会话（API 请求写入的 TCC 条目无效且污染列表）；
+/// 公证版请求弹窗点允许后系统自行引导退出重开（预绑定权限需重启生效），
+/// 未获准则会话直达系统设置
+async function handleRequestScreenRecording() {
   if (!isTauri) return
-  await invoke(CMD.openPrivacySettings, { kind })
+  if (systemStore.appNotarized === true) {
+    const granted = await invoke<boolean>(CMD.requestScreenRecordingPermission)
+    if (granted) return
+  }
+  systemStore.startPermGrant('screen_recording')
+}
+
+/// 完全访问无 API 请求路径，恒为授权会话直达设置
+function handleFullDiskAccess() {
+  systemStore.startPermGrant('full_disk_access')
 }
 
 const allSettingsItems = computed<SettingItem[]>(() => {
@@ -259,15 +272,7 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     action: handleQuitApp,
   })
 
-  items.push({
-    id: 'perm-screen-recording',
-    title: t('settings.privacy.screenRecording'),
-    subtitle: permStatus(permScreenRecording.value),
-    type: 'action',
-    icon: permScreenRecording.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
-    group: t('settings.group.privacy'),
-    action: () => handleOpenPrivacy('screen_recording'),
-  })
+  // 权限行顺序与引导面板一致：设备控制 → 完全访问，录屏（预绑定，授权后须重启）恒置末位
   items.push({
     id: 'perm-accessibility',
     title: t('settings.privacy.accessibility'),
@@ -276,10 +281,11 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     icon: permAccessibility.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
     group: t('settings.group.privacy'),
     action: async () => {
-      if (!permAccessibility.value) {
+      // 未授权且公证版才走 API 请求；其余路径（已授权仅查看 / 未公证手动添加）直达设置
+      if (!permAccessibility.value && systemStore.appNotarized === true) {
         await handleRequestAccessibility()
       }
-      await handleOpenPrivacy('accessibility')
+      systemStore.startPermGrant('accessibility')
     },
   })
   items.push({
@@ -289,7 +295,19 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     type: 'action',
     icon: permFullDiskAccess.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
     group: t('settings.group.privacy'),
-    action: () => handleOpenPrivacy('full_disk_access'),
+    action: () => handleFullDiskAccess(),
+  })
+  items.push({
+    id: 'perm-screen-recording',
+    title: t('settings.privacy.screenRecording'),
+    subtitle: permStatus(permScreenRecording.value),
+    type: 'action',
+    icon: permScreenRecording.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
+    group: t('settings.group.privacy'),
+    action: () => {
+      if (permScreenRecording.value) return systemStore.startPermGrant('screen_recording')
+      return handleRequestScreenRecording()
+    },
   })
   items.push({
     id: 'clear-injections',

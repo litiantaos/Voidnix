@@ -20,7 +20,7 @@
 
 **索引构建**：启动时 `spawn_blocking` 递归扫描目标子目录，跳过隐藏文件 + `FILE_IGNORE_DIRS`（node_modules / .git / dist / build / target 等），深度上限 6 层，数量上限 50,000。
 
-**白名单子目录**（`FILE_SCAN_DIRS`）：Desktop / Documents / Downloads / Pictures / Music / Movies / Projects / Code。
+**白名单子目录**按 TCC「文件与文件夹」管辖分组：`FILE_SCAN_DIRS`（Projects / Code，恒定扫描）与 `FILE_SCAN_TCC_DIRS`（Desktop / Documents / Downloads / Pictures / Music / Movies，受管辖——首次触碰 read_dir/FSEvents 监听会触发系统询问弹窗）。受管辖组仅在 `check_full_disk_access()`（open 系统 TCC 数据库，免弹窗探测）为真时纳入扫描与监听，启动期零触碰；文件 watcher 主循环 60s 轮询全磁盘状态，授权后（无→有）自动补监听受管辖目录并重建一次索引，无需重启应用。
 
 **name_lower 预计算**：扫描时 `to_lowercase` 一次，搜索时零分配 `String::find`。
 

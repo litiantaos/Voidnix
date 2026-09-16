@@ -570,7 +570,8 @@ describe('WelcomeView 首启引导视图', () => {
     expect(useSettingsStore().onboarded).toBe(false)
   })
 
-  it('权限面板：功能 ↔ 权限映射渲染，三项未授权可点直达系统设置，辅助功能先经系统弹窗请求再跳', async () => {
+  it('权限面板（公证版）：功能 ↔ 权限映射渲染，设备控制/录屏先经系统弹窗请求再发起授权会话', async () => {
+    useSystemStore().appNotarized = true
     useAppStore().setFullscreenView(WelcomeView)
     const wrapper = mountView()
     // 展开权限面板
@@ -587,37 +588,96 @@ describe('WelcomeView 首启引导视图', () => {
     ).toBe(false)
     expect(wrapper.find('.w-footer .w-note').text()).toBe('← 上一步 · Enter 开始使用')
     const rows = wrapper.findAll('.w-perm-row')
-    expect(rows.map((r) => r.find('.w-perm-name').text())).toEqual([
-      '屏幕录制',
-      '辅助功能',
-      '完全磁盘',
-    ])
+    // 顺序：设备控制（即开即生效）置首；完全访问、录屏（授权后须重启）置末
+    expect(rows.map((r) => r.find('.w-perm-name').text())).toEqual(['设备控制', '完全访问', '录屏'])
     expect(rows.map((r) => r.find('.w-perm-use').text())).toEqual([
-      '截屏标注 · 窗口管理',
       '划词翻译 · 访达隐藏文件切换',
-      '下载/图片等保存免弹窗',
+      '文件搜索 · 截图保存',
+      '截屏标注 · 窗口管理',
     ])
 
+    // 未授权按钮统一「授权」（不分手动/API 档）
     const buttons = wrapper.findAll('.w-perm-row button')
     expect(buttons.map((b) => b.text())).toEqual(['授权', '授权', '授权'])
 
+    // 设备控制（公证版）：API 请求 → 显示拖拽指引浮窗 → 进授权会话（三个权限
+    // 会话通用浮窗，startPermGrant 内统一 show）
     await buttons[0]!.trigger('click')
-    expect(vi.mocked(invoke)).toHaveBeenCalledWith('open_privacy_settings', {
-      kind: 'screen_recording',
-    })
-
-    vi.mocked(invoke).mockClear()
-    await buttons[1]!.trigger('click')
     expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'request_accessibility_permission')
-    expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'open_privacy_settings', {
+    expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'show_perm_drag_hint', {
+      text: '请在上方列表中找到 Voidnix 并打开开关，\n或拖拽左侧图标至列表中以完成授权',
+    })
+    expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(3, 'open_privacy_settings', {
       kind: 'accessibility',
     })
 
     vi.mocked(invoke).mockClear()
-    await buttons[2]!.trigger('click')
-    expect(vi.mocked(invoke)).toHaveBeenCalledWith('open_privacy_settings', {
+    // 完全访问无 API 请求路径，公证版也直接进授权会话（浮窗 + 面板两发）
+    await buttons[1]!.trigger('click')
+    expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'show_perm_drag_hint', {
+      text: '请在上方列表中找到 Voidnix 并打开开关，\n或拖拽左侧图标至列表中以完成授权',
+    })
+    expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'open_privacy_settings', {
       kind: 'full_disk_access',
     })
+
+    vi.mocked(invoke).mockClear()
+    await buttons[2]!.trigger('click')
+    expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'request_screen_recording_permission')
+    expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'show_perm_drag_hint', {
+      text: '请在上方列表中找到 Voidnix 并打开开关，\n或拖拽左侧图标至列表中以完成授权',
+    })
+    expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(3, 'open_privacy_settings', {
+      kind: 'screen_recording',
+    })
+  })
+
+  it('权限面板（未公证版）：API 请求写入的 TCC 条目无效，跳过请求直达系统设置；功能说明保留，按钮统一「授权」', async () => {
+    useSystemStore().appNotarized = false
+    useAppStore().setFullscreenView(WelcomeView)
+    const wrapper = mountView()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await nextTick()
+
+    // 功能 ↔ 权限映射说明保留原位（未公证不降级为操作指引）
+    const rows = wrapper.findAll('.w-perm-row')
+    expect(rows.map((r) => r.find('.w-perm-use').text())).toEqual([
+      '划词翻译 · 访达隐藏文件切换',
+      '文件搜索 · 截图保存',
+      '截屏标注 · 窗口管理',
+    ])
+    expect(rows.map((r) => r.find('.w-perm-btn').text())).toEqual(['授权', '授权', '授权'])
+
+    // 每行两发：拖拽指引浮窗（三个权限会话通用，startPermGrant 内统一 show）+
+    // 授权会话面板；全程无任何 API 请求
+    const buttons = wrapper.findAll('.w-perm-row button')
+    const kinds = ['accessibility', 'full_disk_access', 'screen_recording'] as const
+    for (const [i, kind] of kinds.entries()) {
+      vi.mocked(invoke).mockClear()
+      await buttons[i]!.trigger('click')
+      expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2)
+      expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'show_perm_drag_hint', {
+        text: '请在上方列表中找到 Voidnix 并打开开关，\n或拖拽左侧图标至列表中以完成授权',
+      })
+      expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'open_privacy_settings', { kind })
+    }
+  })
+
+  it('权限面板（notarized 未就位）：null 按未公证处理——走手动分流，防误请求产生无效 TCC 条目', async () => {
+    useSystemStore().appNotarized = null
+    useAppStore().setFullscreenView(WelcomeView)
+    const wrapper = mountView()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await nextTick()
+
+    // 录屏（末位）点击走手动分流：直达授权会话，不调 API 请求
+    const buttons = wrapper.findAll('.w-perm-row button')
+    await buttons[2]!.trigger('click')
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith('open_privacy_settings', {
+      kind: 'screen_recording',
+    })
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('request_screen_recording_permission')
   })
 
   it('已授权项渲染为静态完成态（非按钮），状态经获焦刷新链路实时反映', async () => {
@@ -627,10 +687,10 @@ describe('WelcomeView 首启引导视图', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     await nextTick()
     expect(wrapper.findAll('.w-perm-row button')).toHaveLength(2)
-    // 屏幕录制行转静默完成态（勾 + 已授权），名称仍在行首
-    const firstRow = wrapper.findAll('.w-perm-row')[0]!
-    expect(firstRow.find('.w-perm-name').text()).toBe('屏幕录制')
-    expect(firstRow.find('.w-perm-done').exists()).toBe(true)
+    // 录屏行（末位）转静默完成态（勾 + 已授权），名称仍在行首
+    const lastRow = wrapper.findAll('.w-perm-row')[2]!
+    expect(lastRow.find('.w-perm-name').text()).toBe('录屏')
+    expect(lastRow.find('.w-perm-done').exists()).toBe(true)
 
     // 剩余项授权完成后（系统设置返回 → 窗口获焦 → refresh）全部转静默完成态
     const systemStore = useSystemStore()

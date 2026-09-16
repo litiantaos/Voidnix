@@ -54,19 +54,62 @@ jobs:
       - name: Rust 单元测试
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
+      # 凭证经 GITHUB_ENV 按组（签名三件套 / 公证三件套）配齐才注入：GitHub 对未配置的
+      # secrets 注入空字符串，tauri-bundler 以 var_os 判定会把空串当已配置（空凭证走
+      # codesign/notarytool 硬失败），缺省则 bundler 自动退回跳过（仅警告）
+      - name: 注入 macOS 签名与公证凭证
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            {
+              # 证书为多行 base64，须用分隔符语法写入
+              echo "APPLE_CERTIFICATE<<EOF"
+              printf '%s\n' "$APPLE_CERTIFICATE"
+              echo "EOF"
+              echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+              echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+            } >> "$GITHUB_ENV"
+          fi
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "APPLE_ID=$APPLE_ID" >> "$GITHUB_ENV"
+            echo "APPLE_PASSWORD=$APPLE_PASSWORD" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
+          fi
+
       - name: 构建并打包（zsh binary 经 bundle.resources 自动嵌入）
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS 代码签名：未提供则退化为 adhoc，TCC 按 cdhash 匹配导致每次更新权限失效
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # macOS 签名/公证凭证由前置步骤按组注入：签名配齐则开发者证书签名，
+          # 公证配齐则自动公证 + staple（macOS 15+ 辅助功能/屏幕录制 API 要求公证，
+          # 未公证应用含 Apple Development 证书签名——系统设置开关打开也不生效）
         with:
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
+
+      # adhoc 硬拦（同 deploy.sh 防线）：TCC 权限模型依赖非 adhoc 签名，secrets 漂移
+      # 导致的静默退化必须在 CI 暴露，不能带着失效权限发布
+      - name: 校验产物签名（拦截 adhoc 回归）
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP="src-tauri/target/release/bundle/macos/Voidnix.app"
+          codesign --verify --deep --strict "$APP"
+          SIG_DUMP="$(codesign -dvv "$APP" 2>&1)"
+          echo "$SIG_DUMP" | grep -E "Identifier|TeamIdentifier|Authority=Developer|flags"
+          echo "$SIG_DUMP" | grep -q "TeamIdentifier=NB22FJ9QD3" \
+            || { echo "错误：签名退化为 adhoc（缺少 TeamIdentifier=NB22FJ9QD3），TCC 权限将失效"; exit 1; }
+          if [ -n "$APPLE_TEAM_ID" ]; then
+            xcrun stapler validate "$APP"
+          fi

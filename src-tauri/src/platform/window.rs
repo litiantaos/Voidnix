@@ -84,6 +84,24 @@ pub fn main_frame_and_vis(window: &tauri::WebviewWindow) -> Option<(NSRect, NSRe
     Some((frame, vis))
 }
 
+/// 包含指定点（Cocoa）的屏 visibleFrame。
+pub fn screen_vis_containing(
+    mtm: objc2_foundation::MainThreadMarker,
+    x: f64,
+    y: f64,
+) -> Option<NSRect> {
+    use objc2_app_kit::NSScreen;
+    NSScreen::screens(mtm)
+        .iter()
+        .map(|s| s.visibleFrame())
+        .find(|v| {
+            x >= v.origin.x
+                && x < v.origin.x + v.size.width
+                && y >= v.origin.y
+                && y < v.origin.y + v.size.height
+        })
+}
+
 /// 天花板公式（单一源）：visibleFrame × 0.9，下限 100。
 pub fn height_ceiling(vis: NSRect) -> f64 {
     (vis.size.height * 0.9).max(100.0)
@@ -225,8 +243,7 @@ pub fn make_key_window(window: &tauri::WebviewWindow) {
 /// 跨屏异常（cur 不在 placement 屏）时仍复位居中。每次 show 经
 /// present_on_cursor_screen 重定位，故拖动仅影响当前显示期间，下次唤起自动复位。
 pub fn animate_frame(window: &tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f64) {
-    use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize};
-    const DURATION_SECS: f64 = 0.26;
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
     const BOTTOM_MARGIN: f64 = 40.0;
 
     let Ok(ptr) = window.ns_window() else {
@@ -288,22 +305,107 @@ pub fn animate_frame(window: &tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f
     };
 
     let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
-    unsafe {
-        let ctx_cls = objc2::class!(NSAnimationContext);
-        let _: () = objc2::msg_send![ctx_cls, beginGrouping];
-        let ctx: *mut objc2::runtime::AnyObject = objc2::msg_send![ctx_cls, currentContext];
-        let _: () = objc2::msg_send![ctx, setDuration: DURATION_SECS];
-        let timing_cls = objc2::class!(CAMediaTimingFunction);
-        let timing: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![timing_cls, functionWithName: ns_string!("default")];
-        let _: () = objc2::msg_send![ctx, setTimingFunction: timing];
-        let animator: *mut objc2::runtime::AnyObject = objc2::msg_send![ns_window, animator];
-        let _: () = objc2::msg_send![animator, setFrame: frame, display: true];
-        let _: () = objc2::msg_send![ctx_cls, endGrouping];
-    }
+    unsafe { animator_set_frame(ns_window, frame) };
     let window_number: objc2_foundation::NSInteger =
         unsafe { objc2::msg_send![ns_window, windowNumber] };
     crate::platform::skylight::set_full_event_shape(window_number as i64, w, h);
+}
+
+/// NSAnimationContext 接管 setFrame（CoreAnimation 动画，系统级而非 JS rAF 逐帧）。
+unsafe fn animator_set_frame(ns_window: &NSWindow, frame: NSRect) {
+    use objc2_foundation::ns_string;
+    const DURATION_SECS: f64 = 0.26;
+    let ctx_cls = objc2::class!(NSAnimationContext);
+    let _: () = objc2::msg_send![ctx_cls, beginGrouping];
+    let ctx: *mut objc2::runtime::AnyObject = objc2::msg_send![ctx_cls, currentContext];
+    let _: () = objc2::msg_send![ctx, setDuration: DURATION_SECS];
+    let timing_cls = objc2::class!(CAMediaTimingFunction);
+    let timing: *mut objc2::runtime::AnyObject =
+        objc2::msg_send![timing_cls, functionWithName: ns_string!("default")];
+    let _: () = objc2::msg_send![ctx, setTimingFunction: timing];
+    let animator: *mut objc2::runtime::AnyObject = objc2::msg_send![ns_window, animator];
+    let _: () = objc2::msg_send![animator, setFrame: frame, display: true];
+    let _: () = objc2::msg_send![ctx_cls, endGrouping];
+}
+
+/// 授权会话避让专用：主窗动画移到指定 frame（Cocoa），并把 placement 切到该屏——
+/// 会话期间前端的高度/位置约束与目标屏一致；避让只影响当前显示期间，下次 show 仍按
+/// 光标屏复位（与拖动同语义）。与 animate_frame 的差异：采用显式坐标不做跨屏复位
+/// 居中（跨屏正是本函数的目的），clamp 进包含 frame 的屏 visibleFrame（底部 40 间距
+/// 与 animate_frame 同规）。仅主线程调用。
+pub fn move_main_to(window: &tauri::WebviewWindow, frame: NSRect) {
+    use objc2_foundation::{MainThreadMarker, NSPoint, NSSize};
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let Ok(ptr) = window.ns_window() else { return };
+    let raw = ptr.cast::<NSWindow>();
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
+        return;
+    };
+
+    let cx = frame.origin.x + frame.size.width / 2.0;
+    let cy = frame.origin.y + frame.size.height / 2.0;
+    let Some(vis) = screen_vis_containing(mtm, cx, cy) else {
+        return;
+    };
+    store_placement(vis);
+
+    const BOTTOM_MARGIN: f64 = 40.0;
+    let w = frame.size.width.min(vis.size.width).max(100.0);
+    let h = frame.size.height.min(height_ceiling(vis)).max(100.0);
+    let x = frame.origin.x.clamp(
+        vis.origin.x,
+        (vis.origin.x + vis.size.width - w).max(vis.origin.x),
+    );
+    let mut y = frame.origin.y;
+    if y < vis.origin.y + BOTTOM_MARGIN {
+        y = vis.origin.y + BOTTOM_MARGIN;
+    }
+    if y + h > vis.origin.y + vis.size.height {
+        y = vis.origin.y + vis.size.height - h;
+    }
+    if y < vis.origin.y + BOTTOM_MARGIN {
+        y = vis.origin.y + BOTTOM_MARGIN;
+    }
+
+    let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+    unsafe { animator_set_frame(ns_window, frame) };
+    let window_number: objc2_foundation::NSInteger =
+        unsafe { objc2::msg_send![ns_window, windowNumber] };
+    crate::platform::skylight::set_full_event_shape(window_number as i64, w, h);
+}
+
+/// 授权会话层级降级：主窗降到普通层级并置顶于该层。主窗常态浮动层级（present
+/// 每次重申 NSFloatingWindowLevel），普通层级的系统设置窗口即使激活也盖不过浮动
+/// 窗。降层置顶后由调用方紧接激活系统设置——设置窗被压到主窗之上，其余应用窗口
+/// 在主窗之下（三明治）。orderWindow:relativeTo: 跨 app 排序实测无效，勿再用。
+/// 会话结束经 restore_window_order 复位。仅主线程调用。
+pub fn demote_window_level(window: &tauri::WebviewWindow) {
+    let Ok(ptr) = window.ns_window() else { return };
+    let raw = ptr.cast::<NSWindow>();
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
+        return;
+    };
+    ns_window.setLevel(objc2_app_kit::NSNormalWindowLevel);
+    ns_window.orderFrontRegardless();
+}
+
+/// 授权会话结束：复位浮动层级并前置；make_key 时 panel makeKey 取得键盘焦点
+/// （不激活 NSApp——语义同 show 主链路）。完全访问/录屏授权后系统弹重启确认，
+/// 夺 key 会把弹窗降为非激活，调用方须传 false 只置顶。
+pub fn restore_window_order(window: &tauri::WebviewWindow, make_key: bool) {
+    let Ok(ptr) = window.ns_window() else { return };
+    let raw = ptr.cast::<NSWindow>();
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
+        return;
+    };
+    ns_window.setLevel(objc2_app_kit::NSFloatingWindowLevel);
+    ns_window.orderFrontRegardless();
+    if make_key {
+        ns_window.makeKeyWindow();
+    }
 }
 
 /// snap-panel 进出场目标（宽高应与稳态一致，只改 origin / alpha，避免 reflow）。

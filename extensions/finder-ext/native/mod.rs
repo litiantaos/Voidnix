@@ -197,8 +197,8 @@ fn hide_main_sync(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 辅助功能未授权时弹系统提示并打开设置。
-fn ensure_accessibility() -> Result<(), String> {
+/// 辅助功能未授权时弹系统提示并打开设置（授权会话）。
+fn ensure_accessibility(app: &AppHandle) -> Result<(), String> {
     if crate::platform::permission::check_accessibility() {
         return Ok(());
     }
@@ -207,7 +207,7 @@ fn ensure_accessibility() -> Result<(), String> {
     if crate::platform::permission::check_accessibility() {
         return Ok(());
     }
-    crate::platform::permission::open_privacy_settings("accessibility");
+    crate::platform::permission::open_privacy_settings(app, "accessibility");
     Err("切换隐藏文件需要辅助功能权限：系统设置 → 隐私与安全性 → 辅助功能 → 启用 Voidnix".into())
 }
 
@@ -313,7 +313,7 @@ fn finder_pid() -> Option<i32> {
 ///
 /// 系统不提供稳定可读显示态，此处只做切换。
 fn handle_toggle_hidden(app: &AppHandle) -> Result<(), String> {
-    ensure_accessibility()?;
+    ensure_accessibility(app)?;
 
     let pid = finder_pid().ok_or_else(|| "未找到访达进程".to_string())?;
 

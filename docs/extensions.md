@@ -235,7 +235,7 @@ impl Extension for ClipboardExtension {
 - `runtime::window`：主窗口 show/hide/move + panel 转换 + `pick_directory` / `pick_files` / `get_home_dir`
 - `runtime::shortcut`：快捷键注册 + 录制 + `register_shortcut_hook`（扩展钩子）
 - `runtime::storage`：`TempHandle` RAII（new / Drop 自动清理）+ `cleanup_all_voidnix_temps`（lib.rs setup 启动期统一扫 `voidnix_*` / `voidnix-icon-*` / `voidnix/picker.jpg`）+ `ext_data_dir(app, id)`（统一扩展数据目录，替代各 native/ 重复的 `app_data_dir().unwrap_or_else().join(...)` 模式）+ `save_png_safely`（create_dir_all + path_guard + write 共用）
-- `runtime::permission`：系统权限薄壳
+- `runtime::permission`：系统权限薄壳（含公证状态检测；open_privacy_settings 发起授权会话——设置激活置顶、主窗避让并排钉住至授权完成；perm_drag_hint 录屏手动添加拖拽指引浮窗，授权路径按公证状态分流，见 AGENTS.md 签名一节）
 - `runtime::llm`：LLM 基础设施（`stream_openai_request` / `validate_ai_request` / `LlmMessage`），agent + translate 共享（`trim_conversation` 在 agent engine 内）
 - `runtime::pasteboard`：框架命令薄壳（`pasteboard_write_text`；原语在 `platform::pasteboard`）
 - `platform::focus`：焦点管理（`capture_frontmost` / `restore_captured` / `captured_pid`，PREV_FRONT_PID 唯一源）

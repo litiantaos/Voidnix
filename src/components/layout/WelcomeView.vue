@@ -250,6 +250,9 @@
         </div>
       </div>
     </aside>
+
+    <!-- 拖拽指引浮窗为独立原生小窗（Rust 悬浮于设置窗口底部外侧，三个授权会话
+         通用，由 startPermGrant/perm-session 显示、perm-flow 收起），非界内元素 -->
   </div>
 </template>
 
@@ -321,39 +324,51 @@ const stageZoom = computed(() => {
 })
 
 /// 权限页条目（功能 ↔ 权限映射）：granted null（检查中）按未授权渲染，
-/// 状态由获焦刷新链路更新
-const permRows = computed(
-  () =>
-    [
-      {
-        kind: 'screen_recording',
-        label: t('welcome.permScreenRecording'),
-        use: t('welcome.permUseScreenRecording'),
-        granted: systemStore.permScreenRecording,
-      },
-      {
-        kind: 'accessibility',
-        label: t('welcome.permAccessibility'),
-        use: t('welcome.permUseAccessibility'),
-        granted: systemStore.permAccessibility,
-      },
-      {
-        kind: 'full_disk_access',
-        label: t('welcome.permFullDisk'),
-        use: t('welcome.permUseFullDisk'),
-        granted: systemStore.permFullDiskAccess,
-      },
-    ] as { kind: PermKind; label: string; use: string; granted: boolean | null }[],
-)
+/// 状态由获焦刷新 + 授权会话 perm-flow 即时更新。
+/// 顺序：设备控制（即开即生效）置首；完全访问与录屏授权后均须重启、置末尾——
+/// 按序授权到最后一项正好统一重启，避免中途割裂。
+const permRows = computed(() => {
+  return [
+    {
+      kind: 'accessibility' as const,
+      label: t('welcome.permAccessibility'),
+      use: t('welcome.permUseAccessibility'),
+      granted: systemStore.permAccessibility,
+    },
+    {
+      kind: 'full_disk_access' as const,
+      label: t('welcome.permFullDisk'),
+      use: t('welcome.permUseFullDisk'),
+      granted: systemStore.permFullDiskAccess,
+    },
+    {
+      kind: 'screen_recording' as const,
+      label: t('welcome.permScreenRecording'),
+      use: t('welcome.permUseScreenRecording'),
+      granted: systemStore.permScreenRecording,
+    },
+  ]
+})
 
-/// 未授权项点击直达系统设置（同设置页权限行范式：辅助功能先经系统弹窗请求再跳）；
-/// 授权后返回必经窗口获焦，状态自动刷新
+/// 未授权项点击「去授权」。公证版设备控制/录屏先走 API 请求（macOS 15+ 请求才
+/// 进授权列表；录屏弹窗点允许后系统自行引导退出重开）。其余（未公证三权限，
+/// 或完全访问——无 API 请求路径；公证版请求未获准）发起授权会话直达系统设置：
+/// Rust 激活置顶设置窗口（默认聚焦）、主窗避让到其旁并排，会话期间钉住不隐藏，
+/// 授权完成或超时经 perm-flow 解除并即时刷新状态。
 async function handlePerm(kind: PermKind) {
   if (!isTauri) return
-  if (kind === 'accessibility') {
-    systemStore.permAccessibility = await invoke<boolean>(CMD.requestAccessibilityPermission)
+  // notarized 未就位（null）按未公证处理：误走 API 请求会产生无效 TCC 条目，
+  // 误走手动添加最多多一步操作，保守取后者
+  const manual = kind === 'full_disk_access' || systemStore.appNotarized !== true
+  if (!manual) {
+    if (kind === 'accessibility') {
+      systemStore.permAccessibility = await invoke<boolean>(CMD.requestAccessibilityPermission)
+    } else {
+      const granted = await invoke<boolean>(CMD.requestScreenRecordingPermission)
+      if (granted) return
+    }
   }
-  await invoke(CMD.openPrivacySettings, { kind })
+  systemStore.startPermGrant(kind)
 }
 
 const shortcutKeys = computed(() => formatShortcutKeys(settings.globalShortcut))

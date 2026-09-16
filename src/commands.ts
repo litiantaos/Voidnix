@@ -22,7 +22,8 @@ export const CMD = {
   quitApp: 'quit_app',
   revealInFinder: 'reveal_in_finder',
   openPrivacySettings: 'open_privacy_settings',
-
+  showPermDragHint: 'show_perm_drag_hint',
+  hidePermDragHint: 'hide_perm_drag_hint',
   // —— 自测模式（环境变量驱动，前端 main.ts 消费）——
   isSelfTestMode: 'is_self_test_mode',
   selfTestDiag: 'self_test_diag',
@@ -33,9 +34,11 @@ export const CMD = {
   disableAutostart: 'disable_autostart',
 
   // —— 权限（框架）——
+  checkAppNotarized: 'check_app_notarized',
   checkAccessibilityPermission: 'check_accessibility_permission',
   requestAccessibilityPermission: 'request_accessibility_permission',
   checkScreenRecordingPermission: 'check_screen_recording_permission',
+  requestScreenRecordingPermission: 'request_screen_recording_permission',
   checkFullDiskAccessPermission: 'check_full_disk_access_permission',
 
   // —— 全局快捷键 / 录制（框架）——
