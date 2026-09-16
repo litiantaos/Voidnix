@@ -1,16 +1,10 @@
 <template>
-  <BaseEmptyState
+  <BaseSetupState
     v-if="!isConfigured"
     class="agent-setup"
-    icon="i-ri-key-2-line"
     :title="t('agent.setupTitle')"
-  >
-    <template #action>
-      <BaseButton variant="primary" @click="appStore.setActiveExtension('ai-providers')">
-        {{ t('agent.setupAction') }}
-      </BaseButton>
-    </template>
-  </BaseEmptyState>
+    @configure="appStore.setActiveExtension('ai-providers')"
+  />
 
   <div
     v-else
@@ -176,7 +170,7 @@ import { isAgentProviderReady } from './config'
 import { useAppStore } from '@/stores/app'
 import { t } from '@/runtime/i18n'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
+import BaseSetupState from '@/components/ui/BaseSetupState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import AgentTextPart from './AgentTextPart.vue'
 import AgentToolStep from './AgentToolStep.vue'
@@ -380,7 +374,7 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 未配置空态：视觉归 BaseEmptyState，此处仅补偿搜索栏留白 */
+/* 未配置空态：视觉归 BaseSetupState，此处仅补偿搜索栏留白 */
 .agent-setup {
   min-height: 0;
   padding: var(--chrome-fade-height) var(--space) var(--space);

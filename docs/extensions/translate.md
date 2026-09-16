@@ -36,6 +36,10 @@ defineConfig('extensions/translate/config', {
 - 启动与 `updateAiConfig` 冷 prune 写回
 - 运行结果引擎标签：单 Key 仅提供商名，多 Key 为「提供商 · 备注」
 
+### 未配置
+
+View 空态（有道与 AI 均无可用凭证时）用统一 `BaseSetupState`（`components/ui/`），「去配置」进入本扩展设置子视图（`openSubview('config')`，有道 Key 与 AI 模型选用均在此，含跳转中枢入口）。
+
 旧 AI 引擎字段启动时一次性导入中枢并 strip。详见 [ai-providers.md](./ai-providers.md)。
 
 ## 结果交互

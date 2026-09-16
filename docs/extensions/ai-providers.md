@@ -25,7 +25,7 @@
 - **回车**：打开编辑 Key 弹窗
 - **Cmd+Enter / 右键**：统一「粘贴 Key / 粘贴 API URL / 粘贴 Responses URL（声明了 `responsesEndpoint` 才出现）/ 粘贴 {模型}」、删除 Key（经 `useActionPanel` 统一 `toggleOpen`，二次触发关闭）
 - **分组标题右侧**：编辑提供商 · 添加 Key
-- **添加提供商**：搜索栏右侧 `+`（`searchBarAccessory`）
+- **添加提供商**：搜索栏右侧 `+`（`searchBarAccessory`）；列表空态（`BaseSetupState`，按钮文案覆盖为「添加提供商」）同款直达创建弹窗
 
 弹窗：添加/编辑提供商（名称 / API URL / 模型 / 可选 Responses URL；创建时含首把 Key）；添加/编辑 Key。无「选用 / 使用中」。
 

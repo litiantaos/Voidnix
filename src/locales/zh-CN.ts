@@ -12,6 +12,8 @@ export const zhCNMessages: Msgs = {
   'common.save': { 'zh-CN': '保存' },
   'common.delete': { 'zh-CN': '删除' },
   'common.loading': { 'zh-CN': '加载中' },
+  // 需 API 配置的扩展未就绪空态（BaseSetupState）的主按钮，跳转目标由各扩展决定
+  'common.goConfigure': { 'zh-CN': '去配置' },
   // 拖拽指引浮窗两行说明（独立小窗悬浮于设置窗口底部外侧，三个权限授权会话通用；
   // \n 换行，图标高度与两行文本高度一致）
   'common.permDragHint': {

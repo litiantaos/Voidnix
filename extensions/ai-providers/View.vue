@@ -1,9 +1,10 @@
 <template>
   <div class="flex-col-full-pb">
-    <BaseEmptyState
+    <BaseSetupState
       v-if="keyRows.length === 0"
       :title="t('ai-providers.empty')"
-      icon="i-ri-key-2-line"
+      :action-text="t('ai-providers.addProvider')"
+      @configure="openCreateProvider"
     />
 
     <BaseList
@@ -261,7 +262,7 @@ import {
 } from './logic'
 import { createProviderTick } from './bridge'
 import BaseList from '@/components/ui/BaseList.vue'
-import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
+import BaseSetupState from '@/components/ui/BaseSetupState.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'

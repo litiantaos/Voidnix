@@ -1,8 +1,8 @@
 <template>
-  <BaseEmptyState
+  <BaseSetupState
     v-if="!isConfigured"
-    icon="i-ri-settings-3-line"
     :title="t('translate.notConfigured')"
+    @configure="appStore.openSubview('config')"
   />
 
   <div v-else flex="~ col">
@@ -77,7 +77,7 @@ import { copyAndHide, useAppStore } from '@/stores/app'
 import { t } from '@/runtime/i18n'
 import { CMD } from '@/commands'
 import { detectSpeechLang } from './logic'
-import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
+import BaseSetupState from '@/components/ui/BaseSetupState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'

@@ -6,10 +6,6 @@ registerMessages({
     'zh-CN': '请先配置 AI 提供商',
     en: 'Please configure an AI provider first',
   },
-  'agent.setupAction': {
-    'zh-CN': '去配置 AI 提供商',
-    en: 'Configure AI Providers',
-  },
   'agent.emptyTitle': { 'zh-CN': '来点有意思的吧！', en: "Let's do something fun!" },
   'agent.emptyHint': {
     'zh-CN': '日常问题、工作任务、搜索资料、跑命令...',
