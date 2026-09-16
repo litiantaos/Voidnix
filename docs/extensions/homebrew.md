@@ -8,6 +8,7 @@
 - 进入视图即拉状态（KeepAlive 缓存下重进走 `onActivated` 重新拉取）；api 元数据陈旧（>24h）时后台 `brew update` 刷新，「更新」按钮位先以旋转禁用态显示「拉取更新」，完成后自动重拉刷新可升级数
 - 子视图 `detail`（`subviews.detail`，标题「包详情」）：目标包摘要 + 依赖 + 被依赖，依赖 / 被依赖项可回车递归进入详情
 - 一键更新：状态行右侧「更新」按钮 → 流式执行 `update → upgrade → cleanup → autoremove`，完成后刷新状态；主视图首项（状态行）回车/双击亦触发（有更新且非运行中时）
+- 服务行回车/双击：进入包详情（服务即已安装包，版本/描述从包列表按名回填，不在列表则 formula 兜底）；启停/重启走行内按钮
 - 卸载：详情页右侧「卸载」→ `showConfirm` 展示被依赖数 + 孤立依赖自动清理提示 → 流式执行 `uninstall → autoremove`；详情页首项回车直接进入卸载确认
 
 ## 命令
@@ -30,6 +31,7 @@
 - **过期检测**：`brew outdated --json=v2` → name → (installed, current) 映射，组装时填充 `new_version`（空 = 已是最新）。不用 `brew info` 的版本对比替代——revision 后缀（如 `1.5.4_1`）会导致误报
 - **已安装版本**：`parse_installed` 从 `brew info --json=v2 --installed` 解析——formulae 读 `installed[0].version`（数组），casks 读 `installed`（字符串）
 - **流式执行**：`run_brew_step` spawn 子进程，stdout + stderr 各起一个 reader task，经 mpsc 合流后逐行 `on_event.send`；reader 结束（管道 EOF）= 子进程已退出，再 `wait` 取退出码
+- **加载态不顶掉缓存**：主/详情视图的 spinner 仅在无数据时接管渲染（`loading && !status/info`）——KeepAlive 重激活的重拉在途期间保留已缓存列表（列表↔详情往返不闪 spinner）；两视图 `loading` 初值 true（onActivated 的 IPC 往返前首帧即 loading，不闪空白/「无匹配」空态，非 Tauri 环境回落 false），目标变化（递归进入依赖）时立即弃旧 info 防「新标题旧列表」错位
 - **kill_on_drop**：子进程带 `kill_on_drop(true)`，Channel 断开或任务取消时自动回收
 - **运行态持久化**：`BREW_RUNNING`（`LazyLock<Mutex<Option<BrewRunState>>>`）跨组件生命周期持久化。`brew_run` 经 RAII guard（`RunGuard`）占位 + 逐步 `set_step`，Drop 时自动清空 + emit `brew-run-done` 事件。guard 拒绝并发调用（返回错误「已有 Homebrew 操作正在运行」）。前端 `onActivated` 先查 `brew_run_state`：有残留操作则恢复运行态（按钮旋转禁用显示当前步骤）并照常拉数据渲染列表——`brew_status` 三条只读命令与运行中 brew 操作并发安全，不阻断为加载态等操作结束，完成经 `brew-run-done` 统一重拉；无则正常加载。查询响应与完成事件的到达竞态（两条投递通道无顺序保证）经 `doneSeen` 标记丢弃过期 Some，防恢复已结束的操作态卡死运行态。状态拉取带 seq 竞态守卫（恢复态拉取与完成重拉并发时仅最新一轮落盘）
 

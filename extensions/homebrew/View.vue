@@ -2,7 +2,8 @@
   <div flex="~ col">
     <BaseEmptyState v-if="error" icon="i-ri-error-warning-line" :title="error" />
 
-    <BaseEmptyState v-else-if="loading" :loading="true" />
+    <!-- 加载态仅在无数据时接管：重激活重拉期间保留 KeepAlive 缓存列表，防闪 spinner -->
+    <BaseEmptyState v-else-if="loading && !status" :loading="true" />
 
     <template v-else-if="status">
       <BaseList
@@ -54,8 +55,6 @@
           <!-- 服务行 -->
           <BaseListItem
             v-else-if="item.type === 'service'"
-            :icon="serviceIcon(item.status)"
-            icon-wrapper-class="fill-mist"
             :title="item.name"
             :tone="item.status === 'started' ? 'accent' : undefined"
           >
@@ -72,27 +71,21 @@
               <div flex gap="1">
                 <BaseButton
                   v-if="item.status !== 'started'"
-                  variant="ghost"
-                  icon="i-ri-play-line"
+                  icon="i-ri-play-circle-line"
                   :disabled="running"
-                  class="flex-center !px-0 !w-7"
                   :title="t('homebrew.start')"
                   @click.stop="runService('services_start', item.name)"
                 />
                 <BaseButton
                   v-if="item.status === 'started'"
-                  variant="ghost"
-                  icon="i-ri-stop-line"
+                  icon="i-ri-stop-circle-line"
                   :disabled="running"
-                  class="flex-center !px-0 !w-7"
                   :title="t('homebrew.stop')"
                   @click.stop="runService('services_stop', item.name)"
                 />
                 <BaseButton
-                  variant="ghost"
                   icon="i-ri-restart-line"
                   :disabled="running"
-                  class="flex-center !px-0 !w-7"
                   :title="t('homebrew.restart')"
                   @click.stop="runService('services_restart', item.name)"
                 />
@@ -101,7 +94,7 @@
           </BaseListItem>
 
           <!-- 包行 -->
-          <BaseListItem v-else :title="item.name" :tone="item.outdated ? 'accent' : undefined">
+          <BaseListItem v-else :title="item.name">
             <template #subtitle>
               <span
                 text="xs"
@@ -185,7 +178,8 @@ type ListItem =
 const appStore = useAppStore()
 const status = ref<BrewStatus | null>(null)
 const services = ref<BrewService[]>([])
-const loading = ref(false)
+// 初值 true：首帧即 loading 态（onActivated 的 IPC 往返前不闪空白帧）
+const loading = ref(true)
 const error = ref('')
 const running = ref(false)
 const runningStep = ref('')
@@ -255,10 +249,6 @@ function groupTitle(g: string): string {
   if (g === '__status__') return ''
   if (g === '__service__') return t('homebrew.services')
   return g === 'cask' ? 'Casks' : 'Formulae'
-}
-
-function serviceIcon(status: string): string {
-  return status === 'started' ? 'i-ri-flashlight-line' : 'i-ri-shut-down-line'
 }
 
 function serviceStatusText(status: string): string {
@@ -351,22 +341,28 @@ async function runService(operation: string, name: string) {
   }
 }
 
+function openDetail(target: { name: string; kind: string; version: string; desc: string }) {
+  sessionStorage.setItem('homebrew:detail', JSON.stringify(target))
+  appStore.openSubview('detail', false)
+}
+
 function onExecute(item: ListItem) {
   if (item.type === 'status') {
     if (status.value?.has_update && !running.value) run('update_upgrade')
     return
   }
-  if (item.type !== 'package') return
-  sessionStorage.setItem(
-    'homebrew:detail',
-    JSON.stringify({
+  if (item.type === 'service') {
+    // 服务行也是包：回车/双击进入包详情（与包行一致），启停/重启走行内按钮
+    const pkg = status.value?.packages.find((p) => p.name === item.name)
+    openDetail({
       name: item.name,
-      kind: item.kind,
-      version: item.version,
-      desc: item.desc,
-    }),
-  )
-  appStore.openSubview('detail', false)
+      kind: pkg?.kind ?? 'formula',
+      version: pkg?.version ?? '',
+      desc: pkg?.desc ?? '',
+    })
+    return
+  }
+  openDetail({ name: item.name, kind: item.kind, version: item.version, desc: item.desc })
 }
 
 // KeepAlive（ContentView max=3）缓存下重进走 onActivated 而非 onMounted，数据拉取统一收口于此
@@ -389,7 +385,11 @@ async function ensureDoneListener() {
 }
 
 onActivated(async () => {
-  if (!isTauri || running.value) return
+  if (!isTauri) {
+    loading.value = false
+    return
+  }
+  if (running.value) return
   await ensureDoneListener()
   doneSeen = false
   // 查状态：null = 无操作（含后台元数据刷新）进行中；Some = 仍在运行（LRU 驱逐/窗口隐藏后重挂载恢复进度）

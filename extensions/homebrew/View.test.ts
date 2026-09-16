@@ -107,6 +107,8 @@ describe('homebrew View 运行态恢复', () => {
     expect(wrapper.text()).toContain('git')
     expect(wrapper.text()).not.toContain('加载中')
     expect(wrapper.text()).not.toContain('升级中')
+    // 卸载清理：BaseList 的 document 级回车监听（执行即消费）泄漏会吞掉后续用例的回车
+    wrapper.unmount()
   })
 
   it('升级中退出后重进：渲染列表 + 恢复运行态显示当前步骤，不阻断为加载态', async () => {
@@ -200,6 +202,90 @@ describe('homebrew View 运行态恢复', () => {
     await flush()
     expect(wrapper.text()).toContain('4.5.0')
     expect(wrapper.text()).not.toContain('加载中')
+    wrapper.unmount()
+  })
+
+  it('详情返回列表（KeepAlive 重激活）：重拉在途保留缓存列表，不闪 spinner', async () => {
+    let hang = false
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === 'brew_run_state') return Promise.resolve(null)
+      if (cmd === 'brew_status') {
+        if (!hang) return Promise.resolve(statusPayload())
+        return new Promise<BrewStatusPayload>(() => {})
+      }
+      if (cmd === 'brew_services') return Promise.resolve([])
+      return Promise.resolve(null)
+    })
+    const { wrapper, show } = mountHost()
+    await flush()
+    expect(wrapper.text()).toContain('git')
+
+    // 模拟进详情（列表 deactivate）再返回：重拉挂起在途，缓存列表应保持可见
+    show.value = false
+    await flush()
+    hang = true
+    show.value = true
+    await flush()
+    expect(wrapper.text()).toContain('git')
+    wrapper.unmount()
+  })
+})
+
+describe('homebrew View 界面', () => {
+  it('服务行无左侧图标、启停按钮为正常按钮组件；有更新的包名不带强调色', async () => {
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === 'brew_run_state') return Promise.resolve(null)
+      if (cmd === 'brew_status') return Promise.resolve(statusPayload())
+      if (cmd === 'brew_services') return Promise.resolve([{ name: 'redis', status: 'started' }])
+      return Promise.resolve(null)
+    })
+    const { wrapper } = mountHost()
+    await flush()
+
+    // 服务行左侧图标已移除
+    expect(wrapper.html()).not.toContain('i-ri-flashlight-line')
+    expect(wrapper.html()).not.toContain('i-ri-shut-down-line')
+    // 右侧按钮走正常按钮组件（soft-chip 面，非 ghost 覆写），图标同为满幅圆形线稿（视觉等大）
+    const stop = wrapper.find('[title="停止"]')
+    expect(stop.exists()).toBe(true)
+    expect(stop.classes()).toContain('soft-chip')
+    expect(stop.classes()).not.toContain('ui-btn-ghost')
+    expect(stop.classes()).not.toContain('!w-7')
+    expect(stop.find('i').classes()).toContain('i-ri-stop-circle-line')
+    expect(wrapper.find('[title="重启"] i').classes()).toContain('i-ri-restart-line')
+    // 有更新的包名标题不带 accent 色，版本号告警色保留
+    const gitTitle = wrapper.findAll('div').find((d) => d.text() === 'git')
+    expect(gitTitle?.classes()).not.toContain('text-accent')
+    expect(wrapper.html()).toContain('text-warning')
+    wrapper.unmount()
+  })
+
+  it('服务行回车：进入包详情，不触发启停', async () => {
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === 'brew_run_state') return Promise.resolve(null)
+      if (cmd === 'brew_status') return Promise.resolve(statusPayload())
+      if (cmd === 'brew_services')
+        return Promise.resolve([
+          { name: 'redis', status: 'started' },
+          { name: 'postgresql@16', status: 'stopped' },
+        ])
+      return Promise.resolve(null)
+    })
+    const { wrapper } = mountHost()
+    await flush()
+
+    // 选中下移到首个服务行（redis，不在包列表中 → formula 兜底）后回车
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    await flush()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flush()
+
+    expect(mocks.openSubview).toHaveBeenCalledWith('detail', false)
+    expect(JSON.parse(sessionStorage.getItem('homebrew:detail') ?? '{}')).toMatchObject({
+      name: 'redis',
+      kind: 'formula',
+    })
+    expect(mocks.invoke).not.toHaveBeenCalledWith('brew_run', expect.anything())
     wrapper.unmount()
   })
 })

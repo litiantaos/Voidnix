@@ -1,7 +1,7 @@
 <template>
   <div flex="~ col">
     <BaseEmptyState v-if="error" icon="i-ri-error-warning-line" :title="error" />
-    <BaseEmptyState v-else-if="loading" :loading="true" />
+    <BaseEmptyState v-else-if="loading && !info" :loading="true" />
 
     <BaseList
       v-else-if="filteredItems.length > 0"
@@ -94,7 +94,8 @@ interface InfoItem {
 }
 
 const appStore = useAppStore()
-const loading = ref(false)
+// 初值 true：首帧即 loading 态（onActivated 的 IPC 往返前不落「无匹配」空态闪帧）
+const loading = ref(true)
 const error = ref('')
 const info = ref<BrewInfo | null>(null)
 const target = ref<DetailTarget | null>(null)
@@ -165,13 +166,19 @@ watch(filteredItems, (list) => {
 })
 
 async function fetchInfo() {
-  if (!isTauri) return
+  if (!isTauri) {
+    loading.value = false
+    return
+  }
   const raw = sessionStorage.getItem('homebrew:detail')
   if (!raw) {
     error.value = t('homebrew.missingPackageInfo')
     return
   }
-  target.value = JSON.parse(raw) as DetailTarget
+  const next = JSON.parse(raw) as DetailTarget
+  // 目标变化（递归进入依赖）：旧 info 属于上一个包，立即弃用防「新标题旧列表」错位
+  if (target.value?.name !== next.name) info.value = null
+  target.value = next
 
   loading.value = true
   error.value = ''
@@ -278,7 +285,9 @@ onActivated(async () => {
   // 操作进行中：读取目标包信息用于标题显示，不调 brew info（锁冲突会挂起）
   const raw = sessionStorage.getItem('homebrew:detail')
   if (raw) {
-    target.value = JSON.parse(raw) as DetailTarget
+    const next = JSON.parse(raw) as DetailTarget
+    if (target.value?.name !== next.name) info.value = null
+    target.value = next
     appStore.setSearchQuery('')
   }
   running.value = true
