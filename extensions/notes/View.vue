@@ -622,16 +622,25 @@ function ensureCaretVisible() {
 
 // ── 交互承接 ─────────────────────────────────────────────────────────────
 
-/// 点击渲染层 → 光标定位(mousedown preventDefault 保住 textarea 焦点,自管 caret offset)
+/// 点击渲染层 → 光标定位(mousedown preventDefault 保住 textarea 焦点,自管 caret
+/// offset);Shift+点击扩展当前选区(锚 = 现选区固定端);左键按住进入拖选会话
 function onLayerDown(e: MouseEvent) {
   e.preventDefault()
   const el = inputEl.value
   if (!el) return
   el.focus()
   const cp = caretCpFromPoint(e.clientX, e.clientY)
-  const cu = idxMap.cpStart[cp] ?? 0
-  el.setSelectionRange(cu, cu)
-  syncCaret()
+  if (e.shiftKey) {
+    const backward = el.selectionDirection === 'backward'
+    dragAnchor = idxMap.cu2cp[backward ? el.selectionEnd : el.selectionStart] ?? cp
+    applyDragSelection(cp)
+  } else {
+    const cu = idxMap.cpStart[cp] ?? 0
+    el.setSelectionRange(cu, cu)
+    dragAnchor = cp
+    syncCaret()
+  }
+  if (e.button === 0) startDrag(e.clientX, e.clientY, dragAnchor)
 }
 
 /// 视口坐标 → code point 偏移:caretRangeFromPoint 命中字符 span(data-ti)±半字
@@ -670,6 +679,86 @@ function liveTi(el: Element): number | null {
   if (!el.classList.contains('ch') || el.classList.contains('ghost')) return null
   const ti = el.getAttribute('data-ti')
   return ti !== null && ti !== '' ? Number(ti) : null
+}
+
+// ── 拖选 ─────────────────────────────────────────────────────────────────
+// 渲染层 user-select 关闭(选区自绘),原生拖选不可用——mousedown 只落光标。
+// 拖选自管:锚 = 按下点 code point,window mousemove 记指针并即时落位,rAF 循环
+// 承担越缘自动滚动的持续扩展(无鼠标事件时滚动使指针下字符变化);选区写入隐藏
+// textarea(setSelectionRange),高亮经既有 .ch.sel 渲染,Cmd+C / 键入替换原生直通。
+
+let dragAnchor: number | null = null // 拖选锚(cp);null = 非拖选中
+let dragMoved = false // 越过 3px 阈值(防点击抖动在字符边界误启选区)
+let dragCp = 0 // 上帧选区活动端(cp),无变化跳过写选区
+let dragRaf = 0
+let dragDownPt = { x: 0, y: 0 }
+let dragPt = { x: 0, y: 0 }
+
+function onDragMove(e: MouseEvent) {
+  dragPt = { x: e.clientX, y: e.clientY }
+  dragFrame() // 事件内即时落位(mouseup 前的末位置必达)
+}
+
+function onDragEnd() {
+  dragAnchor = null
+  if (dragRaf) cancelAnimationFrame(dragRaf)
+  dragRaf = 0
+  window.removeEventListener('mousemove', onDragMove)
+  window.removeEventListener('mouseup', onDragEnd)
+  window.removeEventListener('blur', onDragEnd)
+}
+
+/// 拖选会话:mousedown 起挂 window 监听(指针离层仍跟踪,按住期间浏览器隐式捕获)
+/// + rAF 循环(自动滚动的持续驱动);残留会话(rAF 未消,如中途 cmd+tab)先收束
+function startDrag(x: number, y: number, anchor: number) {
+  if (dragRaf) onDragEnd()
+  dragAnchor = anchor
+  dragDownPt = { x, y }
+  dragPt = { x, y }
+  dragMoved = false
+  dragCp = anchor
+  window.addEventListener('mousemove', onDragMove)
+  window.addEventListener('mouseup', onDragEnd)
+  window.addEventListener('blur', onDragEnd)
+  const tick = () => {
+    dragRaf = requestAnimationFrame(tick)
+    dragFrame()
+  }
+  dragRaf = requestAnimationFrame(tick)
+}
+
+/// 锚 → cp 落选区(方向随活动端相对锚,后续 Shift+Arrow / Shift+Click 扩展端正确)
+function applyDragSelection(cp: number) {
+  const el = inputEl.value
+  if (!el || dragAnchor === null) return
+  const a = idxMap.cpStart[dragAnchor] ?? 0
+  const b = idxMap.cpStart[cp] ?? 0
+  el.setSelectionRange(Math.min(a, b), Math.max(a, b), cp < dragAnchor ? 'backward' : 'forward')
+  syncCaret()
+}
+
+/// 拖选帧:指针钳制进层盒(越层拖选落最近可视字符,与原生 textarea 一致)→ 命中
+/// cp → 扩展选区;指针越层上下缘按超出量自动滚动(限 LINE_H/帧)
+function dragFrame() {
+  const layer = layerEl.value
+  if (!layer || dragAnchor === null) return
+  if (!dragMoved) {
+    if (Math.hypot(dragPt.x - dragDownPt.x, dragPt.y - dragDownPt.y) < 3) return
+    dragMoved = true
+  }
+  const rect = layer.getBoundingClientRect()
+  const EDGE = 18 // 越缘感应带
+  const over = rect.top + EDGE - dragPt.y
+  const under = dragPt.y - (rect.bottom - EDGE)
+  if (over > 0) layer.scrollTop = Math.max(0, layer.scrollTop - Math.min(over, LINE_H))
+  else if (under > 0) layer.scrollTop += Math.min(under, LINE_H)
+  const x = Math.min(Math.max(dragPt.x, rect.left + 1), rect.right - 1)
+  const y = Math.min(Math.max(dragPt.y, rect.top + 1), rect.bottom - 1)
+  const cp = caretCpFromPoint(x, y)
+  if (cp !== dragCp) {
+    dragCp = cp
+    applyDragSelection(cp)
+  }
 }
 
 function onKeyUp() {
@@ -875,6 +964,7 @@ function onDocSelectionChange() {
 }
 
 onUnmounted(() => {
+  onDragEnd()
   document.removeEventListener('selectionchange', onDocSelectionChange)
   window.removeEventListener('window-focused', onWinFocused)
   layerEl.value?.removeEventListener('scroll', anchorIME)
@@ -906,6 +996,7 @@ watch(
   },
 )
 onDeactivated(() => {
+  onDragEnd() // 拖选中切扩展/进子视图:收束会话,防 window 监听残留跨界面响应
   inputEl.value?.blur()
 })
 </script>

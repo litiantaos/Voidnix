@@ -325,6 +325,74 @@ test.describe('notes 记事本', () => {
     await expect(page.locator('.caret-on')).toBeVisible()
   })
 
+  test('拖选:按住拖动建立选区,前反向方向正确,高亮随动,松手保持', async ({ page }) => {
+    await page.locator('.notes-layer').click()
+    await page.keyboard.type('abcdef')
+    await expect(page.locator('.ch')).toHaveCount(6)
+    await expect(page.locator('.ch.anim')).toHaveCount(0, { timeout: 3000 })
+    // 拖选起止点:字符左缘内 1px(命中 startOffset 0,cp 确定性落点)
+    const pts = await page.evaluate(() => {
+      const layer = document.querySelector('.notes-layer') as HTMLElement
+      const at = (ti: number) => {
+        const el = layer.querySelector(`.ch[data-ti='${ti}']`) as HTMLElement
+        const r = el.getBoundingClientRect()
+        return { x: r.left + 1, y: r.top + r.height / 2 }
+      }
+      return { from: at(1), to: at(4) }
+    })
+    // 前向拖选:锚在左,选区 [1,4)
+    await page.mouse.move(pts.from.x, pts.from.y)
+    await page.mouse.down()
+    await page.mouse.move(pts.to.x, pts.to.y, { steps: 6 })
+    await page.mouse.up()
+    const fwd = await page.evaluate(() => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      return { s: ta.selectionStart, e: ta.selectionEnd, d: ta.selectionDirection }
+    })
+    expect(fwd).toMatchObject({ s: 1, e: 4, d: 'forward' })
+    await expect(page.locator('.ch.sel')).toHaveCount(3)
+    await expect(page.locator('.caret-on')).toHaveCount(0)
+    // 反向拖选:活动端在锚左侧,方向 backward,选区范围不变
+    await page.mouse.move(pts.to.x, pts.to.y)
+    await page.mouse.down()
+    await page.mouse.move(pts.from.x, pts.from.y, { steps: 6 })
+    await page.mouse.up()
+    const back = await page.evaluate(() => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      return { s: ta.selectionStart, e: ta.selectionEnd, d: ta.selectionDirection }
+    })
+    expect(back).toMatchObject({ s: 1, e: 4, d: 'backward' })
+    await expect(page.locator('.ch.sel')).toHaveCount(3)
+  })
+
+  test('拖选越缘自动滚动:长文拖出层底,选区随滚动扩展到视口外', async ({ page }) => {
+    await page.locator('.notes-layer').click()
+    await page.evaluate(() => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      ta.value = Array.from({ length: 40 }, (_, i) => `line${i}`).join('\n')
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+      ta.setSelectionRange(0, 0)
+      ta.dispatchEvent(new Event('select', { bubbles: true }))
+    })
+    await page.waitForTimeout(400)
+    // 从首行拖到层底下方 40px 并按住:自动滚动持续驱动,选区端点追到滚动露出的内容
+    const box = await page.locator('.notes-layer').boundingBox()
+    expect(box).toBeTruthy()
+    await page.mouse.move(box!.x + 20, box!.y + 8)
+    await page.mouse.down()
+    await page.mouse.move(box!.x + 20, box!.y + box!.height + 40, { steps: 10 })
+    await page.waitForTimeout(700)
+    await page.mouse.up()
+    const state = await page.evaluate(() => {
+      const layer = document.querySelector('.notes-layer') as HTMLElement
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      return { scrollTop: layer.scrollTop, selEnd: ta.selectionEnd }
+    })
+    expect(state.scrollTop).toBeGreaterThan(0)
+    // 40 行 fixture 全文 239 字符,选区须显著越过初始视口(自动滚动扩展的证据)
+    expect(state.selEnd).toBeGreaterThan(160)
+  })
+
   test('IME 锚随输入区滚动:壳镜像层盒 + 软换行重合,滚动即时同步', async ({ page }) => {
     await page.locator('.notes-layer').click()
     await page.evaluate(() => {
