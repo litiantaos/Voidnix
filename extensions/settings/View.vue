@@ -81,6 +81,12 @@ const handleQuitApp = async () => {
   }
 }
 
+const handleOpenWebsite = async () => {
+  if (isTauri) {
+    await open('https://voidnix.app')
+  }
+}
+
 const handleOpenGitHub = async () => {
   if (isTauri) {
     await open('https://github.com/litiantaos/Voidnix')
@@ -158,7 +164,7 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     title: t('settings.appearance'),
     type: 'select',
     icon: 'i-ri-contrast-2-line',
-    group: t('settings.group.app'),
+    group: t('settings.group.general'),
     value: settings.appearance,
     options: [
       { label: t('settings.appearance.auto'), value: 'auto' },
@@ -175,7 +181,7 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     title: t('settings.language'),
     type: 'select',
     icon: 'i-ri-translate-2',
-    group: t('settings.group.app'),
+    group: t('settings.group.general'),
     value: settings.language,
     options: [
       { label: t('settings.language.zh-CN'), value: 'zh-CN' },
@@ -194,7 +200,7 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     tone: appStore.shortcutErrors.main ? 'danger' : undefined,
     type: 'shortcut',
     icon: 'i-ri-keyboard-line',
-    group: t('settings.group.app'),
+    group: t('settings.group.general'),
     value: settings.globalShortcut,
     update: handleGlobalShortcutChange,
   })
@@ -204,7 +210,7 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     title: t('settings.autostart'),
     type: 'toggle',
     icon: 'i-ri-shut-down-line',
-    group: t('settings.group.app'),
+    group: t('settings.group.general'),
     value: systemStore.autostartEnabled,
     update: handleAutostartToggle,
   })
@@ -214,7 +220,7 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     title: t('settings.menubarIcon'),
     type: 'toggle',
     icon: 'i-ri-layout-top-line',
-    group: t('settings.group.app'),
+    group: t('settings.group.general'),
     value: settings.menubarIconVisible,
     update: (v: boolean) => {
       settings.menubarIconVisible = v
@@ -226,50 +232,8 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     title: t('settings.showWelcome'),
     type: 'action',
     icon: 'i-ri-guide-line',
-    group: t('settings.group.app'),
+    group: t('settings.group.general'),
     action: handleShowWelcome,
-  })
-
-  const checkLabel = updateStore.checking
-    ? t('settings.checking')
-    : updateStore.downloading
-      ? t('settings.downloading')
-      : updateStore.downloaded
-        ? t('settings.installUpdate')
-        : updateStore.info
-          ? t('settings.downloadAndInstall')
-          : t('settings.checkUpdate')
-  let versionLabel = appVersion.value ? `v${appVersion.value}` : ''
-  if (updateStore.info) {
-    versionLabel = `→ ${updateStore.info.newVersion}（v${updateStore.info.currentVersion}）`
-  }
-  items.push({
-    id: 'check-update',
-    title: checkLabel,
-    subtitle: versionLabel,
-    type: 'action',
-    icon: updateStore.downloaded ? 'i-ri-arrow-up-circle-line' : 'i-ri-refresh-line',
-    group: t('settings.group.app'),
-    action: handleCheckUpdate,
-  })
-
-  items.push({
-    id: 'about',
-    title: t('settings.about'),
-    type: 'action',
-    icon: 'i-ri-information-line',
-    subtitle: 'github.com/litiantaos/Voidnix',
-    group: t('settings.group.app'),
-    action: handleOpenGitHub,
-  })
-
-  items.push({
-    id: 'quit-app',
-    title: t('settings.quit'),
-    type: 'action',
-    icon: 'i-ri-logout-box-line',
-    group: t('settings.group.app'),
-    action: handleQuitApp,
   })
 
   // 权限行顺序与引导面板一致：设备控制 → 完全访问，录屏（预绑定，授权后须重启）恒置末位
@@ -309,6 +273,50 @@ const allSettingsItems = computed<SettingItem[]>(() => {
       return handleRequestScreenRecording()
     },
   })
+  // 关于组：版本/更新与产品链接（版本信息天然属于「关于」）
+  const checkLabel = updateStore.checking
+    ? t('settings.checking')
+    : updateStore.downloading
+      ? t('settings.downloading')
+      : updateStore.downloaded
+        ? t('settings.installUpdate')
+        : updateStore.info
+          ? t('settings.downloadAndInstall')
+          : t('settings.checkUpdate')
+  let versionLabel = appVersion.value ? `v${appVersion.value}` : ''
+  if (updateStore.info) {
+    versionLabel = `→ ${updateStore.info.newVersion}（v${updateStore.info.currentVersion}）`
+  }
+  items.push({
+    id: 'check-update',
+    title: checkLabel,
+    subtitle: versionLabel,
+    type: 'action',
+    icon: updateStore.downloaded ? 'i-ri-arrow-up-circle-line' : 'i-ri-refresh-line',
+    group: t('settings.group.about'),
+    action: handleCheckUpdate,
+  })
+
+  items.push({
+    id: 'website',
+    title: t('settings.website'),
+    type: 'action',
+    icon: 'i-ri-global-line',
+    subtitle: 'voidnix.app',
+    group: t('settings.group.about'),
+    action: handleOpenWebsite,
+  })
+
+  items.push({
+    id: 'about',
+    title: t('settings.about'),
+    type: 'action',
+    icon: 'i-ri-information-line',
+    subtitle: 'github.com/litiantaos/Voidnix',
+    group: t('settings.group.about'),
+    action: handleOpenGitHub,
+  })
+
   items.push({
     id: 'clear-injections',
     title: t('settings.clearInjections'),
@@ -317,6 +325,15 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     icon: 'i-ri-eraser-line',
     group: t('settings.group.advanced'),
     action: handleClearInjections,
+  })
+
+  items.push({
+    id: 'quit-app',
+    title: t('settings.quit'),
+    type: 'action',
+    icon: 'i-ri-logout-box-line',
+    group: t('settings.group.advanced'),
+    action: handleQuitApp,
   })
 
   return items
