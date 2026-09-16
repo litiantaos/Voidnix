@@ -88,6 +88,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # DMG 背景与图标定位经 Finder AppleScript 写入 .DS_Store：bundler 检测到 CI
+          # 环境默认跳过该步骤（--skip-jenkins），产物将无拖拽引导，须显式忽略 CI 检测
+          # （取值必须为 true，实测 1 无效）
+          TAURI_BUNDLER_DMG_IGNORE_CI: true
           # macOS 签名/公证凭证由前置步骤按组注入：签名配齐则开发者证书签名，
           # 公证配齐则自动公证 + staple（macOS 15+ 辅助功能/屏幕录制 API 要求公证，
           # 未公证应用含 Apple Development 证书签名——系统设置开关打开也不生效）

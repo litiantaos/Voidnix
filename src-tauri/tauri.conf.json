@@ -39,7 +39,15 @@
     "icon": [
       "icons/icon.icns"
     ],
-    "macOS": {},
+    "macOS": {
+      "dmg": {
+        "background": "icons/dmg-background.png",
+        "windowPosition": { "x": 420, "y": 250 },
+        "windowSize": { "width": 660, "height": 400 },
+        "appPosition": { "x": 180, "y": 210 },
+        "applicationFolderPosition": { "x": 480, "y": 210 }
+      }
+    },
     "createUpdaterArtifacts": true,
     "resources": {
       "target/release/zsh-autosuggestions": "zsh-autosuggestions"

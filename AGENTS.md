@@ -137,6 +137,8 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 正式版发布走 `.github/workflows/release.yml`（`git tag v*` 触发，`tauri-action` 打包）。
 
+**DMG 安装引导**：`bundle.macOS.dmg` 配背景图 `icons/dmg-background.png`（拖拽引导：accent 箭头 + 一句话，图标槽位由 Finder 渲染）。图由 `bun run generate:dmg-bg`（`scripts/gen-dmg-background.py`）生成，@2x 1320×800 + pHYs 144dpi（Finder 按内嵌 DPI 折算逻辑 660×400pt，retina 全分辨率）。实测几何（macOS 26）：660×400pt 窗口 = 32pt 标题栏 + 340pt 背景绘制区 + 28pt 隐藏状态栏白带，图标位置为内容区坐标的中心点，渐变须在 340pt 内淡出到纯白衔接白带；改布局须同步 tauri.conf.json dmg 段与生成脚本。背景与图标定位经 Finder AppleScript 写入 .DS_Store，tauri-bundler 检测到 CI 环境默认跳过该步骤（产物退化为白背景默认排列），release.yml 已设 `TAURI_BUNDLER_DMG_IGNORE_CI=true` 强制执行（取值须为 true，1 无效），勿删。
+
 **签名一致性**：CI 与本地 `deploy.sh` 必须用同一 Apple 证书签名——adhoc 签名的 cdhash 每次编译都变，TCC 按其匹配系统权限会导致每次更新权限失效。
 
 - CI 凭证走 GitHub secrets（签名 `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` 同 `.env`，公证 `APPLE_ID` / `APPLE_PASSWORD`（app 专用密码）/ `APPLE_TEAM_ID`），两组各配齐才经前置步骤写入 `GITHUB_ENV`——GitHub 对未配置的 secrets 注入空字符串，tauri-bundler 以 `var_os` 判定会把空串当已配置致构建硬失败，缺省则 bundler 自动退回 adhoc/跳过公证（仅警告）；公证配齐时 tauri-bundler 在 build 阶段自动公证 + staple
