@@ -372,15 +372,6 @@ const drawing = useDrawing({
   textOnCanvas,
   textRegions: textDetection.textRegions,
 })
-const beginCanvasText = async () => {
-  textOnCanvas.value = true
-  await nextTick()
-  drawing.redraw()
-}
-const endCanvasText = () => {
-  textOnCanvas.value = false
-  nextTick(() => drawing.redraw())
-}
 
 const textInputComposable = useTextInput({
   sel: selection.sel,
@@ -394,6 +385,19 @@ const textInputComposable = useTextInput({
   redraw: drawing.redraw,
   textInputEl,
 })
+
+// 烧录前先固化编辑中的文本（未点外部确认也能进导出图：shape 写入完整 text/换行/基线补偿，
+// textarea 撤除），已提交文本的 DOM 呈现层随 textOnCanvas 隐藏，canvas 统一绘制
+const beginCanvasText = async () => {
+  textInputComposable.commitText()
+  textOnCanvas.value = true
+  await nextTick()
+  drawing.redraw()
+}
+const endCanvasText = () => {
+  textOnCanvas.value = false
+  nextTick(() => drawing.redraw())
+}
 
 const actions = useScreenshotActions({
   sel: selection.sel,
