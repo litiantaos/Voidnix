@@ -22,6 +22,28 @@ export function isModalDialogOpen(): boolean {
   return !!document.querySelector('[role="dialog"][aria-modal="true"]')
 }
 
+/** WKWebView 窗口隐藏（alpha=0）期间渲染时钟冻结，CSS 动画停在隐藏帧且恢复可见后
+ *  不再推进（WebKit 已知行为，loading 图标静止）。窗口唤起获焦时重启全部无限循环
+ *  动画（loading/pulse 等持续指示器）：inline animation-name 置 none → forced
+ *  reflow → 还原，旧动画注销重建、时间轴归零重走。有限动画（进出场过渡）冻结在
+ *  近终态，重启反而跳变，不处理。 */
+export function resumeInfiniteAnimations(): number {
+  if (typeof document.getAnimations !== 'function') return 0
+  const targets = new Set<HTMLElement>()
+  for (const anim of document.getAnimations()) {
+    const effect = anim.effect
+    if (!effect || effect.getTiming().iterations !== Infinity) continue
+    // CSS 动画的 effect 为 KeyframeEffect（才有 target），'target' in 判定收窄
+    if (!('target' in effect)) continue
+    if (effect.target instanceof HTMLElement) targets.add(effect.target)
+  }
+  if (targets.size === 0) return 0
+  for (const el of targets) el.style.animationName = 'none'
+  void document.body.offsetHeight
+  for (const el of targets) el.style.animationName = ''
+  return targets.size
+}
+
 export function isFormControl(
   el: Element | null | undefined,
   extraChecks?: { settingsControl?: boolean },

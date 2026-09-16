@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { wrapIndex, isComposing, isFormControl } from './dom'
+import { wrapIndex, isComposing, isFormControl, resumeInfiniteAnimations } from './dom'
 
 describe('wrapIndex', () => {
   it('向下循环', () => {
@@ -63,5 +63,54 @@ describe('isFormControl', () => {
     div.setAttribute('data-settings-control', '')
     expect(isFormControl(div, { settingsControl: true })).toBe(true)
     expect(isFormControl(div)).toBe(false)
+  })
+})
+
+describe('resumeInfiniteAnimations', () => {
+  // happy-dom 无动画引擎，stub document.getAnimations（duck-typed 假动画）
+  function stubAnimations(anims: unknown[]) {
+    Object.defineProperty(document, 'getAnimations', {
+      value: () => anims,
+      configurable: true,
+    })
+  }
+  const drop = (obj: object, key: string) => delete (obj as Record<string, unknown>)[key]
+
+  it('重启无限循环动画（none → forced reflow → 还原），有限动画不触碰', () => {
+    const spinner = document.createElement('i')
+    const once = document.createElement('i')
+    document.body.append(spinner, once)
+    stubAnimations([
+      { effect: { getTiming: () => ({ iterations: Infinity }), target: spinner } },
+      { effect: { getTiming: () => ({ iterations: 1 }), target: once } },
+    ])
+
+    // 拦截 forced reflow：捕获 reflow 时刻两目标的中间态
+    const atReflow: string[] = []
+    Object.defineProperty(document.body, 'offsetHeight', {
+      configurable: true,
+      get: () => {
+        atReflow.push(`${spinner.style.animationName}|${once.style.animationName}`)
+        return 0
+      },
+    })
+
+    try {
+      expect(resumeInfiniteAnimations()).toBe(1)
+    } finally {
+      drop(document.body, 'offsetHeight')
+      drop(document, 'getAnimations')
+    }
+
+    expect(atReflow).toEqual(['none|'])
+    // 还原后 inline 覆写清空（交回样式表值），动画注销重建
+    expect(spinner.style.animationName).toBe('')
+    expect(once.style.animationName).toBe('')
+  })
+
+  it('无无限循环动画：零重启', () => {
+    stubAnimations([{ effect: { getTiming: () => ({ iterations: 1 }), target: document.body } }])
+    expect(resumeInfiniteAnimations()).toBe(0)
+    drop(document, 'getAnimations')
   })
 })

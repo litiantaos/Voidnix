@@ -12,6 +12,7 @@ import { whenConfigReady } from '@/runtime/storage'
 import { t, resolveLocalized } from '@/runtime/i18n'
 import { formatShortcutKeys } from '@/utils/format'
 import { isTauri, hideWindow, showWindow } from '@/utils/tauri'
+import { resumeInfiniteAnimations } from '@/utils/dom'
 import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 
 type Win = ReturnType<typeof import('@tauri-apps/api/window').getCurrentWindow> | null
@@ -339,6 +340,8 @@ export function useAppLifecycle(win: Win) {
         ({ payload: focused }: { payload: boolean }) => {
           if (focused) {
             window.dispatchEvent(new CustomEvent('window-focused'))
+            // 窗口隐藏期间 WKWebView 冻结 CSS 动画且恢复可见后不推进：唤起获焦重启无限循环动画
+            resumeInfiniteAnimations()
             // 主动接完 responder 链（wry: makeFirstResponder(webview)，不 activate_app）：
             // 无激活唤起下窗口 key 聚焦后 WKWebView 页面焦点状态要迟些才自然翻转，
             // 显式落位使其当帧翻转——输入框聚焦/唤起全选（selectAllWhenPageFocused 双通道
