@@ -56,8 +56,9 @@
 
 - Vision OCR 经 `objc2-vision` 进程内调用 `VNRecognizeTextRequest` + `VNDetectBarcodesRequest`（zh-Hans/Hant/en/ja 文字 + QR/条码），一次请求同时返回文字和二维码内容（`OcrResult { text, qr }`）。原实现 `swift -e` 子进程每次要启动 Swift 解释器 + 编译脚本 + 冷加载 Vision/AppKit（实测 0.3s 起步）叠加 PNG 编码落盘/解码往返；进程内 `crop_cg_with_annotation` 直接产出合成标注的 CGImage 喂 `VNImageRequestHandler`，零子进程零落盘。`detect_text_regions` 直接消费截屏会话的原始 CGImage（不再绕道 picker.jpg 磁盘解码——原落盘仅为跨进程传图）
 - OCR 会话状态（预览图/识别文本/错误/加载态）存模块级 `ocrSession`（index.ts 导出，OcrView 绑定而非组件局部）：KeepAlive 缓存超限 LRU 驱逐会销毁视图，重挂载直接从会话恢复现场（识别进行中被驱逐亦然，invoke 回调写会话；窗口隐藏走 content-visibility 冻结，状态原样保留）；新 OCR 数据注入（`pendingOcrData`）时经视图 watch 重置。跨 navigate 重载不存活（重载后 `activeSubview` 已丢，无恢复入口）
-- 结果窗口高度封顶（subview `auto` 高度）：输入框高度弹性——内容自然撑高、超限框内滚动；上限从 `get_window_max_height` 命令推导（placement/光标屏 visibleFrame × 0.9，与 `set_main_frame` 的 Rust clamp 同源）− 固定部分（chrome + 预览 h-44 + 操作列表 ≈ 568）− 余量，内容恒不超窗，窗口级零滚动
-- 识别期间预览区覆磨砂加载遮罩（浅色磨砂底 `--mica-shell-fill` + `backdrop-blur-xs` + `BaseEmptyState` loading 居中，进出场 opacity 过渡；`ocrSession.loading` 驱动，识别中被 LRU 驱逐重挂载遮罩仍在）：预览图即时显示（注入 `pendingOcrData` 即写 `ocrSession.imageUrl`），结果到达即卸载遮罩渲染文本与操作列表
+- 结果窗口高度封顶（subview `auto` 高度）：输入框高度弹性——内容自然撑高、超限框内滚动；上限从 `get_window_max_height` 命令推导（placement/光标屏 visibleFrame × 0.9，与 `set_main_frame` 的 Rust clamp 同源）− 固定部分（chrome + 预览 h-44 + 操作按钮行 ≈ 318）− 余量，内容恒不超窗，窗口级零滚动
+- 识别期间预览区覆磨砂加载遮罩（浅色磨砂底 `--mica-shell-fill` + `backdrop-blur-xs` + `BaseEmptyState` loading 居中，进出场 opacity 过渡；`ocrSession.loading` 驱动，识别中被 LRU 驱逐重挂载遮罩仍在）：预览图即时显示（注入 `pendingOcrData` 即写 `ocrSession.imageUrl`），结果到达即卸载遮罩渲染文本与操作按钮行。预览区滚动层与遮罩分层（同为外层容器直接子级）——滚动容器内的 absolute 遮罩只覆盖初始视口且随长图滚走，分层后遮罩钉住视口不参与滚动（e2e `screenshot.spec.ts` 回归锁）；外层 `overflow-hidden` + `radius-panel` 把图片与遮罩四角裁进圆角（分层后圆角与滚动不在同一元素，须显式裁剪防直角溢出）
+- 操作按钮行（横排 `BaseButton` + `gap-2`，识别完成后渲染）：左右键环形切换选中（`ui-active` 高亮），回车触发当前项，点击即选中并执行；默认选中首项（复制）。让位语义与 BaseList 对齐——textarea 聚焦（编辑识别结果）时左右键移动光标、回车换行，blur（点击预览区等）恢复导航；KeepAlive deactivate / 模态弹窗 / IME 合成 / 整窗视图期间不响应；Enter 执行即消费（`stopImmediatePropagation`，防全局导航重复响应），auto-repeat 不触发。跨扩展转移归首项，subview 往返与窗口唤起保留
 - Skylight `move_window_to_active_space` 跨 Space
 
 ## 数据存储

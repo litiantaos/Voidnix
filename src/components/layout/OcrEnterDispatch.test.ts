@@ -145,9 +145,9 @@ describe('OCR 回车派发（回归：不得执行全局残留结果）', () => 
     await nextTick()
     await nextTick()
 
-    // OCR 完成：操作列表（复制为首项）已渲染
-    const ocrListItems = wrapper.findAll('[role="option"]')
-    expect(ocrListItems.length).toBeGreaterThan(0)
+    // OCR 完成：操作按钮行（复制为首项）已渲染
+    const ocrButtons = wrapper.findAll('button').filter((b) => b.text() === '复制')
+    expect(ocrButtons.length).toBeGreaterThan(0)
 
     // 间谍 clipboard onExecute：若被调用即证明回车落到了全局残留结果（bug）
     const onExecuteSpy = vi.spyOn(clipboard, 'onExecute' as never)

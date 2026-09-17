@@ -4,7 +4,6 @@ registerMessages({
   // ─── OcrView（主窗口） ──────────────────────
   'screenshot.previewAlt': { 'zh-CN': '截图预览', en: 'Screenshot preview' },
   'screenshot.ocrResult': { 'zh-CN': '识别结果', en: 'Recognition result' },
-  'screenshot.actions': { 'zh-CN': '操作', en: 'Actions' },
   'screenshot.noContent': { 'zh-CN': '未识别到内容', en: 'No content recognized' },
   'screenshot.copy': { 'zh-CN': '复制', en: 'Copy' },
   'screenshot.translate': { 'zh-CN': '翻译', en: 'Translate' },

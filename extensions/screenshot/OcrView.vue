@@ -1,28 +1,31 @@
 <template>
   <!-- 顶距交给 scrollContainer CHROME_HEIGHT（已含栏底 gap），勿再 p-t 叠双层 -->
   <div flex="~ col" gap="3" :class="{ 'pb-3': !session.ocrText && !session.error }">
-    <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动 -->
+    <!-- 截图预览：cover 缩放铺满容器，长边溢出可上下/左右滚动。
+         滚动层与遮罩分层：absolute 遮罩若在滚动容器内会随内容滚走（初始仅覆盖视口）。
+         overflow-hidden 在外层裁圆角：图片与遮罩四角不溢出 radius-panel 边框范围 -->
     <div
       v-if="session.imageUrl"
-      ref="previewRef"
       m="x-3"
       relative
-      class="hide-scrollbar border border-divider radius-panel border-solid fill-ctrl"
+      overflow="hidden"
+      class="border border-divider radius-panel border-solid fill-ctrl"
       h="44"
       shrink="0"
-      overflow="auto"
     >
-      <img
-        :src="session.imageUrl"
-        block
-        max-w="none"
-        w="full"
-        h="full"
-        object="cover left-top"
-        :alt="t('screenshot.previewAlt')"
-        @load="onPreviewLoad"
-      />
-      <!-- 识别中加载遮罩：磨砂 + 居中空态 -->
+      <div ref="previewRef" absolute inset="0" overflow="auto" class="hide-scrollbar">
+        <img
+          :src="session.imageUrl"
+          block
+          max-w="none"
+          w="full"
+          h="full"
+          object="cover left-top"
+          :alt="t('screenshot.previewAlt')"
+          @load="onPreviewLoad"
+        />
+      </div>
+      <!-- 识别中加载遮罩：磨砂 + 居中空态（在滚动层外，钉住视口不随滚动） -->
       <Transition
         enter-active-class="transition duration-[var(--duration-fast)] ease-out"
         enter-from-class="opacity-0"
@@ -60,34 +63,34 @@
         />
       </div>
 
-      <!-- 操作列表（原按钮组改为列表项，回车触发）-->
-      <BaseList
-        :items="ocrActions"
-        v-model:selected-index="actionIndex"
-        group-field="group"
-        :group-title="() => t('screenshot.actions')"
-        @execute="onAction"
-      >
-        <template #item="{ item }">
-          <BaseListItem :title="item.label" />
-        </template>
-      </BaseList>
+      <!-- 操作按钮行（横排）：左右键切换选中，回车触发；点击即选中并执行 -->
+      <div p="x-3 b-3" flex gap="2">
+        <BaseButton
+          v-for="(action, i) in ocrActions"
+          :key="action.id"
+          :active="i === actionIndex"
+          @click="onAction(i)"
+        >
+          {{ action.label }}
+        </BaseButton>
+      </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, onDeactivated } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { t } from '@/runtime/i18n'
 import { isTauri } from '@/utils/tauri'
 import { copyAndHide, useAppStore } from '@/stores/app'
+import { onKeyStroke } from '@/composables/events'
+import { isComposing, isModalDialogOpen, wrapIndex } from '@/utils/dom'
 import { pendingOcrData, ocrSession } from './index'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
-import BaseList from '@/components/ui/BaseList.vue'
-import BaseListItem from '@/components/ui/BaseListItem.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 
 interface OcrResult {
   text: string
@@ -97,7 +100,6 @@ interface OcrResult {
 interface OcrAction {
   id: string
   label: string
-  group: string
   run: () => void | Promise<void>
 }
 
@@ -110,7 +112,7 @@ const actionIndex = ref(0)
 
 // 输入框高度弹性上限：内容自然撑高、超限框内滚动。上限从 get_window_max_height
 // 命令推导（placement/光标屏 visibleFrame × 0.9，与 set_main_frame 的 Rust clamp
-// 同源）− 固定部分（chrome 76 + 预览 176 + 间距 24 + 边框 2 + 操作列表 290 = 568）
+// 同源）− 固定部分（chrome 76 + 预览 176 + 间距 24 + 边框 2 + 操作按钮行 40 = 318）
 // − 12px 余量，内容恒不超窗（窗口级零滚动）。必须同源——按整屏高（monitor 尺寸
 // ÷ scale，含菜单栏/Dock）推导会撑过 clamp 重引窗口级滚动。非 Tauri / 查询失败
 // 回退 224（10 行），下限 144（6 行）防短屏算出退化值。每次唤起都是新挂载
@@ -121,7 +123,7 @@ onMounted(async () => {
   if (!isTauri) return
   const maxWin = await invoke<number | null>(CMD.getWindowMaxHeight).catch(() => null)
   if (!maxWin) return
-  textMaxHeight.value = Math.max(144, Math.round(maxWin) - 568 - 12)
+  textMaxHeight.value = Math.max(144, Math.round(maxWin) - 318 - 12)
 })
 
 // 截图 cover 缩放：短边撑满容器、长边溢出（容器 overflow-auto 可上下/左右滚动）
@@ -164,7 +166,7 @@ async function runOcr(data: NonNullable<typeof pendingOcrData.value>) {
     session.value.error = String(e)
   } finally {
     session.value.loading = false
-    // 操作列表接管键盘：默认选中首项（复制），回车直接复制；点击 textarea 可编辑
+    // 按钮行接管键盘：默认选中首项（复制），回车直接复制；点击 textarea 可编辑
     actionIndex.value = 0
   }
 }
@@ -209,29 +211,79 @@ function trimEmptyLines() {
     .join('\n')
 }
 
-// 操作列表（原按钮组改为列表项）：识别完成后默认选中首项（复制），回车触发
+// 操作按钮行（原列表项改回横排）：识别完成后默认选中首项（复制），回车直接复制
 const ocrActions = computed<OcrAction[]>(() => {
   if (!session.value.ocrText.trim()) return []
   return [
-    { id: 'copy', label: t('screenshot.copy'), group: 'actions', run: handleCopy },
-    { id: 'translate', label: t('screenshot.translate'), group: 'actions', run: handleTranslate },
-    { id: 'trimSpaces', label: t('screenshot.trimSpaces'), group: 'actions', run: trimSpaces },
-    {
-      id: 'trimNewlines',
-      label: t('screenshot.trimNewlines'),
-      group: 'actions',
-      run: trimNewlines,
-    },
-    {
-      id: 'trimEmptyLines',
-      label: t('screenshot.trimEmptyLines'),
-      group: 'actions',
-      run: trimEmptyLines,
-    },
+    { id: 'copy', label: t('screenshot.copy'), run: handleCopy },
+    { id: 'translate', label: t('screenshot.translate'), run: handleTranslate },
+    { id: 'trimSpaces', label: t('screenshot.trimSpaces'), run: trimSpaces },
+    { id: 'trimNewlines', label: t('screenshot.trimNewlines'), run: trimNewlines },
+    { id: 'trimEmptyLines', label: t('screenshot.trimEmptyLines'), run: trimEmptyLines },
   ]
 })
 
-function onAction(action: OcrAction) {
-  void action.run()
+// ── 按钮行键盘：左右键环形切换，回车触发（让位语义与 BaseList 对齐）──
+// KeepAlive 软禁用：deactivate 后监听仍在，isActive 抑制响应
+const isActive = ref(true)
+onActivated(() => {
+  isActive.value = true
+})
+onDeactivated(() => {
+  isActive.value = false
+})
+
+function canNavigate(e: KeyboardEvent): boolean {
+  if (!isActive.value) return false
+  if (ocrActions.value.length === 0) return false
+  if (appStore.fullscreenView) return false
+  if (isComposing(e)) return false
+  if (isModalDialogOpen()) return false
+  return true
+}
+
+onKeyStroke(
+  ['ArrowLeft', 'ArrowRight'],
+  (e) => {
+    if (!canNavigate(e)) return
+    e.preventDefault()
+    actionIndex.value = wrapIndex(
+      actionIndex.value,
+      ocrActions.value.length,
+      e.key === 'ArrowRight' ? 'down' : 'up',
+    )
+  },
+  // 焦点在 textarea（编辑识别结果）时让出：左右键移动光标
+  { ignoreFormControls: true },
+)
+
+onKeyStroke(
+  'Enter',
+  (e) => {
+    if (!canNavigate(e)) return
+    // 按钮聚焦时 Enter 由按钮自身 click 处理
+    if (document.activeElement?.tagName === 'BUTTON') return
+    // 按住回车 auto-repeat 不重复执行（跨扩展跳转等场景）
+    if (e.repeat) return
+    e.preventDefault()
+    // 执行即消费：一次回车至多触发一个动作（防 KeepAlive 并存监听 / 全局导航重复响应）
+    e.stopImmediatePropagation()
+    void ocrActions.value[actionIndex.value]?.run()
+  },
+  // textarea 聚焦时回车换行（submit-on-enter=false）
+  { ignoreFormControls: true },
+)
+
+// 跨扩展转移归首项（与 BaseList 自管列表同语义）；subview 往返与窗口唤起保留
+watch(
+  () => appStore.activeExtId,
+  () => {
+    actionIndex.value = 0
+  },
+)
+
+function onAction(index: number) {
+  actionIndex.value = index
+  void ocrActions.value[index]?.run()
 }
 </script>

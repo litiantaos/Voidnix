@@ -139,11 +139,11 @@ describe('screenshot OcrView 会话状态跨 KeepAlive 卸载保留', () => {
     const { wrapper } = mountHost()
     await flush()
 
-    // 900 − 568 固定部分 − 12 余量 = 320；天花板与 set_main_frame 的 Rust clamp
+    // 900 − 318 固定部分 − 12 余量 = 570；天花板与 set_main_frame 的 Rust clamp
     // 同源（visibleFrame × 0.9），内容恒不超窗——按整屏高推导会撑过 clamp 产生滚动
     const textarea = wrapper.findComponent(BaseTextarea)
-    expect(textarea.props('maxHeight')).toBe(320)
-    expect(wrapper.find('textarea').attributes('style')).toContain('max-height: 320px')
+    expect(textarea.props('maxHeight')).toBe(570)
+    expect(wrapper.find('textarea').attributes('style')).toContain('max-height: 570px')
     wrapper.unmount()
   })
 
@@ -170,9 +170,87 @@ describe('screenshot OcrView 会话状态跨 KeepAlive 卸载保留', () => {
     expect(wrapper.findComponent(BaseEmptyState).props('loading')).toBe(true)
     expect(wrapper.findComponent(BaseTextarea).exists()).toBe(false)
 
+    // 遮罩在滚动层外（兄弟层）：滚动容器内的 absolute 遮罩只覆盖初始视口，
+    // 且作为滚动内容随长图滚走（钉住视口回归锁）。用包含关系而非 parentElement——
+    // 测试环境 Transition 被 stub，遮罩的直接父节点是 transition-stub
+    const outer = wrapper.find('.fill-ctrl')
+    const scrollLayer = wrapper.find('.hide-scrollbar')
+    const mask = wrapper.find('.backdrop-blur-xs')
+    expect(mask.exists()).toBe(true)
+    expect(outer.element.contains(scrollLayer.element)).toBe(true)
+    expect(outer.element.contains(mask.element)).toBe(true)
+    expect(scrollLayer.element.contains(mask.element)).toBe(false)
+    // 圆角裁剪回归锁：外层 overflow-hidden（图片/遮罩四角不溢出 radius-panel 边框）
+    expect(outer.attributes('overflow')).toBe('hidden')
+
     resolveOcr({ text: '识别文本', qr: [] })
     await flush()
     expect(wrapper.findComponent(BaseEmptyState).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('操作按钮行：左右键环形切换，回车触发当前项；textarea 聚焦时让出', async () => {
+    injectPending()
+    const { wrapper } = mountHost()
+    await flush()
+
+    const buttons = wrapper.findAll('button')
+    expect(buttons).toHaveLength(5)
+    // 默认选中首项（复制）
+    expect(buttons[0].classes()).toContain('ui-active')
+
+    const press = (key: string, opts?: KeyboardEventInit) => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...opts }),
+      )
+    }
+
+    // 右移 0→1→2；选中「去空格」后写入带空格文本回车触发
+    press('ArrowRight')
+    press('ArrowRight')
+    await flush(1)
+    expect(buttons[2].classes()).toContain('ui-active')
+    expect(buttons[0].classes()).not.toContain('ui-active')
+    ocrSession.value.ocrText = 'a b  c'
+    press('Enter')
+    await flush(1)
+    expect(ocrSession.value.ocrText).toBe('abc')
+
+    // 左移：2→1→0，再左移环形到尾项（去空行）
+    press('ArrowLeft')
+    press('ArrowLeft')
+    press('ArrowLeft')
+    await flush(1)
+    expect(buttons[4].classes()).toContain('ui-active')
+
+    // Enter 执行即消费：后续 document 监听（全局导航等）不再收到同一按键
+    let laterSawEnter = false
+    const later = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') laterSawEnter = true
+    }
+    document.addEventListener('keydown', later)
+    press('Enter')
+    document.removeEventListener('keydown', later)
+    expect(laterSawEnter).toBe(false)
+
+    // textarea 聚焦（编辑识别结果）时让出：左右键移动光标、回车换行，不切不触发。
+    // happy-dom 的 focus() 不更新 document.activeElement（仍为 BODY），手动打桩
+    // 到 textarea 模拟聚焦；真实聚焦行为由 e2e 真键盘覆盖
+    const textarea = wrapper.find('textarea')
+    Object.defineProperty(document, 'activeElement', {
+      configurable: true,
+      get: () => textarea.element,
+    })
+    try {
+      press('ArrowRight')
+      press('Enter')
+      await flush(1)
+      expect(buttons[4].classes()).toContain('ui-active')
+      expect(ocrSession.value.ocrText).toBe('abc')
+    } finally {
+      // 断言失败也恢复,防桩泄漏污染同文件后续用例
+      Reflect.deleteProperty(document, 'activeElement')
+    }
     wrapper.unmount()
   })
 
