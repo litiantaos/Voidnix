@@ -25,6 +25,7 @@ vi.mock('@/runtime/search-engine', async (importOriginal) => {
       search: (...args: unknown[]) => searchMock(...args),
       setActiveExtension: vi.fn(),
       abort: vi.fn(),
+      clearResultCache: vi.fn(),
     },
   }
 })
@@ -65,9 +66,11 @@ function makeWrapper() {
         activeExtension: computed(() => null),
         reset: () => {},
       })
-      return { api }
+      return { api, onInput: api.onInput }
     },
-    render: () => h('input', { ref: searchInput }),
+    render() {
+      return h('input', { ref: searchInput, onInput: this.onInput })
+    },
   })
   const wrapper = mount(TestComp)
   // 累积卸载：composable 在 window 上注册 window-invoked 等全局监听，
@@ -163,6 +166,67 @@ describe('useSearchInput 默认列表提示行', () => {
     window.dispatchEvent(new CustomEvent('window-invoked'))
     await flushPromises()
     expect(vi.mocked(invoke)).toHaveBeenCalled()
+  })
+})
+
+describe('useSearchInput 逐键搜索稳定合并', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    searchMock.mockReset()
+  })
+  afterEach(() => {
+    while (mountedWrappers.length) mountedWrappers.pop()!.unmount()
+  })
+
+  it('partial 稳定合并：prev 条目保留、新条目追加同组尾部，不被 partial 整表替换（防闪烁回归）', async () => {
+    vi.useFakeTimers()
+    const fileA: SearchResult = {
+      id: 'f1',
+      title: 'alpha.txt',
+      extId: 'search',
+      data: { kind: 'file' },
+    }
+    const clipA: SearchResult = {
+      id: 'c1',
+      title: 'alpha note',
+      extId: 'clipboard',
+      data: { kind: 'clipboard' },
+    }
+    const clipB: SearchResult = {
+      id: 'c2',
+      title: 'alpha beta',
+      extId: 'clipboard',
+      data: { kind: 'clipboard' },
+    }
+    let releaseFinal!: () => void
+    searchMock.mockImplementation(async (q: string, onUpdate?: (r: SearchResult[]) => void) => {
+      if (q === 'al') return [fileA, clipA]
+      if (q === 'alpha') {
+        // partial：仅同步缓存 clipboard 到达（文件索引后至），final 挂起模拟慢扩展
+        onUpdate?.([clipA, clipB])
+        await new Promise<void>((r) => (releaseFinal = r))
+        return [fileA, clipA, clipB]
+      }
+      return []
+    })
+    const { wrapper, results } = makeWrapper()
+    await flushPromises()
+
+    const input = wrapper.find('input')
+    await input.setValue('al')
+    await vi.advanceTimersByTimeAsync(30)
+    expect(results.value.map((r) => r.id)).toEqual(['f1', 'c1'])
+
+    await input.setValue('alpha')
+    await vi.advanceTimersByTimeAsync(30)
+    // partial 阶段（final 挂起）：f1 不因缺席消失（缺席=未到达）、c2 追加 clipboard 组尾；
+    // 旧实现此处被整表替换为 [c1,c2]——文件行闪失再在 final 恢复，即逐键闪烁
+    expect(results.value.map((r) => r.id)).toEqual(['f1', 'c1', 'c2'])
+
+    releaseFinal()
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(['f1', 'c1', 'c2'])
+    vi.useRealTimers()
   })
 })
 

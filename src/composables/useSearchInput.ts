@@ -301,6 +301,8 @@ export function useSearchInput(opts: SearchInputOptions) {
       return
     }
     const searchId = ++currentSearchId
+    // 刷新语义要求数据新鲜：清结果缓存防命中（onWindowHiding 已清，此处兜底 blur 未藏窗的获焦刷新）
+    searchEngine.clearResultCache()
     // 身份捕获于 await 前：await 期间用户输入会开新搜索（searchId 守卫），prev 不受影响
     const prevList = results.value
     const prevSel = prevList[selectedIndex.value]
@@ -366,10 +368,16 @@ export function useSearchInput(opts: SearchInputOptions) {
       // 30ms 合并快速连续按键，减少 ~60-80% 废弃搜索周期（打分/groupAndSort/对象分配），
       // 用户无感知延迟；扩展搜索保留 100ms 防抖（可能含 DB/网络慢查询）。
       searchTimeout = setTimeout(async () => {
+        // partial 经 stableMerge 稳定合并（追加不重排，与 rerunSearch 同语义）：跨过引擎
+        // 首帧合批窗口的错峰到达（应用缓存冷重建、高负载下文件索引 IPC 超 50ms）不再
+        // 「顶部插入 + 整表重排」跳动，新条目落同组尾部；prev 条目保留至 final 规范序
+        // 一次性替换（缺席 = 未到达，防收缩闪烁）。合并不前插，选中索引天然稳定。
+        const prevList = results.value
         const finalResults = await searchEngine.search(query, (partial) => {
           if (searchId === currentSearchId) {
-            results.value = partial
-            clampSelected(partial.length)
+            const merged = stableMerge(prevList, partial, false)
+            results.value = merged
+            clampSelected(merged.length)
           }
         })
         if (searchId === currentSearchId) {
@@ -517,6 +525,8 @@ export function useSearchInput(opts: SearchInputOptions) {
    *  跳过子树渲染并释放 tile backing，结果列表与扩展视图的 DOM/状态冻结保留。 */
   function onWindowHiding() {
     searchEngine.abort()
+    // 会话级结果缓存随会话结束清空：隐藏期间剪贴板/应用缓存可能变更
+    searchEngine.clearResultCache()
     if (searchTimeout) {
       clearTimeout(searchTimeout)
       searchTimeout = null

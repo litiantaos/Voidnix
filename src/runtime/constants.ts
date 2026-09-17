@@ -41,6 +41,12 @@ export const LIMITS = {
   maxGroupResults: 12,
   maxFileResults: 20, // file 组限流（含 folder；单组计数，无跨组共享）
   searchTimeoutMs: 3000,
+  /** 首帧合批窗口：首个 partial 延迟投递，窗口内错峰到达的快结果（同步缓存与应用缓存 emit 在先、
+   *  文件索引 IPC 晚 1-2 帧）合并为一次渲染，消除逐键搜索「先出部分结果、后至结果插入列表顶部」
+   *  的闪烁；全部扩展窗口内 resolve 则取消投递、经 return 一次到位，快路径零额外延迟。 */
+  firstPaintHoldMs: 50,
+  /** 会话级结果缓存条目上限（LRU）：覆盖一次输入-回退（删除）路径的全部 query，限量控内存。 */
+  maxCachedQueries: 16,
 } as const
 
 // 主窗口尺寸（不可配置；与 tauri.conf.json 主窗口 width/height 一致）。

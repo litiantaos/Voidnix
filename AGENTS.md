@@ -175,7 +175,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### 搜索引擎
 
-`src/runtime/search-engine.ts`：流式增量召回（消除快结果等慢结果的 barrier）→ 一次预算 finalScore → keyword 合流 → dedupe → groupAndSort。每个扩展 `emit`/`resolve` 都同步触发增量重排，`onUpdate` 经 rAF 批量合帧回调（同帧多扩展结果合并为一次渲染；全部同帧 resolve 时 rAF 被 cancel、结果经 return 值投递），应用缓存秒出、内存索引文件结果随打随出。
+`src/runtime/search-engine.ts`：流式增量召回（消除快结果等慢结果的 barrier）→ 一次预算 finalScore → keyword 合流 → dedupe → groupAndSort。每个扩展 `emit`/`resolve` 都同步触发增量重排，`onUpdate` 两级合批：首个 partial 经 `LIMITS.firstPaintHoldMs`（50ms）窗口延迟投递——跨帧错峰到达的快结果（同步缓存剪贴板/应用缓存 emit 在先、文件索引 IPC 晚 1-2 帧）合并为一次渲染，消除逐键输入「先出部分结果、后至结果插入列表顶部」的列表闪烁；窗口关闭后恢复 rAF 合帧即时流式（慢扩展增量补充）。全部扩展窗口内 resolve 时待投递被取消、结果经 return 值一次投递（快路径零额外延迟），应用缓存秒出、内存索引文件结果随打随出。逐键 partial 到达消费端后再经 stableMerge 追加合并（`useSearchInput`，与 rerunSearch 同语义）：跨过窗口的残余错峰（应用缓存冷重建等 >50ms）只做同组尾部追加不重排，final 才一次性落规范序。删除路径回退到本会话查过的 query 经会话级 LRU 结果缓存（`LIMITS.maxCachedQueries`）同步回显：零重搜零重排、同数组引用零重渲染；仅非空 query（默认列表刷新路径依赖重算）、扩展模式不缓存，窗口隐藏与 rerunSearch 刷新前清空（`clearResultCache`）。currency dynamic 对非货币 query 零网络早退（fetch 仅服务货币查询与扩展内参考列表），慢 provider 只剩真正的货币查询。
 
 **两种模式共用 `search()`**：
 

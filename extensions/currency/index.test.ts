@@ -1,10 +1,11 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // http_get 恒失败：验证网络失败时用户看到显式报错行而非静默空结果
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn().mockRejectedValue(new Error('network down')),
 }))
 
+import { invoke } from '@tauri-apps/api/core'
 import ext from './index'
 import type { SearchContext } from '@/runtime/types'
 
@@ -15,6 +16,10 @@ function ctx(extensionMode: boolean): SearchContext {
 }
 
 describe('currency 网络失败呈现', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('货币查询失败返回显式报错行（全局模式）', async () => {
     const r = await dynamic('100 usd', ctx(false))
     expect(r).toHaveLength(1)
@@ -24,9 +29,10 @@ describe('currency 网络失败呈现', () => {
     expect(r[0].data?.extId).toBe('currency')
   })
 
-  it('非货币查询失败不报错（避免离线刷屏）', async () => {
+  it('非货币查询零网络：早退不触发汇率 fetch', async () => {
     const r = await dynamic('hello', ctx(false))
     expect(r).toHaveLength(0)
+    expect(invoke).not.toHaveBeenCalled()
   })
 
   it('扩展内空 query（参考汇率）失败返回报错行', async () => {

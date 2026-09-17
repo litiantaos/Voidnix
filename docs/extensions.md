@@ -96,7 +96,7 @@ interface SearchContext {
 }
 ```
 
-- **全局模式**（`searchEngine.search`）：召回管道（流式增量、rAF 合帧、dedupe/groupAndSort）与过滤规则（空 query `finalScore>0` / 非空 query 查找型 `fuzzy>0`，即时答案靠 `finalScore>0` 穿透）见 AGENTS.md「搜索引擎」。扩展侧约定：
+- **全局模式**（`searchEngine.search`）：召回管道（流式增量、首帧合批窗口 + rAF 合帧、dedupe/groupAndSort）与过滤规则（空 query `finalScore>0` / 非空 query 查找型 `fuzzy>0`，即时答案靠 `finalScore>0` 穿透）见 AGENTS.md「搜索引擎」。扩展侧约定：
 
   - **流式**：扩展可选调用 `ctx.emit(partial)` 多次产出部分结果（如 search 扩展应用 emit 秒出、文件 return 后补），不调用的扩展走一次性 return 行为不变。框架按 `extId:id` 去重，emit 与 return 重叠不产生重复项；但已 emit 的内容不应放入 return——emit 产首批、return 补充，避免多余打分计算
   - **keyword 合流**：入口打分 `scoreExtensionEntry`（name/id/description 正向 + keywords 双向，与 `/` 工具列表共用）；按 query 记忆化——同 query 结果不变，增量 flush 复用缓存免重算

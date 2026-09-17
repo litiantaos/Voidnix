@@ -62,25 +62,24 @@ export default defineExtension({
       if (!trimmed && !ctx?.extensionMode) return []
 
       const parsed = trimmed ? parseCurrencyInput(query) : null
+      // 非货币查询零网络：parseCurrencyInput 不命中即同步返回，汇率 fetch 仅服务真正的
+      // 货币查询与扩展内参考列表——不把任意查询的 collectAll 拖过首帧合批窗口
+      if (!parsed && !(ctx?.extensionMode && !trimmed)) return []
 
       const rates = await fetchRates()
       if (!rates) {
-        // 网络失败且无缓存：仅在用户明确发起货币查询（或扩展内空 query 参考列表）时报错，
-        // 避免全局任意查询被离线错误刷屏
-        if (parsed || (!trimmed && ctx?.extensionMode)) {
-          return [
-            {
-              id: 'rates-err',
-              title: t('currency.fetchFailed'),
-              description: t('common.networkError'),
-              icon: 'i-ri-error-warning-line',
-              boost: DYNAMIC_BOOST,
-              // 回车激活 currency（扩展模式重跑 dynamic 即重试拉取），防静默藏窗
-              data: { kind: 'extension', extId: 'currency' },
-            },
-          ]
-        }
-        return []
+        // 网络失败且无缓存：能到达此处的只剩货币查询/扩展内参考列表，返回显式报错行
+        //（回车激活 currency 扩展模式重跑 dynamic 即重试拉取，防静默藏窗）
+        return [
+          {
+            id: 'rates-err',
+            title: t('currency.fetchFailed'),
+            description: t('common.networkError'),
+            icon: 'i-ri-error-warning-line',
+            boost: DYNAMIC_BOOST,
+            data: { kind: 'extension', extId: 'currency' },
+          },
+        ]
       }
 
       // 空 query：展示以 USD 为基准的参考汇率，避免进扩展见空

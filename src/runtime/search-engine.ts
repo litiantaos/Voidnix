@@ -31,14 +31,17 @@ interface ScoredResult {
 }
 
 /** 单例搜索引擎：流式增量召回（消除快结果等慢结果的 barrier）+ filter/group 管道。
- *  每个扩展 dynamic 的 emit/resolve 都同步触发增量重排，onUpdate 经 rAF 批量合帧回调——
- *  同帧内多扩展结果合并为一次渲染，避免逐 emit 触发 Vue 重渲染；快结果秒出，慢结果增量补充。 */
+ *  每个扩展 dynamic 的 emit/resolve 都同步触发增量重排，onUpdate 经两级合批回调——
+ *  首帧合批窗口（firstPaintHoldMs，跨帧错峰的快结果合并为一次渲染，消除逐键列表闪烁）
+ *  + 窗口后 rAF 合帧；快结果秒出，慢结果增量补充。 */
 class SearchEngine {
   private currentController?: AbortController
   private activeExtension: string | undefined
   // keyword 入口记忆化：同 query 的 keyword 结果不变，增量 flush 复用避免重算
   private kwCacheQ: string | null = null
   private kwCache: SearchResult[] = []
+  // 会话级结果缓存（LRU）：删除路径回退到本会话查过的 query 同步回显
+  private resultCache = new LruCache(LIMITS.maxCachedQueries)
 
   /** 扩展激活/退出时切换模式。激活时只调该扩展 dynamic；undefined 恢复全局聚合。 */
   setActiveExtension(id: string | undefined) {
@@ -51,8 +54,8 @@ class SearchEngine {
     this.currentController = undefined
   }
 
-  /** 流式搜索：query 为当前输入；onUpdate 经 rAF 批量合帧回调增量重排结果（同帧多 emit 合并一次渲染，
-   *  全部扩展同帧 resolve 时 rAF 被 cancel，结果经 return 值投递）。
+  /** 流式搜索：query 为当前输入；onUpdate 增量投递（首帧合批窗口 + 窗口后 rAF 合帧，见 makeDeliver），
+   *  全部扩展窗口内 resolve 时 onUpdate 不触发、结果经 return 值一次投递。
    *  返回 Promise 解析为最终完整结果。不传 onUpdate 时退化为一次性返回。
    *  取消上一次查询（触发其 dynamic cleanup + child abort）。 */
   async search(
@@ -74,49 +77,95 @@ class SearchEngine {
     if (extensionMode) {
       // 扩展模式：累积 raw 结果，每次扩展 emit/resolve 都 dedupe + onUpdate（保留扩展返回序，不过滤不限流）
       const acc: SearchResult[] = []
-      let last: SearchResult[] | undefined // 缓存最近一次 flush 结果，return 复用避免重复 dedupe
-      let rafId: number | null = null
-      const flush = () => {
-        if (controller.signal.aborted || !onUpdate) return
-        last = dedupeBy(acc, (r) => `${r.extId}:${r.id}`)
-        // rAF 批量：同一帧内多次 emit 合并为一次 onUpdate（减少 Vue 渲染 + DOM 节点重建）
-        if (rafId === null) {
-          rafId = requestAnimationFrame(() => {
-            rafId = null
-            if (!controller.signal.aborted && last) onUpdate(last)
-          })
-        }
-      }
+      const deliver = this.makeDeliver(onUpdate, controller.signal, () =>
+        dedupeBy(acc, (r) => `${r.extId}:${r.id}`),
+      )
       await this.collectAll(query, controller.signal, extId, extensionMode, (items) => {
         acc.push(...items)
-        flush()
+        deliver.flush()
       })
-      if (rafId !== null) cancelAnimationFrame(rafId)
       // last 有值 = flush 至少执行过一次，最后一次与 return 等价直接复用；无值（无扩展产出/已 abort）补算
-      return last ?? dedupeBy(acc, (r) => `${r.extId}:${r.id}`)
+      return deliver.finish() ?? dedupeBy(acc, (r) => `${r.extId}:${r.id}`)
     }
 
     // 全局模式：累积 ScoredResult（打分只算一次），每次扩展 emit/resolve 都 keyword 合流 + groupAndSort + onUpdate
+
+    // 会话级结果缓存：回退到本会话查过的 query（删除字符）同步回显缓存终值——零重搜零重排、
+    // 列表与离开该 query 时逐项一致（onUpdate 不触发、同数组引用，Vue 零重渲染）。
+    // 仅非空 query（空 query 是默认列表，图标/缓存刷新路径依赖重算）；扩展模式结果依赖
+    // activeExtension 不缓存。生命周期归消费者：窗口隐藏 / 唤起刷新路径清空（clearResultCache）。
+    const hit = q ? this.resultCache.get(q) : undefined
+    if (hit) return hit
+
     const scored: ScoredResult[] = []
-    let last: SearchResult[] | undefined // 缓存最近一次 flush 结果，return 复用避免重复 buildGlobal
-    let rafId: number | null = null
-    const flush = () => {
-      if (controller.signal.aborted || !onUpdate) return
-      last = this.buildGlobal(scored, q)
-      // rAF 批量：应用缓存 + 文件索引 + keyword 通常同帧到达，合并为一次 onUpdate
-      if (rafId === null) {
-        rafId = requestAnimationFrame(() => {
-          rafId = null
-          if (!controller.signal.aborted && last) onUpdate(last)
-        })
-      }
-    }
+    const deliver = this.makeDeliver(onUpdate, controller.signal, () => this.buildGlobal(scored, q))
     await this.collectAll(query, controller.signal, extId, extensionMode, (items) => {
       scored.push(...this.scoreResults(items, q))
-      flush()
+      deliver.flush()
     })
-    if (rafId !== null) cancelAnimationFrame(rafId)
-    return last ?? this.buildGlobal(scored, q)
+    const final = deliver.finish() ?? this.buildGlobal(scored, q)
+    // abort 的搜索结果是部分到达的中间态，不可作为终值缓存
+    if (!controller.signal.aborted && q) this.resultCache.set(q, final)
+    return final
+  }
+
+  /** 清空会话级结果缓存。会话边界调用：窗口隐藏（外部数据可能变更）、唤起刷新（rerunSearch 要新鲜数据）。 */
+  clearResultCache() {
+    this.resultCache.clear()
+  }
+
+  /** 增量投递调度（两种模式共用）：首个 partial 经 firstPaintHoldMs 窗口延迟投递——
+   *  跨帧错峰到达的快结果（同步缓存剪贴板/应用缓存 emit 与文件索引 IPC 相隔 1-2 帧）
+   *  合并为一次渲染，消除逐键输入「先出部分结果、后至结果插入列表顶部」的列表闪烁；
+   *  窗口关闭后恢复 rAF 合帧即时流式（同帧多次 emit 合并为一次 onUpdate），慢扩展增量补充。
+   *  全部扩展在窗口内 resolve 时 finish 取消待投递，结果经 return 一次到位（快路径零额外延迟）。 */
+  private makeDeliver(
+    onUpdate: ((results: SearchResult[]) => void) | undefined,
+    signal: AbortSignal,
+    compute: () => SearchResult[],
+  ) {
+    let last: SearchResult[] | undefined // 缓存最近一次 flush 结果，return 复用避免重复计算
+    let delivered = false // 首帧是否已投递；此后增量恢复 rAF 即时流式
+    let holdTimer: ReturnType<typeof setTimeout> | null = null
+    let rafId: number | null = null
+    const deliver = () => {
+      if (!signal.aborted && last) onUpdate?.(last)
+    }
+    return {
+      /** 扩展 emit/resolve 到批：计算最新结果并调度投递（未投递走合批窗口，已投递走 rAF）。 */
+      flush() {
+        if (signal.aborted || !onUpdate) return
+        last = compute()
+        if (!delivered) {
+          if (holdTimer === null) {
+            holdTimer = setTimeout(() => {
+              holdTimer = null
+              delivered = true
+              deliver()
+            }, LIMITS.firstPaintHoldMs)
+          }
+          return
+        }
+        if (rafId === null) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null
+            deliver()
+          })
+        }
+      },
+      /** collectAll 完成：取消待投递（窗口/rAF），last 交由 return 路径一次投递。 */
+      finish(): SearchResult[] | undefined {
+        if (holdTimer !== null) {
+          clearTimeout(holdTimer)
+          holdTimer = null
+        }
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId)
+          rafId = null
+        }
+        return last
+      },
+    }
   }
 
   /** 并发启动所有目标扩展的 dynamic；每个扩展的 emit（部分结果）与 resolve（最终/补充结果）
@@ -319,6 +368,31 @@ function dedupeBy<T>(items: T[], keyFn: (x: T) => string): T[] {
     out.push(x)
   }
   return out
+}
+
+/** 会话级 query→结果 LRU：Map 迭代序即插入序，get 提升新鲜度，超量淘汰最旧。 */
+class LruCache {
+  private map = new Map<string, SearchResult[]>()
+  constructor(private readonly max: number) {}
+  get(key: string): SearchResult[] | undefined {
+    const v = this.map.get(key)
+    if (v !== undefined) {
+      this.map.delete(key)
+      this.map.set(key, v)
+    }
+    return v
+  }
+  set(key: string, value: SearchResult[]) {
+    if (this.map.has(key)) this.map.delete(key)
+    this.map.set(key, value)
+    if (this.map.size > this.max) {
+      const oldest = this.map.keys().next().value
+      if (oldest !== undefined) this.map.delete(oldest)
+    }
+  }
+  clear() {
+    this.map.clear()
+  }
 }
 
 export const searchEngine = new SearchEngine()

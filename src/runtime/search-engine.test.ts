@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
 import { pinyinReady } from '@/utils/fuzzy'
+import { LIMITS } from './constants'
 import type {
   Extension,
   SearchResult,
@@ -46,6 +47,8 @@ describe('SearchEngine', () => {
   beforeEach(() => {
     registry.length = 0
     searchEngine.setActiveExtension(undefined)
+    // 会话级结果缓存随用例隔离（生产由窗口隐藏/唤起刷新清空）
+    searchEngine.clearResultCache()
   })
 
   it('框架注入 extId = 产出扩展 meta.id（扩展禁填）', async () => {
@@ -315,7 +318,7 @@ describe('SearchEngine', () => {
     expect(final.map((r) => r.id).sort()).toEqual(['a', 'b', 'c'])
   })
 
-  it('流式 emit rAF 批量：快扩展结果经 onUpdate 增量投递，慢扩展结果经 return 补全', async () => {
+  it('流式投递：首帧合批窗口后经 onUpdate 投递，慢扩展结果经 return 补全', async () => {
     vi.useFakeTimers()
     let releaseSlow!: (v: ProviderResult[]) => void
     registry.push(
@@ -328,15 +331,85 @@ describe('SearchEngine', () => {
     )
     const updates: SearchResult[][] = []
     const p = searchEngine.search('alpha', (partial) => updates.push([...partial]))
-    // 快扩展同帧 resolve → flush 排 rAF；慢扩展 pending 致 collectAll 未完，rAF 得以触发
+    // 首帧合批窗口内不投递（快结果暂存，与后至结果合并为一次渲染）
     await vi.advanceTimersByTimeAsync(16)
+    expect(updates.length).toBe(0)
+    // 窗口关闭：慢扩展仍 pending，合并后的首帧经 onUpdate 投递
+    await vi.advanceTimersByTimeAsync(LIMITS.firstPaintHoldMs)
     expect(updates.length).toBe(1)
     expect(updates[0].map((r) => r.id)).toContain('f')
-    // 慢扩展补全 → 末帧 rAF 被 cancel（onUpdate 不再触发），return 投递完整结果
+    // 慢扩展补全 → 待投递 rAF 被 cancel（onUpdate 不再触发），return 投递完整结果
     releaseSlow([result('s', 'alpha slow', 'application', 5)])
     const final = await p
     expect(final.map((r) => r.id).sort()).toEqual(['f', 's'])
     expect(updates.length).toBe(1)
+    vi.useRealTimers()
+  })
+
+  it('首帧合批：窗口内错峰到达的快结果合并为一次 onUpdate（逐键搜索防闪烁回归）', async () => {
+    vi.useFakeTimers()
+    let releaseSlow!: (v: ProviderResult[]) => void
+    registry.push(
+      // 同步缓存型（clipboard tabCache 命中）：t≈0 flush
+      makeSearchExt('sync', () => [result('c1', 'alpha clip', 'clipboard')]),
+      // IPC 型（文件索引，晚于首帧到达）：t=20ms flush
+      makeSearchExt('files', () => {
+        return new Promise<ProviderResult[]>((resolve) => {
+          setTimeout(() => resolve([result('f1', 'alpha file', 'file')]), 20)
+        })
+      }),
+      // 慢扩展（网络型）撑住 collectAll 不提前完成
+      makeSearchExt('slow', () => {
+        return new Promise<ProviderResult[]>((resolve) => {
+          releaseSlow = resolve
+        })
+      }),
+    )
+    const updates: SearchResult[][] = []
+    const p = searchEngine.search('alpha', (partial) => updates.push([...partial]))
+    await vi.advanceTimersByTimeAsync(LIMITS.firstPaintHoldMs)
+    // sync 与 files 错峰到达（相隔 20ms > 1 帧），窗口合批后仅一次投递、两组结果同屏
+    expect(updates.length).toBe(1)
+    expect(updates[0].map((r) => r.id).sort()).toEqual(['c1', 'f1'])
+    releaseSlow([])
+    const final = await p
+    expect(final.map((r) => r.id).sort()).toEqual(['c1', 'f1'])
+    expect(updates.length).toBe(1)
+    vi.useRealTimers()
+  })
+
+  it('窗口关闭后恢复 rAF 即时流式：后至 emit 增量合并帧投递（不再等窗口）', async () => {
+    // 显式 toFake 纳入 rAF：默认 fakeTimers 不接管 requestAnimationFrame，
+    // 真实 rAF 只能在 advance 的真实耗时间隙里碰运气触发（原实现踩此边界）。
+    // 后至增量用 emit（dynamic 仍 pending）：resolve 型后至会被 finish 取消 rAF、经 return 投递
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'],
+    })
+    let emitLate!: () => void
+    let releaseLate!: () => void
+    registry.push(
+      makeSearchExt('fast', () => [result('f', 'alpha fast', 'application', 10)]),
+      makeSearchExt('late', (_q, ctx) => {
+        return new Promise<ProviderResult[]>((resolve) => {
+          emitLate = () => ctx.emit?.([result('l', 'alpha late', 'file', 5)])
+          releaseLate = () => resolve([])
+          ctx.signal.addEventListener('abort', () => resolve([]))
+        })
+      }),
+    )
+    const updates: SearchResult[][] = []
+    const p = searchEngine.search('alpha', (partial) => updates.push([...partial]))
+    await vi.advanceTimersByTimeAsync(LIMITS.firstPaintHoldMs)
+    expect(updates.length).toBe(1)
+    // 窗口后扩展仍在流式产出（dynamic 未 resolve）：emit 触发 rAF 合帧即时投递
+    emitLate()
+    await vi.advanceTimersByTimeAsync(16)
+    expect(updates.length).toBe(2)
+    expect(updates[1].map((r) => r.id)).toContain('l')
+    releaseLate()
+    await p
+    // resolve 后经 return 投递完整结果，onUpdate 不再触发
+    expect(updates.length).toBe(2)
     vi.useRealTimers()
   })
 
@@ -406,6 +479,85 @@ describe('SearchEngine', () => {
     deferreds[1]?.resolve([])
     await p1
     await p2
+  })
+
+  // ── 会话级结果缓存 ──
+
+  it('结果缓存：同 query 二次 search 同步回显，dynamic 零重跑（删除路径回显语义）', async () => {
+    let calls = 0
+    registry.push(
+      makeSearchExt('cached', () => {
+        calls++
+        return [result('c1', 'alpha hit', 'application', 10)]
+      }),
+    )
+    const first = await searchEngine.search('alpha')
+    expect(calls).toBe(1)
+    const second = await searchEngine.search('alpha')
+    // 命中缓存：dynamic 不再执行，同数组引用逐项一致（Vue 赋同引用零重渲染）
+    expect(calls).toBe(1)
+    expect(second).toBe(first)
+  })
+
+  it('结果缓存清空后重查：dynamic 重跑', async () => {
+    let calls = 0
+    registry.push(
+      makeSearchExt('cached2', () => {
+        calls++
+        return [result('c1', 'alpha hit', 'application', 10)]
+      }),
+    )
+    await searchEngine.search('alpha')
+    await searchEngine.search('alpha')
+    expect(calls).toBe(1)
+    searchEngine.clearResultCache()
+    await searchEngine.search('alpha')
+    expect(calls).toBe(2)
+  })
+
+  it('abort 的搜索不写缓存：部分到达的中间态不可作为终值', async () => {
+    let release!: () => void
+    registry.push(
+      makeSearchExt('pending', (_q, ctx) => {
+        return new Promise<ProviderResult[]>((resolve) => {
+          release = () => resolve([])
+          ctx.signal.addEventListener('abort', () => resolve([]))
+        })
+      }),
+    )
+    const p = searchEngine.search('alpha')
+    searchEngine.abort()
+    release()
+    await p
+    // 缓存未写入：换 registry 重查同 query 应重跑、拿到新扩展结果
+    registry.length = 0
+    let calls = 0
+    registry.push(
+      makeSearchExt('fresh', () => {
+        calls++
+        return [result('f1', 'alpha hit', 'application', 10)]
+      }),
+    )
+    const out = await searchEngine.search('alpha')
+    expect(calls).toBe(1)
+    expect(out.map((r) => r.id)).toEqual(['f1'])
+  })
+
+  it('空 query 与扩展模式不缓存：默认列表刷新路径与扩展内搜索依赖重算', async () => {
+    let calls = 0
+    const counter = () => {
+      calls++
+      return [result('c1', 'alpha hit', 'application', 10)]
+    }
+    registry.push(makeSearchExt('modes', counter))
+    await searchEngine.search('')
+    await searchEngine.search('')
+    expect(calls).toBe(2)
+    searchEngine.setActiveExtension('modes')
+    await searchEngine.search('alpha')
+    await searchEngine.search('alpha')
+    expect(calls).toBe(4)
+    searchEngine.setActiveExtension(undefined)
   })
 
   it('单扩展超时 abort 其 child signal，不牵连其它扩展', async () => {
