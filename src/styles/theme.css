@@ -640,6 +640,11 @@ body {
   background: var(--ui-active-fill) !important;
   color: var(--color-accent);
 }
+/* 按钮选中态盒模型恒定：soft-chip 的 1px 边以透明占位保留（BaseButton active 时仍挂
+ * soft-chip）——否则边框随选中消失，按钮内容盒 ±2px、同行按钮整体平移跳动 */
+.soft-chip.ui-active {
+  border: 1px solid transparent !important;
+}
 
 /* 禁用态：仅内容（文字+图标）降透明，容器边框/背景不动。
  * currentColor 取元素计算后的 color，按 variant 自适应（primary 白字 / ghost 主色字 / default 灰字）。

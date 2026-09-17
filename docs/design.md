@@ -21,7 +21,7 @@
 - **soft-card**：抬升卡 = soft-surface + `radius-panel` + `--shadow-card`（助手消息 / system-status）
 - **soft-chip**：控件 — 实白 + 1px 冷灰 solid border，无 elevation；focus 改边框色 `--focus-ring-color`
 - **ext-tag**：搜索栏只读扩展名
-- **ui-active**：列表选中色块 + 轻 blur
+- **ui-active**：列表选中色块 + 轻 blur；按钮选中（`soft-chip.ui-active`）以透明 1px 边占位保持盒模型恒定——防切换时内容盒 ±2px、同行按钮平移跳动
 - **ui-btn-***：BaseButton variant 面类（primary 实心主钮 / ghost 透明 / danger 淡红底 + 红字 + 红边，hover 加深边色、active 加深底与边）
 - **dialog-\***：弹窗近实白（非 soft-surface）；标题/底栏为浮层 + 透明渐变，内容可滚入；高度随内容形态切换平滑重排（JS FLIP + `transition: height`）
 - **fill-ctrl**：实底填充（进度轨 / kbd 等，非卡片壳）

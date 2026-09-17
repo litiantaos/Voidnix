@@ -38,14 +38,16 @@ const isIconOnly = computed(() => !!props.icon && !slots.default)
 
 /**
  * 面选择：
- * - active + ghost/default：挂 ui-active（浅底 + 主色文字/图标），跳过 soft-chip/ui-btn-*
- *   避免其 background !important 覆盖 ui-active
+ * - active + default：保留 soft-chip（1px 边以透明占位由 .soft-chip.ui-active 接管，
+ *   防选中切换时盒模型 ±2px 跳动；背景/文字色由 .ui-active !important 覆盖）
+ * - active + ghost：不挂 soft-chip/ui-btn-*（ghost 本无边框，无盒模型差），
+ *   让 ui-active 干净接管
  * - active + primary/danger：保留 variant 面（自身已带强语义色），ui-active 仍挂但仅做微提示
  *   （.ui-active 的染主色规则经 :not(.ui-btn-primary):not(.ui-btn-danger) 排除，不污染语义色）
  * - 非 active：default/danger → soft-chip；primary → ui-btn-primary；ghost → ui-btn-ghost
  */
 const surfaceClass = computed(() => {
-  if (props.active && (props.variant === 'ghost' || props.variant === 'default')) return ''
+  if (props.active && props.variant === 'ghost') return ''
   return props.variant === 'default' || props.variant === 'danger' ? 'soft-chip' : ''
 })
 
