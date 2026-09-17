@@ -6,18 +6,19 @@
 
 - 默认快捷键 `Option+F`（代码标识符 `Alt+F`；`globalShortcuts` id=`finder-ext`，可在面板内改；dev 构建按框架规则叠加 Shift）
 - 再按一次同快捷键：已在本模块则隐藏窗口（`makeToggleHandler`）
-- 面板：操作列表 + 启动快捷键配置；↑↓ 选中、回车执行；成功后隐藏窗口（有 toast 则短延迟）
+- 面板：用 App 打开候选组（置顶，见下；候选为空时隐藏）+ 操作列表 + 启动快捷键配置；↑↓ 选中、回车执行；成功后隐藏窗口（有 toast 则短延迟）
 
 ## 动作
 
 统一命令 `finder_run_action`（`CMD.finderRunAction`），`action`：
 
 - `copy_path`：选中项路径写入剪贴板（多行）；无选中则用当前窗口目标目录
+- `open_with`：用指定应用打开选中项（`app_path` 传 .app 路径）；多选全部打开；无选中回退当前窗口目标目录
 - `open_terminal`：在选中项所在目录（或目标目录）打开 Terminal.app
 - `new_file`：`BaseDialog` 单输入——默认 `Untitled.txt`，打开时选中扩展名前的文件名主体 → 创建 → 访达中选中
 - `toggle_hidden`：注入 `Cmd+Shift+.`（与系统一致、**不重启访达**）；需辅助功能；文案固定「切换隐藏文件」（系统无稳定可读显示态，不做两态文案）
 
-路径均经 `platform/path_guard`。
+路径均经 `platform/path_guard`（`open_with` 的应用路径除外，见实现要点）。
 
 ## 上下文入口（视频 / 图片处理）
 
@@ -29,10 +30,33 @@
 - 跨扩展通信：`window.dispatchEvent(new CustomEvent('video-pending-input-path', { detail: paths[] }))`（数组，多选区全量）/ `window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: path }))` + `setActiveExtension`；对应扩展 setup 监听事件写入各自 `pendingInputPaths` / `pendingInputPath`，View watch（immediate）后加载（与 screenshot→translate 同一模式）。**同步投递先于跳转首帧**：经 IPC 往返会晚一拍，期间目标列表形状未定型，快速 ↓+Enter 会误中「选择文件」行弹系统文件选择器
 - 访达非前台 / 权限缺失 / 无视频或图片选中 → 入口不出现（静默，不报错）
 
+## 用 App 打开
+
+场景（按频次）：
+
+1. **用编辑器打开文件夹**（核心）：访达选中项目文件夹 → 用 VS Code/Zed 等打开。访达右键「打开方式」对文件夹只显示 Finder（菜单层过滤），但 LaunchServices 注册数据里编辑器在列（实测 VS Code/Zed 均注册 folder handler）——直接消费 LS 数据即可拿到编辑器候选
+2. **用编辑器/其他应用打开文件**：替代右键 → 打开方式的深层菜单，键盘流直达
+3. **多选**：选中多个文件全部交给目标应用（`open -a <app> f1 f2…`，语义同访达「打开方式」多选；候选按首项类型推荐）
+4. **无选中**：回退当前访达窗口目标目录（与 copy_path / open_terminal 一致，「在当前目录打开编辑器」）
+
+**候选平铺在面板顶部（「用 App 打开」组），无二级界面**——与主流工具同款做法（访达「打开方式」/ Raycast / Alfred：类型推荐 + 最近使用置顶，不让用户默认浏览全部应用）：
+
+- 候选构成：**MRU 最近使用置顶**（跨类型，上限 3）→ **LaunchServices 类型推荐补足**（偏好序：默认应用在前，`NSWorkspace.URLsForApplicationsToOpenURL`，与访达「打开方式」同源数据）→ 去重后截断至 5 行；候选为空（无选区且无 MRU）时组整体隐藏
+- LS 候选与已安装列表 join 不上的（Playwright 缓存浏览器 / 系统卷投影等脏项）静默剔除；Finder 自身（目录默认 handler）Rust 端过滤；LS 返回的 Cryptexes 投影路径（`/System/Volumes/Preboot/Cryptexes/App/System/...`）Rust 端归一化为 `/System/...` 常规路径，否则系统应用候选（TextEdit/Preview 等）join 失败被误剔
+- 回车直接执行候选（`open_with`），成功记忆 MRU——高频路径 `Option+F → Enter` 两键直达常用编辑器
+- 候选行图标 = base64 应用图标缩小一半（57%，`BaseListItem.icon` 图片形态；fill-mist 圆角外框保留）
+
+数据与记忆：
+
+- 应用列表**复用 search 扩展命令**（`search_apps` 元数据 + `get_app_icons` 图标按 id 合流）：应用枚举与图标提取的唯一实现，缓存已随全局搜索预热；`apps.ts` 持模块级缓存，`app-cache-updated` / `app-icons-updated` 事件整体失效重拉（镜像 search/index.ts 手法）
+- 最近使用落盘 `config.json`（`recentApps`，MRU 上限 3）
+- 候选行图标 = base64 应用图标：`BaseListItem.icon` 支持 i- 前缀字体类与 base64 图片双形态（与 `ResultIcon` 同优先级语义）
+
 ## 命令
 
-- `finder_run_action`（`CMD.finderRunAction`）：执行动作（见上）
+- `finder_run_action`（`CMD.finderRunAction`）：执行动作（见上）；`name` 仅 `new_file`、`app_path` 仅 `open_with`
 - `finder_selected_paths`（`CMD.finderSelectedPaths`）：返回访达当前选中的文件路径（仅前台为访达时）
+- `finder_open_with_apps`（`CMD.finderOpenWithApps`）：返回 LaunchServices 意义上能打开指定路径的应用路径列表（偏好序，已过滤 Finder；供候选推荐）
 
 ## 实现要点
 
@@ -45,7 +69,8 @@
   - `ensure_accessibility`（窗口仍可见）→ **先 hide 主窗**归还 key → 前置访达并等 frontmost → `platform/input::post_combo("cmd+shift+.", finder_pid)`
   - 先注入再 hide 时面板仍占 key，按键常被吞，表现为需点两次
 - **权限**：控制访达（自动化，读选区/目录）；切换隐藏需辅助功能（失败有明确 toast）
-- **无落盘扩展 config**；快捷键覆盖走框架 `settings.shortcutOverrides`
+- **open_with 应用路径专用校验**（`validate_app_path`：绝对路径 + `.app` 后缀 + 存在）：不经 path_guard——系统内置应用在 `/System/Applications`（path_guard 拦 `/System` 前缀），`open -a` 交 LaunchServices 启动无文件系统写，且路径源自应用枚举缓存而非用户输入；目标路径（选区/目录）仍走 path_guard
+- **快捷键覆盖**走框架 `settings.shortcutOverrides`；`recentApps` 落盘 `defineConfig`
 
 ## 文件
 
@@ -54,12 +79,14 @@ extensions/finder-ext/
 ├── index.ts          # defineExtension + globalShortcuts
 ├── locales.ts        # 扩展文案（i18n 注册）
 ├── shortcuts.ts      # 快捷键 id/默认值 + 动作列表
-├── View.vue          # BaseSettingsList（操作 + 快捷键）+ 选区视频 / 图片探测
-└── native/mod.rs     # finder_run_action + finder_selected_paths + JXA 上下文 + 动作实现
+├── apps.ts           # 候选数据（复用 search 命令的列表缓存 + buildCandidates 纯函数）
+├── config.ts         # recentApps（用 App 打开最近使用，MRU 上限 3）
+├── View.vue          # 候选组平铺 + BaseSettingsList（操作 + 快捷键）+ 选区视频 / 图片探测
+└── native/mod.rs     # finder_run_action + finder_selected_paths + finder_open_with_apps + JXA 上下文 + 动作实现
 ```
 
 ## 已知限制
 
 - 终端固定 Terminal.app（不读用户默认终端）
-- 拷贝路径 / 终端 / 新建要求访达 frontmost；`toggle_hidden` 除外
-- 无访达窗口时 `new_file` / 无选中且无 target 的 `open_terminal` 会失败并提示
+- 拷贝路径 / 用 App 打开 / 终端 / 新建要求访达 frontmost；`toggle_hidden` 除外
+- 无访达窗口时 `new_file` / 无选中且无 target 的 `open_terminal` / `open_with` 会失败并提示

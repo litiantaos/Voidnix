@@ -4,7 +4,8 @@ export const FINDER_SHORTCUT = {
   default: 'Alt+F',
 } as const
 
-export type FinderAction = 'copy_path' | 'open_terminal' | 'new_file' | 'toggle_hidden'
+export type FinderAction =
+  'copy_path' | 'open_terminal' | 'new_file' | 'toggle_hidden' | 'open_with'
 
 export const FINDER_ACTIONS: {
   id: FinderAction

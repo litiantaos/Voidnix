@@ -38,6 +38,8 @@ import type { SettingItem } from '@/types/settings'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 import { t } from '@/runtime/i18n'
 import { FINDER_SHORTCUT, FINDER_ACTIONS, type FinderAction } from './shortcuts'
+import { buildCandidates, fetchApps, type AppEntry } from './apps'
+import { config as finderConfig, rememberRecentApp } from './config'
 import { reactivateTick } from './index'
 
 const appStore = useAppStore()
@@ -54,11 +56,12 @@ const nameInputRef = ref<InstanceType<typeof BaseInput> | null>(null)
 const HIDE_IN_RUST = new Set<FinderAction>(['toggle_hidden', 'new_file'])
 
 /** @returns 是否成功（供新建文件等决定是否关弹窗） */
-async function runAction(action: FinderAction, name?: string): Promise<boolean> {
+async function runAction(action: FinderAction, name?: string, appPath?: string): Promise<boolean> {
   try {
     const msg = await invoke<string>(CMD.finderRunAction, {
       action,
       name: name ?? null,
+      appPath: appPath ?? null,
     })
     if (HIDE_IN_RUST.has(action)) {
       return true
@@ -199,10 +202,12 @@ async function detectSelection() {
   // 先清空：避免 KeepAlive 重激活瞬间显示上次过期选区，探测完成再赋新值
   videoPaths.value = []
   imagePath.value = null
+  openWithCandidates.value = []
   try {
     const paths = await invoke<string[]>(CMD.finderSelectedPaths)
     videoPaths.value = filterByExt(paths, VIDEO_EXT_SET)
     imagePath.value = filterByExt(paths, IMAGE_EXT_SET)[0] ?? null
+    void refreshCandidates(paths)
   } catch {
     // 访达非前台 / 权限缺失 → 不显示入口
     videoPaths.value = []
@@ -220,8 +225,48 @@ function baseName(path: string): string {
   return path.split('/').pop() || path
 }
 
+// ── 用 App 打开：面板内联候选（主流做法：MRU 置顶 + 类型推荐补足），无二级界面 ──
+
+const openWithCandidates = ref<AppEntry[]>([])
+const allApps = ref<AppEntry[]>([])
+
+/** 候选刷新序号：探测重入（快捷键重呼）时旧轮结果丢弃，防过期候选闪现 */
+let candidateSeq = 0
+
+/** 刷新「用 App 打开」候选：LaunchServices 类型推荐（取选区首项，多选按首项类型）+ MRU。 */
+async function refreshCandidates(paths: string[]) {
+  const seq = ++candidateSeq
+  const ls = paths[0]
+    ? await invoke<string[]>(CMD.finderOpenWithApps, { path: paths[0] }).catch(() => [])
+    : []
+  if (seq !== candidateSeq) return
+  // 总是经 fetchApps 取已安装列表：缓存命中零开销，失效事件（应用增删/图标就绪）后取新；
+  // 失败回退现有列表（join 尽力而为）
+  const apps = await fetchApps().catch(() => allApps.value)
+  if (seq !== candidateSeq) return
+  if (apps.length > 0) allApps.value = apps
+  openWithCandidates.value = buildCandidates(apps, ls, finderConfig.recentApps)
+}
+
+/** 执行候选行：打开成功记忆 MRU（下次置顶直达）。 */
+async function executeOpenWith(app: AppEntry) {
+  const ok = await runAction('open_with', undefined, app.path)
+  if (ok) rememberRecentApp(app.path)
+}
+
 const allItems = computed<SettingItem[]>(() => {
   const list: SettingItem[] = []
+  // 「用 App 打开」候选组置顶：MRU + LaunchServices 类型推荐平铺（回车直达）
+  for (const app of openWithCandidates.value) {
+    list.push({
+      id: `open_with_${app.id}`,
+      title: app.name,
+      icon: app.icon,
+      type: 'action',
+      action: () => void executeOpenWith(app),
+      group: t('finderExt.openWithGroup'),
+    })
+  }
   // 选中视频时置顶「视频处理」入口（跨扩展跳转，带入路径；多选区全量带入批量处理）
   if (videoPaths.value.length > 0) {
     list.push({

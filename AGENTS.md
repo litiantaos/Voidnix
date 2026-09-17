@@ -536,6 +536,7 @@ src/
     ├── awake/{Display Wakelock, config.json}   # awake binary + 配置
     ├── screenshot/config.json
     ├── window-manager/config.json
+    ├── finder-ext/config.json          # 用 App 打开最近使用（recentApps，MRU 上限 3）
     ├── translate/config.json
     ├── agent/config.json             # 资源上限 + systemPrompt + 搜索 Provider + 会话消息/ sessionId（AI Key 见 ai-providers.json）
     ├── video/{ffmpeg,ffprobe,ffmpeg.version,config.json}  # 按需下载的静态 ffmpeg/ffprobe + 配置

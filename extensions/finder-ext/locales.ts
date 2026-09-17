@@ -11,6 +11,7 @@ registerMessages({
   'finderExt.operations': { 'zh-CN': '操作', en: 'Actions' },
   'finderExt.shortcut': { 'zh-CN': '启动快捷键', en: 'Launch Shortcut' },
   'finderExt.general': { 'zh-CN': '通用', en: 'General' },
+  'finderExt.openWithGroup': { 'zh-CN': '用 App 打开', en: 'Open with App' },
 
   // ─── 快捷操作标题 ──────────────────────
   'finderExt.action.copyPath': { 'zh-CN': '拷贝路径', en: 'Copy Path' },

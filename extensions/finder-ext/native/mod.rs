@@ -26,20 +26,28 @@ impl Extension for FinderExtExtension {
 // ── 公共命令 ───────────────────────────────────────────────────────────────
 
 /// 执行访达动作。
-/// `name` 仅 `new_file` 使用（最终文件名，已含扩展名）。
+/// `name` 仅 `new_file` 使用（最终文件名，已含扩展名）；`app_path` 仅 `open_with` 使用（.app 路径）。
 #[tauri::command]
 pub async fn finder_run_action(
     app: AppHandle,
     action: String,
     name: Option<String>,
+    app_path: Option<String>,
 ) -> Result<String, String> {
     // osascript / 文件 IO / sleep 阻塞调用放 blocking 线程，避免卡 main thread
-    tokio::task::spawn_blocking(move || run_action_inner(&app, &action, name.as_deref()))
-        .await
-        .map_err(|e| e.to_string())?
+    tokio::task::spawn_blocking(move || {
+        run_action_inner(&app, &action, name.as_deref(), app_path.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
-fn run_action_inner(app: &AppHandle, action: &str, name: Option<&str>) -> Result<String, String> {
+fn run_action_inner(
+    app: &AppHandle,
+    action: &str,
+    name: Option<&str>,
+    app_path: Option<&str>,
+) -> Result<String, String> {
     match action {
         "copy_path" => {
             require_finder_frontmost()?;
@@ -51,6 +59,13 @@ fn run_action_inner(app: &AppHandle, action: &str, name: Option<&str>) -> Result
             require_finder_frontmost()?;
             let ctx = finder_context()?;
             handle_open_terminal(&ctx.paths, &ctx.target)?;
+            Ok(String::new())
+        }
+        "open_with" => {
+            require_finder_frontmost()?;
+            let ctx = finder_context()?;
+            let app_path = app_path.ok_or_else(|| "缺少应用路径".to_string())?;
+            handle_open_with(&ctx.paths, &ctx.target, app_path)?;
             Ok(String::new())
         }
         "new_file" => {
@@ -90,6 +105,62 @@ fn selected_paths_inner() -> Result<Vec<String>, String> {
         .filter(|p| validate_path(Path::new(p)))
         .collect();
     Ok(paths)
+}
+
+/// 返回 LaunchServices 注册意义上能打开指定路径的应用（.app 路径，偏好序：默认应用在前）。
+/// 供「用 App 打开」做类型推荐候选（同访达「打开方式」数据源，经 NSWorkspace 现代封装）；
+/// Finder 自身是目录的默认 handler，用 Finder 打开无价值，过滤。
+#[tauri::command]
+pub async fn finder_open_with_apps(path: String) -> Result<Vec<String>, String> {
+    // LS 查询含磁盘 IO，放 blocking 线程（NSWorkspace 查询与 finder_pid 同款先例）
+    tokio::task::spawn_blocking(move || open_with_apps_inner(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn open_with_apps_inner(path: &str) -> Result<Vec<String>, String> {
+    // 入参来自 finder_selected_paths（已经 path_guard 校验）；此处仅存在性防抖，
+    // 不走 path_guard——/System 下选中的文件同样有推荐应用
+    let p = PathBuf::from(path);
+    if !p.is_absolute() || !p.exists() {
+        return Ok(vec![]);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWorkspace;
+        use objc2_foundation::{NSString, NSURL};
+        let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+        let apps = NSWorkspace::sharedWorkspace().URLsForApplicationsToOpenURL(&url);
+        Ok(apps
+            .iter()
+            .filter_map(|u| u.path())
+            .map(|p| normalize_ls_path(&p.to_string()))
+            .filter(|s| !s.is_empty() && !is_finder_app(s))
+            .collect())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(vec![])
+    }
+}
+
+/// Cryptexes 投影路径归一化：LS 对系统应用（cryptex 卷内容）返回
+/// `/System/Volumes/Preboot/Cryptexes/App/System/...` 投影路径，与应用枚举
+/// （search_apps 的 `/System/...`）不一致，直接返回会致前端 join 失败、
+/// 系统应用候选（TextEdit/Preview 等）被静默剔除。剥前缀还原常规路径；
+/// 还原后不存在（非 System firmlink 内容）则保留原路径。
+fn normalize_ls_path(path: &str) -> String {
+    const CRYPTEX_PREFIX: &str = "/System/Volumes/Preboot/Cryptexes/App";
+    if let Some(rest) = path.strip_prefix(CRYPTEX_PREFIX) {
+        if Path::new(rest).exists() {
+            return rest.to_string();
+        }
+    }
+    path.to_string()
+}
+
+fn is_finder_app(path: &str) -> bool {
+    path == "/System/Library/CoreServices/Finder.app"
 }
 
 // ── Finder 上下文 ──────────────────────────────────────────────────────────
@@ -280,6 +351,59 @@ fn handle_open_terminal(paths: &[String], target: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// open_with 应用路径专用校验：绝对路径 + .app 后缀 + 存在。
+/// 不经 path_guard——系统内置应用在 /System/Applications（path_guard 拦 /System 前缀），
+/// 启动交 LaunchServices（`open -a`）无文件系统写，且路径源自应用枚举缓存而非用户输入。
+fn validate_app_path(raw: &str) -> Result<PathBuf, String> {
+    let p = PathBuf::from(raw);
+    if !p.is_absolute() {
+        return Err("应用路径须为绝对路径".into());
+    }
+    if p.extension().and_then(|e| e.to_str()) != Some("app") {
+        return Err("不是有效的应用".into());
+    }
+    if !p.is_dir() {
+        return Err("应用不存在或已卸载".into());
+    }
+    Ok(p)
+}
+
+/// 用指定应用打开访达选中项（多选全部打开，语义同访达「打开方式」多选）；
+/// 无选中回退当前窗口目标目录（与 copy_path / open_terminal 一致）。
+fn handle_open_with(paths: &[String], target: &str, app_path: &str) -> Result<(), String> {
+    let app = validate_app_path(app_path)?;
+
+    let targets: Vec<String> = if !paths.is_empty() {
+        let valid: Vec<String> = paths
+            .iter()
+            .filter(|p| validate_path(Path::new(p.as_str())))
+            .cloned()
+            .collect();
+        if valid.is_empty() {
+            return Err("未选中任何项目".into());
+        }
+        valid
+    } else if !target.is_empty() {
+        if !validate_path(Path::new(target)) {
+            return Err("路径不安全".into());
+        }
+        vec![target.to_string()]
+    } else {
+        return Err("无可用目录（请打开访达窗口或选中项目）".into());
+    };
+
+    let mut cmd = Command::new("open");
+    cmd.arg("-a").arg(&app);
+    for t in &targets {
+        cmd.arg(t);
+    }
+    let status = cmd.status().map_err(|e| format!("打开失败: {e}"))?;
+    if !status.success() {
+        return Err("打开失败".into());
+    }
+    Ok(())
+}
+
 /// 访达进程 PID（`com.apple.finder`）。
 fn finder_pid() -> Option<i32> {
     #[cfg(target_os = "macos")]
@@ -429,5 +553,72 @@ fn reveal_in_finder(path: &Path) {
             Some(&ns_path),
             &objc2_foundation::NSString::from_str(""),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_with_apps_nonexistent_path_returns_empty() {
+        assert!(open_with_apps_inner("/definitely/not/here/voidnix")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn finder_app_filter() {
+        assert!(is_finder_app("/System/Library/CoreServices/Finder.app"));
+        assert!(!is_finder_app("/Applications/Visual Studio Code.app"));
+    }
+
+    #[test]
+    fn ls_path_normalization() {
+        // Cryptexes 投影路径还原常规路径（System firmlink 内容存在）
+        let sys = "/System/Applications";
+        if Path::new(sys).is_dir() {
+            assert_eq!(
+                normalize_ls_path(
+                    "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Notes.app"
+                ),
+                "/System/Applications/Notes.app"
+            );
+        }
+        // 非 Cryptexes 前缀原样返回；还原后不存在也保留原路径
+        assert_eq!(
+            normalize_ls_path("/Applications/Visual Studio Code.app"),
+            "/Applications/Visual Studio Code.app"
+        );
+        assert_eq!(
+            normalize_ls_path("/System/Volumes/Preboot/Cryptexes/App/Not/Here.app"),
+            "/System/Volumes/Preboot/Cryptexes/App/Not/Here.app"
+        );
+    }
+
+    #[test]
+    fn app_path_validation() {
+        // 相对路径拒绝
+        assert!(validate_app_path("Applications/X.app").is_err());
+        // 非 .app 后缀拒绝
+        assert!(validate_app_path("/Applications/readme.txt").is_err());
+        // 不存在的 .app 拒绝
+        assert!(validate_app_path("/Applications/VoidnixNotHere9999.app").is_err());
+        // 存在的 .app 目录放行
+        let dir = std::env::temp_dir().join("voidnix-fw-app-validate.app");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(validate_app_path(dir.to_str().unwrap()).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+        // 系统内置应用放行（/System 前缀不经 path_guard，见函数注释）
+        let sys = Path::new("/System/Applications");
+        if sys.is_dir() {
+            let sample = std::fs::read_dir(sys)
+                .unwrap()
+                .flatten()
+                .map(|e| e.path())
+                .find(|p| p.extension().is_some_and(|e| e == "app"))
+                .expect("系统应用目录应含 .app");
+            assert!(validate_app_path(sample.to_str().unwrap()).is_ok());
+        }
     }
 }

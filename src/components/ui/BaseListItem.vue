@@ -15,7 +15,16 @@
       overflow="hidden"
     >
       <slot name="icon">
-        <i v-if="icon" :class="icon" text="sm"></i>
+        <img
+          v-if="isImageIcon"
+          :src="iconSrc"
+          h="[57%]"
+          max-w="[57%]"
+          w="[57%]"
+          object="contain"
+          alt=""
+        />
+        <i v-else-if="icon" :class="icon" text="sm"></i>
       </slot>
     </div>
     <div flex="~ col 1" min-w="0" justify="center">
@@ -40,12 +49,22 @@ import { computed, useSlots, Comment } from 'vue'
 const props = defineProps<{
   title?: string
   subtitle?: string
+  /** 字体图标类（i- 前缀）或 base64 图片图标（应用图标，与 ResultIcon 同优先级语义） */
   icon?: string
   iconWrapperClass?: string
   multilineTitle?: boolean
   /** 标题色调：accent（强调，如代理当前节点）/ danger（危险操作，如移除） */
   tone?: 'accent' | 'danger'
 }>()
+
+/** 图片图标判定与 src 组装（与 ResultIcon 同源：i- 前缀 = 字体图标，其余 = base64）。
+ *  面板行图片图标取 57%（ResultIcon 115% 的一半），外框（fill-mist 圆角底）保留 */
+const isImageIcon = computed(() => !!props.icon && !props.icon.startsWith('i-'))
+const iconSrc = computed(() => {
+  const i = props.icon
+  if (!i) return ''
+  return i.startsWith('data:') ? i : 'data:image/png;base64,' + i
+})
 
 const slots = useSlots()
 

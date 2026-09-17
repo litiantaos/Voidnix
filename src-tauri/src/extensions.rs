@@ -68,6 +68,7 @@ macro_rules! configure_app {
             crate::extensions::clipboard::commands::toggle_clipboard_favorite,
             crate::extensions::clipboard::commands::update_clipboard_text,
             crate::extensions::clipboard::set_clipboard_max_days,
+            crate::extensions::finder_ext::finder_open_with_apps,
             crate::extensions::finder_ext::finder_run_action,
             crate::extensions::finder_ext::finder_selected_paths,
             crate::extensions::homebrew::brew_info,
