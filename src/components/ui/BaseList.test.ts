@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
-import { nextTick, h, KeepAlive } from 'vue'
+import { nextTick, h, KeepAlive, defineComponent, ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAppStore } from '@/stores/app'
 import BaseList from './BaseList.vue'
@@ -122,6 +122,98 @@ describe('BaseList', () => {
     document.removeEventListener('keydown', later)
     expect(wrapper.emitted('execute')).toHaveLength(1)
     expect(laterSawEnter).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('已停用 KeepAlive 子树内重挂载的列表不响应键盘（后台列表不得劫持导航与回车）', async () => {
+    // 复现路径：停用视图的响应式 watcher 仍活跃，驱动其内部 v-if 翻转使列表卸载后
+    // 在停用树内重挂载（如剪贴板 history 随全局 query 过滤清空再回填）——重挂载不
+    // 触发 activated/deactivated 钩子对，初始态若按 active 处理会成为后台仍消费
+    // ↑↓ 与 Enter 的僵尸列表（用户在其它扩展里回车触发剪贴板粘贴的根因）
+    const showA = ref(true)
+    const showList = ref(true)
+    const selects: number[] = []
+    let executes = 0
+    const ChildA = defineComponent({
+      setup: () => () =>
+        showList.value
+          ? h(BaseList, {
+              items: items(3),
+              onSelect: (i: number) => selects.push(i),
+              onExecute: () => executes++,
+            })
+          : h('div'),
+    })
+    const ChildB = defineComponent({ setup: () => () => h('div') })
+    const wrapper = mount({
+      setup: () => () => h(KeepAlive, () => (showA.value ? h(ChildA) : h(ChildB))),
+    })
+
+    // 切到 B 停用 A，随后 A 停用期间其内部 v-if 翻转一轮（卸载 → 停用树内重挂载）
+    showA.value = false
+    await nextTick()
+    showList.value = false
+    await nextTick()
+    showList.value = true
+    await nextTick()
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+    expect(selects).toEqual([])
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+    expect(executes).toBe(0)
+
+    // 重新激活后恢复正常响应（激活转换经根注入钩子/实时判定恢复）
+    showA.value = true
+    await nextTick()
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+    expect(selects).toEqual([1])
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+    expect(executes).toBe(1)
+
+    wrapper.unmount()
+  })
+
+  it('列表缩短致选中越界：Enter 不派发 undefined，方向键 wrap 自愈（H7 同族）', async () => {
+    const wrapper = mount(BaseList<Item>, {
+      props: { items: items(6) },
+      slots: { item: ({ item }: { item: Item }) => item.title },
+    })
+    for (let i = 0; i < 5; i++) {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+      )
+    }
+    await nextTick()
+    expect(wrapper.emitted('select')?.at(-1)).toEqual([5])
+
+    // 过滤使列表缩短为 2 项：localIndex=5 越界（无高亮），Enter 不派发 undefined
+    await wrapper.setProps({ items: items(2) })
+    await nextTick()
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+    expect(wrapper.emitted('execute')).toBeUndefined()
+
+    // 方向键自愈：越界索引经 wrapIndex 回到 0
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+    expect(wrapper.emitted('select')?.at(-1)).toEqual([0])
     wrapper.unmount()
   })
 })

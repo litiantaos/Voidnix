@@ -37,7 +37,7 @@ export function useScroll(element: Ref<HTMLElement | undefined>) {
 export function onKeyStroke(
   keys: string | string[],
   handler: (e: KeyboardEvent) => void,
-  opts?: { ignoreFormControls?: boolean },
+  opts?: { ignoreFormControls?: boolean; capture?: boolean },
 ) {
   const keySet = new Set(Array.isArray(keys) ? keys : [keys])
   const listener = (e: KeyboardEvent) => {
@@ -51,6 +51,6 @@ export function onKeyStroke(
       handler(e)
     }
   }
-  onMounted(() => document.addEventListener('keydown', listener))
-  onUnmounted(() => document.removeEventListener('keydown', listener))
+  onMounted(() => document.addEventListener('keydown', listener, opts?.capture))
+  onUnmounted(() => document.removeEventListener('keydown', listener, opts?.capture))
 }

@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts" generic="T">
-import { ref, watch, nextTick, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
+import { ref, watch, nextTick, onActivated, onBeforeUnmount, getCurrentInstance } from 'vue'
 import { onKeyStroke } from '@/composables/events'
 import { t } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
@@ -42,18 +42,29 @@ import {
   wrapIndex,
 } from '@/utils/dom'
 
-// KeepAlive 软禁用：deactivate 后监听仍在，用 isActive 抑制响应。
+// KeepAlive 软禁用：deactivate 后监听仍在，按键时实时判定是否处于停用子树（见 inDeactivatedTree）。
 // inKeepAliveTree：首次 activated 即标记（KeepAlive 树内组件挂载即触发 activated；
 // 标准列表在 ContentView 的 KeepAlive 外，永不触发）——用于区分自管/受控列表。
-const isActive = ref(true)
 const inKeepAliveTree = ref(false)
 onActivated(() => {
-  isActive.value = true
   inKeepAliveTree.value = true
 })
-onDeactivated(() => {
-  isActive.value = false
-})
+
+const instance = getCurrentInstance()
+
+/// 已停用 KeepAlive 子树内的列表不响应键盘。不能用 onDeactivated 置位的 isActive 镜像：
+/// 停用视图的响应式 watcher 仍活跃，其内部 v-if 分支翻转会使列表在停用树内卸载后重挂载
+/// （如剪贴板 history 随全局 query 过滤清空再回填），重挂载不触发 activated/deactivated
+/// 钩子对，镜像停在初值 true 会成为后台仍消费 ↑↓/Enter 的「僵尸列表」（用户在其它
+/// 扩展回车触发剪贴板粘贴的根因）。按键时沿父链查 isDeactivated——状态由框架在
+/// KeepAlive 激活/停用转换时维护，无镜像配对假设（与 Vue registerKeepAliveHook 的
+/// 钩子守卫同源语义）
+function inDeactivatedTree(): boolean {
+  for (let anc = instance; anc; anc = anc.parent) {
+    if (anc.isDeactivated) return true
+  }
+  return false
+}
 
 // 整窗视图让位在列表层强制执行（不依赖调用方 keyboardActive 巧合为 false）：
 // 同 isModalDialogOpen 一样属全局模态让位，集中防御优于散布到全部调用点。
@@ -174,12 +185,15 @@ function emitIds(ids: Set<string>) {
   emit('update:selectedIds', ids)
 }
 
-/// shift 范围选择：anchor → index 区间全选
+/// shift 范围选择：anchor → index 区间全选（列表缩短后 anchor 可能越界，跳过缺席项）
 function selectRangeTo(index: number) {
   if (anchorIndex < 0) anchorIndex = localIndex.value
   const [start, end] = [Math.min(anchorIndex, index), Math.max(anchorIndex, index)]
   const ids = new Set<string>()
-  for (let i = start; i <= end; i++) ids.add(getId(props.items[i]))
+  for (let i = start; i <= end; i++) {
+    const it = props.items[i]
+    if (it) ids.add(getId(it))
+  }
   setSelectedIndex(index)
   emitIds(ids)
 }
@@ -192,7 +206,8 @@ function onItemClick(index: number, e: MouseEvent) {
     }
     const ids = new Set(props.selectedIds ?? [])
     if (ids.size === 0) {
-      ids.add(getId(props.items[localIndex.value]))
+      const focused = props.items[localIndex.value]
+      if (focused) ids.add(getId(focused))
       if (anchorIndex < 0) anchorIndex = localIndex.value
     }
     const id = getId(props.items[index])
@@ -223,9 +238,10 @@ function onItemContextMenu(index: number, e: MouseEvent) {
 
 // ── Keyboard 守卫 ──
 
-/// 公共守卫：未激活 / 整窗视图接管 / IME 合成中 / 模态弹窗打开（焦点在 BUTTON 上也不会再抢 ↑↓） 不响应
+/// 公共守卫：处于停用 KeepAlive 子树 / 未激活 / 整窗视图接管 / IME 合成中 / 模态弹窗
+/// 打开（焦点在 BUTTON 上也不会再抢 ↑↓）不响应
 function canNavigate(e: KeyboardEvent): boolean {
-  if (!isActive.value || !props.keyboardActive) return false
+  if (inDeactivatedTree() || !props.keyboardActive) return false
   if (appStore.fullscreenView) return false
   if (props.composing || isComposingCheck(e)) return false
   if (isModalDialogOpen()) return false
@@ -282,15 +298,21 @@ if (props.multiSelect) {
     emitIds(new Set(props.items.map((item) => getId(item))))
   })
 
-  // 有多选项时 ESC 先清选择（不退出扩展）：子组件 onMounted 先于父，listener 注册在
-  // useResultNavigation 之前，stopImmediatePropagation 阻断后者同 target bubble listener。
-  onKeyStroke('Escape', (e) => {
-    if (!canNavigate(e)) return
-    if ((props.selectedIds?.size ?? 0) === 0) return
-    e.preventDefault()
-    e.stopImmediatePropagation()
-    emitIds(new Set())
-  })
+  // 有多选项时 ESC 先清选择（不退出扩展）：捕获相监听先于 useResultNavigation 的
+  // bubble 监听（与注册顺序无关）——扩展视图列表晚于 MainView 挂载，注册顺序不保证
+  // 「子先于父」，捕获相是唯一确定性先行通道；stopImmediatePropagation 断掉后续
+  // document 监听（含退出扩展的分派）
+  onKeyStroke(
+    'Escape',
+    (e) => {
+      if (!canNavigate(e)) return
+      if ((props.selectedIds?.size ?? 0) === 0) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      emitIds(new Set())
+    },
+    { capture: true },
+  )
 }
 
 onKeyStroke('Enter', (e) => {
@@ -301,14 +323,16 @@ onKeyStroke('Enter', (e) => {
   // 按住回车的 auto-repeat 不执行行项：跨扩展跳转的回车若被按住，repeat 会落到
   // 目标视图首行执行其动作（曾致 video 首行「选择文件」直接弹系统面板）
   if (e.repeat) return
+  // H7 同族守卫：过滤/删除使列表缩短后 localIndex 可能越界（无高亮、消费者收到
+  // undefined 会读属性崩溃）——无有效目标时不消费按键，方向键 wrapIndex 自愈
+  const item = props.items[localIndex.value]
+  if (!item) return
   e.preventDefault()
   // 执行即消费：一次回车至多执行一个列表的项（与 useResultNavigation 全局模式对齐），
   // 防 KeepAlive 并存监听重复响应同一按键
   e.stopImmediatePropagation()
-  if (props.items.length > 0) {
-    emit('execute', props.items[localIndex.value], localIndex.value, e)
-    if (props.multiSelect) emitIds(new Set())
-  }
+  emit('execute', item, localIndex.value, e)
+  if (props.multiSelect) emitIds(new Set())
 })
 
 // ── Scroll ──
