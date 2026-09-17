@@ -212,9 +212,16 @@ export function useSearchInput(opts: SearchInputOptions) {
     // 转移入口（退出扩展/回主页/清空输入）显式归首项、规范序；后台刷新（图标就绪/缓存变更/
     // 窗口获焦）同 query 稳定合并（旧序为基 + 选中身份跟随），usage/recency 加权变化
     // 不改当前会话排序，唤起时零重排零跳位。
+    if (resetSelection) {
+      // 同步落提示行：默认列表异步到达前的窗口期（IPC + 缓存扫描约 10-50ms）内，残留的
+      // 上一会话结果仍占据列表且可被回车执行——退出扩展/goHome 后紧接的回车会把残留
+      // 剪贴板记录直接粘贴出去（无 toast 即关窗）。同步替换杜绝该窗口（与下方 catch
+      // 分支的兜底同款单行，无空态闪烁）。
+      results.value = [toolsHintResult()]
+      selectedIndex.value = 0
+    }
     const prevList = resetSelection ? [] : results.value
     const prevSel = resetSelection ? undefined : results.value[selectedIndex.value]
-    if (resetSelection) selectedIndex.value = 0
     // 尾部固定提示行：随每次默认列表刷新（增量与最终）追加
     const withHint = (list: SearchResult[]) => [...list, toolsHintResult()]
     const apply = (list: SearchResult[], final: boolean) => {
