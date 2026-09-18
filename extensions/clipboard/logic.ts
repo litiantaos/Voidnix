@@ -1,4 +1,5 @@
 import { scoreFields } from '@/utils/fuzzy'
+import { parseUtcMs } from '@/utils/datetime'
 import { t } from '@/runtime/i18n'
 import type { ClipboardItem } from './index'
 
@@ -24,6 +25,23 @@ export function clipboardIcon(item: ClipboardItem): string {
   if (item.content_type === 'image') return 'i-ri-image-line'
   if (item.content_type === 'file') return 'i-ri-file-line'
   return 'i-ri-file-text-line'
+}
+
+/**
+ * created_at 为 SQLite UTC 时间（datetime('now')，「YYYY-MM-DD HH:MM:SS」），
+ * 经 parseUtcMs 解析后转本地时区展示：今天显示 HH:MM，否则显示 MM/DD HH:MM。
+ */
+export function formatClipboardTime(at: string): string {
+  const ms = parseUtcMs(at)
+  if (Number.isNaN(ms)) return at
+  const d = new Date(ms)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const localDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const now = new Date()
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (localDate === today) return hm
+  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${hm}`
 }
 
 /** 按 content_type 过滤（'all' 原样返回，其余返回新数组）。 */

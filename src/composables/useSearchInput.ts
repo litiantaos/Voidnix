@@ -12,6 +12,7 @@ import type { Extension, SearchResult } from '@/runtime/types'
 import { isTauri } from '@/utils/tauri'
 import { buildOpenUrlResult, buildWebSearchResult, parseWebSearchQuery } from '@/utils/web-search'
 import { probeMem, trackResults } from '@/utils/mem-probe'
+import { parseUtcMs } from '@/utils/datetime'
 import { isModalDialogOpen } from '@/utils/dom'
 
 interface SearchInputOptions {
@@ -506,8 +507,8 @@ export function useSearchInput(opts: SearchInputOptions) {
       if (items.length === 0) return
       const latest = items[0]
       if (latest.content_type !== 'text') return
-      // created_at 为 SQLite UTC（YYYY-MM-DD HH:MM:SS），补 T+Z 解析为 UTC 毫秒时间戳
-      const createdAt = new Date(latest.created_at.replace(' ', 'T') + 'Z').getTime()
+      // created_at 为 SQLite UTC（YYYY-MM-DD HH:MM:SS），经 parseUtcMs 解析
+      const createdAt = parseUtcMs(latest.created_at)
       if (Date.now() - createdAt > 3000) return
       // 设值后派发 input 事件，复用 onInput 完整搜索链路（防抖/搜索引擎/结果更新）；
       // select 使后续输入直接替换填充内容（focusHandler 在 IPC 往返前已执行，此时 query 仍空不会 select）。

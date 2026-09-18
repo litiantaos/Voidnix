@@ -22,6 +22,7 @@ import {
   delayColor,
   filterNodes,
   formatDelay,
+  formatSubTime,
   isUserSelectorGroup,
   latestDelay,
 } from './logic'
@@ -533,10 +534,7 @@ export function useProxyPanel() {
   }
 
   // ── 订阅 ──
-  function formatTime(ts: string): string {
-    if (!ts) return t('proxy.notUpdated')
-    return ts.slice(0, 10)
-  }
+  // 更新时间格式化在 ./logic::formatSubTime（纯逻辑，可测）
 
   /// 切换激活订阅：写 config（持久化）+ 通知 Rust 更新 run_params + 热重载（含 idle 常驻）。
   /// 仅激活订阅的节点参与合并，切换后节点列表整体替换，故清空乐观选中与测速缓存。
@@ -846,7 +844,7 @@ export function useProxyPanel() {
     onGroupChange,
     delayColor,
     formatDelay,
-    formatTime,
+    formatTime: formatSubTime,
     showEditModal,
     isCreating,
     closeEditModal,

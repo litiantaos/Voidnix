@@ -35,6 +35,14 @@ describe('recencyScore', () => {
   it('负值（未来时间）视作最近期 → 300', () => {
     expect(recencyScore(new Date(NOW + HOUR).toISOString(), NOW)).toBe(300)
   })
+
+  it('mdfind 原始格式「YYYY-MM-DD HH:MM:SS +0000」正确分桶（JSC 原生解析不认此格式）', () => {
+    expect(recencyScore('2026-01-14 23:30:00 +0000', NOW)).toBe(300)
+    expect(recencyScore('2026-01-14 22:00:00 +0000', NOW)).toBe(200)
+    expect(recencyScore('2026-01-10 20:00:00 +0000', NOW)).toBe(100)
+    expect(recencyScore('2026-01-06 16:00:00 +0000', NOW)).toBe(50)
+    expect(recencyScore('2025-11-01 00:00:00 +0000', NOW)).toBe(0)
+  })
 })
 
 describe('toResult', () => {

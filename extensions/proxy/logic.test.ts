@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import { t } from '@/runtime/i18n'
 import './locales'
 import {
   delayColor,
   formatDelay,
+  formatSubTime,
   DELAY_TIMEOUT,
   filterNodes,
   isUserSelectorGroup,
@@ -30,6 +32,21 @@ describe('proxy logic', () => {
     expect(filterNodes(nodes, 'hk')).toEqual([{ name: 'HK-01' }])
     expect(filterNodes(nodes, '')).toHaveLength(3)
     expect(filterNodes(nodes, 'premium')).toEqual([{ name: 'JP Premium' }])
+  })
+
+  it('formatSubTime：ISO UTC 转本地日期', () => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    // 本地正午时刻（本地分量定义），转 ISO 后经 formatSubTime 回读，任何时区下本地日期都是今天
+    const localNoon = new Date()
+    localNoon.setHours(12, 0, 0, 0)
+    expect(formatSubTime(localNoon.toISOString())).toBe(
+      `${localNoon.getFullYear()}-${pad(localNoon.getMonth() + 1)}-${pad(localNoon.getDate())}`,
+    )
+  })
+
+  it('formatSubTime：空串 → 未更新文案，非法串原样返回', () => {
+    expect(formatSubTime('')).toBe(t('proxy.notUpdated'))
+    expect(formatSubTime('garbage')).toBe('garbage')
   })
 })
 

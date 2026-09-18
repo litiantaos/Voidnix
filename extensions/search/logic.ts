@@ -1,11 +1,13 @@
 import type { ProviderResult, SearchResultKind } from '@/runtime/types'
 import type { RawSearchResult } from '@/utils/tauri'
+import { parseUtcMs } from '@/utils/datetime'
 
 /** 最近使用时间衰减打分（分桶：<1h=300 / <24h=200 / <168h=100 / <720h=50 / else 0）。
- *  `now` 注入便于测试；默认 Date.now()。负值（未来时间）视作最近期。 */
+ *  `now` 注入便于测试；默认 Date.now()。负值（未来时间）视作最近期。
+ *  last_used 为 mdfind 原始串「YYYY-MM-DD HH:MM:SS +0000」，JSC 不认，须经 parseUtcMs。 */
 export function recencyScore(lastUsed: string | null, now: number = Date.now()): number {
   if (!lastUsed) return 0
-  const hours = (now - new Date(lastUsed).getTime()) / 3600000
+  const hours = (now - parseUtcMs(lastUsed)) / 3600000
   if (hours < 0) return 300
   if (hours < 1) return 300
   if (hours < 24) return 200

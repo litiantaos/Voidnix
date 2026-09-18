@@ -1,5 +1,6 @@
 /// proxy 扩展纯逻辑：延迟着色、节点过滤、模式标签、分组解析。
 import { t } from '@/runtime/i18n'
+import { parseUtcMs } from '@/utils/datetime'
 
 /// mihomo controller /proxies 响应类型
 export interface ProxyHistory {
@@ -38,6 +39,16 @@ export function latestDelay(history?: ProxyHistory[]): number {
 
 /// 测速超时哨兵值：测速失败/超时写入 delayMap，与「未测速」（0）区分。
 export const DELAY_TIMEOUT = -1
+
+/// 订阅更新时间 → 本地日期「YYYY-MM-DD」（updatedAt 为 ISO UTC，切本地时区展示；空 → 未更新文案）。
+export function formatSubTime(ts: string): string {
+  if (!ts) return t('proxy.notUpdated')
+  const ms = parseUtcMs(ts)
+  if (Number.isNaN(ms)) return ts
+  const d = new Date(ms)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
 
 /// 延迟（ms）→ 颜色语义类。连通=绿，连不通=红，未测速（0）返回空串不着色。
 export function delayColor(ms: number): string {

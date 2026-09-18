@@ -44,8 +44,8 @@ describe('parseTimestamp', () => {
     expect(parseTimestamp('2024-01-01T00:00:00Z')).toEqual({ ts: 1704067200000, isMs: true })
   })
 
-  it('日期字符串（无时间）→ isMs=true', () => {
-    expect(parseTimestamp('2024-01-01')).toEqual({ ts: 1704067200000, isMs: true })
+  it('纯日期串 → 本地午夜（非规范的 UTC 午夜），isMs=true', () => {
+    expect(parseTimestamp('2024-01-01')).toEqual({ ts: new Date(2024, 0, 1).getTime(), isMs: true })
   })
 
   it('无效输入返回 null', () => {

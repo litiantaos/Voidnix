@@ -27,7 +27,7 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 - `content`：文本原文 / `data:image/png;base64,...` / path-based `file://` URL（Finder 写入的 file reference URL `file:///.file/id=...` 经 `NSURL.filePathURL` 解析为实际路径后存为 `file://{path}`）
 - `content_type`：text/image/file
 - `source_app`：来源 app
-- `created_at`：**UTC** `datetime('now')`，与表默认 `CURRENT_TIMESTAMP` 一致；重复项 UPDATE 刷新
+- `created_at`：**UTC** `datetime('now')`，与表默认 `CURRENT_TIMESTAMP` 一致；重复项 UPDATE 刷新。展示统一经 `logic.ts::formatClipboardTime`（`utils/datetime.ts::parseUtcMs` 按 UTC 解析转本地时区：今天 HH:MM，否则 MM/DD HH:MM），禁止把 UTC 字符串当本地时间直接截取
 - `is_favorite`：收藏标记
 - `file_size` / `image_width` / `image_height`：迁移列
 

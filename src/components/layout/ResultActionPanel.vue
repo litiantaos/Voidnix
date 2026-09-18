@@ -38,6 +38,7 @@ import { hideWindow } from '@/utils/tauri'
 import BaseDropdownItems, { type PanelItem } from '@/components/ui/BaseDropdownItems.vue'
 import { useActionPanel } from '@/composables/useActionPanel'
 import { formatBytes } from '@/utils/format'
+import { parseUtcMs } from '@/utils/datetime'
 import { t } from '@/runtime/i18n'
 import type { SearchResult } from '@/runtime/types'
 
@@ -132,13 +133,12 @@ function runAction(key: string | number) {
 /// 右键入口（经 MainView 转发）：暴露 composable 统一的 toggle（已开则关，否则 canOpen → openFor）
 defineExpose({ toggleOpen })
 
-// mdls 日期 "2024-01-01 12:00:00 +0000" → 转 ISO 后格式化为本地 "2024-01-01 12:00"
+// mdls 日期 "2024-01-01 12:00:00 +0000" → epoch 后格式化为本地 "2024-01-01 12:00"
 function fmtDate(s: string | null | undefined): string {
   if (!s) return '—'
-  const parts = s.split(' ')
-  const iso = parts.length >= 3 ? `${parts[0]}T${parts[1]}${parts[2]}` : s
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return s
+  const ms = parseUtcMs(s)
+  if (isNaN(ms)) return s
+  const d = new Date(ms)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }

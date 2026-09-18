@@ -13,6 +13,7 @@ import {
   filterByType,
   clipboardTitle,
   clipboardIcon,
+  formatClipboardTime,
   type ContentType,
 } from './logic'
 import './locales'
@@ -84,7 +85,7 @@ function mapClipboardResults(raw: ClipboardItem[], query: string): ProviderResul
   return filterByQuery(raw, query).map((item) => ({
     id: `clipboard-${item.id}`,
     title: clipboardTitle(item),
-    description: `${item.source_app} • ${item.created_at}`,
+    description: `${item.source_app} • ${formatClipboardTime(item.created_at)}`,
     icon: clipboardIcon(item),
     data: {
       kind: 'clipboard' as const,

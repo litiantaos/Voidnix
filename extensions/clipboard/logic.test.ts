@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchText, filterByQuery, filterByType } from './logic'
+import { matchText, filterByQuery, filterByType, formatClipboardTime } from './logic'
 import type { ClipboardItem } from './index'
 import './locales'
 
@@ -99,5 +99,35 @@ describe('filterByType', () => {
     const snapshot = items.map((i) => ({ ...i }))
     filterByType(items, 'image')
     expect(items).toEqual(snapshot)
+  })
+})
+
+describe('formatClipboardTime', () => {
+  const pad = (n: number) => String(n).padStart(2, '0')
+
+  /** 按某时刻的 UTC 分量构造 SQLite datetime('now') 同格式字符串。 */
+  function sqliteUtc(d: Date, hhmm: string): string {
+    return (
+      `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+      `${hhmm}:${pad(d.getUTCSeconds())}`
+    )
+  }
+
+  it('今天的记录转本地时区显示本地 HH:MM', () => {
+    const now = new Date()
+    const utc = sqliteUtc(now, `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}`)
+    expect(formatClipboardTime(utc)).toBe(`${pad(now.getHours())}:${pad(now.getMinutes())}`)
+  })
+
+  it('非今天的记录显示本地 MM/DD HH:MM', () => {
+    const d = new Date(Date.now() - 400 * 24 * 3600 * 1000)
+    const utc = sqliteUtc(d, `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`)
+    expect(formatClipboardTime(utc)).toBe(
+      `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    )
+  })
+
+  it('非法字符串原样返回', () => {
+    expect(formatClipboardTime('garbage')).toBe('garbage')
   })
 })

@@ -26,7 +26,7 @@
 
 **拼音索引预计算**：扫描时为 CJK 文件名生成 `pinyin_key`（`pinyin.rs`，编译期内嵌 U+4E00..U+9FFF 拼音首字母表 + 无声调全拼表，由 pinyin-pro 生成），格式 `"首字母串\x1f全拼串"`（如 `设计文档` → `sjwd\x1fshejiwendang`）；分隔符 \x1f 不可打印，ASCII 查询不含、不会跨段匹配，额外对此键 substring 匹配即可独立命中首字母（`sjwd`）与全拼（`sheji`）。
 
-**use_count / last_used**：索引构建时一次 `mdfind "kMDItemUseCount > 0"` 批量拉目标目录下被打开过的文件元数据（远少于全量），合并进 `CachedFile`。`last_used` 的 Spotlight 日期字符串经 `parse_epoch_hours`（Howard Hinnant days-from-civil）预解析为 epoch hours 存入 `last_used_hours`，搜索时纯整数减法算 hours_ago 做 recency 分桶——零日期解析热路径开销。
+**use_count / last_used**：索引构建时一次 `mdfind "kMDItemUseCount > 0"` 批量拉目标目录下被打开过的文件元数据（远少于全量），合并进 `CachedFile`。`last_used` 的 Spotlight 日期字符串经 `parse_epoch_hours`（Howard Hinnant days-from-civil）预解析为 epoch hours 存入 `last_used_hours`，搜索时纯整数减法算 hours_ago 做 recency 分桶——零日期解析热路径开销。前端 `recencyScore` 拿到的是原始字符串，须经 `utils/datetime.ts::parseUtcMs` 解析——JSC 的 `new Date` 不认「YYYY-MM-DD HH:MM:SS +0000」格式（V8 认，Node 单测测不出此差异），裸解析恒 NaN 使 recency 分桶全失效。
 
 **排序权重**（Rust 端截断 top 100 时用，与前端 `frequencyBoost`/`recencyScore` 对齐）：name substring（前缀 1000 / 包含 600）与 pinyin substring（300）取 max + frequency（log2 平滑 cap 1500）+ recency（<1h=300 / <24h=200 / <168h=100 / <720h=50）+ folder 优先 240。拼音分低于名称直匹，确保精确匹配优先。高频/近期文件在截断时不被丢弃，前端 `scoreFields` 再做 fuzzy + boost 精排。
 

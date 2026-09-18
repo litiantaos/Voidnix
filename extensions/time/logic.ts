@@ -19,12 +19,15 @@ export function toLocalIso(date: Date): string {
  *  返回 { ts: 毫秒, isMs: 输入是否为毫秒级 }；空或无法解析返回 null。
  *  - 10 位纯数字 → 视为秒，isMs=false（ts 已归一为毫秒）
  *  - 13 位纯数字 → 视为毫秒，isMs=true
+ *  - 纯日期串（YYYY-MM-DD）→ 本地午夜（JS 规范默认 UTC 午夜，与带时间输入的本地语义不一致）
  *  - 其余 → 尝试作为日期字符串解析，成功则 isMs=true */
 export function parseTimestamp(input: string): { ts: number; isMs: boolean } | null {
   const trimmed = input.trim()
   if (!trimmed) return null
   if (/^\d{10}$/.test(trimmed)) return { ts: parseInt(trimmed, 10) * 1000, isMs: false }
   if (/^\d{13}$/.test(trimmed)) return { ts: parseInt(trimmed, 10), isMs: true }
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed)
+  if (dm) return { ts: new Date(+dm[1], +dm[2] - 1, +dm[3]).getTime(), isMs: true }
   const ms = new Date(trimmed).getTime()
   if (isNaN(ms)) return null
   return { ts: ms, isMs: true }

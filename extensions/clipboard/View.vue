@@ -77,7 +77,7 @@
             <div flex gap="1.5" items="center">
               <span>{{ item.source_app }}</span>
               <span text="muted">·</span>
-              <span>{{ formatTime(item.created_at) }}</span>
+              <span>{{ formatClipboardTime(item.created_at) }}</span>
               <template v-if="item.file_size">
                 <span text="muted">·</span>
                 <span>{{ formatBytes(item.file_size) }}</span>
@@ -215,6 +215,7 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useActionPanel } from '@/composables/useActionPanel'
 import { useAppStore } from '@/stores/app'
 import { formatBytes, toErrorMessage } from '@/utils/format'
+import { formatClipboardTime } from './logic'
 import { t } from '@/runtime/i18n'
 
 const appStore = useAppStore()
@@ -552,16 +553,5 @@ function getColor(item: { id: string; content_type: string; content: string }): 
     colorCache.set(item.id, cached)
   }
   return cached
-}
-
-function formatTime(at: string): string {
-  const date = at.slice(0, 10)
-  const now = new Date()
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  if (date === today) {
-    const m = at.match(/\d{2}:\d{2}/)
-    return m ? m[0] : at
-  }
-  return date.slice(5)
 }
 </script>
