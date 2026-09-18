@@ -76,6 +76,7 @@
 - 图标井 `fill-mist`；仪表盘卡 `fill-ctrl`
 - 搜索栏拆层 `search-bar` / `search-bar-surface` / `search-bar-content`
 - toast / 动作面板：`dropdown-panel` + `fixed bottom-3 right-3`；toast `z-9999`
+- `ActionMenuHint`：列表行右缘悬浮快捷键键帽（absolute、`right` 12px、flex 垂直居中，canvas 实底 + divider 细边，底部透明模糊遮罩 backdrop blur + mask 渐变、上下撑满行高、`pointer-events: none`），恒 visibility hidden，仅所在行选中 `ui-active` 瞬时显现（hover 不触发、无过渡）；经 BaseList `actionHint` prop 供给（boolean / item 谓词），未传零渲染
 
 ## Agent
 

@@ -18,13 +18,14 @@
         :ref="(el: unknown) => setItemRef(el, i)"
         role="option"
         :aria-selected="isItemSelected(i)"
-        class="radius-panel"
+        class="radius-panel relative"
         :class="{ 'ui-active': isItemSelected(i) }"
         @click="onItemClick(i, $event)"
         @dblclick="onItemDblClick(i)"
         @contextmenu="onItemContextMenu(i, $event)"
       >
         <slot name="item" :item="item" :index="i" />
+        <ActionMenuHint v-if="hasActionHint(item)" />
       </div>
     </template>
   </div>
@@ -35,6 +36,7 @@ import { ref, watch, nextTick, onActivated, onBeforeUnmount, getCurrentInstance 
 import { onKeyStroke } from '@/composables/events'
 import { t } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
+import ActionMenuHint from '@/components/ui/ActionMenuHint.vue'
 import {
   isComposing as isComposingCheck,
   isFormControl,
@@ -88,6 +90,10 @@ const props = withDefaults(
      *  全局搜索框由 data-list-execute 属性统一放行，无需此 prop。Enter 一律让出
      *  除非控件标记 data-list-execute。默认 false 保护设置页 input 编辑。 */
     navigateOnInput?: boolean
+    /** 行内右键动作菜单（Cmd+Enter 同入口）快捷键提示：true = 全部行显示；
+     *  谓词 = 按 item 条件显示（如全局结果仅 application/file/folder 且有 path）。
+     *  提示是否显现仍由行选中态驱动（ActionMenuHint），此 prop 只控制渲染。 */
+    actionHint?: boolean | ((item: T) => boolean)
   }>(),
   {
     selectedIndex: 0,
@@ -96,6 +102,7 @@ const props = withDefaults(
     keyboardActive: true,
     composing: false,
     navigateOnInput: false,
+    actionHint: false,
   },
 )
 
@@ -234,6 +241,12 @@ function onItemContextMenu(index: number, e: MouseEvent) {
   anchorIndex = index
   setSelectedIndex(index)
   nextTick(() => emit('contextmenu', props.items[index], index, e))
+}
+
+/// actionHint 谓词求值：boolean 直接映射，函数按 item 条件（框架不解释业务语义）
+function hasActionHint(item: T): boolean {
+  if (!props.actionHint) return false
+  return typeof props.actionHint === 'function' ? props.actionHint(item) : true
 }
 
 // ── Keyboard 守卫 ──

@@ -14,6 +14,7 @@
       group-field="group"
       :group-title="groupTitle"
       :keyboard-active="!panelOpen && !showProviderModal && !showKeyModal"
+      action-hint
       @execute="onExecute"
       @contextmenu="toggleOpen"
     >

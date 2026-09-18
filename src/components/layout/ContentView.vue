@@ -46,6 +46,7 @@
           :selected-ids="selectedIds"
           :keyboard-active="!!appStore.activeExtId"
           :composing="appStore.isComposing"
+          :action-hint="hasActionMenu"
           @update:selected-ids="selectedIds = $event"
           :group-field="!extension ? props.groupField : undefined"
           :group-title="!extension ? props.groupTitle : undefined"
@@ -106,6 +107,14 @@ const appStore = useAppStore()
 
 const selectedIds = ref(new Set<string>())
 const isMultiSelect = computed(() => !!props.extension?.listOptions?.multiSelect)
+
+/** 支持右键动作菜单（ResultActionPanel）的结果才显示快捷键提示，与面板 canOpen 同条件：
+ *  仅全局模式（扩展模式下 Cmd+Enter 走 execute 的 reveal 直达，不开面板） */
+function hasActionMenu(result: SearchResult): boolean {
+  if (appStore.activeExtId) return false
+  const kind = result.data?.kind
+  return !!result.data?.path && (kind === 'application' || kind === 'file' || kind === 'folder')
+}
 
 // 窗口隐藏时 toggle content-visibility:hidden：跳过 contentRef 全子树渲染
 // （标准列表 + 扩展视图），forced layout 释放 compositing layer tile backing。

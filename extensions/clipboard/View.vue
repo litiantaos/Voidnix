@@ -14,6 +14,7 @@
       :selected-ids="selectedIds"
       :keyboard-active="!open && !previewOpen && !editOpen"
       id-field="id"
+      action-hint
       @update:selected-ids="selectedIds = $event"
       @select="selectedIndex = $event"
       @execute="handleExecute"
