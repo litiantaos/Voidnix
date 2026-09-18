@@ -12,7 +12,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
 import '@/locales'
 import './locales'
 import { useAppStore } from '@/stores/app'
-import imageExt, { pendingInputPath } from './index'
+import imageExt, { pendingInputPaths } from './index'
 import ImageView from './View.vue'
 
 /** setup 仅跑一次（window 监听幂等注册，重复跑会叠加监听器） */
@@ -34,9 +34,9 @@ function mountHost() {
   return { wrapper, alive }
 }
 
-/** 模拟 finder-ext「图片处理」动作的投递：同页 CustomEvent 同步写入 */
-function deliver(path: string) {
-  window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: path }))
+/** 模拟 finder-ext「图片处理」动作的投递：同页 CustomEvent 同步写入（数组，多选区全量） */
+function deliver(paths: string[]) {
+  window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: paths }))
 }
 
 /** 列表行 id 序（si-* 为 BaseListItem 根 id，DOM 序即列表序） */
@@ -56,15 +56,15 @@ beforeEach(() => {
     if (cmd === 'pick_files') return Promise.resolve([])
     return Promise.resolve(null)
   })
-  pendingInputPath.value = ''
+  pendingInputPaths.value = []
 })
 
 describe('finder-ext → image 跨扩展同页投递', () => {
-  it('setup 注册的 window 监听同步写入 pendingInputPath（无 IPC 往返依赖）', async () => {
+  it('setup 注册的 window 监听同步写入 pendingInputPaths（无 IPC 往返依赖）', async () => {
     await ensureSetup()
-    deliver('/tmp/pic.png')
+    deliver(['/tmp/pic.png'])
     // 同步断言：dispatch 返回时值已就位（旧 Tauri 事件总线需等 macrotask 回调）
-    expect(pendingInputPath.value).toBe('/tmp/pic.png')
+    expect(pendingInputPaths.value).toEqual(['/tmp/pic.png'])
   })
 
   it('回归：LRU 驱逐重挂载（投递时未挂载），mount 即消费，首帧列表形状定型', async () => {
@@ -73,13 +73,13 @@ describe('finder-ext → image 跨扩展同页投递', () => {
     await flush()
 
     // 投递与挂载同拍发生（对应 KeepAlive 驱逐后经跳转重挂载，watch immediate 消费）
-    deliver('/Users/x/照片.png')
+    deliver(['/Users/x/照片.png'])
     alive.value = true
     await flush()
 
     // 首帧 index 1 = operations（移除背景主操作行），不再是「选择文件」source 行
     expect(rowIds(wrapper)).toEqual(['si-tool', 'si-operations', 'si-source', 'si-outputDir'])
-    expect(pendingInputPath.value).toBe('')
+    expect(pendingInputPaths.value).toEqual([])
     wrapper.unmount()
   })
 
@@ -122,7 +122,7 @@ describe('finder-ext → image 跨扩展同页投递', () => {
     // 模拟旧 emit + listen：投递经 macrotask 到达（setActiveExtension 同步先行，
     // Vue flush 是 microtask 必先于 macrotask——与旧实现时序一致）
     setTimeout(() => {
-      pendingInputPath.value = '/Users/x/a.jpg'
+      pendingInputPaths.value = ['/Users/x/a.jpg']
     }, 0)
     appStore.setActiveExtension('image')
     await nextTick()
@@ -144,13 +144,60 @@ describe('finder-ext → image 跨扩展同页投递', () => {
     await flush()
 
     // 跳转动作完整顺序：投递（同步）→ setActiveExtension（同步）→ 一次 flush
-    deliver('/Users/x/a.jpg')
+    deliver(['/Users/x/a.jpg'])
     appStore.setActiveExtension('image')
     // 仅一次 nextTick（对应跳转首帧）：operations 行必须已在——
     // 旧实现此刻列表仍为 [tool, source, outputDir]（IPC 未达），↓+Enter 会误中 source
     await nextTick()
     expect(rowIds(wrapper)).toEqual(['si-tool', 'si-operations', 'si-source', 'si-outputDir'])
-    expect(pendingInputPath.value).toBe('')
+    expect(pendingInputPaths.value).toEqual([])
+    appStore.setActiveExtension(null)
+    await flush()
+    wrapper.unmount()
+  })
+
+  it('回归：多张投递自动切拼接模式，首帧列表含拼接参数行', async () => {
+    await ensureSetup()
+    const appStore = useAppStore()
+    const { wrapper, alive } = mountHost()
+    alive.value = true
+    await flush()
+
+    // 访达多选图片投递（选区序）：跳转首帧即拼接终态形状，参数行齐全
+    deliver(['/Users/x/b.jpg', '/Users/x/a.png', '/Users/x/c.heic'])
+    appStore.setActiveExtension('image')
+    await nextTick()
+    expect(rowIds(wrapper)).toEqual([
+      'si-tool',
+      'si-operations',
+      'si-source',
+      'si-direction',
+      'si-resize',
+      'si-gap',
+      'si-outputDir',
+    ])
+    expect(pendingInputPaths.value).toEqual([])
+    appStore.setActiveExtension(null)
+    await flush()
+    wrapper.unmount()
+  })
+
+  it('回归：多张投递整体替换共享集合，不残留前次投递列表', async () => {
+    await ensureSetup()
+    const appStore = useAppStore()
+    const { wrapper, alive } = mountHost()
+    alive.value = true
+    await flush()
+
+    // 首次投递进入拼接，视图保持活跃（缓存态）时再次投递：集合整体替换而非追加
+    deliver(['/Users/x/keep1.png', '/Users/x/keep2.png'])
+    appStore.setActiveExtension('image')
+    await flush()
+    deliver(['/Users/x/fresh1.png', '/Users/x/fresh2.png'])
+    await flush()
+
+    // source 行标题 = 替换后的「2 张图片」（追加则成 4 张）
+    expect(wrapper.find('[id="si-source"]').text()).toContain('2 张图片')
     appStore.setActiveExtension(null)
     await flush()
     wrapper.unmount()

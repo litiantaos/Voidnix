@@ -22,12 +22,12 @@
 
 ## 上下文入口（视频 / 图片处理）
 
-当选中视频或图片文件时，操作列表顶部动态出现「视频处理」/「图片处理」项（副标题显示文件名；多选视频显示 `{n} 个视频`），回车即跳转对应扩展并带入路径。
+当选中视频或图片文件时，操作列表顶部动态出现「视频处理」/「图片处理」项（副标题显示文件名；多选显示 `{n} 个视频` / `{n} 张图片`），回车即跳转对应扩展并带入路径。
 
-- 探测：面板 `onActivated` 调 `finder_selected_paths` 读访达选区，同一 `detectSelection` 分别按视频 / 图片扩展名白名单过滤（视频收集全部命中供批量处理，图片取首个命中）；快捷键重入（KeepAlive 下 `onActivated` 不触发）由 `reactivateTick` 信号驱动重新探测
+- 探测：面板 `onActivated` 调 `finder_selected_paths` 读访达选区，同一 `detectSelection` 分别按视频 / 图片扩展名白名单过滤（均收集全部命中供批量处理；图片多张由 image 扩展自动进拼接模式）；快捷键重入（KeepAlive 下 `onActivated` 不触发）由 `reactivateTick` 信号驱动重新探测
 - 视频白名单：与 video 扩展 `VIDEO_EXTENSIONS` 基本一致，**去除 `.ts`**（与 TypeScript 源码歧义）；此处仅作 UI 入口提示，真正处理以 video 扩展 ffprobe 为准
 - 图片白名单：`IMAGE_EXT_SET`（png/jpg/jpeg/heic/heif/webp/tiff/tif/bmp/gif），镜像自 image 扩展 `IMAGE_EXTENSIONS`（新增格式双向同步）
-- 跨扩展通信：`window.dispatchEvent(new CustomEvent('video-pending-input-path', { detail: paths[] }))`（数组，多选区全量）/ `window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: path }))` + `setActiveExtension`；对应扩展 setup 监听事件写入各自 `pendingInputPaths` / `pendingInputPath`，View watch（immediate）后加载（与 screenshot→translate 同一模式）。**同步投递先于跳转首帧**：经 IPC 往返会晚一拍，期间目标列表形状未定型，快速 ↓+Enter 会误中「选择文件」行弹系统文件选择器
+- 跨扩展通信：`window.dispatchEvent(new CustomEvent('video-pending-input-path', { detail: paths[] }))` / `window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: paths[] }))`（均数组，多选区全量）+ `setActiveExtension`；对应扩展 setup 监听事件写入各自 `pendingInputPaths`，View watch（immediate）后加载（与 screenshot→translate 同一模式；image 按张数分流——单张直达 removeBg、多张自动切拼接）。**同步投递先于跳转首帧**：经 IPC 往返会晚一拍，期间目标列表形状未定型，快速 ↓+Enter 会误中「选择文件」行弹系统文件选择器
 - 访达非前台 / 权限缺失 / 无视频或图片选中 → 入口不出现（静默，不报错）
 
 ## 用 App 打开

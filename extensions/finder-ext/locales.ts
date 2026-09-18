@@ -8,6 +8,7 @@ registerMessages({
   'finderExt.videoProcess': { 'zh-CN': '视频处理', en: 'Video Processing' },
   'finderExt.videoCount': { 'zh-CN': '{n} 个视频', en: '{n} Videos' },
   'finderExt.imageProcess': { 'zh-CN': '图片处理', en: 'Image Processing' },
+  'finderExt.imageCount': { 'zh-CN': '{n} 张图片', en: '{n} Images' },
   'finderExt.operations': { 'zh-CN': '操作', en: 'Actions' },
   'finderExt.shortcut': { 'zh-CN': '启动快捷键', en: 'Launch Shortcut' },
   'finderExt.general': { 'zh-CN': '通用', en: 'General' },

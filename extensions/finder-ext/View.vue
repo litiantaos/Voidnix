@@ -183,9 +183,9 @@ const IMAGE_EXT_SET = new Set([
 ])
 
 const videoPaths = ref<string[]>([])
-const imagePath = ref<string | null>(null)
+const imagePaths = ref<string[]>([])
 
-/** 按扩展名过滤（video 收集全部支持批量；image 取第一个）。 */
+/** 按扩展名过滤（video / image 均收集全部命中供批量处理）。 */
 function filterByExt(paths: string[], set: Set<string>): string[] {
   return paths.filter((p) => {
     const ext = p.split('.').pop()?.toLowerCase()
@@ -201,17 +201,17 @@ async function detectSelection() {
   detectInFlight = true
   // 先清空：避免 KeepAlive 重激活瞬间显示上次过期选区，探测完成再赋新值
   videoPaths.value = []
-  imagePath.value = null
+  imagePaths.value = []
   openWithCandidates.value = []
   try {
     const paths = await invoke<string[]>(CMD.finderSelectedPaths)
     videoPaths.value = filterByExt(paths, VIDEO_EXT_SET)
-    imagePath.value = filterByExt(paths, IMAGE_EXT_SET)[0] ?? null
+    imagePaths.value = filterByExt(paths, IMAGE_EXT_SET)
     void refreshCandidates(paths)
   } catch {
     // 访达非前台 / 权限缺失 → 不显示入口
     videoPaths.value = []
-    imagePath.value = null
+    imagePaths.value = []
   } finally {
     detectInFlight = false
   }
@@ -289,19 +289,22 @@ const allItems = computed<SettingItem[]>(() => {
       group: t('finderExt.operations'),
     })
   }
-  // 选中图片时置顶「图片处理」入口（跨扩展跳转，带入路径）
-  if (imagePath.value) {
+  // 选中图片时置顶「图片处理」入口（跨扩展跳转，全量带入；多张由 image 自动进拼接模式）
+  if (imagePaths.value.length > 0) {
     list.push({
       id: 'image_process',
       title: t('finderExt.imageProcess'),
-      subtitle: baseName(imagePath.value),
+      subtitle:
+        imagePaths.value.length === 1
+          ? baseName(imagePaths.value[0])
+          : t('finderExt.imageCount', { n: imagePaths.value.length }),
       icon: 'i-ri-image-edit-line',
       type: 'action',
       action: () => {
-        const p = imagePath.value
-        if (!p) return
+        const ps = imagePaths.value
+        if (!ps.length) return
         // 同上：同步投递先于跳转首帧（image 的 operations 行按时插入，列表形状稳定）
-        window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: p }))
+        window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: ps }))
         appStore.setActiveExtension('image')
       },
       group: t('finderExt.operations'),

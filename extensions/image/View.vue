@@ -183,7 +183,7 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import { t } from '@/runtime/i18n'
 import type { SettingItem } from '@/types/settings'
 import { config } from './config'
-import { pendingInputPath } from './index'
+import { pendingInputPaths } from './index'
 import {
   IMAGE_EXTENSIONS,
   RESIZE_PRESETS,
@@ -573,17 +573,29 @@ async function setInput(path: string) {
 // 投递与 setActiveExtension 同步发生：缓存态（KeepAlive 存活）watch 在同一 flush 内
 // 先于渲染执行、inputPath 同步置位——跳转首帧列表即含 operations 行（形状定型）；
 // LRU 驱逐重挂载场景经 immediate 在 mount 时消费（watch 注册晚于投递写入，immediate 补齐）。
-// 单张投递按抠图意图直达 removeBg（只改本地不落盘默认）。
+// 单张投递按抠图意图直达 removeBg（只改本地不落盘默认）；多张 = 拼接意图，自动切拼接，
+// 选区序即拼接序（预览区序号可调），投递集合整体替换共享集合（不依赖「投递时本视图必已
+// deactivate 清空」的隐含前提）。不设 video 同款 busy 守卫：拼接无队列索引基准，处理中
+// 投递的真正风险是旧 result 无令牌回灌（removeBg 既有竞态，与投递无关），守卫只会静默
+// 丢弃用户显式动作。
 // 位置约束：immediate 回调在注册点同步执行，须置于全部依赖（inputMeta / previewToken /
 // addImage / setInput）声明之后。
 watch(
-  pendingInputPath,
-  (path) => {
-    if (!path) return
-    pendingInputPath.value = ''
-    tool.value = 'removeBg'
-    addImage(path)
-    void setInput(path)
+  pendingInputPaths,
+  (paths) => {
+    if (!paths.length) return
+    pendingInputPaths.value = []
+    if (paths.length === 1) {
+      tool.value = 'removeBg'
+      addImage(paths[0])
+      void setInput(paths[0])
+      return
+    }
+    tool.value = 'stitch'
+    result.value = null
+    imageFiles.value = []
+    selectedFile.value = -1
+    for (const p of paths) addImage(p)
   },
   { immediate: true },
 )
