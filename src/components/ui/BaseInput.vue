@@ -8,7 +8,7 @@
       error ? 'border border-danger' : '',
       disabled ? 'ui-disabled' : '',
       // 有 suffix（密码眼睛等）时右内边距收紧，图标更贴右
-      hasSuffix ? '!pr-1' : '',
+      hasSuffix() ? '!pr-1' : '',
     ]"
     @click="focus()"
   >
@@ -35,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, toRef, useSlots } from 'vue'
+import { ref, toRef, useSlots } from 'vue'
 import { useInputControl } from '@/composables/useInputControl'
 import { isModalDialogOpen } from '@/utils/dom'
 
@@ -68,7 +68,12 @@ const emit = defineEmits<{
 }>()
 
 const slots = useSlots()
-const hasSuffix = computed(() => !!slots.suffix)
+
+/** suffix 存在性在 render 期求值：slot 集合不参与响应式（由父 render 驱动同步），
+ *  computed 缓存会在 slot 缺席后依赖集为空、锁死旧值（同 BaseListItem/BaseButton） */
+function hasSuffix(): boolean {
+  return !!slots.suffix
+}
 
 const {
   elRef: inputRef,

@@ -205,6 +205,58 @@ describe('homebrew View 运行态恢复', () => {
     wrapper.unmount()
   })
 
+  it('后台元数据刷新完成：按钮先短暂消失（fetch 在途），落盘新状态后恢复更新按钮', async () => {
+    // 时间线：进入视图时元数据陈旧（旧元数据下无 outdated）→ 后台 brew update
+    // → done → 重拉返回新元数据（有 outdated）。fetch 在途期间按钮消失是已知窗口，
+    // 但落盘 has_update=true 后按钮必须恢复显示（回车触发的前提与按钮可见性同源）。
+    let doneFired = false
+    let resolveFresh: (v: BrewStatusPayload) => void = () => {}
+    const freshStatusPromise = new Promise<BrewStatusPayload>((r) => {
+      resolveFresh = r
+    })
+    const stalePayload: BrewStatusPayload = {
+      version: '4.4.0',
+      packages: [{ name: 'git', kind: 'formula', desc: '', version: '2.40.0', new_version: '' }],
+      has_update: false,
+      refreshing: true,
+    }
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === 'brew_run_state') return Promise.resolve(null)
+      if (cmd === 'brew_services') return Promise.resolve([])
+      if (cmd === 'brew_status') {
+        if (!doneFired) return Promise.resolve(stalePayload)
+        return freshStatusPromise
+      }
+      return Promise.resolve(null)
+    })
+
+    const { wrapper } = mountHost()
+    await flush()
+    // 后台刷新中：按钮旋转显示「拉取更新」
+    expect(wrapper.text()).toContain('拉取更新')
+
+    // 后台 update 完成：done 先清运行态（按钮消失窗口），重拉挂起
+    doneFired = true
+    mocks.listeners.get('brew-run-done')?.({ payload: null })
+    await flush()
+    expect(wrapper.text()).not.toContain('拉取更新')
+
+    // 新元数据落盘：有 outdated → 按钮必须恢复为「更新」
+    resolveFresh({
+      version: '4.4.0',
+      packages: [
+        { name: 'git', kind: 'formula', desc: '', version: '2.40.0', new_version: '2.43.0' },
+      ],
+      has_update: true,
+      refreshing: false,
+    })
+    await flush()
+    // 精确断言按钮文案（「拉取更新」也含「更新」子串，须用按钮元素文本反证）
+    const updateBtn = wrapper.findAll('button').find((b) => b.text() === '更新')
+    expect(updateBtn?.exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('详情返回列表（KeepAlive 重激活）：重拉在途保留缓存列表，不闪 spinner', async () => {
     let hang = false
     mocks.invoke.mockImplementation((cmd: string) => {

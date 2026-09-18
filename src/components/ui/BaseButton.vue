@@ -4,7 +4,7 @@
     :disabled="disabled"
     :class="[
       'ui-ctrl flex-none',
-      isIconOnly ? 'w-7 px-0 flex-center' : icon ? 'flex gap-1.5 items-center' : '',
+      isIconOnly() ? 'w-7 px-0 flex-center' : icon ? 'flex gap-1.5 items-center' : '',
       surfaceClass,
       variantClass,
       disabled ? 'ui-disabled' : '',
@@ -34,7 +34,12 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const slots = useSlots()
-const isIconOnly = computed(() => !!props.icon && !slots.default)
+
+/** icon-only 判定在 render 期求值：slots.default 存在性不参与响应式（动态 slot
+ *  集合由父 render 驱动同步），computed 缓存会在 slot 缺席后依赖集为空、锁死旧值 */
+function isIconOnly(): boolean {
+  return !!props.icon && !slots.default
+}
 
 /**
  * 面选择：
