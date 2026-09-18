@@ -67,7 +67,7 @@
               <div v-else class="flex-center h-12 w-full">
                 <i class="i-ri-loader-4-line text-sm text-muted animate-spin"></i>
               </div>
-              <span class="text-xs text-white px-0.5 bg-black/40 left-0 top-0 absolute z-1">{{
+              <span class="text-xs text-white px-0.5 bg-black/40 bottom-0 right-0 absolute z-1">{{
                 i + 1
               }}</span>
             </div>
