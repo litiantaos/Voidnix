@@ -182,6 +182,19 @@ _zsh_autosuggestions_match() {
   (( _ZSH_AUTOSUGGESTIONS_IDX_VERSION )) || return
   local buf="$1"
 
+  # 空 buffer（新提示符）：仅 PWD 有专属目录段时建议其 top-1，否则不回落——
+  # 空提示符建议无前缀约束，祖先/全局兜底只会显示其他项目的命令（跨项目
+  # 污染）；无建议是中性态（对齐原版「空 buffer 不打扰」）。非空输入才做
+  # 上溯合并与全局兜底。
+  if [[ -z "$buf" ]]; then
+    if (( ${+_zsh_autosuggestions_dir_index[$PWD]} )); then
+      local dref="_zsh_autosuggestions_dir_${_zsh_autosuggestions_dir_index[$PWD]}"
+      local -a seg=("${(@P)dref}")
+      REPLY="$seg[1]"
+    fi
+    return
+  fi
+
   # 目录专属列表：PWD 起逐级上溯，各级命中按近→远合并（子目录继承项目根的
   # 常用命令；根 / 不参与——命中即等价全局，无目录语义）
   local -a dir_list=()
@@ -193,17 +206,6 @@ _zsh_autosuggestions_match() {
     fi
     d="${d:h}"
   done
-
-  # 空 buffer（新提示符）：目录 top-1 优先，无目录数据回落全局 top-1。
-  if [[ -z "$buf" ]]; then
-    if (( ${#dir_list} )); then
-      REPLY="${dir_list[1]}"
-      return
-    fi
-    (( ${#_zsh_autosuggestions_sorted} )) || return
-    REPLY="${_zsh_autosuggestions_sorted[1]}"
-    return
-  fi
 
   # ${(b)buf} 转义 glob 元字符，保证字面前缀匹配。
   # 目录命中在前、全局补足在后（两列表各自按 frecency 降序），
@@ -658,8 +660,9 @@ _zsh_autosuggestions_line_init() {
   _ZSH_AUTOSUGGESTIONS_ALT_INDEX=1
   _ZSH_AUTOSUGGESTIONS_CURRENT_SUGGESTION=""
   (( ${+_ZSH_AUTOSUGGESTIONS_DISABLED} )) && return
-  # 无条件 fetch：空 BUFFER 时 _zsh_autosuggestions_match 返回 top-1 作为默认建议，
-  # 非空 BUFFER（push-line / edit-command-line 重入）走前缀匹配。
+  # 无条件 fetch：空 BUFFER 仅在 PWD 有专属目录段时建议其 top-1（match 内
+  # 控制，无段即无建议）；非空 BUFFER（push-line / edit-command-line 重入）
+  # 走前缀匹配。
   _zsh_autosuggestions_widget_fetch
 }
 

@@ -16,9 +16,9 @@ zsh 启动 → `source index.zsh`（零解析，版本校验；耗时随规模�
 
 ## 保留算法
 
-frecency（`(count+1)^0.7 * exp(-dt/half_life)` + K=10 归一，半衰期默认 7d 可配）+ 前缀匹配（`${(b)buf}` 转义 glob 元字符）+ 失败率惩罚（`sqrt(fail_rate.clamp(1.0)) × fail_penalty`，默认 0.8；clamp 防止 fail_count 逾越 history count 导致 score 钳 0）+ 接受率加权（`0.7 + 0.3 × accept_rate`，accept_rate=1.0 不衰减）。
+frecency（`(count+1)^0.7 * exp(-dt/half_life)` + K=10 归一，半衰期默认 7d 可配）+ 前缀匹配（`${(b)buf}` 转义 glob 元字符）+ 失败率惩罚（`sqrt(fail_rate.clamp(1.0)) × fail_penalty`，默认 0.8；clamp 防止 fail_count 逾越 history count 导致 score 钳 0；fail 判定豁免信号致死退出码 129..=159——SIGINT/SIGHUP/SIGTERM 等外部终止不是命令失败，dev server 这类长驻命令每次都以 Ctrl+C 结束，计入 fail 会把最高频命令的 per-dir fail_rate 推满、直接改写目录排序）+ 接受率加权（`0.7 + 0.3 × accept_rate`，accept_rate=1.0 不衰减）。
 
-**目录优先建议**：同一 frecency 公式、同参数按目录独立运行。rebuild 将 signals.log 按 pwd 聚合成 per-dir `CommandStat`（count/last_used/fail/accept；**目录维度以 signals 执行记录为准，不要求已入 history**——默认 zsh 配置 history 退出才落盘，会话内命令可即时建议，`SAVEHIST` 截断的老命令不丢），每目录算分取前 100 条、目录按总执行次数取前 32 个写入 cache。zsh 匹配时从 PWD 逐级上溯目录索引，各级命中按近→远合并（子目录继承项目根的常用命令；根 `/` 不参与——命中即等价全局，无目录语义），命中则先扫合并目录列表（空 buffer 取最近层级 top-1，非空前缀目录命中在前、全局补足在后、`(re)` 精确下标去重）；未命中或不足 CYCLE_N 回落全局。目录归属取 preexec 时刻 PWD（命令在哪个目录敲的就归哪个目录，`cd` 归发起目录）。
+**目录优先建议**：同一 frecency 公式、同参数按目录独立运行。rebuild 将 signals.log 按 pwd 聚合成 per-dir `CommandStat`（count/last_used/fail/accept；**目录维度以 signals 执行记录为准，不要求已入 history**——默认 zsh 配置 history 退出才落盘，会话内命令可即时建议，`SAVEHIST` 截断的老命令不丢），每目录算分取前 100 条、目录按总执行次数取前 32 个写入 cache。zsh 匹配时**空 buffer（新提示符）仅在 PWD 有专属目录段时建议其 top-1**，无段不回落祖先/全局——空提示符建议无前缀约束，兜底只会显示其他项目的命令（跨项目污染），无建议是中性态（对齐原版「空 buffer 不打扰」）；**非空输入**从 PWD 逐级上溯目录索引，各级命中按近→远合并（子目录继承项目根的常用命令；根 `/` 不参与——命中即等价全局，无目录语义），命中则先扫合并目录列表（非空前缀目录命中在前、全局补足在后、`(re)` 精确下标去重），未命中或不足 CYCLE_N 回落全局。目录归属取 preexec 时刻 PWD（命令在哪个目录敲的就归哪个目录，`cd` 归发起目录）。目录段数据靠 signals 逐条积累（history 无 pwd 维度无法回填）：首次在某目录执行命令后即形成该目录段，此后该目录空提示符开始出建议。
 
 ## 文件布局
 

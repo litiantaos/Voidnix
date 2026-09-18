@@ -2,7 +2,8 @@
 //!   `<ts>\t<exit>\t<state>\t<pwd>\t<cmd>`
 //! 字段：
 //!   ts      记录时间（EPOCHSECONDS，precmd 时刻；目录 frecency 的时间源）
-//!   exit    命令退出码（0=成功，非 0=失败）。失败统计独立于 suggestion。
+//!   exit    命令退出码。fail 判定豁免信号致死码 129..=159（Ctrl+C 终止 dev
+//!           server 等外部终止不是命令失败），见 is_fail。失败统计独立于 suggestion。
 //!   state   suggestion 互动状态：
 //!             0 = 无 suggestion 互动（未显示，或不计）
 //!             1 = accepted（用户通过 →/end 等接受 suggestion）
@@ -43,6 +44,14 @@ pub fn load(path: &Path) -> Vec<SignalRecord> {
         .collect()
 }
 
+/// 失败判定：非 0 且非信号致死。129..=159（128+1..128+31）是 SIGINT/SIGHUP/
+/// SIGTERM 等外部终止——dev server 这类长驻命令每次都以 Ctrl+C 结束，计 fail
+/// 会把最高频命令的 fail_rate 推满（per-dir 维度无 history count 缓冲，惩罚
+/// 直接改写排序）。
+fn is_fail(exit: i32) -> bool {
+    exit != 0 && !(129..=159).contains(&exit)
+}
+
 /// 全局反馈聚合：fail/accept/reject 计数叠加到 history 语料上（不消费 pwd）。
 /// 只修正已存在条目，不引入新命令（history 是全局语料的唯一权威）。
 pub fn apply(stats: &mut HashMap<String, CommandStat>, records: &[SignalRecord]) {
@@ -55,7 +64,7 @@ pub fn apply(stats: &mut HashMap<String, CommandStat>, records: &[SignalRecord])
             continue;
         };
 
-        if r.exit != 0 {
+        if is_fail(r.exit) {
             s.fail_count += 1;
         }
         match r.state {
@@ -91,7 +100,7 @@ pub fn dir_stats(records: &[SignalRecord]) -> HashMap<String, HashMap<String, Co
         if r.ts > s.last_used {
             s.last_used = r.ts;
         }
-        if r.exit != 0 {
+        if is_fail(r.exit) {
             s.fail_count += 1;
         }
         match r.state {
@@ -194,6 +203,44 @@ mod tests {
         assert_eq!(s.accept_count, 0);
         assert_eq!(s.reject_count, 0);
         assert_eq!(s.fail_count, 0);
+    }
+
+    #[test]
+    fn signal_death_exit_does_not_count_fail() {
+        // dev server 以 Ctrl+C 结束（SIGINT=130 等 128+n）不是命令失败
+        let mut stats = HashMap::new();
+        stats.insert("serve".to_string(), make_stat("serve"));
+        let p = make_signals(
+            "1700000000\t129\t0\t/tmp\tserve\n\
+             1700000001\t130\t0\t/tmp\tserve\n\
+             1700000002\t143\t0\t/tmp\tserve\n",
+        );
+        apply(&mut stats, &load(&p));
+        assert_eq!(stats.get("serve").unwrap().fail_count, 0);
+    }
+
+    #[test]
+    fn real_failure_exit_counts_fail() {
+        // 127（command not found）/ 1（一般错误）仍是真失败
+        let mut stats = HashMap::new();
+        stats.insert("cmd".to_string(), make_stat("cmd"));
+        let p = make_signals("1700000000\t127\t0\t/tmp\tcmd\n1700000001\t1\t0\t/tmp\tcmd\n");
+        apply(&mut stats, &load(&p));
+        assert_eq!(stats.get("cmd").unwrap().fail_count, 2);
+    }
+
+    #[test]
+    fn dir_stats_signal_death_not_fail() {
+        let p = make_signals("1700000000\t129\t0\t/proj\tcargo test\n");
+        let dirs = dir_stats(&load(&p));
+        assert_eq!(
+            dirs.get("/proj")
+                .unwrap()
+                .get("cargo test")
+                .unwrap()
+                .fail_count,
+            0
+        );
     }
 
     #[test]
