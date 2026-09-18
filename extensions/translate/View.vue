@@ -34,7 +34,8 @@
                 class="i-ri-loader-4-line animate-spin"
                 text="base muted"
               />
-              <span v-else leading="relaxed" font="normal" wrap="break-word">
+              <!-- pre-wrap 保留译文内换行（HTML 默认折叠 \n 为空格） -->
+              <span v-else leading="relaxed" font="normal" whitespace="pre-wrap" wrap="break-word">
                 {{ item.translation }}
               </span>
             </template>
