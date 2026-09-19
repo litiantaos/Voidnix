@@ -19,21 +19,21 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yml = "0.0.12"
+serde_norway = "0.9"
 rusqlite = { version = "0.40", features = ["bundled"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process", "net", "io-util"] }
 tokio-util = "0.7"
-base64 = "0.22"
+base64 = "0.23"
 log = "0.4"
-dirs = "6"
+dirs = "7"
 regex = "1"
-reqwest = { version = "0.13.3", features = ["json", "rustls", "stream", "form"] }
+reqwest = { version = "0.13", features = ["json", "rustls", "stream", "form"] }
 futures-util = "0.3"
 async-trait = "0.1"
 sha2 = "0.11"
 urlencoding = "2"
-sysinfo = { version = "0.32", default-features = false, features = ["system", "disk", "network", "component"] }
-tokio-tungstenite = "0.27"
+sysinfo = { version = "0.39", default-features = false, features = ["system", "disk", "network", "component"] }
+tokio-tungstenite = "0.30"
 
 
 [dev-dependencies]
@@ -45,7 +45,7 @@ core-graphics = { version = "0.25", features = ["elcapitan"] }
 core-foundation = "0.10"
 libc = "0.2"
 notify = "8.2.0"
-rlimit = "0.10"
+rlimit = "0.11"
 plist = "1"
 block2 = "0.6"
 objc2 = { version = "0.6.4", features = ["exception"] }

@@ -1,6 +1,6 @@
 use crate::http;
 use crate::runtime::storage::ext_data_dir;
-use serde_yml::{Mapping, Value};
+use serde_norway::{Mapping, Value};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -52,7 +52,8 @@ pub async fn fetch(url: &str) -> Result<(usize, String), String> {
 
 /// 解析 YAML 统计 proxies 数量（非法 YAML 报错）。
 fn count_proxies(yaml_text: &str) -> Result<usize, String> {
-    let val: Value = serde_yml::from_str(yaml_text).map_err(|e| format!("非 Clash YAML: {e}"))?;
+    let val: Value =
+        serde_norway::from_str(yaml_text).map_err(|e| format!("非 Clash YAML: {e}"))?;
     Ok(val
         .get("proxies")
         .and_then(|p| p.as_sequence())
@@ -107,7 +108,7 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
     let mut rules: Option<Value> = None;
 
     for text in texts {
-        let val: Value = match serde_yml::from_str(text) {
+        let val: Value = match serde_norway::from_str(text) {
             Ok(v) => v,
             Err(_) => continue,
         };
@@ -217,7 +218,7 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
         root.insert(s("rules"), rules.unwrap_or_else(default_rules));
     }
 
-    serde_yml::to_string(&root).map_err(|e| format!("序列化 config.yaml 失败: {e}"))
+    serde_norway::to_string(&root).map_err(|e| format!("序列化 config.yaml 失败: {e}"))
 }
 
 /// 强制覆盖订阅自带 proxy-groups 中所有测速型分组（url-test / fallback / load-balance）
@@ -356,7 +357,7 @@ proxy-groups:
         // 三类测速组都注入 HTTPS 框架 URL
         assert!(out.contains("url: https://cp.cloudflare.com/generate_204"));
         // 解析验证：每个测速组的 url 都是 HTTPS
-        let v: Value = serde_yml::from_str(&out).unwrap();
+        let v: Value = serde_norway::from_str(&out).unwrap();
         let groups = v.get("proxy-groups").and_then(|g| g.as_sequence()).unwrap();
         let test_groups: Vec<_> = groups
             .iter()
@@ -381,7 +382,7 @@ proxy-groups:
         let a = "proxies:\n  - {name: DUP, type: ss}\n".to_string();
         let b = "proxies:\n  - {name: DUP, type: ss}\n  - {name: OK, type: ss}\n".to_string();
         let out = merge_yaml(&[a, b], &params()).unwrap();
-        let v: Value = serde_yml::from_str(&out).unwrap();
+        let v: Value = serde_norway::from_str(&out).unwrap();
         let count = v
             .get("proxies")
             .and_then(|p| p.as_sequence())
@@ -434,7 +435,7 @@ proxy-groups:
         let good = "proxies:\n  - {name: OK, type: ss}\n".to_string();
         let out = merge_yaml(&[bad, good], &params()).unwrap();
         assert!(out.contains("OK"));
-        let v: Value = serde_yml::from_str(&out).unwrap();
+        let v: Value = serde_norway::from_str(&out).unwrap();
         let count = v
             .get("proxies")
             .and_then(|p| p.as_sequence())

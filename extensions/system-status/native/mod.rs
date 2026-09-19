@@ -131,9 +131,7 @@ pub async fn system_static_info(state: State<'_, SystemState>) -> Result<SystemS
         let model = sysctl_hw_model().unwrap_or_default();
         let cpu = sys.cpus().first();
         let cpu_model = cpu.map(|c| c.brand().to_string()).unwrap_or_default();
-        let cpu_cores = sys
-            .physical_core_count()
-            .unwrap_or_else(|| sys.cpus().len());
+        let cpu_cores = System::physical_core_count().unwrap_or_else(|| sys.cpus().len());
 
         // 磁盘去重：APFS 下同名卷 + /System/Volumes/ 系统数据卷会造成重复
         let mut seen: HashSet<String> = HashSet::new();
@@ -194,7 +192,7 @@ pub async fn system_static_info(state: State<'_, SystemState>) -> Result<SystemS
 /// 精简进程刷新策略：只拉 cpu + memory（UI 仅消费 Top 3 的 name/cpu/memory）。
 /// 默认 refresh_processes 额外拉 disk_usage（I/O 开销）+ exe 路径，纯属浪费。
 fn process_refresh_kind() -> ProcessRefreshKind {
-    ProcessRefreshKind::new().with_cpu().with_memory()
+    ProcessRefreshKind::nothing().with_cpu().with_memory()
 }
 
 /// 实时快照（每 2s 轮询）。
@@ -214,18 +212,18 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
     // CPU 温度：取 label 含 cpu 的首个传感器，过滤无效值
     let cpu_temp = {
         let mut comps = crate::runtime::lock_or_recover(&state.components);
-        comps.refresh();
+        comps.refresh(false);
         comps
             .iter()
             .find(|c| c.label().to_lowercase().contains("cpu"))
-            .map(|c| c.temperature())
+            .and_then(|c| c.temperature())
             .filter(|t| *t > 0.0 && *t < 200.0)
     };
 
     // 磁盘（跳过 APFS 系统数据卷 + 按 name 去重）
     let disks_usage = {
         let mut disks = crate::runtime::lock_or_recover(&state.disks);
-        disks.refresh();
+        disks.refresh(false);
         let mut seen: HashSet<String> = HashSet::new();
         disks
             .list()
@@ -252,10 +250,10 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
     };
 
     // 网络速率：基于上次采样的字节差值 / 时间
-    // refresh_list 而非 refresh：refresh 只更新已有条目，捕获不到接口增删（TUN/VPN 启停、Wi-Fi 切换）
+    // refresh(true)（全量对账）而非 refresh(false)：后者只更新已有条目，捕获不到接口增删（TUN/VPN 启停、Wi-Fi 切换）
     let (net_up, net_down) = {
         let mut nets = crate::runtime::lock_or_recover(&state.networks);
-        nets.refresh_list();
+        nets.refresh(true);
         let cur_rx: u64 = nets.list().values().map(|n| n.total_received()).sum();
         let cur_tx: u64 = nets.list().values().map(|n| n.total_transmitted()).sum();
         let mut stats = crate::runtime::lock_or_recover(&state.net_stats);
@@ -564,13 +562,13 @@ impl Extension for SystemStatusExtension {
         // 立即 manage 空 collector（SystemState 仅用户打开模块时消费，无需启动时阻塞）。
         // 重采集（refresh_processes(All) + Disks/Networks/Components 全量刷新 ~100ms+）
         // 下沉后台 spawn_blocking，不阻塞 bootstrap join_all。
-        // Disks/Networks::new_with_refreshed_list：sysinfo 0.32+ 的 new() 返回空列表，
-        // refresh() 只更新已有条目（空列表上为 no-op，接口增删也捕获不到）。
+        // Disks/Networks/Components::new_with_refreshed_list：sysinfo 的 new() 返回空列表，
+        // refresh(false) 只更新已有条目（空列表上为 no-op，接口增删也捕获不到）。
         app.manage(SystemState {
             sys: Mutex::new(System::new()),
             disks: Mutex::new(Disks::new_with_refreshed_list()),
             networks: Mutex::new(Networks::new_with_refreshed_list()),
-            components: Mutex::new(Components::new()),
+            components: Mutex::new(Components::new_with_refreshed_list()),
             net_stats: Mutex::new(NetStats {
                 last_time: None,
                 last_rx: 0,
@@ -594,9 +592,9 @@ impl Extension for SystemStatusExtension {
                         process_refresh_kind(),
                     );
                 }
-                state.disks.lock().unwrap().refresh();
-                state.networks.lock().unwrap().refresh_list();
-                state.components.lock().unwrap().refresh();
+                state.disks.lock().unwrap().refresh(false);
+                state.networks.lock().unwrap().refresh(true);
+                state.components.lock().unwrap().refresh(false);
             }
         });
         Ok(())
