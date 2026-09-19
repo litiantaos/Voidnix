@@ -6,11 +6,14 @@
 
 - 默认快捷键 `Option+F`（代码标识符 `Alt+F`；`globalShortcuts` id=`finder-ext`，可在面板内改；dev 构建按框架规则叠加 Shift）
 - 再按一次同快捷键：已在本模块则隐藏窗口（`makeToggleHandler`）
-- 面板：用 App 打开候选组（置顶，见下；候选为空时隐藏）+ 操作列表 + 启动快捷键配置；↑↓ 选中、回车执行；成功后隐藏窗口（有 toast 则短延迟）
+- **两种进入模式**（按进入方式区分，不看访达前台状态）：
+  - **访达快捷键进入**（上下文面板）：用 App 打开候选组（置顶，见下；候选为空时隐藏）+ 选区视频/图片入口 + 操作列表 + 启动快捷键配置；↑↓ 选中、回车执行；成功后隐藏窗口（有 toast 则短延迟）
+  - **应用界面进入**（浏览模式：搜索 / 工具列表 / 扩展切换）：无访达上下文，不探测选区、无候选组，显示全量操作目录（用 App 打开 → 视频处理 → 图片处理 → 其余动作，序与上下文面板一致）+ 启动快捷键配置；回车任意操作仅 toast「该操作仅在访达中生效」，不执行不隐藏
+- 模式判定：`entryViaShortcut`（makeToggleHandler 回调同步置位，先于 View 挂载 / onActivated 到达）+ `reactivateTick`（快捷键重入，KeepAlive 下 onActivated 不触发，tick watch 恒切回上下文模式）。标记消费即复位、无跨次残留：挂载 / 重激活由 `onActivated` 消费；已激活态重入（窗口隐藏后快捷键再呼出，无 onActivated 跟进——窗口隐藏不反激活，仅扩展切换会）由 tick watch 按 KeepAlive 激活态（onActivated / onDeactivated 配对维护）消费，否则残留 true 会让下次应用界面进入误判为上下文面板
 
 ## 动作
 
-统一命令 `finder_run_action`（`CMD.finderRunAction`），`action`：
+统一命令 `finder_run_action`（`CMD.finderRunAction`），`action`（面板目录见 `shortcuts.ts::FINDER_CATALOG` 单一数据源——finder_run_action 动作与选区媒体入口统一编排、序即面板正式序；上下文模式过滤 `open_with`——由候选组承载、媒体入口仅有选区时出现；浏览模式全量显示）：
 
 - `copy_path`：选中项路径写入剪贴板（多行）；无选中则用当前窗口目标目录
 - `open_with`：用指定应用打开选中项（`app_path` 传 .app 路径）；多选全部打开；无选中回退当前窗口目标目录
@@ -29,6 +32,7 @@
 - 图片白名单：`IMAGE_EXT_SET`（png/jpg/jpeg/heic/heif/webp/tiff/tif/bmp/gif），镜像自 image 扩展 `IMAGE_EXTENSIONS`（新增格式双向同步）
 - 跨扩展通信：`window.dispatchEvent(new CustomEvent('video-pending-input-path', { detail: paths[] }))` / `window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: paths[] }))`（均数组，多选区全量）+ `setActiveExtension`；对应扩展 setup 监听事件写入各自 `pendingInputPaths`，View watch（immediate）后加载（与 screenshot→translate 同一模式；image 按张数分流——单张直达 removeBg、多张自动切拼接）。**同步投递先于跳转首帧**：经 IPC 往返会晚一拍，期间目标列表形状未定型，快速 ↓+Enter 会误中「选择文件」行弹系统文件选择器
 - 访达非前台 / 权限缺失 / 无视频或图片选中 → 入口不出现（静默，不报错）
+- 浏览模式（应用界面进入）：入口以目录行形式恒显（无副标题、不探测选区），回车仅提示「该操作仅在访达中生效」（不跳转扩展）
 
 ## 用 App 打开
 
@@ -76,12 +80,12 @@
 
 ```
 extensions/finder-ext/
-├── index.ts          # defineExtension + globalShortcuts
+├── index.ts          # defineExtension + globalShortcuts + entryViaShortcut / reactivateTick 进入信号
 ├── locales.ts        # 扩展文案（i18n 注册）
-├── shortcuts.ts      # 快捷键 id/默认值 + 动作列表
+├── shortcuts.ts      # 快捷键 id/默认值 + 面板目录单一数据源 FINDER_CATALOG（动作 + 媒体入口，序即面板正式序）
 ├── apps.ts           # 候选数据（复用 search 命令的列表缓存 + buildCandidates 纯函数）
 ├── config.ts         # recentApps（用 App 打开最近使用，MRU 上限 3）
-├── View.vue          # 候选组平铺 + BaseSettingsList（操作 + 快捷键）+ 选区视频 / 图片探测
+├── View.vue          # 双进入模式（快捷键上下文面板 / 应用界面浏览模式）+ 候选组平铺 + BaseSettingsList（操作 + 快捷键）+ 选区视频 / 图片探测
 └── native/mod.rs     # finder_run_action + finder_selected_paths + finder_open_with_apps + JXA 上下文 + 动作实现
 ```
 

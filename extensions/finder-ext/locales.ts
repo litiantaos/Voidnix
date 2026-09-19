@@ -16,7 +16,12 @@ registerMessages({
 
   // ─── 快捷操作标题 ──────────────────────
   'finderExt.action.copyPath': { 'zh-CN': '拷贝路径', en: 'Copy Path' },
+  'finderExt.action.openWith': { 'zh-CN': '用 App 打开', en: 'Open with App' },
   'finderExt.action.openTerminal': { 'zh-CN': '在终端中打开', en: 'Open in Terminal' },
   'finderExt.action.newFile': { 'zh-CN': '新建文件', en: 'New File' },
   'finderExt.action.toggleHidden': { 'zh-CN': '切换隐藏文件', en: 'Toggle Hidden Files' },
+  'finderExt.finderOnly': {
+    'zh-CN': '该操作仅在访达中生效',
+    en: 'This action only works in Finder',
+  },
 })

@@ -27,7 +27,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore, toastAndHide } from '@/stores/app'
@@ -37,10 +37,10 @@ import BaseDialog from '@/components/ui/BaseDialog.vue'
 import type { SettingItem } from '@/types/settings'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 import { t } from '@/runtime/i18n'
-import { FINDER_SHORTCUT, FINDER_ACTIONS, type FinderAction } from './shortcuts'
+import { FINDER_SHORTCUT, FINDER_CATALOG, type FinderAction } from './shortcuts'
 import { buildCandidates, fetchApps, type AppEntry } from './apps'
 import { config as finderConfig, rememberRecentApp } from './config'
-import { reactivateTick } from './index'
+import { entryViaShortcut, reactivateTick } from './index'
 
 const appStore = useAppStore()
 const { value: shortcutValue, update: updateShortcut } = useShortcutConfig(
@@ -185,6 +185,13 @@ const IMAGE_EXT_SET = new Set([
 const videoPaths = ref<string[]>([])
 const imagePaths = ref<string[]>([])
 
+/** 浏览模式：应用界面进入（非访达快捷键）——无访达上下文，显示全量操作目录，回车提示仅在访达中生效。 */
+const browseMode = ref(false)
+
+/** 视图当前是否处于 KeepAlive 激活态（onActivated / onDeactivated 配对维护）：
+ * 快捷键重入时据此判断是否有 onActivated 跟进消费进入标记（窗口隐藏不反激活，仅扩展切换会）。 */
+let viewActive = false
+
 /** 按扩展名过滤（video / image 均收集全部命中供批量处理）。 */
 function filterByExt(paths: string[], set: Set<string>): string[] {
   return paths.filter((p) => {
@@ -217,9 +224,32 @@ async function detectSelection() {
   }
 }
 
-onActivated(detectSelection)
-// 快捷键重入（窗口隐藏后再呼出）：onActivated 不触发，靠 tick 驱动重新探测
-watch(reactivateTick, () => void detectSelection())
+onActivated(() => {
+  viewActive = true
+  // 快捷键进入（makeToggleHandler 同步置位，先于本钩子到达）：访达上下文面板；
+  // 应用界面进入（搜索 / 工具列表 / 扩展切换）：浏览模式，不探测选区
+  browseMode.value = !entryViaShortcut.value
+  entryViaShortcut.value = false
+  if (browseMode.value) {
+    // 清空上下文（防 KeepAlive 重激活残留上次候选 / 媒体入口）
+    videoPaths.value = []
+    imagePaths.value = []
+    openWithCandidates.value = []
+    return
+  }
+  void detectSelection()
+})
+onDeactivated(() => {
+  viewActive = false
+})
+// 快捷键呼出（含 KeepAlive 重入）：恒为上下文模式，重新探测选区
+watch(reactivateTick, () => {
+  browseMode.value = false
+  // 已激活态的重入（窗口隐藏后快捷键再呼出，无 onActivated 跟进）：此处消费标记，
+  // 防残留 true 让下次应用界面进入（onActivated）误判为快捷键进入
+  if (viewActive) entryViaShortcut.value = false
+  void detectSelection()
+})
 
 function baseName(path: string): string {
   return path.split('/').pop() || path
@@ -254,78 +284,93 @@ async function executeOpenWith(app: AppEntry) {
   if (ok) rememberRecentApp(app.path)
 }
 
+/** 跳转视频处理（跨扩展，带入选区路径；多选区全量带入批量处理）。
+ * 同页 CustomEvent 同步投递：目标视图首帧渲染即收到路径（经 IPC 往返会晚一拍，
+ * 空输入状态的回车是「选择文件」而非「开始处理」，快速连按会误触）。 */
+function jumpToVideo() {
+  const ps = videoPaths.value
+  if (!ps.length) return
+  window.dispatchEvent(new CustomEvent('video-pending-input-path', { detail: ps }))
+  appStore.setActiveExtension('video')
+}
+
+/** 跳转图片处理（跨扩展，全量带入；多张由 image 自动进拼接模式）。
+ * 同步投递先于跳转首帧（image 的 operations 行按时插入，列表形状稳定）。 */
+function jumpToImage() {
+  const ps = imagePaths.value
+  if (!ps.length) return
+  window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: ps }))
+  appStore.setActiveExtension('image')
+}
+
+/** 媒体入口副标题：单选取文件名，多选取计数。 */
+function mediaSubtitle(
+  paths: string[],
+  countKey: 'finderExt.videoCount' | 'finderExt.imageCount',
+): string {
+  return paths.length === 1 ? baseName(paths[0]) : t(countKey, { n: paths.length })
+}
+
 const allItems = computed<SettingItem[]>(() => {
   const list: SettingItem[] = []
-  // 「用 App 打开」候选组置顶：MRU + LaunchServices 类型推荐平铺（回车直达）
-  for (const app of openWithCandidates.value) {
-    list.push({
-      id: `open_with_${app.id}`,
-      title: app.name,
-      icon: app.icon,
-      type: 'action',
-      action: () => void executeOpenWith(app),
-      group: t('finderExt.openWithGroup'),
-    })
+  // 「用 App 打开」候选组置顶（仅上下文模式）：MRU + LaunchServices 类型推荐平铺（回车直达）；
+  // 浏览模式无选区上下文，由目录首行「用 App 打开」承载
+  if (!browseMode.value) {
+    for (const app of openWithCandidates.value) {
+      list.push({
+        id: `open_with_${app.id}`,
+        title: app.name,
+        icon: app.icon,
+        type: 'action',
+        action: () => void executeOpenWith(app),
+        group: t('finderExt.openWithGroup'),
+      })
+    }
   }
-  // 选中视频时置顶「视频处理」入口（跨扩展跳转，带入路径；多选区全量带入批量处理）
-  if (videoPaths.value.length > 0) {
+  // 目录行（单一数据源 shortcuts.ts，顺序即正式面板序）；上下文模式：open_with 由候选组
+  // 承载（目录行省略）、媒体入口仅有选区时出现（带选区副标题）；浏览模式全量显示
+  for (const entry of FINDER_CATALOG) {
+    let subtitle: string | undefined
+    if (!browseMode.value) {
+      if (entry.id === 'open_with') continue
+      if (entry.id === 'video_process' && videoPaths.value.length === 0) continue
+      if (entry.id === 'image_process' && imagePaths.value.length === 0) continue
+      if (entry.id === 'video_process') {
+        subtitle = mediaSubtitle(videoPaths.value, 'finderExt.videoCount')
+      } else if (entry.id === 'image_process') {
+        subtitle = mediaSubtitle(imagePaths.value, 'finderExt.imageCount')
+      }
+    }
     list.push({
-      id: 'video_process',
-      title: t('finderExt.videoProcess'),
-      subtitle:
-        videoPaths.value.length === 1
-          ? baseName(videoPaths.value[0])
-          : t('finderExt.videoCount', { n: videoPaths.value.length }),
-      icon: 'i-ri-video-line',
-      type: 'action',
-      action: () => {
-        const ps = videoPaths.value
-        if (!ps.length) return
-        // 同页 CustomEvent 同步投递：目标视图首帧渲染即收到路径（经 IPC 往返会晚一拍，
-        // 空输入状态的回车是「选择文件」而非「开始处理」，快速连按会误触）
-        window.dispatchEvent(new CustomEvent('video-pending-input-path', { detail: ps }))
-        appStore.setActiveExtension('video')
-      },
-      group: t('finderExt.operations'),
-    })
-  }
-  // 选中图片时置顶「图片处理」入口（跨扩展跳转，全量带入；多张由 image 自动进拼接模式）
-  if (imagePaths.value.length > 0) {
-    list.push({
-      id: 'image_process',
-      title: t('finderExt.imageProcess'),
-      subtitle:
-        imagePaths.value.length === 1
-          ? baseName(imagePaths.value[0])
-          : t('finderExt.imageCount', { n: imagePaths.value.length }),
-      icon: 'i-ri-image-edit-line',
+      id: entry.id,
+      title: t(entry.titleKey),
+      subtitle,
+      icon: entry.icon,
       type: 'action',
       action: () => {
-        const ps = imagePaths.value
-        if (!ps.length) return
-        // 同上：同步投递先于跳转首帧（image 的 operations 行按时插入，列表形状稳定）
-        window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: ps }))
-        appStore.setActiveExtension('image')
-      },
-      group: t('finderExt.operations'),
-    })
-  }
-  list.push(
-    ...FINDER_ACTIONS.map((a) => ({
-      id: a.id,
-      title: t(a.titleKey),
-      icon: a.icon,
-      type: 'action' as const,
-      action: () => {
-        if (a.id === 'new_file') {
+        // 浏览模式（应用界面进入）：操作依赖访达选区 / 前台，仅提示不执行
+        if (browseMode.value) {
+          appStore.showStatus(t('finderExt.finderOnly'))
+          return
+        }
+        const id = entry.id
+        if (id === 'new_file') {
           startNaming()
           return
         }
-        void runAction(a.id)
+        if (id === 'video_process') {
+          jumpToVideo()
+          return
+        }
+        if (id === 'image_process') {
+          jumpToImage()
+          return
+        }
+        void runAction(id)
       },
       group: t('finderExt.operations'),
-    })),
-  )
+    })
+  }
   list.push({
     id: FINDER_SHORTCUT.id,
     title: t('finderExt.shortcut'),
