@@ -45,6 +45,8 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings   # lint�
 cargo clippy --manifest-path extensions/zsh-autosuggestions/native/Cargo.toml --all-targets -- -D warnings
 ```
 
+编译产物清理：`target/` 只增不减——依赖更新（rustc 升级 / `cargo update`）后旧 hash 产物永不删除（cargo 自动 GC 只清 incremental 旧会话、不碰 deps），deps 出现同 crate 多 hash 副本即堆积信号。依赖全量更新后或 target 明显膨胀（>15GB）时主动 `cargo clean --manifest-path src-tauri/Cargo.toml` 重建（1098 依赖全量约 1 分钟，改一行增量约 5s，重建代价远低于堆积代价）；zsh crate 独立 target 小，不随动。lib 仅 `rlib` 一种 crate-type（纯 macOS 桌面，staticlib/cdylib 是移动端模板遗留，勿加回）。
+
 内部命令（tauri.conf.json 自动调用）：`bun run dev`（Vite）、`bun run build`（check:drift → lint → typecheck → vite build）。
 
 `bun run tauri:dev` 前置 `build:zsh-bin + sync:extensions + check:drift`，命令名/安全边界漂移在 dev 即暴露（风格校验由 CI `lint:check` 门禁，dev 不写盘）。
