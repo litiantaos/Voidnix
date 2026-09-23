@@ -127,7 +127,7 @@ A package panel: browse installed formulae / casks and available upgrades, updat
 
 ### Settings
 
-Appearance and UI language, launch shortcut, launch at login, check for updates, quit; privacy permission entries (Screen Recording, Accessibility, Full Disk Access) with one-click jumps into System Settings.
+Appearance and UI language, launch shortcut, launch at login, check for updates, quit; "Guide & Permissions" replays the onboarding guide with its privacy permission panel (Screen Recording, Accessibility, Full Disk Access).
 
 ## License
 

@@ -32,10 +32,6 @@ const systemStore = useSystemStore()
 const query = computed(() => appStore.searchQuery.toLowerCase().trim())
 const appVersion = ref('')
 
-const permScreenRecording = computed(() => systemStore.permScreenRecording)
-const permAccessibility = computed(() => systemStore.permAccessibility)
-const permFullDiskAccess = computed(() => systemStore.permFullDiskAccess)
-
 const handleAutostartToggle = async (val: boolean) => {
   if (!isTauri) return
   try {
@@ -60,8 +56,9 @@ const handleGlobalShortcutChange = async (val: string | number) => {
   await settings.setGlobalShortcut(val as string)
 }
 
-/// 重看首启引导：置回 onboarded=false + 清 query + 回主界面（fullscreen 槽策略 watch
-/// 据此激活）；写完结恢复目标（fullscreenReturnExtId）使引导 Esc/Enter 后回设置页
+/// 「引导与权限」入口：重看首启引导（含权限面板）——置回 onboarded=false + 清 query
+/// + 回主界面（fullscreen 槽策略 watch 据此激活）；写完结恢复目标（fullscreenReturnExtId）
+/// 使引导 Esc/Enter 后回设置页
 const handleShowWelcome = () => {
   appStore.fullscreenReturnExtId = 'settings'
   settings.onboarded = false
@@ -127,34 +124,6 @@ const handleClearInjections = async () => {
 
 /// 检查更新：立即弹 UpdateDialog、弹窗内检查（菜单栏「检查更新」与搜索角标同源入口）
 const handleCheckUpdate = () => updateStore.startCheck()
-
-function permStatus(granted: boolean | null): string {
-  if (granted === null) return t('settings.permChecking')
-  return granted ? t('settings.permGranted') : t('settings.permDenied')
-}
-
-/// 设备控制（辅助功能）API 请求（公证分流由唯一调用点承载：未公证直接发起授权会话）
-async function handleRequestAccessibility() {
-  if (!isTauri) return
-  systemStore.permAccessibility = await invoke<boolean>(CMD.requestAccessibilityPermission)
-}
-
-/// 录屏：未公证直接发起授权会话（API 请求写入的 TCC 条目无效且污染列表）；
-/// 公证版请求弹窗点允许后系统自行引导退出重开（预绑定权限需重启生效），
-/// 未获准则会话直达系统设置
-async function handleRequestScreenRecording() {
-  if (!isTauri) return
-  if (systemStore.appNotarized === true) {
-    const granted = await invoke<boolean>(CMD.requestScreenRecordingPermission)
-    if (granted) return
-  }
-  systemStore.startPermGrant('screen_recording')
-}
-
-/// 完全访问无 API 请求路径，恒为授权会话直达设置
-function handleFullDiskAccess() {
-  systemStore.startPermGrant('full_disk_access')
-}
 
 const allSettingsItems = computed<SettingItem[]>(() => {
   const items: SettingItem[] = []
@@ -236,43 +205,6 @@ const allSettingsItems = computed<SettingItem[]>(() => {
     action: handleShowWelcome,
   })
 
-  // 权限行顺序与引导面板一致：设备控制 → 完全访问，录屏（预绑定，授权后须重启）恒置末位
-  items.push({
-    id: 'perm-accessibility',
-    title: t('settings.privacy.accessibility'),
-    subtitle: permStatus(permAccessibility.value),
-    type: 'action',
-    icon: permAccessibility.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
-    group: t('settings.group.privacy'),
-    action: async () => {
-      // 未授权且公证版才走 API 请求；其余路径（已授权仅查看 / 未公证手动添加）直达设置
-      if (!permAccessibility.value && systemStore.appNotarized === true) {
-        await handleRequestAccessibility()
-      }
-      systemStore.startPermGrant('accessibility')
-    },
-  })
-  items.push({
-    id: 'perm-full-disk-access',
-    title: t('settings.privacy.fullDiskAccess'),
-    subtitle: permStatus(permFullDiskAccess.value),
-    type: 'action',
-    icon: permFullDiskAccess.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
-    group: t('settings.group.privacy'),
-    action: () => handleFullDiskAccess(),
-  })
-  items.push({
-    id: 'perm-screen-recording',
-    title: t('settings.privacy.screenRecording'),
-    subtitle: permStatus(permScreenRecording.value),
-    type: 'action',
-    icon: permScreenRecording.value ? 'i-ri-checkbox-circle-line' : 'i-ri-alert-line',
-    group: t('settings.group.privacy'),
-    action: () => {
-      if (permScreenRecording.value) return systemStore.startPermGrant('screen_recording')
-      return handleRequestScreenRecording()
-    },
-  })
   // 关于组：版本/更新与产品链接（版本信息天然属于「关于」）
   const checkLabel = updateStore.checking
     ? t('settings.checking')

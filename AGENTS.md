@@ -287,7 +287,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - **激活策略**（MainView 策略 watch，机制与策略唯一粘合点）：`settingsReady && isTauri && !selfTestMode && !onboarded && !activeExtId` → 激活 `WelcomeView`——扩展激活自动让位，退出回主界面再现；纯浏览器预览不展示。`settingsReady` 是 `whenConfigReady('config/settings')` 落定标志：backfill 前 onboarded 仍是默认 false，策略据此静默（防老用户每次启动瞬时挂载引导再撤除）；selfTestMode 置位是独立异步链、不保证先于回填落定，自测 + 全新数据目录下可能瞬时激活后自愈（窗口隐藏由脚本驱动，零后果）。自测模式下整窗接管会让搜索输入不可聚焦、CGEvent 打字进不去，故一并跳过
 - **完结**：按键导航（Enter / → 展开、展开态 Enter 完结、Esc 随时完结、← 收起，状态机见 [docs/welcome.md](docs/welcome.md)）经视图内 `requestDone`（双重守卫：一次性——重复按键不二次 emit；槽已让位不落盘不 emit——done 会被框架入口守卫忽略，先行落盘会让引导未经确认即永久跳过）自持落盘 `onboarded` 后 emit done → MainView `onFullscreenDone` 通用收尾（有 `fullscreenReturnExtId` 恢复目标则回该扩展，否则重载默认列表 + 搜索栏重现回焦输入框；入口守卫 `activeExtId`——槽被扩展让位后到达的 done 已过期，忽略防覆盖 results / 抢扩展焦点）→ onboarded 变化经策略 watch 自动清槽（完结语义归供给方，框架层零业务泄漏）
 - **剪贴板自动填充**：fullscreen 期直接跳过（搜索栏仅 v-show 隐藏、元素仍在 DOM，readonly 守卫拦不住程序化填充，须查 `appStore.fullscreenView`）；`ResultActionPanel` canOpen 同查 fullscreenView（防 Cmd+Enter 在整窗视图上开面板）
-- 设置页「使用引导」可重看：置回 `onboarded=false` + 回主界面 + 写入 `fullscreenReturnExtId='settings'`，复用同一显示条件；引导 Esc/Enter 完结后回设置页（首启路径无恢复目标，回主界面）
+- 设置页「引导与权限」可重看（权限入口收敛于此——设置页不再有独立权限行，权限面板由引导承载）：置回 `onboarded=false` + 回主界面 + 写入 `fullscreenReturnExtId='settings'`，复用同一显示条件；引导 Esc/Enter 完结后回设置页（首启路径无恢复目标，回主界面）
 
 视图实现（键盘图纸等距几何、投影展开动画、权限面板布局）详见 [docs/welcome.md](docs/welcome.md)。改键盘几何/默认键位须同步移植 `scripts/gen-og-keyboard.mjs`（OG 分享图生成，见官网节）。
 
