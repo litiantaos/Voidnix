@@ -1,13 +1,21 @@
 <template>
-  <BaseEmptyState
-    v-if="history.length === 0"
-    :title="t('clipboard.empty')"
-    icon="i-ri-clipboard-line"
-    :loading="loading"
-  />
+  <!-- 恒在包裹层：无 contain（BaseList 根的 contain:layout 会使内容高度不参与
+       撑开滚动容器），空态与列表共存其下；BaseList 常挂（v-show）——v-if 空态
+       切换会卸载 BaseList，其 activeExtId 归零 watch 在卸载期间缺席、重挂载不
+       触发 activated（inKeepAliveTree 停 false），跨会话归零旁路；常挂后归零
+       职责完全回归 BaseList 统一语义 -->
+  <div>
+    <BaseEmptyState
+      v-if="history.length === 0"
+      class="h-full"
+      :title="t('clipboard.empty')"
+      icon="i-ri-clipboard-line"
+      :loading="loading"
+    />
 
-  <div v-else>
     <BaseList
+      v-show="history.length > 0"
+      ref="listRef"
       :items="history"
       :selected-index="selectedIndex"
       multi-select
@@ -221,15 +229,39 @@ import { t } from '@/runtime/i18n'
 
 const appStore = useAppStore()
 
+// BaseList 实例（归零经组件契约 reset()：瞬时落位 + 滚顶，见 BaseList）。
+// 结构化类型只声明消费方法：泛型组件（generic="T"）无法经 InstanceType 提取实例类型
+const listRef = ref<{ reset: () => void } | null>(null)
+
 const selectedIds = ref(new Set<string>())
 const selectedIndex = ref(0)
+
+/// 归零 + 重拉（会话复位 / 过滤条件变化共用）：列表是动态置顶序，内容全变时保留
+/// 索引指向已漂移的记录，统一归首项。View 停用期间同样生效（后台刷新，重挂载
+/// 从首项起）
+function resetAndRefetch(query: string, favorites: boolean) {
+  selectedIds.value = new Set()
+  if (listRef.value) listRef.value.reset()
+  else selectedIndex.value = 0
+  fetchClipboardHistory(query, favorites)
+}
 
 let debounceTimer: ReturnType<typeof setTimeout>
 watch([activeTab, activeType, () => appStore.searchQuery], ([tab, , query]) => {
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
-    fetchClipboardHistory(query, tab === 'favorites')
+    // 过滤条件变化 = 列表重新过滤：内容全变，选中归首项（保留索引指向已漂移的记录）
+    resetAndRefetch(query, tab === 'favorites')
   }, 80)
+})
+
+// history 替换后越界 clamp（删除 / favorites tab 下取消收藏使列表缩短）：
+// 越界 localIndex 无高亮（方向键 wrapIndex 才自愈），收敛为贴尾——连续删除不打断；
+// 空列表 clamp 至 0，回填重挂载从首项起；过滤路径已归零不触发
+watch(history, (items) => {
+  if (selectedIndex.value >= items.length) {
+    selectedIndex.value = Math.max(0, items.length - 1)
+  }
 })
 
 watch(
@@ -238,9 +270,28 @@ watch(
     if (id !== 'clipboard') {
       clearTimeout(debounceTimer)
       selectedIds.value = new Set()
+      // 选中归零由 BaseList 统一承载（watch activeExtId 跨会话转移归零；BaseList
+      // 常挂不卸载，归零 watch 恒在）；此处不重置：subview（config）往返也触发
+      // onActivated，重置会破坏往返保留语义
     }
   },
 )
+
+// 会话结束即归位（消除唤起首帧残影——hide 不 orderOut 架构下 show 立即可见的是
+// 隐藏前最后一帧，唤起侧才归零会让旧选中位置可见几十 ms）：窗口隐藏时归位，
+// 覆盖全部前端隐藏路径（blur/主快捷键再按/Esc/click-outside 等均经 hideWindow
+// 派发 window-hiding）；列表是动态置顶序（每次系统复制插入顶部），保留的选中
+// 索引跨会话指向已漂移的记录——BaseList 默认的「窗口唤起保留」三态语义在
+// 剪贴板上按 View 数据语义覆盖。过滤词原样保留（窗口显隐不改扩展内容状态）。
+// 延迟一档宏任务：ContentView clearCache 同事件内保存/回填 scrollTop（兜底
+// content-visibility 帧的引擎 clamp，纯微任务链），归位直写 scrollTop 会被其
+// savedTop 回填覆盖，宏任务边界稳定后行
+function onWindowHiding() {
+  if (appStore.activeExtId !== 'clipboard') return
+  const query = appStore.searchQuery
+  const favorites = activeTab.value === 'favorites'
+  setTimeout(() => resetAndRefetch(query, favorites), 0)
+}
 
 async function handleExecute(item: ClipboardItem, _index: number, _e?: KeyboardEvent) {
   // Cmd+回车开菜单由捕获相监听拦截（避免 BaseList 清空多选）；此处仅处理粘贴（回车/双击）
@@ -254,6 +305,10 @@ async function handleExecute(item: ClipboardItem, _index: number, _e?: KeyboardE
       await invoke(CMD.pasteClipboardItem, { id: ids[0] })
     }
     invalidateCache()
+    // 粘贴成功即会话结束：invoke 返回时窗口已被 Rust 端 hide_main 隐藏（不经前端
+    // hideWindow、无 window-hiding 事件），此刻归位使 DOM 更新在隐藏期完成，
+    // 下次唤起首帧即首项；失败路径（窗口未隐藏）保留选中供重试
+    listRef.value?.reset()
   } catch (e) {
     console.error('Failed to paste clipboard:', e)
     appStore.showStatus(toErrorMessage(e, t('clipboard.pasteFailed')), {
@@ -371,8 +426,14 @@ function onPreviewKey(e: KeyboardEvent) {
     previewOpen.value = false
   }
 }
-onMounted(() => document.addEventListener('keydown', onPreviewKey, true))
-onUnmounted(() => document.removeEventListener('keydown', onPreviewKey, true))
+onMounted(() => {
+  document.addEventListener('keydown', onPreviewKey, true)
+  window.addEventListener('window-hiding', onWindowHiding)
+})
+onUnmounted(() => {
+  document.removeEventListener('keydown', onPreviewKey, true)
+  window.removeEventListener('window-hiding', onWindowHiding)
+})
 
 const toggleFavorite = async (id: string) => {
   try {

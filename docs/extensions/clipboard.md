@@ -97,7 +97,7 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 
 - **缩略图懒加载**：IntersectionObserver（rootMargin 200px 预载）按需 `invoke(get_clipboard_image)`，LRU 上限 30 条（`imageCache`）
 - **恒高占位**：加载前渲染与缩略图同尺寸同边框的块级占位（Wind4 preflight 将 img reset 为 block，占位同为块级精确等高）。无占位时图片项走文本回退（矮一行），懒加载完成后条目变高，已滚动到位的选中项（如按上键 wrap 到末项）会被推出视口
-- **进入重置**：选中三态语义（跨会话转移归首项 / subview 往返与窗口唤起保留）由 BaseList 组件层统一承载（规范见 [extensions.md](../extensions.md)），View 侧 `v-model:selected-index` 保持镜像传导。clipboard 特有：`onActivated` 重置 tab/type 并重拉列表
+- **进入重置**：选中三态语义（跨会话转移归首项 / subview 往返保留）由 BaseList 组件层统一承载（规范见 [extensions.md](../extensions.md)），View 侧 `v-model:selected-index` 保持镜像传导。**BaseList 常挂**（恒在包裹层 `div` 内 `v-show` 切换空态，勿用 `v-if`——卸载会使 BaseList 的归零 watch 缺席、重挂载不触发 activated，跨会话归零旁路；包裹层同时隔离 ContentView `:deep(*)` 拉伸——BaseList 根的 `contain: layout` 直接作 flex 子项会使内容高度不参与撑开滚动容器）。clipboard 特有归位语义（`resetAndRefetch`：经 BaseList `reset()`（瞬时归零契约）+ 清多选 + 重拉）：**会话结束即归位**（消除唤起首帧残影——hide 不 orderOut 下 show 立即可见隐藏前最后一帧，锚在隐藏时刻使 DOM 更新在隐藏期完成）：窗口隐藏（监听 `window-hiding`，延迟一档宏任务错开 ContentView clearCache 的 scrollTop 回填；覆盖 blur/主快捷键再按/Esc/click-outside 等全部前端隐藏路径）+ 粘贴成功分支（粘贴命令在 Rust 端隐藏、不经前端 hideWindow，`invoke` 返回时窗口已隐藏，失败路径保留选中供重试）——列表是动态置顶序（每次系统复制插入顶部），保留的选中索引跨会话指向已漂移的记录，BaseList 默认的「窗口唤起保留」按 View 数据语义覆盖；**过滤条件变化（tab/type/query）归首项**（debounce 重拉回调内）；**history 替换越界 clamp 贴尾**（`watch(history)`，覆盖删除 / favorites tab 下取消收藏使列表缩短——越界无高亮直到方向键自愈，贴尾不打断连续删除）
 
 ## 动作菜单
 

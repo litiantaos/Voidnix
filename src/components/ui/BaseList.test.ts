@@ -102,6 +102,37 @@ describe('BaseList', () => {
     controlled.unmount()
   })
 
+  it('reset() 归零并同步父级镜像（会话复位的瞬时通道）；空列表安全', async () => {
+    const wrapper = mount(BaseList<Item>, {
+      props: { items: items(10) },
+      slots: { item: ({ item }: { item: Item }) => item.title },
+    })
+    const setupState = (
+      wrapper.vm.$ as unknown as {
+        setupState: {
+          setSelectedIndex: (i: number) => void
+          reset: () => Promise<void>
+        }
+      }
+    ).setupState
+    setupState.setSelectedIndex(5)
+    expect(wrapper.emitted('select')?.at(-1)).toEqual([5])
+
+    await setupState.reset()
+    await nextTick()
+    // 归零 + emit 同步镜像（View 的 @select 回写 selectedIndex）
+    expect(wrapper.emitted('select')?.at(-1)).toEqual([0])
+    expect(wrapper.emitted('update:selectedIndex')?.at(-1)).toEqual([0])
+    // 重复 reset 幂等
+    await setupState.reset()
+    expect(wrapper.emitted('select')?.at(-1)).toEqual([0])
+
+    // 空列表（v-if 卸载前的边界）：行 0 不存在时不滚动不抛错
+    await wrapper.setProps({ items: [] })
+    await setupState.reset()
+    wrapper.unmount()
+  })
+
   it('Enter auto-repeat 不执行行项：跨扩展跳转按住回车的 repeat 不得落到目标视图首行', async () => {
     const wrapper = mount(BaseList<Item>, {
       props: { items: items(3) },

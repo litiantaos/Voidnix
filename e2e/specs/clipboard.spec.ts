@@ -36,7 +36,9 @@ test.describe('剪贴板进入重置', () => {
               const now = new Date().toISOString().slice(0, 19).replace('T', ' ')
               return [{ ...items[39], content: 'freshly copied', created_at: now }]
             }
-            return items
+            // 每次返回新数组：忠实模拟 Rust serde 反序列化（引用必变），
+            // 返回闭包原引用会使「原地 splice 删除 + 缓存命中」路径失去引用变化信号
+            return items.slice()
           }
           // 模拟缩略图加载滞后（异步 IPC + 解码）；id=134（/mock/shot-35.png）模拟
           // 图片文件被外部清理：Rust 查不到文件返回 null，断言回落文本分支
@@ -44,6 +46,14 @@ test.describe('剪贴板进入重置', () => {
             if (args?.id === '134') return null
             await new Promise((r) => setTimeout(r, 600))
             return pngData
+          }
+          // 删除命令原地裁剪闭包 items，后续 get_clipboard_history 返回裁剪后列表
+          if (cmd === 'delete_clipboard_items') {
+            const ids = new Set<string>(args?.ids ?? [])
+            for (let i = items.length - 1; i >= 0; i--) {
+              if (ids.has(items[i]!.id)) items.splice(i, 1)
+            }
+            return null
           }
           if (cmd === 'plugin:store|get')
             return args?.key === 'onboarded' ? [true, true] : [null, false]
@@ -147,9 +157,7 @@ test.describe('剪贴板进入重置', () => {
     await expect(page.locator('.ui-active')).toHaveText(/^mock item 16(?!\d)/)
   })
 
-  test('窗口隐藏再唤起：滚动与选中无缝保留（不卸载 KeepAlive，无 hide↔show 竞态错位）', async ({
-    page,
-  }) => {
+  test('窗口隐藏即归位：选中归首项并滚顶（会话结束，下次唤起首帧即首项）', async ({ page }) => {
     const rows = await enterClipboard(page)
     expect(await rows.count()).toBe(40)
 
@@ -159,14 +167,99 @@ test.describe('剪贴板进入重置', () => {
     expect(topHide).toBeGreaterThan(0)
     await expect(page.locator('.ui-active')).toHaveText(/^mock item 16(?!\d)/)
 
-    // 模拟窗口隐藏（Tauri 下 hideWindow 派发；浏览器模式手动派发同一事件触发 clearCache：
-    // content-visibility:hidden forced layout 释放 tile backing，DOM 与视图状态保留）
+    // 模拟窗口隐藏（Tauri 下 hideWindow 派发；浏览器模式手动派发同一事件）。
+    // hide 不 orderOut 架构下 show 立即可见的是隐藏前最后一帧——归位锚在隐藏
+    // 时刻（DOM 更新在隐藏期完成），而非唤起时刻（旧选中位置会可见几十 ms）
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('window-hiding')))
     await page.waitForTimeout(300)
 
-    // 无缝继续：滚动与选中均保持隐藏前状态（任何列表的状态不应随窗口显隐变化）
-    expect(await scrollTop(page)).toBe(topHide)
+    expect(await scrollTop(page)).toBe(0)
+    await expect(page.locator('.ui-active')).toHaveText(/^mock item 1(?!\d)/)
+  })
+
+  test('过滤清空列表后退出再进入：跨会话归零不丢失（BaseList 常挂不卸载）', async ({ page }) => {
+    await enterClipboard(page)
+
+    for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowDown')
+    await page.waitForTimeout(200)
     await expect(page.locator('.ui-active')).toHaveText(/^mock item 16(?!\d)/)
+
+    // 输入无匹配过滤词：history 清空（BaseList 常挂仅隐藏，行数为零）
+    await page.locator('#main-search-input').fill('zzz-no-match')
+    await page.waitForTimeout(400)
+    await expect(page.locator('[role="option"]')).toHaveCount(0)
+
+    // 此时退出扩展：BaseList 未卸载（v-show），其跨会话归零 watch 恒在
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(400)
+    await expect(page.locator('.ext-tag')).toHaveCount(0, { timeout: 5000 })
+
+    // 重新进入（history 回填使 BaseList 重挂载）：选中从首项起而非残留旧索引
+    const rows2 = await enterClipboard(page)
+    expect(await rows2.count()).toBe(40)
+    expect(await scrollTop(page)).toBe(0)
+    await expect(page.locator('.ui-active')).toHaveText(/^mock item 1(?!\d)/)
+  })
+
+  test('同会话过滤往返：过滤词变化与清空均归首项（内容全变不保留漂移索引）', async ({ page }) => {
+    await enterClipboard(page)
+
+    for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowDown')
+    await page.waitForTimeout(200)
+    await expect(page.locator('.ui-active')).toHaveText(/^mock item 16(?!\d)/)
+
+    // 输入过滤词：列表内容全变，选中归首项（不再保留指向漂移记录的旧索引）
+    await page.locator('#main-search-input').fill('item 19')
+    await page.waitForTimeout(400)
+    const filtered = page.locator('[role="option"]')
+    await expect(filtered).toHaveCount(1, { timeout: 5000 })
+    await expect(page.locator('.ui-active')).toHaveText(/^mock item 19/)
+
+    // 清空过滤词：全列表回填，选中归首项并滚顶
+    await page.locator('#main-search-input').fill('')
+    await page.waitForTimeout(400)
+    await expect(page.locator('[role="option"]')).toHaveCount(40, { timeout: 5000 })
+    expect(await scrollTop(page)).toBe(0)
+    await expect(page.locator('.ui-active')).toHaveText(/^mock item 1(?!\d)/)
+  })
+
+  test('删除选中末项后列表缩短：选中贴尾不越界（连续删除无高亮丢失）', async ({ page }) => {
+    await enterClipboard(page)
+
+    // wrap 到末项（mock item 40）
+    await page.keyboard.press('ArrowUp')
+    await page.waitForTimeout(250)
+    await expect(page.locator('.ui-active')).toHaveText(/^mock item 40/)
+
+    // Cmd+Enter 开动作菜单 → 删除 → confirm 确认
+    await page.keyboard.press('Meta+Enter')
+    const menu = page.locator('[role="menu"]')
+    await expect(menu).toBeVisible()
+    await menu.getByText('删除').click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: '删除' }).click()
+
+    // 删除后 fetch 回填 39 条：选中越界（39 ≥ 39）clamp 贴尾至第 38 行
+    // （mock item 39 为图片行，标题渲染为 img 不进 innerText，按行索引断言）
+    await page.waitForTimeout(500)
+    await expect(page.locator('[role="option"]')).toHaveCount(39, { timeout: 5000 })
+    await expect(page.locator('[role="option"]').nth(38)).toHaveClass(/ui-active/)
+  })
+
+  test('回车粘贴后选中归首项（粘贴即会话结束，下次唤起首帧即首项）', async ({ page }) => {
+    await enterClipboard(page)
+
+    for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowDown')
+    await page.waitForTimeout(200)
+    await expect(page.locator('.ui-active')).toHaveText(/^mock item 16(?!\d)/)
+
+    // 回车粘贴：粘贴命令在 Rust 端隐藏窗口（前端 invoke 返回时已隐藏），
+    // 成功分支立即归位——DOM 更新在隐藏期完成，下次唤起首帧即首项
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(300)
+    await expect(page.locator('.ui-active')).toHaveText(/^mock item 1(?!\d)/)
+    expect(await scrollTop(page)).toBe(0)
   })
 
   test('扩展激活时唤起填充特性不污染 query（窗口显隐不改扩展内容状态）', async ({ page }) => {

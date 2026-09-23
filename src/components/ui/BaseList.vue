@@ -71,12 +71,12 @@ onActivated(() => {
 const instance = getCurrentInstance()
 
 /// 已停用 KeepAlive 子树内的列表不响应键盘。不能用 onDeactivated 置位的 isActive 镜像：
-/// 停用视图的响应式 watcher 仍活跃，其内部 v-if 分支翻转会使列表在停用树内卸载后重挂载
-/// （如剪贴板 history 随全局 query 过滤清空再回填），重挂载不触发 activated/deactivated
-/// 钩子对，镜像停在初值 true 会成为后台仍消费 ↑↓/Enter 的「僵尸列表」（用户在其它
-/// 扩展回车触发剪贴板粘贴的根因）。按键时沿父链查 isDeactivated——状态由框架在
-/// KeepAlive 激活/停用转换时维护，无镜像配对假设（与 Vue registerKeepAliveHook 的
-/// 钩子守卫同源语义）
+/// 停用视图的响应式 watcher 仍活跃，其内部 v-if/v-else-if 分支翻转会使列表在停用树内
+/// 卸载后重挂载（如 homebrew status 就绪前后空态与列表互切），重挂载不触发
+/// activated/deactivated 钩子对，镜像停在初值 true 会成为后台仍消费 ↑↓/Enter 的
+/// 「僵尸列表」（用户在其它扩展回车误触的根因）。按键时沿父链查 isDeactivated——
+/// 状态由框架在 KeepAlive 激活/停用转换时维护，无镜像配对假设（与 Vue
+/// registerKeepAliveHook 的钩子守卫同源语义）
 function inDeactivatedTree(): boolean {
   for (let anc = instance; anc; anc = anc.parent) {
     if (anc.isDeactivated) return true
@@ -178,7 +178,7 @@ onBeforeUnmount(() => {
   // 旧数组引用链立即断开，而非等 ref 替换后旧数组被间接持有期间 DOM 节点仍可达
   itemRefs.value.length = 0
 })
-defineExpose({ selectedIndex: localIndex, setSelectedIndex, reveal })
+defineExpose({ selectedIndex: localIndex, setSelectedIndex, reset, reveal })
 
 // ── 选中高亮滑层 ──
 // 聚焦行色块与快捷键徽标由两层脱流 overlay 承载：色块层绘制序在行文本之下、徽标层
@@ -598,6 +598,9 @@ function rapidSnapWindow(follow: boolean): number {
   return envelope * 0.8
 }
 let lastNavAt = -Infinity
+/// reset() 进行中标志：联动 watch 本轮跳过动画判定（长距离移向 0 会落入动画
+/// 路径，与 reset 的瞬时语义冲突），归位由 reset 续段显式执行
+let resetting = false
 
 // 选中移动主编排（滑块 + 视口跟随，双源单 watcher）：滚动先行、滑块滞后同曲线跟随
 // （follow 模式）；行在视野内时滑块直接常规滑动（--duration-fast ease-out）。items
@@ -625,7 +628,7 @@ watch([() => props.items, localIndex], async ([items, index], [prevItems, prevIn
     if (el) plan = viewportFollowTarget(el)
   }
   const rapid = interval < rapidSnapWindow(plan != null)
-  const animated = !prefersReducedMotion() && !itemsChanged && !wrapped && !rapid
+  const animated = !prefersReducedMotion() && !itemsChanged && !wrapped && !rapid && !resetting
   await nextTick()
   if (!moved) {
     placeIndicator(animated)
@@ -639,6 +642,26 @@ watch([() => props.items, localIndex], async ([items, index], [prevItems, prevIn
   placeIndicator(animated, animated && plan != null)
   if (plan) animateScroll(plan.container, plan.target, animated)
 })
+
+/// 归零并瞬时落位（滑层瞬落 + 视口滚顶）：会话复位 / 列表重过滤等 View 数据语义
+/// 的显式入口（动态置顶列表新记录不断插入顶部，保留索引指向已漂移记录——消费者
+/// clipboard）。与 setSelectedIndex(0) 的差别：不经联动 watch 的动画判定（长距离
+/// 移向 0 落入动画路径），同步归零 + 下一帧瞬时落位滚顶；与 items 是否替换无关
+/// （fetch 缓存命中引用不变仍瞬时）。滚动方向恒为滚顶（列表头部 = 最新记录起点）
+async function reset() {
+  resetting = true
+  suppressScroll = true
+  setSelectedIndex(0)
+  await nextTick()
+  resetting = false
+  suppressScroll = false
+  placeIndicator(false)
+  const el = itemRefs.value[0]
+  if (el) {
+    const plan = viewportFollowTarget(el)
+    if (plan) animateScroll(plan.container, plan.target, false)
+  }
+}
 
 /// 定位到指定项：高亮选中（同步导航索引）+ 居中滚动
 function reveal(index: number) {
