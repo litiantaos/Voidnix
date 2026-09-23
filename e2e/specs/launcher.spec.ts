@@ -39,7 +39,7 @@ test.describe('Voidnix 启动器', () => {
     const input = page.locator('#main-search-input')
     await input.fill('/')
     await page.waitForTimeout(200)
-    const listItems = page.locator('[role="listbox"] > div')
+    const listItems = page.locator('[role="listbox"] [role="option"]')
     await expect(listItems.first()).toBeVisible({ timeout: 5000 })
   })
 

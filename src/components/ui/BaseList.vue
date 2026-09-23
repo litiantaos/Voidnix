@@ -1,38 +1,54 @@
 <template>
-  <div p="x-3" pb="3" flex="~ col" gap="1.5" role="listbox" :aria-label="t('search.resultsLabel')">
-    <template v-for="(item, i) in items" :key="itemKey(item, i)">
-      <div
-        v-if="
-          groupField &&
-          (i === 0 || getGroupValue(item) !== getGroupValue(items[i - 1])) &&
-          (groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item))
-        "
-        class="group-header"
-      >
-        <slot name="group-title" :group="getGroupValue(item)" :item="item" :index="i">
-          {{ groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item) }}
-        </slot>
-      </div>
+  <div p="x-3" pb="3" role="listbox" :aria-label="t('search.resultsLabel')">
+    <div ref="listBodyRef" class="list-body relative" flex="~ col" gap="1.5">
+      <!-- 选中滑层（色块）：脱流承载聚焦行色块，绘制序在行文本之下（见 placeIndicator） -->
+      <div ref="indicatorRef" class="selection-indicator" aria-hidden="true" />
+      <template v-for="(item, i) in items" :key="itemKey(item, i)">
+        <div
+          v-if="
+            groupField &&
+            (i === 0 || getGroupValue(item) !== getGroupValue(items[i - 1])) &&
+            (groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item))
+          "
+          class="group-header"
+        >
+          <slot name="group-title" :group="getGroupValue(item)" :item="item" :index="i">
+            {{ groupTitle ? groupTitle(getGroupValue(item)) : getGroupValue(item) }}
+          </slot>
+        </div>
 
-      <div
-        :ref="(el: unknown) => setItemRef(el, i)"
-        role="option"
-        :aria-selected="isItemSelected(i)"
-        class="radius-panel relative"
-        :class="{ 'ui-active': isItemSelected(i) }"
-        @click="onItemClick(i, $event)"
-        @dblclick="onItemDblClick(i)"
-        @contextmenu="onItemContextMenu(i, $event)"
-      >
-        <slot name="item" :item="item" :index="i" />
-        <ActionMenuHint v-if="hasActionHint(item)" />
+        <div
+          :ref="(el: unknown) => setItemRef(el, i)"
+          role="option"
+          :aria-selected="isItemSelected(i)"
+          class="radius-panel relative"
+          :class="{ 'ui-active': isItemSelected(i), 'list-focus-row': localIndex === i }"
+          @click="onItemClick(i, $event)"
+          @dblclick="onItemDblClick(i)"
+          @contextmenu="onItemContextMenu(i, $event)"
+        >
+          <slot name="item" :item="item" :index="i" />
+        </div>
+      </template>
+      <!-- 选中滑层（徽标）：与色块层同参数移动，DOM 尾部使其盖行尾内容之上 -->
+      <div v-if="actionHint" ref="hintLayerRef" class="selection-hint" aria-hidden="true">
+        <ActionMenuHint :visible="focusHasHint" />
       </div>
-    </template>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts" generic="T">
-import { ref, watch, nextTick, onActivated, onBeforeUnmount, getCurrentInstance } from 'vue'
+import {
+  ref,
+  computed,
+  watch,
+  nextTick,
+  onMounted,
+  onActivated,
+  onBeforeUnmount,
+  getCurrentInstance,
+} from 'vue'
 import { onKeyStroke } from '@/composables/events'
 import { t } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
@@ -90,9 +106,9 @@ const props = withDefaults(
      *  全局搜索框由 data-list-execute 属性统一放行，无需此 prop。Enter 一律让出
      *  除非控件标记 data-list-execute。默认 false 保护设置页 input 编辑。 */
     navigateOnInput?: boolean
-    /** 行内右键动作菜单（Cmd+Enter 同入口）快捷键提示：true = 全部行显示；
-     *  谓词 = 按 item 条件显示（如全局结果仅 application/file/folder 且有 path）。
-     *  提示是否显现仍由行选中态驱动（ActionMenuHint），此 prop 只控制渲染。 */
+    /** 行内右键动作菜单（Cmd+Enter 同入口）快捷键提示徽标：true = 全部行显示；
+     *  谓词 = 按焦点行 item 条件显示（如全局结果仅 application/file/folder 且有
+     *  path）。徽标由选中滑层承载、随焦点行平滑移动，仅谓词翻转时淡入淡出。 */
     actionHint?: boolean | ((item: T) => boolean)
   }>(),
   {
@@ -163,6 +179,79 @@ onBeforeUnmount(() => {
   itemRefs.value.length = 0
 })
 defineExpose({ selectedIndex: localIndex, setSelectedIndex, reveal })
+
+// ── 选中高亮滑层 ──
+// 聚焦行色块与快捷键徽标由两层脱流 overlay 承载：色块层绘制序在行文本之下、徽标层
+// 置于 DOM 尾部盖行尾内容之上（滑块含 transform 形成 stacking context，徽标无法在
+// 单元素内同时满足两种层级，故拆两层同参数驱动）；选中切换经 transform 过渡滑动
+// （仅 GPU 合成属性），行自身 ui-active 保留（文本色 / aria），背景由 .list-focus-row
+// 规则让位滑块；多选（selectedIds）行不受影响，保留自身静态色块
+const listBodyRef = ref<HTMLElement | null>(null)
+const indicatorRef = ref<HTMLElement | null>(null)
+const hintLayerRef = ref<HTMLElement | null>(null)
+let bodyObserver: ResizeObserver | null = null
+
+/// 徽标显隐（actionHint 谓词按焦点行求值）：运动已由滑层承载（随色块平滑移动），
+/// 显隐只表达「焦点行有无 Cmd+Enter 动作」的数据语义；未传 actionHint 时徽标层零渲染
+const focusHasHint = computed(() => {
+  const item = props.items[localIndex.value]
+  if (!item || !props.actionHint) return false
+  return typeof props.actionHint === 'function' ? props.actionHint(item) : true
+})
+
+/// 滑层落位（色块 + 徽标两层同参数）。animated=false 瞬时（挂载 / items 替换 /
+/// 尺寸变化——不从过期位置滑来）；true 走 CSS transform/height 过渡（高度与位移同
+/// 曲线渐变，滑层脱流无 reflow 传播），follow=true 时滚动先行、滑层以同曲线
+/// （--duration-normal + --ease-inout）滞后跟随（滞后量 --selection-follow-lag，
+/// theme.css 单一定义）——位移与高度进度恒 ≤ 滚动揭示量，构造上不会滑入未揭示的裁剪区
+function placeIndicator(animated: boolean, follow = false) {
+  const layers = [indicatorRef.value, hintLayerRef.value].filter((l): l is HTMLElement => l != null)
+  const el = itemRefs.value[localIndex.value]
+  for (const layer of layers) layer.classList.toggle('follow', follow)
+  if (!el) {
+    for (const layer of layers) {
+      layer.style.display = 'none'
+      layer.style.transition = ''
+    }
+    return
+  }
+  const height = `${el.offsetHeight}px`
+  const transform = `translateY(${el.offsetTop}px)`
+  if (!animated) {
+    for (const layer of layers) {
+      layer.style.transition = 'none'
+      layer.style.display = ''
+      layer.style.height = height
+      layer.style.transform = transform
+    }
+    // 强制同步 layout 锁定两层落位帧后恢复过渡，后续移动从新位置起滑
+    for (const layer of layers) void layer.offsetHeight
+    for (const layer of layers) layer.style.transition = ''
+    return
+  }
+  for (const layer of layers) {
+    layer.style.display = ''
+    layer.style.height = height
+    layer.style.transform = transform
+  }
+}
+
+onMounted(() => {
+  placeIndicator(false)
+  // 行高随内容 / 容器宽度变化（副标题出现、换行）重落位；happy-dom 无 RO 跳过
+  if (typeof ResizeObserver !== 'undefined' && listBodyRef.value) {
+    bodyObserver = new ResizeObserver(() => placeIndicator(false))
+    bodyObserver.observe(listBodyRef.value)
+  }
+})
+
+// KeepAlive 重挂 DOM 后按当前几何重落位（停用期间后台刷新可能改写列表布局）
+onActivated(() => placeIndicator(false))
+
+onBeforeUnmount(() => {
+  bodyObserver?.disconnect()
+  bodyObserver = null
+})
 
 // ── Multi-select ──
 let anchorIndex = -1
@@ -241,12 +330,6 @@ function onItemContextMenu(index: number, e: MouseEvent) {
   anchorIndex = index
   setSelectedIndex(index)
   nextTick(() => emit('contextmenu', props.items[index], index, e))
-}
-
-/// actionHint 谓词求值：boolean 直接映射，函数按 item 条件（框架不解释业务语义）
-function hasActionHint(item: T): boolean {
-  if (!props.actionHint) return false
-  return typeof props.actionHint === 'function' ? props.actionHint(item) : true
 }
 
 // ── Keyboard 守卫 ──
@@ -359,24 +442,125 @@ function scrollPadding(container: HTMLElement, edge: 'Top' | 'Bottom'): number {
   return Number.isFinite(n) ? n : 0
 }
 
-/// 抑制 watch 的瞬时滚动，reveal 定位时由 smooth 滚动接管
+/// 抑制 watch 的视口跟随滚动，reveal 定位时由居中滚动接管
 let suppressScroll = false
 
-watch(localIndex, async (index) => {
-  await nextTick()
-  if (suppressScroll) return
-  const el = itemRefs.value[index]
-  if (!el) return
-  const container = findScrollContainer(el)
-  if (!container) return
+/// 三次贝塞尔缓动求值（与 CSS cubic-bezier 同式）：对时间比例 x 解 X(t)=x，返回 Y(t)。
+/// Newton-Raphson 为主、二分兜底（导数过小或未收敛）
+function cubicBezier(x1: number, y1: number, x2: number, y2: number): (x: number) => number {
+  const cx = 3 * x1
+  const bx = 3 * (x2 - x1) - cx
+  const ax = 1 - cx - bx
+  const cy = 3 * y1
+  const by = 3 * (y2 - y1) - cy
+  const ay = 1 - cy - by
+  const sampleX = (t: number) => ((ax * t + bx) * t + cx) * t
+  const sampleY = (t: number) => ((ay * t + by) * t + cy) * t
+  const sampleDx = (t: number) => (3 * ax * t + 2 * bx) * t + cx
+  return (x: number) => {
+    let t = x
+    for (let i = 0; i < 8; i++) {
+      const err = sampleX(t) - x
+      if (Math.abs(err) < 1e-6) return sampleY(t)
+      const d = sampleDx(t)
+      if (Math.abs(d) < 1e-7) break
+      t -= err / d
+    }
+    let lo = 0
+    let hi = 1
+    t = x
+    while (hi - lo > 1e-7) {
+      const cur = sampleX(t)
+      if (Math.abs(cur - x) < 1e-7) break
+      if (cur < x) lo = t
+      else hi = t
+      t = (lo + hi) / 2
+    }
+    return sampleY(t)
+  }
+}
 
-  // 分组首项：连同标题一并滚入视野
-  const isFirstInGroup =
-    index === 0 ||
-    (!!props.groupField &&
-      getGroupValue(props.items[index]) !== getGroupValue(props.items[index - 1]))
-  const topElement =
-    isFirstInGroup && el.previousElementSibling ? (el.previousElementSibling as HTMLElement) : el
+const EASE_INOUT = cubicBezier(0.45, 0, 0.2, 1)
+
+/// 读 :root 自定义属性（时长/缓动单一真相在 theme.css token，与 .selection-indicator.follow
+/// 同源；测试环境未加载 theme.css 时得空串，经解析回退同值常量）
+function rootToken(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name)
+}
+
+/// 时长 token 解析（"150ms" / "0.2s"），失败回退 fallback
+function parseDuration(value: string, fallback: number): number {
+  const m = /([\d.]+)(ms|s)/.exec(value)
+  return m ? parseFloat(m[1]!) * (m[2] === 's' ? 1000 : 1) : fallback
+}
+
+/// 滚动动画参数（时长/缓动）：滑块跟随曲线与滚动曲线恒一致，进度约束（滑块 ≤ 滚动）
+/// 不因 token 调参失配
+function scrollMotion(): { duration: number; ease: (x: number) => number } {
+  const bm = /cubic-bezier\(([^)]+)\)/.exec(rootToken('--ease-inout'))
+  const params = bm?.[1]?.split(',').map(Number)
+  const ease =
+    params && params.length === 4 && params.every(Number.isFinite)
+      ? cubicBezier(params[0]!, params[1]!, params[2]!, params[3]!)
+      : EASE_INOUT
+  return { duration: parseDuration(rootToken('--duration-normal'), 200), ease }
+}
+
+/// 在飞滚动动画取消句柄（单列表单容器，实例级即可）
+let scrollAnim: (() => void) | null = null
+
+/// 容器滚动到 target：animated 时按滚动曲线（--duration-normal + --ease-inout，软起步）
+/// rAF 逐帧推进。每帧回读 scrollTop，非本动画写入（用户滚轮/拖拽/滚动锚定）即中断让权
+function animateScroll(container: HTMLElement, target: number, animated: boolean) {
+  scrollAnim?.()
+  const start = container.scrollTop
+  const delta = target - start
+  if (!animated || Math.abs(delta) < 1) {
+    container.scrollTop = target
+    return
+  }
+  const { duration, ease } = scrollMotion()
+  if (duration <= 0) {
+    container.scrollTop = target
+    return
+  }
+  let raf = 0
+  let last = start
+  let t0 = -1
+  const cancel = () => {
+    if (raf) cancelAnimationFrame(raf)
+    raf = 0
+    scrollAnim = null
+  }
+  scrollAnim = cancel
+  const step = (now: number) => {
+    if (container.scrollTop !== last) {
+      cancel()
+      return
+    }
+    if (t0 < 0) t0 = now
+    const p = Math.min((now - t0) / duration, 1)
+    container.scrollTop = start + delta * ease(p)
+    last = container.scrollTop
+    if (p < 1) raf = requestAnimationFrame(step)
+    else cancel()
+  }
+  raf = requestAnimationFrame(step)
+}
+
+onBeforeUnmount(() => scrollAnim?.())
+
+/// 视口跟随目标：行不在视野内时返回容器与目标 scrollTop（分组首项连同标题一并滚入），
+/// 在视野内返回 null。既有触发面：仅选中移动时调用
+function viewportFollowTarget(el: HTMLElement): { container: HTMLElement; target: number } | null {
+  const container = findScrollContainer(el)
+  if (!container) return null
+
+  // 分组首项连同标题滚入：仅当前邻确为分组标题（.group-header）才作滚动锚——
+  // 不能盲取 previousElementSibling：list-body 首子元素是选中滑块，index 0 的前邻
+  // 是滑块而非标题
+  const prev = el.previousElementSibling
+  const topElement = prev?.classList.contains('group-header') ? prev : el
 
   const topInset = scrollPadding(container, 'Top')
   // bottom 无声明时回退 12（与列表 pb-3 / 全局 p-3 一致），避免贴底时下边距小于两侧
@@ -389,17 +573,78 @@ watch(localIndex, async (index) => {
   const visibleBottom = containerRect.bottom - bottomInset
 
   if (elRectBottom > visibleBottom) {
-    container.scrollTop += elRectBottom - visibleBottom
-  } else if (elRectTop < visibleTop) {
-    container.scrollTop -= visibleTop - elRectTop
+    return { container, target: container.scrollTop + (elRectBottom - visibleBottom) }
   }
+  if (elRectTop < visibleTop) {
+    return { container, target: container.scrollTop - (visibleTop - elRectTop) }
+  }
+  return null
+}
+
+/// 减动效偏好：导航滑层与视口跟随滚动退化为瞬时（复用连击 snap 同路径），逐次读取
+function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+/// 连击步进窗口 = 本步动画包络 × 0.8（同源读 token 推导，调参随动）：视口内滑动 =
+/// --duration-fast；跨界跟随 = --selection-follow-lag + --duration-normal。重定目标
+/// 发生在动画完成 80% 之后时，滑块残余滞后不超过一步的 20%（读感为连续滑行而非
+/// 追帧漂浮），保留动画；快于此的输入（按住 repeat / 极速连点）瞬时步进
+function rapidSnapWindow(follow: boolean): number {
+  const envelope = follow
+    ? parseDuration(rootToken('--selection-follow-lag'), 60) +
+      parseDuration(rootToken('--duration-normal'), 200)
+    : parseDuration(rootToken('--duration-fast'), 150)
+  return envelope * 0.8
+}
+let lastNavAt = -Infinity
+
+// 选中移动主编排（滑块 + 视口跟随，双源单 watcher）：滚动先行、滑块滞后同曲线跟随
+// （follow 模式）；行在视野内时滑块直接常规滑动（--duration-fast ease-out）。items
+// 引用替换（含同 flush「替换 + 归零」）与 wrap 首↔末项两者一致瞬时跳变；仅 items
+// 变化只重落滑块不滚动。滚动将启动是 follow 的唯一判定，保证滑块进度恒 ≤ 滚动
+// 揭示量（不入裁剪区）。prefers-reduced-motion 下退化为瞬时（滑块直落位、直写 scrollTop）
+watch([() => props.items, localIndex], async ([items, index], [prevItems, prevIndex]) => {
+  const now = performance.now()
+  const moved = index !== prevIndex
+  const interval = moved ? now - lastNavAt : Infinity
+  if (moved) lastNavAt = now
+  const itemsChanged = items !== prevItems
+  // wrap 首↔末项（末→0 / 0→末，显式判定非距离阈值）：穿行整列表无导航意义，
+  // 所有列表一致瞬时跳变（滑块/滚动/徽标同语义）；2 项列表除外——0↔1 即相邻
+  // 步进，判定退化会让短列表的选择移动永不滑动
+  const wrapped =
+    prevItems.length > 2 &&
+    ((prevIndex === prevItems.length - 1 && index === 0) ||
+      (prevIndex === 0 && index === prevItems.length - 1))
+  // 同步段（pre-patch）：同类导航行已存在，滚动计划可按当前几何先行计算（类翻转
+  // 不改变行几何），供连击分档选取窗口
+  let plan: { container: HTMLElement; target: number } | null = null
+  if (moved && !itemsChanged && !wrapped && !suppressScroll) {
+    const el = itemRefs.value[index]
+    if (el) plan = viewportFollowTarget(el)
+  }
+  const rapid = interval < rapidSnapWindow(plan != null)
+  const animated = !prefersReducedMotion() && !itemsChanged && !wrapped && !rapid
+  await nextTick()
+  if (!moved) {
+    placeIndicator(animated)
+    return
+  }
+  // items 替换 / wrap / 连击步进（跳变路径，新行 post-patch 才存在时补算滚动计划）
+  if (!animated) {
+    const el = itemRefs.value[index]
+    plan = el != null && !suppressScroll ? viewportFollowTarget(el) : null
+  }
+  placeIndicator(animated, animated && plan != null)
+  if (plan) animateScroll(plan.container, plan.target, animated)
 })
 
-/// 定位到指定项：高亮选中（同步导航索引）+ 平滑滚动居中
+/// 定位到指定项：高亮选中（同步导航索引）+ 居中滚动
 function reveal(index: number) {
   suppressScroll = true
   setSelectedIndex(index)
-  // watch 的瞬时滚动在本轮微任务被 suppressScroll 拦截；下一宏任务复位并 smooth 滚动
+  // watch 的视口跟随在本轮微任务被 suppressScroll 拦截；下一宏任务复位并居中滚动
   setTimeout(() => {
     suppressScroll = false
     void scrollIntoCenter(index)
@@ -419,7 +664,8 @@ async function scrollIntoCenter(index: number) {
   // 在扣除 chrome / 底边 inset 后的可视区内垂直居中
   const visibleHeight = containerRect.height - topInset - bottomInset
   const offset = elRect.top - (containerRect.top + topInset) + elRect.height / 2 - visibleHeight / 2
-  container.scrollTo({ top: container.scrollTop + offset, behavior: 'smooth' })
+  // 居中滚动与视口跟随同曲线（reveal 高亮常规滑动；减动效偏好退化为瞬时）
+  animateScroll(container, container.scrollTop + offset, !prefersReducedMotion())
 }
 
 function getGroupValue(item: T): string {
@@ -436,5 +682,44 @@ function getGroupValue(item: T): string {
    全量渲染开销可控，不使用 content-visibility（快速滚动有加载延迟 + 滚动条跳动）。 */
 [role='listbox'] {
   contain: layout style;
+}
+
+/* 选中滑层：色块层（.selection-indicator）置于行前、绘制序在行文本之下，徽标层
+ * （.selection-hint）置于 DOM 尾部、盖行尾内容之上——两层脱流、同参数驱动，仅过渡
+ * transform / height（GPU 合成 + 脱流高度，无 IOSurface 常驻；height 属布局属性但
+ * 滑层脱流且容器 contain:layout，reflow 不传播到行——同 BaseDialog 内容高 FLIP 的
+ * height 过渡先例） */
+.selection-indicator,
+.selection-hint {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    height var(--duration-fast) var(--ease-out);
+}
+
+.selection-indicator {
+  border-radius: var(--radius-panel);
+  background: var(--ui-active-fill);
+}
+
+/* 视口跟随时滑层滞后起步：滚动先行（JS 侧同曲线 --duration-normal + --ease-inout），
+ * 同曲线 + 延迟保证滑层进度（位移与高度）恒 ≤ 滚动揭示量，不滑入未揭示的裁剪区。
+ * 滞后量 --selection-follow-lag（theme.css）：CSS 过渡延迟与 JS 连击窗口同源消费，
+ * 单一定义 */
+.selection-indicator.follow,
+.selection-hint.follow {
+  transition:
+    transform var(--duration-normal) var(--ease-inout) var(--selection-follow-lag),
+    height var(--duration-normal) var(--ease-inout) var(--selection-follow-lag);
+}
+
+/* 聚焦行背景交由滑块承载：特异性（0,4,0）压过 theme .ui-active 色块的 !important；
+ * 多选（selectedIds）行不挂此类，保留自身静态色块 */
+.list-body > [role='option'].list-focus-row {
+  background: transparent !important;
 }
 </style>

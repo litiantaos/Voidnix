@@ -5,11 +5,13 @@
   --shadow-ink: 40 40 50; /* elevation 中性墨 */
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-inout: cubic-bezier(0.45, 0, 0.2, 1); /* 内容平移类（列表视口跟随滚动） */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --duration-fastest: 100ms; /* 退场 / 微交互（ui-popup leave、ext-tag 图标切换） */
   --duration-fast: 150ms;
   --duration-normal: 200ms;
   --duration-slow: 300ms; /* 数据条填充等慢一拍的进度型过渡 */
+  --selection-follow-lag: 60ms; /* BaseList 视口跟随：滚动先行的滑块滞后起步量（CSS 过渡延迟与 JS 连击窗口同源） */
   --space: 12px; /* 全局 p-3 */
   --space-soft: 6px 10px; /* step / notice 内垫 */
 

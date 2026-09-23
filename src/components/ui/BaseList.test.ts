@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { mount, flushPromises, enableAutoUnmount, type VueWrapper } from '@vue/test-utils'
 import { nextTick, h, KeepAlive, defineComponent, ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAppStore } from '@/stores/app'
@@ -18,6 +18,16 @@ describe('BaseList', () => {
   beforeEach(() => {
     // BaseList 读 app store（整窗视图让位守卫）：挂载需 active pinia
     setActivePinia(createPinia())
+  })
+
+  // 用例中途断言失败时内联清理不会执行：泄漏的 rAF/performance stub、body 挂载的
+  // scroller 与存活的 wrapper（其 document 级按键监听含 stopImmediatePropagation，
+  // 会消费后续用例派发的按键）会把一次失败级联成连锁失败，统一在此兜底恢复
+  enableAutoUnmount(afterEach)
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    document.body.querySelectorAll('.overflow-y-auto').forEach((el) => el.remove())
   })
 
   it('结果缩短时释放已卸载的 DOM 引用并裁掉尾部空槽', async () => {
@@ -182,6 +192,320 @@ describe('BaseList', () => {
     )
     await nextTick()
     expect(executes).toBe(1)
+
+    wrapper.unmount()
+  })
+
+  it('选中高亮滑块：挂载落位首行、随选中移动、items 替换重落位、越界隐藏', async () => {
+    const wrapper = mount(BaseList<Item>, {
+      props: { items: items(3) },
+      slots: { item: ({ item }: { item: Item }) => item.title },
+    })
+
+    // happy-dom 无布局引擎：mock 行几何（40px 步进、高 32）
+    const mockGeometry = () =>
+      wrapper.findAll('[role="option"]').forEach((row, i) => {
+        Object.defineProperty(row.element, 'offsetTop', { value: i * 40, configurable: true })
+        Object.defineProperty(row.element, 'offsetHeight', { value: 32, configurable: true })
+      })
+    mockGeometry()
+    // 挂载落位发生在 onMounted（先于几何 mock），显式重落位建立确定性基线
+    ;(
+      wrapper.vm.$ as unknown as { setupState: { placeIndicator: (animated: boolean) => void } }
+    ).setupState.placeIndicator(false)
+
+    const indicator = wrapper.get('.selection-indicator')
+    // 挂载即瞬时落位聚焦行；行自身 ui-active 保留语义，背景让位（list-focus-row）
+    expect(indicator.attributes('style')).toContain('translateY(0px)')
+    expect(indicator.attributes('style')).toContain('height: 32px')
+    const rows = wrapper.findAll('[role="option"]')
+    expect(rows[0].classes()).toContain('list-focus-row')
+    expect(rows[1].classes()).not.toContain('list-focus-row')
+
+    // 同列表内移动：滑块跟随新行
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+    )
+    await flushPromises()
+    expect(indicator.attributes('style')).toContain('translateY(40px)')
+    expect(wrapper.findAll('[role="option"]')[1].classes()).toContain('list-focus-row')
+
+    // items 替换（引用变化）：滑块按当前几何重落位（key 不变复用元素，几何已变）
+    Object.defineProperty(wrapper.findAll('[role="option"]')[1].element, 'offsetTop', {
+      value: 99,
+      configurable: true,
+    })
+    await wrapper.setProps({ items: items(2) })
+    await flushPromises()
+    expect(indicator.attributes('style')).toContain('translateY(99px)')
+
+    // 列表缩短致选中越界：滑块隐藏（无高亮行）
+    await wrapper.setProps({ items: items(1) })
+    await flushPromises()
+    expect(indicator.attributes('style')).toContain('display: none')
+    wrapper.unmount()
+  })
+
+  it('wrap 回首项正确滚动返回顶部：滑块作 list-body 首子元素不得充当滚动锚', async () => {
+    // index 0 的前邻是选中滑块（非分组标题）：盲取 previousElementSibling 作滚动锚
+    // 会把矩形取到滑块位置，误判「在视野内」→ wrap 到 0 不滚动
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb)
+      return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+
+    const scroller = document.createElement('div')
+    scroller.className = 'overflow-y-auto'
+    document.body.appendChild(scroller)
+    const wrapper = mount(BaseList<Item>, {
+      props: { items: items(3) },
+      slots: { item: ({ item }: { item: Item }) => item.title },
+      attachTo: scroller,
+    })
+
+    // 几何：行 0 在视野上方（wrap 目标），行 1/2 在视野内
+    const rect = (el: Element, top: number, bottom: number) => {
+      Object.defineProperty(el, 'getBoundingClientRect', {
+        value: () => ({ top, bottom, height: bottom - top }),
+        configurable: true,
+      })
+    }
+    rect(scroller, 0, 200)
+    const rows = wrapper.findAll('[role="option"]')
+    rect(rows[0].element, -220, -188)
+    rect(rows[1].element, 100, 132)
+    rect(rows[2].element, 140, 172)
+    scroller.scrollTop = 220
+
+    const setSelected = (i: number) =>
+      (
+        wrapper.vm.$ as unknown as { setupState: { setSelectedIndex: (i: number) => void } }
+      ).setupState.setSelectedIndex(i)
+
+    // 可控时钟：连击判定（动画包络 80% 同源推导）读 performance.now，真实毫秒间隔会被误判连击
+    let simNow = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => simNow)
+
+    // 选中行 2（视野内，无滚动帧），随后 ArrowDown wrap 回行 0（视野上方）
+    setSelected(2)
+    await flushPromises()
+    frames.length = 0
+    simNow = 400
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+    )
+    await flushPromises()
+    // wrap 首↔末一律瞬时跳变（锚点回归仍以「滚动确实发生」体现：直写 scrollTop = 0）
+    expect(frames.length).toBe(0)
+    expect(scroller.scrollTop).toBe(0)
+    expect(wrapper.get('.selection-indicator').classes()).not.toContain('follow')
+
+    // 反向 wrap（0 → 末项）：同样瞬时跳变
+    frames.length = 0
+    simNow = 600
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }),
+    )
+    await flushPromises()
+    expect(frames.length).toBe(0)
+    expect(wrapper.get('.selection-indicator').classes()).not.toContain('follow')
+
+    wrapper.unmount()
+  })
+
+  it('视口跟随滚动与滑块同参：逐帧推进、用户滚动中断、items 替换瞬时跳变', async () => {
+    // 手动帧泵：确定性驱动 rAF 时间戳（t0 取首帧时间戳）
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb)
+      return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+
+    const scroller = document.createElement('div')
+    scroller.className = 'overflow-y-auto'
+    document.body.appendChild(scroller)
+    const wrapper = mount(BaseList<Item>, {
+      props: { items: items(6) },
+      slots: { item: ({ item }: { item: Item }) => item.title },
+      attachTo: scroller,
+    })
+
+    // happy-dom 无布局引擎：mock 滚动容器与行矩形（行均在视野下方，容器高 200）
+    const rect = (el: Element, top: number, bottom: number) => {
+      Object.defineProperty(el, 'getBoundingClientRect', {
+        value: () => ({ top, bottom, height: bottom - top }),
+        configurable: true,
+      })
+    }
+    rect(scroller, 0, 200)
+    wrapper
+      .findAll('[role="option"]')
+      .forEach((row, i) => rect(row.element, 220 + i * 40, 252 + i * 40))
+    const indicator = wrapper.get('.selection-indicator')
+
+    const arrowDown = () =>
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+      )
+
+    // 可控时钟：连击判定（动画包络 80% 同源推导）读 performance.now，真实毫秒间隔会被误判连击
+    let simNow = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => simNow)
+
+    // 导航至行 1（bottom 292 > 可视底 188）：目标 scrollTop = 104；滚动先行，滑块转
+    // follow 模式（滞后同曲线跟随），滚动 rAF 逐帧推进（--duration-normal + ease-inout）
+    arrowDown()
+    await flushPromises()
+    expect(frames.length).toBe(1)
+    expect(indicator.classes()).toContain('follow')
+    frames.shift()!(0) // t0=0、p=0 → 仍在起点
+    expect(scroller.scrollTop).toBe(0)
+    frames.shift()!(100) // p=0.5，ease-inout 中程 =0.5
+    expect(scroller.scrollTop).toBeGreaterThan(30)
+    expect(scroller.scrollTop).toBeLessThan(80)
+    frames.shift()!(200) // p=1 → 到达目标，动画结束
+    expect(scroller.scrollTop).toBe(104)
+    expect(frames.length).toBe(0)
+
+    // 用户手动滚动（滚轮/拖拽）：下一帧检测到外源写入即中断让权
+    simNow = 400 // 距上次导航 > follow 档 208ms（(60+200)×0.8），保持动画路径
+    arrowDown()
+    await flushPromises()
+    expect(frames.length).toBe(1)
+    frames.shift()!(400) // t0、p=0 → 写起始值 104
+    scroller.scrollTop = 37
+    frames.shift()!(460)
+    expect(scroller.scrollTop).toBe(37)
+    expect(frames.length).toBe(0)
+
+    // items 替换 + 归零（同 flush，模拟「结果替换 + 重置选中」）：与滑块一致瞬时跳变
+    // （follow 摘除、直写 scrollTop），不排 rAF 帧
+    simNow = 700
+    const applied = wrapper.setProps({ items: items(3) })
+    ;(
+      wrapper.vm.$ as unknown as { setupState: { setSelectedIndex: (i: number) => void } }
+    ).setupState.setSelectedIndex(0)
+    await applied
+    await flushPromises()
+    // 行 0（bottom 252 > 188）目标 = 37 + 64 = 101
+    expect(scroller.scrollTop).toBe(101)
+    expect(frames.length).toBe(0)
+    expect(indicator.classes()).not.toContain('follow')
+
+    wrapper.unmount()
+  })
+
+  it('连击瞬时步进（快于动画包络 80%）：不排 rAF 帧、不挂 follow', async () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb)
+      return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+
+    const scroller = document.createElement('div')
+    scroller.className = 'overflow-y-auto'
+    document.body.appendChild(scroller)
+    const wrapper = mount(BaseList<Item>, {
+      props: { items: items(4) },
+      slots: { item: ({ item }: { item: Item }) => item.title },
+      attachTo: scroller,
+    })
+    const rect = (el: Element, top: number, bottom: number) => {
+      Object.defineProperty(el, 'getBoundingClientRect', {
+        value: () => ({ top, bottom, height: bottom - top }),
+        configurable: true,
+      })
+    }
+    rect(scroller, 0, 200)
+    wrapper
+      .findAll('[role="option"]')
+      .forEach((row, i) => rect(row.element, 220 + i * 40, 252 + i * 40))
+    const indicator = wrapper.get('.selection-indicator')
+    const arrowDown = () =>
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+      )
+
+    let simNow = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => simNow)
+
+    // 首按（距上次导航 ∞）：动画路径，排帧
+    arrowDown()
+    await flushPromises()
+    expect(frames.length).toBe(1)
+    frames.shift()!(0)
+    frames.shift()!(100)
+    frames.shift()!(200)
+    expect(scroller.scrollTop).toBe(104)
+
+    // 100ms 后连击（跨界 < follow 档 208ms）：瞬时步进，零帧零 follow，scrollTop 直写
+    // 目标（行 2 底边 332 − 可视底 188 = 144 → 104 + 144 = 248）
+    simNow = 100
+    arrowDown()
+    await flushPromises()
+    expect(frames.length).toBe(0)
+    expect(scroller.scrollTop).toBe(248)
+    expect(indicator.classes()).not.toContain('follow')
+
+    // 停顿超过窗口后恢复动画
+    simNow = 500
+    arrowDown()
+    await flushPromises()
+    expect(frames.length).toBe(1)
+    expect(indicator.classes()).toContain('follow')
+    frames.length = 0
+
+    wrapper.unmount()
+  })
+
+  it('prefers-reduced-motion：滑层与视口跟随退化为瞬时（零 rAF 帧、直写 scrollTop）', async () => {
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true } as MediaQueryList)
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb)
+      return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+
+    const scroller = document.createElement('div')
+    scroller.className = 'overflow-y-auto'
+    document.body.appendChild(scroller)
+    const wrapper = mount(BaseList<Item>, {
+      props: { items: items(4) },
+      slots: { item: ({ item }: { item: Item }) => item.title },
+      attachTo: scroller,
+    })
+    // happy-dom 无布局引擎：mock 滚动容器与行矩形（行均在视野下方，容器高 200；行高 32、40px 步进）
+    const rect = (el: Element, top: number, bottom: number) => {
+      Object.defineProperty(el, 'getBoundingClientRect', {
+        value: () => ({ top, bottom, height: bottom - top }),
+        configurable: true,
+      })
+    }
+    rect(scroller, 0, 200)
+    wrapper
+      .findAll('[role="option"]')
+      .forEach((row, i) => rect(row.element, 220 + i * 40, 252 + i * 40))
+    wrapper.findAll('[role="option"]').forEach((row, i) => {
+      Object.defineProperty(row.element, 'offsetTop', { value: i * 40, configurable: true })
+      Object.defineProperty(row.element, 'offsetHeight', { value: 32, configurable: true })
+    })
+    const indicator = wrapper.get('.selection-indicator')
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+    )
+    await flushPromises()
+    // 跨界导航同连击 snap：不排帧、不挂 follow，scrollTop 直写目标（行 1 底边
+    // 292 − 可视底 188 = 104）；滑块直落位行 1
+    expect(frames.length).toBe(0)
+    expect(scroller.scrollTop).toBe(104)
+    expect(indicator.classes()).not.toContain('follow')
+    expect(indicator.attributes('style')).toContain('translateY(40px)')
 
     wrapper.unmount()
   })

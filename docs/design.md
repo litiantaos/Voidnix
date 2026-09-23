@@ -12,7 +12,7 @@
 
 - `--cool` / `--cool-deep`：冷相填充与 chip 描边
 - `--shadow-ink`：elevation 中性墨
-- `--ease-out` / `--ease-in` / `--ease-spring` · `--duration-fastest`（100，退场/微交互）/ `--duration-fast`（150）/ `--duration-normal`（200）/ `--duration-slow`（300，进度型）
+- `--ease-out` / `--ease-in` / `--ease-inout`（内容平移类，如列表视口跟随滚动） / `--ease-spring` · `--duration-fastest`（100，退场/微交互）/ `--duration-fast`（150）/ `--duration-normal`（200）/ `--duration-slow`（300，进度型）/ `--selection-follow-lag`（60，BaseList 视口跟随的滑块滞后起步，CSS/JS 同源）
 - `--space`（12 = 全局 p-3）· `--space-soft`（6px 10px，step/notice）
 
 ## 分层
@@ -21,7 +21,7 @@
 - **soft-card**：抬升卡 = soft-surface + `radius-panel` + `--shadow-card`（助手消息 / system-status）
 - **soft-chip**：控件 — 实白 + 1px 冷灰 solid border，无 elevation；focus 改边框色 `--focus-ring-color`
 - **ext-tag**：搜索栏只读扩展名
-- **ui-active**：列表选中色块 + 轻 blur；按钮选中（`soft-chip.ui-active`）以透明 1px 边占位保持盒模型恒定——防切换时内容盒 ±2px、同行按钮平移跳动
+- **ui-active**：列表选中色块 + 轻 blur；按钮选中（`soft-chip.ui-active`）以透明 1px 边占位保持盒模型恒定——防切换时内容盒 ±2px、同行按钮平移跳动。BaseList 行的色块由组件内脱流滑块承载（同 `--ui-active-fill`，选中切换 translateY 滑动，见 docs/extensions.md「选中高亮滑块」）
 - **ui-btn-***：BaseButton variant 面类（primary 实心主钮 / ghost 透明 / danger 淡红底 + 红字 + 红边，hover 加深边色、active 加深底与边）
 - **dialog-\***：弹窗近实白（非 soft-surface）；标题/底栏为浮层 + 透明渐变，内容可滚入；高度随内容形态切换平滑重排（JS FLIP + `transition: height`）
 - **fill-ctrl**：实底填充（进度轨 / kbd 等，非卡片壳）
@@ -76,7 +76,7 @@
 - 图标井 `fill-mist`；仪表盘卡 `fill-ctrl`
 - 搜索栏拆层 `search-bar` / `search-bar-surface` / `search-bar-content`
 - toast / 动作面板：`dropdown-panel` + `fixed bottom-3 right-3`；toast `z-9999`
-- `ActionMenuHint`：列表行右缘悬浮快捷键键帽（absolute、`right` 12px、flex 垂直居中，canvas 实底 + divider 细边，底部透明模糊遮罩 backdrop blur + mask 渐变、上下撑满行高、`pointer-events: none`），恒 visibility hidden，仅所在行选中 `ui-active` 瞬时显现（hover 不触发、无过渡）；经 BaseList `actionHint` prop 供给（boolean / item 谓词），未传零渲染
+- `ActionMenuHint`：快捷键键帽，渲染于 BaseList 选中滑层（`.selection-hint`）内随焦点行平滑移动——运动由滑层 transform 承载，切换项零显隐（absolute、`right` 12px、flex 垂直居中，canvas 实底 + divider 细边，底部透明模糊遮罩 backdrop blur + mask 渐变、上下撑满行高、`pointer-events: none`）；显隐只表达「焦点行有无动作」的数据语义（actionHint 谓词），翻转时淡入淡出（无位移无缩放），opacity 落在 scrim/key 子元素自身（祖先 opacity 隔断 backdrop 采样致遮罩突现），退场完成后容器延迟交还 visibility，稳态未显示时整树跳过绘制；经 BaseList `actionHint` prop 供给（boolean / item 谓词），未传零渲染
 
 ## Agent
 
