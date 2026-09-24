@@ -280,8 +280,8 @@ watch(
 // 会话结束即归位（消除唤起首帧残影——hide 不 orderOut 架构下 show 立即可见的是
 // 隐藏前最后一帧，唤起侧才归零会让旧选中位置可见几十 ms）：窗口隐藏时归位，
 // 覆盖全部前端隐藏路径（blur/主快捷键再按/Esc/click-outside 等均经 hideWindow
-// 派发 window-hiding）；列表是动态置顶序（每次系统复制插入顶部），保留的选中
-// 索引跨会话指向已漂移的记录——BaseList 默认的「窗口唤起保留」三态语义在
+// 派发 window-hiding）；列表是动态置顶序（系统复制插入顶部、粘贴刷新被贴记录时间
+// 置顶），保留的选中索引跨会话指向已漂移的记录——BaseList 默认的「窗口唤起保留」三态语义在
 // 剪贴板上按 View 数据语义覆盖。过滤词原样保留（窗口显隐不改扩展内容状态）。
 // 延迟一档宏任务：ContentView clearCache 同事件内保存/回填 scrollTop（兜底
 // content-visibility 帧的引擎 clamp，纯微任务链），归位直写 scrollTop 会被其

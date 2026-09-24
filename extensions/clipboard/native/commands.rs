@@ -246,6 +246,22 @@ fn hide_and_paste(app: &tauri::AppHandle) {
     std::thread::spawn(simulate_cmd_v);
 }
 
+/// 粘贴成功后刷新记录时间为当前 UTC（等效「最近使用」，重复项 UPDATE 刷新同源）：
+/// 动态置顶序下下次拉取显示在列表顶部；多条按选择序依次 -i 秒偏移——created_at
+/// 秒精度，同秒多条 DESC 序不稳定。粘贴写入带防回环 marker，monitor 跳过入库，
+/// 置顶须在此手动刷新。刷新失败静默（粘贴本体已成功，不因其报错）。
+fn refresh_pasted_at(app: &tauri::AppHandle, ids: &[String]) {
+    let Ok(db) = require_db(app) else { return };
+    let conn = db.conn();
+    for (i, id) in ids.iter().enumerate() {
+        let _ = conn.execute(
+            "UPDATE clipboard_history SET created_at = datetime('now', ?1) WHERE id = ?2",
+            rusqlite::params![format!("-{i} seconds"), id],
+        );
+    }
+    db.maybe_checkpoint(&conn);
+}
+
 #[tauri::command]
 pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), String> {
     if !ax_trusted() {
@@ -271,6 +287,7 @@ pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), Str
     };
 
     write_to_pasteboard(&content, &content_type)?;
+    refresh_pasted_at(&app, &[id]);
     hide_and_paste(&app);
 
     Ok(())
@@ -343,6 +360,7 @@ pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<
         let (content, content_type) = &items[0];
         write_to_pasteboard(content, content_type)?;
     }
+    refresh_pasted_at(&app, &ids);
     hide_and_paste(&app);
 
     Ok(())

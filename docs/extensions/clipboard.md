@@ -27,7 +27,7 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 - `content`：文本原文 / `data:image/png;base64,...` / path-based `file://` URL（Finder 写入的 file reference URL `file:///.file/id=...` 经 `NSURL.filePathURL` 解析为实际路径后存为 `file://{path}`）
 - `content_type`：text/image/file
 - `source_app`：来源 app
-- `created_at`：**UTC** `datetime('now')`，与表默认 `CURRENT_TIMESTAMP` 一致；重复项 UPDATE 刷新。展示统一经 `logic.ts::formatClipboardTime`（`utils/datetime.ts::parseUtcMs` 按 UTC 解析转本地时区：今天 HH:MM，否则 MM/DD HH:MM），禁止把 UTC 字符串当本地时间直接截取
+- `created_at`：**UTC** `datetime('now')`，与表默认 `CURRENT_TIMESTAMP` 一致；重复项 UPDATE 刷新，粘贴成功后同样刷新为粘贴时间（置顶，见「粘贴」节）。展示统一经 `logic.ts::formatClipboardTime`（`utils/datetime.ts::parseUtcMs` 按 UTC 解析转本地时区：今天 HH:MM，否则 MM/DD HH:MM），禁止把 UTC 字符串当本地时间直接截取
 - `is_favorite`：收藏标记
 - `file_size` / `image_width` / `image_height`：迁移列
 
@@ -83,6 +83,7 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 - **图片**：先 `encode_image_to_png` 再 `clear` + marker + `set_png_bytes`（解码失败不触碰剪贴板、不模拟 Cmd+V，命令返回 Err）
 - **统一转 PNG**：任意 `data:image/*;base64,`（JPEG/GIF/WebP/BMP/HEIC 等）经 NSImage 转换
 - **多选序**：按前端 `ids` 选择序
+- **粘贴置顶**：写板成功后 `refresh_pasted_at` 将被粘贴记录 `created_at` 刷新为当前 UTC（等效「最近使用」，收藏不过期收益随动）——动态置顶序下显示到列表顶部；多条按选择序依次 `-i seconds` 偏移（created_at 秒精度，同秒多条 DESC 序不稳定）。粘贴写入带防回环 marker、monitor 跳过入库，置顶须在此手动刷新；刷新失败静默（粘贴本体已成功）
 - **全 text**：换行拼接
 - **全 file**：写多 item pasteboard（`set_file_urls(..., Some(marker))`）
 - **混类型**：只贴首项
@@ -97,7 +98,7 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 
 - **缩略图懒加载**：IntersectionObserver（rootMargin 200px 预载）按需 `invoke(get_clipboard_image)`，LRU 上限 30 条（`imageCache`）
 - **恒高占位**：加载前渲染与缩略图同尺寸同边框的块级占位（Wind4 preflight 将 img reset 为 block，占位同为块级精确等高）。无占位时图片项走文本回退（矮一行），懒加载完成后条目变高，已滚动到位的选中项（如按上键 wrap 到末项）会被推出视口
-- **进入重置**：选中三态语义（跨会话转移归首项 / subview 往返保留）由 BaseList 组件层统一承载（规范见 [extensions.md](../extensions.md)），View 侧 `v-model:selected-index` 保持镜像传导。**BaseList 常挂**（恒在包裹层 `div` 内 `v-show` 切换空态，勿用 `v-if`——卸载会使 BaseList 的归零 watch 缺席、重挂载不触发 activated，跨会话归零旁路；包裹层同时隔离 ContentView `:deep(*)` 拉伸——BaseList 根的 `contain: layout` 直接作 flex 子项会使内容高度不参与撑开滚动容器）。clipboard 特有归位语义（`resetAndRefetch`：经 BaseList `reset()`（瞬时归零契约）+ 清多选 + 重拉）：**会话结束即归位**（消除唤起首帧残影——hide 不 orderOut 下 show 立即可见隐藏前最后一帧，锚在隐藏时刻使 DOM 更新在隐藏期完成）：窗口隐藏（监听 `window-hiding`，延迟一档宏任务错开 ContentView clearCache 的 scrollTop 回填；覆盖 blur/主快捷键再按/Esc/click-outside 等全部前端隐藏路径）+ 粘贴成功分支（粘贴命令在 Rust 端隐藏、不经前端 hideWindow，`invoke` 返回时窗口已隐藏，失败路径保留选中供重试）——列表是动态置顶序（每次系统复制插入顶部），保留的选中索引跨会话指向已漂移的记录，BaseList 默认的「窗口唤起保留」按 View 数据语义覆盖；**过滤条件变化（tab/type/query）归首项**（debounce 重拉回调内）；**history 替换越界 clamp 贴尾**（`watch(history)`，覆盖删除 / favorites tab 下取消收藏使列表缩短——越界无高亮直到方向键自愈，贴尾不打断连续删除）
+- **进入重置**：选中三态语义（跨会话转移归首项 / subview 往返保留）由 BaseList 组件层统一承载（规范见 [extensions.md](../extensions.md)），View 侧 `v-model:selected-index` 保持镜像传导。**BaseList 常挂**（恒在包裹层 `div` 内 `v-show` 切换空态，勿用 `v-if`——卸载会使 BaseList 的归零 watch 缺席、重挂载不触发 activated，跨会话归零旁路；包裹层同时隔离 ContentView `:deep(*)` 拉伸——BaseList 根的 `contain: layout` 直接作 flex 子项会使内容高度不参与撑开滚动容器）。clipboard 特有归位语义（`resetAndRefetch`：经 BaseList `reset()`（瞬时归零契约）+ 清多选 + 重拉）：**会话结束即归位**（消除唤起首帧残影——hide 不 orderOut 下 show 立即可见隐藏前最后一帧，锚在隐藏时刻使 DOM 更新在隐藏期完成）：窗口隐藏（监听 `window-hiding`，延迟一档宏任务错开 ContentView clearCache 的 scrollTop 回填；覆盖 blur/主快捷键再按/Esc/click-outside 等全部前端隐藏路径）+ 粘贴成功分支（粘贴命令在 Rust 端隐藏、不经前端 hideWindow，`invoke` 返回时窗口已隐藏，失败路径保留选中供重试）——列表是动态置顶序（系统复制插入顶部、粘贴刷新被贴记录时间置顶），保留的选中索引跨会话指向已漂移的记录，BaseList 默认的「窗口唤起保留」按 View 数据语义覆盖；**过滤条件变化（tab/type/query）归首项**（debounce 重拉回调内）；**history 替换越界 clamp 贴尾**（`watch(history)`，覆盖删除 / favorites tab 下取消收藏使列表缩短——越界无高亮直到方向键自愈，贴尾不打断连续删除）
 
 ## 动作菜单
 
