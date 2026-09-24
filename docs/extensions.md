@@ -69,7 +69,7 @@ export default defineExtension({
 - `build: Arc<dyn Fn(&AppHandle) -> Vec<MenuEntry>>`：返回当前菜单快照。空 `Vec` = 该扩展当前不贡献（不参与菜单、不影响图标可见性）
 - `on_event: Arc<dyn Fn(&AppHandle, &str)>`：收到所有点击的 item id，扩展自行过滤归属项（约定 id 以扩展 id 为前缀避免碰撞，如 `proxy_toggle`）
 
-`MenuEntry` 四态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Submenu{label,items}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。菜单渲染规则、托盘图标可见性开关与现有消费者（awake / proxy）见 [AGENTS.md](../AGENTS.md)「菜单栏」节。
+`MenuEntry` 三态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。菜单渲染规则、托盘图标可见性开关与现有消费者（awake / proxy）见 [AGENTS.md](../AGENTS.md)「菜单栏」节。
 
 ### UI 规约补充
 
@@ -165,8 +165,8 @@ config.maxDays = 60 // 自动写盘
 - 加载异步竞态：`load()` 异步，扩展 setup 早期可能读 defaults。安全参数由 Rust clamp 兜底。
 - 资源上限（agent 专属）：plain `BOUNDS` const 表达 floor/cap，**权威在 Rust `native/policy.rs`**，TS 仅 UI 镜像，详见 [agent.md](./extensions/agent.md)。
 - 含 Rust 命令同步的配置按**数据位置**分两类同步规约：
-  - **Config 字段型**（数值/字符串/枚举/boolean，持久化在 `config.json`）：在 `config.ts` 用 `watch(..., { immediate: true })` 同步，View.vue 仅改 config 不显式 invoke，失败仅 `console.error`。`immediate: true` 确保启动期磁盘回填后自动同步持久化值（避免「上次开启 → 重启丢失」回归）。样板：`window-manager/config.ts`（`enabled` / `customWidth` / `customHeight`）、`awake/config.ts`（`displayMode`）、`clipboard/config.ts`（`maxDays`）。
-  - **Rust 状态型**（无 config 字段，状态权威在 Rust 端）：在 `View.vue` 显式 `invoke` + 错误反馈（`showStatus error`），成功才更新 UI 局部状态。样板：`awake/View.vue::toggleAwake`（子进程开关，状态查 `is_awake_enabled`）。
+  - **Config 字段型**（数值/字符串/枚举/boolean，持久化在 `config.json`）：在 `config.ts` 用 `watch(..., { immediate: true })` 同步，View.vue 仅改 config 不显式 invoke，失败仅 `console.error`。`immediate: true` 确保启动期磁盘回填后自动同步持久化值（避免「上次开启 → 重启丢失」回归）。样板：`window-manager/config.ts`（`enabled` / `customWidth` / `customHeight`）、`clipboard/config.ts`（`maxDays`）。
+  - **Rust 状态型**（状态权威在 Rust 端）：在 `View.vue` 显式 `invoke` + 错误反馈（`showStatus error`），成功才更新 UI 局部状态。需要跨启动恢复或 Rust 侧也会发起变更时，加 `config` 持久化意图字段：`config.ts` 用 `watch(..., { immediate: true })` 驱动启动恢复（Rust 端幂等），Rust 侧发起的变更经事件由 `config.ts` 模块级 listener 回写（不依赖 View 挂载，防重启误恢复）。样板：`awake/View.vue::toggleAwake`（显式 invoke——授权交互的错误需 toast 反馈；`config.enabled` 仅承载启动意图，权威在 Rust `AtomicBool`，状态查 `is_awake_enabled`）。
 
 框架级配置（全局快捷键）在 `stores/settings.ts`，同样走 `defineConfig`（`config/settings` storePath）。**AI 提供商**（`src/runtime/ai-providers.ts`）：只存 URL/Key/模型（无「使用中」）；列表按提供商分组、**每把 Key 一行**；选用由 agent/translate 等消费者自管；自动写 `ai.env`（`VOIDNIX_ZHIPU_API_KEY` / `VOIDNIX_DEEPSEEK_API_KEY` 等私有名，外部工具须显式引用）并幂等装 shell 钩子。详见 [ai-providers.md](./extensions/ai-providers.md)。
 
@@ -176,7 +176,7 @@ config.maxDays = 60 // 自动写盘
 
 - **扩展整体启用**：`enabled: boolean`（默认 `false`，需用户主动启用）
 - **特定功能启用**：`<feature>Enabled: boolean`
-- **枚举型**：字符串字面量联合（如 `displayMode: 'mirror' | 'extend'`），不用 boolean 伪装模式枚举
+- **枚举型**：字符串字面量联合（如 `mode: 'rule' | 'global'`），不用 boolean 伪装模式枚举
 - **单对象 vs 数组**：唯一实体用单对象（`searchProvider: {...}`），多实体并发执行用数组（`configs: [...]`）；数组禁止 `isDefault` 标记或独立的 `activeXxxId` 字段——若需单选激活才加 `activeXxxId`
 - **Rust 同步命令**：`set_<ext>_<field>` 模板（boolean 启用型统一 `set_X_enabled`）
 - **Rust 查询命令**：`is_<ext>_enabled`（仅 Rust 状态型需要；config 字段型前端自有真理，勿加查询命令）

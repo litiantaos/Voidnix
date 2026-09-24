@@ -13,7 +13,6 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use tauri::menu::{
     CheckMenuItem, IsMenuItem, Menu, MenuBuilder, MenuEvent, MenuItem, PredefinedMenuItem,
-    SubmenuBuilder,
 };
 use tauri::tray::TrayIconBuilder;
 use tauri::AppHandle;
@@ -54,11 +53,6 @@ pub enum MenuEntry {
         id: String,
         label: String,
         checked: bool,
-    },
-    /// 子菜单（如「切换节点」）。
-    Submenu {
-        label: String,
-        items: Vec<MenuEntry>,
     },
     /// 分隔线。
     Separator,
@@ -256,15 +250,6 @@ fn entries_to_items(
                 )
                 .map_err(|e| e.to_string())?;
                 out.push(Box::new(it));
-            }
-            MenuEntry::Submenu { label, items } => {
-                let child = entries_to_items(app, items)?;
-                let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = child.iter().map(|b| &**b).collect();
-                let sub = SubmenuBuilder::new(app, label.as_str())
-                    .items(&refs)
-                    .build()
-                    .map_err(|e| e.to_string())?;
-                out.push(Box::new(sub));
             }
             MenuEntry::Separator => {
                 let it = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;

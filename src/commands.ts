@@ -88,7 +88,6 @@ export const CMD = {
 
   // —— awake ——
   setAwakeEnabled: 'set_awake_enabled',
-  setAwakeDisplayMode: 'set_awake_display_mode',
   isAwakeEnabled: 'is_awake_enabled',
 
   // —— clean-mode ——

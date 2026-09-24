@@ -54,7 +54,6 @@ macro_rules! configure_app {
             crate::extensions::ai_providers::usage::deepseek::ai_providers_deepseek_balance,
             crate::extensions::ai_providers::usage::zhipu::ai_providers_zhipu_quota,
             crate::extensions::awake::is_awake_enabled,
-            crate::extensions::awake::set_awake_display_mode,
             crate::extensions::awake::set_awake_enabled,
             crate::extensions::clean_mode::is_clean_mode_enabled,
             crate::extensions::clean_mode::set_clean_mode_enabled,

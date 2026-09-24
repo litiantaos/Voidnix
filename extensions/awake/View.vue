@@ -18,7 +18,6 @@ import type { SettingItem } from '@/types/settings'
 const isEnabled = ref(false)
 const appStore = useAppStore()
 let unlistenEnabled: (() => void) | undefined
-let unlistenMode: (() => void) | undefined
 
 const checkStatus = async () => {
   try {
@@ -30,8 +29,11 @@ const checkStatus = async () => {
 
 const toggleAwake = async (next: boolean) => {
   try {
+    // 先 invoke 再写 config：成功路径由 watch 回声幂等处理，
+    // 失败（授权取消等）时 config.enabled 未被置位，状态不漂移
     await invoke(CMD.setAwakeEnabled, { enabled: next })
     isEnabled.value = next
+    awakeConfig.enabled = next
   } catch (e) {
     appStore.showStatus(`${t('common.operationFailed')}: ${e ?? t('common.unknownError')}`, {
       duration: 4000,
@@ -40,24 +42,16 @@ const toggleAwake = async (next: boolean) => {
   }
 }
 
-const onModeChange = (value: string | number) => {
-  awakeConfig.displayMode = value as typeof awakeConfig.displayMode
-}
-
 onMounted(async () => {
   checkStatus()
   // 菜单栏操作改状态后 Rust emit 同步面板显示（与 proxy-enabled 同模式）
   unlistenEnabled = await listen<boolean>('awake-enabled', (e) => {
     isEnabled.value = e.payload
   })
-  unlistenMode = await listen<string>('awake-mode', (e) => {
-    awakeConfig.displayMode = e.payload as typeof awakeConfig.displayMode
-  })
 })
 
 onUnmounted(() => {
   unlistenEnabled?.()
-  unlistenMode?.()
 })
 
 const items = computed<SettingItem[]>(() => [
@@ -68,20 +62,7 @@ const items = computed<SettingItem[]>(() => [
     type: 'toggle',
     value: isEnabled.value,
     update: toggleAwake,
-    group: t('awake.group.display'),
-  },
-  {
-    id: 'mode',
-    title: t('awake.displayMode'),
-    subtitle: t('awake.displayModeHint'),
-    type: 'select',
-    value: awakeConfig.displayMode,
-    options: [
-      { label: t('awake.mirror'), value: 'mirror' },
-      { label: t('awake.extend'), value: 'extend' },
-    ],
-    update: onModeChange,
-    group: t('awake.group.display'),
+    group: t('awake.group.sleep'),
   },
 ])
 </script>

@@ -93,7 +93,7 @@ ps -A -o rss=,%cpu=,vsz=,comm= 2>/dev/null | awk '
     ext=substr(rest, 1, sl - 1)
     # ext 白名单（二道防线）：扩展 id 仅小写字母/数字/连字符
     if (ext !~ /^[a-z0-9-]+$/) next
-    # comm 末段无参数，binpath 取 marker 后首个 / 到行尾，可含空格（如 awake 的 "Display Wakelock"）
+    # comm 末段无参数，binpath 取 marker 后首个 / 到行尾，可含空格
     binpath=substr(rest, sl + 1)
     sub(/[ \t]+$/, "", binpath)
     nb=split(binpath, parts, "/")

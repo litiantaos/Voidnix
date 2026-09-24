@@ -1,17 +1,10 @@
 import { registerMessages } from '@/runtime/i18n'
 
 registerMessages({
-  'awake.enable': { 'zh-CN': '启用唤醒', en: 'Enable Awake' },
+  'awake.enable': { 'zh-CN': '启用合盖不休眠', en: 'Enable lid-closed keep-awake' },
   'awake.enableHint': {
-    'zh-CN': '通过虚拟外接显示器触发 Clamshell Mode，需接入电源',
-    en: 'Trigger Clamshell Mode via a virtual external display. Requires power.',
+    'zh-CN': '禁用系统睡眠，合盖熄屏仍持续运行，含电池供电。需管理员授权，启动后首次开启验证一次',
+    en: 'Disables system sleep so the Mac keeps running with the lid shut and screen off, on battery too. Administrator authorization is requested once per launch.',
   },
-  'awake.group.display': { 'zh-CN': '显示器', en: 'Display' },
-  'awake.displayMode': { 'zh-CN': '显示模式', en: 'Display Mode' },
-  'awake.displayModeHint': {
-    'zh-CN': '镜像与主屏显示相同画面，扩展提供独立桌面空间',
-    en: 'Mirror shows the same as the main display; Extend provides an independent desktop space.',
-  },
-  'awake.mirror': { 'zh-CN': '镜像', en: 'Mirror' },
-  'awake.extend': { 'zh-CN': '扩展', en: 'Extend' },
+  'awake.group.sleep': { 'zh-CN': '睡眠', en: 'Sleep' },
 })

@@ -5,31 +5,6 @@ use std::process::Command;
 fn main() {
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
 
-    // 编译 awake_display.mm → 可执行文件
-    let awake_dest = Path::new(&out_dir).join("awake_display");
-    let status = Command::new("clang++")
-        .args([
-            "-fobjc-arc",
-            "-std=c++17",
-            "-mmacosx-version-min=11.0",
-            "-framework",
-            "Foundation",
-            "-framework",
-            "CoreGraphics",
-            "-framework",
-            "AppKit",
-            "-o",
-            awake_dest.to_str().unwrap(),
-            "../extensions/awake/native/awake_display.mm",
-        ])
-        .status()
-        .expect("Failed to compile awake_display.mm");
-
-    if !status.success() {
-        panic!("Failed to compile awake_display.mm");
-    }
-
-    println!("cargo:rerun-if-changed=../extensions/awake/native/awake_display.mm");
     println!("cargo:rerun-if-changed=build.rs");
     // cargo 1.46+ 自动追踪 #[path] 引用的文件（extensions.rs 中已声明），
     // 无需 rerun-if-changed=../extensions——那会导致修改任意扩展文件都重跑 build.rs，

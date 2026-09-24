@@ -159,7 +159,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 纯 TS（8）：calculator、settings、ip、base64、time、uuid、currency、notes
 
-复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[ai-providers](docs/extensions/ai-providers.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[image](docs/extensions/image.md)、[finder-ext](docs/extensions/finder-ext.md)、[window-manager](docs/extensions/window-manager.md)、[homebrew](docs/extensions/homebrew.md)。
+复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[ai-providers](docs/extensions/ai-providers.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[image](docs/extensions/image.md)、[finder-ext](docs/extensions/finder-ext.md)、[window-manager](docs/extensions/window-manager.md)、[homebrew](docs/extensions/homebrew.md)、[awake](docs/extensions/awake.md)。
 
 ## 架构要点
 
@@ -298,7 +298,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 **扩展贡献**：含 native/ 的扩展在 Rust `setup` 内 `menubar::register(MenuBarContribution{ title, build, on_event })`：
 
 - `title`：分组标题（disabled 项渲染）
-- `build`：返回 `Vec<MenuEntry>` 快照（`Item`/`CheckItem`/`Submenu`/`Separator`）
+- `build`：返回 `Vec<MenuEntry>` 快照（`Item`/`CheckItem`/`Separator`）
 - `on_event`：收点击 id 自行过滤
 - 状态变更后调 `menubar::refresh(&app)` 触发重建
 
@@ -314,7 +314,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **消费者**（2 个）：
 
-- **awake**：打开扩展 + 启用开关 + 显示模式二级菜单
+- **awake**：打开扩展 + 启用开关
 - **proxy**：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后贡献段消失（图标常驻），重连走扩展视图（详见 [proxy.md](docs/extensions/proxy.md)）
 
 ### Agent 引擎
@@ -475,6 +475,7 @@ src-tauri/src/
     ├── permission.rs   # 系统权限原语 + 授权会话（详见 docs/permissions.md）
     ├── window_list.rs  # CGWindowList 共享封装（screenshot / window-manager / 授权会话避让共用）
     ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel + appearance 缓存）
+    ├── sleep.rs        # 睡眠 watchdog（osascript 管理员授权启动 root sh 循环，flag 文件驱动 pmset disablesleep 边沿写 + pid 监视自愈，awake 消费）
     └── path_guard.rs   # 统一路径校验
 ```
 
@@ -536,7 +537,7 @@ src/
     ├── calculator/config.json        # 计算器历史（history key，10 条上限）
     ├── notes/config.json             # 记事本内容（content key，自动暂存）
     ├── zsh-autosuggestions/{bin/, index.zsh, signals.log, bin.version, config.json}  # zsh 补全
-    ├── awake/{Display Wakelock, config.json}   # awake binary + 配置
+    ├── awake/{sleep-watchdog-*.flag, config.json}   # 睡眠 watchdog flag（按 pid 命名，运行时按需）+ 配置
     ├── screenshot/config.json
     ├── window-manager/config.json
     ├── finder-ext/config.json          # 用 App 打开最近使用（recentApps，MRU 上限 3）
