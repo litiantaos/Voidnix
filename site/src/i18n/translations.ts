@@ -225,7 +225,7 @@ const zh = {
           {
             id: 'awake',
             name: '保持唤醒',
-            desc: '接入电源时合盖熄屏不休眠',
+            desc: '禁用系统睡眠，电池也能合盖持续运行',
             icon: 'ri-macbook-line',
           },
           {
@@ -528,7 +528,7 @@ const en: Dict = {
           {
             id: 'awake',
             name: 'Keep Awake',
-            desc: 'Sleep display without system sleep when plugged in',
+            desc: 'Disable system sleep, keep running lid-closed on battery',
             icon: 'ri-macbook-line',
           },
           {
