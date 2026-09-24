@@ -14,6 +14,9 @@ pub struct AwakeState {
     helper_started: AtomicBool,
     /// 授权弹窗进行中守卫：弹窗期间二次开启直接拒绝，防 osascript 授权对话框叠加
     engaging: AtomicBool,
+    /// 菜单栏快捷开关可见性（前端 config watch 同步）。菜单段不随 enabled
+    /// 变化显隐——开启即常驻，CheckItem 勾选态反映 enabled。
+    menubar_visible: AtomicBool,
 }
 
 /// 电池护栏阈值：放电中低于此百分比即解除持有。disablesleep 会压住系统的
@@ -109,6 +112,17 @@ pub async fn is_awake_enabled(state: State<'_, AwakeState>) -> Result<bool, Stri
     Ok(state.enabled.load(Ordering::Relaxed))
 }
 
+#[tauri::command]
+pub async fn set_awake_menubar_visible(
+    app: AppHandle,
+    state: State<'_, AwakeState>,
+    visible: bool,
+) -> Result<(), String> {
+    state.menubar_visible.store(visible, Ordering::Relaxed);
+    crate::runtime::menubar::refresh(&app);
+    Ok(())
+}
+
 /// Awake 扩展。
 pub struct AwakeExtension;
 
@@ -123,6 +137,7 @@ impl Extension for AwakeExtension {
             enabled: AtomicBool::new(false),
             helper_started: AtomicBool::new(false),
             engaging: AtomicBool::new(false),
+            menubar_visible: AtomicBool::new(false),
         });
         // 历史与异常清理：旧版虚拟显示器 binary（H12 曾落 temp_dir）、
         // 断电/被杀场景残留的旧 pid flag（watchdog 随 app 退出自愈，正常路径
@@ -146,7 +161,8 @@ impl Extension for AwakeExtension {
         let _ = std::fs::remove_file(legacy_dir.join("Display Wakelock"));
         let _ = std::fs::remove_dir(&legacy_dir);
 
-        // 菜单栏贡献：保持唤醒激活时显示两项（打开扩展 + 启用开关）
+        // 菜单栏贡献：menubar_visible 开启时常驻启用开关（menubar_visible 由
+        // 前端 config watch 经 set_awake_menubar_visible 同步，默认不显示）
         crate::runtime::menubar::register(MenuBarContribution {
             title: "保持系统唤醒",
             build: Arc::new(build_awake),
@@ -184,51 +200,71 @@ impl Extension for AwakeExtension {
                 }
             }
         });
+
+        // 熄屏巡检：disablesleep 挡住合盖睡眠后系统不会自动关内屏（无外接时
+        // macOS 走的是睡眠路径而非 clamshell 关屏路径），须主动熄屏。合盖 +
+        // 无外接的边沿立即 displaysleepnow，停留期经节流补熄（面板被通知等
+        // 重新点亮）；有外接屏时不熄（clamshell 外接显示是正常用法，该命令
+        // 是全屏级会把外接屏一起黑掉）。2s 轮询仅合盖检测开销（IORegistry +
+        // CG 查询均为微秒级 syscall，无子进程）
+        let screen_app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(2));
+            let mut was_closed = false;
+            let mut last_sleep_at: Option<std::time::Instant> = None;
+            loop {
+                tick.tick().await;
+                let lid = sleep::lid_is_closed();
+                let due = screen_app
+                    .state::<AwakeState>()
+                    .enabled
+                    .load(Ordering::Relaxed)
+                    && sleep::screen_sleep_due(
+                        lid,
+                        sleep::has_external_display(),
+                        was_closed,
+                        last_sleep_at
+                            .map(|t| std::time::Instant::now() - t)
+                            .unwrap_or(std::time::Duration::MAX),
+                    );
+                if due {
+                    sleep::sleep_displays_now();
+                    last_sleep_at = Some(std::time::Instant::now());
+                }
+                // lid 读 None（AppleClamshellState 偶发 flutter）保持闭锁，
+                // 防止 flutter 制造伪开盖→伪边沿重复熄屏
+                if let Some(closed) = lid {
+                    was_closed = closed;
+                }
+            }
+        });
         Ok(())
     }
 }
 
-/// 菜单快照：保持唤醒激活时贡献两项（打开扩展 + 启用开关 CheckItem），未激活返回空。
-/// 文案与界面 View.vue 保持一致。
+/// 菜单快照：`menubar_visible` 开启时常驻贡献启用开关 CheckItem（勾选态反映
+/// enabled，不随开关状态显隐）；关闭时返回空段。文案与界面 View.vue 保持一致。
 fn build_awake(app: &AppHandle) -> Vec<MenuEntry> {
     let state = app.state::<AwakeState>();
-    if !state.enabled.load(Ordering::Relaxed) {
+    if !state.menubar_visible.load(Ordering::Relaxed) {
         return vec![];
     }
-    vec![
-        MenuEntry::Item {
-            id: "awake_open".into(),
-            label: "打开扩展".into(),
-            enabled: true,
-        },
-        MenuEntry::CheckItem {
-            id: "awake_toggle".into(),
-            label: "启用唤醒".into(),
-            checked: true,
-        },
-    ]
+    vec![MenuEntry::CheckItem {
+        id: "awake_toggle".into(),
+        label: "启用唤醒".into(),
+        checked: state.enabled.load(Ordering::Relaxed),
+    }]
 }
 
-/// 菜单点击：打开扩展 → emit（带 wasVisible）；启用开关 → 关闭。
-/// 均复用命令（内部 refresh + emit 同步前端）。
+/// 菜单点击：启用开关 → 按当前状态取反切换。开启路径经授权（取消/进行中
+/// 静默，菜单勾选态不变，重试即可）；成功路径命令内部 refresh + emit 同步前端。
 fn on_awake_event(app: &AppHandle, id: &str) {
-    match id {
-        "awake_open" => {
-            // show 由前端 listener 控制（wasVisible=false 时 setActiveExtension → rAF → showWindow），
-            // 避免 Rust 立即 show 时 webview 仍为旧视图的闪现
-            let was_visible = crate::runtime::shortcut::is_window_visible();
-            let _ = app.emit(
-                "open-extension",
-                serde_json::json!({ "id": "awake", "wasVisible": was_visible }),
-            );
-        }
-        "awake_toggle" => {
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let state = app.state::<AwakeState>();
-                let _ = set_awake_enabled(app.clone(), state, false).await;
-            });
-        }
-        _ => {}
+    if id == "awake_toggle" {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app.state::<AwakeState>();
+            let next = !state.enabled.load(Ordering::Relaxed);
+            let _ = set_awake_enabled(app.clone(), state, next).await;
+        });
     }
 }

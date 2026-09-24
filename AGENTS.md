@@ -314,7 +314,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **消费者**（2 个）：
 
-- **awake**：打开扩展 + 启用开关
+- **awake**：启用开关 CheckItem（设置项 `menubarToggleVisible` 控制是否常驻显示，勾选态反映 enabled，点击切换；开启路径经授权弹窗）
 - **proxy**：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后贡献段消失（图标常驻），重连走扩展视图（详见 [proxy.md](docs/extensions/proxy.md)）
 
 ### Agent 引擎
@@ -475,7 +475,7 @@ src-tauri/src/
     ├── permission.rs   # 系统权限原语 + 授权会话（详见 docs/permissions.md）
     ├── window_list.rs  # CGWindowList 共享封装（screenshot / window-manager / 授权会话避让共用）
     ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel + appearance 缓存）
-    ├── sleep.rs        # 睡眠 watchdog（osascript 管理员授权启动 root sh 循环，flag 文件驱动 pmset disablesleep 边沿写 + pid 监视自愈，awake 消费）
+    ├── sleep.rs        # 睡眠域原语：root watchdog（osascript 授权 + flag 驱动 pmset disablesleep 边沿写 + pid 自愈）、合盖检测（AppleClamshellState）、外接屏判定、displaysleepnow 熄屏、电池状态解析（awake 消费）
     └── path_guard.rs   # 统一路径校验
 ```
 

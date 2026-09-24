@@ -62,7 +62,17 @@ const items = computed<SettingItem[]>(() => [
     type: 'toggle',
     value: isEnabled.value,
     update: toggleAwake,
-    group: t('awake.group.sleep'),
+    group: t('awake.group.general'),
+  },
+  {
+    id: 'menubar',
+    title: t('awake.menubarToggle'),
+    type: 'toggle',
+    value: awakeConfig.menubarToggleVisible,
+    update: (visible: boolean | string | number) => {
+      awakeConfig.menubarToggleVisible = visible as boolean
+    },
+    group: t('awake.group.general'),
   },
 ])
 </script>

@@ -1,5 +1,114 @@
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Duration;
+
+use core_foundation::base::TCFType;
+use core_foundation::boolean::CFBoolean;
+use core_foundation::string::{CFString, CFStringRef};
+use std::ffi::{c_char, c_void};
+
+/// 熄屏补熄节流间隔：合盖停留期间面板可能被通知等重新点亮，按此间隔
+/// 复核补熄（`pmset displaysleepnow` 对已灭屏为幂等无操作）。
+pub const RESLEEP_INTERVAL: Duration = Duration::from_secs(5);
+
+/// 合盖状态（IORegistry `IOPMrootDomain` 的 `AppleClamshellState`，无公开
+/// API 的事实标准读法）。`None` = 读取失败或无盖机型（Mac mini/Studio）。
+/// 该属性偶发返回失败，消费方须以闭锁防抖（None 不翻转既有判定）。
+pub fn lid_is_closed() -> Option<bool> {
+    type MachPort = u32;
+    type IoObject = u32;
+    type KernReturn = i32;
+    const K_IO_MAIN_PORT_DEFAULT: MachPort = 0;
+    extern "C" {
+        fn IOServiceGetMatchingService(main_port: MachPort, matching: *mut c_void) -> IoObject;
+        fn IOServiceMatching(name: *const c_char) -> *mut c_void;
+        fn IORegistryEntryCreateCFProperty(
+            entry: IoObject,
+            key: CFStringRef,
+            allocator: *const c_void,
+            options: u32,
+        ) -> *const c_void;
+        fn IOObjectRelease(object: IoObject) -> KernReturn;
+    }
+    // SAFETY: IOKit C API 惯例调用——IOServiceMatching 返回的 matching dict
+    // 由 IOServiceGetMatchingService 消耗无需释放；属性返回 Create 规则
+    // CFBoolean，wrap 接管所有权（drop 自动 CFRelease）；entry 由
+    // IOObjectRelease 释放
+    unsafe {
+        let name = c"IOPMrootDomain".as_ptr();
+        let service = IOServiceGetMatchingService(K_IO_MAIN_PORT_DEFAULT, IOServiceMatching(name));
+        if service == 0 {
+            return None;
+        }
+        let key = CFString::new("AppleClamshellState");
+        let prop = IORegistryEntryCreateCFProperty(
+            service,
+            key.as_concrete_TypeRef(),
+            std::ptr::null(),
+            0,
+        );
+        IOObjectRelease(service);
+        if prop.is_null() {
+            return None;
+        }
+        let closed = bool::from(CFBoolean::wrap_under_create_rule(prop.cast()));
+        Some(closed)
+    }
+}
+
+/// 是否接有外接显示器（CoreGraphics 活动显示列表中存在非内置屏）。
+/// 合盖 + 外接 = clamshell 正常用法，外接屏应保持点亮。
+pub fn has_external_display() -> bool {
+    type CGDirectDisplayID = u32;
+    const K_CG_ERROR_SUCCESS: i32 = 0;
+    extern "C" {
+        fn CGGetActiveDisplayList(
+            max_displays: u32,
+            active_displays: *mut CGDirectDisplayID,
+            display_count: *mut u32,
+        ) -> i32;
+        fn CGDisplayIsBuiltin(display: CGDirectDisplayID) -> u32;
+    }
+    // SAFETY: CoreGraphics C API，缓冲区按容量传入并由调用方栈持有；
+    // 超过 8 块屏的机器截断前 8 块判定（外接判定不受影响）
+    unsafe {
+        let mut ids = [0u32; 8];
+        let mut count: u32 = 0;
+        if CGGetActiveDisplayList(8, ids.as_mut_ptr(), &mut count) != K_CG_ERROR_SUCCESS {
+            return false;
+        }
+        (0..count as usize).any(|i| CGDisplayIsBuiltin(ids[i]) == 0)
+    }
+}
+
+/// 立即熄灭所有显示器（`pmset displaysleepnow`，无需 root）。fire-and-forget：
+/// 无值得等待的结果。对已灭屏为幂等无操作。
+pub fn sleep_displays_now() {
+    // SAFETY: 进程 spawn 后即脱离管理（无 stdio 句柄泄漏），僵尸由系统回收
+    let _ = Command::new("/usr/bin/pmset")
+        .arg("displaysleepnow")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+}
+
+/// 熄屏决策（纯函数供单测）：处于「合盖 + 无外接」时需要熄屏——进入该
+/// 状态的边沿立即发，停留期经 ``RESLEEP_INTERVAL`` 节流补熄。lid 读 None
+/// （AppleClamshellState 偶发 flutter）按 `was_closed` 闭锁延续既有判定，
+/// 防 flutter 触发重复边沿。开盖恒不熄。
+pub fn screen_sleep_due(
+    lid_closed: Option<bool>,
+    external: bool,
+    was_closed: bool,
+    since_last_sleep: Duration,
+) -> bool {
+    let closed_now = match lid_closed {
+        Some(closed) => closed,
+        None => was_closed,
+    };
+    closed_now && !external && (!was_closed || since_last_sleep >= RESLEEP_INTERVAL)
+}
 
 /// 启动睡眠 watchdog 的失败分类。
 pub enum SleepWatchdogError {
@@ -123,6 +232,27 @@ mod tests {
     fn shell_quotes_spaces_and_apostrophes() {
         assert_eq!(shell_single_quoted("/a b/c"), "'/a b/c'");
         assert_eq!(shell_single_quoted("/us'er/x"), "'/us'\\''er/x'");
+    }
+
+    #[test]
+    fn screen_sleep_decision_edges_and_throttle() {
+        let long = RESLEEP_INTERVAL + Duration::from_secs(1);
+        let short = RESLEEP_INTERVAL - Duration::from_secs(1);
+        // 开盖恒不熄
+        assert!(!screen_sleep_due(Some(false), false, false, long));
+        assert!(!screen_sleep_due(Some(false), false, true, long));
+        // 合盖 + 无外接：边沿立即熄
+        assert!(screen_sleep_due(Some(true), false, false, long));
+        // 停留期节流：窗口内不重发，到期补熄（防通知唤醒）
+        assert!(!screen_sleep_due(Some(true), false, true, short));
+        assert!(screen_sleep_due(Some(true), false, true, long));
+        // 合盖 + 外接 = clamshell 正常用法，不熄
+        assert!(!screen_sleep_due(Some(true), true, false, long));
+        assert!(!screen_sleep_due(Some(true), true, true, long));
+        // lid 读 None（AppleClamshellState flutter）：按闭锁延续，不产生伪边沿
+        assert!(!screen_sleep_due(None, false, false, long));
+        assert!(!screen_sleep_due(None, false, true, short));
+        assert!(screen_sleep_due(None, false, true, long));
     }
 
     #[test]

@@ -9,6 +9,8 @@ import { defineConfig } from '@/runtime/storage'
 /// enabled 是意图状态：Rust 侧 watchdog 随 flag 文件异步对齐系统真实状态。
 export const config = defineConfig('extensions/awake/config', {
   enabled: false,
+  /// 菜单栏快捷开关常驻显示（不随 enabled 显隐）
+  menubarToggleVisible: false,
 })
 
 /// Rust 状态同步：enabled 走 watch(immediate: true) 推送到 Rust。
@@ -26,6 +28,17 @@ watch(
       console.error('[awake] setAwakeEnabled failed:', e)
       if (enabled) config.enabled = false
     }
+  },
+  { immediate: true },
+)
+
+/// menubarToggleVisible 同步（Config 字段型：View 仅改 config，Rust 侧开关段显隐）
+watch(
+  () => config.menubarToggleVisible,
+  (visible) => {
+    invoke(CMD.setAwakeMenubarVisible, { visible }).catch((e: unknown) => {
+      console.error('[awake] setAwakeMenubarVisible failed:', e)
+    })
   },
   { immediate: true },
 )
