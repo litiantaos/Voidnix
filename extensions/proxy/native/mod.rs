@@ -72,6 +72,18 @@ pub async fn is_proxy_enabled(state: State<'_, ProxyState>) -> Result<bool, Stri
     Ok(state.enabled.load(Ordering::Relaxed))
 }
 
+/// 菜单栏贡献段常显开关（前端 config watch 同步，见 config.ts menubarVisible）。
+#[tauri::command]
+pub async fn set_proxy_menubar_visible(
+    app: AppHandle,
+    state: State<'_, ProxyState>,
+    visible: bool,
+) -> Result<(), String> {
+    state.menubar_visible.store(visible, Ordering::Relaxed);
+    crate::runtime::menubar::refresh(&app);
+    Ok(())
+}
+
 /// 查询核心状态（已下载/版本号/下载中），供列表「核心」项展示。
 #[tauri::command]
 pub async fn proxy_core_status(app: AppHandle) -> Result<core::CoreStatus, String> {
@@ -428,6 +440,7 @@ impl Extension for ProxyExtension {
             monitor_gen: AtomicU64::new(0),
             monitor_spawned_gen: AtomicU64::new(u64::MAX), // 初始无 task：任意代都不等于「已 spawn」
             release_gen: AtomicU64::new(0),
+            menubar_visible: AtomicBool::new(false),
         });
         app.manage(StreamRegistry::default());
         menu::register();

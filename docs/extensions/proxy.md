@@ -24,7 +24,7 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
 - mihomo 监听 **`external-controller`**（RESTful API，bearer secret 鉴权）
 - 扩展**不解析代理协议**，proxies/proxy-groups/rules 原样合并自订阅 Clash YAML
 
-**UI 结构**：主界面三个分组（代理/订阅/节点）+ 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，完全卸载入口）：
+**UI 结构**：主界面三个分组（代理/订阅/节点）+ 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，菜单栏常显开关 + 完全卸载入口）：
 
 - **代理分组**：含开启/规则模式两项；开启项副标题经 `/traffic` WS 实时显示上下行速率
 - **订阅分组**：导入/更新/删除；多订阅时仅激活订阅生效（点击有节点的订阅行切换激活，accent 强调当前激活项；空订阅点击进编辑，编辑按钮随时进编辑）。行内「更新」按钮按现有 URL 重新拉取（与弹窗保存共用 `proxy_update_subscription`；激活订阅更新后节点列表整体替换并清测速缓存，非激活订阅仅回填元数据），新建订阅拉取成功自动激活
@@ -37,7 +37,7 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
 - 分别接 mihomo **`/connections`**（实时连接列表）、**`/rules`**（分流规则只读列表）、**`/logs`**（实时日志，环形缓冲 500 行，全级别推送由搜索过滤）
 - 三个子视图均用 BaseList
 
-**菜单栏**：图标仅在已连接时显示（打开扩展 + 已连接状态可点断开）；其余控制全部在扩展视图。
+**菜单栏**：贡献段由设置项 `menubarVisible` 控制常显（默认关）——开启时段内恒有「打开扩展」+ 连接状态 CheckItem（勾选态反映连接、可点切换，已连接显示当前节点）；其余控制全部在扩展视图。
 
 ## mihomo binary 下载（运行时按需）
 
@@ -112,7 +112,7 @@ mihomo 以 root 经 **launchd LaunchDaemon 托管**（`/Library/LaunchDaemons/<b
 TUN 是全部扩展中最重的系统侵入面（系统目录 LaunchDaemon + root 常驻进程 + 接管全部流量），用户必须在安装前知情：
 
 - **首次启用确认**：前端 `toggleEnabled` 在 config 未记录确认（`config.tunConfirmed`）时先弹确认对话框，明确告知——需要管理员密码（仅首次安装一次）、安装什么（`/Library/LaunchDaemons/…mihomo.plist`，mihomo 以 root 常驻：开机自启 + 崩溃自愈）、流量走向（TUN 虚拟网卡接管全部 IP 流量，关闭即恢复直通）、卸载入口（代理设置子视图「完全卸载」）。确认即持久化置位，**只弹一次**——不按 daemon 安装态判断（更新核心/完全卸载/提权取消都会移除 daemon，已确认用户会被重复打扰；重装时的系统密码弹窗仍提供感知）
-- **完全卸载**（`proxy_uninstall` 命令，设置子视图 danger 项，核心已下载且未在下载中才展示，无足迹显示空态）：`stop_core` 停代理（热重载 idle 释放 TUN + 停监测/流）→ 作废乐观释放重试（`release_gen` 自增，bootout 后 controller 必不可达，防陈旧重试误报）→ `uninstall_launchdaemon` 提权 bootout + 删 plist → 清空 enabled/tun_active/run_params → `remove_runtime_files` 删全部运行文件（binary/版本/geo/日志/启动配置/临时 plist）。**订阅与端口配置保留**（config.json + subs/，用户数据，重装无需重配）；卸载后回到未下载状态，重装走下载入口。子视图自管核心状态（激活时拉权威值），主视图经 `proxy-enabled` 事件同步 enabled、`onActivated` 对账核心状态并清残留节点
+- **完全卸载**（`proxy_uninstall` 命令，设置子视图 danger 项，核心已下载且未在下载中才展示；「显示菜单栏」开关恒在——显示偏好与核心状态无关，子视图不再有空态）：`stop_core` 停代理（热重载 idle 释放 TUN + 停监测/流）→ 作废乐观释放重试（`release_gen` 自增，bootout 后 controller 必不可达，防陈旧重试误报）→ `uninstall_launchdaemon` 提权 bootout + 删 plist → 清空 enabled/tun_active/run_params → `remove_runtime_files` 删全部运行文件（binary/版本/geo/日志/启动配置/临时 plist）。**订阅与端口配置保留**（config.json + subs/，用户数据，重装无需重配）；卸载后回到未下载状态，重装走下载入口。子视图自管核心状态（激活时拉权威值），主视图经 `proxy-enabled` 事件同步 enabled、`onActivated` 对账核心状态并清残留节点
 
 ### LaunchDaemon plist
 
@@ -307,18 +307,23 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 ## 聚合菜单栏贡献（mod.rs）
 
-代理已连接时向框架统一菜单栏托盘（`runtime/menubar.rs`，`public/bar_icon.png` 模板图）贡献两项——极简 + 唯一（控制逻辑全部在扩展视图，菜单不重复）；断开后 `build` 返回空，贡献段从菜单消失（托盘图标常驻，见框架菜单栏节）。`setup` 内 **`menubar::register`** 声明 `build`/`on_event`，状态变更后 **`menubar::refresh`** 重建。
+向框架统一菜单栏托盘（`runtime/menubar.rs`，`public/bar_icon.png` 模板图）贡献——极简 + 唯一（控制逻辑全部在扩展视图，菜单不重复）。显隐由设置项 `menubarVisible`（config subview「显示菜单栏」开关）控制：watch 经 **`set_proxy_menubar_visible`** 同步 Rust `ProxyState.menubar_visible`，开启即常显（不随连接状态显隐），关闭时 `build` 返回空、贡献段从菜单消失——替代原「已连接才显示」逻辑（托盘图标常驻，见框架菜单栏节）。`setup` 内 **`menubar::register`** 声明 `build`/`on_event`，状态变更后 **`menubar::refresh`** 重建。
 
-**两项贡献**：
+**贡献项**：
 
 - **打开扩展**（Item，点击打开代理视图）
-- **已连接：节点**（CheckItem 勾选，点击断开 → 图标隐藏，重连走扩展视图）
+- **连接状态**（CheckItem 勾选态反映 enabled，点击切换连接；已连接 label 为「已连接：节点」，未连接为「开启代理」）
 
-状态行当前节点名由 **`refresh_proxy_menu`** 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `proxy_update_subscription` / `proxy_remove_subscription` / `proxy_set_active_subscription` 五个命令入口在调用后 spawn 刷新（`reload_running_config` 本身不触发）。点击状态行调 `stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步视图 + refresh 使 `build` 返回空 → 图标隐藏。其余控制（模式/订阅/节点切换/测速）仍在扩展视图。
+点击切换的两条路径：
 
-## 命令（20 个）
+- **断开**（已连接时点）：`stop_core` 热重载 idle 断开代理，emit `proxy-enabled:false` 同步视图 + refresh 更新勾选态与 label
+- **连接**（未连接时点）：门槛校验（`tun_confirmed` 已确认首启告知 + `core_status().downloaded` 核心就绪 + `read_run_params` 可构造参数）通过则 `start_core` 直连（与 `set_proxy_enabled` 开启路径对齐：start → refresh → emit → 拉节点名），任一不满足回退 `open_extension` 打开扩展走完整流程（下载按钮/告知弹窗/secret 生成都在前端视图，菜单不绕过知情确认）
 
-- **启停**：`set_proxy_enabled`（总入口，传 `active_sub_id` 指定激活订阅；机制见「运行模式」）/ `is_proxy_enabled` / `proxy_uninstall`（完全卸载，见「首次启用确认 + 完全卸载」）
+状态行当前节点名由 **`refresh_proxy_menu`** 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `proxy_update_subscription` / `proxy_remove_subscription` / `proxy_set_active_subscription` 五个命令入口在调用后 spawn 刷新（`reload_running_config` 本身不触发）。其余控制（模式/订阅/节点切换/测速）仍在扩展视图。
+
+## 命令（21 个）
+
+- **启停**：`set_proxy_enabled`（总入口，传 `active_sub_id` 指定激活订阅；机制见「运行模式」）/ `is_proxy_enabled` / `set_proxy_menubar_visible`（菜单栏贡献段常显开关，config watch 同步）/ `proxy_uninstall`（完全卸载，见「首次启用确认 + 完全卸载」）
 - **核心**：`proxy_core_status` / `proxy_ensure_core`（版本查询 / 运行时按需下载）
 - **升级**：`proxy_check_update` / `proxy_update_core`（比对 latest / 停代理 + 删旧 + 重下 + 恢复）
 - **订阅**：`proxy_update_subscription`（拉取 + 热重载）/ `proxy_remove_subscription`（删 + 切新激活 + 热重载，传 `new_active_sub_id`）/ `proxy_set_active_subscription`（切激活 + 热重载）

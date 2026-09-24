@@ -1,12 +1,6 @@
 <template>
   <div class="flex-col-full-pb">
-    <!-- 状态未就绪/下载中不渲染（防闪空态/误报「未安装」）；无足迹显示空态 -->
-    <BaseSettingsList v-if="statusLoaded && items.length > 0" :items="items" />
-    <BaseEmptyState
-      v-else-if="statusLoaded && !footprint.downloading"
-      :title="t('proxy.noCoreFootprint')"
-      icon="i-ri-inbox-archive-line"
-    />
+    <BaseSettingsList v-if="statusLoaded" :items="items" />
   </div>
 </template>
 
@@ -19,10 +13,10 @@ import { isTauri } from '@/utils/tauri'
 import { t } from '@/runtime/i18n'
 import { toErrorMessage } from '@/utils/format'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
-import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
+import { config } from './config'
 import type { SettingItem } from '@/types/settings'
 
-/// 代理设置子视图（config subview）：完全卸载入口。
+/// 代理设置子视图（config subview）：菜单栏常显开关 + 完全卸载入口。
 /// 核心状态自管（挂载/激活时拉权威值）——主视图与子视图互不感知，主视图靠
 /// onActivated 对账 + proxy-enabled 事件同步（见 useProxyPanel）。
 const appStore = useAppStore()
@@ -50,11 +44,25 @@ async function loadStatus() {
 }
 
 const items = computed<SettingItem[]>(() => {
-  // 无核心且无 daemon = 无系统足迹可清理（空态）；下载中不展示（在飞下载会复活卸载产物）
-  if (!footprint.value.downloaded && !footprint.value.daemonInstalled) return []
-  if (footprint.value.downloading) return []
-  return [
+  // 菜单栏常显开关恒在（显示偏好，与核心安装状态无关）
+  const list: SettingItem[] = [
     {
+      id: 'proxy-menubar',
+      title: t('proxy.menubarToggle'),
+      type: 'toggle',
+      value: config.menubarVisible,
+      update: (visible: boolean | string | number) => {
+        config.menubarVisible = visible as boolean
+      },
+      group: t('proxy.settingsGroupGeneral'),
+    },
+  ]
+  // 完全卸载：有系统足迹且非下载中才展示（在飞下载会复活卸载产物）
+  if (
+    (footprint.value.downloaded || footprint.value.daemonInstalled) &&
+    !footprint.value.downloading
+  ) {
+    list.push({
       id: 'proxy-uninstall',
       title: t('proxy.uninstall'),
       subtitle: t('proxy.uninstallHint'),
@@ -63,8 +71,9 @@ const items = computed<SettingItem[]>(() => {
       variant: 'danger',
       group: t('proxy.settingsGroup'),
       action: uninstall,
-    },
-  ]
+    })
+  }
+  return list
 })
 
 /// 完全卸载：停代理 + 提权卸载 LaunchDaemon + 清理核心运行文件（订阅/端口配置保留）。

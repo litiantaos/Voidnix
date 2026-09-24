@@ -31,6 +31,10 @@ pub struct ProxyState {
     /// 旧重试作废——在源头消灭「重试 PUT idle 落在重开的 PUT active 之后」的竞态窗口
     /// （enabled 标志在 start_core 末尾才置位，靠它拦截存在缝隙）。
     pub release_gen: AtomicU64,
+    /// 菜单栏贡献段常显（前端 config watch 经 set_proxy_menubar_visible 同步）。
+    /// 开启时段恒在（打开扩展 + 已连接时附状态行），关闭时无贡献段——替代原
+    /// 「已连接才显示」逻辑。
+    pub menubar_visible: AtomicBool,
 }
 
 /// 健康事件 payload（emit "proxy-status"，前端 showStatus 反馈）。
@@ -866,7 +870,7 @@ pub(crate) fn root_mihomo_running(app: &AppHandle) -> bool {
 }
 
 /// 读 extensions/proxy/config.json 构造 RunParams。
-fn read_run_params(app: &AppHandle) -> Option<RunParams> {
+pub(crate) fn read_run_params(app: &AppHandle) -> Option<RunParams> {
     let path = crate::runtime::storage::ext_data_dir(app, "proxy")
         .ok()?
         .join("config.json");
@@ -892,6 +896,18 @@ fn read_run_params(app: &AppHandle) -> Option<RunParams> {
             .to_string(),
         tun: true,
     })
+}
+
+/// 读 config.json 的 tunConfirmed（首启 TUN 告知确认标记）。
+/// 菜单栏直连路径的门槛：未确认（前端会在首开时生成 secret 并弹告知弹窗）须回退
+/// 打开扩展走完整流程，不得绕过知情确认直接安装系统组件。
+pub(crate) fn tun_confirmed(app: &AppHandle) -> bool {
+    crate::runtime::storage::ext_data_dir(app, "proxy")
+        .ok()
+        .and_then(|d| std::fs::read_to_string(d.join("config.json")).ok())
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|v| v.get("tunConfirmed").and_then(Value::as_bool))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

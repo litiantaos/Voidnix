@@ -315,7 +315,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 **消费者**（2 个）：
 
 - **awake**：启用开关 CheckItem（设置项 `menubarToggleVisible` 控制是否常驻显示，勾选态反映 enabled，点击切换；开启路径经授权弹窗）
-- **proxy**：打开扩展 + 已连接状态 CheckItem 可点断开「已连接：节点」；断开后贡献段消失（图标常驻），重连走扩展视图（详见 [proxy.md](docs/extensions/proxy.md)）
+- **proxy**：设置项 `menubarVisible` 控制贡献段常显（替代「已连接才显示」）；段内「打开扩展」+ 连接状态 CheckItem（勾选态反映连接、可点切换，已连接显示当前节点；未过首启流程时连接回退打开扩展）（详见 [proxy.md](docs/extensions/proxy.md)）
 
 ### Agent 引擎
 

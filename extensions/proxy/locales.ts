@@ -40,13 +40,11 @@ registerMessages({
   },
   'proxy.tunConfirmOk': { 'zh-CN': '安装并开启', en: 'Install & Enable' },
 
-  // ─── 设置子视图（完全卸载）─────────────────
+  // ─── 设置子视图 ────────────────────────────
   'proxy.openSettings': { 'zh-CN': '代理设置', en: 'Proxy Settings' },
   'proxy.settingsGroup': { 'zh-CN': '系统', en: 'System' },
-  'proxy.noCoreFootprint': {
-    'zh-CN': '未安装核心或系统组件',
-    en: 'No core or system components installed',
-  },
+  'proxy.settingsGroupGeneral': { 'zh-CN': '通用', en: 'General' },
+  'proxy.menubarToggle': { 'zh-CN': '显示菜单栏', en: 'Show in Menu Bar' },
   'proxy.uninstall': { 'zh-CN': '完全卸载', en: 'Full Uninstall' },
   'proxy.uninstallHint': {
     'zh-CN': '移除 root 常驻进程、LaunchDaemon 与核心文件（需管理员密码）',

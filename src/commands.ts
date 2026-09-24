@@ -142,6 +142,7 @@ export const CMD = {
   // —— proxy ——
   setProxyEnabled: 'set_proxy_enabled',
   isProxyEnabled: 'is_proxy_enabled',
+  setProxyMenubarVisible: 'set_proxy_menubar_visible',
   proxyCoreStatus: 'proxy_core_status',
   proxyEnsureCore: 'proxy_ensure_core',
   proxyCheckUpdate: 'proxy_check_update',

@@ -101,6 +101,7 @@ macro_rules! configure_app {
             crate::extensions::proxy::proxy_update_core,
             crate::extensions::proxy::proxy_update_subscription,
             crate::extensions::proxy::set_proxy_enabled,
+            crate::extensions::proxy::set_proxy_menubar_visible,
             crate::extensions::screenshot::ocr::copy_screenshot_to_clipboard,
             crate::extensions::screenshot::ocr::detect_text_regions,
             crate::extensions::screenshot::ocr::ocr_image,

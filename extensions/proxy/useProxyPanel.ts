@@ -128,6 +128,9 @@ export function useProxyPanel() {
   const coreError = ref('')
   /// 实时流量速率（开代理时经 /traffic WS 推送，开启项副标题展示）。
   const traffic = ref<TrafficFrame | null>(null)
+  /// 视图当前是否激活（KeepAlive activate/deactivate 驱动）：外部置位 enabled 时
+  /// 仅激活中才开流量流，非激活留给 onActivated 补开（避免后台空转 WS）。
+  const viewActive = ref(false)
   let trafficChannel: Channel<TrafficFrame> | null = null
   /// 下载中状态真相源跟随 Rust DOWNLOADING 原子（重新进入界面也能正确反映）。
   const isDownloading = computed(() => coreStatus.value.downloading)
@@ -709,7 +712,14 @@ export function useProxyPanel() {
       if (toggling.value) return
       isEnabled.value = e.payload
       preloaded.enabled = e.payload
-      if (!e.payload) stopTrafficStream() // 关代理（含菜单关闭/进程退出）停流量流
+      if (e.payload) {
+        // 外部置位开启（菜单栏切换 / 启动重连恢复）：刷新节点列表（onActivated 不重载，
+        // 不刷会停留陈旧空列表）；流量流仅激活中开，非激活由 onActivated 补开
+        void loadProxies()
+        if (viewActive.value) startTrafficStream()
+      } else {
+        stopTrafficStream() // 关代理（含菜单关闭/进程退出）停流量流
+      }
     })
     unlistenMode = await listen<string>('proxy-mode', (e) => {
       config.mode = e.payload as typeof config.mode
@@ -762,6 +772,7 @@ export function useProxyPanel() {
   // 重激活也触发，让用户切回视图即可看到最新版本提示（API rate limit 60/h 够自用）。
   // 同时恢复流量流（切子视图时 onDeactivated 停止，切回时重启；startTrafficStream 有防重入守卫）。
   onActivated(() => {
+    viewActive.value = true
     checkUpdate()
     // 设置子视图可能已完全卸载（跨视图状态对账）：重激活拉权威核心状态，
     // 核心已删则清残留节点列表（enabled 已由 proxy-enabled 事件同步为 false）
@@ -777,6 +788,7 @@ export function useProxyPanel() {
 
   // 切子视图（连接/规则/日志）时被 KeepAlive 缓存：停流量流免空转。
   onDeactivated(() => {
+    viewActive.value = false
     stopTrafficStream()
   })
 

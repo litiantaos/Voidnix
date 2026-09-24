@@ -1,4 +1,7 @@
 import { watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { CMD } from '@/commands'
+import { isTauri } from '@/utils/tauri'
 import { defineConfig } from '@/runtime/storage'
 import { generateRequestId } from '@/utils/id'
 
@@ -41,6 +44,8 @@ export const config = defineConfig('extensions/proxy/config', {
   /// TUN 首次启用确认标记：用户确认过一次首启告知弹窗即置 true，此后不再弹
   /// （含 daemon 因更新核心/完全卸载被移除后的重装路径——重装时的系统密码弹窗仍提供感知）。
   tunConfirmed: false,
+  /// 菜单栏贡献段常显（不随连接状态显隐；关闭时段不显示，替代原「已连接才显示」逻辑）。
+  menubarVisible: false,
 })
 
 /// 端口变体归一化（模块级，app 启动即生效）。
@@ -63,6 +68,18 @@ watch(
     }
   },
   { immediate: true, flush: 'sync' },
+)
+
+/// menubarVisible 同步（Config 字段型：Settings 仅改 config，Rust 侧贡献段显隐）
+watch(
+  () => config.menubarVisible,
+  (visible) => {
+    if (!isTauri) return
+    invoke(CMD.setProxyMenubarVisible, { visible }).catch((e: unknown) => {
+      console.error('[proxy] setProxyMenubarVisible failed:', e)
+    })
+  },
+  { immediate: true },
 )
 
 /// 模式值（rule=规则分流，global=全局代理）
