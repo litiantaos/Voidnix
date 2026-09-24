@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { toChars, diffChars, buildIndexMap, ANIM_MAX_DIFF, FLIP_WINDOW } from './logic'
+import {
+  toChars,
+  diffChars,
+  buildIndexMap,
+  ANIM_MAX_DIFF,
+  POP_MAX_ADDED,
+  FLIP_WINDOW,
+} from './logic'
 
 describe('toChars', () => {
   it('BMP 字符逐一拆分', () => {
@@ -111,9 +118,12 @@ describe('buildIndexMap', () => {
 })
 
 describe('动画降级阈值', () => {
-  it('ANIM_MAX_DIFF / FLIP_WINDOW 为正整数常量', () => {
+  it('ANIM_MAX_DIFF / POP_MAX_ADDED / FLIP_WINDOW 为正整数常量', () => {
     expect(Number.isInteger(ANIM_MAX_DIFF)).toBe(true)
     expect(ANIM_MAX_DIFF).toBeGreaterThan(0)
+    expect(Number.isInteger(POP_MAX_ADDED)).toBe(true)
+    expect(POP_MAX_ADDED).toBeGreaterThan(0)
+    expect(POP_MAX_ADDED).toBeLessThan(ANIM_MAX_DIFF)
     expect(Number.isInteger(FLIP_WINDOW)).toBe(true)
     expect(FLIP_WINDOW).toBeGreaterThan(0)
   })

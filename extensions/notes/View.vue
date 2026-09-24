@@ -111,6 +111,7 @@ import {
   diffChars,
   buildIndexMap,
   ANIM_MAX_DIFF,
+  POP_MAX_ADDED,
   FLIP_WINDOW,
   STAGGER_STEP,
   STAGGER_CAP,
@@ -180,8 +181,13 @@ const focused = ref(false)
 const selStart = ref(0)
 const selEnd = ref(0)
 const charEls = new Map<number, HTMLSpanElement>()
+/// id → 原始 cell 对象(非响应式代理):动画瞬态(fresh/comp)的清理经原始引用
+/// 赋值 + class 直更(applyFlip 同款内联范式),绕过响应式零重渲染——单组件大
+/// v-for 无行级更新粒度,任何响应式触发都是全列表渲染,千字级 animationend
+/// 风暴会造成 O(字符数 × 文档长) 卡死。applyText/initText 时全量重建
+let cellById = new Map<number, CharCell>()
 const cleanupTimers = new Set<ReturnType<typeof setTimeout>>()
-let caretPos = { x: 0, y: 0 }
+let caretPos = { x: PAD, y: PAD } // 兜底初值 = 内容原点(仅 anchorEl 缺失路径消费)
 let caretAnim: Animation | null = null // 光标 Q 弹形变(连续移动时新动画取代旧动画)
 let flipFlight = 0 // FLIP 航次计数(连续编辑时旧轮清场让位新轮)
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)')
@@ -221,7 +227,6 @@ function cellStyle(cell: CharCell) {
       ...(cell.delay && cell.ch !== '\n' ? { animationDelay: `${cell.delay}ms` } : {}),
     }
   }
-  if (cell.delay && cell.ch !== '\n') return { animationDelay: `${cell.delay}ms` }
   return undefined
 }
 
@@ -266,8 +271,9 @@ function onInput() {
 /// 编辑行区(编辑点至行尾)非均匀重排走逐字符 FLIP(FLIP_WINDOW 限界);下方完整
 /// 行块刚性整体纵移走尾块单元素过渡(applyTailShift)。IME 组合期间同样开动画:
 /// 拼音字母逐个弹入,提交 diff(字母→汉字)天然产生旧字飘散 + 新字弹入。
-/// 超 ANIM_MAX_DIFF 的大批量编辑降级为静态直更(无逐字动画),仍走增量 diff——
-/// 门槛只看单次编辑规模,长文档的日常键入/删除照常动效。
+/// 降级分层:超 ANIM_MAX_DIFF 的大批量编辑整体静态直更(仍走增量 diff);动画档内
+/// 新增超 POP_MAX_ADDED 逐字 pop 关闭(ghost/FLIP 照常)——大批量粘贴的逐字进场
+/// 无意义且清理成本平方级。门槛只看单次编辑规模,长文档的日常键入/删除照常动效。
 function applyText(newVal: string) {
   const oldChars = toChars(text.value)
   const newChars = toChars(newVal)
@@ -316,7 +322,7 @@ function applyText(newVal: string) {
   //    cells 数组可能残留飘散中的旧 ghost(置于前缀后),按数组下标 slice 取
   //    被删段会把 ghost 错抓走、真实被删字符逃逸为「可见但不在 textIds」的
   //    幽灵(不可编辑);旧 ghost 不进新数组,由新 diff 中断其动画。
-  const cellById = new Map(cells.value.map((c) => [c.id, c]))
+  //    全链路持原始对象(cellById 值即原始引用):瞬态清理(fresh/comp)绕过响应式(见 cellById)
   const removedCells = textIds
     .slice(d.prefix, d.prefix + d.removed)
     .map((id) => cellById.get(id))
@@ -347,13 +353,16 @@ function applyText(newVal: string) {
     })
   }
   const added: CharCell[] = []
-  const stagger = d.added > 1 && anim
+  // pop 逐字进场只给小批量(键入/IME/短语粘贴):超过 POP_MAX_ADDED 的新增静态
+  // 直更,杜绝千字级 animationend 清理风暴(见 logic.POP_MAX_ADDED)
+  const pop = anim && d.added <= POP_MAX_ADDED
+  const stagger = pop && d.added > 1
   for (let i = 0; i < d.added; i++) {
     added.push({
       id: nextId++,
       ch: newChars[d.prefix + i],
       ti: d.prefix + i,
-      fresh: anim,
+      fresh: pop,
       comp: composing.value,
       delay: stagger ? Math.min(i * STAGGER_STEP, STAGGER_CAP) : undefined,
     })
@@ -363,6 +372,7 @@ function applyText(newVal: string) {
     suffixCells[i].comp = false
   }
   cells.value = [...prefixCells, ...ghosts, ...added, ...suffixCells]
+  cellById = new Map([...prefixCells, ...suffixCells, ...added].map((c) => [c.id, c]))
   textIds = [
     ...textIds.slice(0, d.prefix),
     ...added.map((c) => c.id),
@@ -374,10 +384,14 @@ function applyText(newVal: string) {
     nextTick(() => {
       applyFlip(flipOld)
       applyTailShift(tailOldTop)
-      for (const g of ghosts) {
+      // ghost 到期合批清理:同批同寿命一个 timer 一次 filter——逐 ghost 独立
+      // timer 是 O(ghost 数 × 文档长) 的渲染平方项。按本批 id 集合精确移除,
+      // 连续删除时不得误伤后批新生、仍在动画窗口内的 ghost
+      if (ghosts.length > 0) {
+        const ids = new Set(ghosts.map((g) => g.id))
         const timer = setTimeout(() => {
           cleanupTimers.delete(timer)
-          cells.value = cells.value.filter((c) => c.id !== g.id)
+          cells.value = cells.value.filter((c) => !ids.has(c.id))
         }, GHOST_MS + 60)
         cleanupTimers.add(timer)
       }
@@ -908,32 +922,31 @@ function onCompStart() {
 }
 
 /// compositionend(WebKit 中在末次 input 之后):提交 diff(字母→汉字)的
-/// pop/ghost/FLIP 已由该次 input 承担,此处仅清组合下划线标记
+/// pop/ghost/FLIP 已由该次 input 承担,此处仅清组合下划线标记。
+/// 同 onAnimEnd 内联范式:class 直更 + 原始对象赋值,零重渲染
 function onCompEnd() {
   const el = inputEl.value
   if (el && el.value !== text.value) applyText(el.value)
   composing.value = false
-  let touched = false
-  for (const c of cells.value) {
+  for (const c of cellById.values()) {
     if (c.comp) {
       c.comp = false
-      touched = true
+      charEls.get(c.id)?.classList.remove('comp')
     }
   }
-  if (touched) cells.value = [...cells.value]
   nextTick(() => syncCaret())
 }
 
-/// animationend 委托:pop 播完清标记(inline-block 恢复 inline,断词回归正常)
+/// animationend 委托:pop 播完清标记(inline-block 恢复 inline,断词回归正常)。
+/// 内联范式(同 applyFlip):class 直更 + 经 cellById 原始对象赋值绕过响应式,
+/// 零重渲染——批量 stagger 的动画错峰结束,走响应式则每个字符触发一次全列表渲染
 function onAnimEnd(e: AnimationEvent) {
   const el = e.target
   if (!(el instanceof HTMLSpanElement)) return
   if (!el.classList.contains('anim')) return
-  const id = Number(el.dataset.cid)
-  const cell = cells.value.find((c) => c.id === id)
-  if (!cell) return
-  cell.fresh = false
-  cells.value = [...cells.value]
+  el.classList.remove('anim')
+  const cell = cellById.get(Number(el.dataset.cid))
+  if (cell) cell.fresh = false // 原始对象:fresh=false 供下次渲染消费,当前 DOM 已直更
 }
 
 // ── 持久化恢复 + 生命周期 ────────────────────────────────────────────────
@@ -944,6 +957,7 @@ function initText(s: string) {
   const rebuilt: CharCell[] = list.map((ch, i) => ({ id: nextId++, ch, ti: i }))
   textIds = rebuilt.map((c) => c.id)
   cells.value = rebuilt
+  cellById = new Map(rebuilt.map((c) => [c.id, c]))
   // 恢复路径无动画,整体入头部容器;后续编辑按其切分点重划分
   splitContentIdx.value = Number.MAX_SAFE_INTEGER
   text.value = s

@@ -1,10 +1,17 @@
 // 记事本动效核心纯逻辑:code point 拆分 + 前后缀 diff + code unit/point 索引映射。
 // 渲染与测量在 View.vue,此处保持零 DOM 依赖(co-location 测试)。
 
-/** 单次编辑字符级动画(pop/ghost/FLIP)的启用上限:编辑规模(增+删)超过即降级为
- *  静态直更(大批量粘贴/全选清空,逐字 stagger 无意义),光标动效保留。
- *  门槛只看单次编辑,与文档总长无关——长文日常键入/删除照常动效。 */
+/** 单次编辑字符级动画(ghost/FLIP)的启用上限:编辑规模(增+删)超过即降级为
+ *  静态直更(大批量粘贴/全选清空),光标动效保留。门槛只看单次编辑,与文档总长
+ *  无关——长文日常键入/删除照常动效。 */
 export const ANIM_MAX_DIFF = 1200
+
+/** 批量新增逐字 pop 进场的上限:单次新增超过即静态直更(无 anim class)。
+ *  与 ANIM_MAX_DIFF 分层——pop 逐字进场伴随逐字符 animationend,而每次清理
+ *  触发全列表重渲染(单组件大 v-for 无行级粒度),千字级 stagger 会造成
+ *  O(字符数 × 文档长) 的渲染风暴(长文上实测分钟级卡死);键入/IME/短语粘贴
+ *  (≤ 上限)照常逐字弹入。 */
+export const POP_MAX_ADDED = 48
 
 /** 批量新增(粘贴/IME 提交)时逐字 stagger 步长与总延迟上限(ms)。 */
 export const STAGGER_STEP = 16

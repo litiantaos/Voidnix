@@ -453,6 +453,42 @@ test.describe('notes 记事本', () => {
     expect(text).toMatch(/^abcX?d/)
   })
 
+  test('批量粘贴不产生逐字动画风暴:静态直更,秒级落定(长文不再分钟级卡死)', async ({ page }) => {
+    // 回归锚:批量新增(> POP_MAX_ADDED)不走逐字 pop——animationend 逐字符清理
+    // 触发全列表重渲染,千字级 stagger 是 O(字符数 × 文档长) 的渲染平方项
+    await page.locator('.notes-layer').click()
+    await page.evaluate(() => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      ta.value = '一'.repeat(1000)
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    // 1s 内千字全部落位(修复前 animationend 风暴使渲染拖到 3s+)
+    await expect(page.locator('.ch')).toHaveCount(1000, { timeout: 1000 })
+    // 静态直更:无逐字进场标记
+    await expect(page.locator('.ch.anim')).toHaveCount(0)
+    await expect(page.locator('.caret-on')).toBeVisible()
+
+    // 长文档(数万字)上粘贴 800 字:动画档内新增超 pop 上限,须秒级完成
+    const doc50k = Array.from({ length: 2000 }, (_, i) => `第${i}行内容填充文本，`).join('\n')
+    await page.evaluate((v) => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      ta.value = v
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    }, doc50k)
+    await page.waitForTimeout(600)
+    const expected = await page.evaluate((v) => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      ta.value = v + '一'.repeat(800)
+      ta.setSelectionRange(v.length, v.length)
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+      return Array.from(ta.value).length
+    }, doc50k)
+    // 修复前此场景 ~2 分钟(animationend × 全列表渲染);3s 上限含 CI 机器浮动余量
+    await expect(page.locator('.ch')).toHaveCount(expected, { timeout: 3000 })
+    await expect(page.locator('.ch.anim')).toHaveCount(0)
+    await expect(page.locator('.caret-on')).toBeVisible()
+  })
+
   test('设置子视图:入口与快捷键配置项', async ({ page }) => {
     // 搜索栏右侧设置按钮 → config 子视图
     await page.locator('button:has(.i-ri-settings-3-line)').click()
