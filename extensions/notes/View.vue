@@ -2,16 +2,22 @@
   <!-- 顶距交给 CHROME_HEIGHT,与列表 px-3 pb-3 同构,勿 p-t 叠双层 -->
   <div p="x-3 b-3" relative flex="~ col" class="notes-root">
     <!-- 输入区壳:ui-field(soft-surface 底 + border 描边,聚焦改边框色)+ panel 圆角,
-         与 BaseTextarea 主输入(panel 档)同款面;固定窗高,壳高恒定 -->
-    <div class="notes-box ui-field radius-panel" p="3" flex="~ 1 col" min-h="0">
+         与 BaseTextarea 主输入(panel 档)同款面;固定窗高,壳高恒定。壳零内距——
+         内距挂壳时滚动剪裁发生在内距线(边框内 12px),文字悬空截断不贴边框,
+         内衬改挂渲染层(文本外距,见下),壳只承载面与描边 -->
+    <div class="notes-box ui-field radius-panel" flex="~ 1 col" min-h="0">
       <!-- 渲染层:逐字符 span + 自绘光标。白名单 pre-wrap(与 textarea 同语义),
            user-select 关闭(选区自绘),点击/键盘定位经隐藏 textarea 承接。
            固定窗高下渲染层自身即滚动容器(局部固定高度区域,长文内部滚动):
            ghost/caret 均 absolute 锚定于滚动内容系,随滚动同步移动;
-           overflow-x 锁 hidden 截断行尾 ghost 飘散的瞬时越界,免横向滚动泄漏 -->
+           overflow-x 锁 hidden 截断行尾 ghost 飘散的瞬时越界,免横向滚动泄漏。
+           p-3 内衬挂滚动容器自身 = 文本外距:滚动容器剪裁沿 padding box(边框内缘),
+           内衬只是初始让位,滚动时文字一路贴到边框才剪裁(挂壳则是内距线悬空截断);
+           radius-panel 随附,滚动中的文字/选区沿圆角弧剪裁不越出边框 -->
       <div
         ref="layerEl"
-        class="notes-layer hide-scrollbar overflow-x-hidden overflow-y-auto"
+        class="notes-layer hide-scrollbar radius-panel overflow-x-hidden overflow-y-auto"
+        p="3"
         relative
         flex="1"
         min-h="30"
@@ -23,6 +29,12 @@
              行首,与上方内容布局无关,编辑仅使其整体纵移 k×LINE_H),刚性平移用
              单元素 transform 过渡,O(1) 动画任意深度尾部 -->
         <span class="flow-head">
+          <!-- 隐形零宽探针(恒 inline):ghost 行盒高的测量源——被删字符可能仍在进场动画中
+               (inline-block,行盒 = LINE_H),直接测它拿不到内容盒高;探针与字体/引擎同步。
+               须置于 head 内部行首:作为层内独立 inline 元素排在尾块(block)之后会被拆进
+               独立匿名块,多出一行幻影空行撑大 scrollHeight(末距虚胖 + 与 IME 壳滚动
+               范围错位);排在尾块之前则 head 以 \n 结尾时占行推挤尾块。行首零宽不占位不断行 -->
+          <span ref="probeEl" class="gh-probe" aria-hidden="true">&#8203;</span>
           <span
             v-for="cell in headCells"
             :key="cell.id"
@@ -48,10 +60,8 @@
             >{{ cell.ch }}</span
           >
         </span>
-        <span v-if="showPlaceholder" class="notes-ph">{{ t('notes.placeholder') }}</span>
-        <!-- 隐形零宽探针(恒 inline):ghost 行盒高的测量源——被删字符可能仍在进场动画中
-             (inline-block,行盒 = LINE_H),直接测它拿不到内容盒高;探针与字体/引擎同步 -->
-        <span ref="probeEl" class="gh-probe" aria-hidden="true">&#8203;</span>
+        <!-- p-3 与渲染层内衬同步:placeholder 对齐文本原点(内容原点非层原点) -->
+        <span v-if="showPlaceholder" class="notes-ph" p="3">{{ t('notes.placeholder') }}</span>
         <!-- 光标双层:外层 left/top 布局定位 + transform 平滑滑移(FLIP);内层视觉 + 闪烁 -->
         <span ref="caretEl" class="caret" :class="{ 'caret-on': caretOn }"
           ><span ref="caretCoreEl" class="caret-core"
@@ -112,6 +122,12 @@ const LINE_H = 24 // 渲染层行高(px)
 const CARET_H = 18 // 光标视觉高(px),行内垂直居中
 const FLIP_MS = 150 // FLIP 位移过渡(--duration-fast)
 const GHOST_MS = 150 // 离场动画时长(--duration-fast)
+const PAD = 12 // 渲染层 p-3 内衬(px)= 文本距边框外距;内容原点随之自 (0,0) 移至 (PAD,PAD)
+
+/// 行网格量化:行盒自内容原点 (PAD,PAD) 起按 LINE_H 栅格排布——行顶/行号一律
+/// 先扣内衬再量化,非整倍偏移会引入虚假 ±PAD 位移
+const rowTop = (y: number) => PAD + Math.round((y - PAD) / LINE_H) * LINE_H
+const rowIdx = (y: number) => Math.round((y - PAD) / LINE_H)
 
 interface CharCell {
   id: number
@@ -292,7 +308,7 @@ function applyText(newVal: string) {
       const el = charEls.get(textIds[splitOld])
       // 行网格量化:块首字符字形顶(含半行距)→ 行顶,与尾块 offsetTop(块顶)同系,
       // 消除普通行内编辑的虚假 ±4px 平移(非换行编辑 dy 恒 0,不触发尾块过渡)
-      if (el) tailOldTop = Math.round(charRect(el).y / LINE_H) * LINE_H
+      if (el) tailOldTop = rowTop(charRect(el).y)
     }
   }
 
@@ -473,11 +489,11 @@ function syncCaret() {
 function measureCaret(cp: number): { x: number; y: number } {
   const ids = textIds
   const n = ids.length
-  if (n === 0) return { x: 0, y: 0 }
+  if (n === 0) return { x: PAD, y: PAD }
   const anchorEl = charEls.get(ids[Math.min(cp, n - 1)])
   if (!anchorEl) return caretPos
-  const y = Math.round(layerTop(anchorEl) / LINE_H) * LINE_H
-  if (cp === n && text.value.endsWith('\n')) return { x: 0, y: y + LINE_H }
+  const y = rowTop(layerTop(anchorEl))
+  if (cp === n && text.value.endsWith('\n')) return { x: PAD, y: y + LINE_H }
   return {
     x: cp < n ? anchorEl.offsetLeft : anchorEl.offsetLeft + anchorEl.offsetWidth,
     y,
@@ -656,6 +672,8 @@ function caretCpFromPoint(x: number, y: number): number {
   const node = r.startContainer
   if (node.nodeType === Node.TEXT_NODE) {
     const span = node.parentElement
+    // 命中 head 行首零宽探针(无 data-ti):视为文档首而非文档尾
+    if (span?.classList.contains('gh-probe')) return 0
     const ti = span?.dataset.ti
     if (ti !== undefined) return Number(ti) + (r.startOffset > 0 ? 1 : 0)
     return n // 命中 ghost(离场 150ms 窗口):防御落末尾
@@ -784,22 +802,22 @@ function buildRowPositions(): { cp: number; x: number }[][] {
     if (i < n) {
       const el = charEls.get(ids[i])
       if (!el) continue
-      r = Math.round(layerTop(el) / LINE_H)
+      r = rowIdx(layerTop(el))
       x = el.offsetLeft
     } else if (n > 0) {
       const last = charEls.get(ids[n - 1])
-      if (!last) return rows.length > 0 ? rows : [[{ cp: 0, x: 0 }]]
+      if (!last) return rows.length > 0 ? rows : [[{ cp: 0, x: PAD }]]
       // 末字符为换行:文末位置在新行行首
       if (last.textContent === '\n') {
-        r = Math.round(layerTop(last) / LINE_H) + 1
-        x = 0
+        r = rowIdx(layerTop(last)) + 1
+        x = PAD
       } else {
-        r = Math.round(layerTop(last) / LINE_H)
+        r = rowIdx(layerTop(last))
         x = last.offsetLeft + last.offsetWidth
       }
     } else {
       r = 0
-      x = 0
+      x = PAD
     }
     if (r !== curRow) {
       if (cur.length > 0) rows.push(cur)
@@ -1143,7 +1161,8 @@ onDeactivated(() => {
   opacity: 0;
   pointer-events: none;
   border: none;
-  padding: 0;
+  /* 与渲染层 p-3 内衬镜像同步:壳内 caret 布局位(含内衬偏移)== caretPos */
+  padding: 12px;
   resize: none;
   overflow: hidden;
   background: transparent;

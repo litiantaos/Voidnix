@@ -21,9 +21,9 @@ test.describe('notes 记事本', () => {
     // 点击渲染层 → textarea 聚焦 → 光标亮起
     await page.locator('.notes-layer').click()
     await expect(page.locator('.caret-on')).toBeVisible()
-    // 光标在内容原点附近(空文本,行首)
+    // 光标在内容原点(空文本,行首)= 渲染层 p-3 内衬偏移
     const left = await page.locator('.caret').evaluate((el) => parseFloat(el.style.left))
-    expect(left).toBeLessThan(2)
+    expect(left).toBe(12)
   })
 
   test('逐字输入:字符渲染 + 进场动画落地清理 + 光标右移', async ({ page }) => {
@@ -76,8 +76,8 @@ test.describe('notes 记事本', () => {
     // 稳定态继续输入:量化后 top 必须与动画态一致(不垂直跳动、与文字对齐)
     await page.keyboard.type('def')
     const top2 = await page.locator('.caret').evaluate((el) => el.style.top)
-    expect(top1).toBe('3px')
-    expect(top2).toBe('3px')
+    expect(top1).toBe('15px')
+    expect(top2).toBe('15px')
   })
 
   test('光标移动 Q 弹:三段形变含宽度增粗,到位后清空', async ({ page }) => {
@@ -107,7 +107,7 @@ test.describe('notes 记事本', () => {
     expect(rest).toHaveLength(0)
     // 垂直位置不受形变影响(quantified 网格)
     const top = await page.locator('.caret').evaluate((el) => el.style.top)
-    expect(top).toBe('3px')
+    expect(top).toBe('15px')
   })
 
   test('光标拖尾:位移路径渐隐细条,右移左删各自向新位收缩', async ({ page }) => {
@@ -147,25 +147,25 @@ test.describe('notes 记事本', () => {
     await expect(page.locator('.ch.anim')).toHaveCount(0, { timeout: 3000 })
     const caret = page.locator('.caret')
     // 末尾:第二行
-    expect(await caret.evaluate((el) => el.style.top)).toBe('27px')
+    expect(await caret.evaluate((el) => el.style.top)).toBe('39px')
     const xBottom = await caret.evaluate((el) => parseFloat(el.style.left))
     // 上:到第一行(当前列超出行宽,落第一行行尾)
     await page.keyboard.press('ArrowUp')
-    expect(await caret.evaluate((el) => el.style.top)).toBe('3px')
+    expect(await caret.evaluate((el) => el.style.top)).toBe('15px')
     const xTop = await caret.evaluate((el) => parseFloat(el.style.left))
     expect(xTop).toBeLessThan(xBottom)
     // 首行再上:文档首
     await page.keyboard.press('ArrowUp')
-    expect(await caret.evaluate((el) => parseFloat(el.style.left))).toBeLessThan(1)
+    expect(await caret.evaluate((el) => parseFloat(el.style.left))).toBe(12)
     // 回第一行行尾后下:以当前列即时匹配第二行最近位置,不记忆原列
     await page.keyboard.press('Meta+ArrowRight')
     await page.keyboard.press('ArrowDown')
-    expect(await caret.evaluate((el) => el.style.top)).toBe('27px')
+    expect(await caret.evaluate((el) => el.style.top)).toBe('39px')
     const xBack = await caret.evaluate((el) => parseFloat(el.style.left))
     expect(Math.abs(xBack - xTop)).toBeLessThan(5)
     // Cmd+Left/Right:行首/行尾
     await page.keyboard.press('Meta+ArrowLeft')
-    expect(await caret.evaluate((el) => parseFloat(el.style.left))).toBeLessThan(1)
+    expect(await caret.evaluate((el) => parseFloat(el.style.left))).toBe(12)
     await page.keyboard.press('Meta+ArrowRight')
     const xEnd = await caret.evaluate((el) => parseFloat(el.style.left))
     expect(Math.abs(xEnd - xBottom)).toBeLessThan(1)
@@ -183,20 +183,23 @@ test.describe('notes 记事本', () => {
     })
     await page.waitForTimeout(400)
     await expect(page.locator('.ch.anim')).toHaveCount(0, { timeout: 3000 })
-    const secondTop = async (ti: number) =>
+    // 行位量化断言:offsetTop 含 inline(+4 半行距)/inline-block(0)盒语义差,
+    // FLIP 防回归的实质是「行不闪变」,取整行网格(12 = 渲染层 p-3 内衬,行网格
+    // 自内容原点起)
+    const secondRow = async (ti: number) =>
       page.evaluate((idx) => {
         const el = document.querySelector(`.notes-layer .ch[data-ti='${idx}']`)
-        return el ? el.offsetTop : -1
+        return el ? Math.round((el.offsetTop - 12) / 24) : -1
       }, ti)
     // 'first line\nsecond line':second 行首 s 的 ti=11,插入 X 后为 12
-    expect(await secondTop(11)).toBe(28)
+    expect(await secondRow(11)).toBe(1)
     // 中间插入触发后缀 FLIP:第二行在 FLIP 进行中必须保持原行位
     //(\n 被 inline-block 化会使其换行失效,后续文本瞬间并作一行、清理后才恢复)
     await page.keyboard.type('X')
     await page.waitForTimeout(40)
-    expect(await secondTop(12)).toBe(28)
+    expect(await secondRow(12)).toBe(1)
     await page.waitForTimeout(400)
-    expect(await secondTop(12)).toBe(28)
+    expect(await secondRow(12)).toBe(1)
   })
 
   test('FLIP 位移垂直分量恒零(视觉盒测量基元)', async ({ page }) => {
@@ -435,16 +438,18 @@ test.describe('notes 记事本', () => {
     await page.keyboard.type('abcdef')
     await expect(page.locator('.ch')).toHaveCount(6)
     await expect(page.locator('.ch.anim')).toHaveCount(0, { timeout: 3000 })
-    // 点击渲染层中部 → 光标 cp 偏移 > 0 且 < 6
+    // 点击渲染层中部(首行中线,避开 p-3 内衬 gutter) → 光标 cp 偏移 > 0 且 < 6
     const box = await page.locator('.notes-layer').boundingBox()
     expect(box).toBeTruthy()
-    await page.mouse.click(box!.x + box!.width / 2, box!.y + 8)
+    await page.mouse.click(box!.x + box!.width / 2, box!.y + 20)
     const left = await page.locator('.caret').evaluate((el) => parseFloat(el.style.left))
-    expect(left).toBeGreaterThan(4)
-    expect(left).toBeLessThan(60)
-    // 光标处继续输入落在中部而非末尾
+    expect(left).toBeGreaterThan(14)
+    expect(left).toBeLessThan(70)
+    // 光标处继续输入落在中部而非末尾(滤除 head 行首零宽探针的 ZWSP)
     await page.keyboard.type('X')
-    const text = await page.locator('.notes-layer').evaluate((el) => el.textContent)
+    const text = await page
+      .locator('.notes-layer')
+      .evaluate((el) => el.textContent.replace(/\u200B/g, ''))
     expect(text).toMatch(/^abcX?d/)
   })
 
