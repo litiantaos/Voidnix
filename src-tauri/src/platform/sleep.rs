@@ -334,13 +334,18 @@ pub fn spawn_sleep_watchdog(flag: &Path, app_pid: u32) -> Result<(), SleepWatchd
 
 /// watchdog 的 sh 循环体。子 shell 整体后台化（`&` + 全重定向），授权命令立即
 /// 返回；循环存活至 app pid 消失，退出前回收 flag 并在持有期间恢复默认睡眠。
-/// SET 状态使 pmset 写入只发生在 flag 边沿：外部把 disablesleep 改回去时不会
-/// 被无脑重写（与用户手工设置互相尊重），flag 仍在即维持既有状态。
+/// SET 边沿置位后进入**持续维持**：每周期校验 `pmset -g` 的 SleepDisabled
+///（实际输出为 `SleepDisabled\t\t1`，中间两个 tab，匹配须用 `.*` 桥接），
+/// 失配即重写 1——全局设置可能被外部清零（dev/prod 双实例的另一实例退出
+/// 恢复、手动 `sudo pmset`），边沿式写入会让持有静默失效（实测：另一实例
+/// 退出恢复 0 后本实例的合盖防睡无声丢失，系统按 Clamshell Sleep 入睡）。
+/// 覆盖外部手动改动的代价被接受：app 开关是用户意图的明确表达。
 fn watchdog_shell(flag: &str, app_pid: u32) -> String {
     format!(
         "( SET=; while kill -0 {app_pid} 2>/dev/null; do \
          if [ -f {flag} ]; then \
-         if [ -z \"$SET\" ]; then /usr/bin/pmset -a disablesleep 1; SET=1; fi; \
+         if [ -z \"$SET\" ]; then /usr/bin/pmset -a disablesleep 1; SET=1; \
+         elif ! /usr/bin/pmset -g | grep -q 'SleepDisabled.*1'; then /usr/bin/pmset -a disablesleep 1; fi; \
          elif [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; SET=; fi; \
          sleep 2; done; \
          rm -f {flag}; \
@@ -519,9 +524,12 @@ mod tests {
         let cmd = watchdog_shell("/Users/x/Library/Application Support/a/sleep.flag", 4242);
         // flag 路径含空格必须以单引号传入
         assert!(cmd.contains("-f '/Users/x/Library/Application Support/a/sleep.flag'"));
-        // pid 监视 + 边沿写 + 退出恢复 + 后台化，四要素齐备
+        // pid 监视 + 边沿写 + 持续维持自愈 + 退出恢复 + 后台化，五要素齐备
         assert!(cmd.contains("kill -0 4242"));
         assert!(cmd.contains("disablesleep 1; SET=1"));
+        assert!(cmd.contains(
+            "elif ! /usr/bin/pmset -g | grep -q 'SleepDisabled.*1'; then /usr/bin/pmset -a disablesleep 1; fi"
+        ));
         assert!(cmd.contains("disablesleep 0; SET=;"));
         assert!(cmd.ends_with("</dev/null >/dev/null 2>&1 &"));
         // 关闭恢复须以 SET 状态守卫：从未持有时不写 0（尊重用户手工设置）

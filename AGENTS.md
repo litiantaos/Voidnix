@@ -476,7 +476,7 @@ src-tauri/src/
     ├── permission.rs   # 系统权限原语 + 授权会话（详见 docs/permissions.md）
     ├── window_list.rs  # CGWindowList 共享封装（screenshot / window-manager / 授权会话避让共用）
     ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel + appearance 缓存）
-    ├── sleep.rs        # 睡眠域原语：root watchdog（osascript 授权 + flag 驱动 pmset disablesleep 边沿写 + pid 自愈）、合盖检测（AppleClamshellState）、外接屏判定、displaysleepnow、内置面板亮度读写（DisplayServices 私有 framework）、电池状态解析（awake 消费）
+    ├── sleep.rs        # 睡眠域原语：root watchdog（osascript 授权 + flag 驱动 pmset disablesleep，持有期持续校验自愈 + pid 自愈）、合盖检测（AppleClamshellState）、外接屏判定、displaysleepnow、内置面板亮度读写（DisplayServices 私有 framework）、电池状态解析（awake 消费）
     └── path_guard.rs   # 统一路径校验
 ```
 
