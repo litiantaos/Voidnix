@@ -51,4 +51,11 @@ registerMessages({
     'zh-CN': '读取系统信息失败：{error}',
     en: 'Failed to read system info: {error}',
   },
+
+  // ─── 设置 ──────────────────────────────
+  'systemStatus.group.settings': { 'zh-CN': '设置', en: 'Settings' },
+  'systemStatus.settings.menubarToggle': {
+    'zh-CN': '在菜单栏显示状态',
+    en: 'Show status in menu bar',
+  },
 })

@@ -10,6 +10,30 @@ use objc2_app_kit::NSWindow;
 use objc2_foundation::NSRect;
 use std::sync::Mutex;
 
+/// 本进程任一 NSMenu 菜单窗口是否在屏（托盘下拉 / 右键菜单打开期间为真）。
+/// menubar 据此推迟重建——set_menu 替换 NSMenu 会立即关闭正在浏览的菜单。
+/// 主线程无响应时按打开处理（保守：宁可推迟重建，不关用户的菜单）。
+pub fn is_menu_open(app: &tauri::AppHandle) -> bool {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let _ = app.run_on_main_thread(move || {
+        let open = objc2_foundation::MainThreadMarker::new()
+            .map(|mtm| {
+                use objc2_app_kit::NSApp;
+                NSApp(mtm).windows().iter().any(|w| {
+                    w.class()
+                        .name()
+                        .to_str()
+                        .is_ok_and(|n| n.contains("MenuWindow"))
+                        && w.isVisible()
+                })
+            })
+            .unwrap_or(false);
+        let _ = tx.send(open);
+    });
+    rx.recv_timeout(std::time::Duration::from_millis(500))
+        .unwrap_or(true)
+}
+
 /// 默认主窗逻辑尺寸（与 tauri.conf / WINDOW 常量一致）。
 const MAIN_DEFAULT_W: f64 = 720.0;
 const MAIN_DEFAULT_H: f64 = 480.0;

@@ -293,17 +293,17 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### 菜单栏
 
-`runtime/menubar.rs`，框架唯一托盘图标（`public/bar_icon.png` + `icon_as_template` 深浅色自适应），左键弹聚合菜单。
+`runtime/menubar.rs`，框架唯一托盘图标（`public/bar_icon.png` + `icon_as_template` 深浅色自适应），左键弹聚合菜单；另供 `is_icon_visible` 可见性查询（常驻采样方据此挂起）。
 
 **扩展贡献**：含 native/ 的扩展在 Rust `setup` 内 `menubar::register(MenuBarContribution{ title, order, build, on_event })`：
 
 - `title`：分组标题（disabled 项渲染）
-- `order`：段落排序键，与前端扩展 `meta.order` 同值（升序渲染；并行 setup 的 register 顺序不定，排序保证跨启动稳定）
+- `order`：段落排序键，默认与前端扩展 `meta.order` 同值（升序渲染；并行 setup 的 register 顺序不定，排序保证跨启动稳定）；例外 system-status 取 30 置顶（状态速览先于 proxy/awake 交互项）
 - `build`：返回 `Vec<MenuEntry>` 快照（`Item`/`CheckItem`/`Submenu`/`Separator`）
 - `on_event`：收点击 id 自行过滤
 - 状态变更后调 `menubar::refresh(&app)` 触发重建
 
-**渲染规则**：菜单首组恒为框架基础项「打开 Voidnix」（`show_main`）+「检查更新」（emit `check-update`，`useAppLifecycle` 接收：唤起窗口 + `updateStore.startCheck()`；update store 检测到新版本后经 `set_update_version` 命令同步，项文案切换为「更新到新版本（x.x.x）」，reset 还原），扩展段居中按需追加（每段前插 disabled 标题项，段间分隔线），尾部框架基础项「退出」（复用 `quit_app`）垫底。
+**渲染规则**：菜单首组恒为框架基础项「打开 Voidnix」（`show_main`）+「检查更新」（emit `check-update`，`useAppLifecycle` 接收：唤起窗口 + `updateStore.startCheck()`；update store 检测到新版本后经 `set_update_version` 命令同步，项文案切换为「更新到新版本（x.x.x）」，reset 还原），扩展段居中按需追加（每段前插 disabled 标题项，段间分隔线），尾部框架基础项「退出」（复用 `quit_app`）垫底。**菜单浏览期间跳过重建**（`platform/window.rs::is_menu_open` 探测本进程 NSMenu 窗口在屏）：`set_menu` 替换 NSMenu 会立即关闭打开中的下拉菜单（system-status 5s 采样周期 refresh 的必撞场景）；悬挂的重建由 500ms 延迟重试补齐（`RETRY_SCHEDULED` 单飞守卫防堆积，不依赖任何扩展的采样轮次）。
 
 ### 检查更新
 
@@ -313,10 +313,11 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **实现范式**：镜像 `shortcut.rs`（`LazyLock<Mutex<Vec>>` + free function，`Arc<dyn Fn>` 锁外调用防 `on_event→refresh` 重入死锁）。Rust 侧能力（非 TS `Extension` 槽——菜单构建依赖 Rust State，纯 TS 扩展无此需求）。
 
-**消费者**（2 个）：
+**消费者**（3 个）：
 
 - **awake**：启用开关 CheckItem + 熄屏方式二级菜单（设置项 `menubarToggleVisible` 控制是否常驻显示，勾选态反映 enabled 与当前策略；开启路径经授权弹窗）
 - **proxy**：设置项 `menubarVisible` 控制贡献段常显（替代「已连接才显示」）；段内「打开扩展」+ 连接状态 CheckItem（勾选态反映连接、可点切换，已连接显示当前节点；未过首启流程时连接回退打开扩展）（详见 [proxy.md](docs/extensions/proxy.md)）
+- **system-status**：下拉菜单「系统状态」段（order 30 置顶），单个可点击状态行「CPU x% · 内存 x% · x°C」（百分比两项带标识、温度靠单位自表意；温度缺失省段；点击 emit `open-extension` 打开扩展界面，与 proxy「打开扩展」同路径）；显隐由扩展设置页 `menubarVisible` 控制（config subview，搜索栏 Actions 齿轮进入，proxy/agent 同款；config watch 经 `set_system_status_menubar_visible` 同步 AtomicBool，初始 false 防启动闪现，关闭时采样一并挂起）；setup 内常驻采样任务（镜像 awake 电池巡检范式）：CPU/内存每 5s、温度每 30s（结果缓存，阻塞采集走 spawn_blocking），每轮写 `menu_line` 缓存并 `refresh` 重建菜单（build 读缓存零阻塞），图标隐藏时跳过采样
 
 ### Agent 引擎
 
@@ -540,6 +541,7 @@ src/
     ├── zsh-autosuggestions/{bin/, index.zsh, signals.log, bin.version, config.json}  # zsh 补全
     ├── awake/{sleep-watchdog-*.flag, config.json}   # 睡眠 watchdog flag（按 pid 命名，运行时按需）+ 配置
     ├── screenshot/config.json
+    ├── system-status/config.json        # 菜单栏状态段显隐（menubarVisible）
     ├── window-manager/config.json
     ├── finder-ext/config.json          # 用 App 打开最近使用（recentApps，MRU 上限 3）
     ├── translate/config.json

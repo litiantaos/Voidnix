@@ -1,14 +1,17 @@
 use crate::runtime::registry::Extension;
 use serde::Serialize;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 use sysinfo::{
     Components, DiskKind, Disks, Networks, ProcessRefreshKind, ProcessesToUpdate, System,
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
-/// 系统状态扩展：硬件信息 + 实时状态。拉模式（前端进入模块轮询，零常驻后台）。
+/// 系统状态扩展：硬件信息 + 实时状态。快照为拉模式（前端进入模块轮询）；
+/// 菜单栏下拉状态行（单个可点击项，点击打开扩展界面）由 setup 内采样任务供给
+/// （CPU/内存 5s、温度 30s，图标隐藏时挂起，见 `spawn_menu_sampler`）。
 /// sysinfo 全局实例在 setup 时创建并 prime CPU（首次 refresh_cpu_usage 后下次才有真实使用率）。
 pub struct SystemState {
     sys: Mutex<System>,
@@ -18,6 +21,11 @@ pub struct SystemState {
     net_stats: Mutex<NetStats>,
     /// GPU 信息缓存（system_profiler 调用慢 ~1s，静态信息缓存首次结果）
     gpu: Mutex<Option<(String, Option<u32>)>>,
+    /// 菜单栏状态行缓存（采样任务写、MenuBarContribution build 读，build 零阻塞）
+    menu_line: Mutex<Option<String>>,
+    /// 菜单栏状态段显隐（前端 config watch 经 set_system_status_menubar_visible 同步）。
+    /// 初始 false：生效值到位前不显示，防配置关闭时启动闪现（与 menubar ICON_VISIBLE 同思路）
+    menubar_visible: AtomicBool,
 }
 
 struct NetStats {
@@ -195,6 +203,18 @@ fn process_refresh_kind() -> ProcessRefreshKind {
     ProcessRefreshKind::nothing().with_cpu().with_memory()
 }
 
+/// 菜单栏状态段显隐（前端 config watch 同步，Config 字段型）。
+#[tauri::command]
+pub async fn set_system_status_menubar_visible(
+    app: AppHandle,
+    state: State<'_, SystemState>,
+    visible: bool,
+) -> Result<(), String> {
+    state.menubar_visible.store(visible, Ordering::Relaxed);
+    crate::runtime::menubar::refresh(&app);
+    Ok(())
+}
+
 /// 实时快照（每 2s 轮询）。
 ///
 /// 声明 async 而无显式 await：Tauri 把 async command body 调度到 runtime worker 线程，
@@ -209,16 +229,8 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
     let cpu_usage = sys.global_cpu_usage();
     let cpu_cores_usage = sys.cpus().iter().map(|c| c.cpu_usage()).collect();
 
-    // CPU 温度：取 label 含 cpu 的首个传感器，过滤无效值
-    let cpu_temp = {
-        let mut comps = crate::runtime::lock_or_recover(&state.components);
-        comps.refresh(false);
-        comps
-            .iter()
-            .find(|c| c.label().to_lowercase().contains("cpu"))
-            .and_then(|c| c.temperature())
-            .filter(|t| *t > 0.0 && *t < 200.0)
-    };
+    // CPU 温度：跨平台传感器选择（Intel 含 cpu 标签 / Apple Silicon PMU tdie 族）
+    let cpu_temp = cpu_temp_of(&state);
 
     // 磁盘（跳过 APFS 系统数据卷 + 按 name 去重）
     let disks_usage = {
@@ -549,6 +561,186 @@ fn local_ip() -> String {
         .unwrap_or_default()
 }
 
+/// 刷新温度传感器并取 CPU 温度（snapshot 与菜单栏采样共用）。
+fn cpu_temp_of(state: &SystemState) -> Option<f32> {
+    let mut comps = crate::runtime::lock_or_recover(&state.components);
+    comps.refresh(false);
+    let sensors: Vec<(&str, Option<f32>)> =
+        comps.iter().map(|c| (c.label(), c.temperature())).collect();
+    pick_cpu_temp(&sensors)
+}
+
+/// CPU 温度传感器选择（标签跨平台形态不同）：Intel 命中 label 含 cpu 的传感器
+/// （sysinfo 映射 SMC 键为 PECI CPU / CPU Proximity）；Apple Silicon 无 cpu 标签，
+/// IOHID 温度传感器为 PMU tdie*（SoC 各 die 温度，随负载爬升）。两类各取族内
+/// 最大值（最热 die 最能代表负载），cpu 标签优先命中。
+fn pick_cpu_temp(sensors: &[(&str, Option<f32>)]) -> Option<f32> {
+    fn max_valid(sensors: &[(&str, Option<f32>)], matched: impl Fn(&str) -> bool) -> Option<f32> {
+        sensors
+            .iter()
+            .filter(|(label, t)| {
+                matched(&label.to_lowercase()) && t.is_some_and(|v| v > 0.0 && v < 200.0)
+            })
+            .filter_map(|(_, t)| *t)
+            .fold(None, |acc: Option<f32>, t| {
+                Some(acc.map_or(t, |a| a.max(t)))
+            })
+    }
+    max_valid(sensors, |l| l.contains("cpu"))
+        .or_else(|| max_valid(sensors, |l| l.starts_with("pmu tdie")))
+}
+
+// ── 菜单栏下拉状态行 ──
+
+/// CPU/内存采样间隔（CPU 差值语义的最小窗口远小于此，5s 粒度足够速览）。
+const MENU_FAST_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+/// 温度每 N 轮快采一次（IOHID 传感器刷新开销较高，30s 低频）。
+const MENU_SLOW_EVERY: u32 = 6;
+
+/// 下拉菜单状态行（单个可点击项）：「CPU 12% · 内存 44% · 49°C」。
+/// 百分比两项带标识表意（纯数值表意不明），温度靠 °C 单位自表意省标签。
+/// 温度缺失时省略温度段。
+fn format_status_line(cpu: f32, mem_used: u64, mem_total: u64, temp: Option<f32>) -> String {
+    let mut parts = vec![format!("CPU {cpu:.0}%")];
+    if mem_total > 0 {
+        parts.push(format!(
+            "内存 {:.0}%",
+            mem_used as f64 / mem_total as f64 * 100.0
+        ));
+    }
+    if let Some(t) = temp {
+        parts.push(format!("{t:.0}°C"));
+    }
+    parts.join(" · ")
+}
+
+/// 一轮快指标采样（CPU/内存）+ 组装状态行；温度由调用方缓存传入。
+fn sample_line(app: &AppHandle, temp: Option<f32>) -> Option<String> {
+    let state = app.try_state::<SystemState>()?;
+    let (cpu, used, total) = {
+        let mut sys = crate::runtime::lock_or_recover(&state.sys);
+        sys.refresh_cpu_usage();
+        sys.refresh_memory();
+        (
+            sys.global_cpu_usage(),
+            sys.used_memory(),
+            sys.total_memory(),
+        )
+    };
+    Some(format_status_line(cpu, used, total, temp))
+}
+
+/// 慢指标采样：CPU 温度（IOHID 传感器刷新）。外层 None = 未采到状态（state 缺失），
+/// 内层 None = 温度传感器无有效值——两层语义供采样循环的缓存 flatten 区分。
+fn sample_slow(app: &AppHandle) -> Option<Option<f32>> {
+    let state = app.try_state::<SystemState>()?;
+    Some(cpu_temp_of(&state))
+}
+
+/// 菜单栏状态行采样任务：快指标每轮采、温度每 `MENU_SLOW_EVERY` 轮采（结果缓存），
+/// 每轮写 `menu_line` 缓存并 refresh 重建菜单（打开下拉即见最近快照）。
+/// 图标隐藏时跳过采样（零开销挂起），恢复可见后下一轮补上；阻塞采集走 spawn_blocking。
+fn spawn_menu_sampler(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut tick = tokio::time::interval(MENU_FAST_INTERVAL);
+        let mut round: u32 = 0;
+        // 启动即采一次温度（interval 首 tick 立即到达，图标显示后即刻有完整状态行）
+        let mut slow = None;
+        loop {
+            tick.tick().await;
+            if !crate::runtime::menubar::is_icon_visible() {
+                continue;
+            }
+            if !app
+                .state::<SystemState>()
+                .menubar_visible
+                .load(Ordering::Relaxed)
+            {
+                continue;
+            }
+            round = round.wrapping_add(1);
+            if round.is_multiple_of(MENU_SLOW_EVERY) || slow.is_none() {
+                let a = app.clone();
+                if let Ok(s) = tauri::async_runtime::spawn_blocking(move || sample_slow(&a)).await {
+                    slow = s;
+                }
+            }
+            if let Some(line) = sample_line(&app, slow.flatten()) {
+                let state = app.state::<SystemState>();
+                *crate::runtime::lock_or_recover(&state.menu_line) = Some(line);
+                crate::runtime::menubar::refresh(&app);
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_status_line, pick_cpu_temp};
+
+    #[test]
+    fn status_line_full_metrics() {
+        let s = format_status_line(12.4, 7_000_000_000, 16_000_000_000, Some(48.6));
+        assert_eq!(s, "CPU 12% · 内存 44% · 49°C");
+    }
+
+    #[test]
+    fn status_line_without_temp() {
+        let s = format_status_line(8.0, 8_000_000_000, 16_000_000_000, None);
+        assert_eq!(s, "CPU 8% · 内存 50%");
+    }
+
+    #[test]
+    fn status_line_zero_mem_total_skips_mem() {
+        let s = format_status_line(3.0, 0, 0, None);
+        assert_eq!(s, "CPU 3%");
+    }
+
+    #[test]
+    fn picks_max_among_cpu_labels_on_intel() {
+        let sensors = [
+            ("PECI CPU", Some(55.0)),
+            ("CPU Proximity", Some(50.0)),
+            ("GPU", Some(60.0)),
+        ];
+        assert_eq!(pick_cpu_temp(&sensors), Some(55.0));
+    }
+
+    #[test]
+    fn picks_pmu_tdie_max_on_apple_silicon() {
+        let sensors = [
+            ("PMU tdie1", Some(43.8)),
+            ("PMU tdie10", Some(44.2)),
+            ("gas gauge battery", Some(34.9)),
+            ("NAND CH0 temp", Some(36.0)),
+        ];
+        assert_eq!(pick_cpu_temp(&sensors), Some(44.2));
+    }
+
+    #[test]
+    fn cpu_label_preferred_over_tdie() {
+        let sensors = [("PMU tdie1", Some(44.0)), ("CPU Proximity", Some(41.0))];
+        assert_eq!(pick_cpu_temp(&sensors), Some(41.0));
+    }
+
+    #[test]
+    fn filters_invalid_and_none() {
+        let sensors = [
+            ("PMU tdie1", Some(0.0)),
+            ("PMU tdie2", Some(250.0)),
+            ("PMU tdie3", None),
+            ("als-temp", None),
+        ];
+        assert_eq!(pick_cpu_temp(&sensors), None);
+    }
+
+    #[test]
+    fn none_when_no_match() {
+        let sensors = [("NAND CH0 temp", Some(36.0))];
+        assert_eq!(pick_cpu_temp(&sensors), None);
+    }
+}
+
 /// 系统状态扩展。
 pub struct SystemStatusExtension;
 
@@ -575,6 +767,8 @@ impl Extension for SystemStatusExtension {
                 last_tx: 0,
             }),
             gpu: Mutex::new(None),
+            menu_line: Mutex::new(None),
+            menubar_visible: AtomicBool::new(false),
         });
 
         // 后台 prime：refresh_cpu_usage / refresh_processes 后下次调用才有真实使用率（差值语义）。
@@ -597,6 +791,42 @@ impl Extension for SystemStatusExtension {
                 state.components.lock().unwrap().refresh(false);
             }
         });
+
+        // 菜单栏下拉状态行（单个可点击项，点击打开扩展界面；build 读缓存零阻塞）。
+        // order 30 置顶（proxy 40 / awake 160 之前）：状态速览先于交互项
+        crate::runtime::menubar::register(crate::runtime::menubar::MenuBarContribution {
+            title: "系统状态",
+            order: 30,
+            build: std::sync::Arc::new(|app: &AppHandle| {
+                let Some(state) = app.try_state::<SystemState>() else {
+                    return vec![];
+                };
+                if !state.menubar_visible.load(Ordering::Relaxed) {
+                    return vec![];
+                }
+                let line = crate::runtime::lock_or_recover(&state.menu_line).clone();
+                match line {
+                    Some(label) => vec![crate::runtime::menubar::MenuEntry::Item {
+                        id: "system_status_open".into(),
+                        label,
+                        enabled: true,
+                    }],
+                    None => vec![],
+                }
+            }),
+            on_event: std::sync::Arc::new(|app: &AppHandle, id: &str| {
+                if id == "system_status_open" {
+                    let was_visible = crate::runtime::shortcut::is_window_visible();
+                    let _ = app.emit(
+                        "open-extension",
+                        serde_json::json!({ "id": "system-status", "wasVisible": was_visible }),
+                    );
+                }
+            }),
+        });
+
+        // 菜单栏状态行采样（图标隐藏时挂起）
+        spawn_menu_sampler(app.clone());
         Ok(())
     }
 }

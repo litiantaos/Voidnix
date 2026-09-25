@@ -1,5 +1,8 @@
 import { defineExtension } from '@/runtime/extension-registry'
 import SystemStatusView from './View.vue'
+import SystemStatusSettings from './Settings.vue'
+import SystemStatusActions from './Actions.vue'
+import './config'
 import './locales'
 
 export default defineExtension({
@@ -35,4 +38,11 @@ export default defineExtension({
   disableSearchInput: true,
   windowHeight: 'auto',
   mainView: () => SystemStatusView,
+  searchBarAccessory: () => SystemStatusActions,
+  /// config（设置）内容少走 auto 自适应
+  subviews: { config: () => SystemStatusSettings },
+  subviewHeights: { config: 'auto' },
+  subviewTitle: {
+    config: { 'zh-CN': '设置', en: 'Settings' },
+  },
 })

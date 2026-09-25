@@ -129,6 +129,7 @@ macro_rules! configure_app {
             crate::extensions::search::commands::reveal_in_finder,
             crate::extensions::search::commands::search_apps,
             crate::extensions::search::commands::search_files,
+            crate::extensions::system_status::set_system_status_menubar_visible,
             crate::extensions::system_status::system_snapshot,
             crate::extensions::system_status::system_static_info,
             crate::extensions::translate::ai_translate::translate_ai,

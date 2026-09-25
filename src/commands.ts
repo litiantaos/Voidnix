@@ -166,6 +166,7 @@ export const CMD = {
   // —— system-status ——
   systemStaticInfo: 'system_static_info',
   systemSnapshot: 'system_snapshot',
+  setSystemStatusMenubarVisible: 'set_system_status_menubar_visible',
 
   // —— video ——
   videoCoreStatus: 'video_core_status',

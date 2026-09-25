@@ -41,8 +41,8 @@ export default defineExtension({
 - `search`：SearchProvider.dynamic 单通道召回（消费者见下「搜索集成」）
 - `onExecute`：搜索结果回车动作，扩展私有（无消费者）
 - `mainView`：主视图组件（17 扩展）
-- `searchBarAccessory`：搜索栏右侧配件（6：clipboard/agent/translate/proxy/ai-providers/notes）
-- `subviews`：扩展私有命名子视图（7：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{connections/rules/logs}、homebrew{detail}、notes{config}）
+- `searchBarAccessory`：搜索栏右侧配件（7：clipboard/agent/translate/proxy/ai-providers/notes/system-status）
+- `subviews`：扩展私有命名子视图（8：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{connections/rules/logs}、homebrew{detail}、notes{config}、system-status{config}）
 - `subviewTitle`：子视图显示名（id→中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」（2：proxy、homebrew）
 - `globalShortcuts`：全局快捷键绑定（6：clipboard/screenshot/agent/translate/finder-ext/notes）
 - `placeholder`：搜索框占位提示，激活扩展时显示（7：clipboard/currency/ip/time/base64/calculator/homebrew）

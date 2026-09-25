@@ -97,6 +97,11 @@ pub fn refresh(app: &AppHandle) {
     rebuild(app);
 }
 
+/// 菜单栏图标是否可见（常驻采样方据此挂起，图标隐藏时零采样开销）。
+pub fn is_icon_visible() -> bool {
+    ICON_VISIBLE.load(Ordering::Relaxed)
+}
+
 /// 设置开关：菜单栏图标显隐（前端 settings watch 同步，Rust 侧不读配置文件）。
 #[tauri::command]
 pub fn set_menubar_visible(app: AppHandle, visible: bool) {
@@ -111,10 +116,28 @@ pub fn set_update_version(app: AppHandle, version: Option<String>) {
     rebuild(&app);
 }
 
+/// 菜单浏览期间跳过重建后的延迟重试单飞（防长开菜单期间重试线程堆积）。
+static RETRY_SCHEDULED: AtomicBool = AtomicBool::new(false);
+
 fn rebuild(app: &AppHandle) {
     if !ICON_VISIBLE.load(Ordering::Relaxed) {
         if let Some(tray) = app.tray_by_id(TRAY_ID) {
             let _ = tray.set_visible(false);
+        }
+        return;
+    }
+
+    // 菜单浏览期间跳过重建：set_menu 替换 NSMenu 会立即关闭打开中的下拉菜单。
+    // 悬挂的重建由 500ms 延迟重试补齐（单飞守卫，菜单长开期间每 500ms 复查一次，
+    // 不依赖任何扩展的采样轮次）。
+    if crate::platform::window::is_menu_open(app) {
+        if !RETRY_SCHEDULED.swap(true, Ordering::Relaxed) {
+            let retry_app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                RETRY_SCHEDULED.store(false, Ordering::Relaxed);
+                rebuild(&retry_app);
+            });
         }
         return;
     }
