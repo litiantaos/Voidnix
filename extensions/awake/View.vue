@@ -74,5 +74,20 @@ const items = computed<SettingItem[]>(() => [
     },
     group: t('awake.group.general'),
   },
+  {
+    id: 'screenPolicy',
+    title: t('awake.screenPolicy'),
+    subtitle: t('awake.screenPolicyHint'),
+    type: 'select',
+    value: awakeConfig.screenPolicy,
+    options: [
+      { label: t('awake.screenPolicy.dim'), value: 'dim' },
+      { label: t('awake.screenPolicy.sleep'), value: 'sleep' },
+    ],
+    update: (value: string | number) => {
+      awakeConfig.screenPolicy = value as typeof awakeConfig.screenPolicy
+    },
+    group: t('awake.group.general'),
+  },
 ])
 </script>

@@ -133,6 +133,7 @@ fn open_extension(app: &AppHandle) {
 pub(crate) fn register() {
     crate::runtime::menubar::register(MenuBarContribution {
         title: "代理",
+        order: 40,
         build: Arc::new(build_proxy),
         on_event: Arc::new(on_proxy_event),
     });

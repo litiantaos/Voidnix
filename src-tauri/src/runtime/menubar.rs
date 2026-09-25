@@ -13,6 +13,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use tauri::menu::{
     CheckMenuItem, IsMenuItem, Menu, MenuBuilder, MenuEvent, MenuItem, PredefinedMenuItem,
+    SubmenuBuilder,
 };
 use tauri::tray::TrayIconBuilder;
 use tauri::AppHandle;
@@ -54,6 +55,11 @@ pub enum MenuEntry {
         label: String,
         checked: bool,
     },
+    /// 子菜单（如「熄屏方式」）。
+    Submenu {
+        label: String,
+        items: Vec<MenuEntry>,
+    },
     /// 分隔线。
     Separator,
 }
@@ -68,6 +74,9 @@ pub enum MenuEntry {
 /// 若持锁调用将重入死锁（std::sync::Mutex 非重入）。
 pub struct MenuBarContribution {
     pub title: &'static str,
+    /// 段落排序键，与前端扩展 `meta.order` 同值（升序渲染）。扩展 setup 为
+    /// join_all 并行，register 完成顺序不定，排序保证菜单段顺序跨启动稳定
+    pub order: u32,
     pub build: MenuBuild,
     pub on_event: MenuOnEvent,
 }
@@ -110,15 +119,19 @@ fn rebuild(app: &AppHandle) {
         return;
     }
 
-    // 锁内仅克隆 title + build 句柄，锁外调用 build 闭包（防 build/on_event → refresh 重入死锁）
-    let specs: Vec<(&'static str, MenuBuild)> = {
+    // 锁内仅克隆 title/order + build 句柄，锁外调用 build 闭包（防 build/on_event → refresh 重入死锁）
+    let mut specs: Vec<(u32, &'static str, MenuBuild)> = {
         let guard = lock_or_recover(&CONTRIBUTIONS);
-        guard.iter().map(|c| (c.title, c.build.clone())).collect()
+        guard
+            .iter()
+            .map(|c| (c.order, c.title, c.build.clone()))
+            .collect()
     };
+    specs.sort_by_key(|(order, _, _)| *order);
     // build 快照，过滤空段
     let sections: Vec<(&'static str, Vec<MenuEntry>)> = specs
         .iter()
-        .map(|(title, build)| (*title, build(app)))
+        .map(|(_, title, build)| (*title, build(app)))
         .filter(|(_, items)| !items.is_empty())
         .collect();
 
@@ -250,6 +263,15 @@ fn entries_to_items(
                 )
                 .map_err(|e| e.to_string())?;
                 out.push(Box::new(it));
+            }
+            MenuEntry::Submenu { label, items } => {
+                let child = entries_to_items(app, items)?;
+                let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = child.iter().map(|b| &**b).collect();
+                let sub = SubmenuBuilder::new(app, label.as_str())
+                    .items(&refs)
+                    .build()
+                    .map_err(|e| e.to_string())?;
+                out.push(Box::new(sub));
             }
             MenuEntry::Separator => {
                 let it = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;

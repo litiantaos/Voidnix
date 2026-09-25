@@ -56,6 +56,7 @@ macro_rules! configure_app {
             crate::extensions::awake::is_awake_enabled,
             crate::extensions::awake::set_awake_enabled,
             crate::extensions::awake::set_awake_menubar_visible,
+            crate::extensions::awake::set_awake_screen_policy,
             crate::extensions::clean_mode::is_clean_mode_enabled,
             crate::extensions::clean_mode::set_clean_mode_enabled,
             crate::extensions::clipboard::commands::clear_clipboard_history,

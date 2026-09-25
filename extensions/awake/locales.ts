@@ -8,4 +8,17 @@ registerMessages({
   },
   'awake.group.general': { 'zh-CN': '通用', en: 'General' },
   'awake.menubarToggle': { 'zh-CN': '显示菜单栏开关', en: 'Show Menu Bar Toggle' },
+  'awake.screenPolicy': { 'zh-CN': '合盖熄屏方式', en: 'Closed-Lid Screen' },
+  'awake.screenPolicyHint': {
+    'zh-CN': '零亮度保持画面流活跃可远程控制，显示睡眠更省电但远程会冻结',
+    en: 'Zero brightness keeps the framebuffer live for remote control; display sleep saves more power but freezes remote sessions.',
+  },
+  'awake.screenPolicy.dim': {
+    'zh-CN': '零亮度（远程可用）',
+    en: 'Zero brightness (remote-friendly)',
+  },
+  'awake.screenPolicy.sleep': {
+    'zh-CN': '显示睡眠（更省电）',
+    en: 'Display sleep (saves power)',
+  },
 })

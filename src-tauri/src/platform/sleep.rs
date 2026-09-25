@@ -5,7 +5,30 @@ use std::time::Duration;
 use core_foundation::base::TCFType;
 use core_foundation::boolean::CFBoolean;
 use core_foundation::string::{CFString, CFStringRef};
-use std::ffi::{c_char, c_void};
+use std::ffi::{c_char, c_int, c_void};
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
+use std::sync::OnceLock;
+
+mod cg {
+    //! CoreGraphics 显示列表共享 extern（has_external_display 与 builtin_display_id 共用，
+    //! 消除重复声明）。
+    pub type CGDirectDisplayID = u32;
+    pub const K_CG_ERROR_SUCCESS: i32 = 0;
+
+    extern "C" {
+        pub fn CGGetOnlineDisplayList(
+            max_displays: u32,
+            online_displays: *mut CGDirectDisplayID,
+            display_count: *mut u32,
+        ) -> i32;
+        pub fn CGGetActiveDisplayList(
+            max_displays: u32,
+            active_displays: *mut CGDirectDisplayID,
+            display_count: *mut u32,
+        ) -> i32;
+        pub fn CGDisplayIsBuiltin(display: CGDirectDisplayID) -> u32;
+    }
+}
 
 /// 熄屏补熄节流间隔：合盖停留期间面板可能被通知等重新点亮，按此间隔
 /// 复核补熄（`pmset displaysleepnow` 对已灭屏为幂等无操作）。
@@ -59,26 +82,114 @@ pub fn lid_is_closed() -> Option<bool> {
 /// 是否接有外接显示器（CoreGraphics 活动显示列表中存在非内置屏）。
 /// 合盖 + 外接 = clamshell 正常用法，外接屏应保持点亮。
 pub fn has_external_display() -> bool {
-    type CGDirectDisplayID = u32;
-    const K_CG_ERROR_SUCCESS: i32 = 0;
-    extern "C" {
-        fn CGGetActiveDisplayList(
-            max_displays: u32,
-            active_displays: *mut CGDirectDisplayID,
-            display_count: *mut u32,
-        ) -> i32;
-        fn CGDisplayIsBuiltin(display: CGDirectDisplayID) -> u32;
-    }
     // SAFETY: CoreGraphics C API，缓冲区按容量传入并由调用方栈持有；
     // 超过 8 块屏的机器截断前 8 块判定（外接判定不受影响）
     unsafe {
         let mut ids = [0u32; 8];
         let mut count: u32 = 0;
-        if CGGetActiveDisplayList(8, ids.as_mut_ptr(), &mut count) != K_CG_ERROR_SUCCESS {
+        if cg::CGGetActiveDisplayList(8, ids.as_mut_ptr(), &mut count) != cg::K_CG_ERROR_SUCCESS {
             return false;
         }
-        (0..count as usize).any(|i| CGDisplayIsBuiltin(ids[i]) == 0)
+        (0..count as usize).any(|i| cg::CGDisplayIsBuiltin(ids[i]) == 0)
     }
+}
+
+/// 内置面板的 display id：优先 online 列表（合盖后系统可能仍保持 online），
+/// 退 active 列表，再退进程内缓存——合盖后两个 CG 列表都会摘掉内置屏
+/// （Keepresso 实测），无缓存则合盖期 get/set 无目标。
+fn builtin_display_id() -> Option<u32> {
+    static LAST_BUILTIN: AtomicU32 = AtomicU32::new(0);
+    // SAFETY: CG C API，栈缓冲；两个列表 API 签名一致由 fn 指针复用
+    unsafe fn first_builtin(
+        list: unsafe extern "C" fn(u32, *mut u32, *mut u32) -> i32,
+    ) -> Option<u32> {
+        let mut ids = [0u32; 8];
+        let mut count: u32 = 0;
+        if list(8, ids.as_mut_ptr(), &mut count) != cg::K_CG_ERROR_SUCCESS {
+            return None;
+        }
+        (0..count as usize)
+            .map(|i| ids[i])
+            .find(|id| cg::CGDisplayIsBuiltin(*id) != 0)
+    }
+    let live = unsafe {
+        first_builtin(cg::CGGetOnlineDisplayList)
+            .or_else(|| first_builtin(cg::CGGetActiveDisplayList))
+    };
+    match live {
+        Some(id) => {
+            LAST_BUILTIN.store(id, AtomicOrdering::Relaxed);
+            Some(id)
+        }
+        None => match LAST_BUILTIN.load(AtomicOrdering::Relaxed) {
+            0 => None,
+            cached => Some(cached),
+        },
+    }
+}
+
+/// DisplayServices 私有 framework 符号（dlopen 一次按需 dlsym）。
+/// 该通道为 Keepresso 生产验证的同款实现（`KPBrightness.m`）。
+/// 返回裸符号地址，判空调用方负责。
+fn display_services_symbol(name: &std::ffi::CStr) -> *mut c_void {
+    static HANDLE: OnceLock<usize> = OnceLock::new();
+    extern "C" {
+        fn dlopen(path: *const c_char, mode: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    }
+    let handle = *HANDLE.get_or_init(|| {
+        // SAFETY: dlopen 对已加载 framework 返回同句柄（引用计数），
+        // RTLD_LAZY=1 延迟绑定；句柄以 usize 存入 OnceLock（裸指针非 Sync）
+        unsafe {
+            dlopen(
+                c"/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices"
+                    .as_ptr(),
+                1,
+            ) as usize
+        }
+    }) as *mut c_void;
+    if handle.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: handle 来自 dlopen 成功返回
+    unsafe { dlsym(handle, name.as_ptr()) }
+}
+
+/// 内置面板用户亮度（0..1），经 DisplayServices 私有 framework 读写。
+/// 通道选择依据（均实测于本机新背光架构）：IORegistry 直写
+/// `AppleARMBacklight.brightness`（无论 32/64 位 CFNumber）与
+/// `CoreDisplay_Display_SetUserBrightness` 均只改报告值、不驱动实际背光；
+/// DisplayServices 为 Keepresso 生产验证通道。读回值在新架构下同样是
+/// 服务层报告，写入有效性以物理观察为准（tick 诊断日志带写入返回值）。
+/// 符号缺失或无内置屏返回 None，消费方据此退化到显示睡眠策略。
+pub fn builtin_brightness() -> Option<f32> {
+    type GetFn = unsafe extern "C" fn(u32, *mut f32) -> i32;
+    let sym = display_services_symbol(c"DisplayServicesGetBrightness");
+    if sym.is_null() {
+        return None;
+    }
+    // SAFETY: 符号非空，按 DisplayServicesGetBrightness 的真实签名转译
+    let get: GetFn = unsafe { std::mem::transmute(sym) };
+    let id = builtin_display_id()?;
+    let mut level = 0f32;
+    // SAFETY: get 为已解析符号，id 来自 CG 列表/缓存
+    (unsafe { get(id, &mut level) } == 0).then_some(level)
+}
+
+/// 设置内置面板用户亮度（0..1，clamp）。返回写入是否被服务接受。
+pub fn set_builtin_brightness(value: f32) -> bool {
+    type SetFn = unsafe extern "C" fn(u32, f32) -> i32;
+    let sym = display_services_symbol(c"DisplayServicesSetBrightness");
+    if sym.is_null() {
+        return false;
+    }
+    // SAFETY: 符号非空，按 DisplayServicesSetBrightness 的真实签名转译
+    let set: SetFn = unsafe { std::mem::transmute(sym) };
+    let Some(id) = builtin_display_id() else {
+        return false;
+    };
+    // SAFETY: set 为已解析符号，float 按值传参
+    unsafe { set(id, value.clamp(0.0, 1.0)) == 0 }
 }
 
 /// 立即熄灭所有显示器（`pmset displaysleepnow`，无需 root）。fire-and-forget：
@@ -91,6 +202,72 @@ pub fn sleep_displays_now() {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
+}
+
+/// 面板视为「亮」的归一化阈值（macOS 合盖首拍即把背光归零，活读常为 0，
+/// 开盖期样本是恢复目标的可靠来源）。
+pub const BRIGHTNESS_LIT_THRESHOLD: f32 = 0.02;
+
+/// 零亮度策略的动作决策（纯函数供单测）。
+#[derive(Debug, PartialEq)]
+pub enum ScreenDimAction {
+    /// 合盖边沿：以 target 为恢复目标把背光归零（framebuffer 保持活跃，远程捕获流不断）
+    Zero { target: f32 },
+    /// 停留期被外部调亮：压回零（节流）
+    Rezero,
+    /// 开盖（或策略退出）：恢复保存的目标（调用方应在面板仍暗时才恢复）
+    Restore,
+    /// 本 tick 无动作
+    None,
+}
+
+/// 零亮度策略决策：合盖 + 无外接时归零背光（恢复目标取活读亮值，开盖期
+/// 样本兜底——合盖首拍活读常已归零）；开盖恢复；停留期被调亮则节流压回。
+/// lid 读 None 按 `was_closed` 闭锁延续。外接在场恒不动（macOS 自管内屏）。
+#[allow(clippy::too_many_arguments)]
+pub fn screen_dim_action(
+    lid_closed: Option<bool>,
+    was_closed: bool,
+    external: bool,
+    brightness: Option<f32>,
+    open_sample: Option<f32>,
+    has_saved: bool,
+    since_last_dim: Duration,
+) -> ScreenDimAction {
+    let closed_now = match lid_closed {
+        Some(closed) => closed,
+        None => was_closed,
+    };
+    if !closed_now {
+        return if has_saved {
+            ScreenDimAction::Restore
+        } else {
+            ScreenDimAction::None
+        };
+    }
+    if external {
+        return ScreenDimAction::None;
+    }
+    if !has_saved {
+        // 边沿：恢复目标优先活读亮值，macOS 合盖首拍即归零则退开盖样本；
+        // 两者皆无（从未采到亮值）不动，等开盖样本就绪后的下个边沿
+        let target = brightness
+            .filter(|b| *b > BRIGHTNESS_LIT_THRESHOLD)
+            .or(open_sample);
+        return match target {
+            Some(t) => ScreenDimAction::Zero { target: t },
+            None => ScreenDimAction::None,
+        };
+    }
+    // 停留期：外部调亮（或压零失败）时节流重试
+    if brightness
+        .map(|b| b > BRIGHTNESS_LIT_THRESHOLD)
+        .unwrap_or(false)
+        && since_last_dim >= RESLEEP_INTERVAL
+    {
+        return ScreenDimAction::Rezero;
+    }
+    ScreenDimAction::None
 }
 
 /// 熄屏决策（纯函数供单测）：处于「合盖 + 无外接」时需要熄屏——进入该
@@ -253,6 +430,68 @@ mod tests {
         assert!(!screen_sleep_due(None, false, false, long));
         assert!(!screen_sleep_due(None, false, true, short));
         assert!(screen_sleep_due(None, false, true, long));
+    }
+
+    #[test]
+    fn screen_dim_decision_lifecycle() {
+        use ScreenDimAction as A;
+        let long = RESLEEP_INTERVAL + Duration::from_secs(1);
+        let short = RESLEEP_INTERVAL - Duration::from_secs(1);
+        let lit = Some(0.5f32);
+        let dark = Some(0.0f32);
+        let no_sample: Option<f32> = None;
+
+        // 开盖：无保存不动，有保存恢复
+        assert_eq!(
+            screen_dim_action(Some(false), false, false, lit, no_sample, false, long),
+            A::None
+        );
+        assert_eq!(
+            screen_dim_action(Some(false), true, false, dark, no_sample, true, short),
+            A::Restore
+        );
+
+        // 合盖边沿：活读亮值即恢复目标；活读已归零则退开盖样本；两者皆无不动
+        assert_eq!(
+            screen_dim_action(Some(true), false, false, lit, no_sample, false, long),
+            A::Zero { target: 0.5 }
+        );
+        assert_eq!(
+            screen_dim_action(Some(true), false, false, dark, Some(0.7), false, long),
+            A::Zero { target: 0.7 }
+        );
+        assert_eq!(
+            screen_dim_action(Some(true), false, false, dark, no_sample, false, long),
+            A::None
+        );
+
+        // 停留期：被调亮且过节流才压回；暗或窗口内不动
+        assert_eq!(
+            screen_dim_action(Some(true), true, false, lit, no_sample, true, long),
+            A::Rezero
+        );
+        assert_eq!(
+            screen_dim_action(Some(true), true, false, lit, no_sample, true, short),
+            A::None
+        );
+        assert_eq!(
+            screen_dim_action(Some(true), true, false, dark, no_sample, true, long),
+            A::None
+        );
+
+        // 外接在场恒不动（macOS 自管内屏）；lid None 按闭锁延续
+        assert_eq!(
+            screen_dim_action(Some(true), false, true, lit, Some(0.5), false, long),
+            A::None
+        );
+        assert_eq!(
+            screen_dim_action(None, true, false, lit, no_sample, true, long),
+            A::Rezero
+        );
+        assert_eq!(
+            screen_dim_action(None, false, false, lit, no_sample, false, long),
+            A::None
+        );
     }
 
     #[test]

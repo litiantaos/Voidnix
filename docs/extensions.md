@@ -69,7 +69,7 @@ export default defineExtension({
 - `build: Arc<dyn Fn(&AppHandle) -> Vec<MenuEntry>>`：返回当前菜单快照。空 `Vec` = 该扩展当前不贡献（不参与菜单、不影响图标可见性）
 - `on_event: Arc<dyn Fn(&AppHandle, &str)>`：收到所有点击的 item id，扩展自行过滤归属项（约定 id 以扩展 id 为前缀避免碰撞，如 `proxy_toggle`）
 
-`MenuEntry` 三态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。菜单渲染规则、托盘图标可见性开关与现有消费者（awake / proxy）见 [AGENTS.md](../AGENTS.md)「菜单栏」节。
+`MenuEntry` 四态：`Item{id,label,enabled}` / `CheckItem{id,label,checked}` / `Submenu{label,items}` / `Separator`。状态变更后调 `menubar::refresh(&app)` 触发重建。菜单渲染规则、托盘图标可见性开关与现有消费者（awake / proxy）见 [AGENTS.md](../AGENTS.md)「菜单栏」节。
 
 ### UI 规约补充
 

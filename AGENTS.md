@@ -295,10 +295,11 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 `runtime/menubar.rs`，框架唯一托盘图标（`public/bar_icon.png` + `icon_as_template` 深浅色自适应），左键弹聚合菜单。
 
-**扩展贡献**：含 native/ 的扩展在 Rust `setup` 内 `menubar::register(MenuBarContribution{ title, build, on_event })`：
+**扩展贡献**：含 native/ 的扩展在 Rust `setup` 内 `menubar::register(MenuBarContribution{ title, order, build, on_event })`：
 
 - `title`：分组标题（disabled 项渲染）
-- `build`：返回 `Vec<MenuEntry>` 快照（`Item`/`CheckItem`/`Separator`）
+- `order`：段落排序键，与前端扩展 `meta.order` 同值（升序渲染；并行 setup 的 register 顺序不定，排序保证跨启动稳定）
+- `build`：返回 `Vec<MenuEntry>` 快照（`Item`/`CheckItem`/`Submenu`/`Separator`）
 - `on_event`：收点击 id 自行过滤
 - 状态变更后调 `menubar::refresh(&app)` 触发重建
 
@@ -314,7 +315,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **消费者**（2 个）：
 
-- **awake**：启用开关 CheckItem（设置项 `menubarToggleVisible` 控制是否常驻显示，勾选态反映 enabled，点击切换；开启路径经授权弹窗）
+- **awake**：启用开关 CheckItem + 熄屏方式二级菜单（设置项 `menubarToggleVisible` 控制是否常驻显示，勾选态反映 enabled 与当前策略；开启路径经授权弹窗）
 - **proxy**：设置项 `menubarVisible` 控制贡献段常显（替代「已连接才显示」）；段内「打开扩展」+ 连接状态 CheckItem（勾选态反映连接、可点切换，已连接显示当前节点；未过首启流程时连接回退打开扩展）（详见 [proxy.md](docs/extensions/proxy.md)）
 
 ### Agent 引擎
@@ -475,7 +476,7 @@ src-tauri/src/
     ├── permission.rs   # 系统权限原语 + 授权会话（详见 docs/permissions.md）
     ├── window_list.rs  # CGWindowList 共享封装（screenshot / window-manager / 授权会话避让共用）
     ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel + appearance 缓存）
-    ├── sleep.rs        # 睡眠域原语：root watchdog（osascript 授权 + flag 驱动 pmset disablesleep 边沿写 + pid 自愈）、合盖检测（AppleClamshellState）、外接屏判定、displaysleepnow 熄屏、电池状态解析（awake 消费）
+    ├── sleep.rs        # 睡眠域原语：root watchdog（osascript 授权 + flag 驱动 pmset disablesleep 边沿写 + pid 自愈）、合盖检测（AppleClamshellState）、外接屏判定、displaysleepnow、内置面板亮度读写（DisplayServices 私有 framework）、电池状态解析（awake 消费）
     └── path_guard.rs   # 统一路径校验
 ```
 

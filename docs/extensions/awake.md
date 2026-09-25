@@ -7,7 +7,9 @@
 三层结构：
 
 - `platform/sleep.rs::spawn_sleep_watchdog`：经 osascript 管理员授权启动一个 root 后台 sh 循环。循环每 2 秒轮询 flag 文件（`ext_data_dir/extensions/awake/sleep-watchdog-<pid>.flag`，按 app pid 命名防快速重启时旧 watchdog 退出清理误删新实例的 flag）与 app pid：flag 出现 → 上翻 `disablesleep 1`、消失 → 回落 0（各仅写一次，边沿触发）；app 退出/崩溃 → 恢复默认睡眠并自清 flag。
-- **熄屏巡检**（awake setup 的 2s tick）：`disablesleep` 挡住合盖睡眠后系统不会自动关内屏（无外接时 macOS 走的是睡眠路径而非 clamshell 关屏路径，背光常亮），须主动熄屏——合盖 + 无外接的边沿立即 `pmset displaysleepnow`（无需 root、对已灭屏幂等），停留期每 5s 节流补熄（面板被通知等重新点亮）。有外接屏时不熄（clamshell 外接显示是正常用法，该命令是全屏级会把外接屏一起黑掉）。合盖检测读 IORegistry `IOPMrootDomain` 的 `AppleClamshellState`（偶发读取失败以闭锁防抖，None 不翻转既有判定）；外接判定走 CG 活动显示列表的非内置屏。两者均为微秒级 syscall 无子进程。开盖瞬间与熄屏动作存在毫秒级竞态窗口（读 lid 后恰开盖），后果为开盖首帧被熄一次、任意输入唤醒，接受（Keepresso 同构方案同样存在）。
+- **熄屏巡检**（awake setup 的 2s tick）：`disablesleep` 挡住合盖睡眠后系统不会自动关内屏（无外接时 macOS 走的是睡眠路径而非 clamshell 关屏路径，背光常亮），须主动熄屏。合盖检测读 IORegistry `IOPMrootDomain` 的 `AppleClamshellState`（偶发读取失败以闭锁防抖，None 不翻转既有判定）；外接判定走 CG 活动显示列表的非内置屏；两者均为微秒级 syscall 无子进程。两档策略（config `screenPolicy`，默认 `dim`）：
+  - `sleep`（显示睡眠）：合盖 + 无外接的边沿立即 `pmset displaysleepnow`（无需 root、对已灭屏幂等），停留期每 5s 节流补熄。省电最优，但显示子系统真睡、屏幕捕获流冻结——第三方远程（如 UU 远程）停摆。
+  - `dim`（零亮度）：内置面板背光归零、framebuffer 保持活跃，远程控制可用。亮度经私有 `DisplayServices.framework` 的 `DisplayServicesGet/SetBrightness(display, float)` 读写（Keepresso 生产验证的同款通道；dlsym 解析，display id 取 online→active→进程内缓存——合盖后两个 CG 列表都会摘掉内置屏）。恢复目标在开盖期持续采样（macOS 合盖首拍即归零，活读常为 0），开盖（或开关关闭）时面板仍暗才恢复（外部已调亮的不覆盖）；符号缺失/无内置屏自动退化显示睡眠。零亮度残留时关闭开关会先还亮度再退场（防开盖黑屏）。**本机新背光架构实测**：IORegistry 直写 `AppleARMBacklight`（32/64 位 CFNumber 均同）与 `CoreDisplay_Display_SetUserBrightness` 都只改报告值不驱动实际背光，且读回验证全部假阳性（写入后读回一致仅说明服务层状态变了）——亮度通道的有效性以物理观察为准，诊断日志带写入返回值。
 - `extensions/awake/native/mod.rs`：意图状态（`AtomicBool`）+ 授权一次性守卫（`helper_started`，本 app 运行期首次开启弹一次密码，之后全靠 flag 文件零弹窗）。
 
 ## 关键决策
@@ -19,7 +21,7 @@
 - **授权并发守卫**（`engaging` AtomicBool CAS）：授权弹窗模态阻塞期间二次开启会被拒绝，防 osascript 授权对话框叠加。
 - **电池护栏**：`disablesleep` 会压住系统的低电量睡眠路径（Keepresso 实证：合盖 Mac 一路跑过截止线），60s 低频巡检 `pmset -g batt`，放电中低于 20% 即解除持有（删 flag，watchdog 回落），系统随即入睡；读取失败/插电一律 no-op。一次性解除无自动恢复（滞回随之不需要），重新开启由用户决定。
 - **Rust 侧关闭的 config 回写**：菜单栏开关与电池护栏解除都经 `awake-enabled` 事件由 `config.ts` 模块级 listener 回写 `enabled=false`（不依赖 View 挂载），防重启后 watch immediate 误重新持有。
-- **菜单栏快捷开关**：config `menubarToggleVisible`（默认 false）经 watch 同步 Rust `set_awake_menubar_visible`；开启后菜单段常驻（不随 enabled 显隐），CheckItem 勾选态反映 enabled、点击按当前状态取反。开启路径走授权弹窗，取消/进行中静默（勾选态不变，重试即可）。
+- **菜单栏快捷开关**：config `menubarToggleVisible`（默认 false）经 watch 同步 Rust `set_awake_menubar_visible`；开启后菜单段常驻（不随 enabled 显隐），含启用开关 CheckItem 与「熄屏方式」二级菜单（勾选态反映 enabled 与当前策略，点击切换）。开启路径走授权弹窗，取消/进行中静默（勾选态不变，重试即可）。
 
 ## 远程会话
 

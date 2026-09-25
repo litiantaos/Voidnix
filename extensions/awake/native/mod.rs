@@ -2,7 +2,7 @@ use crate::platform::sleep::{self, SleepWatchdogError};
 use crate::runtime::menubar::{MenuBarContribution, MenuEntry};
 use crate::runtime::registry::Extension;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -17,6 +17,10 @@ pub struct AwakeState {
     /// 菜单栏快捷开关可见性（前端 config watch 同步）。菜单段不随 enabled
     /// 变化显隐——开启即常驻，CheckItem 勾选态反映 enabled。
     menubar_visible: AtomicBool,
+    /// 合盖熄屏策略（前端 config watch 同步）：0=显示睡眠（displaysleepnow，
+    /// 省电最优但屏幕捕获流冻结、远程停摆）；1=零亮度（背光归零、framebuffer
+    /// 保持活跃，远程控制可用）
+    screen_policy: AtomicU8,
 }
 
 /// 电池护栏阈值：放电中低于此百分比即解除持有。disablesleep 会压住系统的
@@ -32,6 +36,13 @@ const BATTERY_FLOOR_PERCENT: u32 = 20;
 fn flag_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(crate::runtime::storage::ext_data_dir(app, "awake")?
         .join(format!("sleep-watchdog-{}.flag", std::process::id())))
+}
+
+/// dev 构建诊断日志（与 lib.rs [boot] 埋点同款门控），用于熄屏链路实测定位。
+fn debug_log(message: impl FnOnce() -> String) {
+    if cfg!(debug_assertions) {
+        eprintln!("{}", message());
+    }
 }
 
 #[tauri::command]
@@ -123,6 +134,24 @@ pub async fn set_awake_menubar_visible(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn set_awake_screen_policy(
+    app: AppHandle,
+    state: State<'_, AwakeState>,
+    policy: String,
+) -> Result<(), String> {
+    let value = match policy.as_str() {
+        "sleep" => 0u8,
+        "dim" => 1u8,
+        _ => return Err(format!("未知熄屏策略：{policy}")),
+    };
+    state.screen_policy.store(value, Ordering::Relaxed);
+    crate::runtime::menubar::refresh(&app);
+    // 菜单栏切换路径同步前端 config（watch 回声幂等）
+    let _ = app.emit("awake-policy", &policy);
+    Ok(())
+}
+
 /// Awake 扩展。
 pub struct AwakeExtension;
 
@@ -138,6 +167,7 @@ impl Extension for AwakeExtension {
             helper_started: AtomicBool::new(false),
             engaging: AtomicBool::new(false),
             menubar_visible: AtomicBool::new(false),
+            screen_policy: AtomicU8::new(1),
         });
         // 历史与异常清理：旧版虚拟显示器 binary（H12 曾落 temp_dir）、
         // 断电/被杀场景残留的旧 pid flag（watchdog 随 app 退出自愈，正常路径
@@ -165,6 +195,7 @@ impl Extension for AwakeExtension {
         // 前端 config watch 经 set_awake_menubar_visible 同步，默认不显示）
         crate::runtime::menubar::register(MenuBarContribution {
             title: "保持系统唤醒",
+            order: 160,
             build: Arc::new(build_awake),
             on_event: Arc::new(on_awake_event),
         });
@@ -203,33 +234,125 @@ impl Extension for AwakeExtension {
 
         // 熄屏巡检：disablesleep 挡住合盖睡眠后系统不会自动关内屏（无外接时
         // macOS 走的是睡眠路径而非 clamshell 关屏路径），须主动熄屏。合盖 +
-        // 无外接的边沿立即 displaysleepnow，停留期经节流补熄（面板被通知等
-        // 重新点亮）；有外接屏时不熄（clamshell 外接显示是正常用法，该命令
-        // 是全屏级会把外接屏一起黑掉）。2s 轮询仅合盖检测开销（IORegistry +
-        // CG 查询均为微秒级 syscall，无子进程）
+        // 无外接的边沿立即执行、停留期节流补做；有外接屏时不动（clamshell
+        // 外接显示是正常用法）。两档策略（screen_policy）：
+        // - 显示睡眠：displaysleepnow 全屏级熄灭，省电最优，但屏幕捕获流
+        //   随之冻结、远程控制停摆
+        // - 零亮度：背光归零、framebuffer 保持活跃，远程可用；开盖期持续
+        //   采样亮度作恢复目标（macOS 合盖首拍即归零，活读常为 0），开盖
+        //   （或开关关闭）时面板仍暗才恢复。亮度不可控机型自动退化显示睡眠
+        // 2s 轮询仅检测开销（IORegistry 合盖检测 + CG 显示列表 + DisplayServices
+        // 亮度读写均为微秒级调用）
         let screen_app = app.clone();
         tauri::async_runtime::spawn(async move {
+            use sleep::ScreenDimAction;
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(2));
             let mut was_closed = false;
             let mut last_sleep_at: Option<std::time::Instant> = None;
+            // 零亮度策略状态：开盖期亮度样本 / 恢复目标 / 上次压零时刻
+            let mut open_sample: Option<f32> = None;
+            let mut saved_target: Option<f32> = None;
+            let mut last_dim_at: Option<std::time::Instant> = None;
+            let since = |at: Option<std::time::Instant>| {
+                at.map(|t| std::time::Instant::now() - t)
+                    .unwrap_or(std::time::Duration::MAX)
+            };
             loop {
                 tick.tick().await;
-                let lid = sleep::lid_is_closed();
-                let due = screen_app
+                let enabled = screen_app
                     .state::<AwakeState>()
                     .enabled
-                    .load(Ordering::Relaxed)
-                    && sleep::screen_sleep_due(
+                    .load(Ordering::Relaxed);
+                let policy = screen_app
+                    .state::<AwakeState>()
+                    .screen_policy
+                    .load(Ordering::Relaxed);
+                let lid = sleep::lid_is_closed();
+                let external = sleep::has_external_display();
+
+                // 开关关闭后的兜底恢复：零亮度残留时无条件还亮度再退场
+                // （否则合盖态关开关会让开盖黑屏）
+                if !enabled {
+                    if let Some(target) = saved_target.take() {
+                        if sleep::builtin_brightness()
+                            .map(|b| b <= sleep::BRIGHTNESS_LIT_THRESHOLD)
+                            .unwrap_or(false)
+                        {
+                            let ok = sleep::set_builtin_brightness(target);
+                            debug_log(|| {
+                                format!("[awake] dim restore on-disable target={target} ok={ok}")
+                            });
+                        }
+                    }
+                    was_closed = false;
+                    last_sleep_at = None;
+                    last_dim_at = None;
+                    continue;
+                }
+
+                let brightness = sleep::builtin_brightness();
+                // 亮度恢复统一出口（独立于当前策略）：零亮度持有期间开盖即还
+                // 亮度——策略中途切换（dim→sleep）不能把恢复责任丢给已离开的
+                // 分支。外部已调亮的跳过并丢弃
+                if saved_target.is_some() && lid == Some(false) {
+                    if let Some(target) = saved_target.take() {
+                        if brightness
+                            .map(|b| b <= sleep::BRIGHTNESS_LIT_THRESHOLD)
+                            .unwrap_or(false)
+                        {
+                            let ok = sleep::set_builtin_brightness(target);
+                            debug_log(|| {
+                                format!("[awake] dim restore on-open target={target} ok={ok}")
+                            });
+                        }
+                    }
+                    last_dim_at = None;
+                }
+
+                let dim = policy == 1 && brightness.is_some();
+                if dim {
+                    // 开盖期持续采样亮读数（暗读跳过）作恢复目标
+                    if lid == Some(false) {
+                        if let Some(b) = brightness.filter(|b| *b > sleep::BRIGHTNESS_LIT_THRESHOLD)
+                        {
+                            open_sample = Some(b);
+                        }
+                    }
+                    match sleep::screen_dim_action(
                         lid,
-                        sleep::has_external_display(),
                         was_closed,
-                        last_sleep_at
-                            .map(|t| std::time::Instant::now() - t)
-                            .unwrap_or(std::time::Duration::MAX),
-                    );
-                if due {
+                        external,
+                        brightness,
+                        open_sample,
+                        saved_target.is_some(),
+                        since(last_dim_at),
+                    ) {
+                        ScreenDimAction::Zero { target } => {
+                            saved_target = Some(target);
+                            let ok = sleep::set_builtin_brightness(0.0);
+                            last_dim_at = Some(std::time::Instant::now());
+                            debug_log(|| {
+                                format!(
+                                    "[awake] dim zero target={target} ok={ok} lid={lid:?} external={external}"
+                                )
+                            });
+                        }
+                        ScreenDimAction::Rezero => {
+                            let ok = sleep::set_builtin_brightness(0.0);
+                            last_dim_at = Some(std::time::Instant::now());
+                            debug_log(|| format!("[awake] dim rezero ok={ok} (externally lit)"));
+                        }
+                        // Restore 已由上方统一出口处理，这里不会再命中
+                        ScreenDimAction::Restore | ScreenDimAction::None => {}
+                    }
+                } else if sleep::screen_sleep_due(lid, external, was_closed, since(last_sleep_at)) {
                     sleep::sleep_displays_now();
                     last_sleep_at = Some(std::time::Instant::now());
+                    debug_log(|| {
+                        format!(
+                            "[awake] display sleep lid={lid:?} external={external} policy={policy}"
+                        )
+                    });
                 }
                 // lid 读 None（AppleClamshellState 偶发 flutter）保持闭锁，
                 // 防止 flutter 制造伪开盖→伪边沿重复熄屏
@@ -242,22 +365,41 @@ impl Extension for AwakeExtension {
     }
 }
 
-/// 菜单快照：`menubar_visible` 开启时常驻贡献启用开关 CheckItem（勾选态反映
-/// enabled，不随开关状态显隐）；关闭时返回空段。文案与界面 View.vue 保持一致。
+/// 菜单快照：`menubar_visible` 开启时常驻贡献启用开关 + 熄屏方式二级菜单
+/// （勾选态分别反映 enabled 与当前策略，不随状态显隐）；关闭时返回空段。
+/// 文案与界面 View.vue 保持一致。
 fn build_awake(app: &AppHandle) -> Vec<MenuEntry> {
     let state = app.state::<AwakeState>();
     if !state.menubar_visible.load(Ordering::Relaxed) {
         return vec![];
     }
-    vec![MenuEntry::CheckItem {
-        id: "awake_toggle".into(),
-        label: "启用唤醒".into(),
-        checked: state.enabled.load(Ordering::Relaxed),
-    }]
+    let dim = state.screen_policy.load(Ordering::Relaxed) == 1;
+    vec![
+        MenuEntry::CheckItem {
+            id: "awake_toggle".into(),
+            label: "启用唤醒".into(),
+            checked: state.enabled.load(Ordering::Relaxed),
+        },
+        MenuEntry::Submenu {
+            label: "熄屏方式".into(),
+            items: vec![
+                MenuEntry::CheckItem {
+                    id: "awake_policy_dim".into(),
+                    label: "零亮度（远程可用）".into(),
+                    checked: dim,
+                },
+                MenuEntry::CheckItem {
+                    id: "awake_policy_sleep".into(),
+                    label: "显示睡眠（更省电）".into(),
+                    checked: !dim,
+                },
+            ],
+        },
+    ]
 }
 
-/// 菜单点击：启用开关 → 按当前状态取反切换。开启路径经授权（取消/进行中
-/// 静默，菜单勾选态不变，重试即可）；成功路径命令内部 refresh + emit 同步前端。
+/// 菜单点击：启用开关按当前状态取反（开启路径经授权，取消/进行中静默）；
+/// 熄屏策略项切换到对应档位。均复用命令（内部 refresh + emit 同步前端）。
 fn on_awake_event(app: &AppHandle, id: &str) {
     if id == "awake_toggle" {
         let app = app.clone();
@@ -265,6 +407,17 @@ fn on_awake_event(app: &AppHandle, id: &str) {
             let state = app.state::<AwakeState>();
             let next = !state.enabled.load(Ordering::Relaxed);
             let _ = set_awake_enabled(app.clone(), state, next).await;
+        });
+    } else if id == "awake_policy_dim" || id == "awake_policy_sleep" {
+        let policy = if id == "awake_policy_dim" {
+            "dim"
+        } else {
+            "sleep"
+        };
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app.state::<AwakeState>();
+            let _ = set_awake_screen_policy(app.clone(), state, policy.to_string()).await;
         });
     }
 }
