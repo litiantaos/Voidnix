@@ -61,11 +61,11 @@ test.describe('系统侵入面清理入口', () => {
     // 完全卸载已移至设置子视图，主列表不再出现
     await expect(page.getByText('完全卸载')).toHaveCount(0)
 
-    // 搜索栏齿轮 → config 子视图；显示菜单栏开关恒在（显示偏好与核心状态无关），
+    // 搜索栏齿轮 → config 子视图；「在菜单栏图标菜单中显示」开关恒在（显示偏好与核心状态无关），
     // 纯浏览器无核心足迹（downloaded/daemonInstalled 均 false）→ 无卸载行
     await page.locator('button:has(.i-ri-settings-3-line)').click()
     await page.waitForTimeout(300)
-    await expect(page.getByText('显示菜单栏')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('在菜单栏图标菜单中显示')).toBeVisible({ timeout: 5000 })
     await expect(page.getByText('完全卸载')).toHaveCount(0)
     await expect(page.getByText('开启代理')).toHaveCount(0) // mainView 让位
     // 再点齿轮（激活态 fill 图标）返回主视图

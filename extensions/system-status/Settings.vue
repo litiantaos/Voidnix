@@ -21,7 +21,7 @@ const settingsItems = computed<SettingItem[]>(() => [
     update: (visible: boolean | string | number) => {
       config.menubarVisible = visible as boolean
     },
-    group: t('systemStatus.group.settings'),
+    group: t('systemStatus.group.general'),
   },
 ])
 </script>

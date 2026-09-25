@@ -2,8 +2,8 @@
   <!-- 设置：齿轮 toggle，激活态 fill 图标（proxy/agent 同款） -->
   <BaseButton
     :icon="appStore.activeSubview === 'config' ? 'i-ri-settings-3-fill' : 'i-ri-settings-3-line'"
-    :title="t('systemStatus.group.settings')"
-    :aria-label="t('systemStatus.group.settings')"
+    :title="t('systemStatus.settings')"
+    :aria-label="t('systemStatus.settings')"
     @click="toggleConfig"
   />
 </template>

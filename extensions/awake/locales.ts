@@ -7,7 +7,7 @@ registerMessages({
     en: 'Disables system sleep, works with the lid closed and on battery. Administrator authorization once per launch.',
   },
   'awake.group.general': { 'zh-CN': '通用', en: 'General' },
-  'awake.menubarToggle': { 'zh-CN': '显示菜单栏开关', en: 'Show Menu Bar Toggle' },
+  'awake.menubarToggle': { 'zh-CN': '在菜单栏图标菜单中显示', en: 'Show in Menu Bar Icon Menu' },
   'awake.screenPolicy': { 'zh-CN': '合盖熄屏方式', en: 'Closed-Lid Screen' },
   'awake.screenPolicyHint': {
     'zh-CN': '零亮度保持画面流活跃可远程控制，显示睡眠更省电但远程会冻结',

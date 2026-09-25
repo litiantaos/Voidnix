@@ -112,7 +112,7 @@ mihomo 以 root 经 **launchd LaunchDaemon 托管**（`/Library/LaunchDaemons/<b
 TUN 是全部扩展中最重的系统侵入面（系统目录 LaunchDaemon + root 常驻进程 + 接管全部流量），用户必须在安装前知情：
 
 - **首次启用确认**：前端 `toggleEnabled` 在 config 未记录确认（`config.tunConfirmed`）时先弹确认对话框，明确告知——需要管理员密码（仅首次安装一次）、安装什么（`/Library/LaunchDaemons/…mihomo.plist`，mihomo 以 root 常驻：开机自启 + 崩溃自愈）、流量走向（TUN 虚拟网卡接管全部 IP 流量，关闭即恢复直通）、卸载入口（代理设置子视图「完全卸载」）。确认即持久化置位，**只弹一次**——不按 daemon 安装态判断（更新核心/完全卸载/提权取消都会移除 daemon，已确认用户会被重复打扰；重装时的系统密码弹窗仍提供感知）
-- **完全卸载**（`proxy_uninstall` 命令，设置子视图 danger 项，核心已下载且未在下载中才展示；「显示菜单栏」开关恒在——显示偏好与核心状态无关，子视图不再有空态）：`stop_core` 停代理（热重载 idle 释放 TUN + 停监测/流）→ 作废乐观释放重试（`release_gen` 自增，bootout 后 controller 必不可达，防陈旧重试误报）→ `uninstall_launchdaemon` 提权 bootout + 删 plist → 清空 enabled/tun_active/run_params → `remove_runtime_files` 删全部运行文件（binary/版本/geo/日志/启动配置/临时 plist）。**订阅与端口配置保留**（config.json + subs/，用户数据，重装无需重配）；卸载后回到未下载状态，重装走下载入口。子视图自管核心状态（激活时拉权威值），主视图经 `proxy-enabled` 事件同步 enabled、`onActivated` 对账核心状态并清残留节点
+- **完全卸载**（`proxy_uninstall` 命令，设置子视图 danger 项，核心已下载且未在下载中才展示；「在菜单栏图标菜单中显示」开关恒在——显示偏好与核心状态无关，子视图不再有空态）：`stop_core` 停代理（热重载 idle 释放 TUN + 停监测/流）→ 作废乐观释放重试（`release_gen` 自增，bootout 后 controller 必不可达，防陈旧重试误报）→ `uninstall_launchdaemon` 提权 bootout + 删 plist → 清空 enabled/tun_active/run_params → `remove_runtime_files` 删全部运行文件（binary/版本/geo/日志/启动配置/临时 plist）。**订阅与端口配置保留**（config.json + subs/，用户数据，重装无需重配）；卸载后回到未下载状态，重装走下载入口。子视图自管核心状态（激活时拉权威值），主视图经 `proxy-enabled` 事件同步 enabled、`onActivated` 对账核心状态并清残留节点
 
 ### LaunchDaemon plist
 
@@ -307,7 +307,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 ## 聚合菜单栏贡献（mod.rs）
 
-向框架统一菜单栏托盘（`runtime/menubar.rs`，`public/bar_icon.png` 模板图）贡献——极简 + 唯一（控制逻辑全部在扩展视图，菜单不重复）。显隐由设置项 `menubarVisible`（config subview「显示菜单栏」开关）控制：watch 经 **`set_proxy_menubar_visible`** 同步 Rust `ProxyState.menubar_visible`，开启即常显（不随连接状态显隐），关闭时 `build` 返回空、贡献段从菜单消失——替代原「已连接才显示」逻辑（托盘图标常驻，见框架菜单栏节）。`setup` 内 **`menubar::register`** 声明 `build`/`on_event`，状态变更后 **`menubar::refresh`** 重建。
+向框架统一菜单栏托盘（`runtime/menubar.rs`，`public/bar_icon.png` 模板图）贡献——极简 + 唯一（控制逻辑全部在扩展视图，菜单不重复）。显隐由设置项 `menubarVisible`（config subview「在菜单栏图标菜单中显示」开关）控制：watch 经 **`set_proxy_menubar_visible`** 同步 Rust `ProxyState.menubar_visible`，开启即常显（不随连接状态显隐），关闭时 `build` 返回空、贡献段从菜单消失——替代原「已连接才显示」逻辑（托盘图标常驻，见框架菜单栏节）。`setup` 内 **`menubar::register`** 声明 `build`/`on_event`，状态变更后 **`menubar::refresh`** 重建。
 
 **贡献项**：
 
