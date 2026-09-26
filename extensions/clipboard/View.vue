@@ -304,11 +304,15 @@ async function handleExecute(item: ClipboardItem, _index: number, _e?: KeyboardE
     } else {
       await invoke(CMD.pasteClipboardItem, { id: ids[0] })
     }
+    // Rust 端 refresh_pasted_at 直接改 DB 不发 clipboard-updated，须手动清缓存，
+    // 否则下方重拉命中旧 tabCache（onWindowHiding 路径无需：隐藏前数据变更均已经
+    // clipboard-updated 同步过缓存）
     invalidateCache()
     // 粘贴成功即会话结束：invoke 返回时窗口已被 Rust 端 hide_main 隐藏（不经前端
-    // hideWindow、无 window-hiding 事件），此刻归位使 DOM 更新在隐藏期完成，
-    // 下次唤起首帧即首项；失败路径（窗口未隐藏）保留选中供重试
-    listRef.value?.reset()
+    // hideWindow、无 window-hiding 事件，onWindowHiding 的重拉不会触发），此处归位 +
+    // 重拉使置顶序与新时间落进 history、DOM 更新在隐藏期完成，下次唤起首帧即新序
+    // 首项；失败路径（窗口未隐藏）保留选中供重试
+    resetAndRefetch(appStore.searchQuery, activeTab.value === 'favorites')
   } catch (e) {
     console.error('Failed to paste clipboard:', e)
     appStore.showStatus(toErrorMessage(e, t('clipboard.pasteFailed')), {

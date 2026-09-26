@@ -18,7 +18,10 @@ pub fn pasteboard_paste_text(text: String, app: AppHandle) -> Result<(), String>
         return Err("需授予辅助功能权限".into());
     }
     write_text_marked(&text);
+    // 与 clipboard 扩展粘贴路径同范式：直接 hide_main（不经 hide_window 命令），
+    // 内存兜底须在此对齐
     crate::runtime::window::hide_main(&app);
+    crate::runtime::window::maybe_reload_webview(&app);
     std::thread::spawn(|| {
         std::thread::sleep(std::time::Duration::from_millis(200));
         crate::platform::input::post_combo("cmd+v", None);

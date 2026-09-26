@@ -83,7 +83,8 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 - **图片**：先 `encode_image_to_png` 再 `clear` + marker + `set_png_bytes`（解码失败不触碰剪贴板、不模拟 Cmd+V，命令返回 Err）
 - **统一转 PNG**：任意 `data:image/*;base64,`（JPEG/GIF/WebP/BMP/HEIC 等）经 NSImage 转换
 - **多选序**：按前端 `ids` 选择序
-- **粘贴置顶**：写板成功后 `refresh_pasted_at` 将被粘贴记录 `created_at` 刷新为当前 UTC（等效「最近使用」，收藏不过期收益随动）——动态置顶序下显示到列表顶部；多条按选择序依次 `-i seconds` 偏移（created_at 秒精度，同秒多条 DESC 序不稳定）。粘贴写入带防回环 marker、monitor 跳过入库，置顶须在此手动刷新；刷新失败静默（粘贴本体已成功）
+- **粘贴置顶**：写板成功后 `refresh_pasted_at` 将被粘贴记录 `created_at` 刷新为当前 UTC（等效「最近使用」，收藏不过期收益随动）——动态置顶序下显示到列表顶部；多条按选择序依次 `-i seconds` 偏移（created_at 秒精度，同秒多条 DESC 序不稳定）。粘贴写入带防回环 marker、monitor 跳过入库，置顶须在此手动刷新；刷新失败静默（粘贴本体已成功）。前端粘贴成功后 `invalidateCache` + `resetAndRefetch` 重拉——粘贴路径窗口由 Rust 端 `hide_main` 隐藏、无 `window-hiding` 事件，`onWindowHiding` 的重拉不会触发，不在此重拉则列表保持旧序旧时间直到退出扩展重进（`onActivated`）；重拉走 IPC 拿到置顶新序，DOM 更新在隐藏期完成，下次唤起首帧即新序首项
+- **粘贴隐藏编排**：粘贴路径经 `hide_and_paste` 直调 `hide_main`（不经 `hide_window` 命令——auto 防抖不适用，粘贴是显式用户动作、窗口必然可见），`maybe_reload_webview` 内存兜底与该命令对齐触发；但**前端 `window-hiding` 事件不会派发**（无前端 `hideWindow` 参与），监听该事件的编排（ContentView compositing 释放等）在此路径缺席，由粘贴点手动重拉 + 归位补偿，且下次任何前端路径隐藏时补齐
 - **全 text**：换行拼接
 - **全 file**：写多 item pasteboard（`set_file_urls(..., Some(marker))`）
 - **混类型**：只贴首项

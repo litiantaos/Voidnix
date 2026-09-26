@@ -1,5 +1,4 @@
 use super::db::Database;
-use crate::runtime::shortcut::set_window_visible;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -240,9 +239,12 @@ fn write_files_to_pasteboard(urls: &[String]) {
     pasteboard::set_file_urls(urls, Some("com.litiantao.voidnix.clipboard"));
 }
 
+/// 粘贴路径不经 hide_window 命令（auto 防抖不适用——粘贴是显式用户动作，窗口
+/// 必然可见），内存兜底须在此对齐：hide_main + maybe_reload_webview 同 hide_window
+/// 命令编排。set_window_visible 已由 hide_main 内部承担，勿在调用点重复。
 fn hide_and_paste(app: &tauri::AppHandle) {
     crate::runtime::window::hide_main(app);
-    set_window_visible(false);
+    crate::runtime::window::maybe_reload_webview(app);
     std::thread::spawn(simulate_cmd_v);
 }
 
