@@ -44,7 +44,15 @@ registerMessages({
   'proxy.openSettings': { 'zh-CN': '代理设置', en: 'Proxy Settings' },
   'proxy.settingsGroup': { 'zh-CN': '系统', en: 'System' },
   'proxy.settingsGroupGeneral': { 'zh-CN': '通用', en: 'General' },
+  'proxy.settingsGroupSubscription': { 'zh-CN': '订阅', en: 'Subscriptions' },
   'proxy.menubarToggle': { 'zh-CN': '在菜单栏图标菜单中显示', en: 'Show in Menu Bar Icon Menu' },
+  'proxy.autoUpdate': { 'zh-CN': '自动更新订阅', en: 'Auto-update Subscriptions' },
+  'proxy.autoUpdateHint': {
+    'zh-CN': '超过更新间隔未拉取的订阅在后台静默更新',
+    en: 'Subscriptions not fetched within the interval are updated silently in the background',
+  },
+  'proxy.autoUpdateInterval': { 'zh-CN': '更新间隔', en: 'Update Interval' },
+  'proxy.intervalHours': { 'zh-CN': '{n} 小时', en: '{n} h' },
   'proxy.uninstall': { 'zh-CN': '完全卸载', en: 'Full Uninstall' },
   'proxy.uninstallHint': {
     'zh-CN': '移除 root 常驻进程、LaunchDaemon 与核心文件（需管理员密码）',
@@ -79,10 +87,8 @@ Subscriptions and port settings are kept; download the core again to reuse.`,
   'proxy.locateSelected': { 'zh-CN': '定位到选中节点', en: 'Locate Selected' },
   'proxy.testAll': { 'zh-CN': '全部测速', en: 'Test All' },
   'proxy.unnamedSubscription': { 'zh-CN': '未命名订阅', en: 'Unnamed Subscription' },
-  'proxy.subscriptionInfo': {
-    'zh-CN': '{count} 节点 · {time}',
-    en: '{count} nodes · {time}',
-  },
+  'proxy.subscriptionCount': { 'zh-CN': '{count} 节点', en: '{count} nodes' },
+  'proxy.subscriptionExpires': { 'zh-CN': '{date} 到期', en: '{date} expiry' },
   'proxy.notConfigured': { 'zh-CN': '未配置', en: 'Not configured' },
   'proxy.nodeGroup': { 'zh-CN': '节点分组', en: 'Node Group' },
   'proxy.nodeGroupHint': {
@@ -121,7 +127,6 @@ Subscriptions and port settings are kept; download the core again to reuse.`,
   // ─── 下载进度 ───────────────────────────────
   'proxy.extracting': { 'zh-CN': '解压中', en: 'Extracting' },
   'proxy.downloading': { 'zh-CN': '下载中', en: 'Downloading' },
-  'proxy.notUpdated': { 'zh-CN': '未更新', en: 'Never updated' },
 
   // ─── logic ─────────────────────────────────
   'proxy.timeout': { 'zh-CN': '超时', en: 'Timeout' },

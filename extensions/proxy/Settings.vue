@@ -13,10 +13,10 @@ import { isTauri } from '@/utils/tauri'
 import { t } from '@/runtime/i18n'
 import { toErrorMessage } from '@/utils/format'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
-import { config } from './config'
+import { config, AUTO_UPDATE_INTERVAL_OPTIONS } from './config'
 import type { SettingItem } from '@/types/settings'
 
-/// 代理设置子视图（config subview）：菜单栏常显开关 + 完全卸载入口。
+/// 代理设置子视图（config subview）：菜单栏常显开关 + 订阅自动更新开关/间隔 + 完全卸载入口。
 /// 核心状态自管（挂载/激活时拉权威值）——主视图与子视图互不感知，主视图靠
 /// onActivated 对账 + proxy-enabled 事件同步（见 useProxyPanel）。
 const appStore = useAppStore()
@@ -55,6 +55,31 @@ const items = computed<SettingItem[]>(() => {
         config.menubarVisible = visible as boolean
       },
       group: t('proxy.settingsGroupGeneral'),
+    },
+    {
+      id: 'proxy-auto-update',
+      title: t('proxy.autoUpdate'),
+      subtitle: t('proxy.autoUpdateHint'),
+      type: 'toggle',
+      value: config.autoUpdateEnabled,
+      update: (enabled: boolean | string | number) => {
+        config.autoUpdateEnabled = enabled as boolean
+      },
+      group: t('proxy.settingsGroupSubscription'),
+    },
+    {
+      id: 'proxy-auto-update-interval',
+      title: t('proxy.autoUpdateInterval'),
+      type: 'select',
+      value: config.autoUpdateIntervalHours,
+      options: AUTO_UPDATE_INTERVAL_OPTIONS.map((h) => ({
+        label: t('proxy.intervalHours', { n: h }),
+        value: h,
+      })),
+      update: (v: string | number) => {
+        config.autoUpdateIntervalHours = Number(v)
+      },
+      group: t('proxy.settingsGroupSubscription'),
     },
   ]
   // 完全卸载：有系统足迹且非下载中才展示（在飞下载会复活卸载产物）

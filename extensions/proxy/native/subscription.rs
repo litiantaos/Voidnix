@@ -31,10 +31,17 @@ fn sub_yaml_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
     Ok(sub_dir(app)?.join(format!("{id}.yaml")))
 }
 
-/// 拉取订阅（SSRF 校验 + Clash UA），返回 (proxy 数, 原始 YAML 文本)。
-pub async fn fetch(url: &str) -> Result<(usize, String), String> {
+/// 拉取结果：proxies 数量 + 原始 YAML + 订阅到期时间（unix 秒，未提供为 None）。
+pub struct FetchedSub {
+    pub count: usize,
+    pub text: String,
+    pub expire: Option<i64>,
+}
+
+/// 拉取订阅（SSRF 校验 + Clash UA + subscription-userinfo 到期解析）。
+pub async fn fetch(url: &str) -> Result<FetchedSub, String> {
     http::validate_url(url)?;
-    let text = http::client()
+    let resp = http::client()
         .get(url)
         .header(reqwest::header::USER_AGENT, SUB_UA)
         .timeout(Duration::from_secs(30))
@@ -42,12 +49,37 @@ pub async fn fetch(url: &str) -> Result<(usize, String), String> {
         .await
         .map_err(|e| format!("订阅请求失败: {e}"))?
         .error_for_status()
-        .map_err(|e| format!("订阅响应错误: {e}"))?
+        .map_err(|e| format!("订阅响应错误: {e}"))?;
+    // subscription-userinfo：Clash 生态通用响应头（机场流量信息），
+    // expire 字段为订阅到期 unix 秒，缺失 = 订阅方未提供
+    let expire = resp
+        .headers()
+        .get("subscription-userinfo")
+        .and_then(|v| v.to_str().ok())
+        .and_then(parse_expire);
+    let text = resp
         .text()
         .await
         .map_err(|e| format!("读取订阅失败: {e}"))?;
     let count = count_proxies(&text)?;
-    Ok((count, text))
+    Ok(FetchedSub {
+        count,
+        text,
+        expire,
+    })
+}
+
+/// 解析 subscription-userinfo 头的 expire 字段：`upload=..; download=..; total=..; expire=1735689600`。
+/// 值非法（非数字）按未提供处理。
+fn parse_expire(header: &str) -> Option<i64> {
+    header.split(';').find_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        if k.trim().eq_ignore_ascii_case("expire") {
+            v.trim().parse::<i64>().ok()
+        } else {
+            None
+        }
+    })
 }
 
 /// 解析 YAML 统计 proxies 数量（非法 YAML 报错）。
@@ -299,6 +331,23 @@ mod tests {
         assert!(!valid_sub_id("../evil"));
         assert!(!valid_sub_id("a/b"));
         assert!(!valid_sub_id("a\\b"));
+    }
+
+    #[test]
+    fn parse_expire_extracts_unix_seconds() {
+        // 标准形态：多字段分号分隔，expire 在末尾
+        assert_eq!(
+            parse_expire("upload=0; download=0; total=107374182400; expire=1735689600"),
+            Some(1735689600)
+        );
+        // expire 居中 + 键两侧空白容忍
+        assert_eq!(parse_expire("upload=1; expire=42 ; download=2"), Some(42));
+        // 大小写不敏感（头部字段名大小写约定不一）
+        assert_eq!(parse_expire("Expire=100"), Some(100));
+        // 无 expire 字段 / 值非数字 / 空串：按未提供处理
+        assert_eq!(parse_expire("upload=0; download=0"), None);
+        assert_eq!(parse_expire("expire=abc"), None);
+        assert_eq!(parse_expire(""), None);
     }
 
     #[test]

@@ -5,12 +5,14 @@ import { isTauri } from '@/utils/tauri'
 import { defineConfig } from '@/runtime/storage'
 import { generateRequestId } from '@/utils/id'
 
-/// 订阅源（Clash YAML）。url 由 Rust 端拉取解析，proxyCount/updatedAt 在拉取成功后回填。
+/// 订阅源（Clash YAML）。url 由 Rust 端拉取解析，proxyCount/updatedAt/expiresAt 在拉取成功后回填。
+/// expiresAt 取自响应头 subscription-userinfo 的 expire 字段（unix 秒转 ISO），空 = 订阅方未提供。
 export interface Subscription {
   id: string
   name: string
   url: string
   updatedAt: string
+  expiresAt: string
   proxyCount: number
 }
 
@@ -36,7 +38,7 @@ export const config = defineConfig('extensions/proxy/config', {
   secret: '',
   /// 订阅源集合（默认一项空订阅，类似 agent 默认 provider，保证列表始终非空可编辑）。
   subscriptions: [
-    { id: generateRequestId(), name: '', url: '', updatedAt: '', proxyCount: 0 },
+    { id: generateRequestId(), name: '', url: '', updatedAt: '', expiresAt: '', proxyCount: 0 },
   ] as Subscription[],
   /// 当前激活订阅 id：同一时刻仅一个订阅生效，build_run_config 仅合并此订阅的 YAML。
   /// 空 = 无激活（回退首项）；由 normalizer watch 保证始终指向有效 id。
@@ -46,7 +48,14 @@ export const config = defineConfig('extensions/proxy/config', {
   tunConfirmed: false,
   /// 菜单栏贡献段常显（不随连接状态显隐；关闭时段不显示，替代原「已连接才显示」逻辑）。
   menubarVisible: false,
+  /// 订阅自动更新开关：关闭后不再后台拉取（每小时复查入口直接短路）。
+  autoUpdateEnabled: true,
+  /// 订阅自动更新间隔（小时，上次拉取超过该时长视为过期）。档位与 AUTO_UPDATE_INTERVAL_OPTIONS 对应。
+  autoUpdateIntervalHours: 24,
 })
+
+/// 订阅自动更新间隔档位（小时）：设置页 select 选项单一源（autoUpdateIntervalHours 合法值域）。
+export const AUTO_UPDATE_INTERVAL_OPTIONS = [1, 6, 12, 24, 72]
 
 /// 端口变体归一化（模块级，app 启动即生效）。
 ///
@@ -89,7 +98,7 @@ export type ProxyMode = (typeof MODE_VALUES)[number]
 /// CRUD helpers（defineConfig reactive 数组变更自动持久化）
 export function addSubscription(name = '', url = ''): string {
   const id = generateRequestId()
-  config.subscriptions.push({ id, name, url, updatedAt: '', proxyCount: 0 })
+  config.subscriptions.push({ id, name, url, updatedAt: '', expiresAt: '', proxyCount: 0 })
   return id
 }
 

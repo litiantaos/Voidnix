@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { t } from '@/runtime/i18n'
 import './locales'
 import {
   delayColor,
   formatDelay,
-  formatSubTime,
+  formatSubExpiry,
+  isSubExpired,
   DELAY_TIMEOUT,
   filterNodes,
   isUserSelectorGroup,
@@ -34,19 +34,29 @@ describe('proxy logic', () => {
     expect(filterNodes(nodes, 'premium')).toEqual([{ name: 'JP Premium' }])
   })
 
-  it('formatSubTime：ISO UTC 转本地日期', () => {
+  it('formatSubExpiry：ISO UTC 转本地日期', () => {
     const pad = (n: number) => String(n).padStart(2, '0')
-    // 本地正午时刻（本地分量定义），转 ISO 后经 formatSubTime 回读，任何时区下本地日期都是今天
+    // 本地正午时刻（本地分量定义），转 ISO 后经 formatSubExpiry 回读，任何时区下本地日期都是今天
     const localNoon = new Date()
     localNoon.setHours(12, 0, 0, 0)
-    expect(formatSubTime(localNoon.toISOString())).toBe(
+    expect(formatSubExpiry(localNoon.toISOString())).toBe(
       `${localNoon.getFullYear()}-${pad(localNoon.getMonth() + 1)}-${pad(localNoon.getDate())}`,
     )
   })
 
-  it('formatSubTime：空串 → 未更新文案，非法串原样返回', () => {
-    expect(formatSubTime('')).toBe(t('proxy.notUpdated'))
-    expect(formatSubTime('garbage')).toBe('garbage')
+  it('formatSubExpiry：空/未提供/非法串 → 空串（调用方省略该段）', () => {
+    expect(formatSubExpiry('')).toBe('')
+    expect(formatSubExpiry(undefined)).toBe('')
+    expect(formatSubExpiry('garbage')).toBe('')
+  })
+
+  it('isSubExpired：过期判定', () => {
+    expect(isSubExpired(new Date(Date.now() - 86400_000).toISOString())).toBe(true)
+    expect(isSubExpired(new Date(Date.now() + 86400_000).toISOString())).toBe(false)
+    // 未提供/非法：不判过期（无信息不作危险断言）
+    expect(isSubExpired('')).toBe(false)
+    expect(isSubExpired(undefined)).toBe(false)
+    expect(isSubExpired('garbage')).toBe(false)
   })
 })
 

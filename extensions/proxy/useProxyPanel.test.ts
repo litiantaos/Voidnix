@@ -26,7 +26,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { config } from './config'
-import { useProxyPanel } from './useProxyPanel'
+import { useProxyPanel, isSubscriptionStale } from './useProxyPanel'
 
 /// 累积 wrapper：afterEach 统一 unmount，清理 onMounted/onUnmounted 注册的 listener
 const mountedWrappers: ReturnType<typeof mount>[] = []
@@ -112,5 +112,84 @@ describe('useProxyPanel toggleEnabled 首启确认（只弹一次）', () => {
     expect(dirs).toHaveLength(2)
     expect(dirs).toContain(true)
     expect(dirs).toContain(false)
+  })
+})
+
+describe('isSubscriptionStale 自动更新过期判定', () => {
+  const HOUR = 3600_000
+  const ago = (h: number) => new Date(Date.now() - h * HOUR).toISOString()
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    config.autoUpdateEnabled = true
+    config.autoUpdateIntervalHours = 24
+  })
+  afterEach(() => {
+    config.autoUpdateIntervalHours = 24
+  })
+
+  it('无 url / 间隔内拉取过 → 不过期；从未拉取（updatedAt 空）→ 过期', () => {
+    expect(
+      isSubscriptionStale({
+        id: 'a',
+        name: '',
+        url: '',
+        updatedAt: ago(48),
+        expiresAt: '',
+        proxyCount: 0,
+      }),
+    ).toBe(false)
+    expect(
+      isSubscriptionStale({
+        id: 'a',
+        name: '',
+        url: 'https://s.example/sub',
+        updatedAt: ago(23),
+        expiresAt: '',
+        proxyCount: 1,
+      }),
+    ).toBe(false)
+    expect(
+      isSubscriptionStale({
+        id: 'a',
+        name: '',
+        url: 'https://s.example/sub',
+        updatedAt: '',
+        expiresAt: '',
+        proxyCount: 0,
+      }),
+    ).toBe(true)
+  })
+
+  it('超过间隔 → 过期；间隔设置即时生效', () => {
+    const sub = {
+      id: 'a',
+      name: '',
+      url: 'https://s.example/sub',
+      updatedAt: ago(3),
+      expiresAt: '',
+      proxyCount: 1,
+    }
+    expect(isSubscriptionStale(sub)).toBe(false) // 3h < 24h
+    config.autoUpdateIntervalHours = 1
+    expect(isSubscriptionStale(sub)).toBe(true) // 3h > 1h
+  })
+
+  it('间隔非法值防御：0/负数钳到 1h，NaN 落 24h 档', () => {
+    const sub = {
+      id: 'a',
+      name: '',
+      url: 'https://s.example/sub',
+      updatedAt: ago(2),
+      expiresAt: '',
+      proxyCount: 1,
+    }
+    config.autoUpdateIntervalHours = 0
+    expect(isSubscriptionStale(sub)).toBe(true) // 2h > 钳后 1h
+    const fresh = { ...sub, updatedAt: ago(0.5) }
+    expect(isSubscriptionStale(fresh)).toBe(false) // 0.5h < 1h
+    config.autoUpdateIntervalHours = Number.NaN
+    expect(isSubscriptionStale({ ...sub, updatedAt: ago(25) })).toBe(true) // NaN → 24h 档
+    expect(isSubscriptionStale({ ...sub, updatedAt: ago(23) })).toBe(false)
   })
 })

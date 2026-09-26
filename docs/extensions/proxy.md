@@ -24,10 +24,10 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
 - mihomo 监听 **`external-controller`**（RESTful API，bearer secret 鉴权）
 - 扩展**不解析代理协议**，proxies/proxy-groups/rules 原样合并自订阅 Clash YAML
 
-**UI 结构**：主界面三个分组（代理/订阅/节点）+ 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，菜单栏常显开关 + 完全卸载入口）：
+**UI 结构**：主界面三个分组（代理/订阅/节点）+ 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，菜单栏常显开关 + 订阅自动更新开关/间隔 + 完全卸载入口）：
 
 - **代理分组**：含开启/规则模式两项；开启项副标题经 `/traffic` WS 实时显示上下行速率
-- **订阅分组**：导入/更新/删除；多订阅时仅激活订阅生效（点击有节点的订阅行切换激活，accent 强调当前激活项；空订阅点击进编辑，编辑按钮随时进编辑）。行内「更新」按钮按现有 URL 重新拉取（与弹窗保存共用 `proxy_update_subscription`；激活订阅更新后节点列表整体替换并清测速缓存，非激活订阅仅回填元数据），新建订阅拉取成功自动激活
+- **订阅分组**：导入/更新/删除；多订阅时仅激活订阅生效（点击有节点的订阅行切换激活，accent 强调当前激活项；空订阅点击进编辑，编辑按钮随时进编辑）。行内「更新」按钮按现有 URL 重新拉取（与弹窗保存共用 `proxy_update_subscription`；激活订阅更新后节点列表整体替换并清测速缓存，非激活订阅仅回填元数据），新建订阅拉取成功自动激活。副标题展示节点数与**到期日期**（取自订阅响应头 `subscription-userinfo` 的 `expire` 字段，未提供则省略；已到期标 danger），另有可配置间隔的后台自动更新（见「订阅拉取与热重载」）
 - **节点分组**：列表/切换/测速；多 selector 分组订阅时节点组首项出现分组切换器
 
 **搜索过滤**：主搜索栏统一过滤当前视图——主界面按名过滤节点，诊断子视图过滤连接/规则/日志（切视图清空查询）。
@@ -266,8 +266,10 @@ config 含 **`geox-url`**（geoip/geosite 镜像 URL，国内直连 GitHub 不�
 
 ### 订阅拉取与热重载
 
-- 订阅拉取走 **`http::client()`**（SSRF 校验 + Clash UA `clash.meta/v1.19.27`，确保机场返回 YAML 而非 Base64）
-- 更新入口两个（编辑弹窗保存 / 订阅行内「更新」按钮），共用 `proxy_update_subscription` 命令；行内更新单飞（任一更新中其余行按钮禁用，进行中行转 spinner）
+- 订阅拉取走 **`http::client()`**（SSRF 校验 + Clash UA `clash.meta/v1.19.27`，确保机场返回 YAML 而非 Base64），同时解析响应头 **`subscription-userinfo`** 的 `expire` 字段（unix 秒，Clash 生态通用的订阅到期约定）回填前端 `expiresAt`（缺失 = 订阅方未提供，展示省略）
+- 更新入口两个（编辑弹窗保存 / 订阅行内「更新」按钮），共用 `proxy_update_subscription` 命令（返回 `{count, expire}`）；行内更新单飞（任一更新中其余行按钮禁用，进行中行转 spinner）
+- **自动更新**（前端模块级，`useProxyPanel.ts`）：设置项 `autoUpdateEnabled`（开关）+ `autoUpdateIntervalHours`（间隔档位 1/6/12/24/72 小时，设置页 select）；配置回填后立即检查 + 每小时复查（复查频率与间隔解耦，间隔由阈值表达），`updatedAt` 超过间隔（或从未拉取成功）且配置了 URL 的订阅串行静默拉取（失败仅 console，每小时复查自愈离线场景；核心未运行时 Rust 侧 reload 为安全空操作）。设置变化即时生效（watch 触发按新阈值复查）；关闭开关后循环内逐轮短路止血。手动/自动并发无协调——命令幂等，最坏重复拉取一次
+- 激活订阅被更新后 Rust emit **`proxy-subscription-updated`(id)**：前端（含自动更新等非用户触发路径）据此清乐观选中与测速缓存并重载节点列表；手动行内更新路径（`updatingSubId` 命中同一订阅）由自身收尾，跳过防双载
 - 切换激活订阅 / 增删订阅触发 **`reload_running_config`**（按 enabled/idle 自适应重载）：重建 `config.yaml` 后 `PUT /configs {path}` 让 mihomo 原生热重载（root 进程常驻，免重启免再提权）。激活订阅切换即整体替换节点列表（清空乐观选中与测速缓存）
 
 ## mihomo controller 转发（controller.rs）
@@ -326,7 +328,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 - **启停**：`set_proxy_enabled`（总入口，传 `active_sub_id` 指定激活订阅；机制见「运行模式」）/ `is_proxy_enabled` / `set_proxy_menubar_visible`（菜单栏贡献段常显开关，config watch 同步）/ `proxy_uninstall`（完全卸载，见「首次启用确认 + 完全卸载」）
 - **核心**：`proxy_core_status` / `proxy_ensure_core`（版本查询 / 运行时按需下载）
 - **升级**：`proxy_check_update` / `proxy_update_core`（比对 latest / 停代理 + 删旧 + 重下 + 恢复）
-- **订阅**：`proxy_update_subscription`（拉取 + 热重载）/ `proxy_remove_subscription`（删 + 切新激活 + 热重载，传 `new_active_sub_id`）/ `proxy_set_active_subscription`（切激活 + 热重载）
+- **订阅**：`proxy_update_subscription`（拉取 + 解析到期 + 热重载 + emit `proxy-subscription-updated`，返回 `{count, expire}`）/ `proxy_remove_subscription`（删 + 切新激活 + 热重载，传 `new_active_sub_id`）/ `proxy_set_active_subscription`（切激活 + 热重载）
 - **节点与测速**：`proxy_get_proxies` / `proxy_select_proxy` / `proxy_test_group_delay_stream`（流式并发单节点测速，见 controller 节）
 - **模式**：`proxy_set_mode`（controller 转发；切模式后回写 run_params 防重启回退，未变跳过 + emit 同步前端）
 - **重连**：`proxy_reconnect`（免提权热重载软重启，见「手动重连」）

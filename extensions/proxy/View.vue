@@ -108,15 +108,28 @@
           v-else-if="item.type === 'subscription'"
           :title="item.sub.name || t('proxy.unnamedSubscription')"
           :tone="item.active ? 'accent' : undefined"
-          :subtitle="
-            item.sub.proxyCount
-              ? t('proxy.subscriptionInfo', {
-                  count: item.sub.proxyCount,
-                  time: formatTime(item.sub.updatedAt),
-                })
-              : item.sub.url || t('proxy.notConfigured')
-          "
         >
+          <template #subtitle>
+            <template v-if="item.sub.proxyCount">
+              <span truncate>{{
+                t('proxy.subscriptionCount', { count: item.sub.proxyCount })
+              }}</span>
+              <!-- 到期时间取自订阅响应头 subscription-userinfo；未提供则省略，过期标 danger -->
+              <template v-if="formatSubExpiry(item.sub.expiresAt)">
+                <span text="muted" shrink="0" ml="3">·</span>
+                <span
+                  :text="isSubExpired(item.sub.expiresAt) ? 'danger' : 'muted'"
+                  shrink="0"
+                  ml="2"
+                  whitespace="nowrap"
+                  >{{
+                    t('proxy.subscriptionExpires', { date: formatSubExpiry(item.sub.expiresAt) })
+                  }}</span
+                >
+              </template>
+            </template>
+            <span v-else truncate>{{ item.sub.url || t('proxy.notConfigured') }}</span>
+          </template>
           <template #trailing>
             <div flex gap="2">
               <BaseButton
@@ -263,7 +276,8 @@ const {
   onGroupChange,
   delayColor,
   formatDelay,
-  formatTime,
+  formatSubExpiry,
+  isSubExpired,
   showEditModal,
   isCreating,
   closeEditModal,

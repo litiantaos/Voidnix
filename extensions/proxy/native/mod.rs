@@ -144,22 +144,35 @@ pub async fn proxy_uninstall(app: AppHandle, state: State<'_, ProxyState>) -> Re
     Ok(())
 }
 
-/// 拉取订阅并持久化（subs/<id>.yaml），返回节点数；核心运行中则热重载。
+/// 订阅拉取结果：proxies 数量 + 到期时间（unix 秒，None = 订阅方未提供）。
+#[derive(Serialize)]
+pub struct SubUpdateResult {
+    pub count: usize,
+    pub expire: Option<i64>,
+}
+
+/// 拉取订阅并持久化（subs/<id>.yaml），返回节点数与到期时间；核心运行中则热重载。
+/// emit `proxy-subscription-updated`(id)：激活订阅被更新后节点列表整体替换，前端
+/// （含自动更新等非用户触发路径）据此刷新列表与测速缓存。
 #[tauri::command]
 pub async fn proxy_update_subscription(
     app: AppHandle,
     state: State<'_, ProxyState>,
     id: String,
     url: String,
-) -> Result<usize, String> {
-    let (count, text) = subscription::fetch(&url).await?;
-    subscription::save(&app, &id, &text)?;
+) -> Result<SubUpdateResult, String> {
+    let fetched = subscription::fetch(&url).await?;
+    subscription::save(&app, &id, &fetched.text)?;
     reload_running_config(&app, &state).await?;
+    let _ = app.emit("proxy-subscription-updated", id);
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
         menu::refresh_proxy_menu(&app2).await;
     });
-    Ok(count)
+    Ok(SubUpdateResult {
+        count: fetched.count,
+        expire: fetched.expire,
+    })
 }
 
 /// 删除订阅持久化文件；核心运行中则热重载。

@@ -40,14 +40,21 @@ export function latestDelay(history?: ProxyHistory[]): number {
 /// 测速超时哨兵值：测速失败/超时写入 delayMap，与「未测速」（0）区分。
 export const DELAY_TIMEOUT = -1
 
-/// 订阅更新时间 → 本地日期「YYYY-MM-DD」（updatedAt 为 ISO UTC，切本地时区展示；空 → 未更新文案）。
-export function formatSubTime(ts: string): string {
-  if (!ts) return t('proxy.notUpdated')
+/// 订阅到期时间（ISO UTC）→ 本地日期「YYYY-MM-DD」；空/未提供返回空串（调用方省略该段）。
+export function formatSubExpiry(ts: string | undefined): string {
+  if (!ts) return ''
   const ms = parseUtcMs(ts)
-  if (Number.isNaN(ms)) return ts
+  if (Number.isNaN(ms)) return ''
   const d = new Date(ms)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/// 订阅是否已到期（到期时间有效且早于现在；未提供/非法视为未到期）。
+export function isSubExpired(ts: string | undefined): boolean {
+  if (!ts) return false
+  const ms = parseUtcMs(ts)
+  return !Number.isNaN(ms) && ms < Date.now()
 }
 
 /// 延迟（ms）→ 颜色语义类。连通=绿，连不通=红，未测速（0）返回空串不着色。

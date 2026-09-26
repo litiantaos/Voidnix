@@ -7,6 +7,8 @@ import { isTauri } from '@/utils/tauri'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { t } from '@/runtime/i18n'
+import { whenConfigReady } from '@/runtime/storage'
+import { parseUtcMs } from '@/utils/datetime'
 import {
   type Subscription,
   config,
@@ -22,7 +24,8 @@ import {
   delayColor,
   filterNodes,
   formatDelay,
-  formatSubTime,
+  formatSubExpiry,
+  isSubExpired,
   isUserSelectorGroup,
   latestDelay,
 } from './logic'
@@ -94,6 +97,79 @@ if (isTauri) {
     })
 }
 
+/// 拉取订阅并回填元数据（节点数/更新时间/到期时间），手动（弹窗保存/行内更新）与
+/// 自动更新共用；expire 为 unix 秒（null = 订阅方未提供）。
+async function fetchSubscription(id: string, url: string): Promise<number> {
+  const res = await invoke<{ count: number; expire: number | null }>(CMD.proxyUpdateSubscription, {
+    id,
+    url,
+  })
+  updateSubscription(id, {
+    proxyCount: res.count,
+    updatedAt: new Date().toISOString(),
+    expiresAt: res.expire ? new Date(res.expire * 1000).toISOString() : '',
+  })
+  return res.count
+}
+
+// ── 订阅自动更新（模块级，app 启动即生效）──
+// 阈值：上次拉取超过 autoUpdateIntervalHours（或从未拉取成功）视为过期，每小时复查一次
+// （启动时立即查；复查频率与用户设置的更新间隔解耦，间隔由阈值表达）。后台静默更新：
+// 失败仅 console（机场偶发不可达，toast 是噪音）；启动时离线等场景由每小时复查自愈。
+// 激活订阅被更新后节点列表经 proxy-subscription-updated 事件驱动刷新（见 onMounted 监听），
+// 核心未运行时 Rust 侧 reload 为安全空操作。
+const AUTO_UPDATE_CHECK_MS = 60 * 60 * 1000
+let autoUpdateInFlight = false
+
+/// 订阅是否超过自动更新间隔（含从未拉取成功）。间隔 clamp 防御磁盘手改非法值
+/// （0/负数会让每次复查都触发拉取；NaN 落 24h 档）。导出供单测。
+export function isSubscriptionStale(s: Subscription): boolean {
+  if (!s.url) return false
+  const hours = Number.isFinite(config.autoUpdateIntervalHours)
+    ? Math.max(1, config.autoUpdateIntervalHours)
+    : 24
+  const t = parseUtcMs(s.updatedAt)
+  // updatedAt 空/非法（从未拉取成功，如编辑保存时网络失败）同样视为过期，后台自动补拉
+  return Number.isNaN(t) || Date.now() - t >= hours * 60 * 60 * 1000
+}
+
+async function autoUpdateSubscriptions(): Promise<void> {
+  if (!config.autoUpdateEnabled || autoUpdateInFlight) return
+  const stale = config.subscriptions.filter(isSubscriptionStale)
+  if (stale.length === 0) return
+  autoUpdateInFlight = true
+  try {
+    // 串行拉取：对机场温和（部分按频率限流），逐条失败互不影响；
+    // 每轮复查开关（关闭即时止血，已发起的单次拉取跑完即止）
+    for (const s of stale) {
+      if (!config.autoUpdateEnabled) break
+      try {
+        await fetchSubscription(s.id, s.url)
+      } catch (e) {
+        console.error('[proxy] auto update subscription failed:', e)
+      }
+    }
+  } finally {
+    autoUpdateInFlight = false
+  }
+}
+
+if (isTauri) {
+  // 等配置回填后再查（模块加载时 subscriptions 仍是默认空项）；timer 随页面文档
+  // 生命周期存活（navigate 重载后旧 timer 随旧文档销毁，模块重执行重建）
+  void whenConfigReady('extensions/proxy/config').then(() => {
+    void autoUpdateSubscriptions()
+    setInterval(() => void autoUpdateSubscriptions(), AUTO_UPDATE_CHECK_MS)
+  })
+  // 设置变化即时生效：开启/缩短间隔立即按新阈值复查（等一小时才反应不符合直觉）
+  watch(
+    () => [config.autoUpdateEnabled, config.autoUpdateIntervalHours] as const,
+    () => {
+      if (config.autoUpdateEnabled) void autoUpdateSubscriptions()
+    },
+  )
+}
+
 export function useProxyPanel() {
   const appStore = useAppStore()
   /** proxy 流量速率紧凑口径（1.2K/s） */
@@ -140,6 +216,7 @@ export function useProxyPanel() {
   let unlistenEnabled: (() => void) | null = null
   let unlistenMode: (() => void) | null = null
   let unlistenStatus: (() => void) | null = null
+  let unlistenSubUpdated: (() => void) | null = null
 
   // 订阅编辑弹窗（agent 模型提供商模式）
   const editingId = ref('')
@@ -537,7 +614,8 @@ export function useProxyPanel() {
   }
 
   // ── 订阅 ──
-  // 更新时间格式化在 ./logic::formatSubTime（纯逻辑，可测）
+  // 手动拉取走模块级 fetchSubscription（与自动更新共用回填逻辑），到期时间格式化在
+  // ./logic::formatSubExpiry（纯逻辑，可测）
 
   /// 切换激活订阅：写 config（持久化）+ 通知 Rust 更新 run_params + 热重载（含 idle 常驻）。
   /// 仅激活订阅的节点参与合并，切换后节点列表整体替换，故清空乐观选中与测速缓存。
@@ -598,13 +676,6 @@ export function useProxyPanel() {
     },
   )
 
-  /// 拉取订阅并回填元数据（节点数/更新时间）。saveSub（弹窗保存）与 refreshSub（行内更新）共用。
-  async function fetchSub(id: string, url: string): Promise<number> {
-    const count = await invoke<number>(CMD.proxyUpdateSubscription, { id, url })
-    updateSubscription(id, { proxyCount: count, updatedAt: new Date().toISOString() })
-    return count
-  }
-
   /// 保存：新建则 add，编辑则 update；url 非空则拉取（含热重启 + 节点刷新）
   async function saveSub() {
     const name = editForm.value.name.trim()
@@ -621,7 +692,7 @@ export function useProxyPanel() {
     closeEditModal()
     if (!url) return
     try {
-      const count = await fetchSub(id, url)
+      const count = await fetchSubscription(id, url)
       appStore.showStatus(t('proxy.nodesUpdated', { count }), { duration: 2000 })
       // 新建订阅拉取成功即自动激活（首次添加即用，内部 loadProxies）；编辑则直接刷新
       if (wasCreating && count > 0) {
@@ -644,7 +715,7 @@ export function useProxyPanel() {
     if (!s.url || updatingSubId.value) return
     updatingSubId.value = s.id
     try {
-      const count = await fetchSub(s.id, s.url)
+      const count = await fetchSubscription(s.id, s.url)
       appStore.showStatus(t('proxy.nodesUpdated', { count }), { duration: 2000 })
       if (s.id === config.activeSubscriptionId) {
         selectedNodeName.value = ''
@@ -724,6 +795,16 @@ export function useProxyPanel() {
     unlistenMode = await listen<string>('proxy-mode', (e) => {
       config.mode = e.payload as typeof config.mode
     })
+    // 激活订阅被更新（手动行内更新之外的路径：自动更新等）：节点列表整体替换，
+    // 清乐观选中与测速缓存并重载。手动路径（updatingSubId 命中同一订阅）由
+    // refreshSub 自行收尾，跳过防双载。
+    unlistenSubUpdated = await listen<string>('proxy-subscription-updated', (e) => {
+      if (e.payload !== config.activeSubscriptionId) return
+      if (updatingSubId.value === e.payload) return
+      selectedNodeName.value = ''
+      delayMap.value = {}
+      void loadProxies()
+    })
     // 健康监测异常反馈：进程异常退出/出站失效自动恢复失败时，核心 emit proxy-status。
     // error 持久写入 coreError（开启代理项红色提示，enabled 态附重连按钮）+ 状态栏即时提醒。
     unlistenStatus = await listen<{ kind: string; msg: string }>('proxy-status', (e) => {
@@ -798,6 +879,7 @@ export function useProxyPanel() {
     unlistenEnabled?.()
     unlistenMode?.()
     unlistenStatus?.()
+    unlistenSubUpdated?.()
     stopTrafficStream()
   })
 
@@ -856,7 +938,8 @@ export function useProxyPanel() {
     onGroupChange,
     delayColor,
     formatDelay,
-    formatTime: formatSubTime,
+    formatSubExpiry,
+    isSubExpired,
     showEditModal,
     isCreating,
     closeEditModal,
