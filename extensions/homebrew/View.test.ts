@@ -111,7 +111,7 @@ describe('homebrew View 运行态恢复', () => {
     wrapper.unmount()
   })
 
-  it('升级中退出后重进：渲染列表 + 恢复运行态显示当前步骤，不阻断为加载态', async () => {
+  it('升级中退出后重进：列表保持可浏览 + 按钮恢复当前步骤，不阻断为加载态', async () => {
     // 第一阶段：空闲进入（列表已拉取）
     const first = mountHost()
     await flush()
@@ -123,12 +123,88 @@ describe('homebrew View 运行态恢复', () => {
     await flush()
 
     const text = second.wrapper.text()
+    // 列表与状态行保持渲染（可浏览），进度经按钮位滚动显示当前步骤
     expect(text).toContain('git')
-    expect(text).not.toContain('加载中')
+    expect(text).toContain('Homebrew')
     expect(text).toContain('升级中')
+    // 无独立进度卡
+    expect(second.wrapper.find('.soft-card').exists()).toBe(false)
+    expect(text).not.toContain('加载中')
     // 运行中禁用更新按钮，防重复触发
     expect(second.wrapper.html()).toContain('disabled')
     second.wrapper.unmount()
+  })
+
+  it('一键更新：按钮位滚动显示进度详情，line 输出不渲染，完成后回常态', async () => {
+    let resolveRun: () => void = () => {}
+    const runPromise = new Promise<void>((r) => (resolveRun = r))
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === 'brew_run_state') return Promise.resolve(null)
+      if (cmd === 'brew_status') return Promise.resolve(statusPayload())
+      if (cmd === 'brew_services') return Promise.resolve([])
+      if (cmd === 'brew_run') return runPromise
+      return Promise.resolve(null)
+    })
+    const { wrapper } = mountHost()
+    await flush()
+
+    const updateBtn = wrapper.findAll('button').find((b) => b.text() === '更新')
+    expect(updateBtn?.exists()).toBe(true)
+    await updateBtn!.trigger('click')
+    await flush()
+
+    // 点击即运行态：旋转 + 占位文案，无独立进度卡
+    expect(wrapper.find('i.animate-spin').exists()).toBe(true)
+    expect(wrapper.find('.soft-card').exists()).toBe(false)
+
+    // 从 brew_run 调用参数捕获 Channel，模拟 Rust 流式事件
+    const runCall = mocks.invoke.mock.calls.find((c) => c[0] === 'brew_run')
+    const onEvent = (runCall?.[1] as { onEvent: { onmessage: unknown } })?.onEvent
+    const fire = onEvent?.onmessage as (e: { kind: string; text: string }) => void
+
+    fire({ kind: 'step', text: 'update' })
+    await flush()
+    expect(wrapper.text()).toContain('拉取更新')
+
+    fire({ kind: 'step', text: 'upgrade' })
+    fire({ kind: 'line', text: '==> Upgrading 1 outdated package:' })
+    await flush()
+    // 表头行不误判为包名，显示步骤名
+    expect(wrapper.text()).toContain('升级中')
+    expect(wrapper.text()).not.toContain('outdated')
+
+    // 下载行（ghcr blobs URL 段）即取包名——下载先于 Pouring，是最长阶段
+    fire({
+      kind: 'line',
+      text: '==> Downloading https://ghcr.io/v2/homebrew/core/git/blobs/sha256:9f2c',
+    })
+    await flush()
+    expect(wrapper.text()).toContain('git 0/1')
+
+    // cask 升级行（Upgrading Cask <token>）不把 Cask 当包名
+    fire({ kind: 'line', text: '==> Upgrading Cask google-chrome' })
+    await flush()
+    expect(wrapper.text()).toContain('google-chrome 0/1')
+
+    fire({ kind: 'line', text: '==> Pouring git--2.43.0.arm64_sonoma.bottle.tar.gz' })
+    await flush()
+    // 当前包名 + 计数
+    expect(wrapper.text()).toContain('git 0/1')
+
+    fire({ kind: 'line', text: '🍺  git 2.40.0 -> 2.43.0' })
+    await flush()
+    // 🍺 行计数完成
+    expect(wrapper.text()).toContain('git 1/1')
+    // line 事件不产生任何终端输出
+    expect(wrapper.text()).not.toContain('Pouring')
+
+    // 完成：滚动详情退场、成功 toast
+    resolveRun()
+    await flush()
+    expect(wrapper.text()).not.toContain('升级中')
+    expect(wrapper.text()).not.toContain('git 1/1')
+    expect(mocks.showStatus).toHaveBeenCalledWith('更新完成')
+    wrapper.unmount()
   })
 
   it('后台操作完成：brew-run-done 清运行态并重拉最新状态', async () => {

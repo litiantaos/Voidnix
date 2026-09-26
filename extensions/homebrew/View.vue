@@ -36,18 +36,24 @@
                 }}</span>
               </template>
             </template>
-            <!-- refreshing：后台元数据刷新中也显示（旋转禁用态），完成后按新状态显隐 -->
+            <!-- 运行中：按钮位滚动显示进度详情（步骤名 / 升级步骤的包名+计数；后台元数据刷新
+                 同位显示「拉取更新」），文案切换走纵向滚动 + 宽度渐变（宽度盒锁旧量新） -->
             <template v-if="status.has_update || refreshing" #trailing>
               <BaseButton
                 :icon="running ? 'i-ri-loader-4-line animate-spin' : 'i-ri-arrow-up-circle-line'"
                 :disabled="running"
                 @click.stop="run('update_upgrade')"
               >
-                {{
-                  running
-                    ? stepLabels[runningStep] || t('homebrew.processing')
-                    : t('homebrew.update')
-                }}
+                <span ref="labelBoxRef" class="brew-label-box" @transitionend="onLabelWidthSettled">
+                  <Transition
+                    name="brew-roll"
+                    mode="out-in"
+                    @leave="onLabelLeave"
+                    @enter="onLabelEnter"
+                  >
+                    <span :key="updateButtonLabel" class="brew-label">{{ updateButtonLabel }}</span>
+                  </Transition>
+                </span>
               </BaseButton>
             </template>
           </BaseListItem>
@@ -183,6 +189,10 @@ const loading = ref(true)
 const error = ref('')
 const running = ref(false)
 const runningStep = ref('')
+const runningOperation = ref('')
+/** 升级步骤的单包进度：🍺 行计数完成、Pouring/Downloading/Upgrading 行取当前包名（总数 = 列表过期数） */
+const upgradeDone = ref(0)
+const currentPackage = ref('')
 const refreshing = ref(false)
 const selectedIndex = ref(0)
 
@@ -196,6 +206,52 @@ const stepLabels = computed<Record<string, string>>(() => ({
   'services stop': t('homebrew.step.servicesStop'),
   'services restart': t('homebrew.step.servicesRestart'),
 }))
+
+/** 更新按钮文案：空闲「更新」，运行中滚动进度详情——升级步骤显示当前包名 + 完成数/总数
+ *  （包名未知或重挂载恢复时回落步骤名），其余步骤与服务操作显示步骤名 / 处理中 */
+const updateButtonLabel = computed(() => {
+  if (!running.value) return t('homebrew.update')
+  if (
+    runningOperation.value === 'update_upgrade' &&
+    runningStep.value === 'upgrade' &&
+    currentPackage.value &&
+    outdatedCount.value > 0
+  ) {
+    return `${currentPackage.value} ${upgradeDone.value}/${outdatedCount.value}`
+  }
+  return stepLabels.value[runningStep.value] || t('homebrew.processing')
+})
+
+// ── 文案宽度过渡（auto↔px 无 CSS 过渡，同 BaseDialog 内容高 FLIP 范式）──
+// leave 锁旧宽（out-in 空档防坍缩），enter 量新宽后由宽度盒常驻 width transition 插值，
+// transitionend 清回 auto；文案的滚动 transform/opacity 与宽度互不干扰
+const labelBoxRef = ref<HTMLElement | null>(null)
+
+function onLabelLeave() {
+  const box = labelBoxRef.value
+  if (box) box.style.width = `${box.offsetWidth}px`
+}
+
+function onLabelEnter() {
+  const box = labelBoxRef.value
+  if (!box) return
+  const from = parseInt(box.style.width)
+  box.style.width = 'auto'
+  const to = box.offsetWidth
+  if (!Number.isFinite(from) || from === to) {
+    box.style.width = ''
+    return
+  }
+  box.style.width = `${from}px`
+  void box.offsetWidth
+  box.style.width = `${to}px`
+}
+
+function onLabelWidthSettled(e: TransitionEvent) {
+  if (e.propertyName === 'width' && e.target === labelBoxRef.value) {
+    labelBoxRef.value!.style.width = ''
+  }
+}
 
 const hasQuery = computed(() => appStore.searchQuery.trim().length > 0)
 
@@ -292,13 +348,39 @@ async function fetchStatus() {
   }
 }
 
+/** 升级行 → 当前包名（Pouring 的 `name--version` 取 name；Upgrading 行滤掉
+ *  「N outdated packages:」表头与 cask 的「Cask」前缀；Downloading 取 ghcr blobs
+ *  URL 段（下载先于 Pouring，是 formula 升级的最长阶段）；tap 全限定名归一化为短名，
+ *  与列表一致 */
+function currentPackageFrom(line: string): string | null {
+  let m = /^==> Pouring (.+?)--/.exec(line)
+  if (m) return m[1]!.split('/').pop() ?? null
+  m = /^==> Downloading \S*\/([^/\s]+)\/blobs\//.exec(line)
+  if (m) return m[1]!.split('/').pop() ?? null
+  m = /^==> Upgrading(?: Cask)? (\S+)/.exec(line)
+  if (m && !/^\d/.test(m[1]!)) return m[1]!.split('/').pop() ?? null
+  m = /^==> Installing Cask (\S+)/.exec(line)
+  if (m) return m[1]!.split('/').pop() ?? null
+  return null
+}
+
 async function run(operation: string) {
   if (!isTauri || running.value) return
   running.value = true
   runningStep.value = ''
+  runningOperation.value = operation
+  upgradeDone.value = 0
+  currentPackage.value = ''
   const channel = new Channel<BrewEvent>()
   channel.onmessage = (e: BrewEvent) => {
-    if (e.kind === 'step') runningStep.value = e.text
+    if (e.kind === 'step') {
+      runningStep.value = e.text
+    } else if (e.kind === 'line' && runningStep.value === 'upgrade') {
+      // 🍺 行 = 单包升级完成；Pouring / Downloading / Upgrading 行 = 当前包
+      if (e.text.startsWith('🍺')) upgradeDone.value += 1
+      const name = currentPackageFrom(e.text)
+      if (name) currentPackage.value = name
+    }
   }
 
   try {
@@ -311,6 +393,7 @@ async function run(operation: string) {
   } finally {
     running.value = false
     runningStep.value = ''
+    runningOperation.value = ''
   }
 }
 
@@ -378,6 +461,7 @@ async function ensureDoneListener() {
     doneSeen = true
     running.value = false
     runningStep.value = ''
+    runningOperation.value = ''
     refreshing.value = false
     loading.value = false
     await fetchStatus()
@@ -395,10 +479,14 @@ onActivated(async () => {
   // 查状态：null = 无操作（含后台元数据刷新）进行中；Some = 仍在运行（LRU 驱逐/窗口隐藏后重挂载恢复进度）
   const state = await invoke<BrewRunState | null>(CMD.brewRunState)
   if (state && !doneSeen) {
-    // 仍在运行：恢复运行态（按钮旋转禁用）并照常拉数据渲染列表（brew_status 只读命令，
-    // 与运行中操作并发安全），完成事件统一重拉——不阻断为加载态等后台操作结束
+    // 仍在运行：恢复运行态并照常拉数据（brew_status 只读命令，与运行中操作并发安全），
+    // 完成事件统一重拉——不阻断为加载态等后台操作结束
     running.value = true
     runningStep.value = state.step
+    if (state.operation === 'update_upgrade') {
+      // 更新进行中：按钮位滚动恢复当前步骤
+      runningOperation.value = 'update_upgrade'
+    }
   }
   await fetchStatus()
 })
@@ -408,3 +496,40 @@ onUnmounted(() => {
   unlistenDone = null
 })
 </script>
+
+<style scoped>
+/* 文案宽度盒：常驻 width transition 承接 FLIP 的 px→px 插值；overflow hidden 同时
+ * 裁剪滚动的进出场位移 */
+.brew-label-box {
+  display: block;
+  overflow: hidden;
+  transition: width var(--duration-fast) var(--ease-out);
+}
+
+/* 滚动文案：inline-block 使宽度盒可量宽、transform 可作用于自身 */
+.brew-label {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* 更新按钮滚动详情：文案切换纵向滚动（旧文上出、新文下入），仅 transform/opacity
+ * GPU 合成属性，时长/曲线走 token（同 ui-popup 族语义，位移幅度更收敛） */
+.brew-roll-enter-active {
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+.brew-roll-leave-active {
+  transition:
+    transform var(--duration-fastest) var(--ease-in),
+    opacity var(--duration-fastest) var(--ease-in);
+}
+.brew-roll-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.brew-roll-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+</style>
