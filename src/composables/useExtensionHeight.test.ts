@@ -135,6 +135,13 @@ beforeEach(() => {
       disconnect() {}
     },
   )
+  // rAF → 微任务：scheduleAdjust 的双帧等待在 flushPromises 的微任务清空中即可推进
+  // （嵌套注册的第二帧微任务同轮清空），不依赖 happy-dom 的真实帧时钟
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    queueMicrotask(() => cb(performance.now()))
+    return 0
+  })
+  vi.stubGlobal('cancelAnimationFrame', () => {})
 })
 
 afterEach(() => {

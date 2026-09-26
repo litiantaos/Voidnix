@@ -86,14 +86,21 @@ export function useExtensionHeight(deps: {
     return invoke<MainFrameInfo | null>(CMD.getMainFrame).catch(() => null)
   }
 
-  /// rAF 合帧：RO 多次触发合并为单次 adjust，避免 auto 模式流式搜索时 IPC 风暴
+  /// rAF 合帧：RO/watch/focus 多次触发合并为单次 adjust，避免 auto 模式流式搜索时 IPC 风暴。
+  /// 双帧等待：adjust 前确保触发源所在帧完成 layout+paint——尤其扩展切换的首挂载（重视图
+  /// 布局可达数百 ms），若动画在布局完成前启动，NSWindow 逐帧变大而 WebContent 忙于首帧
+  /// 布局、viewport 跟不上动画帧（表现为内容高度明显滞后于窗口高度）；等一帧完整绘制后
+  /// 再启动动画，WebContent 空闲、viewport 逐帧同步无滞后。重布局期间 rAF 自然推迟，
+  /// 窗口停留旧高度（viewport 匹配的稳定态），与 show 路径「先呈现再渐进 animate」同语义。
   function scheduleAdjust() {
     if (rafQueued) return
     rafQueued = true
     rafId = requestAnimationFrame(() => {
-      rafQueued = false
-      rafId = null
-      void adjust()
+      rafId = requestAnimationFrame(() => {
+        rafQueued = false
+        rafId = null
+        void adjust()
+      })
     })
   }
 
@@ -240,7 +247,7 @@ export function useExtensionHeight(deps: {
     lastApplied = null
     nextTick(() => {
       syncObserver()
-      adjust()
+      scheduleAdjust()
     })
   })
 
@@ -259,7 +266,7 @@ export function useExtensionHeight(deps: {
   onMounted(() => {
     nextTick(() => {
       syncObserver()
-      adjust()
+      scheduleAdjust()
     })
     void tauriWindow
       .onFocusChanged(({ payload: focused }) => {
@@ -273,7 +280,7 @@ export function useExtensionHeight(deps: {
         originalTop = null
         wasAuto = false
         lastApplied = null
-        nextTick(() => adjust())
+        nextTick(() => scheduleAdjust())
       })
       .then((un) => {
         unlistenFocus = un
