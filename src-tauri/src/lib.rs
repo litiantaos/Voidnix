@@ -115,6 +115,13 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running launcher");
+        .build(tauri::generate_context!())
+        .expect("error while building launcher")
+        .run(|app, event| {
+            // app 退出（quit_app / 系统退出）：执行扩展注册的退出钩子（如 proxy dev 变体
+            // 清理 LaunchDaemon）。tauri dev 改码重载走 SIGKILL 不经此处，开发迭代不受提权弹框打扰。
+            if let tauri::RunEvent::Exit = event {
+                crate::runtime::exit::run_exit_hooks(app);
+            }
+        });
 }

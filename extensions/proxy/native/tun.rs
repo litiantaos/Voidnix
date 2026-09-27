@@ -190,6 +190,16 @@ pub async fn uninstall_launchdaemon(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 重启 LaunchDaemon 托管的 mihomo（osascript 提权）：`launchctl kickstart -k` 原子
+/// kill + 立即拉起（绕过 ThrottleInterval）。核心假死 / controller 失联时的硬重启入口。
+pub async fn restart_launchdaemon(app: &AppHandle) -> Result<(), String> {
+    let label = daemon_label(app);
+    let cmd = format!("launchctl kickstart -k system/{label}");
+    let script = format!("do shell script \"{cmd}\" with administrator privileges");
+    run_osascript(app, &script).await?;
+    Ok(())
+}
+
 // ── 冲突诊断 ──
 
 /// 查端口 LISTEN 占用者，返回 (pid, 完整 command 行)。无占用返回 None。

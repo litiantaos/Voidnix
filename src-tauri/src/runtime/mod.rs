@@ -1,5 +1,6 @@
 pub mod autostart;
 pub mod binary_fetch;
+pub mod exit;
 pub mod llm;
 pub mod menubar;
 pub mod pasteboard;

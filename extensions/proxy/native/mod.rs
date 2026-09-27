@@ -123,6 +123,33 @@ pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> 
     Ok(())
 }
 
+/// 硬重启内核（提权 kickstart -k：kill mihomo + launchd 立即拉起），核心假死/controller
+/// 失联时的手动入口（与 proxy_reconnect 软重启相对）。之前 enabled 则热重载 active 恢复代理。
+#[tauri::command]
+pub async fn proxy_restart_core(
+    app: AppHandle,
+    state: State<'_, ProxyState>,
+) -> Result<(), String> {
+    lifecycle::restart_core(&app, &state).await
+}
+
+/// 停止内核并移除 LaunchDaemon 托管（提权 bootout + 删 plist）：进程退出、开机自启移除，
+/// 核心文件与订阅配置保留（下次开代理重新安装，再提权一次）。与 proxy_uninstall（另删全部
+/// 运行文件）相对；与「关闭代理」（热重载 idle、进程常驻）亦不同。
+#[tauri::command]
+pub async fn proxy_stop_core(app: AppHandle, state: State<'_, ProxyState>) -> Result<(), String> {
+    if !tun::plist_installed(&app) {
+        lifecycle::reset_stopped_state(&app); // 幂等兜底：清可能残留的内存态
+        return Ok(());
+    }
+    // 作废 stop_core 乐观释放重试：bootout 后 controller 必不可达，防陈旧重试误报
+    state.release_gen.fetch_add(1, Ordering::Relaxed);
+    tun::uninstall_launchdaemon(&app).await?;
+    *state.run_params.lock().map_err(|e| e.to_string())? = None;
+    lifecycle::reset_stopped_state(&app);
+    Ok(())
+}
+
 /// 完全卸载：停代理 → 卸载 LaunchDaemon（提权一次，bootout 停 root mihomo + 删 plist）→
 /// 清理核心运行文件。前端「完全卸载」入口；订阅与端口配置保留（重装无需重配）。
 #[tauri::command]
@@ -458,6 +485,20 @@ impl Extension for ProxyExtension {
         app.manage(StreamRegistry::default());
         menu::register();
         lifecycle::observe_tun_taken(app);
+        // dev 变体无常驻语义：LaunchDaemon 随 app 退出清理（bootout + 删 plist，提权弹框
+        // 可取消，取消则残留由下次开代理 reconnect 复用/退出再清）。prod 的常驻是设计意图
+        // （app 退出不影响代理 + 开机自启），不清理。tauri dev 改码重载走 SIGKILL 不触发
+        // Exit 钩子，开发迭代不受提权弹框打扰。
+        if cfg!(debug_assertions) {
+            crate::runtime::exit::register(Arc::new(|app: &AppHandle| {
+                if tun::plist_installed(app) {
+                    if let Err(e) = tauri::async_runtime::block_on(tun::uninstall_launchdaemon(app))
+                    {
+                        log::debug!("[proxy] dev 退出清理 LaunchDaemon 未完成: {e}");
+                    }
+                }
+            }));
+        }
         let app2 = app.clone();
         tauri::async_runtime::spawn(async move {
             lifecycle::reconnect_root_mihomo(&app2).await;

@@ -24,7 +24,7 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
 - mihomo 监听 **`external-controller`**（RESTful API，bearer secret 鉴权）
 - 扩展**不解析代理协议**，proxies/proxy-groups/rules 原样合并自订阅 Clash YAML
 
-**UI 结构**：主界面三个分组（代理/订阅/节点）+ 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，菜单栏常显开关 + 订阅自动更新开关/间隔 + 完全卸载入口）：
+**UI 结构**：主界面三个分组（代理/订阅/节点）+ 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，菜单栏常显开关 + 订阅自动更新开关/间隔 + 重启内核/停止内核（daemon 已装才展示）+ 完全卸载入口）：
 
 - **代理分组**：含开启/规则模式两项；开启项副标题经 `/traffic` WS 实时显示上下行速率
 - **订阅分组**：导入/更新/删除；多订阅时仅激活订阅生效（点击有节点的订阅行切换激活，accent 强调当前激活项；空订阅点击进编辑，编辑按钮随时进编辑）。行内「更新」按钮按现有 URL 重新拉取（与弹窗保存共用 `proxy_update_subscription`；激活订阅更新后节点列表整体替换并清测速缓存，非激活订阅仅回填元数据），新建订阅拉取成功自动激活。副标题展示节点数与**到期日期**（取自订阅响应头 `subscription-userinfo` 的 `expire` 字段，未提供则省略；已到期标 danger），另有可配置间隔的后台自动更新（见「订阅拉取与热重载」）
@@ -107,6 +107,8 @@ asset 名精确串等 **`mihomo-darwin-{arch}-{tag}.gz`**，排除 go120/go122/g
 
 mihomo 以 root 经 **launchd LaunchDaemon 托管**（`/Library/LaunchDaemons/<bundle-id>.mihomo.plist`）常驻——TUN 需 root 创建虚拟网卡 + auto-route，接管全部 IP 流量。首次开启代理时 `tun::install_launchdaemon` 经 `osascript ... with administrator privileges` 提权**一次**安装 plist 并 bootstrap 启动；之后 RunAtLoad 开机自启 + KeepAlive 崩溃自愈，Voidnix 全程经 controller API 热重载 active/idle config 控制，**日常零提权**。
 
+**dev 变体无常驻语义**：常驻（app 退出不影响代理 + 开机自启）是 prod 的设计意图，dev 是开发构建不应留系统副作用——dev 退出（`runtime/exit.rs` 退出钩子，setup 内 `cfg!(debug_assertions)` 注册）时若 plist 已装则提权 bootout + 删 plist（弹一次密码框，可取消；取消则残留由下次启动 reconnect 复用、下次退出再清）。tauri dev 改码重载走 SIGKILL 不触发 Exit 钩子，开发迭代不受弹框打扰。
+
 ### 首次启用确认 + 完全卸载（系统侵入面告知）
 
 TUN 是全部扩展中最重的系统侵入面（系统目录 LaunchDaemon + root 常驻进程 + 接管全部流量），用户必须在安装前知情：
@@ -149,6 +151,11 @@ plist 的 `ProgramArguments` 指向 mihomo binary（绝对路径）+ `-d` 数据
 ### 进程管理
 
 mihomo 生命周期由 launchd 托管（KeepAlive 保活），无裸进程 spawn/kill。binary 升级/卸载走 **`tun::uninstall_launchdaemon`**（提权 bootout + 删 plist）。
+
+**手动内核操作**（设置子视图「系统」组，daemon 已装才展示）：
+
+- **重启内核**（`proxy_restart_core` → `lifecycle::restart_core`）：提权 `launchctl kickstart -k` 原子 kill + 立即拉起（绕过 ThrottleInterval）——核心假死/controller 失联时的硬重启，与 `proxy_reconnect`（免提权热重载软重启）相对。重启后 mihomo 加载启动配置（恒 idle）；之前 enabled 则热重载 active 恢复代理 + 同步 TUN 验证（失败回滚 idle + 复位）+ 重启健康监测，`proxy-enabled` 事件（kickstart 前 false / 恢复后 true）驱动前端停旧 WS 流引用、刷新节点列表与流量流
+- **停止内核**（`proxy_stop_core`）：提权 bootout + 删 plist（进程退出、开机自启移除），核心文件与订阅配置保留（区别于「完全卸载」删全部运行文件；区别于「关闭代理」热重载 idle 进程常驻）。下次开代理走 install 路径重新安装（再提权一次）。作废乐观释放重试（`release_gen` 自增）+ `reset_stopped_state` 复位（清 enabled/tun_active/run_params + 停监测/流 + emit false + 撤菜单，与 `reset_dead_state` 共用基元、不发错误通知）
 
 **config.yaml** 含 **`tun`**（system stack + dns-hijack + auto-route）+ **`dns`**（fake-ip）段。stack 选 system（非 gvisor）：走 macOS 原生 utun + 内核 TCP 栈，gvisor 用户态栈在连接风暴 + 批量超时失败时会泄漏 dial goroutine 进入 busy-loop（睡眠唤醒后数十 App 重连触发，CPU 卡 100% 不自愈），system 将连接管理交还内核从根上消除该泄漏。
 
@@ -323,9 +330,9 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 状态行当前节点名由 **`refresh_proxy_menu`** 异步拉 `controller::get_proxies` → `parse_current_node`（取主 selector 的 `now`）填充缓存（`ProxyState.current_node`）；`set_proxy_enabled` / `proxy_select_proxy` / `proxy_update_subscription` / `proxy_remove_subscription` / `proxy_set_active_subscription` 五个命令入口在调用后 spawn 刷新（`reload_running_config` 本身不触发）。其余控制（模式/订阅/节点切换/测速）仍在扩展视图。
 
-## 命令（21 个）
+## 命令（23 个）
 
-- **启停**：`set_proxy_enabled`（总入口，传 `active_sub_id` 指定激活订阅；机制见「运行模式」）/ `is_proxy_enabled` / `set_proxy_menubar_visible`（菜单栏贡献段常显开关，config watch 同步）/ `proxy_uninstall`（完全卸载，见「首次启用确认 + 完全卸载」）
+- **启停**：`set_proxy_enabled`（总入口，传 `active_sub_id` 指定激活订阅；机制见「运行模式」）/ `is_proxy_enabled` / `set_proxy_menubar_visible`（菜单栏贡献段常显开关，config watch 同步）/ `proxy_restart_core`（提权硬重启，见「进程管理」）/ `proxy_stop_core`（停止内核 + 移除 daemon 托管，见「进程管理」）/ `proxy_uninstall`（完全卸载，见「首次启用确认 + 完全卸载」）
 - **核心**：`proxy_core_status` / `proxy_ensure_core`（版本查询 / 运行时按需下载）
 - **升级**：`proxy_check_update` / `proxy_update_core`（比对 latest / 停代理 + 删旧 + 重下 + 恢复）
 - **订阅**：`proxy_update_subscription`（拉取 + 解析到期 + 热重载 + emit `proxy-subscription-updated`，返回 `{count, expire}`）/ `proxy_remove_subscription`（删 + 切新激活 + 热重载，传 `new_active_sub_id`）/ `proxy_set_active_subscription`（切激活 + 热重载）

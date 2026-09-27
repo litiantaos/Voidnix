@@ -33,7 +33,9 @@ static VERSION_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"v\d+\.\d+\.\d+").expect("invalid version regex"));
 
 /// 核心状态（供前端列表「核心」项展示版本号/下载状态）。
+/// camelCase：前端按 camelCase 读取（daemonInstalled），serde 默认 snake_case 会静默失配。
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CoreStatus {
     pub downloaded: bool,
     pub version: String,
@@ -52,6 +54,7 @@ pub(crate) struct CoreAsset {
 
 /// 更新检查结果：current 为空（未下载/版本未知）时强制 has_update=false。
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
     pub has_update: bool,
     pub current: String,

@@ -157,6 +157,8 @@ export const CMD = {
   proxyTestGroupDelayStream: 'proxy_test_group_delay_stream',
   proxySetMode: 'proxy_set_mode',
   proxyReconnect: 'proxy_reconnect',
+  proxyRestartCore: 'proxy_restart_core',
+  proxyStopCore: 'proxy_stop_core',
   proxyGetRules: 'proxy_get_rules',
   proxyTrafficStream: 'proxy_traffic_stream',
   proxyConnectionsStream: 'proxy_connections_stream',

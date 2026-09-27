@@ -538,6 +538,60 @@ pub(crate) async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(),
 
 // ── 健康监测 + 自动热重载恢复 ──
 
+/// 硬重启内核（提权 `launchctl kickstart -k`：kill 进程 + 立即拉起，绕过 ThrottleInterval）。
+/// 与 `proxy_reconnect`（免提权热重载软重启）相对：核心假死 / controller 失联时的手动入口。
+/// 重启后 mihomo 加载启动配置（恒 idle）；之前 enabled 则热重载 active 恢复代理 + 重启健康监测。
+pub(crate) async fn restart_core(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
+    if !tun::plist_installed(app) {
+        return Err("核心未安装，请先开启一次代理".into());
+    }
+    let was_enabled = state.enabled.load(Ordering::Relaxed);
+    let params = state
+        .run_params
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .or_else(|| read_run_params(app))
+        .ok_or_else(|| "缺少运行参数，请先开启一次代理".to_string())?;
+    // 进程即将被 kill：停全部 WS 流（连接随进程死，注册残留一并清）；enabled 时 emit
+    // false 让前端清旧流引用 + UI 反映中断（成功恢复后 emit true 驱动前端重开流/刷新节点）
+    app.state::<StreamRegistry>().cancel_all();
+    if was_enabled {
+        let _ = app.emit("proxy-enabled", false);
+    }
+    tun::restart_launchdaemon(app).await?;
+    // kickstart 原子 kill+拉起，等 controller 就绪（KeepAlive 即时重启，秒级）
+    let base = format!("http://127.0.0.1:{}", params.controller_port);
+    if controller::wait_ready(&base, &params.secret, 15000)
+        .await
+        .is_err()
+    {
+        reset_stopped_state(app);
+        return Err("重启后核心无响应，请稍后重试或查看 mihomo.log".into());
+    }
+    state.tun_active.store(true, Ordering::Relaxed);
+    if !was_enabled {
+        return Ok(()); // idle 常驻：启动配置即 idle，无需热重载
+    }
+    let mut active = params;
+    active.tun = true;
+    let log_before = log_size(app); // reload 前快照，供 verify_tun_active 区分新增行
+                                    // 同步 TUN 验证（同 start_core）：失败回滚 idle + 复位，避免「UI 开着实际直通」
+    if let Err(e) = reload_config_yaml(app, &active).await {
+        rollback_to_idle(app, &active).await;
+        reset_stopped_state(app);
+        return Err(e);
+    }
+    if let Err(e) = verify_tun_active(app, log_before).await {
+        rollback_to_idle(app, &active).await;
+        reset_stopped_state(app);
+        return Err(e);
+    }
+    ensure_monitor(app);
+    let _ = app.emit("proxy-enabled", true);
+    Ok(())
+}
+
 /// 使在跑的健康监测 task 失效（代际自增，task 醒来比对失配即退出）。
 /// stop_core / reset_dead_state 调用。
 fn invalidate_monitor(state: &ProxyState) {
@@ -673,12 +727,7 @@ async fn probe_health(base: &str, secret: &str) -> bool {
 
 /// 进程已退出/不可控：重置内存状态 + 通知前端 + 清理残留 pidfile + 停监测（代际失效）。
 fn reset_dead_state(app: &AppHandle, msg: &str) {
-    let state = app.state::<ProxyState>();
-    state.enabled.store(false, Ordering::Relaxed);
-    state.tun_active.store(false, Ordering::Relaxed);
-    invalidate_monitor(&state);
-    app.state::<StreamRegistry>().cancel_all();
-    let _ = app.emit("proxy-enabled", false);
+    reset_stopped_state(app);
     let _ = app.emit(
         "proxy-status",
         ProxyStatus {
@@ -686,6 +735,18 @@ fn reset_dead_state(app: &AppHandle, msg: &str) {
             msg: msg.to_string(),
         },
     );
+}
+
+/// 内核停止（bootout / 手动停止）后的状态复位基元：清 enabled/tun_active + 停监测 +
+/// 停流 + 撤菜单 + emit `proxy-enabled:false` 同步前端。用户主动操作路径共用
+/// （不发错误通知，由调用方自行反馈）。
+pub(crate) fn reset_stopped_state(app: &AppHandle) {
+    let state = app.state::<ProxyState>();
+    state.enabled.store(false, Ordering::Relaxed);
+    state.tun_active.store(false, Ordering::Relaxed);
+    invalidate_monitor(&state);
+    app.state::<StreamRegistry>().cancel_all();
+    let _ = app.emit("proxy-enabled", false);
     crate::runtime::menubar::refresh(app);
 }
 

@@ -23,6 +23,8 @@ const appStore = useAppStore()
 
 const statusLoaded = ref(false)
 const uninstalling = ref(false)
+const restarting = ref(false)
+const stopping = ref(false)
 const footprint = ref({ downloaded: false, daemonInstalled: false, downloading: false })
 
 async function loadStatus() {
@@ -82,6 +84,30 @@ const items = computed<SettingItem[]>(() => {
       group: t('proxy.settingsGroupSubscription'),
     },
   ]
+  // 内核操作：daemon 已装才展示（未装 = 无内核可重启/停止）；下载中隐藏（与卸载一致）
+  if (footprint.value.daemonInstalled && !footprint.value.downloading) {
+    list.push(
+      {
+        id: 'proxy-restart-core',
+        title: t('proxy.restartCore'),
+        subtitle: t('proxy.restartCoreHint'),
+        type: 'button',
+        label: t('proxy.coreRestartAction'),
+        group: t('proxy.settingsGroup'),
+        action: restartCore,
+      },
+      {
+        id: 'proxy-stop-core',
+        title: t('proxy.stopCore'),
+        subtitle: t('proxy.stopCoreHint'),
+        type: 'button',
+        label: t('proxy.coreStopAction'),
+        variant: 'danger',
+        group: t('proxy.settingsGroup'),
+        action: stopCore,
+      },
+    )
+  }
   // 完全卸载：有系统足迹且非下载中才展示（在飞下载会复活卸载产物）
   if (
     (footprint.value.downloaded || footprint.value.daemonInstalled) &&
@@ -100,6 +126,44 @@ const items = computed<SettingItem[]>(() => {
   }
   return list
 })
+
+/// 硬重启内核（提权 kickstart）：核心假死/controller 失联时的手动入口。代理开着时
+/// Rust 侧热重载 active 自动恢复并 emit 同步（节点列表/流量流经主视图事件驱动刷新）。
+async function restartCore() {
+  if (restarting.value) return
+  restarting.value = true
+  try {
+    await invoke(CMD.proxyRestartCore)
+    appStore.showStatus(t('proxy.coreRestarted'), { duration: 2000 })
+  } catch (e) {
+    appStore.showStatus(toErrorMessage(e, t('proxy.coreRestartFailed')), {
+      duration: 4000,
+      kind: 'error',
+    })
+  } finally {
+    restarting.value = false
+  }
+}
+
+/// 停止内核并移除 LaunchDaemon 托管：进程退出、开机自启移除，核心文件与订阅保留。
+async function stopCore() {
+  if (stopping.value) return
+  stopping.value = true
+  try {
+    await invoke(CMD.proxyStopCore)
+    await loadStatus()
+    appStore.showStatus(t('proxy.coreStopped'), { duration: 3000 })
+  } catch (e) {
+    // 提权取消/失败：daemon 可能仍在，刷新权威状态
+    await loadStatus()
+    appStore.showStatus(toErrorMessage(e, t('proxy.coreStopFailed')), {
+      duration: 4000,
+      kind: 'error',
+    })
+  } finally {
+    stopping.value = false
+  }
+}
 
 /// 完全卸载：停代理 + 提权卸载 LaunchDaemon + 清理核心运行文件（订阅/端口配置保留）。
 async function uninstall() {
