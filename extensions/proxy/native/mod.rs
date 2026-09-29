@@ -371,6 +371,8 @@ pub async fn proxy_reconnect(app: AppHandle, state: State<'_, ProxyState>) -> Re
         return Err("代理核心无响应，请关闭后重新开启".into());
     }
     params.tun = true;
+    // verify 窗口守卫（同 start_core）：快照 offset → verify 期间禁监测截断
+    let _verify_window = lifecycle::arm_log_verify_window(&state);
     let log_before = lifecycle::log_size(&app); // reload 前快照，供 verify_tun_active 区分新增行
     reload_config_yaml(&app, &params).await?;
     // 同步 TUN 验证：失败时回滚 idle config 清理 mihomo 状态（同 start_core）
@@ -480,6 +482,7 @@ impl Extension for ProxyExtension {
             monitor_gen: AtomicU64::new(0),
             monitor_spawned_gen: AtomicU64::new(u64::MAX), // 初始无 task：任意代都不等于「已 spawn」
             release_gen: AtomicU64::new(0),
+            log_verify_window: AtomicBool::new(false),
             menubar_visible: AtomicBool::new(false),
         });
         app.manage(StreamRegistry::default());

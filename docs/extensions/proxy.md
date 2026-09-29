@@ -352,6 +352,6 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 - **`config.yaml`** —— mihomo 启动配置（**恒 idle**，永不含 TUN 段——崩溃后 launchd 重启只加载 idle，避免循环崩溃）
 - **`config-active.yaml`** —— active 运行配置（含 TUN 段），仅经 PUT /configs 热重载加载，不作为启动配置
 - **`subs/<id>.yaml`** —— 各订阅原始 Clash YAML
-- **`mihomo.log`** —— mihomo 运行日志（launchd 接管 stdout/stderr 写入，启动失败可查）。info 级别每连接一行且 launchd 只追加，**超 5MB 在 stop_core 截断**（O_APPEND 继续写新 EOF，免重启）；诊断读日志走 **64KB 尾读窗口**（`read_log_tail`），不随日志体积放大读取内存
+- **`mihomo.log`** —— mihomo 运行日志（launchd 接管 stdout/stderr 写入，启动失败可查）。info 级别每连接一行且 launchd 只追加，**超 5MB 截断**（健康监测每 30s 轮巡 + stop_core；O_APPEND 继续写新 EOF，免重启）。截断前置条件是日志属主为当前用户——launchd 以 root 创建的 644 文件用户不可写，截断会静默失败（实测膨胀至 256MB），install/restart 提权脚本内 `chown` 修复属主。verify 窗口（快照 offset → verify_tun_active）期间监测跳过截断（`log_verify_window`）；诊断读日志走 **64KB 尾读窗口**（`read_log_tail`，快照后日志被截断时从头读窗口内新增行，不返回空）
 - **`mihomo-daemon.plist`** —— LaunchDaemon plist 临时副本（install 时生成，提权 cat 到 `/Library/LaunchDaemons/`）
 - **`geoip.metadb` / `geosite.dat`** —— Geo 数据库（首次使用经 gh-proxy 镜像预下载，mihomo 加载含 GEOIP/GEOSITE 规则的 config 时需此文件）

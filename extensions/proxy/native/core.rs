@@ -384,8 +384,9 @@ pub(crate) fn remove_core_files(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 完全卸载清理：删除全部核心运行文件（binary/版本/geo/日志/启动配置/临时 plist）。
-/// 保留 config.json 与 subs/（用户数据：订阅与端口偏好，重装无需重配）。
+/// 完全卸载清理：删除全部核心运行文件（binary/版本/geo/日志/启动配置/临时 plist/cache）。
+/// cache.db：mihomo 选择器与 fake-ip 映射缓存（root 进程创建，含解析域名历史），不随卸载
+/// 残留。保留 config.json 与 subs/（用户数据：订阅与端口偏好，重装无需重配）。
 pub(crate) fn remove_runtime_files(app: &AppHandle) -> Result<(), String> {
     let dir = ext_data_dir(app, "proxy")?;
     for name in [
@@ -397,6 +398,7 @@ pub(crate) fn remove_runtime_files(app: &AppHandle) -> Result<(), String> {
         "mihomo-daemon.plist",
         "config.yaml",
         "config-active.yaml",
+        "cache.db",
     ] {
         let _ = std::fs::remove_file(dir.join(name));
     }

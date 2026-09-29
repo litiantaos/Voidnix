@@ -14,6 +14,18 @@ fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+/// 包裹 shell 命令为 `do shell script` AppleScript 源，并做 AppleScript 字符串转义。
+/// cmd 须先经 shell_quote 拼装；其 `'\''` 转义携带反斜杠、用户名/路径含引号或反斜杠时，
+/// 未转义嵌入双引号 AppleScript 字符串会提前终止或编译失败（-2740），提权入口整体失效
+/// （用户名含 `'` 的账户 restart/install 恒报错）。`\` 先于 `"` 转义，防止转义引入的
+/// 反斜杠被二次转义。
+fn do_shell_script(cmd: &str) -> String {
+    format!(
+        "do shell script \"{}\" with administrator privileges",
+        cmd.replace('\\', "\\\\").replace('"', "\\\"")
+    )
+}
+
 /// LaunchDaemon label（按 bundle identifier 区分 dev/prod）。
 fn daemon_label(app: &AppHandle) -> String {
     format!("{}.mihomo", app.config().identifier)
@@ -116,6 +128,8 @@ pub async fn install_launchdaemon(
     let dest_q = shell_quote(&plist_install_path(&label).display().to_string());
     let bin_q = shell_quote(&bin.display().to_string());
     let log_q = shell_quote(&dir.join("mihomo.log").display().to_string());
+    // mihomo.log 属主修复（同 restart_script：root 属主 644 致用户侧截断静默失败）
+    let user_q = shell_quote(&std::env::var("USER").unwrap_or_default());
 
     // 第三层：只杀自己的 mihomo（不碰别的实例）+ bootstrap 后 controller 健康检查 → 同 session 回收
     // 自身 mihomo 按 binary 完整路径匹配（含 bundle-id 数据目录，全局唯一）。
@@ -144,6 +158,7 @@ pub async fn install_launchdaemon(
          fi; \
          launchctl bootout system/{label} 2>/dev/null; \
          : > {log_q}; \
+         if [ -n {user_q} ]; then chown {user_q} {log_q} 2>/dev/null; fi; \
          cat {tmp_q} > {dest_q}; \
          chown root:wheel {dest_q}; \
          chmod 644 {dest_q}; \
@@ -161,7 +176,7 @@ pub async fn install_launchdaemon(
             echo MIHOMO_LAUNCH_FAILED; \
          fi"
     );
-    let script = format!("do shell script \"{cmd}\" with administrator privileges");
+    let script = do_shell_script(&cmd);
     let stdout = run_osascript(app, &script).await?;
 
     // 第三层：脚本检测到 fatal 已回收 plist，返回精确诊断
@@ -185,19 +200,41 @@ pub async fn uninstall_launchdaemon(app: &AppHandle) -> Result<(), String> {
     let label = daemon_label(app);
     let dest_q = shell_quote(&plist_install_path(&label).display().to_string());
     let cmd = format!("launchctl bootout system/{label} 2>/dev/null; rm -f {dest_q}");
-    let script = format!("do shell script \"{cmd}\" with administrator privileges");
+    let script = do_shell_script(&cmd);
     run_osascript(app, &script).await?;
     Ok(())
 }
 
 /// 重启 LaunchDaemon 托管的 mihomo（osascript 提权）：`launchctl kickstart -k` 原子
 /// kill + 立即拉起（绕过 ThrottleInterval）。核心假死 / controller 失联时的硬重启入口。
+///
+/// 顺带修复 mihomo.log 属主（历史安装中 launchd 以 root 创建，644 下用户进程截断静默
+/// 失败，日志无限膨胀）：chown 为当前用户后，健康监测/stop 的用户侧截断恒可行。chown
+/// 在 kickstart 前——launchd 每次 spawn 重新 open 路径，打开既有文件不改属主。
 pub async fn restart_launchdaemon(app: &AppHandle) -> Result<(), String> {
     let label = daemon_label(app);
-    let cmd = format!("launchctl kickstart -k system/{label}");
-    let script = format!("do shell script \"{cmd}\" with administrator privileges");
+    let cmd = restart_script(
+        &label,
+        &ext_data_dir(app, "proxy")
+            .map(|d| d.join("mihomo.log").display().to_string())
+            .unwrap_or_default(),
+        &std::env::var("USER").unwrap_or_default(),
+    );
+    let script = do_shell_script(&cmd);
     run_osascript(app, &script).await?;
     Ok(())
+}
+
+/// restart 提权脚本（纯函数，便于单测）。chown 失败静默（`2>/dev/null`，USER 缺失/日志
+/// 路径异常时不阻断重启），kickstart 置于末位——`do shell script` 以末命令退出码判定
+/// 成败，kickstart 的错误语义（label 不存在等）须透传给调用方。
+fn restart_script(label: &str, log: &str, user: &str) -> String {
+    format!(
+        "chown {} {} 2>/dev/null; launchctl kickstart -k system/{}",
+        shell_quote(user),
+        shell_quote(log),
+        label
+    )
 }
 
 // ── 冲突诊断 ──
@@ -353,4 +390,36 @@ async fn run_osascript(app: &AppHandle, script: &str) -> Result<String, String> 
     }
     crate::platform::click_monitor::suppress(false);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restart_script_applescript_safe_and_propagates_kickstart_exit() {
+        let cmd = restart_script(
+            "com.litiantao.voidnix.mihomo",
+            "/Users/foo/Library/Application Support/com.litiantao.voidnix/extensions/proxy/mihomo.log",
+            "litiantao",
+        );
+        // 属主修复在前（kickstart respawn 前生效），kickstart 置末位透传退出码
+        assert!(cmd.starts_with("chown 'litiantao'"));
+        assert!(cmd.contains("chown 'litiantao' '/Users/foo/Library/Application Support/com.litiantao.voidnix/extensions/proxy/mihomo.log' 2>/dev/null"));
+        assert!(cmd.ends_with("launchctl kickstart -k system/com.litiantao.voidnix.mihomo"));
+        // do shell script 外层是 AppleScript 双引号字符串，内部双引号会提前终止它（-2740）
+        assert!(!cmd.contains('"'), "脚本内不得出现双引号");
+    }
+
+    #[test]
+    fn do_shell_script_escapes_applescript_string() {
+        // shell_quote 的 `'\''` 转义含反斜杠：未转义嵌入 AppleScript 双引号字符串会 -2740
+        let quoted = shell_quote("o'brien");
+        let script = do_shell_script(&format!("chown {quoted} /tmp/x"));
+        // 反斜杠转义为 `\\`，AppleScript 解码后 shell 仍收到正确的 `'\''`
+        assert!(script.contains("chown 'o'\\\\''brien' /tmp/x"));
+        // 引号内的双引号同样转义（未来脚本若引入），外层仍是一对完整双引号
+        let script2 = do_shell_script("echo \"hi\"");
+        assert!(script2.contains("echo \\\"hi\\\""));
+    }
 }

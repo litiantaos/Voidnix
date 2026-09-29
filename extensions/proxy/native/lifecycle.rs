@@ -31,6 +31,10 @@ pub struct ProxyState {
     /// 旧重试作废——在源头消灭「重试 PUT idle 落在重开的 PUT active 之后」的竞态窗口
     /// （enabled 标志在 start_core 末尾才置位，靠它拦截存在缝隙）。
     pub release_gen: AtomicU64,
+    /// 日志验证窗口：start/restart 的「快照 offset → verify_tun_active」期间置位，健康
+    /// 监测据此跳过日志截断——窗口内截断会使 read_log_tail 的 offset 失配（len <= since
+    /// 返回空），TUN error 漏检 → 「UI 开着实际直通」的静默失效绕过检测。见 LogVerifyWindow。
+    pub log_verify_window: AtomicBool,
     /// 菜单栏贡献段常显（前端 config watch 经 set_proxy_menubar_visible 同步）。
     /// 开启时段恒在（打开扩展 + 已连接时附状态行），关闭时无贡献段——替代原
     /// 「已连接才显示」逻辑。
@@ -286,9 +290,36 @@ pub(crate) fn log_size(app: &AppHandle) -> u64 {
 /// 增长（info 级别每连接一行），全量 read_to_string 会随体积线性放大每次开关代理的内存尖峰。
 const LOG_TAIL_WINDOW: u64 = 64 * 1024;
 
-/// mihomo.log 体积上限：超限时 stop_core（低频、用户主动关代理）截断为空——launchd 以
-/// O_APPEND 持有 fd，截断后写入继续追加到新 EOF，无需重启进程。
+/// mihomo.log 体积上限：超限时截断为空——launchd 以 O_APPEND 持有 fd，截断后写入继续
+/// 追加到新 EOF，无需重启进程。触发点：健康监测每轮巡检（运行期，mihomo 常驻数周，
+/// 仅靠 stop 点覆盖不到）+ stop_core（低频、用户主动关代理）。
+/// 前置条件：日志属主为当前用户——launchd 以 root 创建的 644 文件用户不可写，截断会
+/// 静默失败（实测膨胀至 256MB）；install/restart 提权脚本内 chown 修复（见 tun.rs）。
 const LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+
+/// verify 窗口守卫：置位 log_verify_window，Drop 时自动复位（含 `?` 提前返回路径）。
+/// start/restart 的快照 offset → verify_tun_active 期间持有，防止健康监测并发截断日志
+/// 致 offset 失配漏检 TUN error。pub(crate)：arm_log_verify_window 返回值供命令层持有。
+pub(crate) struct LogVerifyWindow<'a>(&'a AtomicBool);
+
+impl<'a> LogVerifyWindow<'a> {
+    fn arm(flag: &'a AtomicBool) -> Self {
+        flag.store(true, Ordering::Relaxed);
+        Self(flag)
+    }
+}
+
+impl Drop for LogVerifyWindow<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
+}
+
+/// 供命令层（proxy_reconnect 等快照→verify 路径）共用守卫：返回值持有即窗口生效，
+/// Drop（含 `?` 提前返回）自动复位。start_core/restart_core 直接用 LogVerifyWindow::arm。
+pub(crate) fn arm_log_verify_window(state: &ProxyState) -> LogVerifyWindow<'_> {
+    LogVerifyWindow::arm(&state.log_verify_window)
+}
 
 /// 读 `since` 字节偏移之后的新增完整行；自 `since` 起超出窗口时退化为最后窗口内的完整行
 /// （连接风暴下新增超 64KB 时只看最新一段，TUN error 必在尾部）。
@@ -301,10 +332,18 @@ pub(crate) fn read_log_tail(path: &Path, since: u64) -> Vec<String> {
     let Ok(len) = f.metadata().map(|m| m.len()) else {
         return Vec::new();
     };
-    if len <= since {
-        return Vec::new(); // 无新增（或已被截断/轮转）
+    if len == since {
+        return Vec::new(); // 无新增
     }
-    let start = since.max(len.saturating_sub(LOG_TAIL_WINDOW));
+    // len < since：快照后日志被截断（stop_core/监测轮巡的体积上限截断）——offset 失配。
+    // 退化为从头读窗口内内容而非返回空：截断后的新增行正是 verify_tun_active 的待检对象，
+    // 返回空会让 verify 空转通过（read_log_tail 无新增 = 无 error），漏检 TUN 静默失效。
+    // len == since 严格区分：长度恰好相等是无新增，从头读会捡回快照前的陈旧行误报。
+    let start = if len < since {
+        0
+    } else {
+        since.max(len.saturating_sub(LOG_TAIL_WINDOW))
+    };
     if f.seek(SeekFrom::Start(start)).is_err() {
         return Vec::new();
     }
@@ -321,14 +360,17 @@ pub(crate) fn read_log_tail(path: &Path, since: u64) -> Vec<String> {
     body.lines().map(str::to_string).collect()
 }
 
-/// mihomo.log 超限截断（stop_core 低频点调用，见 `LOG_MAX_BYTES`）。
+/// mihomo.log 超限截断（健康监测每轮 + stop_core，见 `LOG_MAX_BYTES`）。
+/// 截断失败（属主非本用户等）输出 debug 日志——不再静默，属主未修复的安装可据此发现。
 fn truncate_log_if_large(dir: &Path) {
     let log = dir.join("mihomo.log");
     if std::fs::metadata(&log)
         .map(|m| m.len() > LOG_MAX_BYTES)
         .unwrap_or(false)
     {
-        let _ = std::fs::File::create(&log);
+        if let Err(e) = std::fs::File::create(&log) {
+            log::debug!("[proxy] mihomo.log 截断失败（属主异常？重启内核可修复）: {e}");
+        }
     }
 }
 
@@ -423,6 +465,8 @@ pub(crate) async fn start_core(
     // 确保 root mihomo 在跑（launchd 托管：复用/等拉起/首次安装），安装后跑 idle config。
     // 统一热重载 active config 开启代理——install 后从 idle 切 active，复用时确认状态，免提权。
     ensure_root_mihomo(app, state, &params).await?;
+    // verify 窗口守卫：快照 offset → verify 期间禁监测截断（见 LogVerifyWindow）
+    let _verify_window = LogVerifyWindow::arm(&state.log_verify_window);
     let log_before = log_size(app); // reload 前快照，供 verify_tun_active 区分新增行
     reload_config_yaml(app, &params).await?;
     // 同步 TUN 验证：PUT /configs 返回 204 不代表 TUN 创建成功（别的工具占路由时静默失败）。
@@ -575,6 +619,8 @@ pub(crate) async fn restart_core(app: &AppHandle, state: &ProxyState) -> Result<
     }
     let mut active = params;
     active.tun = true;
+    // verify 窗口守卫（同 start_core）：快照 offset → verify 期间禁监测截断
+    let _verify_window = LogVerifyWindow::arm(&state.log_verify_window);
     let log_before = log_size(app); // reload 前快照，供 verify_tun_active 区分新增行
                                     // 同步 TUN 验证（同 start_core）：失败回滚 idle + 复位，避免「UI 开着实际直通」
     if let Err(e) = reload_config_yaml(app, &active).await {
@@ -643,6 +689,14 @@ async fn health_monitor(app: &AppHandle, gen: u64) {
         }
         if !state.enabled.load(Ordering::Relaxed) {
             continue; // 未启用不监测
+        }
+        // 日志体积巡检（每 30s，metadata 调用开销可忽略）：mihomo 常驻数周，仅靠
+        // stop_core 点截断覆盖不到运行期。verify 窗口内跳过（offset 失配漏检 TUN error，
+        // 见 log_verify_window 字段注释）；截断依赖 install/restart 脚本已修复属主。
+        if !state.log_verify_window.load(Ordering::Relaxed) {
+            if let Ok(dir) = crate::runtime::storage::ext_data_dir(app, "proxy") {
+                truncate_log_if_large(&dir);
+            }
         }
         let Some(p) = state.run_params.lock().ok().and_then(|g| g.clone()) else {
             continue;
@@ -1010,9 +1064,18 @@ mod tests {
             vec!["[TUN] error".to_string(), "later".to_string()]
         );
 
-        // 文件被截断/轮转（len <= since）→ 无新增
-        std::fs::write(&log, "x\n").unwrap();
-        assert!(read_log_tail(&log, since).is_empty());
+        // 扩大文件后重新快照，使截断后内容必然短于快照 offset（进入截断分支）
+        std::fs::write(&log, "old1\nold2\npad-line-a\npad-line-b\n").unwrap();
+        let since_trunc = std::fs::metadata(&log).unwrap().len();
+        // 文件被截断/轮转（len < since）→ 从头读窗口内新增行（首行段照常丢弃），不返回空
+        std::fs::write(&log, "truncated\n[TUN] error\n").unwrap();
+        assert_eq!(
+            read_log_tail(&log, since_trunc),
+            vec!["[TUN] error".to_string()]
+        );
+        // len == since（无新增字节）→ 严格空，防捡回快照前陈旧行误报
+        let eq = std::fs::metadata(&log).unwrap().len();
+        assert!(read_log_tail(&log, eq).is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1035,6 +1098,19 @@ mod tests {
         assert!(lines.len() > 0 && lines.len() < 1000);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn log_verify_window_guards_armed_and_cleared_on_drop() {
+        let flag = AtomicBool::new(false);
+        {
+            let _g = LogVerifyWindow::arm(&flag);
+            assert!(flag.load(Ordering::Relaxed), "置位期间监测须跳过截断");
+        }
+        assert!(
+            !flag.load(Ordering::Relaxed),
+            "Drop（含 ? 提前返回）后必须复位，否则截断永久失效"
+        );
     }
 
     #[test]
