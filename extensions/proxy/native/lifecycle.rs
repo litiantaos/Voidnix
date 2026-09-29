@@ -626,8 +626,10 @@ pub(crate) async fn restart_core(app: &AppHandle, state: &ProxyState) -> Result<
             *g = Some(params.clone());
         }
     }
-    state.release_gen.fetch_add(1, Ordering::Relaxed); // 作废挂起的 stop 释放重试
-    invalidate_monitor(state); // 长窗口防监测插手（取消路径下方恢复，成功路径 enable 重建）
+    // 作废挂起的 stop 释放重试
+    state.release_gen.fetch_add(1, Ordering::Relaxed);
+    // 长窗口防监测插手（取消路径下方恢复，成功路径 enable 重建）
+    invalidate_monitor(state);
     // 可取消提权：取消即原状返回——进程未动，任何状态/事件均未变更
     if let Err(e) = tun::restart_launchdaemon(app).await {
         ensure_monitor(app); // 内核未动，恢复看护（enabled 未变）

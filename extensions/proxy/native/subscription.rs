@@ -118,6 +118,7 @@ fn s(v: &str) -> Value {
 ///    转自有 HTTPDNS（dns.weixin.qq.com.cn）重查再纯 IP 直连——嗅探/降级重试本身即转圈；
 /// 2. 微信多媒体（图片/头像/视频）大量以纯 IP 访问，域名分流规则天然失效；
 /// 3. 纯 IP 海外 CDN 被 MATCH 兜底送代理，海外节点回源拉国内图片极慢。
+///
 /// 腾讯系域名进白名单后：明文 53 返回真实国内 IP → 微信不触发嗅探降级、直连 CN CDN
 /// （进 TUN 后 GeoIP,CN 命中 DIRECT），三重问题同时消解。
 /// 注意 qq.com.cn / qpic.cn / qlogo.cn 均非 qq.com 子域，须单列。

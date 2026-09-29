@@ -523,9 +523,9 @@ impl Extension for ProxyExtension {
                         Ok(Err(e)) => {
                             log::debug!("[proxy] dev 退出清理 LaunchDaemon 未完成: {e}")
                         }
-                        Err(_) => log::debug!(
-                            "[proxy] dev 退出清理超时（60s），残留由下次开代理接管清理"
-                        ),
+                        Err(_) => {
+                            log::debug!("[proxy] dev 退出清理超时（60s），残留由下次开代理接管清理")
+                        }
                     }
                 }
             }));
