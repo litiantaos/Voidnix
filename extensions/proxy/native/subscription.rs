@@ -111,6 +111,48 @@ fn s(v: &str) -> Value {
     Value::String(v.to_string())
 }
 
+/// TUN fake-ip 模式的白名单：命中域名的 DNS 查询返回真实 IP（不走 fake-ip）。
+///
+/// 微信图片慢的三重机制（社区共识，见 Clash Verge Rev issue #1762 等长篇排查）：
+/// 1. 微信有网络嗅探：发现解析结果是 198.18.0.0/15 保留段（fake-ip）即判定 DNS 被劫持，
+///    转自有 HTTPDNS（dns.weixin.qq.com.cn）重查再纯 IP 直连——嗅探/降级重试本身即转圈；
+/// 2. 微信多媒体（图片/头像/视频）大量以纯 IP 访问，域名分流规则天然失效；
+/// 3. 纯 IP 海外 CDN 被 MATCH 兜底送代理，海外节点回源拉国内图片极慢。
+/// 腾讯系域名进白名单后：明文 53 返回真实国内 IP → 微信不触发嗅探降级、直连 CN CDN
+/// （进 TUN 后 GeoIP,CN 命中 DIRECT），三重问题同时消解。
+/// 注意 qq.com.cn / qpic.cn / qlogo.cn 均非 qq.com 子域，须单列。
+const FAKE_IP_FILTER: &[&str] = &[
+    // 腾讯多媒体 CDN 与微信业务域
+    "+.qq.com",
+    "+.qq.com.cn",
+    "+.qpic.cn",
+    "+.qlogo.cn",
+    "+.tencent.com",
+    "+.wechat.com",
+    "+.servicewechat.com",
+    // 局域网主机名（mDNS/Bonjour 需真实地址）
+    "+.lan",
+    "+.local",
+    // 系统联网探测（captive portal 判定须真实 IP，fake-ip 会误判「无网络」）
+    "+.msftconnecttest.com",
+    "+.msftncsi.com",
+    // STUN NAT 探测（探测的是出口公网 IP，fake-ip 结果完全错误）
+    "+.stun.*.*",
+    "+.stun.*.*.*",
+];
+
+/// 前置注入的国内多媒体直连规则：微信图片 CDN 后缀中不被订阅常见的 `DOMAIN-SUFFIX,qq.com`
+/// / `DOMAIN-SUFFIX,cn` 覆盖的部分（.com 后缀独立域 + qq.com.cn 独立域），防止被订阅前置
+/// 规则或 MATCH 兜底误送海外代理（「规则没写全，图片请求被兜底送代理」的社区共识项）。
+/// 与 GEOIP,CN,DIRECT 兜底语义一致，仅提前匹配，不改变分流意图。
+const MULTIMEDIA_DIRECT_RULES: &[&str] = &[
+    "DOMAIN-SUFFIX,qq.com.cn,DIRECT",
+    "DOMAIN-SUFFIX,qpic.cn,DIRECT",
+    "DOMAIN-SUFFIX,qlogo.cn,DIRECT",
+    "DOMAIN-SUFFIX,wechat.com,DIRECT",
+    "DOMAIN-SUFFIX,servicewechat.com,DIRECT",
+];
+
 /// 读取激活订阅的原始 YAML（`subs/<active_sub_id>.yaml`）交 merge_yaml 合并生成 config.yaml 文本。
 ///
 /// 单激活模型：同一时刻仅一个订阅生效（前端 config.activeSubscriptionId），未激活订阅的
@@ -203,8 +245,21 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
     geox.insert(s("geosite"), s(&format!("{geo_base}/geosite.dat")));
     root.insert(s("geox-url"), Value::Mapping(geox));
 
+    // 选择器持久化：节点选择写 cache.db。缺失时内核重启（kickstart 从 config.yaml 冷启）
+    // 会把主分组选择重置回默认节点——流量静默换出口，菜单栏状态行仍显示旧节点名。
+    let mut profile = Mapping::new();
+    profile.insert(s("store-selected"), Value::Bool(true));
+    root.insert(s("profile"), Value::Mapping(profile));
+
     // TUN 模式：劫持全局流量到虚拟网卡（须 root 运行）。配 fake-ip DNS 与 dns-hijack。
     if params.tun {
+        // 全局 IPv6 显式关闭（关 IPv6 是微信图片转圈的社区第一共识）：多数代理节点无 IPv6
+        // 出口，而应用仍可能拿到真实 AAAA（微信自有 HTTPDNS over 443 不经 dns-hijack，
+        // mihomo 拦不住其结果）→ 应用优先试 IPv6 → 系统 v6 黑洞（默认路由指向系统隧道或
+        // 无 v6 出口）死等超时才狼狈降级 v4，微信/京东/剪映图片转圈的公认根因。false 时
+        // TUN 不建 v6 地址路由、DNS AAAA 置空、DIRECT 出站不试 v6。
+        // （mihomo 默认 ipv6=true；此前仅靠 dns 模块默认值置空 AAAA，属未声明行为，显式固化。）
+        root.insert(s("ipv6"), Value::Bool(false));
         let mut tun = Mapping::new();
         tun.insert(s("enable"), Value::Bool(true));
         // stack=system：走 macOS 原生 utun + 内核 TCP 栈，不经用户态 goroutine。
@@ -221,6 +276,20 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
         dns.insert(s("enable"), Value::Bool(true));
         dns.insert(s("enhanced-mode"), s("fake-ip"));
         dns.insert(s("fake-ip-range"), s("198.18.0.1/16"));
+        // AAAA 查询统一置空（「关了 IPv6 还不稳定就把 AAAA 解析也关停」的社区共识项）。
+        // dns-hijack any:53 只劫持明文 53；应用自有 DoH（443）绕得过劫持但经代理/直连出站，
+        // 其结果 mihomo 改写不了——此处保证 mihomo 自身路径（fake-ip 恢复域名后的 DIRECT
+        // 代解析、GEOIP 域名解析）永不产出 v6 地址，剩余风险由上层 ipv6:false 收口。
+        dns.insert(s("ipv6"), Value::Bool(false));
+        // 腾讯多媒体白名单（见 FAKE_IP_FILTER 注释）：微信嗅探 fake-ip 即降级 HTTPDNS 重试，
+        // 白名单域名直接返回真实国内 IP，微信无劫持感、直连 CN CDN。
+        dns.insert(
+            s("fake-ip-filter"),
+            Value::Sequence(FAKE_IP_FILTER.iter().map(|f| s(f)).collect()),
+        );
+        // fake-ip 映射持久化（cache.db）：mihomo 重启后同一域名仍映射同一 fake-ip，应用
+        // 缓存的旧地址不失效，免去重启后全量重连（微信等长缓存应用敏感）。
+        dns.insert(s("store-fake-ip"), Value::Bool(true));
         // nameserver 国内直连：fake-ip 查询 + DIRECT 流量真实解析（如 apple.com）均走此。
         // 国内 DNS 对常见域名（含未被污染的海外域名如 apple）返回正确 IP，快速可靠。
         // 不配 fallback/fallback-filter：海外 DoH 在 TUN 下经代理，会让 DIRECT 海外域名解析
@@ -247,7 +316,10 @@ pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String
             None => auto_groups(&all_proxies),
         };
         root.insert(s("proxy-groups"), groups_val);
-        root.insert(s("rules"), rules.unwrap_or_else(default_rules));
+        root.insert(
+            s("rules"),
+            prepend_direct_rules(rules.unwrap_or_else(default_rules)),
+        );
     }
 
     serde_norway::to_string(&root).map_err(|e| format!("序列化 config.yaml 失败: {e}"))
@@ -307,6 +379,17 @@ fn auto_groups(proxies: &[Value]) -> Value {
 
 fn default_rules() -> Value {
     Value::Sequence(vec![s("GEOIP,CN,DIRECT"), s("MATCH,节点选择")])
+}
+
+/// 把 MULTIMEDIA_DIRECT_RULES 前置到 rules 序列（订阅自带/默认规则共用）。
+/// 前置保证优先于订阅任意规则命中（含 MATCH 兜底），规则不存在/非序列时原样返回。
+fn prepend_direct_rules(rules: Value) -> Value {
+    let Value::Sequence(seq) = rules else {
+        return rules;
+    };
+    let mut out: Vec<Value> = MULTIMEDIA_DIRECT_RULES.iter().map(|r| s(r)).collect();
+    out.extend(seq);
+    Value::Sequence(out)
 }
 
 #[cfg(test)]
@@ -456,6 +539,8 @@ proxy-groups:
         assert!(out.contains("unified-delay: true"));
         assert!(out.contains("tcp-concurrent: true"));
         assert!(out.contains("keep-alive-interval: 30"));
+        // 选择器持久化：内核重启不重置用户已选节点
+        assert!(out.contains("store-selected: true"));
     }
 
     #[test]
@@ -468,6 +553,13 @@ proxy-groups:
         assert!(out.contains("auto-route: true"));
         assert!(out.contains("dns:"));
         assert!(out.contains("fake-ip"));
+        // IPv6 全链路关闭（微信图片转圈根因之一）：全局开关 + dns AAAA 置空均显式声明
+        assert!(out.contains("ipv6: false"));
+        assert!(out.contains("store-fake-ip: true"));
+        // 腾讯多媒体白名单：qq.com.cn/qpic.cn/qlogo.cn 均非 qq.com 子域，须各自出现
+        for f in ["+.qq.com", "+.qq.com.cn", "+.qpic.cn", "+.qlogo.cn"] {
+            assert!(out.contains(f), "fake-ip-filter 缺 {f}");
+        }
         // DNS：国内 nameserver 直连 + 节点域名专用 proxy-server-nameserver（防 TUN 回环）。
         // 不用 fallback（海外 DoH 经代理致 DIRECT 海外域名解析失败/等待，是 active 测速慢的根因）。
         assert!(out.contains("223.5.5.5"));
@@ -476,6 +568,33 @@ proxy-groups:
         // tun 关闭时不含 tun 段（idle 热重载）
         let out2 = merge_yaml(&[], &params()).unwrap();
         assert!(!out2.contains("tun:"));
+    }
+
+    #[test]
+    fn merge_yaml_prepends_multimedia_direct_rules() {
+        // 订阅自带 rules 与默认 rules 均前置注入多媒体直连规则，且位于 MATCH 兜底之前
+        let yaml = "proxies:\n  - {name: N1, type: ss}\nrules:\n  - MATCH,PROXY\n".to_string();
+        let out = merge_yaml(&[yaml], &params()).unwrap();
+        let v: Value = serde_norway::from_str(&out).unwrap();
+        let rules: Vec<String> = v
+            .get("rules")
+            .and_then(|r| r.as_sequence())
+            .unwrap()
+            .iter()
+            .filter_map(|r| r.as_str().map(str::to_string))
+            .collect();
+        // 注入规则占据序列最前
+        for (i, r) in MULTIMEDIA_DIRECT_RULES.iter().enumerate() {
+            assert_eq!(&rules[i], r);
+        }
+        // 订阅原规则保留在后（MATCH 仍在，位于注入规则之后）
+        assert_eq!(rules.last().unwrap(), "MATCH,PROXY");
+
+        // 无订阅 rules：默认规则同样前置注入
+        let yaml2 = "proxies:\n  - {name: N1, type: ss}\n".to_string();
+        let out2 = merge_yaml(&[yaml2], &params()).unwrap();
+        assert!(out2.contains("DOMAIN-SUFFIX,qpic.cn,DIRECT"));
+        assert!(out2.contains("MATCH,节点选择"));
     }
 
     #[test]
