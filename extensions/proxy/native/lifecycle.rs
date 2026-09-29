@@ -298,9 +298,10 @@ const LOG_TAIL_WINDOW: u64 = 64 * 1024;
 const LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
 
 /// verify 窗口守卫：置位 log_verify_window，Drop 时自动复位（含 `?` 提前返回路径）。
-/// start/restart 的快照 offset → verify_tun_active 期间持有，防止健康监测并发截断日志
-/// 致 offset 失配漏检 TUN error。pub(crate)：arm_log_verify_window 返回值供命令层持有。
-pub(crate) struct LogVerifyWindow<'a>(&'a AtomicBool);
+/// enable_active（start/restart/reconnect 共用）的快照 offset → verify_tun_active 期间
+/// 持有，防止健康监测并发截断日志致 offset 失配漏检 TUN error。单守卫经 enable_active
+/// 收口后不存在嵌套窗口（单 AtomicBool 嵌套时先结束者会提前清标志）。
+struct LogVerifyWindow<'a>(&'a AtomicBool);
 
 impl<'a> LogVerifyWindow<'a> {
     fn arm(flag: &'a AtomicBool) -> Self {
@@ -315,10 +316,28 @@ impl Drop for LogVerifyWindow<'_> {
     }
 }
 
-/// 供命令层（proxy_reconnect 等快照→verify 路径）共用守卫：返回值持有即窗口生效，
-/// Drop（含 `?` 提前返回）自动复位。start_core/restart_core 直接用 LogVerifyWindow::arm。
-pub(crate) fn arm_log_verify_window(state: &ProxyState) -> LogVerifyWindow<'_> {
-    LogVerifyWindow::arm(&state.log_verify_window)
+/// 启用尾部（start_core / restart_core / proxy_reconnect 共用）：verify 窗口守卫 → 写盘
+/// 热重载 active → 同步 TUN 验证（失败回滚 idle）→ run_params 落栈 → enabled 置位 →
+/// 启动健康监测。emit `proxy-enabled` 与失败时的状态复位由调用方按各自语义收尾。
+pub(crate) async fn enable_active(
+    app: &AppHandle,
+    state: &ProxyState,
+    params: &RunParams,
+) -> Result<(), String> {
+    let _verify_window = LogVerifyWindow::arm(&state.log_verify_window);
+    let log_before = log_size(app); // reload 前快照，供 verify_tun_active 区分新增行
+    reload_config_yaml(app, params).await?;
+    // 同步 TUN 验证：PUT /configs 返回 204 不代表 TUN 创建成功（别的工具占路由时静默失败）。
+    // 失败时即时回滚 idle config 清理 mihomo 状态——避免遗留 broken active config 致
+    // controller 逐渐无响应、后续重开走 osascript 重装。
+    if let Err(e) = verify_tun_active(app, log_before).await {
+        rollback_to_idle(app, params).await;
+        return Err(e);
+    }
+    *state.run_params.lock().map_err(|e| e.to_string())? = Some(params.clone());
+    state.enabled.store(true, Ordering::Relaxed);
+    ensure_monitor(app); // 启动健康监测（幂等：已在跑则跳过）
+    Ok(())
 }
 
 /// 读 `since` 字节偏移之后的新增完整行；自 `since` 起超出窗口时退化为最后窗口内的完整行
@@ -454,7 +473,7 @@ pub(crate) async fn start_core(
     }
     // 作废挂起的 TUN 释放重试（stop 的乐观后台路径）：重试按 release_gen 比对自弃，
     // 从源头消灭「重试 PUT idle 落在本轮 PUT active 之后」的竞态窗口（enabled 在
-    // start_core 末尾才置位，靠它拦截存在缝隙）。
+    // enable_active 末尾才置位，靠它拦截存在缝隙）。
     state.release_gen.fetch_add(1, Ordering::Relaxed);
     // Pre-flight：TUN auto-route 路由已存在时 mihomo TUN 必然失败。占用者若是 Voidnix 对端变体
     // （dev/prod）残留的 active mihomo（app 退出后 launchd 继续托管），先经其 controller
@@ -465,21 +484,7 @@ pub(crate) async fn start_core(
     // 确保 root mihomo 在跑（launchd 托管：复用/等拉起/首次安装），安装后跑 idle config。
     // 统一热重载 active config 开启代理——install 后从 idle 切 active，复用时确认状态，免提权。
     ensure_root_mihomo(app, state, &params).await?;
-    // verify 窗口守卫：快照 offset → verify 期间禁监测截断（见 LogVerifyWindow）
-    let _verify_window = LogVerifyWindow::arm(&state.log_verify_window);
-    let log_before = log_size(app); // reload 前快照，供 verify_tun_active 区分新增行
-    reload_config_yaml(app, &params).await?;
-    // 同步 TUN 验证：PUT /configs 返回 204 不代表 TUN 创建成功（别的工具占路由时静默失败）。
-    // 同步检测不阻塞 UX（200ms + reload < 500ms），且失败时即时回滚 idle config 清理 mihomo
-    // 状态——避免遗留 broken active config 致 controller 逐渐无响应、后续重开走 osascript 重装。
-    if let Err(e) = verify_tun_active(app, log_before).await {
-        rollback_to_idle(app, &params).await;
-        return Err(e);
-    }
-    *state.run_params.lock().map_err(|e| e.to_string())? = Some(params);
-    state.enabled.store(true, Ordering::Relaxed);
-    ensure_monitor(app); // 启动健康监测（幂等：已在跑则跳过）
-    Ok(())
+    enable_active(app, state, &params).await
 }
 
 /// 停止代理（流量切直通）。乐观关闭——成功/后台重试均立即返回 Ok，UI 即时显示关闭。
@@ -585,11 +590,30 @@ pub(crate) async fn stop_core(app: &AppHandle, state: &ProxyState) -> Result<(),
 /// 硬重启内核（提权 `launchctl kickstart -k`：kill 进程 + 立即拉起，绕过 ThrottleInterval）。
 /// 与 `proxy_reconnect`（免提权热重载软重启）相对：核心假死 / controller 失联时的手动入口。
 /// 重启后 mihomo 加载启动配置（恒 idle）；之前 enabled 则热重载 active 恢复代理 + 重启健康监测。
+///
+/// 状态机要点（对照 start_core 的差异，多项为 review 修复）：
+/// - **可取消提权不预先变更状态**：kickstart 前不 emit / 不停流 / 不动 enabled——用户取消
+///   密码框时进程未动，一切保持原状（旧实现先 emit proxy-enabled:false + 停流，取消后
+///   UI 显示已关而 mihomo 仍在接管流量）。停流移到 kickstart 成功后：连接随进程死，
+///   cancel 只清注册残留，成功路径的 emit true 驱动前端重开。
+/// - **长窗口防插手**：入口作废健康监测（弹框 + wait_ready + reload 期间旧监测 tick 会
+///   reset_dead_state 打掉 enabled，重启成功后监测惰性化）与 stop 释放重试（陈旧重试的
+///   PUT idle 可能落在重启完成后，误释放 + 迟到错误 toast）；取消提权路径 ensure_monitor
+///   恢复看护，成功路径由 enable_active 重建。
+/// - **失败路径 tun_active 如实反映进程死活**：kickstart 后进程常驻跑 idle config——
+///   谎报 false 会让 proxy_update_core 跳过卸载，核心更新静默不生效（版本号已改写、
+///   进程仍是旧的）。
+/// - **enable 前补 start_core 同款 TUN 路由预检**：重启死窗口期间对端变体可能抢占
+///   auto-route；kickstart 后本端 idle 无自有路由，预检语义与 start_core 完全一致，
+///   让渡后透明恢复（而非 verify 失败把代理打掉）。
+/// - **idle 重启回写 run_params**：reconnect 未复用成功（run_params=None）时经
+///   read_run_params 回退——不回写会让 controller 凭证/订阅切换此后全部 no-op。
 pub(crate) async fn restart_core(app: &AppHandle, state: &ProxyState) -> Result<(), String> {
     if !tun::plist_installed(app) {
         return Err("核心未安装，请先开启一次代理".into());
     }
     let was_enabled = state.enabled.load(Ordering::Relaxed);
+    // 参数：内存优先，缺失回退 config.json 并回写（idle 重启路径修复，见函数级注释）
     let params = state
         .run_params
         .lock()
@@ -597,50 +621,67 @@ pub(crate) async fn restart_core(app: &AppHandle, state: &ProxyState) -> Result<
         .clone()
         .or_else(|| read_run_params(app))
         .ok_or_else(|| "缺少运行参数，请先开启一次代理".to_string())?;
-    // 进程即将被 kill：停全部 WS 流（连接随进程死，注册残留一并清）；enabled 时 emit
-    // false 让前端清旧流引用 + UI 反映中断（成功恢复后 emit true 驱动前端重开流/刷新节点）
-    app.state::<StreamRegistry>().cancel_all();
-    if was_enabled {
-        let _ = app.emit("proxy-enabled", false);
+    if let Ok(mut g) = state.run_params.lock() {
+        if g.is_none() {
+            *g = Some(params.clone());
+        }
     }
-    tun::restart_launchdaemon(app).await?;
+    state.release_gen.fetch_add(1, Ordering::Relaxed); // 作废挂起的 stop 释放重试
+    invalidate_monitor(state); // 长窗口防监测插手（取消路径下方恢复，成功路径 enable 重建）
+    // 可取消提权：取消即原状返回——进程未动，任何状态/事件均未变更
+    if let Err(e) = tun::restart_launchdaemon(app).await {
+        ensure_monitor(app); // 内核未动，恢复看护（enabled 未变）
+        return Err(e);
+    }
+    // kickstart 已提交：WS 连接随进程死，清注册残留（成功后 emit true 驱动前端重开）
+    app.state::<StreamRegistry>().cancel_all();
     // kickstart 原子 kill+拉起，等 controller 就绪（KeepAlive 即时重启，秒级）
     let base = format!("http://127.0.0.1:{}", params.controller_port);
     if controller::wait_ready(&base, &params.secret, 15000)
         .await
         .is_err()
     {
-        reset_stopped_state(app);
+        // 进程可能死活皆存（崩溃循环/拉起中）：tun_active 如实反映，勿谎报 false
+        reset_state(app, root_mihomo_running(app));
         return Err("重启后核心无响应，请稍后重试或查看 mihomo.log".into());
     }
     state.tun_active.store(true, Ordering::Relaxed);
     if !was_enabled {
-        return Ok(()); // idle 常驻：启动配置即 idle，无需热重载
+        // idle 常驻：启动配置即 idle，无需热重载；刷新菜单状态行与实际对齐
+        let app2 = app.clone();
+        tauri::async_runtime::spawn(async move {
+            super::menu::refresh_proxy_menu(&app2).await;
+        });
+        return Ok(());
+    }
+    // TUN 路由预检 + 让渡（同 start_core；此时本端 idle 无自有路由，见函数级注释）
+    if let Some(msg) = tun_route_conflict() {
+        if let Err(e) = release_sibling_tun(app, msg).await {
+            reset_state(app, root_mihomo_running(app));
+            return Err(e);
+        }
     }
     let mut active = params;
     active.tun = true;
-    // verify 窗口守卫（同 start_core）：快照 offset → verify 期间禁监测截断
-    let _verify_window = LogVerifyWindow::arm(&state.log_verify_window);
-    let log_before = log_size(app); // reload 前快照，供 verify_tun_active 区分新增行
-                                    // 同步 TUN 验证（同 start_core）：失败回滚 idle + 复位，避免「UI 开着实际直通」
-    if let Err(e) = reload_config_yaml(app, &active).await {
-        rollback_to_idle(app, &active).await;
-        reset_stopped_state(app);
+    // enable_active 失败已回滚 idle；进程经 kickstart 常驻 → tun_active=true 如实
+    if let Err(e) = enable_active(app, state, &active).await {
+        reset_state(app, root_mihomo_running(app));
         return Err(e);
     }
-    if let Err(e) = verify_tun_active(app, log_before).await {
-        rollback_to_idle(app, &active).await;
-        reset_stopped_state(app);
-        return Err(e);
-    }
-    ensure_monitor(app);
     let _ = app.emit("proxy-enabled", true);
+    // 菜单栏状态行刷新：current_node 缓存与重启后实际选择对齐（store-selected 持久化的
+    // 选择或分组默认，均可能与缓存不同）
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        super::menu::refresh_proxy_menu(&app2).await;
+    });
     Ok(())
 }
 
 /// 使在跑的健康监测 task 失效（代际自增，task 醒来比对失配即退出）。
-/// stop_core / reset_dead_state 调用。
-fn invalidate_monitor(state: &ProxyState) {
+/// stop_core / reset_dead_state / restart_core（长窗口防插手）/ 停止类提权命令（弹框窗口
+/// 防监测 reset 撕裂状态）调用；取消提权等「内核未动」的返回路径须 ensure_monitor 恢复。
+pub(crate) fn invalidate_monitor(state: &ProxyState) {
     state.monitor_gen.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -791,17 +832,24 @@ fn reset_dead_state(app: &AppHandle, msg: &str) {
     );
 }
 
-/// 内核停止（bootout / 手动停止）后的状态复位基元：清 enabled/tun_active + 停监测 +
-/// 停流 + 撤菜单 + emit `proxy-enabled:false` 同步前端。用户主动操作路径共用
-/// （不发错误通知，由调用方自行反馈）。
-pub(crate) fn reset_stopped_state(app: &AppHandle) {
+/// 内核停止后的状态复位基元：清 enabled/tun_active + 停监测 + 停流 + 撤菜单 + emit
+/// `proxy-enabled:false` 同步前端。用户主动操作路径共用（不发错误通知，由调用方自行反馈）。
+/// tun_alive：root mihomo 进程是否仍在跑——tun_active 语义 = 进程在跑（非 TUN 设备占用），
+/// restart 失败回滚时进程常驻跑 idle config 须传 true；谎报 false 会让 proxy_update_core
+/// 跳过卸载（tun_active 门控），核心更新静默不生效。
+pub(crate) fn reset_state(app: &AppHandle, tun_alive: bool) {
     let state = app.state::<ProxyState>();
     state.enabled.store(false, Ordering::Relaxed);
-    state.tun_active.store(false, Ordering::Relaxed);
+    state.tun_active.store(tun_alive, Ordering::Relaxed);
     invalidate_monitor(&state);
     app.state::<StreamRegistry>().cancel_all();
     let _ = app.emit("proxy-enabled", false);
     crate::runtime::menubar::refresh(app);
+}
+
+/// 内核已停止（bootout / 进程退出）的复位：进程确定不在跑。
+pub(crate) fn reset_stopped_state(app: &AppHandle) {
+    reset_state(app, false);
 }
 
 /// 核心运行中时热重载 active config 以应用配置变更（订阅增删）。

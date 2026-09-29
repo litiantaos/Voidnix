@@ -107,7 +107,7 @@ asset 名精确串等 **`mihomo-darwin-{arch}-{tag}.gz`**，排除 go120/go122/g
 
 mihomo 以 root 经 **launchd LaunchDaemon 托管**（`/Library/LaunchDaemons/<bundle-id>.mihomo.plist`）常驻——TUN 需 root 创建虚拟网卡 + auto-route，接管全部 IP 流量。首次开启代理时 `tun::install_launchdaemon` 经 `osascript ... with administrator privileges` 提权**一次**安装 plist 并 bootstrap 启动；之后 RunAtLoad 开机自启 + KeepAlive 崩溃自愈，Voidnix 全程经 controller API 热重载 active/idle config 控制，**日常零提权**。
 
-**dev 变体无常驻语义**：常驻（app 退出不影响代理 + 开机自启）是 prod 的设计意图，dev 是开发构建不应留系统副作用——dev 退出（`runtime/exit.rs` 退出钩子，setup 内 `cfg!(debug_assertions)` 注册）时若 plist 已装则提权 bootout + 删 plist（弹一次密码框，可取消；取消则残留由下次启动 reconnect 复用、下次退出再清）。tauri dev 改码重载走 SIGKILL 不触发 Exit 钩子，开发迭代不受弹框打扰。
+**dev 变体无常驻语义**：常驻（app 退出不影响代理 + 开机自启）是 prod 的设计意图，dev 是开发构建不应留系统副作用——dev 退出（`runtime/exit.rs` 退出钩子，setup 内按 identifier `.dev` 后缀注册；不用 `cfg!(debug_assertions)`——`tauri build --debug` 产物是 debug 断言开 + 正式版 identifier，按 cfg 会误得 dev 卸载语义破坏 prod 常驻契约）时若 plist 已装则提权 bootout + 删 plist（弹一次密码框，可取消；取消则残留由下次启动 reconnect 复用、下次退出再清）。钩子在主线程同步执行，外套 60s 超时防提权弹框无人值守钉死退出（超时放行退出，残留同取消路径）。tauri dev 改码重载走 SIGKILL 不触发 Exit 钩子，开发迭代不受弹框打扰。
 
 ### 首次启用确认 + 完全卸载（系统侵入面告知）
 
@@ -154,8 +154,8 @@ mihomo 生命周期由 launchd 托管（KeepAlive 保活），无裸进程 spawn
 
 **手动内核操作**（设置子视图「系统」组，daemon 已装才展示）：
 
-- **重启内核**（`proxy_restart_core` → `lifecycle::restart_core`）：提权 `launchctl kickstart -k` 原子 kill + 立即拉起（绕过 ThrottleInterval）——核心假死/controller 失联时的硬重启，与 `proxy_reconnect`（免提权热重载软重启）相对。重启后 mihomo 加载启动配置（恒 idle）；之前 enabled 则热重载 active 恢复代理 + 同步 TUN 验证（失败回滚 idle + 复位）+ 重启健康监测，`proxy-enabled` 事件（kickstart 前 false / 恢复后 true）驱动前端停旧 WS 流引用、刷新节点列表与流量流
-- **停止内核**（`proxy_stop_core`）：提权 bootout + 删 plist（进程退出、开机自启移除），核心文件与订阅配置保留（区别于「完全卸载」删全部运行文件；区别于「关闭代理」热重载 idle 进程常驻）。下次开代理走 install 路径重新安装（再提权一次）。作废乐观释放重试（`release_gen` 自增）+ `reset_stopped_state` 复位（清 enabled/tun_active/run_params + 停监测/流 + emit false + 撤菜单，与 `reset_dead_state` 共用基元、不发错误通知）
+- **重启内核**（`proxy_restart_core` → `lifecycle::restart_core`）：提权 `launchctl kickstart -k` 原子 kill + 立即拉起（绕过 ThrottleInterval；kickstart 失败回退 bootstrap 拉起已装 plist）——核心假死/controller 失联时的硬重启，与 `proxy_reconnect`（免提权热重载软重启）相对。**可取消提权不预先变更状态**：kickstart 前不 emit/不停流/不动 enabled，用户取消密码框即原状返回（进程未动）；停流移到 kickstart 成功后（连接随进程死，仅清注册残留）。入口作废健康监测与 stop 释放重试（弹框+wait_ready+reload 长窗口防旧监测 tick reset 打掉 enabled / 陈旧重试误释放），取消路径 ensure_monitor 恢复、成功路径由共用启用尾部 `enable_active` 重建。重启后 mihomo 加载启动配置（恒 idle）；之前 enabled 则先做 start_core 同款 TUN 路由预检/让渡（重启死窗口期间对端变体可能抢占 auto-route）再热重载 active 恢复（`enable_active`：verify 窗口守卫 + 热重载 + 同步 TUN 验证失败回滚 idle + run_params 落栈 + enabled 置位 + 监测）；失败路径 `reset_state` 复位且 **tun_active 如实反映进程死活**（kickstart 后进程常驻跑 idle，谎报 false 会让更新核心跳过卸载静默不生效）。idle 重启路径把 `read_run_params` 回退参数回写 run_params（否则 controller 凭证/订阅切换此后全部 no-op）。恢复后 emit `proxy-enabled:true` 驱动前端刷新节点列表与流量流
+- **停止内核**（`proxy_stop_core`）：提权 bootout + 删 plist（进程退出、开机自启移除），核心文件与订阅配置保留（区别于「完全卸载」删全部运行文件；区别于「关闭代理」热重载 idle 进程常驻）。下次开代理走 install 路径重新安装（再提权一次）。**停止意图先行**：提权前作废乐观释放重试（`release_gen` 自增）+ 作废健康监测 + 停流（弹框可 >60s，窗口内监测 tick reset_dead_state 会把状态打掉；用户随后取消弹框时 mihomo 实际仍在跑 active config 而 UI 已全显示关）；取消提权时 ensure_monitor 恢复看护、enabled 未动原状返回。成功后 `reset_stopped_state` 复位（清 enabled/tun_active/run_params + 停监测/流 + emit false + 撤菜单，与 `reset_dead_state` 共用基元、不发错误通知）
 
 **config.yaml** 含 **`tun`**（system stack + dns-hijack + auto-route）+ **`dns`**（fake-ip）段。stack 选 system（非 gvisor）：走 macOS 原生 utun + 内核 TCP 栈，gvisor 用户态栈在连接风暴 + 批量超时失败时会泄漏 dial goroutine 进入 busy-loop（睡眠唤醒后数十 App 重连触发，CPU 卡 100% 不自愈），system 将连接管理交还内核从根上消除该泄漏。
 

@@ -130,6 +130,7 @@ pub async fn install_launchdaemon(
     let log_q = shell_quote(&dir.join("mihomo.log").display().to_string());
     // mihomo.log 属主修复（同 restart_script：root 属主 644 致用户侧截断静默失败）
     let user_q = shell_quote(&std::env::var("USER").unwrap_or_default());
+    let chown_log = chown_log_fragment(&user_q, &log_q);
 
     // 第三层：只杀自己的 mihomo（不碰别的实例）+ bootstrap 后 controller 健康检查 → 同 session 回收
     // 自身 mihomo 按 binary 完整路径匹配（含 bundle-id 数据目录，全局唯一）。
@@ -158,7 +159,7 @@ pub async fn install_launchdaemon(
          fi; \
          launchctl bootout system/{label} 2>/dev/null; \
          : > {log_q}; \
-         if [ -n {user_q} ]; then chown {user_q} {log_q} 2>/dev/null; fi; \
+         {chown_log}; \
          cat {tmp_q} > {dest_q}; \
          chown root:wheel {dest_q}; \
          chmod 644 {dest_q}; \
@@ -215,6 +216,7 @@ pub async fn restart_launchdaemon(app: &AppHandle) -> Result<(), String> {
     let label = daemon_label(app);
     let cmd = restart_script(
         &label,
+        &plist_install_path(&label).display().to_string(),
         &ext_data_dir(app, "proxy")
             .map(|d| d.join("mihomo.log").display().to_string())
             .unwrap_or_default(),
@@ -225,15 +227,24 @@ pub async fn restart_launchdaemon(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// restart 提权脚本（纯函数，便于单测）。chown 失败静默（`2>/dev/null`，USER 缺失/日志
-/// 路径异常时不阻断重启），kickstart 置于末位——`do shell script` 以末命令退出码判定
-/// 成败，kickstart 的错误语义（label 不存在等）须透传给调用方。
-fn restart_script(label: &str, log: &str, user: &str) -> String {
+/// 提权脚本内 mihomo.log 属主修复片段（install/restart 共用）：空 USER（env 缺失）经
+/// `[ -n ]` 守卫跳过，chown 失败静默（2>/dev/null）不阻断主流程。
+fn chown_log_fragment(user_q: &str, log_q: &str) -> String {
+    format!("if [ -n {user_q} ]; then chown {user_q} {log_q} 2>/dev/null; fi")
+}
+
+/// restart 提权脚本（纯函数，便于单测）：chown 修复日志属主（见 restart_launchdaemon）+
+/// kickstart 原子 kill/拉起。**kickstart 失败回退 bootstrap**：restart_core 的门槛
+/// （plist_installed）只查文件存在，plist 在而 job 未在 launchd（手动 `launchctl bootout` /
+/// 上次 install 健康检查回收后 rm 失败等合法状态）时 kickstart 报 "Could not find
+/// service"，直接从已装 plist bootstrap 拉起。`||` 短路：kickstart 成功整体即成功，
+/// 两者皆败透传 bootstrap 的错误语义。
+fn restart_script(label: &str, plist: &str, log: &str, user: &str) -> String {
     format!(
-        "chown {} {} 2>/dev/null; launchctl kickstart -k system/{}",
-        shell_quote(user),
-        shell_quote(log),
-        label
+        "{}; launchctl kickstart -k system/{} 2>/dev/null || launchctl bootstrap system {}",
+        chown_log_fragment(&shell_quote(user), &shell_quote(log)),
+        label,
+        shell_quote(plist),
     )
 }
 
@@ -397,18 +408,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn restart_script_applescript_safe_and_propagates_kickstart_exit() {
+    fn restart_script_applescript_safe_and_falls_back_to_bootstrap() {
         let cmd = restart_script(
             "com.litiantao.voidnix.mihomo",
+            "/Library/LaunchDaemons/com.litiantao.voidnix.mihomo.plist",
             "/Users/foo/Library/Application Support/com.litiantao.voidnix/extensions/proxy/mihomo.log",
             "litiantao",
         );
-        // 属主修复在前（kickstart respawn 前生效），kickstart 置末位透传退出码
-        assert!(cmd.starts_with("chown 'litiantao'"));
-        assert!(cmd.contains("chown 'litiantao' '/Users/foo/Library/Application Support/com.litiantao.voidnix/extensions/proxy/mihomo.log' 2>/dev/null"));
-        assert!(cmd.ends_with("launchctl kickstart -k system/com.litiantao.voidnix.mihomo"));
+        // 属主修复在前（kickstart respawn 前生效）
+        assert!(cmd.starts_with("if [ -n 'litiantao' ]; then chown"));
+        // kickstart 失败回退 bootstrap（plist 在而 job 未 bootstrapped 的合法状态）
+        assert!(cmd.contains(
+            "launchctl kickstart -k system/com.litiantao.voidnix.mihomo 2>/dev/null || launchctl bootstrap system '/Library/LaunchDaemons/com.litiantao.voidnix.mihomo.plist'"
+        ));
         // do shell script 外层是 AppleScript 双引号字符串，内部双引号会提前终止它（-2740）
         assert!(!cmd.contains('"'), "脚本内不得出现双引号");
+    }
+
+    #[test]
+    fn chown_log_fragment_guards_empty_user() {
+        // 空 USER（env 缺失）：`[ -n '' ]` 守卫跳过，不产生 chown 报错
+        assert_eq!(
+            chown_log_fragment(&shell_quote(""), &shell_quote("/tmp/x")),
+            "if [ -n '' ]; then chown '' '/tmp/x' 2>/dev/null; fi"
+        );
     }
 
     #[test]

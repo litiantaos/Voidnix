@@ -20,7 +20,7 @@ use tokio::task::JoinSet;
 
 use self::core::RunParams;
 use self::lifecycle::{
-    controller_creds_opt, controller_endpoint, ensure_monitor, reload_config_yaml,
+    controller_creds_opt, controller_endpoint, enable_active, ensure_monitor, invalidate_monitor,
     reload_running_config, root_mihomo_running, start_core, stop_core, ProxyState,
 };
 use self::stream::{LogFrame, StreamRegistry, TrafficFrame};
@@ -103,13 +103,21 @@ pub async fn proxy_check_update(app: AppHandle) -> Result<core::UpdateInfo, Stri
     Ok(core::check_update(&app).await)
 }
 
-/// 更新核心：停代理 → 卸载 LaunchDaemon → 删旧 binary → ensure_bin 重下最新 → 恢复。
+/// 更新核心：卸载 LaunchDaemon → 删旧 binary → ensure_bin 重下最新 → 之前启用则恢复。
+/// 卸载是可取消提权：入口先作废监测 + 停流（弹框窗口内监测 tick 会 reset_dead_state
+/// 把状态打掉，取消后 mihomo 实际仍在跑而 UI 已全显示关）；取消时恢复监测原状返回。
 #[tauri::command]
 pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> Result<(), String> {
     let was_enabled = state.enabled.load(Ordering::Relaxed);
     let params = state.run_params.lock().map_err(|e| e.to_string())?.clone();
+    state.release_gen.fetch_add(1, Ordering::Relaxed); // 作废 stop 释放重试（bootout 后 controller 必不可达）
+    invalidate_monitor(&state);
+    app.state::<StreamRegistry>().cancel_all();
     if state.tun_active.load(Ordering::Relaxed) {
-        tun::uninstall_launchdaemon(&app).await?;
+        if let Err(e) = tun::uninstall_launchdaemon(&app).await {
+            ensure_monitor(&app); // 取消提权：进程未动（enabled 未变，UI 如实显示），恢复看护
+            return Err(e);
+        }
         state.tun_active.store(false, Ordering::Relaxed);
     }
     state.enabled.store(false, Ordering::Relaxed);
@@ -118,8 +126,18 @@ pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> 
     if was_enabled {
         if let Some(p) = params {
             start_core(&app, &state, p).await?; // 重新 install_launchdaemon（提权）
+            crate::runtime::menubar::refresh(&app);
+            let _ = app.emit("proxy-enabled", true);
+            let app2 = app.clone();
+            tauri::async_runtime::spawn(async move {
+                menu::refresh_proxy_menu(&app2).await;
+            });
+            return Ok(());
         }
     }
+    // 未恢复（原本 idle / 无参数）：emit false 同步前端 + 撤菜单（幂等，enabled 本已 false）
+    let _ = app.emit("proxy-enabled", false);
+    crate::runtime::menubar::refresh(&app);
     Ok(())
 }
 
@@ -142,9 +160,16 @@ pub async fn proxy_stop_core(app: AppHandle, state: State<'_, ProxyState>) -> Re
         lifecycle::reset_stopped_state(&app); // 幂等兜底：清可能残留的内存态
         return Ok(());
     }
-    // 作废 stop_core 乐观释放重试：bootout 后 controller 必不可达，防陈旧重试误报
+    // 停止意图先行：作废 stop_core 乐观释放重试（bootout 后 controller 必不可达，防陈旧
+    // 重试误报）+ 作废监测（提权弹框可 >60s，窗口内监测 tick reset_dead_state 会把状态打掉；
+    // 用户随后取消弹框时 mihomo 实际仍在跑 active config 而 UI 已全显示关）+ 停流。
     state.release_gen.fetch_add(1, Ordering::Relaxed);
-    tun::uninstall_launchdaemon(&app).await?;
+    invalidate_monitor(&state);
+    app.state::<StreamRegistry>().cancel_all();
+    if let Err(e) = tun::uninstall_launchdaemon(&app).await {
+        ensure_monitor(&app); // 取消提权：进程未动（enabled 未变，UI 如实显示开），恢复看护
+        return Err(e);
+    }
     *state.run_params.lock().map_err(|e| e.to_string())? = None;
     lifecycle::reset_stopped_state(&app);
     Ok(())
@@ -162,12 +187,10 @@ pub async fn proxy_uninstall(app: AppHandle, state: State<'_, ProxyState>) -> Re
     if tun::plist_installed(&app) {
         tun::uninstall_launchdaemon(&app).await?;
     }
-    state.tun_active.store(false, Ordering::Relaxed);
-    state.enabled.store(false, Ordering::Relaxed);
     *state.run_params.lock().map_err(|e| e.to_string())? = None;
+    // 复位基元统一收尾（含此前手写复位缺的 invalidate_monitor/cancel_all）
+    lifecycle::reset_stopped_state(&app);
     core::remove_runtime_files(&app)?;
-    crate::runtime::menubar::refresh(&app);
-    let _ = app.emit("proxy-enabled", false);
     Ok(())
 }
 
@@ -351,7 +374,8 @@ pub async fn proxy_set_mode(
     Ok(())
 }
 
-/// 免提权软重启（热重载 active config）。
+/// 免提权软重启（热重载 active config）。启用尾部与 start_core/restart_core 共用
+/// enable_active（verify 窗口守卫 + 热重载 + 同步 TUN 验证 + run_params 落栈 + 监测）。
 #[tauri::command]
 pub async fn proxy_reconnect(app: AppHandle, state: State<'_, ProxyState>) -> Result<(), String> {
     let mut params = state
@@ -371,18 +395,8 @@ pub async fn proxy_reconnect(app: AppHandle, state: State<'_, ProxyState>) -> Re
         return Err("代理核心无响应，请关闭后重新开启".into());
     }
     params.tun = true;
-    // verify 窗口守卫（同 start_core）：快照 offset → verify 期间禁监测截断
-    let _verify_window = lifecycle::arm_log_verify_window(&state);
-    let log_before = lifecycle::log_size(&app); // reload 前快照，供 verify_tun_active 区分新增行
-    reload_config_yaml(&app, &params).await?;
-    // 同步 TUN 验证：失败时回滚 idle config 清理 mihomo 状态（同 start_core）
-    if let Err(e) = lifecycle::verify_tun_active(&app, log_before).await {
-        lifecycle::rollback_to_idle(&app, &params).await;
-        return Err(e);
-    }
-    state.enabled.store(true, Ordering::Relaxed);
+    enable_active(&app, &state, &params).await?;
     state.tun_active.store(true, Ordering::Relaxed);
-    ensure_monitor(&app);
     let _ = app.emit("proxy-enabled", true);
     Ok(())
 }
@@ -492,12 +506,26 @@ impl Extension for ProxyExtension {
         // 可取消，取消则残留由下次开代理 reconnect 复用/退出再清）。prod 的常驻是设计意图
         // （app 退出不影响代理 + 开机自启），不清理。tauri dev 改码重载走 SIGKILL 不触发
         // Exit 钩子，开发迭代不受提权弹框打扰。
-        if cfg!(debug_assertions) {
+        // 变体判定用 identifier `.dev` 后缀而非 cfg!(debug_assertions)：`tauri build --debug`
+        // 产物是 debug 断言开 + 正式版 identifier，按 cfg 判定会让它每次退出都按 dev 语义
+        // 弹框删正式版 daemon，破坏 prod 常驻契约（sibling_identifier 同款后缀判定）。
+        // block_on 外套 60s 超时：Exit 钩子在主线程同步执行，提权弹框无人值守时不得无限
+        // 钉死退出——超时放行退出，daemon 残留由下次开代理 install 接管清理（与取消弹框
+        // 同路径）。
+        if app.config().identifier.ends_with(".dev") {
             crate::runtime::exit::register(Arc::new(|app: &AppHandle| {
                 if tun::plist_installed(app) {
-                    if let Err(e) = tauri::async_runtime::block_on(tun::uninstall_launchdaemon(app))
-                    {
-                        log::debug!("[proxy] dev 退出清理 LaunchDaemon 未完成: {e}");
+                    match tauri::async_runtime::block_on(tokio::time::timeout(
+                        std::time::Duration::from_secs(60),
+                        tun::uninstall_launchdaemon(app),
+                    )) {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => {
+                            log::debug!("[proxy] dev 退出清理 LaunchDaemon 未完成: {e}")
+                        }
+                        Err(_) => log::debug!(
+                            "[proxy] dev 退出清理超时（60s），残留由下次开代理接管清理"
+                        ),
                     }
                 }
             }));
