@@ -316,7 +316,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **消费者**（3 个）：
 
-- **awake**：启用开关 CheckItem + 熄屏方式二级菜单（设置项 `menubarToggleVisible` 控制是否常驻显示，勾选态反映 enabled 与当前策略；开启路径经授权弹窗）
+- **awake**：启用开关 CheckItem + 熄屏方式二级菜单（设置项 `menubarToggleVisible` 控制是否常驻显示，勾选态反映 enabled 与当前策略；开启路径仅 daemon 首次安装经授权弹窗，之后零弹窗）
 - **proxy**：设置项 `menubarVisible` 控制贡献段常显（替代「已连接才显示」）；段内「打开扩展」+ 连接状态 CheckItem（勾选态反映连接、可点切换，已连接显示当前节点；未过首启流程时连接回退打开扩展）（详见 [proxy.md](docs/extensions/proxy.md)）
 - **system-status**：下拉菜单「系统状态」段（order 30 置顶），单个可点击状态行「CPU x% · 内存 x% · x°C」（百分比两项带标识、温度靠单位自表意；温度缺失省段；点击 emit `open-extension` 打开扩展界面，与 proxy「打开扩展」同路径）；显隐由扩展设置页 `menubarVisible` 控制（config subview，搜索栏 Actions 齿轮进入，proxy/agent 同款；config watch 经 `set_system_status_menubar_visible` 同步 AtomicBool，初始 false 防启动闪现，关闭时采样一并挂起）；setup 内常驻采样任务（镜像 awake 电池巡检范式）：CPU/内存每 5s、温度每 30s（结果缓存，阻塞采集走 spawn_blocking），每轮写 `menu_line` 缓存并 `refresh` 重建菜单（build 读缓存零阻塞），图标隐藏时跳过采样
 
@@ -479,7 +479,7 @@ src-tauri/src/
     ├── permission.rs   # 系统权限原语 + 授权会话（详见 docs/permissions.md）
     ├── window_list.rs  # CGWindowList 共享封装（screenshot / window-manager / 授权会话避让共用）
     ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel + appearance 缓存）
-    ├── sleep.rs        # 睡眠域原语：root watchdog（osascript 授权 + flag 驱动 pmset disablesleep，持有期持续校验自愈 + pid 自愈）、合盖检测（AppleClamshellState）、外接屏判定、displaysleepnow、内置面板亮度读写（DisplayServices 私有 framework）、电池状态解析（awake 消费）
+    ├── sleep.rs        # 睡眠域原语：睡眠守护 daemon 循环体 + LaunchDaemon plist 生成（flag/beat 驱动 pmset disablesleep，app 心跳过期自愈 + 持有期持续校验自愈，awake 经 elevate 安装）、合盖检测（AppleClamshellState）、外接屏判定、displaysleepnow、内置面板亮度读写（DisplayServices 私有 framework）、电池状态解析（awake 消费）
     └── path_guard.rs   # 统一路径校验
 ```
 
@@ -541,7 +541,7 @@ src/
     ├── calculator/config.json        # 计算器历史（history key，10 条上限）
     ├── notes/config.json             # 记事本内容（content key，自动暂存）
     ├── zsh-autosuggestions/{bin/, index.zsh, signals.log, bin.version, config.json}  # zsh 补全
-    ├── awake/{sleep-watchdog-*.flag, config.json}   # 睡眠 watchdog flag（按 pid 命名，运行时按需）+ 配置
+    ├── awake/{awake.flag, awake.beat, awake.daemon-beat, awake-daemon.plist, config.json}   # 睡眠守护 LaunchDaemon 的持有 flag + app 心跳 + daemon 存活标记 + plist 草稿（实际装于 /Library/LaunchDaemons/<bundle-id>.awake.plist）+ 配置
     ├── screenshot/config.json
     ├── system-status/config.json        # 菜单栏状态段显隐（menubarVisible）
     ├── window-manager/config.json

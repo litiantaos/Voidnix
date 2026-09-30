@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -287,79 +286,91 @@ pub fn screen_sleep_due(
     closed_now && !external && (!was_closed || since_last_sleep >= RESLEEP_INTERVAL)
 }
 
-/// 启动睡眠 watchdog 的失败分类。
-pub enum SleepWatchdogError {
-    /// 用户取消了管理员授权弹窗（osascript error -128）
-    Cancelled,
-    /// 授权通过但命令执行失败，携带 stderr
-    Failed(String),
-}
+/// daemon 循环周期（秒）：与原 watchdog 同频，持有维持与 beat 过期检测的粒度。
+pub const DAEMON_CYCLE_SECS: u64 = 2;
 
-/// 启动 root 睡眠 watchdog：经 osascript 管理员授权运行一个后台 shell 循环，
-/// 每 2 秒轮询 flag 文件与本进程 pid——flag 出现时上翻 `pmset -a disablesleep 1`、
-/// 消失时回落 0（各仅写一次，边沿触发）；app 退出或崩溃（pid 消失）时自动恢复
-/// 默认睡眠并清理 flag。每次 app 运行期只需授权一次，之后开关全靠 flag 文件、
-/// 零弹窗。watchdog 生命周期绑定 app 进程是崩溃安全的最小机制：无需落盘恢复
-/// 债务、无需守护进程，极端场景（断电同时杀死 watchdog）的残留 flag 由下次
-/// 启动的 setup 清理。
+/// beat 过期阈值（秒）：app 心跳间隔 2s 的 5 周期余量（容忍 worker 短暂阻塞）。
+/// app 死亡（退出/崩溃）后最迟 GRACE + 一个周期恢复默认睡眠；重启间隙短于
+/// GRACE 则无缝续持。
+pub const BEAT_GRACE_SECS: i64 = 10;
+
+/// 睡眠守护 daemon 的常驻 sh 循环体（launchd LaunchDaemon 托管，plist 内联、
+/// 永不退出、KeepAlive 自愈）。每周期三分支：
 ///
-/// 这是全局唯一能实现「合盖 + 无外接显示器 + 电池供电」不休眠的杠杆：
-/// `IOPMAssertion` 压不住 clamshell 睡眠路径。flag 驱动而非每次直写，还避免
-/// 了与用户手工 `sudo pmset` 的持续互相覆盖（单次覆盖用户可见）。
-pub fn spawn_sleep_watchdog(flag: &Path, app_pid: u32) -> Result<(), SleepWatchdogError> {
-    let shell = watchdog_shell(&flag.to_string_lossy(), app_pid);
-    let script = format!(
-        "do shell script \"{}\" with administrator privileges",
-        shell.replace('\\', "\\\\").replace('"', "\\\"")
-    );
-    let output = Command::new("/usr/bin/osascript")
-        .arg("-e")
-        .arg(script)
-        .output()
-        .map_err(|e| SleepWatchdogError::Failed(e.to_string()))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("-128") || stderr.to_lowercase().contains("cancel") {
-        return Err(SleepWatchdogError::Cancelled);
-    }
-    let message = stderr.trim();
-    Err(SleepWatchdogError::Failed(if message.is_empty() {
-        "osascript exited with error".into()
-    } else {
-        message.into()
-    }))
-}
-
-/// watchdog 的 sh 循环体。子 shell 整体后台化（`&` + 全重定向），授权命令立即
-/// 返回；循环存活至 app pid 消失，退出前回收 flag 并在持有期间恢复默认睡眠。
-/// SET 边沿置位后进入**持续维持**：每周期校验 `pmset -g` 的 SleepDisabled
-///（实际输出为 `SleepDisabled\t\t1`，中间两个 tab，匹配须用 `.*` 桥接），
-/// 失配即重写 1——全局设置可能被外部清零（dev/prod 双实例的另一实例退出
-/// 恢复、手动 `sudo pmset`），边沿式写入会让持有静默失效（实测：另一实例
-/// 退出恢复 0 后本实例的合盖防睡无声丢失，系统按 Clamshell Sleep 入睡）。
-/// 覆盖外部手动改动的代价被接受：app 开关是用户意图的明确表达。
-fn watchdog_shell(flag: &str, app_pid: u32) -> String {
+/// - flag 在场 + beat 新鲜（mtime 距今 ≤ GRACE）→ 持有：边沿置位
+///   `pmset -a disablesleep 1` 后进入**持续维持**——每周期校验 `pmset -g` 的
+///   SleepDisabled（实际输出为 `SleepDisabled\t\t1`，中间两个 tab，匹配须用
+///   `.*` 桥接），失配即重写 1。全局设置可能被外部清零（UU 远程会话建立、
+///   手动 `sudo pmset`），边沿式写入会让持有静默失效（实测事故：合盖防睡
+///   无声丢失、系统按 Clamshell Sleep 入睡）。覆盖外部手动改动的代价被
+///   接受：app 开关是用户意图的明确表达。
+/// - flag 在场 + beat 过期 → app 已死（退出/崩溃）：rm flag、SET 守卫恢复 0
+///   （崩溃安全，无落盘恢复债务）。
+/// - flag 缺席 → SET 守卫恢复 0 后空闲（零 fork 静默轮询）。
+///
+/// 每周期 touch daemon 存活标记（app 侧安装验证与活性判定的唯一信号）。
+/// beat age 以 `date +%s` − `stat -f %m` 计算：beat 缺失 → age 巨大 → 过期；
+/// 时钟后跳 age 为负 → 判新鲜（安全方向）；时钟前跳 → 单周期伪释放，下周期
+/// 自愈。launchd 环境无 PATH，全部外部命令绝对路径。
+pub fn daemon_loop_script(flag: &str, beat: &str, daemon_beat: &str) -> String {
+    let q = crate::platform::elevate::shell_quote;
     format!(
-        "( SET=; while kill -0 {app_pid} 2>/dev/null; do \
+        "SET=; while :; do \
          if [ -f {flag} ]; then \
+         AGE=$(( $(/bin/date +%s) - $(/usr/bin/stat -f %m {beat} 2>/dev/null || echo 0) )); \
+         if [ ${{AGE:-999}} -le {grace} ]; then \
          if [ -z \"$SET\" ]; then /usr/bin/pmset -a disablesleep 1; SET=1; \
-         elif ! /usr/bin/pmset -g | grep -q 'SleepDisabled.*1'; then /usr/bin/pmset -a disablesleep 1; fi; \
+         elif ! /usr/bin/pmset -g | /usr/bin/grep -q 'SleepDisabled.*1'; then /usr/bin/pmset -a disablesleep 1; fi; \
+         else /bin/rm -f {flag}; \
+         if [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; SET=; fi; fi; \
          elif [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; SET=; fi; \
-         sleep 2; done; \
-         rm -f {flag}; \
-         if [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; fi ) \
-         </dev/null >/dev/null 2>&1 &",
-        app_pid = app_pid,
-        flag = shell_single_quoted(flag)
+         /usr/bin/touch {daemon_beat}; /bin/sleep {cycle}; done",
+        flag = q(flag),
+        beat = q(beat),
+        daemon_beat = q(daemon_beat),
+        grace = BEAT_GRACE_SECS,
+        cycle = DAEMON_CYCLE_SECS,
     )
 }
 
-/// 单引号包裹一个字面量词传给 sh（路径含空格如 "Application Support"）。
-/// 单引号内唯一无法出现的字符是单引号本身，以 `'\''` 断开重开转义。
-fn shell_single_quoted(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
+/// XML 五字符实体转义（plist `<string>` 内联脚本含双引号/`&` 等）。
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+/// 睡眠守护 daemon 的 LaunchDaemon plist。脚本经 `cat` 复制进安装件（不走
+/// `do shell script`），只需 XML 转义。RunAtLoad + KeepAlive：开机常驻、
+/// 崩溃自愈（ThrottleInterval 10 保持重生敏捷——循环设计为永不退出，仅异常
+/// 死亡时生效）。
+pub fn awake_daemon_plist(label: &str, script: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>{script}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>"#,
+        label = label,
+        script = xml_escape(script)
+    )
 }
 
 /// 电池供电状态摘要（`pmset -g batt`）。护栏的只读输入。
@@ -411,9 +422,63 @@ mod tests {
     use super::*;
 
     #[test]
-    fn shell_quotes_spaces_and_apostrophes() {
-        assert_eq!(shell_single_quoted("/a b/c"), "'/a b/c'");
-        assert_eq!(shell_single_quoted("/us'er/x"), "'/us'\\''er/x'");
+    fn daemon_loop_script_shape() {
+        let cmd = daemon_loop_script(
+            "/Users/x/Library/Application Support/a/awake.flag",
+            "/Users/x/Library/Application Support/a/awake.beat",
+            "/Users/x/Library/Application Support/a/awake.daemon-beat",
+        );
+        // 永真循环（launchd 托管常驻，永不退出）
+        assert!(cmd.starts_with("SET=; while :; do "));
+        // 路径含空格必须以单引号传入
+        assert!(cmd.contains("-f '/Users/x/Library/Application Support/a/awake.flag'"));
+        assert!(cmd.contains("stat -f %m '/Users/x/Library/Application Support/a/awake.beat'"));
+        // beat age 计算 + GRACE 常量内嵌（缺失 → age 巨大 → 过期方向安全）
+        assert!(cmd.contains("AGE=$(( $(/bin/date +%s) - $(/usr/bin/stat -f %m"));
+        assert!(cmd.contains("|| echo 0) ));"));
+        assert!(cmd.contains(&format!("[ ${{AGE:-999}} -le {BEAT_GRACE_SECS} ]")));
+        // 持有三要素：边沿置位 + pmset -g 持续校验自愈（tab 桥接）+ SET 守卫回落
+        assert!(cmd.contains("disablesleep 1; SET=1"));
+        assert!(cmd.contains(
+            "elif ! /usr/bin/pmset -g | /usr/bin/grep -q 'SleepDisabled.*1'; then /usr/bin/pmset -a disablesleep 1; fi"
+        ));
+        // beat 过期 → app 已死：清 flag + SET 守卫恢复（从未持有时不写 0）
+        assert!(cmd.contains("else /bin/rm -f"));
+        assert!(cmd
+            .contains("if [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; SET=; fi; fi;"));
+        // flag 缺席回落 + daemon 存活标记 + 周期常量
+        assert!(
+            cmd.contains("elif [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; SET=; fi;")
+        );
+        assert!(cmd.contains(
+            "/usr/bin/touch '/Users/x/Library/Application Support/a/awake.daemon-beat';"
+        ));
+        assert!(cmd.contains(&format!("/bin/sleep {DAEMON_CYCLE_SECS}; done")));
+        // launchd 无 PATH：全部外部命令绝对路径（裸 sleep/touch/rm/stat 不容出现）
+        assert!(!cmd.contains(" sleep 2;") && !cmd.contains(" rm ") && !cmd.contains(" touch "));
+    }
+
+    #[test]
+    fn xml_escape_covers_entity_chars() {
+        assert_eq!(
+            xml_escape("a&b<c>d\"e'f"),
+            "a&amp;b&lt;c&gt;d&quot;e&apos;f"
+        );
+    }
+
+    #[test]
+    fn awake_daemon_plist_inlines_escaped_script() {
+        let script = daemon_loop_script("/a/awake.flag", "/a/awake.beat", "/a/awake.daemon-beat");
+        let plist = awake_daemon_plist("com.x.awake", &script);
+        // launchd 形状：Label + 内联 sh -c + RunAtLoad/KeepAlive/ThrottleInterval
+        assert!(plist.contains("<string>com.x.awake</string>"));
+        assert!(plist.contains("<string>/bin/sh</string>\n        <string>-c</string>"));
+        assert!(plist.contains("<key>RunAtLoad</key>\n    <true/>"));
+        assert!(plist.contains("<key>KeepAlive</key>\n    <true/>"));
+        assert!(plist.contains("<key>ThrottleInterval</key>\n    <integer>10</integer>"));
+        // 脚本中的双引号（SET 判空）必须转义为实体，且无裸 & 残留于转义段
+        assert!(plist.contains("[ -z &quot;$SET&quot; ]"));
+        assert!(plist.contains("&amp;&amp;") || !script.contains("&&"));
     }
 
     #[test]
@@ -517,22 +582,5 @@ mod tests {
         // 无百分比行（异常输出）→ None，消费方保持现状
         assert!(parse_battery("Now drawing from 'Battery Power'\n").is_none());
         assert!(parse_battery("").is_none());
-    }
-
-    #[test]
-    fn watchdog_shell_shape() {
-        let cmd = watchdog_shell("/Users/x/Library/Application Support/a/sleep.flag", 4242);
-        // flag 路径含空格必须以单引号传入
-        assert!(cmd.contains("-f '/Users/x/Library/Application Support/a/sleep.flag'"));
-        // pid 监视 + 边沿写 + 持续维持自愈 + 退出恢复 + 后台化，五要素齐备
-        assert!(cmd.contains("kill -0 4242"));
-        assert!(cmd.contains("disablesleep 1; SET=1"));
-        assert!(cmd.contains(
-            "elif ! /usr/bin/pmset -g | grep -q 'SleepDisabled.*1'; then /usr/bin/pmset -a disablesleep 1; fi"
-        ));
-        assert!(cmd.contains("disablesleep 0; SET=;"));
-        assert!(cmd.ends_with("</dev/null >/dev/null 2>&1 &"));
-        // 关闭恢复须以 SET 状态守卫：从未持有时不写 0（尊重用户手工设置）
-        assert!(cmd.contains("if [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; fi )"));
     }
 }

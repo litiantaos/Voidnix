@@ -1,17 +1,16 @@
-use crate::platform::sleep::{self, SleepWatchdogError};
+mod daemon;
+
+use crate::platform::sleep;
 use crate::runtime::menubar::{MenuBarContribution, MenuEntry};
 use crate::runtime::registry::Extension;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-/// 开关意图状态：true = flag 在场 + watchdog 持有 disablesleep。
-/// 系统真实状态由 watchdog 异步对齐（2 秒轮询），此处是 UI/菜单的即时真值。
+/// 开关意图状态：true = flag 在场 + daemon 持有 disablesleep。
+/// 系统真实状态由 daemon 异步对齐（2 秒轮询），此处是 UI/菜单的即时真值。
 pub struct AwakeState {
     pub enabled: AtomicBool,
-    /// 本 app 运行期内 watchdog 是否已获管理员授权（仅首次开启弹一次密码）
-    helper_started: AtomicBool,
     /// 授权弹窗进行中守卫：弹窗期间二次开启直接拒绝，防 osascript 授权对话框叠加
     engaging: AtomicBool,
     /// 菜单栏快捷开关可见性（前端 config watch 同步）。菜单段不随 enabled
@@ -28,15 +27,6 @@ pub struct AwakeState {
 /// 会跑过截止线）；解除后系统随即按自身策略入睡，剩余电量在睡眠态耗速极低。
 /// 一次性动作无自动恢复（重新开启由用户决定），无滞回需求。
 const BATTERY_FLOOR_PERCENT: u32 = 20;
-
-/// watchdog flag 文件路径（ext_data_dir/extensions/awake/）。按 app pid 命名：
-/// 快速重启场景下旧 watchdog 的退出清理（rm flag）不会误删新实例刚写的 flag
-/// （旧实例死亡到新实例 engage 落 flag 可短于旧 watchdog 的 2 秒轮询窗口），
-/// 残留的旧 pid flag 由下次启动 setup 按 glob 清理。
-fn flag_path(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(crate::runtime::storage::ext_data_dir(app, "awake")?
-        .join(format!("sleep-watchdog-{}.flag", std::process::id())))
-}
 
 /// dev 构建诊断日志（与 lib.rs [boot] 埋点同款门控），用于熄屏链路实测定位。
 fn debug_log(message: impl FnOnce() -> String) {
@@ -65,10 +55,11 @@ pub async fn set_awake_enabled(
         }
         Err("管理员授权进行中".into())
     } else {
-        // 仅删 flag：watchdog 活着时 2 秒内自动回落（本运行期内关闭过的场景）；
-        // 从未启动过 watchdog 则零副作用（含前端 config 回填触发的初始 false 回声）
-        let _ = flag_path(&app).and_then(|f| std::fs::remove_file(&f).map_err(|e| e.to_string()));
+        // 先撤意图再删 flag（心跳任务按 enabled 决定是否补写 flag，顺序颠倒会被
+        // 补写竞态复活）：daemon 常驻在场，删 flag 后 2 秒内自动回落；daemon 未
+        // 装时零副作用（含前端 config 回填触发的初始 false 回声）
         state.enabled.store(false, Ordering::Relaxed);
+        daemon::remove_flag(&app);
         crate::runtime::menubar::refresh(&app);
         let _ = app.emit("awake-enabled", false);
         Ok(false)
@@ -77,41 +68,20 @@ pub async fn set_awake_enabled(
 
 /// 开启路径主体（engaging 独占区内执行）。
 ///
+/// 顺序硬不变量：ensure_daemon（可能提权弹窗，可达分钟级）→ touch beat →
+/// 写 flag → 置 enabled。心跳任务仅在 enabled=true 时 touch beat，若 flag
+/// 先于弹窗落盘，弹窗期间 beat 停更会被在场 daemon 判定 app 已死而自清 flag
+/// （静默漂移）；写 flag 前 beat 必新鲜。取消/失败发生在写 flag 之前，零清理。
+///
 /// 不变量：授权弹窗期间所有关闭入口不可达——菜单栏贡献段、电池巡检都以
 /// `enabled=true` 为前提，而 engage 完成前置位前它恒为 false；View 的关闭
 /// 路径同样只在开启态（toggle 值为 true）下可达。因此 engage 无需与关闭
 /// 路径互斥（无「弹窗中删 flag、完成后又置 enabled」的交错）。若将来新增
 /// 关闭入口（如 URL 命令），必须保持该前提或引入 disarm 计数。
 async fn engage(app: &AppHandle, state: &AwakeState) -> Result<bool, String> {
-    let flag = flag_path(app)?;
-    // 先落 flag 再授权：watchdog 首个周期即上翻 disablesleep；
-    // 授权取消/失败时回收，不留「flag 在场但无人持有」的中间态
-    if let Some(parent) = flag.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&flag, b"").map_err(|e| e.to_string())?;
-    if !state.helper_started.load(Ordering::Relaxed) {
-        let pid = std::process::id();
-        let flag_for_spawn = flag.clone();
-        let started = tauri::async_runtime::spawn_blocking(move || {
-            sleep::spawn_sleep_watchdog(&flag_for_spawn, pid)
-        })
-        .await
-        .map_err(|e| e.to_string())?;
-        match started {
-            Ok(()) => {
-                state.helper_started.store(true, Ordering::Relaxed);
-            }
-            Err(SleepWatchdogError::Cancelled) => {
-                let _ = std::fs::remove_file(&flag);
-                return Err("已取消管理员授权".into());
-            }
-            Err(SleepWatchdogError::Failed(msg)) => {
-                let _ = std::fs::remove_file(&flag);
-                return Err(format!("启动睡眠守护失败：{msg}"));
-            }
-        }
-    }
+    daemon::ensure_daemon(app).await?;
+    daemon::touch_beat(app)?;
+    daemon::write_flag(app)?;
     state.enabled.store(true, Ordering::Relaxed);
     crate::runtime::menubar::refresh(app);
     let _ = app.emit("awake-enabled", true);
@@ -164,7 +134,6 @@ impl Extension for AwakeExtension {
     async fn setup(&self, app: &AppHandle) -> tauri::Result<()> {
         app.manage(AwakeState {
             enabled: AtomicBool::new(false),
-            helper_started: AtomicBool::new(false),
             engaging: AtomicBool::new(false),
             menubar_visible: AtomicBool::new(false),
             screen_policy: AtomicU8::new(1),
@@ -220,14 +189,43 @@ impl Extension for AwakeExtension {
                     .flatten();
                 let Some(battery) = status else { continue };
                 if battery.on_battery && battery.percent < BATTERY_FLOOR_PERCENT {
-                    let _ = flag_path(&guard_app)
-                        .and_then(|f| std::fs::remove_file(&f).map_err(|e| e.to_string()));
+                    // 先撤意图再删 flag：心跳任务按 enabled 决定是否补写 flag，
+                    // 顺序颠倒会在两步之间被补写竞态复活
                     guard_app
                         .state::<AwakeState>()
                         .enabled
                         .store(false, Ordering::Relaxed);
+                    daemon::remove_flag(&guard_app);
                     crate::runtime::menubar::refresh(&guard_app);
                     let _ = guard_app.emit("awake-enabled", false);
+                }
+            }
+        });
+
+        // app 心跳（镜像电池巡检范式）：enabled 时按 daemon 周期 touch beat
+        //（daemon 持有的存活信号，停更 GRACE 后 daemon 自清 flag 恢复默认睡眠
+        // ——app 崩溃安全的全部机制）。自愈闭环：enabled 而 flag 缺失（强制睡眠
+        // 唤醒后 daemon 已按 beat 过期自清等漂移场景）且 daemon 活着时补写 flag
+        // 重建持有，与 daemon 侧 pmset -g 校验自愈同构；daemon 已死则不补，
+        // 留待下次 engage 的 ensure_daemon 重装
+        let beat_app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut tick =
+                tokio::time::interval(std::time::Duration::from_secs(sleep::DAEMON_CYCLE_SECS));
+            loop {
+                tick.tick().await;
+                if !beat_app
+                    .state::<AwakeState>()
+                    .enabled
+                    .load(Ordering::Relaxed)
+                {
+                    continue;
+                }
+                if daemon::touch_beat(&beat_app).is_err() {
+                    continue;
+                }
+                if !daemon::flag_exists(&beat_app) && daemon::daemon_alive(&beat_app) {
+                    let _ = daemon::write_flag(&beat_app);
                 }
             }
         });

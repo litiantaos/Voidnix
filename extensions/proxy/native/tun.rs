@@ -161,8 +161,7 @@ pub async fn install_launchdaemon(
             echo MIHOMO_LAUNCH_FAILED; \
          fi"
     );
-    let script = elevate::do_shell_script(&cmd);
-    let stdout = elevate::run_admin_shell(app, &script)
+    let stdout = elevate::run_admin_shell(app, &cmd)
         .await
         .map_err(ElevateError::into_message)?;
 
@@ -187,8 +186,7 @@ pub async fn uninstall_launchdaemon(app: &AppHandle) -> Result<(), String> {
     let label = daemon_label(app);
     let dest_q = shell_quote(&plist_install_path(&label).display().to_string());
     let cmd = format!("launchctl bootout system/{label} 2>/dev/null; rm -f {dest_q}");
-    let script = elevate::do_shell_script(&cmd);
-    elevate::run_admin_shell(app, &script)
+    elevate::run_admin_shell(app, &cmd)
         .await
         .map_err(ElevateError::into_message)?;
     Ok(())
@@ -210,8 +208,7 @@ pub async fn restart_launchdaemon(app: &AppHandle) -> Result<(), String> {
             .unwrap_or_default(),
         &std::env::var("USER").unwrap_or_default(),
     );
-    let script = elevate::do_shell_script(&cmd);
-    elevate::run_admin_shell(app, &script)
+    elevate::run_admin_shell(app, &cmd)
         .await
         .map_err(ElevateError::into_message)?;
     Ok(())
