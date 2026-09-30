@@ -467,6 +467,7 @@ src-tauri/src/
     ├── panel.rs        # NSPanel 转换
     ├── skylight.rs     # Space 迁移（私有 API）
     ├── focus.rs        # 焦点管理（PREV_FRONT_PID + is_app_active + restore_captured）
+    ├── elevate.rs      # osascript 提权原语（do shell script 拼装 + 守卫执行器 + 取消/失败分类，proxy 与 awake 共用）
     ├── input.rs        # CGEvent 键盘注入（post_key + post_combo）
     ├── mem.rs          # 进程内存查询（proc_pid_rusage → WebContent physical footprint）
     ├── pasteboard.rs   # NSPasteboard 原语统一

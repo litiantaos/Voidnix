@@ -3,6 +3,8 @@ pub mod autostart;
 pub mod click_monitor;
 pub mod distributed;
 #[cfg(target_os = "macos")]
+pub mod elevate;
+#[cfg(target_os = "macos")]
 pub mod focus;
 pub mod frontmost_watcher;
 #[cfg(target_os = "macos")]
