@@ -294,19 +294,30 @@ pub const DAEMON_CYCLE_SECS: u64 = 2;
 /// GRACE 则无缝续持。
 pub const BEAT_GRACE_SECS: i64 = 10;
 
+/// daemon 循环逻辑版本令牌：行为变更时递增。安装件以包含此令牌判定新鲜，
+/// 而非整文件字节比对——plist 模板排版等外观调整不触发提权重装，令牌缺席
+/// 或不同才重装。
+pub const DAEMON_LOOP_VERSION: &str = "awake-loop-1";
+
 /// 睡眠守护 daemon 的常驻 sh 循环体（launchd LaunchDaemon 托管，plist 内联、
-/// 永不退出、KeepAlive 自愈）。每周期三分支：
+/// 永不退出、KeepAlive 自愈）。每周期三分支，恢复路径全部**现实态判定**
+///（`pmset -g` 实查）而非进程内存——`disablesleep` 是持久系统设置，daemon
+/// 进程被替换（KeepAlive 重生 / 重启 RunAtLoad / 重装 bootout+bootstrap）后
+/// 内存态归零，若按内存守卫恢复会漏写 0，留下无人持有的全局睡眠禁用：
 ///
-/// - flag 在场 + beat 新鲜（mtime 距今 ≤ GRACE）→ 持有：边沿置位
-///   `pmset -a disablesleep 1` 后进入**持续维持**——每周期校验 `pmset -g` 的
-///   SleepDisabled（实际输出为 `SleepDisabled\t\t1`，中间两个 tab，匹配须用
-///   `.*` 桥接），失配即重写 1。全局设置可能被外部清零（UU 远程会话建立、
-///   手动 `sudo pmset`），边沿式写入会让持有静默失效（实测事故：合盖防睡
+/// - flag 在场 + beat 新鲜（mtime 距今 ≤ GRACE）→ 持有：每周期校验
+///   `pmset -g` 的 SleepDisabled（实际输出为 `SleepDisabled\t\t1`，中间两个
+///   tab，匹配须用 `.*` 桥接），失配即重写 1——覆盖置位边沿与外部清零自愈
+///   （UU 远程会话建立、手动 `sudo pmset`；边沿式写入有实测事故：合盖防睡
 ///   无声丢失、系统按 Clamshell Sleep 入睡）。覆盖外部手动改动的代价被
-///   接受：app 开关是用户意图的明确表达。
-/// - flag 在场 + beat 过期 → app 已死（退出/崩溃）：rm flag、SET 守卫恢复 0
-///   （崩溃安全，无落盘恢复债务）。
-/// - flag 缺席 → SET 守卫恢复 0 后空闲（零 fork 静默轮询）。
+///   接受：app 开关是用户意图的明确表达。置 HELD=1。
+/// - flag 在场 + beat 过期 → app 已死（退出/崩溃）：rm flag，现实态为 1 才
+///   写 0（崩溃安全，无落盘恢复债务），HELD=0。
+/// - flag 缺席 → HELD 或首周期（FIRST）时现实态为 1 才写 0，随后空闲
+///   （pmset 零 fork，仅 touch/sleep 周期开销）。HELD 只做「恢复一次」的
+///   停止条件，防与另一实例（dev/prod 双 daemon）的持有互相拉扯；FIRST
+///   兜底「上一代进程持有中死亡 + flag 已被删」的孤儿 disablesleep——代价
+///   是空闲首周期可能覆盖用户手工 `sudo pmset disablesleep 1`（接受，见上）。
 ///
 /// 每周期 touch daemon 存活标记（app 侧安装验证与活性判定的唯一信号）。
 /// beat age 以 `date +%s` − `stat -f %m` 计算：beat 缺失 → age 巨大 → 过期；
@@ -314,20 +325,24 @@ pub const BEAT_GRACE_SECS: i64 = 10;
 /// 自愈。launchd 环境无 PATH，全部外部命令绝对路径。
 pub fn daemon_loop_script(flag: &str, beat: &str, daemon_beat: &str) -> String {
     let q = crate::platform::elevate::shell_quote;
+    let fresh = "! /usr/bin/pmset -g | /usr/bin/grep -q 'SleepDisabled.*1'";
+    let held = "/usr/bin/pmset -g | /usr/bin/grep -q 'SleepDisabled.*1'";
     format!(
-        "SET=; while :; do \
+        "HELD=0; FIRST=1; while :; do \
          if [ -f {flag} ]; then \
          AGE=$(( $(/bin/date +%s) - $(/usr/bin/stat -f %m {beat} 2>/dev/null || echo 0) )); \
          if [ ${{AGE:-999}} -le {grace} ]; then \
-         if [ -z \"$SET\" ]; then /usr/bin/pmset -a disablesleep 1; SET=1; \
-         elif ! /usr/bin/pmset -g | /usr/bin/grep -q 'SleepDisabled.*1'; then /usr/bin/pmset -a disablesleep 1; fi; \
+         if {fresh}; then /usr/bin/pmset -a disablesleep 1; fi; HELD=1; \
          else /bin/rm -f {flag}; \
-         if [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; SET=; fi; fi; \
-         elif [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; SET=; fi; \
-         /usr/bin/touch {daemon_beat}; /bin/sleep {cycle}; done",
+         if {held}; then /usr/bin/pmset -a disablesleep 0; fi; HELD=0; fi; \
+         elif [ \"$HELD\" -eq 1 ] || [ \"$FIRST\" -eq 1 ]; then \
+         if {held}; then /usr/bin/pmset -a disablesleep 0; fi; HELD=0; fi; \
+         FIRST=0; /usr/bin/touch {daemon_beat}; /bin/sleep {cycle}; done",
         flag = q(flag),
         beat = q(beat),
         daemon_beat = q(daemon_beat),
+        fresh = fresh,
+        held = held,
         grace = BEAT_GRACE_SECS,
         cycle = DAEMON_CYCLE_SECS,
     )
@@ -345,7 +360,7 @@ fn xml_escape(s: &str) -> String {
 /// 睡眠守护 daemon 的 LaunchDaemon plist。脚本经 `cat` 复制进安装件（不走
 /// `do shell script`），只需 XML 转义。RunAtLoad + KeepAlive：开机常驻、
 /// 崩溃自愈（ThrottleInterval 10 保持重生敏捷——循环设计为永不退出，仅异常
-/// 死亡时生效）。
+/// 死亡时生效）。LoopVersion 令牌供安装侧新鲜度判定（launchd 忽略未知键）。
 pub fn awake_daemon_plist(label: &str, script: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -360,6 +375,8 @@ pub fn awake_daemon_plist(label: &str, script: &str) -> String {
         <string>-c</string>
         <string>{script}</string>
     </array>
+    <key>LoopVersion</key>
+    <string>{version}</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -369,8 +386,45 @@ pub fn awake_daemon_plist(label: &str, script: &str) -> String {
 </dict>
 </plist>"#,
         label = label,
-        script = xml_escape(script)
+        script = xml_escape(script),
+        version = DAEMON_LOOP_VERSION
     )
+}
+
+/// 进程活动持有（`NSProcessInfo beginActivity`）：持有期间豁免本进程的
+/// App Nap / timer 合并——app 心跳依赖 2s 定时器，合盖无交互的隐藏 LSUIElement
+/// 正是 App Nap 的完整触发画像（定时器被拖延 >GRACE 即丢持有）。选
+/// `UserInitiatedAllowingIdleSleep`：不加冗余的闲置睡眠断言（睡眠杠杆由
+/// daemon 的 disablesleep 独占），仅保本进程调度不被节流。
+pub struct ActivityHold {
+    handle:
+        objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_foundation::NSObjectProtocol>>,
+}
+
+// SAFETY: 句柄是不透明 token，仅回传给 endActivity（Apple 文档允许跨线程），
+// 不触发任何 Objective-C 消息传递
+unsafe impl Send for ActivityHold {}
+
+/// 开始进程活动持有。符号/运行时异常返回 None，消费方按无豁免降级
+/// （心跳照常，仅失去 App Nap 保护）。
+pub fn begin_activity_hold() -> Option<ActivityHold> {
+    use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
+    let info = NSProcessInfo::processInfo();
+    let reason = NSString::from_str("voidnix-awake-heartbeat");
+    let handle = info.beginActivityWithOptions_reason(
+        NSActivityOptions::UserInitiatedAllowingIdleSystemSleep,
+        &reason,
+    );
+    Some(ActivityHold { handle })
+}
+
+impl ActivityHold {
+    /// 结束持有（drop 不自动结束，必须显式 endActivity）
+    pub fn end(self) {
+        use objc2_foundation::NSProcessInfo;
+        // SAFETY: handle 来自 beginActivityWithOptions:reason: 的原样返回
+        unsafe { NSProcessInfo::processInfo().endActivity(&self.handle) };
+    }
 }
 
 /// 电池供电状态摘要（`pmset -g batt`）。护栏的只读输入。
@@ -428,8 +482,8 @@ mod tests {
             "/Users/x/Library/Application Support/a/awake.beat",
             "/Users/x/Library/Application Support/a/awake.daemon-beat",
         );
-        // 永真循环（launchd 托管常驻，永不退出）
-        assert!(cmd.starts_with("SET=; while :; do "));
+        // 永真循环（launchd 托管常驻，永不退出）+ 现实态恢复的状态位
+        assert!(cmd.starts_with("HELD=0; FIRST=1; while :; do "));
         // 路径含空格必须以单引号传入
         assert!(cmd.contains("-f '/Users/x/Library/Application Support/a/awake.flag'"));
         assert!(cmd.contains("stat -f %m '/Users/x/Library/Application Support/a/awake.beat'"));
@@ -437,19 +491,19 @@ mod tests {
         assert!(cmd.contains("AGE=$(( $(/bin/date +%s) - $(/usr/bin/stat -f %m"));
         assert!(cmd.contains("|| echo 0) ));"));
         assert!(cmd.contains(&format!("[ ${{AGE:-999}} -le {BEAT_GRACE_SECS} ]")));
-        // 持有三要素：边沿置位 + pmset -g 持续校验自愈（tab 桥接）+ SET 守卫回落
-        assert!(cmd.contains("disablesleep 1; SET=1"));
+        // 持有：pmset -g 现实态校验（tab 桥接）失配即写 1（覆盖置位边沿与清零自愈）
         assert!(cmd.contains(
-            "elif ! /usr/bin/pmset -g | /usr/bin/grep -q 'SleepDisabled.*1'; then /usr/bin/pmset -a disablesleep 1; fi"
+            "if ! /usr/bin/pmset -g | /usr/bin/grep -q 'SleepDisabled.*1'; then /usr/bin/pmset -a disablesleep 1; fi; HELD=1;"
         ));
-        // beat 过期 → app 已死：清 flag + SET 守卫恢复（从未持有时不写 0）
+        // beat 过期 → app 已死：清 flag + 现实态为 1 才恢复（进程被替换后也能收尾）
         assert!(cmd.contains("else /bin/rm -f"));
-        assert!(cmd
-            .contains("if [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; SET=; fi; fi;"));
-        // flag 缺席回落 + daemon 存活标记 + 周期常量
-        assert!(
-            cmd.contains("elif [ -n \"$SET\" ]; then /usr/bin/pmset -a disablesleep 0; SET=; fi;")
-        );
+        assert!(cmd.contains(
+            "if /usr/bin/pmset -g | /usr/bin/grep -q 'SleepDisabled.*1'; then /usr/bin/pmset -a disablesleep 0; fi; HELD=0; fi;"
+        ));
+        // flag 缺席：HELD 或首周期（FIRST 兜底进程替换的孤儿 disablesleep）恢复一次
+        assert!(cmd.contains("elif [ \"$HELD\" -eq 1 ] || [ \"$FIRST\" -eq 1 ]; then"));
+        assert!(cmd.contains("FIRST=0; /usr/bin/touch"));
+        // daemon 存活标记 + 周期常量
         assert!(cmd.contains(
             "/usr/bin/touch '/Users/x/Library/Application Support/a/awake.daemon-beat';"
         ));
@@ -470,15 +524,20 @@ mod tests {
     fn awake_daemon_plist_inlines_escaped_script() {
         let script = daemon_loop_script("/a/awake.flag", "/a/awake.beat", "/a/awake.daemon-beat");
         let plist = awake_daemon_plist("com.x.awake", &script);
-        // launchd 形状：Label + 内联 sh -c + RunAtLoad/KeepAlive/ThrottleInterval
+        // launchd 形状：Label + 内联 sh -c + LoopVersion + RunAtLoad/KeepAlive/ThrottleInterval
         assert!(plist.contains("<string>com.x.awake</string>"));
         assert!(plist.contains("<string>/bin/sh</string>\n        <string>-c</string>"));
+        assert!(plist.contains(&format!(
+            "<key>LoopVersion</key>\n    <string>{DAEMON_LOOP_VERSION}</string>"
+        )));
         assert!(plist.contains("<key>RunAtLoad</key>\n    <true/>"));
         assert!(plist.contains("<key>KeepAlive</key>\n    <true/>"));
         assert!(plist.contains("<key>ThrottleInterval</key>\n    <integer>10</integer>"));
-        // 脚本中的双引号（SET 判空）必须转义为实体，且无裸 & 残留于转义段
-        assert!(plist.contains("[ -z &quot;$SET&quot; ]"));
-        assert!(plist.contains("&amp;&amp;") || !script.contains("&&"));
+        // 脚本中的双引号（HELD/FIRST 判等）必须转义为实体
+        assert!(plist.contains("[ &quot;$HELD&quot; -eq 1 ]"));
+        // 直接验证 & 转义：注入含 & 的探针脚本
+        let probe = awake_daemon_plist("l", "a&b");
+        assert!(probe.contains("<string>a&amp;b</string>"));
     }
 
     #[test]

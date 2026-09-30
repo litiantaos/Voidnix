@@ -69,70 +69,121 @@ pub fn flag_exists(app: &AppHandle) -> bool {
 }
 
 /// 文件 mtime 距今是否 ≤ max_age（心跳新鲜度判定；缺失/读取失败一律不新鲜）。
+/// mtime 在未来（时钟后跳）按 age 0 判新鲜——与 daemon 侧 sh 的「负 age 新鲜」
+/// 同向，防时钟回拨把健康 daemon 误判死亡而触发提权重装。
 fn beat_is_fresh(path: &Path, max_age: u64) -> bool {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
-        .and_then(|t| t.elapsed().ok())
+        .map(|t| t.elapsed().unwrap_or(Duration::ZERO))
         .is_some_and(|age| age.as_secs() <= max_age)
 }
 
-/// daemon 是否存活（存活标记 3 周期内新鲜）。
+/// daemon 存活判定阈值（秒）：不小于 plist 的 ThrottleInterval（10）+ 周期
+/// 余量——KeepAlive 重生最长隔一个 throttle 窗口，阈值过紧会把重生间隙误判
+/// 死亡、对健康 daemon 触发多余的提权重装。
+const DAEMON_ALIVE_GRACE_SECS: u64 = 15;
+
+/// daemon 是否存活（存活标记新鲜度判定）。
 pub fn daemon_alive(app: &AppHandle) -> bool {
     daemon_beat_path(app)
-        .map(|p| beat_is_fresh(&p, sleep::DAEMON_CYCLE_SECS * 3))
+        .map(|p| beat_is_fresh(&p, DAEMON_ALIVE_GRACE_SECS))
         .unwrap_or(false)
 }
 
-/// 安装 LaunchDaemon（osascript 提权一次）：bootout 旧实例忽略错误 → 草稿 cat
-/// 覆盖安装件 → root:wheel 644 → bootstrap 拉起。脚本零双引号，AppleScript 天然
-/// 安全；bootout 前置使重装（版本升级/数据目录迁移后的内容比对不一致）幂等。
+/// 安装 LaunchDaemon（osascript 提权一次）。安装脚本三重加固：
+///
+/// 1. **安装源 root 侧校验**：草稿先 cat 到 `.tmp`（root 属主），sha256 与
+///    app 侧预期值（内嵌于 AppleScript 源、授权前已定）比对通过才原子 mv
+///    覆盖安装件——草稿位于用户可写目录，授权弹窗打开的秒到分钟窗口内被
+///    同用户进程替换的话，篡改件过不了哈希，杜绝经此路径的 root 提权。
+/// 2. **失败不破坏现状**：草稿缺失/为空或校验失败即中止（`&&` 链），不动
+///    既有安装件；`.tmp` 残留清理。
+/// 3. **rm daemon 心跳标记后再 bootstrap**：重装路径下旧 daemon 刚被 bootout、
+///    其 ≤2s 前的存活标记仍新鲜，会令安装后的心跳轮询空转通过（新 daemon
+///    未起也判活）——先删标记，轮询只认新 daemon 的首拍。
 async fn install(
     app: &AppHandle,
     label: &str,
     draft: &Path,
     dest: &Path,
+    expected_plist: &str,
+    daemon_beat: &Path,
 ) -> Result<(), ElevateError> {
+    use sha2::{Digest, Sha256};
+    let expected_hash: String = Sha256::digest(expected_plist.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let tmp = PathBuf::from(format!("{}.tmp", dest.display()));
+    let q = shell_quote;
     let cmd = format!(
         "launchctl bootout system/{label} 2>/dev/null; \
-         cat {draft} > {dest}; \
-         chown root:wheel {dest}; \
-         chmod 644 {dest}; \
-         launchctl bootstrap system {dest}",
-        draft = shell_quote(&draft.display().to_string()),
-        dest = shell_quote(&dest.display().to_string()),
+         rm -f {daemon_beat}; \
+         if [ -s {draft} ]; then \
+         if cat {draft} > {tmp} \
+         && [ \"$(/usr/bin/shasum -a 256 {tmp} | /usr/bin/awk '{{print $1}}')\" = {hash} ] \
+         && mv {tmp} {dest} \
+         && chown root:wheel {dest} \
+         && chmod 644 {dest} \
+         && launchctl bootstrap system {dest}; then :; \
+         else rm -f {tmp}; echo VOIDNIX_INSTALL_FAILED; fi; \
+         else echo VOIDNIX_DRAFT_MISSING; fi",
+        draft = q(&draft.display().to_string()),
+        dest = q(&dest.display().to_string()),
+        tmp = q(&tmp.display().to_string()),
+        daemon_beat = q(&daemon_beat.display().to_string()),
+        hash = expected_hash,
     );
-    crate::platform::elevate::run_admin_shell(app, &cmd).await?;
+    let stdout = crate::platform::elevate::run_admin_shell(app, &cmd).await?;
+    if stdout.contains("VOIDNIX_DRAFT_MISSING") {
+        return Err(ElevateError::Failed("安装草稿缺失，请重试".into()));
+    }
+    if stdout.contains("VOIDNIX_INSTALL_FAILED") {
+        return Err(ElevateError::Failed(
+            "安装源校验失败，已保留原安装件，请重试".into(),
+        ));
+    }
     Ok(())
 }
 
-/// 确保 daemon 健康在场：plist 未装 / 内容与新生成的不一致（版本升级）/ 存活
-/// 心跳过期 → 提权安装；健康时纯文件读零弹窗。安装后本进程侧轮询存活心跳
-/// 验证（launchd KeepAlive 之下 bootstrap 即活，轮询兜极端启动失败）。
+/// 确保 daemon 健康在场：安装件含当前 LoopVersion 令牌（循环逻辑新鲜度）且
+/// 存活心跳新鲜 → 纯文件读零弹窗直通；否则提权安装（bootout + 校验安装 +
+/// bootstrap）。安装后本进程侧轮询存活心跳验证，15s 覆盖 launchd 慢启动。
+/// 健康快路径判定前置——草稿落盘（IO 故障会失败）只发生在确需安装时。
 pub async fn ensure_daemon(app: &AppHandle) -> Result<(), String> {
+    let label = daemon_label(app);
+    let installed = installed_plist_path(&label);
+    let version_marker = format!("<string>{}</string>", sleep::DAEMON_LOOP_VERSION);
+    let current = std::fs::read_to_string(&installed).unwrap_or_default();
+    if current.contains(&version_marker) && daemon_alive(app) {
+        return Ok(());
+    }
+
     let script = sleep::daemon_loop_script(
         &flag_path(app)?.display().to_string(),
         &beat_path(app)?.display().to_string(),
         &daemon_beat_path(app)?.display().to_string(),
     );
-    let label = daemon_label(app);
     let plist = sleep::awake_daemon_plist(&label, &script);
     let draft = draft_plist_path(app)?;
     std::fs::write(&draft, &plist).map_err(|e| e.to_string())?;
 
-    let installed = installed_plist_path(&label);
-    let current = std::fs::read_to_string(&installed).unwrap_or_default();
-    if current == plist && daemon_alive(app) {
-        return Ok(());
-    }
-    install(app, &label, &draft, &installed)
-        .await
-        .map_err(|e| match e {
-            ElevateError::Cancelled => "已取消管理员授权".into(),
-            ElevateError::Failed(msg) => format!("安装睡眠守护失败：{msg}"),
-        })?;
+    install(
+        app,
+        &label,
+        &draft,
+        &installed,
+        &plist,
+        &daemon_beat_path(app)?,
+    )
+    .await
+    .map_err(|e| match e {
+        ElevateError::Cancelled => "已取消管理员授权".into(),
+        ElevateError::Failed(msg) => format!("安装睡眠守护失败：{msg}"),
+    })?;
     let daemon_beat = daemon_beat_path(app)?;
-    for _ in 0..16 {
+    for _ in 0..30 {
         if beat_is_fresh(&daemon_beat, sleep::DAEMON_CYCLE_SECS * 3) {
             return Ok(());
         }

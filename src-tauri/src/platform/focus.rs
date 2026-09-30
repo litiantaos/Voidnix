@@ -9,10 +9,11 @@ static PREV_FRONT_PID: AtomicI32 = AtomicI32::new(0);
 /// 时 is_system_frontmost 已能识别；但用户输完密码后 SecurityAgent 先关闭，shell 命令
 /// （kill mihomo + sleep + spawn）仍跑 2-3s，frontmost 已还给原 app（非系统进程），
 /// 此时 is_app_active 返 false 会触发 blur hide 关窗——与「授权未完成窗口就关闭」同类。
-/// 置位期间视为交互流未中断。tun.rs::run_osascript 进入时置位，主线程收尾时清零。
+/// 置位期间视为交互流未中断。platform/elevate.rs::run_admin_shell 进入时置位，
+/// 最后一个并发完成者清零。
 static OSASCRIPT_RUNNING: AtomicBool = AtomicBool::new(false);
 
-/// 标记 osascript 授权是否执行中（由 tun.rs::run_osascript 调用）。
+/// 标记 osascript 授权是否执行中（由 platform/elevate.rs::run_admin_shell 调用）。
 pub fn set_osascript_running(v: bool) {
     OSASCRIPT_RUNNING.store(v, Ordering::SeqCst);
 }

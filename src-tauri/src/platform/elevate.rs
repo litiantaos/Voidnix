@@ -3,7 +3,14 @@
 //! daemon 安装）共用。
 
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Manager};
+
+/// 提权并发计数：proxy（手动操作）与 awake（启动自动安装）可能同时弹授权，
+/// 进程级抑制标志（click-outside + OSASCRIPT_RUNNING）只有最后一个完成者能
+/// 清除——先完成者清标志会让仍开着的第二个授权框期间的点击被误判
+/// click-outside 藏窗、shell 执行期被误判 blur hide。
+static ELEVATE_DEPTH: AtomicUsize = AtomicUsize::new(0);
 
 /// 提权执行失败分类。
 pub enum ElevateError {
@@ -71,8 +78,11 @@ fn classify_osascript_failure(stderr: &str, fallback: &str) -> ElevateError {
 /// 仍走 OSASCRIPT_RUNNING 分支返 true，blur hide 持续被抑制。
 pub async fn run_admin_shell(app: &AppHandle, cmd: &str) -> Result<String, ElevateError> {
     let script = do_shell_script(cmd);
-    crate::platform::click_monitor::suppress(true);
-    crate::platform::focus::set_osascript_running(true);
+    // 首个进入者置位抑制标志；嵌套/并发进入不再重复置位（见 ELEVATE_DEPTH）
+    if ELEVATE_DEPTH.fetch_add(1, Ordering::SeqCst) == 0 {
+        crate::platform::click_monitor::suppress(true);
+        crate::platform::focus::set_osascript_running(true);
+    }
     let result = tokio::task::spawn_blocking(move || {
         let out = Command::new("osascript")
             .args(["-e", &script])
@@ -88,30 +98,32 @@ pub async fn run_admin_shell(app: &AppHandle, cmd: &str) -> Result<String, Eleva
     })
     .await
     .unwrap_or_else(|e| Err(ElevateError::Failed(format!("osascript 执行失败: {e}"))));
-    // 主线程收尾：make_key 恢复焦点（panel 可见时）+ 清 flag
-    let app_clone = app.clone();
-    let scheduled = app.run_on_main_thread(move || {
-        if let Some(window) = app_clone.get_webview_window("main") {
-            // 镜像 frontmost_watcher 的可见性判定：hide 不 orderOut，alpha=0 视为已隐藏
-            let visible = window
-                .ns_window()
-                .ok()
-                .and_then(|p| {
-                    let raw = p.cast::<objc2_app_kit::NSWindow>();
-                    unsafe { raw.as_ref().map(|ns| ns.alphaValue() >= 0.01) }
-                })
-                .unwrap_or(false);
-            if visible {
-                crate::platform::window::make_key_window(&window);
+    // 仅最后一个完成者收尾：make_key 恢复焦点（panel 可见时）+ 清抑制标志
+    if ELEVATE_DEPTH.fetch_sub(1, Ordering::SeqCst) == 1 {
+        let app_clone = app.clone();
+        let scheduled = app.run_on_main_thread(move || {
+            if let Some(window) = app_clone.get_webview_window("main") {
+                // 镜像 frontmost_watcher 的可见性判定：hide 不 orderOut，alpha=0 视为已隐藏
+                let visible = window
+                    .ns_window()
+                    .ok()
+                    .and_then(|p| {
+                        let raw = p.cast::<objc2_app_kit::NSWindow>();
+                        unsafe { raw.as_ref().map(|ns| ns.alphaValue() >= 0.01) }
+                    })
+                    .unwrap_or(false);
+                if visible {
+                    crate::platform::window::make_key_window(&window);
+                }
             }
+            crate::platform::focus::set_osascript_running(false);
+        });
+        if scheduled.is_err() {
+            // 调度失败（app 退出等极端情况）兜底直接清 flag，避免泄漏
+            crate::platform::focus::set_osascript_running(false);
         }
-        crate::platform::focus::set_osascript_running(false);
-    });
-    if scheduled.is_err() {
-        // 调度失败（app 退出等极端情况）兜底直接清 flag，避免泄漏
-        crate::platform::focus::set_osascript_running(false);
+        crate::platform::click_monitor::suppress(false);
     }
-    crate::platform::click_monitor::suppress(false);
     result
 }
 

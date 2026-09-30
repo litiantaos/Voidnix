@@ -13,6 +13,13 @@ pub struct AwakeState {
     pub enabled: AtomicBool,
     /// 授权弹窗进行中守卫：弹窗期间二次开启直接拒绝，防 osascript 授权对话框叠加
     engaging: AtomicBool,
+    /// 意图互斥锁：串行化「撤意图 + 删 flag」与心跳任务的「enabled 判定 + 补写
+    /// flag」——两者都 check-then-act，无锁时删除与补写交错会把刚撤下的 flag
+    /// 复活（电池护栏的紧急睡眠被拖延一个 GRACE）
+    intent_lock: std::sync::Mutex<()>,
+    /// 进程活动持有（App Nap 豁免）：enabled 期间持有，防止合盖无交互时心跳
+    /// 定时器被 timer 合并拖延过 GRACE 丢持有
+    activity: std::sync::Mutex<Option<sleep::ActivityHold>>,
     /// 菜单栏快捷开关可见性（前端 config watch 同步）。菜单段不随 enabled
     /// 变化显隐——开启即常驻，CheckItem 勾选态反映 enabled。
     menubar_visible: AtomicBool,
@@ -20,6 +27,18 @@ pub struct AwakeState {
     /// 省电最优但屏幕捕获流冻结、远程停摆）；1=零亮度（背光归零、framebuffer
     /// 保持活跃，远程控制可用）
     screen_policy: AtomicU8,
+}
+
+/// 撤意图的统一收束（intent_lock 临界区内）：store false + 删 flag + 结束活动
+/// 持有。所有关闭路径（命令、电池护栏、心跳降级）共用，保证三者与心跳补写
+/// 互斥。refresh/emit 由调用方收尾（锁外，无重入风险）。
+fn disarm(app: &AppHandle, state: &AwakeState) {
+    let _guard = state.intent_lock.lock().unwrap();
+    state.enabled.store(false, Ordering::Relaxed);
+    daemon::remove_flag(app);
+    if let Some(hold) = state.activity.lock().unwrap().take() {
+        hold.end();
+    }
 }
 
 /// 电池护栏阈值：放电中低于此百分比即解除持有。disablesleep 会压住系统的
@@ -55,11 +74,10 @@ pub async fn set_awake_enabled(
         }
         Err("管理员授权进行中".into())
     } else {
-        // 先撤意图再删 flag（心跳任务按 enabled 决定是否补写 flag，顺序颠倒会被
-        // 补写竞态复活）：daemon 常驻在场，删 flag 后 2 秒内自动回落；daemon 未
-        // 装时零副作用（含前端 config 回填触发的初始 false 回声）
-        state.enabled.store(false, Ordering::Relaxed);
-        daemon::remove_flag(&app);
+        // 统一收束（intent_lock 临界区内撤意图 + 删 flag + 结束活动持有，与心跳
+        // 补写互斥）：daemon 常驻在场，删 flag 后 2 秒内自动回落；daemon 未装时
+        // 零副作用（含前端 config 回填触发的初始 false 回声）
+        disarm(&app, &state);
         crate::runtime::menubar::refresh(&app);
         let _ = app.emit("awake-enabled", false);
         Ok(false)
@@ -83,6 +101,9 @@ async fn engage(app: &AppHandle, state: &AwakeState) -> Result<bool, String> {
     daemon::touch_beat(app)?;
     daemon::write_flag(app)?;
     state.enabled.store(true, Ordering::Relaxed);
+    // App Nap 豁免：合盖无交互的隐藏 app 正是 timer 合并的完整画像，心跳
+    // 定时器被拖延过 GRACE 即丢持有。失败按无豁免降级（心跳照常）。
+    *state.activity.lock().unwrap() = sleep::begin_activity_hold();
     crate::runtime::menubar::refresh(app);
     let _ = app.emit("awake-enabled", true);
     Ok(true)
@@ -135,6 +156,8 @@ impl Extension for AwakeExtension {
         app.manage(AwakeState {
             enabled: AtomicBool::new(false),
             engaging: AtomicBool::new(false),
+            intent_lock: std::sync::Mutex::new(()),
+            activity: std::sync::Mutex::new(None),
             menubar_visible: AtomicBool::new(false),
             screen_policy: AtomicU8::new(1),
         });
@@ -189,13 +212,8 @@ impl Extension for AwakeExtension {
                     .flatten();
                 let Some(battery) = status else { continue };
                 if battery.on_battery && battery.percent < BATTERY_FLOOR_PERCENT {
-                    // 先撤意图再删 flag：心跳任务按 enabled 决定是否补写 flag，
-                    // 顺序颠倒会在两步之间被补写竞态复活
-                    guard_app
-                        .state::<AwakeState>()
-                        .enabled
-                        .store(false, Ordering::Relaxed);
-                    daemon::remove_flag(&guard_app);
+                    // 统一收束（与心跳补写互斥）：daemon 回落，系统随即入睡
+                    disarm(&guard_app, &guard_app.state::<AwakeState>());
                     crate::runtime::menubar::refresh(&guard_app);
                     let _ = guard_app.emit("awake-enabled", false);
                 }
@@ -204,26 +222,39 @@ impl Extension for AwakeExtension {
 
         // app 心跳（镜像电池巡检范式）：enabled 时按 daemon 周期 touch beat
         //（daemon 持有的存活信号，停更 GRACE 后 daemon 自清 flag 恢复默认睡眠
-        // ——app 崩溃安全的全部机制）。自愈闭环：enabled 而 flag 缺失（强制睡眠
-        // 唤醒后 daemon 已按 beat 过期自清等漂移场景）且 daemon 活着时补写 flag
-        // 重建持有，与 daemon 侧 pmset -g 校验自愈同构；daemon 已死则不补，
-        // 留待下次 engage 的 ensure_daemon 重装
+        // ——app 崩溃安全的全部机制；App Nap 由 activity hold 豁免，见 engage）。
+        // 两个收束分支：
+        // - 自愈：enabled 而 flag 缺失（强制睡眠唤醒后 daemon 已按 beat 过期自清
+        //   等漂移场景）且 daemon 活着时补写 flag 重建持有，与 daemon 侧 pmset -g
+        //   校验自愈同构；daemon 已死则不补，留待下次 engage 的 ensure_daemon 重装。
+        //   判定与补写整体在 intent_lock 内，与撤意图路径互斥（防把刚撤下的 flag
+        //   复活）。
+        // - 降级：touch 连续失败 5 次（10s，权限/路径异常）即撤意图如实上报——
+        //   daemon 端会因 beat 停更自清，UI 停留在「开」即静默漂移
         let beat_app = app.clone();
         tauri::async_runtime::spawn(async move {
             let mut tick =
                 tokio::time::interval(std::time::Duration::from_secs(sleep::DAEMON_CYCLE_SECS));
+            let mut failures: u32 = 0;
             loop {
                 tick.tick().await;
-                if !beat_app
-                    .state::<AwakeState>()
-                    .enabled
-                    .load(Ordering::Relaxed)
-                {
+                let state = beat_app.state::<AwakeState>();
+                if !state.enabled.load(Ordering::Relaxed) {
+                    failures = 0;
                     continue;
                 }
                 if daemon::touch_beat(&beat_app).is_err() {
+                    failures += 1;
+                    if failures >= 5 {
+                        failures = 0;
+                        disarm(&beat_app, &state);
+                        crate::runtime::menubar::refresh(&beat_app);
+                        let _ = beat_app.emit("awake-enabled", false);
+                    }
                     continue;
                 }
+                failures = 0;
+                let _guard = state.intent_lock.lock().unwrap();
                 if !daemon::flag_exists(&beat_app) && daemon::daemon_alive(&beat_app) {
                     let _ = daemon::write_flag(&beat_app);
                 }

@@ -467,7 +467,7 @@ src-tauri/src/
     ├── panel.rs        # NSPanel 转换
     ├── skylight.rs     # Space 迁移（私有 API）
     ├── focus.rs        # 焦点管理（PREV_FRONT_PID + is_app_active + restore_captured）
-    ├── elevate.rs      # osascript 提权原语（do shell script 拼装 + 守卫执行器 + 取消/失败分类，proxy 与 awake 共用）
+    ├── elevate.rs      # osascript 提权原语（do shell script 拼装 + 守卫执行器（click-outside/blur 抑制按并发计数进出）+ 取消/失败分类，proxy 与 awake 共用）
     ├── input.rs        # CGEvent 键盘注入（post_key + post_combo）
     ├── mem.rs          # 进程内存查询（proc_pid_rusage → WebContent physical footprint）
     ├── pasteboard.rs   # NSPasteboard 原语统一
@@ -479,7 +479,7 @@ src-tauri/src/
     ├── permission.rs   # 系统权限原语 + 授权会话（详见 docs/permissions.md）
     ├── window_list.rs  # CGWindowList 共享封装（screenshot / window-manager / 授权会话避让共用）
     ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel + appearance 缓存）
-    ├── sleep.rs        # 睡眠域原语：睡眠守护 daemon 循环体 + LaunchDaemon plist 生成（flag/beat 驱动 pmset disablesleep，app 心跳过期自愈 + 持有期持续校验自愈，awake 经 elevate 安装）、合盖检测（AppleClamshellState）、外接屏判定、displaysleepnow、内置面板亮度读写（DisplayServices 私有 framework）、电池状态解析（awake 消费）
+    ├── sleep.rs        # 睡眠域原语：睡眠守护 daemon 循环体 + LaunchDaemon plist 生成（flag/beat 驱动 pmset disablesleep，恢复路径现实态判定 + app 心跳过期自愈 + 持有期持续校验自愈 + LoopVersion 令牌版本化，awake 经 elevate 安装）、App Nap 豁免活动持有、合盖检测（AppleClamshellState）、外接屏判定、displaysleepnow、内置面板亮度读写（DisplayServices 私有 framework）、电池状态解析（awake 消费）
     └── path_guard.rs   # 统一路径校验
 ```
 
