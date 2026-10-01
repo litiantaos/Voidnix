@@ -19,8 +19,10 @@ test.describe('系统侵入面清理入口', () => {
   test('设置页「清除系统注入」项渲染', async ({ page }) => {
     await openExtension(page, '/settings')
     await expect(page.getByText('清除系统注入')).toBeVisible({ timeout: 5000 })
-    // 副标题说明注入范围
-    await expect(page.getByText('.zshrc / .zprofile 注入块与 ai.env 凭证文件')).toBeVisible()
+    // 副标题说明注入范围（ai.env 为历史遗留文件）
+    await expect(
+      page.getByText('.zshrc / .zprofile 注入块与历史遗留的 ai.env 凭证文件'),
+    ).toBeVisible()
   })
 
   test('设置页「引导与权限」回主界面（onboarded 置回）', async ({ page }) => {
