@@ -340,7 +340,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### AI 网关
 
-`extensions/ai-gateway/`：统一本地 AI 网关——进程内 Anthropic Messages / OpenAI Responses / OpenAI Chat Completions 三协议直通反向代理（axum，release 8788 / dev 8789），按请求 `model` 路由到提供商端点 + 多 Key 轮换（429/401/403/503/529）。任何工具把 base_url 指向网关即可接入；Claude Code 为首个接线消费者（独立 `ccTakeover` 开关，默认关，与网关开关都开才接管/任一关即还原 settings.json 自有键）。详见 [ai-gateway.md](docs/extensions/ai-gateway.md)。
+`extensions/ai-gateway/`：统一本地 AI 网关——进程内 Anthropic Messages / OpenAI Responses / OpenAI Chat Completions 三协议直通反向代理（axum，release 8788 / dev 8789），按请求 `model` 路由到提供商端点 + 多 Key 轮换（401-408/429/5xx，失败 Key 冷却 60s 对齐 Retry-After）+ 会话亲和（同会话粘同 Key 保上游 prompt cache）。请求体归一吸收 CC 怪癖：剥 `[1m]` 后缀、thinking disabled 注入、GLM effort 翻译、auto mode 分类器预算特判（判据与修复参考 magpie 的 thinkingOffUnlessAsked/fitAutoModeClassifier）。任何工具把 base_url 指向网关即可接入；Claude Code 为首个接线消费者（独立 `ccTakeover` 开关，默认关，与网关开关都开才接管/任一关即还原 settings.json 自有键）。详见 [ai-gateway.md](docs/extensions/ai-gateway.md)。
 
 ### 国际化（i18n）
 

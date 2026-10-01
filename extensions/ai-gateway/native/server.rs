@@ -174,6 +174,11 @@ impl Gateway {
             enabled,
             routes: routes.clone(),
         };
+        // 换表即清按 (provider, idx) 记录的运行时状态:Key 增删/重排后同一 idx 指向
+        // 不同 Key,冷却/亲和/粘性继续沿用会错位对象;重建代价仅一次成功请求
+        self.cooldowns.lock().unwrap().clear();
+        self.affinity.lock().unwrap().clear();
+        self.last_good.lock().unwrap().clear();
         *self.routes.write().unwrap() = Arc::new(routes);
         if let Err(e) = tokio::task::spawn_blocking(move || persist_state(&dir, &persisted))
             .await
@@ -762,12 +767,16 @@ const ANTHROPIC_MIN_OUTPUT_TOKENS: u64 = 256;
 
 /// 输出预算探测(部分反序列化,未知字段流式跳过零建树;大请求体的线性扫描成本远低于网络传输)
 #[derive(Deserialize)]
-struct OutputPrefs {
+struct OutputPrefs<'a> {
     #[serde(default)]
     max_tokens: Option<u64>,
     /// 解析 thinking:存在性判定「是否注入 disabled」,budget 供 GLM effort 翻译
     #[serde(default)]
     thinking: Option<ThinkingSpec>,
+    /// 仅探测非空性:分类器请求不带工具定义(与 magpie 判据一致),
+    /// 据此排除「消息文本里恰好出现 <transcript>/<block> 字样」的主对话误判
+    #[serde(default, borrow)]
+    tools: Vec<&'a serde_json::value::RawValue>,
 }
 
 #[derive(Deserialize)]
@@ -819,11 +828,12 @@ fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> Bytes {
     let strip_suffix = model != norm_model(model);
     // claude 原生模型按原样发送(原生端点本就「不问不思考」,无需注入)
     let native_claude = model.to_lowercase().contains("claude-");
-    let prefs = serde_json::from_slice::<OutputPrefs>(&body).ok();
+    let prefs: Option<OutputPrefs> = serde_json::from_slice(&body).ok();
     let no_thinking = prefs.as_ref().is_some_and(|p| p.thinking.is_none());
     let needs_disable = protocol == Protocol::Anthropic && !native_claude && no_thinking;
     // CC 分类器请求自带 thinking disabled(被智谱无视),预算提升不受「显式自管」豁免约束
-    let classifier = is_auto_mode_classifier(protocol, &body);
+    let classifier = is_auto_mode_classifier(protocol, &body)
+        && prefs.as_ref().is_some_and(|p| p.tools.is_empty());
     let needs_boost = protocol == Protocol::Anthropic
         && (classifier
             || (no_thinking
@@ -1284,6 +1294,13 @@ mod tests {
         let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["max_tokens"], 64);
+        // 主对话消息里恰好出现特征 token(如讨论网关源码)但带 tools 定义:不误判,
+        // effort 不被压低、预算不扩容
+        let body = br#"{"model":"glm-5.3","max_tokens":32000,"thinking":{"type":"adaptive"},"tools":[{"type":"text_editor"}],"system":"analyze <block> tags","messages":[{"role":"user","content":"<transcript> example"}]}"#;
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["max_tokens"], 32000);
+        assert_eq!(v.get("output_config"), None);
     }
 
     #[test]
