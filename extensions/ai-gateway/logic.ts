@@ -106,7 +106,23 @@ export function effectiveAlias(
   return isAliasValid(models, sel) ? sel : null
 }
 
-/** CC 接线载荷(与 Rust `CcApplyPayload` 同构);无 Anthropic 可路由模型时返回 null */
+/** 剥 CC `[1m]` 长上下文后缀(与 Rust `norm_model` 同语义;中枢可能带后缀存储) */
+export function strip1m(model: string): string {
+  return model
+    .trim()
+    .replace(/\[1m\]$/, '')
+    .trim()
+}
+
+function ensure1m(model: string): string {
+  return `${strip1m(model)}[1m]`
+}
+
+/**
+ * CC 接线载荷(与 Rust `CcApplyPayload` 同构);无 Anthropic 可路由模型时返回 null。
+ * `longContext` 开 = 模型 id 统一追加 `[1m]`(CC 私有语法,识别后发 context-1m beta 头),
+ * 关 = 统一剥成裸名——开关是 CC 侧形态的唯一决定因素,与中枢存储形态无关;label 恒裸名。
+ */
 export interface CcApplyPayload {
   port: number
   sonnetModel: string
@@ -122,16 +138,19 @@ export function buildCcPayload(
   },
   /** 网关实际端口(sync 响应携带,Rust 是权威源) */
   port: number,
+  /** CC 模型 id 是否统一带 [1m] 长上下文后缀 */
+  longContext: boolean,
 ): CcApplyPayload | null {
   const anthropic = anthropicModels(routableModels(routes))
   if (anthropic.length === 0) return null
+  const withCtx = (m: string) => (longContext ? ensure1m(m) : strip1m(m))
   const modelOf = (sel: AliasSelection | null) =>
-    sel && isAliasValid(anthropic, sel) ? sel.model.trim() : ''
+    sel && isAliasValid(anthropic, sel) ? withCtx(sel.model) : ''
   return {
     port,
     sonnetModel: modelOf(aliases.sonnet),
     haikuModel: modelOf(aliases.haiku),
-    pickerRows: anthropic.map((m) => ({ model: m.model, label: m.model })),
+    pickerRows: anthropic.map((m) => ({ model: withCtx(m.model), label: strip1m(m.model) })),
   }
 }
 

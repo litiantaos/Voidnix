@@ -97,6 +97,18 @@ const items = computed<SettingItem[]>(() => {
     },
   })
   if (config.ccTakeover) {
+    out.push({
+      id: 'cc-1m-context',
+      group: defaultsGroup,
+      type: 'toggle',
+      title: t('ai-gateway.cc1mContext'),
+      subtitle: t('ai-gateway.cc1mContextHint'),
+      icon: 'i-ri-expand-width-line',
+      value: config.cc1mContext,
+      update: (v) => {
+        config.cc1mContext = v
+      },
+    })
     const aliasDefs: { id: string; title: string; sel: AliasSelection | null }[] = [
       { id: 'sonnet', title: t('ai-gateway.aliasDefault'), sel: config.sonnet },
       { id: 'haiku', title: t('ai-gateway.aliasBackground'), sel: config.haiku },

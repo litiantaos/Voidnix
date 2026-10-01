@@ -32,12 +32,13 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 
 - `env.ANTHROPIC_BASE_URL` = `http://127.0.0.1:{port}`；`env.ANTHROPIC_AUTH_TOKEN` = 占位（网关注入真实 Key，摘除 `apiKeyHelper`，不再依赖 shell env / ai.env source 链路）
 - `env.ANTHROPIC_DEFAULT_{SONNET,HAIKU}_MODEL` = 新会话默认模型 + 后台任务模型（标题生成等小流量；不钉住则走主模型烧额度）。opus 档不写且摘除历史残留——`modelPicker` 替换内置阵容后别名不可达，属死配置
+- `env.ANTHROPIC_DEFAULT_*_MODEL` 与 `modelPicker` 的模型 id 由 `cc1mContext` 开关统一决定形态（默认开）：开 = 追加 `[1m]` 后缀（CC 私有语法，识别后发 context-1m beta 头启用百万 token 上下文；已带后缀防双写），关 = 统一剥成裸名——开关是 CC 侧形态的唯一决定因素，中枢存储带不带后缀都无影响；picker 的 label 恒裸名
 - `modelPicker`（CC v2.1.242+，旧版本忽略未知键）= 全部 Anthropic 可路由模型 + `replaceBuiltInOptions`——**CC 内 `/model` 直接切换任何模型**，新会话生效
 - 备份：首次触碰前写 `settings.json.voidnix-bak` 原文 + `cc-backup.json` 自有键精确快照（扩展数据目录）；关闭接管按快照逐键还原，用户自有键（`CLAUDE_CODE_EFFORT_LEVEL` 等）始终不碰
 
 ## 界面
 
-设置列表三组：网关（单一总开关，副标题即运行态、绑定失败整行标红）、Claude Code（接管开关组首 + 新会话默认 + 后台任务两档下拉，别名细节仅接管开启时展示，CC 接线细节，低频：不限制 `/model` 范围）、可路由模型（全工具状态展示：模型 → 提供商 · 协议 · Key 数）。使用说明（任何工具的接入方式、CC 自动接线、热更新等）经搜索栏 info 按钮的 markdown 弹窗承载（`Actions.vue`，与 ai-providers 帮助弹窗同款）。无可路由提供商时空态引导去 AI 提供商声明端点。
+设置列表三组：网关（单一总开关，副标题即运行态、绑定失败整行标红）、Claude Code（接管开关组首 + 1M 上下文开关与默认模型两档下拉，别名细节仅接管开启时展示，接管失败红字暴露原因，CC 接线细节，低频：不限制 `/model` 范围）、可路由模型（全工具状态展示：模型 → 提供商 · 协议 · Key 数）。使用说明（任何工具的接入方式、CC 自动接线、热更新等）经搜索栏 info 按钮的 markdown 弹窗承载（`Actions.vue`，与 ai-providers 帮助弹窗同款）。无可路由提供商时空态引导去 AI 提供商声明端点。
 
 ## 命令
 

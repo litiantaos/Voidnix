@@ -14,6 +14,11 @@ registerMessages({
     'zh-CN': '接管失败:{msg}',
     en: 'Takeover failed: {msg}',
   },
+  'ai-gateway.cc1mContext': { 'zh-CN': '1M 上下文', en: '1M Context' },
+  'ai-gateway.cc1mContextHint': {
+    'zh-CN': '写入 CC 的模型 id 统一追加 [1m] 后缀,新会话启用百万 token 上下文(提供商需支持)',
+    en: 'Appends the [1m] suffix to model ids written to CC, enabling 1M-token context in new sessions (provider support required)',
+  },
   'ai-gateway.statusLoading': { 'zh-CN': '获取状态中…', en: 'Loading status…' },
   'ai-gateway.statusRunning': {
     'zh-CN': '运行中 · 127.0.0.1:{port} · {n} 提供商',

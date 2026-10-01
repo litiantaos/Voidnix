@@ -125,6 +125,7 @@ describe('buildCcPayload', () => {
         haiku: { providerId: 'd', model: 'r1' },
       },
       8788,
+      false,
     )
     expect(payload).not.toBeNull()
     expect(payload!.sonnetModel).toBe('glm-5.3')
@@ -133,9 +134,54 @@ describe('buildCcPayload', () => {
     expect(payload!.port).toBe(8788)
   })
 
+  it('longContext 开 = 别名与 picker 统一追加 [1m](已带后缀防双写),label 恒裸名', () => {
+    const withSuffix = buildRoutes([
+      p({
+        id: 'z',
+        name: '智谱',
+        anthropicEndpoint: 'https://z/api/anthropic',
+        models: ['glm-5.3', 'glm-5.3-flash[1m]'],
+      }),
+    ])
+    const payload = buildCcPayload(
+      withSuffix,
+      {
+        sonnet: { providerId: 'z', model: 'glm-5.3' },
+        haiku: { providerId: 'z', model: 'glm-5.3-flash[1m]' },
+      },
+      8788,
+      true,
+    )
+    expect(payload!.sonnetModel).toBe('glm-5.3[1m]')
+    expect(payload!.haikuModel).toBe('glm-5.3-flash[1m]')
+    expect(payload!.pickerRows).toEqual([
+      { model: 'glm-5.3[1m]', label: 'glm-5.3' },
+      { model: 'glm-5.3-flash[1m]', label: 'glm-5.3-flash' },
+    ])
+  })
+
+  it('longContext 关 = 中枢带后缀存储也统一剥成裸名(开关是 CC 侧形态唯一决定因素)', () => {
+    const withSuffix = buildRoutes([
+      p({
+        id: 'z',
+        name: '智谱',
+        anthropicEndpoint: 'https://z/api/anthropic',
+        models: ['glm-5.3[1m]'],
+      }),
+    ])
+    const payload = buildCcPayload(
+      withSuffix,
+      { sonnet: { providerId: 'z', model: 'glm-5.3[1m]' }, haiku: null },
+      8788,
+      false,
+    )
+    expect(payload!.sonnetModel).toBe('glm-5.3')
+    expect(payload!.pickerRows).toEqual([{ model: 'glm-5.3', label: 'glm-5.3' }])
+  })
+
   it('无 Anthropic 可路由模型时返回 null(不接线)', () => {
     const onlyResponses = buildRoutes([p({ id: 'd', responsesEndpoint: 'https://d/responses' })])
-    expect(buildCcPayload(onlyResponses, { sonnet: null, haiku: null }, 8788)).toBeNull()
+    expect(buildCcPayload(onlyResponses, { sonnet: null, haiku: null }, 8788, true)).toBeNull()
   })
 })
 

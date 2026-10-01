@@ -62,6 +62,7 @@ async function push() {
             haiku: effectiveAlias(models, config.haiku),
           },
           gatewayStatus.value?.port ?? GATEWAY_PORT,
+          config.cc1mContext,
         )
       : null
   if (payload) {

@@ -15,6 +15,8 @@ export const config = defineConfig('extensions/ai-gateway/config', {
   enabled: false,
   /** CC 接管开关:与 enabled 独立,两者都开才改写 CC settings.json 自有键;关 = 按快照还原 */
   ccTakeover: false,
+  /** CC 1M 上下文:开 = 写入 CC 的模型 id 统一追加 [1m](CC 识别后发长上下文 beta 头);关 = 统一裸名 */
+  cc1mContext: true,
   /** 新会话默认模型(CC sonnet 档别名;空 = 不写该键,启用时自动兜底首个可路由模型) */
   sonnet: null as AliasSelection | null,
   /** 后台任务模型(CC haiku 档别名,标题生成等小流量;空 = 不写该键,后台走主模型) */
