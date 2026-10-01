@@ -74,25 +74,35 @@ pub fn ext_data_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
 
 /// 原子写文本文件（tmp + rename，0600）。扩展落盘共享原语（网关状态 / CC 接管
 /// settings.json 等，部分文件含密钥，统一 0600 密级；rename 保证读者只见完整文件）。
+/// tmp 名含 pid + 递增序号：并发写同一目标互不踩踏——共享固定名时交错 truncate 会
+/// 拼出损坏内容、rename 互抢高频失败（并发 sync / CC 接管与还原是真实并发源）；
+/// 0600 落在 rename 前，目标文件不以宽权限形态出现过。进程崩溃可能残留少量 tmp
+/// （内容同密级，已 0600）。
 pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
     }
-    let tmp = path.with_extension(format!(
-        "{}.tmp",
-        path.extension().and_then(|e| e.to_str()).unwrap_or("tmp")
-    ));
+    let tmp = tmp_sibling(path);
     std::fs::write(&tmp, content).map_err(|e| format!("写入临时文件失败: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
     std::fs::rename(&tmp, path).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
         format!("替换目标文件失败: {e}")
     })?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
     Ok(())
+}
+
+/// 同目录唯一 tmp 路径：`{原名}.{pid}.{序号}.tmp`——进程内递增序号防本进程并发写
+/// 踩踏，pid 防跨进程（dev 与 release 共管 `~/.claude/settings.json`）。
+fn tmp_sibling(path: &Path) -> PathBuf {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    path.with_file_name(format!("{name}.{}.{seq}.tmp", std::process::id()))
 }
 
 /// 安全写入 PNG（含 create_dir_all + path_guard）。
@@ -196,6 +206,43 @@ mod tests {
         cleanup_temps_by_prefix(&dir, "voidnix-icon-", &[".png"]);
         assert!(!dir.join("voidnix_ocr.png").exists());
         assert!(!dir.join("voidnix-icon-app.png").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 并发写同一目标：唯一 tmp 名保证零 rename 冲突、终态完整可解析、0600 密级
+    #[test]
+    fn atomic_write_concurrent_same_target() {
+        let dir = std::env::temp_dir().join(format!("voidnix-aw-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("state.json");
+        let pad = "x".repeat(4096);
+        let writers: Vec<_> = (0..6)
+            .map(|t| {
+                let path = path.clone();
+                let pad = pad.clone();
+                std::thread::spawn(move || {
+                    let mut errs = 0;
+                    for i in 0..200 {
+                        let content = format!("{{\"thread\":{t},\"iter\":{i},\"pad\":\"{pad}\"}}");
+                        if atomic_write(&path, &content).is_err() {
+                            errs += 1;
+                        }
+                    }
+                    errs
+                })
+            })
+            .collect();
+        let errs: usize = writers.into_iter().map(|w| w.join().unwrap()).sum();
+        assert_eq!(errs, 0, "唯一 tmp 名下不应有 rename 冲突");
+        let final_text = std::fs::read_to_string(&path).unwrap();
+        assert!(serde_json::from_str::<serde_json::Value>(&final_text).is_ok());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
