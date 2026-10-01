@@ -103,13 +103,11 @@ export const enMessages: Msgs = {
   'settings.updateOK': { en: 'OK' },
   'settings.clearInjections': { en: 'Clear System Injections' },
   'settings.clearInjectionsHint': {
-    en: 'Remove injected blocks from .zshrc / .zprofile and the ai.env file',
+    en: 'Remove injected blocks from .zshrc / .zprofile and leftover ai.env files',
   },
   'settings.clearInjectionsConfirmTitle': { en: 'Clear System Injections' },
   'settings.clearInjectionsConfirmMessage': {
-    en: `Removes all Voidnix blocks from \`~/.zshrc\` and \`~/.zprofile\` (AI credential source hook, zsh completions, etc.) and deletes \`~/.config/voidnix[/dev]/ai.env\` (contains plaintext API keys).
-
-They will be re-created on demand if you keep using the features.`,
+    en: `Removes all Voidnix blocks from \`~/.zshrc\` and \`~/.zprofile\` (zsh completions, etc.) and deletes leftover \`~/.config/voidnix[/dev]/ai.env\` (contains plaintext API keys).`,
   },
   'settings.clearInjectionsOk': { en: 'Clear' },
   'settings.clearInjectionsDone': { en: 'Cleared {count} injection(s)' },

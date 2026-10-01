@@ -1,4 +1,4 @@
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { defineConfig } from '@/runtime/storage'
 import { generateRequestId } from '@/utils/id'
@@ -38,15 +38,12 @@ export interface AiProvider {
    *（bigmodel.cn → zhipu-coding-plan；deepseek.com → deepseek-balance）。
    */
   usageKind: AiUsageKind
-  /** 导出到 shell 的额外 env 名；空则按 hostname 推导 */
-  envKey: string
 }
 
 export interface ResolvedAiCredentials {
   endpoint: string
   apiKey: string
   model: string
-  source: 'config' | 'env'
   providerId?: string
   keyId?: string
 }
@@ -56,11 +53,6 @@ export interface AiCredentialSelection {
   providerId?: string
   keyId?: string
   model?: string
-  env?: {
-    apiKey?: string
-    endpoint?: string
-    model?: string
-  }
 }
 
 export const config = defineConfig('config/ai-providers', {
@@ -77,7 +69,6 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
   const responsesEndpoint = typeof raw.responsesEndpoint === 'string' ? raw.responsesEndpoint : ''
   const anthropicEndpoint = typeof raw.anthropicEndpoint === 'string' ? raw.anthropicEndpoint : ''
   const models = Array.isArray(raw.models) ? (raw.models as string[]).map(String) : []
-  const envKey = typeof raw.envKey === 'string' ? raw.envKey : ''
   const usageKind = (raw.usageKind as AiUsageKind) || ''
 
   if (Array.isArray(raw.keys) && raw.keys.length > 0) {
@@ -95,7 +86,6 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
       models,
       keys,
       usageKind,
-      envKey,
     }
   }
 
@@ -111,7 +101,6 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
     models,
     keys: [{ id: kid, label: '默认', apiKey: legacyKey }],
     usageKind,
-    envKey,
   }
 }
 
@@ -201,27 +190,18 @@ export function isCredentialSelectionValid(sel: {
   return true
 }
 
-/** 按选用解析凭证；未指定 providerId 时不猜「默认提供商」（仅 env 可补）。 */
+/** 按选用解析凭证；未指定 providerId 时不猜「默认提供商」。 */
 export function resolveCredentials(sel: AiCredentialSelection = {}): ResolvedAiCredentials | null {
   const p = sel.providerId ? getProviderById(sel.providerId) : undefined
-  const cfgEndpoint = p?.endpoint.trim() ?? ''
-  const cfgKey = apiKeyOf(p, sel.keyId)
-  const cfgModel = sel.model?.trim() ?? ''
-  const envKey = sel.env?.apiKey?.trim() ?? ''
-  const envEndpoint = sel.env?.endpoint?.trim() ?? ''
-  const envModel = sel.env?.model?.trim() ?? ''
-
-  const endpoint = cfgEndpoint || envEndpoint
-  const apiKey = cfgKey || envKey
-  const model = cfgModel || envModel
+  const endpoint = p?.endpoint.trim() ?? ''
+  const apiKey = apiKeyOf(p, sel.keyId)
+  const model = sel.model?.trim() ?? ''
   if (!endpoint || !apiKey || !model) return null
 
-  const fullyConfig = !!(cfgEndpoint && cfgKey && cfgModel)
   return {
     endpoint,
     apiKey,
     model,
-    source: fullyConfig ? 'config' : 'env',
     providerId: p?.id,
     keyId: getKeySlot(p, sel.keyId)?.id,
   }
@@ -235,35 +215,7 @@ export const hasAnyConfiguredProvider = computed(() =>
   ),
 )
 
-// ─── Env 快照 ───────────────────────────────────────────────
-
-export interface AiEnvSnapshot {
-  apiKey: string
-  endpoint: string
-  model: string
-  source: string
-}
-
-let envSnapshot: AiEnvSnapshot = {
-  apiKey: '',
-  endpoint: '',
-  model: '',
-  source: 'empty',
-}
-
-export function getEnvSnapshot(): AiEnvSnapshot {
-  return envSnapshot
-}
-
-export async function refreshEnvSnapshot(): Promise<AiEnvSnapshot> {
-  if (!isTauri) return envSnapshot
-  try {
-    envSnapshot = await invoke<AiEnvSnapshot>(CMD.aiProvidersEnvSnapshot)
-  } catch (e) {
-    console.error('[ai-providers] env snapshot failed:', e)
-  }
-  return envSnapshot
-}
+// ─── 加载后规范化 ───────────────────────────────────────────
 
 /** 加载后规范化 keys[]（legacy apiKey / 缺 keys）。 */
 export function normalizeProvidersInPlace() {
@@ -304,7 +256,6 @@ export function addAiProvider(
     models: partial?.models ? [...partial.models] : [],
     keys,
     usageKind: partial?.usageKind ?? '',
-    envKey: partial?.envKey ?? '',
   })
   return id
 }
@@ -413,26 +364,4 @@ export async function pasteOut(text: string): Promise<void> {
     return
   }
   await invoke(CMD.pasteboardPasteText, { text })
-}
-
-// ─── 同步钩子 ───────────────────────────────────────────────
-
-type SyncHandler = () => void
-let syncHandler: SyncHandler | null = null
-let syncWatchStarted = false
-
-export function registerSyncHandler(handler: SyncHandler) {
-  syncHandler = handler
-  if (!syncWatchStarted) {
-    syncWatchStarted = true
-    watch(
-      () => config.providers,
-      () => {
-        if (!syncHandler) return
-        syncHandler()
-      },
-      { deep: true },
-    )
-  }
-  handler()
 }

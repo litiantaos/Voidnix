@@ -127,9 +127,6 @@ export const CMD = {
   agentApprove: 'agent_approve',
 
   // —— ai-providers ——
-  aiProvidersExport: 'ai_providers_export',
-  aiProvidersExportDir: 'ai_providers_export_dir',
-  aiProvidersEnvSnapshot: 'ai_providers_env_snapshot',
   aiProvidersZhipuQuota: 'ai_providers_zhipu_quota',
   aiProvidersDeepseekBalance: 'ai_providers_deepseek_balance',
 

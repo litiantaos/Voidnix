@@ -64,7 +64,6 @@ const zhipuProvider: AiProvider = {
   models: ['glm-5.3'],
   keys: [{ id: 'k1', label: '默认', apiKey: 'sk-zhipu-key' }],
   usageKind: '',
-  envKey: '',
 }
 
 /** KeepAlive 宿主 + activeExtId 同步（真实 app 中 MainView 激活扩展时两者一体变化） */

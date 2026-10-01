@@ -1,5 +1,4 @@
 import { config as translateConfig, resolveAiTargets } from './config'
-import { refreshEnvSnapshot } from '@/runtime/ai-providers'
 import { ref } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
 import { makeToggleHandler } from '@/stores/app'
@@ -97,8 +96,6 @@ export async function translateText(text: string) {
   isTranslating.value = true
   streamIndexMap.clear()
 
-  // 配置缺项时用 env / ai.env 补齐
-  await refreshEnvSnapshot()
   await initStreamListeners()
 
   const configs = translateConfig.configs

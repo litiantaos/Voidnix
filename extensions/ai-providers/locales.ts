@@ -27,21 +27,15 @@ registerMessages({
   'ai-providers.configGuide': { 'zh-CN': '配置说明', en: 'Config Guide' },
   'ai-providers.usageGuide': { 'zh-CN': '使用说明', en: 'Usage Guide' },
   'ai-providers.helpMarkdown': {
-    'zh-CN': `提供商配置保存后写入 \`~/.config/voidnix/ai.env\`，新开终端生效。
+    'zh-CN': `统一维护提供商的 URL / Key / 模型，供应用内扩展（Agent、翻译）与 AI 网关消费。
 
-- Key 导出为 \`VOIDNIX_*_API_KEY\`，端点导出为 \`VOIDNIX_*_BASE_URL\`
-- Responses 端点（可选）导出为 \`VOIDNIX_*_RESPONSES_URL\`，供 responses 线协议工具（如 Grok Build \`api_backend = "responses"\`）引用；与 API URL 相同的提供商留空即可（工具直接用 \`*_BASE_URL\` + 自身协议开关）
-- Anthropic 端点（可选）供 AI 网关扩展直通 Claude Code（智谱 \`https://open.bigmodel.cn/api/anthropic\`、DeepSeek \`https://api.deepseek.com/anthropic\`），声明后模型进入网关路由
-- 智谱、DeepSeek 用固定后缀，如 \`VOIDNIX_ZHIPU_API_KEY\`，其余按名称推导
-- 外部工具须显式引用，如 OpenCode \`{env:VOIDNIX_ZHIPU_API_KEY}\`
+- 外部工具（Claude Code、OpenAI 兼容 CLI 等）经 **AI 网关** 接入：把 API 地址指向 \`http://127.0.0.1:8788\`、Key 随便填，网关按请求模型路由并注入真实 Key（多 Key 自动轮换）
+- Anthropic 端点（可选）供网关直通 Claude Code 等 Anthropic 客户端（智谱 \`https://open.bigmodel.cn/api/anthropic\`、DeepSeek \`https://api.deepseek.com/anthropic\`），声明后模型进入网关路由
 - 选中 Key 按下 **Cmd+Enter** 可粘贴 Key / URL / 模型名（声明了 Responses 端点时多一条粘贴项）`,
-    en: `Provider config is written to \`~/.config/voidnix/ai.env\` after saving; new terminals pick it up.
+    en: `A single place for provider URLs, keys and models — consumed by in-app extensions (Agent, Translate) and the AI gateway.
 
-- Keys are exported as \`VOIDNIX_*_API_KEY\`, endpoints as \`VOIDNIX_*_BASE_URL\`
-- The optional Responses endpoint is exported as \`VOIDNIX_*_RESPONSES_URL\` for tools speaking the responses wire API (e.g. Grok Build \`api_backend = "responses"\`); leave it empty when it equals the API URL — tools just use \`*_BASE_URL\` with their own protocol switch
-- The optional Anthropic endpoint feeds the AI Gateway extension for Claude Code passthrough (Zhipu \`https://open.bigmodel.cn/api/anthropic\`, DeepSeek \`https://api.deepseek.com/anthropic\`); declared models join gateway routing
-- Zhipu and DeepSeek use fixed suffixes, e.g. \`VOIDNIX_ZHIPU_API_KEY\`; others are derived from the name
-- External tools must reference them explicitly, e.g. OpenCode \`{env:VOIDNIX_ZHIPU_API_KEY}\`
+- External tools (Claude Code, OpenAI-compatible CLIs, …) connect through the **AI gateway**: point the API base URL at \`http://127.0.0.1:8788\` with any placeholder key; the gateway routes by model and injects real keys (with rotation)
+- The optional Anthropic endpoint lets the gateway serve Claude Code and other Anthropic clients (Zhipu \`https://open.bigmodel.cn/api/anthropic\`, DeepSeek \`https://api.deepseek.com/anthropic\`); declared models join gateway routing
 - Select a key and press **Cmd+Enter** to paste the key / endpoint / model name (an extra item appears when a Responses endpoint is declared)`,
   },
 })

@@ -1,11 +1,9 @@
 import { defineConfig, whenConfigReady } from '@/runtime/storage'
-import { t } from '@/runtime/i18n'
 import {
   config as hubConfig,
   getProviderById,
   getKeySlot,
   providerDisplayName,
-  getEnvSnapshot,
   apiKeyOf,
   addAiProvider,
   formatSelectionKey,
@@ -166,11 +164,9 @@ export interface AiTranslateTarget {
 
 /**
  * 将 AI 配置的多选模型解析为可调用目标列表。
- * 同步版：env 需事先 refreshEnvSnapshot。
  * 走 effective（与中枢不一致的选用跳过）；keyId 缺省时 apiKeyOf 取第一把非空 Key。
  */
 export function resolveAiTargets(cfg: AiConfig): AiTranslateTarget[] {
-  const env = getEnvSnapshot()
   const out: AiTranslateTarget[] = []
   const seen = new Set<string>()
 
@@ -182,9 +178,9 @@ export function resolveAiTargets(cfg: AiConfig): AiTranslateTarget[] {
     seen.add(dedupe)
 
     const provider = getProviderById(providerId)
-    const endpoint = (provider?.endpoint.trim() || env.endpoint).trim()
-    const apiKey = (apiKeyOf(provider, sel.keyId) || env.apiKey).trim()
-    if (!endpoint || !apiKey) continue
+    const endpoint = provider?.endpoint.trim() ?? ''
+    const apiKey = apiKeyOf(provider, sel.keyId)
+    if (!provider || !endpoint || !apiKey) continue
 
     // 与 selectionDisplayLabel 一致：仅多 Key 时附加备注
     const multiKey = (provider?.keys?.length ?? 0) > 1
@@ -192,23 +188,13 @@ export function resolveAiTargets(cfg: AiConfig): AiTranslateTarget[] {
       multiKey && sel.keyId
         ? provider?.keys.find((k) => k.id === sel.keyId)?.label?.trim()
         : undefined
-    const base = provider ? providerDisplayName(provider) : t('translate.envVars')
+    const base = providerDisplayName(provider)
     out.push({
       endpoint,
       apiKey,
       model,
       label: keyLabel ? `${base} · ${keyLabel}` : base,
     })
-  }
-
-  // 未选任何有效模型时：仅 env 完整则可跑一发（CLI/临时）
-  if (out.length === 0) {
-    const endpoint = env.endpoint.trim()
-    const apiKey = env.apiKey.trim()
-    const model = env.model.trim()
-    if (endpoint && apiKey && model) {
-      out.push({ endpoint, apiKey, model, label: t('translate.envVars') })
-    }
   }
 
   return out

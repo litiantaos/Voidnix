@@ -9,7 +9,6 @@ import { nextTick } from 'vue'
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   listen: vi.fn(async () => () => {}),
-  refreshEnvSnapshot: vi.fn(async () => {}),
   appStore: {
     activeExtId: 'translate',
     activeSubview: null,
@@ -20,7 +19,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }))
-vi.mock('@/runtime/ai-providers', () => ({ refreshEnvSnapshot: mocks.refreshEnvSnapshot }))
 vi.mock('./config', () => ({
   config: {
     configs: [{ type: 'youdao', appKey: 'k', appSecret: 's' }],
@@ -60,7 +58,7 @@ describe('translate View 聚焦', () => {
   it('window-focused 先于页面焦点翻转到达（hasFocus 仍 false）时仍聚焦输入框', async () => {
     hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
     const wrapper = mountView()
-    // onMounted 异步链（refreshEnvSnapshot → envTouched → isConfigured → textarea 渲染）
+    // onMounted 异步链落定后 textarea 渲染
     await flushPromises()
     await nextTick()
 

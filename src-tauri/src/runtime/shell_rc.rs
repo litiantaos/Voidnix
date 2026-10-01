@@ -324,10 +324,9 @@ fn clear_rc_file(rc_path: &Path) -> Result<bool, String> {
 
 /// 清除 Voidnix 在用户 shell 环境的全部注入（设置页「清除系统注入」）：
 /// - `~/.zshrc` / `~/.zprofile`：摘除全部 `# voidnix <scope>` 块 + 旧版成对 marker，删 `*.voidnix-bak` 备份
-/// - `~/.config/voidnix[/dev]/ai.env`：AI 凭证明文投影（0600，含 API Key）
+/// - `~/.config/voidnix[/dev]/ai.env`：历史遗留的 AI 凭证明文投影（ai.env 导出已移除）
 ///
-/// 卸载导向的清理入口：继续使用相关功能时会重新写入（保存提供商配置重导出 ai.env 并
-/// 重装 source 钩子，zsh 补全重新启用）。返回被清理的文件路径列表（供前端反馈）。
+/// 卸载导向的清理入口（zsh 补全等继续使用时会重新写入）。返回被清理的文件路径列表（供前端反馈）。
 #[tauri::command]
 pub fn clear_voidnix_injections() -> Result<Vec<String>, String> {
     let Some(home) = dirs::home_dir() else {

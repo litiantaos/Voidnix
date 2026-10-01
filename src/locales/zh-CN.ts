@@ -104,13 +104,11 @@ export const zhCNMessages: Msgs = {
   'settings.updateOK': { 'zh-CN': '好的' },
   'settings.clearInjections': { 'zh-CN': '清除系统注入' },
   'settings.clearInjectionsHint': {
-    'zh-CN': '移除 .zshrc / .zprofile 注入块与 ai.env 凭证文件',
+    'zh-CN': '移除 .zshrc / .zprofile 注入块与历史遗留的 ai.env 凭证文件',
   },
   'settings.clearInjectionsConfirmTitle': { 'zh-CN': '清除系统注入' },
   'settings.clearInjectionsConfirmMessage': {
-    'zh-CN': `将从 \`~/.zshrc\` 与 \`~/.zprofile\` 摘除全部 Voidnix 注入块（AI 凭证 source 钩子、zsh 补全等），并删除 \`~/.config/voidnix[/dev]/ai.env\`（含明文 API Key）。
-
-继续使用相关功能时会按需重新写入。`,
+    'zh-CN': `将从 \`~/.zshrc\` 与 \`~/.zprofile\` 摘除全部 Voidnix 注入块（zsh 补全等），并删除历史遗留的 \`~/.config/voidnix[/dev]/ai.env\`（含明文 API Key）。`,
   },
   'settings.clearInjectionsOk': { 'zh-CN': '清除' },
   'settings.clearInjectionsDone': { 'zh-CN': '已清除 {count} 处注入' },

@@ -136,7 +136,6 @@ describe('resolveAgentCredentials', () => {
     expect(r?.apiKey).toBe('a')
     expect(r?.endpoint).toBe('https://x')
     expect(r?.model).toBe('m1')
-    expect(r?.source).toBe('config')
     expect(r?.providerId).toBe(id)
   })
 

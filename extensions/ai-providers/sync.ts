@@ -1,45 +1,12 @@
-import { invoke } from '@tauri-apps/api/core'
 import { load } from '@tauri-apps/plugin-store'
-import { CMD } from '@/commands'
 import { isTauri } from '@/utils/tauri'
 import {
   config,
-  registerSyncHandler,
-  refreshEnvSnapshot,
   normalizeProvidersInPlace,
   addAiProvider,
   getProviderById,
-  type AiProvider,
 } from '@/runtime/ai-providers'
 import { whenConfigReady } from '@/runtime/storage'
-import { buildExportPayload } from './logic'
-
-let syncTimer: ReturnType<typeof setTimeout> | null = null
-let lastExportPath = ''
-
-export function getLastExportPath(): string {
-  return lastExportPath
-}
-
-async function doExport() {
-  if (!isTauri) return
-  const { envText } = buildExportPayload({
-    providers: config.providers as AiProvider[],
-  })
-  try {
-    lastExportPath = await invoke<string>(CMD.aiProvidersExport, { envText })
-  } catch (e) {
-    console.error('[ai-providers] export failed:', e)
-  }
-}
-
-function scheduleExport() {
-  if (syncTimer) clearTimeout(syncTimer)
-  syncTimer = setTimeout(() => {
-    syncTimer = null
-    void doExport()
-  }, 400)
-}
 
 /**
  * 一次性：从旧 agent/translate 磁盘 config 导入提供商到中枢。
@@ -117,12 +84,9 @@ async function importLegacyProviders(): Promise<number> {
   return imported
 }
 
-/** 中枢 setup：规范化 + 遗留导入 + env 快照 + 导出钩子。 */
+/** 中枢 setup：规范化 + 遗留导入。 */
 export async function setupAiProvidersSync() {
   await whenConfigReady('config/ai-providers')
   normalizeProvidersInPlace()
   await importLegacyProviders()
-  await refreshEnvSnapshot()
-  // registerSyncHandler 会立即调一次 handler，无需再 scheduleExport
-  registerSyncHandler(scheduleExport)
 }

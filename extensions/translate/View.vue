@@ -73,7 +73,6 @@ import { invoke } from '@tauri-apps/api/core'
 
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
 import { config as translateConfig, resolveAiTargets } from './config'
-import { refreshEnvSnapshot } from '@/runtime/ai-providers'
 import { copyAndHide, useAppStore } from '@/stores/app'
 import { t } from '@/runtime/i18n'
 import { CMD } from '@/commands'
@@ -92,14 +91,7 @@ const selectedIndex = ref(0)
 /** 正在朗读的结果下标（null = 无）。自然结束 / 被取代 / 停止时复位。 */
 const speakingIndex = ref<number | null>(null)
 
-const envTouched = ref(false)
-onMounted(async () => {
-  await refreshEnvSnapshot()
-  envTouched.value = true
-})
-
 const isConfigured = computed(() => {
-  void envTouched.value
   return translateConfig.configs.some(
     (c) =>
       (c.type === 'youdao' && c.appKey && c.appSecret) ||

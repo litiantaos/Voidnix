@@ -72,7 +72,6 @@ describe('resolveAiTargets', () => {
         models: ['m1'],
         keys: [{ id: 'k', label: '默认', apiKey: 'k1' }],
         usageKind: '',
-        envKey: '',
         responsesEndpoint: '',
         anthropicEndpoint: '',
       },
@@ -83,7 +82,6 @@ describe('resolveAiTargets', () => {
         models: ['m2'],
         keys: [{ id: 'k', label: '默认', apiKey: 'k2' }],
         usageKind: '',
-        envKey: '',
         responsesEndpoint: '',
         anthropicEndpoint: '',
       },
@@ -113,7 +111,6 @@ describe('resolveAiTargets', () => {
         { id: 'k2', label: '备', apiKey: 'b' },
       ],
       usageKind: '',
-      envKey: '',
       responsesEndpoint: '',
       anthropicEndpoint: '',
     })
@@ -139,7 +136,6 @@ describe('resolveAiTargets', () => {
         { id: 'k2', label: '好', apiKey: 'good' },
       ],
       usageKind: '',
-      envKey: '',
       responsesEndpoint: '',
       anthropicEndpoint: '',
     })
@@ -171,7 +167,6 @@ describe('resolveAiTargets', () => {
       models: ['m1'],
       keys: [{ id: 'k', label: '默认', apiKey: 'k1' }],
       usageKind: '',
-      envKey: '',
       responsesEndpoint: '',
       anthropicEndpoint: '',
     })

@@ -20,7 +20,7 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 - release **8788**（固定端口，CC 配置一次写入不再变）；dev **8789**（与 release 常驻并存不互抢；`logic.ts::GATEWAY_PORT` 与 Rust `server.rs::PORT` 双端手动同步）
 - 服务器跑在 app tokio runtime 内（`axum` 最小特性集 http1 + tokio）；app 常驻 Accessory + monitor LaunchAgent 守护
 - 启动链：扩展 Rust `setup` 读持久化快照直接拉起（前端就绪前的冷启动窗口 CC 无感）；前端配置就绪后经 `ai_gateway_sync` 全量刷新
-- 快照 `extensions/ai-gateway/gateway-state.json`（enabled + 路由表，0600 原子写，含 Key 与 ai.env 同密级）
+- 快照 `extensions/ai-gateway/gateway-state.json`（enabled + 路由表，0600 原子写，含 Key 明文）
 
 ## 路由表来源
 
@@ -30,7 +30,7 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 
 接管由独立开关 `ccTakeover` 控制（默认关——网关开关只管起停服务，不擅改用户配置文件），实际接管需 `enabled && ccTakeover` 且存在可接线载荷；任一条件失守（关接管/关网关/删光 Anthropic 端点）即还原。接管期间读-合-写 `~/.claude/settings.json` **自有键**（serde_json `preserve_order` 保用户键序）：
 
-- `env.ANTHROPIC_BASE_URL` = `http://127.0.0.1:{port}`；`env.ANTHROPIC_AUTH_TOKEN` = 占位（网关注入真实 Key，摘除 `apiKeyHelper`，不再依赖 shell env / ai.env source 链路）
+- `env.ANTHROPIC_BASE_URL` = `http://127.0.0.1:{port}`；`env.ANTHROPIC_AUTH_TOKEN` = 占位（网关注入真实 Key，摘除 `apiKeyHelper`，不再依赖 shell env 链路）
 - `env.ANTHROPIC_DEFAULT_{SONNET,HAIKU}_MODEL` = 新会话默认模型 + 后台任务模型（标题生成等小流量；不钉住则走主模型烧额度）。opus 档不写且摘除历史残留——`modelPicker` 替换内置阵容后别名不可达，属死配置
 - `env.ANTHROPIC_DEFAULT_*_MODEL` 与 `modelPicker` 的模型 id 由 `cc1mContext` 开关统一决定形态（默认开）：开 = 追加 `[1m]` 后缀（CC 私有语法，识别后发 context-1m beta 头启用百万 token 上下文；已带后缀防双写），关 = 统一剥成裸名——开关是 CC 侧形态的唯一决定因素，中枢存储带不带后缀都无影响；picker 的 label 恒裸名
 - `modelPicker`（CC v2.1.242+，旧版本忽略未知键）= 全部 Anthropic 可路由模型 + `replaceBuiltInOptions`——**CC 内 `/model` 直接切换任何模型**，新会话生效

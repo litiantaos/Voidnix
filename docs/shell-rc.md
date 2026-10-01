@@ -64,7 +64,7 @@ shell_rc::filter_all_voidnix(&content);
 ## 现有消费者
 
 - `zsh-autosuggestions`（补全）：`export ZSH_AS_DIR=…; eval "$(… init)"`
-- `ai-providers`（AI 凭证，仅 release）：`source ~/.config/voidnix/ai.env`（zshrc + zprofile）。debug 不注入——外部工具按私有名（`VOIDNIX_*`）显式引用，无法 dev/prod 并存，dev 凭证只写 `voidnix.dev/ai.env` 供 App 内回退与手动 source
+- `ai-providers` 的历史 ai.env source 钩子已随网关接管外部工具而移除——扩展 setup 对存量注入块与 `~/.config/voidnix[/dev]/ai.env` 做幂等自清（见 [ai-providers.md](../extensions/ai-providers.md)）
 
 ## 禁止
 
@@ -75,7 +75,7 @@ shell_rc::filter_all_voidnix(&content);
 
 ## 用户侧摘除
 
-设置页「清除系统注入」（高级组，框架命令 `clear_voidnix_injections`）：摘除 `~/.zshrc` / `~/.zprofile` 中全部 `# voidnix` 块 + 旧版成对 marker，删 `*.voidnix-bak` 备份，并删除 `~/.config/voidnix[/dev]/ai.env`（AI 凭证明文投影）。卸载导向入口——继续使用相关功能时会按需重新写入。
+设置页「清除系统注入」（高级组，框架命令 `clear_voidnix_injections`）：摘除 `~/.zshrc` / `~/.zprofile` 中全部 `# voidnix` 块 + 旧版成对 marker，删 `*.voidnix-bak` 备份，并删除历史遗留的 `~/.config/voidnix[/dev]/ai.env`。卸载导向入口。
 
 ```bash
 # 手动搜 marker

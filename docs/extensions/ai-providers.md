@@ -4,9 +4,9 @@
 
 ## 职责边界
 
-- **本扩展**：CRUD 提供商与 Key、粘贴出去、智谱额度展示、写 `ai.env` + shell 钩子
+- **本扩展**：CRUD 提供商与 Key、粘贴出去、智谱额度展示
 - **消费者**：自行持久化选用（如 Agent 的 `providerModelKey`，翻译 AI 的 `selections`）
-- **解析**：`resolveCredentials({ providerId, keyId?, model? })` 按传入选用取值（缺项可由 env 补全），中枢不猜默认提供商；Agent 无显式选用时自行默认首个可用提供商
+- **解析**：`resolveCredentials({ providerId, keyId?, model? })` 按传入选用取值，中枢不猜默认提供商；Agent 无显式选用时自行默认首个可用提供商
 
 ## schema 变更
 
@@ -83,41 +83,17 @@
 - **智谱 Coding Plan**（`bigmodel.cn` / `zhipuai`，`usage/zhipu.rs`）：副标题与右侧 30d 曲线格式见「界面」（曲线对齐 [tokens-monitor](https://github.com/litiantaos/tokens-monitor)）。命令 `ai_providers_zhipu_quota`，配额 `GET https://open.bigmodel.cn/api/monitor/usage/quota/limit`（Authorization = 裸 Key，最小请求头），与 30d 用量请求（`bigmodel.cn/api/monitor/usage/model-usage`，叠加浏览器请求面 UA/Referer/Origin 防网关拒）并发。HTTP 401 与信封 `code` 401/1001 均判无效 Key（401 判定先于 shape 分支）。响应兼容两种 shape：`{data:{limits,level}}` 信封（V2 `TOKENS_LIMIT`）与 V3（2026-07-30 积分制）顶层数组（`CREDIT_LIMIT`），均映射 5h（unit 3）/7d（unit 6）窗，非配额类型（如 `TIME_LIMIT`）跳过。`nextResetTime` 为毫秒。
 - **DeepSeek**（`deepseek.com`，`usage/deepseek.rs`）：账户余额 `GET {origin}/user/balance`（Bearer Key）。列表副标题展示 `¥/ $` 总余额；无 5h/7d 窗口、无 30d 曲线。命令 `ai_providers_deepseek_balance`。
 
-## CLI / env
+## 外部工具接入
 
-### 写入规则
+外部工具不引用中枢凭证——统一经 [ai-gateway](ai-gateway.md) 接入（本地三协议网关按模型名路由 + Key 轮换 + 热更新）：API 地址指向 `http://127.0.0.1:8788`、Key 填占位值即可。各工具自管模型选用（模型定义在工具配置里，含上下文长度/定价等元数据，不由中枢投射）。
 
-- **文件路径**：保存后写 `~/.config/voidnix[/dev]/ai.env`
-- **release**：基础目录；shell 全局投影注入（`shell_rc` 幂等写入 `# voidnix ai-providers` source 块，见 [shell-rc.md](../shell-rc.md)）
-- **debug**：叠 `.dev`，与 bundle id 隔离一致；只写 `voidnix.dev/ai.env` 文件，**不注入 shell**
-- **dev/prod 不并存原因**：外部工具按私有名（`VOIDNIX_*`）显式引用，无法 dev/prod 并存，全局只放 prod
-- **dev 凭证用途**：供 App 内回退与手动 `source ~/.config/voidnix.dev/ai.env` 验证
+- **Responses 端点**（`responsesEndpoint`，可选）：语义是「Responses 端点与 chat 端点**不同**时的那个 URL」——分立端点（智谱 Responses `https://open.bigmodel.cn/api/v1` 与 chat `/api/coding/paas/v4`）才需要填；同端点用路径/参数区分协议的提供商（DeepSeek 等）留空即可。`endpoint` 始终存 chat 端点（内部消费者 agent/translate 走 chat completions，不受影响）
+- **Anthropic 端点**（`anthropicEndpoint`，可选）：Anthropic Messages 线协议端点（智谱 `https://open.bigmodel.cn/api/anthropic`、DeepSeek `https://api.deepseek.com/anthropic`），声明后模型进入网关的 Anthropic 路由（Claude Code 等客户端）
 
-### 变量命名
-
-全量 `VOIDNIX_` 私有前缀——不抢占外部工具约定的通用变量名（如 `ZHIPU_API_KEY`），外部工具须显式引用。`envKey` 显式可覆盖（逃生舱，不加前缀）。
-
-- **知名端点**固定后缀：
-  - 智谱 Coding Plan（`bigmodel.cn` / `zhipuai`）→ `VOIDNIX_ZHIPU_API_KEY` + `VOIDNIX_ZHIPU_BASE_URL`
-  - DeepSeek（`deepseek.com`）→ `VOIDNIX_DEEPSEEK_API_KEY` + `VOIDNIX_DEEPSEEK_BASE_URL`
-  - 其余按名称 / hostname 推导（如 OpenAI 端点 → `VOIDNIX_OPENAI_API_KEY`）
-- **多 Key 命名**：第一把非空写规范名（`VOIDNIX_DEEPSEEK_API_KEY` 等）；其余按备注 ASCII 后缀（`VOIDNIX_DEEPSEEK_BACKUP_API_KEY`），纯中文备注回退 `VOIDNIX_DEEPSEEK_KEY2_API_KEY`，碰撞递增，不静默丢 Key
-- **单 Key 规范名冲突**（两套同端点提供商）：第二套序号兜底（`VOIDNIX_DEEPSEEK_KEY1_API_KEY`），不静默丢
-- **`VOIDNIX_*_BASE_URL`**：按**提供商**输出（endpoint 是提供商级属性），每提供商仅一条，不随 Key 重复
-- **`VOIDNIX_*_RESPONSES_URL`**：Responses 线协议端点，提供商声明了 `responsesEndpoint`（非空）才输出，每提供商一条。语义是「Responses 端点与 chat 端点**不同**时的那个 URL」：分立端点（智谱 Responses `https://open.bigmodel.cn/api/v1` 与 chat `/api/coding/paas/v4`）才需要填；同端点用路径/参数区分协议的提供商（DeepSeek 等）留空即可，工具直接用 `*_BASE_URL` + 自身协议开关（如 Grok Build `api_backend`）。`endpoint` 始终存 chat 端点（内部消费者 agent/translate 走 chat completions，不受影响）
-- **`anthropicEndpoint` 不导出 ai.env**：Anthropic Messages 线协议端点（智谱 `https://open.bigmodel.cn/api/anthropic`、DeepSeek `https://api.deepseek.com/anthropic`）仅供 ai-gateway 扩展路由（内部消费者直接读中枢配置），外部工具无引用需求
-
-### 外部工具
-
-中枢只写 env（`VOIDNIX_*` 私有名，key + url）；各工具自管模型选用（模型定义在工具配置里，含上下文长度/定价等元数据，不由中枢投射）。
-
-- **OpenCode**：`opencode.json` 的 `provider.*.options.apiKey` 用 `{env:VOIDNIX_ZHIPU_API_KEY}` 等显式引用；baseURL 写在 `options.baseURL`。模型：`zhipuai-coding-plan/glm-5.2`、`deepseek/deepseek-v4-pro` 等
-- **Grok Build**：`~/.grok/config.toml` 的 `[model.*]` 用 `env_key = "VOIDNIX_ZHIPU_API_KEY"` 等 + `base_url`；GLM 走 `api_backend = "responses"`、`base_url` 取 `VOIDNIX_ZHIPU_RESPONSES_URL` 值（`https://open.bigmodel.cn/api/v1`），DeepSeek 走 `chat_completions`；切模型 `/model glm-5-2-1m` 等
-- **Claude Code**：经 [ai-gateway](ai-gateway.md) 接入（本地双协议网关按模型名路由 + Key 轮换），不走 env 引用
+历史的 `ai.env` 导出（`VOIDNIX_*` 环境变量 + shell source 钩子）已移除：扩展 setup 对存量遗留（rc 注入块 / `~/.config/voidnix[/dev]/ai.env`）做幂等自清。
 
 ## 命令
 
-- `ai_providers_export` / `export_dir` / `env_snapshot`
 - `ai_providers_zhipu_quota` / `ai_providers_deepseek_balance`
 - 框架 `pasteboard_paste_text`：隐藏主窗后注入 Cmd+V；**粘贴后密钥仍留在系统剪贴板**（与 clipboard 扩展粘贴路径一致，不自动清）
 

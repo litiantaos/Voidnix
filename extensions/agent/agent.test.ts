@@ -65,7 +65,6 @@ beforeEach(async () => {
     models: ['m1'],
     keys: [{ id: 'k1', label: '默认', apiKey: 'sk-test' }],
     usageKind: '',
-    envKey: '',
     responsesEndpoint: '',
     anthropicEndpoint: '',
   })

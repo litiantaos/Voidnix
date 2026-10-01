@@ -72,7 +72,7 @@ pub fn ext_data_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// 原子写文本文件（tmp + rename，0600）。扩展落盘共享原语（ai.env / 网关状态 / CC 接管
+/// 原子写文本文件（tmp + rename，0600）。扩展落盘共享原语（网关状态 / CC 接管
 /// settings.json 等，部分文件含密钥，统一 0600 密级；rename 保证读者只见完整文件）。
 pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {

@@ -336,7 +336,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### AI 凭证中枢
 
-`src/runtime/ai-providers.ts` → `config/ai-providers.json`：只存 URL/Key/模型，**无「使用中」**——选用由消费者自管（agent `providerModelKey` / translate `selections` 各自持久化），有效性校验 + 读时 effective（不写回）+ 冷 prune。写 `ai.env`（`VOIDNIX_*` 私有名，仅 release 注入 shell，debug 只写文件）；shell rc 注入统一走 `runtime/shell_rc`（[shell-rc.md](docs/shell-rc.md)）。详见 [ai-providers.md](docs/extensions/ai-providers.md)。
+`src/runtime/ai-providers.ts` → `config/ai-providers.json`：只存 URL/Key/模型，**无「使用中」**——选用由消费者自管（agent `providerModelKey` / translate `selections` 各自持久化），有效性校验 + 读时 effective（不写回）+ 冷 prune；外部工具统一经 ai-gateway 接入，不投影环境变量（历史 ai.env 导出与 shell 钩子已移除，setup 幂等自清存量遗留，见 [ai-providers.md](docs/extensions/ai-providers.md)）。详见 [ai-providers.md](docs/extensions/ai-providers.md)。
 
 ### AI 网关
 

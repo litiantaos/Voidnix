@@ -155,7 +155,6 @@ describe('resolveCredentials', () => {
       models: ['m'],
       keys: undefined as unknown as [],
       usageKind: '',
-      envKey: '',
       responsesEndpoint: '',
       anthropicEndpoint: '',
       // @ts-expect-error legacy field

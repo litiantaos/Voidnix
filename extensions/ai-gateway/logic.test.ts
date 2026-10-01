@@ -19,7 +19,6 @@ function p(partial: Partial<AiProvider> & Pick<AiProvider, 'id'>): AiProvider {
     models: ['m'],
     keys: [{ id: 'k', label: '主号', apiKey: 'sk-1' }],
     usageKind: '',
-    envKey: '',
     ...partial,
   }
 }

@@ -37,5 +37,4 @@ registerMessages({
   'translate.lang.es': { 'zh-CN': '西班牙文', en: 'Spanish' },
 
   // ─── config 语义 ───────────────────────────
-  'translate.envVars': { 'zh-CN': '环境变量', en: 'Environment Variables' },
 })
