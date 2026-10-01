@@ -60,6 +60,7 @@ const zhipuProvider: AiProvider = {
   name: '',
   endpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
   responsesEndpoint: '',
+  anthropicEndpoint: '',
   models: ['glm-5.3'],
   keys: [{ id: 'k1', label: '默认', apiKey: 'sk-zhipu-key' }],
   usageKind: '',

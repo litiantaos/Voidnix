@@ -24,27 +24,6 @@ fn env_file_path() -> Result<PathBuf, String> {
     Ok(export_dir()?.join("ai.env"))
 }
 
-fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
-    }
-    let tmp = path.with_extension(format!(
-        "{}.tmp",
-        path.extension().and_then(|e| e.to_str()).unwrap_or("tmp")
-    ));
-    std::fs::write(&tmp, content).map_err(|e| format!("写入临时文件失败: {e}"))?;
-    std::fs::rename(&tmp, path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("替换目标文件失败: {e}")
-    })?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
-}
-
 /// shell rc scope（marker `# voidnix ai-providers`；见 runtime/shell_rc）。
 /// 仅 release 注入 source 钩子；debug 用此 scope 摘除历史 dev 块自愈。
 const SHELL_SCOPE: &str = if cfg!(debug_assertions) {
@@ -105,7 +84,7 @@ fn ensure_user_shell_hooks() {
 #[tauri::command]
 pub fn ai_providers_export(env_text: String) -> Result<String, String> {
     let path = env_file_path()?;
-    atomic_write(&path, &env_text)?;
+    crate::runtime::storage::atomic_write(&path, &env_text)?;
     ensure_user_shell_hooks();
     Ok(path.to_string_lossy().into_owned())
 }

@@ -67,6 +67,7 @@ beforeEach(async () => {
     usageKind: '',
     envKey: '',
     responsesEndpoint: '',
+    anthropicEndpoint: '',
   })
   agentConfig.providerModelKey = ''
   setProviderModelKey('p1::k1::m1')

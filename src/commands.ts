@@ -133,6 +133,12 @@ export const CMD = {
   aiProvidersZhipuQuota: 'ai_providers_zhipu_quota',
   aiProvidersDeepseekBalance: 'ai_providers_deepseek_balance',
 
+  // —— ai-gateway ——
+  aiGatewaySync: 'ai_gateway_sync',
+  aiGatewayStatus: 'ai_gateway_status',
+  aiGatewayCcApply: 'ai_gateway_cc_apply',
+  aiGatewayCcRemove: 'ai_gateway_cc_remove',
+
   // —— search ——
   searchApps: 'search_apps',
   getAppIcons: 'get_app_icons',

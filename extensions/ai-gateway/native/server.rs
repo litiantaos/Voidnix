@@ -1,0 +1,816 @@
+//! AI 网关服务器:Anthropic Messages / OpenAI Responses / OpenAI Chat Completions 三协议直通反向代理。
+//!
+//! 路由 = 请求体 `model` 字段 → 提供商;每提供商多 Key 轮换(429/401/403/503/529 换下一把重发,
+//! lastGood 粘性优先)。请求体整体缓冲以支持换 Key 重放,响应(SSE 流式)透传不落盘。
+
+use axum::body::{Body, Bytes};
+use axum::extract::{Request, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::Response;
+use axum::routing::{get, post};
+use axum::Router;
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex, RwLock};
+use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
+
+/// release 8788(固定端口,存量 CC 配置零改动);
+/// dev 8789(dev 与 release 常驻并存,不互抢端口)
+pub const PORT: u16 = if cfg!(debug_assertions) { 8789 } else { 8788 };
+
+/// 请求体缓冲上限:CC 长上下文请求可达数十 MB,128MB 兜底异常超大请求
+const MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
+
+/// 轮换触发的上游状态码:容量满(429/503/529)、鉴权失效(401/403)——换 Key 常可恢复。
+/// 529 为 Anthropic 生态过载语义,智谱同款。
+const ROTATABLE: [u16; 5] = [429, 401, 403, 503, 529];
+
+/// 上游错误体缓冲上限:轮换失败后回放最后一个错误响应给客户端(错误体很小,64KB 足够)
+const MAX_ERROR_BODY: usize = 64 * 1024;
+
+// ─── 数据结构(与前端 logic.ts 同构,camelCase)──────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayKey {
+    pub label: String,
+    pub api_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayRoute {
+    pub provider_id: String,
+    pub name: String,
+    /// Anthropic Messages 线协议端点(空 = 该提供商不支持 /v1/messages 直通)
+    pub anthropic_url: String,
+    /// OpenAI Responses 线协议端点(空 = 该提供商不支持 /v1/responses 直通)
+    pub responses_url: String,
+    /// OpenAI Chat Completions 线协议端点(空 = 该提供商不支持 /v1/chat/completions 直通)
+    pub chat_url: String,
+    pub models: Vec<String>,
+    pub keys: Vec<GatewayKey>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayStatus {
+    pub running: bool,
+    pub port: u16,
+    pub route_count: usize,
+    pub bind_error: Option<String>,
+}
+
+/// 持久化快照(extensions/ai-gateway/gateway-state.json):app 重启后前端就绪前
+/// 由 Rust 侧直接拉起服务器,消除冷启动窗口内 CC 断连。
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedState {
+    enabled: bool,
+    routes: Vec<GatewayRoute>,
+}
+
+fn state_file(dir: &Path) -> PathBuf {
+    dir.join("gateway-state.json")
+}
+
+fn persist_state(dir: &Path, state: &PersistedState) -> Result<(), String> {
+    let path = state_file(dir);
+    let text = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
+    crate::runtime::storage::atomic_write(&path, &(text + "\n"))
+}
+
+fn read_state(dir: &Path) -> Result<PersistedState, String> {
+    let text = std::fs::read_to_string(state_file(dir)).map_err(|e| e.to_string())?;
+    serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+// ─── 全局单例 ─────────────────────────────────────────────
+
+pub struct Gateway {
+    /// 路由表快照:换表时整体替换 Arc,读侧 clone 一个 Arc 零深拷贝(表含全部 Key 字符串)
+    routes: RwLock<Arc<Vec<GatewayRoute>>>,
+    /// 提供商 → 上次成功 Key 下标;粘性优先复用,避免每次都撞已满的 Key
+    last_good: Mutex<HashMap<String, usize>>,
+    task: Mutex<Option<JoinHandle<()>>>,
+    bind_error: RwLock<Option<String>>,
+    /// 启停串行锁:bind 是 async,与并发的 sync 调用竞态会双 bind 撞自己端口
+    lifecycle: tokio::sync::Mutex<()>,
+}
+
+pub static GATEWAY: LazyLock<Arc<Gateway>> = LazyLock::new(|| {
+    Arc::new(Gateway {
+        routes: RwLock::new(Arc::new(Vec::new())),
+        last_good: Mutex::new(HashMap::new()),
+        task: Mutex::new(None),
+        bind_error: RwLock::new(None),
+        lifecycle: tokio::sync::Mutex::new(()),
+    })
+});
+
+impl Gateway {
+    /// 前端单一同步入口:换路由表 + 持久化 + 按需启停服务器。
+    pub async fn update(&self, enabled: bool, routes: Vec<GatewayRoute>, dir: &Path) {
+        let dir = dir.to_path_buf();
+        let persisted = PersistedState {
+            enabled,
+            routes: routes.clone(),
+        };
+        *self.routes.write().unwrap() = Arc::new(routes);
+        if let Err(e) = tokio::task::spawn_blocking(move || persist_state(&dir, &persisted))
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()))
+        {
+            log::warn!("[ai-gateway] 状态持久化失败: {e}");
+        }
+        if enabled {
+            self.ensure_server().await;
+        } else {
+            self.stop_server();
+        }
+    }
+
+    /// Rust 侧冷启动恢复:读快照,enabled 则直接拉起(路由表先就位,前端就绪后再刷新)。
+    pub async fn restore_from(&self, dir: &Path) {
+        let Ok(state) = read_state(dir) else {
+            return;
+        };
+        *self.routes.write().unwrap() = Arc::new(state.routes);
+        if state.enabled {
+            self.ensure_server().await;
+        }
+    }
+
+    async fn ensure_server(&self) {
+        // 串行化检查 + bind:并发 sync 在此排队,后来者见 task 已立即返回(并清粘滞错误)
+        let _guard = self.lifecycle.lock().await;
+        if self.task.lock().unwrap().is_some() {
+            *self.bind_error.write().unwrap() = None;
+            return;
+        }
+        match TcpListener::bind(("127.0.0.1", PORT)).await {
+            Ok(listener) => {
+                *self.bind_error.write().unwrap() = None;
+                let handle = tokio::spawn(serve_until_exit(listener));
+                *self.task.lock().unwrap() = Some(handle);
+                log::info!("[ai-gateway] 网关已启动: 127.0.0.1:{PORT}");
+            }
+            Err(e) => {
+                *self.bind_error.write().unwrap() =
+                    Some(format!("端口 {PORT} 绑定失败: {e}(被其它进程占用)"));
+            }
+        }
+    }
+
+    fn stop_server(&self) {
+        if let Some(handle) = self.task.lock().unwrap().take() {
+            handle.abort();
+            log::info!("[ai-gateway] 网关已停止");
+        }
+        *self.bind_error.write().unwrap() = None;
+    }
+
+    /// 读侧快照:clone Arc 零深拷贝
+    fn routes_snapshot(&self) -> Arc<Vec<GatewayRoute>> {
+        Arc::clone(&self.routes.read().unwrap())
+    }
+
+    pub fn status(&self) -> GatewayStatus {
+        GatewayStatus {
+            running: self.task.lock().unwrap().is_some(),
+            port: PORT,
+            route_count: self.routes_snapshot().len(),
+            bind_error: self.bind_error.read().unwrap().clone(),
+        }
+    }
+
+    /// Key 尝试顺序:lastGood 粘性置首,其余按配置序
+    fn key_order(&self, route: &GatewayRoute) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..route.keys.len()).collect();
+        if let Some(&lg) = self.last_good.lock().unwrap().get(&route.provider_id) {
+            if lg < order.len() {
+                order.retain(|&i| i != lg);
+                order.insert(0, lg);
+            }
+        }
+        order
+    }
+
+    fn mark_good(&self, provider_id: &str, idx: Option<usize>) {
+        let mut map = self.last_good.lock().unwrap();
+        match idx {
+            Some(i) => {
+                map.insert(provider_id.to_string(), i);
+            }
+            None => {
+                map.remove(provider_id);
+            }
+        }
+    }
+}
+
+// ─── 服务器 ───────────────────────────────────────────────
+
+async fn serve_until_exit(listener: TcpListener) {
+    let app = Router::new()
+        .route("/v1/messages", post(proxy_anthropic))
+        // CC 上下文核算调用同协议透传(请求体含 model,路由逻辑一致)
+        .route("/v1/messages/count_tokens", post(proxy_anthropic))
+        .route("/v1/responses", post(proxy_responses))
+        .route("/responses", post(proxy_responses))
+        .route("/v1/chat/completions", post(proxy_chat))
+        .route("/chat/completions", post(proxy_chat))
+        // OpenAI 系工具常先列模型再请求;CC 的 discovery 不用此端点(modelPicker 注入)
+        .route("/v1/models", get(list_models))
+        .route("/health", get(health))
+        .with_state(Arc::clone(&*GATEWAY));
+    if let Err(e) = axum::serve(listener, app).await {
+        *GATEWAY.bind_error.write().unwrap() = Some(format!("服务器异常退出: {e}"));
+        *GATEWAY.task.lock().unwrap() = None;
+    }
+}
+
+async fn health(State(g): State<Arc<Gateway>>) -> Response {
+    let routes = g.routes_snapshot();
+    let body = format!(
+        "ok (providers: {}, models: {})",
+        routes.len(),
+        routes.iter().map(|r| r.models.len()).sum::<usize>()
+    );
+    plain_response(StatusCode::OK, body)
+}
+
+/// GET /v1/models:OpenAI 形状模型清单(全部可路由模型,跨协议并集)
+async fn list_models(State(g): State<Arc<Gateway>>) -> Response {
+    let routes = g.routes_snapshot();
+    let data: Vec<serde_json::Value> = routes
+        .iter()
+        .flat_map(|r| r.models.iter().map(|m| norm_model(m)))
+        .map(|id| {
+            serde_json::json!({ "id": id, "object": "model", "owned_by": r_owned(routes.as_slice(), id) })
+        })
+        .collect();
+    let payload = serde_json::json!({ "object": "list", "data": data });
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .unwrap_or_else(|_| empty_error())
+}
+
+/// 模型 → 提供商名(/v1/models 的 owned_by)
+fn r_owned<'a>(routes: &'a [GatewayRoute], model: &str) -> &'a str {
+    routes
+        .iter()
+        .find(|r| r.models.iter().any(|m| norm_model(m) == model))
+        .map(|r| r.name.as_str())
+        .unwrap_or("")
+}
+
+async fn proxy_anthropic(State(g): State<Arc<Gateway>>, req: Request) -> Response {
+    proxy(g, Protocol::Anthropic, req).await
+}
+
+async fn proxy_responses(State(g): State<Arc<Gateway>>, req: Request) -> Response {
+    proxy(g, Protocol::Responses, req).await
+}
+
+async fn proxy_chat(State(g): State<Arc<Gateway>>, req: Request) -> Response {
+    proxy(g, Protocol::Chat, req).await
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Protocol {
+    Anthropic,
+    Responses,
+    Chat,
+}
+
+impl Protocol {
+    fn upstream_base(self, route: &GatewayRoute) -> &str {
+        match self {
+            Protocol::Anthropic => &route.anthropic_url,
+            Protocol::Responses => &route.responses_url,
+            Protocol::Chat => &route.chat_url,
+        }
+    }
+
+    /// 上游鉴权头族:Anthropic 端点双头(x-api-key + Bearer,智谱/DeepSeek 兼容端点实测接受);
+    /// OpenAI 族只注 Bearer(x-api-key 对 OpenAI 语义是无效头,严格网关可能拒绝)
+    fn dual_auth(self) -> bool {
+        matches!(self, Protocol::Anthropic)
+    }
+
+    fn error_kind(self) -> ErrorShape {
+        match self {
+            Protocol::Anthropic => ErrorShape::Anthropic,
+            _ => ErrorShape::OpenAi,
+        }
+    }
+}
+
+/// 上游 URL 拼接:剥客户端 /v1 前缀(OpenAI 族端点自带 /v1 惯例)+ 端点尾缀防重
+/// (表单示例是完整端点如 `.../v1/responses`,基目录拼 `/responses` 会双路径)
+fn join_upstream_url(protocol: Protocol, base: &str, path_and_query: &str) -> String {
+    let stripped = match protocol {
+        // Anthropic 端点惯例不带 /v1,客户端路径原样;但端点若以 /v1 结尾则剥掉防 /v1/v1
+        Protocol::Anthropic => path_and_query,
+        _ => path_and_query.strip_prefix("/v1").unwrap_or(path_and_query),
+    };
+    let mut base = base.trim_end_matches('/');
+    match protocol {
+        Protocol::Anthropic => {
+            if base.ends_with("/v1") {
+                base = &base[..base.len() - 3];
+            }
+        }
+        Protocol::Responses => {
+            if base.ends_with("/responses") {
+                base = &base[..base.len() - "/responses".len()];
+            }
+        }
+        Protocol::Chat => {
+            if let Some(stripped_base) = base.strip_suffix("/chat/completions") {
+                base = stripped_base;
+            }
+        }
+    }
+    format!("{base}{stripped}")
+}
+
+async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
+    let (parts, body_raw) = req.into_parts();
+    // 请求体整体缓冲:换 Key 重放需要完整 body(SSE 是响应侧流式,不受影响)
+    let body = match axum::body::to_bytes(body_raw, MAX_BODY_BYTES).await {
+        Ok(b) => b,
+        Err(e) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_request_error",
+                &format!("请求体读取失败: {e}"),
+                protocol,
+            )
+        }
+    };
+
+    let Some(model) = extract_model(&body) else {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "请求缺少 model 字段,网关无法路由",
+            protocol,
+        );
+    };
+
+    let routes = g.routes_snapshot();
+    let Some(route) = find_route(&routes, &model) else {
+        return error_response(
+            StatusCode::NOT_FOUND,
+            "invalid_request_error",
+            &format!(
+                "未知模型 {model},网关可用: {}",
+                available_models(&routes, protocol)
+            ),
+            protocol,
+        );
+    };
+
+    let base = protocol.upstream_base(route);
+    if base.trim().is_empty() {
+        return error_response(
+            StatusCode::NOT_FOUND,
+            "invalid_request_error",
+            &format!(
+                "提供商 {} 未声明该协议端点(在 AI 提供商中补全 URL)",
+                route.name
+            ),
+            protocol,
+        );
+    }
+
+    let path_and_query = parts
+        .uri
+        .path_and_query()
+        .map(|pq| pq.as_str().to_string())
+        .unwrap_or_default();
+    let url = join_upstream_url(protocol, base, &path_and_query);
+    let headers = forward_headers(&parts.headers, body.len());
+
+    let order = g.key_order(route);
+    let mut last_error: Option<(u16, Bytes)> = None;
+    for idx in order {
+        let key = &route.keys[idx];
+        let mut req = crate::http::stream_client()
+            .post(&url)
+            .headers(headers.clone())
+            .bearer_auth(&key.api_key);
+        if protocol.dual_auth() {
+            req = req.header("x-api-key", &key.api_key);
+        }
+        let resp = req.body(body.clone()).send().await;
+        match resp {
+            Err(e) => {
+                log::warn!("[ai-gateway] {} · {}: 网络错误 {e}", route.name, key.label);
+                continue;
+            }
+            Ok(r) => {
+                let status = r.status().as_u16();
+                if ROTATABLE.contains(&status) {
+                    // 缓存错误响应兜底(全部 Key 失败时回放给客户端)
+                    if let Ok(buf) = read_capped(r, MAX_ERROR_BODY).await {
+                        last_error = Some((status, buf));
+                    }
+                    log::warn!(
+                        "[ai-gateway] {} · {}: {status},换下一把 Key",
+                        route.name,
+                        key.label
+                    );
+                    g.mark_good(&route.provider_id, None);
+                    continue;
+                }
+                g.mark_good(&route.provider_id, Some(idx));
+                return stream_response(r).await;
+            }
+        }
+    }
+
+    if let Some((status, buf)) = last_error {
+        // 回放最后一个上游错误(429 等),客户端能看到真实原因
+        return Response::builder()
+            .status(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY))
+            .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .body(Body::from(buf))
+            .unwrap_or_else(|_| empty_error());
+    }
+    error_response(
+        StatusCode::BAD_GATEWAY,
+        "api_error",
+        &format!(
+            "提供商 {} 的全部 Key 均不可用(网络错误或额度耗尽)",
+            route.name
+        ),
+        protocol,
+    )
+}
+
+/// 透传上游响应:状态 + 头(剥跳-by-hop)原样,SSE 字节流直 pipe。
+async fn stream_response(upstream: reqwest::Response) -> Response {
+    let status = upstream.status();
+    let mut headers = HeaderMap::new();
+    for (name, value) in upstream.headers() {
+        if !is_hop_by_hop(name.as_str()) {
+            headers.insert(name, value.clone());
+        }
+    }
+    let stream = upstream
+        .bytes_stream()
+        .map(|chunk| chunk.map_err(|e| std::io::Error::other(e.to_string())));
+    Response::builder()
+        .status(status)
+        // hyper 对无 content-length 的流式体自动 chunked,与上游传输语义一致
+        .body(Body::from_stream(stream))
+        .unwrap_or_else(|_| empty_error())
+}
+
+/// 读取响应体并截断到上限(轮换失败的错误体缓存用;正常路径不走这里)
+async fn read_capped(resp: reqwest::Response, cap: usize) -> Result<Bytes, ()> {
+    let mut buf: Vec<u8> = Vec::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| ())?;
+        if buf.len() + chunk.len() > cap {
+            buf.extend_from_slice(&chunk[..cap - buf.len()]);
+            break;
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf.into())
+}
+
+/// 构造转发头:透传客户端头,剥 host/鉴权/逐跳与长度相关头(长度按缓冲后的 body 重算)
+fn forward_headers(src: &HeaderMap, body_len: usize) -> HeaderMap {
+    let mut out = HeaderMap::new();
+    for (name, value) in src {
+        let n = name.as_str();
+        if is_hop_by_hop(n)
+            || n == "host"
+            || n == "authorization"
+            || n == "x-api-key"
+            || n == "content-length"
+        {
+            continue;
+        }
+        out.insert(name.clone(), value.clone());
+    }
+    if body_len > 0 {
+        if let Ok(v) = axum::http::HeaderValue::from_str(&body_len.to_string()) {
+            out.insert(axum::http::header::CONTENT_LENGTH, v);
+        }
+    }
+    out
+}
+
+fn is_hop_by_hop(name: &str) -> bool {
+    matches!(
+        name,
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+    )
+}
+
+/// 只取 model 字段的最小反序列化目标:零未知字段树分配(长上下文请求体可达数十 MB,
+/// 全量建 serde_json::Value 树每请求付出 2-3 倍 body 的分配)
+#[derive(Deserialize)]
+struct ModelOnly {
+    model: String,
+}
+
+/// 从请求体 JSON 提取 model 字段(三种协议请求同名字段)
+fn extract_model(body: &[u8]) -> Option<String> {
+    let parsed: ModelOnly = serde_json::from_slice(body).ok()?;
+    let trimmed = parsed.model.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// 模型名归一:剥 `[1m]` 长上下文后缀(CC 发送前已剥,中枢侧可能带后缀存储,双向归一比对)
+fn norm_model(m: &str) -> &str {
+    let t = m.trim();
+    t.strip_suffix("[1m]").unwrap_or(t).trim()
+}
+
+fn find_route<'a>(routes: &'a [GatewayRoute], model: &str) -> Option<&'a GatewayRoute> {
+    let target = norm_model(model);
+    routes
+        .iter()
+        .find(|r| r.models.iter().any(|m| norm_model(m) == target))
+}
+
+fn available_models(routes: &[GatewayRoute], protocol: Protocol) -> String {
+    let mut names: Vec<&str> = Vec::new();
+    for r in routes {
+        if protocol.upstream_base(r).trim().is_empty() {
+            continue;
+        }
+        names.extend(r.models.iter().map(|m| norm_model(m)));
+    }
+    if names.is_empty() {
+        "（无——请在 AI 提供商中声明对应端点）".to_string()
+    } else {
+        names.join(", ")
+    }
+}
+
+// ─── 响应构造 ─────────────────────────────────────────────
+
+/// 错误体形状:按客户端协议族分形,否则 OpenAI 工具按自家约定解析 error.message 得 undefined
+enum ErrorShape {
+    Anthropic,
+    OpenAi,
+}
+
+fn error_response(status: StatusCode, kind: &str, message: &str, protocol: Protocol) -> Response {
+    let payload = match protocol.error_kind() {
+        ErrorShape::Anthropic => serde_json::json!({
+            "type": "error",
+            "error": { "type": kind, "message": message },
+        }),
+        ErrorShape::OpenAi => serde_json::json!({
+            "error": { "type": kind, "message": message },
+        }),
+    };
+    Response::builder()
+        .status(status)
+        .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .unwrap_or_else(|_| empty_error())
+}
+
+fn plain_response(status: StatusCode, text: String) -> Response {
+    Response::builder()
+        .status(status)
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )
+        .body(Body::from(text))
+        .unwrap_or_else(|_| empty_error())
+}
+
+/// Response::builder 失败的兜底(理论不可达:合法 status + 合法 body)
+fn empty_error() -> Response {
+    let mut r = Response::new(Body::empty());
+    *r.status_mut() = StatusCode::BAD_GATEWAY;
+    r
+}
+
+// ─── 单元测试 ─────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn route(id: &str, anthropic: &str, models: &[&str]) -> GatewayRoute {
+        GatewayRoute {
+            provider_id: id.to_string(),
+            name: id.to_string(),
+            anthropic_url: anthropic.to_string(),
+            responses_url: String::new(),
+            chat_url: String::new(),
+            models: models.iter().map(|s| s.to_string()).collect(),
+            keys: vec![GatewayKey {
+                label: "k1".into(),
+                api_key: "sk-1".into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn norm_model_strips_1m_suffix() {
+        assert_eq!(norm_model("glm-5.3[1m]"), "glm-5.3");
+        assert_eq!(norm_model("glm-5.3"), "glm-5.3");
+        assert_eq!(norm_model(" glm-5.3 [1m] "), "glm-5.3");
+    }
+
+    #[test]
+    fn find_route_matches_with_1m_tolerance() {
+        let routes = vec![route(
+            "zhipu",
+            "https://x.cn/api/anthropic",
+            &["glm-5.3[1m]"],
+        )];
+        assert!(find_route(&routes, "glm-5.3").is_some());
+        assert!(find_route(&routes, "glm-5.3[1m]").is_some());
+        assert!(find_route(&routes, "glm-5.3-flash").is_none());
+    }
+
+    #[test]
+    fn upstream_base_selects_per_protocol() {
+        let r = GatewayRoute {
+            anthropic_url: "https://a".into(),
+            responses_url: "https://r".into(),
+            chat_url: "https://c".into(),
+            ..route("x", "", &[])
+        };
+        assert_eq!(Protocol::Anthropic.upstream_base(&r), "https://a");
+        assert_eq!(Protocol::Responses.upstream_base(&r), "https://r");
+        assert_eq!(Protocol::Chat.upstream_base(&r), "https://c");
+    }
+
+    #[test]
+    fn upstream_path_strips_v1_for_openai_conventions() {
+        // Chat/Responses 端点自带 /v1:客户端 /v1/chat/completions → 端点 + /chat/completions
+        assert_eq!(
+            join_upstream_url(
+                Protocol::Chat,
+                "https://api.example.com/v1",
+                "/v1/chat/completions?x=1"
+            ),
+            "https://api.example.com/v1/chat/completions?x=1"
+        );
+        // 客户端路径不带 /v1(base_url 已含)同样正确
+        assert_eq!(
+            join_upstream_url(
+                Protocol::Chat,
+                "https://api.example.com/v1",
+                "/chat/completions"
+            ),
+            "https://api.example.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn join_upstream_url_dedups_endpoint_suffixes() {
+        // 表单示例是完整端点:基目录拼接会双路径,防重剥掉端点尾部
+        assert_eq!(
+            join_upstream_url(
+                Protocol::Responses,
+                "https://api.openai.com/v1/responses",
+                "/v1/responses"
+            ),
+            "https://api.openai.com/v1/responses"
+        );
+        assert_eq!(
+            join_upstream_url(
+                Protocol::Chat,
+                "https://x.com/v1/chat/completions",
+                "/v1/chat/completions"
+            ),
+            "https://x.com/v1/chat/completions"
+        );
+        // Anthropic 端点带 /v1 的自然写法:剥掉防 /v1/v1/messages
+        assert_eq!(
+            join_upstream_url(
+                Protocol::Anthropic,
+                "https://api.anthropic.com/v1",
+                "/v1/messages"
+            ),
+            "https://api.anthropic.com/v1/messages"
+        );
+        // 常规基目录不受影响
+        assert_eq!(
+            join_upstream_url(
+                Protocol::Anthropic,
+                "https://open.bigmodel.cn/api/anthropic",
+                "/v1/messages"
+            ),
+            "https://open.bigmodel.cn/api/anthropic/v1/messages"
+        );
+    }
+
+    #[test]
+    fn extract_model_parses_json_body() {
+        let body = br#"{"model":"glm-5.3","messages":[]}"#;
+        assert_eq!(extract_model(body).as_deref(), Some("glm-5.3"));
+        assert_eq!(extract_model(br#"{"messages":[]}"#), None);
+        assert_eq!(extract_model(b"not json"), None);
+        assert_eq!(extract_model(br#"{"model":""}"#), None);
+    }
+
+    #[test]
+    fn forward_headers_strips_auth_host_length() {
+        let mut src = HeaderMap::new();
+        src.insert("host", "127.0.0.1:8788".parse().unwrap());
+        src.insert("authorization", "Bearer old".parse().unwrap());
+        src.insert("x-api-key", "old".parse().unwrap());
+        src.insert("content-type", "application/json".parse().unwrap());
+        src.insert("anthropic-version", "2023-06-01".parse().unwrap());
+        let out = forward_headers(&src, 42);
+        assert!(out.get("host").is_none());
+        assert!(out.get("authorization").is_none());
+        assert!(out.get("x-api-key").is_none());
+        assert_eq!(out.get("content-type").unwrap(), "application/json");
+        assert_eq!(out.get("anthropic-version").unwrap(), "2023-06-01");
+        assert_eq!(out.get("content-length").unwrap(), "42");
+    }
+
+    #[test]
+    fn key_order_prefers_last_good() {
+        let g = Gateway {
+            routes: RwLock::new(Arc::new(Vec::new())),
+            last_good: Mutex::new(HashMap::new()),
+            task: Mutex::new(None),
+            bind_error: RwLock::new(None),
+            lifecycle: tokio::sync::Mutex::new(()),
+        };
+        let r = route("zhipu", "", &[]);
+        let order = g.key_order(&r);
+        assert_eq!(order, vec![0]);
+
+        // 多 Key:粘性置首
+        let multi = GatewayRoute {
+            keys: vec![
+                GatewayKey {
+                    label: "a".into(),
+                    api_key: "1".into(),
+                },
+                GatewayKey {
+                    label: "b".into(),
+                    api_key: "2".into(),
+                },
+                GatewayKey {
+                    label: "c".into(),
+                    api_key: "3".into(),
+                },
+            ],
+            ..route("zhipu2", "", &[])
+        };
+        g.mark_good("zhipu2", Some(2));
+        assert_eq!(g.key_order(&multi), vec![2, 0, 1]);
+        g.mark_good("zhipu2", None);
+        assert_eq!(g.key_order(&multi), vec![0, 1, 2]);
+
+        // lastGood 越界(删 Key 后)回退配置序
+        g.mark_good("zhipu2", Some(9));
+        assert_eq!(g.key_order(&multi), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn persisted_state_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("voidnix-gw-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = PersistedState {
+            enabled: true,
+            routes: vec![route("zhipu", "https://x.cn/api/anthropic", &["glm-5.3"])],
+        };
+        persist_state(&dir, &state).unwrap();
+        let back = read_state(&dir).unwrap();
+        assert!(back.enabled);
+        assert_eq!(back.routes.len(), 1);
+        assert_eq!(back.routes[0].models, vec!["glm-5.3"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

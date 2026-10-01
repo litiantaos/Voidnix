@@ -112,6 +112,14 @@
         </div>
 
         <div class="form-field">
+          <span class="form-label">Anthropic URL</span>
+          <BaseInput
+            v-model="providerForm.anthropicEndpoint"
+            :placeholder="EXAMPLE_ANTHROPIC_ENDPOINT"
+          />
+        </div>
+
+        <div class="form-field">
           <span class="form-label">{{ t('ai-providers.modelId') }}</span>
           <div flex="~ col" gap="1.5">
             <div v-for="(_, i) in providerForm.models" :key="i" flex gap="1.5" items="center">
@@ -450,6 +458,14 @@ const actionMenuItems = computed<PanelItem[]>(() => {
       icon: 'i-ri-links-line',
     })
   }
+  if (p?.anthropicEndpoint.trim()) {
+    items.push({
+      type: 'item',
+      key: 'paste-anthropic-url',
+      label: t('ai-providers.paste', { name: 'Anthropic URL' }),
+      icon: 'i-ri-links-line',
+    })
+  }
   if (models.length === 0) {
     items.push({
       type: 'item',
@@ -509,6 +525,7 @@ const {
     if (k === 'paste-key') void pasteField(row.slot.apiKey, 'Key')
     else if (k === 'paste-url' && p) void pasteField(p.endpoint, 'API URL')
     else if (k === 'paste-responses-url' && p) void pasteField(p.responsesEndpoint, 'Responses URL')
+    else if (k === 'paste-anthropic-url' && p) void pasteField(p.anthropicEndpoint, 'Anthropic URL')
     else if (k.startsWith('paste-model:'))
       void pasteField(k.slice('paste-model:'.length), t('ai-providers.modelLabel'))
     else if (k === 'delete-key') {
@@ -528,6 +545,7 @@ const providerForm = ref({
   name: '',
   endpoint: '',
   responsesEndpoint: '',
+  anthropicEndpoint: '',
   models: [''] as string[],
   firstKeyLabel: t('ai-providers.default'),
   firstKey: '',
@@ -535,8 +553,10 @@ const providerForm = ref({
 
 /** 与列表展示一致：名称留空时 = URL 推导域名（空 URL 用示例 endpoint → OPENAI） */
 const EXAMPLE_ENDPOINT = 'https://api.openai.com/v1'
-/** Responses 线协议端点示例（OpenAI Responses 完整端点；可选字段，空 = 不导出） */
-const EXAMPLE_RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses'
+/** Responses 线协议端点示例（基目录，客户端自行追加 /responses；可选字段，空 = 不导出） */
+const EXAMPLE_RESPONSES_ENDPOINT = 'https://api.openai.com/v1'
+/** Anthropic Messages 线协议端点示例（智谱官方兼容端点；可选字段，空 = 不参与网关路由） */
+const EXAMPLE_ANTHROPIC_ENDPOINT = 'https://open.bigmodel.cn/api/anthropic'
 const nameFieldPlaceholder = computed(() =>
   providerLabelFromUrl(providerForm.value.endpoint.trim() || EXAMPLE_ENDPOINT, 'OPENAI'),
 )
@@ -549,6 +569,7 @@ function openCreateProvider() {
     name: '',
     endpoint: '',
     responsesEndpoint: '',
+    anthropicEndpoint: '',
     models: [''],
     firstKeyLabel: t('ai-providers.default'),
     firstKey: '',
@@ -574,6 +595,7 @@ function openEditProvider(providerId: string) {
     name: p.name.trim() || defaultProviderName(p.endpoint),
     endpoint: p.endpoint,
     responsesEndpoint: p.responsesEndpoint ?? '',
+    anthropicEndpoint: p.anthropicEndpoint ?? '',
     models: p.models.length ? [...p.models] : [''],
     firstKeyLabel: '',
     firstKey: '',
@@ -585,6 +607,7 @@ function saveProvider() {
   const models = providerForm.value.models.map((m) => m.trim()).filter(Boolean)
   const endpoint = providerForm.value.endpoint.trim()
   const responsesEndpoint = providerForm.value.responsesEndpoint.trim()
+  const anthropicEndpoint = providerForm.value.anthropicEndpoint.trim()
   // 有 URL 时名称空则落盘域名默认，避免一直「虚」占位
   const name = providerForm.value.name.trim() || defaultProviderName(endpoint)
 
@@ -604,6 +627,7 @@ function saveProvider() {
       name,
       endpoint,
       responsesEndpoint,
+      anthropicEndpoint,
       models,
       keys: [slot],
     })
@@ -612,7 +636,13 @@ function saveProvider() {
       showToast(t('ai-providers.urlRequired'), { kind: 'error' })
       return
     }
-    updateAiProvider(editingProviderId.value, { name, endpoint, responsesEndpoint, models })
+    updateAiProvider(editingProviderId.value, {
+      name,
+      endpoint,
+      responsesEndpoint,
+      anthropicEndpoint,
+      models,
+    })
   }
   showProviderModal.value = false
 }

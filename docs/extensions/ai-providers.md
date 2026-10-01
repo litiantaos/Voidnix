@@ -1,6 +1,6 @@
 # AI 提供商
 
-统一维护 OpenAI 兼容 **URL（chat / 可选 Responses）/ 多 Key / 模型**。只做配置中枢，**不维护「使用中」**；谁用哪套由消费者自选。
+统一维护 OpenAI 兼容 **URL（chat / 可选 Responses / 可选 Anthropic）/ 多 Key / 模型**。只做配置中枢，**不维护「使用中」**；谁用哪套由消费者自选。
 
 ## 职责边界
 
@@ -23,11 +23,11 @@
   - 副标题 = `sk-… · MAX · 5h 12% (2.3h) · 7d 34% (2.3d) · 30d 1.2B`（重置缺失为 `—`）
   - 右侧 = **30d 曲线**（智谱）
 - **回车**：打开编辑 Key 弹窗
-- **Cmd+Enter / 右键**：统一「粘贴 Key / 粘贴 API URL / 粘贴 Responses URL（声明了 `responsesEndpoint` 才出现）/ 粘贴 {模型}」、删除 Key（经 `useActionPanel` 统一 `toggleOpen`，二次触发关闭）
+- **Cmd+Enter / 右键**：统一「粘贴 Key / 粘贴 API URL / 粘贴 Responses URL / 粘贴 Anthropic URL（各自声明了对应端点才出现）/ 粘贴 {模型}」、删除 Key（经 `useActionPanel` 统一 `toggleOpen`，二次触发关闭）
 - **分组标题右侧**：编辑提供商 · 添加 Key
 - **添加提供商**：搜索栏右侧 `+`（`searchBarAccessory`）；列表空态（`BaseSetupState`，按钮文案覆盖为「添加提供商」）同款直达创建弹窗
 
-弹窗：添加/编辑提供商（名称 / API URL / 模型 / 可选 Responses URL；创建时含首把 Key）；添加/编辑 Key。无「选用 / 使用中」。
+弹窗：添加/编辑提供商（名称 / API URL / 模型 / 可选 Responses URL / 可选 Anthropic URL；创建时含首把 Key）；添加/编辑 Key。无「选用 / 使用中」。
 
 ## 多 Key
 
@@ -105,6 +105,7 @@
 - **单 Key 规范名冲突**（两套同端点提供商）：第二套序号兜底（`VOIDNIX_DEEPSEEK_KEY1_API_KEY`），不静默丢
 - **`VOIDNIX_*_BASE_URL`**：按**提供商**输出（endpoint 是提供商级属性），每提供商仅一条，不随 Key 重复
 - **`VOIDNIX_*_RESPONSES_URL`**：Responses 线协议端点，提供商声明了 `responsesEndpoint`（非空）才输出，每提供商一条。语义是「Responses 端点与 chat 端点**不同**时的那个 URL」：分立端点（智谱 Responses `https://open.bigmodel.cn/api/v1` 与 chat `/api/coding/paas/v4`）才需要填；同端点用路径/参数区分协议的提供商（DeepSeek 等）留空即可，工具直接用 `*_BASE_URL` + 自身协议开关（如 Grok Build `api_backend`）。`endpoint` 始终存 chat 端点（内部消费者 agent/translate 走 chat completions，不受影响）
+- **`anthropicEndpoint` 不导出 ai.env**：Anthropic Messages 线协议端点（智谱 `https://open.bigmodel.cn/api/anthropic`、DeepSeek `https://api.deepseek.com/anthropic`）仅供 ai-gateway 扩展路由（内部消费者直接读中枢配置），外部工具无引用需求
 
 ### 外部工具
 
@@ -112,6 +113,7 @@
 
 - **OpenCode**：`opencode.json` 的 `provider.*.options.apiKey` 用 `{env:VOIDNIX_ZHIPU_API_KEY}` 等显式引用；baseURL 写在 `options.baseURL`。模型：`zhipuai-coding-plan/glm-5.2`、`deepseek/deepseek-v4-pro` 等
 - **Grok Build**：`~/.grok/config.toml` 的 `[model.*]` 用 `env_key = "VOIDNIX_ZHIPU_API_KEY"` 等 + `base_url`；GLM 走 `api_backend = "responses"`、`base_url` 取 `VOIDNIX_ZHIPU_RESPONSES_URL` 值（`https://open.bigmodel.cn/api/v1`），DeepSeek 走 `chat_completions`；切模型 `/model glm-5-2-1m` 等
+- **Claude Code**：经 [ai-gateway](ai-gateway.md) 接入（本地双协议网关按模型名路由 + Key 轮换），不走 env 引用
 
 ## 命令
 

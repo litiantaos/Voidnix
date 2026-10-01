@@ -31,6 +31,7 @@ registerMessages({
 
 - Key 导出为 \`VOIDNIX_*_API_KEY\`，端点导出为 \`VOIDNIX_*_BASE_URL\`
 - Responses 端点（可选）导出为 \`VOIDNIX_*_RESPONSES_URL\`，供 responses 线协议工具（如 Grok Build \`api_backend = "responses"\`）引用；与 API URL 相同的提供商留空即可（工具直接用 \`*_BASE_URL\` + 自身协议开关）
+- Anthropic 端点（可选）供 AI 网关扩展直通 Claude Code（智谱 \`https://open.bigmodel.cn/api/anthropic\`、DeepSeek \`https://api.deepseek.com/anthropic\`），声明后模型进入网关路由
 - 智谱、DeepSeek 用固定后缀，如 \`VOIDNIX_ZHIPU_API_KEY\`，其余按名称推导
 - 外部工具须显式引用，如 OpenCode \`{env:VOIDNIX_ZHIPU_API_KEY}\`
 - 选中 Key 按下 **Cmd+Enter** 可粘贴 Key / URL / 模型名（声明了 Responses 端点时多一条粘贴项）`,
@@ -38,6 +39,7 @@ registerMessages({
 
 - Keys are exported as \`VOIDNIX_*_API_KEY\`, endpoints as \`VOIDNIX_*_BASE_URL\`
 - The optional Responses endpoint is exported as \`VOIDNIX_*_RESPONSES_URL\` for tools speaking the responses wire API (e.g. Grok Build \`api_backend = "responses"\`); leave it empty when it equals the API URL — tools just use \`*_BASE_URL\` with their own protocol switch
+- The optional Anthropic endpoint feeds the AI Gateway extension for Claude Code passthrough (Zhipu \`https://open.bigmodel.cn/api/anthropic\`, DeepSeek \`https://api.deepseek.com/anthropic\`); declared models join gateway routing
 - Zhipu and DeepSeek use fixed suffixes, e.g. \`VOIDNIX_ZHIPU_API_KEY\`; others are derived from the name
 - External tools must reference them explicitly, e.g. OpenCode \`{env:VOIDNIX_ZHIPU_API_KEY}\`
 - Select a key and press **Cmd+Enter** to paste the key / endpoint / model name (an extra item appears when a Responses endpoint is declared)`,

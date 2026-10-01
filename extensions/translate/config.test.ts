@@ -74,6 +74,7 @@ describe('resolveAiTargets', () => {
         usageKind: '',
         envKey: '',
         responsesEndpoint: '',
+        anthropicEndpoint: '',
       },
       {
         id: 'p2',
@@ -84,6 +85,7 @@ describe('resolveAiTargets', () => {
         usageKind: '',
         envKey: '',
         responsesEndpoint: '',
+        anthropicEndpoint: '',
       },
     )
     const targets = resolveAiTargets({
@@ -113,6 +115,7 @@ describe('resolveAiTargets', () => {
       usageKind: '',
       envKey: '',
       responsesEndpoint: '',
+      anthropicEndpoint: '',
     })
     const targets = resolveAiTargets({
       id: SERVICE_AI_ID,
@@ -138,6 +141,7 @@ describe('resolveAiTargets', () => {
       usageKind: '',
       envKey: '',
       responsesEndpoint: '',
+      anthropicEndpoint: '',
     })
     const targets = resolveAiTargets({
       id: SERVICE_AI_ID,
@@ -169,6 +173,7 @@ describe('resolveAiTargets', () => {
       usageKind: '',
       envKey: '',
       responsesEndpoint: '',
+      anthropicEndpoint: '',
     })
     const targets = resolveAiTargets({
       id: SERVICE_AI_ID,

@@ -33,6 +33,7 @@ function p(
     usageKind: '',
     envKey: '',
     responsesEndpoint: '',
+    anthropicEndpoint: '',
   }
 }
 

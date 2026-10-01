@@ -157,6 +157,7 @@ describe('resolveCredentials', () => {
       usageKind: '',
       envKey: '',
       responsesEndpoint: '',
+      anthropicEndpoint: '',
       // @ts-expect-error legacy field
       apiKey: 'from-disk',
     })

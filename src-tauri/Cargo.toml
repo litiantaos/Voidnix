@@ -18,7 +18,9 @@ tauri = { version = "2", features = ["protocol-asset", "macos-private-api", "tra
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+# AI 网关本地服务器(http1 + tokio 最小特性集;reqwest 已带入 hyper 客户端侧)
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 serde_norway = "0.9"
 rusqlite = { version = "0.40", features = ["bundled"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process", "net", "io-util"] }

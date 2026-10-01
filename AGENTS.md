@@ -94,11 +94,11 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 ### 全功能回归冒烟测试
 
-`scripts/smoke-test.py` — 全链路回归门禁，覆盖全部 24 扩展 + 框架行为 + 性能指标，防止"修 A 坏 B"连锁回归。仅用户明确要求时运行。
+`scripts/smoke-test.py` — 全链路回归门禁，覆盖全部 25 扩展 + 框架行为 + 性能指标，防止"修 A 坏 B"连锁回归。仅用户明确要求时运行。
 
 **三层架构**：
 
-- **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（24 扩展/id 无重复/order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 17 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）、窗口管理运行时启用（`setWindowManagerEnabled` disable→enable toggle，8s 超时检测 Mutex 重入死锁）、扩展功能正确性（clipboard 历史 / system-status / proxy / homebrew / video / awake / clean-mode 状态查询，ip / time / uuid / currency 即时答案；网络依赖项失败 skip 不 fail）、搜索延迟基线（代表性 query 耗时断言）。报告经 plugin-store 写到 `config/test-report.json`
+- **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（25 扩展/id 无重复/order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 18 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）、窗口管理运行时启用（`setWindowManagerEnabled` disable→enable toggle，8s 超时检测 Mutex 重入死锁）、扩展功能正确性（clipboard 历史 / system-status / proxy / homebrew / video / awake / clean-mode 状态查询，ip / time / uuid / currency 即时答案；网络依赖项失败 skip 不 fail）、搜索延迟基线（代表性 query 耗时断言）。报告经 plugin-store 写到 `config/test-report.json`
 - **Layer 2（系统冒烟）**：CGEvent 驱动真实 UI，验证窗口显隐 / 全局快捷键 / snap-panel 全链路 / 搜索 UI / 扩展视图渲染。每步返回结构化 `TestResult`（pass/fail/skip），汇总为统一报告。逐阶段内存采样输出趋势（非仅终点）
 - **Layer 3（性能压测，`--perf [N]`）**：N 轮全场景工作负载循环（全局搜索 / 工具列表 / 快捷键 / 扩展视图 / hide/show），每轮逐阶段采内存快照，输出多轮趋势表 + drift 分析，定位 compositing layer 累积与回收。工作负载顺序刻意安排：快捷键在扩展视图之前（快捷键含 hide_window，若此时 FP 已超 350M 阈值会触发 navigate 重载，重载期间 WKWebView 不可交互）。合并自原 `wk-mem-test.py`。**内存结论只看 release 模式**：dev 模式下 Vite HMR / UnoCSS 开发态样式注入使每次视图变更重建整页合成树，WebContent graphics 可虚高至 GB 级（实测 5 轮 1.6G），release 同负载零累积——`--dev --perf` 只用于功能/时序验证，内存数据无效
 
@@ -155,11 +155,11 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 所有扩展同构（`extensions/<id>/index.ts` + 可选 `config.ts` + 可选 `native/`），详见 [docs/extensions.md](docs/extensions.md)。
 
-含 native/（16）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers、image、homebrew
+含 native/（17）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers、ai-gateway、image、homebrew
 
 纯 TS（8）：calculator、settings、ip、base64、time、uuid、currency、notes
 
-复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[ai-providers](docs/extensions/ai-providers.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[image](docs/extensions/image.md)、[finder-ext](docs/extensions/finder-ext.md)、[window-manager](docs/extensions/window-manager.md)、[homebrew](docs/extensions/homebrew.md)、[awake](docs/extensions/awake.md)。
+复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[ai-providers](docs/extensions/ai-providers.md)、[ai-gateway](docs/extensions/ai-gateway.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[image](docs/extensions/image.md)、[finder-ext](docs/extensions/finder-ext.md)、[window-manager](docs/extensions/window-manager.md)、[homebrew](docs/extensions/homebrew.md)、[awake](docs/extensions/awake.md)。
 
 ## 架构要点
 
@@ -337,6 +337,10 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 ### AI 凭证中枢
 
 `src/runtime/ai-providers.ts` → `config/ai-providers.json`：只存 URL/Key/模型，**无「使用中」**——选用由消费者自管（agent `providerModelKey` / translate `selections` 各自持久化），有效性校验 + 读时 effective（不写回）+ 冷 prune。写 `ai.env`（`VOIDNIX_*` 私有名，仅 release 注入 shell，debug 只写文件）；shell rc 注入统一走 `runtime/shell_rc`（[shell-rc.md](docs/shell-rc.md)）。详见 [ai-providers.md](docs/extensions/ai-providers.md)。
+
+### AI 网关
+
+`extensions/ai-gateway/`：统一本地 AI 网关——进程内 Anthropic Messages / OpenAI Responses / OpenAI Chat Completions 三协议直通反向代理（axum，release 8788 / dev 8789），按请求 `model` 路由到提供商端点 + 多 Key 轮换（429/401/403/503/529）。任何工具把 base_url 指向网关即可接入；Claude Code 为首个接线消费者（独立 `ccTakeover` 开关，默认关，与网关开关都开才接管/任一关即还原 settings.json 自有键）。详见 [ai-gateway.md](docs/extensions/ai-gateway.md)。
 
 ### 国际化（i18n）
 
@@ -541,6 +545,7 @@ src/
     ├── calculator/config.json        # 计算器历史（history key，10 条上限）
     ├── notes/config.json             # 记事本内容（content key，自动暂存）
     ├── zsh-autosuggestions/{bin/, index.zsh, signals.log, bin.version, config.json}  # zsh 补全
+    ├── ai-gateway/{gateway-state.json, cc-backup.json, config.json}  # AI 网关持久化快照（enabled+路由表，含 Key 0600）+ CC settings.json 还原快照
     ├── awake/{awake.flag, awake.beat, awake.daemon-beat, awake-daemon.plist, config.json}   # 睡眠守护 LaunchDaemon 的持有 flag + app 心跳 + daemon 存活标记 + plist 草稿（实际装于 /Library/LaunchDaemons/<bundle-id>.awake.plist）+ 配置
     ├── screenshot/config.json
     ├── system-status/config.json        # 菜单栏状态段显隐（menubarVisible）

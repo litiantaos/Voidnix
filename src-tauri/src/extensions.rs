@@ -48,6 +48,10 @@ macro_rules! configure_app {
             crate::extensions::agent::agent_abort,
             crate::extensions::agent::agent_approve,
             crate::extensions::agent::agent_run,
+            crate::extensions::ai_gateway::ai_gateway_cc_apply,
+            crate::extensions::ai_gateway::ai_gateway_cc_remove,
+            crate::extensions::ai_gateway::ai_gateway_status,
+            crate::extensions::ai_gateway::ai_gateway_sync,
             crate::extensions::ai_providers::ai_providers_env_snapshot,
             crate::extensions::ai_providers::ai_providers_export,
             crate::extensions::ai_providers::ai_providers_export_dir,
@@ -161,6 +165,7 @@ pub fn register_all(
     reg: crate::runtime::registry::ExtensionRegistry,
 ) -> crate::runtime::registry::ExtensionRegistry {
     reg.register(agent::AgentExtension)
+        .register(ai_gateway::AiGatewayExtension)
         .register(ai_providers::AiProvidersExtension)
         .register(awake::AwakeExtension)
         .register(clean_mode::CleanModeExtension)
@@ -180,6 +185,9 @@ pub fn register_all(
 
 #[path = "../../extensions/agent/native/mod.rs"]
 pub mod agent;
+
+#[path = "../../extensions/ai-gateway/native/mod.rs"]
+pub mod ai_gateway;
 
 #[path = "../../extensions/ai-providers/native/mod.rs"]
 pub mod ai_providers;

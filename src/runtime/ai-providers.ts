@@ -28,6 +28,8 @@ export interface AiProvider {
   endpoint: string
   /** Responses 线协议端点（供外部工具如 Grok Build `api_backend="responses"`）；空 = 未声明不导出 */
   responsesEndpoint: string
+  /** Anthropic Messages 线协议端点（供 ai-gateway 直通 Claude Code 等 Anthropic 客户端）；空 = 未声明不参与网关路由 */
+  anthropicEndpoint: string
   models: string[]
   /** 多 Key；至少 1 项（CRUD 保底） */
   keys: AiKeySlot[]
@@ -73,6 +75,7 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
   const name = typeof raw.name === 'string' ? raw.name : ''
   const endpoint = typeof raw.endpoint === 'string' ? raw.endpoint : ''
   const responsesEndpoint = typeof raw.responsesEndpoint === 'string' ? raw.responsesEndpoint : ''
+  const anthropicEndpoint = typeof raw.anthropicEndpoint === 'string' ? raw.anthropicEndpoint : ''
   const models = Array.isArray(raw.models) ? (raw.models as string[]).map(String) : []
   const envKey = typeof raw.envKey === 'string' ? raw.envKey : ''
   const usageKind = (raw.usageKind as AiUsageKind) || ''
@@ -83,7 +86,17 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
       label: k.label || 'Key',
       apiKey: k.apiKey || '',
     }))
-    return { id, name, endpoint, responsesEndpoint, models, keys, usageKind, envKey }
+    return {
+      id,
+      name,
+      endpoint,
+      responsesEndpoint,
+      anthropicEndpoint,
+      models,
+      keys,
+      usageKind,
+      envKey,
+    }
   }
 
   // legacy single apiKey
@@ -94,6 +107,7 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
     name,
     endpoint,
     responsesEndpoint,
+    anthropicEndpoint,
     models,
     keys: [{ id: kid, label: '默认', apiKey: legacyKey }],
     usageKind,
@@ -137,9 +151,6 @@ export function getKeySlot(p: AiProvider | undefined, keyId?: string): AiKeySlot
 export function apiKeyOf(p: AiProvider | undefined, keyId?: string): string {
   return getKeySlot(p, keyId)?.apiKey.trim() ?? ''
 }
-
-/** @deprecated 用 apiKeyOf；保留别名避免零散引用炸裂 */
-export const activeApiKey = apiKeyOf
 
 /**
  * 选用串：`providerId::keyId::model`（推荐）或旧式 `providerId::model`（key 取第一把）。
@@ -289,6 +300,7 @@ export function addAiProvider(
     name: partial?.name ?? '',
     endpoint: partial?.endpoint ?? '',
     responsesEndpoint: partial?.responsesEndpoint ?? '',
+    anthropicEndpoint: partial?.anthropicEndpoint ?? '',
     models: partial?.models ? [...partial.models] : [],
     keys,
     usageKind: partial?.usageKind ?? '',
