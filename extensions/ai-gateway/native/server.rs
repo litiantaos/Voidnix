@@ -632,17 +632,18 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
 /// 透传上游响应:状态 + 头(剥跳-by-hop)原样,SSE 字节流直 pipe。
 async fn stream_response(upstream: reqwest::Response) -> Response {
     let status = upstream.status();
-    let mut headers = HeaderMap::new();
+    // 上游响应头原样透传(content-type 区分 JSON/SSE,request-id 等客户端依赖;
+    // 此前遗漏透传致全部头丢失——SSE 客户端宽松解析无感,非流式 JSON 客户端解析失败)
+    let mut builder = Response::builder().status(status);
     for (name, value) in upstream.headers() {
         if !is_hop_by_hop(name.as_str()) {
-            headers.insert(name, value.clone());
+            builder = builder.header(name, value);
         }
     }
     let stream = upstream
         .bytes_stream()
         .map(|chunk| chunk.map_err(|e| std::io::Error::other(e.to_string())));
-    Response::builder()
-        .status(status)
+    builder
         // hyper 对无 content-length 的流式体自动 chunked,与上游传输语义一致
         .body(Body::from_stream(stream))
         .unwrap_or_else(|_| empty_error())
