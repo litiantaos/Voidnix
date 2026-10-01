@@ -558,6 +558,8 @@ src/
     └── proxy/{mihomo, mihomo.log, mihomo-daemon.plist, geoip.metadb, geosite.dat, config.yaml, subs/, config.json}  # TUN 模式 launchd 托管（plist 装于 /Library/LaunchDaemons）
 ```
 
+网关排障日志：`extensions/ai-gateway/gateway.log`（异常路径行式追加——路由失败/上游错误/网络错误/Key 耗尽，epoch 毫秒时间戳，超 512KB 自旋转；成功请求零记录，不含 Key 与请求体）。
+
 icon 缓存纯内存（首次提取后按 bundle mtime 增量复用，零磁盘文件）。dev 镜像 `com.litiantao.voidnix.dev` 同构。
 
 所有 config.json 均走 `defineConfig`（`src/runtime/storage.ts`，行为特性与使用规约见 [docs/extensions.md](docs/extensions.md)「扩展配置」）：reactive + watch 自动持久化（防抖 + 强制落盘上限）；不订阅 plugin-store `onChange`（回放无来源标识，会回灌旧快照覆盖新值）；所有 config 仅在 main 窗口持有，无跨窗口同步需求。schema 变更优先删磁盘 config.json；AI 中枢对旧 agent/translate 凭证字段做一次性 best-effort 导入（见 ai-providers）。

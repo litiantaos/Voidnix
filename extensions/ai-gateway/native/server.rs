@@ -100,6 +100,10 @@ pub struct Gateway {
     bind_error: RwLock<Option<String>>,
     /// 启停串行锁:bind 是 async,与并发的 sync 调用竞态会双 bind 撞自己端口
     lifecycle: tokio::sync::Mutex<()>,
+    /// 排障日志目录(扩展数据目录,update/restore 时注入);None = 冷启动窗口,日志丢弃
+    log_dir: RwLock<Option<PathBuf>>,
+    /// 日志追加串行锁:proxy 多并发,防交错
+    log_lock: Mutex<()>,
 }
 
 pub static GATEWAY: LazyLock<Arc<Gateway>> = LazyLock::new(|| {
@@ -109,13 +113,44 @@ pub static GATEWAY: LazyLock<Arc<Gateway>> = LazyLock::new(|| {
         task: Mutex::new(None),
         bind_error: RwLock::new(None),
         lifecycle: tokio::sync::Mutex::new(()),
+        log_dir: RwLock::new(None),
+        log_lock: Mutex::new(()),
     })
 });
+
+/// 排障日志:数据目录 gateway.log,行式追加(epoch 毫秒 + 类别 + 详情,`date -r 秒` 可转)。
+/// 只记异常路径(路由失败/上游错误/网络错误/Key 耗尽),成功请求零记录;
+/// 不含 Key 明文与请求体;超 512KB 整文件重置(自旋转)。
+fn log_gateway(kind: &str, detail: &str) {
+    let Some(dir) = GATEWAY.log_dir.read().unwrap().clone() else {
+        return;
+    };
+    let _guard = GATEWAY.log_lock.lock().unwrap();
+    let path = dir.join("gateway.log");
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let line = format!("[{ms}] {kind} {detail}\n");
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        if f.metadata().map(|m| m.len()).unwrap_or(0) > 512 * 1024 {
+            let _ = std::fs::write(&path, &line);
+        } else {
+            let _ = f.write_all(line.as_bytes());
+        }
+    }
+}
 
 impl Gateway {
     /// 前端单一同步入口:换路由表 + 持久化 + 按需启停服务器。
     pub async fn update(&self, enabled: bool, routes: Vec<GatewayRoute>, dir: &Path) {
         let dir = dir.to_path_buf();
+        *self.log_dir.write().unwrap() = Some(dir.clone());
         let persisted = PersistedState {
             enabled,
             routes: routes.clone(),
@@ -139,6 +174,7 @@ impl Gateway {
         let Ok(state) = read_state(dir) else {
             return;
         };
+        *self.log_dir.write().unwrap() = Some(dir.to_path_buf());
         *self.routes.write().unwrap() = Arc::new(state.routes);
         if state.enabled {
             self.ensure_server().await;
@@ -283,7 +319,7 @@ async fn proxy_chat(State(g): State<Arc<Gateway>>, req: Request) -> Response {
     proxy(g, Protocol::Chat, req).await
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Protocol {
     Anthropic,
     Responses,
@@ -358,6 +394,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
     };
 
     let Some(model) = extract_model(&body) else {
+        log_gateway("route", "请求缺少 model 字段");
         return error_response(
             StatusCode::BAD_REQUEST,
             "invalid_request_error",
@@ -375,6 +412,13 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
 
     let routes = g.routes_snapshot();
     let Some(route) = find_route(&routes, &model) else {
+        log_gateway(
+            "route",
+            &format!(
+                "未知模型 {model} · 可用: {}",
+                available_models(&routes, protocol)
+            ),
+        );
         return error_response(
             StatusCode::NOT_FOUND,
             "invalid_request_error",
@@ -388,6 +432,10 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
 
     let base = protocol.upstream_base(route);
     if base.trim().is_empty() {
+        log_gateway(
+            "route",
+            &format!("{} 未声明 {:?} 协议端点", route.name, protocol),
+        );
         return error_response(
             StatusCode::NOT_FOUND,
             "invalid_request_error",
@@ -422,15 +470,36 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
         match resp {
             Err(e) => {
                 log::warn!("[ai-gateway] {} · {}: 网络错误 {e}", route.name, key.label);
+                log_gateway(
+                    "net",
+                    &format!("{model} · {} · {}: {e}", route.name, key.label),
+                );
                 continue;
             }
             Ok(r) => {
                 let status = r.status().as_u16();
                 if ROTATABLE.contains(&status) {
                     // 缓存错误响应兜底(全部 Key 失败时回放给客户端)
-                    if let Ok(buf) = read_capped(r, MAX_ERROR_BODY).await {
-                        last_error = Some((status, buf));
+                    let cached = read_capped(r, MAX_ERROR_BODY).await.ok();
+                    if let Some(buf) = &cached {
+                        last_error = Some((status, buf.clone()));
                     }
+                    let snippet = cached
+                        .as_ref()
+                        .map(|b| {
+                            String::from_utf8_lossy(b)
+                                .chars()
+                                .take(160)
+                                .collect::<String>()
+                        })
+                        .unwrap_or_default();
+                    log_gateway(
+                        "upstream",
+                        &format!(
+                            "{model} · {} · {}: {status} {snippet}",
+                            route.name, key.label
+                        ),
+                    );
                     log::warn!(
                         "[ai-gateway] {} · {}: {status},换下一把 Key",
                         route.name,
@@ -447,12 +516,17 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
 
     if let Some((status, buf)) = last_error {
         // 回放最后一个上游错误(429 等),客户端能看到真实原因
+        log_gateway("replay", &format!("{model} · {} 回放 {status}", route.name));
         return Response::builder()
             .status(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY))
             .header(axum::http::header::CONTENT_TYPE, "application/json")
             .body(Body::from(buf))
             .unwrap_or_else(|_| empty_error());
     }
+    log_gateway(
+        "exhaust",
+        &format!("{model} · {} 的全部 Key 均不可用(网络错误)", route.name),
+    );
     error_response(
         StatusCode::BAD_GATEWAY,
         "api_error",
@@ -845,6 +919,8 @@ mod tests {
             task: Mutex::new(None),
             bind_error: RwLock::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
+            log_dir: RwLock::new(None),
+            log_lock: Mutex::new(()),
         };
         let r = route("zhipu", "", &[]);
         let order = g.key_order(&r);

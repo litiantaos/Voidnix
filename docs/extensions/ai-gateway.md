@@ -21,6 +21,7 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 - 服务器跑在 app tokio runtime 内（`axum` 最小特性集 http1 + tokio）；app 常驻 Accessory + monitor LaunchAgent 守护
 - 启动链：扩展 Rust `setup` 读持久化快照直接拉起（前端就绪前的冷启动窗口 CC 无感）；前端配置就绪后经 `ai_gateway_sync` 全量刷新
 - 快照 `extensions/ai-gateway/gateway-state.json`（enabled + 路由表，0600 原子写，含 Key 明文）
+- 排障日志 `extensions/ai-gateway/gateway.log`：只记异常路径（route 未知模型 / upstream 上游状态码与错误摘要 / net 网络错误 / replay 回放 / exhaust Key 耗尽），epoch 毫秒时间戳（`date -r 秒` 转可读），超 512KB 整文件重置；成功请求零记录、不含 Key 与请求体
 
 ## 路由表来源
 
