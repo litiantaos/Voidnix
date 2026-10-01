@@ -403,7 +403,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
         );
     };
 
-    // 请求体归一:剥 model 的 [1m] 客户端后缀(全协议面)+ Anthropic 面输出预算下限
+    // 请求体归一:剥 [1m] 后缀 + Anthropic 面注入 thinking disabled + 输出预算下限
     let body = normalize_body(protocol, &model, body);
 
     let routes = g.routes_snapshot();
@@ -644,15 +644,17 @@ fn find_route<'a>(routes: &'a [GatewayRoute], model: &str) -> Option<&'a Gateway
         .find(|r| r.models.iter().any(|m| norm_model(m) == target))
 }
 
-/// 请求体归一(唯一的请求体改写,两件事):
+/// 请求体归一(唯一的请求体改写,三件事):
 /// 1. 剥 model 的 `[1m]` 客户端后缀(全协议面)——CC 主对话发送前自剥 + 发 beta 头,
 ///    但其分类器等旁路请求原样带后缀,上游不认识该语法必报「模型不存在」;网关路由
 ///    匹配时已归一,转发时同样归一,客户端怪癖在网关侧吸收
-/// 2. Anthropic 面输出预算下限:兼容端点(智谱/DeepSeek)默认开 thinking 且计入 max_tokens,
-///    与原生 Anthropic「无 thinking 字段 = 关闭 thinking」语义相悖——小预算请求(CC 安全分类器
-///    max_tokens 为个位数十位数级)的预算被 thinking 耗尽,响应无 text block,客户端判模型不可用。
-///    对未显式声明 thinking 且预算低于下限的请求提升 max_tokens(模型答完即停,不产生额外消耗;
-///    flash 档分类任务实测 thinking 约 150 token,256 留有余量)
+/// 2. Anthropic 面注入 `thinking: {"type": "disabled"}`(请求未提 thinking 且非 claude 原生模型):
+///    原生 Anthropic 语义即「无该字段 = 不思考」,但兼容端点默认思考(智谱/DeepSeek)——CC 分类器/
+///    标题等旁路请求不带 thinking,输出预算被思考耗尽产出空 text。DeepSeek 认此参数彻底关思考
+///    (实测 blocks 仅 text);智谱忽略它,由下述预算下限兜底(参考 magpie 的 thinkingOffUnlessAsked)
+/// 3. Anthropic 面输出预算下限:对未显式声明 thinking 且 max_tokens 低于 256 的请求提升预算——
+///    智谱忽略 disabled 依然思考且计入 max_tokens,小预算请求仍会被耗尽,下限保证 text 有出口
+///    (模型答完即停,不产生额外消耗;flash 档分类任务实测思考约 150 token,256 留有余量)
 const ANTHROPIC_MIN_OUTPUT_TOKENS: u64 = 256;
 
 /// 输出预算探测(部分反序列化,未知字段流式跳过零建树;大请求体的线性扫描成本远低于网络传输)
@@ -660,20 +662,25 @@ const ANTHROPIC_MIN_OUTPUT_TOKENS: u64 = 256;
 struct OutputPrefs {
     #[serde(default)]
     max_tokens: Option<u64>,
-    /// 仅探测存在性:显式管理 thinking 预算的请求不碰
+    /// 仅探测存在性:显式管理 thinking 预算的请求不注入不提升
     #[serde(default)]
     thinking: Option<serde::de::IgnoredAny>,
 }
 
 fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> Bytes {
     let strip_suffix = model != norm_model(model);
+    // claude 原生模型按原样发送(原生端点本就「不问不思考」,无需注入)
+    let native_claude = model.to_lowercase().contains("claude-");
+    let prefs = serde_json::from_slice::<OutputPrefs>(&body).ok();
+    let no_thinking = prefs.as_ref().is_some_and(|p| p.thinking.is_none());
+    let needs_disable = protocol == Protocol::Anthropic && !native_claude && no_thinking;
     let needs_boost = protocol == Protocol::Anthropic
-        && serde_json::from_slice::<OutputPrefs>(&body).is_ok_and(|p| {
+        && no_thinking
+        && prefs.is_some_and(|p| {
             p.max_tokens
                 .is_some_and(|m| m < ANTHROPIC_MIN_OUTPUT_TOKENS)
-                && p.thinking.is_none()
         });
-    if !strip_suffix && !needs_boost {
+    if !strip_suffix && !needs_disable && !needs_boost {
         return body;
     }
     let Ok(mut root) = serde_json::from_slice::<Value>(&body) else {
@@ -681,6 +688,9 @@ fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> Bytes {
     };
     if strip_suffix {
         root["model"] = Value::String(norm_model(model).to_string());
+    }
+    if needs_disable {
+        root["thinking"] = serde_json::json!({ "type": "disabled" });
     }
     if needs_boost {
         if let Some(m) = root.get("max_tokens").and_then(|v| v.as_u64()) {
@@ -780,21 +790,39 @@ mod tests {
 
     #[test]
     fn normalize_body_strips_1m_suffix_on_all_protocols() {
-        // 带 [1m] 后缀(含空格形态)剥成裸名;chat 面同样剥(上游不认识客户端语法)
+        // 带 [1m] 后缀(含空格形态)剥成裸名;chat 面同样剥(上游不认识客户端语法),
+        // 且 chat 面不注入 thinking(协议不同,OpenAI 系工具自管 reasoning)
         let body = br#"{"model":"glm-5.3 [1m]","max_tokens":32000,"messages":[]}"#;
         let out = normalize_body(Protocol::Chat, "glm-5.3 [1m]", Bytes::from_static(body));
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["model"], "glm-5.3");
-        // 裸名 + 预算充足:零改写原样返回
+        assert_eq!(v.get("thinking"), None);
+    }
+
+    #[test]
+    fn normalize_body_injects_thinking_disabled_when_unasked() {
+        // Anthropic 面未提 thinking:注入 disabled(恢复原生「无字段 = 不思考」语义,
+        // DeepSeek 认此参数彻底关思考),预算充足时不提升
         let body = br#"{"model":"glm-5.3","max_tokens":32000,"messages":[]}"#;
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["thinking"]["type"], "disabled");
+        assert_eq!(v["max_tokens"], 32000);
+        // claude 原生模型不注入(原生端点本就「不问不思考」)
+        let body = br#"{"model":"claude-opus-5-5","max_tokens":32000,"messages":[]}"#;
         assert_eq!(
-            normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body)),
+            normalize_body(
+                Protocol::Anthropic,
+                "claude-opus-5-5",
+                Bytes::from_static(body)
+            ),
             Bytes::from_static(body)
         );
     }
 
     #[test]
     fn normalize_body_lifts_small_max_tokens_without_thinking() {
+        // 未提 thinking 的小预算:注入 disabled + 提升预算可叠加
         let body = br#"{"model":"glm-5.3-flash","max_tokens":8,"messages":[]}"#;
         let out = normalize_body(
             Protocol::Anthropic,
@@ -803,35 +831,30 @@ mod tests {
         );
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["max_tokens"], 256);
-        assert_eq!(v["model"], "glm-5.3-flash");
-        // 后缀剥除与预算提升可叠加
+        assert_eq!(v["thinking"]["type"], "disabled");
+        // 三件事叠加:后缀剥除 + disabled + 预算提升
         let body = br#"{"model":"glm-5.3[1m]","max_tokens":8,"messages":[]}"#;
         let out = normalize_body(Protocol::Anthropic, "glm-5.3[1m]", Bytes::from_static(body));
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["model"], "glm-5.3");
         assert_eq!(v["max_tokens"], 256);
+        assert_eq!(v["thinking"]["type"], "disabled");
     }
 
     #[test]
     fn normalize_body_respects_explicit_thinking_and_floor() {
-        // 显式 thinking(预算自管)不动预算
+        // 显式 thinking(预算自管):不注入不提升,原样放行
         let body =
-            br#"{"model":"glm-5.3","max_tokens":8,"thinking":{"type":"disabled"},"messages":[]}"#;
+            br#"{"model":"glm-5.3","max_tokens":8,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[]}"#;
+        assert_eq!(
+            normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body)),
+            Bytes::from_static(body)
+        );
+        // 无 max_tokens(无预算可提升,但 disabled 仍注入)/ 非 JSON(整体放行)
+        let body = br#"{"model":"glm-5.3","messages":[]}"#;
         let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
         let v: Value = serde_json::from_slice(&out).unwrap();
-        assert_eq!(v["max_tokens"], 8);
-        // 已达下限不动
-        let body = br#"{"model":"glm-5.3","max_tokens":256,"messages":[]}"#;
-        assert_eq!(
-            normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body)),
-            Bytes::from_static(body)
-        );
-        // 无 max_tokens / 非 JSON 原样放行
-        let body = br#"{"model":"glm-5.3","messages":[]}"#;
-        assert_eq!(
-            normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body)),
-            Bytes::from_static(body)
-        );
+        assert_eq!(v["thinking"]["type"], "disabled");
         let body = br#"not json"#;
         assert_eq!(
             normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body)),
