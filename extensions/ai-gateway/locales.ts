@@ -10,6 +10,10 @@ registerMessages({
     'zh-CN': '改写 ~/.claude/settings.json 的接入键(需网关运行中),关闭自动还原原配置',
     en: 'Rewires ~/.claude/settings.json entry keys (gateway must be running); off restores the original',
   },
+  'ai-gateway.ccError': {
+    'zh-CN': '接管失败:{msg}',
+    en: 'Takeover failed: {msg}',
+  },
   'ai-gateway.statusLoading': { 'zh-CN': '获取状态中…', en: 'Loading status…' },
   'ai-gateway.statusRunning': {
     'zh-CN': '运行中 · 127.0.0.1:{port} · {n} 提供商',

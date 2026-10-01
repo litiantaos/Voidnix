@@ -27,6 +27,9 @@ export interface GatewayStatus {
 /** 视图共享状态:push 后即时刷新,避免等下一次 invoke */
 export const gatewayStatus = ref<GatewayStatus | null>(null)
 
+/** CC 接管/还原失败原因(null = 无错误);apply 抛错(settings.json 非法 JSON 等)须在 UI 可见,不得静默 */
+export const ccApplyError = ref<string | null>(null)
+
 let syncTimer: ReturnType<typeof setTimeout> | null = null
 
 /** 路由表派生(中枢 → 网关;View 状态页共用) */
@@ -64,15 +67,19 @@ async function push() {
   if (payload) {
     try {
       await invoke(CMD.aiGatewayCcApply, { payload })
+      ccApplyError.value = null
       if (gatewayStatus.value) gatewayStatus.value.ccManaged = true
     } catch (e) {
+      ccApplyError.value = String(e)
       console.error('[ai-gateway] cc apply failed:', e)
     }
   } else if (gatewayStatus.value?.ccManaged) {
     try {
       await invoke(CMD.aiGatewayCcRemove)
+      ccApplyError.value = null
       if (gatewayStatus.value) gatewayStatus.value.ccManaged = false
     } catch (e) {
+      ccApplyError.value = String(e)
       console.error('[ai-gateway] cc remove failed:', e)
     }
   }

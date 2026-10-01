@@ -22,7 +22,7 @@ import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import type { SettingItem, SettingSelectOptions } from '@/types/settings'
 import { config, type AliasSelection } from './config'
-import { gatewayStatus, currentRoutes, type GatewayStatus } from './sync'
+import { gatewayStatus, ccApplyError, currentRoutes, type GatewayStatus } from './sync'
 import { routableModels, anthropicModels } from './logic'
 
 const appStore = useAppStore()
@@ -86,7 +86,10 @@ const items = computed<SettingItem[]>(() => {
     group: defaultsGroup,
     type: 'toggle',
     title: t('ai-gateway.ccTakeover'),
-    subtitle: t('ai-gateway.ccTakeoverHint'),
+    subtitle: ccApplyError.value
+      ? t('ai-gateway.ccError', { msg: ccApplyError.value })
+      : t('ai-gateway.ccTakeoverHint'),
+    tone: ccApplyError.value ? 'danger' : undefined,
     icon: 'i-ri-terminal-box-line',
     value: config.ccTakeover,
     update: (v) => {
