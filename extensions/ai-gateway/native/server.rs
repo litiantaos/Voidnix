@@ -27,7 +27,11 @@ const MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
 
 /// 轮换触发的上游状态码:容量满(429/503/529)、鉴权失效(401/403)——换 Key 常可恢复。
 /// 529 为 Anthropic 生态过载语义,智谱同款。
-const ROTATABLE: [u16; 5] = [429, 401, 403, 503, 529];
+/// 轮换判定(参考 magpie fallback 集):401-408(鉴权/欠费/模型权限/超时)与 429 可换 Key 重发,
+/// 5xx 同理;全部 Key 失败后回放最后错误,请求级错误(如 400 参数)不会被误伤——不在此集
+fn rotatable(status: u16) -> bool {
+    matches!(status, 401..=408 | 429) || status >= 500
+}
 
 /// 上游错误体缓冲上限:轮换失败后回放最后一个错误响应给客户端(错误体很小,64KB 足够)
 const MAX_ERROR_BODY: usize = 64 * 1024;
@@ -96,6 +100,12 @@ pub struct Gateway {
     routes: RwLock<Arc<Vec<GatewayRoute>>>,
     /// 提供商 → 上次成功 Key 下标;粘性优先复用,避免每次都撞已满的 Key
     last_good: Mutex<HashMap<String, usize>>,
+    /// 轮换失败的 Key 冷却表 (provider, idx) → 解禁时刻;冷却中的 Key 排队尾,
+    /// 避免每个请求都为已知失败的 Key 白付一次往返(429 对齐上游 Retry-After)
+    cooldowns: Mutex<HashMap<(String, usize), std::time::Instant>>,
+    /// 会话亲和:会话指纹 → (提供商, Key 下标, 最近应答);上游 prompt cache 按 Key 隔离,
+    /// 同一对话换 Key = 整个前缀 cache 作废全价重算,长会话代价远超粘性收益
+    affinity: Mutex<HashMap<u64, (String, usize, std::time::Instant)>>,
     task: Mutex<Option<JoinHandle<()>>>,
     bind_error: RwLock<Option<String>>,
     /// 启停串行锁:bind 是 async,与并发的 sync 调用竞态会双 bind 撞自己端口
@@ -110,6 +120,8 @@ pub static GATEWAY: LazyLock<Arc<Gateway>> = LazyLock::new(|| {
     Arc::new(Gateway {
         routes: RwLock::new(Arc::new(Vec::new())),
         last_good: Mutex::new(HashMap::new()),
+        cooldowns: Mutex::new(HashMap::new()),
+        affinity: Mutex::new(HashMap::new()),
         task: Mutex::new(None),
         bind_error: RwLock::new(None),
         lifecycle: tokio::sync::Mutex::new(()),
@@ -117,6 +129,13 @@ pub static GATEWAY: LazyLock<Arc<Gateway>> = LazyLock::new(|| {
         log_lock: Mutex::new(()),
     })
 });
+
+/// 会话亲和保持时长:上游 prompt cache 冷却约 5 分钟(Anthropic/OpenAI 最短),
+/// 24h 覆盖一个长工作会话的生命周期,过期条目在写入时惰性清理
+const AFFINITY_KEEP: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// 轮换失败 Key 的默认冷却
+const KEY_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// 排障日志:数据目录 gateway.log,行式追加(epoch 毫秒 + 类别 + 详情,`date -r 秒` 可转)。
 /// 只记异常路径(路由失败/上游错误/网络错误/Key 耗尽),成功请求零记录;
@@ -224,14 +243,47 @@ impl Gateway {
         }
     }
 
-    /// Key 尝试顺序:lastGood 粘性置首,其余按配置序
-    fn key_order(&self, route: &GatewayRoute) -> Vec<usize> {
+    /// Key 尝试顺序:会话亲和(粘住该会话上次应答的 Key,保上游 prompt cache) >
+    /// lastGood 粘性 > 配置序;冷却中的 Key 整体排到队尾(段内保持相对顺序)
+    fn key_order(&self, route: &GatewayRoute, session: Option<u64>) -> Vec<usize> {
         let mut order: Vec<usize> = (0..route.keys.len()).collect();
-        if let Some(&lg) = self.last_good.lock().unwrap().get(&route.provider_id) {
-            if lg < order.len() {
-                order.retain(|&i| i != lg);
-                order.insert(0, lg);
-            }
+        let sticky = session
+            .and_then(|s| {
+                let aff = self.affinity.lock().unwrap();
+                aff.get(&s)
+                    .filter(|(pid, idx, at)| {
+                        pid == &route.provider_id
+                            && *idx < route.keys.len()
+                            && at.elapsed() < AFFINITY_KEEP
+                    })
+                    .map(|(_, idx, _)| *idx)
+            })
+            .or_else(|| {
+                self.last_good
+                    .lock()
+                    .unwrap()
+                    .get(&route.provider_id)
+                    .copied()
+                    .filter(|&lg| lg < route.keys.len())
+            });
+        if let Some(s) = sticky {
+            order.retain(|&i| i != s);
+            order.insert(0, s);
+        }
+        // 冷却段排尾:非冷却段(粘性序) + 冷却段(同相对序),全部冷却时退化为原序
+        let now = std::time::Instant::now();
+        let cooling: std::collections::HashSet<usize> = self
+            .cooldowns
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|((pid, _), until)| pid == &route.provider_id && **until > now)
+            .map(|((_, idx), _)| *idx)
+            .collect();
+        if !cooling.is_empty() && cooling.len() < order.len() {
+            let (hot, cold): (Vec<_>, Vec<_>) =
+                order.into_iter().partition(|i| !cooling.contains(i));
+            order = [hot, cold].concat();
         }
         order
     }
@@ -246,6 +298,24 @@ impl Gateway {
                 map.remove(provider_id);
             }
         }
+    }
+
+    /// 轮换失败的 Key 进冷却(429 对齐上游 Retry-After,上限默认值)
+    fn mark_cool(&self, provider_id: &str, idx: usize, until: std::time::Instant) {
+        self.cooldowns
+            .lock()
+            .unwrap()
+            .insert((provider_id.to_string(), idx), until);
+    }
+
+    /// 会话应答成功:绑定亲和并顺带清理过期条目(低频写入,全扫成本可忽略)
+    fn bind_session(&self, session: u64, provider_id: &str, idx: usize) {
+        let mut aff = self.affinity.lock().unwrap();
+        aff.retain(|_, (_, _, at)| at.elapsed() < AFFINITY_KEEP);
+        aff.insert(
+            session,
+            (provider_id.to_string(), idx, std::time::Instant::now()),
+        );
     }
 }
 
@@ -403,7 +473,8 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
         );
     };
 
-    // 请求体归一:剥 [1m] 后缀 + Anthropic 面注入 thinking disabled + 输出预算下限
+    // 请求体归一:剥 [1m] 后缀 + Anthropic 面注入 thinking disabled + GLM effort 翻译 + 输出预算下限
+    let session = session_hash(&body);
     let body = normalize_body(protocol, &model, body);
 
     let routes = g.routes_snapshot();
@@ -451,7 +522,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
     let url = join_upstream_url(protocol, base, &path_and_query);
     let headers = forward_headers(&parts.headers, body.len());
 
-    let order = g.key_order(route);
+    let order = g.key_order(route, session);
     let mut last_error: Option<(u16, Bytes)> = None;
     for idx in order {
         let key = &route.keys[idx];
@@ -474,8 +545,16 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
             }
             Ok(r) => {
                 let status = r.status().as_u16();
-                if ROTATABLE.contains(&status) {
+                if rotatable(status) {
                     // 缓存错误响应兜底(全部 Key 失败时回放给客户端)
+                    let retry_after = r
+                        .headers()
+                        .get(axum::http::header::RETRY_AFTER)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.trim().parse::<u64>().ok())
+                        .map_or(KEY_COOLDOWN, |s| {
+                            std::time::Duration::from_secs(s).max(KEY_COOLDOWN)
+                        });
                     let cached = read_capped(r, MAX_ERROR_BODY).await.ok();
                     if let Some(buf) = &cached {
                         last_error = Some((status, buf.clone()));
@@ -502,9 +581,17 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                         key.label
                     );
                     g.mark_good(&route.provider_id, None);
+                    g.mark_cool(
+                        &route.provider_id,
+                        idx,
+                        std::time::Instant::now() + retry_after,
+                    );
                     continue;
                 }
                 g.mark_good(&route.provider_id, Some(idx));
+                if let Some(s) = session {
+                    g.bind_session(s, &route.provider_id, idx);
+                }
                 if status >= 400 {
                     // 非轮换错误(如模型名 400)直接透传客户端:Key 本身没坏不轮换,
                     // 但必须落日志——CC 报 unavailable 而网关日志为空的盲区即此处
@@ -620,6 +707,21 @@ struct ModelOnly {
     model: String,
 }
 
+/// 会话指纹:messages[0] 的 hash(RawValue 零拷贝)。会话是 append-only,首条消息全程不变,
+/// 同一会话的各轮请求得到同一指纹;分类器等独立请求指纹唯一,绑定后无后续命中,无害
+fn session_hash(body: &[u8]) -> Option<u64> {
+    #[derive(Deserialize)]
+    struct Probe<'a> {
+        #[serde(default, borrow)]
+        messages: Vec<&'a serde_json::value::RawValue>,
+    }
+    let probe: Probe = serde_json::from_slice(body).ok()?;
+    let first = probe.messages.first()?;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hasher::write(&mut h, first.get().as_bytes());
+    Some(std::hash::Hasher::finish(&h))
+}
+
 /// 从请求体 JSON 提取 model 字段(三种协议请求同名字段)
 fn extract_model(body: &[u8]) -> Option<String> {
     let parsed: ModelOnly = serde_json::from_slice(body).ok()?;
@@ -662,9 +764,37 @@ const ANTHROPIC_MIN_OUTPUT_TOKENS: u64 = 256;
 struct OutputPrefs {
     #[serde(default)]
     max_tokens: Option<u64>,
-    /// 仅探测存在性:显式管理 thinking 预算的请求不注入不提升
+    /// 解析 thinking:存在性判定「是否注入 disabled」,budget 供 GLM effort 翻译
     #[serde(default)]
-    thinking: Option<serde::de::IgnoredAny>,
+    thinking: Option<ThinkingSpec>,
+}
+
+#[derive(Deserialize)]
+struct ThinkingSpec {
+    /// 显式声明的 thinking 类型(存在性即「客户端自管」,类型值本身不消费)
+    #[serde(rename = "type")]
+    #[expect(dead_code)]
+    kind: String,
+    #[serde(default)]
+    budget_tokens: Option<u64>,
+}
+
+/// GLM 5.2/5.3:思考强度不认 thinking.budget_tokens(实测 50 与 8000 无控制力),
+/// 走 output_config.effort(实测 low/high 思考量差 3.5 倍),参考 magpie effortInOutputConfig
+fn glm_effort_model(model: &str) -> bool {
+    let m = model.to_lowercase();
+    m.contains("glm-5.2") || m.contains("glm-5.3")
+}
+
+/// thinking budget(CC 的 EFFORT_LEVEL 翻译产物)→ GLM effort 档
+fn budget_to_effort(budget: u64) -> &'static str {
+    if budget >= 10_000 {
+        "high"
+    } else if budget >= 4_000 {
+        "medium"
+    } else {
+        "low"
+    }
 }
 
 fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> Bytes {
@@ -676,11 +806,20 @@ fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> Bytes {
     let needs_disable = protocol == Protocol::Anthropic && !native_claude && no_thinking;
     let needs_boost = protocol == Protocol::Anthropic
         && no_thinking
-        && prefs.is_some_and(|p| {
+        && prefs.as_ref().is_some_and(|p| {
             p.max_tokens
                 .is_some_and(|m| m < ANTHROPIC_MIN_OUTPUT_TOKENS)
         });
-    if !strip_suffix && !needs_disable && !needs_boost {
+    // GLM:thinking 带预算时翻译 output_config.effort(智谱忽略 budget,不翻则强度形同虚设)
+    let effort = match (&prefs, protocol) {
+        (Some(p), Protocol::Anthropic) if glm_effort_model(norm_model(model)) => p
+            .thinking
+            .as_ref()
+            .and_then(|t| t.budget_tokens)
+            .map(budget_to_effort),
+        _ => None,
+    };
+    if !strip_suffix && !needs_disable && !needs_boost && effort.is_none() {
         return body;
     }
     let Ok(mut root) = serde_json::from_slice::<Value>(&body) else {
@@ -691,6 +830,15 @@ fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> Bytes {
     }
     if needs_disable {
         root["thinking"] = serde_json::json!({ "type": "disabled" });
+    }
+    if let Some(e) = effort {
+        let oc = root
+            .get("output_config")
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+        let mut oc = oc;
+        oc.insert("effort".to_string(), Value::String(e.to_string()));
+        root["output_config"] = Value::Object(oc);
     }
     if needs_boost {
         if let Some(m) = root.get("max_tokens").and_then(|v| v.as_u64()) {
@@ -843,13 +991,14 @@ mod tests {
 
     #[test]
     fn normalize_body_respects_explicit_thinking_and_floor() {
-        // 显式 thinking(预算自管):不注入不提升,原样放行
+        // 显式 thinking(预算自管):不注入 disabled 不提升预算;GLM 模型翻译 output_config.effort
         let body =
             br#"{"model":"glm-5.3","max_tokens":8,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[]}"#;
-        assert_eq!(
-            normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body)),
-            Bytes::from_static(body)
-        );
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["max_tokens"], 8);
+        assert_eq!(v["thinking"]["budget_tokens"], 1024);
+        assert_eq!(v["output_config"]["effort"], "low");
         // 无 max_tokens(无预算可提升,但 disabled 仍注入)/ 非 JSON(整体放行)
         let body = br#"{"model":"glm-5.3","messages":[]}"#;
         let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
@@ -979,6 +1128,8 @@ mod tests {
         let g = Gateway {
             routes: RwLock::new(Arc::new(Vec::new())),
             last_good: Mutex::new(HashMap::new()),
+            cooldowns: Mutex::new(HashMap::new()),
+            affinity: Mutex::new(HashMap::new()),
             task: Mutex::new(None),
             bind_error: RwLock::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
@@ -986,7 +1137,7 @@ mod tests {
             log_lock: Mutex::new(()),
         };
         let r = route("zhipu", "", &[]);
-        let order = g.key_order(&r);
+        let order = g.key_order(&r, None);
         assert_eq!(order, vec![0]);
 
         // 多 Key:粘性置首
@@ -1008,13 +1159,102 @@ mod tests {
             ..route("zhipu2", "", &[])
         };
         g.mark_good("zhipu2", Some(2));
-        assert_eq!(g.key_order(&multi), vec![2, 0, 1]);
+        assert_eq!(g.key_order(&multi, None), vec![2, 0, 1]);
         g.mark_good("zhipu2", None);
-        assert_eq!(g.key_order(&multi), vec![0, 1, 2]);
+        assert_eq!(g.key_order(&multi, None), vec![0, 1, 2]);
 
         // lastGood 越界(删 Key 后)回退配置序
         g.mark_good("zhipu2", Some(9));
-        assert_eq!(g.key_order(&multi), vec![0, 1, 2]);
+        assert_eq!(g.key_order(&multi, None), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn key_order_affinity_and_cooldown() {
+        let g = Gateway {
+            routes: RwLock::new(Arc::new(Vec::new())),
+            last_good: Mutex::new(HashMap::new()),
+            cooldowns: Mutex::new(HashMap::new()),
+            affinity: Mutex::new(HashMap::new()),
+            task: Mutex::new(None),
+            bind_error: RwLock::new(None),
+            lifecycle: tokio::sync::Mutex::new(()),
+            log_dir: RwLock::new(None),
+            log_lock: Mutex::new(()),
+        };
+        let multi = GatewayRoute {
+            keys: vec![
+                GatewayKey {
+                    label: "a".into(),
+                    api_key: "1".into(),
+                },
+                GatewayKey {
+                    label: "b".into(),
+                    api_key: "2".into(),
+                },
+                GatewayKey {
+                    label: "c".into(),
+                    api_key: "3".into(),
+                },
+            ],
+            ..route("zhipu", "", &[])
+        };
+        // 会话亲和优先于 lastGood:会话绑 Key 1(置首),其余按配置序
+        g.bind_session(42, "zhipu", 1);
+        g.mark_good("zhipu", Some(2));
+        assert_eq!(g.key_order(&multi, Some(42)), vec![1, 0, 2]);
+        // 非本提供商的亲和不影响
+        assert_eq!(g.key_order(&multi, Some(7)), vec![2, 0, 1]);
+        // 冷却的 Key 排队尾(粘性 Key 1 冷却 → 让位给下一位)
+        g.mark_cool("zhipu", 1, std::time::Instant::now() + KEY_COOLDOWN);
+        let order = g.key_order(&multi, Some(42));
+        assert_eq!(order.last(), Some(&1));
+        // 全部冷却退化为粘性序(仍可服务)
+        for i in 0..3 {
+            g.mark_cool("zhipu", i, std::time::Instant::now() + KEY_COOLDOWN);
+        }
+        assert_eq!(g.key_order(&multi, None).len(), 3);
+    }
+
+    #[test]
+    fn session_hash_is_stable_per_first_message() {
+        let base = r#"{"model":"glm-5.3","messages":[{"role":"user","content":"task A"},REST]}"#;
+        // 同首条 + 不同后续(append-only 会话的下一轮) → 同指纹
+        let a = base.replace("REST", r#"{"role":"assistant","content":"ok"}"#);
+        let b = base.replace("REST", r#"{"role":"user","content":"more"}"#);
+        assert_eq!(session_hash(a.as_bytes()), session_hash(b.as_bytes()),);
+        // 不同首条 → 不同指纹;空 messages → None
+        let c = base.replace("task A", "task B");
+        assert_ne!(session_hash(a.as_bytes()), session_hash(c.as_bytes()));
+        assert_eq!(session_hash(br#"{"model":"m","messages":[]}"#), None);
+    }
+
+    #[test]
+    fn rotatable_covers_auth_quota_timeout_and_5xx() {
+        for s in [401u16, 402, 403, 404, 408, 429, 500, 502, 503, 504, 529] {
+            assert!(rotatable(s), "{s} 应可轮换");
+        }
+        // 请求级错误不轮换(400 参数错误)
+        assert!(!rotatable(400));
+    }
+
+    #[test]
+    fn normalize_body_translates_budget_to_glm_effort() {
+        // GLM 模型 + thinking budget → output_config.effort(智谱不认 budget)
+        let body = br#"{"model":"glm-5.3","max_tokens":32000,"thinking":{"type":"enabled","budget_tokens":16000},"messages":[]}"#;
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["output_config"]["effort"], "high");
+        // 小预算 → low
+        let body = br#"{"model":"glm-5.3[1m]","max_tokens":32000,"thinking":{"type":"enabled","budget_tokens":2000},"messages":[]}"#;
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3[1m]", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["output_config"]["effort"], "low");
+        assert_eq!(v["model"], "glm-5.3");
+        // 非 GLM 模型不翻译
+        let body = br#"{"model":"deepseek-v4","max_tokens":32000,"thinking":{"type":"enabled","budget_tokens":16000},"messages":[]}"#;
+        let out = normalize_body(Protocol::Anthropic, "deepseek-v4", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v.get("output_config"), None);
     }
 
     #[test]

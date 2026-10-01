@@ -11,7 +11,9 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 ```
 
 - **路由**：请求体 `model` 字段 → 提供商；`[1m]` 后缀双向归一（CC 发送前已剥，中枢可能带后缀存储）
-- **轮换**：每提供商多 Key，429/401/403/503/529 换下一把重发，lastGood 粘性优先；全部失败回放最后一个上游错误（429 等），客户端可见真实原因
+- **轮换**：每提供商多 Key，401-408/429/5xx 换下一把重发，lastGood 粘性优先；失败 Key 冷却 60s 排队尾（429 对齐上游 `Retry-After`），全部失败回放最后一个上游错误（429 等），客户端可见真实原因
+- **会话亲和**：`messages[0]` hash 为会话指纹（会话 append-only，首条全程不变），同一会话粘住上次应答的 Key——上游 prompt cache 按 Key 隔离，换 Key = 前缀 cache 作废全价重算；亲和优先级高于 lastGood，保持 24h（对齐 cache 冷却 5min × 长会话生命周期），过期写入时惰性清理
+- **GLM effort 翻译**：GLM 5.2/5.3 的思考强度不认 `thinking.budget_tokens`（实测无控制力）、走 `output_config.effort`（实测生效）——Anthropic 面带 thinking 预算的 GLM 请求自动翻译（budget ≥10k → high / ≥4k → medium / 其余 low），CC 的 `EFFORT_LEVEL` 由此真正生效
 - **透传**：请求体整体缓冲（换 Key 重放需完整 body，上限 128MB），响应 SSE 字节流直 pipe 不落盘；剥 host/鉴权/逐跳头后注入 `x-api-key` + `Bearer`；上游走 `http::stream_client()`（建连 30s、读间隙 120s，无整体超时，SSE ping 保活）。**唯一请求体归一**（`normalize_body`，参考 magpie 的 `thinkingOffUnlessAsked`）：① 剥 model 的 `[1m]` 客户端后缀（全协议面——CC 主对话自剥 + 发 beta 头，但其分类器等旁路请求原样带后缀，上游不认识该语法必报「模型不存在」）；② Anthropic 面对未提 thinking 且非 claude 原生模型的请求注入 `thinking: {"type": "disabled"}`——原生 Anthropic 语义即「无该字段 = 不思考」，兼容端点默认思考，CC 分类器/标题等旁路小请求的输出预算被思考耗尽产出空 text；DeepSeek 认此参数彻底关思考，智谱忽略它（由③兜底）；③ 对未提 thinking 且 `max_tokens` 低于 256 的请求提升预算至 256（智谱忽略 disabled 依然思考且计入 max_tokens，下限保证 text 有出口；模型答完即停，无额外消耗）。非轮换错误（400 等请求级错误）直接透传客户端但落 `errpass` 日志
 - **不做跨协议翻译**：三个面各自直通对应端点，零语义损耗；智谱（`https://open.bigmodel.cn/api/anthropic`）、DeepSeek（`https://api.deepseek.com/anthropic`）均有官方 Anthropic 兼容端点
 
