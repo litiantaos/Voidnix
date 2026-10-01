@@ -12,7 +12,7 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 
 - **路由**：请求体 `model` 字段 → 提供商；`[1m]` 后缀双向归一（CC 发送前已剥，中枢可能带后缀存储）
 - **轮换**：每提供商多 Key，429/401/403/503/529 换下一把重发，lastGood 粘性优先；全部失败回放最后一个上游错误（429 等），客户端可见真实原因
-- **透传**：请求体整体缓冲（换 Key 重放需完整 body，上限 128MB），响应 SSE 字节流直 pipe 不落盘；剥 host/鉴权/逐跳头后注入 `x-api-key` + `Bearer`；上游走 `http::stream_client()`（建连 30s、读间隙 120s，无整体超时，SSE ping 保活）。**唯一请求体改写**：Anthropic 面对未显式声明 `thinking` 且 `max_tokens` 低于 256 的请求提升预算至 256——智谱/DeepSeek 兼容端点默认开 thinking 且计入 max_tokens（原生 Anthropic 语义是无该字段即关闭），CC 安全分类器等小预算请求会被 thinking 耗尽预算产出空 text，下限提升恢复其「小输出」预期（模型答完即停，无额外消耗）
+- **透传**：请求体整体缓冲（换 Key 重放需完整 body，上限 128MB），响应 SSE 字节流直 pipe 不落盘；剥 host/鉴权/逐跳头后注入 `x-api-key` + `Bearer`；上游走 `http::stream_client()`（建连 30s、读间隙 120s，无整体超时，SSE ping 保活）。**唯一请求体归一**（`normalize_body`）：① 剥 model 的 `[1m]` 客户端后缀（全协议面——CC 主对话自剥 + 发 beta 头，但其分类器等旁路请求原样带后缀，上游不认识该语法必报「模型不存在」）；② Anthropic 面对未显式声明 `thinking` 且 `max_tokens` 低于 256 的请求提升预算至 256——智谱/DeepSeek 兼容端点默认开 thinking 且计入 max_tokens（原生 Anthropic 语义是无该字段即关闭），CC 安全分类器等小预算请求会被 thinking 耗尽预算产出空 text，下限提升恢复其「小输出」预期（模型答完即停，无额外消耗）。非轮换错误（400 等请求级错误）直接透传客户端但落 `errpass` 日志
 - **不做跨协议翻译**：三个面各自直通对应端点，零语义损耗；智谱（`https://open.bigmodel.cn/api/anthropic`）、DeepSeek（`https://api.deepseek.com/anthropic`）均有官方 Anthropic 兼容端点
 
 ## 端口与生命周期

@@ -403,12 +403,8 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
         );
     };
 
-    // Anthropic 面输出预算下限(唯一的请求体改写,见 boost_output_budget 注释)
-    let body = if protocol == Protocol::Anthropic {
-        boost_output_budget(body)
-    } else {
-        body
-    };
+    // 请求体归一:剥 model 的 [1m] 客户端后缀(全协议面)+ Anthropic 面输出预算下限
+    let body = normalize_body(protocol, &model, body);
 
     let routes = g.routes_snapshot();
     let Some(route) = find_route(&routes, &model) else {
@@ -509,6 +505,14 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                     continue;
                 }
                 g.mark_good(&route.provider_id, Some(idx));
+                if status >= 400 {
+                    // 非轮换错误(如模型名 400)直接透传客户端:Key 本身没坏不轮换,
+                    // 但必须落日志——CC 报 unavailable 而网关日志为空的盲区即此处
+                    log_gateway(
+                        "errpass",
+                        &format!("{model} · {}: {status} 透传(不轮换)", route.name),
+                    );
+                }
                 return stream_response(r).await;
             }
         }
@@ -640,11 +644,15 @@ fn find_route<'a>(routes: &'a [GatewayRoute], model: &str) -> Option<&'a Gateway
         .find(|r| r.models.iter().any(|m| norm_model(m) == target))
 }
 
-/// Anthropic 面输出预算下限:兼容端点(智谱/DeepSeek)默认开 thinking 且计入 max_tokens,
-/// 与原生 Anthropic「无 thinking 字段 = 关闭 thinking」语义相悖——小预算请求(CC 安全分类器
-/// max_tokens 为个位数十位数级)的预算被 thinking 耗尽,响应无 text block,客户端判模型不可用。
-/// 对未显式声明 thinking 且预算低于下限的请求提升 max_tokens(模型答完即停,不产生额外消耗;
-/// flash 档分类任务实测 thinking 约 150 token,256 留有余量)。
+/// 请求体归一(唯一的请求体改写,两件事):
+/// 1. 剥 model 的 `[1m]` 客户端后缀(全协议面)——CC 主对话发送前自剥 + 发 beta 头,
+///    但其分类器等旁路请求原样带后缀,上游不认识该语法必报「模型不存在」;网关路由
+///    匹配时已归一,转发时同样归一,客户端怪癖在网关侧吸收
+/// 2. Anthropic 面输出预算下限:兼容端点(智谱/DeepSeek)默认开 thinking 且计入 max_tokens,
+///    与原生 Anthropic「无 thinking 字段 = 关闭 thinking」语义相悖——小预算请求(CC 安全分类器
+///    max_tokens 为个位数十位数级)的预算被 thinking 耗尽,响应无 text block,客户端判模型不可用。
+///    对未显式声明 thinking 且预算低于下限的请求提升 max_tokens(模型答完即停,不产生额外消耗;
+///    flash 档分类任务实测 thinking 约 150 token,256 留有余量)
 const ANTHROPIC_MIN_OUTPUT_TOKENS: u64 = 256;
 
 /// 输出预算探测(部分反序列化,未知字段流式跳过零建树;大请求体的线性扫描成本远低于网络传输)
@@ -657,23 +665,30 @@ struct OutputPrefs {
     thinking: Option<serde::de::IgnoredAny>,
 }
 
-fn boost_output_budget(body: Bytes) -> Bytes {
-    let Ok(prefs) = serde_json::from_slice::<OutputPrefs>(&body) else {
-        return body;
-    };
-    let Some(max_tokens) = prefs.max_tokens else {
-        return body;
-    };
-    if prefs.thinking.is_some() || max_tokens >= ANTHROPIC_MIN_OUTPUT_TOKENS {
+fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> Bytes {
+    let strip_suffix = model != norm_model(model);
+    let needs_boost = protocol == Protocol::Anthropic
+        && serde_json::from_slice::<OutputPrefs>(&body).is_ok_and(|p| {
+            p.max_tokens
+                .is_some_and(|m| m < ANTHROPIC_MIN_OUTPUT_TOKENS)
+                && p.thinking.is_none()
+        });
+    if !strip_suffix && !needs_boost {
         return body;
     }
     let Ok(mut root) = serde_json::from_slice::<Value>(&body) else {
         return body;
     };
-    if root.get("max_tokens").and_then(|v| v.as_u64()) != Some(max_tokens) {
-        return body;
+    if strip_suffix {
+        root["model"] = Value::String(norm_model(model).to_string());
     }
-    root["max_tokens"] = Value::from(ANTHROPIC_MIN_OUTPUT_TOKENS);
+    if needs_boost {
+        if let Some(m) = root.get("max_tokens").and_then(|v| v.as_u64()) {
+            if m < ANTHROPIC_MIN_OUTPUT_TOKENS {
+                root["max_tokens"] = Value::from(ANTHROPIC_MIN_OUTPUT_TOKENS);
+            }
+        }
+    }
     serde_json::to_vec(&root).map_or_else(|_| body, Bytes::from)
 }
 
@@ -764,37 +779,62 @@ mod tests {
     }
 
     #[test]
-    fn boost_output_budget_lifts_small_max_tokens_without_thinking() {
-        let body = br#"{"model":"glm-5.3-flash","max_tokens":8,"messages":[]}"#;
-        let boosted = boost_output_budget(Bytes::from_static(body));
-        let v: Value = serde_json::from_slice(&boosted).unwrap();
-        assert_eq!(v["max_tokens"], 256);
-        assert_eq!(v["model"], "glm-5.3-flash");
+    fn normalize_body_strips_1m_suffix_on_all_protocols() {
+        // 带 [1m] 后缀(含空格形态)剥成裸名;chat 面同样剥(上游不认识客户端语法)
+        let body = br#"{"model":"glm-5.3 [1m]","max_tokens":32000,"messages":[]}"#;
+        let out = normalize_body(Protocol::Chat, "glm-5.3 [1m]", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["model"], "glm-5.3");
+        // 裸名 + 预算充足:零改写原样返回
+        let body = br#"{"model":"glm-5.3","max_tokens":32000,"messages":[]}"#;
+        assert_eq!(
+            normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body)),
+            Bytes::from_static(body)
+        );
     }
 
     #[test]
-    fn boost_output_budget_respects_explicit_thinking_and_floor() {
-        // 显式 thinking(预算自管)不动
-        let body = br#"{"model":"m","max_tokens":8,"thinking":{"type":"disabled"},"messages":[]}"#;
-        assert_eq!(
-            boost_output_budget(Bytes::from_static(body)),
-            Bytes::from_static(body)
+    fn normalize_body_lifts_small_max_tokens_without_thinking() {
+        let body = br#"{"model":"glm-5.3-flash","max_tokens":8,"messages":[]}"#;
+        let out = normalize_body(
+            Protocol::Anthropic,
+            "glm-5.3-flash",
+            Bytes::from_static(body),
         );
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["max_tokens"], 256);
+        assert_eq!(v["model"], "glm-5.3-flash");
+        // 后缀剥除与预算提升可叠加
+        let body = br#"{"model":"glm-5.3[1m]","max_tokens":8,"messages":[]}"#;
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3[1m]", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["model"], "glm-5.3");
+        assert_eq!(v["max_tokens"], 256);
+    }
+
+    #[test]
+    fn normalize_body_respects_explicit_thinking_and_floor() {
+        // 显式 thinking(预算自管)不动预算
+        let body =
+            br#"{"model":"glm-5.3","max_tokens":8,"thinking":{"type":"disabled"},"messages":[]}"#;
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["max_tokens"], 8);
         // 已达下限不动
-        let body = br#"{"model":"m","max_tokens":256,"messages":[]}"#;
+        let body = br#"{"model":"glm-5.3","max_tokens":256,"messages":[]}"#;
         assert_eq!(
-            boost_output_budget(Bytes::from_static(body)),
+            normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body)),
             Bytes::from_static(body)
         );
         // 无 max_tokens / 非 JSON 原样放行
-        let body = br#"{"model":"m","messages":[]}"#;
+        let body = br#"{"model":"glm-5.3","messages":[]}"#;
         assert_eq!(
-            boost_output_budget(Bytes::from_static(body)),
+            normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body)),
             Bytes::from_static(body)
         );
         let body = br#"not json"#;
         assert_eq!(
-            boost_output_budget(Bytes::from_static(body)),
+            normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body)),
             Bytes::from_static(body)
         );
     }
