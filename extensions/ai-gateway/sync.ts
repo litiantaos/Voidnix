@@ -11,7 +11,6 @@ import {
   buildCcPayload,
   fallbackAliases,
   effectiveAlias,
-  GATEWAY_PORT,
   type GatewayRoute,
 } from './logic'
 
@@ -39,29 +38,36 @@ export function currentRoutes(): GatewayRoute[] {
 
 async function push() {
   const routes = currentRoutes()
+  let st: GatewayStatus
   try {
-    gatewayStatus.value = await invoke<GatewayStatus>(CMD.aiGatewaySync, {
+    st = await invoke<GatewayStatus>(CMD.aiGatewaySync, {
       enabled: config.enabled,
       routes,
     })
+    gatewayStatus.value = st
   } catch (e) {
+    // 状态未知本轮不动 CC 接线:误 apply 会把 CC 接到死端口,误 remove 会无谓
+    // 打断在用的接管,两者都不如下一轮 sync 再决策
     console.error('[ai-gateway] sync failed:', e)
+    return
   }
 
   // CC 接线独立于网关开关:ccTakeover 是用户意愿(默认关,不擅改 CC 配置文件),
-  // 实际接管还需网关在跑(enabled)且存在可接线载荷;任一缺失(关接管/关网关/删光
-  // Anthropic 端点)且处于接管态即还原。接管态唯一真相源 = Rust 侧快照存在性(ccManaged),
-  // 不另设本地标志
+  // 实际接管还需网关真正在跑(enabled 且 bind 成功——绑定失败时写入会把 CC 指向
+  // 死端口或占用端口的陌生进程)且存在可接线载荷;任一失守(关接管/关网关/绑定
+  // 失败/删光 Anthropic 端点)且处于接管态即还原。接管态唯一真相源 = Rust 侧快照
+  // 存在性(ccManaged),不另设本地标志
+  const gatewayOk = st.running && !st.bindError
   const models = routableModels(routes)
   const payload =
-    config.enabled && config.ccTakeover
+    config.enabled && config.ccTakeover && gatewayOk
       ? buildCcPayload(
           routes,
           {
             sonnet: effectiveAlias(models, config.sonnet),
             haiku: effectiveAlias(models, config.haiku),
           },
-          gatewayStatus.value?.port ?? GATEWAY_PORT,
+          st.port,
           config.cc1mContext,
         )
       : null
@@ -69,16 +75,16 @@ async function push() {
     try {
       await invoke(CMD.aiGatewayCcApply, { payload })
       ccApplyError.value = null
-      if (gatewayStatus.value) gatewayStatus.value.ccManaged = true
+      st.ccManaged = true
     } catch (e) {
       ccApplyError.value = String(e)
       console.error('[ai-gateway] cc apply failed:', e)
     }
-  } else if (gatewayStatus.value?.ccManaged) {
+  } else if (st.ccManaged) {
     try {
       await invoke(CMD.aiGatewayCcRemove)
       ccApplyError.value = null
-      if (gatewayStatus.value) gatewayStatus.value.ccManaged = false
+      st.ccManaged = false
     } catch (e) {
       ccApplyError.value = String(e)
       console.error('[ai-gateway] cc remove failed:', e)

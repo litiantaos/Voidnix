@@ -12,7 +12,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted } from 'vue'
+import { computed, onActivated } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { t } from '@/runtime/i18n'
 import { CMD } from '@/commands'
@@ -171,6 +171,6 @@ function goAiProviders() {
   appStore.setActiveExtension('ai-providers')
 }
 
-onMounted(() => void refreshStatus())
+// KeepAlive 内 onActivated 首挂载同样触发,无需 onMounted 双发
 onActivated(() => void refreshStatus())
 </script>

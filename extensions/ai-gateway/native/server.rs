@@ -38,14 +38,14 @@ const MAX_ERROR_BODY: usize = 64 * 1024;
 
 // ─── 数据结构(与前端 logic.ts 同构,camelCase)──────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct GatewayKey {
     pub label: String,
     pub api_key: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct GatewayRoute {
     pub provider_id: String,
@@ -139,7 +139,7 @@ const KEY_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// 排障日志:数据目录 gateway.log,行式追加(epoch 毫秒 + 类别 + 详情,`date -r 秒` 可转)。
 /// 只记异常路径(路由失败/上游错误/网络错误/Key 耗尽),成功请求零记录;
-/// 不含 Key 明文与请求体;超 512KB 整文件重置(自旋转)。
+/// 不含 Key 明文与请求体;超 512KB 整文件重置(自旋转);新建即 0600(数据目录密级统一)。
 fn log_gateway(kind: &str, detail: &str) {
     let Some(dir) = GATEWAY.log_dir.read().unwrap().clone() else {
         return;
@@ -151,6 +151,7 @@ fn log_gateway(kind: &str, detail: &str) {
         .map(|d| d.as_millis())
         .unwrap_or(0);
     let line = format!("[{ms}] {kind} {detail}\n");
+    let created = !path.exists();
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
@@ -161,6 +162,13 @@ fn log_gateway(kind: &str, detail: &str) {
             let _ = std::fs::write(&path, &line);
         } else {
             let _ = f.write_all(line.as_bytes());
+        }
+    }
+    if created {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
         }
     }
 }
@@ -174,11 +182,15 @@ impl Gateway {
             enabled,
             routes: routes.clone(),
         };
-        // 换表即清按 (provider, idx) 记录的运行时状态:Key 增删/重排后同一 idx 指向
-        // 不同 Key,冷却/亲和/粘性继续沿用会错位对象;重建代价仅一次成功请求
-        self.cooldowns.lock().unwrap().clear();
-        self.affinity.lock().unwrap().clear();
-        self.last_good.lock().unwrap().clear();
+        // 换表才清按 (provider, idx) 记录的运行时状态:Key 增删/重排后同一 idx 指向
+        // 不同 Key,冷却/亲和/粘性继续沿用会错位对象。同表重推(改开关/别名等无关
+        // 配置触发的 sync)不清——亲和清空 = 活跃会话丢 Key 粘性,上游 prompt cache
+        // 按 Key 隔离,换 Key 即前缀 cache 作废全价重算,代价远超一次成功请求
+        if **self.routes.read().unwrap() != routes {
+            self.cooldowns.lock().unwrap().clear();
+            self.affinity.lock().unwrap().clear();
+            self.last_good.lock().unwrap().clear();
+        }
         *self.routes.write().unwrap() = Arc::new(routes);
         if let Err(e) = tokio::task::spawn_blocking(move || persist_state(&dir, &persisted))
             .await
@@ -469,7 +481,10 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
     };
 
     let Some(model) = extract_model(&body) else {
-        log_gateway("route", "请求缺少 model 字段");
+        log_gateway(
+            "route",
+            &format!("{} {} 缺少 model 字段", parts.method, parts.uri.path()),
+        );
         return error_response(
             StatusCode::BAD_REQUEST,
             "invalid_request_error",
@@ -478,16 +493,16 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
         );
     };
 
-    // 请求体归一:剥 [1m] 后缀 + Anthropic 面注入 thinking disabled + GLM effort 翻译 + 输出预算下限
     let session = session_hash(&body);
-    let body = normalize_body(protocol, &model, body);
 
     let routes = g.routes_snapshot();
     let Some(route) = find_route(&routes, &model) else {
         log_gateway(
             "route",
             &format!(
-                "未知模型 {model} · 可用: {}",
+                "{} {} · 未知模型 {model} · 可用: {}",
+                parts.method,
+                parts.uri.path(),
                 available_models(&routes, protocol)
             ),
         );
@@ -506,7 +521,13 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
     if base.trim().is_empty() {
         log_gateway(
             "route",
-            &format!("{} 未声明 {:?} 协议端点", route.name, protocol),
+            &format!(
+                "{} {} · {} 未声明 {:?} 协议端点",
+                parts.method,
+                parts.uri.path(),
+                route.name,
+                protocol
+            ),
         );
         return error_response(
             StatusCode::NOT_FOUND,
@@ -518,6 +539,11 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
             protocol,
         );
     }
+
+    // 请求体归一:剥 [1m] 后缀 + Anthropic 面注入 thinking disabled + GLM effort 翻译
+    // + 输出预算下限。路由命中后才执行——未知模型/缺端点的请求直接拒绝,不为其
+    // 支付归一成本(GLM 面含全量建树)
+    let body = normalize_body(protocol, &model, body);
 
     let path_and_query = parts
         .uri
@@ -682,7 +708,9 @@ fn forward_headers(src: &HeaderMap, body_len: usize) -> HeaderMap {
         {
             continue;
         }
-        out.insert(name.clone(), value.clone());
+        // append 而非 insert:多值头(如逐行发送的多条 anthropic-beta)在迭代中逐值
+        // 产出,insert 会整体替换只剩最后一个值
+        out.append(name.clone(), value.clone());
     }
     if body_len > 0 {
         if let Ok(v) = axum::http::HeaderValue::from_str(&body_len.to_string()) {
@@ -752,7 +780,7 @@ fn find_route<'a>(routes: &'a [GatewayRoute], model: &str) -> Option<&'a Gateway
         .find(|r| r.models.iter().any(|m| norm_model(m) == target))
 }
 
-/// 请求体归一(唯一的请求体改写,三件事):
+/// 请求体归一(唯一的请求体改写,基础三件 + GLM/分类器两支内联注释):
 /// 1. 剥 model 的 `[1m]` 客户端后缀(全协议面)——CC 主对话发送前自剥 + 发 beta 头,
 ///    但其分类器等旁路请求原样带后缀,上游不认识该语法必报「模型不存在」;网关路由
 ///    匹配时已归一,转发时同样归一,客户端怪癖在网关侧吸收
@@ -763,6 +791,11 @@ fn find_route<'a>(routes: &'a [GatewayRoute], model: &str) -> Option<&'a Gateway
 /// 3. Anthropic 面输出预算下限:对未显式声明 thinking 且 max_tokens 低于 256 的请求提升预算——
 ///    智谱忽略 disabled 依然思考且计入 max_tokens,小预算请求仍会被耗尽,下限保证 text 有出口
 ///    (模型答完即停,不产生额外消耗;flash 档分类任务实测思考约 150 token,256 留有余量)
+///
+/// 改写需全量建 serde_json::Value 树:GLM 主对话(effort 翻译命中)每请求付出 2-3 倍
+/// body 的分配尖峰并占用 tokio worker([1m] 长上下文可达数十 MB)——已知可接受成本,
+/// 相对网络传输是小头;未来优化方向 = 被改键(model/thinking/output_config/max_tokens)
+/// 全在顶层,可做字节级 splice 免建树
 const ANTHROPIC_MIN_OUTPUT_TOKENS: u64 = 256;
 
 /// 输出预算探测(部分反序列化,未知字段流式跳过零建树;大请求体的线性扫描成本远低于网络传输)
@@ -781,9 +814,8 @@ struct OutputPrefs<'a> {
 
 #[derive(Deserialize)]
 struct ThinkingSpec {
-    /// 显式声明的 thinking 类型(存在性即「客户端自管」,类型值本身不消费)
+    /// 显式声明的 thinking 类型:「disabled」供分类器形态判据消费,其余类型值不消费
     #[serde(rename = "type")]
-    #[expect(dead_code)]
     kind: String,
     #[serde(default)]
     budget_tokens: Option<u64>,
@@ -796,20 +828,39 @@ fn glm_effort_model(model: &str) -> bool {
     m.contains("glm-5.2") || m.contains("glm-5.3")
 }
 
-/// CC auto mode 安全分类器请求识别(判据来自 magpie automode.go):transcript 块 +
-/// verdict 标签同时出现即足够特异(tools 定义不会出现在这类请求里)。分类器用会话主模型、
-/// 主动带 thinking disabled、max_tokens 仅 64——无视 disabled 的模型(智谱)思考耗尽预算
-/// 产出空答案,CC 读到无 verdict 即拦截动作
-fn is_auto_mode_classifier(protocol: Protocol, body: &[u8]) -> bool {
-    protocol == Protocol::Anthropic
-        && memchr_search(body, b"<transcript>")
-        && (memchr_search(body, b"<block>") || memchr_search(body, b"<severity>"))
+/// CC auto mode 安全分类器请求识别,双判据取并集(单判据都有漂移面):
+/// - **形态(主,跨 CC 版本稳定)**:无工具定义 + 显式 thinking disabled + 输出预算 ≤ 128
+///   ——分类器请求天然三者俱全,不依赖 prompt 内容;CC 改版换标签时仍被捕获
+/// - **标签(辅,magpie automode.go 判据)**:请求体含 `<transcript>` + `<block>`/`<severity>`
+///   ——CC 只改形态字段(预算/thinking 写法)时仍被捕获
+///
+/// 分类器用会话主模型、主动带 thinking disabled、max_tokens 仅 64——无视 disabled 的
+/// 模型(智谱)思考耗尽预算产出空答案,CC 读到无 verdict 即拦截动作。
+/// tools 非空直接否决:主对话必带工具定义,防「消息文本里恰好出现特征 token」误判
+fn is_auto_mode_classifier(protocol: Protocol, prefs: &OutputPrefs, body: &[u8]) -> bool {
+    if protocol != Protocol::Anthropic || !prefs.tools.is_empty() {
+        return false;
+    }
+    let shape = prefs
+        .thinking
+        .as_ref()
+        .is_some_and(|t| t.kind == "disabled")
+        && prefs.max_tokens.is_some_and(|m| m <= 128);
+    shape || tag_match(body)
+}
+
+/// 标签判据的字面特征(transcript 块 + verdict 标签同时出现即足够特异)
+fn tag_match(body: &[u8]) -> bool {
+    contains_bytes(body, b"<transcript>")
+        && (contains_bytes(body, b"<block>") || contains_bytes(body, b"<severity>"))
 }
 
 /// 分类器预算扩容:给无视 thinking disabled 的模型腾出思考余量 + 答案空间(magpie classifierRoom)
 const CLASSIFIER_ROOM: u64 = 2048;
 
-fn memchr_search(haystack: &[u8], needle: &[u8]) -> bool {
+/// 朴素子串包含(windows 线性扫;release 实测 ~0.8ms/MB,相对网络传输可忽略,
+/// 无需真 memchr 算法——命名如实)
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
@@ -832,8 +883,9 @@ fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> Bytes {
     let no_thinking = prefs.as_ref().is_some_and(|p| p.thinking.is_none());
     let needs_disable = protocol == Protocol::Anthropic && !native_claude && no_thinking;
     // CC 分类器请求自带 thinking disabled(被智谱无视),预算提升不受「显式自管」豁免约束
-    let classifier = is_auto_mode_classifier(protocol, &body)
-        && prefs.as_ref().is_some_and(|p| p.tools.is_empty());
+    let classifier = prefs
+        .as_ref()
+        .is_some_and(|p| is_auto_mode_classifier(protocol, p, &body));
     let needs_boost = protocol == Protocol::Anthropic
         && (classifier
             || (no_thinking
@@ -1176,18 +1228,24 @@ mod tests {
     }
 
     #[test]
+    fn forward_headers_preserves_multi_value_headers() {
+        // 客户端逐行发送多条 anthropic-beta(context-1m 等能力开关)必须全量到达上游,
+        // 迭代逐值产出 + insert 整体替换会只剩最后一个值
+        let mut src = HeaderMap::new();
+        src.append("anthropic-beta", "context-1m-2025-08-07".parse().unwrap());
+        src.append("anthropic-beta", "oauth-2025-04-20".parse().unwrap());
+        let out = forward_headers(&src, 1);
+        let betas: Vec<&str> = out
+            .get_all("anthropic-beta")
+            .iter()
+            .map(|v| v.to_str().unwrap())
+            .collect();
+        assert_eq!(betas, vec!["context-1m-2025-08-07", "oauth-2025-04-20"]);
+    }
+
+    #[test]
     fn key_order_prefers_last_good() {
-        let g = Gateway {
-            routes: RwLock::new(Arc::new(Vec::new())),
-            last_good: Mutex::new(HashMap::new()),
-            cooldowns: Mutex::new(HashMap::new()),
-            affinity: Mutex::new(HashMap::new()),
-            task: Mutex::new(None),
-            bind_error: RwLock::new(None),
-            lifecycle: tokio::sync::Mutex::new(()),
-            log_dir: RwLock::new(None),
-            log_lock: Mutex::new(()),
-        };
+        let g = bare_gateway();
         let r = route("zhipu", "", &[]);
         let order = g.key_order(&r, None);
         assert_eq!(order, vec![0]);
@@ -1222,17 +1280,7 @@ mod tests {
 
     #[test]
     fn key_order_affinity_and_cooldown() {
-        let g = Gateway {
-            routes: RwLock::new(Arc::new(Vec::new())),
-            last_good: Mutex::new(HashMap::new()),
-            cooldowns: Mutex::new(HashMap::new()),
-            affinity: Mutex::new(HashMap::new()),
-            task: Mutex::new(None),
-            bind_error: RwLock::new(None),
-            lifecycle: tokio::sync::Mutex::new(()),
-            log_dir: RwLock::new(None),
-            log_lock: Mutex::new(()),
-        };
+        let g = bare_gateway();
         let multi = GatewayRoute {
             keys: vec![
                 GatewayKey {
@@ -1282,25 +1330,37 @@ mod tests {
 
     #[test]
     fn normalize_body_gives_auto_mode_classifier_room() {
-        // CC auto mode 分类器请求(transcript 块 + block 标签 + 自带 thinking disabled + 64 预算):
-        // 预算扩容不受「显式 thinking 豁免」约束(disabled 被智谱无视),GLM 压最低 effort
-        let body = br#"{"model":"glm-5.3","max_tokens":64,"thinking":{"type":"disabled"},"system":"Answer <block>yes</block> or <block>no</block>","messages":[{"role":"user","content":"<transcript>tool call</transcript>"}]}"#;
+        // 形态判据(主):显式 disabled + 64 预算 + 无 tools,即使标签特征漂移(假想 CC
+        // 新版 prompt 标签)也捕获——预算扩容 + GLM 压最低 effort
+        let body = br#"{"model":"glm-5.3","max_tokens":64,"thinking":{"type":"disabled"},"system":"Answer <verdict>yes</verdict>","messages":[{"role":"user","content":"<dialog>tool call</dialog>"}]}"#;
         let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["max_tokens"], 64 + CLASSIFIER_ROOM);
         assert_eq!(v["output_config"]["effort"], "low");
-        // 普通请求(无 transcript/block 特征)不受分类器特判影响:显式 thinking 不动预算
-        let body = br#"{"model":"glm-5.3","max_tokens":64,"thinking":{"type":"disabled"},"system":"normal","messages":[{"role":"user","content":"hi"}]}"#;
+        // 标签判据(辅):形态字段漂移(如预算改大/thinking 写法变化)但特征标签仍在,
+        // 且无 tools——仍按分类器处理
+        let body = br#"{"model":"glm-5.3","max_tokens":64,"thinking":{"type":"adaptive"},"system":"Answer <block>yes</block>","messages":[{"role":"user","content":"<transcript>tool call</transcript>"}]}"#;
         let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
         let v: Value = serde_json::from_slice(&out).unwrap();
-        assert_eq!(v["max_tokens"], 64);
-        // 主对话消息里恰好出现特征 token(如讨论网关源码)但带 tools 定义:不误判,
-        // effort 不被压低、预算不扩容
+        assert_eq!(v["max_tokens"], 64 + CLASSIFIER_ROOM);
+        assert_eq!(v["output_config"]["effort"], "low");
+        // 主对话消息里出现特征 token 但带 tools 定义:不误判,effort 不压、预算不扩容
         let body = br#"{"model":"glm-5.3","max_tokens":32000,"thinking":{"type":"adaptive"},"tools":[{"type":"text_editor"}],"system":"analyze <block> tags","messages":[{"role":"user","content":"<transcript> example"}]}"#;
         let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["max_tokens"], 32000);
         assert_eq!(v.get("output_config"), None);
+        // disabled + 无 tools 但预算充裕(512 > 128):形态不符且无标签,不动
+        let body = br#"{"model":"glm-5.3","max_tokens":512,"thinking":{"type":"disabled"},"system":"normal","messages":[{"role":"user","content":"hi"}]}"#;
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["max_tokens"], 512);
+        assert_eq!(v.get("output_config"), None);
+        // disabled + 64 预算但带 tools(带工具的显式关思考请求):不是分类器,不动
+        let body = br#"{"model":"glm-5.3","max_tokens":64,"thinking":{"type":"disabled"},"tools":[{"type":"bash"}],"system":"normal","messages":[{"role":"user","content":"hi"}]}"#;
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["max_tokens"], 64);
     }
 
     #[test]
@@ -1346,6 +1406,63 @@ mod tests {
         assert!(back.enabled);
         assert_eq!(back.routes.len(), 1);
         assert_eq!(back.routes[0].models, vec!["glm-5.3"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn bare_gateway() -> Gateway {
+        Gateway {
+            routes: RwLock::new(Arc::new(Vec::new())),
+            last_good: Mutex::new(HashMap::new()),
+            cooldowns: Mutex::new(HashMap::new()),
+            affinity: Mutex::new(HashMap::new()),
+            task: Mutex::new(None),
+            bind_error: RwLock::new(None),
+            lifecycle: tokio::sync::Mutex::new(()),
+            log_dir: RwLock::new(None),
+            log_lock: Mutex::new(()),
+        }
+    }
+
+    /// 同表重推(改开关/别名等无关 sync)保留冷却/亲和/粘性;换表才清(idx 错位防线)。
+    /// enabled=false 不触端口 bind,测试可与其它用例并存
+    #[tokio::test]
+    async fn update_preserves_runtime_state_when_routes_unchanged() {
+        let dir = std::env::temp_dir().join(format!("voidnix-gw-keep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let g = bare_gateway();
+        let multi = GatewayRoute {
+            keys: vec![
+                GatewayKey {
+                    label: "a".into(),
+                    api_key: "1".into(),
+                },
+                GatewayKey {
+                    label: "b".into(),
+                    api_key: "2".into(),
+                },
+            ],
+            ..route("zhipu", "", &[])
+        };
+        g.update(false, vec![multi.clone()], &dir).await;
+        g.bind_session(42, "zhipu", 1);
+        g.update(false, vec![multi.clone()], &dir).await;
+        assert_eq!(
+            g.key_order(&multi, Some(42)),
+            vec![1, 0],
+            "同表重推不清亲和"
+        );
+        // 换表(头部插一把 Key,idx 语义变化)即清:亲和失效回配置序
+        let mut changed = multi.clone();
+        changed.keys.insert(
+            0,
+            GatewayKey {
+                label: "x".into(),
+                api_key: "9".into(),
+            },
+        );
+        g.update(false, vec![changed], &dir).await;
+        assert_eq!(g.key_order(&multi, Some(42)), vec![0, 1], "换表清亲和");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

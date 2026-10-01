@@ -14,7 +14,7 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 - **轮换**：每提供商多 Key，401-408/429/5xx 换下一把重发，lastGood 粘性优先；失败 Key 冷却 60s 排队尾（429 对齐上游 `Retry-After`），全部失败回放最后一个上游错误（429 等），客户端可见真实原因
 - **会话亲和**：`messages[0]` hash 为会话指纹（会话 append-only，首条全程不变），同一会话粘住上次应答的 Key——上游 prompt cache 按 Key 隔离，换 Key = 前缀 cache 作废全价重算；亲和优先级高于 lastGood，保持 24h（对齐 cache 冷却 5min × 长会话生命周期），过期写入时惰性清理
 - **GLM effort 翻译**：GLM 5.2/5.3 的思考强度不认 `thinking.budget_tokens`（实测无控制力）、走 `output_config.effort`（实测生效）——Anthropic 面带 thinking 预算的 GLM 请求自动翻译（budget ≥10k → high / ≥4k → medium / 其余 low），CC 的 `EFFORT_LEVEL` 由此真正生效
-- **透传**：请求体整体缓冲（换 Key 重放需完整 body，上限 128MB），响应 SSE 字节流直 pipe 不落盘；剥 host/鉴权/逐跳头后注入 `x-api-key` + `Bearer`；上游走 `http::stream_client()`（建连 30s、读间隙 120s，无整体超时，SSE ping 保活）。**唯一请求体归一**（`normalize_body`，thinking 处理参考 magpie `thinkingOffUnlessAsked`/`fitAutoModeClassifier`）：① 剥 model 的 `[1m]` 客户端后缀（全协议面）；② Anthropic 面对未提 thinking 且非 claude 原生模型的请求注入 `thinking: {"type": "disabled"}`——DeepSeek 认此参数彻底关思考，智谱忽略它；③ GLM 5.2/5.3 的 thinking budget 翻译为 `output_config.effort`（智谱不认 budget，认 effort）；④ **CC auto mode 分类器特判**（请求含 `<transcript>` + `<block>`/`<severity>` 特征）：max_tokens 扩容 +2048 且不受「显式 thinking 豁免」约束（分类器自带 disabled 被智谱无视，64 预算被思考耗尽产出空答案即 CC 报「模型不可用」），GLM 压 effort 最低档；⑤ 未提 thinking 且 `max_tokens` < 256 的请求提升预算至 256。非轮换错误直接透传客户端但落 `errpass` 日志
+- **透传**：请求体整体缓冲（换 Key 重放需完整 body，上限 128MB），响应 SSE 字节流直 pipe 不落盘；剥 host/鉴权/逐跳头后注入 `x-api-key` + `Bearer`；上游走 `http::stream_client()`（建连 30s、读间隙 120s，无整体超时，SSE ping 保活）。**唯一请求体归一**（`normalize_body`，thinking 处理参考 magpie `thinkingOffUnlessAsked`/`fitAutoModeClassifier`）：① 剥 model 的 `[1m]` 客户端后缀（全协议面）；② Anthropic 面对未提 thinking 且非 claude 原生模型的请求注入 `thinking: {"type": "disabled"}`——DeepSeek 认此参数彻底关思考，智谱忽略它；③ GLM 5.2/5.3 的 thinking budget 翻译为 `output_config.effort`（智谱不认 budget，认 effort）；④ **CC auto mode 分类器特判**，双判据取并集：形态为主（无工具定义 + 显式 thinking disabled + `max_tokens` ≤ 128——跨 CC 版本稳定，不依赖 prompt 字面标签）、标签为辅（`<transcript>` + `<block>`/`<severity>`，magpie automode 判据）；命中即 max_tokens 扩容 +2048 且不受「显式 thinking 豁免」约束（分类器自带 disabled 被智谱无视，64 预算被思考耗尽产出空答案即 CC 报「模型不可用」），GLM 压 effort 最低档；⑤ 未提 thinking 且 `max_tokens` < 256 的请求提升预算至 256。非轮换错误直接透传客户端但落 `errpass` 日志
 - **不做跨协议翻译**：三个面各自直通对应端点，零语义损耗；智谱（`https://open.bigmodel.cn/api/anthropic`）、DeepSeek（`https://api.deepseek.com/anthropic`）均有官方 Anthropic 兼容端点
 
 ## 端口与生命周期
@@ -23,15 +23,15 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 - 服务器跑在 app tokio runtime 内（`axum` 最小特性集 http1 + tokio）；app 常驻 Accessory + monitor LaunchAgent 守护
 - 启动链：扩展 Rust `setup` 读持久化快照直接拉起（前端就绪前的冷启动窗口 CC 无感）；前端配置就绪后经 `ai_gateway_sync` 全量刷新
 - 快照 `extensions/ai-gateway/gateway-state.json`（enabled + 路由表，0600 原子写，含 Key 明文）
-- 排障日志 `extensions/ai-gateway/gateway.log`：只记异常路径（route 未知模型 / upstream 上游状态码与错误摘要 / net 网络错误 / replay 回放 / exhaust Key 耗尽），epoch 毫秒时间戳（`date -r 秒` 转可读），超 512KB 整文件重置；成功请求零记录、不含 Key 与请求体
+- 排障日志 `extensions/ai-gateway/gateway.log`：只记异常路径（route 路由失败，行含 method+path / upstream 上游状态码与错误摘要 / net 网络错误 / replay 回放 / exhaust Key 耗尽），epoch 毫秒时间戳（`date -r 秒` 转可读），超 512KB 整文件重置，新建即 0600；成功请求零记录、不含 Key 与请求体
 
 ## 路由表来源
 
-中枢（ai-providers）→ `buildRoutes`：三种端点（`anthropicEndpoint` / `responsesEndpoint` / `endpoint`，后者即 chat completions 的 API URL）至少声明一个 + 至少一把非空 Key + 至少一个模型的提供商才参与。hub deep watch（400ms 防抖）→ `ai_gateway_sync` 推 Rust,**改 Key / 加模型即时生效，工具无需重启**。
+中枢（ai-providers）→ `buildRoutes`：三种端点（`anthropicEndpoint` / `responsesEndpoint` / `endpoint`，后者即 chat completions 的 API URL）至少声明一个 + 至少一把非空 Key + 至少一个模型的提供商才参与。hub deep watch（400ms 防抖）→ `ai_gateway_sync` 推 Rust,**改 Key / 加模型即时生效，工具无需重启**；路由表未变时（改开关/别名等无关 sync）保留冷却/亲和/粘性运行时状态——亲和清空 = 活跃会话丢 Key 粘性，上游 prompt cache 按 Key 隔离即全价重算。请求体归一在路由命中后才执行，未知模型不支付归一成本。
 
 ## Claude Code 接线
 
-接管由独立开关 `ccTakeover` 控制（默认关——网关开关只管起停服务，不擅改用户配置文件），实际接管需 `enabled && ccTakeover` 且存在可接线载荷；任一条件失守（关接管/关网关/删光 Anthropic 端点）即还原。接管期间读-合-写 `~/.claude/settings.json` **自有键**（serde_json `preserve_order` 保用户键序）：
+接管由独立开关 `ccTakeover` 控制（默认关——网关开关只管起停服务，不擅改用户配置文件），实际接管需 `enabled && ccTakeover` 且网关实际运行中（bind 成功——绑定失败时写入会把 CC 指向死端口或占用端口的陌生进程）且存在可接线载荷；任一条件失守（关接管/关网关/绑定失败/删光 Anthropic 端点）即还原，sync 调用本身失败（状态未知）时本轮不动接线。接管期间读-合-写 `~/.claude/settings.json` **自有键**（serde_json `preserve_order` 保用户键序）：
 
 - `env.ANTHROPIC_BASE_URL` = `http://127.0.0.1:{port}`；`env.ANTHROPIC_AUTH_TOKEN` = 占位（网关注入真实 Key，摘除 `apiKeyHelper`，不再依赖 shell env 链路）
 - `env.ANTHROPIC_DEFAULT_{SONNET,HAIKU}_MODEL` = 新会话默认模型 + 后台任务模型（标题生成等小流量；不钉住则走主模型烧额度）。opus 档不写且摘除历史残留——`modelPicker` 替换内置阵容后别名不可达，属死配置
