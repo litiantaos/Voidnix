@@ -285,8 +285,16 @@ test.describe('剪贴板进入重置', () => {
     const rows = page.locator('[role="option"]')
     await expect(rows.first()).toBeVisible({ timeout: 5000 })
 
-    // 浏览到「时间戳」（第 6 项）后回车进入该扩展
-    for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown')
+    // 浏览到「时间戳」后回车进入该扩展（动态定位行序：列表随扩展增删变序，硬编码步数会脆断）
+    const targetIndex = await (async () => {
+      const total = await rows.count()
+      for (let i = 0; i < total; i++) {
+        if ((await rows.nth(i).textContent())?.includes('时间戳')) return i
+      }
+      return -1
+    })()
+    expect(targetIndex).toBeGreaterThanOrEqual(0)
+    for (let i = 0; i < targetIndex; i++) await page.keyboard.press('ArrowDown')
     await expect(page.locator('.ui-active')).toContainText('时间戳')
     await page.keyboard.press('Enter')
     await page.waitForTimeout(400)
