@@ -786,6 +786,23 @@ fn glm_effort_model(model: &str) -> bool {
     m.contains("glm-5.2") || m.contains("glm-5.3")
 }
 
+/// CC auto mode 安全分类器请求识别(判据来自 magpie automode.go):transcript 块 +
+/// verdict 标签同时出现即足够特异(tools 定义不会出现在这类请求里)。分类器用会话主模型、
+/// 主动带 thinking disabled、max_tokens 仅 64——无视 disabled 的模型(智谱)思考耗尽预算
+/// 产出空答案,CC 读到无 verdict 即拦截动作
+fn is_auto_mode_classifier(protocol: Protocol, body: &[u8]) -> bool {
+    protocol == Protocol::Anthropic
+        && memchr_search(body, b"<transcript>")
+        && (memchr_search(body, b"<block>") || memchr_search(body, b"<severity>"))
+}
+
+/// 分类器预算扩容:给无视 thinking disabled 的模型腾出思考余量 + 答案空间(magpie classifierRoom)
+const CLASSIFIER_ROOM: u64 = 2048;
+
+fn memchr_search(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|w| w == needle)
+}
+
 /// thinking budget(CC 的 EFFORT_LEVEL 翻译产物)→ GLM effort 档
 fn budget_to_effort(budget: u64) -> &'static str {
     if budget >= 10_000 {
@@ -804,19 +821,38 @@ fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> Bytes {
     let prefs = serde_json::from_slice::<OutputPrefs>(&body).ok();
     let no_thinking = prefs.as_ref().is_some_and(|p| p.thinking.is_none());
     let needs_disable = protocol == Protocol::Anthropic && !native_claude && no_thinking;
+    // CC 分类器请求自带 thinking disabled(被智谱无视),预算提升不受「显式自管」豁免约束
+    let classifier = is_auto_mode_classifier(protocol, &body);
     let needs_boost = protocol == Protocol::Anthropic
-        && no_thinking
-        && prefs.as_ref().is_some_and(|p| {
-            p.max_tokens
-                .is_some_and(|m| m < ANTHROPIC_MIN_OUTPUT_TOKENS)
-        });
-    // GLM:thinking 带预算时翻译 output_config.effort(智谱忽略 budget,不翻则强度形同虚设)
+        && (classifier
+            || (no_thinking
+                && prefs.as_ref().is_some_and(|p| {
+                    p.max_tokens
+                        .is_some_and(|m| m < ANTHROPIC_MIN_OUTPUT_TOKENS)
+                })));
+    // GLM:thinking 带预算时翻译 output_config.effort(智谱忽略 budget,不翻则强度形同虚设);
+    // 分类器请求(GLM)无预算时压到最低档,少思考快出 verdict(magpie fitAutoModeClassifier)
+    let glm = glm_effort_model(norm_model(model));
     let effort = match (&prefs, protocol) {
-        (Some(p), Protocol::Anthropic) if glm_effort_model(norm_model(model)) => p
-            .thinking
-            .as_ref()
-            .and_then(|t| t.budget_tokens)
-            .map(budget_to_effort),
+        (Some(p), Protocol::Anthropic) if glm => {
+            if classifier {
+                Some(
+                    p.thinking
+                        .as_ref()
+                        .and_then(|t| t.budget_tokens)
+                        .map_or("low", |b| match budget_to_effort(b) {
+                            "high" => "high",
+                            "medium" => "medium",
+                            _ => "low",
+                        }),
+                )
+            } else {
+                p.thinking
+                    .as_ref()
+                    .and_then(|t| t.budget_tokens)
+                    .map(budget_to_effort)
+            }
+        }
         _ => None,
     };
     if !strip_suffix && !needs_disable && !needs_boost && effort.is_none() {
@@ -842,8 +878,13 @@ fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> Bytes {
     }
     if needs_boost {
         if let Some(m) = root.get("max_tokens").and_then(|v| v.as_u64()) {
-            if m < ANTHROPIC_MIN_OUTPUT_TOKENS {
-                root["max_tokens"] = Value::from(ANTHROPIC_MIN_OUTPUT_TOKENS);
+            let target = if classifier {
+                m + CLASSIFIER_ROOM
+            } else {
+                ANTHROPIC_MIN_OUTPUT_TOKENS
+            };
+            if m < target {
+                root["max_tokens"] = Value::from(target);
             }
         }
     }
@@ -1226,6 +1267,22 @@ mod tests {
         let c = base.replace("task A", "task B");
         assert_ne!(session_hash(a.as_bytes()), session_hash(c.as_bytes()));
         assert_eq!(session_hash(br#"{"model":"m","messages":[]}"#), None);
+    }
+
+    #[test]
+    fn normalize_body_gives_auto_mode_classifier_room() {
+        // CC auto mode 分类器请求(transcript 块 + block 标签 + 自带 thinking disabled + 64 预算):
+        // 预算扩容不受「显式 thinking 豁免」约束(disabled 被智谱无视),GLM 压最低 effort
+        let body = br#"{"model":"glm-5.3","max_tokens":64,"thinking":{"type":"disabled"},"system":"Answer <block>yes</block> or <block>no</block>","messages":[{"role":"user","content":"<transcript>tool call</transcript>"}]}"#;
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["max_tokens"], 64 + CLASSIFIER_ROOM);
+        assert_eq!(v["output_config"]["effort"], "low");
+        // 普通请求(无 transcript/block 特征)不受分类器特判影响:显式 thinking 不动预算
+        let body = br#"{"model":"glm-5.3","max_tokens":64,"thinking":{"type":"disabled"},"system":"normal","messages":[{"role":"user","content":"hi"}]}"#;
+        let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["max_tokens"], 64);
     }
 
     #[test]
