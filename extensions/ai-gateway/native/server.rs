@@ -11,6 +11,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
@@ -365,6 +366,13 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
         );
     };
 
+    // Anthropic 面输出预算下限(唯一的请求体改写,见 boost_output_budget 注释)
+    let body = if protocol == Protocol::Anthropic {
+        boost_output_budget(body)
+    } else {
+        body
+    };
+
     let routes = g.routes_snapshot();
     let Some(route) = find_route(&routes, &model) else {
         return error_response(
@@ -558,6 +566,43 @@ fn find_route<'a>(routes: &'a [GatewayRoute], model: &str) -> Option<&'a Gateway
         .find(|r| r.models.iter().any(|m| norm_model(m) == target))
 }
 
+/// Anthropic 面输出预算下限:兼容端点(智谱/DeepSeek)默认开 thinking 且计入 max_tokens,
+/// 与原生 Anthropic「无 thinking 字段 = 关闭 thinking」语义相悖——小预算请求(CC 安全分类器
+/// max_tokens 为个位数十位数级)的预算被 thinking 耗尽,响应无 text block,客户端判模型不可用。
+/// 对未显式声明 thinking 且预算低于下限的请求提升 max_tokens(模型答完即停,不产生额外消耗;
+/// flash 档分类任务实测 thinking 约 150 token,256 留有余量)。
+const ANTHROPIC_MIN_OUTPUT_TOKENS: u64 = 256;
+
+/// 输出预算探测(部分反序列化,未知字段流式跳过零建树;大请求体的线性扫描成本远低于网络传输)
+#[derive(Deserialize)]
+struct OutputPrefs {
+    #[serde(default)]
+    max_tokens: Option<u64>,
+    /// 仅探测存在性:显式管理 thinking 预算的请求不碰
+    #[serde(default)]
+    thinking: Option<serde::de::IgnoredAny>,
+}
+
+fn boost_output_budget(body: Bytes) -> Bytes {
+    let Ok(prefs) = serde_json::from_slice::<OutputPrefs>(&body) else {
+        return body;
+    };
+    let Some(max_tokens) = prefs.max_tokens else {
+        return body;
+    };
+    if prefs.thinking.is_some() || max_tokens >= ANTHROPIC_MIN_OUTPUT_TOKENS {
+        return body;
+    }
+    let Ok(mut root) = serde_json::from_slice::<Value>(&body) else {
+        return body;
+    };
+    if root.get("max_tokens").and_then(|v| v.as_u64()) != Some(max_tokens) {
+        return body;
+    }
+    root["max_tokens"] = Value::from(ANTHROPIC_MIN_OUTPUT_TOKENS);
+    serde_json::to_vec(&root).map_or_else(|_| body, Bytes::from)
+}
+
 fn available_models(routes: &[GatewayRoute], protocol: Protocol) -> String {
     let mut names: Vec<&str> = Vec::new();
     for r in routes {
@@ -642,6 +687,42 @@ mod tests {
         assert_eq!(norm_model("glm-5.3[1m]"), "glm-5.3");
         assert_eq!(norm_model("glm-5.3"), "glm-5.3");
         assert_eq!(norm_model(" glm-5.3 [1m] "), "glm-5.3");
+    }
+
+    #[test]
+    fn boost_output_budget_lifts_small_max_tokens_without_thinking() {
+        let body = br#"{"model":"glm-5.3-flash","max_tokens":8,"messages":[]}"#;
+        let boosted = boost_output_budget(Bytes::from_static(body));
+        let v: Value = serde_json::from_slice(&boosted).unwrap();
+        assert_eq!(v["max_tokens"], 256);
+        assert_eq!(v["model"], "glm-5.3-flash");
+    }
+
+    #[test]
+    fn boost_output_budget_respects_explicit_thinking_and_floor() {
+        // 显式 thinking(预算自管)不动
+        let body = br#"{"model":"m","max_tokens":8,"thinking":{"type":"disabled"},"messages":[]}"#;
+        assert_eq!(
+            boost_output_budget(Bytes::from_static(body)),
+            Bytes::from_static(body)
+        );
+        // 已达下限不动
+        let body = br#"{"model":"m","max_tokens":256,"messages":[]}"#;
+        assert_eq!(
+            boost_output_budget(Bytes::from_static(body)),
+            Bytes::from_static(body)
+        );
+        // 无 max_tokens / 非 JSON 原样放行
+        let body = br#"{"model":"m","messages":[]}"#;
+        assert_eq!(
+            boost_output_budget(Bytes::from_static(body)),
+            Bytes::from_static(body)
+        );
+        let body = br#"not json"#;
+        assert_eq!(
+            boost_output_budget(Bytes::from_static(body)),
+            Bytes::from_static(body)
+        );
     }
 
     #[test]
