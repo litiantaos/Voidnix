@@ -174,7 +174,7 @@ defineConfig(AGENT_CONFIG_PATH, {
 
 ### 未配置
 
-- 空态用统一 `BaseSetupState`（`components/ui/`），「去配置」直达 ai-providers 扩展（`setActiveExtension('ai-providers')`）
+- 空态用统一 `BaseSetupState`（`components/ui/`），「去配置」直达 ai-providers 扩展（`setActiveExtension('ai-providers', 'agent')`——带 from，ai-providers 内 Esc 返回 agent）
 
 ### 悬浮操作
 

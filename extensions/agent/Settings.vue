@@ -114,7 +114,7 @@ const allItems = computed<SettingItem[]>(() => [
     subtitle: t('agent.configureInAiProviders'),
     type: 'action',
     group: t('agent.group.provider'),
-    action: () => appStore.setActiveExtension('ai-providers'),
+    action: () => appStore.setActiveExtension('ai-providers', 'agent'),
   },
   {
     id: 'search-provider',

@@ -291,7 +291,7 @@ function jumpToVideo() {
   const ps = videoPaths.value
   if (!ps.length) return
   window.dispatchEvent(new CustomEvent('video-pending-input-path', { detail: ps }))
-  appStore.setActiveExtension('video')
+  appStore.setActiveExtension('video', 'finder-ext')
 }
 
 /** 跳转图片处理（跨扩展，全量带入；多张由 image 自动进拼接模式）。
@@ -300,7 +300,7 @@ function jumpToImage() {
   const ps = imagePaths.value
   if (!ps.length) return
   window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: ps }))
-  appStore.setActiveExtension('image')
+  appStore.setActiveExtension('image', 'finder-ext')
 }
 
 /** 媒体入口副标题：单选取文件名，多选取计数。 */

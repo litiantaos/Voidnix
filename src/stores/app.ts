@@ -68,6 +68,11 @@ export const useAppStore = defineStore('app', () => {
   /// 槽被其它路径清空（扩展激活让位）时同样清空防过期
   const fullscreenReturnExtId = ref<string | null>(null)
 
+  /// 扩展间导航的 Esc 返回目标：setActiveExtension(id, from) 带来源时记忆（如 ai-gateway →
+  /// ai-providers），exitExtension 消费；其余激活路径一律清空防过期——返回跳转本身不带
+  /// from，故返回后再 Esc 走原 entryQuery 逻辑，链自然收敛回主界面
+  const extensionReturnExtId = ref<string | null>(null)
+
   /// 自测模式一次性标志（main.ts 查询 is_self_test_mode 后置位）：接管式 UI（首启引导等）
   /// 据此让位——整窗接管会藏起搜索输入，CGEvent 打字进不去；窗口由测试脚本驱动。
   const selfTestMode = ref(false)
@@ -78,7 +83,7 @@ export const useAppStore = defineStore('app', () => {
     showToast(msg, opts)
   }
 
-  function setActiveExtension(id: string | null) {
+  function setActiveExtension(id: string | null, from?: string | null) {
     const prevId = activeExtId.value
     if (id && !prevId) {
       // 从外部进入扩展：快照入口 query（统一所有激活路径——快捷键 toggle / open-extension
@@ -92,8 +97,11 @@ export const useAppStore = defineStore('app', () => {
     if (isDialogOpen.value && id !== prevId) {
       resolveConfirm(false)
     }
-    // ext→ext（如 OCR→translate）：保留原入口，ESC 回到最初进入点
+    // ext→ext（如 OCR→translate）：保留原入口；带 from 的导航另有 Esc 返回目标
+    // （extensionReturnExtId），返回链收敛后仍由入口逻辑退出
     activeExtId.value = id
+    // 扩展间导航（带 from）：记忆 Esc 返回目标；其余激活路径一律清空防过期
+    extensionReturnExtId.value = id && from && from !== id ? from : null
     persistActiveExt(id)
     activeSubview.value = null
     subviewExternal.value = false
@@ -185,6 +193,7 @@ export const useAppStore = defineStore('app', () => {
     fullscreenView,
     setFullscreenView,
     fullscreenReturnExtId,
+    extensionReturnExtId,
     selfTestMode,
     shortcutErrors,
     setShortcutError,

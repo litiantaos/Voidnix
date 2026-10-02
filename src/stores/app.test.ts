@@ -61,6 +61,24 @@ describe('app store', () => {
       expect(store.entryQuery).toBe('/calc')
     })
 
+    it('带 from 的导航记忆 Esc 返回目标，其余激活路径清空', () => {
+      const store = useAppStore()
+      store.setActiveExtension('ai-gateway')
+      expect(store.extensionReturnExtId).toBeNull()
+
+      store.setActiveExtension('ai-providers', 'ai-gateway')
+      expect(store.extensionReturnExtId).toBe('ai-gateway')
+
+      // 返回跳转（不带 from）：目标消费即清空
+      store.setActiveExtension('ai-gateway')
+      expect(store.extensionReturnExtId).toBeNull()
+
+      // 导航后再切第三方扩展：过期目标清空
+      store.setActiveExtension('ai-providers', 'ai-gateway')
+      store.setActiveExtension('notes')
+      expect(store.extensionReturnExtId).toBeNull()
+    })
+
     it('退出扩展清空 entryQuery', () => {
       const store = useAppStore()
       store.setSearchQuery('/calc')

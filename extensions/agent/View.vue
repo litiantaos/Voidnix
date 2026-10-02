@@ -3,7 +3,7 @@
     v-if="!isConfigured"
     class="agent-setup"
     :title="t('agent.setupTitle')"
-    @configure="appStore.setActiveExtension('ai-providers')"
+    @configure="appStore.setActiveExtension('ai-providers', 'agent')"
   />
 
   <div

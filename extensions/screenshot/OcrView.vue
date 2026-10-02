@@ -193,7 +193,7 @@ async function handleTranslate() {
   // translate 扩展 setup 监听 'translate-pending-text'（window CustomEvent，同步达），
   // 写入自身 pendingText——跳转首帧即进入翻译中状态。
   window.dispatchEvent(new CustomEvent('translate-pending-text', { detail: session.value.ocrText }))
-  appStore.setActiveExtension('translate')
+  appStore.setActiveExtension('translate', 'screenshot')
 }
 
 function trimSpaces() {

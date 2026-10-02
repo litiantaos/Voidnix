@@ -98,12 +98,21 @@ export function useSearchInput(opts: SearchInputOptions) {
     clearSearch()
   }
 
-  /** 退出扩展 → 回到入口前状态：query 决定返回目标（/ → 工具列表，其余 → 主界面）。
+  /** 退出扩展：优先回扩展间导航的来源（setActiveExtension 带 from 记忆的返回目标，消费即
+   *  清空——返回跳转不带 from，来源扩展再 Esc 走下方原入口逻辑）；否则回到入口前状态：
+   *  query 决定返回目标（/ → 工具列表，其余 → 主界面）。
    *  滚动位置由 setActiveExtension(null) 触发 scrollKey watch 自动 save/restore，此处不再手动处理。
    *  / 分支先 clearSearch(query) 再 setActiveExtension(null)：让 scrollKey 单调 ext→tools 变化，
    *  避免 setActiveExtension 先行产生 ext→home 中转态（虽 Vue 批处理合并 watch 不致误触发 clear，
    *  但线性转换更稳健、不依赖 flush 时序细节）。setActiveExtension 退出分支不读 searchQuery，顺序安全。 */
   function exitExtension() {
+    const back = appStore.extensionReturnExtId
+    if (back) {
+      searchEngine.abort()
+      appStore.setActiveExtension(back)
+      clearSearch()
+      return
+    }
     const query = appStore.entryQuery
     searchEngine.abort()
     if (query.startsWith('/')) {
@@ -411,7 +420,8 @@ export function useSearchInput(opts: SearchInputOptions) {
         loadDefaultResults(true)
       }
     } else if (appStore.activeExtId) {
-      exitExtension()
+      // 标签关闭 = 回主界面(全局语义),不走 ext→ext 的 Esc 返回跳转
+      goHome()
     }
     searchInput.value?.focus()
   }

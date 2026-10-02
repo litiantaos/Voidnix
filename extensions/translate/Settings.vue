@@ -353,7 +353,7 @@ function onModelListKeydown(e: KeyboardEvent) {
 
 function goAiProviders() {
   showAiModal.value = false
-  appStore.setActiveExtension('ai-providers')
+  appStore.setActiveExtension('ai-providers', 'translate')
 }
 
 function saveAi() {
