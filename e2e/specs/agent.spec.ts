@@ -26,6 +26,6 @@ test.describe('agent 未配置引导', () => {
       .getByRole('button', { name: '添加提供商' })
       .filter({ hasText: '添加提供商' })
     await addProvider.click()
-    await expect(page.getByText('API URL')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('OpenAI Chat URL')).toBeVisible({ timeout: 5000 })
   })
 })
