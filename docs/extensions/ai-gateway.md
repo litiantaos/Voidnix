@@ -7,7 +7,7 @@
 ```
 Claude Code ──POST /v1/messages──▶ 127.0.0.1:8788 ──按 body.model 路由──▶ 提供商 anthropicEndpoint
 Responses 客户端 ──POST /v1/responses──▶ 同端口 ──▶ 提供商 responsesEndpoint
-Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提供商 endpoint（API URL）
+Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提供商 chatEndpoint（OpenAI Chat URL）
 ```
 
 - **路由**：请求体 `model` 字段 → 提供商；`[Nm]` 长上下文后缀双向归一（CC 发送前已剥，中枢可能带后缀存储）
@@ -27,7 +27,7 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 
 ## 路由表来源
 
-中枢（ai-providers）→ `buildRoutes`：三种端点（`anthropicEndpoint` / `responsesEndpoint` / `endpoint`，后者即 chat completions 的 API URL）至少声明一个 + 至少一把非空 Key + 至少一个模型的提供商才参与。hub deep watch（400ms 防抖）→ `ai_gateway_sync` 推 Rust,**改 Key / 加模型即时生效，工具无需重启**；路由表未变时（改开关/别名等无关 sync）保留冷却/亲和/粘性运行时状态——亲和清空 = 活跃会话丢 Key 粘性，上游 prompt cache 按 Key 隔离即全价重算。请求体归一在路由命中后才执行，未知模型不支付归一成本。
+中枢（ai-providers）→ `buildRoutes`：三种端点（`anthropicEndpoint` / `responsesEndpoint` / `chatEndpoint`）至少声明一个 + 至少一把非空 Key + 至少一个模型的提供商才参与。hub deep watch（400ms 防抖）→ `ai_gateway_sync` 推 Rust,**改 Key / 加模型即时生效，工具无需重启**；路由表未变时（改开关/别名等无关 sync）保留冷却/亲和/粘性运行时状态——亲和清空 = 活跃会话丢 Key 粘性，上游 prompt cache 按 Key 隔离即全价重算。请求体归一在路由命中后才执行，未知模型不支付归一成本。
 
 ## Claude Code 接线
 

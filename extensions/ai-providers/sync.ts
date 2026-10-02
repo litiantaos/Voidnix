@@ -1,11 +1,6 @@
 import { load } from '@tauri-apps/plugin-store'
 import { isTauri } from '@/utils/tauri'
-import {
-  config,
-  normalizeProvidersInPlace,
-  addAiProvider,
-  getProviderById,
-} from '@/runtime/ai-providers'
+import { config, addAiProvider, getProviderById } from '@/runtime/ai-providers'
 import { whenConfigReady } from '@/runtime/storage'
 
 /**
@@ -30,8 +25,8 @@ async function importLegacyProviders(): Promise<number> {
         if (!endpoint && !apiKey.trim() && models.every((m) => !String(m).trim())) continue
         const id = typeof r.id === 'string' ? r.id : undefined
         if (id && getProviderById(id)) continue
-        if (endpoint && config.providers.some((p) => p.endpoint.trim() === endpoint)) continue
-        addAiProvider({ id, endpoint, apiKey, models })
+        if (endpoint && config.providers.some((p) => p.chatEndpoint.trim() === endpoint)) continue
+        addAiProvider({ id, chatEndpoint: endpoint, apiKey, models })
         imported += 1
       }
       if (imported > 0) {
@@ -61,11 +56,11 @@ async function importLegacyProviders(): Promise<number> {
         const apiKey = typeof r.apiKey === 'string' ? r.apiKey : ''
         const models = Array.isArray(r.models) ? r.models.map(String) : []
         if (!endpoint && !apiKey.trim()) continue
-        if (endpoint && config.providers.some((p) => p.endpoint.trim() === endpoint)) {
+        if (endpoint && config.providers.some((p) => p.chatEndpoint.trim() === endpoint)) {
           touched = true
           continue
         }
-        addAiProvider({ endpoint, apiKey, models })
+        addAiProvider({ chatEndpoint: endpoint, apiKey, models })
         imported += 1
         touched = true
       }
@@ -84,9 +79,8 @@ async function importLegacyProviders(): Promise<number> {
   return imported
 }
 
-/** 中枢 setup：规范化 + 遗留导入。 */
+/** 中枢 setup：遗留导入（schema 规范化已在 defineConfig onLoad 同步完成）。 */
 export async function setupAiProvidersSync() {
   await whenConfigReady('config/ai-providers')
-  normalizeProvidersInPlace()
   await importLegacyProviders()
 }

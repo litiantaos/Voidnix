@@ -99,12 +99,12 @@
         </div>
 
         <div class="form-field">
-          <span class="form-label">API URL</span>
-          <BaseInput v-model="providerForm.endpoint" :placeholder="EXAMPLE_ENDPOINT" />
+          <span class="form-label">OpenAI Chat URL</span>
+          <BaseInput v-model="providerForm.chatEndpoint" :placeholder="EXAMPLE_ENDPOINT" />
         </div>
 
         <div class="form-field">
-          <span class="form-label">Responses URL</span>
+          <span class="form-label">OpenAI Responses URL</span>
           <BaseInput
             v-model="providerForm.responsesEndpoint"
             :placeholder="EXAMPLE_RESPONSES_ENDPOINT"
@@ -112,7 +112,7 @@
         </div>
 
         <div class="form-field">
-          <span class="form-label">Anthropic URL</span>
+          <span class="form-label">Anthropic Messages URL</span>
           <BaseInput
             v-model="providerForm.anthropicEndpoint"
             :placeholder="EXAMPLE_ANTHROPIC_ENDPOINT"
@@ -444,17 +444,17 @@ const actionMenuItems = computed<PanelItem[]>(() => {
     {
       type: 'item',
       key: 'paste-url',
-      label: t('ai-providers.paste', { name: 'API URL' }),
+      label: t('ai-providers.paste', { name: 'OpenAI Chat URL' }),
       icon: 'i-ri-links-line',
-      disabled: !p?.endpoint.trim(),
+      disabled: !p?.chatEndpoint.trim(),
     },
   ]
-  // 声明了 Responses 端点（与 API URL 分立）才出现对应粘贴项
+  // 声明了 Responses 端点（与 chat 端点分立）才出现对应粘贴项
   if (p?.responsesEndpoint.trim()) {
     items.push({
       type: 'item',
       key: 'paste-responses-url',
-      label: t('ai-providers.paste', { name: 'Responses URL' }),
+      label: t('ai-providers.paste', { name: 'OpenAI Responses URL' }),
       icon: 'i-ri-links-line',
     })
   }
@@ -462,7 +462,7 @@ const actionMenuItems = computed<PanelItem[]>(() => {
     items.push({
       type: 'item',
       key: 'paste-anthropic-url',
-      label: t('ai-providers.paste', { name: 'Anthropic URL' }),
+      label: t('ai-providers.paste', { name: 'Anthropic Messages URL' }),
       icon: 'i-ri-links-line',
     })
   }
@@ -523,9 +523,11 @@ const {
     const k = String(key)
     const p = getProviderById(row.providerId)
     if (k === 'paste-key') void pasteField(row.slot.apiKey, 'Key')
-    else if (k === 'paste-url' && p) void pasteField(p.endpoint, 'API URL')
-    else if (k === 'paste-responses-url' && p) void pasteField(p.responsesEndpoint, 'Responses URL')
-    else if (k === 'paste-anthropic-url' && p) void pasteField(p.anthropicEndpoint, 'Anthropic URL')
+    else if (k === 'paste-url' && p) void pasteField(p.chatEndpoint, 'OpenAI Chat URL')
+    else if (k === 'paste-responses-url' && p)
+      void pasteField(p.responsesEndpoint, 'OpenAI Responses URL')
+    else if (k === 'paste-anthropic-url' && p)
+      void pasteField(p.anthropicEndpoint, 'Anthropic Messages URL')
     else if (k.startsWith('paste-model:'))
       void pasteField(k.slice('paste-model:'.length), t('ai-providers.modelLabel'))
     else if (k === 'delete-key') {
@@ -543,7 +545,7 @@ const editingProviderId = ref('')
 const createKeyVisible = ref(false)
 const providerForm = ref({
   name: '',
-  endpoint: '',
+  chatEndpoint: '',
   responsesEndpoint: '',
   anthropicEndpoint: '',
   models: [''] as string[],
@@ -558,7 +560,7 @@ const EXAMPLE_RESPONSES_ENDPOINT = 'https://api.openai.com/v1'
 /** Anthropic Messages 线协议端点示例（智谱官方兼容端点；可选字段，空 = 不参与网关路由） */
 const EXAMPLE_ANTHROPIC_ENDPOINT = 'https://open.bigmodel.cn/api/anthropic'
 const nameFieldPlaceholder = computed(() =>
-  providerLabelFromUrl(providerForm.value.endpoint.trim() || EXAMPLE_ENDPOINT, 'OPENAI'),
+  providerLabelFromUrl(providerForm.value.chatEndpoint.trim() || EXAMPLE_ENDPOINT, 'OPENAI'),
 )
 
 function openCreateProvider() {
@@ -567,7 +569,7 @@ function openCreateProvider() {
   createKeyVisible.value = false
   providerForm.value = {
     name: '',
-    endpoint: '',
+    chatEndpoint: '',
     responsesEndpoint: '',
     anthropicEndpoint: '',
     models: [''],
@@ -592,8 +594,8 @@ function openEditProvider(providerId: string) {
   editingProviderId.value = p.id
   // 已配置但未写 name：表单直接填域名默认值
   providerForm.value = {
-    name: p.name.trim() || defaultProviderName(p.endpoint),
-    endpoint: p.endpoint,
+    name: p.name.trim() || defaultProviderName(p.chatEndpoint),
+    chatEndpoint: p.chatEndpoint,
     responsesEndpoint: p.responsesEndpoint ?? '',
     anthropicEndpoint: p.anthropicEndpoint ?? '',
     models: p.models.length ? [...p.models] : [''],
@@ -605,15 +607,15 @@ function openEditProvider(providerId: string) {
 
 function saveProvider() {
   const models = providerForm.value.models.map((m) => m.trim()).filter(Boolean)
-  const endpoint = providerForm.value.endpoint.trim()
+  const chatEndpoint = providerForm.value.chatEndpoint.trim()
   const responsesEndpoint = providerForm.value.responsesEndpoint.trim()
   const anthropicEndpoint = providerForm.value.anthropicEndpoint.trim()
   // 有 URL 时名称空则落盘域名默认，避免一直「虚」占位
-  const name = providerForm.value.name.trim() || defaultProviderName(endpoint)
+  const name = providerForm.value.name.trim() || defaultProviderName(chatEndpoint)
 
   if (providerModalMode.value === 'create') {
     const apiKey = providerForm.value.firstKey.trim()
-    if (!endpoint) {
+    if (!chatEndpoint) {
       showToast(t('ai-providers.urlRequired'), { kind: 'error' })
       return
     }
@@ -625,20 +627,20 @@ function saveProvider() {
     const slot = newKeySlot(label, apiKey)
     addAiProvider({
       name,
-      endpoint,
+      chatEndpoint,
       responsesEndpoint,
       anthropicEndpoint,
       models,
       keys: [slot],
     })
   } else if (editingProviderId.value) {
-    if (!endpoint) {
+    if (!chatEndpoint) {
       showToast(t('ai-providers.urlRequired'), { kind: 'error' })
       return
     }
     updateAiProvider(editingProviderId.value, {
       name,
-      endpoint,
+      chatEndpoint,
       responsesEndpoint,
       anthropicEndpoint,
       models,
@@ -793,7 +795,7 @@ async function refreshAllMonitors() {
         tasks.push(fetchZhipuForSlot(ck, slot.apiKey, gen))
       } else if (kind === 'deepseek-balance') {
         liveKeys.add(ck)
-        tasks.push(fetchDeepseekForSlot(ck, slot.apiKey, p.endpoint, gen))
+        tasks.push(fetchDeepseekForSlot(ck, slot.apiKey, p.chatEndpoint, gen))
       }
     }
   }
@@ -816,7 +818,7 @@ watch(
       .map((p) => {
         const kind = resolveUsageKind(p)
         const keys = (p.keys ?? []).map((k) => `${k.id}:${k.apiKey}`).join(',')
-        return `${p.id}|${p.endpoint}|${kind}|${keys}`
+        return `${p.id}|${p.chatEndpoint}|${kind}|${keys}`
       })
       .join('\n'),
   () => {

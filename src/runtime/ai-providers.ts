@@ -23,10 +23,11 @@ export interface AiKeySlot {
  */
 export interface AiProvider {
   id: string
-  /** 显示名；空则从 endpoint hostname 推导 */
+  /** 显示名；空则从 chat 端点 hostname 推导 */
   name: string
-  endpoint: string
-  /** Responses 线协议端点（供外部工具如 Grok Build `api_backend="responses"`）；空 = 未声明不导出 */
+  /** OpenAI Chat Completions 线协议端点（内部消费者 agent/translate 的请求端点） */
+  chatEndpoint: string
+  /** OpenAI Responses 线协议端点（供外部工具如 Grok Build `api_backend="responses"`）；空 = 未声明不导出 */
   responsesEndpoint: string
   /** Anthropic Messages 线协议端点（供 ai-gateway 直通 Claude Code 等 Anthropic 客户端）；空 = 未声明不参与网关路由 */
   anthropicEndpoint: string
@@ -55,9 +56,13 @@ export interface AiCredentialSelection {
   model?: string
 }
 
-export const config = defineConfig('config/ai-providers', {
-  providers: [] as AiProvider[],
-})
+export const config = defineConfig(
+  'config/ai-providers',
+  { providers: [] as AiProvider[] },
+  // backfill 同步迁移（旧字段名 endpoint / legacy 单 apiKey → 新 schema）：resolveReady 前
+  // 完成，whenConfigReady 的全部等待者（模块级 then / setup await / 网关 watch）无旧形态竞态
+  () => normalizeProvidersInPlace(),
+)
 
 // ─── 规范化 / 迁移 ──────────────────────────────────────────
 
@@ -65,7 +70,13 @@ export const config = defineConfig('config/ai-providers', {
 export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
   const id = typeof raw.id === 'string' ? raw.id : generateRequestId()
   const name = typeof raw.name === 'string' ? raw.name : ''
-  const endpoint = typeof raw.endpoint === 'string' ? raw.endpoint : ''
+  // legacy 字段名 endpoint → chatEndpoint（读旧值迁移）
+  const chatEndpoint =
+    typeof raw.chatEndpoint === 'string'
+      ? raw.chatEndpoint
+      : typeof raw.endpoint === 'string'
+        ? raw.endpoint
+        : ''
   const responsesEndpoint = typeof raw.responsesEndpoint === 'string' ? raw.responsesEndpoint : ''
   const anthropicEndpoint = typeof raw.anthropicEndpoint === 'string' ? raw.anthropicEndpoint : ''
   const models = Array.isArray(raw.models) ? (raw.models as string[]).map(String) : []
@@ -80,7 +91,7 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
     return {
       id,
       name,
-      endpoint,
+      chatEndpoint,
       responsesEndpoint,
       anthropicEndpoint,
       models,
@@ -95,7 +106,7 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
   return {
     id,
     name,
-    endpoint,
+    chatEndpoint,
     responsesEndpoint,
     anthropicEndpoint,
     models,
@@ -113,13 +124,13 @@ export function newKeySlot(label = 'Key', apiKey = ''): AiKeySlot {
 export function providerDisplayName(p: AiProvider): string {
   const n = p.name.trim()
   if (n) return n
-  return providerLabelFromUrl(p.endpoint, '未命名提供商')
+  return providerLabelFromUrl(p.chatEndpoint, '未命名提供商')
 }
 
 export function resolveUsageKind(p: AiProvider): AiUsageKind {
   if (p.usageKind) return p.usageKind
-  if (/bigmodel\.cn|zhipuai/i.test(p.endpoint)) return 'zhipu-coding-plan'
-  if (/deepseek\.com/i.test(p.endpoint)) return 'deepseek-balance'
+  if (/bigmodel\.cn|zhipuai/i.test(p.chatEndpoint)) return 'zhipu-coding-plan'
+  if (/deepseek\.com/i.test(p.chatEndpoint)) return 'deepseek-balance'
   return ''
 }
 
@@ -193,7 +204,7 @@ export function isCredentialSelectionValid(sel: {
 /** 按选用解析凭证；未指定 providerId 时不猜「默认提供商」。 */
 export function resolveCredentials(sel: AiCredentialSelection = {}): ResolvedAiCredentials | null {
   const p = sel.providerId ? getProviderById(sel.providerId) : undefined
-  const endpoint = p?.endpoint.trim() ?? ''
+  const endpoint = p?.chatEndpoint.trim() ?? ''
   const apiKey = apiKeyOf(p, sel.keyId)
   const model = sel.model?.trim() ?? ''
   if (!endpoint || !apiKey || !model) return null
@@ -211,13 +222,18 @@ export function resolveCredentials(sel: AiCredentialSelection = {}): ResolvedAiC
 export const hasAnyConfiguredProvider = computed(() =>
   config.providers.some(
     (p) =>
-      !!p.endpoint.trim() && p.keys.some((k) => k.apiKey.trim()) && p.models.some((m) => m.trim()),
+      !!p.chatEndpoint.trim() &&
+      p.keys.some((k) => k.apiKey.trim()) &&
+      p.models.some((m) => m.trim()),
   ),
 )
 
 // ─── 加载后规范化 ───────────────────────────────────────────
 
-/** 加载后规范化 keys[]（legacy apiKey / 缺 keys）。 */
+/**
+ * 加载后规范化：legacy 字段名 endpoint → chatEndpoint、旧单 apiKey / 缺 keys → keys[]。
+ * 经 defineConfig onLoad 在 backfill 后同步执行（早于全部 whenConfigReady 等待者）。
+ */
 export function normalizeProvidersInPlace() {
   if (config.providers.length === 0) return
   const next = config.providers.map((p) =>
@@ -250,7 +266,7 @@ export function addAiProvider(
   config.providers.push({
     id,
     name: partial?.name ?? '',
-    endpoint: partial?.endpoint ?? '',
+    chatEndpoint: partial?.chatEndpoint ?? '',
     responsesEndpoint: partial?.responsesEndpoint ?? '',
     anthropicEndpoint: partial?.anthropicEndpoint ?? '',
     models: partial?.models ? [...partial.models] : [],

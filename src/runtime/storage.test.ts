@@ -182,6 +182,28 @@ describe('defineConfig', () => {
     expect(config.items).toEqual(['a', 'b', 'c'])
   })
 
+  // ─── onLoad 迁移钩子：resolveReady 前同步执行 ──────────────
+
+  it('onLoad 迁移钩子在等待者读取前完成（旧字段名无竞态窗口）', async () => {
+    storeGet.mockImplementation((key) =>
+      Promise.resolve(key === 'items' ? [{ endpoint: 'https://x' }] : null),
+    )
+    // 模拟模块级 then 消费者：ready 一 resolve 立即快照（真实竞态点）
+    const waiterSnapshot: unknown[] = []
+    const config = defineConfig('cfg-onload', { items: [] as Record<string, unknown>[] }, (c) => {
+      // 迁移：旧字段名 endpoint → chatEndpoint
+      c.items = c.items.map(({ endpoint, ...rest }) => ({ ...rest, chatEndpoint: endpoint }))
+    })
+    void whenConfigReady('cfg-onload').then(() => {
+      waiterSnapshot.push(JSON.parse(JSON.stringify(config.items)))
+    })
+    await whenConfigReady('cfg-onload')
+    await new Promise((r) => setTimeout(r, 10))
+    // 等待者与 ready 后读取均为迁移后形态
+    expect(waiterSnapshot[0]).toEqual([{ chatEndpoint: 'https://x' }])
+    expect(config.items).toEqual([{ chatEndpoint: 'https://x' }])
+  })
+
   // ─── 回归：持续变更防饿死（agent 流式增量场景） ──────────────
 
   it('持续变更防饿死：pending 超 2s 强制落盘', async () => {

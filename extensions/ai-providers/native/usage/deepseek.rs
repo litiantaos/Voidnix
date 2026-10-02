@@ -38,7 +38,7 @@ fn deepseek_balance_url(endpoint: &str) -> String {
     "https://api.deepseek.com/user/balance".into()
 }
 
-/// 拉取 DeepSeek 账户余额。`endpoint` 用提供商配置的 API URL 推导 host。
+/// 拉取 DeepSeek 账户余额。`endpoint` 用提供商配置的 OpenAI Chat URL 推导 host。
 #[tauri::command]
 pub async fn ai_providers_deepseek_balance(
     api_key: String,

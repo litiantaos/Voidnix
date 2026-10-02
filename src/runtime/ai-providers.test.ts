@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   config,
+  type AiProvider,
   addAiProvider,
   removeAiProvider,
   removeKeyFromProvider,
@@ -55,7 +56,7 @@ beforeEach(() => {
 describe('multi-key', () => {
   it('add 默认一把 key，无 active 字段', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       apiKey: 'k',
       models: ['m'],
     })
@@ -67,14 +68,14 @@ describe('multi-key', () => {
   it('add 可指定 id；重复 id 幂等', () => {
     const id = addAiProvider({
       id: 'fixed-id',
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       apiKey: 'k',
       models: ['m'],
     })
     expect(id).toBe('fixed-id')
     const again = addAiProvider({
       id: 'fixed-id',
-      endpoint: 'https://other',
+      chatEndpoint: 'https://other',
       apiKey: 'other',
       models: ['z'],
     })
@@ -84,7 +85,7 @@ describe('multi-key', () => {
   })
 
   it('addKey 后按 keyId 解析', () => {
-    const id = addAiProvider({ endpoint: 'https://x', apiKey: 'a', models: ['m'] })
+    const id = addAiProvider({ chatEndpoint: 'https://x', apiKey: 'a', models: ['m'] })
     const kid2 = addKeyToProvider(id, '备用')
     const p = config.providers[0]
     p.keys.find((k) => k.id === kid2)!.apiKey = 'b'
@@ -92,7 +93,7 @@ describe('multi-key', () => {
     expect(apiKeyOf(p)).toBe('a')
   })
 
-  it('normalize legacy apiKey，剥掉 activeKeyId', () => {
+  it('normalize legacy apiKey 与 legacy endpoint 字段名，剥掉 activeKeyId', () => {
     const n = normalizeProvider({
       id: 'old',
       endpoint: 'https://x',
@@ -101,13 +102,14 @@ describe('multi-key', () => {
       activeKeyId: 'whatever',
     })
     expect(n.keys[0].apiKey).toBe('legacy')
+    expect(n.chatEndpoint).toBe('https://x')
     expect('activeKeyId' in n).toBe(false)
   })
 
-  it('resolveUsageKind 按 endpoint 识别', () => {
-    const z = addAiProvider({ endpoint: 'https://open.bigmodel.cn/api/coding/paas/v4' })
-    const d = addAiProvider({ endpoint: 'https://api.deepseek.com' })
-    const o = addAiProvider({ endpoint: 'https://api.openai.com/v1' })
+  it('resolveUsageKind 按 chat 端点识别', () => {
+    const z = addAiProvider({ chatEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4' })
+    const d = addAiProvider({ chatEndpoint: 'https://api.deepseek.com' })
+    const o = addAiProvider({ chatEndpoint: 'https://api.openai.com/v1' })
     expect(resolveUsageKind(config.providers.find((p) => p.id === z)!)).toBe('zhipu-coding-plan')
     expect(resolveUsageKind(config.providers.find((p) => p.id === d)!)).toBe('deepseek-balance')
     expect(resolveUsageKind(config.providers.find((p) => p.id === o)!)).toBe('')
@@ -117,7 +119,7 @@ describe('multi-key', () => {
 describe('resolveCredentials', () => {
   it('只按消费者传入的选用解析', () => {
     const id = addAiProvider({
-      endpoint: 'https://cfg',
+      chatEndpoint: 'https://cfg',
       models: ['cm'],
       keys: [
         { id: 'k1', label: '1', apiKey: 'ka' },
@@ -136,7 +138,7 @@ describe('resolveCredentials', () => {
 
   it('无 keyId 时优先第一把非空 Key', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m'],
       keys: [
         { id: 'k1', label: '空', apiKey: '' },
@@ -147,26 +149,27 @@ describe('resolveCredentials', () => {
     expect(getKeySlot(config.providers[0])?.id).toBe('k2')
   })
 
-  it('normalizeProvidersInPlace 把 legacy apiKey 收成 keys', () => {
+  it('normalizeProvidersInPlace 把 legacy apiKey 收成 keys 并迁移 endpoint 字段名', () => {
+    // 模拟磁盘旧 schema 原始 JSON（endpoint 旧字段名 + 单 apiKey）
     config.providers.push({
       id: 'legacy',
       name: '',
       endpoint: 'https://x',
       models: ['m'],
-      keys: undefined as unknown as [],
+      keys: undefined,
       usageKind: '',
       responsesEndpoint: '',
       anthropicEndpoint: '',
-      // @ts-expect-error legacy field
       apiKey: 'from-disk',
-    })
+    } as unknown as AiProvider)
     normalizeProvidersInPlace()
     expect(config.providers[0].keys[0].apiKey).toBe('from-disk')
+    expect(config.providers[0].chatEndpoint).toBe('https://x')
   })
 
   it('removeKey / removeProvider', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       apiKey: 'a',
       models: ['m'],
       keys: [
@@ -194,7 +197,7 @@ describe('selection key', () => {
 
   it('modelSelectOptions 含 keyId；单 Key 仅模型名', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1'],
       keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
     })
@@ -205,7 +208,7 @@ describe('selection key', () => {
 
   it('modelSelectOptions 多 Key 选项带备注', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1'],
       keys: [
         { id: 'k1', label: '主号', apiKey: 'a' },
@@ -224,7 +227,7 @@ describe('selection key', () => {
 describe('isCredentialSelectionValid', () => {
   it('提供商/模型/Key 一致为真；删模型或 Key 为假', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1', 'm2'],
       keys: [
         { id: 'k1', label: '主', apiKey: 'a' },

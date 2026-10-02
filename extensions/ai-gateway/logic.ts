@@ -35,7 +35,7 @@ export interface RoutableModel {
 }
 
 /**
- * 中枢 → 网关路由表:三种协议端点(chat = endpoint)全空才不参与,另需至少一把非空 Key
+ * 中枢 → 网关路由表:三种协议端点全空才不参与,另需至少一把非空 Key
  * 与至少一个模型;模型与 Key 全量带入(轮换在网关侧,热生效)。
  */
 export function buildRoutes(providers: AiProvider[]): GatewayRoute[] {
@@ -43,7 +43,7 @@ export function buildRoutes(providers: AiProvider[]): GatewayRoute[] {
   for (const p of providers) {
     const anthropicUrl = p.anthropicEndpoint?.trim() ?? ''
     const responsesUrl = p.responsesEndpoint?.trim() ?? ''
-    const chatUrl = p.endpoint?.trim() ?? ''
+    const chatUrl = p.chatEndpoint?.trim() ?? ''
     const keys = (p.keys ?? [])
       .filter((k) => k.apiKey.trim())
       .map((k) => ({ label: k.label?.trim() || 'Key', apiKey: k.apiKey.trim() }))

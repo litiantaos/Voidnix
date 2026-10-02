@@ -13,7 +13,7 @@ import type { AliasSelection } from './config'
 function p(partial: Partial<AiProvider> & Pick<AiProvider, 'id'>): AiProvider {
   return {
     name: '',
-    endpoint: 'https://api.example.com/v1',
+    chatEndpoint: 'https://api.example.com/v1',
     responsesEndpoint: '',
     anthropicEndpoint: '',
     models: ['m'],
@@ -51,9 +51,9 @@ describe('buildRoutes', () => {
     ])
   })
 
-  it('三种端点全空 / 无非空 Key / 无模型的提供商跳过;仅 chat(endpoint)也参与', () => {
+  it('三种端点全空 / 无非空 Key / 无模型的提供商跳过;仅 chat 端点也参与', () => {
     const routes = buildRoutes([
-      p({ id: 'a', endpoint: '' }),
+      p({ id: 'a', chatEndpoint: '' }),
       p({ id: 'b', anthropicEndpoint: 'https://x', keys: [{ id: 'k', label: 'x', apiKey: '  ' }] }),
       p({ id: 'c', anthropicEndpoint: 'https://x', models: [' ', ''] }),
       p({ id: 'd', responsesEndpoint: 'https://r' }),

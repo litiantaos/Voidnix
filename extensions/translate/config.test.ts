@@ -45,7 +45,7 @@ describe('getAiConfig / updateAiConfig', () => {
   it('读写 selections（写入压滤无效项）', () => {
     addAiProvider({
       id: 'p1',
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1'],
       keys: [{ id: 'k', label: '默认', apiKey: 'a' }],
     })
@@ -68,7 +68,7 @@ describe('resolveAiTargets', () => {
       {
         id: 'p1',
         name: 'A',
-        endpoint: 'https://1',
+        chatEndpoint: 'https://1',
         models: ['m1'],
         keys: [{ id: 'k', label: '默认', apiKey: 'k1' }],
         usageKind: '',
@@ -78,7 +78,7 @@ describe('resolveAiTargets', () => {
       {
         id: 'p2',
         name: 'B',
-        endpoint: 'https://2',
+        chatEndpoint: 'https://2',
         models: ['m2'],
         keys: [{ id: 'k', label: '默认', apiKey: 'k2' }],
         usageKind: '',
@@ -104,7 +104,7 @@ describe('resolveAiTargets', () => {
     aiProvidersConfig.providers.push({
       id: 'p1',
       name: 'A',
-      endpoint: 'https://1',
+      chatEndpoint: 'https://1',
       models: ['m1'],
       keys: [
         { id: 'k1', label: '主', apiKey: 'a' },
@@ -129,7 +129,7 @@ describe('resolveAiTargets', () => {
     aiProvidersConfig.providers.push({
       id: 'p1',
       name: 'A',
-      endpoint: 'https://1',
+      chatEndpoint: 'https://1',
       models: ['m1'],
       keys: [
         { id: 'k1', label: '空', apiKey: '' },
@@ -163,7 +163,7 @@ describe('resolveAiTargets', () => {
     aiProvidersConfig.providers.push({
       id: 'p1',
       name: 'A',
-      endpoint: 'https://1',
+      chatEndpoint: 'https://1',
       models: ['m1'],
       keys: [{ id: 'k', label: '默认', apiKey: 'k1' }],
       usageKind: '',
@@ -187,7 +187,7 @@ describe('resolveAiTargets', () => {
 describe('effectiveAiSelections / prune', () => {
   it('读时过滤悬空；冷 prune / updateAiConfig 写回干净', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1', 'm2'],
       keys: [
         { id: 'k1', label: '主', apiKey: 'a' },
@@ -226,12 +226,12 @@ describe('effectiveAiSelections / prune', () => {
 
   it('旧式无 keyId 与带 keyId 的同一模型去重并补全 keyId', () => {
     const id = addAiProvider({
-      endpoint: 'https://api.deepseek.com',
+      chatEndpoint: 'https://api.deepseek.com',
       models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
       keys: [{ id: 'k-default', label: '默认', apiKey: 'sk' }],
     })
     const z = addAiProvider({
-      endpoint: 'https://open.bigmodel.cn/x',
+      chatEndpoint: 'https://open.bigmodel.cn/x',
       models: ['glm-5.2'],
       keys: [{ id: 'kz', label: '195', apiKey: 'zk' }],
     })

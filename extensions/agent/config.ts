@@ -145,13 +145,13 @@ export function setProviderModelKey(key: string) {
 }
 
 /**
- * 无显式选用时默认首个可用提供商（endpoint + 非空 key + 模型齐备）；列表无可用则空。
+ * 无显式选用时默认首个可用提供商（chat 端点 + 非空 key + 模型齐备）；列表无可用则空。
  * 读时推导，不写回 providerModelKey。
  */
 const firstProviderSelection = computed(() => {
   void aiProvidersConfig.providers
   for (const p of aiProvidersConfig.providers) {
-    if (!p.endpoint.trim()) continue
+    if (!p.chatEndpoint.trim()) continue
     const slot = p.keys.find((k) => k.apiKey.trim())
     const model = p.models.find((m) => m.trim())
     if (slot && model) return formatSelectionKey(p.id, slot.id, model.trim())

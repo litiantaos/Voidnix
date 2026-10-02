@@ -1,6 +1,6 @@
 # AI 提供商
 
-统一维护 OpenAI 兼容 **URL（chat / 可选 Responses / 可选 Anthropic）/ 多 Key / 模型**。只做配置中枢，**不维护「使用中」**；谁用哪套由消费者自选。
+统一维护三种线协议端点 **OpenAI Chat（`chatEndpoint`）/ OpenAI Responses（可选）/ Anthropic Messages（可选）+ 多 Key / 模型**。只做配置中枢，**不维护「使用中」**；谁用哪套由消费者自选。
 
 ## 职责边界
 
@@ -10,7 +10,7 @@
 
 ## schema 变更
 
-- **normalizeProvider**：中枢加载后对 `keys[]` 做 `normalizeProvider`（旧单 `apiKey` → keys）
+- **normalizeProvider**：经 `defineConfig` 第三参 onLoad 在 backfill 后同步执行（`resolveReady` 前，全部 `whenConfigReady` 等待者读到迁移后形态）——旧字段名 `endpoint` → `chatEndpoint`、旧单 `apiKey` / 缺 `keys` → `keys[]`
 - **空中枢导入**：中枢为空时一次性从旧 `extensions/agent/config.json` 的 `aiProviders` / translate 旧 AI 引擎字段导入，并尽量删掉旧密钥字段；消费者侧也会清悬空选用
 - **重建**：仍可直接删磁盘 config 按 defaults 重建
 
@@ -23,11 +23,11 @@
   - 副标题 = `sk-… · MAX · 5h 12% (2.3h) · 7d 34% (2.3d) · 30d 1.2B`（重置缺失为 `—`）
   - 右侧 = **30d 曲线**（智谱）
 - **回车**：打开编辑 Key 弹窗
-- **Cmd+Enter / 右键**：统一「粘贴 Key / 粘贴 API URL / 粘贴 Responses URL / 粘贴 Anthropic URL（各自声明了对应端点才出现）/ 粘贴 {模型}」、删除 Key（经 `useActionPanel` 统一 `toggleOpen`，二次触发关闭）
+- **Cmd+Enter / 右键**：统一「粘贴 Key / 粘贴 OpenAI Chat URL / 粘贴 OpenAI Responses URL / 粘贴 Anthropic Messages URL（各自声明了对应端点才出现）/ 粘贴 {模型}」、删除 Key（经 `useActionPanel` 统一 `toggleOpen`，二次触发关闭）
 - **分组标题右侧**：编辑提供商 · 添加 Key
 - **添加提供商**：搜索栏右侧 `+`（`searchBarAccessory`）；列表空态（`BaseSetupState`，按钮文案覆盖为「添加提供商」）同款直达创建弹窗
 
-弹窗：添加/编辑提供商（名称 / API URL / 模型 / 可选 Responses URL / 可选 Anthropic URL；创建时含首把 Key）；添加/编辑 Key。无「选用 / 使用中」。
+弹窗：添加/编辑提供商（名称 / OpenAI Chat URL / 模型 / 可选 OpenAI Responses URL / 可选 Anthropic Messages URL；创建时含首把 Key）；添加/编辑 Key。无「选用 / 使用中」。
 
 ## 多 Key
 
@@ -76,7 +76,7 @@
 
 ## 额度 / 余额监控
 
-按 endpoint 自动识别（或 `usageKind` 显式指定）。Rust 侧全部在 `native/usage/`（每提供商一文件 + 共享原语 `fetch_text` / `json_i64` / `json_f64`；获取协议差异大，不做配置驱动的统一抽象），新增提供商 = `usage/` 下新文件（`#[tauri::command]` 由 `sync:extensions` 自动注册）+ 前端 `resolveUsageKind` 分支与拉取函数：
+按 chat 端点自动识别（或 `usageKind` 显式指定）。Rust 侧全部在 `native/usage/`（每提供商一文件 + 共享原语 `fetch_text` / `json_i64` / `json_f64`；获取协议差异大，不做配置驱动的统一抽象），新增提供商 = `usage/` 下新文件（`#[tauri::command]` 由 `sync:extensions` 自动注册）+ 前端 `resolveUsageKind` 分支与拉取函数：
 
 **拉取时机**：用量是实时数据，每次进入扩展拉最新——KeepAlive 首挂载/重进均触发 activated；窗口唤起获焦（`window-focused`）补刷，回调自带 `activeExtId` 激活判断、失活期跳过；配置指纹变化（改 Key / 端点）同样重拉。拉取期间旧值原地保留静默替换，无缓存（首次进入）才显示加载态。
 
@@ -87,7 +87,7 @@
 
 外部工具不引用中枢凭证——统一经 [ai-gateway](ai-gateway.md) 接入（本地三协议网关按模型名路由 + Key 轮换 + 热更新）：API 地址指向 `http://127.0.0.1:8788`、Key 填占位值即可。各工具自管模型选用（模型定义在工具配置里，含上下文长度/定价等元数据，不由中枢投射）。
 
-- **Responses 端点**（`responsesEndpoint`，可选）：语义是「Responses 端点与 chat 端点**不同**时的那个 URL」——分立端点（智谱 Responses `https://open.bigmodel.cn/api/v1` 与 chat `/api/coding/paas/v4`）才需要填；同端点用路径/参数区分协议的提供商（DeepSeek 等）留空即可。`endpoint` 始终存 chat 端点（内部消费者 agent/translate 走 chat completions，不受影响）
+- **Responses 端点**（`responsesEndpoint`，可选）：语义是「Responses 端点与 chat 端点**不同**时的那个 URL」——分立端点（智谱 Responses `https://open.bigmodel.cn/api/v1` 与 chat `/api/coding/paas/v4`）才需要填；同端点用路径/参数区分协议的提供商（DeepSeek 等）留空即可。`chatEndpoint` 始终存 chat 端点（内部消费者 agent/translate 走 chat completions，不受影响）
 - **Anthropic 端点**（`anthropicEndpoint`，可选）：Anthropic Messages 线协议端点（智谱 `https://open.bigmodel.cn/api/anthropic`、DeepSeek `https://api.deepseek.com/anthropic`），声明后模型进入网关的 Anthropic 路由（Claude Code 等客户端）
 
 历史的 `ai.env` 导出（`VOIDNIX_*` 环境变量 + shell source 钩子）已移除：扩展 setup 对存量遗留（rc 注入块 / `~/.config/voidnix[/dev]/ai.env`）做幂等自清。

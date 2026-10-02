@@ -47,7 +47,7 @@ describe('updateSearchProvider', () => {
 describe('effectiveProviderModelKey / prune', () => {
   it('显式选用合法时规范三段', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1', 'm2'],
       keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
     })
@@ -57,7 +57,7 @@ describe('effectiveProviderModelKey / prune', () => {
 
   it('无显式选用时默认首个可用提供商', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1', 'm2'],
       keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
     })
@@ -67,12 +67,12 @@ describe('effectiveProviderModelKey / prune', () => {
 
   it('首个提供商缺 key / 模型时落到下一个可用提供商', () => {
     addAiProvider({
-      endpoint: 'https://empty',
+      chatEndpoint: 'https://empty',
       models: ['m1'],
       keys: [{ id: 'ke', label: '空', apiKey: '' }],
     })
     const id2 = addAiProvider({
-      endpoint: 'https://ok',
+      chatEndpoint: 'https://ok',
       models: ['m1'],
       keys: [{ id: 'k2', label: '默认', apiKey: 'a' }],
     })
@@ -82,7 +82,7 @@ describe('effectiveProviderModelKey / prune', () => {
 
   it('显式选用悬空且无其他可用提供商时 effective 为空；冷 prune 清空持久值', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1'],
       keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
     })
@@ -98,7 +98,7 @@ describe('effectiveProviderModelKey / prune', () => {
 
   it('旧式两段串 effective 规范为三段；冷 prune 写回', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1'],
       keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
     })
@@ -127,7 +127,7 @@ describe('resolveAgentCredentials', () => {
 
   it('无显式选用时按首个可用提供商解析', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1'],
       keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
     })
@@ -141,12 +141,12 @@ describe('resolveAgentCredentials', () => {
 
   it('显式选用时按选用解析（非默认首个）', () => {
     addAiProvider({
-      endpoint: 'https://first',
+      chatEndpoint: 'https://first',
       models: ['mf'],
       keys: [{ id: 'kf', label: '默认', apiKey: 'first' }],
     })
     const id2 = addAiProvider({
-      endpoint: 'https://second',
+      chatEndpoint: 'https://second',
       models: ['m1'],
       keys: [{ id: 'k2', label: '默认', apiKey: 'a' }],
     })
@@ -158,7 +158,7 @@ describe('resolveAgentCredentials', () => {
 
   it('悬空选用且无其他可用提供商时返回 null', () => {
     const id = addAiProvider({
-      endpoint: 'https://x',
+      chatEndpoint: 'https://x',
       models: ['m1'],
       keys: [{ id: 'k1', label: '默认', apiKey: 'a' }],
     })

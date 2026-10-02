@@ -69,7 +69,7 @@ Providers, keys and models are all managed in AI Providers; changes apply instan
     en: 'No Anthropic-routable models',
   },
   'ai-gateway.emptyRoute': {
-    'zh-CN': '无可路由提供商:在 AI 提供商中配置 API URL 与 Key',
-    en: 'No routable providers: configure the API URL and keys in AI Providers',
+    'zh-CN': '无可路由提供商:在 AI 提供商中配置任一协议端点与 Key',
+    en: 'No routable providers: configure any protocol endpoint and keys in AI Providers',
   },
 })

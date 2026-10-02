@@ -58,7 +58,7 @@ function quotaPayload() {
 const zhipuProvider: AiProvider = {
   id: 'zp',
   name: '',
-  endpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+  chatEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
   responsesEndpoint: '',
   anthropicEndpoint: '',
   models: ['glm-5.3'],

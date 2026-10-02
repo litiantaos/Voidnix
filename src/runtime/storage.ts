@@ -72,14 +72,23 @@ function defaultValidate(_key: string, value: unknown, defaultValue: unknown): b
 /// @param storePath plugin-store 路径（不含 .json 后缀），如 'extensions/clipboard/config'
 ///                  或 'config/settings'。最终落盘 <appDataDir>/<storePath>.json
 /// @param defaults  默认值（深克隆，源对象不会被污染）
+/// @param onLoad    backfill 完成后的同步迁移钩子（旧字段名 / 旧结构 → 新 schema），
+///                  在 resolveReady **之前**同栈执行——whenConfigReady 的全部等待者
+///                  （含模块级 then）必然读到迁移后的形态，无旧形态竞态窗口。
+///                  非 Tauri / 子窗口路径不回填，不调用。变更走正常持久化管线落盘。
 ///
 /// 加载语义：load() 异步，扩展 setup / 早期命令可能读到 defaults
 /// （磁盘值尚未回填）。安全参数由 Rust clamp 兜底，UI 可能短暂显示 defaults。
 ///
 /// 退出 flush：onCloseRequested 触发 pending saveTimer 立即落盘，避免防抖窗口内变更丢失。
 ///
-/// schema 变更：自开发自用不维护迁移，改 schema 时手动删磁盘 config.json 即可。
-export function defineConfig<T extends object>(storePath: string, defaults: T): T {
+/// schema 变更：优先 onLoad 同步迁移（幂等，磁盘旧形态多次迁移无副作用）；
+/// 无法迁移的破坏性变更直接删磁盘 config.json 按 defaults 重建。
+export function defineConfig<T extends object>(
+  storePath: string,
+  defaults: T,
+  onLoad?: (config: T) => void,
+): T {
   const config = reactive(structuredClone(defaults)) as T
 
   // 仅 main 窗口持久化：pin/screenshot/snap-panel 等子窗口无 store 权限，
@@ -118,6 +127,8 @@ export function defineConfig<T extends object>(storePath: string, defaults: T): 
           }
         }),
       )
+      // 同步迁移在 resolveReady 前：等待者（setup await / 模块级 then）读到的必然是新形态
+      onLoad?.(config)
       isLoading = false
       resolveReady()
     })

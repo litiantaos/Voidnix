@@ -160,7 +160,7 @@ config.maxDays = 60 // 自动写盘
 - backfill 类型守卫：磁盘值类型与 default 不符则丢弃；`isStillDefault` 走递归 deepEqual（顺序无关）。
 - 写盘深克隆 + race 保护：序列化与并发变更互不竞争；启动期 `isLoading` 抑制 watch 冗余写；退出 `onCloseRequested` flush 防抖窗口内变更。
 - 不订阅 plugin-store `onChange`：其 `set` 会向本进程回放 `store://change`（无来源标识），回灌会以旧快照覆盖 emit 到达前已 mutate 的新值（实测复现）；所有 config 仅在 main 窗口持有（子窗口纯内存 reactive），无跨窗口同步需求。
-- schema 变更：自开发自用不维护迁移，改 schema 时手动删磁盘 config.json 即可。
+- schema 变更：优先第三参 `onLoad` 迁移钩子（backfill 后、`resolveReady` 前同步执行，全部 `whenConfigReady` 等待者读到迁移后形态；幂等，样板 `ai-providers.ts`）；无法迁移的破坏性变更直接删磁盘 config.json 按 defaults 重建。
 - store 实例缓存（文件级 `Map<storePath, Store>`），watch 回调复用，禁止每次保存重新 `load()`。
 - 加载异步竞态：`load()` 异步，扩展 setup 早期可能读 defaults。安全参数由 Rust clamp 兜底。
 - 资源上限（agent 专属）：plain `BOUNDS` const 表达 floor/cap，**权威在 Rust `native/policy.rs`**，TS 仅 UI 镜像，详见 [agent.md](./extensions/agent.md)。
@@ -168,7 +168,7 @@ config.maxDays = 60 // 自动写盘
   - **Config 字段型**（数值/字符串/枚举/boolean，持久化在 `config.json`）：在 `config.ts` 用 `watch(..., { immediate: true })` 同步，View.vue 仅改 config 不显式 invoke，失败仅 `console.error`。`immediate: true` 确保启动期磁盘回填后自动同步持久化值（避免「上次开启 → 重启丢失」回归）。样板：`window-manager/config.ts`（`enabled` / `customWidth` / `customHeight`）、`clipboard/config.ts`（`maxDays`）。
   - **Rust 状态型**（状态权威在 Rust 端）：在 `View.vue` 显式 `invoke` + 错误反馈（`showStatus error`），成功才更新 UI 局部状态。需要跨启动恢复或 Rust 侧也会发起变更时，加 `config` 持久化意图字段：`config.ts` 用 `watch(..., { immediate: true })` 驱动启动恢复（Rust 端幂等），Rust 侧发起的变更经事件由 `config.ts` 模块级 listener 回写（不依赖 View 挂载，防重启误恢复）。样板：`awake/View.vue::toggleAwake`（显式 invoke——授权交互的错误需 toast 反馈；`config.enabled` 仅承载启动意图，权威在 Rust `AtomicBool`，状态查 `is_awake_enabled`）。
 
-框架级配置（全局快捷键）在 `stores/settings.ts`，同样走 `defineConfig`（`config/settings` storePath）。**AI 提供商**（`src/runtime/ai-providers.ts`）：只存 URL/Key/模型（无「使用中」）；列表按提供商分组、**每把 Key 一行**；选用由 agent/translate 等消费者自管；自动写 `ai.env`（`VOIDNIX_ZHIPU_API_KEY` / `VOIDNIX_DEEPSEEK_API_KEY` 等私有名，外部工具须显式引用）并幂等装 shell 钩子。详见 [ai-providers.md](./extensions/ai-providers.md)。
+框架级配置（全局快捷键）在 `stores/settings.ts`，同样走 `defineConfig`（`config/settings` storePath）。**AI 提供商**（`src/runtime/ai-providers.ts`）：只存三种线协议端点（OpenAI Chat / 可选 Responses / 可选 Anthropic）+ 多 Key + 模型（无「使用中」）；列表按提供商分组、**每把 Key 一行**；选用由 agent/translate 等消费者自管；外部工具统一经 ai-gateway 接入（历史 ai.env 导出已移除，setup 幂等自清存量遗留）。详见 [ai-providers.md](./extensions/ai-providers.md)。
 
 ### 配置字段命名规范
 

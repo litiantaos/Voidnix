@@ -178,7 +178,7 @@ export function resolveAiTargets(cfg: AiConfig): AiTranslateTarget[] {
     seen.add(dedupe)
 
     const provider = getProviderById(providerId)
-    const endpoint = provider?.endpoint.trim() ?? ''
+    const endpoint = provider?.chatEndpoint.trim() ?? ''
     const apiKey = apiKeyOf(provider, sel.keyId)
     if (!provider || !endpoint || !apiKey) continue
 
@@ -235,12 +235,12 @@ function migrateLegacyAiFields() {
 
     if (endpoint || apiKey.trim()) {
       const found = endpoint
-        ? hubConfig.providers.find((p) => p.endpoint.trim() === endpoint)
+        ? hubConfig.providers.find((p) => p.chatEndpoint.trim() === endpoint)
         : undefined
       const id =
         found?.id ??
         addAiProvider({
-          endpoint,
+          chatEndpoint: endpoint,
           apiKey,
           models,
         })

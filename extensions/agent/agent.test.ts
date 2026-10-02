@@ -61,7 +61,7 @@ beforeEach(async () => {
   aiProvidersConfig.providers.splice(0, aiProvidersConfig.providers.length, {
     id: 'p1',
     name: '',
-    endpoint: 'https://api.example.com/v1',
+    chatEndpoint: 'https://api.example.com/v1',
     models: ['m1'],
     keys: [{ id: 'k1', label: '默认', apiKey: 'sk-test' }],
     usageKind: '',
