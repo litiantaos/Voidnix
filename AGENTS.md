@@ -340,7 +340,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### AI 网关
 
-`extensions/ai-gateway/`：统一本地 AI 网关——进程内 Anthropic Messages / OpenAI Responses / OpenAI Chat Completions 三协议直通反向代理（axum，release 8788 / dev 8789），按请求 `model` 路由到提供商端点 + 多 Key 轮换（401-408/429/5xx，失败 Key 冷却 60s 对齐 Retry-After）+ 会话亲和（同会话粘同 Key 保上游 prompt cache）。请求体归一吸收 CC 怪癖：剥 `[1m]` 后缀、thinking disabled 注入、GLM effort 翻译、auto mode 分类器特判（形态判据为主：无工具 + 显式 disabled + 预算 ≤ 128，跨 CC 版本稳定；标签判据为辅，修复参考 magpie 的 thinkingOffUnlessAsked/fitAutoModeClassifier），归一在路由命中后才执行。任何工具把 base_url 指向网关即可接入；Claude Code 为首个接线消费者（独立 `ccTakeover` 开关，默认关，与网关开关都开且绑定成功才接管/任一失守即还原 settings.json 自有键）。详见 [ai-gateway.md](docs/extensions/ai-gateway.md)。
+`extensions/ai-gateway/`：统一本地 AI 网关——进程内 Anthropic Messages / OpenAI Responses / OpenAI Chat Completions 三协议直通反向代理（axum，release 8788 / dev 8789），按请求 `model` 路由到提供商端点 + 多 Key 轮换（401-408/429/5xx，失败 Key 冷却 60s 对齐 Retry-After）+ 会话亲和（同会话粘同 Key 保上游 prompt cache）。请求体归一吸收 CC 怪癖：剥 `[Nm]` 长上下文后缀、thinking disabled 注入、GLM effort 翻译、auto mode 分类器特判（形态判据为主：无工具 + 显式 disabled + 预算 ≤ 128，跨 CC 版本稳定；标签判据为辅，修复参考 magpie 的 thinkingOffUnlessAsked/fitAutoModeClassifier），归一在路由命中后才执行。任何工具把 base_url 指向网关即可接入；Claude Code 为首个接线消费者（`ccTakeover` 开关默认关，UI 层与网关开关联动——开接管自动启用网关、关网关连带还原接管；实际接管需网关绑定成功/任一失守即还原 settings.json 自有键；dev/release 实例互斥——base_url 指向另一构建的活跃网关端口即拒绝 apply，防抢占互踩）。详见 [ai-gateway.md](docs/extensions/ai-gateway.md)。
 
 ### 国际化（i18n）
 

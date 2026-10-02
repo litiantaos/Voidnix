@@ -121,10 +121,11 @@ describe('buildCcPayload', () => {
       routes,
       {
         sonnet: { providerId: 'z', model: 'glm-5.3' },
+        opus: null,
         haiku: { providerId: 'd', model: 'r1' },
       },
       8788,
-      false,
+      'default',
     )
     expect(payload).not.toBeNull()
     expect(payload!.sonnetModel).toBe('glm-5.3')
@@ -133,7 +134,7 @@ describe('buildCcPayload', () => {
     expect(payload!.port).toBe(8788)
   })
 
-  it('longContext 开 = 别名与 picker 统一追加 [1m](已带后缀防双写),label 恒裸名', () => {
+  it("context = '1m' = 别名与 picker 统一追加 [1m](已带后缀防双写),label 恒裸名", () => {
     const withSuffix = buildRoutes([
       p({
         id: 'z',
@@ -146,10 +147,11 @@ describe('buildCcPayload', () => {
       withSuffix,
       {
         sonnet: { providerId: 'z', model: 'glm-5.3' },
+        opus: null,
         haiku: { providerId: 'z', model: 'glm-5.3-flash[1m]' },
       },
       8788,
-      true,
+      '1m',
     )
     expect(payload!.sonnetModel).toBe('glm-5.3[1m]')
     expect(payload!.haikuModel).toBe('glm-5.3-flash[1m]')
@@ -159,7 +161,7 @@ describe('buildCcPayload', () => {
     ])
   })
 
-  it('longContext 关 = 中枢带后缀存储也统一剥成裸名(开关是 CC 侧形态唯一决定因素)', () => {
+  it("context = 'default' = 中枢带后缀存储也统一剥成裸名(档位是 CC 侧形态唯一决定因素)", () => {
     const withSuffix = buildRoutes([
       p({
         id: 'z',
@@ -170,9 +172,9 @@ describe('buildCcPayload', () => {
     ])
     const payload = buildCcPayload(
       withSuffix,
-      { sonnet: { providerId: 'z', model: 'glm-5.3[1m]' }, haiku: null },
+      { sonnet: { providerId: 'z', model: 'glm-5.3[1m]' }, opus: null, haiku: null },
       8788,
-      false,
+      'default',
     )
     expect(payload!.sonnetModel).toBe('glm-5.3')
     expect(payload!.pickerRows).toEqual([{ model: 'glm-5.3', label: 'glm-5.3' }])
@@ -180,19 +182,21 @@ describe('buildCcPayload', () => {
 
   it('无 Anthropic 可路由模型时返回 null(不接线)', () => {
     const onlyResponses = buildRoutes([p({ id: 'd', responsesEndpoint: 'https://d/responses' })])
-    expect(buildCcPayload(onlyResponses, { sonnet: null, haiku: null }, 8788, true)).toBeNull()
+    expect(
+      buildCcPayload(onlyResponses, { sonnet: null, opus: null, haiku: null }, 8788, '1m'),
+    ).toBeNull()
   })
 })
 
 describe('fallbackAliases', () => {
-  it('两档全空兜底首个 Anthropic 模型;无可用模型返回全空', () => {
+  it('三档全空兜底首个 Anthropic 模型;无可用模型返回全空', () => {
     const routes = buildRoutes([
       p({ id: 'z', name: '智谱', anthropicEndpoint: 'https://z', models: ['glm-5.3'] }),
     ])
     const fb = fallbackAliases(routableModels(routes))
     const expectSel: AliasSelection = { providerId: 'z', model: 'glm-5.3' }
-    expect(fb).toEqual({ sonnet: expectSel, haiku: expectSel })
+    expect(fb).toEqual({ sonnet: expectSel, opus: expectSel, haiku: expectSel })
 
-    expect(fallbackAliases([])).toEqual({ sonnet: null, haiku: null })
+    expect(fallbackAliases([])).toEqual({ sonnet: null, opus: null, haiku: null })
   })
 })

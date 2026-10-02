@@ -22,6 +22,19 @@ use tokio::task::JoinHandle;
 /// dev 8789(dev 与 release 常驻并存,不互抢端口)
 pub const PORT: u16 = if cfg!(debug_assertions) { 8789 } else { 8788 };
 
+/// 网关端口对:cc_settings 跨实例互斥/归属判定消费(单一源,勿另处字面量);
+/// 与 TS `GATEWAY_PORT` 双端手动同步
+pub const GATEWAY_PORTS: &[u16] = &[8788, 8789];
+
+/// 端口所属构建名(互斥拒绝报错指引用)
+pub fn port_side(port: u16) -> &'static str {
+    if port == 8789 {
+        "dev"
+    } else {
+        "release"
+    }
+}
+
 /// 请求体缓冲上限:CC 长上下文请求可达数十 MB,128MB 兜底异常超大请求
 const MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
 
@@ -540,7 +553,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
         );
     }
 
-    // 请求体归一:剥 [1m] 后缀 + Anthropic 面注入 thinking disabled + GLM effort 翻译
+    // 请求体归一:剥 [Nm] 后缀 + Anthropic 面注入 thinking disabled + GLM effort 翻译
     // + 输出预算下限。路由命中后才执行——未知模型/缺端点的请求直接拒绝,不为其
     // 支付归一成本(GLM 面含全量建树)
     let body = normalize_body(protocol, &model, body);
@@ -767,10 +780,20 @@ fn extract_model(body: &[u8]) -> Option<String> {
     }
 }
 
-/// 模型名归一:剥 `[1m]` 长上下文后缀(CC 发送前已剥,中枢侧可能带后缀存储,双向归一比对)
+/// 模型名归一:剥 `[Nm]` 长上下文后缀(N = 1/2/…,CC 私有语法;CC 发送前已剥,中枢侧可能带后缀存储,双向归一比对)
 fn norm_model(m: &str) -> &str {
     let t = m.trim();
-    t.strip_suffix("[1m]").unwrap_or(t).trim()
+    let Some(body) = t.strip_suffix(']') else {
+        return t;
+    };
+    let Some(cut) = body.rfind('[') else { return t };
+    let Some(digits) = body[cut + 1..].strip_suffix('m') else {
+        return t;
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return t;
+    }
+    t[..cut].trim()
 }
 
 fn find_route<'a>(routes: &'a [GatewayRoute], model: &str) -> Option<&'a GatewayRoute> {
@@ -781,7 +804,7 @@ fn find_route<'a>(routes: &'a [GatewayRoute], model: &str) -> Option<&'a Gateway
 }
 
 /// 请求体归一(唯一的请求体改写,基础三件 + GLM/分类器两支内联注释):
-/// 1. 剥 model 的 `[1m]` 客户端后缀(全协议面)——CC 主对话发送前自剥 + 发 beta 头,
+/// 1. 剥 model 的 `[Nm]` 客户端后缀(全协议面)——CC 主对话发送前自剥 + 发 beta 头,
 ///    但其分类器等旁路请求原样带后缀,上游不认识该语法必报「模型不存在」;网关路由
 ///    匹配时已归一,转发时同样归一,客户端怪癖在网关侧吸收
 /// 2. Anthropic 面注入 `thinking: {"type": "disabled"}`(请求未提 thinking 且非 claude 原生模型):
@@ -1034,10 +1057,15 @@ mod tests {
     }
 
     #[test]
-    fn norm_model_strips_1m_suffix() {
+    fn norm_model_strips_context_suffix() {
         assert_eq!(norm_model("glm-5.3[1m]"), "glm-5.3");
+        assert_eq!(norm_model("glm-5.3[2m]"), "glm-5.3");
         assert_eq!(norm_model("glm-5.3"), "glm-5.3");
         assert_eq!(norm_model(" glm-5.3 [1m] "), "glm-5.3");
+        // 非 `[数字m]` 形态不剥(空数字/非数字/后缀不在结尾)
+        assert_eq!(norm_model("a[m]"), "a[m]");
+        assert_eq!(norm_model("a[x1m]"), "a[x1m]");
+        assert_eq!(norm_model("a[1m]b"), "a[1m]b");
     }
 
     #[test]

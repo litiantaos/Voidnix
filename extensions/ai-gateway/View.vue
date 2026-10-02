@@ -21,7 +21,7 @@ import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import type { SettingItem, SettingSelectOptions } from '@/types/settings'
-import { config, type AliasSelection } from './config'
+import { config, type AliasSelection, type ContextTier } from './config'
 import { gatewayStatus, ccApplyError, currentRoutes, type GatewayStatus } from './sync'
 import { routableModels, anthropicModels } from './logic'
 
@@ -59,7 +59,7 @@ const statusTitle = computed(() => {
   return t('ai-gateway.statusStopped')
 })
 
-/** 设置项三组:总开关(副标题即运行态,绑定失败标红) → CC(接管开关 + 默认模型) → 全工具状态展示;使用指引走搜索栏说明弹窗 */
+/** 设置项两组:网关(总开关 + 提供商导航入口,副标题即运行态、绑定失败标红) → CC(接管开关 + 形态与三档映射);使用指引走搜索栏说明弹窗 */
 const items = computed<SettingItem[]>(() => {
   const s = gatewayStatus.value
   const out: SettingItem[] = [
@@ -73,13 +73,24 @@ const items = computed<SettingItem[]>(() => {
       icon: s?.running ? 'i-ri-broadcast-line' : 'i-ri-stop-circle-line',
       value: config.enabled,
       update: (v) => {
+        // 关网关 = 停整个网关功能,接管开关连带还原(不变式:ccTakeover 开 ⇒ enabled 开)
         config.enabled = v
+        if (!v) config.ccTakeover = false
       },
+    },
+    {
+      id: 'go-providers',
+      group: t('ai-gateway.sectionGateway'),
+      type: 'action',
+      title: t('ai-gateway.goProviders'),
+      subtitle: t('ai-gateway.goProvidersHint'),
+      icon: 'i-ri-key-2-line',
+      action: goAiProviders,
     },
   ]
 
   // Claude Code(低频,CC 专属的接线细节):接管开关在前,开启才改写其 settings.json;
-  // 别名两档仅接管开启时展示(关了无消费者),不限制 /model 范围
+  // 形态与两档映射仅接管开启时展示(关了无消费者),不限制 /model 范围
   const defaultsGroup = t('ai-gateway.sectionCc')
   out.push({
     id: 'cc-takeover',
@@ -93,25 +104,32 @@ const items = computed<SettingItem[]>(() => {
     icon: 'i-ri-terminal-box-line',
     value: config.ccTakeover,
     update: (v) => {
+      // 接管依赖网关运行:开启即连带启用,消除「接管开着而网关关着」的虚假态
       config.ccTakeover = v
+      if (v) config.enabled = true
     },
   })
   if (config.ccTakeover) {
     out.push({
-      id: 'cc-1m-context',
+      id: 'cc-context',
       group: defaultsGroup,
-      type: 'toggle',
-      title: t('ai-gateway.cc1mContext'),
-      subtitle: t('ai-gateway.cc1mContextHint'),
+      type: 'select',
+      title: t('ai-gateway.ccContext'),
+      subtitle: t('ai-gateway.ccContextHint'),
       icon: 'i-ri-expand-width-line',
-      value: config.cc1mContext,
+      value: config.ccContext,
+      options: [
+        { label: t('ai-gateway.ccContextDefault'), value: 'default' },
+        { label: '1M', value: '1m' },
+      ],
       update: (v) => {
-        config.cc1mContext = v
+        config.ccContext = v as ContextTier
       },
     })
-    const aliasDefs: { id: string; title: string; sel: AliasSelection | null }[] = [
-      { id: 'sonnet', title: t('ai-gateway.aliasDefault'), sel: config.sonnet },
-      { id: 'haiku', title: t('ai-gateway.aliasBackground'), sel: config.haiku },
+    const aliasDefs: { id: 'sonnet' | 'opus' | 'haiku'; title: string; hint: string }[] = [
+      { id: 'sonnet', title: t('ai-gateway.aliasSonnet'), hint: t('ai-gateway.aliasSonnetHint') },
+      { id: 'opus', title: t('ai-gateway.aliasOpus'), hint: t('ai-gateway.aliasOpusHint') },
+      { id: 'haiku', title: t('ai-gateway.aliasHaiku'), hint: t('ai-gateway.aliasHaikuHint') },
     ]
     for (const def of aliasDefs) {
       out.push({
@@ -119,41 +137,18 @@ const items = computed<SettingItem[]>(() => {
         group: defaultsGroup,
         type: 'select',
         title: def.title,
-        subtitle: def.id === 'sonnet' ? t('ai-gateway.defaultsHint') : undefined,
+        subtitle: def.hint,
         icon: 'i-ri-cpu-line',
-        value: aliasValue(def.sel),
+        value: aliasValue(config[def.id]),
         options:
           aliasOptions.value.length > 0
             ? aliasOptions.value
             : [{ label: t('ai-gateway.noAnthropicModel'), value: '' }],
         update: (v) => {
-          const parsed = parseAlias(v)
-          if (def.id === 'sonnet') config.sonnet = parsed
-          else config.haiku = parsed
+          config[def.id] = parseAlias(v)
         },
       })
     }
-  }
-
-  // 可路由模型(状态展示,非操作)
-  const routeGroup = t('ai-gateway.sectionRoutes')
-  for (const m of routable.value) {
-    const protocols = [
-      m.anthropic ? 'Anthropic' : '',
-      m.responses ? 'Responses' : '',
-      m.chat ? 'Chat' : '',
-    ]
-      .filter(Boolean)
-      .join(' / ')
-    const keys = currentRoutes().find((r) => r.providerId === m.providerId)?.keys.length ?? 0
-    out.push({
-      id: `route-${m.providerId}-${m.model}`,
-      group: routeGroup,
-      type: 'custom',
-      title: m.model,
-      subtitle: `${m.providerName} · ${protocols} · ${t('ai-gateway.keysCount', { n: keys })}`,
-      icon: 'i-ri-route-line',
-    })
   }
 
   return out
@@ -167,8 +162,9 @@ async function refreshStatus() {
   }
 }
 
+/** 带 from 导航：providers 内 Esc 返回本扩展 */
 function goAiProviders() {
-  appStore.setActiveExtension('ai-providers')
+  appStore.setActiveExtension('ai-providers', 'ai-gateway')
 }
 
 // KeepAlive 内 onActivated 首挂载同样触发,无需 onMounted 双发

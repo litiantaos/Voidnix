@@ -53,22 +53,23 @@ pub async fn ai_gateway_status(app: AppHandle) -> Result<StatusReport, String> {
 
 /// 接管 Claude Code settings.json 自有键(幂等;首次触碰自动备份)。
 /// async + spawn_blocking:多文件读写不得占主线程(项目纪律,同 permission.rs)。
+/// 跨实例互斥/自愈/快照都在 apply_at 内(单次读 settings,零 TOCTOU 窗口)。
 #[tauri::command]
 pub async fn ai_gateway_cc_apply(
     app: AppHandle,
     payload: cc_settings::CcApplyPayload,
 ) -> Result<(), String> {
     let dir = crate::runtime::storage::ext_data_dir(&app, "ai-gateway")?;
-    tokio::task::spawn_blocking(move || cc_settings::apply(&dir, &payload))
+    tokio::task::spawn_blocking(move || cc_settings::apply(&dir, server::PORT, &payload))
         .await
         .map_err(|e| e.to_string())?
 }
 
-/// 还原 Claude Code settings.json 自有键(按快照精确还原)。
+/// 还原 Claude Code settings.json 自有键(按快照精确还原,非本实例接管只清快照)。
 #[tauri::command]
 pub async fn ai_gateway_cc_remove(app: AppHandle) -> Result<(), String> {
     let dir = crate::runtime::storage::ext_data_dir(&app, "ai-gateway")?;
-    tokio::task::spawn_blocking(move || cc_settings::remove(&dir))
+    tokio::task::spawn_blocking(move || cc_settings::remove(&dir, server::PORT))
         .await
         .map_err(|e| e.to_string())?
 }

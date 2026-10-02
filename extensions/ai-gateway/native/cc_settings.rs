@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 
+use super::server::{port_side, GATEWAY_PORTS};
+
 /// 网关接管的键(json pointer 路径)。`apiKeyHelper` 一并摘除:占位凭证经
 /// `ANTHROPIC_AUTH_TOKEN` 注入,不再依赖 shell env(ai.env source 链路)
 const OWNED_POINTERS: &[&str] = &[
@@ -37,6 +39,8 @@ pub struct CcApplyPayload {
     pub port: u16,
     /// 新会话默认模型(sonnet 档别名;空 = 移除该键)
     pub sonnet_model: String,
+    /// 旗舰档模型(opus 档别名;空 = 移除该键)
+    pub opus_model: String,
     /// 后台任务模型(haiku 档别名;空 = 移除该键,后台流量走主模型)
     pub haiku_model: String,
     pub picker_rows: Vec<CcPickerRow>,
@@ -56,41 +60,62 @@ pub fn backup_exists(dir: &Path) -> bool {
     backup_file(dir).exists()
 }
 
-/// 接管:备份(首次)→ 写自有键。幂等,重复 apply 快照不变。
-pub fn apply(dir: &Path, payload: &CcApplyPayload) -> Result<(), String> {
-    apply_at(&cc_settings_path()?, dir, payload)
+/// 接管:互斥校验 → 备份(首次)→ 写自有键。幂等,重复 apply 快照不变。
+pub fn apply(dir: &Path, my_port: u16, payload: &CcApplyPayload) -> Result<(), String> {
+    apply_at(&cc_settings_path()?, dir, my_port, payload)
 }
 
 /// 还原:按快照恢复自有键原始值(快照缺失时退化为直接摘除自有键),并删除快照。
-pub fn remove(dir: &Path) -> Result<(), String> {
-    remove_at(&cc_settings_path()?, dir)
+/// base_url 指向另一构建的网关端口时视为对侧实例的接管,本实例快照无权覆写,只清快照。
+pub fn remove(dir: &Path, my_port: u16) -> Result<(), String> {
+    remove_at(&cc_settings_path()?, dir, my_port)
 }
 
-fn apply_at(settings: &Path, dir: &Path, payload: &CcApplyPayload) -> Result<(), String> {
+fn apply_at(
+    settings: &Path,
+    dir: &Path,
+    my_port: u16,
+    payload: &CcApplyPayload,
+) -> Result<(), String> {
     let mut root = read_settings(settings)?;
 
-    // 首次触碰:原文兜底副本 + 自有键精确快照(只在快照不存在时写,重复 apply 不覆盖首次原貌)。
-    // settings.json 已呈接管态时跳过备份:dev/release 共管同一文件,快照按数据目录隔离,
-    // 把对方构建的接管态存为「原始态」会在还原时踩出指向对方端口的残留
-    let backup = backup_file(dir);
-    if !backup.exists() && !is_managed_state(&root) {
-        if settings.exists() {
-            let raw = std::fs::read_to_string(settings)
-                .map_err(|e| format!("读取 {} 失败: {e}", settings.display()))?;
-            let bak = settings.with_extension("json.voidnix-bak");
-            if !bak.exists() {
-                std::fs::write(&bak, &raw).map_err(|e| format!("写备份失败: {e}"))?;
-            }
+    // 跨实例互斥:dev/release 共管同一 settings.json,接管是排他资源。base_url 指向另一
+    // 构建的网关端口且该网关仍活着(经 /health 验明正身,排除无关进程占端口的误判)→ 拒绝;
+    // 探测失败 = 上次异常退出的死残留,放行覆盖自愈(下方全摘除快照保证还原路径成立)
+    if let Some(p) = gateway_port_of(&root).filter(|p| *p != my_port) {
+        if gateway_alive(p) {
+            return Err(format!(
+                "CC 正被 {} 实例接管（网关端口 {p}），请先关闭那侧的接管",
+                port_side(p)
+            ));
         }
-        let snapshot = collect_owned(&root);
+    }
+
+    // 首次触碰:原文兜底副本 + 自有键精确快照(只在快照不存在时写,重复 apply 不覆盖首次原貌)。
+    // settings.json 已呈接管态时原始态不可考(死掉实例覆盖的残留,原文只存在对方的备份里):
+    // 写全摘除快照(还原 = 摘除全部自有键)——既不把对方接管态存为「原始态」在还原时踩出
+    // 指向对方端口的残留,又保证接管标记成立(「任一失守即还原」不变式对自愈接管者生效)
+    let backup = backup_file(dir);
+    if !backup.exists() {
+        let snapshot = if is_managed_state(&root) {
+            null_owned()
+        } else {
+            if settings.exists() {
+                let raw = std::fs::read_to_string(settings)
+                    .map_err(|e| format!("读取 {} 失败: {e}", settings.display()))?;
+                let bak = settings.with_extension("json.voidnix-bak");
+                if !bak.exists() {
+                    std::fs::write(&bak, &raw).map_err(|e| format!("写备份失败: {e}"))?;
+                }
+            }
+            collect_owned(&root)
+        };
         let text = serde_json::to_string_pretty(&snapshot).map_err(|e| e.to_string())?;
         crate::runtime::storage::atomic_write(&backup, &(text + "\n"))?;
     }
 
     remove_pointer(&mut root, "/apiKeyHelper");
     remove_pointer(&mut root, "/env/ANTHROPIC_API_KEY");
-    // opus 档已收敛:不写 + 摘除存量(modelPicker 替换内置阵容后别名不可达,属死配置)
-    remove_pointer(&mut root, "/env/ANTHROPIC_DEFAULT_OPUS_MODEL");
     set_pointer(
         &mut root,
         "/env/ANTHROPIC_BASE_URL",
@@ -103,6 +128,7 @@ fn apply_at(settings: &Path, dir: &Path, payload: &CcApplyPayload) -> Result<(),
     );
     let aliases = [
         ("/env/ANTHROPIC_DEFAULT_SONNET_MODEL", &payload.sonnet_model),
+        ("/env/ANTHROPIC_DEFAULT_OPUS_MODEL", &payload.opus_model),
         ("/env/ANTHROPIC_DEFAULT_HAIKU_MODEL", &payload.haiku_model),
     ];
     for (pointer, model) in aliases {
@@ -125,7 +151,7 @@ fn apply_at(settings: &Path, dir: &Path, payload: &CcApplyPayload) -> Result<(),
     write_settings(settings, &root)
 }
 
-fn remove_at(settings: &Path, dir: &Path) -> Result<(), String> {
+fn remove_at(settings: &Path, dir: &Path, my_port: u16) -> Result<(), String> {
     let backup = backup_file(dir);
     let snapshot: Value = if backup.exists() {
         let text = std::fs::read_to_string(&backup).map_err(|e| e.to_string())?;
@@ -140,6 +166,12 @@ fn remove_at(settings: &Path, dir: &Path) -> Result<(), String> {
         return Ok(());
     }
     let mut root = read_settings(settings)?;
+    // 归属校验:base_url 指向另一构建的网关端口 = 对侧实例的活动接管,本实例(可能陈旧的)
+    // 快照无权覆写——只清自己的快照,防 dev 残留快照拆掉 release 的接管(互踩的还原侧)
+    if gateway_port_of(&root).is_some_and(|p| p != my_port) {
+        let _ = std::fs::remove_file(&backup);
+        return Ok(());
+    }
 
     for pointer in OWNED_POINTERS {
         let restored = snapshot.get(pointer.trim_start_matches('/'));
@@ -198,17 +230,50 @@ fn read_settings(path: &Path) -> Result<Value, String> {
     Ok(v)
 }
 
+/// base_url 指向的网关端口解析(锚定本机回环 + 网关端口对;远程主机/带路径/缺失返回 None)
+fn gateway_port_of(root: &Value) -> Option<u16> {
+    let base = root.pointer("/env/ANTHROPIC_BASE_URL")?.as_str()?;
+    let port = base.strip_prefix("http://127.0.0.1:")?.parse().ok()?;
+    GATEWAY_PORTS.contains(&port).then_some(port)
+}
+
 /// settings.json 是否已呈网关接管态(BASE_URL 指向本地网关端口或凭证为占位符)
 fn is_managed_state(root: &Value) -> bool {
-    let base = root
-        .pointer("/env/ANTHROPIC_BASE_URL")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
     let token = root
         .pointer("/env/ANTHROPIC_AUTH_TOKEN")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    base.starts_with("http://127.0.0.1:87") || token == PLACEHOLDER_TOKEN
+    gateway_port_of(root).is_some() || token == PLACEHOLDER_TOKEN
+}
+
+/// 全摘除快照:所有自有键记为「原本不存在」,还原时整体摘除(接管态覆盖自愈场景的原始态不可考)
+fn null_owned() -> Value {
+    let mut map = Map::new();
+    for pointer in OWNED_POINTERS {
+        map.insert(pointer.trim_start_matches('/').to_string(), Value::Null);
+    }
+    Value::Object(map)
+}
+
+/// 网关端口活性探测:TCP 连接后发 GET /health,状态行 200 才认(区分 Voidnix 网关与恰好
+/// 占用端口的无关进程);连接拒绝/超时/非 200 均视为死端口。blocking 调用(spawn_blocking 内)
+fn gateway_alive(port: u16) -> bool {
+    use std::io::{Read, Write};
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) =
+        std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300))
+    else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+    if stream
+        .write_all(b"GET /health HTTP/1.0\r\nhost: 127.0.0.1\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut buf = [0u8; 16];
+    matches!(stream.read(&mut buf), Ok(n) if String::from_utf8_lossy(&buf[..n]).starts_with("HTTP/1.1 200"))
 }
 
 fn write_settings(path: &Path, root: &Value) -> Result<(), String> {
@@ -273,6 +338,7 @@ mod tests {
         CcApplyPayload {
             port: 8788,
             sonnet_model: "glm-5.3".into(),
+            opus_model: "glm-5.3".into(),
             haiku_model: "glm-5.3-flash".into(),
             picker_rows: vec![
                 CcPickerRow {
@@ -310,16 +376,15 @@ mod tests {
         )
         .unwrap();
 
-        apply_at(&settings, &dir, &payload()).unwrap();
+        apply_at(&settings, &dir, 8788, &payload()).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
 
         assert_eq!(v["apiKeyHelper"], Value::Null);
         assert_eq!(v["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8788");
         assert_eq!(v["env"]["ANTHROPIC_AUTH_TOKEN"], "voidnix-gateway");
         assert_eq!(v["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "glm-5.3");
+        assert_eq!(v["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "glm-5.3");
         assert_eq!(v["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "glm-5.3-flash");
-        // opus 档已收敛:历史残留的映射键被摘除
-        assert_eq!(v["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], Value::Null);
         // 用户自有键不动
         assert_eq!(v["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "max");
         assert_eq!(v["tui"], "fullscreen");
@@ -342,9 +407,9 @@ mod tests {
         let original = r#"{"apiKeyHelper":"echo $OLD","env":{"ANTHROPIC_BASE_URL":"http://old","CLAUDE_CODE_EFFORT_LEVEL":"max"},"tui":"fullscreen"}"#;
         std::fs::write(&settings, original).unwrap();
 
-        apply_at(&settings, &dir, &payload()).unwrap();
-        apply_at(&settings, &dir, &payload()).unwrap(); // 幂等:快照仍是首次原貌
-        remove_at(&settings, &dir).unwrap();
+        apply_at(&settings, &dir, 8788, &payload()).unwrap();
+        apply_at(&settings, &dir, 8788, &payload()).unwrap(); // 幂等:快照仍是首次原貌
+        remove_at(&settings, &dir, 8788).unwrap();
 
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         assert_eq!(v["apiKeyHelper"], "echo $OLD");
@@ -363,12 +428,12 @@ mod tests {
         let settings = dir.join("cc").join("settings.json");
         setup(&dir, &settings);
 
-        apply_at(&settings, &dir, &payload()).unwrap();
+        apply_at(&settings, &dir, 8788, &payload()).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         assert_eq!(v["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8788");
 
         // 无原文:还原后 env 清空被整体摘除,settings 回到空对象
-        remove_at(&settings, &dir).unwrap();
+        remove_at(&settings, &dir, 8788).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         assert_eq!(v.as_object().map(Map::len), Some(0));
 
@@ -384,7 +449,7 @@ mod tests {
             haiku_model: String::new(),
             ..payload()
         };
-        apply_at(&settings, &dir, &p).unwrap();
+        apply_at(&settings, &dir, 8788, &p).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         assert_eq!(v["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "glm-5.3");
         assert_eq!(v["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], Value::Null);
@@ -402,5 +467,71 @@ mod tests {
             p,
             json!({ "options": [{ "model": "glm-5.3", "label": "GLM" }], "replaceBuiltInOptions": true })
         );
+    }
+
+    #[test]
+    fn gateway_port_of_recognizes_only_local_gateway_urls() {
+        let base = |url: &str| json!({ "env": { "ANTHROPIC_BASE_URL": url } });
+        assert_eq!(gateway_port_of(&base("http://127.0.0.1:8788")), Some(8788));
+        assert_eq!(gateway_port_of(&base("http://127.0.0.1:8789")), Some(8789));
+        // 远程主机同端口不误判(锚定本机回环);非网关端口与带路径后缀均不算
+        assert_eq!(gateway_port_of(&base("https://relay.mycorp.io:8788")), None);
+        assert_eq!(gateway_port_of(&base("http://127.0.0.1:3000")), None);
+        assert_eq!(gateway_port_of(&base("http://127.0.0.1:8788/v1")), None);
+        assert_eq!(gateway_port_of(&json!({ "env": {} })), None);
+    }
+
+    #[test]
+    fn apply_on_managed_state_writes_null_snapshot_for_self_heal() {
+        // 死残留(接管态,占位凭证)上自愈接管:原始态不可考,快照记全摘除、无原文兜底副本;
+        // 还原 = 摘除全部自有键(用户自有键不动)
+        let dir = std::env::temp_dir().join("voidnix-cc-5");
+        let settings = dir.join("cc").join("settings.json");
+        setup(&dir, &settings);
+        std::fs::write(
+            &settings,
+            r#"{"env":{"ANTHROPIC_BASE_URL":"http://old","ANTHROPIC_AUTH_TOKEN":"voidnix-gateway"},"tui":"fullscreen"}"#,
+        )
+        .unwrap();
+
+        apply_at(&settings, &dir, 8788, &payload()).unwrap();
+        assert!(!settings.with_extension("json.voidnix-bak").exists());
+        let snap: Value =
+            serde_json::from_str(&std::fs::read_to_string(backup_file(&dir)).unwrap()).unwrap();
+        assert_eq!(snap.get("env/ANTHROPIC_BASE_URL"), Some(&Value::Null));
+
+        remove_at(&settings, &dir, 8788).unwrap();
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(v.pointer("/env/ANTHROPIC_BASE_URL"), None);
+        assert_eq!(v.pointer("/env"), None);
+        assert_eq!(v["tui"], "fullscreen");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remove_skips_foreign_takeover() {
+        // settings 指向另一构建的网关端口(对侧活动接管):本实例陈旧快照无权覆写,
+        // 只清自己的快照、settings.json 原样
+        let dir = std::env::temp_dir().join("voidnix-cc-6");
+        let settings = dir.join("cc").join("settings.json");
+        setup(&dir, &settings);
+        std::fs::write(
+            &settings,
+            r#"{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:8789","ANTHROPIC_AUTH_TOKEN":"voidnix-gateway"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            backup_file(&dir),
+            r#"{"env/ANTHROPIC_BASE_URL":"http://mine"}"#,
+        )
+        .unwrap();
+
+        let before = std::fs::read_to_string(&settings).unwrap();
+        remove_at(&settings, &dir, 8788).unwrap();
+        assert_eq!(std::fs::read_to_string(&settings).unwrap(), before);
+        assert!(!backup_file(&dir).exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

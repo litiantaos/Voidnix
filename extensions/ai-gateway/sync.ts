@@ -37,6 +37,8 @@ export function currentRoutes(): GatewayRoute[] {
 }
 
 async function push() {
+  // 接管意愿已消失(关接管/关网关):旧失败信息不再相关,一并清掉防红字残留
+  if (!config.enabled || !config.ccTakeover) ccApplyError.value = null
   const routes = currentRoutes()
   let st: GatewayStatus
   try {
@@ -52,7 +54,8 @@ async function push() {
     return
   }
 
-  // CC 接线独立于网关开关:ccTakeover 是用户意愿(默认关,不擅改 CC 配置文件),
+  // CC 接线判定:ccTakeover 是用户意愿(默认关,不擅改 CC 配置文件;UI 层联动保证
+  // ccTakeover ⇒ enabled,此处仍双条件判定不依赖该不变式),
   // 实际接管还需网关真正在跑(enabled 且 bind 成功——绑定失败时写入会把 CC 指向
   // 死端口或占用端口的陌生进程)且存在可接线载荷;任一失守(关接管/关网关/绑定
   // 失败/删光 Anthropic 端点)且处于接管态即还原。接管态唯一真相源 = Rust 侧快照
@@ -65,10 +68,11 @@ async function push() {
           routes,
           {
             sonnet: effectiveAlias(models, config.sonnet),
+            opus: effectiveAlias(models, config.opus),
             haiku: effectiveAlias(models, config.haiku),
           },
           st.port,
-          config.cc1mContext,
+          config.ccContext,
         )
       : null
   if (payload) {
@@ -92,13 +96,15 @@ async function push() {
   }
 }
 
-/** 冷路径:接管开启但两档别名全空时落兜底(用户此后可改;单项失效不静默重写) */
+/** 冷路径:接管开启时为缺失档位落兜底(逐档判空——旧 schema 迁移来的 opus 也能补上;
+ * 已选档不静默重写,用户此后可改) */
 function ensureAliasDefaults() {
   if (!config.enabled || !config.ccTakeover) return
-  if (config.sonnet || config.haiku) return
+  if (config.sonnet && config.opus && config.haiku) return
   const fb = fallbackAliases(routableModels(currentRoutes()))
-  config.sonnet = fb.sonnet
-  config.haiku = fb.haiku
+  config.sonnet = config.sonnet ?? fb.sonnet
+  config.opus = config.opus ?? fb.opus
+  config.haiku = config.haiku ?? fb.haiku
 }
 
 function schedulePush() {
