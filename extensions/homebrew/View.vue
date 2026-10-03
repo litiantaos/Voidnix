@@ -9,7 +9,7 @@
       <BaseList
         :items="listItems"
         v-model:selected-index="selectedIndex"
-        :group-field="(item: ListItem) => item.kind"
+        :group-field="packageGroup"
         :group-title="groupTitle"
         @execute="onExecute"
       >
@@ -272,37 +272,53 @@ const filteredPackages = computed(() => {
   return pkgs.filter((p) => p.name.toLowerCase().includes(q))
 })
 
+// 有更新的包置顶成组（紧跟状态行，与「N 更新」摘要呼应），不重复留在 formula/cask 组
+const outdatedItems = computed<ListItem[]>(() =>
+  filteredPackages.value.filter((p) => p.new_version).map((p) => packageItem(p)),
+)
+const currentItems = computed<ListItem[]>(() =>
+  filteredPackages.value.filter((p) => !p.new_version).map((p) => packageItem(p)),
+)
+
+function packageItem(p: InstalledPackage): ListItem {
+  return {
+    type: 'package',
+    id: `${p.kind}:${p.name}`,
+    kind: p.kind,
+    name: p.name,
+    desc: p.desc,
+    version: p.version,
+    new_version: p.new_version,
+    outdated: !!p.new_version,
+  }
+}
+
 const listItems = computed<ListItem[]>(() => {
-  const items: ListItem[] = []
-  if (!hasQuery.value) {
-    items.push({ type: 'status', id: '__status__', kind: '__status__' })
-    for (const s of services.value) {
-      items.push({
-        type: 'service',
-        id: `svc:${s.name}`,
-        kind: '__service__',
-        name: s.name,
-        status: s.status,
-      })
-    }
-  }
-  for (const p of filteredPackages.value) {
-    items.push({
-      type: 'package',
-      id: `${p.kind}:${p.name}`,
-      kind: p.kind,
-      name: p.name,
-      desc: p.desc,
-      version: p.version,
-      new_version: p.new_version,
-      outdated: !!p.new_version,
-    })
-  }
-  return items
+  // 查询模式：仅过滤后的包（可更新组仍置顶）
+  if (hasQuery.value) return [...outdatedItems.value, ...currentItems.value]
+  const serviceItems: ListItem[] = services.value.map((s) => ({
+    type: 'service',
+    id: `svc:${s.name}`,
+    kind: '__service__',
+    name: s.name,
+    status: s.status,
+  }))
+  return [
+    { type: 'status', id: '__status__', kind: '__status__' },
+    ...outdatedItems.value,
+    ...serviceItems,
+    ...currentItems.value,
+  ]
 })
+
+/// 分组键：有更新的包归「可更新」组置顶；kind 字段保留真实值（formula/cask）供详情使用
+function packageGroup(item: ListItem): string {
+  return item.type === 'package' && item.outdated ? '__outdated__' : item.kind
+}
 
 function groupTitle(g: string): string {
   if (g === '__status__') return ''
+  if (g === '__outdated__') return t('homebrew.outdatedGroup')
   if (g === '__service__') return t('homebrew.services')
   return g === 'cask' ? 'Casks' : 'Formulae'
 }

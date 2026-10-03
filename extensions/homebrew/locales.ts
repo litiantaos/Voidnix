@@ -6,6 +6,9 @@ registerMessages({
   'homebrew.processing': { 'zh-CN': '处理中', en: 'Processing' },
   'homebrew.update': { 'zh-CN': '更新', en: 'Update' },
 
+  // ─── 分组 ────────────────────────────────
+  'homebrew.outdatedGroup': { 'zh-CN': '可更新', en: 'Updates' },
+
   // ─── 服务 ──────────────────────────────
   'homebrew.services': { 'zh-CN': '服务', en: 'Services' },
   'homebrew.start': { 'zh-CN': '启动', en: 'Start' },

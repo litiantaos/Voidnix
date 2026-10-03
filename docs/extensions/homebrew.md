@@ -4,7 +4,7 @@
 
 ## 交互
 
-- 主视图（`mainView`）：Homebrew 状态行（版本 / formula 数 / cask 数 / 可升级数）+ 服务行（启停 / 重启）+ 包列表（formula 在前、cask 在后，各按名称排序）。搜索框实时过滤包名
+- 主视图（`mainView`）：Homebrew 状态行（版本 / formula 数 / cask 数 / 可升级数）+ 包列表。有更新的包独立成「可更新」组**置顶**（紧跟状态行，与「N 更新」摘要呼应；formula/cask 混排保持原相对序），其后服务行（启停 / 重启），其余包 formula 在前、cask 在后各按名称排序。搜索框实时过滤包名，可更新包同样置顶
 - 进入视图即拉状态（KeepAlive 缓存下重进走 `onActivated` 重新拉取）；api 元数据陈旧（>24h）时后台 `brew update` 刷新，「更新」按钮位先以旋转禁用态显示「拉取更新」，完成后自动重拉刷新可升级数
 - 子视图 `detail`（`subviews.detail`，标题「包详情」）：目标包摘要 + 依赖 + 被依赖，依赖 / 被依赖项可回车递归进入详情
 - 一键更新：状态行右侧「更新」按钮 → 流式执行 `update → upgrade → cleanup → autoremove`，完成后刷新状态；主视图首项（状态行）回车/双击亦触发（有更新且非运行中时）。运行中按钮位（旋转禁用态）**滚动显示进度详情**：文案随推进切换，纵向滚动过渡（旧文上出、新文下入，仅 transform/opacity）+ 按钮宽度渐变（宽度盒 JS FLIP——leave 锁旧宽、enter 量新宽由常驻 width transition 插值、transitionend 清回 auto，auto↔px 无 CSS 过渡，同 BaseDialog 内容高范式）——非升级步骤显示步骤名（拉取更新 / 升级中 / 清理中 / 清理依赖），升级步骤显示**当前包名 + 完成数/总数**（解析 `==> Downloading`（ghcr blobs URL 段，下载先于 Pouring 是最长阶段）/`==> Pouring`/`==> Upgrading [Cask]`/`==> Installing Cask` 行取包名，tap 全限定名归一化为短名、表头「N outdated packages:」不误判；`🍺` 行计完成，总数取列表过期数；包名未知或重挂载恢复时回落步骤名）；后台元数据刷新同位显示「拉取更新」。终端原文不展示，无独立进度卡；服务启停瞬时完成不占位

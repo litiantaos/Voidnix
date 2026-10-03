@@ -402,7 +402,9 @@ describe('homebrew View 界面', () => {
     const { wrapper } = mountHost()
     await flush()
 
-    // 选中下移到首个服务行（redis，不在包列表中 → formula 兜底）后回车
+    // 选中下移两步到首个服务行（redis，不在包列表中 → formula 兜底；
+    // 中间隔置顶「可更新」组的 git 行）后回车
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
     await flush()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -414,6 +416,43 @@ describe('homebrew View 界面', () => {
       kind: 'formula',
     })
     expect(mocks.invoke).not.toHaveBeenCalledWith('brew_run', expect.anything())
+    wrapper.unmount()
+  })
+
+  it('有更新的包置顶成组：紧跟状态行，不重复留在 formula/cask 组', async () => {
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === 'brew_run_state') return Promise.resolve(null)
+      if (cmd === 'brew_status')
+        return Promise.resolve<BrewStatusPayload>({
+          version: '4.4.0',
+          packages: [
+            { name: 'a-shell', kind: 'formula', desc: '', version: '1.0.0', new_version: '' },
+            {
+              name: 'git',
+              kind: 'formula',
+              desc: 'Distributed VCS',
+              version: '2.40.0',
+              new_version: '2.43.0',
+            },
+            { name: 'zebra', kind: 'cask', desc: '', version: '3.0', new_version: '3.1' },
+          ],
+          has_update: true,
+          refreshing: false,
+        })
+      if (cmd === 'brew_services') return Promise.resolve([{ name: 'redis', status: 'started' }])
+      return Promise.resolve(null)
+    })
+    const { wrapper } = mountHost()
+    await flush()
+
+    // 顺序：状态行 → 可更新组（git、zebra，formula→cask 保持原相对序）→ 服务组（redis）→ Formulae（a-shell）
+    const text = wrapper.text()
+    expect(text.indexOf('可更新')).toBeLessThan(text.indexOf('git'))
+    expect(text.indexOf('git')).toBeLessThan(text.indexOf('zebra'))
+    expect(text.indexOf('zebra')).toBeLessThan(text.indexOf('redis'))
+    expect(text.indexOf('redis')).toBeLessThan(text.indexOf('a-shell'))
+    // 不重复：git 仅出现一次（不在 Formulae 组再出现）
+    expect(text.split('git').length - 1).toBe(1)
     wrapper.unmount()
   })
 })
