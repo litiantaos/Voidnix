@@ -265,6 +265,7 @@ import { useAppStore } from '@/stores/app'
 import { useSystemStore } from '@/stores/system'
 import { CMD } from '@/commands'
 import { isTauri } from '@/utils/tauri'
+import { isModalDialogOpen } from '@/utils/dom'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { formatShortcutKeys } from '@/utils/format'
 import { getExtension } from '@/runtime/extension-registry'
@@ -377,6 +378,10 @@ const shortcutKeys = computed(() => formatShortcutKeys(settings.globalShortcut))
 const taglineLength = computed(() => (locale.value === 'zh-CN' ? 96 : undefined))
 
 onKeyStroke(['Enter', 'Escape', 'ArrowLeft', 'ArrowRight'], (e) => {
+  // 模态弹窗让位（与 BaseList canNavigate 同族）：引导期间弹窗出现（如菜单栏检查更新
+  // 唤起 UpdateDialog），按键归弹窗；Esc/Enter 由 BaseDialog stopPropagation 挡住，
+  // 方向键会冒泡到达此处驱动图纸动画错乱
+  if (isModalDialogOpen()) return
   // Enter 焦点在按钮（权限授权等）上时让位给按钮自身激活（BaseList 同款守卫），防双发
   if (e.key === 'Enter' && document.activeElement?.tagName === 'BUTTON') return
   if (e.key === 'Escape') {

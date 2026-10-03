@@ -224,6 +224,7 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useActionPanel } from '@/composables/useActionPanel'
 import { useAppStore } from '@/stores/app'
 import { formatBytes, toErrorMessage } from '@/utils/format'
+import { isModalDialogOpen } from '@/utils/dom'
 import { formatClipboardTime } from './logic'
 import { t } from '@/runtime/i18n'
 
@@ -423,6 +424,9 @@ function runMenuAction(key: string | number) {
 
 // 预览覆盖层 Esc 关闭（独立捕获相监听；preview 与菜单互斥，菜单由 composable 处理）
 function onPreviewKey(e: KeyboardEvent) {
+  // 模态弹窗让位（与 useActionPanel 同族）：capture 相先于弹窗一切处理，不守卫则
+  // 弹窗开着时 Esc 永远关的是预览、弹窗收不到键
+  if (isModalDialogOpen()) return
   if (!previewOpen.value) return
   if (e.key === 'Escape') {
     e.preventDefault()

@@ -494,6 +494,28 @@ describe('WelcomeView 首启引导视图', () => {
     expect(wrapper.find('.w-footer .w-note').text()).toBe('Enter / → 下一步 · ← 上一步')
   })
 
+  it('模态弹窗让位：弹窗打开期间方向键不驱动图纸、Enter 不完结；弹窗关闭后恢复', async () => {
+    useAppStore().setFullscreenView(WelcomeView)
+    const wrapper = mountView()
+    // 模拟 BaseDialog 探测判据（引导期间菜单栏检查更新唤起 UpdateDialog 的场景）
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
+    document.body.appendChild(dialog)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.welcome-view').classes()).not.toContain('w-expanded')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await nextTick()
+    expect(wrapper.emitted('done')).toBeUndefined()
+
+    dialog.remove()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.welcome-view').classes()).toContain('w-expanded')
+  })
+
   it('展开转变：投影因子驱动等距→俯视连续插值，动画完成后顶面塌缩为轴对齐矩形、整图等比缩小 0.8 且不出 viewBox', async () => {
     useAppStore().setFullscreenView(WelcomeView)
     const wrapper = mountView()

@@ -8,7 +8,7 @@ import {
   nextTick,
 } from 'vue'
 import type { Ref } from 'vue'
-import { wrapIndex } from '@/utils/dom'
+import { wrapIndex, isModalDialogOpen } from '@/utils/dom'
 import type { PanelItem } from '@/components/ui/BaseDropdownItems.vue'
 
 interface UseActionPanelOptions {
@@ -83,6 +83,9 @@ export function useActionPanel(opts: UseActionPanelOptions) {
 
   function close() {
     open.value = false
+    // 模态弹窗打开期间不回焦搜索框：外点关闭落在弹窗上（或面板动作自身弹确认框）时
+    // 抢焦会使弹窗键盘失效——BaseDialog 的 @keydown 绑在弹窗根元素，焦点出走即收不到
+    if (isModalDialogOpen()) return
     nextTick(() => document.getElementById('main-search-input')?.focus())
   }
 
@@ -108,6 +111,11 @@ export function useActionPanel(opts: UseActionPanelOptions) {
   function onDocKey(e: KeyboardEvent) {
     if (!viewActive) return
     if (e.isComposing) return
+    // 模态弹窗让位（与 useResultNavigation / BaseList canNavigate 同族）：面板开着时
+    // 弹窗出现（如菜单栏检查更新唤起 UpdateDialog、面板删除动作弹确认框），capture
+    // 拦截 + stopPropagation 会让 Enter/方向键落到面板项而弹窗收不到键；面板保留不关
+    //（非模态浮层），弹窗期间鼠标交互经外点关闭自然收束
+    if (isModalDialogOpen()) return
     if (open.value) {
       if (e.key === 'Escape' || (e.key === 'Enter' && e.metaKey)) {
         e.preventDefault()
