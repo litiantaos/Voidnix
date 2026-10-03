@@ -20,7 +20,7 @@ PID=$(pgrep -f "/Applications/Voidnix.app/Contents/MacOS/Voidnix" 2>/dev/null | 
 
 # 新日志文件写表头
 if [ ! -f "$LOG" ]; then
-  printf "# Voidnix Prod Monitor %s\n# time  fp_mb  cpu%%  threads  data_mb\n# & webkit  fp_total_mb  (WebKit XPC 合计，按启动时间关联)\n# @ ext/bin  rss_mb  cpu%%  vsz_mb   (扩展子进程，紧随主进程行)\n" "$TODAY" >> "$LOG"
+  printf "# Voidnix Prod Monitor %s\n# time  fp_mb  cpu%%  threads  data_mb\n# & webkit  fp_total_mb  (WebKit XPC 合计，按启动时间关联)\n# @ ext/bin  rss_mb  cpu%%  vsz_mb   (扩展子进程，紧随主进程行)\n# %% zombie  N   (主进程名下 Z 状态子进程数，仅非零记录)\n" "$TODAY" >> "$LOG"
 fi
 
 # CPU + 线程数（ps，与下方抓栈逻辑一致）
@@ -45,6 +45,12 @@ DATA_MB=$(du -sm "$DATA_DIR" 2>/dev/null | awk '{print $1}')
 [ -z "$DATA_MB" ] && DATA_MB="-"
 
 printf "%s  %s  %s  %s  %s\n" "$(date '+%H:%M:%S')" "$FP_MB" "$CPU" "$THRD" "$DATA_MB" >> "$LOG"
+
+# 主进程名下僵尸子进程数（PPID 归属 + Z 状态；仅非零记录——瞬态僵尸寿命微秒级，
+# 与 60s 采样相遇概率趋零，任何持续非零即子进程回收泄漏。曾整夜累积 2175 个
+# 耗尽用户进程配额致全用户 fork 失败，见 AGENTS.md 防回归记录）
+ZOMBIES=$(ps -A -o ppid=,state= 2>/dev/null | awk -v p="$PID" '$1 == p && $2 == "Z" { n++ } END { print n + 0 }')
+[ "$ZOMBIES" -gt 0 ] && printf '%% zombie  %s\n' "$ZOMBIES" >> "$LOG"
 
 # WebKit XPC 子进程 footprint 合计（与主进程同时启动 ±10s 的 com.apple.WebKit.* 进程）
 # ps rss 对 WKWebView 严重失真（如 WebContent 进程 ps 报 47M / 实际 footprint 175M），

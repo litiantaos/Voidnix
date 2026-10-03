@@ -191,16 +191,17 @@ pub fn set_builtin_brightness(value: f32) -> bool {
     unsafe { set(id, value.clamp(0.0, 1.0)) == 0 }
 }
 
-/// 立即熄灭所有显示器（`pmset displaysleepnow`，无需 root）。fire-and-forget：
-/// 无值得等待的结果。对已灭屏为幂等无操作。
+/// 立即熄灭所有显示器（`pmset displaysleepnow`，无需 root）。对已灭屏为
+/// 幂等无操作，不关心退出结果，但必须同步等退出回收——std Child 被 drop
+/// 不回收，父进程存活期间退出的子进程恒为僵尸（补熄循环曾每 5s 漏一个，
+/// 整夜累积数千个耗尽用户进程配额）。异步上下文消费走 spawn_blocking。
 pub fn sleep_displays_now() {
-    // SAFETY: 进程 spawn 后即脱离管理（无 stdio 句柄泄漏），僵尸由系统回收
     let _ = Command::new("/usr/bin/pmset")
         .arg("displaysleepnow")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn();
+        .status();
 }
 
 /// 面板视为「亮」的归一化阈值（macOS 合盖首拍即把背光归零，活读常为 0，

@@ -3,7 +3,7 @@
 # 用法：bash scripts/voidnix-analyze.sh [天数，默认7]
 #
 # 输出：按天汇总（采样数 / footprint min-avg-max / 漂移 / CPU 峰值 / 线程数 / 数据目录），
-#       WebKit XPC 合计趋势，扩展子进程统计，泄漏告警，当日最近 20 个采样点明细。
+#       WebKit XPC 合计趋势，扩展子进程统计，僵尸子进程峰值与泄漏告警，当日最近 20 个采样点明细。
 set -uo pipefail
 
 DAYS="${1:-7}"
@@ -42,6 +42,13 @@ for i in $(seq 0 $((DAYS - 1))); do
       if (cpu > c_cpu[key]) c_cpu[key]=cpu
       next
     }
+    # 僵尸行：% zombie N（仅非零记录）
+    $1 == "%" {
+      z=$3 + 0
+      if (z > zb_max) zb_max=z
+      zb_n++
+      next
+    }
     # 主进程行（NF=5 新格式 fp/cpu/thrd/data，NF=6 旧格式 rss/cpu/thrd/vsz/data）
     NF >= 5 && $2 ~ /^[0-9]/ {
       fp=$2; cpu=$3; thrd=$4
@@ -60,6 +67,9 @@ for i in $(seq 0 $((DAYS - 1))); do
       if (wk_n > 0) {
         printf "\n  webkit: samples=%-4d  FP[%.0f ~ %.0f ~ %.0f]  drift=%+.0f",
           wk_n, wk_min, wk_sum/wk_n, wk_max, wk_last - wk_first
+      }
+      if (zb_n > 0) {
+        printf "\n  zombie: samples=%-4d  max=%d", zb_n, zb_max
       }
       if (length(c_cnt) > 0) {
         nk=0
@@ -82,6 +92,10 @@ for i in $(seq 0 $((DAYS - 1))); do
   WK_DRIFT=$(echo "$STATS" | sed -n 's/.*webkit:.*drift=\([+-][0-9.]*\).*/\1/p')
   [ -n "$DRIFT" ] && awk -v d="$DRIFT" 'BEGIN { exit (d > 20) ? 0 : 1 }' && echo "  [!] 主进程 FP 单日漂移 >20MB"
   [ -n "$WK_DRIFT" ] && awk -v d="$WK_DRIFT" 'BEGIN { exit (d > 50) ? 0 : 1 }' && echo "  [!] WebKit FP 单日漂移 >50MB — compositing layer 累积"
+  # 僵尸 max ≥5 才告警：瞬态僵尸（微秒级寿命撞上 60s 采样）单次 1-2 个属噪音，
+  # 真泄漏按调用频率单调累积、几分钟内即越过阈值（历史事故每 5s 漏一个）
+  ZB_MAX=$(echo "$STATS" | sed -n 's/.*zombie:.*max=\([0-9]*\).*/\1/p')
+  [ -n "$ZB_MAX" ] && [ "$ZB_MAX" -ge 5 ] && echo "  [!] 僵尸子进程 max=$ZB_MAX — 子进程回收泄漏"
   echo ""
 done
 
@@ -91,18 +105,22 @@ LOG="$LOG_DIR/monitor-$TODAY.log"
 if [ -f "$LOG" ]; then
   echo "=== 今日最近 20 个采样点 ==="
   grep -v '^#' "$LOG" | awk '
-    $1 == "&" {
-      if (main_buf != "") { print main_buf "  WK=" $3 "MB"; main_buf = "" }
-      next
-    }
+    # WK / ZOMBIE 标注先挂在待定变量上，随下一个主进程行（或 END）合并输出
+    $1 == "&" { wk = $3; next }
+    $1 == "%" { zb = $3; next }
     $1 == "@" { next }
     NF >= 5 {
-      if (main_buf != "") print main_buf
+      if (main_buf != "")
+        print main_buf (wk != "" ? "  WK=" wk "MB" : "") (zb != "" ? "  ZOMBIE=" zb : "")
+      wk = ""; zb = ""
       if (NF >= 6)
         main_buf = sprintf("  %s  RSS=%6sMB  CPU=%5s%%  THR=%s  DATA=%sMB", $1, $2, $3, $4, $6)
       else
         main_buf = sprintf("  %s  FP=%6sMB  CPU=%5s%%  THR=%s  DATA=%sMB", $1, $2, $3, $4, $5)
     }
-    END { if (main_buf != "") print main_buf }
+    END {
+      if (main_buf != "")
+        print main_buf (wk != "" ? "  WK=" wk "MB" : "") (zb != "" ? "  ZOMBIE=" zb : "")
+    }
   ' | tail -20
 fi

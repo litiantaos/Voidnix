@@ -340,7 +340,10 @@ fn query_file_usage() -> HashMap<String, (u32, Option<String>)> {
     };
     let stdout = match child.stdout.take() {
         Some(s) => s,
-        None => return HashMap::new(),
+        None => {
+            let _ = child.wait();
+            return HashMap::new();
+        }
     };
 
     // 跨线程超时：读线程 + 计时线程，先就绪的胜出

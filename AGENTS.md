@@ -125,15 +125,16 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 - `voidnix-monitor.sh` — 采样器：launchd 每 60s 调用，Voidnix 未运行时 <10ms 退出零开销，运行时用 `top` 采主进程 Physical footprint（含被内核压缩的内存页；`ps rss` 不含致严重低估——WKWebView WebContent 进程 ps 报 47M 实际 footprint 175M）+ WebKit XPC 子进程 footprint 合计（按启动时间关联主进程 ±10s 的 `com.apple.WebKit.*` 进程），扩展子进程识别用 `ps -A` 全表扫描（按可执行路径 `comm` 匹配 `com.litiantao.voidnix/extensions/<id>/`，按扩展分组；不依赖 PPID 链——root 子进程如 mihomo 由 launchd LaunchDaemon 托管 PPID=1；用 `comm` 而非 `command`，从根上排除 grep/osascript 等仅在参数里引用该路径的进程，也避免采样器自身 fork 的 shell 被误匹配）。主进程 CPU >80% 时用 `sample <pid> 2 -mayDie -file` 抓 2 秒调用栈快照（5 分钟冷却防刷屏），快照存 `stacks/cpu-<时间戳>.txt`、主日志追加 `# [stack]` 关联行。日志与快照自动保留 30 天
 - `voidnix-monitor-install.sh install|uninstall` — 安装/卸载 LaunchAgent（`com.litiantao.voidnix.monitor`，登录后自动生效）
-- `voidnix-analyze.sh [天数]` — 分析器：按天聚合主进程 footprint 区间/漂移/CPU 峰值/线程数/数据目录（漂移 >20MB 告警）、WebKit XPC 合计 footprint 区间/漂移（漂移 >50MB 告警 compositing layer 累积），并按扩展聚合子进程采样数/RSS 区间/CPU 峰值
+- `voidnix-analyze.sh [天数]` — 分析器：按天聚合主进程 footprint 区间/漂移/CPU 峰值/线程数/数据目录（漂移 >20MB 告警）、WebKit XPC 合计 footprint 区间/漂移（漂移 >50MB 告警 compositing layer 累积）、主进程名下僵尸子进程峰值（max ≥5 告警子进程回收泄漏），并按扩展聚合子进程采样数/RSS 区间/CPU 峰值
 
-**日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`，主进程行（`time fp cpu threads data`）后跟 `& webkit fp_total`（WebKit XPC 合计，按启动时间关联）+ `@ ext/bin rss cpu vsz`（扩展子进程）；抓栈触发时追加 `# [stack] time cpu= -> stacks/cpu-时间戳.txt`（注释行，analyze 跳过），快照存 `~/Library/Logs/Voidnix/stacks/`。执行 `bash scripts/voidnix-analyze.sh` 分析趋势，`python3 scripts/smoke-test.py --perf` 做内存累积压测（内存结论只看 release）。
+**日志**：`~/Library/Logs/Voidnix/monitor-YYYY-MM-DD.log`，主进程行（`time fp cpu threads data`）后跟 `& webkit fp_total`（WebKit XPC 合计，按启动时间关联）+ `@ ext/bin rss cpu vsz`（扩展子进程）+ `% zombie N`（主进程名下 Z 状态子进程数，仅非零记录）；抓栈触发时追加 `# [stack] time cpu= -> stacks/cpu-时间戳.txt`（注释行，analyze 跳过），快照存 `~/Library/Logs/Voidnix/stacks/`。执行 `bash scripts/voidnix-analyze.sh` 分析趋势，`python3 scripts/smoke-test.py --perf` 做内存累积压测（内存结论只看 release）。
 
 **已定位并修复的问题**（防回归决策记录）：
 
 - proxy/mihomo CPU 持续 100%——gvisor TUN 栈在睡眠唤醒后的连接风暴中泄漏 dial goroutine 进入 busy-loop，已将 TUN stack 切 system 栈彻底解决（见 [proxy.md](docs/extensions/proxy.md)）
 - 主进程 CPU 100% 反馈环——blur → hideWindow → resignKeyWindow → 派生 blur 失控循环，已加 `hide_window` 的 `is_window_visible()` 幂等守卫断环
 - WKWebView 内存累积——搜索 compositing layer tiles 随搜索累积（PURGE=N 不可回收），已加 `ContentView.clearCache` 在窗口隐藏时 toggle `content-visibility:hidden` 释放全子树 tile backing + WebContent 350M 阈值 navigate 重载兜底（见窗口节 hide 策略）
+- 僵尸子进程耗尽用户进程配额——`sleep_displays_now` 裸 `spawn()` 丢弃 Child（注释误信「僵尸由系统回收」；std Child 被 drop 不回收，父进程存活期间退出的子进程恒为僵尸），awake 熄屏巡检在「合盖 + 无外接 + disablesleep 持有」停留期每 5s 补熄漏一个，整夜累积 2175 个僵尸（实测 `ps` 抓取）占满 ulimit -u（macOS 按用户共享，本机 2666），全用户 fork 失败致 Chrome / Claude Code / Voidnix 同崩；已改 `.status()` 同步等退出回收 + 消费点 `spawn_blocking`（对齐电池巡检范式）。spawn 纪律：std 派生必须以 `.output()` / `.status()` / 显式 `wait()` 之一收尾，禁止裸 spawn 丢弃 Child；tokio 派生须显式 wait 或 `kill_on_drop` 兜底（runtime `enable_all` 下 drop 的 Child 由孤儿回收器兜底）；监控侧 `% zombie` 行每分钟采样主进程名下 Z 状态子进程数（仅非零记录），analyze max ≥5 告警，防同类缺陷静默累积
 
 ## 发布管道与代码签名
 

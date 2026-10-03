@@ -375,7 +375,8 @@ impl Extension for AwakeExtension {
                         ScreenDimAction::Restore | ScreenDimAction::None => {}
                     }
                 } else if sleep::screen_sleep_due(lid, external, was_closed, since(last_sleep_at)) {
-                    sleep::sleep_displays_now();
+                    // pmset 同步等退出回收子进程，阻塞调用走 spawn_blocking（电池巡检同范式）
+                    let _ = tauri::async_runtime::spawn_blocking(sleep::sleep_displays_now).await;
                     last_sleep_at = Some(std::time::Instant::now());
                     debug_log(|| {
                         format!(
