@@ -65,7 +65,7 @@
 ## 实现要点
 
 - **上下文**：JXA 读 `selection` + `finderWindows[0].target` → JSON
-- **frontmost 守卫**：拷贝路径 / 终端 / 新建要求 frontmost 为访达；切换隐藏不依赖 frontmost
+- **frontmost 守卫**（`ensure_finder_frontmost`）：拷贝路径 / 用 App 打开 / 终端 / 新建执行前确保访达前台——frontmost 非访达时先 hide 主窗归还焦点（`PREV_FRONT_PID` 捕获于 show 时，快捷键进入即访达）短轮询再验，归还后仍非访达（用户已主动切走）才拒绝。不能纯查 frontmost：面板交互（点击行/按钮、新建弹窗聚焦输入框）会触发 WKWebView 自我激活（`activateIgnoringOtherApps` 抢走前台，WebKit 内部行为无法从应用侧阻止），纯查会把面板自身交互误判为离开访达。切换隐藏不依赖 frontmost（自路径强制前置访达）
 - **新建文件**：`BaseDialog` `closeOnConfirm=false` → 异步创建
   - 成功 → 卸窗；失败 → toast 且弹窗保持（不先关再开）
   - 创建后 `selectFile` 选中
@@ -92,5 +92,5 @@ extensions/finder-ext/
 ## 已知限制
 
 - 终端固定 Terminal.app（不读用户默认终端）
-- 拷贝路径 / 用 App 打开 / 终端 / 新建要求访达 frontmost；`toggle_hidden` 除外
+- 拷贝路径 / 用 App 打开 / 终端 / 新建要求访达上下文（frontmost 归还后仍非访达才拒）；`toggle_hidden` 除外
 - 无访达窗口时 `new_file` / 无选中且无 target 的 `open_terminal` / `open_with` 会失败并提示

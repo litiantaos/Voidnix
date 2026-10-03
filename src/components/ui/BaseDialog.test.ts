@@ -11,6 +11,8 @@ function mountDialog(props: Record<string, unknown> = {}) {
       title: '测试标题',
       ...props,
     },
+    // 键盘监听在 document 级：须挂进 document 树，元素派发的 keydown 才能冒泡到位
+    attachTo: document.body,
     global: {
       stubs: {
         Teleport: {
@@ -31,6 +33,8 @@ describe('BaseDialog', () => {
   })
 
   afterEach(() => {
+    // attachTo 挂进 body 的组件随测试清理，防跨用例残留（isModalDialogOpen 探测污染）
+    document.body.innerHTML = ''
     vi.useRealTimers()
   })
 
@@ -119,6 +123,7 @@ describe('BaseDialog', () => {
     const wrapper = mount(BaseDialog, {
       props: { title: '新建', variant: 'form', showFooter: true, okLabel: '创建' },
       slots: { default: '<input data-testid="field" />' },
+      attachTo: document.body,
       global: {
         stubs: {
           Teleport: { template: '<div><slot /></div>' },
@@ -131,10 +136,38 @@ describe('BaseDialog', () => {
     expect(wrapper.emitted('confirm')).toHaveLength(1)
   })
 
+  it('form + footer：焦点脱出弹窗子树（body）Enter 仍提交', async () => {
+    // WKWebView 自我激活的激活事务重评估偶发夺走焦点，input 失焦到 body——
+    // document 级监听下回车意图仍归弹窗（finder-ext 新建文件弹窗回归）
+    const wrapper = mountDialog({ variant: 'form', showFooter: true, okLabel: '创建' })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await nextTick()
+    vi.advanceTimersByTime(200)
+    expect(wrapper.emitted('confirm')).toHaveLength(1)
+  })
+
+  it('多弹窗叠加：仅最晚挂载的弹窗消费键盘（底层让位防双确认）', async () => {
+    // 扩展弹窗开着时菜单栏可随时弹检查更新 UpdateDialog——document 级监听间
+    // stopPropagation 无法互相阻断，两个弹窗都会收到同一 Enter；靠 DOM 序
+    // （Teleport 依次 append）仅顶层消费
+    const bottom = mountDialog({
+      variant: 'form',
+      showFooter: true,
+      okLabel: '创建',
+      closeOnConfirm: false,
+    })
+    const top = mountDialog({ closeOnConfirm: false })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await nextTick()
+    expect(bottom.emitted('confirm')).toBeUndefined()
+    expect(top.emitted('confirm')).toHaveLength(1)
+  })
+
   it('form + footer：IME composition 中 Enter 不提交', async () => {
     const wrapper = mount(BaseDialog, {
       props: { title: '新建', variant: 'form', showFooter: true, okLabel: '创建' },
       slots: { default: '<input data-testid="field" />' },
+      attachTo: document.body,
       global: {
         stubs: {
           Teleport: { template: '<div><slot /></div>' },

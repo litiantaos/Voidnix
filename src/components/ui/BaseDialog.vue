@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div flex items="center" inset="0" justify="center" fixed z="100" @keydown="onKeyDown">
+    <div flex items="center" inset="0" justify="center" fixed z="100">
       <Transition
         appear
         enter-from-class="backdrop-from"
@@ -237,7 +237,21 @@ const sizeClass = computed(() => {
   return sizeMap[props.size]
 })
 
+/// 是否当前最晚挂载的模态弹窗：多个 BaseDialog 叠加（如扩展弹窗上弹检查更新）时
+/// 仅顶层消费键盘——document 级监听间 stopPropagation 无法互相阻断（同节点上的
+/// 监听均会收到），靠 DOM 序判定归属（Teleport 容器依次 append body，树序即挂载序；
+/// 判据与 isModalDialogOpen 同为 DOM 探测，零新增状态）。
+function isTopmostDialog(): boolean {
+  const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
+  return dialogs.length === 0 || dialogs[dialogs.length - 1] === dialogRef.value
+}
+
 function onKeyDown(e: KeyboardEvent) {
+  // 关闭中 / 已关（含 KeepAlive dismiss 后监听随组件保活）：不再消费键盘
+  if (closing || !visible.value) return
+  // 叠加弹窗让位：仅顶层消费，防底层表单在检查更新弹窗下被同一 Enter 意外提交
+  if (!isTopmostDialog()) return
+
   // Escape：始终关闭弹窗
   if (e.key === 'Escape') {
     e.preventDefault()
@@ -260,7 +274,7 @@ function onKeyDown(e: KeyboardEvent) {
     target.tagName === 'SELECT' ||
     target.isContentEditable
 
-  // form：方向键留给弹窗内容（多选列表等），阻止冒泡到外层 BaseList
+  // form：方向键留给弹窗内容（多选列表等）；外层列表按 isModalDialogOpen 让位
   if (
     props.variant === 'form' &&
     (e.key === 'ArrowDown' ||
@@ -275,14 +289,17 @@ function onKeyDown(e: KeyboardEvent) {
     return
   }
 
-  // form + footer 回车提交：仅单行 INPUT（BaseSelect 自管 Enter，不冒泡到此）
+  // form + footer 回车提交：单行 INPUT（BaseSelect 自管 Enter，不冒泡到此）；
+  // 焦点已脱出弹窗子树（WKWebView 自我激活的激活事务重评估偶发夺走焦点，
+  // input 失焦到 body）时同样提交——弹窗是模态键盘唯一消费者，回车意图即确认
+  const focusInDialog = !!dialogRef.value?.contains(e.target as Node)
   if (
     props.variant === 'form' &&
     resolvedShowFooter.value &&
     e.key === 'Enter' &&
     !isComposing(e) &&
     !isTextarea &&
-    target.tagName === 'INPUT'
+    (target.tagName === 'INPUT' || !focusInDialog)
   ) {
     e.preventDefault()
     e.stopPropagation()
@@ -324,6 +341,11 @@ function onOverlayClick() {
 }
 
 onMounted(() => {
+  // 键盘监听挂 document 级（与 onKeyStroke 同层）：弹窗聚焦输入框触发 WKWebView
+  // 自我激活后，激活事务的 key 重评估偶发把焦点脱出弹窗子树（input 失焦到 body），
+  // 事件不再冒泡经过弹窗容器，容器级 @keydown 会让 Enter/Esc 永久失灵。模态弹窗
+  // 打开期间其余全局监听均按 isModalDialogOpen 让位，document 级是正确层级
+  document.addEventListener('keydown', onKeyDown)
   previousFocusEl = document.activeElement as HTMLElement
   // 高度动画基线：挂载时记录自然高（appear 过渡只动 opacity/transform，高度即终值）
   if (dialogRef.value) {
@@ -358,6 +380,7 @@ onDeactivated(() => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('keydown', onKeyDown)
   // M-fe2：组件提前销毁时清 timer，避免已卸载组件继续 emit
   if (closeTimer) {
     clearTimeout(closeTimer)

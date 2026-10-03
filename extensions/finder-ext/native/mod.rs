@@ -50,29 +50,30 @@ fn run_action_inner(
 ) -> Result<String, String> {
     match action {
         "copy_path" => {
-            require_finder_frontmost()?;
+            ensure_finder_frontmost(app)?;
             let ctx = finder_context()?;
             handle_copy_path(&ctx.paths, &ctx.target)?;
             Ok("已复制路径".into())
         }
         "open_terminal" => {
-            require_finder_frontmost()?;
+            ensure_finder_frontmost(app)?;
             let ctx = finder_context()?;
             handle_open_terminal(&ctx.paths, &ctx.target)?;
             Ok(String::new())
         }
         "open_with" => {
-            require_finder_frontmost()?;
+            ensure_finder_frontmost(app)?;
             let ctx = finder_context()?;
             let app_path = app_path.ok_or_else(|| "缺少应用路径".to_string())?;
             handle_open_with(&ctx.paths, &ctx.target, app_path)?;
             Ok(String::new())
         }
         "new_file" => {
-            require_finder_frontmost()?;
+            ensure_finder_frontmost(app)?;
             let ctx = finder_context()?;
             let file_name = name.ok_or_else(|| "缺少文件名".to_string())?;
             let path = create_named_file(&ctx.target, file_name)?;
+            // 幂等保底：ensure 守卫通过（未触发 hide）的路径仍须收窗再 reveal
             let _ = hide_main_sync(app);
             reveal_in_finder(&path);
             Ok(String::new())
@@ -194,6 +195,28 @@ fn require_finder_frontmost() -> Result<(), String> {
     } else {
         Err("请先切换到访达".into())
     }
+}
+
+/// 访达前台守卫（执行动作版）：frontmost 非访达时先 hide 主窗归还焦点再验。
+///
+/// 面板交互（点击行/按钮、弹窗聚焦输入框）会触发 WKWebView 自我激活
+/// （activateIgnoringOtherApps 抢走前台，源自 WebKit 内部、应用侧无法阻止），
+/// 此时访达已失焦但用户并未离开访达上下文——PREV_FRONT_PID 捕获于 show 时
+/// （快捷键进入即访达），hide → restore_captured 即归还。归还后仍非访达
+/// （用户已主动切走）才拒绝，上下文守卫语义不变。
+fn ensure_finder_frontmost(app: &AppHandle) -> Result<(), String> {
+    if is_finder_frontmost() {
+        return Ok(());
+    }
+    let _ = hide_main_sync(app);
+    // activate 落稳存在微小延迟，短轮询等待（与 handle_toggle_hidden 同款节奏）
+    for _ in 0..8 {
+        if is_finder_frontmost() {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(40));
+    }
+    Err("请先切换到访达".into())
 }
 
 fn finder_context() -> Result<FinderContext, String> {
