@@ -20,6 +20,7 @@ const OWNED_POINTERS: &[&str] = &[
     "/env/ANTHROPIC_DEFAULT_SONNET_MODEL",
     "/env/ANTHROPIC_DEFAULT_OPUS_MODEL",
     "/env/ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "/env/CLAUDE_CODE_AUTO_MODE_SERVER",
     "/modelPicker",
 ];
 
@@ -125,6 +126,15 @@ fn apply_at(
         &mut root,
         "/env/ANTHROPIC_AUTH_TOKEN",
         Value::String(PLACEHOLDER_TOKEN.to_string()),
+    );
+    // 关闭 auto mode 服务端分类器检查:应答(响应流 safeguard_results)只有 Anthropic
+    // 端点会返回,网关上游是第三方时永不 eligible,CC 每会话 fallback 成立即弹计费变更
+    // 提示(Enter 仅抑制 24h)。设 0 让 CC 不再请求服务端检查,分类器请求照旧自发走网关
+    // 由归一特判兜底
+    set_pointer(
+        &mut root,
+        "/env/CLAUDE_CODE_AUTO_MODE_SERVER",
+        Value::String("0".to_string()),
     );
     let aliases = [
         ("/env/ANTHROPIC_DEFAULT_SONNET_MODEL", &payload.sonnet_model),
@@ -385,6 +395,7 @@ mod tests {
         assert_eq!(v["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "glm-5.3");
         assert_eq!(v["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "glm-5.3");
         assert_eq!(v["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "glm-5.3-flash");
+        assert_eq!(v["env"]["CLAUDE_CODE_AUTO_MODE_SERVER"], "0");
         // 用户自有键不动
         assert_eq!(v["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "max");
         assert_eq!(v["tui"], "fullscreen");
@@ -404,17 +415,23 @@ mod tests {
         let dir = std::env::temp_dir().join("voidnix-cc-2");
         let settings = dir.join("cc").join("settings.json");
         setup(&dir, &settings);
-        let original = r#"{"apiKeyHelper":"echo $OLD","env":{"ANTHROPIC_BASE_URL":"http://old","CLAUDE_CODE_EFFORT_LEVEL":"max"},"tui":"fullscreen"}"#;
+        let original = r#"{"apiKeyHelper":"echo $OLD","env":{"ANTHROPIC_BASE_URL":"http://old","CLAUDE_CODE_AUTO_MODE_SERVER":"1","CLAUDE_CODE_EFFORT_LEVEL":"max"},"tui":"fullscreen"}"#;
         std::fs::write(&settings, original).unwrap();
 
         apply_at(&settings, &dir, 8788, &payload()).unwrap();
         apply_at(&settings, &dir, 8788, &payload()).unwrap(); // 幂等:快照仍是首次原貌
+
+        // 用户原设 1 被接管值覆写为 0
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(v["env"]["CLAUDE_CODE_AUTO_MODE_SERVER"], "0");
         remove_at(&settings, &dir, 8788).unwrap();
 
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         assert_eq!(v["apiKeyHelper"], "echo $OLD");
         assert_eq!(v["env"]["ANTHROPIC_BASE_URL"], "http://old");
         assert_eq!(v["env"]["ANTHROPIC_AUTH_TOKEN"], Value::Null);
+        // 用户原设的自有键:还原恢复原值(非自有键不动)
+        assert_eq!(v["env"]["CLAUDE_CODE_AUTO_MODE_SERVER"], "1");
         assert_eq!(v["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "max");
         assert_eq!(v["modelPicker"], Value::Null);
         assert!(!backup_file(&dir).exists());

@@ -35,6 +35,7 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 
 - `env.ANTHROPIC_BASE_URL` = `http://127.0.0.1:{port}`；`env.ANTHROPIC_AUTH_TOKEN` = 占位（网关注入真实 Key，摘除 `apiKeyHelper`，不再依赖 shell env 链路）
 - `env.ANTHROPIC_DEFAULT_{SONNET,OPUS,HAIKU}_MODEL` = 三档模型映射（新会话开局默认 / 经 `/model` 手动切换的旗舰档 / 后台小任务——标题生成等小流量，不钉住则走主模型烧额度）；空值摘除该键
+- `env.CLAUDE_CODE_AUTO_MODE_SERVER` = `"0"`：关闭 auto mode 服务端分类器检查——CC v2.1.278+ 走网关时默认请求服务端检查（v2.1.282+ 不拉 feature flags 的会话亦然，与 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 叠加时每会话都问），而该检查的应答（响应流 `safeguard_results`）只存在于 Anthropic 官方端点，上游是第三方时永不 eligible，fallback 成立即弹「计费变更不适用本会话」提示（Enter 仅抑制 24h）。设 0 让 CC 不再请求服务端检查，分类器请求照旧自发走网关由归一特判兜底，兼防「响应无 verdict 致动作被拒」暗坑；还原时摘除该键（CC 回默认行为，直连官方保留免费服务端检查机会）
 - `env.ANTHROPIC_DEFAULT_*_MODEL` 与 `modelPicker` 的模型 id 由 `ccContext` 档位（`'default' | '1m'`，UI 下拉直存，档值即 `[<tier>]` 后缀内容，默认 1m）统一决定形态：档值 = 追加 `[<tier>]` 后缀（CC 私有语法，识别后发对应长上下文 beta 头；已带后缀防双写），default = 统一剥成裸名——该项是 CC 侧形态的唯一决定因素，中枢存储带不带后缀都无影响；picker 的 label 恒裸名。新增档位（如 2m）仅扩类型联合 + UI 选项各一行，Rust `norm_model` 已按 `[Nm]` 泛化
 - `modelPicker`（CC v2.1.242+，旧版本忽略未知键）= 全部 Anthropic 可路由模型 + `replaceBuiltInOptions`——**CC 内 `/model` 直接切换任何模型**，新会话生效
 - 备份：首次触碰前写 `settings.json.voidnix-bak` 原文 + `cc-backup.json` 自有键精确快照（扩展数据目录）；关闭接管按快照逐键还原，用户自有键（`CLAUDE_CODE_EFFORT_LEVEL` 等）始终不碰
