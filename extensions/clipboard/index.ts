@@ -8,6 +8,7 @@ import { useAppStore } from '@/stores/app'
 import { listen } from '@tauri-apps/api/event'
 import { toErrorMessage } from '@/utils/format'
 import { t } from '@/runtime/i18n'
+import { showToast } from '@/composables/useToast'
 import {
   filterByQuery,
   filterByType,
@@ -161,6 +162,8 @@ export default defineExtension({
       try {
         await invoke(CMD.pasteClipboardItem, { id })
         invalidateCache()
+        // invoke 返回时窗口已被 Rust hide（粘贴链路主窗隐藏），外部 toast 照常展示
+        showToast(t('common.pasted'))
       } catch (e) {
         console.error('Failed to paste clipboard item:', e)
         useAppStore().showStatus(toErrorMessage(e, t('clipboard.pasteFailed')), {

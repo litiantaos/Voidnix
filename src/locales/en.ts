@@ -8,6 +8,7 @@ export const enMessages: Msgs = {
   'common.cancel': { en: 'Cancel' },
   'common.confirm': { en: 'Confirm' },
   'common.copied': { en: 'Copied' },
+  'common.pasted': { en: 'Pasted' },
   'common.close': { en: 'Close' },
   'common.save': { en: 'Save' },
   'common.delete': { en: 'Delete' },
@@ -32,6 +33,7 @@ export const enMessages: Msgs = {
   'search.searchIn': { en: 'Search {name}' },
   'search.newVersionHint': { en: 'New version available, click to view' },
   'search.browseToolsHint': { en: 'Type / to browse all tools' },
+  'search.openUrlFailed': { en: 'Failed to open URL' },
 
   // ─── welcome（首启引导）─────────────────────
   'welcome.isoModifier': { en: 'Modifier' },

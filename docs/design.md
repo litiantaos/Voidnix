@@ -75,7 +75,7 @@
 - `ui-field`：大输入；`BaseInput panel`：soft-surface 白边（非 field）
 - 图标井 `fill-mist`；仪表盘卡 `fill-ctrl`
 - 搜索栏拆层 `search-bar` / `search-bar-surface` / `search-bar-content`
-- toast / 动作面板：`dropdown-panel` + `fixed bottom-3 right-3`；toast `z-9999`
+- 动作面板：`dropdown-panel` + `fixed bottom-3 right-3`（toast 已迁原生 NSPanel 浮窗，不再走 web 层——详见 AGENTS.md「toast 提示」节）
 - `ActionMenuHint`：快捷键键帽，渲染于 BaseList 选中滑层（`.selection-hint`）内随焦点行平滑移动——运动由滑层 transform 承载，切换项零显隐（absolute、`right` 12px、flex 垂直居中，canvas 实底 + divider 细边，底部透明模糊遮罩 backdrop blur + mask 渐变、上下撑满行高、`pointer-events: none`）；显隐只表达「焦点行有无动作」的数据语义（actionHint 谓词），翻转时淡入淡出（无位移无缩放），opacity 落在 scrim/key 子元素自身（祖先 opacity 隔断 backdrop 采样致遮罩突现），退场完成后容器延迟交还 visibility，稳态未显示时整树跳过绘制；经 BaseList `actionHint` prop 供给（boolean / item 谓词），未传零渲染
 
 ## Agent

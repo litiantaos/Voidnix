@@ -368,12 +368,16 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### toast 提示
 
-自研轻量浮层（`composables/useToast.ts` + `components/ui/ToastOverlay.vue`）。
+原生 NSPanel 独立浮窗（`platform/toast.rs` 原语 + `runtime/toast.rs::show_toast` 命令），独立于主窗 WebView——主窗隐藏不影响展示，反馈类动作得以**立即关窗**。前端 `composables/useToast.ts` 为 invoke 薄壳（仅导出 `showToast`，无页面内状态）。
 
-- 按 `kind` 切图标/色：`success` accent 对勾 / `error` danger 语义色警告（错误反馈必须传 `kind: 'error'`）
-- 堆叠上限 3 条、默认 2000ms 自动清除
-- 窗口隐藏时立即清空（`hideWindow` 内调 `clearToasts`，规避 macOS 隐藏 WebView 节流 setTimeout 致残留）
-- 扩展通过 `copyAndHide`（`stores/app.ts`：写剪贴板 + showStatus 反馈 + 延迟隐藏窗口）自动获得「已复制」反馈
+- 按 `kind` 切 SF Symbol 图标/色：`success` checkmark.circle.fill + controlAccentColor / `error` exclamationmark.triangle.fill + systemRed（错误反馈必须传 `kind: 'error'`）
+- 堆叠上限 3 条（超限淘汰最旧）、默认 2000ms 自动离场；**每行独立 NSPanel**，最新在顶水平居中向下生长（macOS 通知堆叠语义，旧行下移补位）；无 hover 交互（点击穿透）
+- 锚定：所在屏（主窗 placement 屏优先、否则光标屏）visibleFrame **顶部中心**，行区顶下探 12px（HUD 位）。位置与主窗显隐/坐标无关——`toastAndHide` 的 show_toast 与 hide_window 两 invoke 到达序不保证（fetch IPC 并发），恒定锚定无竞态面；`toastAndHide` 侧另 await 顺序化双保险
+- 进出场与堆叠补位动画全走 **window 级 animator**（NSAnimationContext + 窗口 animator 的 alpha/frame，与 `platform/window.rs::animate_panel` 同路径）：进场 250ms easeOut 淡入 + 自屏幕顶缘下滑 12pt；离场 180ms easeIn 淡出 + 下滑 12pt；旧行 window animator 平移补位。**view 层动画（NSView animator / CATransaction 隐式 / CABasicAnimation / NSTimer 逐帧 set+display）在此场景实测均不被渲染管线提交**，勿回退
+- 到期调度：NSTimer 主 runloop 原生定时（fire → fade_out_row → 300ms 后 finish 销毁）；淘汰行 show 时即调度销毁收尾
+- **Rust 端路径的失败反馈**（菜单栏/快捷键操作，主窗隐藏态）：Rust emit 事件 + 扩展入口（`extensions/<id>/index.ts`）模块级常驻 `listen` → showToast（勿放 View/composable 的 KeepAlive 生命周期内——面板未打开过则监听不存在）。现有：screenshot 快捷键截屏失败（`screenshot-capture-failed`，文案即 Err 含权限指引）、awake 菜单开关/熄屏策略失败（`awake-menu-failed`，Rust 侧过滤「取消」类文案——用户主动取消授权静默）、proxy 状态事件（`proxy-status`，toast 通道在扩展入口、视图内 coreError 红字在 useProxyPanel 双通道分工）
+- appearance 每次 show 读缓存一次性设置（瞬态不做监听）；行 panel 用后即销毁（close + Retained 回收，原生 NSPanel 无 WKWebView teardown 限制）
+- 扩展通过 `copyAndHide`（`stores/app.ts`：写剪贴板 + showStatus 反馈 + **立即隐藏**主窗）自动获得「已复制」反馈；粘贴到前台 App 的路径（clipboard 历史粘贴、ai-providers 分字段粘贴）成功亦 toast「已粘贴」——invoke resolve 时主窗已被 Rust `hide_main` 隐藏，webview 存活、外部 toast 照常展示
 - `showStatus(msg, opts?)` 委托 `showToast`（调用点零改动）
 - 搜索栏 placeholder：扩展模式显示搜索说明（`在 X 中搜索` 或扩展自声明 `placeholder`），全局模式保留搜索说明
 
@@ -428,13 +432,11 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 ### 浮层范式
 
 - 右下角浮层统一 `fixed bottom-3 right-3 z-50`（离边缘 12px）+ `dropdown-panel` + 同款进出场动画（`ease-out` 进 / `ease-in` 离）
-- **toast**（`ToastOverlay`）用 `z-9999`，高于 `BaseDialog`（z-100）与动作面板（z-50）
 - screenshot 标注选区 / clean-mode 为功能性覆盖层不加材质；工具条 / 色板走 `acrylic-bar`；贴图悬停条走 `mica-bar`；选区阶段快捷键提示 `mica-panel`
 
 ### 过渡动效
 
 - **标准进出场**：动作面板 / 下拉 / 标注浮层等单元素走 `<Transition name="ui-popup">`（全局类在 `theme.css`，进 `--duration-fast` `--ease-out` / 退 `100ms` `--ease-in`，位移 8px + 缩放 .95）。`ui-popup` 用 `transform` 属性做动画，与 UnoCSS `translate-*`/`scale-*`（Wind4 落独立属性）正交叠加，带 `-translate-x-1/2` 居中定位也不冲突
-- **toast 堆叠**：`TransitionGroup name="toast"`（专用过渡，enter 8px+scale.95 弹入 / leave 4px+scale.98 柔和退场让 opacity 主导 + FLIP `move` 平滑重排 + `leave-active` 脱离文档流），容器 `items-end` 使每条 toast 保持自身宽度不互相拉伸，消除多条不同长度时离场的布局抖动；`.toast-move` 源码序必须在 enter/leave-active 之前（transition 是 shorthand，后定义的 leave-active 须覆盖 move 的 transition 以保留 opacity 过渡）；`leave-active` 用 `position: fixed`（非 absolute）+ `@before-leave` 钩子写入视口坐标 `left/top/width` 锁定原位（容器 `fixed bottom` 从底向上缩短，absolute 元素的静态位置会漂移到流尾）
 - **方向变体**（如 `BaseSelect` 上下展开）直接用 `transition`（UnoCSS 默认 property 列表已含 `translate,scale,opacity,transform`，覆盖 Wind4 独立属性的 from/to）；**禁止** `transition-[a,b,c]` 方括号多值语法——Wind4 不生成该规则，类为空致无过渡瞬时跳变。单属性可用 `transition-[opacity]`
 - **数值走基元**：自定义过渡的时长 / 曲线一律 `var(--duration-*)` / `var(--ease-*)`（`--duration-fastest` 100 / `--duration-fast` 150 / `--duration-normal` 200 / `--duration-slow` 300；UnoCSS 工具类用 `duration-[var(--duration-*)]` 方括号形式——圆括号变量简写 `duration-(--x)` 在 presetWind4 下不生成规则、静默失效），禁止裸 `0.2s` / `duration-300` / `cubic-bezier(...)`。布局伸缩等 CSS 无法表达的用 JS hooks（`BaseDialog` 内容高度 FLIP）
 - **仅 GPU 合成属性**：过渡只用 `transform` / `opacity` / `translate` / `scale`（独立属性），禁用 `box-shadow` / `background-color` 等 paint 类属性（每帧重绘致顿）
@@ -466,6 +468,7 @@ src-tauri/src/
 │   ├── binary_fetch.rs # 外部 binary 下载管线（流式落盘 + sha256 + 多 URL 回退；proxy/video 共用）
 │   ├── speech.rs       # 语音朗读命令（say CLI 封装；translate 消费）
 │   ├── shell_rc.rs     # .zshrc 注入约定（# voidnix <scope> marker）
+│   ├── toast.rs        # 原生 toast 编排（show_toast 命令：锚定输入 + 两段式移除定时）
 │   └── llm/            # LLM 基础设施（types / client / parser）
 └── platform/           # macOS 原生桥（零业务语义）
     ├── autostart.rs    # SMAppService（macOS 13+）注册主 app 为系统 Login Item（objc2 调用）
@@ -485,6 +488,7 @@ src-tauri/src/
     ├── window_list.rs  # CGWindowList 共享封装（screenshot / window-manager / 授权会话避让共用）
     ├── window.rs       # 主窗口原生操作（NSWindow + 圆角 + NSOpenPanel + appearance 缓存）
     ├── sleep.rs        # 睡眠域原语：睡眠守护 daemon 循环体 + LaunchDaemon plist 生成（flag/beat 驱动 pmset disablesleep，恢复路径现实态判定 + app 心跳过期自愈 + 持有期持续校验自愈 + LoopVersion 令牌版本化，awake 经 elevate 安装）、App Nap 豁免活动持有、合盖检测（AppleClamshellState）、外接屏判定、displaysleepnow、内置面板亮度读写（DisplayServices 私有 framework）、电池状态解析（awake 消费）
+    ├── toast.rs        # 原生 toast 浮窗（每行独立 NSPanel 毛玻璃卡片，顶部中心锚定/布局纯函数 + window 级 animator 进出场 + NSTimer 到期调度；主窗隐藏不影响展示）
     └── path_guard.rs   # 统一路径校验
 ```
 

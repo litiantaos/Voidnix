@@ -806,16 +806,11 @@ export function useProxyPanel() {
       void loadProxies()
     })
     // 健康监测异常反馈：进程异常退出/出站失效自动恢复失败时，核心 emit proxy-status。
-    // error 持久写入 coreError（开启代理项红色提示，enabled 态附重连按钮）+ 状态栏即时提醒。
+    // error 持久写入 coreError（开启代理项红色提示，enabled 态附重连按钮）；
+    // toast 通道由扩展入口（proxy/index.ts）模块级常驻监听承载——面板未打开过
+    //（KeepAlive 不存活）时菜单栏路径的失败提示不因此丢失。
     unlistenStatus = await listen<{ kind: string; msg: string }>('proxy-status', (e) => {
-      const { kind, msg } = e.payload
-      coreError.value = kind === 'error' ? msg : ''
-      if (msg) {
-        appStore.showStatus(msg, {
-          duration: 4000,
-          kind: kind === 'error' ? 'error' : 'success',
-        })
-      }
+      coreError.value = e.payload.kind === 'error' ? e.payload.msg : ''
     })
     // 复用预加载 Promise：已完成则即时（preloaded.done=true，statusLoaded 首帧已 true）；
     // 未完成则 await 同一个 in-flight Promise（不重新发 IPC），完成后从缓存同步 ref。

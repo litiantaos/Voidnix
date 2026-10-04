@@ -3,7 +3,7 @@
 
 use std::sync::OnceLock;
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// 启动时创建截图窗口（若不存在）并配置原生层。
 /// 窗口从 tauri.conf.json 移除后改由代码创建，但仍在启动时创建（非首次触发时）：
@@ -168,7 +168,10 @@ pub fn register_shortcut_hook() {
                     }
                     Err(e) => {
                         super::session::IS_IN_SCREENSHOT_SESSION.store(false, Ordering::SeqCst);
-                        eprintln!("截图失败: {e}");
+                        // 快捷键失败必须有可见反馈（此前仅 eprintln，按键无反应无从
+                        // 排查）；文案即 Err 本身（权限指引等用户可读）。toast 为外部
+                        // NSPanel，主窗隐藏态照常展示
+                        let _ = app_clone.emit("screenshot-capture-failed", e);
                     }
                 }
             });

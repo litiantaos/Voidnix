@@ -65,10 +65,10 @@ async function onMarkdownClick(e: MouseEvent) {
 
   try {
     await writeText(code)
+    // 成功反馈走按钮图标翻转（is-copied → check 1.5s），无需 toast 双通道
     const icon = btn.querySelector('i')
     btn.classList.add('is-copied')
     if (icon) icon.className = 'i-ri-check-line'
-    showToast(t('common.copied'))
     window.setTimeout(() => {
       btn.classList.remove('is-copied')
       if (icon) icon.className = 'i-ri-file-copy-line'

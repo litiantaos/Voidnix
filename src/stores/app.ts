@@ -79,8 +79,9 @@ export const useAppStore = defineStore('app', () => {
 
   const shortcutErrors = ref<Record<string, string>>({})
 
+  /** 返回 invoke promise（已吞错）：toastAndHide 顺序化依赖（先 toast 入队再隐藏） */
   function showStatus(msg: string, opts?: ToastOptions) {
-    showToast(msg, opts)
+    return showToast(msg, opts)
   }
 
   function setActiveExtension(id: string | null, from?: string | null) {
@@ -205,27 +206,18 @@ export const useAppStore = defineStore('app', () => {
 // ── app 行为（与 store 协作的副作用函数；扩展消费）──────────────────────
 // 归位说明：原误放 utils/ 层（utils 应为无状态纯工具，不可反向依赖 stores）。
 
-let hideTimer: ReturnType<typeof setTimeout> | null = null
-
-/** toast 反馈 + 延迟隐藏主窗口（msg 为空则立即隐藏）。扩展「反馈后隐藏」通用动作。
- *  copyAndHide 与 finder-ext 等的 hideTimer 时序统一于此。 */
-export function toastAndHide(msg?: string, opts?: { duration?: number; label?: string }) {
-  if (hideTimer) {
-    clearTimeout(hideTimer)
-    hideTimer = null
+/** toast 反馈 + 立即隐藏主窗口（msg 为空则仅隐藏）。toast 为独立原生浮窗，在主窗
+ *  原位继续展示至到期，无需等待。扩展「反馈后隐藏」通用动作。
+ *  await 顺序化：两 invoke 并发发出的话，fetch IPC 通道不保证到达序——hide_window
+ *  先到会把 Rust 侧状态置隐藏，乱序的 show_toast 拿到异常锚定输入。 */
+export async function toastAndHide(msg?: string, opts?: { duration?: number }) {
+  if (msg) {
+    await useAppStore().showStatus(msg, { duration: opts?.duration })
   }
-  if (!msg) {
-    hideWindow()
-    return
-  }
-  useAppStore().showStatus(msg, { duration: opts?.duration ?? 800 })
-  hideTimer = setTimeout(() => {
-    hideTimer = null
-    hideWindow()
-  }, opts?.duration ?? 800)
+  hideWindow()
 }
 
-/** 复制文本到剪贴板 + toast 反馈 + 延迟隐藏主窗口（复制型结果回车通用动作）。 */
+/** 复制文本到剪贴板 + toast 反馈 + 立即隐藏主窗口（复制型结果回车通用动作）。 */
 export async function copyAndHide(value: string, label?: string) {
   await writeText(value)
   toastAndHide(label ?? t('common.copied'))

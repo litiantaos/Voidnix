@@ -428,15 +428,19 @@ fn build_awake(app: &AppHandle) -> Vec<MenuEntry> {
     ]
 }
 
-/// 菜单点击：启用开关按当前状态取反（开启路径经授权，取消/进行中静默）；
-/// 熄屏策略项切换到对应档位。均复用命令（内部 refresh + emit 同步前端）。
+/// 菜单点击：启用开关按当前状态取反（开启路径经授权）；熄屏策略项切换到对应
+/// 档位。均复用命令（内部 refresh + emit 同步前端）。失败 emit 给前端 toast
+///（外部 NSPanel，菜单操作时主窗隐藏态照常可见——此前完全静默，勾选态不动
+/// 无从排查）；用户主动取消授权静默（elevate 取消分类即文案化，含「取消」过滤）。
 fn on_awake_event(app: &AppHandle, id: &str) {
     if id == "awake_toggle" {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             let state = app.state::<AwakeState>();
             let next = !state.enabled.load(Ordering::Relaxed);
-            let _ = set_awake_enabled(app.clone(), state, next).await;
+            if let Err(e) = set_awake_enabled(app.clone(), state, next).await {
+                emit_menu_failure(&app, &e);
+            }
         });
     } else if id == "awake_policy_dim" || id == "awake_policy_sleep" {
         let policy = if id == "awake_policy_dim" {
@@ -447,7 +451,16 @@ fn on_awake_event(app: &AppHandle, id: &str) {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             let state = app.state::<AwakeState>();
-            let _ = set_awake_screen_policy(app.clone(), state, policy.to_string()).await;
+            if let Err(e) = set_awake_screen_policy(app.clone(), state, policy.to_string()).await {
+                emit_menu_failure(&app, &e);
+            }
         });
     }
+}
+
+fn emit_menu_failure(app: &AppHandle, e: &str) {
+    if e.contains("取消") {
+        return;
+    }
+    let _ = app.emit("awake-menu-failed", e);
 }

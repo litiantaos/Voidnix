@@ -8,6 +8,8 @@ import type { Extension, SearchResult } from '@/runtime/types'
 import { hideWindow } from '@/utils/tauri'
 import { buildSearchUrl, parseWebSearchQuery } from '@/utils/web-search'
 import { isModalDialogOpen } from '@/utils/dom'
+import { showToast } from '@/composables/useToast'
+import { t } from '@/runtime/i18n'
 
 interface ResultNavOptions {
   results: Ref<SearchResult[]>
@@ -89,11 +91,18 @@ export function useResultNavigation(opts: ResultNavOptions) {
           const parsed = parseWebSearchQuery(appStore.searchQuery)
           if (parsed.type === 'url' || parsed.keyword) {
             e.preventDefault()
-            open(buildSearchUrl(parsed)).catch(() => {})
-            clearSearch()
-            loadDefaultResults().finally(() => {
-              hideWindow()
-            })
+            // 打开失败保留窗口与查询供重试（静默吞错 + 无条件隐藏会让用户
+            // 见窗口消失而浏览器没开），成功路径才清查询隐藏
+            open(buildSearchUrl(parsed))
+              .then(() => {
+                clearSearch()
+                loadDefaultResults().finally(() => {
+                  hideWindow()
+                })
+              })
+              .catch(() => {
+                showToast(t('search.openUrlFailed'), { kind: 'error' })
+              })
           }
           return
         }

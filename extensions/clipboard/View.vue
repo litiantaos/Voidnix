@@ -227,6 +227,7 @@ import { formatBytes, toErrorMessage } from '@/utils/format'
 import { isModalDialogOpen } from '@/utils/dom'
 import { formatClipboardTime } from './logic'
 import { t } from '@/runtime/i18n'
+import { showToast } from '@/composables/useToast'
 
 const appStore = useAppStore()
 
@@ -309,6 +310,8 @@ async function handleExecute(item: ClipboardItem, _index: number, _e?: KeyboardE
     // 否则下方重拉命中旧 tabCache（onWindowHiding 路径无需：隐藏前数据变更均已经
     // clipboard-updated 同步过缓存）
     invalidateCache()
+    // invoke 返回时窗口已被 Rust hide（粘贴链路主窗隐藏），外部 toast 照常展示
+    showToast(t('common.pasted'))
     // 粘贴成功即会话结束：invoke 返回时窗口已被 Rust 端 hide_main 隐藏（不经前端
     // hideWindow、无 window-hiding 事件，onWindowHiding 的重拉不会触发），此处归位 +
     // 重拉使置顶序与新时间落进 history、DOM 更新在隐藏期完成，下次唤起首帧即新序

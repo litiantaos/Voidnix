@@ -1,4 +1,6 @@
+import { listen } from '@tauri-apps/api/event'
 import { defineExtension } from '@/runtime/extension-registry'
+import { showToast } from '@/composables/useToast'
 import './locales'
 import ProxyView from './View.vue'
 import ProxyActions from './Actions.vue'
@@ -6,6 +8,18 @@ import ProxySettings from './Settings.vue'
 import ConnectionsView from './views/ConnectionsView.vue'
 import RulesView from './views/RulesView.vue'
 import LogsView from './views/LogsView.vue'
+
+// 代理状态事件（健康监测异常 / 菜单栏连接开关失败等）：toast 通道放模块级常驻
+// 监听——原先在 useProxyPanel（KeepAlive 面板生命周期），面板从未打开过时菜单栏
+// 操作失败完全静默。视图内 coreError 红字仍由 useProxyPanel 的监听承载。
+listen<{ kind: string; msg: string }>('proxy-status', (e) => {
+  if (e.payload.msg) {
+    showToast(e.payload.msg, {
+      duration: 4000,
+      kind: e.payload.kind === 'error' ? 'error' : 'success',
+    })
+  }
+}).catch(() => {})
 
 export default defineExtension({
   meta: {

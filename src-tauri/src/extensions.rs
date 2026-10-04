@@ -34,6 +34,7 @@ macro_rules! configure_app {
             crate::runtime::speech::stop_speech,
             crate::runtime::test::is_self_test_mode,
             crate::runtime::test::self_test_diag,
+            crate::runtime::toast::show_toast,
             crate::runtime::window::get_cached_appearance,
             crate::runtime::window::get_home_dir,
             crate::runtime::window::get_main_frame,

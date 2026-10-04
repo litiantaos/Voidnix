@@ -11,6 +11,7 @@ pub mod shortcut;
 pub mod speech;
 pub mod storage;
 pub mod test;
+pub mod toast;
 pub mod window;
 
 /// Mutex 毒锁恢复辅助（统一性审查 G2）：debug 构建下持锁 panic 会毒锁，

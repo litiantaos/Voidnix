@@ -8,6 +8,7 @@ export const zhCNMessages: Msgs = {
   'common.cancel': { 'zh-CN': '取消' },
   'common.confirm': { 'zh-CN': '确定' },
   'common.copied': { 'zh-CN': '已复制' },
+  'common.pasted': { 'zh-CN': '已粘贴' },
   'common.close': { 'zh-CN': '关闭' },
   'common.save': { 'zh-CN': '保存' },
   'common.delete': { 'zh-CN': '删除' },
@@ -33,6 +34,7 @@ export const zhCNMessages: Msgs = {
   'search.searchIn': { 'zh-CN': '搜索{name}' },
   'search.newVersionHint': { 'zh-CN': '发现新版本，点击查看' },
   'search.browseToolsHint': { 'zh-CN': '输入 / 浏览全部工具' },
+  'search.openUrlFailed': { 'zh-CN': '打开链接失败' },
 
   // ─── welcome（首启引导）─────────────────────
   'welcome.isoModifier': { 'zh-CN': '修饰键' },

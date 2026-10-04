@@ -161,10 +161,9 @@ describe('OCR 回车派发（回归：不得执行全局残留结果）', () => 
     )
     expect(pasteCalls).toHaveLength(0)
     expect(onExecuteSpy).not.toHaveBeenCalled()
-    // 复制路径：pasteboard_write_text + toast 反馈（hideWindow 由 toast 定时器延迟 800ms
-    // 触发，本断言点不应已隐藏）
+    // 复制路径：pasteboard_write_text + toast 反馈；toast 为独立原生浮窗，主窗立即隐藏
     expect(invokeMock.mock.calls.some(([cmd]) => cmd === 'pasteboard_write_text')).toBe(true)
-    expect(hideWindowMock).not.toHaveBeenCalled()
+    expect(hideWindowMock).toHaveBeenCalled()
   })
 
   it('OCR 加载中（操作列表未挂载）Enter：不执行任何残留结果', async () => {

@@ -413,6 +413,8 @@ async function pasteField(text: string, label: string) {
   }
   try {
     await pasteOut(value)
+    // invoke 返回时窗口已被 Rust hide（粘贴链路主窗隐藏），外部 toast 照常展示
+    showToast(t('common.pasted'))
   } catch (e) {
     showToast(toErrorMessage(e, t('ai-providers.pasteFailed')), { kind: 'error' })
   }

@@ -1,7 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { CMD } from '@/commands'
-import { clearToasts } from '@/composables/useToast'
 
 /** Rust search_apps/search_files 返回的原始结构（serde 形状，手写） */
 export interface RawSearchResult {
@@ -17,8 +16,6 @@ export interface RawSearchResult {
 }
 
 export function hideWindow(auto = false) {
-  // 窗口隐藏即清 toast：macOS 隐藏 WebView 会节流 setTimeout，未清的 toast 会残留到下次显示
-  clearToasts()
   // 通知 ContentView 释放 KeepAlive 缓存的扩展视图 DOM + compositing layer
   window.dispatchEvent(new CustomEvent('window-hiding'))
   if (auto) {

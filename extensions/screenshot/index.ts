@@ -1,9 +1,17 @@
 import { ref } from 'vue'
+import { listen } from '@tauri-apps/api/event'
 import { defineExtension } from '@/runtime/extension-registry'
 import { useAppStore } from '@/stores/app'
+import { showToast } from '@/composables/useToast'
 import './locales'
 import ScreenshotView from './View.vue'
 import ScreenshotOcr from './OcrView.vue'
+
+// 快捷键截屏失败（权限被拒等）：Rust emit 错误文案，外部 toast 展示（主窗
+// 隐藏态照常可见）——此前仅 eprintln，按键无反应无从排查。模块级常驻监听
+listen<string>('screenshot-capture-failed', (e) => {
+  showToast(e.payload, { kind: 'error', duration: 4000 })
+}).catch(() => {})
 
 // OCR 待识别数据（由截屏标注界面通过 open_extension_subview 触发时注入）
 export const pendingOcrData = ref<{

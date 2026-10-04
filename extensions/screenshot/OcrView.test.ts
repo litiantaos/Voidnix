@@ -11,7 +11,11 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
-vi.mock('@tauri-apps/api/event', () => ({ emit: mocks.emit }))
+vi.mock('@tauri-apps/api/event', () => ({
+  emit: mocks.emit,
+  // screenshot/index.ts 模块级常驻监听（快捷键失败 toast）
+  listen: vi.fn(() => Promise.resolve(() => {})),
+}))
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ setActiveExtension: mocks.setActiveExtension }),
   copyAndHide: vi.fn(),
