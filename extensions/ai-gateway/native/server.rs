@@ -152,6 +152,103 @@ const AFFINITY_KEEP: std::time::Duration = std::time::Duration::from_secs(24 * 3
 /// 轮换失败 Key 的默认冷却
 const KEY_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// 最后一 Key 原地重试的次数上限(瞬时 429/5xx 在网关内换气重打,CC 无感;
+/// 超限回放让客户端自行决策)
+const INPLACE_RETRIES: u32 = 2;
+
+/// 原地重试的等待决策:仅瞬时压力类(429/5xx 且非配额耗尽)值得原地重打——配额型
+/// 窗口内重试必然失败。等待 = 上游 Retry-After(超 8s 的长等待放弃重试,回放让
+/// 客户端决策)或 1s 倍增;round 为已重试轮次(0 起),倍增后超 8s 同样放弃
+fn inplace_retry_wait(
+    status: u16,
+    quota: bool,
+    retry_after: Option<std::time::Duration>,
+    round: u32,
+) -> Option<std::time::Duration> {
+    if quota || !(status == 429 || status >= 500) {
+        return None;
+    }
+    let wait = match retry_after {
+        Some(d) if d.as_secs() > 8 => return None,
+        Some(d) => d * 2u32.pow(round),
+        None => std::time::Duration::from_secs(1u64 << round),
+    };
+    (wait.as_secs() <= 8).then_some(wait)
+}
+
+/// 配额耗尽型错误文案子串(大小写不敏感):速率限制的 60s 冷却对配额耗尽是必然失败
+/// 的空转——日/周配额窗口内重试无意义,长冷却避免每分钟白付一次往返。词表保守,
+/// 仅高置信度配额语义(计费/配额/余额/周期限额);误伤速率限制的代价是多冷 29 分钟
+const QUOTA_MARKERS: &[&str] = &[
+    "quota",
+    "billing",
+    "balance",
+    "arrears",
+    "usage limit",
+    "daily limit",
+    "monthly",
+    "weekly",
+    "额度",
+    "配额",
+    "欠费",
+    "余额",
+    "今日",
+];
+
+/// 轮换失败(429/5xx 等)的响应体是否配额耗尽型
+fn quota_exhausted(body: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(body).to_lowercase();
+    QUOTA_MARKERS.iter().any(|m| text.contains(m))
+}
+
+/// 配额耗尽冷却:日/周窗口尺度下 30min 重探一次(每次代价仅一个 429 往返),
+/// 不做 resets_at 提取(厂商格式无标准,固定值鲁棒)
+const QUOTA_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+/// 上下文超长的厂商错误文案子串(大小写不敏感):命中即翻译为各协议标准错误,客户端
+/// (CC)识别标准语义触发自动 compact——原文案(尤其中文厂商)客户端识别不了,直接
+/// 报错停会话。词表保守:仅上下文语义,不含易与周期限额混淆的「token limit」族
+/// (Anthropic 月度配额文案含该词,误译会触发无意义 compact)
+const TOO_LONG_MARKERS: &[&str] = &[
+    "context_length_exceeded",
+    "context length",
+    "context window",
+    "maximum context",
+    "prompt is too long",
+    "input is too long",
+    "too many input tokens",
+    "exceeds the maximum",
+    "上下文",
+];
+
+/// 上下文超长错误改写:按客户端协议族生成标准错误(Anthropic 面 "prompt is too
+/// long" / OpenAI 面 code=context_length_exceeded),原文摘要保留在 message 供排障
+fn too_long_rewrite(protocol: Protocol, body: &[u8]) -> Option<Response> {
+    let text = String::from_utf8_lossy(body);
+    let lower = text.to_lowercase();
+    if !TOO_LONG_MARKERS.iter().any(|m| lower.contains(m)) {
+        return None;
+    }
+    let snippet: String = text.chars().take(200).collect();
+    let message = format!("prompt is too long: {snippet}");
+    let payload = match protocol.error_kind() {
+        ErrorShape::Anthropic => serde_json::json!({
+            "type": "error",
+            "error": { "type": "invalid_request_error", "message": message },
+        }),
+        ErrorShape::OpenAi => serde_json::json!({
+            "error": { "message": message, "type": "invalid_request_error", "code": "context_length_exceeded" },
+        }),
+    };
+    Some(
+        Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap_or_else(|_| empty_error()),
+    )
+}
+
 /// 排障日志:数据目录 gateway.log,行式追加(epoch 毫秒 + 类别 + 详情,`date -r 秒` 可转)。
 /// 只记异常路径(路由失败/上游错误/网络错误/Key 耗尽),成功请求零记录;
 /// 不含 Key 明文与请求体;超 512KB 整文件重置(自旋转);新建即 0600(数据目录密级统一)。
@@ -570,7 +667,11 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
 
     let order = g.key_order(route, session);
     let mut last_error: Option<(u16, Bytes)> = None;
-    for idx in order {
+    // 游标式循环:最后一 Key 的瞬时失败原地重打(不前进),轮换语义不变
+    let mut i = 0usize;
+    let mut retry_round: u32 = 0;
+    while i < order.len() {
+        let idx = order[i];
         let key = &route.keys[idx];
         let mut req = crate::http::stream_client()
             .post(&url)
@@ -587,6 +688,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                     "net",
                     &format!("{model} · {} · {}: {e}", route.name, key.label),
                 );
+                i += 1;
                 continue;
             }
             Ok(r) => {
@@ -598,13 +700,18 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                         .get(axum::http::header::RETRY_AFTER)
                         .and_then(|v| v.to_str().ok())
                         .and_then(|s| s.trim().parse::<u64>().ok())
-                        .map_or(KEY_COOLDOWN, |s| {
-                            std::time::Duration::from_secs(s).max(KEY_COOLDOWN)
-                        });
+                        .map(std::time::Duration::from_secs);
                     let cached = read_capped(r, MAX_ERROR_BODY).await.ok();
                     if let Some(buf) = &cached {
                         last_error = Some((status, buf.clone()));
                     }
+                    // 配额耗尽型(计费/配额/余额文案)长冷却:速率限制的 60s 对配额耗尽
+                    // 是必然失败的空转,日/周窗口内重试无意义
+                    let quota = cached.as_deref().is_some_and(quota_exhausted);
+                    let cooldown = retry_after
+                        .map_or(if quota { QUOTA_COOLDOWN } else { KEY_COOLDOWN }, |d| {
+                            d.max(if quota { QUOTA_COOLDOWN } else { KEY_COOLDOWN })
+                        });
                     let snippet = cached
                         .as_ref()
                         .map(|b| {
@@ -617,10 +724,32 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                     log_gateway(
                         "upstream",
                         &format!(
-                            "{model} · {} · {}: {status} {snippet}",
-                            route.name, key.label
+                            "{model} · {} · {}: {status}{quota_tag} {snippet}",
+                            route.name,
+                            key.label,
+                            quota_tag = if quota { " quota" } else { "" }
                         ),
                     );
+                    // 无下家可换时的原地重试(冷却前:重试成功则 Key 无罪,不进冷却)
+                    if i + 1 == order.len() && retry_round < INPLACE_RETRIES {
+                        if let Some(wait) =
+                            inplace_retry_wait(status, quota, retry_after, retry_round)
+                        {
+                            log_gateway(
+                                "retry",
+                                &format!(
+                                    "{model} · {} · {}: {status} 原地重试(第 {} 轮,等 {}s)",
+                                    route.name,
+                                    key.label,
+                                    retry_round + 1,
+                                    wait.as_secs()
+                                ),
+                            );
+                            tokio::time::sleep(wait).await;
+                            retry_round += 1;
+                            continue;
+                        }
+                    }
                     log::warn!(
                         "[ai-gateway] {} · {}: {status},换下一把 Key",
                         route.name,
@@ -630,26 +759,59 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                     g.mark_cool(
                         &route.provider_id,
                         idx,
-                        std::time::Instant::now() + retry_after,
+                        std::time::Instant::now() + cooldown,
                     );
+                    i += 1;
                     continue;
                 }
+                if status < 400 {
+                    // 2xx:粘性/亲和的提交移交流守护——收到响应头 ≠ 应答成功,流中途
+                    // 断开(哨兵判异常/传输错误)不提交,客户端重试走其它 Key
+                    let commit = GuardCommit {
+                        g: Arc::clone(&g),
+                        provider_id: route.provider_id.clone(),
+                        idx,
+                        session,
+                    };
+                    let guard = GuardCtx {
+                        commit,
+                        sentinel: (protocol == Protocol::Anthropic)
+                            .then(|| (model.clone(), route.name.clone())),
+                    };
+                    return stream_response(r, Some(guard)).await;
+                }
+                // 非轮换错误(如模型名 400)回传客户端:Key 本身没坏不轮换,但必须落
+                // 日志——CC 报 unavailable 而网关日志为空的盲区即此处。错误体很小,
+                // 即时提交粘性/亲和(4xx 结构化错误证明 Key 存活)
                 g.mark_good(&route.provider_id, Some(idx));
                 if let Some(s) = session {
                     g.bind_session(s, &route.provider_id, idx);
                 }
-                if status >= 400 {
-                    // 非轮换错误(如模型名 400)直接透传客户端:Key 本身没坏不轮换,
-                    // 但必须落日志——CC 报 unavailable 而网关日志为空的盲区即此处
+                let content_type = r
+                    .headers()
+                    .get(axum::http::header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("application/json")
+                    .to_string();
+                let buf = read_capped(r, MAX_ERROR_BODY).await.unwrap_or_default();
+                log_gateway(
+                    "errpass",
+                    &format!("{model} · {}: {status} 透传(不轮换)", route.name),
+                );
+                // 上下文超长语义翻译:命中厂商超长文案(尤其中文)改写为协议标准错误,
+                // CC 识别后自动 compact;原文案 CC 认不了,直接报错停会话
+                if let Some(resp) = too_long_rewrite(protocol, &buf) {
                     log_gateway(
-                        "errpass",
-                        &format!("{model} · {}: {status} 透传(不轮换)", route.name),
+                        "toolong",
+                        &format!("{model} · {}: 已翻译超长错误", route.name),
                     );
+                    return resp;
                 }
-                // 2xx 才挂哨兵:错误状态已有 errpass 记录,哨兵只盯「200 但语义可疑」
-                let sentinel = (protocol == Protocol::Anthropic && status < 400)
-                    .then_some((model.as_str(), route.name.as_str()));
-                return stream_response(r, sentinel).await;
+                return Response::builder()
+                    .status(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY))
+                    .header(axum::http::header::CONTENT_TYPE, content_type)
+                    .body(Body::from(buf))
+                    .unwrap_or_else(|_| empty_error());
             }
         }
     }
@@ -678,9 +840,46 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
     )
 }
 
+/// 2xx 应答流的提交数据:流完整结束才执行——收到响应头 ≠ 应答成功,流中途断开时
+/// 上游 prompt cache 并未建立,粘坏 Key = 客户端重试再撞一次同款失败
+struct GuardCommit {
+    g: Arc<Gateway>,
+    provider_id: String,
+    idx: usize,
+    session: Option<u64>,
+}
+
+impl GuardCommit {
+    fn run(self) {
+        self.g.mark_good(&self.provider_id, Some(self.idx));
+        if let Some(s) = self.session {
+            self.g.bind_session(s, &self.provider_id, self.idx);
+        }
+    }
+}
+
+/// Anthropic 面 SSE 异常流的收尾错误事件帧:流以协议原生错误事件而非静默截断结束,
+/// 客户端感知失败可重试(参考 magpie streamFailure 的「绝不伪造正常终止」不变量)
+fn anthropic_error_event(detail: &str) -> Bytes {
+    let payload = serde_json::json!({
+        "type": "error",
+        "error": { "type": "api_error", "message": format!("upstream stream incomplete: {detail}") },
+    });
+    Bytes::from(format!("event: error\ndata: {payload}\n\n"))
+}
+
+/// 2xx 应答流的守护参数:commit 恒挂(流完整结束才提交);sentinel 仅 Anthropic 面
+/// 填 Some(model, route) 且响应确为 SSE 时生效(非流式 JSON 无 message_stop 事件帧,
+/// 误判为噪声)
+struct GuardCtx {
+    commit: GuardCommit,
+    sentinel: Option<(String, String)>,
+}
+
 /// 透传上游响应:状态 + 头(剥跳-by-hop)原样,SSE 字节流直 pipe。
-/// sentinel = Some((model, route)) 时挂尾部哨兵(Anthropic 面 2xx SSE,见 TailWatch)。
-async fn stream_response(upstream: reqwest::Response, sentinel: Option<(&str, &str)>) -> Response {
+/// guard = Some 的 2xx 流经 GuardStream 守护(流完整才提交粘性/亲和,哨兵判异常注入
+/// 错误事件);None(错误透传)裸 pipe
+async fn stream_response(upstream: reqwest::Response, guard: Option<GuardCtx>) -> Response {
     let status = upstream.status();
     // 上游响应头原样透传(content-type 区分 JSON/SSE,request-id 等客户端依赖;
     // 此前遗漏透传致全部头丢失——SSE 客户端宽松解析无感,非流式 JSON 客户端解析失败)
@@ -690,73 +889,130 @@ async fn stream_response(upstream: reqwest::Response, sentinel: Option<(&str, &s
             builder = builder.header(name, value);
         }
     }
-    // 哨兵只盯 SSE 流语义(非流式 JSON 无 message_stop 事件帧,误判为噪声)
     let is_sse = upstream
         .headers()
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.contains("text/event-stream"));
     let stream = upstream.bytes_stream();
-    let stream: Box<dyn Stream<Item = std::io::Result<Bytes>> + Send + Unpin> =
-        match sentinel.filter(|_| is_sse) {
-            Some((model, route)) => Box::new(SentinelStream::new(stream, model, route)),
-            None => Box::new(
-                stream.map(|chunk| chunk.map_err(|e| std::io::Error::other(e.to_string()))),
-            ),
-        };
+    let stream: Box<dyn Stream<Item = std::io::Result<Bytes>> + Send + Unpin> = match guard {
+        Some(ctx) => {
+            let meta = if is_sse { ctx.sentinel } else { None };
+            Box::new(GuardStream::new(stream, ctx.commit, meta))
+        }
+        None => {
+            Box::new(stream.map(|chunk| chunk.map_err(|e| std::io::Error::other(e.to_string()))))
+        }
+    };
     builder
         // hyper 对无 content-length 的流式体自动 chunked,与上游传输语义一致
         .body(Body::from_stream(stream))
         .unwrap_or_else(|_| empty_error())
 }
 
-/// 直 pipe 流的哨兵包装:chunk 原样透传 + 过路探测;流终止(EOF 或错误)时
-/// 一次性判异常落 tail 行(watch 取出即空,天然幂等)
-struct SentinelStream<S> {
+/// 直 pipe 流的守护包装:chunk 原样透传 + 哨兵过路探测;流终止时一次性结算
+/// (take 即空,天然幂等)——
+/// ① 哨兵(Anthropic SSE)语义完整(内容 + stop_reason + message_stop)或无哨兵时
+///   干净 EOF → 提交粘性/亲和(应答成功的唯一判定点)
+/// ② 哨兵判异常 → 落 tail 日志 + 注入协议原生 error 事件收尾(「200 但语义可疑」
+///   从纯日志观测升级为客户端可感知失败),不提交
+/// ③ 无哨兵(非 Anthropic 面 / 非流式 JSON):传输错误即截断,不提交不注入
+///   (客户端由连接断开感知);哨兵在场时上游传输错误一律吞掉转干净 EOF——
+///   内容已完整则无害收尾,内容残缺则由注入的 error 事件承载失败语义
+struct GuardStream<S> {
     inner: S,
-    watch: Option<(TailWatch, String, String)>,
+    /// Anthropic 面 SSE 的哨兵观测 + 日志所需的 model/route
+    sentinel: Option<(TailWatch, String, String)>,
+    /// 流完整结束才执行的提交
+    commit: Option<GuardCommit>,
+    /// 哨兵判异常后待注入的 error 事件字节(stream 协议 None 后不再 poll,须先行冲出)
+    pending: Option<Bytes>,
+    /// inner 已终止(EOF/Err)且已结算:终止态由本层自持,不再 poll inner——
+    /// 上游流在 Err 后的重复 poll 行为无合约(可能重复 Err 或 Pending 挂死,
+    /// 后者悬挂客户端连接)
+    ended: bool,
 }
 
-impl<S> SentinelStream<S>
+impl<S, E> GuardStream<S>
 where
-    S: Stream<Item = reqwest::Result<Bytes>> + Unpin,
+    S: Stream<Item = Result<Bytes, E>> + Unpin,
+    E: std::fmt::Display,
 {
-    fn new(inner: S, model: &str, route: &str) -> Self {
+    fn new(inner: S, commit: GuardCommit, meta: Option<(String, String)>) -> Self {
         Self {
             inner,
-            watch: Some((TailWatch::new(), model.to_string(), route.to_string())),
+            sentinel: meta.map(|(model, route)| (TailWatch::new(), model, route)),
+            commit: Some(commit),
+            pending: None,
+            ended: false,
         }
     }
 
-    fn finish_log(watch: Option<(TailWatch, String, String)>) {
-        if let Some((watch, model, route)) = watch {
-            if let Some(detail) = watch.finish() {
-                log_gateway("tail", &format!("{model} · {route} · {detail}"));
+    /// 流终止的一次性结算;返回 true = 吞掉上游传输错误转干净 EOF
+    fn settle(&mut self, errored: bool) -> bool {
+        let Some(commit) = self.commit.take() else {
+            return false;
+        };
+        match self.sentinel.take() {
+            Some((watch, model, route)) => match watch.finish() {
+                None => {
+                    commit.run();
+                    true
+                }
+                Some(detail) => {
+                    log_gateway("tail", &format!("{model} · {route} · {detail}"));
+                    self.pending = Some(anthropic_error_event(&detail));
+                    true
+                }
+            },
+            None => {
+                if !errored {
+                    commit.run();
+                }
+                false
             }
         }
     }
+
+    /// 终止收尾:先冲注入事件再 EOF
+    fn emit_end(&mut self) -> Poll<Option<std::io::Result<Bytes>>> {
+        match self.pending.take() {
+            Some(b) => Poll::Ready(Some(Ok(b))),
+            None => Poll::Ready(None),
+        }
+    }
 }
 
-impl<S> Stream for SentinelStream<S>
+impl<S, E> Stream for GuardStream<S>
 where
-    S: Stream<Item = reqwest::Result<Bytes>> + Unpin,
+    S: Stream<Item = Result<Bytes, E>> + Unpin,
+    E: std::fmt::Display,
 {
     type Item = std::io::Result<Bytes>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
+        if this.ended {
+            return this.emit_end();
+        }
         match this.inner.poll_next_unpin(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => {
-                Self::finish_log(this.watch.take());
-                Poll::Ready(None)
+                this.settle(false);
+                this.ended = true;
+                this.emit_end()
             }
             Poll::Ready(Some(Err(e))) => {
-                Self::finish_log(this.watch.take());
-                Poll::Ready(Some(Err(std::io::Error::other(e.to_string()))))
+                let swallowed = this.settle(true);
+                this.ended = true;
+                if swallowed {
+                    this.emit_end()
+                } else {
+                    Poll::Ready(Some(Err(std::io::Error::other(e.to_string()))))
+                }
             }
             Poll::Ready(Some(Ok(bytes))) => {
-                if let Some((watch, _, _)) = this.watch.as_mut() {
+                if let Some((watch, _, _)) = this.sentinel.as_mut() {
                     watch.observe(&bytes);
                 }
                 Poll::Ready(Some(Ok(bytes)))
@@ -826,16 +1082,19 @@ struct ModelOnly {
     model: String,
 }
 
-/// 会话指纹:messages[0] 的 hash(RawValue 零拷贝)。会话是 append-only,首条消息全程不变,
-/// 同一会话的各轮请求得到同一指纹;分类器等独立请求指纹唯一,绑定后无后续命中,无害
+/// 会话指纹:messages[0](Anthropic/Chat 面)或 input[0](Responses 面)的 hash
+/// (RawValue 零拷贝)。会话是 append-only,首条消息全程不变,同一会话的各轮请求得到
+/// 同一指纹;分类器等独立请求指纹唯一,绑定后无后续命中,无害
 fn session_hash(body: &[u8]) -> Option<u64> {
     #[derive(Deserialize)]
     struct Probe<'a> {
         #[serde(default, borrow)]
         messages: Vec<&'a serde_json::value::RawValue>,
+        #[serde(default, borrow)]
+        input: Vec<&'a serde_json::value::RawValue>,
     }
     let probe: Probe = serde_json::from_slice(body).ok()?;
-    let first = probe.messages.first()?;
+    let first = probe.messages.first().or(probe.input.first())?;
     let mut h = std::collections::hash_map::DefaultHasher::new();
     std::hash::Hasher::write(&mut h, first.get().as_bytes());
     Some(std::hash::Hasher::finish(&h))
@@ -1527,6 +1786,61 @@ mod tests {
     }
 
     #[test]
+    fn session_hash_covers_responses_input_array() {
+        // Responses 面请求体是 input 数组(无 messages):同样取首条做指纹,
+        // 此前返回 None 致该面会话完全无亲和
+        let base = r#"{"model":"gpt-x","input":[{"role":"user","content":"task A"},REST]}"#;
+        let a = base.replace("REST", r#"{"role":"assistant","content":"ok"}"#);
+        let b = base.replace("REST", r#"{"role":"user","content":"more"}"#);
+        assert_eq!(session_hash(a.as_bytes()), session_hash(b.as_bytes()));
+        let c = base.replace("task A", "task B");
+        assert_ne!(session_hash(a.as_bytes()), session_hash(c.as_bytes()));
+        // messages 优先于 input(两字段同在时取 messages 首条)
+        let m = r#"{"model":"m","messages":[{"content":"via messages"}],"input":[{"content":"via input"}]}"#;
+        let only_input = r#"{"model":"m","input":[{"content":"via input"}]}"#;
+        assert_ne!(
+            session_hash(m.as_bytes()),
+            session_hash(only_input.as_bytes())
+        );
+    }
+
+    #[test]
+    fn inplace_retry_wait_decides_transient_pressure_only() {
+        use std::time::Duration;
+        // 瞬时 429/5xx:1s 起倍增
+        assert_eq!(
+            inplace_retry_wait(429, false, None, 0),
+            Some(Duration::from_secs(1))
+        );
+        assert_eq!(
+            inplace_retry_wait(503, false, None, 1),
+            Some(Duration::from_secs(2))
+        );
+        assert_eq!(
+            inplace_retry_wait(429, false, None, 2),
+            Some(Duration::from_secs(4))
+        );
+        // Retry-After 优先;倍增后超 8s 放弃
+        assert_eq!(
+            inplace_retry_wait(429, false, Some(Duration::from_secs(5)), 0),
+            Some(Duration::from_secs(5))
+        );
+        assert_eq!(
+            inplace_retry_wait(429, false, Some(Duration::from_secs(5)), 1),
+            None
+        );
+        // Retry-After 本身超 8s:长等待不值得占住,回放让客户端决策
+        assert_eq!(
+            inplace_retry_wait(429, false, Some(Duration::from_secs(30)), 0),
+            None
+        );
+        // 配额耗尽型(窗口内必然失败)与鉴权类失败(换 Key 才有意义)不原地重试
+        assert_eq!(inplace_retry_wait(429, true, None, 0), None);
+        assert_eq!(inplace_retry_wait(401, false, None, 0), None);
+        assert_eq!(inplace_retry_wait(403, false, None, 0), None);
+    }
+
+    #[test]
     fn normalize_body_gives_auto_mode_classifier_room() {
         // 形态判据(主):显式 disabled + 64 预算 + 无 tools,即使标签特征漂移(假想 CC
         // 新版 prompt 标签)也捕获——预算扩容 + GLM 压最低 effort
@@ -1637,6 +1951,255 @@ mod tests {
         }
         // 请求级错误不轮换(400 参数错误)
         assert!(!rotatable(400));
+    }
+
+    #[test]
+    fn quota_exhausted_matches_provider_wording() {
+        // OpenAI 配额 / DeepSeek 余额 / 智谱今日额度 / Anthropic 周期限额
+        assert!(quota_exhausted(
+            br#"{"error":{"message":"You exceeded your current quota, please check your plan and billing details."}}"#
+        ));
+        assert!(quota_exhausted(
+            br#"{"error":{"message":"Insufficient Balance"}}"#
+        ));
+        assert!(quota_exhausted(
+            r#"{"error":{"message":"今日额度已用完,请明日再试"}}"#.as_bytes()
+        ));
+        assert!(quota_exhausted(
+            b"This organization has hit its monthly token limit"
+        ));
+        // 速率限制/内部错误/空体不是配额型(60s 常规冷却)
+        assert!(!quota_exhausted(
+            b"Number of request tokens has exceeded your per-minute rate limit"
+        ));
+        assert!(!quota_exhausted(b"internal server error"));
+        assert!(!quota_exhausted(b""));
+    }
+
+    #[tokio::test]
+    async fn too_long_rewrite_translates_provider_wording() {
+        // OpenAI 英文超长 → Anthropic 面标准 "prompt is too long"(CC 识别触发 compact)
+        let resp = too_long_rewrite(
+            Protocol::Anthropic,
+            br#"{"error":{"message":"This model's maximum context length is 16385 tokens. However, your messages resulted in 20500 tokens"}}"#,
+        )
+        .expect("英文超长文案应翻译");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["type"], "error");
+        assert_eq!(v["error"]["type"], "invalid_request_error");
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("prompt is too long:"));
+        // 中文厂商文案同样命中
+        assert!(too_long_rewrite(
+            Protocol::Anthropic,
+            r#"{"error":{"message":"输入上下文长度超过模型上限,请缩减对话"}}"#.as_bytes()
+        )
+        .is_some());
+        // Chat 面:OpenAI 族 code 语义
+        let resp = too_long_rewrite(
+            Protocol::Chat,
+            b"Your request exceeds the maximum number of tokens allowed",
+        )
+        .unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"]["code"], "context_length_exceeded");
+        // Anthropic 周期配额文案不误译(误译会触发无意义 compact 丢上下文)
+        assert!(too_long_rewrite(
+            Protocol::Anthropic,
+            b"This organization has hit its monthly token limit"
+        )
+        .is_none());
+        // 普通参数错误原样透传
+        assert!(too_long_rewrite(Protocol::Anthropic, b"Invalid model name").is_none());
+        assert!(too_long_rewrite(
+            Protocol::Chat,
+            br#"{"error":{"message":"Invalid max_tokens"}}"#
+        )
+        .is_none());
+    }
+
+    // ─── GuardStream(流守护:提交时机 + 异常注入)──────────────
+
+    /// 完整 Anthropic SSE 流的内容帧(text + stop_reason + message_stop 俱全)
+    const FULL_STREAM: &[&[u8]] = &[
+        b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n",
+        b"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n",
+        b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{}}\n\n",
+        b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+    ];
+
+    fn guard_commit(g: &Arc<Gateway>, idx: usize, session: Option<u64>) -> GuardCommit {
+        GuardCommit {
+            g: Arc::clone(g),
+            provider_id: "zhipu".to_string(),
+            idx,
+            session,
+        }
+    }
+
+    async fn drain<S, E>(mut s: S) -> (Vec<Bytes>, bool)
+    where
+        S: Stream<Item = Result<Bytes, E>> + Unpin,
+        E: std::fmt::Display,
+    {
+        let mut out = Vec::new();
+        let mut saw_err = false;
+        while let Some(item) = s.next().await {
+            match item {
+                Ok(b) => out.push(b),
+                Err(_) => saw_err = true,
+            }
+        }
+        (out, saw_err)
+    }
+
+    fn committed(g: &Gateway, session: u64) -> bool {
+        g.affinity.lock().unwrap().contains_key(&session)
+    }
+
+    #[tokio::test]
+    async fn guard_stream_commits_on_complete_stream() {
+        // 完整流:字节原样透传、无注入、无错误,流结束即提交粘性与亲和
+        let g = Arc::new(bare_gateway());
+        let inner = futures_util::stream::iter(
+            FULL_STREAM
+                .iter()
+                .map(|c| Ok::<Bytes, std::io::Error>(Bytes::copy_from_slice(c))),
+        );
+        let guard = GuardStream::new(
+            inner,
+            guard_commit(&g, 1, Some(42)),
+            Some(("glm-5.3".into(), "zhipu".into())),
+        );
+        let (out, saw_err) = drain(guard).await;
+        assert!(!saw_err);
+        assert_eq!(out.len(), FULL_STREAM.len(), "全部字节透传");
+        assert!(!out.iter().any(|b| contains_bytes(b, b"event: error")));
+        assert!(committed(&g, 42));
+        assert_eq!(g.last_good.lock().unwrap().get("zhipu"), Some(&1));
+    }
+
+    #[tokio::test]
+    async fn guard_stream_withholds_and_injects_on_empty_stream() {
+        // 零内容流(GLM 无视 disabled 耗尽预算等):不提交 + 尾部注入协议原生 error 事件
+        let g = Arc::new(bare_gateway());
+        let inner = futures_util::stream::iter(vec![Ok::<Bytes, std::io::Error>(Bytes::from(
+            "data: {\"type\":\"message_start\"}\n\n".to_string(),
+        ))]);
+        let guard = GuardStream::new(
+            inner,
+            guard_commit(&g, 1, Some(42)),
+            Some(("glm-5.3".into(), "zhipu".into())),
+        );
+        let (out, saw_err) = drain(guard).await;
+        assert!(!saw_err, "注入事件后干净收尾,不透出传输错误");
+        let last = out.last().unwrap();
+        assert!(contains_bytes(last, b"event: error"));
+        assert!(contains_bytes(last, b"upstream stream incomplete"));
+        assert!(!committed(&g, 42), "异常流不提交亲和");
+        assert!(!g.last_good.lock().unwrap().contains_key("zhipu"));
+    }
+
+    #[tokio::test]
+    async fn guard_stream_withholds_and_injects_on_truncated_stream() {
+        // 部分内容后断流(有 text 无 stop/end):同样注入 + 不提交
+        let g = Arc::new(bare_gateway());
+        let inner = futures_util::stream::iter(vec![Ok::<Bytes, std::io::Error>(Bytes::from(
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n"
+                .to_string(),
+        ))]);
+        let guard = GuardStream::new(
+            inner,
+            guard_commit(&g, 0, None),
+            Some(("glm-5.3".into(), "zhipu".into())),
+        );
+        let (out, saw_err) = drain(guard).await;
+        assert!(!saw_err);
+        assert!(contains_bytes(out.last().unwrap(), b"event: error"));
+        assert!(!g.last_good.lock().unwrap().contains_key("zhipu"));
+    }
+
+    #[tokio::test]
+    async fn guard_stream_swallows_tail_error_after_complete_content() {
+        // 内容完整后连接才断(message_stop 已到,Err 只是连接尾部噪声):吞错转干净
+        // EOF 并照常提交——传输层错误不代表应答失败
+        let g = Arc::new(bare_gateway());
+        let mut items: Vec<std::io::Result<Bytes>> = FULL_STREAM
+            .iter()
+            .map(|c| Ok(Bytes::copy_from_slice(c)))
+            .collect();
+        items.push(Err(std::io::Error::other("connection reset")));
+        let guard = GuardStream::new(
+            futures_util::stream::iter(items),
+            guard_commit(&g, 2, Some(7)),
+            Some(("glm-5.3".into(), "zhipu".into())),
+        );
+        let (out, saw_err) = drain(guard).await;
+        assert!(!saw_err, "哨兵在场时传输错误一律吞掉");
+        assert_eq!(out.len(), FULL_STREAM.len());
+        assert!(committed(&g, 7));
+    }
+
+    #[tokio::test]
+    async fn guard_stream_stays_terminated_after_error() {
+        // 病态 inner(Err 后重复 Err):终止态由守护层自持,后续 poll 恒 None——
+        // 不随 inner 摇摆重复透出错误(真实 reqwest 流 Err 后的 poll 行为无合约)
+        let g = Arc::new(bare_gateway());
+        let mut polls = 0u32;
+        let inner = futures_util::stream::poll_fn(move |_cx| {
+            polls += 1;
+            Poll::Ready(Some(Err::<Bytes, std::io::Error>(std::io::Error::other(
+                format!("poll {polls}"),
+            ))))
+        });
+        let mut guard = GuardStream::new(inner, guard_commit(&g, 0, None), None);
+        let first = guard.next().await;
+        assert!(first.is_some_and(|r| r.is_err()), "首个 Err 原样透出");
+        assert!(guard.next().await.is_none(), "终止后恒 None");
+        assert!(guard.next().await.is_none());
+        // 哨兵场景:注入事件冲出后恒 None,不重复注入不透 Err
+        let inner = futures_util::stream::poll_fn(|_cx| {
+            Poll::Ready(Some(Err::<Bytes, std::io::Error>(std::io::Error::other(
+                "broken",
+            ))))
+        });
+        let mut guard = GuardStream::new(
+            inner,
+            guard_commit(&g, 0, None),
+            Some(("glm-5.3".into(), "zhipu".into())),
+        );
+        let (out, saw_err) = drain(&mut guard).await;
+        assert!(!saw_err);
+        assert!(contains_bytes(out.last().unwrap(), b"event: error"));
+    }
+
+    #[tokio::test]
+    async fn guard_stream_err_without_sentinel_withholds_only() {
+        // 无哨兵(非 Anthropic 面 / 非流式):传输错误即截断——不提交、不注入(无法
+        // 构造彼协议错误事件),错误原样透出让客户端由断连感知
+        let g = Arc::new(bare_gateway());
+        let inner = futures_util::stream::iter(vec![
+            Ok::<Bytes, std::io::Error>(Bytes::from_static(b"{\"id\":\"x\"}")),
+            Err(std::io::Error::other("broken pipe")),
+        ]);
+        let guard = GuardStream::new(inner, guard_commit(&g, 0, Some(9)), None);
+        let (out, saw_err) = drain(guard).await;
+        assert!(saw_err, "无哨兵的截断原样透出");
+        assert_eq!(out.len(), 1);
+        assert!(!out.iter().any(|b| contains_bytes(b, b"event: error")));
+        assert!(!committed(&g, 9));
+        // 同流干净 EOF = 完整应答,照常提交
+        let inner = futures_util::stream::iter(vec![Ok::<Bytes, std::io::Error>(
+            Bytes::from_static(b"{\"id\":\"x\"}"),
+        )]);
+        let guard = GuardStream::new(inner, guard_commit(&g, 0, Some(10)), None);
+        drain(guard).await;
+        assert!(committed(&g, 10));
     }
 
     #[test]
