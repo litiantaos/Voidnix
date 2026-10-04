@@ -6,6 +6,8 @@
 //! Claude Code 侧只接管 settings.json 自有键(备份 + 可还原,见 cc_settings)。
 
 pub mod cc_settings;
+pub mod guard;
+pub mod normalize;
 pub mod server;
 
 use crate::runtime::registry::Extension;

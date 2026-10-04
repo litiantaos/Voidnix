@@ -21,6 +21,8 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 
 ## 端口与生命周期
 
+- 模块分工（`native/`）：`server`（Protocol 词汇 + 路由表 + Gateway 状态机 + 轮换策略 + HTTP 骨架与 proxy 主流程 + 响应构造）、`normalize`（请求体读取与归一纯函数：model 提取/会话指纹/模型名归一/normalize_body）、`guard`（2xx 流守护 + 尾部哨兵 + 字节扫描基元）、`cc_settings`（CC 接线）
+
 - release **8788**（固定端口，CC 配置一次写入不再变）；dev **8789**（与 release 常驻并存不互抢；`logic.ts::GATEWAY_PORT` 与 Rust `server.rs::PORT` 双端手动同步）
 - 服务器跑在 app tokio runtime 内（`axum` 最小特性集 http1 + tokio）；app 常驻 Accessory + monitor LaunchAgent 守护
 - 启动链：扩展 Rust `setup` 读持久化快照直接拉起（前端就绪前的冷启动窗口 CC 无感）；前端配置就绪后经 `ai_gateway_sync` 全量刷新
