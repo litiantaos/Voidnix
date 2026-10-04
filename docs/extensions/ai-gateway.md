@@ -23,7 +23,7 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 - 服务器跑在 app tokio runtime 内（`axum` 最小特性集 http1 + tokio）；app 常驻 Accessory + monitor LaunchAgent 守护
 - 启动链：扩展 Rust `setup` 读持久化快照直接拉起（前端就绪前的冷启动窗口 CC 无感）；前端配置就绪后经 `ai_gateway_sync` 全量刷新
 - 快照 `extensions/ai-gateway/gateway-state.json`（enabled + 路由表，0600 原子写，含 Key 明文）
-- 排障日志 `extensions/ai-gateway/gateway.log`：只记异常路径（route 路由失败，行含 method+path / upstream 上游状态码与错误摘要 / net 网络错误 / replay 回放 / exhaust Key 耗尽），epoch 毫秒时间戳（`date -r 秒` 转可读），超 512KB 整文件重置，新建即 0600；成功请求零记录、不含 Key 与请求体
+- 排障日志 `extensions/ai-gateway/gateway.log`：只记异常路径（route 路由失败，行含 method+path / upstream 上游状态码与错误摘要 / net 网络错误 / replay 回放 / exhaust Key 耗尽 / tail 尾部哨兵），epoch 毫秒时间戳（`date -r 秒` 转可读），超 512KB 整文件重置，新建即 0600；成功请求零记录、不含 Key 与请求体。**tail 尾部哨兵**：Anthropic 面 2xx SSE 流保持零解析直 pipe，字节过路做子串探测（text/tool/thinking 内容证据 + stop_reason + message_stop），流终止时判异常——零内容（无 text 无 tool）或未收 stop_reason 或未收 message_stop——记一行 `tail model · route · text=N tool=N think=Y stop=max_tokens end=ok|trunc`，点亮「200 但语义可疑」暗通道（GLM 无视 thinking disabled 耗尽预算的空响应、裸 JSON 错误行致流静默终止等，此前零痕迹，CC 只报「模型不可用」）；跨 chunk 边界的标记子串经残余拼接防漏检，stop_reason 值经末尾 4KB 环形缓冲提取；正常完成的流零记录
 
 ## 路由表来源
 

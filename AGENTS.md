@@ -563,7 +563,7 @@ src/
     └── proxy/{mihomo, mihomo.log, mihomo-daemon.plist, geoip.metadb, geosite.dat, config.yaml, subs/, config.json}  # TUN 模式 launchd 托管（plist 装于 /Library/LaunchDaemons）
 ```
 
-网关排障日志：`extensions/ai-gateway/gateway.log`（异常路径行式追加——路由失败行含 method+path、上游错误、网络错误、Key 耗尽，epoch 毫秒时间戳，超 512KB 自旋转，新建即 0600；成功请求零记录，不含 Key 与请求体）。
+网关排障日志：`extensions/ai-gateway/gateway.log`（异常路径行式追加——路由失败行含 method+path、上游错误、网络错误、Key 耗尽、tail 尾部哨兵——Anthropic 面 2xx SSE 流字节过路探测，流终止时零内容或未收 stop_reason/message_stop 即记一行内容证据与 stop/end，点亮「200 但语义可疑」暗通道（预算被思考耗尽的空响应、裸 JSON 错误行静默断流此前零痕迹），epoch 毫秒时间戳，超 512KB 自旋转，新建即 0600；成功请求零记录，不含 Key 与请求体）。
 
 icon 缓存纯内存（首次提取后按 bundle mtime 增量复用，零磁盘文件）。dev 镜像 `com.litiantao.voidnix.dev` 同构。
 

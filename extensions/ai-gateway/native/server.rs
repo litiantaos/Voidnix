@@ -9,12 +9,14 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::Router;
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
+use std::task::{Context, Poll};
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
@@ -644,7 +646,10 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                         &format!("{model} · {}: {status} 透传(不轮换)", route.name),
                     );
                 }
-                return stream_response(r).await;
+                // 2xx 才挂哨兵:错误状态已有 errpass 记录,哨兵只盯「200 但语义可疑」
+                let sentinel = (protocol == Protocol::Anthropic && status < 400)
+                    .then_some((model.as_str(), route.name.as_str()));
+                return stream_response(r, sentinel).await;
             }
         }
     }
@@ -674,7 +679,8 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
 }
 
 /// 透传上游响应:状态 + 头(剥跳-by-hop)原样,SSE 字节流直 pipe。
-async fn stream_response(upstream: reqwest::Response) -> Response {
+/// sentinel = Some((model, route)) 时挂尾部哨兵(Anthropic 面 2xx SSE,见 TailWatch)。
+async fn stream_response(upstream: reqwest::Response, sentinel: Option<(&str, &str)>) -> Response {
     let status = upstream.status();
     // 上游响应头原样透传(content-type 区分 JSON/SSE,request-id 等客户端依赖;
     // 此前遗漏透传致全部头丢失——SSE 客户端宽松解析无感,非流式 JSON 客户端解析失败)
@@ -684,13 +690,79 @@ async fn stream_response(upstream: reqwest::Response) -> Response {
             builder = builder.header(name, value);
         }
     }
-    let stream = upstream
-        .bytes_stream()
-        .map(|chunk| chunk.map_err(|e| std::io::Error::other(e.to_string())));
+    // 哨兵只盯 SSE 流语义(非流式 JSON 无 message_stop 事件帧,误判为噪声)
+    let is_sse = upstream
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("text/event-stream"));
+    let stream = upstream.bytes_stream();
+    let stream: Box<dyn Stream<Item = std::io::Result<Bytes>> + Send + Unpin> =
+        match sentinel.filter(|_| is_sse) {
+            Some((model, route)) => Box::new(SentinelStream::new(stream, model, route)),
+            None => Box::new(
+                stream.map(|chunk| chunk.map_err(|e| std::io::Error::other(e.to_string()))),
+            ),
+        };
     builder
         // hyper 对无 content-length 的流式体自动 chunked,与上游传输语义一致
         .body(Body::from_stream(stream))
         .unwrap_or_else(|_| empty_error())
+}
+
+/// 直 pipe 流的哨兵包装:chunk 原样透传 + 过路探测;流终止(EOF 或错误)时
+/// 一次性判异常落 tail 行(watch 取出即空,天然幂等)
+struct SentinelStream<S> {
+    inner: S,
+    watch: Option<(TailWatch, String, String)>,
+}
+
+impl<S> SentinelStream<S>
+where
+    S: Stream<Item = reqwest::Result<Bytes>> + Unpin,
+{
+    fn new(inner: S, model: &str, route: &str) -> Self {
+        Self {
+            inner,
+            watch: Some((TailWatch::new(), model.to_string(), route.to_string())),
+        }
+    }
+
+    fn finish_log(watch: Option<(TailWatch, String, String)>) {
+        if let Some((watch, model, route)) = watch {
+            if let Some(detail) = watch.finish() {
+                log_gateway("tail", &format!("{model} · {route} · {detail}"));
+            }
+        }
+    }
+}
+
+impl<S> Stream for SentinelStream<S>
+where
+    S: Stream<Item = reqwest::Result<Bytes>> + Unpin,
+{
+    type Item = std::io::Result<Bytes>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        match this.inner.poll_next_unpin(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => {
+                Self::finish_log(this.watch.take());
+                Poll::Ready(None)
+            }
+            Poll::Ready(Some(Err(e))) => {
+                Self::finish_log(this.watch.take());
+                Poll::Ready(Some(Err(std::io::Error::other(e.to_string()))))
+            }
+            Poll::Ready(Some(Ok(bytes))) => {
+                if let Some((watch, _, _)) = this.watch.as_mut() {
+                    watch.observe(&bytes);
+                }
+                Poll::Ready(Some(Ok(bytes)))
+            }
+        }
+    }
 }
 
 /// 读取响应体并截断到上限(轮换失败的错误体缓存用;正常路径不走这里)
@@ -881,10 +953,108 @@ fn tag_match(body: &[u8]) -> bool {
 /// 分类器预算扩容:给无视 thinking disabled 的模型腾出思考余量 + 答案空间(magpie classifierRoom)
 const CLASSIFIER_ROOM: u64 = 2048;
 
-/// 朴素子串包含(windows 线性扫;release 实测 ~0.8ms/MB,相对网络传输可忽略,
+/// 朴素子串查找(windows 线性扫;release 实测 ~0.8ms/MB,相对网络传输可忽略,
 /// 无需真 memchr 算法——命名如实)
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
 fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack.windows(needle.len()).any(|w| w == needle)
+    find_bytes(haystack, needle).is_some()
+}
+
+/// 从缓冲提取 JSON 字符串值(`"key":"` 前缀定位读到下一个引号;哨兵专用,非通用解析)
+fn extract_json_string<'a>(buf: &'a [u8], prefix: &[u8]) -> Option<&'a str> {
+    let start = find_bytes(buf, prefix)? + prefix.len();
+    let end = start + buf[start..].iter().position(|&b| b == b'"')?;
+    std::str::from_utf8(&buf[start..end]).ok()
+}
+
+/// 标记子串残余窗口:子串可能恰好跨 chunk 边界被切,扫描窗口拼上次残余防漏检
+const MARKER_CARRY: usize = 16;
+
+/// 末尾环形缓冲容量:message_delta(stop_reason + usage)与 message_stop 恒在流尾
+const TAIL_CAP: usize = 4 * 1024;
+
+/// 尾部哨兵:Anthropic 面 2xx SSE 流保持零解析直 pipe,字节过路做子串探测——
+/// text/tool/thinking 内容证据 + stop_reason 到达标记 + 末尾环形缓冲提取
+/// stop_reason 值与 message_stop。流终止(干净 EOF 或断流)时判异常:零内容
+/// (无 text 无 tool)或未收 stop_reason 或未收 message_stop,即「200 但语义可疑」
+/// ——GLM 无视 thinking disabled 耗尽预算产出空响应、裸 JSON 错误行致流静默
+/// 终止等故障此前零痕迹(CC 只报「模型不可用」);正常完成的流零记录
+/// (成功请求零记录约定不变)。
+struct TailWatch {
+    text: bool,
+    tool: bool,
+    think: bool,
+    saw_stop: bool,
+    tail: Vec<u8>,
+    carry: Vec<u8>,
+}
+
+impl TailWatch {
+    fn new() -> Self {
+        Self {
+            text: false,
+            tool: false,
+            think: false,
+            saw_stop: false,
+            tail: Vec::new(),
+            carry: Vec::new(),
+        }
+    }
+
+    /// 内容证据采样:text/tool/think 以 delta 事件为准(tool_use 块开始即证据,
+    /// 块内无 delta),~2ms/MB 相对流解析可忽略
+    fn observe(&mut self, chunk: &[u8]) {
+        let mut window = std::mem::take(&mut self.carry);
+        window.extend_from_slice(chunk);
+        self.text |= contains_bytes(&window, b"\"text_delta\"");
+        self.tool |= contains_bytes(&window, b"\"tool_use\"");
+        self.think |= contains_bytes(&window, b"\"thinking_delta\"");
+        self.saw_stop |= contains_bytes(&window, b"\"stop_reason\"");
+        self.carry = window[window.len().saturating_sub(MARKER_CARRY)..].to_vec();
+        if chunk.len() >= TAIL_CAP {
+            self.tail.clear();
+            self.tail
+                .extend_from_slice(&chunk[chunk.len() - TAIL_CAP..]);
+        } else {
+            let keep = TAIL_CAP - chunk.len();
+            if self.tail.len() > keep {
+                self.tail.drain(..self.tail.len() - keep);
+            }
+            self.tail.extend_from_slice(chunk);
+        }
+    }
+
+    /// 异常判定:Some(日志详情) 才落 tail 行;
+    /// stop:具体值 / null(键在值空) / -(键缺席,未收到 message_delta)
+    fn finish(&self) -> Option<String> {
+        let ended = contains_bytes(&self.tail, b"\"message_stop\"");
+        if (self.text || self.tool) && self.saw_stop && ended {
+            return None;
+        }
+        let stop = match extract_json_string(&self.tail, b"\"stop_reason\":\"") {
+            Some(v) => v.to_string(),
+            None if self.saw_stop => "null".to_string(),
+            None => "-".to_string(),
+        };
+        Some(format!(
+            "text={} tool={} think={} stop={stop} end={}",
+            yn(self.text),
+            yn(self.tool),
+            yn(self.think),
+            if ended { "ok" } else { "trunc" }
+        ))
+    }
+}
+
+fn yn(b: bool) -> &'static str {
+    if b {
+        "Y"
+    } else {
+        "N"
+    }
 }
 
 /// thinking budget(CC 的 EFFORT_LEVEL 翻译产物)→ GLM effort 档
@@ -1389,6 +1559,75 @@ mod tests {
         let out = normalize_body(Protocol::Anthropic, "glm-5.3", Bytes::from_static(body));
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["max_tokens"], 64);
+    }
+
+    #[test]
+    fn tail_watch_silent_on_normal_stream() {
+        // 正常流(text/tool 内容 + stop_reason + message_stop 俱全):零记录
+        let mut w = TailWatch::new();
+        w.observe(b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n");
+        w.observe(b"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n");
+        w.observe(b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{}}\n\n");
+        w.observe(b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
+        assert_eq!(w.finish(), None);
+        // 纯 tool_use 轮次(agent 函数调用)同样正常
+        let mut w = TailWatch::new();
+        w.observe(b"data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"name\":\"bash\"}}\n\n");
+        w.observe(
+            b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n",
+        );
+        w.observe(b"data: {\"type\":\"message_stop\"}\n\n");
+        assert_eq!(w.finish(), None);
+    }
+
+    #[test]
+    fn tail_watch_flags_budget_eaten_empty() {
+        // 预算被思考耗尽:仅 thinking_delta,stop_reason=max_tokens——分类器空响应签名
+        let mut w = TailWatch::new();
+        w.observe(b"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"...\"}}\n\n");
+        w.observe(
+            b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n",
+        );
+        w.observe(b"data: {\"type\":\"message_stop\"}\n\n");
+        let line = w.finish().unwrap();
+        assert!(line.contains("text=N"));
+        assert!(line.contains("think=Y"));
+        assert!(line.contains("stop=max_tokens"));
+        assert!(line.contains("end=ok"));
+    }
+
+    #[test]
+    fn tail_watch_flags_premature_end_and_ring_buffer() {
+        // 裸 JSON 错误行 + 流静默终止:无 stop_reason 无 message_stop(SSE 解析器
+        // 按规范忽略无前缀行,客户端只见流结束零内容)
+        let mut w = TailWatch::new();
+        w.observe(b"{\"error\":{\"type\":\"forbidden\",\"code\":\"1301\"}}\n");
+        let line = w.finish().unwrap();
+        assert!(line.contains("stop=-"));
+        assert!(line.contains("end=trunc"));
+        // 有部分内容但流截断(未收 message_delta):部分输出后断流,同样可疑
+        let mut w = TailWatch::new();
+        w.observe(b"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n");
+        let line = w.finish().unwrap();
+        assert!(line.contains("text=Y"));
+        assert!(line.contains("stop=-"));
+        assert!(line.contains("end=trunc"));
+        // 环形缓冲:超容量内容后尾部事件仍可提取(长思考流的 stop_reason 不丢)
+        let mut w = TailWatch::new();
+        let big = vec![b'x'; TAIL_CAP * 2];
+        w.observe(&big);
+        w.observe(b"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n");
+        w.observe(
+            b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n",
+        );
+        w.observe(b"data: {\"type\":\"message_stop\"}\n\n");
+        assert!(w.text);
+        assert_eq!(w.finish(), None);
+        // 标记子串恰好跨 chunk 边界切开也不漏检(残余拼接)
+        let mut w = TailWatch::new();
+        w.observe(b"prefix \"text_de");
+        w.observe(b"lta\" suffix");
+        assert!(w.text);
     }
 
     #[test]
