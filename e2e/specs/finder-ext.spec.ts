@@ -33,6 +33,8 @@ async function setupFinderMock(page: Page, selected: string[]) {
   await page.addInitScript(
     ({ apps, lsApps, selected: sel }) => {
       ;(window as unknown as Record<string, unknown>).__finderAction = null
+      // toast 已迁移原生 NSPanel（无页面内 DOM），mock 捕获 show_toast 调用参数供断言
+      ;(window as unknown as Record<string, { message: string; kind: string }[]>).__toastCalls = []
       let cbId = 0
       const eventCbs = new Map<number, (payload: unknown) => void>()
       const listenEvents = new Map<number, string>()
@@ -67,6 +69,14 @@ async function setupFinderMock(page: Page, selected: string[]) {
                 appPath: args?.appPath ?? null,
               }
               return ''
+            case 'show_toast':
+              ;(
+                window as unknown as Record<string, { message: string; kind: string }[]>
+              ).__toastCalls.push({
+                message: String(args?.message),
+                kind: String(args?.kind),
+              })
+              return null
             default:
               return null
           }
@@ -206,9 +216,14 @@ test.describe('finder-ext 应用界面进入（浏览模式）', () => {
 
   test('回车提示仅在访达中生效，不执行 finder_run_action', async ({ page }) => {
     await enterViaSearch(page, ['/Users/mock/Documents/project'])
-    // 首行（用 App 打开）回车：仅提示，不执行命令
+    // 首行（用 App 打开）回车：仅提示，不执行命令（原生 toast，断言 mock 捕获的调用）
     await page.keyboard.press('Enter')
-    await expect(page.getByText('该操作仅在访达中生效')).toBeVisible({ timeout: 5000 })
+    const toastCalls = () =>
+      page.evaluate(
+        () =>
+          (window as unknown as Record<string, { message: string; kind: string }[]>).__toastCalls,
+      )
+    expect(await toastCalls()).toEqual([{ message: '该操作仅在访达中生效', kind: 'success' }])
     const action = await page.evaluate(
       () => (window as unknown as Record<string, unknown>).__finderAction,
     )
@@ -216,7 +231,7 @@ test.describe('finder-ext 应用界面进入（浏览模式）', () => {
     // 媒体入口（视频处理）回车：同样仅提示，不跳转扩展
     await page.keyboard.press('ArrowDown')
     await page.keyboard.press('Enter')
-    await expect(page.getByText('该操作仅在访达中生效').first()).toBeVisible({ timeout: 5000 })
+    expect((await toastCalls()).at(-1)?.message).toBe('该操作仅在访达中生效')
     await expect(page.locator('.ext-tag')).toHaveText('访达工具')
   })
 
