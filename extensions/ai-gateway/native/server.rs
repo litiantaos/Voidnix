@@ -74,6 +74,11 @@ pub struct GatewayRoute {
     pub chat_url: String,
     pub models: Vec<String>,
     pub keys: Vec<GatewayKey>,
+    /// 已治理上游:端点本身是另一网关(级联末跳)。归一/错误翻译/配额判定的知识
+    /// (真实上游模型、key 池)只在末跳,本跳让位降级为哑管道。serde default 兜
+    /// 旧 gateway-state.json 快照(无该键反序列化失败会致冷启动空路由)。
+    #[serde(default)]
+    pub governed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -686,8 +691,13 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
 
     // 请求体归一:剥 [Nm] 后缀 + Anthropic 面注入 thinking disabled + GLM effort 翻译
     // + 输出预算下限。路由命中后才执行——未知模型/缺端点的请求直接拒绝,不为其
-    // 支付归一成本(GLM 面含全量建树)
-    let body = normalize_body(protocol, &model, body);
+    // 支付归一成本(GLM 面含全量建树)。已治理上游让位:转发体字节级原样([Nm] 后缀
+    // 留体,find_route 双向 norm_model 不影响路由匹配,末跳自剥幂等)
+    let body = if route.governed {
+        body
+    } else {
+        normalize_body(protocol, &model, body)
+    };
 
     let path_and_query = parts
         .uri
@@ -738,8 +748,10 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                         last_error = Some((status, buf.clone()));
                     }
                     // 配额耗尽型(计费/配额/余额文案)长冷却:速率限制的 60s 对配额耗尽
-                    // 是必然失败的空转,日/周窗口内重试无意义
-                    let quota = cached.as_deref().is_some_and(quota_exhausted);
+                    // 是必然失败的空转,日/周窗口内重试无意义。已治理上游让位:末跳 429
+                    // 带权威 Retry-After(月度配额精确到月初),文本分类对其错误体可能
+                    // 误判,恒 false 退化为 max(Retry-After, 60s) 且保住原地重试
+                    let quota = !route.governed && cached.as_deref().is_some_and(quota_exhausted);
                     let cooldown = retry_after
                         .map_or(if quota { QUOTA_COOLDOWN } else { KEY_COOLDOWN }, |d| {
                             d.max(if quota { QUOTA_COOLDOWN } else { KEY_COOLDOWN })
@@ -831,13 +843,16 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                     &format!("{model} · {}: {status} 透传(不轮换)", route.name),
                 );
                 // 上下文超长语义翻译:命中厂商超长文案(尤其中文)改写为协议标准错误,
-                // CC 识别后自动 compact;原文案 CC 认不了,直接报错停会话
-                if let Some(resp) = too_long_rewrite(protocol, &buf) {
-                    log_gateway(
-                        "toolong",
-                        &format!("{model} · {}: 已翻译超长错误", route.name),
-                    );
-                    return resp;
+                // CC 识别后自动 compact;原文案 CC 认不了,直接报错停会话。已治理上
+                // 游让位:末跳已译为协议标准错误,本跳透传即正确(词表重复命中是噪声)
+                if !route.governed {
+                    if let Some(resp) = too_long_rewrite(protocol, &buf) {
+                        log_gateway(
+                            "toolong",
+                            &format!("{model} · {}: 已翻译超长错误", route.name),
+                        );
+                        return resp;
+                    }
                 }
                 return Response::builder()
                     .status(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY))
@@ -1045,6 +1060,7 @@ mod tests {
                 label: "k1".into(),
                 api_key: "sk-1".into(),
             }],
+            governed: false,
         }
     }
 
@@ -1411,6 +1427,251 @@ mod tests {
         );
         g.update(false, vec![changed], &dir).await;
         assert_eq!(g.key_order(&multi, Some(42)), vec![0, 1], "换表清亲和");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ─── 已治理上游(governed):级联第一跳让位 ─────────────────────
+
+    /// 临时上游 mock(127.0.0.1:0 临时端口):逐次记录到达的原始请求体,恒按脚本
+    /// 应答。fallback 接任意路径(测试不必关心 join_upstream_url 的路径整形),
+    /// tests 直调 proxy() 端到端,网关侧无需 socket
+    async fn spawn_upstream(
+        status: u16,
+        body: &'static [u8],
+        headers: Vec<(&'static str, String)>,
+        seen: Arc<Mutex<Vec<Bytes>>>,
+    ) -> String {
+        let app = Router::new().fallback(post(move |req: Request| {
+            let seen = Arc::clone(&seen);
+            async move {
+                let bytes = axum::body::to_bytes(req.into_body(), 1024 * 1024)
+                    .await
+                    .unwrap();
+                seen.lock().unwrap().push(bytes);
+                let mut resp = Response::builder().status(status);
+                for (k, v) in &headers {
+                    resp = resp.header(*k, v);
+                }
+                resp.body(Body::from(body)).unwrap()
+            }
+        }));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        format!("http://{addr}")
+    }
+
+    /// 裸 Gateway 直写路由表(proxy 的最小装配,不经 update 的持久化副作用)
+    fn gateway_with(routes: Vec<GatewayRoute>) -> Arc<Gateway> {
+        let g = Arc::new(Gateway::bare());
+        *g.routes.write().unwrap() = Arc::new(routes);
+        g
+    }
+
+    fn anthropic_post(body: &str) -> Request {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/messages")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn governed_forwards_body_bytes_verbatim() {
+        let raw = r#"{"model":"glm-5.3[1m]","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}"#;
+        // 已治理:转发体字节级原样([1m] 留体、无 thinking 注入)
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let base = spawn_upstream(200, b"{\"ok\":true}", Vec::new(), Arc::clone(&seen)).await;
+        let g = gateway_with(vec![GatewayRoute {
+            anthropic_url: base,
+            governed: true,
+            ..route("gov", "", &["glm-5.3"])
+        }]);
+        let resp = proxy(g, Protocol::Anthropic, anthropic_post(raw)).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(&*seen.lock().unwrap()[0], raw.as_bytes());
+        // 对照组(直连):同请求被归一——后缀剥除 + thinking disabled 注入,
+        // 证明差异来自门控而非 mock 形态
+        seen.lock().unwrap().clear();
+        let base = spawn_upstream(200, b"{\"ok\":true}", Vec::new(), Arc::clone(&seen)).await;
+        let g = gateway_with(vec![GatewayRoute {
+            anthropic_url: base,
+            ..route("plain", "", &["glm-5.3"])
+        }]);
+        let resp = proxy(g, Protocol::Anthropic, anthropic_post(raw)).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let got: Value = serde_json::from_slice(&seen.lock().unwrap()[0]).unwrap();
+        assert_eq!(got["model"], "glm-5.3");
+        assert_eq!(got["thinking"]["type"], "disabled");
+    }
+
+    #[tokio::test]
+    async fn governed_treats_quota_wording_as_rate_limit() {
+        let quota_body: &'static [u8] =
+            r#"{"error":{"message":"已达到今日额度上限,今日额度已用完"}}"#.as_bytes();
+        // 已治理:配额文案不触发 30min 长冷却,退化为常规 60s(末跳 429 的
+        // Retry-After 才是权威);配额分支不再禁掉原地重试——单 Key 初打 + 2 轮
+        // 全打完才回放(Retry-After: 0 → 等待 0s,测试零真实 sleep)
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let base = spawn_upstream(
+            429,
+            quota_body,
+            vec![("retry-after", "0".to_string())],
+            Arc::clone(&seen),
+        )
+        .await;
+        let g = gateway_with(vec![GatewayRoute {
+            anthropic_url: base,
+            governed: true,
+            ..route("gov", "", &["glm-5.3"])
+        }]);
+        let resp = proxy(
+            Arc::clone(&g),
+            Protocol::Anthropic,
+            anthropic_post(r#"{"model":"glm-5.3","messages":[{"role":"user","content":"hi"}]}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(&*body, quota_body, "回放末跳原始 429 体");
+        assert_eq!(seen.lock().unwrap().len(), 3, "原地重试保住(初打+2 轮)");
+        let cooled = g
+            .cooldowns
+            .lock()
+            .unwrap()
+            .get(&("gov".to_string(), 0))
+            .copied()
+            .expect("重试耗尽后落常规冷却");
+        let remain = cooled
+            .saturating_duration_since(std::time::Instant::now())
+            .as_secs();
+        assert!(
+            remain >= 55 && remain <= 65,
+            "60s 常规冷却,非 30min(remain={remain})"
+        );
+        // 对照组(直连):同文案判配额型——原地重试被禁(单次)+ 30min 长冷却
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let base = spawn_upstream(
+            429,
+            quota_body,
+            vec![("retry-after", "0".to_string())],
+            Arc::clone(&seen),
+        )
+        .await;
+        let g = gateway_with(vec![GatewayRoute {
+            anthropic_url: base,
+            ..route("plain", "", &["glm-5.3"])
+        }]);
+        let resp = proxy(
+            Arc::clone(&g),
+            Protocol::Anthropic,
+            anthropic_post(r#"{"model":"glm-5.3","messages":[{"role":"user","content":"hi"}]}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(seen.lock().unwrap().len(), 1, "配额型不做原地重试");
+        let cooled = g
+            .cooldowns
+            .lock()
+            .unwrap()
+            .get(&("plain".to_string(), 0))
+            .copied()
+            .expect("配额型落冷却");
+        let remain = cooled
+            .saturating_duration_since(std::time::Instant::now())
+            .as_secs();
+        assert!(remain >= 1700, "30min 配额长冷却(remain={remain})");
+    }
+
+    #[tokio::test]
+    async fn governed_passes_too_long_error_verbatim() {
+        let long_body: &'static [u8] =
+            r#"{"error":{"code":"1210","message":"输入上下文长度超过模型上限,请缩减对话后重试"}}"#
+                .as_bytes();
+        // 已治理:末跳已译为协议标准错误,本跳原样透传(不重复翻译)
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let base = spawn_upstream(400, long_body, Vec::new(), Arc::clone(&seen)).await;
+        let g = gateway_with(vec![GatewayRoute {
+            anthropic_url: base,
+            governed: true,
+            ..route("gov", "", &["glm-5.3"])
+        }]);
+        let resp = proxy(
+            g,
+            Protocol::Anthropic,
+            anthropic_post(r#"{"model":"glm-5.3","messages":[{"role":"user","content":"x"}]}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(&*body, long_body, "超长文案原样透传");
+        // 对照组(直连):同文案被翻译为协议标准错误
+        let base = spawn_upstream(400, long_body, Vec::new(), seen).await;
+        let g = gateway_with(vec![GatewayRoute {
+            anthropic_url: base,
+            ..route("plain", "", &["glm-5.3"])
+        }]);
+        let resp = proxy(
+            g,
+            Protocol::Anthropic,
+            anthropic_post(r#"{"model":"glm-5.3","messages":[{"role":"user","content":"x"}]}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("prompt is too long:"));
+    }
+
+    /// 旧 gateway-state.json(无 governed 键)反序列化兜默认 false;roundtrip 写回
+    /// 恒含该键——serde default 是冷启动恢复不空路由的防线
+    #[test]
+    fn legacy_snapshot_without_governed_defaults_false() {
+        let dir = std::env::temp_dir().join(format!("voidnix-gw-legacy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            state_file(&dir),
+            r#"{"enabled":true,"routes":[{"providerId":"z","name":"z","anthropicUrl":"https://x","responsesUrl":"","chatUrl":"","models":["m"],"keys":[{"label":"k","apiKey":"s"}]}]}"#,
+        )
+        .unwrap();
+        let back = read_state(&dir).unwrap();
+        assert_eq!(back.routes.len(), 1);
+        assert!(!back.routes[0].governed);
+        persist_state(&dir, &back).unwrap();
+        let text = std::fs::read_to_string(state_file(&dir)).unwrap();
+        assert!(text.contains("\"governed\""), "写回恒含该键");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 切换 governed = 行为变化,整表不等 → 清冷却/亲和/粘性(一次性亲和代价,
+    /// 上游 prompt cache 按 Key 隔离即重建一次,语义正确)
+    #[tokio::test]
+    async fn toggling_governed_resets_runtime_state() {
+        let dir = std::env::temp_dir().join(format!("voidnix-gw-toggle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let g = Gateway::bare();
+        let plain = route("z", "", &["m"]);
+        let mut gov = plain.clone();
+        gov.governed = true;
+        g.update(false, vec![plain], &dir).await;
+        g.bind_session(7, "z", 0);
+        assert!(g.affinity_has(7));
+        g.update(false, vec![gov], &dir).await;
+        assert!(!g.affinity_has(7), "切换 governed 清运行时状态");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -25,6 +25,11 @@ registerMessages({
     en: 'Please enter the OpenAI Chat URL',
   },
   'ai-providers.keyRequired': { 'zh-CN': '请填写 API Key', en: 'Please enter the API Key' },
+  'ai-providers.governed': { 'zh-CN': '已治理上游', en: 'Governed Upstream' },
+  'ai-providers.governedHint': {
+    'zh-CN': '端点本身是另一 AI 网关时开启：本端跳过请求体归一与错误翻译，由上游网关统一处理',
+    en: 'Enable when the endpoint is itself an AI gateway: normalization and error translation are left to the upstream gateway',
+  },
   'ai-providers.pasteFailed': { 'zh-CN': '粘贴失败', en: 'Paste failed' },
   'ai-providers.fieldEmpty': { 'zh-CN': '{name} 为空', en: '{name} is empty' },
   'ai-providers.configGuide': { 'zh-CN': '配置说明', en: 'Config Guide' },
@@ -34,11 +39,13 @@ registerMessages({
 
 - 外部工具（Claude Code、OpenAI 兼容 CLI 等）经 **AI 网关** 接入：把 API 地址指向 \`http://127.0.0.1:8788\`、Key 随便填，网关按请求模型路由并注入真实 Key（多 Key 自动轮换）
 - Anthropic 端点（可选）供网关直通 Claude Code 等 Anthropic 客户端（智谱 \`https://open.bigmodel.cn/api/anthropic\`、DeepSeek \`https://api.deepseek.com/anthropic\`），声明后模型进入网关路由
+- 端点本身是另一 AI 网关（如团队网关）时标记 **已治理上游**：网关归一与错误翻译让位，由上游统一处理
 - 选中 Key 按下 **Cmd+Enter** 可粘贴 Key / URL / 模型名（声明了 Responses 端点时多一条粘贴项）`,
     en: `A single place for provider endpoints of the three wire protocols (OpenAI Chat / OpenAI Responses / Anthropic Messages), keys and models — consumed by in-app extensions (Agent, Translate) and the AI gateway.
 
 - External tools (Claude Code, OpenAI-compatible CLIs, …) connect through the **AI gateway**: point the API base URL at \`http://127.0.0.1:8788\` with any placeholder key; the gateway routes by model and injects real keys (with rotation)
 - The optional Anthropic endpoint lets the gateway serve Claude Code and other Anthropic clients (Zhipu \`https://open.bigmodel.cn/api/anthropic\`, DeepSeek \`https://api.deepseek.com/anthropic\`); declared models join gateway routing
+- Mark a provider as a **Governed Upstream** when its endpoint is itself an AI gateway (e.g. a team gateway): normalization and error translation are delegated to the upstream
 - Select a key and press **Cmd+Enter** to paste the key / endpoint / model name (an extra item appears when a Responses endpoint is declared)`,
   },
 })

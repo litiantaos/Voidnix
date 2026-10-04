@@ -22,6 +22,8 @@ export interface GatewayRoute {
   chatUrl: string
   models: string[]
   keys: GatewayKey[]
+  /** 已治理上游：端点本身是另一网关（级联末跳），本端归一/错误翻译/配额判定让位 */
+  governed: boolean
 }
 
 /** 路由表中一个可路由模型(经哪些协议可达) */
@@ -59,6 +61,7 @@ export function buildRoutes(providers: AiProvider[]): GatewayRoute[] {
       chatUrl,
       models,
       keys,
+      governed: p.governed === true,
     })
   }
   return routes

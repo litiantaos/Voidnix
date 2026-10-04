@@ -10,7 +10,7 @@
 
 ## schema 变更
 
-- **normalizeProvider**：经 `defineConfig` 第三参 onLoad 在 backfill 后同步执行（`resolveReady` 前，全部 `whenConfigReady` 等待者读到迁移后形态）——旧字段名 `endpoint` → `chatEndpoint`、旧单 `apiKey` / 缺 `keys` → `keys[]`
+- **normalizeProvider**：经 `defineConfig` 第三参 onLoad 在 backfill 后同步执行（`resolveReady` 前，全部 `whenConfigReady` 等待者读到迁移后形态）——旧字段名 `endpoint` → `chatEndpoint`、旧单 `apiKey` / 缺 `keys` → `keys[]`；新字段 `governed`（已治理上游）缺省兜 `false`
 - **空中枢导入**：中枢为空时一次性从旧 `extensions/agent/config.json` 的 `aiProviders` / translate 旧 AI 引擎字段导入，并尽量删掉旧密钥字段；消费者侧也会清悬空选用
 - **重建**：仍可直接删磁盘 config 按 defaults 重建
 
@@ -27,7 +27,7 @@
 - **分组标题右侧**：编辑提供商 · 添加 Key
 - **添加提供商**：搜索栏右侧 `+`（`searchBarAccessory`）；列表空态（`BaseSetupState`，按钮文案覆盖为「添加提供商」）同款直达创建弹窗
 
-弹窗：添加/编辑提供商（名称 / OpenAI Chat URL / 模型 / 可选 OpenAI Responses URL / 可选 Anthropic Messages URL；创建时含首把 Key）；添加/编辑 Key。无「选用 / 使用中」。
+弹窗：添加/编辑提供商（名称 / OpenAI Chat URL / 模型 / 可选 OpenAI Responses URL / 可选 Anthropic Messages URL / 已治理上游开关；创建时含首把 Key）；添加/编辑 Key。无「选用 / 使用中」。
 
 ## 多 Key
 
@@ -89,6 +89,7 @@
 
 - **Responses 端点**（`responsesEndpoint`，可选）：语义是「Responses 端点与 chat 端点**不同**时的那个 URL」——分立端点（智谱 Responses `https://open.bigmodel.cn/api/v1` 与 chat `/api/coding/paas/v4`）才需要填；同端点用路径/参数区分协议的提供商（DeepSeek 等）留空即可。`chatEndpoint` 始终存 chat 端点（内部消费者 agent/translate 走 chat completions，不受影响）
 - **Anthropic 端点**（`anthropicEndpoint`，可选）：Anthropic Messages 线协议端点（智谱 `https://open.bigmodel.cn/api/anthropic`、DeepSeek `https://api.deepseek.com/anthropic`），声明后模型进入网关的 Anthropic 路由（Claude Code 等客户端）
+- **已治理上游**（`governed`，默认关）：端点本身是另一 AI 网关（级联末跳）时开启——仅 ai-gateway 消费，命中时网关的请求体归一/错误翻译/配额文案判定让位（知识只在末跳），详见 [ai-gateway](ai-gateway.md)「级联上游」
 
 历史的 `ai.env` 导出（`VOIDNIX_*` 环境变量 + shell source 钩子）已移除：扩展 setup 对存量遗留（rc 注入块 / `~/.config/voidnix[/dev]/ai.env`）做幂等自清。
 

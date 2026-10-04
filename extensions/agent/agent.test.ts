@@ -64,6 +64,7 @@ beforeEach(async () => {
     chatEndpoint: 'https://api.example.com/v1',
     models: ['m1'],
     keys: [{ id: 'k1', label: '默认', apiKey: 'sk-test' }],
+    governed: false,
     usageKind: '',
     responsesEndpoint: '',
     anthropicEndpoint: '',

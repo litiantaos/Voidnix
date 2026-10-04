@@ -106,6 +106,21 @@ describe('multi-key', () => {
     expect('activeKeyId' in n).toBe(false)
   })
 
+  it('governed 迁移：旧数据兜 false，true 保留，add 缺省 false', () => {
+    expect(normalizeProvider({ id: 'a', chatEndpoint: 'https://x', apiKey: 'k' }).governed).toBe(
+      false,
+    )
+    expect(
+      normalizeProvider({ id: 'a', chatEndpoint: 'https://x', apiKey: 'k', governed: true })
+        .governed,
+    ).toBe(true)
+    expect(
+      normalizeProvider({ id: 'a', chatEndpoint: 'https://x', governed: 'yes' }).governed,
+    ).toBe(false)
+    addAiProvider({ chatEndpoint: 'https://y', apiKey: 'k', models: ['m'] })
+    expect(config.providers.at(-1)!.governed).toBe(false)
+  })
+
   it('resolveUsageKind 按 chat 端点识别', () => {
     const z = addAiProvider({ chatEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4' })
     const d = addAiProvider({ chatEndpoint: 'https://api.deepseek.com' })

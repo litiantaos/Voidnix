@@ -35,6 +35,12 @@ export interface AiProvider {
   /** 多 Key；至少 1 项（CRUD 保底） */
   keys: AiKeySlot[]
   /**
+   * 已治理上游：端点本身是另一 AI 网关（级联末跳）。仅 ai-gateway 消费——命中时
+   * 跳过本端请求体归一与错误翻译、配额文案判定（归一/翻译的知识只在末跳），
+   * 与 anthropicEndpoint 同款「字段服务单一消费者」。
+   */
+  governed: boolean
+  /**
    * 额度/余额监控。空 = 按 endpoint 自动识别
    *（bigmodel.cn → zhipu-coding-plan；deepseek.com → deepseek-balance）。
    */
@@ -80,6 +86,7 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
   const responsesEndpoint = typeof raw.responsesEndpoint === 'string' ? raw.responsesEndpoint : ''
   const anthropicEndpoint = typeof raw.anthropicEndpoint === 'string' ? raw.anthropicEndpoint : ''
   const models = Array.isArray(raw.models) ? (raw.models as string[]).map(String) : []
+  const governed = raw.governed === true
   const usageKind = (raw.usageKind as AiUsageKind) || ''
 
   if (Array.isArray(raw.keys) && raw.keys.length > 0) {
@@ -96,6 +103,7 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
       anthropicEndpoint,
       models,
       keys,
+      governed,
       usageKind,
     }
   }
@@ -111,6 +119,7 @@ export function normalizeProvider(raw: Record<string, unknown>): AiProvider {
     anthropicEndpoint,
     models,
     keys: [{ id: kid, label: '默认', apiKey: legacyKey }],
+    governed,
     usageKind,
   }
 }
@@ -271,6 +280,7 @@ export function addAiProvider(
     anthropicEndpoint: partial?.anthropicEndpoint ?? '',
     models: partial?.models ? [...partial.models] : [],
     keys,
+    governed: partial?.governed ?? false,
     usageKind: partial?.usageKind ?? '',
   })
   return id
