@@ -373,7 +373,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - 按 `kind` 切 SF Symbol 图标/色：`success` checkmark.circle.fill + controlAccentColor / `error` exclamationmark.triangle.fill + systemRed（错误反馈必须传 `kind: 'error'`）
 - 堆叠上限 3 条（超限淘汰最旧）、默认 2000ms 自动离场；**每行独立 NSPanel**，最新在顶水平居中向下生长（macOS 通知堆叠语义，旧行下移补位）；无 hover 交互（点击穿透）
 - 锚定：所在屏（主窗 placement 屏优先、否则光标屏）visibleFrame **顶部中心**，行区顶下探 12px（HUD 位）。位置与主窗显隐/坐标无关——`toastAndHide` 的 show_toast 与 hide_window 两 invoke 到达序不保证（fetch IPC 并发），恒定锚定无竞态面；`toastAndHide` 侧另 await 顺序化双保险
-- 进出场与堆叠补位动画全走 **window 级 animator**（NSAnimationContext + 窗口 animator 的 alpha/frame，与 `platform/window.rs::animate_panel` 同路径）：进场 250ms easeOut 淡入 + 自屏幕顶缘下滑 12pt；离场 180ms easeIn 淡出 + 下滑 12pt；旧行 window animator 平移补位。**view 层动画（NSView animator / CATransaction 隐式 / CABasicAnimation / NSTimer 逐帧 set+display）在此场景实测均不被渲染管线提交**，勿回退
+- 进出场与堆叠补位动画统一复用 `platform/window.rs::animate_panel` 原语（NSWindow 级 window animator，snap-panel 进出场同源共用）：进场 250ms easeOut 淡入 + 自屏幕顶缘下滑 12pt；离场 180ms easeIn 淡出 + 下滑 12pt；旧行 window animator 平移补位。**view 层动画（NSView animator / CATransaction 隐式 / CABasicAnimation / NSTimer 逐帧 set+display）在此场景实测均不被渲染管线提交**，勿回退
 - 到期调度：NSTimer 主 runloop 原生定时（fire → fade_out_row → 300ms 后 finish 销毁）；淘汰行 show 时即调度销毁收尾
 - **Rust 端路径的失败反馈**（菜单栏/快捷键操作，主窗隐藏态）：Rust emit 事件 + 扩展入口（`extensions/<id>/index.ts`）模块级常驻 `listen` → showToast（勿放 View/composable 的 KeepAlive 生命周期内——面板未打开过则监听不存在）。现有：screenshot 快捷键截屏失败（`screenshot-capture-failed`，文案即 Err 含权限指引）、awake 菜单开关/熄屏策略失败（`awake-menu-failed`，Rust 侧过滤「取消」类文案——用户主动取消授权静默）、proxy 状态事件（`proxy-status`，toast 通道在扩展入口、视图内 coreError 红字在 useProxyPanel 双通道分工）
 - appearance 每次 show 读缓存一次性设置（瞬态不做监听）；行 panel 用后即销毁（close + Retained 回收，原生 NSPanel 无 WKWebView teardown 限制）

@@ -351,7 +351,6 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
     app.run_on_main_thread(move || {
         if let Some(w) = app_clone.get_webview_window("snap-panel") {
             let (pw, ph) = window_snap::panel_dimensions();
-            let mut target: Option<NSRect> = None;
             // SAFETY: setFrame/setAlpha/makeKeyAndOrderFront 均为 NSWindow 标准方法。
             // show_panel 已把窗口放到满尺寸目标位；此处只抬高 y 作滑入起点，宽高不变。
             unsafe {
@@ -374,23 +373,16 @@ pub async fn show_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
                             ns,
                             makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()
                         ];
-                        target = Some(NSRect::new(NSPoint::new(x, y), NSSize::new(pw, ph)));
+                        // 滑入落位：淡入 + 下滑到目标位
+                        crate::platform::window::animate_panel(
+                            ns,
+                            Some(1.0),
+                            NSRect::new(NSPoint::new(x, y), NSSize::new(pw, ph)),
+                            SNAP_PANEL_ANIM_SECS,
+                            true,
+                        );
                     }
                 }
-            }
-            if let Some(tf) = target {
-                crate::platform::window::animate_panel(
-                    &w,
-                    crate::platform::window::PanelAnimTarget {
-                        alpha: 1.0,
-                        x: tf.origin.x,
-                        y: tf.origin.y,
-                        w: tf.size.width,
-                        h: tf.size.height,
-                        duration: SNAP_PANEL_ANIM_SECS,
-                        ease_out: true,
-                    },
-                );
             }
         }
         let _ = tx.send(());
@@ -410,7 +402,6 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
     app.run_on_main_thread(move || {
         if let Some(w) = app_clone.get_webview_window("snap-panel") {
             let (pw, ph) = window_snap::panel_dimensions();
-            let mut end: Option<NSRect> = None;
             // SAFETY: setIgnoresMouseEvents / frame 均为 NSWindow 标准 API。
             unsafe {
                 if let Ok(raw) = w.ns_window() {
@@ -420,26 +411,18 @@ pub async fn hide_snap_panel(app: tauri::AppHandle) -> Result<(), String> {
                         let x = cur.origin.x + cur.size.width / 2.0 - pw / 2.0;
                         let y = cur.origin.y + cur.size.height / 2.0 - ph / 2.0;
                         // 终点：上移 10pt + 淡出，宽高仍满尺寸
-                        end = Some(NSRect::new(
-                            NSPoint::new(x, y + SNAP_PANEL_SLIDE_PT),
-                            NSSize::new(pw, ph),
-                        ));
+                        crate::platform::window::animate_panel(
+                            ns,
+                            Some(0.0),
+                            NSRect::new(
+                                NSPoint::new(x, y + SNAP_PANEL_SLIDE_PT),
+                                NSSize::new(pw, ph),
+                            ),
+                            SNAP_PANEL_ANIM_SECS,
+                            false,
+                        );
                     }
                 }
-            }
-            if let Some(ef) = end {
-                crate::platform::window::animate_panel(
-                    &w,
-                    crate::platform::window::PanelAnimTarget {
-                        alpha: 0.0,
-                        x: ef.origin.x,
-                        y: ef.origin.y,
-                        w: ef.size.width,
-                        h: ef.size.height,
-                        duration: SNAP_PANEL_ANIM_SECS,
-                        ease_out: false,
-                    },
-                );
             }
             // 焦点归还等动画结束，避免中途抢前台
             #[cfg(target_os = "macos")]

@@ -432,36 +432,22 @@ pub fn restore_window_order(window: &tauri::WebviewWindow, make_key: bool) {
     }
 }
 
-/// snap-panel 进出场目标（宽高应与稳态一致，只改 origin / alpha，避免 reflow）。
-pub struct PanelAnimTarget {
-    pub alpha: f64,
-    pub x: f64,
-    pub y: f64,
-    pub w: f64,
-    pub h: f64,
-    pub duration: f64,
-    /// `true` = easeOut（进场），`false` = easeIn（离场）
-    pub ease_out: bool,
-}
-
-/// 单 group 同步 **alpha + 纵向位移**（系统曲线，尺寸不变）。
-pub fn animate_panel(window: &tauri::WebviewWindow, target: PanelAnimTarget) {
+/// window 级动画原语：单 group 同步 **alpha + frame**（NSAnimationContext + 窗口
+/// animator，系统曲线）。窗口 alpha/位移由窗口服务器合成，不经 AppKit view 重绘
+/// 管线（view 层动画在该场景实测不提交渲染）；snap-panel 进出场与 toast 行进出场/
+/// 堆叠补位共用。`alpha` 为 None 时仅动画 frame（toast 旧行补位不动 alpha）。
+pub fn animate_panel(
+    ns_window: &NSWindow,
+    alpha: Option<f64>,
+    frame: NSRect,
+    duration: f64,
+    ease_out: bool,
+) {
     use objc2_app_kit::NSAnimationContext;
-    use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize};
+    use objc2_foundation::ns_string;
     use objc2_quartz_core::CAMediaTimingFunction;
 
-    let Ok(ptr) = window.ns_window() else {
-        return;
-    };
-    let raw = ptr.cast::<NSWindow>();
-    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
-        return;
-    };
-    let frame = NSRect::new(
-        NSPoint::new(target.x, target.y),
-        NSSize::new(target.w, target.h),
-    );
-    let timing = CAMediaTimingFunction::functionWithName(if target.ease_out {
+    let timing = CAMediaTimingFunction::functionWithName(if ease_out {
         ns_string!("easeOut")
     } else {
         ns_string!("easeIn")
@@ -469,11 +455,13 @@ pub fn animate_panel(window: &tauri::WebviewWindow, target: PanelAnimTarget) {
 
     NSAnimationContext::beginGrouping();
     let ctx = NSAnimationContext::currentContext();
-    ctx.setDuration(target.duration);
+    ctx.setDuration(duration);
     ctx.setTimingFunction(Some(&timing));
     unsafe {
         let animator: *mut objc2::runtime::AnyObject = objc2::msg_send![ns_window, animator];
-        let _: () = objc2::msg_send![animator, setAlphaValue: target.alpha];
+        if let Some(a) = alpha {
+            let _: () = objc2::msg_send![animator, setAlphaValue: a];
+        }
         let _: () = objc2::msg_send![animator, setFrame: frame, display: true];
     }
     NSAnimationContext::endGrouping();

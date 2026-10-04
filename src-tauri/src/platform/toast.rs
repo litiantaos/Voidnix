@@ -2,10 +2,9 @@
 // 穿透），独立于主窗 WebView 生命周期——主窗隐藏（alpha=0）不影响其展示，反馈
 // 类动作得以在触发后立即关窗。锚定所在屏 visibleFrame 顶部中心（HUD 位，与
 // 主窗显隐/坐标无关）；最新在顶、水平居中、向下生长（macOS 通知堆叠语义）。
-// 进出场与堆叠补位动画全走 **window 级 animator**（NSAnimationContext + 窗口
-// animator 的 alpha/frame，与 platform/window.rs::animate_panel 同路径——snap-panel
-// 生产验证可靠；view 层动画在该场景实测不提交渲染）。到期调度 NSTimer 主线程
-// 原生定时。视觉常量对齐 web 版 toast：px-3 / py-1.5 / gap-2 / radius-panel /
+// 进出场与堆叠补位动画复用 platform/window.rs::animate_panel 原语（window 级
+// animator，snap-panel 生产验证可靠；view 层动画在该场景实测不提交渲染）。
+// 到期调度 NSTimer 主线程原生定时。视觉常量对齐 web 版 toast：px-3 / py-1.5 /
 // 13pt medium。
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,13 +16,13 @@ use objc2::runtime::AnyObject;
 use objc2::MainThreadOnly;
 
 use objc2_app_kit::{
-    NSAnimationContext, NSBackingStoreType, NSColor, NSFont, NSFontWeightMedium, NSImage,
-    NSImageView, NSPanel, NSTextField, NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
-    NSVisualEffectState, NSVisualEffectView, NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSBackingStoreType, NSColor, NSFont, NSFontWeightMedium, NSImage, NSImageView, NSPanel,
+    NSTextField, NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
+    NSVisualEffectView, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize, NSString, NSTimer};
-use objc2_quartz_core::CAMediaTimingFunction;
 
+use crate::platform::window::animate_panel;
 use crate::runtime::lock_or_recover;
 
 /// 行内水平内边距（px-3）
@@ -69,9 +68,11 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 /// 锚定屏快照（行增减重排时保持锚点稳定）
 static VIS: Mutex<Option<NSRect>> = Mutex::new(None);
 
-/// 裸指针 → panel 引用（生命周期锚定行借用，行由 ROWS/FADING 持有；全模块仅主线程访问）。
-fn panel_of(row: &ToastRow) -> Option<&NSPanel> {
-    unsafe { (row.panel as *mut NSPanel).as_ref() }
+/// 裸指针 → panel 引用（生命周期锚定行借用，行由 ROWS/FADING 持有；全模块仅主线程
+/// 访问）。以 NSWindow 视角持有——行级操作（frame/setFrame/orderFront/close/动画）
+/// 全为 NSWindow 方法，对象实为 NSPanel。
+fn panel_of(row: &ToastRow) -> Option<&NSWindow> {
+    unsafe { (row.panel as *mut NSWindow).as_ref() }
 }
 
 /// 行 panel 屏幕布局（纯函数，Cocoa 坐标）：最新（末位）在顶、水平居中、行区顶
@@ -96,35 +97,6 @@ pub fn row_panel_frames(rows: &[(f64, f64)], fading_h: f64, vis: NSRect) -> Vec<
 /// fading（离场中）行的占位高：各行高 + 各自一个行距（销毁后行距一并回收）。
 fn fading_height(fading: &[(f64, f64)]) -> f64 {
     fading.iter().map(|r| r.1 + GAP).sum::<f64>()
-}
-
-/// window 级动画（NSAnimationContext + 窗口 animator）：alpha 与 frame 同时过渡。
-/// 与 platform::window::animate_panel 同路径（snap-panel 生产验证）——窗口 alpha/
-/// 位移由窗口服务器合成，不经 AppKit view 重绘管线。
-fn animate_panel_to(
-    panel: &NSPanel,
-    alpha_to: Option<f64>,
-    frame_to: NSRect,
-    duration: f64,
-    ease_out: bool,
-) {
-    let timing = CAMediaTimingFunction::functionWithName(if ease_out {
-        objc2_foundation::ns_string!("easeOut")
-    } else {
-        objc2_foundation::ns_string!("easeIn")
-    });
-    NSAnimationContext::beginGrouping();
-    let ctx = NSAnimationContext::currentContext();
-    ctx.setDuration(duration);
-    ctx.setTimingFunction(Some(&timing));
-    unsafe {
-        let animator: *mut AnyObject = msg_send![panel, animator];
-        if let Some(a) = alpha_to {
-            let _: () = msg_send![animator, setAlphaValue: a];
-        }
-        let _: () = msg_send![animator, setFrame: frame_to, display: true];
-    }
-    NSAnimationContext::endGrouping();
 }
 
 /// appearance 跟随主题缓存（toast 瞬态，每次 show 读取即可，不做监听）。
@@ -289,10 +261,10 @@ fn relayout(new_id: Option<u64>) {
                 let _: () = msg_send![panel, setFrame: from, display: false];
             }
             panel.orderFrontRegardless();
-            animate_panel_to(panel, Some(1.0), *f, ANIM_ENTER, true);
+            animate_panel(panel, Some(1.0), *f, ANIM_ENTER, true);
         } else if panel.frame().origin != f.origin {
             // 旧行平移补位
-            animate_panel_to(panel, None, *f, ANIM_ENTER, true);
+            animate_panel(panel, None, *f, ANIM_ENTER, true);
         }
     }
 }
@@ -337,7 +309,7 @@ pub fn show_row(
         if let Some(panel) = panel_of(&old) {
             let mut to = panel.frame();
             to.origin.y -= SLIDE_OFFSET;
-            animate_panel_to(panel, Some(0.0), to, ANIM_LEAVE, false);
+            animate_panel(panel, Some(0.0), to, ANIM_LEAVE, false);
         }
         lock_or_recover(&FADING).push(old);
         schedule_expiry(evicted_id, FINISH_DELAY_SEC, true);
@@ -366,7 +338,7 @@ pub fn fade_out_row(id: u64) {
     if let Some(panel) = panel_of(&row) {
         let mut to = panel.frame();
         to.origin.y -= SLIDE_OFFSET;
-        animate_panel_to(panel, Some(0.0), to, ANIM_LEAVE, false);
+        animate_panel(panel, Some(0.0), to, ANIM_LEAVE, false);
     }
     lock_or_recover(&FADING).push(row);
 }
