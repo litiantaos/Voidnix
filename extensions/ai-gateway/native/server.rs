@@ -199,6 +199,10 @@ const QUOTA_MARKERS: &[&str] = &[
     "欠费",
     "余额",
     "今日",
+    // 智谱 1310 实测文案「您已达到每周/每月使用上限,您的限额将在 … 重置」——中文周/月
+    // 上限词与英文 monthly/weekly 对齐,漏判会按速率限制 60s 冷却每分钟空转一次
+    "每周",
+    "每月",
 ];
 
 /// 轮换失败(429/5xx 等)的响应体是否配额耗尽型
@@ -1305,6 +1309,10 @@ mod tests {
         // OpenAI 配额 / DeepSeek 余额 / 智谱今日额度 / Anthropic 周期限额
         assert!(quota_exhausted(
             br#"{"error":{"message":"You exceeded your current quota, please check your plan and billing details."}}"#
+        ));
+        // 智谱 1310 周期上限实测文案(网关日志捕获)
+        assert!(quota_exhausted(
+            r#"{"error":{"message":"[1310][您已达到每周/每月使用上限，您的限额将在 2026-10-07 10:56:46 重置。]"}}"#.as_bytes()
         ));
         assert!(quota_exhausted(
             br#"{"error":{"message":"Insufficient Balance"}}"#
