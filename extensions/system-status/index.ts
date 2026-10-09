@@ -9,10 +9,7 @@ export default defineExtension({
   meta: {
     id: 'system-status',
     name: { 'zh-CN': '系统状态', en: 'System Status' },
-    description: {
-      'zh-CN': '硬件信息与系统实时状态',
-      en: 'Hardware info and real-time system status',
-    },
+    description: { 'zh-CN': '实时查看电脑运行状态', en: 'See how your Mac is doing' },
     icon: 'i-ri-pulse-line',
     order: 135,
     keywords: [

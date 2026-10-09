@@ -7,7 +7,7 @@ export default defineExtension({
   meta: {
     id: 'uuid',
     name: 'UUID',
-    description: { 'zh-CN': 'UUID / NanoID 生成', en: 'UUID / NanoID generator' },
+    description: { 'zh-CN': '一键生成 UUID 和短 ID', en: 'Generate UUIDs and short IDs' },
     icon: 'i-ri-fingerprint-line',
     order: 70,
     keywords: ['uuid', 'guid', 'nanoid', '唯一', '标识'],

@@ -18,7 +18,7 @@ export const zhCNMessages: Msgs = {
   // 拖拽指引浮窗两行说明（独立小窗悬浮于设置窗口底部外侧，三个权限授权会话通用；
   // \n 换行，图标高度与两行文本高度一致）
   'common.permDragHint': {
-    'zh-CN': '请在上方列表中找到 Voidnix 并打开开关，\n或拖拽左侧图标至列表中以完成授权',
+    'zh-CN': '在列表中找到 Voidnix 并打开，\n或将左侧图标拖入列表',
   },
   'common.noResults': { 'zh-CN': '无结果' },
   'common.enabled': { 'zh-CN': '已开启' },
@@ -46,8 +46,8 @@ export const zhCNMessages: Msgs = {
   'welcome.fnClipboard': { 'zh-CN': '剪贴板' },
   'welcome.fnNotes': { 'zh-CN': '记事本' },
   'welcome.tagline': { 'zh-CN': '想到就到，触手可及' },
-  'welcome.noteTools': { 'zh-CN': '输入/显示扩展' },
-  'welcome.noteSearch': { 'zh-CN': '输入//快速搜索' },
+  'welcome.noteTools': { 'zh-CN': '输入 / 浏览全部工具' },
+  'welcome.noteSearch': { 'zh-CN': '直接输入即可搜索' },
   'welcome.permScreenRecording': { 'zh-CN': '录屏' },
   'welcome.permAccessibility': { 'zh-CN': '设备控制' },
   'welcome.permFullDisk': { 'zh-CN': '完全访问' },
@@ -62,7 +62,7 @@ export const zhCNMessages: Msgs = {
   // ─── shortcut conflict（注册失败改键引导）─────
   'shortcut.conflictTitle': { 'zh-CN': '快捷键注册失败' },
   'shortcut.conflictBody': {
-    'zh-CN': '以下快捷键可能已被其它应用占用（如 Raycast、输入法等），请在设置中改为其它组合：',
+    'zh-CN': '以下快捷键可能已被其他应用占用（如 Raycast、输入法等），请在设置中改为其它组合：',
   },
   'shortcut.conflictOpenSettings': { 'zh-CN': '打开设置' },
   'shortcut.conflictLater': { 'zh-CN': '稍后' },
@@ -72,7 +72,7 @@ export const zhCNMessages: Msgs = {
   'group.file': { 'zh-CN': '文件' },
   'group.extension': { 'zh-CN': '扩展' },
   'group.clipboard': { 'zh-CN': '剪贴板' },
-  'group.web': { 'zh-CN': '快捷操作' },
+  'group.web': { 'zh-CN': '网页搜索' },
 
   // ─── settings ────────────────────────────────
   'settings.appearance': { 'zh-CN': '外观' },
@@ -82,9 +82,9 @@ export const zhCNMessages: Msgs = {
   'settings.language': { 'zh-CN': '语言' },
   'settings.language.zh-CN': { 'zh-CN': '中文' },
   'settings.language.en': { 'zh-CN': 'English' },
-  'settings.shortcut': { 'zh-CN': '启动快捷键' },
-  'settings.shortcutConflictHint': { 'zh-CN': '注册失败，可能已被其它应用占用' },
-  'settings.showWelcome': { 'zh-CN': '引导与权限' },
+  'settings.shortcut': { 'zh-CN': '呼出快捷键' },
+  'settings.shortcutConflictHint': { 'zh-CN': '注册失败，可能已被其他应用占用' },
+  'settings.showWelcome': { 'zh-CN': '新手引导' },
   'settings.autostart': { 'zh-CN': '开机自启' },
   'settings.menubarIcon': { 'zh-CN': '菜单栏图标' },
   'settings.checkUpdate': { 'zh-CN': '检查更新' },
@@ -98,24 +98,24 @@ export const zhCNMessages: Msgs = {
   'settings.group.general': { 'zh-CN': '通用' },
   'settings.group.about': { 'zh-CN': '关于' },
   'settings.group.advanced': { 'zh-CN': '高级' },
-  'settings.noResultsFound': { 'zh-CN': '没有找到相关设置' },
+  'settings.noResultsFound': { 'zh-CN': '未找到相关设置' },
   'settings.quitConfirmTitle': { 'zh-CN': '退出应用' },
   'settings.quitConfirmMessage': { 'zh-CN': '确定要退出 Voidnix 吗？' },
   'settings.quitLabel': { 'zh-CN': '退出' },
   'settings.upToDate': { 'zh-CN': '当前版本 v{version} 已是最新版本。' },
   'settings.updateOK': { 'zh-CN': '好的' },
-  'settings.clearInjections': { 'zh-CN': '清除系统注入' },
+  'settings.clearInjections': { 'zh-CN': '清理系统残留' },
   'settings.clearInjectionsHint': {
-    'zh-CN': '移除 .zshrc / .zprofile 注入块与历史遗留的 ai.env 凭证文件',
+    'zh-CN': '清掉终端配置里的 Voidnix 片段与旧密钥',
   },
-  'settings.clearInjectionsConfirmTitle': { 'zh-CN': '清除系统注入' },
+  'settings.clearInjectionsConfirmTitle': { 'zh-CN': '清理系统残留' },
   'settings.clearInjectionsConfirmMessage': {
-    'zh-CN': `将从 \`~/.zshrc\` 与 \`~/.zprofile\` 摘除全部 Voidnix 注入块（zsh 补全等），并删除历史遗留的 \`~/.config/voidnix[/dev]/ai.env\`（含明文 API Key）。`,
+    'zh-CN': `将从 \`~/.zshrc\` 与 \`~/.zprofile\` 摘除全部 Voidnix 片段（zsh 补全等），并删除历史遗留的 \`~/.config/voidnix[/dev]/ai.env\`（含明文 API Key）。`,
   },
-  'settings.clearInjectionsOk': { 'zh-CN': '清除' },
-  'settings.clearInjectionsDone': { 'zh-CN': '已清除 {count} 处注入' },
-  'settings.clearInjectionsNone': { 'zh-CN': '未发现 Voidnix 注入' },
-  'settings.clearInjectionsFailed': { 'zh-CN': '清除注入失败' },
+  'settings.clearInjectionsOk': { 'zh-CN': '清理' },
+  'settings.clearInjectionsDone': { 'zh-CN': '已清理 {count} 处残留' },
+  'settings.clearInjectionsNone': { 'zh-CN': '未发现可清理的残留' },
+  'settings.clearInjectionsFailed': { 'zh-CN': '清理失败' },
 
   // ─── action panel ────────────────────────────
   'action.openInFinder': { 'zh-CN': '在访达中打开' },

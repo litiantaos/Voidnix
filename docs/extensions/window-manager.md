@@ -1,6 +1,6 @@
 # window-manager
 
-窗口布局与分屏。鼠标移至**任意屏**顶部中心触发区滑出 snap 面板，点击分区将前台窗口贴到对应布局。
+拖动窗口，自动分屏。鼠标移至**任意屏**顶部中心触发区滑出 snap 面板，点击分区将前台窗口贴到对应布局。
 
 ## 能力
 
@@ -47,7 +47,7 @@
 - `windows/SnapPanel.vue`：分区 UI；`__snapPanelData.screens > 1` 时显示跨屏组
 - `View.vue` / `config.ts`：设置页 + defineConfig
 
-需**辅助功能权限**（AX）；未授权时走 System Events AppleScript。
+需**设备控制权限**（AX）；未授权时走 System Events AppleScript。
 
 ## 命令
 

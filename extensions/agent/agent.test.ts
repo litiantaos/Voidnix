@@ -311,7 +311,7 @@ describe('useAgentChat session 守卫', () => {
 
     expect(store.isDialogOpen).toBe(true)
     expect(store.dialogOptions?.message).toBe('ls -la')
-    expect(store.dialogOptions?.okLabel).toBe('放行')
+    expect(store.dialogOptions?.okLabel).toBe('允许')
     expect(store.dialogOptions?.cancelLabel).toBe('拒绝')
 
     mocks.invoke.mockResolvedValue(true)
@@ -361,7 +361,7 @@ describe('useAgentChat session 守卫', () => {
     expect(assistant?.streaming).toBeFalsy()
     const notice = assistant?.parts.find((p) => p.type === 'notice')
     expect(notice && notice.type === 'notice' && notice.kind).toBe('aborted')
-    expect(notice && notice.type === 'notice' && notice.text).toBe('已中止')
+    expect(notice && notice.type === 'notice' && notice.text).toBe('已停止')
   })
 
   it('error 写入 error notice', async () => {
@@ -481,7 +481,7 @@ describe('会话持久化与重载恢复', () => {
     expect(assistant?.streaming).toBeFalsy()
     expect(assistant?.parts).toEqual([
       { type: 'text', text: 'partial' },
-      { type: 'notice', kind: 'aborted', text: '已中止' },
+      { type: 'notice', kind: 'aborted', text: '已停止' },
     ])
 
     // 幂等：二次恢复不再 abort / 加 notice

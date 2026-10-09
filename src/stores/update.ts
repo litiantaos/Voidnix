@@ -25,7 +25,7 @@ export const useUpdateStore = defineStore('update', () => {
 
   let _updater: TauriUpdate | null = null
 
-  /** 同步菜单栏「检查更新」项文案：有新版本显示「更新到新版本（x.x.x）」，null 还原。 */
+  /** 同步菜单栏「检查更新」项文案：有新版本显示「更新到版本 x.x.x」，null 还原。 */
   function syncMenuLabel(version: string | null) {
     if (!isTauri) return
     invoke(CMD.setUpdateVersion, { version }).catch(() => {})

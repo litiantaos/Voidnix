@@ -10,7 +10,7 @@ registerMessages({
   'finderExt.imageProcess': { 'zh-CN': '图片处理', en: 'Image Processing' },
   'finderExt.imageCount': { 'zh-CN': '{n} 张图片', en: '{n} Images' },
   'finderExt.operations': { 'zh-CN': '操作', en: 'Actions' },
-  'finderExt.shortcut': { 'zh-CN': '启动快捷键', en: 'Launch Shortcut' },
+  'finderExt.shortcut': { 'zh-CN': '呼出快捷键', en: 'Keyboard shortcut' },
   'finderExt.general': { 'zh-CN': '通用', en: 'General' },
   'finderExt.openWithGroup': { 'zh-CN': '用 App 打开', en: 'Open with App' },
 
@@ -20,8 +20,5 @@ registerMessages({
   'finderExt.action.openTerminal': { 'zh-CN': '在终端中打开', en: 'Open in Terminal' },
   'finderExt.action.newFile': { 'zh-CN': '新建文件', en: 'New File' },
   'finderExt.action.toggleHidden': { 'zh-CN': '切换隐藏文件', en: 'Toggle Hidden Files' },
-  'finderExt.finderOnly': {
-    'zh-CN': '该操作仅在访达中生效',
-    en: 'This action only works in Finder',
-  },
+  'finderExt.finderOnly': { 'zh-CN': '请先切换到访达', en: 'Switch to Finder first' },
 })

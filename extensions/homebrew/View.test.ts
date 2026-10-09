@@ -164,7 +164,7 @@ describe('homebrew View 运行态恢复', () => {
 
     fire({ kind: 'step', text: 'update' })
     await flush()
-    expect(wrapper.text()).toContain('拉取更新')
+    expect(wrapper.text()).toContain('刷新列表')
 
     fire({ kind: 'step', text: 'upgrade' })
     fire({ kind: 'line', text: '==> Upgrading 1 outdated package:' })
@@ -308,14 +308,14 @@ describe('homebrew View 运行态恢复', () => {
 
     const { wrapper } = mountHost()
     await flush()
-    // 后台刷新中：按钮旋转显示「拉取更新」
-    expect(wrapper.text()).toContain('拉取更新')
+    // 后台刷新中：按钮旋转显示「刷新列表」
+    expect(wrapper.text()).toContain('刷新列表')
 
     // 后台 update 完成：done 先清运行态（按钮消失窗口），重拉挂起
     doneFired = true
     mocks.listeners.get('brew-run-done')?.({ payload: null })
     await flush()
-    expect(wrapper.text()).not.toContain('拉取更新')
+    expect(wrapper.text()).not.toContain('刷新列表')
 
     // 新元数据落盘：有 outdated → 按钮必须恢复为「更新」
     resolveFresh({
@@ -327,7 +327,7 @@ describe('homebrew View 运行态恢复', () => {
       refreshing: false,
     })
     await flush()
-    // 精确断言按钮文案（「拉取更新」也含「更新」子串，须用按钮元素文本反证）
+    // 精确断言按钮文案（「可更新」分组也含「更新」子串，须用按钮元素文本反证）
     const updateBtn = wrapper.findAll('button').find((b) => b.text() === '更新')
     expect(updateBtn?.exists()).toBe(true)
     wrapper.unmount()

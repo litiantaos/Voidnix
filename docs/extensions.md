@@ -29,7 +29,7 @@ import { defineExtension } from '@/runtime/extension-registry'
 
 export default defineExtension({
   meta: { id: 'base64', name: 'Base64', icon: 'i-ri-code-s-slash-line', order: 100, keywords: ['编码'] },
-  placeholder: '输入文本编解码 Base64',
+  placeholder: '输入要编码或解码的文本',
   search: { dynamic: (query, ctx) => [...] },
   onExecute: (result) => { ... },
   mainView: () => View,

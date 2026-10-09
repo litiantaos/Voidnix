@@ -7,7 +7,7 @@ export default defineExtension({
     id: 'clean-mode',
     name: { 'zh-CN': '清洁模式', en: 'Clean Mode' },
     description: {
-      'zh-CN': '黑屏并锁定键鼠，方便清洁屏幕和键盘',
+      'zh-CN': '黑屏锁定键鼠，放心清洁',
       en: 'Black screen and lock input for cleaning',
     },
     icon: 'i-ri-contrast-2-fill',

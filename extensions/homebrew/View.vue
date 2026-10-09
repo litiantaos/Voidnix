@@ -37,7 +37,7 @@
               </template>
             </template>
             <!-- 运行中：按钮位滚动显示进度详情（步骤名 / 升级步骤的包名+计数；后台元数据刷新
-                 同位显示「拉取更新」），文案切换走纵向滚动 + 宽度渐变（宽度盒锁旧量新） -->
+                 同位显示「刷新列表」），文案切换走纵向滚动 + 宽度渐变（宽度盒锁旧量新） -->
             <template v-if="status.has_update || refreshing" #trailing>
               <BaseButton
                 :icon="running ? 'i-ri-loader-4-line animate-spin' : 'i-ri-arrow-up-circle-line'"

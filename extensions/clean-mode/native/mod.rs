@@ -323,7 +323,7 @@ fn start_keyboard_tap() -> bool {
             std::ptr::null_mut(),
         );
         if tap.is_null() {
-            eprintln!("[clean-mode] CGEventTapCreate 失败（辅助功能权限不足）");
+            eprintln!("[clean-mode] CGEventTapCreate 失败（设备控制权限不足）");
             return false;
         }
         TAP_REF.store(tap, Ordering::Relaxed);
@@ -448,7 +448,7 @@ fn enable_clean_mode() -> Result<(), String> {
             CGAssociateMouseAndMouseCursorPosition(1);
             set_cursor_arrow();
             return Err(
-                "需要辅助功能权限：系统设置 → 隐私与安全性 → 辅助功能 → Voidnix".to_string(),
+                "需要设备控制权限：系统设置 → 隐私与安全性 → 设备控制 → Voidnix".to_string(),
             );
         }
         windows

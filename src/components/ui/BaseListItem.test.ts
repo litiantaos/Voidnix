@@ -7,7 +7,7 @@ import BaseListItem from './BaseListItem.vue'
 // 集合项（条件不在 slot 函数内），slot 集合形态不参与响应式、由父 render 驱动同步。
 // BaseListItem 的空判定因此必须在 render 期求值——computed 缓存在 slot 函数内的
 // 响应式读取失效后重算为 false，缺席分支依赖集为空，false 永久锁死，slot 再度传入
-// 也不恢复（brew 更新按钮「拉取更新」完成后消失且不回来的根因）。
+// 也不恢复（brew 更新按钮「刷新列表」完成后消失且不回来的根因）。
 describe('BaseListItem 动态 slot 翻转', () => {
   it('trailing slot 消失后再出现，容器与内容必须恢复渲染', async () => {
     // slot 函数内的响应式读取：模拟真实消费（brew 按钮读 running/runningStep），

@@ -6,7 +6,7 @@ export default defineExtension({
   meta: {
     id: 'window-manager',
     name: { 'zh-CN': '窗口管理', en: 'Window Manager' },
-    description: { 'zh-CN': '窗口布局与分屏', en: 'Window layout and snap tiling' },
+    description: { 'zh-CN': '拖动窗口，自动分屏', en: 'Drag a window to snap it' },
     icon: 'i-ri-layout-grid-line',
     keywords: ['window', 'manager', 'layout', 'snap', 'tile', '窗口', '布局', '管理', '分屏'],
     order: 120,

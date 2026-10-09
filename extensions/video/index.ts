@@ -10,10 +10,7 @@ export default defineExtension({
   meta: {
     id: 'video',
     name: { 'zh-CN': '视频处理', en: 'Video Tools' },
-    description: {
-      'zh-CN': '压缩、格式转换与提取音频',
-      en: 'Compress, convert format and extract audio',
-    },
+    description: { 'zh-CN': '压缩、转格式、提取音频', en: 'Compress, convert, extract audio' },
     icon: 'i-ri-video-line',
     order: 115,
     keywords: [

@@ -495,7 +495,7 @@ test.describe('notes 记事本', () => {
     await page.waitForTimeout(200)
     await expect(page.locator('.notes-layer')).toHaveCount(0) // mainView 让位
     // BaseSettingsList 渲染:快捷键项 + 清空项
-    await expect(page.getByText('启动快捷键')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('呼出快捷键')).toBeVisible({ timeout: 5000 })
     await expect(page.getByText('清空内容')).toBeVisible()
     // 再点设置按钮(激活态 fill 图标)返回正文视图
     await page.locator('button:has(.i-ri-settings-3-fill)').click()

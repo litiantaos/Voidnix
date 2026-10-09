@@ -17,10 +17,7 @@ export default defineExtension({
   meta: {
     id: 'finder-ext',
     name: { 'zh-CN': '访达工具', en: 'Finder Tools' },
-    description: {
-      'zh-CN': '访达快捷操作（拷贝路径 / 用 App 打开 / 终端 / 新建文件 / 隐藏文件）',
-      en: 'Finder shortcuts (copy path / open with app / terminal / new file / toggle hidden)',
-    },
+    description: { 'zh-CN': '访达里的常用快捷操作', en: 'Handy shortcuts inside Finder' },
     icon: 'i-ri-folder-add-line',
     keywords: ['finder', '访达', '路径', '终端', '新建文件', '隐藏文件', '打开方式', '编辑器'],
     order: 130,

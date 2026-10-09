@@ -6,7 +6,7 @@ registerMessages({
     en: 'Enable Terminal Autosuggestions',
   },
   'zshAutosuggestions.hint': {
-    'zh-CN': 'Tab 切换备选，→ 接受，Ctrl+X 开关，Ctrl+C 清空',
-    en: 'Tab to cycle, → to accept, Ctrl+X to toggle, Ctrl+C to clear',
+    'zh-CN': 'Tab 换候选，→ 采纳，Ctrl+X 开关，Ctrl+C 清空',
+    en: 'Tab to cycle, → to accept, Ctrl+X toggle, Ctrl+C clear',
   },
 })

@@ -25,13 +25,11 @@ describe('matchText', () => {
   })
 
   it('图片类型返回语义占位（便于按"图片"检索）', () => {
-    expect(matchText(makeItem({ content_type: 'image', content: 'data:...' }))).toBe('图片 image')
+    expect(matchText(makeItem({ content_type: 'image', content: 'data:...' }))).toBe('图片')
   })
 
-  it('文件类型拼接 file 关键词', () => {
-    expect(matchText(makeItem({ content_type: 'file', content: '/a/b.txt' }))).toBe(
-      '文件 file /a/b.txt',
-    )
+  it('文件类型拼接「文件」前缀', () => {
+    expect(matchText(makeItem({ content_type: 'file', content: '/a/b.txt' }))).toBe('文件 /a/b.txt')
   })
 })
 

@@ -19,7 +19,7 @@ registerMessages({
   'systemStatus.gpuCores': { 'zh-CN': '{n} 核 GPU', en: '{n}-core GPU' },
   'systemStatus.memory': { 'zh-CN': '内存', en: 'Memory' },
   'systemStatus.available': { 'zh-CN': '可用 {size}', en: 'Available {size}' },
-  'systemStatus.swap': { 'zh-CN': '交换', en: 'Swap' },
+  'systemStatus.swap': { 'zh-CN': '交换空间', en: 'Swap' },
   'systemStatus.disk': { 'zh-CN': '磁盘', en: 'Disk' },
   'systemStatus.external': { 'zh-CN': '外置', en: 'External' },
 
@@ -28,7 +28,7 @@ registerMessages({
   'systemStatus.health': { 'zh-CN': '健康 {pct}%', en: 'Health {pct}%' },
   'systemStatus.remaining': { 'zh-CN': '剩余 {time}', en: 'Remaining {time}' },
   'systemStatus.fullCharge': { 'zh-CN': '充满 {time}', en: 'Full {time}' },
-  'systemStatus.cycles': { 'zh-CN': '{n} 循环', en: '{n} cycles' },
+  'systemStatus.cycles': { 'zh-CN': '循环计数 {n}', en: '{n} cycles' },
   'systemStatus.noBattery': { 'zh-CN': '无电池（台式机）', en: 'No battery (desktop)' },
   'systemStatus.batteryState.charging': { 'zh-CN': '充电中', en: 'Charging' },
   'systemStatus.batteryState.discharging': { 'zh-CN': '使用中', en: 'Discharging' },
@@ -42,7 +42,7 @@ registerMessages({
 
   // ─── 热状态 ────────────────────────────
   'systemStatus.thermal.fair': { 'zh-CN': '轻微发热', en: 'Slightly warm' },
-  'systemStatus.thermal.serious': { 'zh-CN': '热节流', en: 'Thermal throttling' },
+  'systemStatus.thermal.serious': { 'zh-CN': '过热降速', en: 'Thermal throttling' },
   'systemStatus.thermal.critical': { 'zh-CN': '严重过热', en: 'Critically hot' },
   'systemStatus.thermalStateLabel': { 'zh-CN': '系统热状态', en: 'Thermal state' },
 
@@ -56,7 +56,7 @@ registerMessages({
   'systemStatus.settings': { 'zh-CN': '设置', en: 'Settings' },
   'systemStatus.group.general': { 'zh-CN': '通用', en: 'General' },
   'systemStatus.settings.menubarToggle': {
-    'zh-CN': '在菜单栏图标菜单中显示',
-    en: 'Show in Menu Bar Icon Menu',
+    'zh-CN': '在菜单栏中显示',
+    en: 'Show in menu bar',
   },
 })

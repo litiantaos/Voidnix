@@ -16,13 +16,13 @@ export default defineExtension({
   meta: {
     id: 'base64',
     name: 'Base64',
-    description: { 'zh-CN': 'Base64 编解码工具', en: 'Base64 encode/decode tool' },
+    description: { 'zh-CN': 'Base64 编码与解码', en: 'Encode and decode Base64' },
     icon: 'i-ri-code-s-slash-line',
     order: 80,
     keywords: ['编码', '解码', 'encode', 'decode', 'base64'],
   },
 
-  placeholder: { 'zh-CN': '输入文本编解码 Base64', en: 'Enter text to encode/decode Base64' },
+  placeholder: { 'zh-CN': '输入要编码或解码的文本', en: 'Enter text to encode or decode' },
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {

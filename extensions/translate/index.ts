@@ -227,7 +227,7 @@ export default defineExtension({
   meta: {
     id: 'translate',
     name: { 'zh-CN': '翻译', en: 'Translate' },
-    description: { 'zh-CN': '选词翻译', en: 'Text translation' },
+    description: { 'zh-CN': '选中文字，马上翻译', en: 'Translate selected text instantly' },
     icon: 'i-ri-translate-2',
     keywords: ['translate', '翻译', '翻譯', 'fanyi', 'youdao', '有道'],
     order: 20,

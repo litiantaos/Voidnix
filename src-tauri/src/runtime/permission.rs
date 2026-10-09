@@ -1,10 +1,10 @@
-/// 屏幕录制权限检查：CGPreflightScreenCaptureAccess 纳秒级 TCC 查询，不触发截屏。
+/// 录屏权限检查：CGPreflightScreenCaptureAccess 纳秒级 TCC 查询，不触发截屏。
 #[tauri::command]
 pub fn check_screen_recording_permission() -> bool {
     crate::platform::permission::check_screen_recording()
 }
 
-/// 应用公证状态（本地检测 + 缓存）：未公证时辅助功能/屏幕录制的 API 请求路径
+/// 应用公证状态（本地检测 + 缓存）：未公证时设备控制/录屏的 API 请求路径
 /// 写入的 TCC 条目无效，授权入口据此分流（走系统设置手动添加）。首次为 xcrun
 /// 子进程检测（数百 ms），spawn_blocking 防主线程停顿（同步命令在主线程执行）。
 #[tauri::command]
@@ -24,7 +24,7 @@ pub fn request_accessibility_permission() -> bool {
     crate::platform::permission::request_accessibility()
 }
 
-/// 屏幕录制权限请求：CGRequestScreenCaptureAccess 弹系统对话框并注册进系统设置
+/// 录屏权限请求：CGRequestScreenCaptureAccess 弹系统对话框并注册进系统设置
 /// 列表，同步阻塞至用户响应（可达数分钟）——async + spawn_blocking 在阻塞线程池
 /// 执行（同步命令在主线程执行，会冻结 NSApplication runloop，勿改回）。
 #[tauri::command]

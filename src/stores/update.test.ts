@@ -71,7 +71,7 @@ describe('update store', () => {
     expect(store.info).toEqual({ currentVersion: '9.9.9', newVersion: '2.0.0', body: 'fixes' })
     expect(store.currentVersion).toBe('9.9.9')
     expect(store.checking).toBe(false)
-    // 菜单栏项切换为「更新到新版本（2.0.0）」
+    // 菜单栏项切换为「更新到版本 2.0.0」
     expect(invoke).toHaveBeenCalledWith('set_update_version', { version: '2.0.0' })
   })
 

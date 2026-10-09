@@ -2,7 +2,7 @@ import { registerMessages } from '@/runtime/i18n'
 
 registerMessages({
   // ─── OcrView（主窗口） ──────────────────────
-  'screenshot.previewAlt': { 'zh-CN': '截图预览', en: 'Screenshot preview' },
+  'screenshot.previewAlt': { 'zh-CN': '截屏预览', en: 'Screenshot preview' },
   'screenshot.ocrResult': { 'zh-CN': '识别结果', en: 'Recognition result' },
   'screenshot.noContent': { 'zh-CN': '未识别到内容', en: 'No content recognized' },
   'screenshot.copy': { 'zh-CN': '复制', en: 'Copy' },
@@ -10,7 +10,7 @@ registerMessages({
   'screenshot.trimSpaces': { 'zh-CN': '去空格', en: 'Trim Spaces' },
   'screenshot.trimNewlines': { 'zh-CN': '去换行', en: 'Trim Newlines' },
   'screenshot.trimEmptyLines': { 'zh-CN': '去空行', en: 'Trim Empty Lines' },
-  'screenshot.savePath': { 'zh-CN': '截图保存位置', en: 'Screenshot Save Location' },
+  'screenshot.savePath': { 'zh-CN': '截屏保存位置', en: 'Screenshot Save Location' },
 
   // ─── 截图独立窗口（AnnotationPalette / PinWindow / Operation） ──
   'screenshot.save': { 'zh-CN': '保存', en: 'Save' },

@@ -43,7 +43,7 @@ registerMessages({
     'zh-CN': '确定要清空所有未收藏的剪贴板记录吗？',
     en: 'Clear all non-favorited clipboard records?',
   },
-  'clipboard.settings.shortcut': { 'zh-CN': '启动快捷键', en: 'Shortcut' },
+  'clipboard.settings.shortcut': { 'zh-CN': '呼出快捷键', en: 'Keyboard shortcut' },
   'clipboard.settings.groupGeneral': { 'zh-CN': '通用', en: 'General' },
   'clipboard.settings.retention': { 'zh-CN': '记录保留时长', en: 'Retention Period' },
   'clipboard.settings.days15': { 'zh-CN': '15 天', en: '15 days' },
@@ -58,8 +58,8 @@ registerMessages({
   'clipboard.settings.clear': { 'zh-CN': '清空', en: 'Clear' },
 
   // ─── logic 语义占位 ─────────────────────────
-  'clipboard.kind.image': { 'zh-CN': '图片 image', en: 'Image' },
-  'clipboard.kind.file': { 'zh-CN': '文件 file', en: 'File' },
+  'clipboard.kind.image': { 'zh-CN': '图片', en: 'Image' },
+  'clipboard.kind.file': { 'zh-CN': '文件', en: 'File' },
   'clipboard.titleImage': { 'zh-CN': '[图片]', en: '[Image]' },
   'clipboard.titleFile': { 'zh-CN': '[文件]', en: '[File]' },
 })

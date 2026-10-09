@@ -130,7 +130,7 @@ describe('toLlmMessages', () => {
       userMsg('hi'),
       assistantMsg([
         { type: 'text', text: 'ok' },
-        { type: 'notice', kind: 'aborted', text: '已中止' },
+        { type: 'notice', kind: 'aborted', text: '已停止' },
       ]),
     ])
     expect(out).toEqual([

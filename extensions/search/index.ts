@@ -79,7 +79,7 @@ export default defineExtension({
   meta: {
     id: 'search',
     name: { 'zh-CN': '搜索', en: 'Search' },
-    description: { 'zh-CN': '应用与文件搜索', en: 'App and file search' },
+    description: { 'zh-CN': '找应用、找文件', en: 'Find apps and files' },
     icon: 'i-ri-search-line',
     hidden: true,
     order: 999,

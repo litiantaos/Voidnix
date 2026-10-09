@@ -6,23 +6,23 @@ registerMessages({
     'zh-CN': '请先配置 AI 提供商',
     en: 'Please configure an AI provider first',
   },
-  'agent.emptyTitle': { 'zh-CN': '来点有意思的吧！', en: "Let's do something fun!" },
+  'agent.emptyTitle': { 'zh-CN': '问我点什么吧', en: 'Ask me anything' },
   'agent.emptyHint': {
-    'zh-CN': '日常问题、工作任务、搜索资料、跑命令...',
-    en: 'Daily questions, work tasks, research, run commands…',
+    'zh-CN': '日常问题、查资料、跑命令…',
+    en: 'Questions, research, running commands…',
   },
   'agent.scrollBottom': { 'zh-CN': '滚到底部', en: 'Scroll to bottom' },
-  'agent.stopShortcut': { 'zh-CN': '中止（Ctrl+C）', en: 'Stop (Ctrl+C)' },
-  'agent.stop': { 'zh-CN': '中止生成', en: 'Stop generating' },
-  'agent.placeholder': { 'zh-CN': '聊点什么...', en: 'Chat about anything…' },
+  'agent.stopShortcut': { 'zh-CN': '停止（Ctrl+C）', en: 'Stop (Ctrl+C)' },
+  'agent.stop': { 'zh-CN': '停止生成', en: 'Stop generating' },
+  'agent.placeholder': { 'zh-CN': '聊点什么…', en: 'Chat about anything…' },
 
   // ─── 流式 step ──────────────────────────────
   'agent.thinking': { 'zh-CN': '思考', en: 'Thinking' },
   'agent.copyFailed': { 'zh-CN': '复制失败', en: 'Copy failed' },
 
   // ─── 命令审批 ────────────────────────────────
-  'agent.approvalDialog': { 'zh-CN': '执行命令确认', en: 'Run command' },
-  'agent.approve': { 'zh-CN': '放行', en: 'Allow' },
+  'agent.approvalDialog': { 'zh-CN': '确认执行命令', en: 'Confirm Command' },
+  'agent.approve': { 'zh-CN': '允许', en: 'Allow' },
   'agent.deny': { 'zh-CN': '拒绝', en: 'Deny' },
 
   // ─── 工具语义 label ─────────────────────────
@@ -34,15 +34,15 @@ registerMessages({
   'agent.editSearchProvider': { 'zh-CN': '编辑搜索提供商', en: 'Edit Search Provider' },
   'agent.systemPrompt': { 'zh-CN': '系统提示词', en: 'System Prompt' },
   'agent.systemPromptPlaceholder': {
-    'zh-CN': '定义 Agent 角色、能力边界、工具使用规则、安全约束与输出风格',
-    en: 'Define Agent role, capabilities, tool rules, safety constraints, and output style',
+    'zh-CN': '设定它的角色和做事规则',
+    en: 'Define its role and how it should work',
   },
   'agent.reset': { 'zh-CN': '重置', en: 'Reset' },
   'agent.notSet': { 'zh-CN': '未设置', en: 'Not set' },
   'agent.approvalTitle': { 'zh-CN': '命令执行审批', en: 'Command approval' },
   'agent.approvalSubtitle': {
-    'zh-CN': '执行命令前需要确认放行，关闭即免审批直接执行',
-    en: 'Confirm before running commands, turn off to skip approval',
+    'zh-CN': '执行命令前先征求你的同意，关闭后直接执行',
+    en: 'Ask before running commands; when off, run directly',
   },
   'agent.configureInAiProviders': {
     'zh-CN': '在「AI 提供商」中配置',
@@ -58,7 +58,7 @@ registerMessages({
     'zh-CN': '请先在「AI 提供商」配置提供商（endpoint / API Key / 模型）。',
     en: 'Please configure a provider (endpoint / API Key / model) in "AI Providers" first.',
   },
-  'agent.aborted': { 'zh-CN': '已中止', en: 'Aborted' },
+  'agent.aborted': { 'zh-CN': '已停止', en: 'Stopped' },
 
   // ─── Actions.vue ────────────────────────────
   'agent.history': { 'zh-CN': '历史消息', en: 'History' },

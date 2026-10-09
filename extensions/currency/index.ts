@@ -43,16 +43,13 @@ export default defineExtension({
   meta: {
     id: 'currency',
     name: { 'zh-CN': '汇率', en: 'Currency' },
-    description: { 'zh-CN': '货币汇率换算', en: 'Currency exchange rate conversion' },
+    description: { 'zh-CN': '各国货币实时换算', en: 'Real-time currency conversion' },
     icon: 'i-ri-exchange-cny-line',
     order: 100,
     keywords: ['汇率', '货币', 'currency', 'exchange', 'usd', 'cny', 'eur', 'jpy'],
   },
 
-  placeholder: {
-    'zh-CN': '输入金额与货币，如 100 USD、1万美元、USD10、10w美元，默认查询 1 USD',
-    en: 'Enter amount and currency, e.g. 100 USD (defaults to 1 USD)',
-  },
+  placeholder: { 'zh-CN': '输入金额，如 100 USD、1万美元', en: 'Enter an amount, e.g. 100 USD' },
 
   search: {
     dynamic: async (query, ctx): Promise<ProviderResult[]> => {

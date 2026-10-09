@@ -17,7 +17,7 @@ export const enMessages: Msgs = {
   // 拖拽指引浮窗两行说明（独立小窗悬浮于设置窗口底部外侧，三个权限授权会话通用；
   // \n 换行，图标高度与两行文本高度一致）
   'common.permDragHint': {
-    en: 'Find Voidnix in the list above and turn on the switch,\nor drag the icon on the left into the list',
+    en: 'Find Voidnix in the list and turn it on,\nor drag the icon on the left into the list',
   },
   'common.noResults': { en: 'No results' },
   'common.enabled': { en: 'On' },
@@ -45,8 +45,8 @@ export const enMessages: Msgs = {
   'welcome.fnClipboard': { en: 'Clipboard' },
   'welcome.fnNotes': { en: 'Notes' },
   'welcome.tagline': { en: 'Think it, launch it' },
-  'welcome.noteTools': { en: 'Type / for extensions' },
-  'welcome.noteSearch': { en: 'Type // for quick search' },
+  'welcome.noteTools': { en: 'Type / to browse all tools' },
+  'welcome.noteSearch': { en: 'Just type to search' },
   'welcome.permScreenRecording': { en: 'Screen Recording' },
   'welcome.permAccessibility': { en: 'Device Control' },
   'welcome.permFullDisk': { en: 'Full Access' },
@@ -71,7 +71,7 @@ export const enMessages: Msgs = {
   'group.file': { en: 'Files' },
   'group.extension': { en: 'Extensions' },
   'group.clipboard': { en: 'Clipboard' },
-  'group.web': { en: 'Quick Actions' },
+  'group.web': { en: 'Web' },
 
   // ─── settings ────────────────────────────────
   'settings.appearance': { en: 'Appearance' },
@@ -81,9 +81,9 @@ export const enMessages: Msgs = {
   'settings.language': { en: 'Language' },
   'settings.language.zh-CN': { en: '中文' },
   'settings.language.en': { en: 'English' },
-  'settings.shortcut': { en: 'Shortcut' },
+  'settings.shortcut': { en: 'Keyboard shortcut' },
   'settings.shortcutConflictHint': { en: 'Registration failed — may be taken by another app' },
-  'settings.showWelcome': { en: 'Guide & Permissions' },
+  'settings.showWelcome': { en: 'Welcome guide' },
   'settings.autostart': { en: 'Launch at Login' },
   'settings.menubarIcon': { en: 'Menu Bar Icon' },
   'settings.checkUpdate': { en: 'Check for Updates' },
@@ -103,18 +103,18 @@ export const enMessages: Msgs = {
   'settings.quitLabel': { en: 'Quit' },
   'settings.upToDate': { en: 'Version v{version} is up to date.' },
   'settings.updateOK': { en: 'OK' },
-  'settings.clearInjections': { en: 'Clear System Injections' },
+  'settings.clearInjections': { en: 'Clean up leftovers' },
   'settings.clearInjectionsHint': {
-    en: 'Remove injected blocks from .zshrc / .zprofile and leftover ai.env files',
+    en: 'Remove Voidnix bits from shell configs and old key files',
   },
-  'settings.clearInjectionsConfirmTitle': { en: 'Clear System Injections' },
+  'settings.clearInjectionsConfirmTitle': { en: 'Clean up leftovers' },
   'settings.clearInjectionsConfirmMessage': {
-    en: `Removes all Voidnix blocks from \`~/.zshrc\` and \`~/.zprofile\` (zsh completions, etc.) and deletes leftover \`~/.config/voidnix[/dev]/ai.env\` (contains plaintext API keys).`,
+    en: `Removes all Voidnix snippets from \`~/.zshrc\` and \`~/.zprofile\` (zsh completions, etc.) and deletes leftover \`~/.config/voidnix[/dev]/ai.env\` (contains plaintext API keys).`,
   },
-  'settings.clearInjectionsOk': { en: 'Clear' },
-  'settings.clearInjectionsDone': { en: 'Cleared {count} injection(s)' },
-  'settings.clearInjectionsNone': { en: 'No Voidnix injections found' },
-  'settings.clearInjectionsFailed': { en: 'Failed to clear injections' },
+  'settings.clearInjectionsOk': { en: 'Clean Up' },
+  'settings.clearInjectionsDone': { en: 'Cleaned up {count} leftovers' },
+  'settings.clearInjectionsNone': { en: 'Nothing to clean up' },
+  'settings.clearInjectionsFailed': { en: 'Cleanup failed' },
 
   // ─── action panel ────────────────────────────
   'action.openInFinder': { en: 'Reveal in Finder' },

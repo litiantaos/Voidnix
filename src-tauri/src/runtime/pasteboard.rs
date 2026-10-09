@@ -11,11 +11,11 @@ pub fn pasteboard_write_text(text: String) {
 }
 
 /// 写入剪贴板 → 隐藏主窗 → 注入 Cmd+V（与 clipboard 扩展粘贴路径同范式）。
-/// 需辅助功能权限；用于 AI 提供商等「分字段粘贴到前台 App」。
+/// 需设备控制权限；用于 AI 提供商等「分字段粘贴到前台 App」。
 #[tauri::command]
 pub fn pasteboard_paste_text(text: String, app: AppHandle) -> Result<(), String> {
     if !ax_trusted() {
-        return Err("需授予辅助功能权限".into());
+        return Err("需授予设备控制权限".into());
     }
     write_text_marked(&text);
     // 与 clipboard 扩展粘贴路径同范式：直接 hide_main（不经 hide_window 命令），

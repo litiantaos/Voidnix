@@ -170,7 +170,7 @@ fn rebuild(app: &AppHandle) {
     // 尾部框架基础项「退出」垫底（macOS 菜单惯例：退出居末）
     let update_label = lock_or_recover(&UPDATE_VERSION)
         .as_ref()
-        .map(|v| format!("更新到新版本（{v}）"))
+        .map(|v| format!("更新到版本 {v}"))
         .unwrap_or_else(|| "检查更新".to_string());
     let mut entries: Vec<MenuEntry> = vec![
         MenuEntry::Item {

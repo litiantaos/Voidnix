@@ -594,7 +594,7 @@ pub fn capture_screen() -> Result<ScreenshotData, String> {
     {
         let display = resolve_display_under_cursor();
         let cg_image = capture_display_image(display)
-            .ok_or("截屏失败：请在「系统设置 → 隐私与安全性 → 屏幕录制」中授权")?;
+            .ok_or("截屏失败：请在「系统设置 → 隐私与安全性 → 录屏」中授权")?;
 
         let bounds = display.bounds();
         let origin_x = bounds.origin.x;

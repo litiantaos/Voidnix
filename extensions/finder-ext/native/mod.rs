@@ -291,7 +291,7 @@ fn hide_main_sync(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 辅助功能未授权时弹系统提示并打开设置（授权会话）。
+/// 设备控制未授权时弹系统提示并打开设置（授权会话）。
 fn ensure_accessibility(app: &AppHandle) -> Result<(), String> {
     if crate::platform::permission::check_accessibility() {
         return Ok(());
@@ -302,7 +302,7 @@ fn ensure_accessibility(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
     crate::platform::permission::open_privacy_settings(app, "accessibility");
-    Err("切换隐藏文件需要辅助功能权限：系统设置 → 隐私与安全性 → 辅助功能 → 启用 Voidnix".into())
+    Err("切换隐藏文件需要设备控制权限：系统设置 → 隐私与安全性 → 设备控制 → 启用 Voidnix".into())
 }
 
 // ── 动作实现 ───────────────────────────────────────────────────────────────

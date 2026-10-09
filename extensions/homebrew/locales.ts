@@ -2,7 +2,7 @@ import { registerMessages } from '@/runtime/i18n'
 
 registerMessages({
   // ─── 状态行 ──────────────────────────────
-  'homebrew.updates': { 'zh-CN': '{count} 更新', en: '{count} updates' },
+  'homebrew.updates': { 'zh-CN': '{count} 项可更新', en: '{count} updates available' },
   'homebrew.processing': { 'zh-CN': '处理中', en: 'Processing' },
   'homebrew.update': { 'zh-CN': '更新', en: 'Update' },
 
@@ -31,8 +31,8 @@ registerMessages({
   'homebrew.uninstalled': { 'zh-CN': '已卸载 {name}', en: 'Uninstalled {name}' },
   'homebrew.uninstallTitle': { 'zh-CN': '卸载 {name}？', en: 'Uninstall {name}?' },
   'homebrew.uninstallDepMsg': {
-    'zh-CN': '此包被 {count} 个包依赖（{names}）',
-    en: 'Depended on by {count} packages ({names})',
+    'zh-CN': '有 {count} 个软件依赖它：{names}',
+    en: '{count} packages depend on it: {names}',
   },
   'homebrew.uninstallOrphanMsg': {
     'zh-CN': '孤立的依赖将自动清理',
@@ -44,7 +44,7 @@ registerMessages({
   },
 
   // ─── 操作步骤 ──────────────────────────
-  'homebrew.step.update': { 'zh-CN': '拉取更新', en: 'Fetching updates' },
+  'homebrew.step.update': { 'zh-CN': '刷新列表', en: 'Refreshing' },
   'homebrew.step.upgrade': { 'zh-CN': '升级中', en: 'Upgrading' },
   'homebrew.step.cleanup': { 'zh-CN': '清理中', en: 'Cleaning' },
   'homebrew.step.autoremove': { 'zh-CN': '清理依赖', en: 'Removing dependencies' },

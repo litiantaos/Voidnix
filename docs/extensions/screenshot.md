@@ -19,7 +19,7 @@
 
 ## 约束
 
-- 需**屏幕录制权限**（`CGDisplayCreateImage`），未授权返回中文错误
+- 需**录屏权限**（`CGDisplayCreateImage`），未授权返回中文错误
 
 ### 多屏捕获
 

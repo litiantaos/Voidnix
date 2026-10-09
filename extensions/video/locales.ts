@@ -13,10 +13,7 @@ registerMessages({
   'video.downloading': { 'zh-CN': '下载中…', en: 'Downloading…' },
   'video.downloadingCore': { 'zh-CN': '正在下载核心…', en: 'Downloading core…' },
   'video.coreVersionNone': { 'zh-CN': '核心版本：FFmpeg —', en: 'Core version: FFmpeg —' },
-  'video.dependencyHint': {
-    'zh-CN': '功能依赖 FFmpeg 核心，请先下载',
-    en: 'This feature requires the FFmpeg core. Please download it first.',
-  },
+  'video.dependencyHint': { 'zh-CN': '使用前需先下载 FFmpeg', en: 'Download FFmpeg first' },
   'video.coreVersion': {
     'zh-CN': '核心版本：FFmpeg {version}',
     en: 'Core version: FFmpeg {version}',
@@ -39,19 +36,19 @@ registerMessages({
   // 参数
   'video.group.params': { 'zh-CN': '参数', en: 'Parameters' },
   'video.quality': { 'zh-CN': '质量', en: 'Quality' },
-  'video.quality.high': { 'zh-CN': '高质量', en: 'High Quality' },
+  'video.quality.high': { 'zh-CN': '高画质', en: 'High quality' },
   'video.quality.balanced': { 'zh-CN': '均衡', en: 'Balanced' },
-  'video.quality.small': { 'zh-CN': '体积优先', en: 'Smallest Size' },
+  'video.quality.small': { 'zh-CN': '小体积', en: 'Small size' },
   'video.resolution': { 'zh-CN': '分辨率', en: 'Resolution' },
   'video.resolution.original': { 'zh-CN': '原始', en: 'Original' },
-  'video.container': { 'zh-CN': '容器', en: 'Container' },
+  'video.container': { 'zh-CN': '封装格式', en: 'Container' },
   'video.targetFormat': { 'zh-CN': '目标格式', en: 'Target Format' },
-  'video.frameRateTier': { 'zh-CN': '帧率档', en: 'Frame Rate Tier' },
+  'video.frameRateTier': { 'zh-CN': '帧率', en: 'Frame rate' },
   'video.audioFormat': { 'zh-CN': '音频格式', en: 'Audio Format' },
   'video.audioQuality': { 'zh-CN': '音质', en: 'Audio Quality' },
   'video.audioQuality.high': { 'zh-CN': '高（192k）', en: 'High (192k)' },
   'video.audioQuality.balanced': { 'zh-CN': '标准（128k）', en: 'Standard (128k)' },
-  'video.audioQuality.small': { 'zh-CN': '省流（96k）', en: 'Compact (96k)' },
+  'video.audioQuality.small': { 'zh-CN': '小体积（96k）', en: 'Small (96k)' },
 
   // 输出
   'video.group.output': { 'zh-CN': '输出', en: 'Output' },

@@ -9,8 +9,8 @@ export default defineExtension({
     id: 'ai-gateway',
     name: { 'zh-CN': 'AI 网关', en: 'AI Gateway' },
     description: {
-      'zh-CN': '统一本地 AI 网关：任何工具指向它，即得多提供商路由与 Key 轮换',
-      en: 'Unified local AI gateway: point any tool at it for multi-provider routing and key rotation',
+      'zh-CN': '所有 AI 工具，共用一个入口',
+      en: 'One local entry point for all your AI tools',
     },
     icon: 'i-ri-shuffle-line',
     keywords: [

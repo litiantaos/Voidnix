@@ -8,13 +8,13 @@ export default defineExtension({
   meta: {
     id: 'calculator',
     name: { 'zh-CN': '计算器', en: 'Calculator' },
-    description: { 'zh-CN': '数学表达式计算', en: 'Math expression calculator' },
+    description: { 'zh-CN': '输入算式，立即出结果', en: 'Type an expression, get the answer' },
     icon: 'i-ri-calculator-line',
     keywords: ['calc', 'calculator', 'math', '计算器', '数学'],
     order: 90,
   },
 
-  placeholder: { 'zh-CN': '输入数学表达式', en: 'Enter a math expression' },
+  placeholder: { 'zh-CN': '输入算式', en: 'Type an expression' },
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {

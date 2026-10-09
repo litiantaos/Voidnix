@@ -286,7 +286,7 @@ export function useAppLifecycle(win: Win) {
       })
       track(unlistenFrontmostChanged)
 
-      // Rust 直发的授权会话（finder-ext 辅助功能引导无前端入口置钉）：经事件统一
+      // Rust 直发的授权会话（finder-ext 设备控制引导无前端入口置钉）：经事件统一
       // 置 permGrantKind 并显示拖拽指引浮窗，与 startPermGrant 共享钉住/linger
       // 链路；仅空位时置钉，不覆盖更新的前端会话
       const unlistenPermSession = await listen<string>('perm-session', (e) => {

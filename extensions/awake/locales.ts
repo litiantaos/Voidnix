@@ -3,15 +3,15 @@ import { registerMessages } from '@/runtime/i18n'
 registerMessages({
   'awake.enable': { 'zh-CN': '启用唤醒', en: 'Enable Awake' },
   'awake.enableHint': {
-    'zh-CN': '禁用系统睡眠，合盖熄屏与电池供电时仍可用，首次启动需验证授权',
-    en: 'Disables system sleep, works with the lid closed and on battery. Administrator authorization once per launch.',
+    'zh-CN': '合盖、熄屏、用电池都不休眠；首次开启需授权',
+    en: 'No sleep with lid closed or on battery; authorization needed the first time',
   },
   'awake.group.general': { 'zh-CN': '通用', en: 'General' },
-  'awake.menubarToggle': { 'zh-CN': '在菜单栏图标菜单中显示', en: 'Show in Menu Bar Icon Menu' },
+  'awake.menubarToggle': { 'zh-CN': '在菜单栏中显示', en: 'Show in menu bar' },
   'awake.screenPolicy': { 'zh-CN': '合盖熄屏方式', en: 'Closed-Lid Screen' },
   'awake.screenPolicyHint': {
-    'zh-CN': '零亮度保持画面流活跃可远程控制，显示睡眠更省电但远程会冻结',
-    en: 'Zero brightness keeps the framebuffer live for remote control; display sleep saves more power but freezes remote sessions.',
+    'zh-CN': '零亮度可远程控制，显示睡眠更省电但远程会断',
+    en: 'Zero brightness keeps remote control; display sleep saves power but freezes it',
   },
   'awake.screenPolicy.dim': {
     'zh-CN': '零亮度（远程可用）',

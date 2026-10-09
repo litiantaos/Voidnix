@@ -4,7 +4,7 @@ AGENTS.md「发布管道与代码签名」节记录公证分流结论与防弹�
 
 ## 两档现状（macOS 15+）
 
-未公证应用（Apple Development 证书签名——未购 Apple Developer Program 时的唯一选择，或 adhoc）经 API 请求（`AXIsProcessTrustedWithOptions` / `CGRequestScreenCaptureAccess`）写入的辅助功能/屏幕录制条目**无效**（开关打开也不生效，列表还被坏条目污染）；系统设置手动「+ 添加」的条目**有效**（DR 匹配正常，Apple Development 证书一年内稳定），但屏幕录制可能被周期性要求重授权。
+未公证应用（Apple Development 证书签名——未购 Apple Developer Program 时的唯一选择，或 adhoc）经 API 请求（`AXIsProcessTrustedWithOptions` / `CGRequestScreenCaptureAccess`）写入的设备控制/录屏条目**无效**（开关打开也不生效，列表还被坏条目污染）；系统设置手动「+ 添加」的条目**有效**（DR 匹配正常，Apple Development 证书一年内稳定），但录屏可能被周期性要求重授权。
 
 购入 Program 后换 Developer ID Application 证书 + 配齐公证凭证，分流自动切回 API 路径，无需改代码。完全磁盘与「文件与文件夹」权限不查公证，不受此影响。
 
@@ -22,7 +22,7 @@ AGENTS.md「发布管道与代码签名」节记录公证分流结论与防弹�
 1. 主窗先降普通层级并置顶
 2. `open` 面板 URL（设置窗口冷启动映射/warm 抬升自然落在主窗之上）
 3. 激活兜底（bundle id 跨版本漂移——Ventura+ 为 `com.apple.systemsettings`、macOS 27 实测回落 `com.apple.systempreferences`，按序探测取命中）
-4. 主窗避让到设置窗旁（`CGWindowList` bounds 无需屏幕录制权限，Quartz 坐标经主屏高翻转为 Cocoa；并排两侧优先，小屏放不下时取与设置窗重叠最小的边缘位置）
+4. 主窗避让到设置窗旁（`CGWindowList` bounds 无需录屏权限，Quartz 坐标经主屏高翻转为 Cocoa；并排两侧优先，小屏放不下时取与设置窗重叠最小的边缘位置）
 5. `open` 重发置顶（对已激活 app `activate` 是空操作，LaunchServices 重发恒能把设置窗抬到主窗之上；`orderWindow:relativeTo:` 跨 app 排序实测无效勿用）
 6. 主窗常态浮动层级——present 每次重申 `NSFloatingWindowLevel`，普通层设置窗即使激活也盖不过浮动窗，会话结束复位浮动层级并前置
 
@@ -38,7 +38,7 @@ AGENTS.md「发布管道与代码签名」节记录公证分流结论与防弹�
 
 ### 事件与前端钉住
 
-- 会话起点 emit `perm-session`（kind，前端据此置钉——Rust 直发的会话如 finder-ext 辅助功能引导与 `startPermGrant` 前端入口共享同一钉住/linger 链路）
+- 会话起点 emit `perm-session`（kind，前端据此置钉——Rust 直发的会话如 finder-ext 设备控制引导与 `startPermGrant` 前端入口共享同一钉住/linger 链路）
 - 前端（`systemStore.startPermGrant`）会话期间钉住主窗（失焦/点击外部/前台切换均不隐藏），事件到达即刷新
 - 授权后钉住转入 linger：完全访问/录屏会弹系统重启确认，弹窗失焦与其关闭后的 frontmost-changed 藏窗路径须继续让位；**滑动续期**——被让位事件每次续 15s，静默 15s 解除，不随 focus 事件解除（弹窗期点击主窗/自动聚焦都会产生 focus、误解除会复活藏窗路径）
 - 会话结束 Rust 复位主窗浮动层级并前置：设备控制同时 makeKey 取键盘聚焦（panel 语义不激活 NSApp）；完全访问/录屏在弹窗存续期不夺 key（否则弹窗降为非激活、双击才点到按钮），取消后补聚焦

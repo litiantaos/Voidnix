@@ -10,16 +10,13 @@ export default defineExtension({
   meta: {
     id: 'time',
     name: { 'zh-CN': '时间戳', en: 'Timestamp' },
-    description: { 'zh-CN': 'Unix 时间戳与转换', en: 'Unix timestamp conversion' },
+    description: { 'zh-CN': '时间戳与日期互转', en: 'Convert timestamps and dates' },
     icon: 'i-ri-time-line',
     order: 50,
     keywords: ['时间', '时间戳', 'timestamp', 'date', 'unix', 'epoch'],
   },
 
-  placeholder: {
-    'zh-CN': '输入 Unix 时间戳或日期进行转换',
-    en: 'Enter Unix timestamp or date to convert',
-  },
+  placeholder: { 'zh-CN': '输入时间戳或日期', en: 'Enter a timestamp or date' },
 
   search: {
     dynamic: (query, ctx): ProviderResult[] => {

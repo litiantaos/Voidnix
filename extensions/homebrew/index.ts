@@ -7,7 +7,7 @@ export default defineExtension({
   meta: {
     id: 'homebrew',
     name: 'Homebrew',
-    description: { 'zh-CN': '包管理与一键更新升级', en: 'Package manager and one-click update' },
+    description: { 'zh-CN': '一键更新所有 brew 软件', en: 'Update all your brew packages at once' },
     icon: 'i-ri-cup-fill',
     keywords: [
       'brew',
@@ -29,7 +29,7 @@ export default defineExtension({
     order: 170,
   },
 
-  placeholder: { 'zh-CN': '搜索包名', en: 'Search packages' },
+  placeholder: { 'zh-CN': '搜索软件包', en: 'Search packages' },
 
   mainView: () => HomebrewView,
   subviews: {

@@ -1,4 +1,4 @@
-/// 屏幕录制权限：CGPreflightScreenCaptureAccess 只查 TCC 状态，不触发截屏、不分配位图（纳秒级）。
+/// 录屏权限：CGPreflightScreenCaptureAccess 只查 TCC 状态，不触发截屏、不分配位图（纳秒级）。
 /// 不用 CGDisplayCreateImage——那是真实 GPU 截屏（WindowServer 编码 framebuffer），阻塞数十 ms。
 #[cfg(target_os = "macos")]
 pub fn check_screen_recording() -> bool {
@@ -25,7 +25,7 @@ pub fn app_bundle_path() -> Option<std::path::PathBuf> {
 
 /// 应用公证状态：stapler validate 本地校验 stapled ticket（发布链公证后必 staple，
 /// 检测等价），一次性缓存。macOS 15+ 未公证应用（Apple Development / adhoc 签名）的
-/// 辅助功能/屏幕录制 API 请求路径写入的 TCC 条目无效（开关打开也不生效），
+/// 设备控制/录屏 API 请求路径写入的 TCC 条目无效（开关打开也不生效），
 /// 授权须走系统设置手动添加；授权入口按此分流，公证后自动切回 API 请求路径。
 #[cfg(target_os = "macos")]
 pub fn check_app_notarized() -> bool {
@@ -47,8 +47,8 @@ pub fn check_app_notarized() -> bool {
     false
 }
 
-/// 屏幕录制权限请求：CGRequestScreenCaptureAccess 弹系统授权对话框，并把本应用
-/// 注册进系统设置「屏幕录制」列表——macOS 15+ 未主动请求的应用不出现在列表中，
+/// 录屏权限请求：CGRequestScreenCaptureAccess 弹系统授权对话框，并把本应用
+/// 注册进系统设置「录屏」列表——macOS 15+ 未主动请求的应用不出现在列表中，
 /// 用户只能从访达手动添加。同步阻塞至用户处理弹窗；命令层 async + spawn_blocking
 /// （同步命令在主线程执行）。授权后系统自行引导退出重开（预绑定权限需重启生效）。
 #[cfg(target_os = "macos")]
@@ -64,7 +64,7 @@ pub fn request_screen_recording() -> bool {
     false
 }
 
-/// 辅助功能权限：调用 AXIsProcessTrusted 检查。
+/// 设备控制权限：调用 AXIsProcessTrusted 检查。
 #[cfg(target_os = "macos")]
 pub fn check_accessibility() -> bool {
     extern "C" {
@@ -78,7 +78,7 @@ pub fn check_accessibility() -> bool {
     false
 }
 
-/// 请求辅助功能权限（弹出系统授权对话框）。
+/// 请求设备控制权限（弹出系统授权对话框）。
 /// 返回值表示授权是否已成功。
 #[cfg(target_os = "macos")]
 pub fn request_accessibility() -> bool {
@@ -138,7 +138,7 @@ pub fn open_privacy_settings(app: &tauri::AppHandle, kind: &str) {
         }
     };
     spawn_perm_session(app, kind, url);
-    // 会话起点事件：Rust 直发的会话（finder-ext 辅助功能引导）没有前端入口置钉，
+    // 会话起点事件：Rust 直发的会话（finder-ext 设备控制引导）没有前端入口置钉，
     // 前端经此统一置 permGrantKind，与 startPermGrant 共享钉住/linger 链路
     {
         use tauri::Emitter;
@@ -438,7 +438,7 @@ fn dodge_beside_settings(app: &tauri::AppHandle) -> bool {
 }
 
 /// 系统设置主窗 frame（Cocoa，仅主线程）：CGWindowList 按设置进程 pid 找 layer-0
-/// 最大窗（bounds 无需屏幕录制权限、layer-0 排除悬浮 chrome），Quartz（左上原点
+/// 最大窗（bounds 无需录屏权限、layer-0 排除悬浮 chrome），Quartz（左上原点
 /// y 向下）经主屏 frame 高翻转为 Cocoa（左下原点 y 向上）。供授权会话避让与
 /// 拖拽指引浮窗定位共用。
 #[cfg(target_os = "macos")]

@@ -272,7 +272,7 @@ export function useAgentChat() {
     const msg = findMessage(assistantId)
     if (!msg) return
 
-    // 已收尾的气泡：忽略晚到内容事件（中止后 textDelta 不得接在「已中止」后）
+    // 已收尾的气泡：忽略晚到内容事件（中止后 textDelta 不得接在「已停止」后）
     if (CONTENT_EVENTS.has(event.type) && !msg.streaming) return
 
     switch (event.type) {

@@ -25,7 +25,7 @@ export default defineExtension({
   meta: {
     id: 'proxy',
     name: { 'zh-CN': '代理', en: 'Proxy' },
-    description: { 'zh-CN': '基于 mihomo 的代理工具', en: 'Proxy tool based on mihomo' },
+    description: { 'zh-CN': '一键连接，全局代理', en: 'One click to connect, system-wide proxy' },
     icon: 'i-ri-signal-tower-line',
     keywords: ['proxy', '代理', 'mihomo', 'vpn', '节点', '订阅'],
     order: 40,

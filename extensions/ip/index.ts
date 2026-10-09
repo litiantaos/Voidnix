@@ -45,16 +45,13 @@ export default defineExtension({
   meta: {
     id: 'ip',
     name: { 'zh-CN': 'IP 信息', en: 'IP Info' },
-    description: { 'zh-CN': '查询 IP 地址信息', en: 'Query IP address information' },
+    description: { 'zh-CN': '查本机 IP 与归属地', en: 'Check your IP and look up any IP' },
     icon: 'i-ri-global-line',
     keywords: ['ip', 'network', '网络', '地址'],
     order: 60,
   },
 
-  placeholder: {
-    'zh-CN': '输入 IP 地址，留空查询本机',
-    en: 'Enter an IP address, leave empty for local',
-  },
+  placeholder: { 'zh-CN': '输入 IP，留空查本机', en: 'Enter an IP, leave empty for local' },
 
   search: {
     dynamic: async (query, ctx): Promise<ProviderResult[]> => {

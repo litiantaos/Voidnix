@@ -267,7 +267,7 @@ fn refresh_pasted_at(app: &tauri::AppHandle, ids: &[String]) {
 #[tauri::command]
 pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), String> {
     if !ax_trusted() {
-        return Err("需授予辅助功能权限".to_string());
+        return Err("需授予设备控制权限".to_string());
     }
     let item = {
         let db = require_db(&app)?;
@@ -298,7 +298,7 @@ pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), Str
 #[tauri::command]
 pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<(), String> {
     if !ax_trusted() {
-        return Err("需授予辅助功能权限".to_string());
+        return Err("需授予设备控制权限".to_string());
     }
     if ids.is_empty() {
         return Err("No items found".to_string());
@@ -373,7 +373,7 @@ extern "C" {
     fn AXIsProcessTrusted() -> bool;
 }
 
-/// 辅助功能权限检查（CGEventPost 注入需授权，否则静默失败）。
+/// 设备控制权限检查（CGEventPost 注入需授权，否则静默失败）。
 fn ax_trusted() -> bool {
     // SAFETY: AXIsProcessTrusted 是 Accessibility C API，无参数，仅查询当前进程可信状态
     unsafe { AXIsProcessTrusted() }

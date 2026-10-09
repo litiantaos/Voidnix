@@ -100,13 +100,13 @@ export default defineExtension({
   meta: {
     id: 'clipboard',
     name: { 'zh-CN': '剪贴板', en: 'Clipboard' },
-    description: { 'zh-CN': '剪贴板历史管理', en: 'Clipboard history manager' },
+    description: { 'zh-CN': '自动保存复制记录，随取随用', en: 'Saves everything you copy' },
     icon: 'i-ri-clipboard-line',
     keywords: ['clipboard', 'copy', 'paste', 'history', '剪贴板', '历史', '复制', '粘贴'],
     order: 10,
   },
 
-  placeholder: { 'zh-CN': '搜索剪贴板记录', en: 'Search clipboard history' },
+  placeholder: { 'zh-CN': '搜索复制记录', en: 'Search copy history' },
   mainView: () => ClipboardView,
   searchBarAccessory: () => ClipboardActions,
   subviews: { config: () => ClipboardSettings },

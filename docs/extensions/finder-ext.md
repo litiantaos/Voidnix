@@ -19,7 +19,7 @@
 - `open_with`：用指定应用打开选中项（`app_path` 传 .app 路径）；多选全部打开；无选中回退当前窗口目标目录
 - `open_terminal`：在选中项所在目录（或目标目录）打开 Terminal.app
 - `new_file`：`BaseDialog` 单输入——默认 `Untitled.txt`，打开时选中扩展名前的文件名主体 → 创建 → 访达中选中
-- `toggle_hidden`：注入 `Cmd+Shift+.`（与系统一致、**不重启访达**）；需辅助功能；文案固定「切换隐藏文件」（系统无稳定可读显示态，不做两态文案）
+- `toggle_hidden`：注入 `Cmd+Shift+.`（与系统一致、**不重启访达**）；需设备控制；文案固定「切换隐藏文件」（系统无稳定可读显示态，不做两态文案）
 
 路径均经 `platform/path_guard`（`open_with` 的应用路径除外，见实现要点）。
 
@@ -72,7 +72,7 @@
 - **切换隐藏**（时序关键）：
   - `ensure_accessibility`（窗口仍可见）→ **先 hide 主窗**归还 key → 前置访达并等 frontmost → `platform/input::post_combo("cmd+shift+.", finder_pid)`
   - 先注入再 hide 时面板仍占 key，按键常被吞，表现为需点两次
-- **权限**：控制访达（自动化，读选区/目录）；切换隐藏需辅助功能（失败有明确 toast）
+- **权限**：控制访达（自动化，读选区/目录）；切换隐藏需设备控制（失败有明确 toast）
 - **open_with 应用路径专用校验**（`validate_app_path`：绝对路径 + `.app` 后缀 + 存在）：不经 path_guard——系统内置应用在 `/System/Applications`（path_guard 拦 `/System` 前缀），`open -a` 交 LaunchServices 启动无文件系统写，且路径源自应用枚举缓存而非用户输入；目标路径（选区/目录）仍走 path_guard
 - **快捷键覆盖**走框架 `settings.shortcutOverrides`；`recentApps` 落盘 `defineConfig`
 

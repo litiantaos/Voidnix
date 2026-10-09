@@ -13,7 +13,7 @@ export const useSystemStore = defineStore('system', () => {
   const permAccessibility = ref<boolean | null>(null)
   const permFullDiskAccess = ref<boolean | null>(null)
   const autostartEnabled = ref<boolean>(false)
-  // 公证状态（Rust 侧一次性缓存，恒定）：未公证时辅助功能/屏幕录制的 API 请求路径
+  // 公证状态（Rust 侧一次性缓存，恒定）：未公证时设备控制/录屏的 API 请求路径
   // 写入的 TCC 条目无效，授权入口据此分流
   const appNotarized = ref<boolean | null>(null)
 

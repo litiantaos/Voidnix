@@ -18,7 +18,7 @@ registerMessages({
   // 拼接参数
   'image.width': { 'zh-CN': '宽度', en: 'Width' },
   'image.height': { 'zh-CN': '高度', en: 'Height' },
-  'image.segmentingForeground': { 'zh-CN': '正在分割前景…', en: 'Segmenting foreground…' },
+  'image.segmentingForeground': { 'zh-CN': '正在抠图…', en: 'Removing background…' },
   'image.formatsHint': {
     'zh-CN': '支持 PNG / JPEG / HEIC / WebP 等格式',
     en: 'Supports PNG / JPEG / HEIC / WebP, etc.',

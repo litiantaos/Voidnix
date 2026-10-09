@@ -9,8 +9,8 @@ export default defineExtension({
     id: 'ai-providers',
     name: { 'zh-CN': 'AI 提供商', en: 'AI Providers' },
     description: {
-      'zh-CN': '统一管理 AI API Key，供本应用与外部工具共用',
-      en: 'Unified AI API key management for app and external tools',
+      'zh-CN': '统一管理 AI 接口与 Key',
+      en: 'Manage AI endpoints and keys in one place',
     },
     icon: 'i-ri-key-2-line',
     keywords: [

@@ -207,7 +207,7 @@ test.describe('finder-ext 应用界面进入（浏览模式）', () => {
       '在终端中打开',
       '新建文件',
       '切换隐藏文件',
-      expect.stringContaining('启动快捷键'),
+      expect.stringContaining('呼出快捷键'),
     ])
     // 无候选组（不探测选区）：无组头、无候选应用行
     await expect(page.locator('.group-header').filter({ hasText: '用 App 打开' })).toHaveCount(0)
@@ -223,7 +223,7 @@ test.describe('finder-ext 应用界面进入（浏览模式）', () => {
         () =>
           (window as unknown as Record<string, { message: string; kind: string }[]>).__toastCalls,
       )
-    expect(await toastCalls()).toEqual([{ message: '该操作仅在访达中生效', kind: 'success' }])
+    expect(await toastCalls()).toEqual([{ message: '请先切换到访达', kind: 'success' }])
     const action = await page.evaluate(
       () => (window as unknown as Record<string, unknown>).__finderAction,
     )
@@ -231,7 +231,7 @@ test.describe('finder-ext 应用界面进入（浏览模式）', () => {
     // 媒体入口（视频处理）回车：同样仅提示，不跳转扩展
     await page.keyboard.press('ArrowDown')
     await page.keyboard.press('Enter')
-    expect((await toastCalls()).at(-1)?.message).toBe('该操作仅在访达中生效')
+    expect((await toastCalls()).at(-1)?.message).toBe('请先切换到访达')
     await expect(page.locator('.ext-tag')).toHaveText('访达工具')
   })
 

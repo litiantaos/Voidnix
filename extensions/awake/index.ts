@@ -15,8 +15,8 @@ export default defineExtension({
     id: 'awake',
     name: { 'zh-CN': '保持系统唤醒', en: 'Keep Awake' },
     description: {
-      'zh-CN': '禁用系统睡眠，不插电源也能合盖熄屏持续运行',
-      en: 'Disable system sleep and keep running with the lid closed, battery included',
+      'zh-CN': '不让电脑睡着，合盖也运行',
+      en: 'Keep your Mac running, even with the lid closed',
     },
     icon: 'i-ri-macbook-line',
     keywords: [

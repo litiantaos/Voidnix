@@ -97,10 +97,10 @@ describe('WelcomeView 首启引导视图', () => {
     // 图签：左下角应用名（入场序列末位）+ 品牌口号（名字下方）；纯信息展示无按钮
     const title = wrapper.find('text.w-title')
     expect(title.text()).toBe('Voidnix')
-    // 「/」语法键：键帽 + 引出线双行词块（动词「输入」，与快捷键名词标注区分；含 // 搜索）
+    // 「/」语法键：键帽 + 引出线双行词块（动词「输入」，与快捷键名词标注区分；含搜索提示）
     expect(wrapper.findAll('text.w-cap').map((c) => c.text())).toContain('/')
-    expect(text).toContain('输入/显示扩展')
-    expect(text).toContain('输入//快速搜索')
+    expect(text).toContain('输入 / 浏览全部工具')
+    expect(text).toContain('直接输入即可搜索')
     expect(parseFloat(title.attributes('x')!)).toBeLessThan(100)
     expect(parseFloat(title.attributes('y')!)).toBeGreaterThan(340)
     const tagline = wrapper.find('text.w-tagline')
@@ -130,9 +130,9 @@ describe('WelcomeView 首启引导视图', () => {
     const wrapper = mountView()
     expect(wrapper.find('text.w-tagline').attributes('textLength')).toBeUndefined()
     expect(wrapper.find('text.w-title').attributes('textLength')).toBe('96')
-    // 「/」语法键引出线同语言切换（双行词块，含 // 搜索文案；首行收短防压 N 线）
-    expect(wrapper.text()).toContain('Type / for extensions')
-    expect(wrapper.text()).toContain('Type // for quick search')
+    // 「/」语法键引出线同语言切换（双行词块，含搜索提示文案；首行收短防压 N 线）
+    expect(wrapper.text()).toContain('Type / to browse all tools')
+    expect(wrapper.text()).toContain('Just type to search')
     // 底部按键提示同语言切换（图纸态右下角单句）
     expect(wrapper.find('.w-footer .w-note').text()).toBe('Enter / → next · ← back')
   })
@@ -161,7 +161,7 @@ describe('WelcomeView 首启引导视图', () => {
     expect(seg.end).toBeLessThanOrEqual(714)
     expect(seg.end - seg.elbow).toBeGreaterThanOrEqual(estWidth('Translate') - 1)
     // 「/」双行词块右缘不越图纸右缘
-    seg = segOf(en, 'quick search')
+    seg = segOf(en, 'type to search')
     expect(seg.end).toBeLessThanOrEqual(714)
     en.unmount()
 
@@ -627,7 +627,7 @@ describe('WelcomeView 首启引导视图', () => {
     await buttons[0]!.trigger('click')
     expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'request_accessibility_permission')
     expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'show_perm_drag_hint', {
-      text: '请在上方列表中找到 Voidnix 并打开开关，\n或拖拽左侧图标至列表中以完成授权',
+      text: '在列表中找到 Voidnix 并打开，\n或将左侧图标拖入列表',
     })
     expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(3, 'open_privacy_settings', {
       kind: 'accessibility',
@@ -638,7 +638,7 @@ describe('WelcomeView 首启引导视图', () => {
     await buttons[1]!.trigger('click')
     expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2)
     expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'show_perm_drag_hint', {
-      text: '请在上方列表中找到 Voidnix 并打开开关，\n或拖拽左侧图标至列表中以完成授权',
+      text: '在列表中找到 Voidnix 并打开，\n或将左侧图标拖入列表',
     })
     expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'open_privacy_settings', {
       kind: 'full_disk_access',
@@ -648,7 +648,7 @@ describe('WelcomeView 首启引导视图', () => {
     await buttons[2]!.trigger('click')
     expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'request_screen_recording_permission')
     expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'show_perm_drag_hint', {
-      text: '请在上方列表中找到 Voidnix 并打开开关，\n或拖拽左侧图标至列表中以完成授权',
+      text: '在列表中找到 Voidnix 并打开，\n或将左侧图标拖入列表',
     })
     expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(3, 'open_privacy_settings', {
       kind: 'screen_recording',
@@ -680,7 +680,7 @@ describe('WelcomeView 首启引导视图', () => {
       await buttons[i]!.trigger('click')
       expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2)
       expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(1, 'show_perm_drag_hint', {
-        text: '请在上方列表中找到 Voidnix 并打开开关，\n或拖拽左侧图标至列表中以完成授权',
+        text: '在列表中找到 Voidnix 并打开，\n或将左侧图标拖入列表',
       })
       expect(vi.mocked(invoke)).toHaveBeenNthCalledWith(2, 'open_privacy_settings', { kind })
     }

@@ -38,7 +38,7 @@ export default defineExtension({
   meta: {
     id: 'screenshot',
     name: { 'zh-CN': '截屏', en: 'Screenshot' },
-    description: { 'zh-CN': '截屏、标注、OCR', en: 'Screenshot, annotation, OCR' },
+    description: { 'zh-CN': '截屏、标注、识别文字', en: 'Capture, annotate, recognize text' },
     icon: 'i-ri-screenshot-line',
     keywords: [
       'screenshot',
