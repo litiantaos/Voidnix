@@ -14,6 +14,17 @@ import {
   type GatewayRoute,
 } from './logic'
 
+/** Rust `UsageEvent` 同构(camelCase)——单次转发事件,seq 单调供增量判新 */
+export interface UsageEvent {
+  seq: number
+  model: string
+  provider: string
+  protocol: 'anthropic' | 'responses' | 'chat'
+  /** 接入身份标签(占位 Key 匹配登记表;null = 未登记,按协议面兜底) */
+  consumer: string | null
+  ts: number
+}
+
 /** Rust `StatusReport` 同构(camelCase) */
 export interface GatewayStatus {
   running: boolean
@@ -21,6 +32,7 @@ export interface GatewayStatus {
   routeCount: number
   bindError: string | null
   ccManaged: boolean
+  usage: UsageEvent[]
 }
 
 /** 视图共享状态:push 后即时刷新,避免等下一次 invoke */

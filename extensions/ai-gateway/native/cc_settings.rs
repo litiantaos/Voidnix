@@ -25,7 +25,10 @@ const OWNED_POINTERS: &[&str] = &[
 ];
 
 /// 占位凭证:网关注入真实 Key,客户端凭证仅为满足 CC 非空校验
-const PLACEHOLDER_TOKEN: &str = "voidnix-gateway";
+const PLACEHOLDER_TOKEN: &str = "voidnix-claude-code";
+
+/// 旧版占位凭证(is_managed 兼容判定用):存量接管在下一轮 sync 幂等重写前仍指旧值
+const LEGACY_TOKEN: &str = "voidnix-gateway";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -253,7 +256,7 @@ fn is_managed_state(root: &Value) -> bool {
         .pointer("/env/ANTHROPIC_AUTH_TOKEN")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    gateway_port_of(root).is_some() || token == PLACEHOLDER_TOKEN
+    gateway_port_of(root).is_some() || token == PLACEHOLDER_TOKEN || token == LEGACY_TOKEN
 }
 
 /// 全摘除快照:所有自有键记为「原本不存在」,还原时整体摘除(接管态覆盖自愈场景的原始态不可考)
@@ -391,7 +394,7 @@ mod tests {
 
         assert_eq!(v["apiKeyHelper"], Value::Null);
         assert_eq!(v["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8788");
-        assert_eq!(v["env"]["ANTHROPIC_AUTH_TOKEN"], "voidnix-gateway");
+        assert_eq!(v["env"]["ANTHROPIC_AUTH_TOKEN"], "voidnix-claude-code");
         assert_eq!(v["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "glm-5.3");
         assert_eq!(v["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "glm-5.3");
         assert_eq!(v["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "glm-5.3-flash");

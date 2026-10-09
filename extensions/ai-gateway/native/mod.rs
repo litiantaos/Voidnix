@@ -9,6 +9,8 @@ pub mod cc_settings;
 pub mod guard;
 pub mod normalize;
 pub mod server;
+pub mod state;
+pub mod usage;
 
 use crate::runtime::registry::Extension;
 use server::{GatewayRoute, GatewayStatus};

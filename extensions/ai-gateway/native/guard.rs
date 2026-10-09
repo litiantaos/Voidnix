@@ -6,7 +6,7 @@
 //! (find_bytes/contains_bytes/extract_json_string)随哨兵居此,normalize 的分类器
 //! 标签判据复用 contains_bytes。
 
-use super::server::{log_gateway, Gateway};
+use super::server::Gateway;
 use axum::body::Bytes;
 use futures_util::{Stream, StreamExt};
 use std::pin::Pin;
@@ -89,7 +89,9 @@ where
                     true
                 }
                 Some(detail) => {
-                    log_gateway("tail", &format!("{model} · {route} · {detail}"));
+                    commit
+                        .g
+                        .log_gateway("tail", &format!("{model} · {route} · {detail}"));
                     self.pending = Some(anthropic_error_event(&detail));
                     true
                 }

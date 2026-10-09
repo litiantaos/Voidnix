@@ -21,13 +21,23 @@ Chat 客户端 ──POST /v1/chat/completions──▶ 同端口 ──▶ 提�
 
 ## 端口与生命周期
 
-- 模块分工（`native/`）：`server`（Protocol 词汇 + 路由表 + Gateway 状态机 + 轮换策略 + HTTP 骨架与 proxy 主流程 + 响应构造）、`normalize`（请求体读取与归一纯函数：model 提取/会话指纹/模型名归一/normalize_body）、`guard`（2xx 流守护 + 尾部哨兵 + 字节扫描基元）、`cc_settings`（CC 接线）
+- 模块分工（`native/`）：`server`（Protocol 词汇 + 路由表 + Gateway 状态机 + 轮换策略 + HTTP 骨架与 proxy 主流程 + 响应构造）、`normalize`（请求体读取与归一纯函数 + 响应侧错误语义翻译：model 提取/会话指纹/模型名归一/normalize_body/配额文案分类/超长改写）、`guard`（2xx 流守护 + 尾部哨兵 + 字节扫描基元）、`state`（快照持久化 gateway-state.json + 排障日志 gateway.log）、`usage`（转发事件环形日志，聚合发生在前端）、`cc_settings`（CC 接线）
 
 - release **8788**（固定端口，CC 配置一次写入不再变）；dev **8789**（与 release 常驻并存不互抢；`logic.ts::GATEWAY_PORT` 与 Rust `server.rs::PORT` 双端手动同步）
 - 服务器跑在 app tokio runtime 内（`axum` 最小特性集 http1 + tokio）；app 常驻 Accessory + monitor LaunchAgent 守护
 - 启动链：扩展 Rust `setup` 读持久化快照直接拉起（前端就绪前的冷启动窗口 CC 无感）；前端配置就绪后经 `ai_gateway_sync` 全量刷新
 - 快照 `extensions/ai-gateway/gateway-state.json`（enabled + 路由表，0600 原子写，含 Key 明文）
-- 排障日志 `extensions/ai-gateway/gateway.log`：只记异常路径（route 路由失败，行含 method+path / upstream 上游状态码与错误摘要（配额型带 `quota` 标记）/ net 网络错误 / retry 原地重试 / replay 回放 / exhaust Key 耗尽 / tail 尾部哨兵 / toolong 超长翻译），epoch 毫秒时间戳（`date -r 秒` 转可读），超 512KB 整文件重置，新建即 0600；成功请求零记录、不含 Key 与请求体。**tail 尾部哨兵**：Anthropic 面 2xx SSE 流保持零解析直 pipe，字节过路做子串探测（text/tool/thinking 内容证据 + stop_reason + message_stop），流终止时判异常——零内容（无 text 无 tool）或未收 stop_reason 或未收 message_stop——记一行 `tail model · route · text=N tool=N think=Y stop=max_tokens end=ok|trunc` 并**向客户端注入协议原生 error 事件收尾**（见流守护）——「200 但语义可疑」从纯日志观测升级为客户端可感知失败（GLM 无视 thinking disabled 耗尽预算的空响应、裸 JSON 错误行致流静默终止等，此前零痕迹，CC 只报「模型不可用」且拿到静默截断流）；跨 chunk 边界的标记子串经残余拼接防漏检，stop_reason 值经末尾 4KB 环形缓冲提取；正常完成的流零记录
+- 排障日志 `extensions/ai-gateway/gateway.log`：只记异常路径（route 路由失败，行含 method+path / upstream 上游状态码与错误摘要（配额型带 `quota` 标记）/ net 网络错误 / retry 原地重试 / replay 回放 / exhaust Key 耗尽 / tail 尾部哨兵 / toolong 超长翻译），epoch 毫秒时间戳（`date -r 秒` 转可读），超 512KB 整文件重置，新建即 0600；成功请求零**日志**记录（内存事件流见「活跃链路可视化」，不落盘）、不含 Key 与请求体。**tail 尾部哨兵**：Anthropic 面 2xx SSE 流保持零解析直 pipe，字节过路做子串探测（text/tool/thinking 内容证据 + stop_reason + message_stop），流终止时判异常——零内容（无 text 无 tool）或未收 stop_reason 或未收 message_stop——记一行 `tail model · route · text=N tool=N think=Y stop=max_tokens end=ok|trunc` 并**向客户端注入协议原生 error 事件收尾**（见流守护）——「200 但语义可疑」从纯日志观测升级为客户端可感知失败（GLM 无视 thinking disabled 耗尽预算的空响应、裸 JSON 错误行致流静默终止等，此前零痕迹，CC 只报「模型不可用」且拿到静默截断流）；跨 chunk 边界的标记子串经残余拼接防漏检，stop_reason 值经末尾 4KB 环形缓冲提取；正常完成的流零记录
+
+## 接入身份（凭证约定 + UA 兜底）
+
+网关接入模型本就是「客户端凭证填任意占位值，网关注入真实 Key」——占位 Key 是自由字段，直接编码工具名：凭证形如 `voidnix-<slug>`（slug 限小写字母/数字/连字符），`consumer_from_key` 无状态解析 slug 转显示名（`voidnix-claude-code` → Claude Code、`voidnix-codex` → Codex）写入事件 `consumer` 字段。零登记零配置零持久化。CC 接管写入的占位 token 即 `voidnix-claude-code`（自动识别；旧版 `voidnix-gateway` 在下一轮 sync 幂等重写前由 `is_managed` 的 legacy 兼容值维持归属判定）。
+
+凭证未命中约定时以 **User-Agent 特征兜底**（小写子串匹配保守特征表：`grok` / `claude-cli` / `codex`，按需扩充）——自带登录态的 CLI（如 grok，实测对自定义端点发自家 xAI session token 而非配置的 `api_key`）Key 约定对其失效，UA 携带的稳定工具特征是唯一可达信号。双判据都未命中为 null，前端按协议面兜底。
+
+## 活跃链路可视化
+
+回答「正在使用哪个提供商的哪个模型」：网关内存维护**转发事件流**（`{seq, model, provider, protocol, consumer, ts}`，cap 512——须覆盖前端 90s 活跃窗口在最密集会话下的全部事件、最新在前），随 `ai_gateway_status` / `ai_gateway_sync` 的 `usage` 字段返回。扩展视图设置列表上方 `FlowStage` 组件渲染三列拓扑——左列「模型」（空态左列待命陈列路由表模型、上限 5 截断，活跃时让位给事件派生的活跃集）、中枢网关（上下双行，端口随状态、状态灯蓝呼吸 = 运行 / 红静止 = 停止，视图常显）、右列消费者（**接入身份优先**：事件 `consumer` 字段（`voidnix-<slug>` 占位凭证解析）即显示工具真名；不匹配约定按协议面兜底：anthropic = Claude Code · Messages，其余 = 其它工具 · Responses / Chat）。两侧只渲染 **90s 活跃窗口**内有过流量的节点（窗口前端自行从事件派生，Rust 零窗口机制）：单模型单工具即三点一线，偶发副链路自然分叉生长（纯 opacity 淡入，transform 不参与——连线锚点测量零干扰）、静默后收回；完全静息时右列退为虚线锚点承载待命虚线。轮询 3s（组件激活 + 窗口聚焦双门控）增量判新（seq 水位；隐藏/切扩展期积压的陈旧事件只推水位不回放，15s 新鲜度门槛防粒子风暴）驱动粒子：accent 光点带尾点沿「提供商 → 网关 → 消费者」贝塞尔飞行（新激活节点首事件的连线竞态经 rAF 重试一次兜底）；活跃链路连线点亮为 accent 流动虚线（dashoffset 顺流向），静默熄回灰线。记录点 = 上游 2xx 响应头到达（「使用过」语义，非流完整结束——与粘性/亲和的流守护提交点不同层）；`[Nm]` 后缀经 `norm_model` 归一；count_tokens 等核算调用同记（零特例）；换表保留（历史事实，无 idx 错位语义）、重启清零、不落盘、不含 Key 与请求体。
 
 ## 路由表来源
 
@@ -52,9 +62,9 @@ provider 标记「已治理上游」（ai-providers 表单开关）= 端点本�
 
 ## 界面
 
-设置列表两组：网关（总开关，副标题即运行态、绑定失败整行标红 + 尾随「AI 提供商」导航行——整行可点跳转提供商扩展，路由表来源即在那边管理）、Claude Code（接管开关组首，与网关开关联动——开接管自动启用网关、关网关连带还原，接管失败红字暴露原因；随后上下文档位下拉（默认/1M）与 Sonnet/Opus/Haiku 三档模型下拉（档位用途在小字说明：新会话开局默认 / 经 /model 手动切换的旗舰档 / 后台小任务），仅接管开启时展示，不限制 `/model` 范围）。使用说明（任何工具的接入方式、CC 自动接线、热更新等）经搜索栏 info 按钮的 markdown 弹窗承载（`Actions.vue`，与 ai-providers 帮助弹窗同款）。无可路由提供商时空态引导去 AI 提供商声明端点。
+设置列表两组：网关（总开关，副标题即运行态、绑定失败整行标红 + 尾随「AI 提供商」导航行——整行可点跳转提供商扩展，路由表来源即在那边管理）、Claude Code（接管开关组首，与网关开关联动——开接管自动启用网关、关网关连带还原，接管失败红字暴露原因；随后上下文档位下拉（默认/1M）与 Sonnet/Opus/Haiku 三档模型下拉（档位用途在小字说明：新会话开局默认 / 经 /model 手动切换的旗舰档 / 后台小任务），仅接管开启时展示，不限制 `/model` 范围）。列表上方活跃链路卡（soft-card，`FlowStage.vue`）：三列节点拓扑 + 事件驱动粒子（见「活跃链路可视化」节）。使用说明（任何工具的接入方式、CC 自动接线、热更新等）经搜索栏 info 按钮的 markdown 弹窗承载（`Actions.vue`，与 ai-providers 帮助弹窗同款）。无可路由提供商时空态引导去 AI 提供商声明端点。
 
 ## 命令
 
-- `ai_gateway_sync`（enabled + 路由表 → 启停与状态）/ `ai_gateway_status`
+- `ai_gateway_sync`（enabled + 路由表 → 启停与状态）/ `ai_gateway_status`（两者均返回 StatusReport：网关运行态 + `usage` 转发事件流 + CC 接管标记）
 - `ai_gateway_cc_apply` / `ai_gateway_cc_remove`（接管 / 还原）

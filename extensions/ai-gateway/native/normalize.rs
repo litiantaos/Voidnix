@@ -1,4 +1,6 @@
 //! 请求体的读取与归一:网关侧对客户端请求体的全部纯函数读改(CC 怪癖在网关吸收)。
+//! 响应侧错误语义判定/翻译(配额文案分类、上下文超长改写)与请求侧接入身份解析
+//! (凭证约定 + UA 兜底)亦居此——吸收怪癖的纯函数族。
 //!
 //! 读侧:extract_model(路由键)/ session_hash(会话指纹)/ norm_model(模型名归一);
 //! 改写侧:normalize_body——剥 [Nm] 后缀、注入 thinking disabled、输出预算下限、
@@ -7,6 +9,7 @@
 use super::guard::contains_bytes;
 use super::server::Protocol;
 use axum::body::Bytes;
+use axum::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -232,6 +235,141 @@ pub(super) fn normalize_body(protocol: Protocol, model: &str, body: Bytes) -> By
     serde_json::to_vec(&root).map_or_else(|_| body, Bytes::from)
 }
 
+/// 接入身份解析(双判据,凭证优先):
+/// ① 「占位 Key 即身份」——客户端凭证是任意占位值,按约定填 `voidnix-<工具名>`
+///    (slug 限小写字母/数字/连字符,如 voidnix-claude-code)即可被识别,零登记零配置;
+///    slug 直接转显示名(claude-code → Claude Code)
+/// ② User-Agent 特征兜底——自带登录态的 CLI(如 grok)对自定义端点发自家 session
+///    token 而非配置的 api_key,Key 约定对其失效;UA 携带稳定工具特征
+///    (grok-pager / claude-cli / codex_cli)是唯一可达信号,小写子串匹配
+/// 双判据都未命中返回 None,事件按协议面兜底
+pub(super) fn consumer_from_key(headers: &HeaderMap) -> Option<String> {
+    let key = headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .or_else(|| {
+            headers
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("Bearer "))
+        });
+    if let Some(key) = key {
+        if let Some(slug) = key.strip_prefix("voidnix-") {
+            if !slug.is_empty()
+                && slug
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            {
+                return Some(
+                    slug.split('-')
+                        .map(|w| {
+                            let mut c = w.chars();
+                            match c.next() {
+                                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                                None => String::new(),
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+            }
+        }
+    }
+    let ua = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())?
+        .to_lowercase();
+    // 特征表保守:仅收录 UA 稳定含工具名的已知 CLI,可按需扩充
+    const UA_MARKERS: &[&str] = &["grok", "claude-cli", "codex"];
+    UA_MARKERS
+        .iter()
+        .find(|m| ua.contains(*m))
+        .map(|m| match *m {
+            "claude-cli" => "Claude Code".to_string(),
+            "codex" => "Codex".to_string(),
+            _ => "Grok".to_string(),
+        })
+}
+
+// ─── 错误语义判定/翻译(响应侧纯函数) ─────────────────────
+
+/// 配额耗尽型错误文案子串(大小写不敏感):速率限制的 60s 冷却对配额耗尽是必然失败
+/// 的空转——日/周配额窗口内重试无意义,长冷却避免每分钟白付一次往返。词表保守,
+/// 仅高置信度配额语义(计费/配额/余额/周期限额);误伤速率限制的代价是多冷 29 分钟
+pub(super) const QUOTA_MARKERS: &[&str] = &[
+    "quota",
+    "billing",
+    "balance",
+    "arrears",
+    "usage limit",
+    "daily limit",
+    "monthly",
+    "weekly",
+    "额度",
+    "配额",
+    "欠费",
+    "余额",
+    "今日",
+    // 智谱 1310 实测文案「您已达到每周/每月使用上限,您的限额将在 … 重置」——中文周/月
+    // 上限词与英文 monthly/weekly 对齐,漏判会按速率限制 60s 冷却每分钟空转一次
+    "每周",
+    "每月",
+];
+
+/// 轮换失败(429/5xx 等)的响应体是否配额耗尽型
+pub(super) fn quota_exhausted(body: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(body).to_lowercase();
+    QUOTA_MARKERS.iter().any(|m| text.contains(m))
+}
+
+/// 配额耗尽冷却:日/周窗口尺度下 30min 重探一次(每次代价仅一个 429 往返),
+/// 不做 resets_at 提取(厂商格式无标准,固定值鲁棒)
+pub(super) const QUOTA_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+/// 上下文超长的厂商错误文案子串(大小写不敏感):命中即翻译为各协议标准错误,客户端
+/// (CC)识别标准语义触发自动 compact——原文案(尤其中文厂商)客户端识别不了,直接
+/// 报错停会话。词表保守:仅上下文语义,不含易与周期限额混淆的「token limit」族
+/// (Anthropic 月度配额文案含该词,误译会触发无意义 compact)
+pub(super) const TOO_LONG_MARKERS: &[&str] = &[
+    "context_length_exceeded",
+    "context length",
+    "context window",
+    "maximum context",
+    "prompt is too long",
+    "input is too long",
+    "too many input tokens",
+    "exceeds the maximum",
+    "上下文",
+];
+
+/// 上下文超长错误改写:按客户端协议族生成标准错误载荷(Anthropic 面 "prompt is
+/// too long" / OpenAI 面 code=context_length_exceeded),原文摘要保留在 message 供
+/// 排障。纯函数只产 (status, JSON 载荷),Response 构造回归 server 的响应构造节
+pub(super) fn too_long_rewrite(protocol: Protocol, body: &[u8]) -> Option<(StatusCode, Value)> {
+    let text = String::from_utf8_lossy(body);
+    let lower = text.to_lowercase();
+    if !TOO_LONG_MARKERS.iter().any(|m| lower.contains(m)) {
+        return None;
+    }
+    let snippet: String = text.chars().take(200).collect();
+    let message = format!("prompt is too long: {snippet}");
+    match protocol {
+        Protocol::Anthropic => Some((
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({
+                "type": "error",
+                "error": { "type": "invalid_request_error", "message": message },
+            }),
+        )),
+        _ => Some((
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({
+                "error": { "message": message, "type": "invalid_request_error", "code": "context_length_exceeded" },
+            }),
+        )),
+    }
+}
+
 // ─── 单元测试 ─────────────────────────────────────────────
 
 #[cfg(test)]
@@ -419,5 +557,76 @@ mod tests {
         let out = normalize_body(Protocol::Anthropic, "deepseek-v4", Bytes::from_static(body));
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v.get("output_config"), None);
+    }
+
+    #[test]
+    fn quota_exhausted_matches_provider_wording() {
+        // OpenAI 配额 / DeepSeek 余额 / 智谱今日额度 / Anthropic 周期限额
+        assert!(quota_exhausted(
+            br#"{"error":{"message":"You exceeded your current quota, please check your plan and billing details."}}"#
+        ));
+        // 智谱 1310 周期上限实测文案(网关日志捕获)
+        assert!(quota_exhausted(
+            r#"{"error":{"message":"[1310][您已达到每周/每月使用上限，您的限额将在 2026-10-07 10:56:46 重置。]"}}"#.as_bytes()
+        ));
+        assert!(quota_exhausted(
+            br#"{"error":{"message":"Insufficient Balance"}}"#
+        ));
+        assert!(quota_exhausted(
+            r#"{"error":{"message":"今日额度已用完,请明日再试"}}"#.as_bytes()
+        ));
+        assert!(quota_exhausted(
+            b"This organization has hit its monthly token limit"
+        ));
+        // 速率限制/内部错误/空体不是配额型(60s 常规冷却)
+        assert!(!quota_exhausted(
+            b"Number of request tokens has exceeded your per-minute rate limit"
+        ));
+        assert!(!quota_exhausted(b"internal server error"));
+        assert!(!quota_exhausted(b""));
+    }
+
+    #[test]
+    fn too_long_rewrite_translates_provider_wording() {
+        // OpenAI 英文超长 → Anthropic 面标准 "prompt is too long"(CC 识别触发 compact)
+        let (status, v) = too_long_rewrite(
+            Protocol::Anthropic,
+            br#"{"error":{"message":"This model's maximum context length is 16385 tokens. However, your messages resulted in 20500 tokens"}}"#,
+        )
+        .expect("英文超长文案应翻译");
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(v["type"], "error");
+        assert_eq!(v["error"]["type"], "invalid_request_error");
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("prompt is too long:"));
+        // 中文厂商文案同样命中
+        assert!(too_long_rewrite(
+            Protocol::Anthropic,
+            r#"{"error":{"message":"输入上下文长度超过模型上限,请缩减对话"}}"#.as_bytes()
+        )
+        .is_some());
+        // Chat 面:OpenAI 族 code 语义
+        let (status, v) = too_long_rewrite(
+            Protocol::Chat,
+            b"Your request exceeds the maximum number of tokens allowed",
+        )
+        .unwrap();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(v["error"]["code"], "context_length_exceeded");
+        // Anthropic 周期配额文案不误译(误译会触发无意义 compact 丢上下文)
+        assert!(too_long_rewrite(
+            Protocol::Anthropic,
+            b"This organization has hit its monthly token limit"
+        )
+        .is_none());
+        // 普通参数错误原样透传
+        assert!(too_long_rewrite(Protocol::Anthropic, b"Invalid model name").is_none());
+        assert!(too_long_rewrite(
+            Protocol::Chat,
+            br#"{"error":{"message":"Invalid max_tokens"}}"#
+        )
+        .is_none());
     }
 }

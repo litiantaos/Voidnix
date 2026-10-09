@@ -7,23 +7,38 @@
         </BaseButton>
       </template>
     </BaseEmptyState>
-    <BaseSettingsList v-else :items="items" />
+    <template v-else>
+      <!-- 活跃链路:提供商(模型)→ 网关 → 消费者,事件驱动粒子;内存事件流、重启清零;
+           空态左列陈列路由表模型(待命),零请求也有信息量 -->
+      <section m="x-3" p="3" class="soft-card" style="border-radius: var(--radius-panel)">
+        <FlowStage
+          :events="usageEvents"
+          :port="gatewayStatus?.port ?? 8788"
+          :running="gatewayStatus?.running ?? false"
+          :models="routeModels"
+        />
+      </section>
+      <BaseSettingsList :items="items" />
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { t } from '@/runtime/i18n'
 import { CMD } from '@/commands'
+import { isTauri } from '@/utils/tauri'
 import { useAppStore } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import FlowStage from './FlowStage.vue'
 import type { SettingItem, SettingSelectOptions } from '@/types/settings'
 import { config, type AliasSelection, type ContextTier } from './config'
 import { gatewayStatus, ccApplyError, currentRoutes, type GatewayStatus } from './sync'
-import { routableModels, anthropicModels } from './logic'
+import { routableModels, anthropicModels, stripContext } from './logic'
 
 const appStore = useAppStore()
 
@@ -58,6 +73,16 @@ const statusTitle = computed(() => {
   if (s.running) return t('ai-gateway.statusRunning', { port: s.port, n: s.routeCount })
   return t('ai-gateway.statusStopped')
 })
+
+/** 使用事件流(Rust 侧最新在前),驱动活跃链路拓扑 */
+const usageEvents = computed(() => gatewayStatus.value?.usage ?? [])
+
+/** 路由表模型(空态左列待命陈列);stripContext 归一与 Rust 记录侧(norm_model)
+ * 同语义——中枢可带 [Nm] 后缀存储,不归一则空态/活跃节点同模型不同 key,切换时
+ * 节点错位重挂 + 首事件粒子丢失 */
+const routeModels = computed(() =>
+  routable.value.map((m) => ({ model: stripContext(m.model), provider: m.providerName })),
+)
 
 /** 设置项两组:网关(总开关 + 提供商导航入口,副标题即运行态、绑定失败标红) → CC(接管开关 + 形态与三档映射);使用指引走搜索栏说明弹窗 */
 const items = computed<SettingItem[]>(() => {
@@ -154,11 +179,37 @@ const items = computed<SettingItem[]>(() => {
   return out
 })
 
+// ── 使用统计轮询(双门控:组件激活 AND 窗口聚焦,参照 system-status) ──
+// 窗口隐藏时 onDeactivated 不触发(仅切扩展触发),需监听 focus 避免后台持续轮询
+
+const POLL_INTERVAL = 3000
+let pollTimer: number | undefined
+let polling = false
+let viewActivated = false
+let windowFocused = false
+let unlistenFocus: (() => void) | undefined
+
 async function refreshStatus() {
+  if (!isTauri || polling) return
+  polling = true
   try {
     gatewayStatus.value = await invoke<GatewayStatus>(CMD.aiGatewayStatus)
   } catch (e) {
     console.error('[ai-gateway] status failed:', e)
+  } finally {
+    polling = false
+  }
+}
+
+function syncPolling() {
+  if (viewActivated && windowFocused) {
+    if (pollTimer === undefined) {
+      void refreshStatus()
+      pollTimer = window.setInterval(() => void refreshStatus(), POLL_INTERVAL)
+    }
+  } else if (pollTimer !== undefined) {
+    clearInterval(pollTimer)
+    pollTimer = undefined
   }
 }
 
@@ -167,6 +218,31 @@ function goAiProviders() {
   appStore.setActiveExtension('ai-providers', 'ai-gateway')
 }
 
+onMounted(() => {
+  if (!isTauri) return
+  // 实测页面焦点:navigate 重载后 View 可能在窗口隐藏态重挂载(app store 经
+  // sessionStorage 恢复 activeExtId),硬编码 true 会让双门控在整个隐藏期失效
+  windowFocused = document.hasFocus()
+  getCurrentWindow()
+    .onFocusChanged(({ payload: focused }) => {
+      windowFocused = focused
+      syncPolling()
+    })
+    .then((fn) => {
+      unlistenFocus = fn
+    })
+})
 // KeepAlive 内 onActivated 首挂载同样触发,无需 onMounted 双发
-onActivated(() => void refreshStatus())
+onActivated(() => {
+  viewActivated = true
+  syncPolling()
+})
+onDeactivated(() => {
+  viewActivated = false
+  syncPolling()
+})
+onBeforeUnmount(() => {
+  if (pollTimer !== undefined) clearInterval(pollTimer)
+  unlistenFocus?.()
+})
 </script>

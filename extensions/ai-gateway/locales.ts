@@ -38,14 +38,14 @@ registerMessages({
 
 **Claude Code**:需同时打开「接管 Claude Code」开关才会改写其配置(需网关运行中),重开会话生效;之后在 CC 里 **/model** 随时切换任意模型。关闭接管开关自动还原原配置。
 
-**其它工具**:任何 OpenAI 或 Anthropic 兼容的工具,把 API 地址改为 \`http://127.0.0.1:{port}\`,Key 随便填即可。
+**其它工具**:任何 OpenAI 或 Anthropic 兼容的工具,把 API 地址改为 \`http://127.0.0.1:{port}\`,Key 随便填即可;Key 按约定填 \`voidnix-<工具名>\`(如 voidnix-codex)即可在链路图显示工具真名。
 
 提供商、Key 与模型的增删都在「AI 提供商」里进行,保存即生效,工具无需重启。`,
     en: `Once enabled, all your providers and models are served from a single local address; multiple keys rotate automatically, so exhausted quota switches keys seamlessly.
 
 **Claude Code**: wiring only happens when "Take over Claude Code" is also on (gateway must be running); it takes effect in new sessions. Switch models anytime with **/model**. Turning takeover off restores your original config.
 
-**Other tools**: point any OpenAI- or Anthropic-compatible tool at \`http://127.0.0.1:{port}\` with any placeholder API key.
+**Other tools**: point any OpenAI- or Anthropic-compatible tool at \`http://127.0.0.1:{port}\` with any placeholder API key; use the convention \`voidnix-<tool>\` (e.g. voidnix-codex) to show the tool's real name in the flow.
 
 Providers, keys and models are all managed in AI Providers; changes apply instantly with no restart.`,
   },
@@ -72,4 +72,6 @@ Providers, keys and models are all managed in AI Providers; changes apply instan
     'zh-CN': '无可路由提供商:在 AI 提供商中配置任一协议端点与 Key',
     en: 'No routable providers: configure any protocol endpoint and keys in AI Providers',
   },
+  'ai-gateway.nodeGateway': { 'zh-CN': '网关', en: 'Gateway' },
+  'ai-gateway.consumerTools': { 'zh-CN': '其它工具', en: 'Other tools' },
 })

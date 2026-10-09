@@ -3,10 +3,15 @@
 //! 路由 = 请求体 `model` 字段 → 提供商;每提供商多 Key 轮换(429/401/403/503/529 换下一把重发,
 //! lastGood 粘性优先)。请求体整体缓冲以支持换 Key 重放,响应(SSE 流式)透传不落盘。
 //! 本模块持有词汇(Protocol、路由表)与 Gateway 状态机、轮换策略、HTTP 骨架与 proxy
-//! 主流程;请求体读改纯函数在 normalize,2xx 流守护与尾部哨兵在 guard。
+//! 主流程;请求体读改与错误语义翻译纯函数在 normalize,2xx 流守护与尾部哨兵在 guard,
+//! 快照持久化与排障日志在 state。
 
 use super::guard::{GuardCommit, GuardCtx, GuardStream};
-use super::normalize::{extract_model, norm_model, normalize_body, session_hash};
+use super::normalize::{
+    consumer_from_key, extract_model, norm_model, normalize_body, quota_exhausted, session_hash,
+    too_long_rewrite, QUOTA_COOLDOWN,
+};
+use super::state::{persist_state, read_state, PersistedState};
 use axum::body::{Body, Bytes};
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -88,30 +93,8 @@ pub struct GatewayStatus {
     pub port: u16,
     pub route_count: usize,
     pub bind_error: Option<String>,
-}
-
-/// 持久化快照(extensions/ai-gateway/gateway-state.json):app 重启后前端就绪前
-/// 由 Rust 侧直接拉起服务器,消除冷启动窗口内 CC 断连。
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PersistedState {
-    enabled: bool,
-    routes: Vec<GatewayRoute>,
-}
-
-fn state_file(dir: &Path) -> PathBuf {
-    dir.join("gateway-state.json")
-}
-
-fn persist_state(dir: &Path, state: &PersistedState) -> Result<(), String> {
-    let path = state_file(dir);
-    let text = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
-    crate::runtime::storage::atomic_write(&path, &(text + "\n"))
-}
-
-fn read_state(dir: &Path) -> Result<PersistedState, String> {
-    let text = std::fs::read_to_string(state_file(dir)).map_err(|e| e.to_string())?;
-    serde_json::from_str(&text).map_err(|e| e.to_string())
+    /// 使用事件流(最新在前;内存态,重启清零,不落盘)
+    pub usage: Vec<super::usage::UsageEvent>,
 }
 
 // ─── 全局单例 ─────────────────────────────────────────────
@@ -132,9 +115,11 @@ pub struct Gateway {
     /// 启停串行锁:bind 是 async,与并发的 sync 调用竞态会双 bind 撞自己端口
     lifecycle: tokio::sync::Mutex<()>,
     /// 排障日志目录(扩展数据目录,update/restore 时注入);None = 冷启动窗口,日志丢弃
-    log_dir: RwLock<Option<PathBuf>>,
+    pub(super) log_dir: RwLock<Option<PathBuf>>,
     /// 日志追加串行锁:proxy 多并发,防交错
-    log_lock: Mutex<()>,
+    pub(super) log_lock: Mutex<()>,
+    /// 使用事件流(内存,重启清零;见 usage 模块)
+    pub(super) usage: super::usage::UsageTable,
 }
 
 pub static GATEWAY: LazyLock<Arc<Gateway>> = LazyLock::new(|| {
@@ -148,6 +133,7 @@ pub static GATEWAY: LazyLock<Arc<Gateway>> = LazyLock::new(|| {
         lifecycle: tokio::sync::Mutex::new(()),
         log_dir: RwLock::new(None),
         log_lock: Mutex::new(()),
+        usage: super::usage::UsageTable::default(),
     })
 });
 
@@ -182,119 +168,6 @@ fn inplace_retry_wait(
     (wait.as_secs() <= 8).then_some(wait)
 }
 
-/// 配额耗尽型错误文案子串(大小写不敏感):速率限制的 60s 冷却对配额耗尽是必然失败
-/// 的空转——日/周配额窗口内重试无意义,长冷却避免每分钟白付一次往返。词表保守,
-/// 仅高置信度配额语义(计费/配额/余额/周期限额);误伤速率限制的代价是多冷 29 分钟
-const QUOTA_MARKERS: &[&str] = &[
-    "quota",
-    "billing",
-    "balance",
-    "arrears",
-    "usage limit",
-    "daily limit",
-    "monthly",
-    "weekly",
-    "额度",
-    "配额",
-    "欠费",
-    "余额",
-    "今日",
-    // 智谱 1310 实测文案「您已达到每周/每月使用上限,您的限额将在 … 重置」——中文周/月
-    // 上限词与英文 monthly/weekly 对齐,漏判会按速率限制 60s 冷却每分钟空转一次
-    "每周",
-    "每月",
-];
-
-/// 轮换失败(429/5xx 等)的响应体是否配额耗尽型
-fn quota_exhausted(body: &[u8]) -> bool {
-    let text = String::from_utf8_lossy(body).to_lowercase();
-    QUOTA_MARKERS.iter().any(|m| text.contains(m))
-}
-
-/// 配额耗尽冷却:日/周窗口尺度下 30min 重探一次(每次代价仅一个 429 往返),
-/// 不做 resets_at 提取(厂商格式无标准,固定值鲁棒)
-const QUOTA_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30 * 60);
-
-/// 上下文超长的厂商错误文案子串(大小写不敏感):命中即翻译为各协议标准错误,客户端
-/// (CC)识别标准语义触发自动 compact——原文案(尤其中文厂商)客户端识别不了,直接
-/// 报错停会话。词表保守:仅上下文语义,不含易与周期限额混淆的「token limit」族
-/// (Anthropic 月度配额文案含该词,误译会触发无意义 compact)
-const TOO_LONG_MARKERS: &[&str] = &[
-    "context_length_exceeded",
-    "context length",
-    "context window",
-    "maximum context",
-    "prompt is too long",
-    "input is too long",
-    "too many input tokens",
-    "exceeds the maximum",
-    "上下文",
-];
-
-/// 上下文超长错误改写:按客户端协议族生成标准错误(Anthropic 面 "prompt is too
-/// long" / OpenAI 面 code=context_length_exceeded),原文摘要保留在 message 供排障
-fn too_long_rewrite(protocol: Protocol, body: &[u8]) -> Option<Response> {
-    let text = String::from_utf8_lossy(body);
-    let lower = text.to_lowercase();
-    if !TOO_LONG_MARKERS.iter().any(|m| lower.contains(m)) {
-        return None;
-    }
-    let snippet: String = text.chars().take(200).collect();
-    let message = format!("prompt is too long: {snippet}");
-    let payload = match protocol.error_kind() {
-        ErrorShape::Anthropic => serde_json::json!({
-            "type": "error",
-            "error": { "type": "invalid_request_error", "message": message },
-        }),
-        ErrorShape::OpenAi => serde_json::json!({
-            "error": { "message": message, "type": "invalid_request_error", "code": "context_length_exceeded" },
-        }),
-    };
-    Some(
-        Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .header(axum::http::header::CONTENT_TYPE, "application/json")
-            .body(Body::from(payload.to_string()))
-            .unwrap_or_else(|_| empty_error()),
-    )
-}
-
-/// 排障日志:数据目录 gateway.log,行式追加(epoch 毫秒 + 类别 + 详情,`date -r 秒` 可转)。
-/// 只记异常路径(路由失败/上游错误/网络错误/Key 耗尽),成功请求零记录;
-/// 不含 Key 明文与请求体;超 512KB 整文件重置(自旋转);新建即 0600(数据目录密级统一)。
-pub(super) fn log_gateway(kind: &str, detail: &str) {
-    let Some(dir) = GATEWAY.log_dir.read().unwrap().clone() else {
-        return;
-    };
-    let _guard = GATEWAY.log_lock.lock().unwrap();
-    let path = dir.join("gateway.log");
-    let ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let line = format!("[{ms}] {kind} {detail}\n");
-    let created = !path.exists();
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    {
-        if f.metadata().map(|m| m.len()).unwrap_or(0) > 512 * 1024 {
-            let _ = std::fs::write(&path, &line);
-        } else {
-            let _ = f.write_all(line.as_bytes());
-        }
-    }
-    if created {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-        }
-    }
-}
-
 impl Gateway {
     /// 前端单一同步入口:换路由表 + 持久化 + 按需启停服务器。
     pub async fn update(&self, enabled: bool, routes: Vec<GatewayRoute>, dir: &Path) {
@@ -307,7 +180,8 @@ impl Gateway {
         // 换表才清按 (provider, idx) 记录的运行时状态:Key 增删/重排后同一 idx 指向
         // 不同 Key,冷却/亲和/粘性继续沿用会错位对象。同表重推(改开关/别名等无关
         // 配置触发的 sync)不清——亲和清空 = 活跃会话丢 Key 粘性,上游 prompt cache
-        // 按 Key 隔离,换 Key 即前缀 cache 作废全价重算,代价远超一次成功请求
+        // 按 Key 隔离,换 Key 即前缀 cache 作废全价重算,代价远超一次成功请求。
+        // usage 刻意不在清表之列:统计是历史事实,无 idx 错位语义
         if **self.routes.read().unwrap() != routes {
             self.cooldowns.lock().unwrap().clear();
             self.affinity.lock().unwrap().clear();
@@ -379,6 +253,7 @@ impl Gateway {
             port: PORT,
             route_count: self.routes_snapshot().len(),
             bind_error: self.bind_error.read().unwrap().clone(),
+            usage: self.usage.snapshot(),
         }
     }
 
@@ -472,6 +347,7 @@ impl Gateway {
             lifecycle: tokio::sync::Mutex::new(()),
             log_dir: RwLock::new(None),
             log_lock: Mutex::new(()),
+            usage: super::usage::UsageTable::default(),
         }
     }
 
@@ -567,6 +443,15 @@ pub(super) enum Protocol {
 }
 
 impl Protocol {
+    /// 线协议面名(使用事件的消费者归并键,前端据此区分 Claude Code 与其它工具)
+    fn wire(self) -> &'static str {
+        match self {
+            Protocol::Anthropic => "anthropic",
+            Protocol::Responses => "responses",
+            Protocol::Chat => "chat",
+        }
+    }
+
     fn upstream_base(self, route: &GatewayRoute) -> &str {
         match self {
             Protocol::Anthropic => &route.anthropic_url,
@@ -618,7 +503,7 @@ fn join_upstream_url(protocol: Protocol, base: &str, path_and_query: &str) -> St
     format!("{base}{stripped}")
 }
 
-async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
+pub(super) async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
     let (parts, body_raw) = req.into_parts();
     // 请求体整体缓冲:换 Key 重放需要完整 body(SSE 是响应侧流式,不受影响)
     let body = match axum::body::to_bytes(body_raw, MAX_BODY_BYTES).await {
@@ -634,7 +519,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
     };
 
     let Some(model) = extract_model(&body) else {
-        log_gateway(
+        g.log_gateway(
             "route",
             &format!("{} {} 缺少 model 字段", parts.method, parts.uri.path()),
         );
@@ -650,7 +535,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
 
     let routes = g.routes_snapshot();
     let Some(route) = find_route(&routes, &model) else {
-        log_gateway(
+        g.log_gateway(
             "route",
             &format!(
                 "{} {} · 未知模型 {model} · 可用: {}",
@@ -672,7 +557,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
 
     let base = protocol.upstream_base(route);
     if base.trim().is_empty() {
-        log_gateway(
+        g.log_gateway(
             "route",
             &format!(
                 "{} {} · {} 未声明 {:?} 协议端点",
@@ -730,7 +615,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
         match resp {
             Err(e) => {
                 log::warn!("[ai-gateway] {} · {}: 网络错误 {e}", route.name, key.label);
-                log_gateway(
+                g.log_gateway(
                     "net",
                     &format!("{model} · {} · {}: {e}", route.name, key.label),
                 );
@@ -769,7 +654,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                                 .collect::<String>()
                         })
                         .unwrap_or_default();
-                    log_gateway(
+                    g.log_gateway(
                         "upstream",
                         &format!(
                             "{model} · {} · {}: {status}{quota_tag} {snippet}",
@@ -783,7 +668,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                         if let Some(wait) =
                             inplace_retry_wait(status, quota, retry_after, retry_round)
                         {
-                            log_gateway(
+                            g.log_gateway(
                                 "retry",
                                 &format!(
                                     "{model} · {} · {}: {status} 原地重试(第 {} 轮,等 {}s)",
@@ -813,8 +698,16 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                     continue;
                 }
                 if status < 400 {
-                    // 2xx:粘性/亲和的提交移交流守护——收到响应头 ≠ 应答成功,流中途
-                    // 断开(哨兵判异常/传输错误)不提交,客户端重试走其它 Key
+                    // 2xx:使用事件即时记(响应头到达 = 该模型已被使用;归一裸名合并
+                    // [Nm] 后缀变体,见 usage 模块),粘性/亲和的提交移交流守护——
+                    // 收到响应头 ≠ 应答成功,流中途断开(哨兵判异常/传输错误)不提交,
+                    // 客户端重试走其它 Key
+                    g.record_usage(
+                        norm_model(&model),
+                        &route.name,
+                        protocol.wire(),
+                        consumer_from_key(&parts.headers),
+                    );
                     let commit = GuardCommit {
                         g: Arc::clone(&g),
                         provider_id: route.provider_id.clone(),
@@ -842,7 +735,7 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                     .unwrap_or("application/json")
                     .to_string();
                 let buf = read_capped(r, MAX_ERROR_BODY).await.unwrap_or_default();
-                log_gateway(
+                g.log_gateway(
                     "errpass",
                     &format!("{model} · {}: {status} 透传(不轮换)", route.name),
                 );
@@ -850,12 +743,12 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
                 // CC 识别后自动 compact;原文案 CC 认不了,直接报错停会话。已治理上
                 // 游让位:末跳已译为协议标准错误,本跳透传即正确(词表重复命中是噪声)
                 if !route.governed {
-                    if let Some(resp) = too_long_rewrite(protocol, &buf) {
-                        log_gateway(
+                    if let Some((status, payload)) = too_long_rewrite(protocol, &buf) {
+                        g.log_gateway(
                             "toolong",
                             &format!("{model} · {}: 已翻译超长错误", route.name),
                         );
-                        return resp;
+                        return json_response(status, payload);
                     }
                 }
                 return Response::builder()
@@ -869,14 +762,14 @@ async fn proxy(g: Arc<Gateway>, protocol: Protocol, req: Request) -> Response {
 
     if let Some((status, buf)) = last_error {
         // 回放最后一个上游错误(429 等),客户端能看到真实原因
-        log_gateway("replay", &format!("{model} · {} 回放 {status}", route.name));
+        g.log_gateway("replay", &format!("{model} · {} 回放 {status}", route.name));
         return Response::builder()
             .status(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY))
             .header(axum::http::header::CONTENT_TYPE, "application/json")
             .body(Body::from(buf))
             .unwrap_or_else(|_| empty_error());
     }
-    log_gateway(
+    g.log_gateway(
         "exhaust",
         &format!("{model} · {} 的全部 Key 均不可用(网络错误)", route.name),
     );
@@ -1020,6 +913,11 @@ fn error_response(status: StatusCode, kind: &str, message: &str, protocol: Proto
             "error": { "type": kind, "message": message },
         }),
     };
+    json_response(status, payload)
+}
+
+/// JSON 载荷 → Response 的统一构造(超长翻译等已产载荷的路径复用)
+fn json_response(status: StatusCode, payload: serde_json::Value) -> Response {
     Response::builder()
         .status(status)
         .header(axum::http::header::CONTENT_TYPE, "application/json")
@@ -1047,12 +945,17 @@ fn empty_error() -> Response {
 
 // ─── 单元测试 ─────────────────────────────────────────────
 
+// pub(super):state/usage 模块的测试复用本模块工厂与 mock 上游基建
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use serde_json::Value;
 
-    fn route(id: &str, anthropic: &str, models: &[&str]) -> GatewayRoute {
+    pub(in crate::extensions::ai_gateway) fn route(
+        id: &str,
+        anthropic: &str,
+        models: &[&str],
+    ) -> GatewayRoute {
         GatewayRoute {
             provider_id: id.to_string(),
             name: id.to_string(),
@@ -1304,97 +1207,6 @@ mod tests {
         assert!(!rotatable(400));
     }
 
-    #[test]
-    fn quota_exhausted_matches_provider_wording() {
-        // OpenAI 配额 / DeepSeek 余额 / 智谱今日额度 / Anthropic 周期限额
-        assert!(quota_exhausted(
-            br#"{"error":{"message":"You exceeded your current quota, please check your plan and billing details."}}"#
-        ));
-        // 智谱 1310 周期上限实测文案(网关日志捕获)
-        assert!(quota_exhausted(
-            r#"{"error":{"message":"[1310][您已达到每周/每月使用上限，您的限额将在 2026-10-07 10:56:46 重置。]"}}"#.as_bytes()
-        ));
-        assert!(quota_exhausted(
-            br#"{"error":{"message":"Insufficient Balance"}}"#
-        ));
-        assert!(quota_exhausted(
-            r#"{"error":{"message":"今日额度已用完,请明日再试"}}"#.as_bytes()
-        ));
-        assert!(quota_exhausted(
-            b"This organization has hit its monthly token limit"
-        ));
-        // 速率限制/内部错误/空体不是配额型(60s 常规冷却)
-        assert!(!quota_exhausted(
-            b"Number of request tokens has exceeded your per-minute rate limit"
-        ));
-        assert!(!quota_exhausted(b"internal server error"));
-        assert!(!quota_exhausted(b""));
-    }
-
-    #[tokio::test]
-    async fn too_long_rewrite_translates_provider_wording() {
-        // OpenAI 英文超长 → Anthropic 面标准 "prompt is too long"(CC 识别触发 compact)
-        let resp = too_long_rewrite(
-            Protocol::Anthropic,
-            br#"{"error":{"message":"This model's maximum context length is 16385 tokens. However, your messages resulted in 20500 tokens"}}"#,
-        )
-        .expect("英文超长文案应翻译");
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
-        let v: Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["type"], "error");
-        assert_eq!(v["error"]["type"], "invalid_request_error");
-        assert!(v["error"]["message"]
-            .as_str()
-            .unwrap()
-            .starts_with("prompt is too long:"));
-        // 中文厂商文案同样命中
-        assert!(too_long_rewrite(
-            Protocol::Anthropic,
-            r#"{"error":{"message":"输入上下文长度超过模型上限,请缩减对话"}}"#.as_bytes()
-        )
-        .is_some());
-        // Chat 面:OpenAI 族 code 语义
-        let resp = too_long_rewrite(
-            Protocol::Chat,
-            b"Your request exceeds the maximum number of tokens allowed",
-        )
-        .unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
-        let v: Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["error"]["code"], "context_length_exceeded");
-        // Anthropic 周期配额文案不误译(误译会触发无意义 compact 丢上下文)
-        assert!(too_long_rewrite(
-            Protocol::Anthropic,
-            b"This organization has hit its monthly token limit"
-        )
-        .is_none());
-        // 普通参数错误原样透传
-        assert!(too_long_rewrite(Protocol::Anthropic, b"Invalid model name").is_none());
-        assert!(too_long_rewrite(
-            Protocol::Chat,
-            br#"{"error":{"message":"Invalid max_tokens"}}"#
-        )
-        .is_none());
-    }
-
-    #[test]
-    fn persisted_state_roundtrip() {
-        let dir = std::env::temp_dir().join(format!("voidnix-gw-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let state = PersistedState {
-            enabled: true,
-            routes: vec![route("zhipu", "https://x.cn/api/anthropic", &["glm-5.3"])],
-        };
-        persist_state(&dir, &state).unwrap();
-        let back = read_state(&dir).unwrap();
-        assert!(back.enabled);
-        assert_eq!(back.routes.len(), 1);
-        assert_eq!(back.routes[0].models, vec!["glm-5.3"]);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
     /// 同表重推(改开关/别名等无关 sync)保留冷却/亲和/粘性;换表才清(idx 错位防线)。
     /// enabled=false 不触端口 bind,测试可与其它用例并存
     #[tokio::test]
@@ -1424,7 +1236,9 @@ mod tests {
             vec![1, 0],
             "同表重推不清亲和"
         );
-        // 换表(头部插一把 Key,idx 语义变化)即清:亲和失效回配置序
+        // 换表(头部插一把 Key,idx 语义变化)即清:亲和失效回配置序;usage 是历史
+        // 事实无 idx 语义,换表同样保留(与冷却/亲和的清形成对照)
+        g.record_usage("glm-5.3", "zhipu", "anthropic", None);
         let mut changed = multi.clone();
         changed.keys.insert(
             0,
@@ -1435,6 +1249,7 @@ mod tests {
         );
         g.update(false, vec![changed], &dir).await;
         assert_eq!(g.key_order(&multi, Some(42)), vec![0, 1], "换表清亲和");
+        assert_eq!(g.usage_snapshot().len(), 1, "换表保留使用统计");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1443,7 +1258,7 @@ mod tests {
     /// 临时上游 mock(127.0.0.1:0 临时端口):逐次记录到达的原始请求体,恒按脚本
     /// 应答。fallback 接任意路径(测试不必关心 join_upstream_url 的路径整形),
     /// tests 直调 proxy() 端到端,网关侧无需 socket
-    async fn spawn_upstream(
+    pub(in crate::extensions::ai_gateway) async fn spawn_upstream(
         status: u16,
         body: &'static [u8],
         headers: Vec<(&'static str, String)>,
@@ -1472,13 +1287,15 @@ mod tests {
     }
 
     /// 裸 Gateway 直写路由表(proxy 的最小装配,不经 update 的持久化副作用)
-    fn gateway_with(routes: Vec<GatewayRoute>) -> Arc<Gateway> {
+    pub(in crate::extensions::ai_gateway) fn gateway_with(
+        routes: Vec<GatewayRoute>,
+    ) -> Arc<Gateway> {
         let g = Arc::new(Gateway::bare());
         *g.routes.write().unwrap() = Arc::new(routes);
         g
     }
 
-    fn anthropic_post(body: &str) -> Request {
+    pub(in crate::extensions::ai_gateway) fn anthropic_post(body: &str) -> Request {
         Request::builder()
             .method("POST")
             .uri("/v1/messages")
@@ -1641,27 +1458,6 @@ mod tests {
             .as_str()
             .unwrap()
             .starts_with("prompt is too long:"));
-    }
-
-    /// 旧 gateway-state.json(无 governed 键)反序列化兜默认 false;roundtrip 写回
-    /// 恒含该键——serde default 是冷启动恢复不空路由的防线
-    #[test]
-    fn legacy_snapshot_without_governed_defaults_false() {
-        let dir = std::env::temp_dir().join(format!("voidnix-gw-legacy-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            state_file(&dir),
-            r#"{"enabled":true,"routes":[{"providerId":"z","name":"z","anthropicUrl":"https://x","responsesUrl":"","chatUrl":"","models":["m"],"keys":[{"label":"k","apiKey":"s"}]}]}"#,
-        )
-        .unwrap();
-        let back = read_state(&dir).unwrap();
-        assert_eq!(back.routes.len(), 1);
-        assert!(!back.routes[0].governed);
-        persist_state(&dir, &back).unwrap();
-        let text = std::fs::read_to_string(state_file(&dir)).unwrap();
-        assert!(text.contains("\"governed\""), "写回恒含该键");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 切换 governed = 行为变化,整表不等 → 清冷却/亲和/粘性(一次性亲和代价,
