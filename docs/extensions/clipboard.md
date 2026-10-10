@@ -80,10 +80,11 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 
 ### 粘贴
 
+- **目标输入区判定（文本回退复制）**：生效载荷为文本（单条 text / 全 text 合并 / 混类型首项 text）时，经 `platform::selection::focused_element_editable` 查询粘贴目标（`captured_pid` 的 app，`hide_main` 的 `restore_captured` 交还焦点后 Cmd+V 的落点）聚焦元素是否为文本输入区，三态判定：输入区角色（`AXTextField`/`AXSecureTextField`/`AXSearchField`/`AXComboBox`/`AXTextArea`，终端/IDE 正文同为 AXTextArea）或 `AXEditable` 自报可编辑 → 粘贴；明确非输入区角色（Finder/边栏列表 AXOutline/AXList、表格、按钮、静态文本、图片、网页正文 AXWebArea）→ 回退复制：内容照常写板 + 置顶 + 隐藏（`hide_main` + 内存兜底），跳过 Cmd+V 模拟，命令返回 `copied`（粘贴返回 `pasted`），前端 toast 按此分流（已粘贴/已复制）；未知（判定失败 / 无聚焦元素 / 未知角色——自绘引擎如 Zed 的 AX 树只到 AXWindow 容器层，误判会破坏编辑器内粘贴）→ 维持粘贴。image/file 粘贴在非输入区合法（Finder/预览），不参与回退
 - **图片**：先 `encode_image_to_png` 再 `clear` + marker + `set_png_bytes`（解码失败不触碰剪贴板、不模拟 Cmd+V，命令返回 Err）
 - **统一转 PNG**：任意 `data:image/*;base64,`（JPEG/GIF/WebP/BMP/HEIC 等）经 NSImage 转换
 - **多选序**：按前端 `ids` 选择序
-- **粘贴置顶**：写板成功后 `refresh_pasted_at` 将被粘贴记录 `created_at` 刷新为当前 UTC（等效「最近使用」，收藏不过期收益随动）——动态置顶序下显示到列表顶部；多条按选择序依次 `-i seconds` 偏移（created_at 秒精度，同秒多条 DESC 序不稳定）。粘贴写入带防回环 marker、monitor 跳过入库，置顶须在此手动刷新；刷新失败静默（粘贴本体已成功）。前端粘贴成功后 `invalidateCache` + `resetAndRefetch` 重拉——粘贴路径窗口由 Rust 端 `hide_main` 隐藏、无 `window-hiding` 事件，`onWindowHiding` 的重拉不会触发，不在此重拉则列表保持旧序旧时间直到退出扩展重进（`onActivated`）；重拉走 IPC 拿到置顶新序，DOM 更新在隐藏期完成，下次唤起首帧即新序首项
+- **粘贴置顶**：写板成功后（粘贴与文本回退复制同路）`refresh_pasted_at` 将被粘贴记录 `created_at` 刷新为当前 UTC（等效「最近使用」，收藏不过期收益随动）——动态置顶序下显示到列表顶部；多条按选择序依次 `-i seconds` 偏移（created_at 秒精度，同秒多条 DESC 序不稳定）。粘贴写入带防回环 marker、monitor 跳过入库，置顶须在此手动刷新；刷新失败静默（粘贴本体已成功）。前端粘贴成功后 `invalidateCache` + `resetAndRefetch` 重拉——粘贴路径窗口由 Rust 端 `hide_main` 隐藏、无 `window-hiding` 事件，`onWindowHiding` 的重拉不会触发，不在此重拉则列表保持旧序旧时间直到退出扩展重进（`onActivated`）；重拉走 IPC 拿到置顶新序，DOM 更新在隐藏期完成，下次唤起首帧即新序首项
 - **粘贴隐藏编排**：粘贴路径经 `hide_and_paste` 直调 `hide_main`（不经 `hide_window` 命令——auto 防抖不适用，粘贴是显式用户动作、窗口必然可见），`maybe_reload_webview` 内存兜底与该命令对齐触发；但**前端 `window-hiding` 事件不会派发**（无前端 `hideWindow` 参与），监听该事件的编排（ContentView compositing 释放等）在此路径缺席，由粘贴点手动重拉 + 归位补偿，且下次任何前端路径隐藏时补齐
 - **全 text**：换行拼接
 - **全 file**：写多 item pasteboard（`set_file_urls(..., Some(marker))`）

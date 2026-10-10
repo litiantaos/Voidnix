@@ -301,17 +301,19 @@ async function handleExecute(item: ClipboardItem, _index: number, _e?: KeyboardE
   selectedIds.value = new Set()
   if (ids.length === 0) return
   try {
+    // Rust 判定目标输入区：文本记录在目标无输入区时回退复制（copied）
+    let outcome: 'pasted' | 'copied'
     if (ids.length > 1) {
-      await invoke(CMD.pasteClipboardItems, { ids })
+      outcome = await invoke<'pasted' | 'copied'>(CMD.pasteClipboardItems, { ids })
     } else {
-      await invoke(CMD.pasteClipboardItem, { id: ids[0] })
+      outcome = await invoke<'pasted' | 'copied'>(CMD.pasteClipboardItem, { id: ids[0] })
     }
     // Rust 端 refresh_pasted_at 直接改 DB 不发 clipboard-updated，须手动清缓存，
     // 否则下方重拉命中旧 tabCache（onWindowHiding 路径无需：隐藏前数据变更均已经
     // clipboard-updated 同步过缓存）
     invalidateCache()
     // invoke 返回时窗口已被 Rust hide（粘贴链路主窗隐藏），外部 toast 照常展示
-    showToast(t('common.pasted'))
+    showToast(outcome === 'copied' ? t('common.copied') : t('common.pasted'))
     // 粘贴成功即会话结束：invoke 返回时窗口已被 Rust 端 hide_main 隐藏（不经前端
     // hideWindow、无 window-hiding 事件，onWindowHiding 的重拉不会触发），此处归位 +
     // 重拉使置顶序与新时间落进 history、DOM 更新在隐藏期完成，下次唤起首帧即新序

@@ -239,13 +239,39 @@ fn write_files_to_pasteboard(urls: &[String]) {
     pasteboard::set_file_urls(urls, Some("com.litiantao.voidnix.clipboard"));
 }
 
-/// 粘贴路径不经 hide_window 命令（auto 防抖不适用——粘贴是显式用户动作，窗口
-/// 必然可见），内存兜底须在此对齐：hide_main + maybe_reload_webview 同 hide_window
-/// 命令编排。set_window_visible 已由 hide_main 内部承担，勿在调用点重复。
-fn hide_and_paste(app: &tauri::AppHandle) {
+/// 动作收尾的窗口编排（粘贴与回退复制共用）：不经 hide_window 命令（auto 防抖
+/// 不适用——回车执行是显式用户动作，窗口必然可见），内存兜底须在此对齐：
+/// hide_main + maybe_reload_webview 同 hide_window 命令编排。
+/// set_window_visible 已由 hide_main 内部承担，勿在调用点重复。
+fn hide_after_action(app: &tauri::AppHandle) {
     crate::runtime::window::hide_main(app);
     crate::runtime::window::maybe_reload_webview(app);
+}
+
+/// 粘贴收尾：窗口编排 + 延迟模拟 Cmd+V。
+fn hide_and_paste(app: &tauri::AppHandle) {
+    hide_after_action(app);
     std::thread::spawn(simulate_cmd_v);
+}
+
+/// 回车执行的实际结果：目标无文本输入区时文本记录回退复制（跳过 Cmd+V 模拟），
+/// 前端按此 toast 分流（已粘贴 / 已复制）。
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PasteOutcome {
+    Pasted,
+    Copied,
+}
+
+/// 文本粘贴目标输入区判定：hide_main 的 restore_captured 会把焦点交还
+/// captured_pid 的 app，Cmd+V 落在其聚焦元素上。聚焦元素非文本输入区时
+/// （Finder 列表、浏览器正文等），Cmd+V 落空或触发目标 app 其它键语义——
+/// 文本记录回退复制（内容照常写板置顶）。判定失败（无有效 pid / AX 无响应 /
+/// 无聚焦元素）维持粘贴（既有行为）。
+fn paste_target_is_input_area() -> bool {
+    // 判定失败维持粘贴（既有行为）：unwrap_or(true)
+    crate::platform::selection::focused_element_editable(crate::platform::focus::captured_pid())
+        .unwrap_or(true)
 }
 
 /// 粘贴成功后刷新记录时间为当前 UTC（等效「最近使用」，重复项 UPDATE 刷新同源）：
@@ -265,7 +291,7 @@ fn refresh_pasted_at(app: &tauri::AppHandle, ids: &[String]) {
 }
 
 #[tauri::command]
-pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), String> {
+pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<PasteOutcome, String> {
     if !ax_trusted() {
         return Err("需授予设备控制权限".to_string());
     }
@@ -288,15 +314,23 @@ pub fn paste_clipboard_item(id: String, app: tauri::AppHandle) -> Result<(), Str
         None => return Err(format!("Clipboard item not found: {id}")),
     };
 
+    let fallback_copy = content_type == "text" && !paste_target_is_input_area();
     write_to_pasteboard(&content, &content_type)?;
     refresh_pasted_at(&app, &[id]);
+    if fallback_copy {
+        hide_after_action(&app);
+        return Ok(PasteOutcome::Copied);
+    }
     hide_and_paste(&app);
 
-    Ok(())
+    Ok(PasteOutcome::Pasted)
 }
 
 #[tauri::command]
-pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<(), String> {
+pub fn paste_clipboard_items(
+    ids: Vec<String>,
+    app: tauri::AppHandle,
+) -> Result<PasteOutcome, String> {
     if !ax_trusted() {
         return Err("需授予设备控制权限".to_string());
     }
@@ -346,6 +380,9 @@ pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<
 
     let all_text = items.iter().all(|(_, t)| t == "text");
     let all_file = items.iter().all(|(_, t)| t == "file");
+    // 混类型只贴首项：首项为文本时同样参与目标判定（回退时复制首项内容）
+    let first_is_text = !all_text && !all_file && items[0].1 == "text";
+    let fallback_copy = (all_text || first_is_text) && !paste_target_is_input_area();
     if all_text {
         let merged: String = items
             .iter()
@@ -363,9 +400,13 @@ pub fn paste_clipboard_items(ids: Vec<String>, app: tauri::AppHandle) -> Result<
         write_to_pasteboard(content, content_type)?;
     }
     refresh_pasted_at(&app, &ids);
+    if fallback_copy {
+        hide_after_action(&app);
+        return Ok(PasteOutcome::Copied);
+    }
     hide_and_paste(&app);
 
-    Ok(())
+    Ok(PasteOutcome::Pasted)
 }
 
 #[link(name = "ApplicationServices", kind = "framework")]

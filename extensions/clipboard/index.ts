@@ -160,10 +160,11 @@ export default defineExtension({
     const id = (result.data?.id as string) || result.id
     if (id) {
       try {
-        await invoke(CMD.pasteClipboardItem, { id })
+        // Rust 判定目标输入区：文本记录在目标无输入区时回退复制（copied）
+        const outcome = await invoke<'pasted' | 'copied'>(CMD.pasteClipboardItem, { id })
         invalidateCache()
         // invoke 返回时窗口已被 Rust hide（粘贴链路主窗隐藏），外部 toast 照常展示
-        showToast(t('common.pasted'))
+        showToast(outcome === 'copied' ? t('common.copied') : t('common.pasted'))
       } catch (e) {
         console.error('Failed to paste clipboard item:', e)
         useAppStore().showStatus(toErrorMessage(e, t('clipboard.pasteFailed')), {
