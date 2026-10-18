@@ -9,6 +9,10 @@ monitor 的 pasteboard 访问全部委托至 `platform::pasteboard`（change_cou
 - **自身写入标记**：`pasteboard_write_text`（copyAndHide / 复制路径等 Voidnix 内部写入）带 source marker（`com.litiantao.voidnix.source`），monitor 据此标记 `source_app = "Voidnix"`（仍入库）
 - **外部复制识别**：无 marker，用 `NSWorkspace.frontmostApplication` 取真实来源（Voidnix 是 accessory app，frontmostApplication 不返回自身）
 
+## 快捷键
+
+主快捷键 `Option+C`（dev 构建叠加 ⇧，即 `⌥⇧C`）。密码框 / 终端「安全键盘输入」下系统不投递纯 ⌥ 组合，改按 `⌃⌥C`（dev `⌃⌥⇧C`）——安全输入影子键位常驻注册，正常场景同样是全局热键、`⌃⌥C` 不再传给其它 App（见 [AGENTS.md](../../AGENTS.md)「全局快捷键」）。
+
 ## 配置
 
 `extensions/clipboard/config.ts`（defineConfig 自管）：
@@ -80,7 +84,7 @@ defineConfig('extensions/clipboard/config', { maxDays: 30 })
 
 ### 粘贴
 
-- **目标输入区判定（文本回退复制）**：生效载荷为文本（单条 text / 全 text 合并 / 混类型首项 text）时，经 `platform::selection::focused_element_editable` 查询粘贴目标（`captured_pid` 的 app，`hide_main` 的 `restore_captured` 交还焦点后 Cmd+V 的落点）聚焦元素是否为文本输入区，三态判定：输入区角色（`AXTextField`/`AXSecureTextField`/`AXSearchField`/`AXComboBox`/`AXTextArea`，终端/IDE 正文同为 AXTextArea）或 `AXEditable` 自报可编辑 → 粘贴；明确非输入区角色（Finder/边栏列表 AXOutline/AXList、表格、按钮、静态文本、图片、网页正文 AXWebArea）→ 回退复制：内容照常写板 + 置顶 + 隐藏（`hide_main` + 内存兜底），跳过 Cmd+V 模拟，命令返回 `copied`（粘贴返回 `pasted`），前端 toast 按此分流（已粘贴/已复制）；未知（判定失败 / 无聚焦元素 / 未知角色——自绘引擎如 Zed 的 AX 树只到 AXWindow 容器层，误判会破坏编辑器内粘贴）→ 维持粘贴。image/file 粘贴在非输入区合法（Finder/预览），不参与回退
+- **目标输入区判定（文本回退复制）**：生效载荷为文本（单条 text / 全 text 合并 / 混类型首项 text）时，经 `platform::selection::focused_element_editable` 查询粘贴目标（`captured_pid` 的 app，`hide_main` 的 `restore_captured` 交还焦点后 Cmd+V 的落点）聚焦元素是否为文本输入区，三态判定：输入区角色（`AXTextField`/`AXSecureTextField`/`AXSearchField`/`AXComboBox`/`AXTextArea`，终端/IDE 正文同为 AXTextArea）或 `AXEditable` 自报可编辑 → 粘贴；明确非输入区角色（Finder/边栏列表 AXOutline/AXList、表格、按钮、静态文本、图片、网页正文 AXWebArea）→ 回退复制：内容照常写板 + 置顶 + 隐藏（`hide_main` + 内存兜底），跳过 Cmd+V 模拟，命令返回 `copied`（粘贴返回 `pasted`），前端 toast 按此分流（已粘贴/已复制）；未知容器再做**子元素探测**（最多 8 个直接子元素）：**空容器**（Finder 桌面实测形态）或子元素**全为**图标/列表/网页内容类角色（AXImage/AXCell/AXRow/AXList/AXOutline/AXTable/AXWebArea）→ 判非输入区走回退复制，避免误注入 Cmd+V（实测桌面凭空生成文件）；子元素含 AXButton 等控件**不算非输入区证据**——自绘引擎（Zed）的 AX 聚焦会落在标题栏按钮组（实测 AXGroup + 3× AXButton），误判会让编辑器内粘贴退化成复制；其余情况（容器无可识别子元素 / 判定失败）→ **维持粘贴**（编辑器优先）。Chromium/Electron 的 AX 树默认休眠（`AXFocusedUIElement` 返回 `kAXErrorNoValue`），**仅该错误码**触发唤醒（置 `AXEnhancedUserInterface` / `AXManualAccessibility`）并等待 40ms 重试一次——超时 / 无响应不唤醒（重试无解，避免无谓阻塞主线程）；首次粘贴可能仍回退复制，树建好后稳定走 AX 判定。唤醒后 Chromium 系无障碍树常驻启用（不复位，避免每次粘贴重付唤醒等待）。image/file 粘贴在非输入区合法（Finder/预览），不参与回退
 - **图片**：先 `encode_image_to_png` 再 `clear` + marker + `set_png_bytes`（解码失败不触碰剪贴板、不模拟 Cmd+V，命令返回 Err）
 - **统一转 PNG**：任意 `data:image/*;base64,`（JPEG/GIF/WebP/BMP/HEIC 等）经 NSImage 转换
 - **多选序**：按前端 `ids` 选择序

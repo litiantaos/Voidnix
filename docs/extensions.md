@@ -44,7 +44,7 @@ export default defineExtension({
 - `searchBarAccessory`：搜索栏右侧配件（7：clipboard/agent/translate/proxy/ai-providers/notes/system-status）
 - `subviews`：扩展私有命名子视图（8：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{connections/rules/logs}、homebrew{detail}、notes{config}、system-status{config}）
 - `subviewTitle`：子视图显示名（id→中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」（2：proxy、homebrew）
-- `globalShortcuts`：全局快捷键绑定（6：clipboard/screenshot/agent/translate/finder-ext/notes）
+- `globalShortcuts`：全局快捷键绑定（6：clipboard/screenshot/agent/translate/finder-ext/notes）；条目可选 `secureMirror`（安全输入兜底影子键，仅 clipboard 声明，机制见 [AGENTS.md](../AGENTS.md)「全局快捷键」）
 - `placeholder`：搜索框占位提示，激活扩展时显示（7：clipboard/currency/ip/time/base64/calculator/homebrew）
 - `windowHeight`：扩展激活时主窗口高度，三种声明语义：
   - **`number`**：固定高度，clamp `[MIN,MAX]`

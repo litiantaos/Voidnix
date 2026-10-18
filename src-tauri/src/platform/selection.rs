@@ -17,6 +17,10 @@ mod ax {
     type AXUIElementRef = *mut c_void;
     type AXError = i32;
     const AX_ERROR_SUCCESS: AXError = 0;
+    /// 属性无值（Chromium / Electron 的 AX 树休眠时 `AXFocusedUIElement` 即此码）。
+    /// 唤醒重试只认这一种失败；超时 / 无响应等重试无解。
+    const AX_ERROR_NO_VALUE: AXError = -25212;
+    const AX_ERROR_ILLEGAL_ARGUMENT: AXError = -25201;
     const CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
 
     /// M-rs3：缓存 system-wide AXUIElement。
@@ -37,6 +41,11 @@ mod ax {
         fn AXUIElementSetMessagingTimeout(
             element: AXUIElementRef,
             timeout_in_seconds: f32,
+        ) -> AXError;
+        fn AXUIElementSetAttributeValue(
+            element: AXUIElementRef,
+            attribute: *mut c_void,
+            value: *mut c_void,
         ) -> AXError;
         fn AXUIElementCopyAttributeValue(
             element: AXUIElementRef,
@@ -62,6 +71,14 @@ mod ax {
             c_str: *const i8,
             encoding: u32,
         ) -> *mut c_void;
+        fn CFArrayGetCount(array: *mut c_void) -> isize;
+        fn CFArrayGetValueAtIndex(array: *mut c_void, index: isize) -> *const c_void;
+        fn CFArrayGetTypeID() -> usize;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        static kCFBooleanTrue: *mut c_void;
     }
 
     /// 取（首次创建并设 timeout）缓存的 system-wide element。
@@ -113,17 +130,26 @@ mod ax {
     }
 
     unsafe fn copy_attr(element: AXUIElementRef, attr: &str) -> Option<*mut c_void> {
+        unsafe { copy_attr_with_error(element, attr) }.1
+    }
+
+    /// 同 `copy_attr`，但保留 AX 错误码——调用方需要区分「属性无值」（可唤醒
+    /// 重试）与「超时 / 无响应」（重试无解）时使用。返回的 CF 值由调用方释放。
+    unsafe fn copy_attr_with_error(
+        element: AXUIElementRef,
+        attr: &str,
+    ) -> (AXError, Option<*mut c_void>) {
         let key = cf_str(attr);
         if key.is_null() {
-            return None;
+            return (AX_ERROR_ILLEGAL_ARGUMENT, None);
         }
         let mut val: *mut c_void = std::ptr::null_mut();
-        let err = AXUIElementCopyAttributeValue(element, key, &mut val);
-        CFRelease(key);
+        let err = unsafe { AXUIElementCopyAttributeValue(element, key, &mut val) };
+        unsafe { CFRelease(key) };
         if err == AX_ERROR_SUCCESS && !val.is_null() {
-            Some(val)
+            (AX_ERROR_SUCCESS, Some(val))
         } else {
-            None
+            (err, None)
         }
     }
 
@@ -177,10 +203,11 @@ mod ax {
     ];
 
     /// 角色三态分类（纯函数，pub(super) 供本文件单测）：Some(true) 输入区 /
-    /// Some(false) 明确非输入区 / None 未知。未知是安全缺省——自绘引擎（Zed 等
+    /// Some(false) 明确非输入区 / None 未知。未知不猜——自绘引擎（Zed 等
     /// GPUI/Qt 应用）AX 树只到 AXWindow/AXGroup 容器层（实测 Zed 窗口内无任何
-    /// 文本元素，AXManualAccessibility 也唤不起），误判为非输入区会让编辑器内的
-    /// 粘贴回退成复制，宁可维持粘贴。
+    /// 文本元素，AXManualAccessibility 也唤不起），与本机真实非输入区（桌面图标
+    /// 组的 AXGroup）在 AX 层不可区分；未知的最终取向由消费方按业务代价定
+    /// （clipboard 粘贴取「粘贴」兜底：自绘编辑器优先自动粘贴）。
     pub(super) fn classify_role(role: &str) -> Option<bool> {
         if TEXT_INPUT_ROLES.contains(&role) {
             return Some(true);
@@ -192,9 +219,10 @@ mod ax {
     }
 
     /// 查询指定 app 聚焦元素是否为文本输入区（可接收键盘文本输入）。
-    /// Some(true/false) = 判定成功（输入区 / 明确非输入区）；None = 无法判定
-    /// （pid 无效 / 无 AX 权限 / app 根元素创建失败 / 目标无聚焦元素 / 角色未知），
-    /// 调用方按自身默认行为处理。
+    /// Some(true/false) = 判定成功（输入区 / 明确非输入区，后者含未知容器中
+    /// 空容器或子元素全为图标列表类的形态）；None = 无法判定（pid 无效 / 无 AX
+    /// 权限 / app 根元素创建失败 / 目标无聚焦元素 / 角色未知），调用方按自身
+    /// 默认行为处理。
     pub fn focused_element_editable(pid: i32) -> Option<bool> {
         if pid <= 0 {
             return None;
@@ -210,20 +238,61 @@ mod ax {
         // 目标 app 无响应时快速失败（同步命令路径调用，勿长时间阻塞主线程）
         unsafe { AXUIElementSetMessagingTimeout(app, 0.05) };
         // SAFETY: classify_focused_editable 仅要求 app 为有效 app 级元素
-        let editable = unsafe { classify_focused_editable(app) };
+        let (err, mut editable) = unsafe { classify_focused_editable(app) };
+        // Chromium / Electron 的 AX 树默认不构建（无辅助技术接入时休眠），
+        // AXFocusedUIElement 返回 kAXErrorNoValue（-25212），表现为「拿不到聚焦
+        // 元素」——Chrome 输入框时好时坏即此因。**只有这一种失败**值得唤醒后
+        // 重试：超时 / 无响应（kAXErrorCannotComplete 等）重试无解，角色未知
+        // （自绘引擎容器层）同样无解，都不做无谓等待、也不对无关 App 设置 AX
+        // 开关。树构建是异步的，故短暂等待（40ms，同步命令路径；只对 AX 树
+        // 休眠的 App 生效，唤醒后不再重复，可接受）。
+        if err == AX_ERROR_NO_VALUE {
+            unsafe { wake_accessibility(app) };
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            editable = unsafe { classify_focused_editable(app) }.1;
+        }
         // SAFETY: app 由本函数创建，释放所有权
         unsafe { CFRelease(app) };
         editable
     }
 
+    /// 显式唤醒目标 app 的 AX 树：AXEnhancedUserInterface 是 AppKit 侧开关
+    /// （VoiceOver 使用，Chromium 响应），AXManualAccessibility 是 Electron /
+    /// Chromium 自动化专用开关。普通 AppKit 应用对未知属性返回 unsupported，
+    /// 不生效。
+    ///
+    /// **不复位**：唤醒成功后 Chromium / Electron 会常驻启用无障碍树（有 CPU /
+    /// 内存开销，直到该 App 退出）；复位会让每次粘贴重付唤醒等待。只在
+    /// kAXErrorNoValue（树休眠）时调用，唤醒生效后该 App 不再走这条路径。
+    ///
     /// # Safety
     /// `app` 须为有效 AXUIElementRef（目标 app 根元素）。
-    unsafe fn classify_focused_editable(app: AXUIElementRef) -> Option<bool> {
-        let focused = copy_attr(app, "AXFocusedUIElement")?;
+    unsafe fn wake_accessibility(app: AXUIElementRef) {
+        for attr in ["AXEnhancedUserInterface", "AXManualAccessibility"] {
+            let key = cf_str(attr);
+            if key.is_null() {
+                continue;
+            }
+            unsafe { AXUIElementSetAttributeValue(app, key, kCFBooleanTrue) };
+            unsafe { CFRelease(key) };
+        }
+    }
+
+    /// 返回 `(AXError, 判定结果)`。`AX_ERROR_SUCCESS` 表示拿到了聚焦元素；否则
+    /// 错误码用于区分「无值」（Chromium AX 树休眠，可唤醒重试）与超时 / 无响应
+    /// （重试无意义）。「拿到元素但角色未知」同样是 SUCCESS + None——重试无解。
+    ///
+    /// # Safety
+    /// `app` 须为有效 AXUIElementRef（目标 app 根元素）。
+    unsafe fn classify_focused_editable(app: AXUIElementRef) -> (AXError, Option<bool>) {
+        let (err, focused) = unsafe { copy_attr_with_error(app, "AXFocusedUIElement") };
+        let Some(focused) = focused else {
+            return (err, None);
+        };
         // SAFETY: focused 为有效元素句柄
         let result = unsafe { classify_element(focused) };
-        CFRelease(focused);
-        result
+        unsafe { CFRelease(focused) };
+        (AX_ERROR_SUCCESS, result)
     }
 
     /// # Safety
@@ -240,8 +309,68 @@ mod ax {
         if unsafe { focused_attr_editable(element) } {
             return Some(true);
         }
-        // 非输入区角色 → Some(false)；未知/缺失角色（AXWindow/AXGroup 等容器层）→ None
-        role.as_deref().and_then(classify_role)
+        if let Some(known) = role.as_deref().and_then(classify_role) {
+            return Some(known);
+        }
+        // 未知角色（AXWindow/AXGroup 等容器层）：探测直接子元素——真实界面容器
+        // （桌面图标组、网页内容宿主）暴露图标/列表类子元素，判为非输入区；
+        // 自绘引擎（Zed 等）的容器子元素是标题栏按钮组等控件，不构成证据 →
+        // 维持 None（调用方按粘贴处理）。
+        // SAFETY: classify_children 仅要求 element 为有效元素句柄
+        unsafe { classify_children(element) }
+    }
+
+    /// 子元素角色里「图标 / 列表 / 网页内容」类——真实桌面与内容宿主的表现形态。
+    /// `AXButton` 等控件**不算**非输入区证据：自绘引擎（Zed）的 AX 聚焦会落在
+    /// 标题栏按钮组（实测 AXGroup + 3× AXButton），误判会让编辑器内的粘贴退化成
+    /// 复制；而 `AXTextField` 等输入控件出现在容器子级说明聚焦不在控件上，语义
+    /// 不确定，同样不判。
+    const ICON_LIKE_ROLES: &[&str] = &[
+        "AXImage",
+        "AXCell",
+        "AXRow",
+        "AXList",
+        "AXOutline",
+        "AXTable",
+        "AXWebArea",
+    ];
+
+    /// 未知容器的子元素探测：空容器（Finder 桌面实测形态）或探测范围内直接子元素
+    /// 全为图标/列表/网页内容类 → 非输入区；否则维持 None（调用方按粘贴处理，
+    /// 自绘编辑器优先）。最多探查前 8 个直接子元素（大列表/大 DOM 控制 AX 往返次数）。
+    ///
+    /// # Safety
+    /// `element` 须为有效 AXUIElementRef。
+    unsafe fn classify_children(element: AXUIElementRef) -> Option<bool> {
+        const CHILD_PROBE_LIMIT: isize = 8;
+        let children = unsafe { copy_attr(element, "AXChildren") }?;
+        if unsafe { CFGetTypeID(children) } != unsafe { CFArrayGetTypeID() } {
+            unsafe { CFRelease(children) };
+            return None;
+        }
+        let count = unsafe { CFArrayGetCount(children) };
+        // SAFETY: 索引在 [0, count) 内，返回借用指针（不持有所有权）
+        let mut verdict = if count == 0 { Some(false) } else { None };
+        let mut all_icon_like = count > 0;
+        for i in 0..count.min(CHILD_PROBE_LIMIT) {
+            let child = unsafe { CFArrayGetValueAtIndex(children, i) } as AXUIElementRef;
+            if child.is_null() {
+                all_icon_like = false;
+                break;
+            }
+            match unsafe { element_role(child) } {
+                Some(role) if ICON_LIKE_ROLES.contains(&role.as_str()) => {}
+                _ => {
+                    all_icon_like = false;
+                    break;
+                }
+            }
+        }
+        if all_icon_like {
+            verdict = Some(false);
+        }
+        unsafe { CFRelease(children) };
+        verdict
     }
 
     /// # Safety
@@ -284,9 +413,10 @@ pub fn try_ax() -> Option<String> {
 }
 
 /// 判定指定 app 当前聚焦元素是否为文本输入区（可接收键盘文本输入）。
-/// Some(false) 仅对明确非输入区角色（列表/表格/按钮/静态文本/网页正文等）返回；
-/// None = 无法判定（权限缺失 / 目标无响应 / 无聚焦元素 / 未知角色——自绘引擎
-/// 只暴露 AXWindow/AXGroup 容器层），调用方取自身默认行为。
+/// Some(false) = 明确非输入区（列表/表格/按钮/静态文本/网页正文等角色，或未知
+/// 容器为空 / 探测范围内子元素全为图标列表类——Finder 桌面形态）；None = 无法
+/// 判定（权限缺失 / 目标无响应 / 无聚焦元素 / 未知角色——自绘引擎只暴露
+/// AXWindow/AXGroup 容器层且子元素含控件），调用方取自身默认行为。
 /// clipboard 粘贴回退复制等消费方使用。
 #[cfg(target_os = "macos")]
 pub fn focused_element_editable(pid: i32) -> Option<bool> {

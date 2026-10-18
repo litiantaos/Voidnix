@@ -90,6 +90,12 @@ export interface ShortcutBinding {
   /** 默认组合（如 'cmd+shift+s'），可被用户覆盖。 */
   default?: string
   onExecute: (wasVisible: boolean) => void
+  /** 安全输入兜底：额外注册一条 ⌃ 前缀影子键（⌥C → ⌃⌥C）。
+   *  影子键**常驻注册**——正常场景也占用该组合（成为第二键位、不再传给其它
+   *  App）；仅在动作必须于安全输入（密码框 / 终端安全键盘输入）下可用时声明，
+   *  因为系统在该场景不投递纯 ⌥/⇧ 组合，只有含 ⌃/⌘ 的键位能落地。
+   *  未声明不注册影子。 */
+  secureMirror?: boolean
 }
 
 export interface Extension {

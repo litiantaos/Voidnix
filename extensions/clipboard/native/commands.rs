@@ -264,12 +264,15 @@ pub enum PasteOutcome {
 }
 
 /// 文本粘贴目标输入区判定：hide_main 的 restore_captured 会把焦点交还
-/// captured_pid 的 app，Cmd+V 落在其聚焦元素上。聚焦元素非文本输入区时
-/// （Finder 列表、浏览器正文等），Cmd+V 落空或触发目标 app 其它键语义——
-/// 文本记录回退复制（内容照常写板置顶）。判定失败（无有效 pid / AX 无响应 /
-/// 无聚焦元素）维持粘贴（既有行为）。
+/// captured_pid 的 app，Cmd+V 落在其聚焦元素上。
+///
+/// 三态取向：输入区 → 自动粘贴；**明确非输入区**（列表/表格/网页正文，以及
+/// 未知容器中的空容器或子元素全为图标/列表/网页内容类——桌面、网页内容宿主）→
+/// 回退复制，避免在非输入目标注入 Cmd+V 制造副作用（实测桌面凭空生成文件）；
+/// **无法判定**（自绘引擎容器只有标题栏按钮组等控件、无聚焦元素、AX 无响应）→
+/// 维持粘贴，自绘编辑器（Zed 等）优先自动粘贴，代价是非输入目标可能空粘一次
+/// （内容已写板，toast 提示略偏但不丢数据）。
 fn paste_target_is_input_area() -> bool {
-    // 判定失败维持粘贴（既有行为）：unwrap_or(true)
     crate::platform::selection::focused_element_editable(crate::platform::focus::captured_pid())
         .unwrap_or(true)
 }

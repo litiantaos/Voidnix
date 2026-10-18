@@ -14,6 +14,7 @@ import { formatShortcutKeys } from '@/utils/format'
 import { isTauri, hideWindow, showWindow } from '@/utils/tauri'
 import { resumeInfiniteAnimations } from '@/utils/dom'
 import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
+import type { ShortcutBinding } from '@/runtime/types'
 
 type Win = ReturnType<typeof import('@tauri-apps/api/window').getCurrentWindow> | null
 
@@ -62,16 +63,12 @@ export function useAppLifecycle(win: Win) {
   const watchStops: WatchStopHandle[] = []
   let updateTimer: ReturnType<typeof setTimeout> | null = null
   let lastCheckAt = 0
-  let allGlobalShortcuts: {
-    id: string
-    default?: string
-    onExecute: (wasVisible: boolean) => void
-  }[] = []
+  let allGlobalShortcuts: ShortcutBinding[] = []
 
-  async function setupGlobalShortcut(id: string, shortcut: string) {
+  async function setupGlobalShortcut(id: string, shortcut: string, secureMirror = false) {
     if (!isTauri) return
     try {
-      await invoke(CMD.registerGlobalShortcut, { id, shortcut })
+      await invoke(CMD.registerGlobalShortcut, { id, shortcut, secureMirror })
       appStore.clearShortcutError(id)
     } catch (e) {
       const msg = String(e)
@@ -184,7 +181,11 @@ export function useAppLifecycle(win: Win) {
         .filter((s) => s.id !== 'main')
 
       for (const sc of allGlobalShortcuts) {
-        await setupGlobalShortcut(sc.id, effectiveShortcut(sc.id, sc.default))
+        await setupGlobalShortcut(
+          sc.id,
+          effectiveShortcut(sc.id, sc.default),
+          sc.secureMirror === true,
+        )
       }
 
       // 关键快捷键注册失败 → 改键引导（自测模式下窗口由测试脚本驱动，跳过）
@@ -204,7 +205,11 @@ export function useAppLifecycle(win: Win) {
           () => settings.shortcutOverrides,
           async () => {
             for (const sc of allGlobalShortcuts) {
-              await setupGlobalShortcut(sc.id, effectiveShortcut(sc.id, sc.default))
+              await setupGlobalShortcut(
+                sc.id,
+                effectiveShortcut(sc.id, sc.default),
+                sc.secureMirror === true,
+              )
             }
           },
           { deep: true },

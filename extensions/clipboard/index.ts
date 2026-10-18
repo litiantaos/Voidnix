@@ -115,6 +115,9 @@ export default defineExtension({
     {
       id: 'clipboard',
       default: 'Alt+C',
+      // 密码框 / 终端安全键盘输入下系统不投递 ⌥ 组合，剪贴板是这些场景的入口，
+      // 需要 ⌃ 前缀影子键兜底（常驻注册，即 ⌃⌥C 成为第二键位；其余快捷键不声明）。
+      secureMirror: true,
       onExecute: makeToggleHandler('clipboard'),
     },
   ],
