@@ -2,7 +2,7 @@ import { registerMessages } from '@/runtime/i18n'
 
 registerMessages({
   'zshAutosuggestions.enable': {
-    'zh-CN': '启用终端自动建议',
+    'zh-CN': '开启终端自动建议',
     en: 'Enable Terminal Autosuggestions',
   },
   'zshAutosuggestions.hint': {

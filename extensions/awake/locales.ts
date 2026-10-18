@@ -1,7 +1,7 @@
 import { registerMessages } from '@/runtime/i18n'
 
 registerMessages({
-  'awake.enable': { 'zh-CN': '保持系统唤醒', en: 'Keep Awake' },
+  'awake.enable': { 'zh-CN': '开启系统唤醒', en: 'Enable Keep Awake' },
   'awake.enableHint': {
     'zh-CN': '只控制系统是否休眠，不决定屏幕亮/熄；首次开启需授权',
     en: 'Only controls system sleep, not the display; authorization needed the first time',
@@ -30,7 +30,7 @@ registerMessages({
     en: 'Zero Brightness (Remote-Friendly)',
   },
   'awake.privacyNeedsAwake': {
-    'zh-CN': '请先开启「保持系统唤醒」；开盖零亮度依赖它保持远控',
+    'zh-CN': '请先开启「系统唤醒」；开盖零亮度依赖它保持远控',
     en: 'Enable “Keep Awake” first; the lid-open zero-brightness mode depends on it for remote capture',
   },
 })

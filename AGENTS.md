@@ -317,7 +317,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **消费者**（3 个）：
 
-- **awake**：按扩展分组，段标题「保持系统唤醒」；未开启时只显示保持系统唤醒 CheckItem，开启后才追加开盖时屏幕二级菜单（跟随系统 / 零亮度）+ 合盖时屏幕二级菜单（显示睡眠 / 零亮度）（设置项 `menubarToggleVisible` 控制是否常驻显示，勾选态分别反映 enabled / privacy / 当前策略；开启路径仅 daemon 首次安装经授权弹窗，之后零弹窗）
+- **awake**：按扩展分组，段标题「保持系统唤醒」；未开启时只显示「开启系统唤醒」CheckItem，开启后才追加开盖时屏幕二级菜单（跟随系统 / 零亮度）+ 合盖时屏幕二级菜单（显示睡眠 / 零亮度）（设置项 `menubarToggleVisible` 控制是否常驻显示，勾选态分别反映 enabled / privacy / 当前策略；开启路径仅 daemon 首次安装经授权弹窗，之后零弹窗）
 - **proxy**：设置项 `menubarVisible` 控制贡献段常显（替代「已连接才显示」）；段内「打开扩展」+ 连接状态 CheckItem（勾选态反映连接、可点切换，已连接显示当前节点；未过首启流程时连接回退打开扩展）（详见 [proxy.md](docs/extensions/proxy.md)）
 - **system-status**：下拉菜单「系统状态」段（order 30 置顶），单个可点击状态行「CPU x% · 内存 x% · x°C」（百分比两项带标识、温度靠单位自表意；温度缺失省段；点击 emit `open-extension` 打开扩展界面，与 proxy「打开扩展」同路径）；显隐由扩展设置页 `menubarVisible` 控制（config subview，搜索栏 Actions 齿轮进入，proxy/agent 同款；config watch 经 `set_system_status_menubar_visible` 同步 AtomicBool，初始 false 防启动闪现，关闭时采样一并挂起）；setup 内常驻采样任务（镜像 awake 电池巡检范式）：CPU/内存每 5s、温度每 30s（结果缓存，阻塞采集走 spawn_blocking），每轮写 `menu_line` 缓存并 `refresh` 重建菜单（build 读缓存零阻塞），图标隐藏时跳过采样
 

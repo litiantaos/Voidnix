@@ -133,7 +133,7 @@ pub async fn is_awake_enabled(state: State<'_, AwakeState>) -> Result<bool, Stri
 async fn apply_privacy(app: &AppHandle, enabled: bool) -> Result<bool, String> {
     if enabled {
         if !app.state::<AwakeState>().enabled.load(Ordering::Relaxed) {
-            return Err("请先开启「保持系统唤醒」；开盖零亮度依赖它保持远控".into());
+            return Err("请先开启「系统唤醒」；开盖零亮度依赖它保持远控".into());
         }
         if sleep::has_external_display() {
             return Err("检测到外接显示器，零亮度模式无法遮挡外接屏".into());
@@ -552,7 +552,7 @@ fn build_awake(app: &AppHandle) -> Vec<MenuEntry> {
     let dim = state.screen_policy.load(Ordering::Relaxed) == 1;
     let mut items = vec![MenuEntry::CheckItem {
         id: "awake_toggle".into(),
-        label: "保持系统唤醒".into(),
+        label: "开启系统唤醒".into(),
         checked: enabled,
     }];
     // 屏幕项依赖保持系统唤醒；未开启时只显示总开关，避免“设置了但无效”。

@@ -3,7 +3,7 @@ import { registerMessages } from '@/runtime/i18n'
 registerMessages({
   'ai-gateway.sectionGateway': { 'zh-CN': '网关', en: 'Gateway' },
   'ai-gateway.sectionCc': { 'zh-CN': 'Claude Code', en: 'Claude Code' },
-  'ai-gateway.enable': { 'zh-CN': '启用网关', en: 'Enable Gateway' },
+  'ai-gateway.enable': { 'zh-CN': '开启网关', en: 'Enable Gateway' },
   'ai-gateway.goProviders': { 'zh-CN': 'AI 提供商', en: 'AI Providers' },
   'ai-gateway.goProvidersHint': {
     'zh-CN': '管理提供商、Key 与模型',
@@ -11,7 +11,7 @@ registerMessages({
   },
   'ai-gateway.ccTakeover': { 'zh-CN': '接管 Claude Code', en: 'Take over Claude Code' },
   'ai-gateway.ccTakeoverHint': {
-    'zh-CN': '改写 ~/.claude/settings.json 接入键，开启时自动启用网关，关闭自动还原',
+    'zh-CN': '改写 ~/.claude/settings.json 接入键，接管会同时开启网关，关闭后还原',
     en: 'Rewires ~/.claude/settings.json entry keys; turning it on also enables the gateway, off restores the original',
   },
   'ai-gateway.ccError': {
