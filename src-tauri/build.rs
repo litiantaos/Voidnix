@@ -28,6 +28,7 @@ fn main() {
         build_screenshot_overlay(&out_dir);
         link_skylight();
         link_service_management();
+        link_iokit();
     }
 
     tauri_build::build()
@@ -83,4 +84,11 @@ fn link_skylight() {
 /// SMAppService 类缺方法实现（`+[SMAppService mainApp]` 触发 unrecognized selector）。
 fn link_service_management() {
     println!("cargo:rustc-link-lib=framework=ServiceManagement");
+}
+
+/// 链接 IOKit.framework（IOPMAssertion 显示空闲睡眠豁免）。IORegistry 的
+/// 合盖检测此前靠 Tauri 依赖间接解析到 IOKit；这里显式声明，避免新增的
+/// IOPMAssertion 符号在链接器裁剪/依赖变化后变成未定义引用。
+fn link_iokit() {
+    println!("cargo:rustc-link-lib=framework=IOKit");
 }

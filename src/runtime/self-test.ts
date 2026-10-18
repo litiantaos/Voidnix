@@ -423,6 +423,8 @@ async function testExtensionFunctional(): Promise<TestResult[]> {
     await runTest('extension-func', 'awake 状态查询', async () => {
       const r = await Promise.race([invoke(CMD.isAwakeEnabled), timeout(5000)])
       assert(typeof r === 'boolean', `应返回 boolean，实际 ${typeof r}`)
+      const p = await Promise.race([invoke(CMD.isAwakePrivacy), timeout(5000)])
+      assert(typeof p === 'boolean', `隐私屏状态应返回 boolean，实际 ${typeof p}`)
     }),
   )
 

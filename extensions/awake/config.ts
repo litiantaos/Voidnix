@@ -59,13 +59,16 @@ watch(
   { immediate: true },
 )
 
-/// Rust 侧发起的关闭（菜单栏开关、电池护栏解除）同步回写 config：
-/// 模块级 listener 不依赖 View 挂载，保证事件不因视图未激活而丢失；
-/// 漏写会使重启后 watch immediate 误重新持有（弹授权）。
+/// Rust 侧状态（菜单栏开关、电池护栏解除、心跳降级）同步回写 config：
+/// 模块级 listener 不依赖 View 挂载，保证事件不因视图未激活而丢失。
+/// **必须双向**：菜单栏开启不写回会让 config 停留在 false，下一次
+/// WebContent 重载 / app 重启时 `watch(immediate)` 用磁盘 false 把 Rust
+/// 侧刚建立的持有 disarm 掉——表现为「明明开着，过一阵自己关了」，
+/// 合盖后系统直接睡眠、远控掉线。关闭方向漏写则会让重启后误重新持有。
 /// 菜单栏切换的熄屏策略同款回写（防 View select 与实际脱钩）。
 if (isTauri) {
   listen<boolean>('awake-enabled', (e) => {
-    if (!e.payload && config.enabled) config.enabled = false
+    if (config.enabled !== e.payload) config.enabled = e.payload
   }).catch((e: unknown) => {
     console.error('[awake] listen awake-enabled failed:', e)
   })

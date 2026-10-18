@@ -1,6 +1,17 @@
 # awake
 
-合盖不休眠扩展。核心是系统全局睡眠开关 `pmset -a disablesleep`——这是全局唯一能实现「合盖 + 无外接显示器 + 电池供电」不休眠的杠杆（`IOPMAssertion` 压不住 clamshell 睡眠路径，虚拟显示器方案又被 macOS 的 clamshell 电源前置条件挡死，已移除）。开关语义为全局睡眠禁用：开盖闲置时显示照常息屏、系统不睡；合盖时持续运行。
+保持系统唤醒 + 屏幕状态扩展。系统核心是全局睡眠开关 `pmset -a disablesleep`——这是全局唯一能实现「合盖 + 无外接显示器 + 电池供电」不休眠的杠杆（`IOPMAssertion` 压不住 clamshell 睡眠路径，虚拟显示器方案又被 macOS 的 clamshell 电源前置条件挡死，已移除）。开关语义为全局睡眠禁用：开盖闲置时显示照常息屏、系统不睡；合盖时持续运行。
+
+## 保持系统唤醒与屏幕
+
+扩展名、开关名、菜单组名统一为「保持系统唤醒」。系统与屏幕是两个维度：
+
+- **系统**：`enabled` 控制 `pmset disablesleep`；只决定系统是否休眠，不决定屏幕亮/熄。
+- **开盖时屏幕**：跟随系统 / 零亮度（`privacy`，隐私/远控）。零亮度仅开盖生效；会话级不落盘；长按鼠标左键 2s / 菜单退出。
+- **合盖时屏幕**：显示睡眠 / 零亮度（`screenPolicy`）。合盖屏幕独立于开盖零亮度；保持系统唤醒开启时生效。
+- **依赖关系**：两个零亮度模式都依赖保持系统唤醒维持系统不睡；本扩展**不再自动开启**保持系统唤醒——未开启时 UI/菜单明确拒绝并提示。开盖/合盖按上下文各自生效，不互相覆盖，也没有优先级。
+- **开盖跟随系统**：屏幕交给 macOS 自动息屏/锁屏；本扩展不提供开盖常亮档。
+- 界面按「系统 / 屏幕」两组，但**屏幕组仅在保持系统唤醒开启后显示**；菜单同一规则：未开启时只显示总开关，开启后才追加屏幕子菜单。菜单按扩展分组，段标题为「保持系统唤醒」。
 
 ## 机制
 
@@ -9,8 +20,8 @@
 - **常驻 LaunchDaemon**（`platform/sleep.rs::daemon_loop_script` 循环体 + `extensions/awake/native/daemon.rs` 装配）：root sh 循环内联于 plist（`/Library/LaunchDaemons/<bundle-id>.awake.plist`，dev/prod 按 bundle id 区分，不落用户可写脚本文件防 privesc），launchd RunAtLoad + KeepAlive 托管、永不退出。首次开启经 osascript 提权安装一次（`ensure_daemon`：安装件 LoopVersion 令牌过时 / 存活心跳过期时触发），此后跨 app 重启与重启机零弹窗。循环每 2 秒三分支，恢复路径全部**现实态判定**（`pmset -g` 实查而非进程内存——`disablesleep` 是持久系统设置，daemon 进程被替换后内存守卫会漏恢复，留下无人持有的全局睡眠禁用）：flag（`awake.flag` 稳定名）在场且 app 心跳（`awake.beat` mtime 距今 ≤ 10s）新鲜 → 持有（现实态失配即写 1，覆盖置位边沿与外部清零自愈，见下）；flag 在场但 beat 过期 → app 已死：清 flag、现实态为 1 才写 0（崩溃安全，最迟 12s）；flag 缺席 → HELD 或首周期（FIRST 兜底「上一代持有中死亡 + flag 已删」的孤儿 disablesleep）时现实态为 1 才写 0，随后空闲（仅 touch/sleep 周期开销）。每周期 touch `awake.daemon-beat`（app 侧安装验证与活性判定的唯一信号）。安装脚本三重加固：草稿先落 root 侧 `.tmp` 并 sha256 与 app 侧预期比对（防用户可写目录的授权窗口篡改，杜绝经此提权）、校验失败不动既有安装件、bootstrap 前删 daemon 心跳（防旧 daemon 残留心跳令验证空转通过）。
 - **熄屏巡检**（awake setup 的 2s tick）：`disablesleep` 挡住合盖睡眠后系统不会自动关内屏（无外接时 macOS 走的是睡眠路径而非 clamshell 关屏路径，背光常亮），须主动熄屏。合盖检测读 IORegistry `IOPMrootDomain` 的 `AppleClamshellState`（偶发读取失败以闭锁防抖，None 不翻转既有判定）；外接判定走 CG 活动显示列表的非内置屏；两者均为微秒级 syscall 无子进程。两档策略（config `screenPolicy`，默认 `dim`）：
   - `sleep`（显示睡眠）：合盖 + 无外接的边沿立即 `pmset displaysleepnow`（无需 root、对已灭屏幂等，`.status()` 等退出回收子进程防僵尸，消费点 spawn_blocking），停留期每 5s 节流补熄。省电最优，但显示子系统真睡、屏幕捕获流冻结——第三方远程（如 UU 远程）停摆。
-  - `dim`（零亮度）：内置面板背光归零、framebuffer 保持活跃，远程控制可用。亮度经私有 `DisplayServices.framework` 的 `DisplayServicesGet/SetBrightness(display, float)` 读写（Keepresso 生产验证的同款通道；dlsym 解析，display id 取 online→active→进程内缓存——合盖后两个 CG 列表都会摘掉内置屏）。恢复目标在开盖期持续采样（macOS 合盖首拍即归零，活读常为 0），开盖（或开关关闭）时面板仍暗才恢复（外部已调亮的不覆盖）；符号缺失/无内置屏自动退化显示睡眠。零亮度残留时关闭开关会先还亮度再退场（防开盖黑屏）。**本机新背光架构实测**：IORegistry 直写 `AppleARMBacklight`（32/64 位 CFNumber 均同）与 `CoreDisplay_Display_SetUserBrightness` 都只改报告值不驱动实际背光，且读回验证全部假阳性（写入后读回一致仅说明服务层状态变了）——亮度通道的有效性以物理观察为准，诊断日志带写入返回值。
-- `extensions/awake/native/mod.rs`：意图状态（`AtomicBool`）+ app 心跳任务（enabled 时按 daemon 周期 touch beat，App Nap 由进程活动持有豁免——见关键决策；touch 连续失败 5 次即撤意图如实上报，防「UI 显开、daemon 端已按 beat 停更自清」的静默漂移；自愈——enabled 而 flag 缺失且 daemon 活着时补写 flag，修复强制睡眠唤醒后 daemon 已按 beat 过期自清、app 真值仍 true 的漂移，daemon 已死则不补，留待下次 engage 重装；判定与补写整体在 `intent_lock` 内，与撤意图路径（命令关闭 / 电池护栏 / 心跳降级统一走 `disarm`）互斥，防把刚撤下的 flag 复活）。engage 顺序硬不变量：`ensure_daemon`（可能提权弹窗，可达分钟级）→ touch beat → 写 flag → 置 enabled + 开始活动持有——心跳任务仅在 enabled=true 时 touch，flag 先于弹窗落盘会被在场 daemon 按 beat 过期自清（静默漂移）；取消/失败发生在写 flag 之前，零清理。
+  - `dim`（零亮度）：内置面板背光归零、framebuffer 保持活跃，远程控制可用。持有 `IOPMAssertion` `PreventUserIdleDisplaySleep`（仅「合盖 + 无外接 + 亮度通道可用」期间）：`disablesleep` 只挡系统睡眠，系统 `displaysleep` 定时器（本机 30min）与远控自身的 30min `UserIsActive` 超时仍会关显示子系统、冻结捕获流；零亮度下背光已灭，显示系统保持活跃不增加可见功耗。开盖 / 切 sleep 策略 / 外接到场立即释放。亮度经私有 `DisplayServices.framework` 的 `DisplayServicesGet/SetBrightness(display, float)` 读写（Keepresso 生产验证的同款通道；dlsym 解析，display id 取 online→active→进程内缓存——合盖后两个 CG 列表都会摘掉内置屏）。恢复目标在开盖期持续采样（macOS 合盖首拍即归零，活读常为 0），开盖（或开关关闭）时面板仍暗才恢复（外部已调亮的不覆盖）；符号缺失/无内置屏自动退化显示睡眠。零亮度残留时关闭开关会先还亮度再退场（防开盖黑屏）。**本机新背光架构实测**：IORegistry 直写 `AppleARMBacklight`（32/64 位 CFNumber 均同）与 `CoreDisplay_Display_SetUserBrightness` 都只改报告值不驱动实际背光，且读回验证全部假阳性（写入后读回一致仅说明服务层状态变了）——亮度通道的有效性以物理观察为准，诊断日志带写入返回值。
+- `extensions/awake/native/mod.rs`：意图状态（`AtomicBool`）+ app 心跳任务（enabled 时按 daemon 周期 touch beat，App Nap 由进程活动持有豁免——见关键决策；touch 连续失败 5 次即撤意图如实上报，防「UI 显开、daemon 端已按 beat 停更自清」的静默漂移；自愈——enabled 而 flag 缺失且 daemon 活着时补写 flag，修复强制睡眠唤醒后 daemon 已按 beat 过期自清、app 真值仍 true 的漂移，daemon 已死则不补，留待下次 engage 重装；判定与补写整体在 `intent_lock` 内，与撤意图路径（命令关闭 / 电池护栏 / 心跳降级统一走 `disarm`）互斥，防把刚撤下的 flag 复活）。engage 顺序硬不变量：`ensure_daemon`（可能提权弹窗，可达分钟级）→ touch beat → 写 flag → 置 enabled + 开始活动持有——心跳任务仅在 enabled=true 时 touch，flag 先于弹窗落盘会被在场 daemon 按 beat 过期自清（静默漂移）；取消/失败发生在写 flag 之前，零清理。另有会话级开盖零亮度 `AtomicBool`（不落盘，需 enabled）：仅开盖压零 + 持有显示豁免；合盖屏幕由 `screenPolicy` 独立决定；左键长按 2s / 外接屏出现时退出，启动时零亮度残留兜底恢复（见下节）。
 
 ## 关键决策
 
@@ -21,9 +32,30 @@
 - **启动清理**：setup 保留旧版 pid 命名 flag 的 glob 清理（升级前残留）与旧版虚拟显示器 binary；新版残留 flag（断电双杀 app 与 daemon 的极端场景）由 daemon 重生后首周期按 beat 过期自清。
 - **授权并发守卫**（`engaging` AtomicBool CAS）：授权弹窗模态阻塞期间二次开启会被拒绝，防 osascript 授权对话框叠加。
 - **电池护栏**：`disablesleep` 会压住系统的低电量睡眠路径（Keepresso 实证：合盖 Mac 一路跑过截止线），60s 低频巡检 `pmset -g batt`，放电中低于 20% 即经 `disarm` 解除持有（intent_lock 内撤意图 + 删 flag，与心跳补写互斥），系统随即入睡；读取失败/插电一律 no-op。一次性解除无自动恢复（滞回随之不需要），重新开启由用户决定。
-- **Rust 侧关闭的 config 回写**：菜单栏开关与电池护栏解除都经 `awake-enabled` 事件由 `config.ts` 模块级 listener 回写 `enabled=false`（不依赖 View 挂载），防重启后 watch immediate 误重新持有。
-- **菜单栏快捷开关**：config `menubarToggleVisible`（默认 false）经 watch 同步 Rust `set_awake_menubar_visible`；开启后菜单段常驻（不随 enabled 显隐），含启用开关 CheckItem 与「熄屏方式」二级菜单（勾选态反映 enabled 与当前策略，点击切换）。开启路径仅 daemon 首次安装走授权弹窗（此后零弹窗），取消/进行中静默（勾选态不变，重试即可）。
+- **Rust 侧开关状态的 config 双向回写**：菜单栏开关（开启/关闭）、电池护栏解除、心跳降级都经 `awake-enabled` 事件由 `config.ts` 模块级 listener 回写 `enabled`（不依赖 View 挂载）。开启方向不回写会让 config 停在 false，WebContent 重载 / app 重启时 `watch(immediate)` 用磁盘 false 把 Rust 侧刚建立的持有 disarm（表现为「明明开着，过一阵自己关了」，合盖后系统睡眠、远控掉线）；关闭方向不回写则会让重启后误重新持有。
+- **菜单栏快捷开关**：config `menubarToggleVisible`（默认 false）经 watch 同步 Rust `set_awake_menubar_visible`；开启后菜单段常驻，按扩展分组、段标题「保持系统唤醒」。未开启保持系统唤醒时只显示「保持系统唤醒」CheckItem；开启后才追加「开盖时屏幕」二级菜单（跟随系统 / 零亮度）+ 「合盖时屏幕」二级菜单（显示睡眠 / 零亮度）。勾选态分别反映 enabled / privacy / 当前策略。开启路径仅 daemon 首次安装走授权弹窗（此后零弹窗），取消/进行中静默（勾选态不变，重试即可）。
+- **开盖零亮度会话级不落盘**：不持久化，避免「上次黑屏 + 启动自动恢复零亮度」导致开机即不可见；app 崩溃/重启会退出开盖零亮度，setup 把残留零亮度恢复到 50%。开盖零亮度期间插入外接屏时 fail-open 恢复，防误以为已遮挡。
+- **保持系统唤醒与屏幕解耦**：保持系统唤醒只由「保持系统唤醒」开关控制；开盖零亮度/合盖屏幕是屏幕维度，**不会自动开启**保持系统唤醒。开盖零亮度未开启保持系统唤醒时直接拒绝并提示（View + 菜单同一硬校验），避免「开屏幕顺带改系统状态」的隐式耦合。合盖屏幕只在保持系统唤醒开启时生效。
+
+## 开盖零亮度（隐私/远控）
+
+办公室/公共场所用手机远控、又不想让周围人看到屏幕内容时，用开盖零亮度：
+
+- **开启**：需先在「系统」组开启「保持系统唤醒」；未开启时拒绝并提示（不再自动 engage）。开启后内置屏背光压零，并持有 `PreventUserIdleDisplaySleep`；系统由 daemon 保持不休眠，framebuffer/捕获流保持活跃。
+- **关闭**：**长按鼠标/触控板左键 2 秒**（按住不动，拖动不触发）恢复亮度；也可从远控画面里的菜单/设置页关闭。关闭时若处于开盖状态，恢复到进入零亮度前的亮度；合盖时屏幕按「合盖时屏幕」独立处理。开合盖本身不改变开盖零亮度的开关状态；不自动关闭保持系统唤醒。
+- **入口**：菜单栏「开盖时屏幕 → 零亮度」/ 扩展设置页「屏幕 → 开盖时屏幕」（**不注册全局快捷键**，避免占用系统热键）。本机侧退出：**长按鼠标/触控板左键 2 秒**；远控画面里也可操作菜单/设置页关闭。开盖零亮度是会话级状态，不落盘；app 重启后退回跟随系统（避免黑屏启动），残留零亮度由 setup 恢复到 50%。
+- **fail-open 护栏**：外接屏无法用内置屏亮度 API 遮挡，开启时直接拒绝；开盖零亮度期间插入外接屏会自动关闭并 toast。
+- **不是锁屏**：零亮度只遮挡背光、显示系统保持活跃，macOS 不会因显示睡眠自动锁屏；需要防他人操作时请手动锁屏（远控端会看到锁屏界面，需远程解锁）。
+- **上下文**：开盖零亮度与合盖屏幕按盖子状态各自生效——合盖时即使开盖零亮度开着，屏幕仍按「合盖时屏幕」（显示睡眠/零亮度）；开盖时按「开盖时屏幕」。两者不叠加、不抢优先级。
+
+## 合盖时屏幕
+
+`screenPolicy` 只作用于「保持系统唤醒开启 + 合盖 + 无外接」：
+
+- **显示睡眠**：合盖边沿 `displaysleepnow`，停留期节流补熄；最省电，但显示子系统真睡、捕获流冻结（远控停摆）。
+- **零亮度**：内置面板背光归零、framebuffer 保持活跃并持有 `PreventUserIdleDisplaySleep`；远控可用，功耗高于显示睡眠。
+- 开盖 / 切策略 / 外接到场立即释放；恢复目标在开盖期采样，开盖时面板仍暗才恢复。
 
 ## 远程会话
 
-默认零亮度策略（`dim`）即面向远程设计：背光归零、framebuffer 活跃，第三方远控（UU 远程、Screen Sharing 等）捕获流不断。清晰度受 headless 合成 framebuffer 限制（1920×1080 非 Retina，文字略虚），需要高清晰度时用系统自带虚拟显示器（系统设置 → 显示器 → 高级），不自建——虚拟屏会被 CoreGraphics 计入外接屏，若与熄屏策略并存会互相干扰。注意部分远控工具（实测 UU 远程）在会话建立时会重置非默认电源项清掉 `disablesleep`，daemon 的持续维持会在 2 秒内写回。
+默认零亮度策略（`dim`）即面向远程设计：背光归零、framebuffer 活跃，并持有 `PreventUserIdleDisplaySleep` 压住系统 `displaysleep` 定时器——否则闲置 30 分钟后显示子系统关闭，UU 等远控的捕获流冻结、客户端表现为离线（实测 UU 自身只持有 30 分钟的 `UserIsActive`，超时同样熄屏；本扩展的断言持续到开盖/关闭，不受 30 分钟限制）。合盖远控用 dim；开盖办公场景用开盖零亮度（见上节），同样持有显示豁免。第三方远控（UU 远程、Screen Sharing 等）捕获流不断。清晰度受 headless 合成 framebuffer 限制（1920×1080 非 Retina，文字略虚），需要高清晰度时用系统自带虚拟显示器（系统设置 → 显示器 → 高级），不自建——虚拟屏会被 CoreGraphics 计入外接屏，若与熄屏策略并存会互相干扰。注意部分远控工具（实测 UU 远程）在会话建立时会重置非默认电源项清掉 `disablesleep`，daemon 的持续维持会在 2 秒内写回。

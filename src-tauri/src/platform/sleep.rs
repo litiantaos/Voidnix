@@ -29,6 +29,27 @@ mod cg {
     }
 }
 
+mod iokit {
+    //! IOPMAssertion extern（显示空闲睡眠豁免）。与 IORegistry 一样是 C ABI 原语，
+    //! 无需引入完整 objc2-io-kit 依赖。
+    use core_foundation::string::CFStringRef;
+
+    pub type IOReturn = i32;
+    pub type IOPMAssertionID = u32;
+    /// `kIOPMAssertionLevelOn`
+    pub const K_IOPM_ASSERTION_LEVEL_ON: u32 = 255;
+
+    extern "C" {
+        pub fn IOPMAssertionCreateWithName(
+            assertion_type: CFStringRef,
+            assertion_level: u32,
+            assertion_name: CFStringRef,
+            assertion_id: *mut IOPMAssertionID,
+        ) -> IOReturn;
+        pub fn IOPMAssertionRelease(assertion_id: IOPMAssertionID) -> IOReturn;
+    }
+}
+
 /// 熄屏补熄节流间隔：合盖停留期间面板可能被通知等重新点亮，按此间隔
 /// 复核补熄（`pmset displaysleepnow` 对已灭屏为幂等无操作）。
 pub const RESLEEP_INTERVAL: Duration = Duration::from_secs(5);
@@ -208,6 +229,19 @@ pub fn sleep_displays_now() {
 /// 开盖期样本是恢复目标的可靠来源）。
 pub const BRIGHTNESS_LIT_THRESHOLD: f32 = 0.02;
 
+/// 零亮度残留（崩溃/强杀）或隐私屏无亮样本时的兜底恢复亮度。
+pub const DEFAULT_RESTORE_BRIGHTNESS: f32 = 0.5;
+
+/// 隐私屏恢复目标：当前亮读数优先（开盖瞬间），退最近一次开盖亮样本，
+/// 都不可用时退安全默认值。隐私屏没有可见恢复入口，关闭时必须能把屏幕
+/// 点回来，不能像 dim 边沿那样「无目标就不动」。
+pub fn privacy_restore_target(brightness: Option<f32>, open_sample: Option<f32>) -> f32 {
+    brightness
+        .filter(|b| *b > BRIGHTNESS_LIT_THRESHOLD)
+        .or(open_sample)
+        .unwrap_or(DEFAULT_RESTORE_BRIGHTNESS)
+}
+
 /// 零亮度策略的动作决策（纯函数供单测）。
 #[derive(Debug, PartialEq)]
 pub enum ScreenDimAction {
@@ -268,6 +302,20 @@ pub fn screen_dim_action(
         return ScreenDimAction::Rezero;
     }
     ScreenDimAction::None
+}
+
+/// 零亮度持有期间是否需要压住显示空闲睡眠（IOPMAssertion
+/// `PreventUserIdleDisplaySleep`）。判据与 dim 熄屏路径一致：选 dim 策略、
+/// 合盖（lid None 按 was_closed 闭锁延续）、无外接、亮度通道可用。开盖或
+/// 外接在场立即释放——开盖是正常本地使用，显示空闲应照常睡。
+pub fn should_hold_display_awake(
+    policy: u8,
+    lid_closed: Option<bool>,
+    was_closed: bool,
+    external: bool,
+    brightness: Option<f32>,
+) -> bool {
+    policy == 1 && lid_closed.unwrap_or(was_closed) && !external && brightness.is_some()
 }
 
 /// 熄屏决策（纯函数供单测）：处于「合盖 + 无外接」时需要熄屏——进入该
@@ -390,6 +438,44 @@ pub fn awake_daemon_plist(label: &str, script: &str) -> String {
         script = xml_escape(script),
         version = DAEMON_LOOP_VERSION
     )
+}
+
+/// 显示空闲睡眠豁免（IOPMAssertion `PreventUserIdleDisplaySleep`）。
+///
+/// `pmset disablesleep` 只挡系统睡眠；系统 `displaysleep` 定时器（本机 30min）
+/// 与第三方远控（实测 UU）自身的 30 分钟 `UserIsActive` 超时仍会关掉显示子系统
+/// ——屏幕捕获流随之冻结，远控端表现为「掉线 → 过一会儿重连又在线」。零亮度下
+/// 背光已归零，显示系统保持活跃不增加可见功耗，但必须显式断言才能压住 idle
+/// display sleep（`IOPMAssertionDeclareUserActivity` 会真的点亮屏幕，不适用）。
+/// 进程退出即自动失效，无落盘恢复债务。
+pub struct DisplaySleepHold {
+    id: u32,
+}
+
+impl DisplaySleepHold {
+    /// 获取断言；失败返回 None（消费方按无豁免降级，下个巡检周期重试）。
+    pub fn acquire() -> Option<Self> {
+        let assertion_type = CFString::new("PreventUserIdleDisplaySleep");
+        let name = CFString::new("Voidnix awake dim");
+        let mut id: iokit::IOPMAssertionID = 0;
+        // SAFETY: 两个 CFString 生命周期覆盖调用；id 出参由系统写入
+        let ret = unsafe {
+            iokit::IOPMAssertionCreateWithName(
+                assertion_type.as_concrete_TypeRef(),
+                iokit::K_IOPM_ASSERTION_LEVEL_ON,
+                name.as_concrete_TypeRef(),
+                &mut id,
+            )
+        };
+        (ret == 0).then_some(Self { id })
+    }
+}
+
+impl Drop for DisplaySleepHold {
+    fn drop(&mut self) {
+        // SAFETY: id 来自成功的 Create，只释放一次
+        let _ = unsafe { iokit::IOPMAssertionRelease(self.id) };
+    }
 }
 
 /// 进程活动持有（`NSProcessInfo beginActivity`）：持有期间豁免本进程的
@@ -622,6 +708,54 @@ mod tests {
             screen_dim_action(None, false, false, lit, no_sample, false, long),
             A::None
         );
+    }
+
+    #[test]
+    fn privacy_restore_target_prefers_live_then_sample_then_default() {
+        // 开盖瞬间活读亮值优先
+        assert_eq!(privacy_restore_target(Some(0.8), Some(0.6)), 0.8);
+        // 活读已归零（面板暗）时退回最近开盖样本
+        assert_eq!(privacy_restore_target(Some(0.0), Some(0.6)), 0.6);
+        assert_eq!(privacy_restore_target(None, Some(0.6)), 0.6);
+        // 两者皆无：必须给安全默认值，否则关闭隐私屏会留在黑屏
+        assert_eq!(
+            privacy_restore_target(Some(0.0), None),
+            DEFAULT_RESTORE_BRIGHTNESS
+        );
+        assert_eq!(
+            privacy_restore_target(None, None),
+            DEFAULT_RESTORE_BRIGHTNESS
+        );
+    }
+
+    #[test]
+    fn display_hold_only_in_active_dim_clamshell() {
+        let lit = Some(0.5f32);
+        // dim + 合盖 + 无外接 + 亮度可用 = 持有（压住 displaysleep 定时器）
+        assert!(should_hold_display_awake(1, Some(true), false, false, lit));
+        // lid None：按闭锁延续既有判定
+        assert!(should_hold_display_awake(1, None, true, false, lit));
+        // sleep 策略由 displaysleepnow 主动熄屏，不需要显示豁免
+        assert!(!should_hold_display_awake(0, Some(true), false, false, lit));
+        // 开盖 = 本地正常使用，显示空闲应照常睡
+        assert!(!should_hold_display_awake(
+            1,
+            Some(false),
+            false,
+            false,
+            lit
+        ));
+        assert!(!should_hold_display_awake(1, None, false, false, lit));
+        // 外接在场交给 macOS 自管
+        assert!(!should_hold_display_awake(1, Some(true), false, true, lit));
+        // 亮度通道不可用 = 代码会退化 displaysleepnow，不能再压显示睡眠
+        assert!(!should_hold_display_awake(
+            1,
+            Some(true),
+            false,
+            false,
+            None
+        ));
     }
 
     #[test]

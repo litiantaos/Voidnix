@@ -92,6 +92,8 @@ export const CMD = {
   isAwakeEnabled: 'is_awake_enabled',
   setAwakeMenubarVisible: 'set_awake_menubar_visible',
   setAwakeScreenPolicy: 'set_awake_screen_policy',
+  setAwakePrivacy: 'set_awake_privacy',
+  isAwakePrivacy: 'is_awake_privacy',
 
   // —— clean-mode ——
   setCleanModeEnabled: 'set_clean_mode_enabled',
