@@ -103,7 +103,13 @@ const SHORTCUT_KEY_SYMBOLS: Record<string, string> = {
 /** 快捷键串（`Alt+Space`）→ 显示键列表（`['⌥', 'Space']`）。ShortcutInput 与首启引导卡共用。 */
 export function formatShortcutKeys(shortcut: string): string[] {
   if (!shortcut) return []
-  return shortcut.split('+').map((k) => SHORTCUT_KEY_SYMBOLS[k] ?? k.toUpperCase())
+  return shortcut.split('+').map((k) => {
+    const symbol = SHORTCUT_KEY_SYMBOLS[k]
+    if (symbol) return symbol
+    // 小键盘键位与主键区物理区分（Alt+1 不等于 Alt+Numpad1）
+    if (k.startsWith('Numpad')) return `Num${k.slice(6)}`
+    return k.toUpperCase()
+  })
 }
 
 export function providerLabelFromUrl(url: string, fallback: string): string {

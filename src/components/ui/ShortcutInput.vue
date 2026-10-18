@@ -31,7 +31,7 @@
         h="5"
         items="center"
         justify="center"
-        :class="k === 'Space' ? 'text-[10px] px-2' : 'w-5'"
+        :class="k.length > 3 ? 'text-[10px] px-2' : 'w-5'"
       >
         {{ k }}
       </kbd>
@@ -49,6 +49,7 @@ import { CMD } from '@/commands'
 import { useTauriListener } from '@/composables/useTauriListener'
 import { useAppStore } from '@/stores/app'
 import { formatShortcutKeys } from '@/utils/format'
+import { shortcutKeyFromEvent } from '@/utils/shortcut'
 
 const appStore = useAppStore()
 
@@ -165,12 +166,8 @@ function onKeyDown(e: KeyboardEvent) {
   const isModifier = ['Meta', 'Control', 'Alt', 'Shift'].includes(e.key)
 
   if (!isModifier) {
-    let key = e.key
-    if (e.code === 'Space') {
-      key = 'Space'
-    } else if (/^[a-zA-Z]$/.test(key)) {
-      key = key.toUpperCase()
-    }
+    // 按物理键位取 key：Option 会把 e.key 落成合成字符（⌥C → ç），详见 utils/shortcut
+    const key = shortcutKeyFromEvent(e)
 
     let finalModifiers = modifiers
     if (props.maxKeys > 0) {

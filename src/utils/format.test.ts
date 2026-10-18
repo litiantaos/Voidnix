@@ -23,6 +23,11 @@ describe('formatShortcutKeys', () => {
     expect(formatShortcutKeys('a')).toEqual(['A'])
     expect(formatShortcutKeys('')).toEqual([])
   })
+
+  it('小键盘键位以 Num 前缀与主键区区分', () => {
+    expect(formatShortcutKeys('Alt+Numpad1')).toEqual(['⌥', 'Num1'])
+    expect(formatShortcutKeys('NumpadAdd')).toEqual(['NumAdd'])
+  })
 })
 
 describe('getParentPath', () => {
