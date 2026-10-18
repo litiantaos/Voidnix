@@ -18,7 +18,6 @@ function p(partial: Partial<AiProvider> & Pick<AiProvider, 'id'>): AiProvider {
     anthropicEndpoint: '',
     models: ['m'],
     keys: [{ id: 'k', label: '主号', apiKey: 'sk-1' }],
-    governed: false,
     usageKind: '',
     ...partial,
   }
@@ -61,17 +60,6 @@ describe('buildRoutes', () => {
       p({ id: 'e' }),
     ])
     expect(routes.map((r) => r.providerId)).toEqual(['d', 'e'])
-  })
-
-  it('已治理上游标记收敛透传（缺省/true）', () => {
-    const routes = buildRoutes([
-      p({ id: 'plain', anthropicEndpoint: 'https://x' }),
-      p({ id: 'gov', anthropicEndpoint: 'https://y', governed: true }),
-    ])
-    expect(routes.map((r) => [r.providerId, r.governed])).toEqual([
-      ['plain', false],
-      ['gov', true],
-    ])
   })
 })
 

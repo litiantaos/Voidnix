@@ -63,7 +63,6 @@ const zhipuProvider: AiProvider = {
   anthropicEndpoint: '',
   models: ['glm-5.3'],
   keys: [{ id: 'k1', label: '默认', apiKey: 'sk-zhipu-key' }],
-  governed: false,
   usageKind: '',
 }
 

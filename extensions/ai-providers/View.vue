@@ -120,22 +120,6 @@
         </div>
 
         <div class="form-field">
-          <span class="form-label">{{ t('ai-providers.governed') }}</span>
-          <BaseButton
-            class="self-start"
-            :icon="
-              providerForm.governed
-                ? 'i-ri-checkbox-circle-fill'
-                : 'i-ri-checkbox-blank-circle-line'
-            "
-            @click="providerForm.governed = !providerForm.governed"
-          >
-            {{ providerForm.governed ? t('common.enabled') : t('common.disabled') }}
-          </BaseButton>
-          <div text="xs muted">{{ t('ai-providers.governedHint') }}</div>
-        </div>
-
-        <div class="form-field">
           <span class="form-label">{{ t('ai-providers.modelId') }}</span>
           <div flex="~ col" gap="1.5">
             <div v-for="(_, i) in providerForm.models" :key="i" flex gap="1.5" items="center">
@@ -566,7 +550,6 @@ const providerForm = ref({
   chatEndpoint: '',
   responsesEndpoint: '',
   anthropicEndpoint: '',
-  governed: false,
   models: [''] as string[],
   firstKeyLabel: t('ai-providers.default'),
   firstKey: '',
@@ -591,7 +574,6 @@ function openCreateProvider() {
     chatEndpoint: '',
     responsesEndpoint: '',
     anthropicEndpoint: '',
-    governed: false,
     models: [''],
     firstKeyLabel: t('ai-providers.default'),
     firstKey: '',
@@ -618,7 +600,6 @@ function openEditProvider(providerId: string) {
     chatEndpoint: p.chatEndpoint,
     responsesEndpoint: p.responsesEndpoint ?? '',
     anthropicEndpoint: p.anthropicEndpoint ?? '',
-    governed: p.governed ?? false,
     models: p.models.length ? [...p.models] : [''],
     firstKeyLabel: '',
     firstKey: '',
@@ -651,7 +632,6 @@ function saveProvider() {
       chatEndpoint,
       responsesEndpoint,
       anthropicEndpoint,
-      governed: providerForm.value.governed,
       models,
       keys: [slot],
     })
@@ -665,7 +645,6 @@ function saveProvider() {
       chatEndpoint,
       responsesEndpoint,
       anthropicEndpoint,
-      governed: providerForm.value.governed,
       models,
     })
   }

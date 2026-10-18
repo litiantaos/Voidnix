@@ -97,25 +97,4 @@ mod tests {
         assert_eq!(back.routes[0].models, vec!["glm-5.3"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
-
-    /// 旧 gateway-state.json(无 governed 键)反序列化兜默认 false;roundtrip 写回
-    /// 恒含该键——serde default 是冷启动恢复不空路由的防线
-    #[test]
-    fn legacy_snapshot_without_governed_defaults_false() {
-        let dir = std::env::temp_dir().join(format!("voidnix-gw-legacy-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            state_file(&dir),
-            r#"{"enabled":true,"routes":[{"providerId":"z","name":"z","anthropicUrl":"https://x","responsesUrl":"","chatUrl":"","models":["m"],"keys":[{"label":"k","apiKey":"s"}]}]}"#,
-        )
-        .unwrap();
-        let back = read_state(&dir).unwrap();
-        assert_eq!(back.routes.len(), 1);
-        assert!(!back.routes[0].governed);
-        persist_state(&dir, &back).unwrap();
-        let text = std::fs::read_to_string(state_file(&dir)).unwrap();
-        assert!(text.contains("\"governed\""), "写回恒含该键");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 }

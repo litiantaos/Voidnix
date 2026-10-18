@@ -329,13 +329,14 @@ pub(super) const QUOTA_COOLDOWN: std::time::Duration = std::time::Duration::from
 /// 上下文超长的厂商错误文案子串(大小写不敏感):命中即翻译为各协议标准错误,客户端
 /// (CC)识别标准语义触发自动 compact——原文案(尤其中文厂商)客户端识别不了,直接
 /// 报错停会话。词表保守:仅上下文语义,不含易与周期限额混淆的「token limit」族
-/// (Anthropic 月度配额文案含该词,误译会触发无意义 compact)
+/// (Anthropic 月度配额文案含该词,误译会触发无意义 compact);标准短语 "prompt is
+/// too long" 不在词表——含该短语的错误体(Anthropic 官方原生文案)语义已正确,
+/// 透传即正确,重译只会叠前缀
 pub(super) const TOO_LONG_MARKERS: &[&str] = &[
     "context_length_exceeded",
     "context length",
     "context window",
     "maximum context",
-    "prompt is too long",
     "input is too long",
     "too many input tokens",
     "exceeds the maximum",
@@ -615,6 +616,13 @@ mod tests {
         .unwrap();
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(v["error"]["code"], "context_length_exceeded");
+        // 已是标准语义的文案(Anthropic 官方原生)不重译:标准短语不在词表,
+        // 透传即正确,重译只会叠前缀
+        assert!(too_long_rewrite(
+            Protocol::Anthropic,
+            br#"{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 20500 tokens > 16385 maximum"}}"#
+        )
+        .is_none());
         // Anthropic 周期配额文案不误译(误译会触发无意义 compact 丢上下文)
         assert!(too_long_rewrite(
             Protocol::Anthropic,
