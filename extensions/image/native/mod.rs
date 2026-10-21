@@ -1,5 +1,6 @@
-//! 图片处理扩展：背景移除（Vision）+ 长图拼接（CoreGraphics）。
+//! 图片处理扩展：背景移除（Vision / Bria RMBG-2.0）+ 长图拼接（CoreGraphics）。
 
+mod bria;
 mod remove_bg;
 mod shared;
 mod stitch;
@@ -17,16 +18,37 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 
 /// 移除图片背景。
 ///
-/// 加载 → Vision 前景分割 → 背景置透明 → PNG 编码 → 写临时文件 → 返回 base64 预览。
-/// 在 spawn_blocking 中执行（Vision performRequests 同步阻塞）。
+/// engine = `vision`（默认，系统内置模型，零依赖）或 `bria`（云端 RMBG-2.0，
+/// 需 token，新账户 100 次免费）。Vision 在 spawn_blocking 中执行（performRequests
+/// 同步阻塞）；Bria 走异步 HTTP + 本地预处理（max_edge 限制云端输入最长边）。
+/// `on_progress` 仅 Bria 使用：preparing / uploading / downloading 三阶段。
 #[tauri::command]
-pub async fn image_remove_bg(input_path: String) -> Result<ImageResult, String> {
-    acquire_busy()?;
-    let result = tokio::task::spawn_blocking(move || remove_bg::remove_background(&input_path))
-        .await
-        .map_err(|e| format!("处理任务异常: {e}"));
-    release_busy();
-    result?
+pub async fn image_remove_bg(
+    input_path: String,
+    engine: Option<String>,
+    token: Option<String>,
+    max_edge: Option<u32>,
+    on_progress: tauri::ipc::Channel<String>,
+) -> Result<ImageResult, String> {
+    let _busy = acquire_busy()?;
+    let result = async {
+        match engine.as_deref() {
+            Some("bria") => {
+                bria::remove_background(
+                    &input_path,
+                    token.as_deref().unwrap_or(""),
+                    max_edge.unwrap_or(0),
+                    &on_progress,
+                )
+                .await
+            }
+            _ => tokio::task::spawn_blocking(move || remove_bg::remove_background(&input_path))
+                .await
+                .map_err(|e| format!("处理任务异常: {e}"))?,
+        }
+    }
+    .await;
+    result
 }
 
 /// 拼接长图（横向/纵向，支持间距与重叠、统一尺寸）。
@@ -41,13 +63,10 @@ pub async fn image_stitch(
     gap: i64,
     resize: stitch::Resize,
 ) -> Result<ImageResult, String> {
-    acquire_busy()?;
-    let result =
-        tokio::task::spawn_blocking(move || stitch::stitch(&input_paths, direction, gap, resize))
-            .await
-            .map_err(|e| format!("处理任务异常: {e}"));
-    release_busy();
-    result?
+    let _busy = acquire_busy()?;
+    tokio::task::spawn_blocking(move || stitch::stitch(&input_paths, direction, gap, resize))
+        .await
+        .map_err(|e| format!("处理任务异常: {e}"))?
 }
 
 /// 将临时结果文件保存到指定路径。
@@ -118,20 +137,24 @@ fn mime_from_ext(path: &std::path::Path) -> &'static str {
     }
 }
 
+/// 处理锁守卫：Drop 释放，panic / 提前 return 都不会遗留 BUSY=true。
+struct BusyGuard;
+
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        BUSY.store(false, Ordering::SeqCst);
+    }
+}
+
 /// 获取处理锁（同时仅允许一个图片处理任务）。
-fn acquire_busy() -> Result<(), String> {
+fn acquire_busy() -> Result<BusyGuard, String> {
     if BUSY
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
         return Err("已有图片处理任务进行中".into());
     }
-    Ok(())
-}
-
-/// 释放处理锁。
-fn release_busy() {
-    BUSY.store(false, Ordering::SeqCst);
+    Ok(BusyGuard)
 }
 
 pub struct ImageExtension;

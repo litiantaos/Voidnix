@@ -61,4 +61,41 @@ registerMessages({
   'image.saveFailed': { 'zh-CN': '保存失败', en: 'Save failed' },
   'image.copiedToClipboard': { 'zh-CN': '已复制到剪贴板', en: 'Copied to clipboard' },
   'image.saved': { 'zh-CN': '已保存', en: 'Saved' },
+
+  // 设置：移除背景引擎
+  'image.settings': { 'zh-CN': '设置', en: 'Settings' },
+  'image.closeSettings': { 'zh-CN': '关闭设置', en: 'Close Settings' },
+  'image.group.removeBg': { 'zh-CN': '移除背景', en: 'Background Removal' },
+  'image.engine': { 'zh-CN': '引擎', en: 'Engine' },
+  'image.engineHint': {
+    'zh-CN': '系统模型本地免费；云端模型毛发与复杂边缘更准（图片会上传 Bria）',
+    en: 'Local model is free; cloud model handles hair and complex edges better (uploads to Bria)',
+  },
+  'image.engine.vision': { 'zh-CN': '系统 Vision（本地）', en: 'System Vision (local)' },
+  'image.engine.bria': { 'zh-CN': 'Bria RMBG-2.0（云端）', en: 'Bria RMBG-2.0 (cloud)' },
+  'image.cloudMaxEdge': { 'zh-CN': '云端最长边', en: 'Cloud Max Edge' },
+  'image.cloudMaxEdgeHint': {
+    'zh-CN': '越小上传/下载越快；2048 对一般抠图足够，要原图选「原始」',
+    en: 'Smaller is faster; 2048 is enough for most cutouts, choose Original for full resolution',
+  },
+  'image.cloudMaxEdge.original': { 'zh-CN': '原始', en: 'Original' },
+  'image.preparing': { 'zh-CN': '准备图片…', en: 'Preparing image…' },
+  'image.uploading': { 'zh-CN': '上传并处理中…', en: 'Uploading and processing…' },
+  'image.downloading': { 'zh-CN': '下载结果…', en: 'Downloading result…' },
+  'image.briaToken': { 'zh-CN': 'Bria API Token', en: 'Bria API Token' },
+  'image.briaTokenHint': {
+    'zh-CN': '明文保存在本地扩展配置',
+    en: 'Stored in plain text in local extension config',
+  },
+  'image.briaTokenPlaceholder': { 'zh-CN': '粘贴 Token', en: 'Paste token' },
+  'image.briaTokenRequired': {
+    'zh-CN': '未配置 Bria API Token，请先在设置中填写',
+    en: 'Bria API Token is not configured. Add it in Settings.',
+  },
+  'image.briaConsole': { 'zh-CN': 'Bria 控制台', en: 'Bria Console' },
+  'image.briaFreeHint': {
+    'zh-CN': '新账户 100 次免费，之后约 $0.018/张',
+    en: '100 free calls for new accounts, then about $0.018/image',
+  },
+  'image.open': { 'zh-CN': '打开', en: 'Open' },
 })

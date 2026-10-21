@@ -116,7 +116,11 @@
             }}</BaseButton>
           </template>
           <BaseButton v-else variant="primary" :disabled="processing" @click.stop="removeBg">{{
-            processing ? t('image.processing') : t('image.removeBg')
+            processing
+              ? bgStage
+                ? t(BG_STAGE_KEYS[bgStage])
+                : t('image.processing')
+              : t('image.removeBg')
           }}</BaseButton>
         </div>
       </template>
@@ -172,7 +176,7 @@
 
 <script setup lang="ts">
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { currentMonitor } from '@tauri-apps/api/window'
 import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
@@ -203,6 +207,17 @@ const appStore = useAppStore()
 
 const processing = ref(false)
 const result = ref<ImageResult | null>(null)
+
+/** 云端移除背景阶段（本地 Vision 无阶段，沿用「正在抠图…」）。 */
+type BgStage = 'preparing' | 'uploading' | 'downloading'
+const BG_STAGE_KEYS: Record<BgStage, string> = {
+  preparing: 'image.preparing',
+  uploading: 'image.uploading',
+  downloading: 'image.downloading',
+}
+const bgStage = ref<BgStage | null>(null)
+/** 请求令牌：换图 / 退出扩展 / 移除当前张后，旧请求结果不回灌。 */
+let removeBgToken = 0
 
 /** 当前工具：初始读持久化默认，用户主动切换时写回 config（投递直达只改本地不落盘）。 */
 const tool = ref<Tool>(config.defaultTool)
@@ -285,6 +300,8 @@ function itemStyle(index: number): Record<string, string> {
 // ── 重置 ──
 
 function reset() {
+  removeBgToken++
+  bgStage.value = null
   result.value = null
   originalPreview.value = ''
   inputPath.value = ''
@@ -297,6 +314,8 @@ function reset() {
 
 // 工具切换：清操作结果（结果属于特定工具），共享集合与 removeBg 当前张保留
 watch(tool, () => {
+  removeBgToken++
+  bgStage.value = null
   result.value = null
   if (tool.value === 'removeBg') {
     // 当前张解析：仍在集合则保持；否则取拼接选中项、首张兜底（selectedFile 清除前取值）
@@ -363,7 +382,9 @@ const resizeTitle = computed(() =>
 const resizeOptions = computed(() => RESIZE_PRESETS.map((v) => ({ label: String(v), value: v })))
 
 const removeBgSourceSubtitle = computed(() => {
-  if (processing.value) return t('image.segmentingForeground')
+  if (processing.value) {
+    return bgStage.value ? t(BG_STAGE_KEYS[bgStage.value]) : t('image.segmentingForeground')
+  }
   if (!inputPath.value) return t('image.formatsHint')
   if (result.value) {
     return `${result.value.width}×${result.value.height} · ${formatBytes(result.value.sizeBytes)} · PNG`
@@ -564,6 +585,8 @@ function addImage(path: string) {
 }
 
 async function setInput(path: string) {
+  removeBgToken++
+  bgStage.value = null
   inputPath.value = path
   result.value = null
   await loadPreview(path)
@@ -602,19 +625,44 @@ watch(
 
 async function removeBg() {
   if (!inputPath.value || processing.value) return
+  const engine = config.removeBgEngine
+  const token = config.briaToken.trim()
+  if (engine === 'bria' && !token) {
+    appStore.showStatus(t('image.briaTokenRequired'), { duration: 4000, kind: 'error' })
+    appStore.openSubview('config')
+    return
+  }
+  const req = ++removeBgToken
+  const progress = new Channel<string>()
+  progress.onmessage = (stage) => {
+    if (req !== removeBgToken) return
+    if (stage === 'preparing' || stage === 'uploading' || stage === 'downloading') {
+      bgStage.value = stage
+    }
+  }
   processing.value = true
+  bgStage.value = null
   result.value = null
   try {
-    result.value = await invoke<ImageResult>(CMD.imageRemoveBg, {
+    const r = await invoke<ImageResult>(CMD.imageRemoveBg, {
       inputPath: inputPath.value,
+      engine,
+      token: engine === 'bria' ? token : '',
+      maxEdge: config.briaMaxEdge,
+      onProgress: progress,
     })
+    // 请求期间换图 / 退出扩展 / 移除当前张：旧结果不回灌
+    if (req !== removeBgToken) return
+    result.value = r
   } catch (e) {
+    if (req !== removeBgToken) return
     appStore.showStatus(`${t('image.processFailed')}：${e ?? t('common.unknownError')}`, {
       duration: 4000,
       kind: 'error',
     })
   } finally {
     processing.value = false
+    bgStage.value = null
   }
 }
 
@@ -665,6 +713,8 @@ function removeSelected() {
   selectedFile.value = -1
   if (removed === inputPath.value) {
     // removeBg 当前张被移除：清其侧状态（切回时经 watch(tool) 兜底取集合剩余首张）
+    removeBgToken++
+    bgStage.value = null
     inputPath.value = ''
     originalPreview.value = ''
     inputMeta.value = ''
