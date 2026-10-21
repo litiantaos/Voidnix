@@ -3,6 +3,11 @@ import { registerMessages } from '@/runtime/i18n'
 registerMessages({
   'notes.placeholder': { 'zh-CN': '随手记点什么…', en: 'Jot something down…' },
 
+  // ─── 视图模式 ──────────────────────────────
+  'notes.preview': { 'zh-CN': '预览 Markdown', en: 'Preview Markdown' },
+  'notes.edit': { 'zh-CN': '返回编辑', en: 'Back to Editing' },
+  'notes.previewEmpty': { 'zh-CN': '还没有内容', en: 'Nothing here yet' },
+
   // ─── Settings ──────────────────────────────
   'notes.settings.shortcut': { 'zh-CN': '呼出快捷键', en: 'Keyboard shortcut' },
   'notes.settings.groupGeneral': { 'zh-CN': '通用', en: 'General' },

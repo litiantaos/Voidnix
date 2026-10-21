@@ -647,4 +647,100 @@ test.describe('notes 记事本', () => {
     expect(state.scrollTop).toBe(0)
     expect(state.selStart).toBe(0)
   })
+
+  test('Markdown 预览:渲染正文 / 代码块,与 agent 回复正文同套排版', async ({ page }) => {
+    await page.locator('.notes-layer').click()
+    await page.evaluate(() => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      ta.value = '# 标题\n\n正文 **粗体**\n\n```js\nconst a = 1\n```'
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await page.waitForTimeout(400)
+
+    // 搜索栏配件:眼睛按钮切预览
+    await page.locator('button:has(.i-ri-eye-line)').click()
+    // 激活态:实心眼睛 + accent(与剪贴板收藏按钮同范式,非仅切换视图)
+    const toggleIcon = page.locator('[data-search-bar-accessory] button:has(.i-ri-eye-fill) i')
+    await expect(toggleIcon).toHaveClass(/i-ri-eye-fill/)
+    await expect(toggleIcon).toHaveClass(/text-accent/)
+    const body = page.locator('.notes-preview .markdown-body')
+    await expect(body).toBeVisible({ timeout: 3000 })
+    await expect(body.locator('h1')).toHaveText('标题')
+    await expect(body.locator('strong')).toHaveText('粗体')
+    await expect(body.locator('.md-code-copy')).toBeVisible()
+    // 编辑层整体让位(不是叠加显示)
+    await expect(page.locator('.notes-layer')).toBeHidden()
+    await expect(page.locator('.caret-on')).toHaveCount(0)
+
+    // 沿用 agent 回复正文的排版:全局 markdown.css + text="sm primary" leading="relaxed"
+    // (14px;行高 relaxed 1.625 / markdown-body 1.65,取区间只验「同款宽松行距」)
+    const typo = await body.evaluate((el) => {
+      const cs = getComputedStyle(el)
+      return { fontSize: cs.fontSize, lineHeight: parseFloat(cs.lineHeight) }
+    })
+    expect(typo.fontSize).toBe('14px')
+    expect(typo.lineHeight).toBeGreaterThan(22)
+    expect(typo.lineHeight).toBeLessThan(24)
+
+    // 阅读态可拖选复制;正文不回吃 ui-field 的 font-medium(agent 正文字重 400)
+    const readStyle = await page.locator('.notes-preview').evaluate((el) => {
+      const cs = getComputedStyle(el)
+      return { userSelect: cs.userSelect, fontWeight: cs.fontWeight }
+    })
+    expect(readStyle.userSelect).toBe('text')
+    expect(readStyle.fontWeight).toBe('400')
+  })
+
+  test('Markdown 预览:长文在预览层内部滚动,不撑出页面级滚动', async ({ page }) => {
+    await page.locator('.notes-layer').click()
+    await page.evaluate(() => {
+      const ta = document.querySelector('.notes-input') as HTMLTextAreaElement
+      // 80 节 markdown:远超固定窗高,验证预览层自身滚动(与编辑层同构)
+      ta.value = Array.from(
+        { length: 80 },
+        (_, i) => `## 第 ${i} 节\n\n正文段落 ${i},包含 **加粗** 与 \`代码\`。`,
+      ).join('\n\n')
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await page.waitForTimeout(400)
+    await page.locator('button:has(.i-ri-eye-line)').click()
+    const preview = page.locator('.notes-preview')
+    await expect(preview).toBeVisible({ timeout: 3000 })
+
+    const state = await preview.evaluate((el) => {
+      const pageScroll = document.querySelector('.overflow-y-auto') as HTMLElement
+      return {
+        overflow: el.scrollHeight > el.clientHeight,
+        pageScroll: pageScroll.scrollTop,
+        pageOverflow: pageScroll.scrollHeight > pageScroll.clientHeight,
+      }
+    })
+    expect(state.overflow).toBe(true)
+    // 固定窗高:滚动量由预览层自身消化,ContentView 页面级容器不动
+    expect(state.pageScroll).toBe(0)
+    expect(state.pageOverflow).toBe(false)
+
+    await preview.evaluate((el) => {
+      el.scrollTop = 400
+    })
+    await expect.poll(() => preview.evaluate((el) => el.scrollTop)).toBe(400)
+  })
+
+  test('Markdown 预览:空内容空态 + 返回编辑回焦输入区', async ({ page }) => {
+    await page.locator('button:has(.i-ri-eye-line)').click()
+    const preview = page.locator('.notes-preview')
+    await expect(preview).toBeVisible({ timeout: 3000 })
+    await expect(preview).toHaveText('还没有内容')
+    await expect(page.locator('.markdown-body')).toHaveCount(0)
+
+    await page.locator('button:has(.i-ri-eye-fill)').click()
+    await expect(page.locator('.notes-layer')).toBeVisible({ timeout: 3000 })
+    await expect(page.locator('.notes-preview')).toHaveCount(0)
+    // 回编辑:激活态撤销,按钮回到线框眼睛
+    await expect(
+      page.locator('[data-search-bar-accessory] button:has(.i-ri-eye-line) i'),
+    ).toHaveClass(/i-ri-eye-line/)
+    // 回编辑自动回焦输入区(可直接继续输入)
+    await expect(page.locator('.notes-input')).toBeFocused()
+  })
 })

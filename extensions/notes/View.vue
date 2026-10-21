@@ -15,6 +15,7 @@
            内衬只是初始让位,滚动时文字一路贴到边框才剪裁(挂壳则是内距线悬空截断);
            radius-panel 随附,滚动中的文字/选区沿圆角弧剪裁不越出边框 -->
       <div
+        v-show="!previewMode"
         ref="layerEl"
         class="notes-layer hide-scrollbar radius-panel overflow-x-hidden overflow-y-auto"
         p="3"
@@ -67,6 +68,9 @@
           ><span ref="caretCoreEl" class="caret-core"
         /></span>
       </div>
+
+      <!-- 预览层:与编辑层同壳同位(切换零布局跳动),自身滚动由 Preview 承担 -->
+      <NotesPreview v-if="previewMode" :text="text" />
     </div>
 
     <!-- 真实输入源:键盘/IME/选区语义全由它承接,opacity 0 不可见(原生 caret 一并隐藏)。
@@ -106,6 +110,8 @@ import { t } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
 import { whenConfigReady } from '@/runtime/storage'
 import { config } from './config'
+import NotesPreview from './Preview.vue'
+import { previewMode } from './view-mode'
 import {
   toChars,
   diffChars,
@@ -1005,15 +1011,17 @@ onUnmounted(() => {
   cleanupTimers.clear()
 })
 
-/// 窗口隐藏时跳过聚焦(WKWebView 可编辑元素聚焦会抢前台),获焦后补聚焦(translate 同范式)
+/// 窗口隐藏时跳过聚焦(WKWebView 可编辑元素聚焦会抢前台),获焦后补聚焦(translate 同范式)。
+/// 预览态无编辑目标,不抢焦(否则聚焦隐藏 textarea 会弹出自绘光标/IME 壳)
 function maybeFocus() {
-  if (!document.hasFocus()) return
+  if (previewMode.value || !document.hasFocus()) return
   nextTick(() => inputEl.value?.focus())
 }
 /// 窗口获焦后聚焦输入区:此处不经 maybeFocus 的 hasFocus 守卫——window-focused
 /// 事件先于 WebKit 页面焦点状态翻转到达(实测 show 后数十 ms 内 hasFocus 仍为 false),
 /// 守卫会让快捷键唤起路径永久错过聚焦;事件语义即窗口已 key,聚焦无激活风险(agent 同范式)
 function onWinFocused() {
+  if (previewMode.value) return
   if (appStore.activeExtId !== 'notes' || appStore.activeSubview || appStore.isDialogOpen) return
   inputEl.value?.focus()
 }
@@ -1024,9 +1032,19 @@ onActivated(maybeFocus)
 watch(
   () => appStore.activeSubview,
   (sub, prev) => {
-    if (prev === 'config' && !sub) nextTick(() => inputEl.value?.focus())
+    if (prev === 'config' && !sub && !previewMode.value) nextTick(() => inputEl.value?.focus())
   },
 )
+// 视图模式切换:进预览先卸焦点(同时收束拖选会话);回编辑补聚焦 + 光标落位
+// (maybeFocus 自带 hasFocus 守卫,窗口未聚焦时交由 window-focused 补齐)
+watch(previewMode, (on) => {
+  onDragEnd()
+  if (on) {
+    inputEl.value?.blur()
+    return
+  }
+  maybeFocus()
+})
 onDeactivated(() => {
   onDragEnd() // 拖选中切扩展/进子视图:收束会话,防 window 监听残留跨界面响应
   inputEl.value?.blur()
