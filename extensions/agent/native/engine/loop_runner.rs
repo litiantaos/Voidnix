@@ -121,6 +121,7 @@ async fn run_loop_inner(input: &mut LoopInput) -> Result<(), String> {
             done_event: "",
             request_id: "",
             abort_flag: None,
+            extra_body: None,
         })
         .await?;
 

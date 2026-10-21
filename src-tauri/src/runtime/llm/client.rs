@@ -2,7 +2,9 @@ use crate::runtime::llm::parser::{ChoiceDelta, FinalizedToolCall, ToolCallAccumu
 use crate::runtime::llm::types::LlmMessage;
 use futures_util::StreamExt;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::sync::atomic::Ordering;
+use std::sync::{LazyLock, Mutex};
 use tauri::Emitter;
 
 // ── 请求管道常量（agent + translate 共享）────
@@ -10,6 +12,36 @@ use tauri::Emitter;
 const MAX_SSE_BUFFER: usize = 1_048_576;
 /// 单条消息内容上限（字符数，P4-rs4 统一为字符而非字节，避免多字节中文截断边界不一致）
 const MAX_MESSAGE_CONTENT_LEN: usize = 32_768;
+
+/// 扩展字段负缓存：「URL + 模型 + 扩展字段内容」→ 服务端拒绝该字段。
+///
+/// 只在「带扩展字段被 400/422 拒绝、剥掉后重试**成功**」时写入——重试成功才证明
+/// 失败由扩展字段导致，避免把上下文超长 / 限流等无关 4xx 误记为「不支持」（这类
+/// 重试同样失败，不写缓存）。命中时后续请求直接不发扩展字段，把严格服务端的
+/// 「每次翻译多一次失败往返」降为「每个进程生命周期一次探测」。
+///
+/// 进程级、不落盘：重启后重新探测；缓存只在 4xx 拒绝路径产生，字段被静默忽略的
+/// 服务端不受影响（也无法通过此机制感知）。
+static EXTRA_BODY_REJECTED: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn extra_body_cache_key(url: &str, model: &str, extra: &serde_json::Value) -> String {
+    // 不同消费者可能传不同扩展字段，键必须含字段内容，不能只按 endpoint/model
+    format!("{url}\n{}\n{}", model.trim(), extra)
+}
+
+fn is_extra_body_rejected(key: &str) -> bool {
+    EXTRA_BODY_REJECTED
+        .lock()
+        .map(|set| set.contains(key))
+        .unwrap_or(false)
+}
+
+fn remember_extra_body_rejected(key: String) {
+    if let Ok(mut set) = EXTRA_BODY_REJECTED.lock() {
+        set.insert(key);
+    }
+}
 
 // ── SSRF 防护：endpoint 校验复用 crate::http::validate_endpoint_url（H3 单一真相源）──
 
@@ -65,27 +97,39 @@ pub async fn openai_request_once(
     api_key: &str,
     model: &str,
     messages: Vec<LlmMessage>,
+    extra_body: Option<&serde_json::Value>,
 ) -> Result<String, String> {
     let safe_endpoint = validate_ai_request(endpoint, model, api_key)?;
     let url = format!("{}/chat/completions", safe_endpoint.trim_end_matches('/'));
 
-    let body = serde_json::json!({
-        "model": model.trim(),
-        "messages": messages_to_json(&messages),
-        "stream": false
-    });
+    let mut body = build_once_body(messages_to_json(&messages), model);
+    let extra_key = extra_body.map(|extra| extra_body_cache_key(&url, model, extra));
+    let extra_applied = match &extra_key {
+        Some(key) if is_extra_body_rejected(key) => false,
+        _ => merge_extra_body(&mut body, extra_body),
+    };
 
-    let response = crate::http::client()
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key.trim()))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            log::error!("Request network error: {e}");
-            "Failed to connect to API. Check your endpoint and network.".to_string()
-        })?;
+    let mut response = send_once_request(&url, api_key, &body).await?;
+
+    // 同 stream 路径：不认扩展字段的服务端（400/422）剥掉后重试一次
+    if !response.status().is_success()
+        && extra_applied
+        && matches!(response.status().as_u16(), 400 | 422)
+    {
+        let status = response.status();
+        let detail = response.text().await.unwrap_or_default();
+        log::warn!(
+            "LLM request carrying extra_body rejected ({status}): {detail}; retrying without it"
+        );
+        body = build_once_body(messages_to_json(&messages), model);
+        response = send_once_request(&url, api_key, &body).await?;
+        // 重试成功才证明拒绝由扩展字段导致 → 记入负缓存，后续请求不再发送
+        if response.status().is_success() {
+            if let Some(key) = extra_key {
+                remember_extra_body_rejected(key);
+            }
+        }
+    }
 
     if !response.status().is_success() {
         let status = response.status();
@@ -147,6 +191,97 @@ pub struct StreamConfig<'a, R: tauri::Runtime = tauri::Wry> {
     pub done_event: &'a str,
     pub request_id: &'a str,
     pub abort_flag: Option<&'a std::sync::atomic::AtomicBool>,
+    /// 提供商专有的额外请求体字段（顶层浅合并），如 translate 关思考的
+    /// `thinking: {"type": "disabled"}`。服务端严格反序列化、以 400/422 拒绝
+    /// 未知字段时自动剥掉重试一次，并在重试成功后把该 endpoint/model 记入
+    /// 进程级负缓存（后续请求不再发送）——这类参数是锦上添花，不能让它把请求
+    /// 整体打挂，也不该让严格服务端每次多付一次失败往返。
+    pub extra_body: Option<&'a serde_json::Value>,
+}
+
+/// 组装非流式 chat/completions 请求体（协议核心字段）。
+fn build_once_body(messages: Vec<serde_json::Value>, model: &str) -> serde_json::Value {
+    serde_json::json!({
+        "model": model.trim(),
+        "messages": messages,
+        "stream": false
+    })
+}
+
+/// 组装流式 chat/completions 请求体（协议核心字段）。
+fn build_chat_body(
+    messages: Vec<serde_json::Value>,
+    model: &str,
+    tools: Option<&[serde_json::Value]>,
+    tool_choice: Option<&str>,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model.trim(),
+        "messages": messages,
+        "stream": true
+    });
+    if let Some(tools) = tools {
+        body["tools"] = serde_json::Value::Array(tools.to_vec());
+    }
+    if let Some(choice) = tool_choice {
+        body["tool_choice"] = serde_json::Value::String(choice.to_string());
+    }
+    body
+}
+
+/// 把 `extra_body` 的对象字段浅合并进请求体，返回是否合并了至少一个字段。
+/// 协议核心字段（model / messages / stream）不可被扩展字段覆盖。
+fn merge_extra_body(body: &mut serde_json::Value, extra: Option<&serde_json::Value>) -> bool {
+    let Some(extra) = extra.and_then(serde_json::Value::as_object) else {
+        return false;
+    };
+    let mut merged = false;
+    for (key, value) in extra {
+        if matches!(key.as_str(), "model" | "messages" | "stream") {
+            continue;
+        }
+        body[key] = value.clone();
+        merged = true;
+    }
+    merged
+}
+
+/// 发出非流式 POST（不含响应状态处理）。
+async fn send_once_request(
+    url: &str,
+    api_key: &str,
+    body: &serde_json::Value,
+) -> Result<reqwest::Response, String> {
+    crate::http::client()
+        .post(url)
+        .header("Authorization", format!("Bearer {}", api_key.trim()))
+        .header("Content-Type", "application/json")
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| {
+            log::error!("Request network error: {e}");
+            "Failed to connect to API. Check your endpoint and network.".to_string()
+        })
+}
+
+/// 发出流式 POST（不含响应状态处理）。
+async fn send_stream_request(
+    url: &str,
+    api_key: &str,
+    body: &serde_json::Value,
+) -> Result<reqwest::Response, String> {
+    crate::http::stream_client()
+        .post(url)
+        .header("Authorization", format!("Bearer {}", api_key.trim()))
+        .header("Content-Type", "application/json")
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| {
+            log::error!("Stream request network error: {e}");
+            "Failed to connect to API. Check your endpoint and network.".to_string()
+        })
 }
 
 /// 发起 OpenAI 兼容的流式请求。
@@ -155,33 +290,50 @@ pub async fn stream_openai_request<R: tauri::Runtime>(
 ) -> Result<StreamOutcome, String> {
     let url = format!("{}/chat/completions", config.endpoint.trim_end_matches('/'));
 
-    let messages_json = messages_to_json(config.messages);
-
-    let mut body = serde_json::json!({
-        "model": config.model.trim(),
-        "messages": messages_json,
-        "stream": true
-    });
-    if let Some(tools) = config.tools {
-        body["tools"] = serde_json::Value::Array(tools.to_vec());
-    }
-    if let Some(choice) = config.tool_choice {
-        body["tool_choice"] = serde_json::Value::String(choice.to_string());
-    }
+    let mut body = build_chat_body(
+        messages_to_json(config.messages),
+        config.model,
+        config.tools,
+        config.tool_choice,
+    );
+    let extra_key = config
+        .extra_body
+        .map(|extra| extra_body_cache_key(&url, config.model, extra));
+    let extra_applied = match &extra_key {
+        // 负缓存命中：服务端已明确拒绝过该字段，直接不带，省掉每次失败往返
+        Some(key) if is_extra_body_rejected(key) => false,
+        _ => merge_extra_body(&mut body, config.extra_body),
+    };
 
     // LLM 流式总时长不可控（长推理 + 工具轮次 + 长输出远超 120s），走无整体超时的
     // 流式 client；读间隙超时兜底 stalled 连接
-    let response = crate::http::stream_client()
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", config.api_key.trim()))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            log::error!("Stream request network error: {e}");
-            "Failed to connect to API. Check your endpoint and network.".to_string()
-        })?;
+    let mut response = send_stream_request(&url, config.api_key, &body).await?;
+
+    // 服务端不认扩展字段（严格反序列化，如 OpenAI 原生 / Anthropic 系）→
+    // 剥掉扩展字段重试一次，避免「关思考」把翻译整体打挂。重试成功才把该
+    // endpoint/model 记入负缓存，后续请求不再发送扩展字段（见静态缓存注释）。
+    if !response.status().is_success()
+        && extra_applied
+        && matches!(response.status().as_u16(), 400 | 422)
+    {
+        let status = response.status();
+        let detail = response.text().await.unwrap_or_default();
+        log::warn!(
+            "LLM stream carrying extra_body rejected ({status}): {detail}; retrying without it"
+        );
+        body = build_chat_body(
+            messages_to_json(config.messages),
+            config.model,
+            config.tools,
+            config.tool_choice,
+        );
+        response = send_stream_request(&url, config.api_key, &body).await?;
+        if response.status().is_success() {
+            if let Some(key) = extra_key {
+                remember_extra_body_rejected(key);
+            }
+        }
+    }
 
     if !response.status().is_success() {
         let status = response.status();
@@ -493,6 +645,44 @@ mod tests {
 
     // ── SSE 断流回归测试（本地 mock server 回放事件后关连接）──────────────────
 
+    #[test]
+    fn extra_body_merges_provider_fields() {
+        let mut body = build_chat_body(vec![], "m", None, None);
+        let merged = merge_extra_body(
+            &mut body,
+            Some(&serde_json::json!({ "thinking": { "type": "disabled" } })),
+        );
+        assert!(merged);
+        assert_eq!(body["thinking"]["type"], "disabled");
+        assert_eq!(body["stream"], true);
+    }
+
+    #[test]
+    fn extra_body_cannot_override_protocol_fields() {
+        let mut body = build_chat_body(vec![], "m", None, None);
+        let merged = merge_extra_body(
+            &mut body,
+            Some(&serde_json::json!({
+                "model": "evil",
+                "messages": [],
+                "stream": false,
+                "temperature": 0
+            })),
+        );
+        assert!(merged);
+        assert_eq!(body["model"], "m");
+        assert_eq!(body["stream"], true);
+        assert_eq!(body["temperature"], 0);
+    }
+
+    #[test]
+    fn extra_body_empty_or_missing_is_not_merged() {
+        let mut body = build_chat_body(vec![], "m", None, None);
+        assert!(!merge_extra_body(&mut body, None));
+        assert!(!merge_extra_body(&mut body, Some(&serde_json::json!({}))));
+        assert!(!merge_extra_body(&mut body, Some(&serde_json::json!(null))));
+    }
+
     /// 起一个一次性 SSE mock：接受单连接、丢弃请求、原样回放 events、关闭连接。
     /// 返回 endpoint（http://127.0.0.1:port/v1）。
     async fn spawn_sse_server(events: &str) -> String {
@@ -544,8 +734,205 @@ mod tests {
             done_event: "",
             request_id: "",
             abort_flag: None,
+            extra_body: None,
         })
         .await
+    }
+
+    async fn run_stream_with_extra(
+        endpoint: &str,
+        extra: Option<&serde_json::Value>,
+    ) -> Result<StreamOutcome, String> {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        stream_openai_request(StreamConfig {
+            app: &handle,
+            endpoint,
+            api_key: "k",
+            model: "m",
+            messages: &[LlmMessage::user("hi")],
+            tools: None,
+            tool_choice: None,
+            on_text_delta: None,
+            on_reasoning_delta: None,
+            on_tool_calls_delta: None,
+            chunk_event: "",
+            done_event: "",
+            request_id: "",
+            abort_flag: None,
+            extra_body: extra,
+        })
+        .await
+    }
+
+    // ── extra_body 降级回归（严格反序列化服务端拒绝未知字段）──────────────
+
+    /// 读取一个完整 HTTP 请求（头 + Content-Length 指定长度的体）。
+    async fn read_http_request(sock: &mut tokio::net::TcpStream) -> Vec<u8> {
+        use tokio::io::AsyncReadExt;
+        let mut buf = Vec::new();
+        let mut tmp = [0u8; 4096];
+        loop {
+            let n = sock.read(&mut tmp).await.unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&tmp[..n]);
+            let Some(head_end) = buf.windows(4).position(|w| w == b"\r\n\r\n") else {
+                continue;
+            };
+            let head = String::from_utf8_lossy(&buf[..head_end]).to_ascii_lowercase();
+            let content_len = head
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length:"))
+                .and_then(|v| v.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            if buf.len() >= head_end + 4 + content_len {
+                break;
+            }
+        }
+        buf
+    }
+
+    /// 拒绝带 `thinking` 扩展字段的请求（422），对剥掉扩展字段的重试回放 SSE。
+    /// 持续接受连接（调用次数由测试断言）；返回 (endpoint, 请求计数)。
+    async fn spawn_extra_body_rejecting_server(
+        events: &str,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let requests = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
+        let events = events.to_string();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                let request = read_http_request(&mut sock).await;
+                counter.fetch_add(1, Ordering::SeqCst);
+                if String::from_utf8_lossy(&request).contains("\"thinking\"") {
+                    let payload = r#"{"error":{"message":"unknown field thinking"}}"#;
+                    let resp = format!(
+                        "HTTP/1.1 422 Unprocessable Entity\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        payload.len(),
+                        payload
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                } else {
+                    let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n";
+                    let _ = sock.write_all(head.as_bytes()).await;
+                    let _ = sock.write_all(events.as_bytes()).await;
+                }
+                let _ = sock.shutdown().await;
+            }
+        });
+        (format!("http://{addr}/v1"), requests)
+    }
+
+    /// 对任何请求都返回 422（模拟与扩展字段无关的持续失败）。
+    async fn spawn_always_rejecting_server(
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let requests = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                let _ = read_http_request(&mut sock).await;
+                counter.fetch_add(1, Ordering::SeqCst);
+                let payload = r#"{"error":{"message":"unprocessable"}}"#;
+                let resp = format!(
+                    "HTTP/1.1 422 Unprocessable Entity\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    payload.len(),
+                    payload
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            }
+        });
+        (format!("http://{addr}/v1"), requests)
+    }
+
+    #[tokio::test]
+    async fn stream_retries_without_extra_body_when_rejected() {
+        let events = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let (url, requests) = spawn_extra_body_rejecting_server(events).await;
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let extra = serde_json::json!({ "thinking": { "type": "disabled" } });
+        let mut got = String::new();
+        let outcome = stream_openai_request(StreamConfig {
+            app: &handle,
+            endpoint: &url,
+            api_key: "k",
+            model: "m",
+            messages: &[LlmMessage::user("hi")],
+            tools: None,
+            tool_choice: None,
+            on_text_delta: Some(&mut |d: &str| got.push_str(d)),
+            on_reasoning_delta: None,
+            on_tool_calls_delta: None,
+            chunk_event: "",
+            done_event: "",
+            request_id: "",
+            abort_flag: None,
+            extra_body: Some(&extra),
+        })
+        .await
+        .unwrap();
+        assert_eq!(outcome.full_text, "你好");
+        assert_eq!(got, "你好");
+        assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn stream_skips_extra_body_after_rejection_is_learned() {
+        // 首次：带字段 422 → 剥掉重试成功 → 记入负缓存；
+        // 第二次：命中缓存直接不带字段（单请求），不再为探测付一次失败往返。
+        let events = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let (url, requests) = spawn_extra_body_rejecting_server(events).await;
+        // 缓存键含 extra 内容：加测试标记，避免端口被其它测试复用时跨测试命中
+        let extra = serde_json::json!({ "thinking": { "type": "disabled" }, "cache_probe": true });
+
+        let first = run_stream_with_extra(&url, Some(&extra)).await.unwrap();
+        let second = run_stream_with_extra(&url, Some(&extra)).await.unwrap();
+        assert_eq!(first.full_text, "你好");
+        assert_eq!(second.full_text, "你好");
+        // 两次调用合计 3 个请求：首次 422 + 剥掉重试 200，第二次命中缓存仅 1 个
+        assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn stream_does_not_cache_rejection_when_retry_also_fails() {
+        // 与扩展字段无关的持续 422：重试同样失败 → 不得写负缓存，
+        // 否则后续调用会误以为字段不支持、永久放弃关思考。
+        let (url, requests) = spawn_always_rejecting_server().await;
+        let extra =
+            serde_json::json!({ "thinking": { "type": "disabled" }, "nocache_probe": true });
+
+        let first = run_stream_with_extra(&url, Some(&extra)).await;
+        let second = run_stream_with_extra(&url, Some(&extra)).await;
+        assert!(first.is_err(), "持续 422 必须返回错误: {first:?}");
+        assert!(second.is_err(), "持续 422 必须返回错误: {second:?}");
+        // 两次调用各「带字段 → 422 + 剥掉重试 → 422」= 4 个请求；
+        // 若误把失败重试记入缓存，第二次只有 1 个请求（合计 3）
+        assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 4);
     }
 
     #[tokio::test]

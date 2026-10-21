@@ -6,6 +6,15 @@ use super::lang_utils::{
 };
 use super::TranslateResult;
 
+/// 翻译关闭思考：DeepSeek V4 / GLM 等混合推理模型默认思考（deepseek-flash 实测
+/// 默认 effort=high），思考阶段不产出可见文本——首字延迟 +0.2~1.7s、长文成倍。
+/// 翻译是确定性的语码转换，思考几乎不改善译文（实测长短句质量持平），同类浏览器
+/// 翻译扩展（read-frog 等）也默认关思考。不认该字段的服务端由 llm 客户端
+/// 400/422 降级重试兜底。
+fn no_thinking_body() -> serde_json::Value {
+    serde_json::json!({ "thinking": { "type": "disabled" } })
+}
+
 static PREAMBLE_PATTERNS: &[&str] = &[
     "here is the translation",
     "here's the translation",
@@ -114,7 +123,8 @@ pub async fn translate_ai(
         LlmMessage::system(p.system_content),
         LlmMessage::user(p.rendered),
     ];
-    let raw = llm::openai_request_once(&endpoint, &api_key, &model, messages).await?;
+    let extra = no_thinking_body();
+    let raw = llm::openai_request_once(&endpoint, &api_key, &model, messages, Some(&extra)).await?;
     let translation = clean_translation(&raw);
 
     if translation.is_empty() {
@@ -165,6 +175,7 @@ pub async fn translate_ai_stream(
         LlmMessage::user(p.rendered),
     ];
 
+    let extra = no_thinking_body();
     llm::stream_openai_request(llm::StreamConfig {
         app: &app,
         endpoint: &p.safe_endpoint,
@@ -180,6 +191,7 @@ pub async fn translate_ai_stream(
         done_event: "translate-done",
         request_id: &request_id,
         abort_flag: None,
+        extra_body: Some(&extra),
     })
     .await
     .map(|_| ())
