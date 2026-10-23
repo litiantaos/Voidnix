@@ -6,9 +6,11 @@ import { CMD } from '@/commands'
 // 回归：编辑中的文本标注未点外部确认（commitText 未走）直接复制/保存时，
 // 导出图缺文字——烧录 beginCanvasText 须先固化编辑态（shape 写入完整 text），
 // 再把文本绘制进标注 canvas。修复前占位 shape 的 text 为空串，fillText 永不出现。
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }))
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), showToast: vi.fn() }))
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
+// toast 走原生 NSPanel：断言调用而不真正触发 Tauri invoke（isTauri=false 时薄壳直接 no-op）
+vi.mock('@/composables/useToast', () => ({ showToast: mocks.showToast }))
 
 import '@/locales'
 import '../locales'
@@ -108,6 +110,7 @@ let toDataURLSpy: ReturnType<typeof vi.spyOn> | undefined
 beforeEach(() => {
   fillTextCalls.length = 0
   mocks.invoke.mockReset()
+  mocks.showToast.mockReset()
   // picker 轮询自然终止（retry 有上限）；overlay ready 等其余命令直接成功
   mocks.invoke.mockImplementation((cmd: string) =>
     cmd === CMD.readPickerImage ? Promise.reject(new Error('no picker')) : Promise.resolve(null),
@@ -307,6 +310,71 @@ describe('Operation 全局快捷键不侵入文本编辑', () => {
     await wrapper.find('[tabindex="0"]').trigger('keydown', { key: 'f' })
     await flush()
     expect(wrapper.find('canvas').attributes('width')).toBe('400')
+    wrapper.unmount()
+  })
+})
+
+describe('Operation 取色复制', () => {
+  it('按 C 复制色值后退出截屏并 toast 反馈', async () => {
+    const wrapper = mountOperation()
+    await flush()
+
+    await wrapper.find('[tabindex="0"]').trigger('keydown', { key: 'c' })
+    await flush()
+
+    expect(mocks.invoke).toHaveBeenCalledWith(CMD.pasteboardWriteText, { text: '#000000' })
+    // 取色是终点动作：复制成功即关闭浮层（doCancel 经 rAF 后 emit close）；
+    // toast 层级高于浮层，淡出期间即已可见
+    expect(mocks.showToast).toHaveBeenCalledWith('已复制 #000000')
+    await nextFrame()
+    expect(wrapper.emitted('close')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('长按 C（key repeat）只退出一次、只 toast 一次', async () => {
+    const wrapper = mountOperation()
+    await flush()
+
+    const root = wrapper.find('[tabindex="0"]')
+    await root.trigger('keydown', { key: 'c' })
+    await root.trigger('keydown', { key: 'c' })
+    await root.trigger('keydown', { key: 'c' })
+    await flush()
+    await nextFrame()
+
+    expect(mocks.invoke.mock.calls.filter(([cmd]) => cmd === CMD.pasteboardWriteText)).toHaveLength(
+      1,
+    )
+    expect(mocks.showToast).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('剪贴板写入失败时不关闭截屏、不报已复制，再次按 C 可重试', async () => {
+    let deny = true
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === CMD.pasteboardWriteText)
+        return deny ? Promise.reject(new Error('denied')) : Promise.resolve(null)
+      if (cmd === CMD.readPickerImage) return Promise.reject(new Error('no picker'))
+      return Promise.resolve(null)
+    })
+    const wrapper = mountOperation()
+    await flush()
+    const root = wrapper.find('[tabindex="0"]')
+
+    await root.trigger('keydown', { key: 'c' })
+    await flush()
+    await nextFrame()
+    expect(wrapper.emitted('close')).toBeFalsy()
+    expect(mocks.showToast).not.toHaveBeenCalled()
+
+    // 失败复位守卫：再次按 C 应重新尝试并正常退出
+    deny = false
+    await root.trigger('keydown', { key: 'c' })
+    await flush()
+    await nextFrame()
+    expect(mocks.showToast).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
   })
 })

@@ -92,6 +92,10 @@ export function useOverlayEvents(options: {
     return findShapeAtShapes(options.shapes.value, canvasX, canvasY)
   }
 
+  /** 取色复制已触发（含写剪贴板 IPC 在途）：长按 C 的 key repeat 不得重复
+   *  关窗 / 重复 toast（失败则复位允许重试）。每次 overlay 挂载独立复位。 */
+  let colorCopyStarted = false
+
   // ── 鼠标事件 ──────────────────────────────────────────────
   function onMouseDown(e: MouseEvent) {
     if (e.button !== 0) return
@@ -629,9 +633,20 @@ export function useOverlayEvents(options: {
       if (w > 0 && h > 0) commitSelection({ x, y, w, h })
     }
     if (plain && options.phase.value === 'select' && (e.key === 'c' || e.key === 'C')) {
-      writeText(options.pickedColor.value)
-        .then(() => showToast(t('common.copied')))
-        .catch(() => {})
+      if (colorCopyStarted) return
+      colorCopyStarted = true
+      const color = options.pickedColor.value
+      writeText(color)
+        .then(() => {
+          // 取色是终点动作：复制成功即退出截屏，再以全局 toast 反馈。
+          // toast 层级高于截屏浮层（NSStatusWindowLevel + 2），关窗淡出期间
+          // 反馈即已可见，无需等浮层退场。
+          options.doCancel()
+          showToast(t('screenshot.colorCopied', { color }))
+        })
+        .catch(() => {
+          colorCopyStarted = false
+        })
     }
   }
 

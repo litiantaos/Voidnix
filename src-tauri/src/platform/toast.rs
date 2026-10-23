@@ -2,6 +2,9 @@
 // 穿透），独立于主窗 WebView 生命周期——主窗隐藏（alpha=0）不影响其展示，反馈
 // 类动作得以在触发后立即关窗。锚定所在屏 visibleFrame 顶部中心（HUD 位，与
 // 主窗显隐/坐标无关）；最新在顶、水平居中、向下生长（macOS 通知堆叠语义）。
+// 窗口层级高于应用自有覆盖层（截图 overlay / 钉图在 NSStatusWindowLevel=25，
+// 窗口管理 overlay=26，toast 取 +2）：浮层内的操作反馈（如取色复制 C）在浮层
+// 淡出期间即可见，无需等覆盖层关闭。
 // 进出场与堆叠补位动画复用 platform/window.rs::animate_panel 原语（window 级
 // animator，snap-panel 生产验证可靠；view 层动画在该场景实测不提交渲染）。
 // 到期调度 NSTimer 主线程原生定时。视觉常量对齐 web 版 toast：px-3 / py-1.5 /
@@ -141,6 +144,13 @@ fn measure_label(label: &NSTextField) -> (f64, f64) {
     (size.width.clamp(1.0, MAX_TEXT_W), size.height.max(1.0))
 }
 
+/// toast 窗口层级：高于应用自有覆盖层（截图/钉图 `NSStatusWindowLevel`=25、
+/// 窗口管理 overlay=26）。**勿降回 `NSFloatingWindowLevel`**——否则浮层可见
+/// 期间 toast 会被遮挡（取色复制 C 等浮层内动作的反馈依赖此层级）。
+fn toast_window_level() -> objc2_app_kit::NSWindowLevel {
+    objc2_app_kit::NSStatusWindowLevel + 2
+}
+
 /// 构造一行（独立 NSPanel + 毛玻璃卡片 + SF Symbol 图标 + 13pt medium 文本）。
 /// 初始 alpha 0（进场动画淡入），frame 由调用方定位。id 由调用方回填。
 fn make_row(mtm: MainThreadMarker, message: &str, kind_error: bool) -> ToastRow {
@@ -174,7 +184,7 @@ fn make_row(mtm: MainThreadMarker, message: &str, kind_error: bool) -> ToastRow 
         panel.setReleasedWhenClosed(false);
         panel.setOpaque(false);
         panel.setBackgroundColor(Some(&NSColor::clearColor()));
-        panel.setLevel(objc2_app_kit::NSFloatingWindowLevel);
+        panel.setLevel(toast_window_level());
         panel.setCollectionBehavior(
             NSWindowCollectionBehavior::CanJoinAllSpaces
                 | NSWindowCollectionBehavior::FullScreenAuxiliary,
@@ -366,6 +376,14 @@ mod tests {
 
     fn vis(x: f64, y: f64, w: f64, h: f64) -> NSRect {
         NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
+    }
+
+    #[test]
+    fn toast_level_above_app_overlays() {
+        // 回归：截图浮层/钉图在 NSStatusWindowLevel(25)，窗口管理浮层在 +1(26)；
+        // toast 必须更高，否则浮层内动作（取色复制 C）的反馈被遮挡。
+        let app_overlay_max = objc2_app_kit::NSStatusWindowLevel + 1;
+        assert!(toast_window_level() > app_overlay_max);
     }
 
     #[test]

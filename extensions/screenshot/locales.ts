@@ -40,5 +40,6 @@ registerMessages({
   'screenshot.cancel': { 'zh-CN': '取消', en: 'Cancel' },
   'screenshot.fullscreen': { 'zh-CN': '全屏', en: 'Fullscreen' },
   'screenshot.copyColor': { 'zh-CN': '复制色值', en: 'Copy color value' },
+  'screenshot.colorCopied': { 'zh-CN': '已复制 {color}', en: 'Copied {color}' },
   'screenshot.restoreSelection': { 'zh-CN': '恢复选区', en: 'Restore selection' },
 })
