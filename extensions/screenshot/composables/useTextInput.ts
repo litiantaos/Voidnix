@@ -210,12 +210,18 @@ export function useTextInput(options: {
   }
 
   function onTextInputKeydown(e: KeyboardEvent) {
+    // 编辑框的消费键必须阻止冒泡：根节点的全局快捷键监听会收到编辑框冒泡的事件，
+    // 且 cancelText/commitText 同步改写 textInput.visible 后，根节点看到的是「已退出
+    // 编辑」的状态——Esc 会被再当成取消截图（关掉整个 overlay），Cmd+Enter 提交后
+    // 会被再当成复制。
     if (e.key === 'Escape') {
+      e.stopPropagation()
       cancelText()
       return
     }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
+      e.stopPropagation()
       commitText()
     }
   }

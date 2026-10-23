@@ -8,6 +8,7 @@
 - 标注/选区/工具栏走 Vue（`windows/Operation.vue` + `composables/`）
 - 文字标注双样式：纯文本 / 底色模式（`input-method-line/fill` 字母图标切换，位于颜色选择器之前，后接字号滑杆；状态 `annotTextBg` 落 `Shape.textBg`），选中已有标注时参数（字号/颜色/底色）回灌、切换即改形（同 blurMode 范式，颜色实时作用于编辑中占位 shape）
 - 底色模式：整块圆角底（宽度 = max(换行盒宽, 实际最大行宽) + 内边距——自适应时贴合内容，手动拉宽后保留手动宽度），文字按底色亮度自动取黑/白对比色；编辑态 textarea 同步底色/内边距/对比色所见即所得，外侧虚线拖动框圆角统一按「底色块圆角 + 4px 间隙」随字号缩放（底色模式与色块同心，纯文本同公式，两模式切换圆角不跳变），右侧控制点贴住虚线编辑框右边框（含内边距 + 触控边距，垂直中心按实时内容行数跟随）
+- 文字编辑中全局快捷键整体让位（`textInput.visible` 早退）：编辑框 keydown 冒泡到根节点，不拦下时输入 `f` 会触发 F 全屏（选区被改写整屏 + rootEl 抢焦，编辑中断），Cmd+Z/Backspace 会误删标注；Esc/Cmd+Enter 由编辑框自身消费并 `stopPropagation`（否则 `cancelText`/`commitText` 同步改写 visible 后，根节点会二次当成取消截屏 / 复制）
 - 文字框宽度自适应：初始 40（`TEXT_MIN_WIDTH`）、下限 16（`TEXT_AUTO_MIN_WIDTH`），measureText 实测最大行宽、直读 textarea 值使拼音组词期间实时跟随；宽度变化联动高度重算，拖手柄改宽时换行与编辑框实时贴合，编辑器挂载帧即校正高度（多行不闪单行），字号变化后宽度按实时内容重自适应并同步编辑输入框（提交用输入框宽度，不同步会造成进/出编辑态底色宽度跳变）；拖手柄手动调宽后自适应让位（重开编辑复位）；文字原点建框/拖动时取整（小数坐标下 DOM 与 canvas 栅格取整不同，会产生提交偏移）
 - 编辑态↔提交态零位移：提交文字由 DOM 呈现层渲染（`pre-wrap` div，与编辑态 textarea 同渲染管线）；仅导出（复制/保存/钉图/OCR）时经 canvasText begin/end 临时烧录进标注 canvas（`alphabetic` 基线 + CSS 行盒 max 公式 + 实测基线补偿 `Shape.baselineAdjust`）。烧录前先 `commitText()` 固化编辑中的文本（未点外部确认也能进导出图：shape 写入完整 text/换行/基线补偿后撤除 textarea，四条导出路径统一在 `beginCanvasText` 覆盖）
 - 工具条 / 色板：`acrylic-bar`（与主搜索框同款，soft-surface 材质 + `--shadow-bar`）；贴图悬停条：`mica-bar`
@@ -51,6 +52,8 @@
 ### 智能吸附
 
 - `CGWindowListCopyWindowInfo` 枚举可见窗口矩形（layer∈[0,24)，含本应用 Floating 主窗；截屏 overlay/钉图在 Status=25 已排除），与目标屏相交后减 origin 变本地（智能吸附选区）
+- 候选过滤（`is_snap_candidate`）：`kCGWindowSharingState = NSWindowSharingNone(0)` 的窗口**不纳入**——不可截屏的窗口在截图里本就是空洞，且系统/第三方全屏透明浮层常以 sharing=none 出现（典型：工具/系统类全屏透明浮层，纳入后命中恒为整屏——表现即整屏高亮、尺寸标签恒为整屏）。另排除 WindowManager / Window Server 系统浮层与自身全屏窗口（预热截屏 overlay），本应用主窗（720×480）不受影响
+- 全屏工具浮层降级（`is_deferred_overlay`）：非前台 App 的 floating 及以上全屏窗口（HazeOver / Bartender / Lunar / 录屏控件等透明覆盖层，截屏图里不出现；不区分在前台窗口之上还是之下——调暗背景类浮层可能压在前台窗口下面）排到候选末尾——真实窗口优先，只有无其它命中时才兜底选中；layer 0 的后台全屏窗口与前台全屏 App 保持原序，前台是 Voidnix 自身/未知时非自身 floating 全屏窗口一律降级
 
 ### OCR / 跨 Space
 

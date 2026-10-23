@@ -552,6 +552,7 @@ export function useOverlayEvents(options: {
       options.pendingDrag.value = false
       nextTick(() => options.rootEl.value?.focus())
     }
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey
 
     if (e.key === 'Escape') {
       if (options.textInput.value.visible) {
@@ -573,8 +574,16 @@ export function useOverlayEvents(options: {
         return
       }
       options.doCancel()
+      return
     }
-    if (e.key === 'Enter' && options.hasSelection.value && !options.textInput.value.visible) {
+
+    // 文字编辑中：Escape 之外全部按键归文本系统（编辑框 keydown 冒泡到根节点）。
+    // 不拦下的话字符键会被全局快捷键消费——输入 "f" 触发 F 全屏，sel 被改写为
+    // 整屏且 rootEl 抢走焦点，编辑直接中断；Cmd+Z / Backspace 也会误删标注而非
+    // 撤销输入。Escape 由编辑框自身 stopPropagation 后不会到达这里。
+    if (options.textInput.value.visible) return
+
+    if (e.key === 'Enter' && options.hasSelection.value) {
       // 滚动截屏阶段：Enter 等同于"完成"按钮（拷贝拼接结果）
       if (options.phase.value === 'scroll') {
         if (options.onScrollFinish) void options.onScrollFinish()
@@ -594,18 +603,19 @@ export function useOverlayEvents(options: {
     }
     if (
       (e.key === 'Delete' || e.key === 'Backspace') &&
-      options.selectedShapeIndex.value !== null &&
-      !options.textInput.value.visible
+      options.selectedShapeIndex.value !== null
     ) {
       options.shapes.value.splice(options.selectedShapeIndex.value, 1)
       options.selectedShapeIndex.value = null
       options.isHoveringSelectedShape.value = false
       options.redraw()
     }
-    if (e.key === 'f' || e.key === 'F') {
+    // F 全屏只是选区阶段的快捷键（提示条同源）；标注阶段按 F 不应重写选区。
+    if (plain && options.phase.value === 'select' && (e.key === 'f' || e.key === 'F')) {
       commitSelection({ x: 0, y: 0, w: options.screenW.value, h: options.screenH.value })
     }
     if (
+      plain &&
       (e.key === 'r' || e.key === 'R') &&
       options.phase.value === 'select' &&
       options.lastSelection
@@ -618,12 +628,7 @@ export function useOverlayEvents(options: {
       const h = Math.min(ls.h, options.screenH.value - y)
       if (w > 0 && h > 0) commitSelection({ x, y, w, h })
     }
-    if (
-      (e.key === 'c' || e.key === 'C') &&
-      options.phase.value === 'select' &&
-      !e.metaKey &&
-      !e.ctrlKey
-    ) {
+    if (plain && options.phase.value === 'select' && (e.key === 'c' || e.key === 'C')) {
       writeText(options.pickedColor.value)
         .then(() => showToast(t('common.copied')))
         .catch(() => {})

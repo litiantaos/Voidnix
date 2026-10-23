@@ -144,7 +144,7 @@ pub fn register_shortcut_hook() {
             });
             let app_clone = app.clone();
             std::thread::spawn(move || {
-                let result = super::capture_screen();
+                let result = super::capture_screen(prev_pid);
                 match result {
                     Ok(data) => {
                         // 与 enter 并行编码 picker：主屏 Retina 更慢，放在 enter 内会晚于

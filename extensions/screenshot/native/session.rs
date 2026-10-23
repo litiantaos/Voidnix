@@ -480,12 +480,87 @@ fn start_mouse_tracker(_app: &tauri::AppHandle) {}
 #[cfg(not(target_os = "macos"))]
 fn stop_mouse_tracker() {}
 
+/// 智能吸附候选（`is_snap_candidate` 的入参，字段语义见该函数）。
+struct SnapCandidate<'a> {
+    layer: i64,
+    alpha: f64,
+    sharing: i64,
+    owner: &'a str,
+    pid: i64,
+    is_self: bool,
+    w: f64,
+    h: f64,
+}
+
+/// 智能吸附候选判定（纯函数，便于单测）。
+///
+/// 只保留真实内容窗口：
+/// - 层级 [0, kCGMainMenuWindowLevel=24)：Normal(0)/Floating(3)/ModalPanel(8)/Utility(19)；
+///   排除菜单栏、Status（截屏 overlay·钉图）、PopUpMenu 等 chrome
+/// - 可见（alpha ≥ 0.05）
+/// - 可截屏（`kCGWindowSharingState != NSWindowSharingNone`）：不可截屏的窗口在
+///   截屏图里本来就是空洞，不能作为吸附目标；更关键的是系统/第三方全屏透明浮层
+///   也常以 sharing=none 出现——纳入后鼠标移到任何位置命中的都是它，表现为
+///   「整屏高亮、尺寸标签恒为整屏」
+/// - 排除 Stage Manager 的 WindowManager 浮层（App Icon / Gesture Blocking Overlay，
+///   owner 固定、与普通 App 窗口同名不同义）
+/// - 排除自身全屏窗口：预热创建的截屏 overlay 即使层级 / alpha 上报异常也不会被
+///   当成目标；主窗（720×480）不受影响，仍可吸附
+fn is_snap_candidate(c: &SnapCandidate<'_>, screen_w: f64, screen_h: f64) -> bool {
+    const MAIN_MENU_LEVEL: i64 = 24;
+    if !(0..MAIN_MENU_LEVEL).contains(&c.layer) {
+        return false;
+    }
+    if c.alpha < 0.05 {
+        return false;
+    }
+    if c.sharing == 0 {
+        return false;
+    }
+    if c.owner == "WindowManager" || c.owner == "Window Server" {
+        return false;
+    }
+    if c.w < 40.0 || c.h < 40.0 {
+        return false;
+    }
+    if c.is_self && c.w >= screen_w - 0.5 && c.h >= screen_h - 0.5 {
+        return false;
+    }
+    true
+}
+
+/// 全屏浮层降级判定：非前台 App 的 floating 及以上全屏窗口，基本是覆盖全屏的
+/// 透明工具层（HazeOver / Bartender / Lunar / 录屏控件等）——它们不出现在截屏
+/// 图里，却因为层级高而被 `findWindowAt` 第一个命中。把这类窗口排到候选列表末尾：
+/// 有真实窗口命中时优先真实窗口，只剩它时才兜底选中（仍是合法全屏窗口）。
+///
+/// 不区分它在前台 App 窗口之上还是之下：调暗背景的浮层（HazeOver 类）可能把
+/// 全屏层压在前台窗口**下面**、其它窗口上面，只降级“在前台窗口之上”会漏掉这类。
+///
+/// - `layer > 0`：layer 0 的普通全屏窗口可能只是被小窗遮住的后台应用，
+///   保持原序，避免误选它下方不可见的窗口
+/// - 前台全屏 App（pid == frontmost）保持原序
+/// - frontmost_pid <= 0（前台是 Voidnix 自身 / 未知）时拿不到参照，所有非自身
+///   floating 全屏窗口都降级（主窗是 720×480，不受影响）
+fn is_deferred_overlay(
+    c: &SnapCandidate<'_>,
+    frontmost_pid: i32,
+    screen_w: f64,
+    screen_h: f64,
+) -> bool {
+    if c.is_self || c.layer <= 0 || c.w < screen_w - 0.5 || c.h < screen_h - 0.5 {
+        return false;
+    }
+    frontmost_pid <= 0 || c.pid != frontmost_pid as i64
+}
+
 #[cfg(target_os = "macos")]
 fn enumerate_visible_windows(
     origin_x: f64,
     origin_y: f64,
     screen_w: f64,
     screen_h: f64,
+    frontmost_pid: i32,
 ) -> Vec<WindowRect> {
     use crate::platform::window_list::{copy_on_screen_windows, dict_lookup};
     use core_foundation::dictionary::CFDictionary;
@@ -498,11 +573,16 @@ fn enumerate_visible_windows(
     };
 
     let mut result = Vec::with_capacity(array.len() as usize);
+    // 全屏工具浮层后置（见 is_deferred_overlay），其余保持 CGWindowList 的前后序
+    let mut deferred = Vec::new();
 
+    let self_pid = std::process::id() as i64;
     let key_layer = CFString::from_static_string("kCGWindowLayer");
     let key_bounds = CFString::from_static_string("kCGWindowBounds");
     let key_name = CFString::from_static_string("kCGWindowOwnerName");
+    let key_pid = CFString::from_static_string("kCGWindowOwnerPID");
     let key_alpha = CFString::from_static_string("kCGWindowAlpha");
+    let key_sharing = CFString::from_static_string("kCGWindowSharingState");
 
     for i in 0..array.len() {
         let Some(dict) = array.get(i) else {
@@ -513,28 +593,23 @@ fn enumerate_visible_windows(
             .and_then(|v| v.downcast::<CFNumber>())
             .and_then(|n| n.to_i64())
             .unwrap_or(-1);
-        // 仅纳入普通内容窗口层级 [0, kCGMainMenuWindowLevel)：
-        // 覆盖 Normal(0)/Floating(3, 含 Voidnix 主窗)/ModalPanel(8)/Utility(19)，
-        // 排除菜单栏(24)/Status(25, 含截屏 overlay·钉图)/PopUpMenu 等 chrome。
-        // 不再按 pid 排除本进程：否则主窗无法智能吸附；overlay 已由 layer≥24 滤掉。
-        // Dock/桌面由 ExcludeDesktopElements 处理。
-        const MAIN_MENU_LEVEL: i64 = 24;
-        if !(0..MAIN_MENU_LEVEL).contains(&layer) {
-            continue;
-        }
-
         let alpha = dict_lookup(&dict, &key_alpha)
             .and_then(|v| v.downcast::<CFNumber>())
             .and_then(|n| n.to_f64())
             .unwrap_or(1.0);
-        if alpha < 0.05 {
-            continue;
-        }
-
+        // 缺省按可截屏处理（老系统 / 个别窗口不带该字段）
+        let sharing = dict_lookup(&dict, &key_sharing)
+            .and_then(|v| v.downcast::<CFNumber>())
+            .and_then(|n| n.to_i64())
+            .unwrap_or(1);
         let owner = dict_lookup(&dict, &key_name)
             .and_then(|v| v.downcast::<CFString>())
             .map(|s| s.to_string())
             .unwrap_or_default();
+        let pid = dict_lookup(&dict, &key_pid)
+            .and_then(|v| v.downcast::<CFNumber>())
+            .and_then(|n| n.to_i64())
+            .unwrap_or(0);
 
         let Some(bd) = dict_lookup(&dict, &key_bounds)
             .and_then(|v| v.downcast::<CFDictionary<*const c_void, *const c_void>>())
@@ -550,7 +625,17 @@ fn enumerate_visible_windows(
                 .unwrap_or(0.0)
         };
         let (x, y, w, h) = (gn("X"), gn("Y"), gn("Width"), gn("Height"));
-        if w < 40.0 || h < 40.0 {
+        let candidate = SnapCandidate {
+            layer,
+            alpha,
+            sharing,
+            owner: &owner,
+            pid,
+            is_self: pid == self_pid,
+            w,
+            h,
+        };
+        if !is_snap_candidate(&candidate, screen_w, screen_h) {
             continue;
         }
         // 与目标屏相交（Quartz 全局），输出减 origin 后的本地坐标
@@ -559,14 +644,22 @@ fn enumerate_visible_windows(
         if x + w <= origin_x || x >= sx2 || y + h <= origin_y || y >= sy2 {
             continue;
         }
-        result.push(WindowRect {
+        let deferred_overlay = is_deferred_overlay(&candidate, frontmost_pid, screen_w, screen_h);
+        let rect = WindowRect {
             x: x - origin_x,
             y: y - origin_y,
             w,
             h,
             owner,
-        });
+        };
+        if deferred_overlay {
+            deferred.push(rect);
+        } else {
+            result.push(rect);
+        }
     }
+    // 工具浮层排到最后：前面有真实窗口就命中真实窗口，没有才落到它
+    result.extend(deferred);
     result
 }
 
@@ -576,6 +669,7 @@ fn enumerate_visible_windows(
     _origin_y: f64,
     _screen_w: f64,
     _screen_h: f64,
+    _frontmost_pid: i32,
 ) -> Vec<WindowRect> {
     Vec::new()
 }
@@ -589,7 +683,9 @@ pub(super) static IS_IN_SCREENSHOT_SESSION: std::sync::atomic::AtomicBool =
 
 /// 捕获光标所在屏（仅 Rust 内部：快捷键路径 → enter_screenshot_mode_sync；不暴露 IPC）。
 /// 可在后台线程调用（CGDisplay / CGEvent 线程安全；NSScreen 仅 enter 主线程使用）。
-pub fn capture_screen() -> Result<ScreenshotData, String> {
+/// `frontmost_pid` 为快捷键触发时捕获的原前台 PID（0 = Voidnix 自身/未知），
+/// 供全屏工具浮层降级（见 `is_deferred_overlay`）使用。
+pub fn capture_screen(frontmost_pid: i32) -> Result<ScreenshotData, String> {
     #[cfg(target_os = "macos")]
     {
         let display = resolve_display_under_cursor();
@@ -622,7 +718,7 @@ pub fn capture_screen() -> Result<ScreenshotData, String> {
             height: lh,
         });
 
-        let windows = enumerate_visible_windows(origin_x, origin_y, lw, lh);
+        let windows = enumerate_visible_windows(origin_x, origin_y, lw, lh, frontmost_pid);
 
         Ok(ScreenshotData {
             width: lw as u32,
@@ -1026,4 +1122,174 @@ pub fn reactivate_screenshot_window(app: &tauri::AppHandle) {
     }
     crate::platform::focus::activate_app();
     let _ = window.eval("window.dispatchEvent(new Event('focus'))");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_deferred_overlay, is_snap_candidate, SnapCandidate};
+
+    const SCREEN_W: f64 = 1800.0;
+    const SCREEN_H: f64 = 1169.0;
+
+    fn candidate(layer: i64, alpha: f64, sharing: i64, owner: &str, is_self: bool) -> bool {
+        is_snap_candidate(
+            &SnapCandidate {
+                layer,
+                alpha,
+                sharing,
+                owner,
+                pid: 100,
+                is_self,
+                w: 800.0,
+                h: 600.0,
+            },
+            SCREEN_W,
+            SCREEN_H,
+        )
+    }
+
+    #[test]
+    fn normal_app_window_is_snappable() {
+        assert!(candidate(0, 1.0, 1, "Google Chrome", false));
+        // Floating（Quick Look 等）/ Utility 浮层同样可吸附
+        assert!(candidate(3, 1.0, 1, "qlmanage", false));
+        assert!(candidate(19, 1.0, 2, "Some Utility", false));
+    }
+
+    #[test]
+    fn non_capturable_overlay_is_rejected() {
+        // 系统/工具类全屏透明浮层常是 sharing=none——纳入后命中恒为整屏
+        // （「整屏高亮、尺寸标签恒为整屏」的根因）
+        assert!(!candidate(0, 1.0, 0, "WindowManager", false));
+        assert!(!candidate(0, 1.0, 0, "Some Recorder Overlay", false));
+    }
+
+    #[test]
+    fn system_overlays_are_rejected_even_when_shareable() {
+        assert!(!candidate(0, 1.0, 1, "WindowManager", false));
+        assert!(!candidate(0, 1.0, 1, "Window Server", false));
+    }
+
+    #[test]
+    fn chrome_and_invisible_windows_are_rejected() {
+        assert!(!candidate(24, 1.0, 1, "Window Server", false));
+        assert!(!candidate(25, 1.0, 1, "Voidnix", true));
+        assert!(!candidate(0, 0.0, 1, "Voidnix", true));
+    }
+
+    #[test]
+    fn own_fullscreen_overlay_is_rejected_but_main_window_kept() {
+        // 预热 overlay：自身全屏窗口，即使层级/alpha 上报异常也不吸附
+        assert!(!is_snap_candidate(
+            &SnapCandidate {
+                layer: 0,
+                alpha: 1.0,
+                sharing: 1,
+                owner: "Voidnix",
+                pid: 1,
+                is_self: true,
+                w: SCREEN_W,
+                h: SCREEN_H,
+            },
+            SCREEN_W,
+            SCREEN_H
+        ));
+        // 主窗：自身窗口但非全屏，保留智能吸附
+        assert!(is_snap_candidate(
+            &SnapCandidate {
+                layer: 3,
+                alpha: 1.0,
+                sharing: 1,
+                owner: "Voidnix",
+                pid: 1,
+                is_self: true,
+                w: 720.0,
+                h: 480.0,
+            },
+            SCREEN_W,
+            SCREEN_H
+        ));
+    }
+
+    #[test]
+    fn non_frontmost_floating_fullscreen_is_deferred() {
+        // HazeOver / Bartender / 录屏控件类全屏工具浮层：floating 层级、不属于前台
+        // App——不管压在前台窗口之上还是之下（调暗背景类浮层可能在前台窗口下面、
+        // 其它窗口上面）都后置到候选末尾
+        let overlay = SnapCandidate {
+            layer: 3,
+            alpha: 1.0,
+            sharing: 1,
+            owner: "HazeOver",
+            pid: 200,
+            is_self: false,
+            w: SCREEN_W,
+            h: SCREEN_H,
+        };
+        assert!(is_snap_candidate(&overlay, SCREEN_W, SCREEN_H));
+        assert!(is_deferred_overlay(&overlay, 100, SCREEN_W, SCREEN_H));
+    }
+
+    #[test]
+    fn fullscreen_frontmost_or_layer0_window_keeps_order() {
+        let frontmost_fullscreen = SnapCandidate {
+            layer: 0,
+            alpha: 1.0,
+            sharing: 1,
+            owner: "Safari",
+            pid: 100,
+            is_self: false,
+            w: SCREEN_W,
+            h: SCREEN_H,
+        };
+        // 前台 App 自己的全屏窗口：保持原序
+        assert!(!is_deferred_overlay(
+            &frontmost_fullscreen,
+            100,
+            SCREEN_W,
+            SCREEN_H
+        ));
+        // 非前台但 layer 0 的普通全屏窗口：可能只是被小窗遮住的后台应用，
+        // 不降级（避免误选其下方不可见窗口）
+        let background = SnapCandidate {
+            owner: "Background App",
+            pid: 200,
+            ..frontmost_fullscreen
+        };
+        assert!(!is_deferred_overlay(&background, 100, SCREEN_W, SCREEN_H));
+        // 非前台 floating 全屏：即使在前台 App 窗口之下也降级
+        let floating = SnapCandidate {
+            layer: 3,
+            ..background
+        };
+        assert!(is_deferred_overlay(&floating, 100, SCREEN_W, SCREEN_H));
+        // 前台未知（Voidnix 自身 / 无前台）时拿不到参照：非自身 floating 全屏
+        // 窗口直接降级（主窗非全屏，不受影响）
+        assert!(is_deferred_overlay(&floating, 0, SCREEN_W, SCREEN_H));
+        // 非全屏浮层不受影响
+        let small = SnapCandidate {
+            w: 800.0,
+            h: 600.0,
+            ..floating
+        };
+        assert!(!is_deferred_overlay(&small, 100, SCREEN_W, SCREEN_H));
+    }
+
+    #[test]
+    fn tiny_windows_are_rejected() {
+        assert!(!is_snap_candidate(
+            &SnapCandidate {
+                layer: 0,
+                alpha: 1.0,
+                sharing: 1,
+                owner: "Menu Extra",
+                pid: 100,
+                is_self: false,
+                w: 30.0,
+                h: 30.0,
+            },
+            SCREEN_W,
+            SCREEN_H
+        ));
+    }
 }

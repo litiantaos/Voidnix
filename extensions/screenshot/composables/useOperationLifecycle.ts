@@ -59,8 +59,12 @@ export function useOperationLifecycle(options: {
 
   function onWindowKeyDown(e: KeyboardEvent) {
     if (e.key !== 'Escape') return
-    // 根 div 已处理过的不再重复；仅 activeElement 非根时兜底
-    if (document.activeElement === options.rootEl.value) return
+    // 根 div 的冒泡监听已处理来自 overlay 内部（含 textarea / 色板按钮）的 Escape；
+    // 只有事件目标脱出 overlay（焦点丢到 body 等）时才兜底。不能再用
+    // activeElement === root 判断：焦点在色板按钮时 activeElement 不是 root，
+    // 旧判断会二次调用 onKeyDown——取消文字后再次 doCancel，整个截屏被关掉。
+    const target = e.target
+    if (target instanceof Node && options.rootEl.value?.contains(target)) return
     options.onKeyDown(e)
   }
 
