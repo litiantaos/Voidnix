@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-col-full-pb">
+  <div class="flex-col-view">
     <BaseSettingsList :items="allItems" shortcut-id="agent" />
 
     <!-- 搜索提供商编辑弹窗 -->

@@ -18,7 +18,7 @@ extensions/<id>/
     └── ...                # 子模块（commands.rs / engine/ 等）
 ```
 
-24 个扩展（16 含 native/ + 8 纯 TS，完整清单见 [AGENTS.md](../AGENTS.md)「开发扩展」）。
+26 个扩展（18 含 native/ + 8 纯 TS，完整清单见 [AGENTS.md](../AGENTS.md)「开发扩展」）。
 
 ## 前端注册
 
@@ -42,9 +42,9 @@ export default defineExtension({
 - `onExecute`：搜索结果回车动作，扩展私有（无消费者）
 - `mainView`：主视图组件（17 扩展）
 - `searchBarAccessory`：搜索栏右侧配件（7：clipboard/agent/translate/proxy/ai-providers/notes/system-status）
-- `subviews`：扩展私有命名子视图（8：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{connections/rules/logs}、homebrew{detail}、notes{config}、system-status{config}）
-- `subviewTitle`：子视图显示名（id→中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」（2：proxy、homebrew）
-- `globalShortcuts`：全局快捷键绑定（6：clipboard/screenshot/agent/translate/finder-ext/notes）；条目可选 `secureMirror`（安全输入兜底影子键，仅 clipboard 声明，机制见 [AGENTS.md](../AGENTS.md)「全局快捷键」）
+- `subviews`：扩展私有命名子视图（10：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{connections/rules/logs}、homebrew{detail}、notes{config}、system-status{config}、finder-ext{openWith}、archive{config,entries}）
+- `subviewTitle`：子视图显示名（id→中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」（4：proxy、homebrew、finder-ext、archive）
+- `globalShortcuts`：全局快捷键绑定（6：clipboard/screenshot/agent/translate/finder-ext/notes）
 - `placeholder`：搜索框占位提示，激活扩展时显示（7：clipboard/currency/ip/time/base64/calculator/homebrew）
 - `windowHeight`：扩展激活时主窗口高度，三种声明语义：
   - **`number`**：固定高度，clamp `[MIN,MAX]`
@@ -59,7 +59,7 @@ export default defineExtension({
 
 ### 跨扩展通信
 
-禁止扩展之间直 import 内部状态（如 `import { x } from '@ext/other'`）。同页跨扩展投递数据走 window CustomEvent：发送方 `window.dispatchEvent(new CustomEvent('ext-<event>', { detail: payload }))`，接收方在 `setup()` 内 `window.addEventListener('ext-<event>', ...)` 读 `event.detail`。约定事件名前缀以目标扩展 id 开头（如 `translate-pending-text`），避免冲突。**同步投递是硬要求**：跨扩展跳转（投递 + `setActiveExtension`）必须让 payload 先于目标视图首帧渲染就位——经 Tauri 事件总线的 IPC 往返会晚一拍，期间列表形状未定型（如有图才显示的操作行未插入），用户快速 ↓+Enter 会击中占位行误触（image 的 source 行即文件选择器入口）。接收方 View 的 pending watch 须带 `immediate: true`（LRU 驱逐重挂载时 watch 注册晚于写入）。消费者：finder-ext → image / video（选区路径）、screenshot OCR → translate（待翻译文本）。Rust → 前端或跨窗口投递仍走 Tauri 事件总线（`app.emit` + `listen`）。跨扩展跳转一律带来源 `setActiveExtension(target, from)`：目标扩展内 Esc 经 `exitExtension` 先返回来源扩展（`appStore.extensionReturnExtId`，其余激活路径一律清空防过期；返回跳转本身不带 from，来源扩展再 Esc 走原 entryQuery 入口逻辑，链自然收敛回主界面；返回重置 subview，落扩展 mainView）。消费者与 from 全集：ai-gateway / agent / translate → ai-providers、finder-ext → image / video、screenshot → translate；搜索结果激活与 `open-extension` 外部事件不带 from（来源本就是主界面）。
+禁止扩展之间直 import 内部状态（如 `import { x } from '@ext/other'`）。同页跨扩展投递数据走 window CustomEvent：发送方 `window.dispatchEvent(new CustomEvent('ext-<event>', { detail: payload }))`，接收方在 `setup()` 内 `window.addEventListener('ext-<event>', ...)` 读 `event.detail`。约定事件名前缀以目标扩展 id 开头（如 `translate-pending-text`），避免冲突。**同步投递是硬要求**：跨扩展跳转（投递 + `setActiveExtension`）必须让 payload 先于目标视图首帧渲染就位——经 Tauri 事件总线的 IPC 往返会晚一拍，期间列表形状未定型（如有图才显示的操作行未插入），用户快速 ↓+Enter 会击中占位行误触（image 的 source 行即文件选择器入口）。接收方 View 的 pending watch 须带 `immediate: true`（LRU 驱逐重挂载时 watch 注册晚于写入）。消费者：finder-ext → image / video / archive（选区路径）、screenshot OCR → translate（待翻译文本）。Rust → 前端或跨窗口投递仍走 Tauri 事件总线（`app.emit` + `listen`）。跨扩展跳转一律带来源 `setActiveExtension(target, from)`：目标扩展内 Esc 经 `exitExtension` 先返回来源扩展（`appStore.extensionReturnExtId`，其余激活路径一律清空防过期；返回跳转本身不带 from，来源扩展再 Esc 走原 entryQuery 入口逻辑，链自然收敛回主界面；返回重置 subview，落扩展 mainView）。消费者与 from 全集：ai-gateway / agent / translate → ai-providers、finder-ext → image / video / archive、screenshot → translate；搜索结果激活与 `open-extension` 外部事件不带 from（来源本就是主界面）。
 
 ### 菜单栏贡献（Rust 侧）
 

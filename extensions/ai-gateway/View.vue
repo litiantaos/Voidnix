@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-col-full-pb">
+  <div class="flex-col-view">
     <BaseEmptyState v-if="routable.length === 0" :title="t('ai-gateway.emptyRoute')">
       <template #action>
         <BaseButton variant="primary" icon="i-ri-key-2-line" @click="goAiProviders">

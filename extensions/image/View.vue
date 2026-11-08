@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-col-full-pb">
+  <div class="flex-col-view">
     <!-- ── 移除背景：预览区（高度屏高比例，直接渲染无布局动画）── -->
     <div v-if="tool === 'removeBg' && previewUrl" p="x-3 b-3" shrink="0">
       <div

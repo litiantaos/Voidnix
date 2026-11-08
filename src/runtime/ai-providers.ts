@@ -371,13 +371,13 @@ export function modelSelectOptions():
   return groups
 }
 
-// ─── 粘贴出去（隐藏窗口 + Cmd+V）────────────────────────────
+// ─── 粘贴出去（隐藏窗口 + Cmd+V；目标无输入区时 Rust 回退纯复制）───
 
-export async function pasteOut(text: string): Promise<void> {
+export async function pasteOut(text: string): Promise<'pasted' | 'copied'> {
   if (!text) throw new Error('内容为空')
   if (!isTauri) {
     await navigator.clipboard?.writeText(text)
-    return
+    return 'copied'
   }
-  await invoke(CMD.pasteboardPasteText, { text })
+  return invoke<'pasted' | 'copied'>(CMD.pasteboardPasteText, { text })
 }

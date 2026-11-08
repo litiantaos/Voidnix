@@ -8,11 +8,14 @@ registerMessages({
   'finderExt.videoProcess': { 'zh-CN': '视频处理', en: 'Video Processing' },
   'finderExt.videoCount': { 'zh-CN': '{n} 个视频', en: '{n} Videos' },
   'finderExt.imageProcess': { 'zh-CN': '图片处理', en: 'Image Processing' },
+  'finderExt.archiveProcess': { 'zh-CN': '压缩 / 解压', en: 'Archive' },
+  'finderExt.compress': { 'zh-CN': '压缩', en: 'Compress' },
+  'finderExt.extract': { 'zh-CN': '解压', en: 'Extract' },
   'finderExt.imageCount': { 'zh-CN': '{n} 张图片', en: '{n} Images' },
   'finderExt.operations': { 'zh-CN': '操作', en: 'Actions' },
   'finderExt.shortcut': { 'zh-CN': '呼出快捷键', en: 'Keyboard shortcut' },
   'finderExt.general': { 'zh-CN': '通用', en: 'General' },
-  'finderExt.openWithGroup': { 'zh-CN': '用 App 打开', en: 'Open with App' },
+  'finderExt.selectionCount': { 'zh-CN': '{n} 个项目', en: '{n} Items' },
 
   // ─── 快捷操作标题 ──────────────────────
   'finderExt.action.copyPath': { 'zh-CN': '拷贝路径', en: 'Copy Path' },

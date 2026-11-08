@@ -3,6 +3,10 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
+// 粘贴结果与目标输入区判定是框架级机制（runtime::pasteboard），与本扩展粘贴路径
+// 及 ai-providers 的 pasteboard_paste_text 共用同一实现。
+use crate::runtime::pasteboard::{paste_target_is_input_area, PasteOutcome};
+
 /// DB 未 manage（打开失败降级）时返回可读错误，避免 state 缺失 panic。
 fn require_db(app: &tauri::AppHandle) -> Result<tauri::State<'_, Database>, String> {
     app.try_state::<Database>()
@@ -252,29 +256,6 @@ fn hide_after_action(app: &tauri::AppHandle) {
 fn hide_and_paste(app: &tauri::AppHandle) {
     hide_after_action(app);
     std::thread::spawn(simulate_cmd_v);
-}
-
-/// 回车执行的实际结果：目标无文本输入区时文本记录回退复制（跳过 Cmd+V 模拟），
-/// 前端按此 toast 分流（已粘贴 / 已复制）。
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PasteOutcome {
-    Pasted,
-    Copied,
-}
-
-/// 文本粘贴目标输入区判定：hide_main 的 restore_captured 会把焦点交还
-/// captured_pid 的 app，Cmd+V 落在其聚焦元素上。
-///
-/// 三态取向：输入区 → 自动粘贴；**明确非输入区**（列表/表格/网页正文，以及
-/// 未知容器中的空容器或子元素全为图标/列表/网页内容类——桌面、网页内容宿主）→
-/// 回退复制，避免在非输入目标注入 Cmd+V 制造副作用（实测桌面凭空生成文件）；
-/// **无法判定**（自绘引擎容器只有标题栏按钮组等控件、无聚焦元素、AX 无响应）→
-/// 维持粘贴，自绘编辑器（Zed 等）优先自动粘贴，代价是非输入目标可能空粘一次
-/// （内容已写板，toast 提示略偏但不丢数据）。
-fn paste_target_is_input_area() -> bool {
-    crate::platform::selection::focused_element_editable(crate::platform::focus::captured_pid())
-        .unwrap_or(true)
 }
 
 /// 粘贴成功后刷新记录时间为当前 UTC（等效「最近使用」，重复项 UPDATE 刷新同源）：

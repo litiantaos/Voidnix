@@ -94,11 +94,11 @@ E2E 对 Vite dev server（CI 自动执行 `bunx playwright install` + `bun run t
 
 ### 全功能回归冒烟测试
 
-`scripts/smoke-test.py` — 全链路回归门禁，覆盖全部 25 扩展 + 框架行为 + 性能指标，防止"修 A 坏 B"连锁回归。仅用户明确要求时运行。
+`scripts/smoke-test.py` — 全链路回归门禁，覆盖全部 26 扩展 + 框架行为 + 性能指标，防止"修 A 坏 B"连锁回归。仅用户明确要求时运行。
 
 **三层架构**：
 
-- **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（25 扩展/id 无重复/order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 18 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）、窗口管理运行时启用（`setWindowManagerEnabled` disable→enable toggle，8s 超时检测 Mutex 重入死锁）、扩展功能正确性（clipboard 历史 / system-status / proxy / homebrew / video / awake / clean-mode 状态查询，ip / time / uuid / currency 即时答案；网络依赖项失败 skip 不 fail）、搜索延迟基线（代表性 query 耗时断言）。报告经 plugin-store 写到 `config/test-report.json`
+- **Layer 1（应用自测）**：`src/runtime/self-test.ts`，在真实 app 内部运行（环境变量 `VOIDNIX_SELF_TEST=1` 触发），直接调用 `searchEngine.search()` / `getAllExtensions()` / `invoke()` 等真实 API 做断言。覆盖：扩展注册完整性（26 扩展/id 无重复/order 唯一）、搜索引擎正确性（calculator 算式 / base64 解码 / keyword 入口 / 空查询 / 无结果）、扩展视图渲染冒烟（逐个激活 19 个 mainView，检查 console.error 无关键异常）、Tauri 命令可达性（无副作用探测调用）、窗口管理运行时启用（`setWindowManagerEnabled` disable→enable toggle，8s 超时检测 Mutex 重入死锁）、扩展功能正确性（clipboard 历史 / system-status / proxy / homebrew / video / awake / clean-mode 状态查询，ip / time / uuid / currency 即时答案；网络依赖项失败 skip 不 fail）、搜索延迟基线（代表性 query 耗时断言）。报告经 plugin-store 写到 `config/test-report.json`
 - **Layer 2（系统冒烟）**：CGEvent 驱动真实 UI，验证窗口显隐 / 全局快捷键 / snap-panel 全链路 / 搜索 UI / 扩展视图渲染。每步返回结构化 `TestResult`（pass/fail/skip），汇总为统一报告。逐阶段内存采样输出趋势（非仅终点）
 - **Layer 3（性能压测，`--perf [N]`）**：N 轮全场景工作负载循环（全局搜索 / 工具列表 / 快捷键 / 扩展视图 / hide/show），每轮逐阶段采内存快照，输出多轮趋势表 + drift 分析，定位 compositing layer 累积与回收。工作负载顺序刻意安排：快捷键在扩展视图之前（快捷键含 hide_window，若此时 FP 已超 350M 阈值会触发 navigate 重载，重载期间 WKWebView 不可交互）。合并自原 `wk-mem-test.py`。**内存结论只看 release 模式**：dev 模式下 Vite HMR / UnoCSS 开发态样式注入使每次视图变更重建整页合成树，WebContent graphics 可虚高至 GB 级（实测 5 轮 1.6G），release 同负载零累积——`--dev --perf` 只用于功能/时序验证，内存数据无效
 
@@ -156,11 +156,11 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 所有扩展同构（`extensions/<id>/index.ts` + 可选 `config.ts` + 可选 `native/`），详见 [docs/extensions.md](docs/extensions.md)。
 
-含 native/（17）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers、ai-gateway、image、homebrew
+含 native/（18）：clipboard、screenshot、video、awake、clean-mode、zsh-autosuggestions、window-manager、finder-ext、translate、agent、search、proxy、system-status、ai-providers、ai-gateway、image、homebrew、archive
 
 纯 TS（8）：calculator、settings、ip、base64、time、uuid、currency、notes
 
-复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[ai-providers](docs/extensions/ai-providers.md)、[ai-gateway](docs/extensions/ai-gateway.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[image](docs/extensions/image.md)、[finder-ext](docs/extensions/finder-ext.md)、[window-manager](docs/extensions/window-manager.md)、[homebrew](docs/extensions/homebrew.md)、[awake](docs/extensions/awake.md)。
+复杂扩展文档：[zsh-autosuggestions](docs/extensions/zsh-autosuggestions.md)、[screenshot](docs/extensions/screenshot.md)、[search](docs/extensions/search.md)、[clipboard](docs/extensions/clipboard.md)、[translate](docs/extensions/translate.md)、[agent](docs/extensions/agent.md)、[ai-providers](docs/extensions/ai-providers.md)、[ai-gateway](docs/extensions/ai-gateway.md)、[clean-mode](docs/extensions/clean-mode.md)、[proxy](docs/extensions/proxy.md)、[video](docs/extensions/video.md)、[image](docs/extensions/image.md)、[archive](docs/extensions/archive.md)、[finder-ext](docs/extensions/finder-ext.md)、[window-manager](docs/extensions/window-manager.md)、[homebrew](docs/extensions/homebrew.md)、[awake](docs/extensions/awake.md)。
 
 ## 架构要点
 
@@ -267,8 +267,8 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 `runtime/shortcut.rs`，快捷键 id 驱动（前端传 id + shortcut，Rust 自管注册表 + 录制模态 + 扩展钩子）。
 
 - 默认 Option 基：`Option+Space` 呼出，`Option+C/S/T/A/F/N` = 剪贴板 / 截屏 / 翻译 / Agent / 访达工具 / 记事本
-- **安全输入影子键位（声明制）**：扩展在 `globalShortcuts` 条目声明 `secureMirror: true` 时，若组合**含 ⌥ 且不含 ⌃/⌘**，额外再注册一条 `⌃` 前缀影子键（`Alt+C` → `Ctrl+Alt+C`）。**只有剪贴板声明**——密码框 / 终端「安全键盘输入」下系统不投递纯 ⇧/⌥ 组合（会落成 `ç` 这类字符，击键在 hotkey 匹配前就被交给文本系统，任何进程都收不到），而剪贴板正是取密码的入口，故必须留一条能落地的键；其余快捷键不占额外全局键位。影子键**常驻注册**：正常场景它同样是全局热键（`⌃⌥C` 成为剪贴板的第二键位、不再传给其它 App），secure input 期间主键被系统抑制，它是唯一入口；dev 叠加 ⇧ 后为 `⌃⌥⇧C`。注册失败静默降级（主键与其余键位不受影响）。**影子键必须经 `Shortcut::new` 按新组合重建**：`HotKey.id` 是 `(mods << 16) | key` 派生值，只改 mods 复用主键 id 会让插件 / global-hotkey 按 id 索引的注册表错位——登记影子会顶掉主键的 `EventHotKeyRef`，注销后主键 Carbon 注册泄漏（全局吞键且无法再注册）。撞车时**显式键位永远优先**：主键与其它 id 影子重复 → 先摘掉对方影子再注册主键（顺序不可反：同一 chord 在 Carbon 层重复注册直接失败 `eventHotKeyExistsErr`，影子占着该组合时主键注册必然报错）；影子与其它 id 主键重复 → 不生成影子；两个主键重复 → 显式报错（避免半更新注册表）
-- dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存（影子键同样叠加，即 `⌃⌥⇧X`）
+- 键位唯一：每个 id 只注册一条键位；与其它 id 已注册键位重复时显式报错（避免注册表半更新）
+- dev 构建（debug）注册时经 `cfg!(debug_assertions)` 自动叠加 `Shift`，与 prod（release）区分且可并存；叠加须经 `Shortcut::new` 重算 id（id 是 mods/key 派生值，只改 mods 会带旧 id 进注册表）
 - dev/prod 数据目录按 bundle id 隔离，配置默认值一致
 - **注册失败引导**：`useAppLifecycle` 等 `config/settings` 回填后一次性注册全部快捷键，失败项记入 `appStore.shortcutErrors`；启动即有失败时弹改键引导（markdown 列出失败键位，确认直达设置；设置页主快捷键行标红提示）。任何失败（含仅扩展快捷键冲突）都自动 show 窗口承载引导——扩展快捷键冲突同样静默失效，且隐藏窗口中的弹窗会被「切扩展按取消收束」路径吞掉；自测模式跳过（窗口由测试脚本驱动）
 
@@ -379,7 +379,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - 到期调度：NSTimer 主 runloop 原生定时（fire → fade_out_row → 300ms 后 finish 销毁）；淘汰行 show 时即调度销毁收尾
 - **Rust 端路径的失败反馈**（菜单栏/快捷键操作，主窗隐藏态）：Rust emit 事件 + 扩展入口（`extensions/<id>/index.ts`）模块级常驻 `listen` → showToast（勿放 View/composable 的 KeepAlive 生命周期内——面板未打开过则监听不存在）。现有：screenshot 快捷键截屏失败（`screenshot-capture-failed`，文案即 Err 含权限指引）、awake 菜单开关/熄屏策略失败（`awake-menu-failed`，Rust 侧过滤「取消」类文案——用户主动取消授权静默）、proxy 状态事件（`proxy-status`，toast 通道在扩展入口、视图内 coreError 红字在 useProxyPanel 双通道分工）
 - appearance 每次 show 读缓存一次性设置（瞬态不做监听）；行 panel 用后即销毁（close + Retained 回收，原生 NSPanel 无 WKWebView teardown 限制）
-- 扩展通过 `copyAndHide`（`stores/app.ts`：写剪贴板 + showStatus 反馈 + **立即隐藏**主窗）自动获得「已复制」反馈；粘贴到前台 App 的路径（ai-providers 分字段粘贴）成功亦 toast「已粘贴」；clipboard 历史粘贴按命令结果分流——**明确非输入区才回退复制**（跳过 Cmd+V 模拟，toast「已复制」）：已知非文本角色，或未知容器为空容器 / 子元素全为图标列表类（桌面）、**子元素含控件不算证据**（自绘引擎 AX 聚焦常落在标题栏按钮组）；其余无法判定（仅容器层 / 无聚焦元素 / AX 无响应）维持粘贴——Zed 等自绘编辑器优先自动粘贴（见 [clipboard.md](docs/extensions/clipboard.md)）——invoke resolve 时主窗已被 Rust `hide_main` 隐藏，webview 存活、外部 toast 照常展示
+- 扩展通过 `copyAndHide`（`stores/app.ts`：写剪贴板 + showStatus 反馈 + **立即隐藏**主窗）自动获得「已复制」反馈；粘贴到前台 App 的路径（ai-providers 分字段粘贴经框架 `pasteboard_paste_text`）与 clipboard 历史粘贴**同源分流**（判定上提至 `runtime/pasteboard.rs::paste_target_is_input_area`，两路共用）——**明确非输入区才回退复制**（跳过 Cmd+V 模拟，toast「已复制」；粘贴路径 toast「已粘贴」）：已知非文本角色，或未知容器为空容器 / 子元素全为图标列表类（桌面）、**子元素含控件不算证据**（自绘引擎 AX 聚焦常落在标题栏按钮组）；其余无法判定（仅容器层 / 无聚焦元素 / AX 无响应）维持粘贴——Zed 等自绘编辑器优先自动粘贴（见 [clipboard.md](docs/extensions/clipboard.md)）——invoke resolve 时主窗已被 Rust `hide_main` 隐藏，webview 存活、外部 toast 照常展示
 - `showStatus(msg, opts?)` 委托 `showToast`（调用点零改动）
 - 搜索栏 placeholder：扩展模式显示搜索说明（`在 X 中搜索` 或扩展自声明 `placeholder`），全局模式保留搜索说明
 
@@ -414,7 +414,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### 容器边距
 
-- 全局统一 `p-3`（12px）：搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、扩展内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-full-pb`
+- 全局统一 `p-3`（12px）：搜索栏 `inset-x-3 top-3`、列表 `p-x-3 pb-3`、扩展内容根、textarea、浮层 `bottom-3 right-3`、floating 避让、设置页 `flex-col-view`
 - 搜索栏 top/height/gap 为 `constants.ts` 文件内常量（和为 `CHROME_HEIGHT`，与 MainView `top-3`/`h-13`/`p-3` 同步）
 - **例外**：`BaseDialog` 内容区水平 `16px`，顶/底由浮层 chrome 预留
 - **元素间距**（集中定义，按值从大到小）：

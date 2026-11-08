@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-col-full-pb">
+  <div class="flex-col-view">
     <BaseSetupState
       v-if="keyRows.length === 0"
       :title="t('ai-providers.empty')"
@@ -412,9 +412,10 @@ async function pasteField(text: string, label: string) {
     return
   }
   try {
-    await pasteOut(value)
+    // Rust 判定目标输入区：目标无输入区时回退纯复制（copied）
+    const outcome = await pasteOut(value)
     // invoke 返回时窗口已被 Rust hide（粘贴链路主窗隐藏），外部 toast 照常展示
-    showToast(t('common.pasted'))
+    showToast(outcome === 'copied' ? t('common.copied') : t('common.pasted'))
   } catch (e) {
     showToast(toErrorMessage(e, t('ai-providers.pasteFailed')), { kind: 'error' })
   }

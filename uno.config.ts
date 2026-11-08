@@ -93,7 +93,7 @@ export default defineConfig({
 
     'flex-center': 'flex items-center justify-center',
     'flex-col-full': 'flex flex-col',
-    'flex-col-full-pb': 'pb-3 flex flex-col',
+    'flex-col-view': 'flex flex-col',
 
     'form-label': 'text-xs text-muted font-medium',
     'form-field': 'flex flex-col gap-1.5',

@@ -129,49 +129,24 @@ pub fn hide_window(app: tauri::AppHandle, auto: Option<bool>) {
 // Shortcut registration
 // ============================================================================
 //
-// Rust 端是注册表的单一真相源：REGISTERED_BY_ID 按业务 id 维护「当前已注册
-// 的键位组」（主键 + 安全输入影子键）。前端只传 (id, new_shortcut)，旧值由
-// Rust 自查并 unregister，避免前端通过 watch oldVal 推断旧值带来的撕裂。
+// Rust 端是注册表的单一真相源：REGISTERED_BY_ID 按业务 id 维护当前已注册的
+// 键位。前端只传 (id, new_shortcut)，旧值由 Rust 自查并 unregister，避免前端
+// 通过 watch oldVal 推断旧值带来的撕裂。
 
 static REGISTERED_BY_ID: LazyLock<Mutex<HashMap<String, Vec<Shortcut>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
-
-/// 安全输入影子键位：macOS 15 起，secure input（密码框 / 终端「安全键盘输入」）
-/// 期间系统不投递只含 ⇧/⌥ 的组合——那类组合会落成 `ç` 这类字符直接进输入框。
-/// 因此给 **⌥ 系**组合（含 ⌥、不含 ⌃/⌘）补一条 `⌃` 前缀的影子键位：
-/// - 影子键**常驻注册**：正常场景它同样是全局热键（`⌃⌥C` 成为剪贴板的第二键位、
-///   不再传给其它 App），secure input 期间主键被系统抑制，它是唯一能落地的入口；
-/// - 额外占用的全局键位由声明方按需承担（当前仅剪贴板）。
-///
-/// 不含 ⌥ 的组合（裸键 / 纯 ⇧）不补影子：`⌃`+字符键是终端控制键（⌃K 杀行、
-/// ⌃C 中断…），补影子等于把这些键从所有终端/编辑器手里抢走；而这类组合也不是
-/// 本应用的键位族（默认全为 Alt 基）。
-///
-/// 系统抑制本身即切换：不检测 secure input 状态、不改键位配置、界面仍显示主键位。
-fn secure_mirror_chord(sc: Shortcut) -> Option<Shortcut> {
-    let taken = Modifiers::CONTROL | Modifiers::SUPER | Modifiers::META;
-    if !sc.mods.contains(Modifiers::ALT) || sc.mods.intersects(taken) {
-        return None;
-    }
-    // 必须经 Shortcut::new 按新组合重建：HotKey.id 是 (mods << 16) | key 的派生值，
-    // 只改 mods 会让影子与主键共享同一 id——插件与 global-hotkey 均按 id 存注册表，
-    // 登记影子会顶掉主键的 EventHotKeyRef，注销后主键的 Carbon 注册泄漏（全局吞键
-    // 且无法再注册）。new 会重算 id。
-    Some(Shortcut::new(Some(sc.mods | Modifiers::CONTROL), sc.key))
-}
 
 #[tauri::command]
 pub async fn register_global_shortcut(
     app: tauri::AppHandle,
     id: String,
     shortcut: String,
-    secure_mirror: Option<bool>,
 ) -> Result<(), String> {
     let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
     let app_clone = app.clone();
 
     app.run_on_main_thread(move || {
-        // 先 unregister 该 id 上一次注册的全部键位（主键 + 影子键）
+        // 先 unregister 该 id 上一次注册的键位
         if let Some(old) = lock_or_recover(&REGISTERED_BY_ID).remove(&id) {
             for sc in old {
                 let _ = app_clone.global_shortcut().unregister(sc);
@@ -194,12 +169,12 @@ pub async fn register_global_shortcut(
 
         // dev 构建（debug）给所有快捷键叠加 Shift，与 prod（release）区分，
         // 使 dev/prod 可并存且各响各的。配置仍只存一份（Alt 基）。
-        // 与影子键同理必须经 Shortcut::new 重算 id（id 是 mods/key 派生值，
-        // 只改 mods 会让 dev 键位带着未叠加 Shift 的旧 id 进注册表）。
+        // 必须经 Shortcut::new 重算 id（id 是 mods/key 派生值，只改 mods 会带着
+        // 未叠加 Shift 的旧 id 进注册表）。
         #[cfg(debug_assertions)]
         let new_sc = Shortcut::new(Some(new_sc.mods | Modifiers::SHIFT), new_sc.key);
 
-        // 同一个逻辑键位的全部物理注册共用一段回调：主键与影子行为完全一致。
+        // 该键位的回调
         let make_handler = |sid: String, label: String| {
             move |app: &tauri::AppHandle, _shortcut: &Shortcut, event: ShortcutEvent| {
                 if event.state() != ShortcutState::Pressed {
@@ -261,34 +236,14 @@ pub async fn register_global_shortcut(
             }
         };
 
-        // 显式键位永远优先于影子键位（三个方向）：
-        // - 主键与其它 id 的主键重复 → 报错（Carbon 同一 chord 重复注册直接失败，
-        //   显式报错比插件底层错误更友好，也避免注册表半更新）
-        // - 主键与其它 id 的影子重复 → 先摘掉对方那条影子、再注册主键。顺序不可反：
-        //   同一 chord 在 Carbon 层重复注册会失败（eventHotKeyExistsErr），影子仍占着
-        //   该组合时主键注册必然报错
-        // - 影子与其它 id 的主键重复 → 不生成影子
+        // 与其它 id 已注册键位重复 → 报错（Carbon 同一 chord 重复注册直接失败，
+        // 显式报错比插件底层错误更友好，也避免注册表半更新）
         let duplicate = lock_or_recover(&REGISTERED_BY_ID)
             .iter()
             .any(|(other_id, chords)| other_id != &id && chords.first() == Some(&new_sc));
         if duplicate {
             let _ = tx.send(Err(format!("快捷键 {shortcut} 已被其它动作占用")));
             return;
-        }
-
-        // 主键优先：摘掉其它 id 与主键重复的影子（须在 on_shortcut 之前，理由见上）
-        {
-            let mut map = lock_or_recover(&REGISTERED_BY_ID);
-            for (other_id, chords) in map.iter_mut() {
-                if other_id == &id {
-                    continue;
-                }
-                if chords.len() == 2 && chords[1] == new_sc {
-                    if let Some(dropped) = chords.pop() {
-                        let _ = app_clone.global_shortcut().unregister(dropped);
-                    }
-                }
-            }
         }
 
         if let Err(e) = app_clone
@@ -298,28 +253,8 @@ pub async fn register_global_shortcut(
             let _ = tx.send(Err(e.to_string()));
             return;
         }
-        let mut registered = vec![new_sc];
 
-        // 影子键按需声明（bindings.secureMirror）：只有必须在安全输入下可用的动作
-        // （当前仅剪贴板）才占额外一条全局键位，其余快捷键不注册影子。
-        // 注册失败静默降级：主键仍然可用，只是 secure input 期间没有可落地的键。
-        if secure_mirror.unwrap_or(false) {
-            if let Some(mirror) = secure_mirror_chord(new_sc) {
-                let shadowed = lock_or_recover(&REGISTERED_BY_ID)
-                    .iter()
-                    .any(|(other_id, chords)| other_id != &id && chords.first() == Some(&mirror));
-                if !shadowed
-                    && app_clone
-                        .global_shortcut()
-                        .on_shortcut(mirror, make_handler(id.clone(), shortcut.clone()))
-                        .is_ok()
-                {
-                    registered.push(mirror);
-                }
-            }
-        }
-
-        lock_or_recover(&REGISTERED_BY_ID).insert(id, registered);
+        lock_or_recover(&REGISTERED_BY_ID).insert(id, vec![new_sc]);
         let _ = tx.send(Ok(()));
     })
     .map_err(|e| e.to_string())?;
@@ -327,58 +262,4 @@ pub async fn register_global_shortcut(
     // M-rs4：recv_timeout 兜底，避免主线程闭包异常时永久阻塞前端 invoke
     rx.recv_timeout(std::time::Duration::from_secs(5))
         .map_err(|e| e.to_string())?
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::str::FromStr;
-
-    fn sc(s: &str) -> Shortcut {
-        Shortcut::from_str(s).expect("valid shortcut")
-    }
-
-    #[test]
-    fn secure_mirror_adds_control_to_option_only_chord() {
-        let base = sc("Alt+C");
-        let mirror = secure_mirror_chord(base).expect("Option-only 组合应有影子键位");
-        assert!(mirror.mods.contains(Modifiers::CONTROL));
-        assert!(mirror.mods.contains(Modifiers::ALT));
-        assert_eq!(mirror.key, base.key);
-    }
-
-    #[test]
-    fn secure_mirror_has_distinct_id() {
-        let base = sc("Alt+C");
-        let mirror = secure_mirror_chord(base).expect("应有影子键位");
-        // 注册表（plugin / global-hotkey / Carbon EventHotKeyID）全部按 HotKey.id
-        // 索引：影子复用主键 id 会让两套物理注册互相顶替，注销时主键 Carbon 注册
-        // 泄漏（全局吞键且无法再注册）。id 由 mods/key 派生，必须随新组合重算。
-        assert_ne!(mirror.id, base.id);
-        assert_eq!(mirror, sc("Ctrl+Alt+C"));
-    }
-
-    #[test]
-    fn secure_mirror_covers_shift_option_and_space() {
-        // 系统同样不投递 ⇧⌥ 组合与 ⌥Space，两者都要影子
-        for chord in ["Shift+Alt+C", "Alt+Space"] {
-            let mirror = secure_mirror_chord(sc(chord)).expect("应有影子键位");
-            assert!(mirror.mods.contains(Modifiers::CONTROL), "{chord}");
-        }
-    }
-
-    #[test]
-    fn secure_mirror_skips_chords_without_option() {
-        // 裸键 / 纯 ⇧ 不补 ⌃ 影子：⌃+字符键是终端控制键（⌃K 杀行、⌃C 中断…）
-        for chord in ["K", "Shift+K"] {
-            assert!(secure_mirror_chord(sc(chord)).is_none(), "{chord}");
-        }
-    }
-
-    #[test]
-    fn secure_mirror_skips_chords_already_carrying_command_or_control() {
-        for chord in ["Ctrl+Alt+C", "CommandOrControl+C", "Ctrl+Space"] {
-            assert!(secure_mirror_chord(sc(chord)).is_none(), "{chord}");
-        }
-    }
 }

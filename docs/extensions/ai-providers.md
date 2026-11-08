@@ -95,6 +95,6 @@
 ## 命令
 
 - `ai_providers_zhipu_quota` / `ai_providers_deepseek_balance`
-- 框架 `pasteboard_paste_text`：隐藏主窗后注入 Cmd+V；**粘贴后密钥仍留在系统剪贴板**（与 clipboard 扩展粘贴路径一致，不自动清）
+- 框架 `pasteboard_paste_text`：隐藏主窗后按目标位置分流——聚焦目标是文本输入区则注入 Cmd+V（返回 `pasted`），明确非输入区回退纯复制（返回 `copied`，前端 toast 按此分流已粘贴/已复制）；判定与 clipboard 扩展粘贴路径共用 `runtime::pasteboard::paste_target_is_input_area`。**粘贴后密钥仍留在系统剪贴板**（与 clipboard 扩展粘贴路径一致，不自动清）
 
 DeepSeek 余额请求对推导出的 URL 走 `http::validate_url` SSRF 门禁（首跳）。

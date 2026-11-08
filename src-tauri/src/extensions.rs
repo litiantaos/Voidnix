@@ -55,6 +55,11 @@ macro_rules! configure_app {
             crate::extensions::ai_gateway::ai_gateway_sync,
             crate::extensions::ai_providers::usage::deepseek::ai_providers_deepseek_balance,
             crate::extensions::ai_providers::usage::zhipu::ai_providers_zhipu_quota,
+            crate::extensions::archive::archive_cancel,
+            crate::extensions::archive::archive_compress,
+            crate::extensions::archive::archive_extract,
+            crate::extensions::archive::archive_inspect,
+            crate::extensions::archive::archive_preview,
             crate::extensions::awake::is_awake_enabled,
             crate::extensions::awake::is_awake_privacy,
             crate::extensions::awake::set_awake_enabled,
@@ -167,6 +172,7 @@ pub fn register_all(
     reg.register(agent::AgentExtension)
         .register(ai_gateway::AiGatewayExtension)
         .register(ai_providers::AiProvidersExtension)
+        .register(archive::ArchiveExtension)
         .register(awake::AwakeExtension)
         .register(clean_mode::CleanModeExtension)
         .register(clipboard::ClipboardExtension)
@@ -191,6 +197,9 @@ pub mod ai_gateway;
 
 #[path = "../../extensions/ai-providers/native/mod.rs"]
 pub mod ai_providers;
+
+#[path = "../../extensions/archive/native/mod.rs"]
+pub mod archive;
 
 #[path = "../../extensions/awake/native/mod.rs"]
 pub mod awake;

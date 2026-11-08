@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
 import { makeToggleHandler } from '@/stores/app'
 import FinderExtView from './View.vue'
+import OpenWithView from './OpenWithView.vue'
 import { FINDER_SHORTCUT } from './shortcuts'
 import './locales'
 
@@ -23,9 +24,12 @@ export default defineExtension({
     order: 130,
   },
 
-  disableSearchInput: true,
   windowHeight: 'auto',
   mainView: () => FinderExtView,
+  subviews: { openWith: () => OpenWithView },
+  subviewTitle: {
+    openWith: { 'zh-CN': '用 App 打开', en: 'Open with App' },
+  },
 
   globalShortcuts: [
     {

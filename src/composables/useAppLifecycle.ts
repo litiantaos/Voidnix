@@ -65,10 +65,10 @@ export function useAppLifecycle(win: Win) {
   let lastCheckAt = 0
   let allGlobalShortcuts: ShortcutBinding[] = []
 
-  async function setupGlobalShortcut(id: string, shortcut: string, secureMirror = false) {
+  async function setupGlobalShortcut(id: string, shortcut: string) {
     if (!isTauri) return
     try {
-      await invoke(CMD.registerGlobalShortcut, { id, shortcut, secureMirror })
+      await invoke(CMD.registerGlobalShortcut, { id, shortcut })
       appStore.clearShortcutError(id)
     } catch (e) {
       const msg = String(e)
@@ -181,11 +181,7 @@ export function useAppLifecycle(win: Win) {
         .filter((s) => s.id !== 'main')
 
       for (const sc of allGlobalShortcuts) {
-        await setupGlobalShortcut(
-          sc.id,
-          effectiveShortcut(sc.id, sc.default),
-          sc.secureMirror === true,
-        )
+        await setupGlobalShortcut(sc.id, effectiveShortcut(sc.id, sc.default))
       }
 
       // 关键快捷键注册失败 → 改键引导（自测模式下窗口由测试脚本驱动，跳过）
@@ -205,11 +201,7 @@ export function useAppLifecycle(win: Win) {
           () => settings.shortcutOverrides,
           async () => {
             for (const sc of allGlobalShortcuts) {
-              await setupGlobalShortcut(
-                sc.id,
-                effectiveShortcut(sc.id, sc.default),
-                sc.secureMirror === true,
-              )
+              await setupGlobalShortcut(sc.id, effectiveShortcut(sc.id, sc.default))
             }
           },
           { deep: true },

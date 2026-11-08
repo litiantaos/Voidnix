@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// apps.ts 模块顶层注册失效事件监听，mock 掉 Tauri API（buildCandidates 为纯函数不受影响）
+// apps.ts 模块顶层注册失效事件监听，mock 掉 Tauri API（orderApps 为纯函数不受影响）
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() => {}) }))
 
-import { buildCandidates, type AppEntry } from './apps'
+import { orderApps, type AppEntry } from './apps'
 
 const A = (id: string, name: string, path = `/Applications/${name}.app`): AppEntry => ({
   id,
@@ -12,7 +12,7 @@ const A = (id: string, name: string, path = `/Applications/${name}.app`): AppEnt
   path,
 })
 
-describe('buildCandidates', () => {
+describe('orderApps', () => {
   const installed = [
     A('1', 'VS Code'),
     A('2', 'Zed'),
@@ -29,25 +29,25 @@ describe('buildCandidates', () => {
     '/Applications/Preview.app',
   ]
 
-  it('MRU 置顶 + LS 偏好序补足，join 不上的剔除', () => {
-    const items = buildCandidates(installed, ls, ['/Applications/Preview.app'])
+  it('MRU 置顶 + LS 偏好序随后，仅相关应用不补全全量', () => {
+    const items = orderApps(installed, ls, ['/Applications/Preview.app'])
     expect(items.map((i) => i.name)).toEqual(['Preview', 'TextEdit', 'VS Code', 'Zed', 'Safari'])
   })
 
   it('去重：MRU 与 LS 重叠不重复出现', () => {
-    const items = buildCandidates(installed, ls, ['/Applications/TextEdit.app'])
+    const items = orderApps(installed, ls, ['/Applications/TextEdit.app'])
     expect(items[0].name).toBe('TextEdit')
     expect(items.filter((i) => i.name === 'TextEdit')).toHaveLength(1)
   })
 
-  it('cap 上限截断', () => {
-    const items = buildCandidates(installed, ls, [], 3)
-    expect(items.map((i) => i.name)).toEqual(['TextEdit', 'VS Code', 'Zed'])
+  it('无选区（LS 空）时仅 MRU（相关应用为空则列表为空）', () => {
+    const items = orderApps(installed, [], ['/Applications/Zed.app'])
+    expect(items.map((i) => i.name)).toEqual(['Zed'])
+    expect(orderApps(installed, [], [])).toEqual([])
   })
 
-  it('无选区（LS 空）时仅 MRU；已卸载 MRU 剔除', () => {
-    expect(buildCandidates(installed, [], ['/Applications/Gone.app'])).toEqual([])
-    const items = buildCandidates(installed, [], ['/Applications/Zed.app'])
-    expect(items.map((i) => i.name)).toEqual(['Zed'])
+  it('已卸载 MRU / LS 脏项剔除，不回退全量', () => {
+    const items = orderApps(installed, ['/Applications/Gone.app'], ['/Applications/Gone2.app'])
+    expect(items).toEqual([])
   })
 })

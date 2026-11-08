@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-col-full-pb">
+  <div class="flex-col-view">
     <BaseSettingsList v-if="visibleItems.length > 0" :items="visibleItems" shortcut-id="main" />
 
     <BaseEmptyState v-else icon="i-ri-search-line" :title="t('settings.noResultsFound')" />

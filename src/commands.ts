@@ -184,6 +184,13 @@ export const CMD = {
   videoCancel: 'video_cancel',
   videoJobStatus: 'video_job_status',
 
+  // —— archive ——
+  archiveInspect: 'archive_inspect',
+  archivePreview: 'archive_preview',
+  archiveExtract: 'archive_extract',
+  archiveCompress: 'archive_compress',
+  archiveCancel: 'archive_cancel',
+
   // —— homebrew ——
   brewStatus: 'brew_status',
   brewRun: 'brew_run',

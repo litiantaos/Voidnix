@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-col-full-pb">
+  <div class="flex-col-view">
     <BaseSettingsList :items="items" @execute="onSettingsExecute">
       <!-- 操作行：有视频或处理中显示，回车执行主按钮动作（取消 / 开始） -->
       <template #trailing-operations>

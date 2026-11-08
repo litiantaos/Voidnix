@@ -46,22 +46,21 @@ export async function fetchApps(): Promise<AppEntry[]> {
   return apps
 }
 
-/** 构建「用 App 打开」内联候选（主流做法：最近使用置顶 + 类型推荐补足）：
+/** 「用 App 打开」二级界面相关应用排序：MRU 置顶 → LaunchServices 类型推荐（偏好序：
+ *  默认应用在前），仅相关应用、不补全已安装全量（与访达「打开方式」同款范围）。
  *  - MRU（最近使用，跨类型）置顶——访达「打开方式」的 recent 语义
- *  - LaunchServices 类型推荐（偏好序：默认应用在前）补足至 cap
- *  - 与已安装列表 join 不上的候选（Playwright 缓存浏览器 / 系统卷投影等脏项）静默剔除
+ *  - 与已安装列表 join 不上的推荐（Playwright 缓存浏览器 / 系统卷投影等脏项）静默剔除
  *  纯函数（apps.test.ts 覆盖）。 */
-export function buildCandidates(
+export function orderApps(
   installed: AppEntry[],
   lsPaths: string[],
   recentPaths: string[],
-  cap = 5,
 ): AppEntry[] {
   const byPath = new Map(installed.map((a) => [a.path, a]))
-  const out: AppEntry[] = []
   const seen = new Set<string>()
+  const out: AppEntry[] = []
   const push = (path: string) => {
-    if (out.length >= cap || seen.has(path)) return
+    if (seen.has(path)) return
     const hit = byPath.get(path)
     if (!hit) return
     seen.add(path)

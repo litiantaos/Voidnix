@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-col-full-pb">
+  <div class="flex-col-view">
     <BaseSettingsList v-if="statusLoaded" :items="items" />
   </div>
 </template>

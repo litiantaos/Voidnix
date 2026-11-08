@@ -1,6 +1,6 @@
 <template>
-  <div class="flex-col-full-pb">
-    <BaseSettingsList :items="allItems" :shortcut-id="FINDER_SHORTCUT.id" />
+  <div class="flex-col-view">
+    <BaseSettingsList :items="filteredItems" :shortcut-id="FINDER_SHORTCUT.id" />
 
     <BaseDialog
       v-if="naming"
@@ -27,19 +27,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
-import { useAppStore, toastAndHide } from '@/stores/app'
+import { useAppStore } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import type { SettingItem } from '@/types/settings'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 import { t } from '@/runtime/i18n'
-import { FINDER_SHORTCUT, FINDER_CATALOG, type FinderAction } from './shortcuts'
-import { buildCandidates, fetchApps, type AppEntry } from './apps'
-import { config as finderConfig, rememberRecentApp } from './config'
+import { FINDER_SHORTCUT, FINDER_CATALOG } from './shortcuts'
+import { runAction } from './actions'
 import { entryViaShortcut, reactivateTick } from './index'
 
 const appStore = useAppStore()
@@ -51,28 +50,6 @@ const { value: shortcutValue, update: updateShortcut } = useShortcutConfig(
 const naming = ref(false)
 const fileName = ref('Untitled.txt')
 const nameInputRef = ref<InstanceType<typeof BaseInput> | null>(null)
-
-/** Rust 已自行 hide 的动作（勿再抢 hide / toast 时序） */
-const HIDE_IN_RUST = new Set<FinderAction>(['toggle_hidden', 'new_file'])
-
-/** @returns 是否成功（供新建文件等决定是否关弹窗） */
-async function runAction(action: FinderAction, name?: string, appPath?: string): Promise<boolean> {
-  try {
-    const msg = await invoke<string>(CMD.finderRunAction, {
-      action,
-      name: name ?? null,
-      appPath: appPath ?? null,
-    })
-    if (HIDE_IN_RUST.has(action)) {
-      return true
-    }
-    toastAndHide(msg || undefined)
-    return true
-  } catch (e) {
-    appStore.showStatus(String(e ?? t('common.operationFailed')), { duration: 4000, kind: 'error' })
-    return false
-  }
-}
 
 function startNaming() {
   fileName.value = 'Untitled.txt'
@@ -184,13 +161,28 @@ const IMAGE_EXT_SET = new Set([
 
 const videoPaths = ref<string[]>([])
 const imagePaths = ref<string[]>([])
+/** 原始选区（archive 入口用：压缩包 → 解压、其余 → 压缩，由 archive 扩展自行路由） */
+const selectionPaths = ref<string[]>([])
 
 /** 浏览模式：应用界面进入（非访达快捷键）——无访达上下文，显示全量操作目录，回车提示仅在访达中生效。 */
 const browseMode = ref(false)
 
-/** 视图当前是否处于 KeepAlive 激活态（onActivated / onDeactivated 配对维护）：
- * 快捷键重入时据此判断是否有 onActivated 跟进消费进入标记（窗口隐藏不反激活，仅扩展切换会）。 */
-let viewActive = false
+/** 上下文可恢复标记：进入 openWith 二级界面（subview）/ 跨扩展跳转（视频 / 图片 / 压缩，
+ * 带 from 记忆 Esc 返回目标）期间为 true，重激活 mainView 的 onActivated 消费——保持访达
+ * 上下文（选区 / 媒体入口 / open_with 副标题），不重判模式。这些返回路径均无 entryViaShortcut
+ * 跟进，不标记会被误判为应用界面进入（浏览模式）清空选区。离开本扩展且不再是返回目标
+ * （切扩展不带 from / 退出主界面）时清除，防过期残留误恢复。 */
+let contextResumable = false
+watch(
+  () => appStore.activeExtId,
+  (id) => {
+    // setActiveExtension 先写 activeExtId 再写 extensionReturnExtId，pre-flush watcher
+    // 在两者均落定后运行：jumpTo* 离开时读到返回目标为本扩展 → 保留；其余离开 → 清除
+    if (id !== 'finder-ext' && appStore.extensionReturnExtId !== 'finder-ext') {
+      contextResumable = false
+    }
+  },
+)
 
 /** 按扩展名过滤（video / image 均收集全部命中供批量处理）。 */
 function filterByExt(paths: string[], set: Set<string>): string[] {
@@ -209,45 +201,51 @@ async function detectSelection() {
   // 先清空：避免 KeepAlive 重激活瞬间显示上次过期选区，探测完成再赋新值
   videoPaths.value = []
   imagePaths.value = []
-  openWithCandidates.value = []
+  selectionPaths.value = []
   try {
     const paths = await invoke<string[]>(CMD.finderSelectedPaths)
     videoPaths.value = filterByExt(paths, VIDEO_EXT_SET)
     imagePaths.value = filterByExt(paths, IMAGE_EXT_SET)
-    void refreshCandidates(paths)
+    selectionPaths.value = paths
   } catch {
     // 访达非前台 / 权限缺失 → 不显示入口
     videoPaths.value = []
     imagePaths.value = []
+    selectionPaths.value = []
   } finally {
     detectInFlight = false
   }
 }
 
 onActivated(() => {
-  viewActive = true
+  // 二级界面 / 跨扩展跳转的返回：保持访达上下文（选区 / 媒体入口 / open_with 副标题原样
+  // 保留，不重新探测、不切浏览模式）
+  if (contextResumable) {
+    contextResumable = false
+    browseMode.value = false
+    return
+  }
   // 快捷键进入（makeToggleHandler 同步置位，先于本钩子到达）：访达上下文面板；
   // 应用界面进入（搜索 / 工具列表 / 扩展切换）：浏览模式，不探测选区
   browseMode.value = !entryViaShortcut.value
   entryViaShortcut.value = false
   if (browseMode.value) {
-    // 清空上下文（防 KeepAlive 重激活残留上次候选 / 媒体入口）
+    // 清空上下文（防 KeepAlive 重激活残留上次媒体入口）
     videoPaths.value = []
     imagePaths.value = []
-    openWithCandidates.value = []
+    selectionPaths.value = []
     return
   }
   void detectSelection()
 })
-onDeactivated(() => {
-  viewActive = false
-})
 // 快捷键呼出（含 KeepAlive 重入）：恒为上下文模式，重新探测选区
 watch(reactivateTick, () => {
   browseMode.value = false
-  // 已激活态的重入（窗口隐藏后快捷键再呼出，无 onActivated 跟进）：此处消费标记，
-  // 防残留 true 让下次应用界面进入（onActivated）误判为快捷键进入
-  if (viewActive) entryViaShortcut.value = false
+  // 无条件消费进入标记：mainView 已激活（窗口隐藏后再呼出，无 onActivated 跟进）与
+  // openWith subview 让位停用（若不消费会让标记泄漏——之后退出扩展再从应用界面进入时
+  // onActivated 误判为快捷键进入）两路径都在此收口；首挂载路径 watcher 尚不存在
+  // （reactivateTick 先于 setActiveExtension 触发），标记留给 onActivated
+  entryViaShortcut.value = false
   void detectSelection()
 })
 
@@ -255,33 +253,17 @@ function baseName(path: string): string {
   return path.split('/').pop() || path
 }
 
-// ── 用 App 打开：面板内联候选（主流做法：MRU 置顶 + 类型推荐补足），无二级界面 ──
+// ── 用 App 打开：目录行承载，回车进入二级界面（OpenWithView）浏览具体 App 列表 ──
 
-const openWithCandidates = ref<AppEntry[]>([])
-const allApps = ref<AppEntry[]>([])
-
-/** 候选刷新序号：探测重入（快捷键重呼）时旧轮结果丢弃，防过期候选闪现 */
-let candidateSeq = 0
-
-/** 刷新「用 App 打开」候选：LaunchServices 类型推荐（取选区首项，多选按首项类型）+ MRU。 */
-async function refreshCandidates(paths: string[]) {
-  const seq = ++candidateSeq
-  const ls = paths[0]
-    ? await invoke<string[]>(CMD.finderOpenWithApps, { path: paths[0] }).catch(() => [])
-    : []
-  if (seq !== candidateSeq) return
-  // 总是经 fetchApps 取已安装列表：缓存命中零开销，失效事件（应用增删/图标就绪）后取新；
-  // 失败回退现有列表（join 尽力而为）
-  const apps = await fetchApps().catch(() => allApps.value)
-  if (seq !== candidateSeq) return
-  if (apps.length > 0) allApps.value = apps
-  openWithCandidates.value = buildCandidates(apps, ls, finderConfig.recentApps)
-}
-
-/** 执行候选行：打开成功记忆 MRU（下次置顶直达）。 */
-async function executeOpenWith(app: AppEntry) {
-  const ok = await runAction('open_with', undefined, app.path)
-  if (ok) rememberRecentApp(app.path)
+/** 进入「用 App 打开」二级界面：聚焦搜索框供即时过滤（MainView 的 subview watch 会
+ *  先聚焦滚动容器防失焦藏窗，nextTick 后再聚焦输入框——输入框在窗口内同样不失焦，
+ *  且本扩展 query 即过滤参数，二级列表要即打即筛）。 */
+function openOpenWith() {
+  contextResumable = true
+  appStore.openSubview('openWith')
+  nextTick(() => {
+    ;(document.getElementById('main-search-input') as HTMLInputElement | null)?.focus()
+  })
 }
 
 /** 跳转视频处理（跨扩展，带入选区路径；多选区全量带入批量处理）。
@@ -290,8 +272,18 @@ async function executeOpenWith(app: AppEntry) {
 function jumpToVideo() {
   const ps = videoPaths.value
   if (!ps.length) return
+  contextResumable = true
   window.dispatchEvent(new CustomEvent('video-pending-input-path', { detail: ps }))
   appStore.setActiveExtension('video', 'finder-ext')
+}
+
+/** 跳转压缩/解压（跨扩展，全量带入；全归档 → 解压模式，其余 → 压缩模式，archive 自行路由）。 */
+function jumpToArchive() {
+  const ps = selectionPaths.value
+  if (!ps.length) return
+  contextResumable = true
+  window.dispatchEvent(new CustomEvent('archive-pending-input-path', { detail: ps }))
+  appStore.setActiveExtension('archive', 'finder-ext')
 }
 
 /** 跳转图片处理（跨扩展，全量带入；多张由 image 自动进拼接模式）。
@@ -299,6 +291,7 @@ function jumpToVideo() {
 function jumpToImage() {
   const ps = imagePaths.value
   if (!ps.length) return
+  contextResumable = true
   window.dispatchEvent(new CustomEvent('image-pending-input-path', { detail: ps }))
   appStore.setActiveExtension('image', 'finder-ext')
 }
@@ -311,39 +304,79 @@ function mediaSubtitle(
   return paths.length === 1 ? baseName(paths[0]) : t(countKey, { n: paths.length })
 }
 
+/** 归档扩展名（镜像自 archive 扩展 ARCHIVE_EXTENSIONS，新增格式双向同步）。
+ *  gz/bz2/xz/zst 仅 .tar.* 双扩展算归档——与 archive 侧 Rust detect_by_ext 同语义。 */
+const ARCHIVE_EXT_SET = new Set([
+  'zip',
+  'jar',
+  'epub',
+  '7z',
+  'rar',
+  'tar',
+  'tgz',
+  'tbz2',
+  'txz',
+  'tzst',
+  'iso',
+])
+const TAR_DOUBLE_EXT = new Set(['gz', 'bz2', 'xz', 'zst'])
+
+function isArchivePath(path: string): boolean {
+  const name = path.split('/').pop() ?? ''
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  if (ARCHIVE_EXT_SET.has(ext)) return true
+  if (TAR_DOUBLE_EXT.has(ext)) {
+    return name
+      .slice(0, -(ext.length + 1))
+      .toLowerCase()
+      .endsWith('.tar')
+  }
+  return false
+}
+
+/** 压缩/解压入口标题与副标题：全归档选区 →「解压」（解压第一个），其余 →「压缩」；
+ *  标题与 archive 侧 acceptPaths 路由同源判定。浏览模式无选区，保留通用名。 */
+function archiveEntryTitle(): { title: string; subtitle: string | undefined } {
+  const ps = selectionPaths.value
+  if (!ps.length) return { title: t('finderExt.archiveProcess'), subtitle: undefined }
+  const title = ps.every(isArchivePath) ? t('finderExt.extract') : t('finderExt.compress')
+  const subtitle =
+    ps.length === 1 ? baseName(ps[0]) : t('finderExt.selectionCount', { n: ps.length })
+  return { title, subtitle }
+}
+
 const allItems = computed<SettingItem[]>(() => {
   const list: SettingItem[] = []
-  // 「用 App 打开」候选组置顶（仅上下文模式）：MRU + LaunchServices 类型推荐平铺（回车直达）；
-  // 浏览模式无选区上下文，由目录首行「用 App 打开」承载
-  if (!browseMode.value) {
-    for (const app of openWithCandidates.value) {
-      list.push({
-        id: `open_with_${app.id}`,
-        title: app.name,
-        icon: app.icon,
-        type: 'action',
-        action: () => void executeOpenWith(app),
-        group: t('finderExt.openWithGroup'),
-      })
-    }
-  }
-  // 目录行（单一数据源 shortcuts.ts，顺序即正式面板序）；上下文模式：open_with 由候选组
-  // 承载（目录行省略）、媒体入口仅有选区时出现（带选区副标题）；浏览模式全量显示
+  // 目录行（单一数据源 shortcuts.ts，顺序即正式面板序）；上下文模式：open_with 带
+  // 选区副标题、媒体入口仅有选区时出现（带选区副标题）；浏览模式全量显示
   for (const entry of FINDER_CATALOG) {
     let subtitle: string | undefined
+    let title = t(entry.titleKey)
     if (!browseMode.value) {
-      if (entry.id === 'open_with') continue
       if (entry.id === 'video_process' && videoPaths.value.length === 0) continue
       if (entry.id === 'image_process' && imagePaths.value.length === 0) continue
-      if (entry.id === 'video_process') {
+      if (entry.id === 'archive_process' && selectionPaths.value.length === 0) continue
+      if (entry.id === 'open_with') {
+        subtitle =
+          selectionPaths.value.length === 1
+            ? baseName(selectionPaths.value[0])
+            : selectionPaths.value.length > 0
+              ? t('finderExt.selectionCount', { n: selectionPaths.value.length })
+              : undefined
+      } else if (entry.id === 'video_process') {
         subtitle = mediaSubtitle(videoPaths.value, 'finderExt.videoCount')
       } else if (entry.id === 'image_process') {
         subtitle = mediaSubtitle(imagePaths.value, 'finderExt.imageCount')
+      } else if (entry.id === 'archive_process') {
+        // 全归档选区 →「解压」、其余 →「压缩」（与跳转后的 archive 路由一致），副标题显选区摘要
+        const a = archiveEntryTitle()
+        title = a.title
+        subtitle = a.subtitle
       }
     }
     list.push({
       id: entry.id,
-      title: t(entry.titleKey),
+      title,
       subtitle,
       icon: entry.icon,
       type: 'action',
@@ -354,6 +387,10 @@ const allItems = computed<SettingItem[]>(() => {
           return
         }
         const id = entry.id
+        if (id === 'open_with') {
+          openOpenWith()
+          return
+        }
         if (id === 'new_file') {
           startNaming()
           return
@@ -364,6 +401,10 @@ const allItems = computed<SettingItem[]>(() => {
         }
         if (id === 'image_process') {
           jumpToImage()
+          return
+        }
+        if (id === 'archive_process') {
+          jumpToArchive()
           return
         }
         void runAction(id)
@@ -380,5 +421,15 @@ const allItems = computed<SettingItem[]>(() => {
     group: t('finderExt.general'),
   })
   return list
+})
+
+/** 搜索框过滤（扩展模式 query 即列表过滤参数）：标题 / 副标题包含匹配（快捷键配置行一并过滤）。 */
+const filteredItems = computed<SettingItem[]>(() => {
+  const q = appStore.searchQuery.trim().toLowerCase()
+  if (!q) return allItems.value
+  return allItems.value.filter(
+    (it) =>
+      (it.title ?? '').toLowerCase().includes(q) || (it.subtitle ?? '').toLowerCase().includes(q),
+  )
 })
 </script>

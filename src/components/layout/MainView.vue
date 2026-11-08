@@ -83,12 +83,14 @@
             <span>{{ resolveLocalized(activeExtension.meta.name) }}</span>
           </div>
 
+          <!-- disableSearchInput 扩展 readonly（始终可聚焦）而非 disabled；子视图放开
+               输入（subviewTitle 即「搜索 X」placeholder，finder-ext openWith 同范式） -->
           <input
             ref="searchInput"
             id="main-search-input"
             data-list-execute
             :value="appStore.searchQuery"
-            :readonly="activeExtension?.disableSearchInput"
+            :readonly="activeExtension?.disableSearchInput && !appStore.activeSubview"
             text="base primary"
             outline="none"
             bg="transparent"

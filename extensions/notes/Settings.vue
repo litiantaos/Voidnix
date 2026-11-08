@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-col-full-pb">
+  <div class="flex-col-view">
     <BaseSettingsList :items="items" shortcut-id="notes" />
   </div>
 </template>
