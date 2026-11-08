@@ -101,7 +101,8 @@ pub fn current_frontmost_pid() -> Option<i32> {
 }
 
 /// frontmost 是否为 Voidnix 自身（WKWebView 聚焦可编辑元素触发的自我激活瞬态）。
-fn frontmost_is_self() -> bool {
+/// 供各守卫做「瞬态容忍」判定（如 finder-ext 选区探测）。
+pub fn frontmost_is_self() -> bool {
     let ws = NSWorkspace::sharedWorkspace();
     ws.frontmostApplication()
         .map(|a| a.processIdentifier() == std::process::id() as i32)

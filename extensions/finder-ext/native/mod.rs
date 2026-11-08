@@ -98,7 +98,7 @@ pub async fn finder_selected_paths() -> Result<Vec<String>, String> {
 }
 
 fn selected_paths_inner() -> Result<Vec<String>, String> {
-    require_finder_frontmost()?;
+    require_finder_context()?;
     let ctx = finder_context()?;
     let paths = ctx
         .paths
@@ -174,13 +174,16 @@ struct FinderContext {
     target: String,
 }
 
+/// 访达 bundle id（frontmost 直查 / PID 反查共用单一匹配源）。
+const FINDER_BUNDLE_ID: &str = "com.apple.finder";
+
 fn is_finder_frontmost() -> bool {
     #[cfg(target_os = "macos")]
     {
         let ws = objc2_app_kit::NSWorkspace::sharedWorkspace();
         ws.frontmostApplication()
             .and_then(|a| a.bundleIdentifier())
-            .map(|b| b.to_string() == "com.apple.finder")
+            .map(|b| b.to_string() == FINDER_BUNDLE_ID)
             .unwrap_or(false)
     }
     #[cfg(not(target_os = "macos"))]
@@ -189,8 +192,49 @@ fn is_finder_frontmost() -> bool {
     }
 }
 
-fn require_finder_frontmost() -> Result<(), String> {
+/// PID 是否为访达进程（running app 反查 bundle id）。
+fn pid_is_finder(pid: i32) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let ws = objc2_app_kit::NSWorkspace::sharedWorkspace();
+        ws.runningApplications()
+            .iter()
+            .find(|a| a.processIdentifier() == pid)
+            .and_then(|a| a.bundleIdentifier())
+            .map(|b| b.to_string() == FINDER_BUNDLE_ID)
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// 访达上下文判定（探测版，面板可见期间使用）：frontmost 为访达，或 WKWebView
+/// 自我激活瞬态（frontmost 为自身、而 show 时捕获的原前台是访达）均算访达上下文。
+///
+/// finder-ext 搜索框启用，窗口唤起聚焦搜索框会触发 WKWebView 自我激活
+/// （`activateIgnoringOtherApps` 抢前台，WebKit 内部行为无法阻止），探测的
+/// osascript 与自我激活时序不定——纯查 frontmost 会在瞬态落稳后误判「不在访达」，
+/// 表现为选区时有时无。瞬态中原前台仍是访达（PREV_FRONT_PID 捕获于 show 时，
+/// 快捷键回调先于前端事件同步写入），据此容忍。动作执行版见 `ensure_finder_frontmost`
+/// （可 hide 归还焦点后复验）；探测时面板必须可见、不能 hide，故单独判定。
+fn is_finder_context() -> bool {
     if is_finder_frontmost() {
+        return true;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if crate::platform::focus::frontmost_is_self() {
+            let prev = crate::platform::focus::captured_pid();
+            return prev > 0 && pid_is_finder(prev);
+        }
+    }
+    false
+}
+
+fn require_finder_context() -> Result<(), String> {
+    if is_finder_context() {
         Ok(())
     } else {
         Err("请先切换到访达".into())
@@ -435,7 +479,7 @@ fn finder_pid() -> Option<i32> {
         ws.runningApplications().iter().find_map(|a| {
             let is_finder = a
                 .bundleIdentifier()
-                .map(|b| b.to_string() == "com.apple.finder")
+                .map(|b| b.to_string() == FINDER_BUNDLE_ID)
                 .unwrap_or(false);
             if is_finder {
                 Some(a.processIdentifier())

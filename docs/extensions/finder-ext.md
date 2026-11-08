@@ -68,6 +68,7 @@
 ## 实现要点
 
 - **上下文**：JXA 读 `selection` + `finderWindows[0].target` → JSON
+- **探测版前台判定容忍自我激活瞬态**（`is_finder_context`）：finder-ext 搜索框启用，窗口唤起聚焦搜索框会触发 WKWebView 自我激活抢前台，探测的 osascript 与其时序不定——纯查 frontmost 会在瞬态落稳后误判「不在访达」，选区时有时无。frontmost 为访达，或「frontmost 为自身且 `PREV_FRONT_PID`（show 时捕获、快捷键回调先于前端事件同步写入）为访达」均算访达上下文；探测期间面板可见不能 hide 归还，与动作执行版 `ensure_finder_frontmost`（hide → restore → 复验）分工
 - **frontmost 守卫**（`ensure_finder_frontmost`）：拷贝路径 / 用 App 打开 / 终端 / 新建执行前确保访达前台——frontmost 非访达时先 hide 主窗归还焦点（`PREV_FRONT_PID` 捕获于 show 时，快捷键进入即访达）短轮询再验，归还后仍非访达（用户已主动切走）才拒绝。不能纯查 frontmost：面板交互（点击行/按钮、新建弹窗聚焦输入框）会触发 WKWebView 自我激活（`activateIgnoringOtherApps` 抢走前台，WebKit 内部行为无法从应用侧阻止），纯查会把面板自身交互误判为离开访达。切换隐藏不依赖 frontmost（自路径强制前置访达）
 - **新建文件**：`BaseDialog` `closeOnConfirm=false` → 异步创建
   - 成功 → 卸窗；失败 → toast 且弹窗保持（不先关再开）
