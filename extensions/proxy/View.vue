@@ -24,8 +24,9 @@
             @click.stop="locateSelected"
           />
           <BaseButton
-            :icon="testing ? 'i-ri-loader-4-line animate-spin' : 'i-ri-flashlight-line'"
-            :disabled="testing || nodes.length === 0"
+            icon="i-ri-flashlight-line"
+            :loading="testing"
+            :disabled="nodes.length === 0"
             :title="t('proxy.testAll')"
             @click.stop="testAll"
           />
@@ -72,7 +73,11 @@
             }}</BaseButton>
             <!-- 已下载：开关 + 更新入口（仅关闭代理时显示，开启时走副标题绿色提示） -->
             <div v-else-if="coreStatus.downloaded" flex gap="2">
-              <BaseButton :variant="isEnabled ? 'primary' : 'default'" @click.stop="toggleEnabled">
+              <BaseButton
+                :variant="isEnabled ? 'primary' : 'default'"
+                :loading="toggling"
+                @click.stop="toggleEnabled"
+              >
                 {{ isEnabled ? t('common.enabled') : t('common.disabled') }}
               </BaseButton>
               <BaseButton v-if="isEnabled && coreError" @click.stop="reconnect">{{
@@ -133,11 +138,8 @@
           <template #trailing>
             <div flex gap="2">
               <BaseButton
-                :icon="
-                  updatingSubId === item.sub.id
-                    ? 'i-ri-loader-4-line animate-spin'
-                    : 'i-ri-refresh-line'
-                "
+                icon="i-ri-refresh-line"
+                :loading="updatingSubId === item.sub.id"
                 :disabled="!item.sub.url || updatingSubId !== ''"
                 :title="t('proxy.updateSubscription')"
                 @click.stop="refreshSub(item.sub)"
@@ -262,6 +264,7 @@ const {
   coreError,
   updateInfo,
   isEnabled,
+  toggling,
   statusLoaded,
   reconnect,
   updateCore,

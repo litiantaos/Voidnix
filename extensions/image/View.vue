@@ -115,7 +115,7 @@
               t('image.save')
             }}</BaseButton>
           </template>
-          <BaseButton v-else variant="primary" :disabled="processing" @click.stop="removeBg">{{
+          <BaseButton v-else variant="primary" :loading="processing" @click.stop="removeBg">{{
             processing
               ? bgStage
                 ? t(BG_STAGE_KEYS[bgStage])

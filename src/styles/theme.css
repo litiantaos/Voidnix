@@ -612,6 +612,13 @@ body {
   color: color-mix(in srgb, currentColor 45%, transparent);
 }
 
+/* 主钮禁用/加载的内容降透明：ui-disabled 在此不可用——primary 的 color 带 !important 压制，
+ * 且 currentColor 出现在 color 属性内时取继承值（非 variant 白字），直接补 !important 会把
+ * 白字混成画布色。显式以白字混合（注释宣称的「按 variant 自适应」由此真正成立） */
+.ui-btn-primary.ui-disabled {
+  color: color-mix(in srgb, #fff 45%, transparent) !important;
+}
+
 /*
  * BaseButton variant 面类。
  * primary：直接绑 --color-accent（勿靠 Uno bg-accent，Wind4 对 CSS 变量 color-mix，WK 下易失效）。
@@ -634,6 +641,12 @@ body {
 
 .ui-btn-primary:active:not(:disabled):not(.ui-disabled) {
   background: var(--accent-press-active) !important;
+}
+
+/* 加载态面色降级：主钮 busy 时 accent 实底降透明（内容透明度已由 ui-disabled 承担），
+ * 与「不可用」的纯 disabled（面色不动）区分——降级传达「进行中、暂不可交互」 */
+.ui-btn-primary.ui-loading {
+  background: color-mix(in srgb, var(--color-accent) 60%, transparent) !important;
 }
 
 .ui-btn-primary i {

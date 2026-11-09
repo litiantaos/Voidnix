@@ -22,7 +22,7 @@
 - **soft-chip**：控件 — 实白 + 1px 冷灰 solid border，无 elevation；focus 改边框色 `--focus-ring-color`
 - **ext-tag**：搜索栏只读扩展名
 - **ui-active**：列表选中色块 + 轻 blur；按钮选中（`soft-chip.ui-active`）以透明 1px 边占位保持盒模型恒定——防切换时内容盒 ±2px、同行按钮平移跳动。BaseList 行的色块由组件内脱流滑块承载（同 `--ui-active-fill`，选中切换 translateY 滑动，见 docs/extensions.md「选中高亮滑块」）
-- **ui-btn-***：BaseButton variant 面类（primary 实心主钮 / ghost 透明 / danger 淡红底 + 红字 + 红边，hover 加深边色、active 加深底与边）
+- **ui-btn-***：BaseButton variant 面类（primary 实心主钮 / ghost 透明 / danger 淡红底 + 红字 + 红边，hover 加深边色、active 加深底与边）。**加载态**统一走 BaseButton `loading` prop：前置 `i-ri-loader-4-line animate-spin` spinner + 禁交互（同 disabled），主钮面色降级（`.ui-btn-primary.ui-loading`：accent 实底降至 60% 透明，与「不可用」的纯 disabled 面色不动相区分）；文案可随进度切换（archive 范式），完成落位可换对勾 icon；禁止业务侧手写 spinner icon 三元（`loading ? 'i-ri-loader-4-line…' : …`）
 - **dialog-\***：弹窗近实白（非 soft-surface）；标题/底栏为浮层 + 透明渐变，内容可滚入；高度随内容形态切换平滑重排（JS FLIP + `transition: height`）
 - **fill-ctrl**：实底填充（进度轨 / kbd 等，非卡片壳）
 

@@ -40,8 +40,8 @@
                  同位显示「刷新列表」），文案切换走纵向滚动 + 宽度渐变（宽度盒锁旧量新） -->
             <template v-if="status.has_update || refreshing" #trailing>
               <BaseButton
-                :icon="running ? 'i-ri-loader-4-line animate-spin' : 'i-ri-arrow-up-circle-line'"
-                :disabled="running"
+                icon="i-ri-arrow-up-circle-line"
+                :loading="running"
                 @click.stop="run('update_upgrade')"
               >
                 <span ref="labelBoxRef" class="brew-label-box" @transitionend="onLabelWidthSettled">

@@ -917,6 +917,7 @@ export function useProxyPanel() {
     coreError,
     updateInfo,
     isEnabled,
+    toggling,
     statusLoaded,
     reconnect,
     updateCore,
