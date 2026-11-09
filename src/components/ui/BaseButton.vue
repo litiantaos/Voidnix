@@ -5,7 +5,7 @@
     :aria-busy="loading || undefined"
     :class="[
       'ui-ctrl flex-none',
-      isIconOnly() ? 'w-7 px-0 flex-center' : icon || loading ? 'flex gap-1.5 items-center' : '',
+      isIconOnly() ? 'w-7 px-0 flex-center' : icon || loading ? 'flex gap-2 items-center' : '',
       surfaceClass,
       variantClass,
       disabled || loading ? 'ui-disabled' : '',
@@ -13,7 +13,7 @@
       active ? 'ui-active' : '',
     ]"
   >
-    <i v-if="loading" class="i-ri-loader-4-line text-sm animate-spin" />
+    <i v-if="loading" class="i-ri-loader-4-line text-xs animate-spin" />
     <i v-else-if="icon" :class="[icon, 'text-sm']" />
     <slot />
   </button>
@@ -28,8 +28,8 @@ interface Props {
   icon?: string
   /** 显式 active 状态（列表/弹窗焦点环视觉提示，避免作为 fallthrough attr 污染 DOM） */
   active?: boolean
-  /** 加载态：前置 spinner（i-ri-loader-4-line animate-spin）+ 禁交互（同 disabled），
-   * variant 面色不变——主钮加载仍保持主钮语义色（范式见 docs/design.md ui-btn-*） */
+  /** 加载态：前置 spinner（i-ri-loader-4-line animate-spin，text-xs 与按钮 12px 字同大）+
+   * 禁交互（同 disabled），主钮面色降级（范式见 docs/design.md ui-btn-*） */
   loading?: boolean
 }
 
