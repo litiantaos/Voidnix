@@ -52,6 +52,8 @@ pub(crate) struct Collected {
     pub(crate) entries: Vec<(String, PathBuf, bool)>,
     pub(crate) skipped_junk: u64,
     pub(crate) file_count: u64,
+    /// 文件总字节数（进度分母；符号链接按 0 计——无内容流）
+    pub(crate) total_bytes: u64,
 }
 
 pub fn compress_blocking(
@@ -78,7 +80,8 @@ pub fn compress_blocking(
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let total = collected.file_count.max(1);
+    // 进度按字节推进（按文件条目计会让大文件长时间钉在 0%、再整段跳变）
+    let total = collected.total_bytes.max(1);
     job::emit(on_event, ArchiveEvent::Started { total_bytes: total });
     let cancelled = || token.is_cancelled();
     let progress = |percent: f64| job::emit(on_event, ArchiveEvent::Progress { percent });
@@ -153,6 +156,7 @@ pub(crate) fn collect(
         entries: Vec::new(),
         skipped_junk: 0,
         file_count: 0,
+        total_bytes: 0,
     };
     let single_file = inputs.len() == 1 && inputs[0].is_file();
     for input in inputs {
@@ -198,6 +202,9 @@ pub(crate) fn collect(
                 }
             } else {
                 out.file_count += 1;
+                out.total_bytes += std::fs::symlink_metadata(e.path())
+                    .map(|m| m.len())
+                    .unwrap_or(0);
                 out.entries.push((rel, e.path().to_path_buf(), false));
             }
         }
@@ -206,6 +213,7 @@ pub(crate) fn collect(
 }
 
 pub(crate) struct ProgressCtx<'a> {
+    /// 已处理字节数（进度分母为输入总字节）
     pub(crate) done: u64,
     pub(crate) total: u64,
     pub(crate) last_percent: f64,
@@ -213,16 +221,33 @@ pub(crate) struct ProgressCtx<'a> {
 }
 
 impl ProgressCtx<'_> {
-    fn step(&mut self, is_file: bool) -> Result<(), String> {
-        if is_file {
-            self.done += 1;
-            let percent = (self.done as f64 / self.total as f64 * 100.0).min(100.0);
-            if percent - self.last_percent >= 2.0 {
-                self.last_percent = percent;
-                (self.progress)(percent);
-            }
+    pub(crate) fn step_bytes(&mut self, n: u64) {
+        self.done = self.done.saturating_add(n);
+        let percent = (self.done as f64 / self.total as f64 * 100.0).min(100.0);
+        if percent - self.last_percent >= 0.5 {
+            self.last_percent = percent;
+            (self.progress)(percent);
         }
-        Ok(())
+    }
+}
+
+/// 读侧字节计数器：包住源文件随 io 读取流式推进进度（zip / 7z 写路径共用）。
+pub(crate) struct CountingReader<'c, 'a, R: std::io::Read> {
+    inner: R,
+    ctx: &'c mut ProgressCtx<'a>,
+}
+
+impl<'c, 'a, R: std::io::Read> CountingReader<'c, 'a, R> {
+    pub(crate) fn new(inner: R, ctx: &'c mut ProgressCtx<'a>) -> CountingReader<'c, 'a, R> {
+        CountingReader { inner, ctx }
+    }
+}
+
+impl<R: std::io::Read> std::io::Read for CountingReader<'_, '_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.ctx.step_bytes(n as u64);
+        Ok(n)
     }
 }
 
@@ -271,9 +296,9 @@ fn write_zip(
             let src = File::open(disk).map_err(|e| e.to_string())?;
             zip.start_file(rel.clone(), options)
                 .map_err(|e| e.to_string())?;
-            std::io::copy(&mut &src, &mut zip).map_err(|e| e.to_string())?;
+            let mut src = CountingReader::new(src, ctx);
+            std::io::copy(&mut src, &mut zip).map_err(|e| e.to_string())?;
         }
-        ctx.step(!*is_dir)?;
     }
     zip.finish().map_err(|e| e.to_string())?;
     Ok(())
@@ -318,10 +343,10 @@ pub(crate) fn write_sevenz(
                 .map_err(|e| e.to_string())?;
         } else {
             let src = File::open(disk).map_err(|e| e.to_string())?;
+            let src = CountingReader::new(src, ctx);
             w.push_archive_entry(entry, Some(src))
                 .map_err(|e| e.to_string())?;
         }
-        ctx.step(!*is_dir)?;
     }
     w.finish().map_err(|e| e.to_string())?;
     Ok(())

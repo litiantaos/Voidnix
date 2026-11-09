@@ -22,6 +22,8 @@ registerMessages({
   'archive.compressing': { 'zh-CN': '压缩中…', en: 'Compressing…' },
   'archive.cancel': { 'zh-CN': '取消', en: 'Cancel' },
   'archive.cancelled': { 'zh-CN': '已取消', en: 'Cancelled' },
+  'archive.extractDoneLabel': { 'zh-CN': '解压完成', en: 'Extracted' },
+  'archive.compressDoneLabel': { 'zh-CN': '压缩完成', en: 'Compressed' },
   'archive.extractDone': { 'zh-CN': '已解压 {n} 个文件', en: 'Extracted {n} files' },
   'archive.compressDone': {
     'zh-CN': '已压缩 {n} 个文件（{size}）',
@@ -35,7 +37,6 @@ registerMessages({
     'zh-CN': '已拦截 {n} 个危险路径条目',
     en: '{n} unsafe path entries blocked',
   },
-  'archive.reveal': { 'zh-CN': '在 Finder 中显示', en: 'Reveal in Finder' },
   'archive.format': { 'zh-CN': '格式', en: 'Format' },
   'archive.level': { 'zh-CN': '压缩级别', en: 'Compression Level' },
   'archive.level.fastest': { 'zh-CN': '最快', en: 'Fastest' },

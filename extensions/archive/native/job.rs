@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 static BUSY: AtomicBool = AtomicBool::new(false);
 static CANCEL: Mutex<Option<CancellationToken>> = Mutex::new(None);
 
-/// 任务事件（经本次 invoke 的 Channel 投递；无进度条设计，progress 仅保留协议位）。
+/// 任务事件（经本次 invoke 的 Channel 投递；progress 仅在按钮文案内呈现百分比）。
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ArchiveEvent {

@@ -15,27 +15,20 @@
     <!-- ── 压缩模式：BaseSettingsList 表单（源行 + 名称/格式/级别/密码 + 过滤开关） ── -->
     <template v-if="mode === 'compress'">
       <BaseSettingsList :items="compressItems" @execute="onCompressExecute">
-        <!-- 源行尾：主操作按钮组（busy 状态机 / 压缩） -->
+        <!-- 源行尾：主操作按钮（busy 态同钮切换 spinner + 进度文案，proxy/homebrew 同范式） + 取消 -->
         <template #trailing-source>
           <div flex gap="2">
-            <template v-if="job.busy">
-              <BaseButton disabled>{{ jobLabel }}</BaseButton>
-              <BaseButton variant="ghost" @click.stop="cancelJob">{{
-                t('archive.cancel')
-              }}</BaseButton>
-            </template>
-            <template v-else-if="job.done">
-              <BaseButton icon="i-ri-external-link-line" @click.stop="reveal(job.donePath)">
-                {{ t('archive.reveal') }}
-              </BaseButton>
-            </template>
+            <BaseButton v-if="job.busy" @click.stop="cancelJob">{{
+              t('archive.cancel')
+            }}</BaseButton>
             <BaseButton
-              v-else
               variant="primary"
-              :disabled="!outputName.trim()"
+              :disabled="job.busy || !outputName.trim()"
+              :loading="job.busy && !jobDone"
+              :icon="job.busy && jobDone ? 'i-ri-check-line' : undefined"
               @click.stop="runCompress"
             >
-              {{ t('archive.compress') }}
+              {{ job.busy ? jobLabel : t('archive.compress') }}
             </BaseButton>
           </div>
         </template>
@@ -81,32 +74,44 @@
       </div>
     </BaseDialog>
 
+    <!-- 解压密码弹窗：点击解压时加密包弹此输入（确定即直接解压；密码不落盘仅会话内复用） -->
+    <BaseDialog
+      v-if="extractPwdDialog"
+      :title="t('archive.password')"
+      variant="form"
+      size="sm"
+      show-footer
+      :ok-label="t('common.confirm')"
+      @confirm="confirmExtractPwd"
+      @cancel="extractPwdDialog = false"
+    >
+      <div class="form-field">
+        <span class="form-label">{{ t('archive.password') }}</span>
+        <BaseInput
+          v-model="extractPwdDraft"
+          type="password"
+          @keydown.enter.stop.prevent="confirmExtractPwd"
+        />
+      </div>
+    </BaseDialog>
+
     <!-- ── 解压模式：BaseSettingsList 表单（压缩包 / 解压目录 / 查看文件） ── -->
     <template v-if="mode === 'extract' && info">
       <BaseSettingsList :items="extractItems" @execute="onExtractExecute">
-        <!-- 压缩包行尾：主操作按钮组（busy 状态机 / 解压） -->
+        <!-- 压缩包行尾：主操作按钮（busy 态同钮切换 spinner + 进度文案，proxy/homebrew 同范式） + 取消 -->
         <template #trailing-archive>
           <div flex gap="2">
-            <template v-if="job.busy">
-              <BaseButton disabled>{{ jobLabel }}</BaseButton>
-              <BaseButton variant="ghost" @click.stop="cancelJob">
-                {{ t('archive.cancel') }}
-              </BaseButton>
-            </template>
+            <BaseButton v-if="job.busy" @click.stop="cancelJob">{{
+              t('archive.cancel')
+            }}</BaseButton>
             <BaseButton
-              v-else-if="job.done"
-              icon="i-ri-external-link-line"
-              @click.stop="reveal(job.donePath)"
-            >
-              {{ t('archive.reveal') }}
-            </BaseButton>
-            <BaseButton
-              v-else
               variant="primary"
-              :disabled="info.encrypted && !archivePassword"
+              :disabled="job.busy"
+              :loading="job.busy && !jobDone"
+              :icon="job.busy && jobDone ? 'i-ri-check-line' : undefined"
               @click.stop="runExtract"
             >
-              {{ t('archive.extract') }}
+              {{ job.busy ? jobLabel : t('archive.extract') }}
             </BaseButton>
           </div>
         </template>
@@ -121,16 +126,6 @@
             }}</BaseButton>
           </div>
         </template>
-        <!-- 加密包密码行尾：内联输入（回车即解压；解密输入非设置场景，不走弹窗） -->
-        <template #trailing-password>
-          <BaseInput
-            v-model="archivePassword"
-            type="password"
-            class="w-48"
-            :disabled="job.busy"
-            @keydown.enter.stop.prevent="runExtract"
-          />
-        </template>
       </BaseSettingsList>
     </template>
   </div>
@@ -141,6 +136,7 @@ import { computed, ref, watch } from 'vue'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
+import { hideWindow } from '@/utils/tauri'
 import { t } from '@/runtime/i18n'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -206,13 +202,34 @@ function confirmPwd() {
   pwdDialog.value = false
 }
 
-/** 任务状态（无进度条：busy / done / error 三态 + 按钮 loading 文案） */
-const job = ref({ busy: false, error: '', done: false, donePath: '' })
+// ── 解压密码弹窗（加密包点击解压时弹此输入；确定即直接解压） ──
+const extractPwdDialog = ref(false)
+const extractPwdDraft = ref('')
+
+function confirmExtractPwd() {
+  if (!extractPwdDraft.value) return
+  archivePassword.value = extractPwdDraft.value
+  extractPwdDialog.value = false
+  void runExtract()
+}
+
+/** 任务状态（无进度条：busy / error 两态 + 按钮 loading 文案；成功即关窗无 done 态） */
+const job = ref({ busy: false, error: '' })
+/** 任务进度百分比（null = 引擎不产出进度——bsdtar / 7z / rar 无分母；仅按钮文案内呈现） */
+const jobPercent = ref<number | null>(null)
+/** 任务完成落位标志（100% → 完成文案 → 关窗三段收尾的中段） */
+const jobDone = ref(false)
 /** 任务代次：新输入 / 复位时递增，旧任务的迟到 Channel 事件按代次丢弃 */
 let jobSeq = 0
-const jobLabel = computed(() =>
-  mode.value === 'compress' ? t('archive.compressing') : t('archive.extracting'),
-)
+const jobLabel = computed(() => {
+  if (jobDone.value)
+    return mode.value === 'compress'
+      ? t('archive.compressDoneLabel')
+      : t('archive.extractDoneLabel')
+  const base = mode.value === 'compress' ? t('archive.compressing') : t('archive.extracting')
+  return jobPercent.value != null ? `${base} ${Math.round(jobPercent.value)}%` : base
+})
+/** busy 态按钮图标：进行中 spinner（loading prop）；完成落位对勾（icon） */
 
 /** 解压输出目录：null = 压缩包同目录（默认），可另选可重置（会话级不落盘） */
 const destDir = ref<string | null>(null)
@@ -349,14 +366,6 @@ const extractItems = computed<SettingItemT[]>(() => {
       group,
     },
   ]
-  if (info.value.encrypted) {
-    list.push({
-      id: 'password',
-      title: `${t('archive.password')} · AES-256`,
-      type: 'custom',
-      group,
-    })
-  }
   list.push({
     id: 'browse',
     title: t('archive.browseFiles'),
@@ -476,17 +485,39 @@ async function loadArchive(path: string) {
 
 function onEvent(ev: ArchiveEvent, seq: number) {
   if (seq !== jobSeq) return
-  if (ev.type === 'done') {
-    job.value.busy = false
-    job.value.done = true
-    job.value.donePath = ev.outputPath
+  // done 不在此处理：busy 保持到 finishJob 收尾（100% → 完成文案 → 关窗）结束
+  if (ev.type === 'progress') {
+    jobPercent.value = ev.percent
   } else if (ev.type === 'error') {
     job.value.busy = false
     job.value.error = ev.message === '已取消' ? '' : ev.message
+    // 密码类失败清空会话密码：下次解压重新弹窗输入
+    if (ev.message.includes('密码')) archivePassword.value = ''
     if (ev.message === '已取消') appStore.showStatus(t('archive.cancelled'))
     else appStore.showStatus(ev.message, { kind: 'error' })
   }
   // progress 事件忽略（无进度条设计）
+}
+
+/** 成功收尾三段：进度落 100% → 按钮切「完成」稍驻 → 打开/聚焦目标访达窗口并隐藏主窗
+ *  （toast 为独立原生浮窗，主窗隐藏后继续展示至到期）。seq 守卫：中途新输入/复位即中止。 */
+async function finishJob(outputPath: string, seq: number) {
+  jobPercent.value = 100
+  await sleep(300)
+  if (seq !== jobSeq) return
+  jobDone.value = true
+  await sleep(600)
+  if (seq !== jobSeq) return
+  await invoke(CMD.revealInFinder, { path: outputPath }).catch(() => {})
+  hideWindow()
+  // 窗口已隐藏，静默复位按钮状态供下次进入
+  job.value = { busy: false, error: '' }
+  jobPercent.value = null
+  jobDone.value = false
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
 }
 
 async function runCompress() {
@@ -498,7 +529,8 @@ async function runCompress() {
   }
   const name = normalizeOutputName(outputName.value.trim(), format.value)
   outputName.value = name
-  job.value = { busy: true, error: '', done: false, donePath: '' }
+  job.value = { busy: true, error: '' }
+  jobPercent.value = null
   const seq = ++jobSeq
   const channel = new Channel<ArchiveEvent>()
   channel.onmessage = (ev) => onEvent(ev, seq)
@@ -522,6 +554,7 @@ async function runCompress() {
         size: formatBytes(result.sizeBytes),
       })}${result.skippedJunk ? ` · ${t('archive.junkSkipped', { n: result.skippedJunk })}` : ''}`,
     )
+    await finishJob(result.outputPath, seq)
   } catch (e) {
     if (seq !== jobSeq) return
     job.value.busy = false
@@ -532,10 +565,17 @@ async function runCompress() {
 
 async function runExtract() {
   if (job.value.busy || !info.value) return
+  // 加密包且未输过密码：弹窗输入，确定后经 confirmExtractPwd 续跑本函数直接解压
+  if (info.value.encrypted && !archivePassword.value) {
+    extractPwdDraft.value = ''
+    extractPwdDialog.value = true
+    return
+  }
   // 默认压缩包同目录；destDir 为用户显式另选（可重置回同目录）
   const path = info.value.path
   const dest = destDir.value ?? path.slice(0, path.lastIndexOf('/'))
-  job.value = { busy: true, error: '', done: false, donePath: '' }
+  job.value = { busy: true, error: '' }
+  jobPercent.value = null
   const seq = ++jobSeq
   const channel = new Channel<ArchiveEvent>()
   channel.onmessage = (ev) => onEvent(ev, seq)
@@ -555,19 +595,20 @@ async function runExtract() {
         result.skippedUnsafe ? ` · ${t('archive.skippedUnsafe', { n: result.skippedUnsafe })}` : ''
       }`,
     )
+    await finishJob(result.outputDir, seq)
   } catch (e) {
     if (seq !== jobSeq) return
     job.value.busy = false
     job.value.error = String(e) === '已取消' ? '' : String(e)
+    // 密码类失败清空会话密码：下次解压重新弹窗输入
+    if (String(e).includes('密码')) archivePassword.value = ''
   }
 }
 
-/** 解压表单行回车：压缩包行 = 解压（busy/done/缺密码守卫与按钮一致）；目录行 = 另选目录 */
+/** 解压表单行回车：压缩包行 = 解压（busy 守卫与按钮一致）；目录行 = 另选目录 */
 function onExtractExecute(item: SettingItemT) {
   if (item.id === 'archive') {
-    if (!job.value.busy && !job.value.done && !(info.value?.encrypted && !archivePassword.value)) {
-      void runExtract()
-    }
+    if (!job.value.busy) void runExtract()
   } else if (item.id === 'destDir' && !job.value.busy) void pickDestDir()
 }
 
@@ -585,8 +626,8 @@ function onCompressExecute(item: SettingItemT) {
     openPwdDialog()
     return
   }
-  // 源行回车 = 执行主按钮动作（与按钮组一致：busy/done/空名守卫）
-  if (item.id === 'source' && !job.value.busy && !job.value.done && outputName.value.trim()) {
+  // 源行回车 = 执行主按钮动作（与按钮组一致：busy/空名守卫）
+  if (item.id === 'source' && !job.value.busy && outputName.value.trim()) {
     void runCompress()
   }
 }
@@ -595,15 +636,12 @@ async function cancelJob() {
   await invoke(CMD.archiveCancel)
 }
 
-function reveal(path: string) {
-  if (path) void invoke(CMD.revealInFinder, { path })
-}
-
 function reset() {
   // 新输入 / 复位：作废旧任务代次并取消仍在跑的任务，迟到的 Channel 事件不再污染新状态
   jobSeq++
   if (job.value.busy) void invoke(CMD.archiveCancel).catch(() => {})
   pwdDialog.value = false
+  extractPwdDialog.value = false
   // 格式/过滤开关重置默认（不落盘的会话级选择，见声明处注释）
   format.value = 'zip'
   junkFilter.value = true
@@ -614,6 +652,8 @@ function reset() {
   password.value = ''
   archivePassword.value = ''
   destDir.value = null
-  job.value = { busy: false, error: '', done: false, donePath: '' }
+  job.value = { busy: false, error: '' }
+  jobPercent.value = null
+  jobDone.value = false
 }
 </script>
