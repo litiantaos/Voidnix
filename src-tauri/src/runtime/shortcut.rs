@@ -3,9 +3,11 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, LazyLock, Mutex};
 use tauri::Emitter;
-use tauri_plugin_global_shortcut::{
-    GlobalShortcutExt, Modifiers, Shortcut, ShortcutEvent, ShortcutState,
-};
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
+// Modifiers 仅 dev 叠加 Shift 的 debug-only 分支使用（release 构建会报 unused import）
+#[cfg(debug_assertions)]
+use tauri_plugin_global_shortcut::Modifiers;
+use tauri_plugin_global_shortcut::{Shortcut, ShortcutEvent, ShortcutState};
 
 use crate::runtime::lock_or_recover;
 
