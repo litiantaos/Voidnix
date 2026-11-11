@@ -86,6 +86,9 @@ export default defineConfig({
     // ui-ctrl：壳（尺寸/字号）；面由 soft-chip 或 soft-surface / ui-field 另挂
     'ui-ctrl':
       'h-7 px-3 radius-ctrl outline-none text-xs font-medium text-primary transition-[background-color,box-shadow,border-color] duration-150 ease-out select-none',
+    // ui-btn-inline：BaseButton size=inline（表单内联图标钮）——! 覆盖 ui-ctrl 壳的
+    // h-7/px-3/text-primary（裸类并存胜负取决于生成顺序，勿去 !）；shrink 由基类 flex-none 兜底
+    'ui-btn-inline': '!h-auto !px-1 !text-muted',
     // 大输入：soft-surface + theme .ui-field 描边/聚焦
     'ui-field':
       'radius-ctrl outline-none text-sm font-medium soft-surface text-primary select-none',

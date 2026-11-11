@@ -73,10 +73,13 @@
                 :class="activeExtension.meta.icon"
                 aria-hidden="true"
               />
+              <!-- 图标尺寸逃逸口：!text-xs 生成 !important 确定覆盖 BaseButton 默认 text-sm
+                   （裸 text-xs 与组件类同 specificity，胜负取决于 UnoCSS 生成顺序，勿用） -->
               <BaseButton
                 class="ext-tag-close flex-center inset-0 absolute !p-0 !rounded-full !h-4 !w-4"
                 :tabindex="isTagHovered ? undefined : -1"
-                icon="i-ri-close-line text-xs text-secondary"
+                icon="i-ri-close-line !text-xs text-secondary"
+                :title="t('common.close')"
                 @click="onTagClose"
               />
             </span>

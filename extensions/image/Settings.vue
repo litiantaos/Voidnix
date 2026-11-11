@@ -13,7 +13,7 @@
             <BaseButton
               variant="ghost"
               :icon="tokenVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-              class="!text-muted !px-1 !shrink-0 !h-auto"
+              size="inline"
               @click.stop="tokenVisible = !tokenVisible"
             />
           </template>

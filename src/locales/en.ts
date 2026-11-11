@@ -12,6 +12,7 @@ export const enMessages: Msgs = {
   'common.close': { en: 'Close' },
   'common.save': { en: 'Save' },
   'common.delete': { en: 'Delete' },
+  'common.add': { en: 'Add' },
   'common.loading': { en: 'Loading' },
   'common.goConfigure': { en: 'Configure' },
   // 拖拽指引浮窗两行说明（独立小窗悬浮于设置窗口底部外侧，三个权限授权会话通用；

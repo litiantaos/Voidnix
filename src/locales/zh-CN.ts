@@ -12,6 +12,7 @@ export const zhCNMessages: Msgs = {
   'common.close': { 'zh-CN': '关闭' },
   'common.save': { 'zh-CN': '保存' },
   'common.delete': { 'zh-CN': '删除' },
+  'common.add': { 'zh-CN': '添加' },
   'common.loading': { 'zh-CN': '加载中' },
   // 需 API 配置的扩展未就绪空态（BaseSetupState）的主按钮，跳转目标由各扩展决定
   'common.goConfigure': { 'zh-CN': '去配置' },

@@ -132,9 +132,15 @@
                 v-if="i > 0"
                 class="text-danger"
                 icon="i-ri-close-line"
+                :title="t('common.delete')"
                 @click="providerForm.models.splice(i, 1)"
               />
-              <BaseButton v-else icon="i-ri-add-line" @click="providerForm.models.push('')" />
+              <BaseButton
+                v-else
+                icon="i-ri-add-line"
+                :title="t('common.add')"
+                @click="providerForm.models.push('')"
+              />
             </div>
           </div>
         </div>
@@ -158,7 +164,7 @@
                 <BaseButton
                   variant="ghost"
                   :icon="createKeyVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-                  class="!text-muted !px-1 !shrink-0 !h-auto"
+                  size="inline"
                   @click.stop="createKeyVisible = !createKeyVisible"
                 />
               </template>
@@ -205,7 +211,7 @@
               <BaseButton
                 variant="ghost"
                 :icon="keyEditVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-                class="!text-muted !px-1 !shrink-0 !h-auto"
+                size="inline"
                 @click.stop="keyEditVisible = !keyEditVisible"
               />
             </template>

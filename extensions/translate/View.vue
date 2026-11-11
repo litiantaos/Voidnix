@@ -46,7 +46,7 @@
                 variant="ghost"
                 :icon="speakingIndex === index ? 'i-ri-volume-up-fill' : 'i-ri-volume-up-line'"
                 :active="speakingIndex === index"
-                class="!text-muted !px-1 !shrink-0 !h-auto"
+                size="inline"
                 :title="t('translate.speak')"
                 @click.stop="toggleSpeak(item, index)"
               />

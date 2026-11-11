@@ -25,7 +25,7 @@
               <BaseButton
                 variant="ghost"
                 :icon="passwordVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-                class="!text-muted !px-1 !shrink-0 !h-auto"
+                size="inline"
                 @click.stop="passwordVisible = !passwordVisible"
               />
             </template>
@@ -42,7 +42,7 @@
               <BaseButton
                 variant="ghost"
                 :icon="passwordVisible ? 'i-ri-eye-off-line' : 'i-ri-eye-line'"
-                class="!text-muted !px-1 !shrink-0 !h-auto"
+                size="inline"
                 @click.stop="passwordVisible = !passwordVisible"
               />
             </template>
