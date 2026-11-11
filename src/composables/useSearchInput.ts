@@ -1,7 +1,7 @@
 import { ref, watch, type Ref, type ComputedRef, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useTauriListener } from '@/composables/useTauriListener'
-import { searchEngine, getGroupKey } from '@/runtime/search-engine'
+import { searchEngine, getGroupKey, groupRank } from '@/runtime/search-engine'
 import { getAllExtensions } from '@/runtime/extension-registry'
 import { scoreExtensionEntry } from '@/utils/fuzzy'
 import { resolveLocalized, t } from '@/runtime/i18n'
@@ -37,6 +37,10 @@ function selectAllWithoutAnimation(el: HTMLInputElement) {
  *  本次搜索的排序已定，usage/recency 加权变化不改当前会话排序（打开条目触发的
  *  increment_use_count 升位在下次输入的新搜索生效），唤起时零重排、选中零跳位。
  *  新条目插到同组末尾（组头按相邻组值渲染，天然连续），无同组项追加尾部。
+ *  prev 缺席的组不尾插而是按 GROUP_ORDER 定位插入：组晚到说明此前的列表建立在
+ *  残缺数据上（冷启动应用缓存未就绪时首个搜索被 abort/超时，列表只剩提示行），
+ *  prev 顺序不可作为组间序依据，尾插会把应用组拼到扩展组（提示行）之后——
+ *  「扩展组显示在应用组上方」的根因。
  *  dropMissing：final 精确对齐（next 缺席 = 已消失，移除）；增量 partial 的缺席
  *  = 未到达，prev 条目保留（防子集 partial 收缩列表引发闪烁）。 */
 function stableMerge(
@@ -60,7 +64,17 @@ function stableMerge(
         break
       }
     }
-    if (at < 0) at = merged.length
+    if (at < 0) {
+      // 新组：插到首个更低优先级组之前（无则尾部），保持 GROUP_ORDER 规范序
+      const rank = groupRank(group)
+      at = merged.length
+      for (let i = 0; i < merged.length; i++) {
+        if (groupRank(getGroupKey(merged[i])) > rank) {
+          at = i
+          break
+        }
+      }
+    }
     merged.splice(at, 0, item)
     known.add(key(item))
   }
@@ -76,6 +90,9 @@ export function useSearchInput(opts: SearchInputOptions) {
 
   let searchTimeout: ReturnType<typeof setTimeout> | null = null
   let currentSearchId = 0
+  // 默认列表序脏标记：app-cache-updated（元数据代际变更）置位，下次默认列表刷新
+  // 落规范序重新 settle（见 loadDefaultResults）。图标事件不置位——内容未变。
+  let defaultOrderDirty = false
   // 进入扩展前保存工具列表选中位置，退出回工具列表时恢复
   let savedToolIndex = 0
 
@@ -140,6 +157,8 @@ export function useSearchInput(opts: SearchInputOptions) {
 
   useTauriListener('app-cache-updated', () => {
     if (!appStore.activeExtId && !appStore.searchQuery) {
+      // 会话序 settle 在旧元数据上（冷启动 fs 兜底零分序等），代际变更后重新 settle
+      defaultOrderDirty = true
       loadDefaultResults()
     }
   })
@@ -235,7 +254,12 @@ export function useSearchInput(opts: SearchInputOptions) {
     // 尾部固定提示行：随每次默认列表刷新（增量与最终）追加
     const withHint = (list: SearchResult[]) => [...list, toolsHintResult()]
     const apply = (list: SearchResult[], final: boolean) => {
-      const applied = resetSelection ? list : stableMerge(prevList, list, final)
+      // app-cache-updated（Rust 元数据代际变更：冷启动就绪/Spotlight 自愈/目录变更重建）
+      // 置脏：默认列表的会话序 settle 在旧数据上，代际变更即失效，直接落 list 规范序
+      // 重新 settle（分数/use_count 变化不改 id 集合，stableMerge 不会自愈残缺序）；
+      // 干净的同集刷新（唤起/图标就绪）仍走稳定合并——唤起零重排零跳位语义不变。
+      const applied =
+        resetSelection || defaultOrderDirty ? list : stableMerge(prevList, list, final)
       results.value = applied
       applyListWithSelection(applied, prevSel)
     }
@@ -243,7 +267,10 @@ export function useSearchInput(opts: SearchInputOptions) {
       const defaultResults = await searchEngine.search('', (partial) => {
         if (searchId === currentSearchId) apply(withHint(partial), false)
       })
-      if (searchId === currentSearchId) apply(withHint(defaultResults), true)
+      if (searchId === currentSearchId) {
+        apply(withHint(defaultResults), true)
+        defaultOrderDirty = false
+      }
     } catch {
       if (searchId === currentSearchId) {
         // 后台刷新失败保留现有列表（不闪空态）；转移入口（resetSelection）或本就为空

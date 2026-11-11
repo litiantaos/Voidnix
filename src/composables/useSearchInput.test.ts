@@ -43,6 +43,7 @@ import { useSearchInput } from './useSearchInput'
 import { useAppStore } from '@/stores/app'
 import { SEARCH } from '@/runtime/constants'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import type { SearchResult } from '@/runtime/types'
 
 const appResult: SearchResult = {
@@ -441,6 +442,62 @@ describe('useSearchInput 窗口重新获焦重跑', () => {
     await wrapper.vm.api.loadDefaultResults(true)
     await flushPromises()
     expect(results.value.map((r) => r.id)).toEqual([SEARCH.TOOLS_HINT_ID])
+  })
+
+  it('冷启动竞态：首个搜索中断只剩提示行时，后台刷新的应用组落规范位（不尾插到提示行之后）', async () => {
+    const appStore = useAppStore()
+    appStore.setSearchQuery('')
+    // 首个默认列表搜索被 abort/超时（Rust 缓存就绪事件的刷新会 abort 先行搜索）：
+    // 列表退化为仅提示行
+    searchMock.mockRejectedValue(new Error('aborted'))
+    const { wrapper, results } = makeWrapper()
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual([SEARCH.TOOLS_HINT_ID])
+
+    // app-cache-updated 触发的后台刷新（resetSelection=false）带回完整应用组：
+    // 应用组须按 GROUP_ORDER 落在提示行（扩展组）之前——stableMerge 尾插会让
+    // 「浏览全部工具」渲染在应用组上方（相邻组头渲染，组序错乱）
+    searchMock.mockResolvedValue([appResult])
+    await wrapper.vm.api.loadDefaultResults()
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(['app-1', SEARCH.TOOLS_HINT_ID])
+  })
+
+  it('app-cache-updated 代际置脏：同 id 集合分数变化也重新落规范序（stableMerge 不自愈残缺序）', async () => {
+    const appStore = useAppStore()
+    appStore.setSearchQuery('')
+    const appA: SearchResult = {
+      id: 'app-a',
+      title: 'A',
+      extId: 'search',
+      data: { kind: 'application' },
+    }
+    const appB: SearchResult = {
+      id: 'app-b',
+      title: 'B',
+      extId: 'search',
+      data: { kind: 'application' },
+    }
+    // 冷启动 fs 兜底零分序：B 在前
+    searchMock.mockResolvedValue([appB, appA])
+    const { results } = makeWrapper()
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(['app-b', 'app-a', SEARCH.TOOLS_HINT_ID])
+
+    // 干净的同集刷新（唤起/图标就绪）：分数已变（A 应升位）但代际未变——稳定合并保序
+    searchMock.mockResolvedValue([appA, appB])
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(['app-b', 'app-a', SEARCH.TOOLS_HINT_ID])
+
+    // 元数据代际变更（Spotlight 自愈/缓存重建，id 集合不变）：重新 settle 规范序
+    const cacheHandler = vi
+      .mocked(listen)
+      .mock.calls.find(([event]) => event === 'app-cache-updated')?.[1]
+    expect(cacheHandler).toBeTruthy()
+    cacheHandler!({ payload: undefined } as never)
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(['app-a', 'app-b', SEARCH.TOOLS_HINT_ID])
   })
 })
 

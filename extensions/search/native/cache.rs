@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tauri::Emitter;
 use tokio::sync::Mutex;
 
-use super::app_discovery::collect_apps_with_metadata;
+use super::app_discovery::{collect_apps_with_metadata, mdfind_app_count};
 use super::icon::get_app_icon;
 use super::pinyin;
 use super::types::{CachedApp, CachedFile, APP_CACHE, APP_HANDLE, FILE_CACHE, SEARCH_SESSION};
@@ -67,16 +67,25 @@ const FILE_MAX_ENTRIES: usize = 50_000;
 pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
     log::info!("Starting app cache initialization...");
 
-    let app_metas = match tokio::task::spawn_blocking(collect_apps_with_metadata).await {
-        Ok(metas) => metas,
-        Err(e) => {
-            log::error!(
-                "collect_apps_with_metadata panicked or was cancelled: {:?}",
-                e
-            );
-            Vec::new()
-        }
-    };
+    let (app_metas, mdfind_count) =
+        match tokio::task::spawn_blocking(collect_apps_with_metadata).await {
+            Ok(metas) => metas,
+            Err(e) => {
+                log::error!(
+                    "collect_apps_with_metadata panicked or was cancelled: {:?}",
+                    e
+                );
+                (Vec::new(), 0)
+            }
+        };
+
+    // Spotlight 未就绪（开机后首次查询 mdfind 返回空，条目为 fs 兜底、use_count 全 0）：
+    // 调度退避重试，mdfind 恢复后重建缓存恢复真实频次序（否则零分乱序 + 系统组件
+    // 混入将伴随整个进程生命周期——fs watcher 只监听目录变更，不会自愈）。
+    if mdfind_count == 0 {
+        log::warn!("mdfind returned no apps (Spotlight not ready?); scheduling self-heal retry");
+        schedule_mdfind_retry();
+    }
 
     let session_deltas = SEARCH_SESSION.take_deltas();
 
@@ -482,6 +491,40 @@ pub(super) async fn get_cached_files() -> Arc<Vec<CachedFile>> {
 
 pub async fn prewarm_cache() {
     let (_apps, _files) = tokio::join!(get_cached_apps(), get_cached_files());
+}
+
+/// Spotlight 自愈重试单飞守卫：并发 init（首个 get_cached_apps 与 fs watcher 重建重叠）
+/// 只允许一条重试链，防重复重建。
+static MDFIND_RETRY_RUNNING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// mdfind 空结果自愈：每 20s 探测（最多 5 次），Spotlight 恢复后重建 app 缓存——
+/// metadata 先落缓存（use_count/last_used 恢复真实频次序）并 emit app-cache-updated
+/// 驱动前端刷新；图标由 init_app_cache 自身的后台任务随后补齐（app-icons-updated）。
+fn schedule_mdfind_retry() {
+    if MDFIND_RETRY_RUNNING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        use tokio::time::sleep;
+        for _ in 0..5 {
+            sleep(std::time::Duration::from_secs(20)).await;
+            let count = tokio::task::spawn_blocking(mdfind_app_count)
+                .await
+                .unwrap_or_default();
+            if count == 0 {
+                continue;
+            }
+            log::info!("Spotlight recovered ({} apps), rebuilding app cache", count);
+            let apps = init_app_cache().await;
+            *APP_CACHE.write().await = Some(apps);
+            if let Some(app) = APP_HANDLE.get() {
+                let _ = app.emit("app-cache-updated", ());
+            }
+            break;
+        }
+        MDFIND_RETRY_RUNNING.store(false, Ordering::SeqCst);
+    });
 }
 
 pub(super) async fn get_cached_apps() -> Arc<Vec<CachedApp>> {

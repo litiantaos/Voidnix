@@ -166,7 +166,28 @@ pub(super) fn parse_mdfind_attr_output(stdout: &str) -> Vec<(String, String, Opt
     results
 }
 
-pub(super) fn collect_apps_with_metadata() -> Vec<(String, String, Option<String>, u32)> {
+/// 轻量探测：Spotlight 是否已就绪（mdfind 能否返回应用条目）。
+/// 冷启动自愈重试消费（见 cache.rs retry_mdfind_rebuild），不解析属性、只数命中数。
+pub(super) fn mdfind_app_count() -> usize {
+    let mut command = std::process::Command::new("mdfind");
+    command.arg("kMDItemContentType == 'com.apple.application-bundle'");
+    command.arg("-onlyin").arg("/Applications");
+    match command.output() {
+        Ok(output) => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|l| l.trim().starts_with('/'))
+            .count(),
+        Err(_) => 0,
+    }
+}
+
+/// 应用元数据条目：(path, name, last_used, use_count)
+pub(super) type AppMeta = (String, String, Option<String>, u32);
+
+/// 收集全量应用元数据。返回 (条目, mdfind 命中数)：mdfind_count == 0 表示 Spotlight
+/// 未就绪（开机后首次查询等），条目为 fs 兜底扫描产出（use_count 全 0、含系统
+/// CoreServices 组件），调用方据此调度自愈重试（mdfind 恢复后重建缓存恢复真实频次序）。
+pub(super) fn collect_apps_with_metadata() -> (Vec<AppMeta>, usize) {
     let search_dirs = [
         "/Applications",
         "/System/Applications",
@@ -196,6 +217,7 @@ pub(super) fn collect_apps_with_metadata() -> Vec<(String, String, Option<String
     } else {
         Vec::new()
     };
+    let mdfind_count = results.len();
 
     let existing: std::collections::HashSet<String> =
         results.iter().map(|(p, _, _, _)| p.clone()).collect();
@@ -226,5 +248,5 @@ pub(super) fn collect_apps_with_metadata() -> Vec<(String, String, Option<String
         results.push((finder_path, name, None, 0));
     }
 
-    results
+    (results, mdfind_count)
 }

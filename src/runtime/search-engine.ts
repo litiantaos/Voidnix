@@ -21,6 +21,12 @@ const GROUP_INDEX: Record<string, number> = SEARCH.GROUP_ORDER.reduce(
   {} as Record<string, number>,
 )
 
+/** 组间序 rank：GROUP_ORDER 内为下标，未知组 99 垫底。
+ *  stableMerge 新组插入定位消费（prev 缺席的组不能尾插，见其注释）。 */
+export function groupRank(key: string): number {
+  return GROUP_INDEX[key] ?? 99
+}
+
 // 打分后中间结构：finalScore 一次预算，suppress 判断 + groupAndSort 复用（消除二次 scoreFields）
 // matched = 应显示：空 query 需 finalScore>0（boost>0，默认列表过滤 time/uuid 等 boost=0 即时答案）；
 // 非空 query 需 fuzzy>0（查找型结果必须命中）。非 matched 时仅 extension 类即时答案可靠 finalScore>0 穿透
