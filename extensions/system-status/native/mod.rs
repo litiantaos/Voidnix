@@ -139,12 +139,11 @@ pub async fn system_static_info(state: State<'_, SystemState>) -> Result<SystemS
         let model = sysctl_hw_model().unwrap_or_default();
         let cpu = sys.cpus().first();
         let cpu_model = cpu.map(|c| c.brand().to_string()).unwrap_or_default();
-        let cpu_cores = System::physical_core_count().unwrap_or_else(|| sys.cpus().len());
+        let cpu_cores = System::physical_core_count().unwrap_or_else(|_| sys.cpus().len());
 
         // 磁盘去重：APFS 下同名卷 + /System/Volumes/ 系统数据卷会造成重复
         let mut seen: HashSet<String> = HashSet::new();
         let disks_info = disks
-            .list()
             .iter()
             .filter_map(|d| {
                 let name = d.name().to_string_lossy().into_owned();
@@ -227,7 +226,7 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
     sys.refresh_processes_specifics(ProcessesToUpdate::All, true, process_refresh_kind());
 
     let cpu_usage = sys.global_cpu_usage();
-    let cpu_cores_usage = sys.cpus().iter().map(|c| c.cpu_usage()).collect();
+    let cpu_cores_usage = sys.cpus().iter().map(|c| c.usage()).collect();
 
     // CPU 温度：跨平台传感器选择（Intel 含 cpu 标签 / Apple Silicon PMU tdie 族）
     let cpu_temp = cpu_temp_of(&state);
@@ -238,7 +237,6 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
         disks.refresh(false);
         let mut seen: HashSet<String> = HashSet::new();
         disks
-            .list()
             .iter()
             .filter_map(|d| {
                 let name = d.name().to_string_lossy().into_owned();
@@ -266,8 +264,8 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
     let (net_up, net_down) = {
         let mut nets = crate::runtime::lock_or_recover(&state.networks);
         nets.refresh(true);
-        let cur_rx: u64 = nets.list().values().map(|n| n.total_received()).sum();
-        let cur_tx: u64 = nets.list().values().map(|n| n.total_transmitted()).sum();
+        let cur_rx: u64 = nets.values().map(|n| n.total_received()).sum();
+        let cur_tx: u64 = nets.values().map(|n| n.total_transmitted()).sum();
         let mut stats = crate::runtime::lock_or_recover(&state.net_stats);
         let (up, down) = if let Some(last_t) = stats.last_time {
             let elapsed = last_t.elapsed().as_secs_f64().max(0.1);
@@ -301,7 +299,7 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
     });
     processes.truncate(3);
 
-    let load = System::load_average();
+    let load = System::load_average().unwrap_or_default();
     let (thermal, low_power_mode) = read_thermal();
 
     Ok(SystemSnapshot {
@@ -323,7 +321,7 @@ pub async fn system_snapshot(state: State<'_, SystemState>) -> Result<SystemSnap
         net_up,
         net_down,
         local_ip: local_ip(),
-        uptime: System::uptime(),
+        uptime: System::uptime().unwrap_or_default(),
         processes,
     })
 }
@@ -756,11 +754,17 @@ impl Extension for SystemStatusExtension {
         // 下沉后台 spawn_blocking，不阻塞 bootstrap join_all。
         // Disks/Networks/Components::new_with_refreshed_list：sysinfo 的 new() 返回空列表，
         // refresh(false) 只更新已有条目（空列表上为 no-op，接口增删也捕获不到）。
+        // 0.40 起构造器统一返回 Result（macOS 上不会失败），失败即初始化缺陷，直接 panic 暴露。
+        let sys = System::new().expect("sysinfo System 初始化失败");
+        let disks = Disks::new_with_refreshed_list().expect("sysinfo Disks 初始化失败");
+        let networks = Networks::new_with_refreshed_list().expect("sysinfo Networks 初始化失败");
+        let components =
+            Components::new_with_refreshed_list().expect("sysinfo Components 初始化失败");
         app.manage(SystemState {
-            sys: Mutex::new(System::new()),
-            disks: Mutex::new(Disks::new_with_refreshed_list()),
-            networks: Mutex::new(Networks::new_with_refreshed_list()),
-            components: Mutex::new(Components::new_with_refreshed_list()),
+            sys: Mutex::new(sys),
+            disks: Mutex::new(disks),
+            networks: Mutex::new(networks),
+            components: Mutex::new(components),
             net_stats: Mutex::new(NetStats {
                 last_time: None,
                 last_rx: 0,

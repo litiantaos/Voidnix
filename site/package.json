@@ -14,9 +14,9 @@
     "generate:demo": "node scripts/capture-demo.mjs"
   },
   "dependencies": {
-    "astro": "^5.13.0"
+    "astro": "^7.4.11"
   },
   "devDependencies": {
-    "playwright": "1.62.1"
+    "playwright": "1.65.0"
   }
 }

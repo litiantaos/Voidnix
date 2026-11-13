@@ -29,7 +29,7 @@ native/
 
 ## 安全边界
 
-- **Zip-Slip**：crate 路径 zip 用 `enclosed_name()`（绝对路径 / `..` → 拒绝计数）；tar 自实现 `sanitize_rel`（拒 ParentDir/RootDir）；符号链接目标必须为包内相对路径（绝对或 `..` 一律拒）。恶意条目不中断任务，`skippedUnsafe` 计数回传 UI 提示
+- **Zip-Slip**：zip / tar crate 路径统一用自实现 `sanitize_rel`（拒 ParentDir / RootDir / 绝对路径）判定；zip 9 起 `enclosed_name()` 只剥离绝对路径前缀而非拒绝，不再作为安全门。符号链接目标必须为包内相对路径（绝对或 `..` 一律拒）。恶意条目不中断任务，`skippedUnsafe` 计数回传 UI 提示（列表层以原始名展示逃逸条目）
 - **bsdtar 选项注入**：条目名一律经 `--` 操作数传递（`-` 开头的恶意条目名不可能被解析为 tar 选项）；libarchive 自身默认拒绝绝对路径与 `..` 逃逸
 - **bsdtar 名称转义**：不设 `LC_ALL=C`（C locale 会把中文文件名转义为 `\345...` 八进制），列表层剥 `./` 前缀归一
 - **TCC**：输出目录恒经 `pick_directory`（用户选择即授权）或设置页固定目录；压缩输出路径在 Rust 侧防覆盖递增，不覆盖既有文件

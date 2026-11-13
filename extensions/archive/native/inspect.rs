@@ -1,5 +1,6 @@
 //! 归档内容列表：crate 直读（zip/tar.gz/7z，含精确大小）或系统 bsdtar（纯文件名，大小未知）。
 
+use super::extract::sanitize_rel;
 use super::format::{ArchiveFormat, Engine};
 use serde::Serialize;
 use std::fs::File;
@@ -68,11 +69,14 @@ fn inspect_native(path: &Path, format: ArchiveFormat) -> Result<ArchiveInfo, Str
                     break;
                 }
                 let entry = zip.by_index_raw(i).map_err(|e| e.to_string())?;
-                // enclosed_name 为 None = 绝对路径 / `..` 逃逸（恶意包），列表层跳过、解压层拦截
-                let name = entry
-                    .enclosed_name()
+                // 逃逸条目以原始名展示（zip 9 的 enclosed_name 会剥离绝对前缀而非拒绝，判定收归 sanitize_rel）
+                let raw_name = entry
+                    .name()
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|e| e.to_string());
+                let name = sanitize_rel(&raw_name)
                     .map(|p| p.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| entry.name().to_string());
+                    .unwrap_or(raw_name);
                 if entry.encrypted() {
                     info.encrypted = true;
                 }

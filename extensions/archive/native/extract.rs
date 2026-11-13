@@ -162,6 +162,7 @@ pub(crate) fn extract_zip(
         .as_ref()
         .map(|sel| {
             zip.file_names()
+                .filter_map(|n| n.ok())
                 .filter(|n| sel.iter().any(|s| n.starts_with(s.as_str())))
                 .count() as u64
         })
@@ -189,12 +190,13 @@ pub(crate) fn extract_zip(
                     return Err(msg);
                 }
             };
-        let name = entry.name().to_string();
+        let name = entry.name().map_err(|e| e.to_string())?.to_string();
         if !selected(&req.selected, &name) {
             continue;
         }
-        // enclosed_name：zip crate 层 sanitization（绝对路径 / `..` → None）
-        let Some(rel) = entry.enclosed_name() else {
+        // 路径 sanitization：绝对路径 / `..` 逃逸一律拒绝
+        // （zip 9 的 enclosed_name 会剥离绝对路径前缀而非拒绝，安全判定收归 sanitize_rel）
+        let Some(rel) = sanitize_rel(&name) else {
             result.skipped_unsafe += 1;
             continue;
         };
