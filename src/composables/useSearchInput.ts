@@ -34,8 +34,9 @@ function selectAllWithoutAnimation(el: HTMLInputElement) {
 }
 
 /** 同 query 刷新的稳定合并：内容取 next（新对象/新数据），顺序以 prev 为基——
- *  本次搜索的排序已定，usage/recency 加权变化不改当前会话排序（打开条目触发的
- *  increment_use_count 升位在下次输入的新搜索生效），唤起时零重排、选中零跳位。
+ *  本次搜索的排序已定，外部 usage/recency 加权变化不改当前会话排序；从结果列表打开
+ *  条目触发的本地 usage 升位经 search-usage-updated 置脏，在下一次获焦重跑时才落规范序。
+ *  唤起时（无打开动作）零重排、选中零跳位。
  *  新条目插到同组末尾（组头按相邻组值渲染，天然连续），无同组项追加尾部。
  *  prev 缺席的组不尾插而是按 GROUP_ORDER 定位插入：组晚到说明此前的列表建立在
  *  残缺数据上（冷启动应用缓存未就绪时首个搜索被 abort/超时，列表只剩提示行），
@@ -93,6 +94,10 @@ export function useSearchInput(opts: SearchInputOptions) {
   // 默认列表序脏标记：app-cache-updated（元数据代际变更）置位，下次默认列表刷新
   // 落规范序重新 settle（见 loadDefaultResults）。图标事件不置位——内容未变。
   let defaultOrderDirty = false
+  // 使用记录序脏标记：打开条目或 Spotlight TTL 刷新（Rust emit usage-updated）后置位。
+  // 下次获焦重跑直接落规范序，让频次/近因升位生效；普通显隐刷新仍走稳定合并，
+  // 保持「唤起零重排零跳位」。
+  let usageOrderDirty = false
   // 进入扩展前保存工具列表选中位置，退出回工具列表时恢复
   let savedToolIndex = 0
 
@@ -161,6 +166,14 @@ export function useSearchInput(opts: SearchInputOptions) {
       defaultOrderDirty = true
       loadDefaultResults()
     }
+  })
+
+  // 使用记录变更（打开条目 / Spotlight TTL 刷新）：不立即刷新，只置脏；下次获焦的
+  // 默认列表/同 query 重跑据此落规范序，打开过的条目按新频次前置。
+  useTauriListener('search-usage-updated', () => {
+    usageOrderDirty = true
+    // 会话级 query→结果缓存可能含旧 boost；清掉，避免退回旧 query 时命中旧排序。
+    searchEngine.clearResultCache()
   })
 
   // 图标就绪（后台提取完成）：补全图标后刷新默认列表
@@ -239,8 +252,9 @@ export function useSearchInput(opts: SearchInputOptions) {
     if (!isTauri) return
     const searchId = ++currentSearchId
     // 转移入口（退出扩展/回主页/清空输入）显式归首项、规范序；后台刷新（图标就绪/缓存变更/
-    // 窗口获焦）同 query 稳定合并（旧序为基 + 选中身份跟随），usage/recency 加权变化
-    // 不改当前会话排序，唤起时零重排零跳位。
+    // 窗口获焦）同 query 稳定合并（旧序为基 + 选中身份跟随），外部 usage/recency 变化
+    // 不改当前会话排序；从结果列表打开条目的本地 usage 升位经 search-usage-updated
+    // 置脏，获焦重跑时落规范序。
     if (resetSelection) {
       // 同步落提示行：默认列表异步到达前的窗口期（IPC + 缓存扫描约 10-50ms）内，残留的
       // 上一会话结果仍占据列表且可被回车执行——退出扩展/goHome 后紧接的回车会把残留
@@ -255,11 +269,13 @@ export function useSearchInput(opts: SearchInputOptions) {
     const withHint = (list: SearchResult[]) => [...list, toolsHintResult()]
     const apply = (list: SearchResult[], final: boolean) => {
       // app-cache-updated（Rust 元数据代际变更：冷启动就绪/Spotlight 自愈/目录变更重建）
-      // 置脏：默认列表的会话序 settle 在旧数据上，代际变更即失效，直接落 list 规范序
-      // 重新 settle（分数/use_count 变化不改 id 集合，stableMerge 不会自愈残缺序）；
-      // 干净的同集刷新（唤起/图标就绪）仍走稳定合并——唤起零重排零跳位语义不变。
+      // 与 search-usage-updated（刚打开过条目）置脏：默认列表的会话序 settle 在旧数据上，
+      // 直接落 list 规范序重新 settle（分数/use_count 变化不改 id 集合，stableMerge 不会
+      // 自愈残缺序）；干净的同集刷新（唤起/图标就绪）仍走稳定合并——唤起零重排零跳位语义不变。
       const applied =
-        resetSelection || defaultOrderDirty ? list : stableMerge(prevList, list, final)
+        resetSelection || defaultOrderDirty || usageOrderDirty
+          ? list
+          : stableMerge(prevList, list, final)
       results.value = applied
       applyListWithSelection(applied, prevSel)
     }
@@ -270,6 +286,7 @@ export function useSearchInput(opts: SearchInputOptions) {
       if (searchId === currentSearchId) {
         apply(withHint(defaultResults), true)
         defaultOrderDirty = false
+        usageOrderDirty = false
       }
     } catch {
       if (searchId === currentSearchId) {
@@ -337,10 +354,12 @@ export function useSearchInput(opts: SearchInputOptions) {
    *  先替换为较短中间态（应用缓存先 flush、文件索引后至），文件组瞬间消失再恢复：
    *  列表闪烁 + scrollTop 随内容收缩被 clamp + 选中越界被 clampSelected 归零。
    *  静默重跑仅在最终结果就绪时经 stableMerge 稳定合并一次性应用：内容刷新（新缓存/剪贴板/
-   *  文件）、顺序保持隐藏前列表（query 不变排序不变，usage/recency 升位等下次输入的新搜索
-   *  生效），行 DOM 按 id 复用零重排零跳位；上次结果为空（搜索失败/中断）退回流式 + loading 占位。 */
+   *  文件）、顺序保持隐藏前列表（query 不变排序不变）；从结果列表打开过条目时
+   *  usageOrderDirty 置位，落到规范序让频次/近因升位生效。行 DOM 按 id 复用零重排零跳位；
+   *  上次结果为空（搜索失败/中断）退回流式 + loading 占位。 */
   async function rerunSearch(query: string) {
     if (results.value.length === 0) {
+      searchEngine.clearResultCache()
       runExtensionSearch(query)
       return
     }
@@ -353,7 +372,11 @@ export function useSearchInput(opts: SearchInputOptions) {
     try {
       const res = await searchEngine.search(query)
       if (searchId === currentSearchId) {
-        const merged = stableMerge(prevList, res, true)
+        // 刚打开过条目（usageOrderDirty）：本次重跑落规范序，让频次升位生效；
+        // 普通获焦刷新仍稳定合并（顺序保持隐藏前，零重排零跳位）。
+        const reorder = usageOrderDirty && !appStore.activeExtId
+        const merged = reorder ? res : stableMerge(prevList, res, true)
+        if (reorder) usageOrderDirty = false
         results.value = merged
         applyListWithSelection(merged, prevSel)
       }

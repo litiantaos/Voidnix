@@ -9,34 +9,13 @@ use tokio::sync::Mutex;
 use super::app_discovery::{collect_apps_with_metadata, mdfind_app_count};
 use super::icon::get_app_icon;
 use super::pinyin;
-use super::types::{CachedApp, CachedFile, APP_CACHE, APP_HANDLE, FILE_CACHE, SEARCH_SESSION};
+use super::scan::{scan_dir_names, FILE_SCAN_TCC_DIRS};
+use super::types::{CachedApp, CachedFile, APP_CACHE, APP_HANDLE, FILE_CACHE};
+use super::usage;
 
 static INIT_GUARD: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
 static FILE_INIT_GUARD: std::sync::LazyLock<Mutex<()>> =
     std::sync::LazyLock::new(|| Mutex::new(()));
-
-/// 文件索引扫描目标子目录（家目录下），按 TCC「文件与文件夹」管辖分组：
-/// 受保护目录首次触碰（读目录/FSEvents 监听）会触发系统询问弹窗，
-/// 仅全磁盘权限就绪后才纳入扫描与监听（启动零弹窗，授权后 watcher 自愈补齐）。
-const FILE_SCAN_DIRS: &[&str] = &["Projects", "Code"];
-const FILE_SCAN_TCC_DIRS: &[&str] = &[
-    "Desktop",
-    "Documents",
-    "Downloads",
-    "Pictures",
-    "Music",
-    "Movies",
-];
-
-/// 本进程当前可扫描的目录名集合：不受管辖组恒定，受管辖组随全磁盘权限门控。
-fn scan_dir_names(tcc_allowed: bool) -> impl Iterator<Item = &'static str> {
-    FILE_SCAN_DIRS.iter().copied().chain(
-        FILE_SCAN_TCC_DIRS
-            .iter()
-            .copied()
-            .filter(move |_| tcc_allowed),
-    )
-}
 
 /// 递归扫描时跳过的目录名（依赖/构建产物/缓存，文件数巨大且无搜索价值）
 const FILE_IGNORE_DIRS: &[&str] = &[
@@ -79,20 +58,17 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
             }
         };
 
-    // Spotlight 未就绪（开机后首次查询 mdfind 返回空，条目为 fs 兜底、use_count 全 0）：
-    // 调度退避重试，mdfind 恢复后重建缓存恢复真实频次序（否则零分乱序 + 系统组件
-    // 混入将伴随整个进程生命周期——fs watcher 只监听目录变更，不会自愈）。
+    // Spotlight 未就绪（开机后首次查询 mdfind 返回空，条目为 fs 兜底、含系统组件）：
+    // 调度退避重试，mdfind 恢复后重建缓存恢复完整应用列表（否则兜底条目将伴随整个
+    // 进程生命周期——fs watcher 只监听目录变更，不会自愈）。
     if mdfind_count == 0 {
         log::warn!("mdfind returned no apps (Spotlight not ready?); scheduling self-heal retry");
         schedule_mdfind_retry();
     }
 
-    let session_deltas = SEARCH_SESSION.take_deltas();
-
     let mut apps = Vec::with_capacity(app_metas.len());
 
-    for (path, name, last_used, system_use_count) in app_metas {
-        let delta = session_deltas.get(&path).copied().unwrap_or(0);
+    for (path, name) in app_metas {
         let bundle_mtime = std::fs::metadata(&path)
             .ok()
             .and_then(|m| m.modified().ok());
@@ -101,8 +77,6 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
             name,
             path,
             icon_cache: None,
-            last_used,
-            use_count: std::sync::atomic::AtomicU32::new(system_use_count + delta),
             bundle_mtime,
         });
     }
@@ -134,16 +108,14 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
     let result_clone = result.clone();
     let app_count = result.len();
     tokio::spawn(async move {
-        // 图标提取分块并行：CachedApp 含 AtomicU32 无法 Clone，
-        // 先展平为 plain struct 再分块，各块独立 spawn_blocking 并发提取（利用多核）。
+        // 图标提取分块并行：CachedApp 含大字段，先展平为 plain struct 再分块，
+        // 各块独立 spawn_blocking 并发提取（利用多核）。
         const CHUNK: usize = 20;
 
         #[derive(Clone)]
         struct AppForIcon {
             name: String,
             path: String,
-            last_used: Option<String>,
-            use_count: u32,
             bundle_mtime: Option<std::time::SystemTime>,
             old_icon: Option<String>,
         }
@@ -161,8 +133,6 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
                 AppForIcon {
                     name: a.name.clone(),
                     path: a.path.clone(),
-                    last_used: a.last_used.clone(),
-                    use_count: a.use_count.load(Ordering::Relaxed),
                     bundle_mtime: a.bundle_mtime,
                     old_icon,
                 }
@@ -182,8 +152,6 @@ pub(super) async fn init_app_cache() -> Arc<Vec<CachedApp>> {
                                 name: app.name,
                                 path: app.path,
                                 icon_cache: icon,
-                                last_used: app.last_used,
-                                use_count: std::sync::atomic::AtomicU32::new(app.use_count),
                                 bundle_mtime: app.bundle_mtime,
                             }
                         })
@@ -219,54 +187,31 @@ pub fn set_app_handle(handle: tauri::AppHandle) {
 
 // ── 文件索引 ──
 
-/// 启动时扫描目标子目录构建文件索引。两步并行：
-/// 1) spawn_blocking 递归遍历文件系统（全量文件名）
-/// 2) spawn_blocking mdfind 拉 use_count>0 的文件元数据（path → use_count + last_used）
-///
-/// 合并后存入 FILE_CACHE。两步独立无依赖，tokio::join 并发执行。
+/// 启动时递归扫描目标子目录构建文件索引。
+/// usage 元数据已抽离到独立 usage 索引（见 usage.rs），文件索引只存静态元数据；
+/// 两者在 `search_files` 查询时按 path join，互不阻塞索引重建。
 pub(super) async fn init_file_cache() -> Arc<Vec<CachedFile>> {
     log::info!("Starting file cache initialization...");
 
-    let (entries, usage_map) = tokio::join!(
-        tokio::task::spawn_blocking(|| {
-            let mut files = Vec::new();
-            if let Some(home) = dirs::home_dir() {
-                // 受 TCC 管辖目录仅在全磁盘权限就绪后扫描，避免首次触碰触发系统弹窗
-                let tcc_allowed = crate::platform::permission::check_full_disk_access();
-                for dir_name in scan_dir_names(tcc_allowed) {
-                    let dir = home.join(dir_name);
-                    if dir.exists() {
-                        scan_files_recursive(&dir, &mut files, 0);
-                    }
+    // 受 TCC 管辖目录仅在全磁盘权限就绪后扫描，避免首次触碰触发系统弹窗。
+    let tcc_allowed = crate::platform::permission::check_full_disk_access();
+    let entries = tokio::task::spawn_blocking(move || {
+        let mut files = Vec::new();
+        if let Some(home) = dirs::home_dir() {
+            for dir_name in scan_dir_names(tcc_allowed) {
+                let dir = home.join(dir_name);
+                if dir.exists() {
+                    scan_files_recursive(&dir, &mut files, 0);
                 }
             }
-            files
-        }),
-        tokio::task::spawn_blocking(query_file_usage)
-    );
-
-    let mut entries = entries.unwrap_or_default();
-    let usage_map = usage_map.unwrap_or_default();
-
-    // 合并 mdfind 元数据：use_count + last_used + last_used_hours
-    let merged = if !usage_map.is_empty() {
-        for f in &mut entries {
-            if let Some((use_count, last_used)) = usage_map.get(&f.path) {
-                f.use_count = *use_count;
-                f.last_used = last_used.clone();
-                f.last_used_hours = last_used
-                    .as_ref()
-                    .and_then(|s| parse_epoch_hours(s))
-                    .unwrap_or(0);
-            }
         }
-        entries
-    } else {
-        entries
-    };
+        files
+    })
+    .await
+    .unwrap_or_default();
 
-    log::info!("File cache initialized with {} entries", merged.len());
-    Arc::new(merged)
+    log::info!("File cache initialized with {} entries", entries.len());
+    Arc::new(entries)
 }
 
 /// 递归扫描目录，收集文件/文件夹到 files。跳过隐藏项 + FILE_IGNORE_DIRS，
@@ -311,154 +256,12 @@ fn scan_files_recursive(dir: &Path, files: &mut Vec<CachedFile>, depth: u32) {
             path: path.to_string_lossy().into_owned(),
             parent,
             is_folder: is_dir,
-            use_count: 0,
-            last_used: None,
-            last_used_hours: 0,
         });
 
         if is_dir {
             scan_files_recursive(&path, files, depth + 1);
         }
     }
-}
-
-/// 一次 mdfind 拉目标目录下 use_count>0 的文件元数据（path → (use_count, last_used)）。
-/// 只返回被打开过的文件（远少于全量），解析 kMDItemUseCount + kMDItemLastUsedDate 属性。
-/// 10s 超时：超时则 kill 子进程并返回空 map（不影响基础索引功能，仅缺 use_count/recency 加权）。
-fn query_file_usage() -> HashMap<String, (u32, Option<String>)> {
-    let mut command = std::process::Command::new("mdfind");
-    command.arg("kMDItemUseCount > 0");
-    command.arg("-attr").arg("kMDItemUseCount");
-    command.arg("-attr").arg("kMDItemLastUsedDate");
-
-    if let Some(home) = dirs::home_dir() {
-        for dir in FILE_SCAN_DIRS {
-            let path = home.join(dir);
-            if path.exists() {
-                command.arg("-onlyin").arg(&path);
-            }
-        }
-    }
-
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::null());
-
-    let mut child = match command.spawn() {
-        Ok(c) => c,
-        Err(_) => return HashMap::new(),
-    };
-    let stdout = match child.stdout.take() {
-        Some(s) => s,
-        None => {
-            let _ = child.wait();
-            return HashMap::new();
-        }
-    };
-
-    // 跨线程超时：读线程 + 计时线程，先就绪的胜出
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let result = std::io::read_to_string(stdout);
-        let _ = tx.send(result);
-    });
-
-    match rx.recv_timeout(std::time::Duration::from_secs(10)) {
-        Ok(Ok(output)) => {
-            let _ = child.wait();
-            parse_file_usage_output(&output)
-        }
-        _ => {
-            let _ = child.kill();
-            let _ = child.wait();
-            HashMap::new()
-        }
-    }
-}
-
-/// 解析 mdfind -attr 输出为 path → (use_count, last_used) 映射。
-/// 格式同 app_discovery：路径行 + 缩进属性行，空行分隔条目。
-fn parse_file_usage_output(output: &str) -> HashMap<String, (u32, Option<String>)> {
-    let mut map = HashMap::new();
-    let mut current_path = String::new();
-    let mut current_use_count: u32 = 0;
-    let mut current_last_used: Option<String> = None;
-
-    macro_rules! flush {
-        () => {
-            if !current_path.is_empty() {
-                if current_use_count > 0 || current_last_used.is_some() {
-                    map.insert(
-                        std::mem::take(&mut current_path),
-                        (current_use_count, current_last_used.take()),
-                    );
-                } else {
-                    current_path.clear();
-                }
-            }
-        };
-    }
-
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            flush!();
-            continue;
-        }
-        if trimmed.starts_with('/') {
-            flush!();
-            let parts: Vec<&str> = trimmed.split("   ").collect();
-            current_path = parts
-                .first()
-                .map(|s| s.trim().to_string())
-                .unwrap_or_default();
-            for part in &parts[1..] {
-                parse_usage_attr(part.trim(), &mut current_use_count, &mut current_last_used);
-            }
-        } else {
-            parse_usage_attr(trimmed, &mut current_use_count, &mut current_last_used);
-        }
-    }
-    flush!();
-    map
-}
-
-fn parse_usage_attr(part: &str, use_count: &mut u32, last_used: &mut Option<String>) {
-    if let Some(val) = part.strip_prefix("kMDItemUseCount = ") {
-        *use_count = val.trim().parse().unwrap_or(0);
-    } else if let Some(val) = part.strip_prefix("kMDItemLastUsedDate = ") {
-        let cleaned = val.trim().trim_matches('"');
-        if !cleaned.is_empty() && cleaned != "(null)" {
-            *last_used = Some(cleaned.to_string());
-        }
-    }
-}
-
-/// 解析 Spotlight 日期字符串为 epoch hours（Howard Hinnant days-from-civil 算法）。
-/// 输入格式 "2024-01-15 12:30:00 +0000"；精度到小时，用于 recency 分桶足够。
-/// 零外部依赖，纯整数运算。
-fn parse_epoch_hours(s: &str) -> Option<i64> {
-    let s = s.trim_matches('"');
-    let mut parts = s.split_whitespace();
-    let date = parts.next()?;
-    let time = parts.next()?;
-
-    let mut dp = date.split('-');
-    let y: i64 = dp.next()?.parse().ok()?;
-    let m: i64 = dp.next()?.parse().ok()?;
-    let d: i64 = dp.next()?.parse().ok()?;
-
-    let h: i64 = time.split(':').next()?.parse().ok().unwrap_or(0);
-
-    // days-from-civil（1970-01-01 = day 0）
-    let y_adj = if m <= 2 { y - 1 } else { y };
-    let era = if y_adj >= 0 { y_adj } else { y_adj - 399 } / 400;
-    let yoe = y_adj - era * 400;
-    let m_adj = if m > 2 { m - 3 } else { m + 9 };
-    let doy = (153 * m_adj + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe - 719468;
-
-    Some(days * 24 + h)
 }
 
 pub(super) async fn get_cached_files() -> Arc<Vec<CachedFile>> {
@@ -490,7 +293,11 @@ pub(super) async fn get_cached_files() -> Arc<Vec<CachedFile>> {
 }
 
 pub async fn prewarm_cache() {
-    let (_apps, _files) = tokio::join!(get_cached_apps(), get_cached_files());
+    let (_apps, _files, _usage) = tokio::join!(
+        get_cached_apps(),
+        get_cached_files(),
+        usage::ensure_loaded()
+    );
 }
 
 /// Spotlight 自愈重试单飞守卫：并发 init（首个 get_cached_apps 与 fs watcher 重建重叠）
@@ -498,9 +305,9 @@ pub async fn prewarm_cache() {
 static MDFIND_RETRY_RUNNING: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// mdfind 空结果自愈：每 20s 探测（最多 5 次），Spotlight 恢复后重建 app 缓存——
-/// metadata 先落缓存（use_count/last_used 恢复真实频次序）并 emit app-cache-updated
-/// 驱动前端刷新；图标由 init_app_cache 自身的后台任务随后补齐（app-icons-updated）。
+/// mdfind 空结果自愈：每 20s 探测（最多 5 次），Spotlight 恢复后重建 app 缓存并
+/// emit app-cache-updated 驱动前端刷新；usage 由独立索引的 TTL 刷新负责，图标由
+/// init_app_cache 自身的后台任务随后补齐（app-icons-updated）。
 fn schedule_mdfind_retry() {
     if MDFIND_RETRY_RUNNING.swap(true, Ordering::SeqCst) {
         return;
@@ -516,6 +323,7 @@ fn schedule_mdfind_retry() {
                 continue;
             }
             log::info!("Spotlight recovered ({} apps), rebuilding app cache", count);
+            usage::refresh_async();
             let apps = init_app_cache().await;
             *APP_CACHE.write().await = Some(apps);
             if let Some(app) = APP_HANDLE.get() {
@@ -614,6 +422,7 @@ async fn app_dir_watcher() {
             last_rebuild = Some(Instant::now());
 
             log::info!("App directory changes detected, rebuilding app cache...");
+            usage::refresh_async();
             let new_apps = init_app_cache().await;
             {
                 let mut cache = APP_CACHE.write().await;
@@ -700,6 +509,7 @@ async fn file_dir_watcher() {
                     }
                 }
                 log::info!("Full disk access granted, rescanning protected dirs...");
+                usage::refresh_async();
                 let new_files = init_file_cache().await;
                 {
                     let mut cache = FILE_CACHE.write().await;

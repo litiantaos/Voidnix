@@ -499,6 +499,44 @@ describe('useSearchInput 窗口重新获焦重跑', () => {
     await flushPromises()
     expect(results.value.map((r) => r.id)).toEqual(['app-a', 'app-b', SEARCH.TOOLS_HINT_ID])
   })
+
+  it('search-usage-updated（刚打开过条目）后获焦刷新落规范序，普通获焦仍稳定合并', async () => {
+    const appStore = useAppStore()
+    appStore.setSearchQuery('')
+    const appA: SearchResult = {
+      id: 'app-a',
+      title: 'A',
+      extId: 'search',
+      data: { kind: 'application' },
+    }
+    const appB: SearchResult = {
+      id: 'app-b',
+      title: 'B',
+      extId: 'search',
+      data: { kind: 'application' },
+    }
+    searchMock.mockResolvedValue([appB, appA])
+    const { results } = makeWrapper()
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(['app-b', 'app-a', SEARCH.TOOLS_HINT_ID])
+
+    // 未打开条目：获焦刷新分数变化仍稳定合并（唤起零重排）
+    searchMock.mockResolvedValue([appA, appB])
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(['app-b', 'app-a', SEARCH.TOOLS_HINT_ID])
+
+    // 打开过条目（Rust 记录 usage 后 emit）：获焦重跑落规范序，频次升位生效
+    const usageHandler = vi
+      .mocked(listen)
+      .mock.calls.filter(([event]) => event === 'search-usage-updated')
+      .at(-1)?.[1]
+    expect(usageHandler).toBeTruthy()
+    usageHandler!({ payload: undefined } as never)
+    window.dispatchEvent(new CustomEvent('window-focused'))
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(['app-a', 'app-b', SEARCH.TOOLS_HINT_ID])
+  })
 })
 
 describe('useSearchInput 唤起全选时序', () => {

@@ -1,34 +1,39 @@
 # search
 
-应用发现 + 文件搜索。Rust 维护两个内存索引（`APP_CACHE` + `FILE_CACHE`），过滤排序在前端 `src/utils/fuzzy.ts`。
+应用发现 + 文件搜索。Rust 维护三个内存索引：`APP_CACHE` / `FILE_CACHE` 只存静态元数据，`usage` 索引独立维护使用频次/近因；过滤排序在前端 `src/utils/fuzzy.ts` 精排。
 
 ## 缓存
 
-- `APP_CACHE` / `FILE_CACHE` 进程内全局 `RwLock`，双检锁懒加载；`prewarm_cache` 启动并发预热两者
+- `APP_CACHE` / `FILE_CACHE` 进程内全局 `RwLock`，双检锁懒加载；`prewarm_cache` 启动并发预热两者与 usage 索引（`usage::ensure_loaded`）
 - 应用先返回无图标列表，后台提取图标后替换 cache 并 emit `app-icons-updated`；重建时按 `.app` bundle mtime 增量复用旧图标（未变则跳过 NSWorkspace 提取）
-- 事件分工：`app-cache-updated` 仅在 metadata 就绪与 watcher 重建后发出，前端失效 metadata 缓存；`app-icons-updated` 仅在图标替换 cache 后发出，前端只失效图标缓存
+- 事件分工：`app-cache-updated` 仅在 metadata 就绪与 watcher 重建后发出，前端失效 metadata 缓存；`app-icons-updated` 仅在图标替换 cache 后发出，前端只失效图标缓存；`search-usage-updated` 在 `launch_app` 写入使用记录或 usage TTL 刷新检测到变化后发出（payload `{ app }`），前端仅对应用失效 metadata 缓存，同时结果排序置脏（下次获焦重跑落规范序）
 - `notify` 监听应用目录与文件目录**分离**（两个独立 watcher，各 5s 防抖 + 60s 最小重建间隔）：应用目录变更仅重建 app 缓存，文件目录变更仅重建文件索引——避免 ~/Downloads 等频繁变更触发不必要的 app 图标重提取。文件 watcher 额外做事件路径预过滤（变更全在 `FILE_IGNORE_DIRS` 内则跳过重建，消除 cargo build / npm install 写入 target/node_modules 的空转）
-- 会话内 `launch_app` 使用次数走 `SEARCH_SESSION.session_use_deltas`（内存 HashMap），重建时合并回 `use_count`
+
+## usage 索引
+
+`usage.rs`，路径 → (次数, 最近使用 epoch 秒)，两个来源合并（次数取 max、时间取较新，避免同一次打开重复计数）：
+
+- **Spotlight**：文件走 `mdfind "kMDItemUseCount > 0"`（`-onlyin` 目录与文件扫描共用 `scan_dir_names`，含全磁盘权限就绪后的 TCC 管辖目录）；应用走同一 predicate 的应用目录查询。首次搜索 `ensure_loaded` 等待一次加载，之后每 60s TTL 在搜索热路径（含窗口获焦 `search_usage_tick`）后台刷新（单飞守卫 + 失败保留旧快照），不再绑定文件索引重建——外部 Finder 打开也能在会话内进入排序
+- **本地记录**：`launch_app` 打开成功后写 `app_data/extensions/search/usage.json`（原子写，0600），跨重启保留；刚打开的条目下一次搜索立即可见地升位，不依赖 Spotlight 回写
+- 查询用 `usage::snapshot()` 一次读锁覆盖整轮候选打分，返回有效次数 + 最近使用（ISO 字符串交前端 `parseUtcMs` 解析，消除 JSC 不认 Spotlight「YYYY-MM-DD HH:MM:SS +0000」格式的坑）
 
 ## 应用扫描
 
-`mdfind "kMDItemContentType == 'com.apple.application-bundle' ..."` 扫 `/Applications`、`/System/Applications`、`/System/Library/CoreServices/Applications`、`~/Applications`（Finder.app 另有专门兜底追加）；`scan_apps_from_dir`（递归 .app，深度 5）兜底。元数据经同一 `mdfind -attr kMDItemDisplayName/kMDItemLastUsedDate/kMDItemUseCount` 顺带拉取，回退 Info.plist 直读（不走 mdls 子进程，消除启动期 fallback 风暴；use_count/last_used 回退置 0/None）。`mdls` 仅剩信息面板 `get_path_metadata` 按需使用。
+`mdfind "kMDItemContentType == 'com.apple.application-bundle' ..."` 扫 `/Applications`、`/System/Applications`、`/System/Library/CoreServices/Applications`、`~/Applications`（Finder.app 另有专门兜底追加）；`scan_apps_from_dir`（递归 .app，深度 5）兜底。静态元数据只拉 `kMDItemDisplayName`，回退 Info.plist 直读（不走 mdls 子进程，消除启动期 fallback 风暴）；使用次数/最近使用由 usage 索引的应用查询独立提供。`mdls` 仅剩信息面板 `get_path_metadata` 按需使用。
 
 ## 文件搜索
 
 `search_files` 对 `FILE_CACHE` 内存索引做 substring + 拼音匹配 + 基础打分，返回 top 100 候选。不再 per-query spawn mdfind——随打随出。
 
-**索引构建**：启动时 `spawn_blocking` 递归扫描目标子目录，跳过隐藏文件 + `FILE_IGNORE_DIRS`（node_modules / .git / dist / build / target 等），深度上限 6 层，数量上限 50,000。
+**索引构建**：启动时 `spawn_blocking` 递归扫描目标子目录，跳过隐藏文件 + `FILE_IGNORE_DIRS`（node_modules / .git / dist / build / target 等），深度上限 6 层，数量上限 50,000。索引只存 name / name_lower / path / parent / is_folder / pinyin_key，不含 usage。
 
-**白名单子目录**按 TCC「文件与文件夹」管辖分组：`FILE_SCAN_DIRS`（Projects / Code，恒定扫描）与 `FILE_SCAN_TCC_DIRS`（Desktop / Documents / Downloads / Pictures / Music / Movies，受管辖——首次触碰 read_dir/FSEvents 监听会触发系统询问弹窗）。受管辖组仅在 `check_full_disk_access()`（open 系统 TCC 数据库，免弹窗探测）为真时纳入扫描与监听，启动期零触碰；文件 watcher 主循环 60s 轮询全磁盘状态，授权后（无→有）自动补监听受管辖目录并重建一次索引，无需重启应用。
+**白名单子目录**（`scan.rs`）按 TCC「文件与文件夹」管辖分组：`FILE_SCAN_DIRS`（Projects / Code，恒定扫描）与 `FILE_SCAN_TCC_DIRS`（Desktop / Documents / Downloads / Pictures / Music / Movies，受管辖——首次触碰 read_dir/FSEvents 监听会触发系统询问弹窗）。受管辖组仅在 `check_full_disk_access()`（open 系统 TCC 数据库，免弹窗探测）为真时纳入扫描与监听，启动期零触碰；文件 watcher 主循环 60s 轮询全磁盘状态，授权后（无→有）自动补监听受管辖目录并重建一次索引，无需重启应用。
 
 **name_lower 预计算**：扫描时 `to_lowercase` 一次，搜索时零分配 `String::find`。
 
 **拼音索引预计算**：扫描时为 CJK 文件名生成 `pinyin_key`（`pinyin.rs`，编译期内嵌 U+4E00..U+9FFF 拼音首字母表 + 无声调全拼表，由 pinyin-pro 生成），格式 `"首字母串\x1f全拼串"`（如 `设计文档` → `sjwd\x1fshejiwendang`）；分隔符 \x1f 不可打印，ASCII 查询不含、不会跨段匹配，额外对此键 substring 匹配即可独立命中首字母（`sjwd`）与全拼（`sheji`）。
 
-**use_count / last_used**：索引构建时一次 `mdfind "kMDItemUseCount > 0"` 批量拉目标目录下被打开过的文件元数据（远少于全量），合并进 `CachedFile`。`last_used` 的 Spotlight 日期字符串经 `parse_epoch_hours`（Howard Hinnant days-from-civil）预解析为 epoch hours 存入 `last_used_hours`，搜索时纯整数减法算 hours_ago 做 recency 分桶——零日期解析热路径开销。前端 `recencyScore` 拿到的是原始字符串，须经 `utils/datetime.ts::parseUtcMs` 解析——JSC 的 `new Date` 不认「YYYY-MM-DD HH:MM:SS +0000」格式（V8 认，Node 单测测不出此差异），裸解析恒 NaN 使 recency 分桶全失效。
-
-**排序权重**（Rust 端截断 top 100 时用，与前端 `frequencyBoost`/`recencyScore` 对齐）：name substring（前缀 1000 / 包含 600）与 pinyin substring（300）取 max + frequency（log2 平滑 cap 1500）+ recency（<1h=300 / <24h=200 / <168h=100 / <720h=50）+ folder 优先 240。拼音分低于名称直匹，确保精确匹配优先。高频/近期文件在截断时不被丢弃，前端 `scoreFields` 再做 fuzzy + boost 精排。
+**排序权重**（Rust 端截断 top 100 时用，与前端 `frequencyBoost`/`recencyScore` 对齐）：name substring（前缀 1000 / 包含 600）与 pinyin substring（300）取 max + frequency（log2 平滑 cap 1500）+ recency（<1h=300 / <24h=200 / <168h=100 / <720h=50）+ folder 优先 240。其中 frequency / recency 用 usage 索引的有效合并值。拼音分低于名称直匹，确保精确匹配优先。高频/近期文件在截断时不被丢弃；同分按 usage 次数 → 最近使用 → 更浅路径 → path 收束，避免缓存扫描序造成的静态任意序。前端 `scoreFields` 再做 fuzzy + boost 精排。
 
 ## 图标
 

@@ -14,14 +14,34 @@ const MIN_FILE_QUERY_LEN = 2
 // app-cache-updated（应用增删）→ 失效 metadata；app-icons-updated（图标就绪）→ 仅失效图标。
 let appMetaCache: ProviderResult[] | null = null
 let appIconCache: Map<string, string> | null = null
+// metadata 失效代际：失效发生在 getAppList 的 await 期间时，丢弃旧响应而不是回写缓存。
+let appMetaEpoch = 0
 
-listen('app-cache-updated', () => {
+function invalidateAppMeta(): void {
   appMetaCache = null
-}).catch(() => {})
+  appMetaEpoch++
+}
+
+listen('app-cache-updated', invalidateAppMeta).catch(() => {})
 
 listen('app-icons-updated', () => {
   appIconCache = null
 }).catch(() => {})
+
+// search-usage-updated（打开条目 / Spotlight TTL 刷新）→ 使用记录已变。只有应用
+// 需要失效 metadata 缓存（文件结果每次走 search_files，不缓存 usage）；排序置脏由
+// useSearchInput 的同名监听独立消费。
+listen<{ app?: boolean }>('search-usage-updated', (e) => {
+  if (e.payload?.app) invalidateAppMeta()
+}).catch(() => {})
+
+// 获焦 tick：TTL 到期则后台刷新 usage。空查询默认列表只读前端应用缓存、不调
+// search_apps，需要这个入口让外部 Finder 打开也能进入 60s TTL 刷新。
+if (isTauri) {
+  window.addEventListener('window-focused', () => {
+    invoke(CMD.searchUsageTick).catch(() => {})
+  })
+}
 
 /** 将 appIconCache 中的图标 in-place patch 进 metadata 缓存（下次 emit 自动带上） */
 function applyIcons(): void {
@@ -57,10 +77,13 @@ async function getAppList(): Promise<ProviderResult[]> {
   if (appMetaCache && appIconCache) return appMetaCache
 
   if (!appMetaCache) {
+    const epoch = appMetaEpoch
     const raw = await invoke<RawSearchResult[]>(CMD.searchApps).catch((e) => {
       console.error('[search] search_apps invoke failed:', e)
       return []
     })
+    // 拉取期间 metadata 被失效：丢弃旧响应重拉，避免用旧 boost 回写缓存
+    if (epoch !== appMetaEpoch) return getAppList()
     appMetaCache = raw.map((r) =>
       toResult(r, frequencyBoost(r.use_count ?? 0) + recencyScore(r.last_used) + 1),
     )
@@ -71,7 +94,7 @@ async function getAppList(): Promise<ProviderResult[]> {
   if (!appIconCache) {
     await fetchIcons()
   }
-
+  if (!appMetaCache) return getAppList()
   return appMetaCache
 }
 

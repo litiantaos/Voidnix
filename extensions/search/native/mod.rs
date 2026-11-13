@@ -4,7 +4,10 @@ mod app_discovery;
 mod cache;
 pub mod commands;
 mod icon;
+mod mdfind;
 mod pinyin;
+mod scan;
+mod usage;
 
 pub use cache::{init_fs_watchers, prewarm_cache, set_app_handle};
 
@@ -20,6 +23,7 @@ impl Extension for SearchExtension {
     }
 
     async fn setup(&self, app: &tauri::AppHandle) -> tauri::Result<()> {
+        usage::init(app);
         set_app_handle(app.clone());
         init_fs_watchers();
         tauri::async_runtime::spawn(prewarm_cache());

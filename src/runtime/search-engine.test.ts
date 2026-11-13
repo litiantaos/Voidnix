@@ -515,6 +515,30 @@ describe('SearchEngine', () => {
     expect(calls).toBe(2)
   })
 
+  it('结果缓存清理代际：清理期间在飞行的搜索不回写旧 boost 结果', async () => {
+    let calls = 0
+    let release!: () => void
+    registry.push(
+      makeSearchExt('epoch', () => {
+        calls++
+        if (calls === 1) {
+          return new Promise<ProviderResult[]>((resolve) => {
+            release = () => resolve([result('e1', 'alpha hit', 'application', 10)])
+          })
+        }
+        return [result('e2', 'alpha hit', 'application', 10)]
+      }),
+    )
+    const p = searchEngine.search('alpha')
+    await Promise.resolve()
+    searchEngine.clearResultCache()
+    release()
+    await p
+    // 缓存未写入：同 query 再查应重跑 dynamic
+    await searchEngine.search('alpha')
+    expect(calls).toBe(2)
+  })
+
   it('abort 的搜索不写缓存：部分到达的中间态不可作为终值', async () => {
     let release!: () => void
     registry.push(

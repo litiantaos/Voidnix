@@ -48,6 +48,8 @@ class SearchEngine {
   private kwCache: SearchResult[] = []
   // 会话级结果缓存（LRU）：删除路径回退到本会话查过的 query 同步回显
   private resultCache = new LruCache(LIMITS.maxCachedQueries)
+  // 缓存代际：clear 期间仍在飞行的搜索不得把清理前的旧 boost 结果写回
+  private resultCacheEpoch = 0
 
   /** 扩展激活/退出时切换模式。激活时只调该扩展 dynamic；undefined 恢复全局聚合。 */
   setActiveExtension(id: string | undefined) {
@@ -100,6 +102,7 @@ class SearchEngine {
     // 列表与离开该 query 时逐项一致（onUpdate 不触发、同数组引用，Vue 零重渲染）。
     // 仅非空 query（空 query 是默认列表，图标/缓存刷新路径依赖重算）；扩展模式结果依赖
     // activeExtension 不缓存。生命周期归消费者：窗口隐藏 / 唤起刷新路径清空（clearResultCache）。
+    const cacheEpoch = this.resultCacheEpoch
     const hit = q ? this.resultCache.get(q) : undefined
     if (hit) return hit
 
@@ -110,14 +113,17 @@ class SearchEngine {
       deliver.flush()
     })
     const final = deliver.finish() ?? this.buildGlobal(scored, q)
-    // abort 的搜索结果是部分到达的中间态，不可作为终值缓存
-    if (!controller.signal.aborted && q) this.resultCache.set(q, final)
+    // abort 的搜索结果是部分到达的中间态，不可作为终值缓存；清理代际变化后也不回写
+    if (!controller.signal.aborted && q && cacheEpoch === this.resultCacheEpoch) {
+      this.resultCache.set(q, final)
+    }
     return final
   }
 
   /** 清空会话级结果缓存。会话边界调用：窗口隐藏（外部数据可能变更）、唤起刷新（rerunSearch 要新鲜数据）。 */
   clearResultCache() {
     this.resultCache.clear()
+    this.resultCacheEpoch++
   }
 
   /** 增量投递调度（两种模式共用）：首个 partial 经 firstPaintHoldMs 窗口延迟投递——

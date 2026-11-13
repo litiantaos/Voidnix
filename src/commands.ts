@@ -143,6 +143,7 @@ export const CMD = {
   searchApps: 'search_apps',
   getAppIcons: 'get_app_icons',
   searchFiles: 'search_files',
+  searchUsageTick: 'search_usage_tick',
   launchApp: 'launch_app',
   getPathMetadata: 'get_path_metadata',
 
