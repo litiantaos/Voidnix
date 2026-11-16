@@ -401,6 +401,7 @@ const compressItems = computed<SettingItemT[]>(() => {
       id: 'source',
       title: t('archive.compressN', { n: inputs.value.length }),
       subtitle: sourceSubtitle.value,
+      icon: 'i-ri-file-list-3-line',
       type: 'custom',
       group,
     },
@@ -415,12 +416,14 @@ const compressItems = computed<SettingItemT[]>(() => {
     {
       id: 'name',
       title: t('archive.outputName'),
+      icon: 'i-ri-price-tag-3-line',
       type: 'custom',
       group,
     },
     {
       id: 'format',
       title: t('archive.format'),
+      icon: 'i-ri-file-zip-line',
       type: 'select',
       value: format.value,
       options: formatOptions,
@@ -430,6 +433,7 @@ const compressItems = computed<SettingItemT[]>(() => {
     {
       id: 'level',
       title: t('archive.level'),
+      icon: 'i-ri-dashboard-3-line',
       type: 'select',
       value: preset.value,
       options: LEVEL_PRESETS.map((p) => ({ label: t(p.key), value: p.value })),
@@ -445,6 +449,7 @@ const compressItems = computed<SettingItemT[]>(() => {
     id: 'password',
     title: t('archive.password'),
     subtitle: t('archive.passwordHint'),
+    icon: 'i-ri-lock-line',
     type: 'custom',
     group,
   })
@@ -453,6 +458,7 @@ const compressItems = computed<SettingItemT[]>(() => {
       id: 'junkFilter',
       title: t('archive.junkFilter'),
       subtitle: t('archive.junkFilterHint'),
+      icon: 'i-ri-delete-bin-line',
       type: 'toggle',
       value: junkFilter.value,
       update: (v) => {
@@ -464,6 +470,7 @@ const compressItems = computed<SettingItemT[]>(() => {
       id: 'hiddenFilter',
       title: t('archive.hiddenFilter'),
       subtitle: t('archive.hiddenFilterHint'),
+      icon: 'i-ri-eye-off-line',
       type: 'toggle',
       value: hiddenFilter.value,
       update: (v) => {
@@ -476,6 +483,7 @@ const compressItems = computed<SettingItemT[]>(() => {
     list.push({
       id: 'error',
       title: job.value.error,
+      icon: 'i-ri-error-warning-line',
       tone: 'danger',
       type: 'custom',
       group,

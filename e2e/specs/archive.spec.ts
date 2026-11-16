@@ -139,7 +139,7 @@ test.describe('archive', () => {
     await dispatch(page, ['/tmp/demo/报告.pdf', '/tmp/demo/图/截图.png'])
     await page.waitForTimeout(1000)
 
-    // 表单要素：源行（无图标、尾随按钮组）/ 压缩到（默认源文件同目录）/ 名称输入 / 格式 / 级别预设 / 密码行 / 过滤开关
+    // 表单要素：源行（图标 + 尾随按钮组）/ 压缩到（默认源文件同目录）/ 名称输入 / 格式 / 级别预设 / 密码行 / 过滤开关
     await expect(page.getByText('压缩 2 项')).toBeVisible()
     await expect(page.getByRole('option', { name: /压缩到/ })).toContainText('源文件同目录')
     await expect(page.getByRole('button', { name: '选择目录' })).toBeVisible()
@@ -147,11 +147,12 @@ test.describe('archive', () => {
     await expect(page.getByText('压缩级别')).toBeVisible()
     await expect(page.getByText('过滤系统垃圾文件')).toBeVisible()
     await expect(page.getByText('过滤隐藏文件')).toBeVisible()
-    // 源行尾按钮组：仅主按钮（重新选择已移除）；源行无图标井
+    // 每行图标：源 / 目标目录 / 名称 / 格式 / 级别 / 密码 / 两个过滤开关
+    await expect(page.locator('.archive-view [role="option"] .fill-mist')).toHaveCount(8)
+    // 源行尾按钮组：仅主按钮（重新选择已移除）
     const sourceRow = page.locator('[role="option"]', { hasText: '压缩 2 项' })
     await expect(sourceRow.getByText('压缩', { exact: true })).toBeVisible()
     await expect(page.getByText('重新选择')).toHaveCount(0)
-    expect(await sourceRow.locator('.fill-mist').count()).toBe(0)
     // 仅名称一个输入框（密码行是按钮非输入框）
     expect(await page.locator('.archive-view input').count()).toBe(1)
     // 不展示待压缩项列表（源摘要行合法含首名预览；第二项不得作为行出现）
