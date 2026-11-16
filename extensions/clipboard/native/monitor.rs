@@ -81,10 +81,7 @@ fn looks_like_secret(text: &str) -> bool {
         }
     }
     // 私钥 PEM 头
-    if trimmed.contains("-----BEGIN ") && trimmed.contains("PRIVATE KEY-----") {
-        return true;
-    }
-    false
+    trimmed.contains("-----BEGIN ") && trimmed.contains("PRIVATE KEY-----")
 }
 
 /// 未知来源下的高熵独立 token（无空白、40–200 长、base64/hex 字符集 + 大小写数字混合）。
