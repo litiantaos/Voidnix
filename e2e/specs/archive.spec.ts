@@ -139,8 +139,10 @@ test.describe('archive', () => {
     await dispatch(page, ['/tmp/demo/报告.pdf', '/tmp/demo/图/截图.png'])
     await page.waitForTimeout(1000)
 
-    // 表单要素：源行（无图标、尾随按钮组）/ 名称输入 / 格式 / 级别预设 / 密码行 / 过滤开关
+    // 表单要素：源行（无图标、尾随按钮组）/ 压缩到（默认源文件同目录）/ 名称输入 / 格式 / 级别预设 / 密码行 / 过滤开关
     await expect(page.getByText('压缩 2 项')).toBeVisible()
+    await expect(page.getByRole('option', { name: /压缩到/ })).toContainText('源文件同目录')
+    await expect(page.getByRole('button', { name: '选择目录' })).toBeVisible()
     await expect(page.getByText('归档名称')).toBeVisible()
     await expect(page.getByText('压缩级别')).toBeVisible()
     await expect(page.getByText('过滤系统垃圾文件')).toBeVisible()
@@ -157,6 +159,7 @@ test.describe('archive', () => {
 
     // 密码行回车 = 打开弹窗（键盘可达性，与行尾按钮同动作）；
     // 在任何 BaseSelect 交互前执行——select 收起后残留聚焦的控件会让列表键盘让位
+    await page.keyboard.press('ArrowDown') // destDir
     await page.keyboard.press('ArrowDown') // name
     await page.keyboard.press('ArrowDown') // format
     await page.keyboard.press('ArrowDown') // level
