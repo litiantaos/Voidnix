@@ -13,7 +13,9 @@ registerMessages({
   },
   'archive.entries': { 'zh-CN': '个条目', en: 'entries' },
   'archive.extractTo': { 'zh-CN': '解压到', en: 'Extract to' },
+  'archive.compressTo': { 'zh-CN': '压缩到', en: 'Compress to' },
   'archive.sameDir': { 'zh-CN': '压缩包同目录', en: 'Same as Archive' },
+  'archive.sourceDir': { 'zh-CN': '源文件同目录', en: 'Same as Source' },
   'archive.browseFiles': { 'zh-CN': '查看压缩包', en: 'Browse Archive' },
   'archive.truncatedShort': { 'zh-CN': '条目过多', en: 'Truncated' },
   'archive.chooseDir': { 'zh-CN': '选择目录', en: 'Choose Folder' },
@@ -71,13 +73,4 @@ registerMessages({
     'zh-CN': '点开头的文件/文件夹（含 .git 等）',
     en: 'Dot-prefixed files/folders (incl. .git)',
   },
-
-  // 设置
-  'archive.settings.group': { 'zh-CN': '压缩与解压', en: 'Archive' },
-  'archive.settings.compressDir': { 'zh-CN': '压缩输出目录', en: 'Compress Output Folder' },
-  'archive.settings.compressDirHint': {
-    'zh-CN': '留空则每次压缩时选择',
-    en: 'Empty = choose each time',
-  },
-  'archive.clear': { 'zh-CN': '清除固定目录', en: 'Clear Fixed Folders' },
 })

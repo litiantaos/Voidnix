@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   baseName,
   defaultArchiveName,
+  dirOf,
   formatBytes,
   isArchivePath,
   normalizeOutputName,
@@ -64,5 +65,14 @@ describe('formatBytes / baseName', () => {
 
   it('baseName 去目录', () => {
     expect(baseName('/a/b/c.zip')).toBe('c.zip')
+  })
+})
+
+describe('dirOf', () => {
+  it('取父目录', () => {
+    expect(dirOf('/Users/x/项目')).toBe('/Users/x')
+    expect(dirOf('/Users/x/a.zip')).toBe('/Users/x')
+    expect(dirOf('/a')).toBe('/')
+    expect(dirOf('/')).toBe('/')
   })
 })

@@ -12,7 +12,7 @@
       </BaseSettingsList>
     </template>
 
-    <!-- ── 压缩模式：BaseSettingsList 表单（源行 + 名称/格式/级别/密码 + 过滤开关） ── -->
+    <!-- ── 压缩模式：BaseSettingsList 表单（源行 + 目标目录 + 名称/格式/级别/密码 + 过滤开关） ── -->
     <template v-if="mode === 'compress'">
       <BaseSettingsList :items="compressItems" @execute="onCompressExecute">
         <!-- 源行尾：主操作按钮（busy 态同钮切换 spinner + 进度文案，proxy/homebrew 同范式） + 取消 -->
@@ -30,6 +30,20 @@
             >
               {{ job.busy ? jobLabel : t('archive.compress') }}
             </BaseButton>
+          </div>
+        </template>
+        <!-- 目标目录行尾：源文件同目录重置 + 选择（与解压目录行同范式） -->
+        <template #trailing-destDir>
+          <div flex gap="2">
+            <BaseButton
+              v-if="compressDestDir"
+              :disabled="job.busy"
+              @click.stop="compressDestDir = null"
+              >{{ t('archive.sourceDir') }}</BaseButton
+            >
+            <BaseButton :disabled="job.busy" @click.stop="pickCompressDestDir">{{
+              t('archive.chooseDir')
+            }}</BaseButton>
           </div>
         </template>
         <template #trailing-name>
@@ -148,6 +162,7 @@ import {
   ARCHIVE_EXTENSIONS,
   baseName,
   defaultArchiveName,
+  dirOf,
   formatBytes,
   isArchivePath,
   LEVEL_PRESETS,
@@ -233,6 +248,8 @@ const jobLabel = computed(() => {
 
 /** 解压输出目录：null = 压缩包同目录（默认），可另选可重置（会话级不落盘） */
 const destDir = ref<string | null>(null)
+/** 压缩输出目录：null = 源文件同目录（默认），可另选可重置（会话级不落盘） */
+const compressDestDir = ref<string | null>(null)
 
 // 格式与过滤开关不落盘：每次进入（acceptPaths→reset）重置默认——zip / 垃圾过滤开 / 隐藏过滤关
 const format = ref<CompressFormat>('zip')
@@ -388,6 +405,14 @@ const compressItems = computed<SettingItemT[]>(() => {
       group,
     },
     {
+      id: 'destDir',
+      title: t('archive.compressTo'),
+      subtitle: compressDestDir.value ?? t('archive.sourceDir'),
+      icon: 'i-ri-folder-line',
+      type: 'custom',
+      group,
+    },
+    {
       id: 'name',
       title: t('archive.outputName'),
       type: 'custom',
@@ -522,11 +547,8 @@ function sleep(ms: number) {
 
 async function runCompress() {
   if (job.value.busy || !inputs.value.length || !outputName.value.trim()) return
-  let dir = config.compressDir
-  if (!dir) {
-    dir = await withSuppressBlur(() => invoke<string>(CMD.pickDirectory))
-    if (!dir) return
-  }
+  // 默认源文件同目录；compressDestDir 为用户显式另选（可重置回同目录），不再弹目录选择面板
+  const dir = compressDestDir.value ?? dirOf(inputs.value[0])
   const name = normalizeOutputName(outputName.value.trim(), format.value)
   outputName.value = name
   job.value = { busy: true, error: '' }
@@ -573,7 +595,7 @@ async function runExtract() {
   }
   // 默认压缩包同目录；destDir 为用户显式另选（可重置回同目录）
   const path = info.value.path
-  const dest = destDir.value ?? path.slice(0, path.lastIndexOf('/'))
+  const dest = destDir.value ?? dirOf(path)
   job.value = { busy: true, error: '' }
   jobPercent.value = null
   const seq = ++jobSeq
@@ -620,7 +642,20 @@ async function pickDestDir() {
   })
 }
 
+/** 另选压缩目标目录（同解压目录 picker 范式；默认源文件同目录） */
+async function pickCompressDestDir() {
+  await withSuppressBlur(async () => {
+    const selected = await invoke<string>(CMD.pickDirectory)
+    if (selected) compressDestDir.value = selected
+  })
+}
+
 function onCompressExecute(item: SettingItemT) {
+  // 目标目录行回车 = 另选目录（与行尾按钮同动作）
+  if (item.id === 'destDir') {
+    if (!job.value.busy) void pickCompressDestDir()
+    return
+  }
   // 密码行回车 = 打开密码弹窗（与行尾按钮同动作）
   if (item.id === 'password') {
     openPwdDialog()
@@ -652,6 +687,7 @@ function reset() {
   password.value = ''
   archivePassword.value = ''
   destDir.value = null
+  compressDestDir.value = null
   job.value = { busy: false, error: '' }
   jobPercent.value = null
   jobDone.value = false

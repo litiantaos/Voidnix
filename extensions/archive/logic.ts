@@ -127,6 +127,12 @@ export function baseName(path: string): string {
   return path.split('/').pop() || path
 }
 
+/** 父目录（POSIX 路径；根目录的父目录为自身）。压缩/解压默认输出位置用。 */
+export function dirOf(path: string): string {
+  const i = path.lastIndexOf('/')
+  return i <= 0 ? '/' : path.slice(0, i)
+}
+
 /** 字节数人性化（B/KB/MB/GB，一位小数）。 */
 export function formatBytes(n: number | null): string {
   if (n == null) return '—'

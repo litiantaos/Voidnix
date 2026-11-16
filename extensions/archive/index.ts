@@ -1,7 +1,6 @@
 import { ref } from 'vue'
 import { defineExtension } from '@/runtime/extension-registry'
 import ArchiveView from './View.vue'
-import ArchiveSettings from './Settings.vue'
 import ArchiveTreeView from './TreeView.vue'
 import type { ArchiveInfo } from './logic'
 import './locales'
@@ -42,12 +41,10 @@ export default defineExtension({
   windowHeight: 'auto',
   mainView: () => ArchiveView,
   subviews: {
-    config: () => ArchiveSettings,
     entries: () => ArchiveTreeView,
   },
-  subviewHeights: { config: 'auto', entries: 'auto' },
+  subviewHeights: { entries: 'auto' },
   subviewTitle: {
-    config: { 'zh-CN': '设置', en: 'Settings' },
     entries: { 'zh-CN': '压缩包文件', en: 'Archive Files' },
   },
   setup: async () => {
