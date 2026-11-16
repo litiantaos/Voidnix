@@ -250,8 +250,8 @@ test.describe('finder-ext 快捷键进入（访达上下文面板）', () => {
     await enterViaShortcut(page, ['/Users/mock/Documents/project'])
     await enterOpenWith(page)
     // subview 让位停用态下快捷键重呼（窗口隐藏后再呼出）：makeToggleHandler 的
-    // setActiveExtension 清 subview 回面板根（contextResumable 消费保持上下文），且
-    // tick watch 无条件消费进入标记
+    // setActiveExtension 清 subview 回面板根（contextResumable 分支消费进入意图、
+    // 快捷键进入恒重读访达，保持上下文）
     await page.evaluate(() => {
       ;(window as unknown as Record<string, unknown>).__pressShortcut()
     })
@@ -269,6 +269,25 @@ test.describe('finder-ext 快捷键进入（访达上下文面板）', () => {
     // 浏览模式：无选区副标题、无 App 行
     await expect(page.locator('[role="option"]').first()).not.toContainText('project')
     await expect(page.getByRole('option', { name: 'Mock Code' })).toHaveCount(0)
+  })
+
+  test('退出扩展后从应用界面首按快捷键：直接进入访达上下文面板（不误判浏览模式）', async ({
+    page,
+  }) => {
+    await enterViaSearch(page, ['/Users/mock/Documents/project'])
+    // 退出扩展回主界面：View 停用但 KeepAlive 缓存 —— 用户复现路径的起点
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.ext-tag')).toHaveCount(0, { timeout: 5000 })
+    // 首按快捷键（wasVisible=false）：本次进入意图必须由 onActivated 消费，判上下文
+    await page.evaluate(() => {
+      ;(window as unknown as Record<string, unknown>).__pressShortcut()
+    })
+    const first = page.locator('[role="option"]').first()
+    await expect(first).toContainText('用 App 打开', { timeout: 5000 })
+    await expect(first).toContainText('project')
+    // 上下文模式：媒体入口不出现（浏览模式会显示无副标题的通用「视频处理 / 图片处理」行）
+    await expect(page.getByRole('option', { name: '视频处理' })).toHaveCount(0)
+    await expect(page.getByRole('option', { name: '图片处理' })).toHaveCount(0)
   })
 
   test('无选中时二级界面仅 MRU（目标目录回退由 Rust 兜底）', async ({ page }) => {

@@ -27,7 +27,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
@@ -217,18 +217,27 @@ async function detectSelection() {
   }
 }
 
+/** 消费本次进入意图：返回是否由快捷键发起，并立即复位（一次激活只判一次）。 */
+function consumeEntryViaShortcut(): boolean {
+  const viaShortcut = entryViaShortcut.value
+  entryViaShortcut.value = false
+  return viaShortcut
+}
+
 onActivated(() => {
-  // 二级界面 / 跨扩展跳转的返回：保持访达上下文（选区 / 媒体入口 / open_with 副标题原样
-  // 保留，不重新探测、不切浏览模式）
+  // 二级界面 / 跨扩展跳转的返回：保持访达上下文，不切浏览模式
   if (contextResumable) {
     contextResumable = false
     browseMode.value = false
+    // 快捷键进入（含 subview / 跨扩展跳转返回期间重呼）恒重读访达：期间选区可能已变，
+    // 沿用旧快照会显示过期入口与副标题；纯返回（Esc 关二级 / 跨扩展返回）无进入意图，
+    // 保留快照不重探
+    if (consumeEntryViaShortcut()) void detectSelection()
     return
   }
   // 快捷键进入（makeToggleHandler 同步置位，先于本钩子到达）：访达上下文面板；
   // 应用界面进入（搜索 / 工具列表 / 扩展切换）：浏览模式，不探测选区
-  browseMode.value = !entryViaShortcut.value
-  entryViaShortcut.value = false
+  browseMode.value = !consumeEntryViaShortcut()
   if (browseMode.value) {
     // 清空上下文（防 KeepAlive 重激活残留上次媒体入口）
     videoPaths.value = []
@@ -238,14 +247,16 @@ onActivated(() => {
   }
   void detectSelection()
 })
-// 快捷键呼出（含 KeepAlive 重入）：恒为上下文模式，重新探测选区
+onDeactivated(() => {
+  // 进入意图只对「本次激活」有效：视图停用即失效。已激活态重呼（窗口隐藏，无 onActivated
+  // 跟进）不消费标记，靠这里复位；不复位会让下次应用界面进入误判为快捷键进入
+  entryViaShortcut.value = false
+})
+// 快捷键呼出（含 KeepAlive 重入）：恒切上下文模式并重新探测选区。
+// 标记不在此消费——View 停用 / 未挂载时 onActivated 随后接手判模式（未挂载时本 watcher
+// 尚不存在），提前消费会让其读到 false 误判浏览模式（首次进入识别不到访达的根因）。
 watch(reactivateTick, () => {
   browseMode.value = false
-  // 无条件消费进入标记：mainView 已激活（窗口隐藏后再呼出，无 onActivated 跟进）与
-  // openWith subview 让位停用（若不消费会让标记泄漏——之后退出扩展再从应用界面进入时
-  // onActivated 误判为快捷键进入）两路径都在此收口；首挂载路径 watcher 尚不存在
-  // （reactivateTick 先于 setActiveExtension 触发），标记留给 onActivated
-  entryViaShortcut.value = false
   void detectSelection()
 })
 
