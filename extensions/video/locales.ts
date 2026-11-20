@@ -11,7 +11,8 @@ registerMessages({
 
   // 核心下载
   'video.downloading': { 'zh-CN': '下载中…', en: 'Downloading…' },
-  'video.downloadingCore': { 'zh-CN': '正在下载核心…', en: 'Downloading core…' },
+  // 依赖下载：按钮内百分比 + 本行副标题说明（非处理任务，不进任务行，见 docs/design.md）
+  'video.downloadingCore': { 'zh-CN': '正在下载 FFmpeg…', en: 'Downloading FFmpeg…' },
   'video.coreVersionNone': { 'zh-CN': '核心版本：FFmpeg —', en: 'Core version: FFmpeg —' },
   'video.dependencyHint': { 'zh-CN': '使用前需先下载 FFmpeg', en: 'Download FFmpeg first' },
   'video.coreVersion': {
@@ -55,12 +56,13 @@ registerMessages({
   'video.outputDir': { 'zh-CN': '输出目录', en: 'Output Folder' },
   'video.sameAsSource': { 'zh-CN': '与源文件相同', en: 'Same as source' },
 
-  // 进度/状态
-  'video.progress': { 'zh-CN': '进度 {value}', en: 'Progress {value}' },
-  'video.batchProgress': {
-    'zh-CN': '进度 {i}/{n} · {value}',
-    en: 'Progress {i}/{n} · {value}',
-  },
+  // 处理态任务行（标题 + 进度条，见 docs/design.md「处理态」）
+  'video.taskCompress': { 'zh-CN': '正在压缩', en: 'Compressing' },
+  'video.taskConvert': { 'zh-CN': '正在转换格式', en: 'Converting' },
+  'video.taskExtractAudio': { 'zh-CN': '正在提取音频', en: 'Extracting audio' },
+  'video.taskCounter': { 'zh-CN': '第 {i}/{n} 个', en: '{i}/{n}' },
+  'video.taskPreparing': { 'zh-CN': '准备中…', en: 'Preparing…' },
+  'video.taskDone': { 'zh-CN': '处理完成', en: 'Completed' },
 
   // 处理结果
   'video.cannotReadVideo': { 'zh-CN': '无法读取视频', en: 'Cannot read video' },

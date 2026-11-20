@@ -11,7 +11,6 @@ registerMessages({
 
   // 按钮
   'image.select': { 'zh-CN': '选择', en: 'Select' },
-  'image.processing': { 'zh-CN': '处理中…', en: 'Processing…' },
   'image.add': { 'zh-CN': '添加', en: 'Add' },
   'image.sameDir': { 'zh-CN': '同目录', en: 'Same Folder' },
 
@@ -19,6 +18,7 @@ registerMessages({
   'image.width': { 'zh-CN': '宽度', en: 'Width' },
   'image.height': { 'zh-CN': '高度', en: 'Height' },
   'image.segmentingForeground': { 'zh-CN': '正在抠图…', en: 'Removing background…' },
+  'image.stitching': { 'zh-CN': '正在拼接…', en: 'Stitching…' },
   'image.formatsHint': {
     'zh-CN': '支持 PNG / JPEG / HEIC / WebP 等格式',
     en: 'Supports PNG / JPEG / HEIC / WebP, etc.',
@@ -53,6 +53,10 @@ registerMessages({
   'image.copy': { 'zh-CN': '复制', en: 'Copy' },
   'image.save': { 'zh-CN': '保存', en: 'Save' },
   'image.operations': { 'zh-CN': '操作', en: 'Actions' },
+  // 处理态任务行标题（进度条由 BaseProgress 承载，见 docs/design.md「处理态」）
+  'image.taskRemoveBg': { 'zh-CN': '正在移除背景', en: 'Removing background' },
+  'image.taskStitch': { 'zh-CN': '正在拼接长图', en: 'Stitching images' },
+  'image.taskDone': { 'zh-CN': '处理完成', en: 'Completed' },
 
   // 状态
   'image.processFailed': { 'zh-CN': '处理失败', en: 'Processing failed' },

@@ -103,36 +103,31 @@
     </div>
 
     <BaseSettingsList :items="items" @execute="onExecute">
-      <!-- 操作行：有图才显示，回车执行主按钮动作（removeBg 未处理=移除背景 / 其余=保存）。
-           removeBg 有结果后移除背景按钮去掉，主按钮换保存 -->
-      <template v-if="tool === 'removeBg'" #trailing-operations>
-        <div flex gap="2">
-          <template v-if="result">
-            <BaseButton :disabled="processing" @click.stop="copyToClipboard">{{
-              t('image.copy')
-            }}</BaseButton>
-            <BaseButton variant="primary" :disabled="processing" @click.stop="saveToFile">{{
+      <!-- 操作行 = 处理态任务行（独立「任务」分组）：左侧与选项行同构（无图标，标题对齐），
+           右侧不定进度条（图片链路无分母）；完成闪 600ms 后换结果操作按钮（复制 / 保存） -->
+      <template #title-operations>
+        <span flex items="center" gap="2" min-w="0">
+          <span shrink="0">{{ taskTitle }}</span>
+          <span v-if="taskSuffix" text="muted" truncate>· {{ taskSuffix }}</span>
+        </span>
+      </template>
+      <template #trailing-operations>
+        <div v-if="processing || doneFlash" class="w-40" shrink="0">
+          <BaseProgress :value="taskProgress" />
+        </div>
+        <div v-else flex gap="2">
+          <BaseButton
+            v-if="tool === 'removeBg' && !result"
+            variant="primary"
+            @click.stop="removeBg"
+            >{{ t('image.removeBg') }}</BaseButton
+          >
+          <template v-else>
+            <BaseButton @click.stop="copyToClipboard">{{ t('image.copy') }}</BaseButton>
+            <BaseButton variant="primary" @click.stop="saveToFile">{{
               t('image.save')
             }}</BaseButton>
           </template>
-          <BaseButton v-else variant="primary" :loading="processing" @click.stop="removeBg">{{
-            processing
-              ? bgStage
-                ? t(BG_STAGE_KEYS[bgStage])
-                : t('image.processing')
-              : t('image.removeBg')
-          }}</BaseButton>
-        </div>
-      </template>
-
-      <template v-else #trailing-operations>
-        <div flex gap="2">
-          <BaseButton :disabled="processing" @click.stop="copyToClipboard">{{
-            t('image.copy')
-          }}</BaseButton>
-          <BaseButton variant="primary" :disabled="processing" @click.stop="saveToFile">{{
-            t('image.save')
-          }}</BaseButton>
         </div>
       </template>
 
@@ -182,6 +177,7 @@ import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
 import { isTauri } from '@/utils/tauri'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
+import BaseProgress from '@/components/ui/BaseProgress.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import { t } from '@/runtime/i18n'
@@ -205,7 +201,45 @@ import {
 
 const appStore = useAppStore()
 
-const processing = ref(false)
+/** 处理任务（单一在飞）：任务行标题/进度随它切换；null = 空闲 */
+type TaskKind = 'removeBg' | 'stitch'
+const task = ref<TaskKind | null>(null)
+const processing = computed(() => task.value !== null)
+/// 任务代次：reset（退出扩展）作废在飞任务——旧请求收尾不得清掉新任务的任务态
+let taskSeq = 0
+
+function beginTask(kind: TaskKind): number {
+  const id = ++taskSeq
+  task.value = kind
+  return id
+}
+
+/** 仅本代次任务可归还任务态（作废代次 / 新任务接管时静默） */
+function endTask(id: number) {
+  if (id === taskSeq) task.value = null
+}
+
+/** 完成态闪现：任务行满进度 + 完成文案停留 600ms 再换结果操作按钮（统一处理态收尾） */
+const doneFlash = ref(false)
+let doneTimer: ReturnType<typeof setTimeout> | undefined
+
+function clearDoneFlash() {
+  if (doneTimer) {
+    clearTimeout(doneTimer)
+    doneTimer = undefined
+  }
+  doneFlash.value = false
+}
+
+function flashDone() {
+  clearDoneFlash()
+  doneFlash.value = true
+  doneTimer = setTimeout(() => {
+    doneTimer = undefined
+    doneFlash.value = false
+  }, 600)
+}
+
 const result = ref<ImageResult | null>(null)
 
 /** 云端移除背景阶段（本地 Vision 无阶段，沿用「正在抠图…」）。 */
@@ -221,6 +255,29 @@ let removeBgToken = 0
 
 /** 当前工具：初始读持久化默认，用户主动切换时写回 config（投递直达只改本地不落盘）。 */
 const tool = ref<Tool>(config.defaultTool)
+
+// ── 处理态任务行（docs/design.md「处理态」）──
+// 图片两个工具都没有原生分母（Vision 同步推理 / 拼接 CoreGraphics / Bria 三段阶段），
+// 一律不定进度条 + 阶段文案——不伪造百分比。
+const taskTitle = computed(() => {
+  if (doneFlash.value) return t('image.taskDone')
+  if (task.value === 'stitch') return t('image.taskStitch')
+  if (task.value === 'removeBg') return t('image.taskRemoveBg')
+  return t('image.operations')
+})
+
+const taskProgress = computed<number | null | undefined>(() => {
+  if (doneFlash.value) return 100
+  if (!task.value) return undefined
+  return null
+})
+
+/** muted 后缀：处理阶段（Bria 三段 / 本地抠图 / 拼接）——进度条本身无分母 */
+const taskSuffix = computed(() => {
+  if (doneFlash.value || !task.value) return ''
+  if (task.value === 'stitch') return t('image.stitching')
+  return bgStage.value ? t(BG_STAGE_KEYS[bgStage.value]) : t('image.segmentingForeground')
+})
 
 // ── 移除背景 ──
 const inputPath = ref('')
@@ -301,6 +358,9 @@ function itemStyle(index: number): Record<string, string> {
 
 function reset() {
   removeBgToken++
+  taskSeq++
+  clearDoneFlash()
+  task.value = null
   bgStage.value = null
   result.value = null
   originalPreview.value = ''
@@ -315,6 +375,7 @@ function reset() {
 // 工具切换：清操作结果（结果属于特定工具），共享集合与 removeBg 当前张保留
 watch(tool, () => {
   removeBgToken++
+  clearDoneFlash()
   bgStage.value = null
   result.value = null
   if (tool.value === 'removeBg') {
@@ -344,7 +405,10 @@ onDeactivated(() => {
 // window-focused 补刷（获焦回调自带激活判断，deactivated 期间跳过）
 onActivated(refreshScreenHeight)
 onMounted(() => window.addEventListener('window-focused', refreshScreenHeightIfActive))
-onUnmounted(() => window.removeEventListener('window-focused', refreshScreenHeightIfActive))
+onUnmounted(() => {
+  clearDoneFlash()
+  window.removeEventListener('window-focused', refreshScreenHeightIfActive)
+})
 
 // 跨扩展进入的投递消费见下方 setInput 之后的 watch（依赖 inputMeta / previewToken 等声明，
 // immediate 回调会在注册点同步执行，须置于全部依赖声明之后）。
@@ -382,9 +446,6 @@ const resizeTitle = computed(() =>
 const resizeOptions = computed(() => RESIZE_PRESETS.map((v) => ({ label: String(v), value: v })))
 
 const removeBgSourceSubtitle = computed(() => {
-  if (processing.value) {
-    return bgStage.value ? t(BG_STAGE_KEYS[bgStage.value]) : t('image.segmentingForeground')
-  }
   if (!inputPath.value) return t('image.formatsHint')
   if (result.value) {
     return `${result.value.width}×${result.value.height} · ${formatBytes(result.value.sizeBytes)} · PNG`
@@ -432,9 +493,9 @@ const items = computed<SettingItem[]>(() => {
   if (hasImage) {
     list.push({
       id: 'operations',
-      title: t('image.operations'),
+      title: taskTitle.value,
       type: 'custom',
-      group: t('image.group.common'),
+      group: t('common.group.task'),
     })
   }
 
@@ -511,7 +572,8 @@ const items = computed<SettingItem[]>(() => {
 
 function onExecute(item: SettingItem) {
   if (item.id === 'operations') {
-    // 回车 = 主按钮动作：removeBg 未处理时移除背景，其余（已处理 / 拼接）保存
+    // 回车 = 主按钮动作：处理中/完成闪现期不响应；removeBg 未处理时移除背景，其余保存
+    if (processing.value || doneFlash.value) return
     if (tool.value === 'removeBg' && !result.value) void removeBg()
     else void saveToFile()
     return
@@ -521,11 +583,9 @@ function onExecute(item: SettingItem) {
     return
   }
   if (item.id === 'source') {
-    if (tool.value === 'removeBg') {
-      if (!processing.value) void pickInput()
-    } else {
-      void pickStitchFiles()
-    }
+    if (processing.value) return
+    if (tool.value === 'removeBg') void pickInput()
+    else void pickStitchFiles()
   }
 }
 
@@ -640,7 +700,7 @@ async function removeBg() {
       bgStage.value = stage
     }
   }
-  processing.value = true
+  const taskId = beginTask('removeBg')
   bgStage.value = null
   result.value = null
   try {
@@ -654,6 +714,7 @@ async function removeBg() {
     // 请求期间换图 / 退出扩展 / 移除当前张：旧结果不回灌
     if (req !== removeBgToken) return
     result.value = r
+    flashDone()
   } catch (e) {
     if (req !== removeBgToken) return
     appStore.showStatus(`${t('image.processFailed')}：${e ?? t('common.unknownError')}`, {
@@ -661,7 +722,7 @@ async function removeBg() {
       kind: 'error',
     })
   } finally {
-    processing.value = false
+    endTask(taskId)
     bgStage.value = null
   }
 }
@@ -730,7 +791,7 @@ async function ensureStitched(): Promise<ImageResult | null> {
   // 已有结果且指纹未变：复用
   const fp = stitchFingerprint()
   if (result.value && resultFingerprint === fp) return result.value
-  processing.value = true
+  const taskId = beginTask('stitch')
   try {
     const resize: Resize =
       stitchDirection.value === 'vertical'
@@ -744,6 +805,7 @@ async function ensureStitched(): Promise<ImageResult | null> {
     })
     result.value = r
     resultFingerprint = fp
+    flashDone()
     return r
   } catch (e) {
     appStore.showStatus(`${t('image.stitchFailed')}：${e ?? t('common.unknownError')}`, {
@@ -752,7 +814,7 @@ async function ensureStitched(): Promise<ImageResult | null> {
     })
     return null
   } finally {
-    processing.value = false
+    endTask(taskId)
   }
 }
 

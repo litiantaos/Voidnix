@@ -28,6 +28,8 @@ export const zhCNMessages: Msgs = {
   'common.operationFailed': { 'zh-CN': '操作失败' },
   'common.networkError': { 'zh-CN': '网络错误，请稍后重试。' },
   'common.group.general': { 'zh-CN': '通用' },
+  // 处理态任务行独立分组（扩展主操作 + 进度；见 docs/design.md「处理态」）
+  'common.group.task': { 'zh-CN': '任务' },
 
   // ─── search ──────────────────────────────────
   'search.placeholder': { 'zh-CN': '搜索应用、文件、扩展等' },

@@ -10,12 +10,10 @@
     @cancel="emit('close')"
   >
     <div flex="~ col" gap="3">
-      <!-- 检查中：文案 + 不定进度条（复用下载进度轨道，fill 条内循环跑动） -->
+      <!-- 检查中：文案 + 不定进度条（统一 BaseProgress，无分母不伪造百分比） -->
       <div v-if="updateStore.checking" flex="~ col" gap="1.5">
         <div text="xs secondary">{{ t('updateDialog.checking') }}</div>
-        <div class="progress-track">
-          <div class="progress-fill progress-indeterminate"></div>
-        </div>
+        <BaseProgress :value="null" />
       </div>
 
       <!-- 检查完成、无更新：失败错误 / 已是最新版本 -->
@@ -43,12 +41,12 @@
           {{ updateStore.info.body }}
         </p>
 
-        <!-- 下载进度：下载中显示百分比，下载完成后保留满进度条 -->
-        <div v-if="updateStore.downloading || updateStore.downloaded" flex="~ col" gap="1.5">
-          <div class="progress-track">
-            <div class="progress-fill" :style="{ width: `${pct}%` }"></div>
+        <!-- 下载进度：统一 BaseProgress；百分比紧贴条尾（与任务行同构），无分母时走不定进度 -->
+        <div v-if="updateStore.downloading || updateStore.downloaded" flex items="center" gap="2">
+          <div flex-1 min-w="0">
+            <BaseProgress :value="pct > 0 ? pct : null" />
           </div>
-          <div v-if="pct > 0" text="xs muted text-right" font="mono">{{ pct }}%</div>
+          <span v-if="pct > 0" text="xs muted" font="mono" shrink="0">{{ pct }}%</span>
         </div>
 
         <p v-if="updateStore.error" text="xs danger">{{ updateStore.error }}</p>
@@ -61,6 +59,7 @@
 import { ref, computed } from 'vue'
 import { relaunch } from '@tauri-apps/plugin-process'
 import BaseDialog from './BaseDialog.vue'
+import BaseProgress from './BaseProgress.vue'
 import { t } from '@/runtime/i18n'
 import { useUpdateStore } from '@/stores/update'
 
@@ -119,38 +118,3 @@ async function onConfirm() {
   }
 }
 </script>
-
-<style scoped>
-.progress-track {
-  height: 6px;
-  background: var(--color-fill-18);
-  border-radius: 9999px;
-  overflow: hidden;
-}
-.progress-fill {
-  height: 100%;
-  background: var(--color-accent);
-  border-radius: 9999px;
-  transition: width var(--duration-fast) var(--ease-out);
-}
-/* 检查中不定进度：fill 固定宽，transform 循环跑动（GPU 合成，不动 width 免重排）；
-   循环指示动画非一次性过渡，不适用 duration token（同 mica-fog 裸时长先例） */
-.progress-indeterminate {
-  width: 30%;
-  animation: progress-run 1.4s linear infinite;
-}
-@keyframes progress-run {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    /* fill 左缘滑到轨道右端：位移 (1 + 0.3) / 0.3 − 1 = 433.33% 自身宽，完全出右界后重置 */
-    transform: translateX(433.33%);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .progress-indeterminate {
-    animation: none;
-  }
-}
-</style>

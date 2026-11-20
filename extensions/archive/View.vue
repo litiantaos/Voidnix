@@ -15,22 +15,28 @@
     <!-- ── 压缩模式：BaseSettingsList 表单（源行 + 目标目录 + 名称/格式/级别/密码 + 过滤开关） ── -->
     <template v-if="mode === 'compress'">
       <BaseSettingsList :items="compressItems" @execute="onCompressExecute">
-        <!-- 源行尾：主操作按钮（busy 态同钮切换 spinner + 进度文案，proxy/homebrew 同范式） + 取消 -->
-        <template #trailing-source>
-          <div flex gap="2">
-            <BaseButton v-if="job.busy" @click.stop="cancelJob">{{
+        <!-- 操作行 = 处理态任务行（独立「任务」分组）：左侧与其它行同构（图标井 + 标题），
+             右侧紧凑进度组（进度条 + 紧贴条尾的百分比 + 取消） -->
+        <template #trailing-operations>
+          <div v-if="job.busy || jobDone" flex items="center" gap="3">
+            <!-- 条与百分比同组紧贴；百分比与操作按钮之间留宽一档（gap-3） -->
+            <div flex items="center" gap="2">
+              <div class="w-40" shrink="0"><BaseProgress :value="taskProgress" /></div>
+              <span v-if="taskPercent != null" class="tabular-nums" text="xs secondary" shrink="0"
+                >{{ taskPercent }}%</span
+              >
+            </div>
+            <BaseButton v-if="job.busy && !jobDone" @click.stop="cancelJob">{{
               t('archive.cancel')
             }}</BaseButton>
-            <BaseButton
-              variant="primary"
-              :disabled="job.busy || !outputName.trim()"
-              :loading="job.busy && !jobDone"
-              :icon="job.busy && jobDone ? 'i-ri-check-line' : undefined"
-              @click.stop="runCompress"
-            >
-              {{ job.busy ? jobLabel : t('archive.compress') }}
-            </BaseButton>
           </div>
+          <BaseButton
+            v-else
+            variant="primary"
+            :disabled="!outputName.trim()"
+            @click.stop="runCompress"
+            >{{ t('archive.compress') }}</BaseButton
+          >
         </template>
         <!-- 目标目录行尾：源文件同目录重置 + 选择（与解压目录行同范式） -->
         <template #trailing-destDir>
@@ -112,22 +118,23 @@
     <!-- ── 解压模式：BaseSettingsList 表单（压缩包 / 解压目录 / 查看文件） ── -->
     <template v-if="mode === 'extract' && info">
       <BaseSettingsList :items="extractItems" @execute="onExtractExecute">
-        <!-- 压缩包行尾：主操作按钮（busy 态同钮切换 spinner + 进度文案，proxy/homebrew 同范式） + 取消 -->
-        <template #trailing-archive>
-          <div flex gap="2">
-            <BaseButton v-if="job.busy" @click.stop="cancelJob">{{
+        <!-- 操作行 = 处理态任务行（同压缩模式） -->
+        <template #trailing-operations>
+          <div v-if="job.busy || jobDone" flex items="center" gap="3">
+            <!-- 条与百分比同组紧贴；百分比与操作按钮之间留宽一档（gap-3） -->
+            <div flex items="center" gap="2">
+              <div class="w-40" shrink="0"><BaseProgress :value="taskProgress" /></div>
+              <span v-if="taskPercent != null" class="tabular-nums" text="xs secondary" shrink="0"
+                >{{ taskPercent }}%</span
+              >
+            </div>
+            <BaseButton v-if="job.busy && !jobDone" @click.stop="cancelJob">{{
               t('archive.cancel')
             }}</BaseButton>
-            <BaseButton
-              variant="primary"
-              :disabled="job.busy"
-              :loading="job.busy && !jobDone"
-              :icon="job.busy && jobDone ? 'i-ri-check-line' : undefined"
-              @click.stop="runExtract"
-            >
-              {{ job.busy ? jobLabel : t('archive.extract') }}
-            </BaseButton>
           </div>
+          <BaseButton v-else variant="primary" @click.stop="runExtract">{{
+            t('archive.extract')
+          }}</BaseButton>
         </template>
         <!-- 解压目录行尾：同目录重置 + 选择（镜像 video 输出目录行范式） -->
         <template #trailing-destDir>
@@ -156,6 +163,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
+import BaseProgress from '@/components/ui/BaseProgress.vue'
 import { config } from './config'
 import { archiveInfo, archivePassword, pendingInputPaths } from './index'
 import {
@@ -228,23 +236,49 @@ function confirmExtractPwd() {
   void runExtract()
 }
 
-/** 任务状态（无进度条：busy / error 两态 + 按钮 loading 文案；成功即关窗无 done 态） */
-const job = ref({ busy: false, error: '' })
-/** 任务进度百分比（null = 引擎不产出进度——bsdtar / 7z / rar 无分母；仅按钮文案内呈现） */
+/** 任务状态：error 不再常驻列表行——失败统一 toast（与 video/image 一致） */
+const job = ref({ busy: false })
+/** 任务进度百分比（null = 引擎不产出分母——bsdtar / 7z / rar 无进度事件） */
 const jobPercent = ref<number | null>(null)
-/** 任务完成落位标志（100% → 完成文案 → 关窗三段收尾的中段） */
+/** 任务完成落位标志（满进度条 + 完成文案停留 600ms 后揭晓/关窗） */
 const jobDone = ref(false)
 /** 任务代次：新输入 / 复位时递增，旧任务的迟到 Channel 事件按代次丢弃 */
 let jobSeq = 0
-const jobLabel = computed(() => {
+/** 最近一次失败 toast：Channel error 与 invoke reject 双通道同报同一错误，按消息去重 */
+let lastErrorToast: { msg: string; at: number } | null = null
+
+/** 处理态任务行（独立「任务」分组）：图标固定动作语义、标题/进度随任务切换，单行紧凑布局 */
+const taskTitle = computed(() => {
   if (jobDone.value)
     return mode.value === 'compress'
       ? t('archive.compressDoneLabel')
       : t('archive.extractDoneLabel')
-  const base = mode.value === 'compress' ? t('archive.compressing') : t('archive.extracting')
-  return jobPercent.value != null ? `${base} ${Math.round(jobPercent.value)}%` : base
+  if (job.value.busy)
+    return mode.value === 'compress' ? t('archive.compressing') : t('archive.extracting')
+  return t('archive.operations')
 })
-/** busy 态按钮图标：进行中 spinner（loading prop）；完成落位对勾（icon） */
+/** 0 视作尚未产出分母：按不定进度呈现（不假装 0% ） */
+const taskProgress = computed<number | null | undefined>(() => {
+  if (jobDone.value) return 100
+  if (!job.value.busy) return undefined
+  return jobPercent.value != null && jobPercent.value > 0 ? jobPercent.value : null
+})
+
+/** 行尾百分比：完成闪现 100%；未产出分母不显示数字（进度条走不定进度） */
+const taskPercent = computed<number | null>(() => {
+  if (jobDone.value) return 100
+  if (!job.value.busy || jobPercent.value == null || jobPercent.value <= 0) return null
+  return Math.round(jobPercent.value)
+})
+
+/** 两种表单共用：操作行永远是第一项（独立「任务」分组，空闲 = 主操作入口） */
+const operationsItem = computed<SettingItemT>(() => ({
+  id: 'operations',
+  title: taskTitle.value,
+  icon: mode.value === 'compress' ? 'i-ri-inbox-archive-line' : 'i-ri-inbox-unarchive-line',
+  type: 'custom',
+  group: t('common.group.task'),
+}))
 
 /** 解压输出目录：null = 压缩包同目录（默认），可另选可重置（会话级不落盘） */
 const destDir = ref<string | null>(null)
@@ -366,6 +400,7 @@ const extractItems = computed<SettingItemT[]>(() => {
     info.value.totalSize ? ` · ${formatBytes(info.value.totalSize)}` : ''
   }${info.value.truncated ? ` · ${t('archive.truncatedShort')}` : ''}`
   const list: SettingItemT[] = [
+    operationsItem.value,
     {
       id: 'archive',
       title: baseName(info.value.path),
@@ -397,6 +432,7 @@ const extractItems = computed<SettingItemT[]>(() => {
 const compressItems = computed<SettingItemT[]>(() => {
   const group = ''
   const list: SettingItemT[] = [
+    operationsItem.value,
     {
       id: 'source',
       title: t('archive.compressN', { n: inputs.value.length }),
@@ -479,16 +515,6 @@ const compressItems = computed<SettingItemT[]>(() => {
       group,
     },
   )
-  if (job.value.error) {
-    list.push({
-      id: 'error',
-      title: job.value.error,
-      icon: 'i-ri-error-warning-line',
-      tone: 'danger',
-      type: 'custom',
-      group,
-    })
-  }
   return list
 })
 
@@ -518,33 +544,49 @@ async function loadArchive(path: string) {
 
 function onEvent(ev: ArchiveEvent, seq: number) {
   if (seq !== jobSeq) return
-  // done 不在此处理：busy 保持到 finishJob 收尾（100% → 完成文案 → 关窗）结束
+  // done 不在此处理：busy 保持到 finishJob 收尾（满进度 + 完成文案 → 揭晓 → 关窗）结束
   if (ev.type === 'progress') {
-    jobPercent.value = ev.percent
+    // 完成收尾期间（满进度 + 完成文案）迟到的 progress 不再回退进度
+    if (!jobDone.value) jobPercent.value = ev.percent
   } else if (ev.type === 'error') {
     job.value.busy = false
-    job.value.error = ev.message === '已取消' ? '' : ev.message
+    jobPercent.value = null
+    jobDone.value = false
     // 密码类失败清空会话密码：下次解压重新弹窗输入
     if (ev.message.includes('密码')) archivePassword.value = ''
     if (ev.message === '已取消') appStore.showStatus(t('archive.cancelled'))
-    else appStore.showStatus(ev.message, { kind: 'error' })
+    else toastFailure(ev.message)
   }
-  // progress 事件忽略（无进度条设计）
 }
 
-/** 成功收尾三段：进度落 100% → 按钮切「完成」稍驻 → 打开/聚焦目标访达窗口并隐藏主窗
- *  （toast 为独立原生浮窗，主窗隐藏后继续展示至到期）。seq 守卫：中途新输入/复位即中止。 */
+/** 失败 toast 去重：同一任务里 Channel error 先到、invoke reject 后到（或反之）只报一次 */
+function toastFailure(msg: string) {
+  const now = performance.now()
+  if (lastErrorToast?.msg === msg && now - lastErrorToast.at < 1000) return
+  lastErrorToast = { msg, at: now }
+  appStore.showStatus(msg, { duration: 5000, kind: 'error' })
+}
+
+/** 失败兜底上报：invoke reject 与 Channel error 双通道同报同一错误（按消息去重） */
+function reportFailure(e: unknown, seq: number) {
+  if (seq !== jobSeq) return
+  const msg = String(e)
+  if (msg === '已取消') return
+  if (msg.includes('密码')) archivePassword.value = ''
+  toastFailure(msg)
+}
+
+/** 成功收尾：满进度 + 完成文案停留 600ms（统一处理态完成闪现）→ 打开/聚焦目标访达窗口
+ *  并隐藏主窗（toast 为独立原生浮窗，主窗隐藏后继续展示至到期）。seq 守卫：中途新输入/复位即中止。 */
 async function finishJob(outputPath: string, seq: number) {
   jobPercent.value = 100
-  await sleep(300)
-  if (seq !== jobSeq) return
   jobDone.value = true
   await sleep(600)
   if (seq !== jobSeq) return
   await invoke(CMD.revealInFinder, { path: outputPath }).catch(() => {})
   hideWindow()
-  // 窗口已隐藏，静默复位按钮状态供下次进入
-  job.value = { busy: false, error: '' }
+  // 窗口已隐藏，静默复位状态供下次进入
+  job.value = { busy: false }
   jobPercent.value = null
   jobDone.value = false
 }
@@ -559,8 +601,10 @@ async function runCompress() {
   const dir = compressDestDir.value ?? dirOf(inputs.value[0])
   const name = normalizeOutputName(outputName.value.trim(), format.value)
   outputName.value = name
-  job.value = { busy: true, error: '' }
+  job.value = { busy: true }
   jobPercent.value = null
+  jobDone.value = false
+  lastErrorToast = null
   const seq = ++jobSeq
   const channel = new Channel<ArchiveEvent>()
   channel.onmessage = (ev) => onEvent(ev, seq)
@@ -588,8 +632,8 @@ async function runCompress() {
   } catch (e) {
     if (seq !== jobSeq) return
     job.value.busy = false
-    // 「已取消」已由事件通道 toast，不落成错误行
-    job.value.error = String(e) === '已取消' ? '' : String(e)
+    jobPercent.value = null
+    reportFailure(e, seq)
   }
 }
 
@@ -604,8 +648,10 @@ async function runExtract() {
   // 默认压缩包同目录；destDir 为用户显式另选（可重置回同目录）
   const path = info.value.path
   const dest = destDir.value ?? dirOf(path)
-  job.value = { busy: true, error: '' }
+  job.value = { busy: true }
   jobPercent.value = null
+  jobDone.value = false
+  lastErrorToast = null
   const seq = ++jobSeq
   const channel = new Channel<ArchiveEvent>()
   channel.onmessage = (ev) => onEvent(ev, seq)
@@ -629,17 +675,20 @@ async function runExtract() {
   } catch (e) {
     if (seq !== jobSeq) return
     job.value.busy = false
-    job.value.error = String(e) === '已取消' ? '' : String(e)
-    // 密码类失败清空会话密码：下次解压重新弹窗输入
-    if (String(e).includes('密码')) archivePassword.value = ''
+    jobPercent.value = null
+    reportFailure(e, seq)
   }
 }
 
-/** 解压表单行回车：压缩包行 = 解压（busy 守卫与按钮一致）；目录行 = 另选目录 */
+/** 解压表单行回车：操作行 = 主按钮动作（进行中取消，同 video）；目录行 = 另选目录 */
 function onExtractExecute(item: SettingItemT) {
-  if (item.id === 'archive') {
-    if (!job.value.busy) void runExtract()
-  } else if (item.id === 'destDir' && !job.value.busy) void pickDestDir()
+  if (item.id === 'operations') {
+    if (jobDone.value) return
+    if (job.value.busy) void cancelJob()
+    else void runExtract()
+    return
+  }
+  if (item.id === 'destDir' && !job.value.busy) void pickDestDir()
 }
 
 /** 另选解压目录（镜像 video 输出目录 picker 范式） */
@@ -659,20 +708,23 @@ async function pickCompressDestDir() {
 }
 
 function onCompressExecute(item: SettingItemT) {
+  // 操作行回车 = 主按钮动作（进行中取消，同 video；空名/busy 守卫与按钮一致）
+  if (item.id === 'operations') {
+    if (jobDone.value) return
+    if (job.value.busy) {
+      void cancelJob()
+      return
+    }
+    if (outputName.value.trim()) void runCompress()
+    return
+  }
   // 目标目录行回车 = 另选目录（与行尾按钮同动作）
   if (item.id === 'destDir') {
     if (!job.value.busy) void pickCompressDestDir()
     return
   }
   // 密码行回车 = 打开密码弹窗（与行尾按钮同动作）
-  if (item.id === 'password') {
-    openPwdDialog()
-    return
-  }
-  // 源行回车 = 执行主按钮动作（与按钮组一致：busy/空名守卫）
-  if (item.id === 'source' && !job.value.busy && outputName.value.trim()) {
-    void runCompress()
-  }
+  if (item.id === 'password') openPwdDialog()
 }
 
 async function cancelJob() {
@@ -696,8 +748,9 @@ function reset() {
   archivePassword.value = ''
   destDir.value = null
   compressDestDir.value = null
-  job.value = { busy: false, error: '' }
+  job.value = { busy: false }
   jobPercent.value = null
   jobDone.value = false
+  lastErrorToast = null
 }
 </script>

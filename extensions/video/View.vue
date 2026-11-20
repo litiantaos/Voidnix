@@ -1,9 +1,28 @@
 <template>
   <div class="flex-col-view">
     <BaseSettingsList :items="items" @execute="onSettingsExecute">
-      <!-- 操作行：有视频或处理中显示，回车执行主按钮动作（取消 / 开始） -->
+      <!-- 操作行 = 处理态任务行（独立「任务」分组）：左侧与选项行同构（无图标，标题对齐），
+           右侧紧凑进度组（进度条 + 紧贴条尾的百分比 + 取消）。
+           有视频 / 处理中 / 完成闪现时显示；回车执行主按钮动作（取消 / 开始） -->
+      <template #title-operations>
+        <span flex items="center" gap="2" min-w="0">
+          <span shrink="0">{{ taskTitle }}</span>
+          <span v-if="taskSuffix" text="muted" truncate>· {{ taskSuffix }}</span>
+        </span>
+      </template>
       <template #trailing-operations>
-        <BaseButton v-if="st.busy" @click.stop="cancelJob">{{ t('video.cancel') }}</BaseButton>
+        <div v-if="st.busy || st.doneFlash" flex items="center" gap="3">
+          <!-- 条与百分比同组紧贴；百分比与操作按钮之间留宽一档（gap-3） -->
+          <div flex items="center" gap="2">
+            <div class="w-40" shrink="0">
+              <BaseProgress :value="taskProgress" />
+            </div>
+            <span v-if="taskPercent != null" class="tabular-nums" text="xs secondary" shrink="0"
+              >{{ taskPercent }}%</span
+            >
+          </div>
+          <BaseButton v-if="st.busy" @click.stop="cancelJob">{{ t('video.cancel') }}</BaseButton>
+        </div>
         <BaseButton v-else variant="primary" :disabled="!canRun" @click.stop="startJob">{{
           t('video.start')
         }}</BaseButton>
@@ -57,6 +76,10 @@ const st = reactive({
   index: 0,
   done: 0,
   failed: 0,
+  /** 完成态闪现：任务行短暂显示「处理完成」+ 满进度条后复位（统一处理态收尾） */
+  doneFlash: false,
+  /** 任务发起时的模式快照：中途改模式不影响进行中任务标题 */
+  taskMode: 'compress' as VideoMode,
 })
 
 /** 队列发起时的参数快照（批量中途改 UI 参数不影响后续文件；startJob 时整体覆写） */
@@ -92,6 +115,7 @@ import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseProgress from '@/components/ui/BaseProgress.vue'
 import { t } from '@/runtime/i18n'
 import type { SettingItem } from '@/types/settings'
 import { config } from './config'
@@ -158,25 +182,47 @@ const canRun = computed(
     !isDownloading.value,
 )
 
-const progressText = computed(() => {
-  if (st.percent <= 0) return ''
-  return `${Math.round(st.percent)}%`
+/** 任务行主标题：动作短语；空闲 = 「操作」，完成闪现 = 「处理完成」（批量计数走 muted 后缀） */
+const TASK_TITLE_KEYS: Record<VideoMode, string> = {
+  compress: 'video.taskCompress',
+  convert: 'video.taskConvert',
+  'extract-audio': 'video.taskExtractAudio',
+}
+
+const taskTitle = computed(() => {
+  if (st.doneFlash) return t('video.taskDone')
+  if (!st.busy) return t('video.operations')
+  return t(TASK_TITLE_KEYS[st.taskMode])
 })
 
-/** 合并行副标题：未选文件才显示核心版本；已选仅文件信息；进行中仅进度 */
+/** muted 后缀：批量计数 + 首个 progress 事件前的准备态（百分比归行尾，不塞标题） */
+const taskSuffix = computed(() => {
+  if (!st.busy) return ''
+  const parts: string[] = []
+  if (st.total > 1) parts.push(t('video.taskCounter', { i: st.index + 1, n: st.total }))
+  if (st.percent <= 0) parts.push(t('video.taskPreparing'))
+  return parts.join(' · ')
+})
+
+/** 0 = 尚未收到首个进度事件（ffmpeg 启动/探测期）：按不定进度呈现，不假装 0% */
+const taskProgress = computed<number | null | undefined>(() => {
+  if (st.doneFlash) return 100
+  if (!st.busy) return undefined
+  return st.percent > 0 ? st.percent : null
+})
+
+/** 行尾百分比：完成闪现 100%；未起步/无分母不显示数字（进度条走不定进度） */
+const taskPercent = computed<number | null>(() => {
+  if (st.doneFlash) return 100
+  if (!st.busy || st.percent <= 0) return null
+  return Math.round(st.percent)
+})
+
+/** 输入行副标题：未选文件才显示核心版本；已选仅文件信息（进度归任务行，不再挤占副标题） */
 const sourceSubtitle = computed(() => {
   if (isDownloading.value) return t('video.downloadingCore')
   if (!coreLoaded.value) return t('video.coreVersionNone')
   if (!core.value.available) return t('video.dependencyHint')
-  if (st.busy) {
-    if (st.total > 1)
-      return t('video.batchProgress', {
-        i: st.index + 1,
-        n: st.total,
-        value: progressText.value || '…',
-      })
-    return t('video.progress', { value: progressText.value || '…' })
-  }
   if (st.paths.length === 0) return t('video.coreVersion', { version: core.value.version || '—' })
   if (st.paths.length === 1) {
     return st.metas[0] ? formatMetaLine(st.metas[0]) : displayPath(st.paths[0])
@@ -214,15 +260,17 @@ const items = computed<SettingItem[]>(() => {
     group: t('video.group.common'),
   })
 
-  // 操作：通用组第二项，有视频或处理中才显示——孤儿观察态（页面重载后重开面板）
-  // paths 为空但 busy 置起，取消是唯一可达动作，不能失去入口（busy 态 Start 恒禁用，
-  // 该行仅渲染 Cancel）；回车执行主按钮动作（取消 / 开始），按钮经 trailing-operations 插槽
-  if (st.paths.length > 0 || st.busy) {
+  // 操作行 = 处理态任务行（docs/design.md「处理态」）：独立「任务」分组，左侧与选项行同构
+  //（无图标，标题对齐），右侧进度条 + 紧贴条尾的百分比 + 取消；空闲行尾主按钮。
+  // 完成闪现 600ms 后复位。
+  // 孤儿观察态（页面重载后重开面板）paths 为空但 busy 置起，取消是唯一可达动作，
+  // 不能失去入口；回车执行主按钮动作（取消 / 开始），按钮经 trailing-operations 插槽
+  if (st.paths.length > 0 || st.busy || st.doneFlash) {
     list.push({
       id: 'operations',
-      title: t('video.operations'),
+      title: taskTitle.value,
       type: 'custom',
-      group: t('video.group.common'),
+      group: t('common.group.task'),
     })
   }
 
@@ -428,13 +476,40 @@ let loadSeq = 0
 
 /** 清空选择（同时作废进行中的探测循环，防止越界回写已清空的 metas）。 */
 function resetSelection() {
+  clearDoneFlash()
   loadSeq++
   st.paths = []
   st.metas = []
 }
 
+// ─── 完成态闪现：任务行满进度 + 完成文案停留 600ms 再复位（统一处理态收尾） ───
+let doneTimer: ReturnType<typeof setTimeout> | undefined
+
+function clearDoneFlash() {
+  if (doneTimer) {
+    clearTimeout(doneTimer)
+    doneTimer = undefined
+  }
+  st.doneFlash = false
+}
+
+function flashDone() {
+  clearDoneFlash()
+  st.doneFlash = true
+  st.percent = 100
+  doneTimer = setTimeout(() => {
+    doneTimer = undefined
+    st.doneFlash = false
+    st.percent = 0
+    resetSelection()
+  }, 600)
+}
+
 /** 设置输入列表并逐个探测元数据。单文件失败 toast；多文件静默跳过（汇总行缺省、startJob 时 Rust 自 probe 兜底）。 */
 async function loadInputs(paths: string[]) {
+  // 新选择取代完成态：取消挂起的复位（否则 600ms 后把刚加载的列表清掉）
+  clearDoneFlash()
+  st.percent = 0
   const seq = ++loadSeq
   st.paths = paths
   st.metas = paths.map(() => null)
@@ -472,8 +547,9 @@ function resetOutputDir() {
 }
 
 function onSettingsExecute(item: SettingItem) {
-  // 操作行回车 = 主按钮动作：取消 / 开始（未就绪禁用态不触发）
+  // 操作行回车 = 主按钮动作：取消 / 开始（未就绪禁用态、完成闪现期不触发）
   if (item.id === 'operations') {
+    if (st.doneFlash) return
     if (st.busy) {
       void cancelJob()
       return
@@ -501,6 +577,7 @@ function onSettingsExecute(item: SettingItem) {
 
 function startJob() {
   if (!canRun.value) return
+  clearDoneFlash()
   // 提取音频时分辨率无意义，固定 original；Rust 端仍接收
   const runScale: Scale = mode.value === 'extract-audio' ? 'original' : scale.value
   batchSnapshot.outputDir = outputDir.value || null
@@ -511,6 +588,7 @@ function startJob() {
     scale: runScale,
     preferHardware: config.preferHardware,
   }
+  st.taskMode = mode.value
   st.total = st.paths.length
   st.index = 0
   st.done = 0
@@ -608,7 +686,8 @@ function advanceQueue() {
   else finishBatch(false)
 }
 
-/** 收束整批：单文件保持原文案，多文件汇总（取消不区分）。 */
+/** 收束整批：单文件保持原文案，多文件汇总（取消不区分）。
+ *  全部成功 → 任务行闪完成态 600ms 后再清空选择（失败/取消保留列表便于重试）。 */
 function finishBatch(cancelled: boolean) {
   st.queueActive = false
   st.busy = false
@@ -616,11 +695,11 @@ function finishBatch(cancelled: boolean) {
     appStore.showStatus(t('video.canceled'))
     return
   }
-  // 全部成功即清空选择回到初始态；失败/取消保留列表便于重试或继续处理剩余
-  if (st.failed === 0) resetSelection()
   if (st.total === 1) {
-    if (st.failed === 0) appStore.showStatus(t('video.processComplete'))
-    else {
+    if (st.failed === 0) {
+      appStore.showStatus(t('video.processComplete'))
+      flashDone()
+    } else {
       appStore.showStatus(`${t('video.failed')}：${lastErrorMessage || t('common.unknownError')}`, {
         duration: 5000,
         kind: 'error',
@@ -630,6 +709,7 @@ function finishBatch(cancelled: boolean) {
   }
   if (st.failed === 0) {
     appStore.showStatus(t('video.batchDone', { n: st.done }))
+    flashDone()
   } else {
     appStore.showStatus(
       t('video.batchDonePartial', { done: st.done, n: st.total, failed: st.failed }),
@@ -716,6 +796,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  clearDoneFlash()
   unlistenProgress?.()
   unlistenReady?.()
   unlistenJob?.()

@@ -100,6 +100,40 @@ describe('video 终态双投递去重', () => {
     ctx.wrapper.unmount()
   })
 
+  it('处理态任务行：标题/进度条/取消替代按钮，源行只留文件元数据', async () => {
+    const ctx = await setup()
+    const emitChannel = await startRun(ctx)
+    emitChannel({ type: 'progress', percent: 45, timeSecs: 10, speed: '2x' })
+    await flushPromises()
+
+    const ops = ctx.wrapper.find('#si-operations')
+    expect(ops.text()).toContain('正在压缩')
+    expect(ops.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('45')
+    expect(ops.find('button').text()).toBe('取消')
+    // 进度离开副标题：源行仍是文件元数据
+    expect(ctx.wrapper.find('#si-source').text()).toContain('1920×1080')
+    expect(ctx.wrapper.find('#si-source').text()).not.toContain('进度')
+    ctx.wrapper.unmount()
+  })
+
+  it('成功收尾：任务行闪「处理完成」+ 满进度 600ms 后复位', async () => {
+    const ctx = await setup()
+    const emitChannel = await startRun(ctx)
+    emitChannel({ type: 'done', outputPath: '/tmp/out.mp4', sizeBytes: 1 })
+    await flushPromises()
+
+    const ops = ctx.wrapper.find('#si-operations')
+    expect(ops.text()).toContain('处理完成')
+    expect(ops.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('100')
+    expect(ops.find('button').exists()).toBe(false)
+
+    await new Promise((r) => setTimeout(r, 700))
+    await flushPromises()
+    // 全部成功：完成闪现后清空选择回到初始态，操作行随之消失
+    expect(ctx.wrapper.find('#si-operations').exists()).toBe(false)
+    ctx.wrapper.unmount()
+  })
+
   it('孤儿观察不受影响：busy 由快照置起，全局事件照常驱动并反馈一次', async () => {
     jobSnapshot.busy = true
     jobSnapshot.lastPercent = 10

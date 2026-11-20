@@ -19,9 +19,11 @@ registerMessages({
   'archive.browseFiles': { 'zh-CN': '查看压缩包', en: 'Browse Archive' },
   'archive.truncatedShort': { 'zh-CN': '条目过多', en: 'Truncated' },
   'archive.chooseDir': { 'zh-CN': '选择目录', en: 'Choose Folder' },
-  'archive.extracting': { 'zh-CN': '解压中…', en: 'Extracting…' },
+  // 处理态任务行标题（进度条由 BaseProgress 承载，见 docs/design.md「处理态」）
+  'archive.operations': { 'zh-CN': '操作', en: 'Actions' },
+  'archive.extracting': { 'zh-CN': '正在解压', en: 'Extracting' },
   'archive.compress': { 'zh-CN': '压缩', en: 'Compress' },
-  'archive.compressing': { 'zh-CN': '压缩中…', en: 'Compressing…' },
+  'archive.compressing': { 'zh-CN': '正在压缩', en: 'Compressing' },
   'archive.cancel': { 'zh-CN': '取消', en: 'Cancel' },
   'archive.cancelled': { 'zh-CN': '已取消', en: 'Cancelled' },
   'archive.extractDoneLabel': { 'zh-CN': '解压完成', en: 'Extracted' },

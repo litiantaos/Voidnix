@@ -27,6 +27,7 @@ export const enMessages: Msgs = {
   'common.operationFailed': { en: 'Operation failed' },
   'common.networkError': { en: 'Network error, please try again later.' },
   'common.group.general': { en: 'General' },
+  'common.group.task': { en: 'Task' },
 
   // ─── search ──────────────────────────────────
   'search.placeholder': { en: 'Search apps, files, extensions…' },

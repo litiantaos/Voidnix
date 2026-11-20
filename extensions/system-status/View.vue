@@ -80,15 +80,11 @@
               {{ snapshot.cpu_temp.toFixed(0) }}°C
             </span>
           </div>
-          <div mb="2" rounded="full" class="fill-active" h="1.5" overflow="hidden">
-            <div
-              h="full"
-              w="full"
-              class="origin-left transition-transform duration-[var(--duration-slow)] ease-out"
-              :class="usageColor(snapshot.cpu_usage)"
-              :style="{ transform: `scaleX(${clamp(snapshot.cpu_usage) / 100})` }"
-            />
-          </div>
+          <BaseProgress
+            class="mb-2"
+            :value="clamp(snapshot.cpu_usage)"
+            :tone="usageTone(snapshot.cpu_usage)"
+          />
           <div mb="2" flex gap="0.5" h="3" items="end">
             <div
               v-for="(u, i) in snapshot.cpu_cores_usage"
@@ -106,7 +102,7 @@
                 h="full"
                 class="transition-transform duration-[var(--duration-slow)] ease-out"
                 style="transform-origin: bottom"
-                :class="usageColor(u)"
+                :class="TONE_BG[usageTone(u)]"
                 :style="{ transform: `scaleY(${clamp(u) / 100})` }"
               />
             </div>
@@ -133,18 +129,11 @@
               {{ pct(snapshot.used_memory, snapshot.total_memory).toFixed(0) }}%
             </span>
           </div>
-          <div mb="2" rounded="full" class="fill-active" h="1.5" overflow="hidden">
-            <div
-              h="full"
-              w="full"
-              class="transition-transform duration-[var(--duration-slow)] ease-out"
-              style="transform-origin: left"
-              :class="usageColor(pct(snapshot.used_memory, snapshot.total_memory))"
-              :style="{
-                transform: `scaleX(${clamp(pct(snapshot.used_memory, snapshot.total_memory)) / 100})`,
-              }"
-            />
-          </div>
+          <BaseProgress
+            class="mb-2"
+            :value="clamp(pct(snapshot.used_memory, snapshot.total_memory))"
+            :tone="usageTone(pct(snapshot.used_memory, snapshot.total_memory))"
+          />
           <div text="xs muted" tabular-nums>
             {{ t('systemStatus.available', { size: formatBytes(snapshot.available_memory) }) }}
           </div>
@@ -185,16 +174,10 @@
                 {{ formatBytes(d.used) }} / {{ formatBytes(d.total) }}
               </span>
             </div>
-            <div rounded="full" class="fill-active" h="1.5" overflow="hidden">
-              <div
-                h="full"
-                w="full"
-                class="transition-transform duration-[var(--duration-slow)] ease-out"
-                style="transform-origin: left"
-                :class="usageColor(pct(d.used, d.total))"
-                :style="{ transform: `scaleX(${clamp(pct(d.used, d.total)) / 100})` }"
-              />
-            </div>
+            <BaseProgress
+              :value="clamp(pct(d.used, d.total))"
+              :tone="usageTone(pct(d.used, d.total))"
+            />
           </div>
         </section>
 
@@ -221,16 +204,11 @@
                 {{ t('systemStatus.health', { pct: snapshot.battery.health }) }}
               </span>
             </div>
-            <div mb="2" rounded="full" class="fill-active" h="1.5" overflow="hidden">
-              <div
-                h="full"
-                w="full"
-                class="transition-transform duration-[var(--duration-slow)] ease-out"
-                style="transform-origin: left"
-                :class="batteryColor(snapshot.battery.level)"
-                :style="{ transform: `scaleX(${snapshot.battery.level / 100})` }"
-              />
-            </div>
+            <BaseProgress
+              class="mb-2"
+              :value="clamp(snapshot.battery.level)"
+              :tone="batteryTone(snapshot.battery.level)"
+            />
             <div text="xs muted" flex flex-wrap gap="1.5" tabular-nums>
               <span v-if="snapshot.battery.time_to_empty !== null">
                 {{
@@ -278,16 +256,7 @@
                   {{ p.cpu.toFixed(1) }}% · {{ formatBytes(p.memory) }}
                 </span>
               </div>
-              <div rounded="full" class="fill-active" h="0.5" overflow="hidden">
-                <div
-                  h="full"
-                  w="full"
-                  class="transition-transform duration-[var(--duration-slow)] ease-out"
-                  style="transform-origin: left"
-                  :class="usageColor(p.cpu)"
-                  :style="{ transform: `scaleX(${clamp(p.cpu) / 100})` }"
-                />
-              </div>
+              <BaseProgress size="sm" :value="clamp(p.cpu)" :tone="usageTone(p.cpu)" />
             </div>
           </div>
         </section>
@@ -368,6 +337,7 @@ import { writeText } from '@/utils/clipboard'
 import { formatBytes, formatRate } from '@/utils/format'
 import { t } from '@/runtime/i18n'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
+import BaseProgress from '@/components/ui/BaseProgress.vue'
 
 interface DiskStatic {
   name: string
@@ -609,10 +579,19 @@ function clamp(n: number): number {
   return Math.max(0, Math.min(100, n))
 }
 
-function usageColor(p: number): string {
-  if (p >= 85) return 'bg-danger'
-  if (p >= 60) return 'bg-warning'
-  return 'bg-accent'
+const TONE_BG = {
+  accent: 'bg-accent',
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-danger',
+} as const
+type MeterTone = keyof typeof TONE_BG
+
+/** 占用度 → 语义色（数据仪表与 BaseProgress tone 同源） */
+function usageTone(p: number): MeterTone {
+  if (p >= 85) return 'danger'
+  if (p >= 60) return 'warning'
+  return 'accent'
 }
 
 function loadColor(p: number): string {
@@ -621,10 +600,10 @@ function loadColor(p: number): string {
   return 'text-muted'
 }
 
-function batteryColor(level: number): string {
-  if (level <= 20) return 'bg-danger'
-  if (level <= 40) return 'bg-warning'
-  return 'bg-accent'
+function batteryTone(level: number): MeterTone {
+  if (level <= 20) return 'danger'
+  if (level <= 40) return 'warning'
+  return 'accent'
 }
 
 function batteryIcon(b: BatteryInfo): string {

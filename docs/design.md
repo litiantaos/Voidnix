@@ -22,9 +22,9 @@
 - **soft-chip**：控件 — 实白 + 1px 冷灰 solid border，无 elevation；focus 改边框色 `--focus-ring-color`
 - **ext-tag**：搜索栏只读扩展名
 - **ui-active**：列表选中色块 + 轻 blur；按钮选中（`soft-chip.ui-active`）以透明 1px 边占位保持盒模型恒定——防切换时内容盒 ±2px、同行按钮平移跳动。BaseList 行的色块由组件内脱流滑块承载（同 `--ui-active-fill`，选中切换 translateY 滑动，见 docs/extensions.md「选中高亮滑块」）
-- **ui-btn-***：BaseButton variant 面类（primary 实心主钮 / ghost 透明 / danger 淡红底 + 红字 + 红边，hover 加深边色、active 加深底与边）。**加载态**统一走 BaseButton `loading` prop：前置 `i-ri-loader-4-line animate-spin` spinner（`text-sm`，与 icon 槽同大——loading ↔ idle 切换零尺寸跳变优先于环径视觉；与文字的间距同 icon 槽统一 `gap-2`）+ 禁交互（同 disabled），主钮面色降级（`.ui-btn-primary.ui-loading`：accent 实底降至 60% 透明，与「不可用」的纯 disabled 面色不动相区分）；文案可随进度切换（archive 范式），完成落位可换对勾 icon；禁止业务侧手写 spinner icon 三元（`loading ? 'i-ri-loader-4-line…' : …`）。**图标尺寸单源**：icon/spinner 统一 `text-sm`（14px 配 12px 字的光学配对，与 BaseSelect 箭头同惯例）；覆盖须走 `!text-xs`（!important 确定胜出；裸尺寸类与组件类同 specificity，胜负取决于 UnoCSS 生成顺序，禁用）。**尺寸变体** `size="inline"`（`ui-btn-inline` shortcut）：表单内联图标钮（输入框行内眼睛钮等）随文字行高、贴边内距、muted 色，禁止业务侧手写 `!h-auto !px-1 …` 覆盖串。**无障碍**：icon-only 且传 `title` 时组件自动透传为 `aria-label`，icon-only 按钮必须传 `title`
+- **ui-btn-***：BaseButton variant 面类（primary 实心主钮 / ghost 透明 / danger 淡红底 + 红字 + 红边，hover 加深边色、active 加深底与边）。**加载态**统一走 BaseButton `loading` prop：前置 `i-ri-loader-4-line animate-spin` spinner（`text-sm`，与 icon 槽同大——loading ↔ idle 切换零尺寸跳变优先于环径视觉；与文字的间距同 icon 槽统一 `gap-2`）+ 禁交互（同 disabled），主钮面色降级（`.ui-btn-primary.ui-loading`：accent 实底降至 60% 透明，与「不可用」的纯 disabled 面色不动相区分）；文案可随进度切换（homebrew 滚动段范式）；处理任务的完成落位由任务行「完成」文案 + 满进度条承担（见处理态），不占用按钮；禁止业务侧手写 spinner icon 三元（`loading ? 'i-ri-loader-4-line…' : …`）。**图标尺寸单源**：icon/spinner 统一 `text-sm`（14px 配 12px 字的光学配对，与 BaseSelect 箭头同惯例）；覆盖须走 `!text-xs`（!important 确定胜出；裸尺寸类与组件类同 specificity，胜负取决于 UnoCSS 生成顺序，禁用）。**尺寸变体** `size="inline"`（`ui-btn-inline` shortcut）：表单内联图标钮（输入框行内眼睛钮等）随文字行高、贴边内距、muted 色，禁止业务侧手写 `!h-auto !px-1 …` 覆盖串。**无障碍**：icon-only 且传 `title` 时组件自动透传为 `aria-label`，icon-only 按钮必须传 `title`
 - **dialog-\***：弹窗近实白（非 soft-surface）；标题/底栏为浮层 + 透明渐变，内容可滚入；高度随内容形态切换平滑重排（JS FLIP + `transition: height`）
-- **fill-ctrl**：实底填充（进度轨 / kbd 等，非卡片壳）
+- **fill-ctrl**：实底填充（kbd 等底材，非卡片壳）；进度轨用 `fill-active`（见处理态）
 
 ### elevation（仅三档 + 两特化）
 
@@ -78,6 +78,52 @@
 - 动作面板：`dropdown-panel` + `fixed bottom-3 right-3`（toast 已迁原生 NSPanel 浮窗，不再走 web 层——详见 AGENTS.md「toast 提示」节）
 - `ActionMenuHint`：快捷键键帽，渲染于 BaseList 选中滑层（`.selection-hint`）内随焦点行平滑移动——运动由滑层 transform 承载，切换项零显隐（absolute、`right` 12px、flex 垂直居中，canvas 实底 + divider 细边，底部透明模糊遮罩 backdrop blur + mask 渐变、上下撑满行高、`pointer-events: none`）；显隐只表达「焦点行有无动作」的数据语义（actionHint 谓词），翻转时淡入淡出（无位移无缩放），opacity 落在 scrim/key 子元素自身（祖先 opacity 隔断 backdrop 采样致遮罩突现），退场完成后容器延迟交还 visibility，稳态未显示时整树跳过绘制；经 BaseList `actionHint` prop 供给（boolean / item 谓词），未传零渲染
 
+## 处理态（任务行）
+
+扩展主处理任务（video 转码 / archive 压缩解压 / image 抠图拼接）统一为「任务行」：操作行固定在独立分组
+`common.group.task`（分组标题「任务」）里，和选项分组（通用 / 文件 / 参数 / 输出）隔开——任务行表达
+「状态 + 主操作」，不属于设置项。行由 `BaseSettingsList` 的 `title-{id}` / `trailing-{id}` 槽位组合，
+**单行紧凑布局**（不再用标题下面压一条通栏进度条）：
+
+- **左**：与选项行同构——video/image 无图标、标题从行内容左缘起（与其它行标题对齐）；
+  archive 行本身都有图标井，任务行用**静态动作图标**（archive / unarchive）保持同构。**不要**
+  额外放 spinner/对勾等状态图标（右侧进度条已承担活动信号）。标题后接 muted 后缀
+  （批量 `第 i/n 个`、图片阶段文案、首个进度事件前的 `准备中…`）。
+- **右**：6px 进度条（`BaseProgress`，固定 `w-40`）+ **紧贴条尾**的百分比（`tabular-nums`，
+  无分母时不显示，条与百分比 `gap-2`）+ 取消按钮（可取消时，百分比与按钮 `gap-3` 留宽一档）；
+  不设固定宽度百分比列（会与条脱开显得散）。
+- **空闲**：行尾是主操作按钮（video 开始 / image 移除背景·复制·保存 / archive 压缩·解压）。
+- **不定进度**：后端无分母（bsdtar 解压、Vision 推理、Bria 三段）时进度值传 `null`，
+  30% 宽填充 1.4s 循环（`prefers-reduced-motion` 停用），**绝不伪造百分比**（0 亦按不定进度处理）。
+- **完成收尾**：满进度 + 「完成」文案停留 600ms，再执行扩展自身收尾
+  （toast / 结果操作按钮 / 揭晓并关窗）。
+- **失败**：任务行复位空闲态 + toast，不落常驻错误行（错误详情不塞列表）。
+- **回车**：操作行回车 = 主按钮动作（处理中即取消；完成闪现期不响应），与按钮同守卫。
+
+### 进度载体全景
+
+条状进度统一用 `BaseProgress`（`tone`：accent / success / warning / danger；`size`：md 6px / sm 2px；
+`value: null` = 不定进度）。按「谁拥有这个操作」分工，不得越界：
+
+| 场景                                        | 载体                                                                   | 消费者                                        |
+| ------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------- |
+| 扩展主处理任务（可取消 / 批量 / 多阶段）    | 独立「任务」分组任务行：`BaseProgress` + 紧贴百分比 + 取消             | video、archive、image                         |
+| 控件拥有的长操作（依赖下载 / 包管理器命令） | 触发按钮内文案（百分比 / 步骤滚动），不占任务行                        | video FFmpeg、proxy 核心、homebrew 更新与服务 |
+| 弹窗内全局操作（检查更新 / 下载安装）       | 弹窗内 `BaseProgress` + 紧贴百分比                                     | UpdateDialog                                  |
+| 数据仪表（占用 / 配额，不是任务）           | `BaseProgress` 按阈值切 tone（系统占用）；文本 + SparkLine（模型配额） | system-status、ai-providers                   |
+| 无分母加载（搜索 / OCR / 握手）             | `BaseButton` loading / `BaseEmptyState` spinner                        | 全局                                          |
+
+- **任务行**：处理任务可批量、多阶段、可取消，需要同时表达「在做什么 / 到哪 / 怎么停」，且处理期间
+  表单整体失活——进度属于整个视图，必须离开按钮；**不得**写成某行副标题纯文本（旧 video
+  `进度 2/5 · 45%`：信息与载体脱钩、无取消入口）。
+- **按钮内**：操作由触发按钮拥有——依赖下载（单一产物、字节可量化、无取消）写百分比
+  （`min-w-*` + `tabular-nums` 防宽度抖动）；包管理器命令（homebrew update / upgrade / services）
+  无分母、无取消，按钮内滚动步骤文案（`brew-roll`），不挪任务行。
+- **数据仪表**：不是任务进度——系统占用按阈值切语义色（阈值见 `usageTone`），配额是文本 + SparkLine，
+  不套取消 / 完成语义。
+- **禁止手写轨道 / 填充**：`UpdateDialog` 与 system-status 已统一到 `BaseProgress`（各自的
+  `.progress-track` 样式已删除）；新增进度场景只组合 `BaseProgress`，不复制条形样式。
+
 ## Agent
 
 - 用户 bubble（`--color-bubble` accent 浅染 + `--accent-line-soft` 描边）· 助手 `soft-card` · step/notice `--space-soft` + mist/语义 soft
@@ -87,5 +133,5 @@
 ## 速查
 
 - 主窗 `mica-shell` · 搜索栏 `acrylic-bar` · 控件 chip · 大输入 `ui-field`
-- 选中 `ui-active` · 主钮 `ui-btn-primary` · 浮层 `dropdown-panel`
+- 选中 `ui-active` · 主钮 `ui-btn-primary` · 浮层 `dropdown-panel` · 条状进度/仪表 `BaseProgress`（tone/size）
 - 弹窗 `.dialog-to` · 抬升卡 `soft-card` · 进度/分隔 `fill-active` / `border-divider`

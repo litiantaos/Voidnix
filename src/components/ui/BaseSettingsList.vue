@@ -17,6 +17,10 @@
         :icon="item.icon"
         :tone="item.tone"
       >
+        <!-- 标题整体覆盖（任务行：内联状态图标 + 主标题 + muted 后缀；普通行走 title prop） -->
+        <template v-if="$slots[`title-${item.id}`]" #title>
+          <slot :name="`title-${item.id}`" />
+        </template>
         <template v-if="item.type === 'shortcut'" #trailing>
           <ShortcutInput
             :model-value="item.value"
