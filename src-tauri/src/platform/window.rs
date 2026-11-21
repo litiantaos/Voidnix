@@ -249,6 +249,37 @@ pub fn hide_native(window: &tauri::WebviewWindow) {
     }
 }
 
+/// 唤醒冻结的 WKWebView 渲染时钟。
+///
+/// 根因（开机自启早期偶发）：登录风暴期 WindowServer/WebKit 竞态下，「从未
+/// orderFront → show」的可见性翻转不被 WebKit occlusion 感知——WebContent 进程
+/// 存活、JS/IPC 正常，但渲染时钟永久停摆（画面空白，hide/show 不重建渲染管线，
+/// 重启 app 才恢复）。WKWebView 渲染由窗口可见性驱动是常态机制（隐藏冻结 CSS
+/// 动画同源），异常仅在「翻转丢失后无自愈路径」。
+///
+/// 三连轻扰全部幂等：view 树 setNeedsDisplay（标记重绘）+ alpha 微扰（0.99→1.0，
+/// 迫使 WindowServer 重算该窗口 occlusion state，两行同帧提交无视觉变化）+
+/// orderFrontRegardless 重发（重评估窗口 order，触发 occlusion 通知链）。仅对可见
+/// 窗口调用（调用方保证——alpha 复位 1.0 会把隐藏窗踢成可见）。
+pub fn kick_webview_render(window: &tauri::WebviewWindow) {
+    use objc2_app_kit::NSView;
+
+    if let Ok(ptr) = window.ns_view() {
+        let raw = ptr.cast::<NSView>();
+        if let Some(view) = unsafe { raw.as_ref() } {
+            view.setNeedsDisplay(true);
+        }
+    }
+    if let Ok(ptr) = window.ns_window() {
+        let raw = ptr.cast::<NSWindow>();
+        if let Some(ns_window) = unsafe { raw.as_ref() } {
+            ns_window.setAlphaValue(0.99);
+            ns_window.setAlphaValue(1.0);
+            ns_window.orderFrontRegardless();
+        }
+    }
+}
+
 /// makeKeyWindow —— 取得键盘焦点（配合 orderFrontRegardless）。
 pub fn make_key_window(window: &tauri::WebviewWindow) {
     if let Ok(ptr) = window.ns_window() {

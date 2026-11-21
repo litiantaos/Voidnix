@@ -71,6 +71,21 @@ pub fn show_window(app: tauri::AppHandle) {
     });
 }
 
+/// 唤醒冻结的 WKWebView 渲染时钟（前端渲染脉搏检测到冻结时调用，
+/// 见 `src/utils/render-pulse.ts`）。仅窗口可见时执行——alpha 复位 1.0
+/// 会把隐藏窗踢成可见，可见性以 `shortcut::WINDOW_VISIBLE` 权威状态复核。
+#[tauri::command]
+pub fn kick_webview_render(app: tauri::AppHandle) {
+    let _ = app.clone().run_on_main_thread(move || {
+        use tauri::Manager;
+        if crate::runtime::shortcut::is_window_visible() {
+            if let Some(win) = app.get_webview_window("main") {
+                crate::platform::window::kick_webview_render(&win);
+            }
+        }
+    });
+}
+
 /// 隐藏主窗口。
 ///
 /// 编排：可见性状态 → 平台 hide（resignKey + alpha=0 + ignoresMouse，**不** orderOut）→

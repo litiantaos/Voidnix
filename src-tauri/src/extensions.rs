@@ -40,6 +40,7 @@ macro_rules! configure_app {
             crate::runtime::window::get_main_frame,
             crate::runtime::window::get_window_max_height,
             crate::runtime::window::is_main_window_visible,
+            crate::runtime::window::kick_webview_render,
             crate::runtime::window::pick_directory,
             crate::runtime::window::pick_files,
             crate::runtime::window::quit_app,

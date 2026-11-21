@@ -12,6 +12,7 @@ import { whenConfigReady } from '@/runtime/storage'
 import { t, resolveLocalized } from '@/runtime/i18n'
 import { formatShortcutKeys } from '@/utils/format'
 import { isTauri, hideWindow, showWindow } from '@/utils/tauri'
+import { ensureRenderPulse } from '@/utils/render-pulse'
 import { resumeInfiniteAnimations } from '@/utils/dom'
 import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 import type { ShortcutBinding } from '@/runtime/types'
@@ -33,6 +34,13 @@ export function useAppLifecycle(win: Win) {
   function markSkip() {
     lastShortcutTime = Date.now()
   }
+
+  // 渲染脉搏兜底巡检：可见窗口的渲染时钟必须活着（冻结 = 唤出空白且 hide/show
+  // 不自愈，见 utils/render-pulse.ts）。获焦触发的 ensureRenderPulse 覆盖常规唤起，
+  // 但 onFocusChanged 序列偶发丢失（瞬时 blur 打掉/补发迟至数秒），低频轮询兜底
+  // 全覆盖唤起路径（快捷键 / 菜单栏 / 单实例 / 自动 show）。5s 一次可见性 IPC +
+  // 可见时一次立即通过的 rAF 探测，开销与 system-status 采样同级。
+  let renderPulseTimer: ReturnType<typeof setInterval> | null = null
 
   async function toggleWindow() {
     if (!win) return
@@ -337,6 +345,9 @@ export function useAppLifecycle(win: Win) {
         ({ payload: focused }: { payload: boolean }) => {
           if (focused) {
             window.dispatchEvent(new CustomEvent('window-focused'))
+            // 渲染脉搏检测：唤起获焦即探测 rAF 活性（冻结 = 开机自启竞态下唤出空白，
+            // 两级自愈见 utils/render-pulse.ts；正常路径仅一次 ~16ms 的 rAF 探测）
+            void ensureRenderPulse()
             // 窗口隐藏期间 WKWebView 冻结 CSS 动画且恢复可见后不推进：唤起获焦重启无限循环动画
             resumeInfiniteAnimations()
             // 主动接完 responder 链（wry: makeFirstResponder(webview)，不 activate_app）：
@@ -376,6 +387,15 @@ export function useAppLifecycle(win: Win) {
         },
       )
       track(unlistenFocus)
+
+      // 渲染脉搏兜底巡检（focus 事件丢失时的慢路径兜底，见声明处注释）
+      renderPulseTimer = setInterval(() => {
+        void invoke<boolean>(CMD.isMainWindowVisible)
+          .then((visible) => {
+            if (visible) ensureRenderPulse()
+          })
+          .catch(() => {})
+      }, 5000)
     }
 
     document.addEventListener('keydown', onLocalShortcut)
@@ -393,6 +413,10 @@ export function useAppLifecycle(win: Win) {
     if (permLingerTimer) {
       clearTimeout(permLingerTimer)
       permLingerTimer = null
+    }
+    if (renderPulseTimer) {
+      clearInterval(renderPulseTimer)
+      renderPulseTimer = null
     }
     if (isTauri) {
       unlistenList.forEach((fn) => {

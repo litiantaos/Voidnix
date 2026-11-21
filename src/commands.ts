@@ -13,6 +13,7 @@ export const CMD = {
   getWindowMaxHeight: 'get_window_max_height',
   getMainFrame: 'get_main_frame',
   isMainWindowVisible: 'is_main_window_visible',
+  kickWebviewRender: 'kick_webview_render',
   setWindowAppearance: 'set_window_appearance',
   getCachedAppearance: 'get_cached_appearance',
   showToast: 'show_toast',
