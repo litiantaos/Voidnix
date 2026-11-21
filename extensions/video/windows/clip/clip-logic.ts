@@ -156,6 +156,41 @@ function virtualOffsetToFrame(seg: TimelineSegment, offsetUs: number): number {
   return usToFrame(virtualOffsetToSourceUs(seg, offsetUs), seg.fps)
 }
 
+/**
+ * 显示 seek 目标（源侧微秒）：目标帧呈现窗口的内部（帧网格点 + 半帧），并钳在段内
+ * 最后一帧的窗口里。
+ *
+ * 不能精确落在帧 PTS 边界上：非整微秒帧网格（30000/1001、30/24fps）的帧点经双精度
+ * 秒换算（sourceUs / 1e6）会落在真实 PTS 之下 ε，播放器呈现前一帧——逐帧步进
+ * 「不走 / 跳两帧」与刀口处呈现已删帧的共同根因。入窗口内部后舍入方向不再敏感。
+ * 出点（outFrame 的 PTS）本身落在出点后首帧（已删内容）的窗口里，须回钳到末帧。
+ */
+export function displaySeekUs(seg: TimelineSegment, sourceUs: number): number {
+  const half = Math.floor(frameDurationUs(seg.fps) / 2)
+  const segIn = frameToUs(seg.inFrame, seg.fps)
+  const segOut = frameToUs(seg.outFrame, seg.fps)
+  const lastMid = Math.max(segIn, segOut - half) // 末帧窗口中点（段至少 1 帧）
+  return Math.min(Math.max(sourceUs, segIn) + half, lastMid)
+}
+
+/** 预滚停驻偏置：入点后 2ms——出首帧呈现窗口内部，又只吃掉首帧 ~2ms 时长。 */
+export const PREROLL_PARK_LEAD_US = 2_000
+
+/**
+ * 预滚停驻点（源侧微秒）：入点 + 2ms，恒钳在首帧呈现窗口的**前半段**。
+ *
+ * 播放引擎的 rAF 兜底把「入点 + 半帧」之后判为已到刀口——停驻点越过它会在换层后
+ * 的首个 tick 被误判成刀口（超高帧率/极短段的防御）；且停驻即播放起点，越靠前
+ * 首帧时长越完整。
+ */
+export function prerollParkUs(seg: TimelineSegment): number {
+  const inUs = frameToUs(seg.inFrame, seg.fps)
+  const outUs = frameToUs(seg.outFrame, seg.fps)
+  const halfUs = Math.floor(frameDurationUs(seg.fps) / 2)
+  const maxLead = Math.max(0, Math.min(halfUs - 1, outUs - 1 - inUs))
+  return inUs + Math.min(PREROLL_PARK_LEAD_US, maxLead)
+}
+
 /** 在虚拟位置切一刀：所在段一分为二（源帧网格对齐；刀口落段边界则原样返回）。 */
 export function splitAtVirtual(segs: TimelineSegment[], virtualUs: number): TimelineSegment[] {
   const at = locateVirtual(segs, virtualUs)

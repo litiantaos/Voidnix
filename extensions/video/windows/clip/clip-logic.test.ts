@@ -3,12 +3,15 @@ import {
   clampUs,
   deleteVirtualRange,
   applySourceCuts,
+  displaySeekUs,
   formatDuration,
   formatTimecode,
+  frameDurationUs,
   frameToUs,
   framesPerSecond,
   isValidRange,
   locateVirtual,
+  prerollParkUs,
   quantizeUs,
   segStartUs,
   segVirtualUs,
@@ -71,6 +74,75 @@ describe('帧网格', () => {
   it('clamp 到素材边界', () => {
     expect(clampUs(-50, 1_000_000)).toBe(0)
     expect(clampUs(2_000_000, 1_000_000)).toBe(1_000_000)
+  })
+})
+
+describe('显示 seek 目标（帧呈现窗口内部）', () => {
+  it('非整微秒网格：目标落在该帧窗口内，不贴 PTS 边界（双精度秒舍入不再呈现前一帧）', () => {
+    const grids = [FPS_2997, FPS_30, { num: 24, den: 1 }]
+    for (const fps of grids) {
+      const s = seg({ fps, outFrame: 301 })
+      const d = frameDurationUs(fps)
+      for (const frame of [0, 1, 2, 3, 29, 300]) {
+        const target = displaySeekUs(s, frameToUs(frame, fps))
+        const pts = frame * d
+        // 目标严格在 (pts, pts+d) 内：呈现的恒是该帧
+        expect(target).toBeGreaterThan(pts)
+        expect(target).toBeLessThan(pts + d)
+      }
+    }
+  })
+
+  it('段内中间目标：网格点 + 半帧', () => {
+    const s = seg() // 30fps
+    expect(displaySeekUs(s, 0)).toBe(16_666)
+    expect(displaySeekUs(s, 1_000_000)).toBe(1_016_666) // frame 30 网格点
+  })
+
+  it('出点回钳：seek 到段尾/越界呈现末帧，而非出点后（已删）帧', () => {
+    const s = seg({ inFrame: 100, outFrame: 200 }) // 30fps
+    const d = 1_000_000 / 30
+    const segOut = frameToUs(200, FPS_30)
+    const target = displaySeekUs(s, segOut + 5_000_000) // 越界目标也钳住
+    expect(target).toBeGreaterThan(199 * d) // 末帧窗口内
+    expect(target).toBeLessThan(segOut)
+  })
+
+  it('单帧段：目标钳在该帧窗口内', () => {
+    const s = seg({ inFrame: 0, outFrame: 1 })
+    const target = displaySeekUs(s, 0)
+    expect(target).toBeGreaterThan(0)
+    expect(target).toBeLessThan(1_000_000 / 30)
+  })
+})
+
+describe('预滚停驻点（首帧窗口前半段）', () => {
+  it('常规帧率：入点后 2ms', () => {
+    const s = seg({ inFrame: 100, outFrame: 200 }) // 30fps
+    const inUs = frameToUs(100, FPS_30)
+    expect(prerollParkUs(s)).toBe(inUs + 2_000)
+  })
+
+  it('恒在首帧呈现窗口内部（不贴入点，不出段）', () => {
+    const grids = [FPS_2997, FPS_30, { num: 24, den: 1 }, { num: 500, den: 1 }]
+    for (const fps of grids) {
+      const s = seg({ fps, inFrame: 7, outFrame: 8 }) // 单帧段
+      const inUs = frameToUs(7, fps)
+      const outUs = frameToUs(8, fps)
+      const park = prerollParkUs(s)
+      const d = frameDurationUs(fps)
+      expect(park).toBeGreaterThan(inUs) // 双精度舍入不会落到入点之前
+      expect(park).toBeLessThan(inUs + d) // 首帧窗口内
+      expect(park).toBeLessThan(outUs)
+    }
+  })
+
+  it('超高帧率封顶：停驻不越过 rAF 兜底阈值（入点 + 半帧）', () => {
+    // 500fps：帧长 2000µs，半帧 1000µs < 2ms 偏置——须封到半帧内
+    const fps = { num: 500, den: 1 }
+    const s = seg({ fps, inFrame: 10, outFrame: 40 })
+    const inUs = frameToUs(10, fps)
+    expect(prerollParkUs(s)).toBe(inUs + 999) // 恰在阈值（in+1000）之前
   })
 })
 

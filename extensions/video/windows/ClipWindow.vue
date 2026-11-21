@@ -46,14 +46,29 @@
         <!-- 监视器：媒体井 + 传输控制一体卡 -->
         <section class="soft-card flex flex-1 flex-col min-w-0 overflow-hidden">
           <div class="clip-media flex flex-1 min-h-0 items-center justify-center relative">
+            <!-- 双解码槽：live 可见承载当前段，stage 隐藏（opacity，不用 display ——
+                 保留解码优先级）预滚下一段，刀口处同任务换层（详见播放引擎节） -->
             <video
-              ref="videoRef"
-              class="h-full w-full object-contain"
+              ref="videoARef"
+              class="clip-layer"
+              :class="{ 'is-live': liveIsA }"
               playsinline
               disablepictureinpicture
               preload="auto"
-              @loadedmetadata="onVideoMeta"
-              @error="onVideoError"
+              @loadedmetadata="onSlotMeta"
+              @seeked="onSlotSeeked"
+              @error="onSlotError"
+            />
+            <video
+              ref="videoBRef"
+              class="clip-layer"
+              :class="{ 'is-live': !liveIsA }"
+              playsinline
+              disablepictureinpicture
+              preload="auto"
+              @loadedmetadata="onSlotMeta"
+              @seeked="onSlotSeeked"
+              @error="onSlotError"
             />
             <div
               v-if="previewError"
@@ -271,12 +286,14 @@ import {
   applySourceCuts,
   clampUs,
   deleteVirtualRange,
+  displaySeekUs,
   formatDuration,
   formatTimecode,
   frameDurationUs,
   frameToUs,
   locateVirtual,
   newSegmentId,
+  prerollParkUs,
   segSourceUs,
   segStartUs,
   segVirtualUs,
@@ -349,10 +366,17 @@ const playheadUs = ref(0)
 /** 打点（虚拟时间线微秒，删除区间 [I, O)）。 */
 const inMarkUs = ref<number | null>(null)
 const outMarkUs = ref<number | null>(null)
-/** 当前装载进 <video> 的段序号（-1 = 未装载）。 */
+/** 当前装载进 live 槽的段序号（-1 = 未装载）。 */
 const loadedSegIndex = ref(-1)
 const isPlaying = ref(false)
-const videoRef = ref<HTMLVideoElement | null>(null)
+/** 双解码槽：live 承载当前段（可见、驱动播放头），stage 预滚下一段；A/B 轮换。 */
+const videoARef = ref<HTMLVideoElement | null>(null)
+const videoBRef = ref<HTMLVideoElement | null>(null)
+const liveIsA = ref(true)
+const liveVideoEl = (): HTMLVideoElement | null =>
+  liveIsA.value ? videoARef.value : videoBRef.value
+const stageVideoEl = (): HTMLVideoElement | null =>
+  liveIsA.value ? videoBRef.value : videoARef.value
 const timelineRef = ref<HTMLCanvasElement | null>(null)
 const videoLoadError = ref(false)
 
@@ -536,39 +560,54 @@ async function loadTimelineFor(index: number) {
 }
 
 // ---------------------------------------------------------------------------
-// 播放引擎：虚拟时间线（跨段自动切源，playbackRate = 段倍速）
+// 播放引擎：双解码槽轮换（live / stage）
+//
+// 虚拟时间线（段序拼接 + 段倍速）由两个 <video> 解码槽承载：live 可见、驱动播放
+// 头；stage 隐藏（opacity，不用 display——保留解码优先级）、预滚下一段（seek 到
+// 入点后 2ms 停驻，首帧已解码在层上）。到刀口时预滚就位 → 同任务换层续播（零
+// seek 等待、零定格）；未就位 → 退回「先停表再冷切」保底（时钟停在末帧，出点后
+// 的帧物理上无法上屏，代价是一刀口时长的定格）。
 // ---------------------------------------------------------------------------
 
 function bindVideo() {
-  const video = videoRef.value
-  if (!video) return
-  video.muted = false
+  for (const el of [videoARef.value, videoBRef.value]) if (el) el.muted = false
 }
 
-/** 段切换时的待定 seek（源侧微秒）：loadedmetadata 到达后落位并续播。 */
+/** live 冷切中的待定 seek（源侧微秒，跨源 loadedmetadata 后落位）。 */
 let pendingSeekUs: number | null = null
+/** live 槽 seek 结算中（冷切/播放态跳转，已停表，落位后续播）：tick 让位。 */
+let liveSeeking = false
+/** live 槽当前对应的源位置（µs）：seekVirtual 判「位置未变」免停表重落位。 */
+let liveSourceUs = 0
+/** live 槽已装载段的 id（编辑后索引会漂移，id 才是稳定身份）。 */
+let liveSegId: string | null = null
 
-/** 把段装载进 <video>：同源段直接 seek（切分出的相邻段零间隙），跨源换 src 等 metadata。 */
+/** 把段装载进 live 槽（调用方保证已按需停表）。seek 目标恒在目标帧呈现窗口内部
+ * （displaySeekUs）——非整微秒帧网格（30000/1001、30/24fps）的帧点经双精度秒换算
+ * 会落在真实 PTS 之下 ε，呈现的是前一帧（逐帧步进「不走/跳两帧」与刀口呈现已删
+ * 帧的共同根因）。 */
 function ensureLoaded(segIndex: number, sourceUs: number) {
-  const video = videoRef.value
+  const video = liveVideoEl()
   const seg = segments.value[segIndex]
   if (!video || !seg) return
+  liveSourceUs = sourceUs
+  liveSegId = seg.id
   const url = clips.value[seg.sourceIndex]?.url ?? ''
-  const sameSource = url !== '' && video.src.startsWith(url)
-  if (loadedSegIndex.value === segIndex && sameSource) {
-    video.currentTime = sourceUs / 1_000_000
-    return
-  }
-  if (sameSource) {
-    // 同源不同段（如切分产物）：无需重载 src，直接跳到段入点
-    loadedSegIndex.value = segIndex
-    videoLoadError.value = false
-    video.currentTime = sourceUs / 1_000_000
+  if (url !== '' && video.src.startsWith(url)) {
+    // 同源段（含切分产物）：无需重载 src。引擎未就绪时该赋值按「默认起始位置」
+    // 延迟生效，任何残留的跨源待定 seek 都已过期
+    if (loadedSegIndex.value !== segIndex) {
+      loadedSegIndex.value = segIndex
+      videoLoadError.value = false
+    }
+    pendingSeekUs = null
+    video.currentTime = displaySeekUs(seg, sourceUs) / 1_000_000
     return
   }
   loadedSegIndex.value = segIndex
   videoLoadError.value = false
-  pendingSeekUs = sourceUs
+  pendingSeekUs = displaySeekUs(seg, sourceUs)
+  invalidateFrameGuard() // load() 会静默弃置在飞 rVFC 回调：作废防旧位置误触
   video.src = url
   video.load()
 }
@@ -579,12 +618,17 @@ function syncAfterEdit(atUs: number) {
     isPlaying.value = false
     playheadUs.value = 0
     loadedSegIndex.value = -1
-    const video = videoRef.value
-    if (video) {
-      video.pause()
-      video.removeAttribute('src')
-      video.load()
+    liveSegId = null
+    stageSegIndex = -1
+    stageReady = false
+    stageBusy = false
+    for (const el of [videoARef.value, videoBRef.value]) {
+      if (!el) continue
+      el.pause()
+      el.removeAttribute('src')
+      el.load()
     }
+    invalidateFrameGuard()
     scheduleDraw()
     return
   }
@@ -593,18 +637,55 @@ function syncAfterEdit(atUs: number) {
 
 let rafId = 0
 
+// ---------------------------------------------------------------------------
+// 帧级段边界守卫（requestVideoFrameCallback）：末帧「呈现时」切下一段，比删除帧
+// （PTS = 出点）的呈现早整整一个帧槽。rAF 轮询（~16ms 粒度）追不上帧边界——删除
+// 帧先呈现、下个 tick 才被切走，就是播放到刀口「闪一下已删画面」的根因。仅播放中
+// 生效；每次 tick 幂等续挂，暂停/切源自终止。
+// ---------------------------------------------------------------------------
+
+let frameGuardArmed = false
+let frameGuardToken = 0
+
+/** 作废在飞 rVFC 回调（load() 静默弃置回调、段切换后旧位置回调不得再触新段）。 */
+function invalidateFrameGuard() {
+  frameGuardToken += 1
+  frameGuardArmed = false
+}
+
+function armFrameGuard(video: HTMLVideoElement) {
+  if (frameGuardArmed || !('requestVideoFrameCallback' in video)) return
+  frameGuardArmed = true
+  const token = frameGuardToken
+  video.requestVideoFrameCallback((_now, meta) => {
+    if (token !== frameGuardToken) return
+    frameGuardArmed = false
+    if (!isPlaying.value || video.paused || video.ended) return
+    const seg = segments.value[loadedSegIndex.value]
+    if (!seg) return
+    const lastFrameUs = frameToUs(seg.outFrame, seg.fps) - frameDurationUs(seg.fps)
+    if (meta.mediaTime * 1_000_000 >= lastFrameUs - 200) {
+      crossBoundary() // 末帧已上屏：删除帧的槽位留给下一段
+      return
+    }
+    armFrameGuard(video)
+  })
+}
+
 function tick() {
   rafId = requestAnimationFrame(tick)
-  const video = videoRef.value
+  const video = liveVideoEl()
   if (!video || !isPlaying.value || video.paused || video.ended) return
-  if (pendingSeekUs != null) return // 段切换中，等 metadata 落位
+  if (pendingSeekUs != null || liveSeeking) return // 冷切中，等 seek 落位
   const seg = segments.value[loadedSegIndex.value]
   if (!seg) return
+  armFrameGuard(video)
   const cur = video.currentTime * 1_000_000
   const segIn = frameToUs(seg.inFrame, seg.fps)
   const segOut = frameToUs(seg.outFrame, seg.fps)
-  if (cur >= segOut - 500) {
-    advanceSegment()
+  if (cur >= segOut - frameDurationUs(seg.fps) / 2) {
+    // rVFC 缺席时的兜底：末帧窗口过半即切——宁提前半帧，不放删除帧出来
+    crossBoundary()
     return
   }
   const offset = Math.max(0, (cur - segIn) / seg.speed)
@@ -614,46 +695,207 @@ function tick() {
   )
 }
 
-/** 段尾到达：装载下一段续播；末段则停在成片终点。 */
-function advanceSegment() {
+// ---------------------------------------------------------------------------
+// stage 预滚：下一段提前「seek 到入点停驻、首帧已解码」，刀口换层零等待。
+// 预滚失败的后果只是回退冷切（慢而正确），不构成正确性依赖。
+// ---------------------------------------------------------------------------
+
+let stageSegIndex = -1
+let stageParkUs = 0
+/** 预滚就位：seeked 落位且目标未失效（刀口换层的资格凭证）。 */
+let stageReady = false
+/** 预滚进行中（跨源等 metadata 或 seek 未落位）：防同目标重复装载。 */
+let stageBusy = false
+/** 跨源预滚的待定 seek（源侧微秒，loadedmetadata 后落位）。 */
+let stagePendingUs: number | null = null
+let prerollTimer = 0
+
+/** 调度预滚；immediate 用于换层/落位/起播后（越早预滚，下个刀口越可能无缝）。 */
+function schedulePreroll(immediate = false) {
+  window.clearTimeout(prerollTimer)
+  if (immediate) {
+    prerollStage()
+    return
+  }
+  // 防抖：擦洗/步进连续触发时只在停顿 150ms 后装载一次，避免 seek 抖动
+  prerollTimer = window.setTimeout(prerollStage, 150)
+}
+
+function prerollStage() {
+  const video = stageVideoEl()
   const next = loadedSegIndex.value + 1
-  if (next < segments.value.length) {
-    const seg = segments.value[next]
-    ensureLoaded(next, frameToUs(seg.inFrame, seg.fps))
-    // 同源快路径不经 onVideoMeta：速率与续播在此落位（跨源路径由 onVideoMeta 承担）
-    const video = videoRef.value
-    if (video && pendingSeekUs == null) {
-      video.playbackRate = seg.speed
-      if (isPlaying.value && video.paused) void video.play().catch(() => {})
-    }
-  } else {
+  const seg = segments.value[next]
+  const url = seg ? (clips.value[seg.sourceIndex]?.url ?? '') : ''
+  if (!video || !seg || !url) {
+    stageSegIndex = -1
+    stageReady = false
+    stageBusy = false
+    stagePendingUs = null
+    return
+  }
+  const parkUs = prerollParkUs(seg)
+  if (
+    stageSegIndex === next &&
+    stageParkUs === parkUs &&
+    video.src.startsWith(url) &&
+    (stageReady || stageBusy)
+  ) {
+    return // 目标未变（倍速在换层时落位，不构成预滚失效）
+  }
+  stageSegIndex = next
+  stageParkUs = parkUs
+  stageReady = false
+  stageBusy = true
+  if (video.src.startsWith(url)) {
+    stagePendingUs = null
+    video.currentTime = parkUs / 1_000_000
+    return
+  }
+  stagePendingUs = parkUs
+  video.src = url
+  video.load()
+}
+
+// ---------------------------------------------------------------------------
+// 刀口三路径：终点停住 / 预滚换层（无缝）/ 停表冷切（保底）
+// ---------------------------------------------------------------------------
+
+/**
+ * 到达刀口。两条切换路径都不依赖「播放中 seek 即时生效」——引擎（AVPlayer）异步
+ * 接住 seek 之前媒体时钟仍在走，会越过出点把已删帧送上屏，播放中的前跳甚至按就近
+ * 关键帧落位（关键点常在被删区间内）。末段则停在成片终点。
+ */
+function crossBoundary() {
+  invalidateFrameGuard() // 丢弃旧位置在飞回调（rAF 兜底与 rVFC 双路径不双触发）
+  const next = loadedSegIndex.value + 1
+  if (next >= segments.value.length) {
     isPlaying.value = false
-    videoRef.value?.pause()
+    liveVideoEl()?.pause()
     playheadUs.value = totalUs.value
     scheduleDraw()
+    return
+  }
+  if (stageReady && stageSegIndex === next) {
+    swapLive(next)
+    return
+  }
+  advanceCold(next)
+}
+
+/** 无缝换层：预滚槽同任务接管为 live（换可见性 + 原速率续播），原 live 退役。 */
+function swapLive(next: number) {
+  const seg = segments.value[next]
+  const incoming = stageVideoEl()
+  const outgoing = liveVideoEl()
+  if (!seg || !incoming || !outgoing) return
+  outgoing.pause() // 时钟停在末帧；换层在同一任务内完成，无空窗无越点
+  liveIsA.value = !liveIsA.value
+  loadedSegIndex.value = next
+  liveSourceUs = frameToUs(seg.inFrame, seg.fps)
+  liveSegId = seg.id
+  // 退役槽成为新 stage：预滚状态整体失效，待 schedulePreroll 重定位
+  stageSegIndex = -1
+  stageReady = false
+  stageBusy = false
+  stagePendingUs = null
+  videoLoadError.value = false
+  playheadUs.value = segStartUs(segments.value, next)
+  incoming.playbackRate = seg.speed
+  if (isPlaying.value) void incoming.play().catch(() => {})
+  schedulePreroll(true)
+  scheduleDraw()
+}
+
+/** 冷切保底：先停表（时钟即刻停在末帧，出点后的帧物理上无法再上屏），seek 落位
+ * （同源 seeked / 跨源 loadedmetadata→seeked）后续播，代价是一刀口时长的定格。 */
+function advanceCold(next: number) {
+  const seg = segments.value[next]
+  const video = liveVideoEl()
+  if (!seg || !video) return
+  video.pause()
+  liveSeeking = true
+  ensureLoaded(next, frameToUs(seg.inFrame, seg.fps))
+}
+
+// ---------------------------------------------------------------------------
+// 槽位事件（角色随换层翻转，按事件时的实时角色分派）
+// ---------------------------------------------------------------------------
+
+function onSlotMeta(event: Event) {
+  const el = event.target as HTMLVideoElement
+  if (el === liveVideoEl()) {
+    onLiveMeta(el)
+    return
+  }
+  if (stagePendingUs != null) {
+    el.currentTime = stagePendingUs / 1_000_000
+    stagePendingUs = null
   }
 }
 
-function onVideoMeta() {
-  const video = videoRef.value
+function onSlotSeeked(event: Event) {
+  const el = event.target as HTMLVideoElement
+  if (el !== liveVideoEl()) {
+    // stage 落位即预滚就位；stale seeked（load 弃置的旧 seek）不消费
+    if (stagePendingUs == null) {
+      stageBusy = false
+      stageReady = true
+    }
+    return
+  }
+  onLiveSeeked()
+}
+
+function onSlotError(event: Event) {
+  const el = event.target as HTMLVideoElement
+  if (el === liveVideoEl()) {
+    if (el.src) videoLoadError.value = true
+    return
+  }
+  // stage 预滚失败只回退冷切，不打扰监看
+  stageReady = false
+  stageBusy = false
+  stagePendingUs = null
+}
+
+function onLiveMeta(video: HTMLVideoElement) {
   const seg = segments.value[loadedSegIndex.value]
-  if (!video || !seg) return
+  if (!seg) return
   video.playbackRate = seg.speed
   if (pendingSeekUs != null) {
     video.currentTime = pendingSeekUs / 1_000_000
     pendingSeekUs = null
+    // 不在此直接续播：seek 未落位就 play 会从错误位置出帧，等 seeked 收尾
+    return
   }
-  if (isPlaying.value && video.paused) {
-    void video.play().catch(() => {})
-  }
+  if (liveSeeking) finishLiveSeek()
 }
 
-function onVideoError() {
-  if (videoRef.value?.src) videoLoadError.value = true
+/** live 槽 seek 结算：按需续播（擦洗会话中除外，抬手统一续），并尽快预滚下一段。 */
+function finishLiveSeek() {
+  if (!liveSeeking) return
+  liveSeeking = false
+  const video = liveVideoEl()
+  const seg = segments.value[loadedSegIndex.value]
+  if (!video || !seg) return
+  video.playbackRate = seg.speed
+  if (isPlaying.value && !scrubbing) void video.play().catch(() => {})
+  schedulePreroll(!scrubbing)
+}
+
+function onLiveSeeked() {
+  if (pendingSeekUs != null) return // 跨源 load 尚未就绪（stale seeked 不消费）
+  if (liveSeeking) {
+    finishLiveSeek()
+    return
+  }
+  // 播放态普通 seek（步进/跳转）的续播点；擦洗进行中不续，抬手统一续
+  const video = liveVideoEl()
+  if (isPlaying.value && !scrubbing && video && video.paused) void video.play().catch(() => {})
 }
 
 function togglePlay() {
-  const video = videoRef.value
+  const video = liveVideoEl()
   if (!video || !segments.value.length) return
   if (!playSource.value?.meta.previewable) return
   if (isPlaying.value) {
@@ -663,13 +905,15 @@ function togglePlay() {
     // 播放到末尾后再按播放：从头开始
     if (playheadUs.value >= totalUs.value - 1) seekVirtual(0)
     isPlaying.value = true
+    if (liveSeeking) return // 冷切中：seeked 落位时统一续播
     const seg = segments.value[loadedSegIndex.value]
     video.playbackRate = seg?.speed ?? 1
     void video.play().catch(() => {})
+    schedulePreroll(true)
   }
 }
 
-/** seek 到虚拟时间线位置（跨段自动换源；keepPlaying 段切换后续播）。 */
+/** seek 到虚拟时间线位置（跨段自动换源；keepPlaying 落位后续播）。 */
 function seekVirtual(us: number, keepPlaying = false) {
   if (!segments.value.length) {
     playheadUs.value = 0
@@ -683,12 +927,22 @@ function seekVirtual(us: number, keepPlaying = false) {
   playheadUs.value = target
   const wasPlaying = isPlaying.value || keepPlaying
   if (keepPlaying) isPlaying.value = true
-  ensureLoaded(loc.index, sourceUs)
-  const video = videoRef.value
-  if (video && pendingSeekUs == null) {
-    video.playbackRate = seg.speed
-    if (wasPlaying && video.paused) void video.play().catch(() => {})
+  const video = liveVideoEl()
+  // 装载内容未变（同段 id + 同源位置，如倍速调整/远处编辑后的收口；编辑会让索引
+  // 漂移，id 才是稳定身份）：live 槽本就在正确内容上，无需停表重落位——同值
+  // currentTime 赋值依赖引擎必发 seeked，一旦短路即停播
+  if (segments.value[loc.index]?.id === liveSegId && Math.abs(sourceUs - liveSourceUs) < 1) {
+    schedulePreroll()
+    scheduleDraw()
+    return
   }
+  // 播放中的 seek 先停时钟再落位（与刀口同一纪律）：引擎异步接住 seek 之前时钟
+  // 仍在走，会越过刀口把已删帧送上屏；落位后由 onLiveSeeked 续播
+  if (video && wasPlaying && !video.paused) video.pause()
+  if (wasPlaying) liveSeeking = true
+  ensureLoaded(loc.index, sourceUs)
+  if (video && pendingSeekUs == null) video.playbackRate = seg.speed
+  schedulePreroll() // 防抖：擦洗/步进停顿后预滚新位置的下一段
   scheduleDraw()
 }
 
@@ -726,6 +980,10 @@ function onTimelinePointerDown(event: PointerEvent) {
     scrubbing = false
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerup', onUp)
+    // 擦洗期间 seeked 不续播（见 onLiveSeeked）：抬手统一续播 + 重定位预滚
+    const video = liveVideoEl()
+    if (video && isPlaying.value && video.paused) void video.play().catch(() => {})
+    schedulePreroll(true)
   }
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
@@ -1111,7 +1369,7 @@ function setSpeed(segIndex: number, speed: number) {
   speedMenuFor.value = null
   // 总长变化：钳制播放头并同步已装载段的播放速率
   syncAfterEdit(playheadUs.value)
-  const video = videoRef.value
+  const video = liveVideoEl()
   if (video && pendingSeekUs == null && loadedSegIndex.value === segIndex) {
     video.playbackRate = speed
   }
@@ -1402,11 +1660,11 @@ function onKeyDown(event: KeyboardEvent) {
     case 'k':
     case 'K':
       isPlaying.value = false
-      videoRef.value?.pause()
+      liveVideoEl()?.pause()
       break
     case 'j':
     case 'J':
-      videoRef.value?.pause()
+      liveVideoEl()?.pause()
       isPlaying.value = false
       seekVirtual(playheadUs.value - 500_000)
       break
@@ -1511,8 +1769,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(rafId)
+  window.clearTimeout(prerollTimer)
   if (exporting.value) void invoke(CMD.videoClipCancel).catch(() => {})
-  videoRef.value?.pause()
+  for (const el of [videoARef.value, videoBRef.value]) el?.pause()
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('resize', scheduleDraw)
   unlistenInputs?.()
@@ -1530,6 +1789,21 @@ watch([inMarkUs, outMarkUs, selectedSegment], scheduleDraw)
 .clip-media {
   /* 媒体井近黑底：视频监视器的行业惯例内容画布，主题无关（内容底材例外，同 mask-smoke） */
   background: #0b0c0e;
+}
+
+/* 双解码槽叠层：stage 用 opacity 隐藏（不用 display:none——保留解码优先级，
+   预滚帧必须真实解码在层上，刀口换层才零等待） */
+.clip-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+}
+
+.clip-layer.is-live {
+  opacity: 1;
 }
 
 .meta-chip {
