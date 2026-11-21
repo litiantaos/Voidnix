@@ -52,7 +52,11 @@ printf "%s  %s  %s  %s  %s\n" "$(date '+%H:%M:%S')" "$FP_MB" "$CPU" "$THRD" "$DA
 ZOMBIES=$(ps -A -o ppid=,state= 2>/dev/null | awk -v p="$PID" '$1 == p && $2 == "Z" { n++ } END { print n + 0 }')
 [ "$ZOMBIES" -gt 0 ] && printf '%% zombie  %s\n' "$ZOMBIES" >> "$LOG"
 
-# WebKit XPC 子进程 footprint 合计（与主进程同时启动 ±10s 的 com.apple.WebKit.* 进程）
+# WebKit XPC 子进程 footprint 合计（与主进程同时启动 ±10s 的 com.apple.WebKit.* 进程）。
+# 口径取舍：进程外部无法精确归属 WebContent 到宿主 app（rpid/环境变量/文件映射均被
+# SIP 封锁），紧窗口只会在启动同窗混入少量其它登录项 app 的 WebKit（观察级误差）；
+# app 内部的重载决策（runtime/window.rs::webcontent_footprint）走 _webProcessIdentifier
+# SPI 精确归属，与本监控口径独立
 # ps rss 对 WKWebView 严重失真（如 WebContent 进程 ps 报 47M / 实际 footprint 175M），
 # 必须用 top footprint 才能反映真实占用
 MAIN_LS=$(ps -o lstart= -p "$PID" 2>/dev/null | xargs)

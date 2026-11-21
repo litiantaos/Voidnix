@@ -48,6 +48,57 @@ fn get_rusage_v1(pid: c_int) -> Option<RUsageInfoV1> {
     }
 }
 
+/// 单进程 physical footprint（字节）。
+pub fn footprint_by_pid(pid: c_int) -> Option<u64> {
+    get_rusage_v1(pid).map(|i| i.ri_phys_footprint)
+}
+
+/// 从窗口的 WKWebView 实例直接取其 WebContent 进程 pid。
+///
+/// `_webProcessIdentifier` SPI（respondsToSelector 门控；页面未加载 / WebContent
+/// 未 spawn 时返回 0 过滤）。**主线程调用**。这是 WebContent 归属的唯一精确途径：
+/// 外部进程级归属（rpid/audit_token/环境变量/文件映射）均被 SIP 封锁，启动时间
+/// 启发式会把其它 app 的 WebContent 吃进来。
+///
+/// 两个实现要点（均经 dev 真机验证）：
+/// - `ns_view()` 返回 contentView 容器而非 WKWebView 本体（tao 层语义）；wry 将
+///   WKWebView 自定义子类（WryWebView）作为其直接子视图挂载，遍历子视图以
+///   selector 响应为判据定位——普通 NSView 不响应该 selector，零类引用依赖。
+/// - 调用走 methodForSelector 取 IMP 后按 C ABI 直调：objc2 `msg_send!` 泛型
+///   包装在该 SPI + WryWebView 实例上抛 ObjC 异常（foreign exception 直接
+///   abort 进程），IMP 直调稳定（与 swift 探针同姿势）。
+pub fn webview_webcontent_pid(window: &tauri::WebviewWindow) -> Option<i32> {
+    use objc2_app_kit::NSView;
+
+    let ptr = window.ns_view().ok()?;
+    let raw = ptr.cast::<NSView>();
+    let content = (unsafe { raw.as_ref() })?;
+    let sel = objc2::sel!(_webProcessIdentifier);
+    unsafe {
+        for sv in content.subviews().iter() {
+            let responds: bool = objc2::msg_send![&**sv, respondsToSelector: sel];
+            if !responds {
+                continue;
+            }
+            let imp: usize = objc2::msg_send![&**sv, methodForSelector: sel];
+            if imp == 0 {
+                continue;
+            }
+            type ImpFn =
+                unsafe extern "C" fn(*mut objc2::runtime::AnyObject, objc2::runtime::Sel) -> i32;
+            let f: ImpFn = std::mem::transmute(imp);
+            let pid = f(
+                std::ptr::from_ref(&**sv) as *mut objc2::runtime::AnyObject,
+                sel,
+            );
+            if pid > 0 {
+                return Some(pid);
+            }
+        }
+    }
+    None
+}
+
 #[allow(dead_code)]
 fn seconds_to_ticks(secs: u64) -> u64 {
     let mut tb = TimebaseInfo::default();
@@ -57,14 +108,14 @@ fn seconds_to_ticks(secs: u64) -> u64 {
     secs * 1_000_000_000 * tb.denom as u64 / tb.numer as u64
 }
 
-/// 查找本 app 的 WebContent XPC 进程，返回其 physical footprint（字节）。
+/// 扫描口径 fallback：启动时间下限（`>=` 主进程启动）的全系统 WebContent 取最重者。
 ///
-/// WebKit XPC 进程由 launchd 托管（PPID=1），不能用 PPID 关联。
-/// 用启动时间下限关联：所有在主进程之后创建的 WebContent 进程视为本 app 的子进程。
-/// **不设上限**——navigate 重载或 crash 恢复后创建的新 WebContent 进程启动时间远晚于
-/// 主进程，上限窗口会漏检（曾导致 2.2G 进程不触发重载）。
-/// 取符合条件的 WebContent 中 footprint 最大的（多实例时取最重者）。
-pub fn webcontent_footprint() -> Option<u64> {
+/// WebKit XPC 进程由 launchd 托管（PPID=1），不能用 PPID 关联。**不精确**——其它
+/// app 晚于本 app 启动的 WebContent 同样命中（误差方向单一：只会把别人的大占用当
+/// 自己的超标、误触发重载，不会漏检自己）。仅作 SPI 不可用时的保守兜底，保留
+/// 「不设上限」的动机：navigate 重载或 crash 恢复后创建的新 WebContent 进程启动
+/// 时间远晚于主进程，上限窗口会漏检（曾导致 2.2G 进程不触发重载）。
+pub fn webcontent_footprint_scan() -> Option<u64> {
     let our_pid = std::process::id() as c_int;
     let our_start = get_rusage_v1(our_pid)?.ri_proc_start_abstime;
 

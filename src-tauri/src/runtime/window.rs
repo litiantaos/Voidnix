@@ -372,6 +372,68 @@ fn reload_deferred() -> bool {
 /// 最新线程独占重载职责，避免多线程连环 navigate。
 static RELOAD_GEN: AtomicU64 = AtomicU64::new(0);
 
+/// 本 app WebContent 的 physical footprint（字节），多 webview（主窗 + pin /
+/// video clip 等运行期窗口）取最重者，与重载阈值对比语义一致。
+///
+/// 精确口径：主线程经 `_webProcessIdentifier` SPI 收集全部 webview 的 WebContent
+/// pid——WebContent 归属的唯一精确途径（外部进程级归属 rpid/环境变量/文件映射均
+/// 被 SIP 封锁，启动时间启发式会把其它 app 的 WebContent 吃进来，Safari 多标签
+/// 等重量级存在会误触发 hide 后重载）。SPI 不可用（空集合）或主线程调度超时时
+/// 保守回退启动时间扫描口径（[`webcontent_footprint_scan`]：误差方向单一，只会
+/// 误触发、不会漏检自己的超标）。
+pub fn webcontent_footprint(app: &tauri::AppHandle) -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<i32>>();
+        let collector = app.clone();
+        let dispatched = app.clone().run_on_main_thread(move || {
+            use tauri::Manager;
+            let pids: Vec<i32> = collector
+                .webview_windows()
+                .values()
+                .filter_map(crate::platform::mem::webview_webcontent_pid)
+                .collect();
+            let _ = tx.send(pids);
+        });
+        if dispatched.is_ok() {
+            if let Ok(pids) = rx.recv_timeout(std::time::Duration::from_secs(1)) {
+                if !pids.is_empty() {
+                    if let Some(m) = pids
+                        .iter()
+                        .filter_map(|&p| crate::platform::mem::footprint_by_pid(p))
+                        .max()
+                    {
+                        if cfg!(debug_assertions) {
+                            eprintln!(
+                                "[mem] webcontent fp={:.0}MB (exact, {} pids)",
+                                m as f64 / 1_048_576.0,
+                                pids.len()
+                            );
+                        }
+                        return Some(m);
+                    }
+                    // pid 已知但 rusage 全读失败（进程刚退出）→ 扫描兜底
+                }
+            }
+        }
+        let fp = crate::platform::mem::webcontent_footprint_scan();
+        if let Some(f) = fp {
+            if cfg!(debug_assertions) {
+                eprintln!(
+                    "[mem] webcontent fp={:.0}MB (scan fallback)",
+                    f as f64 / 1_048_576.0
+                );
+            }
+        }
+        fp
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        None
+    }
+}
+
 /// 窗口隐藏后异步检查 WebContent footprint，超阈值时 navigate blank → 原 URL。
 ///
 /// WKWebView 的 `reload()` / `location.reload()` 不释放 tile backing（IOSurface），
@@ -391,7 +453,7 @@ pub fn maybe_reload_webview(app: &tauri::AppHandle) {
         let gen = RELOAD_GEN.fetch_add(1, Ordering::AcqRel);
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(500));
-            let Some(fp) = crate::platform::mem::webcontent_footprint() else {
+            let Some(fp) = webcontent_footprint(&app) else {
                 return;
             };
             if fp <= WC_RELOAD_THRESHOLD {
@@ -413,7 +475,7 @@ pub fn maybe_reload_webview(app: &tauri::AppHandle) {
                 if reload_deferred() {
                     continue;
                 }
-                let Some(fp2) = crate::platform::mem::webcontent_footprint() else {
+                let Some(fp2) = webcontent_footprint(&app) else {
                     return;
                 };
                 if fp2 <= WC_RELOAD_THRESHOLD {
