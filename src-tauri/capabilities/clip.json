@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "clip-window",
+  "description": "Permissions for the clip editor window",
+  "windows": ["clip"],
+  "permissions": [
+    "core:default",
+    "core:webview:allow-set-webview-focus",
+    "core:window:allow-start-dragging"
+  ]
+}

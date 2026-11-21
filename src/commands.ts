@@ -184,6 +184,17 @@ export const CMD = {
   videoRun: 'video_run',
   videoCancel: 'video_cancel',
   videoJobStatus: 'video_job_status',
+  // —— video 剪辑（独立剪辑窗口 + 本地媒体预览）——
+  videoClipOpen: 'video_clip_open',
+  videoClipClose: 'video_clip_close',
+  videoClipTakeInputs: 'video_clip_take_inputs',
+  videoClipProbe: 'video_clip_probe',
+  videoClipTimeline: 'video_clip_timeline',
+  videoClipAnalyze: 'video_clip_analyze',
+  videoClipExport: 'video_clip_export',
+  videoClipCancel: 'video_clip_cancel',
+  videoMediaOpen: 'video_media_open',
+  videoMediaClose: 'video_media_close',
 
   // —— archive ——
   archiveInspect: 'archive_inspect',

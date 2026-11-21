@@ -27,6 +27,10 @@
           t('video.start')
         }}</BaseButton>
       </template>
+      <!-- 「剪辑」入口行：独立剪辑窗口（选文件后直接进入） -->
+      <template #trailing-clip>
+        <BaseButton @click.stop="openClipEditor">{{ t('video.clip.open') }}</BaseButton>
+      </template>
       <!-- 「输入视频」行：核心下载/进度 + 选文件 -->
       <template #trailing-source>
         <BaseButton v-if="isDownloading" class="min-w-12 tabular-nums" disabled>{{
@@ -260,6 +264,15 @@ const items = computed<SettingItem[]>(() => {
     group: t('video.group.common'),
   })
 
+  // 剪辑入口：独立剪辑窗口（裁剪 / 拼接 / 一键去停顿）。已选视频直接带入，否则先选文件。
+  list.push({
+    id: 'clip',
+    title: t('video.clip.entry'),
+    subtitle: t('video.clip.entryDesc'),
+    type: 'custom',
+    group: t('video.group.common'),
+  })
+
   // 操作行 = 处理态任务行（docs/design.md「处理态」）：独立「任务」分组，左侧与选项行同构
   //（无图标，标题对齐），右侧进度条 + 紧贴条尾的百分比 + 取消；空闲行尾主按钮。
   // 完成闪现 600ms 后复位。
@@ -471,6 +484,34 @@ async function pickInput() {
   })
 }
 
+/** 打开独立剪辑窗口：已选视频直接带入，否则先选文件；成功后隐藏主窗（剪辑是独立工作台）。 */
+async function openClipEditor() {
+  if (!coreLoaded.value) return
+  if (!core.value.available) {
+    void ensureCore()
+    return
+  }
+  let paths = st.paths
+  if (!paths.length) {
+    const picked = await withSuppressBlur(() =>
+      invoke<string[]>(CMD.pickFiles, {
+        allowsMultiple: true,
+        allowedExtensions: [...VIDEO_EXTENSIONS],
+      }),
+    )
+    if (!picked.length) return
+    paths = picked
+  }
+  // 顺序：先隐藏主窗（焦点还给原 app），再创建剪辑窗口接管键盘——
+  // 反过来会在剪辑窗口拿到 key 后被主窗 hide 的 restore_captured 抢走焦点。
+  try {
+    await invoke(CMD.hideWindow)
+    await invoke(CMD.videoClipOpen, { paths })
+  } catch (e) {
+    appStore.showStatus(String(e), { kind: 'error', duration: 4000 })
+  }
+}
+
 /** loadInputs 单调序号：并发探测时丢弃过期结果，避免 paths 与 metas 错位（错位会让队列拿到错误时长，影响进度估算）。 */
 let loadSeq = 0
 
@@ -559,6 +600,10 @@ function onSettingsExecute(item: SettingItem) {
   }
   if (item.id === 'outputDir') {
     void pickOutputDir()
+    return
+  }
+  if (item.id === 'clip') {
+    void openClipEditor()
     return
   }
   // 「输入视频」行回车跟随右侧按钮：下载 / 选择

@@ -40,12 +40,23 @@ pub fn cleanup_temps_by_prefix(tmp_dir: &Path, prefix: &str, extensions: &[&str]
     }
 }
 
+/// 清理剪辑窗口临时目录（时间轴精灵 `tl_*.png` + 导出工作子目录 `export-*/`，
+/// 后者含逐段重编码中间产物、可达数百 MB）。整目录删除——启动兜底（崩溃残留）
+/// 与剪辑窗口销毁钩子两条路径共用。
+pub fn cleanup_clip_temps(voidnix_dir: &Path) {
+    let clip_dir = voidnix_dir.join("clip");
+    if clip_dir.is_dir() {
+        let _ = std::fs::remove_dir_all(&clip_dir);
+    }
+}
+
 /// 启动期统一清理 Voidnix 在 /tmp 的所有残留。
 ///
-/// 覆盖三个前缀族：
+/// 覆盖四个前缀族：
 /// - `voidnix_*.png/.jpg`：screenshot 临时图（ocr/clip/pin/scroll）
 /// - `voidnix-icon-*.png`：search 扩展图标缓存
 /// - `/tmp/voidnix/picker.jpg`：screenshot 屏幕预览 JPEG（子目录）
+/// - `/tmp/voidnix/clip/`：剪辑窗口精灵图 + 导出工作目录（崩溃时无人收尾）
 pub fn cleanup_all_voidnix_temps() {
     let tmp = std::env::temp_dir();
     cleanup_temps_by_prefix(&tmp, "voidnix_", &[".png", ".jpg"]);
@@ -54,6 +65,7 @@ pub fn cleanup_all_voidnix_temps() {
     let voidnix_dir = tmp.join("voidnix");
     if voidnix_dir.exists() {
         cleanup_temps_by_prefix(&voidnix_dir, "picker", &[".jpg"]);
+        cleanup_clip_temps(&voidnix_dir);
     }
 }
 
@@ -207,6 +219,23 @@ mod tests {
         assert!(!dir.join("voidnix_ocr.png").exists());
         assert!(!dir.join("voidnix-icon-app.png").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// clip 临时目录整目录清（精灵图 + export-* 工作子目录），非 clip 内容不动
+    #[test]
+    fn cleanup_clip_temps_removes_dir_tree_only() {
+        let root =
+            std::env::temp_dir().join(format!("voidnix-clip-cleanup-{}", std::process::id()));
+        let voidnix = root.join("voidnix");
+        let clip = voidnix.join("clip");
+        std::fs::create_dir_all(clip.join("export-1-1")).unwrap();
+        std::fs::write(clip.join("tl_abcd.png"), b"x").unwrap();
+        std::fs::write(clip.join("export-1-1").join("seg-0.mp4"), b"x").unwrap();
+        std::fs::write(voidnix.join("picker.jpg"), b"x").unwrap();
+        cleanup_clip_temps(&voidnix);
+        assert!(!clip.exists());
+        assert!(voidnix.join("picker.jpg").exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// 并发写同一目标：唯一 tmp 名保证零 rename 冲突、终态完整可解析、0600 密级

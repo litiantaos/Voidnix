@@ -28,6 +28,12 @@ pub fn activate_app() {
         let app = NSApp(mtm);
         #[allow(deprecated)]
         app.activateIgnoringOtherApps(true);
+        // macOS 14+ 对该旧 API 的「非用户交互触发」激活可能静默忽略（如从后台命令
+        // 打开独立窗口），补一发 NSRunningApplication 的显式激活（ActivateAllWindows
+        // 同时把 app 的窗口提到前面），保证独立窗口能成为 key window 接收键盘。
+        let current = objc2_app_kit::NSRunningApplication::currentApplication();
+        #[allow(deprecated)]
+        current.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
     }
 }
 

@@ -47,6 +47,7 @@ export default defineConfig(async ({ command }) => ({
         screenshot: resolve(import.meta.dirname, 'screenshot.html'),
         'snap-panel': resolve(import.meta.dirname, 'snap-panel.html'),
         pin: resolve(import.meta.dirname, 'pin.html'),
+        clip: resolve(import.meta.dirname, 'clip.html'),
       },
       output: {
         // vendor 分包：跨版本缓存边界 + 按需加载。

@@ -587,6 +587,44 @@ pub fn cached_appearance() -> Option<String> {
     lock_or_recover(&WINDOW_APPEARANCE).clone()
 }
 
+/// 把 RGBA 位图设为应用 Dock 图标（**主线程**调用）。
+///
+/// dev 实例是裸二进制（无 bundle/Info.plist），运行时切 Regular 激活策略后 Dock 无图标
+/// 可用（显示系统占位）；用 tauri 编译期内置的默认窗口图标（= 应用图标）补设——
+/// prod 有 bundle 本就不缺，重复设置同图无副作用。
+pub fn set_dock_icon(rgba: &[u8], width: u32, height: u32) {
+    use objc2_app_kit::{NSApp, NSBitmapImageRep, NSDeviceRGBColorSpace, NSImage};
+
+    use objc2_foundation::MainThreadMarker;
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    if width == 0 || height == 0 || rgba.len() != (width as usize) * (height as usize) * 4 {
+        return;
+    }
+    unsafe {
+        let rep = NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+            mtm.alloc::<NSBitmapImageRep>(),
+            std::ptr::null_mut(),
+            width as isize,
+            height as isize,
+            8,
+            4,
+            true,
+            false,
+            NSDeviceRGBColorSpace,
+            (width * 4) as isize,
+            32,
+        );
+        let Some(rep) = rep else { return };
+        std::ptr::copy_nonoverlapping(rgba.as_ptr(), rep.bitmapData(), rgba.len());
+        let size = objc2_foundation::NSSize::new(width as f64, height as f64);
+        let image = NSImage::initWithSize(mtm.alloc::<NSImage>(), size);
+        image.addRepresentation(&rep);
+        NSApp(mtm).setApplicationIconImage(Some(&image));
+    }
+}
+
 /// 透明面板强制接管鼠标：禁止 ignore + 收 mouseMoved + 全窗 event shape（不依赖 alpha）。
 pub fn capture_mouse_events(ns_window: &NSWindow) {
     ns_window.setIgnoresMouseEvents(false);
@@ -666,12 +704,57 @@ impl PickOptions {
     }
 }
 
-/// NSOpenPanel 模态选择。返回选中路径列表，取消返回空。
-/// 调用期间暂停 click-outside 检测；结束后恢复主窗口 key window。
-pub fn pick_paths_modal(app: &tauri::AppHandle, opts: PickOptions) -> Vec<String> {
+/// NSOpenPanel 模态选择，结果（取消 = 空数组）经 `on_done` 回调——**恒在主线程收尾**：
+/// sheet 路径立即返回、completion 由事件循环驱动；无主窗 fallback 同步 `runModal`
+/// 后回调。两条路径都**不得在主线程阻塞等待**（completion 永远没机会执行）。
+///
+/// 面板以 **sheet 挂到主窗**（所有选文件入口都从主窗 UI 触发），不进全局模态会话：
+/// Accessory（LSUIElement）app 在多窗口/key 归属交错时（如剪辑窗已存在再触发选文件），
+/// `runModal` 的面板偶发布局损坏——实测残尸 500×500 落屏幕外、`runModal` 永不返回、
+/// 全 app 窗口事件被模态会话冻结（「卡在选文件」根因，多次复现）。sheet 归属明确，
+/// 由宿主窗口生命周期承载，无此态；且不再冻结其它窗口（剪辑窗在选文件期间仍可交互）。
+pub fn pick_paths_modal<F: Fn(Vec<String>) + 'static>(
+    app: &tauri::AppHandle,
+    opts: PickOptions,
+    on_done: F,
+) {
     use objc2::runtime::AnyObject;
     use objc2_foundation::{NSArray, NSString};
+    use std::rc::Rc;
     use tauri::Manager;
+
+    /// 收尾（主线程）：恢复 click 监听 + 主窗 key；按模态响应读取选中路径回调。
+    unsafe fn finish(
+        app: &tauri::AppHandle,
+        panel: *mut AnyObject,
+        response: isize,
+        on_done: &dyn Fn(Vec<String>),
+    ) {
+        use objc2_foundation::NSString;
+        use tauri::Manager;
+        crate::platform::click_monitor::suppress(false);
+        if let Some(window) = app.get_webview_window("main") {
+            make_key_window(&window);
+        }
+        if response != 1 {
+            // NSModalResponseOK = 1
+            on_done(Vec::new());
+            return;
+        }
+        let urls: *mut AnyObject = objc2::msg_send![panel, URLs];
+        let count: usize = objc2::msg_send![urls, count];
+        let mut out = Vec::with_capacity(count);
+        for i in 0..count {
+            let url: *mut AnyObject = objc2::msg_send![urls, objectAtIndex: i];
+            let path: *mut NSString = objc2::msg_send![url, path];
+            if path.is_null() {
+                continue;
+            }
+            out.push((*path).to_string());
+        }
+        on_done(out);
+    }
+
     unsafe {
         let panel_cls = objc2::class!(NSOpenPanel);
         let panel: *mut AnyObject = objc2::msg_send![panel_cls, openPanel];
@@ -696,46 +779,39 @@ pub fn pick_paths_modal(app: &tauri::AppHandle, opts: PickOptions) -> Vec<String
         crate::platform::click_monitor::suppress(true);
         crate::platform::focus::activate_app();
 
-        // NSModalResponseOK = 1
-        let response: isize = objc2::msg_send![panel, runModal];
+        // sheet 宿主 = 主窗；无主窗时退回居中全局模态（理论不可达：选文件入口都在主窗）
+        // sheet 宿主 = 主窗（须在屏：alpha=0 的隐藏窗上 sheet 不可见）；否则退回居中
+        // 全局模态（选文件入口都在主窗可见时触发，此分支仅防御）
+        let host: Option<*mut NSWindow> = app
+            .get_webview_window("main")
+            .and_then(|w| w.ns_window().ok())
+            .map(|ptr| ptr.cast::<NSWindow>())
+            .filter(|p| !p.is_null())
+            .filter(|p| (**p).alphaValue() > 0.01);
 
-        crate::platform::click_monitor::suppress(false);
-        if let Some(window) = app.get_webview_window("main") {
-            make_key_window(&window);
-        }
-
-        if response != 1 {
-            return Vec::new();
-        }
-
-        let urls: *mut AnyObject = objc2::msg_send![panel, URLs];
-        let count: usize = objc2::msg_send![urls, count];
-        let mut out = Vec::with_capacity(count);
-        for i in 0..count {
-            let url: *mut AnyObject = objc2::msg_send![urls, objectAtIndex: i];
-            let path: *mut NSString = objc2::msg_send![url, path];
-            if path.is_null() {
-                continue;
+        let on_done = Rc::new(on_done);
+        match host.and_then(|p| p.as_ref()) {
+            Some(host_window) => {
+                let app_for_block = app.clone();
+                let on_block = Rc::clone(&on_done);
+                let block: block2::RcBlock<dyn Fn(isize)> =
+                    block2::RcBlock::new(move |result: isize| {
+                        // 外层 pick_paths_modal 函数体已在 unsafe 块内
+                        finish(&app_for_block, panel, result, &*on_block);
+                    });
+                // SAFETY: block 经 RcBox 持有（panel 保留副本），&*block 符合 block2
+                // 调用约定；completion 由主线程事件循环驱动，本函数立即返回不阻塞
+                let _: () = objc2::msg_send![
+                    panel,
+                    beginSheetModalForWindow: host_window,
+                    completionHandler: &*block,
+                ];
             }
-            out.push((*path).to_string());
+            None => {
+                let _: () = objc2::msg_send![panel, center];
+                let response: isize = objc2::msg_send![panel, runModal];
+                finish(app, panel, response, &*on_done);
+            }
         }
-        out
     }
-}
-
-/// NSOpenPanel 模态选目录。返回选中路径，取消返回空串。
-pub fn pick_directory_modal(app: &tauri::AppHandle) -> String {
-    pick_paths_modal(app, PickOptions::directory())
-        .into_iter()
-        .next()
-        .unwrap_or_default()
-}
-
-/// NSOpenPanel 模态选文件。返回路径列表，取消返回空。
-pub fn pick_files_modal(
-    app: &tauri::AppHandle,
-    allows_multiple: bool,
-    allowed_extensions: Vec<String>,
-) -> Vec<String> {
-    pick_paths_modal(app, PickOptions::files(allows_multiple, allowed_extensions))
 }

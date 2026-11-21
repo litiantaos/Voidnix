@@ -6,5 +6,11 @@
     <true/>
     <key>NSScreenCaptureUsageDescription</key>
     <string>Voidnix 需要屏幕录制权限以实现截图功能</string>
+    <!-- 剪辑窗口预览经 127.0.0.1 本地 HTTP Range 服务喂 <video>（媒体服务是 WebKit 媒体管线的可靠路径） -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>

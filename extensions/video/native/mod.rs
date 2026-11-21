@@ -1,8 +1,11 @@
-//! 视频处理扩展：压缩 / 格式转换 / 提取音频（FFmpeg）。
+//! 视频处理扩展：压缩 / 格式转换 / 提取音频 / 剪辑（FFmpeg）。
 
 mod args;
+pub mod clip;
+pub mod clip_export;
 mod core;
 mod job;
+pub mod media_server;
 
 use crate::runtime::registry::Extension;
 use tauri::ipc::Channel;

@@ -233,27 +233,35 @@ pub fn get_main_frame(app: tauri::AppHandle) -> Option<MainFrameInfo> {
     }
 }
 
-/// 打开目录选择器（NSOpenPanel），作为独立浮窗运行，不附着主窗口。
+/// 打开目录选择器（NSOpenPanel，sheet 挂主窗）。
 /// 返回用户选择的目录路径，取消则返回空字符串。
 #[tauri::command]
 pub async fn pick_directory(app: tauri::AppHandle) -> Result<String, String> {
-    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<String>>();
     let app_clone = app.clone();
     app.run_on_main_thread(move || {
         #[cfg(target_os = "macos")]
-        let path = crate::platform::window::pick_directory_modal(&app_clone);
+        crate::platform::window::pick_paths_modal(
+            &app_clone,
+            crate::platform::window::PickOptions::directory(),
+            move |paths| {
+                let _ = tx.send(paths);
+            },
+        );
         #[cfg(not(target_os = "macos"))]
-        let path = String::new();
-        let _ = tx.send(path);
+        let _ = tx.send(Vec::new());
     })
     .map_err(|e| e.to_string())?;
 
-    // 用户操作时长不可控（大目录/找文件），不得短超时截断；
-    // modal 关闭前阻塞 invoke 是预期行为，超时会丢选择且 modal 仍开着。
-    rx.recv().map_err(|e| e.to_string())
+    // sheet completion（主线程）→ mpsc → blocking 线程转 async；用户操作时长不可控，
+    // 不得短超时截断（超时会丢选择且 sheet 仍开着）
+    let paths = tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(paths.into_iter().next().unwrap_or_default())
 }
 
-/// 打开文件选择器（NSOpenPanel）。
+/// 打开文件选择器（NSOpenPanel，sheet 挂主窗）。
 /// `allowed_extensions`：扩展名列表（无点号）；空 = 不限制。
 /// 取消返回空数组。
 #[tauri::command]
@@ -266,18 +274,21 @@ pub async fn pick_files(
     let app_clone = app.clone();
     app.run_on_main_thread(move || {
         #[cfg(target_os = "macos")]
-        let paths = crate::platform::window::pick_files_modal(
+        crate::platform::window::pick_paths_modal(
             &app_clone,
-            allows_multiple,
-            allowed_extensions,
+            crate::platform::window::PickOptions::files(allows_multiple, allowed_extensions),
+            move |paths| {
+                let _ = tx.send(paths);
+            },
         );
         #[cfg(not(target_os = "macos"))]
-        let paths = Vec::new();
-        let _ = tx.send(paths);
+        let _ = tx.send(Vec::new());
     })
     .map_err(|e| e.to_string())?;
 
-    rx.recv().map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// 设置所有窗口外观（appearance）：`auto` 跟随系统 / `light` / `dark`。
@@ -290,7 +301,7 @@ pub fn set_window_appearance(app: tauri::AppHandle, mode: String) {
     // 故在 clone 上调用 + 再 clone 传入闭包（AppHandle clone 开销低）。
     let app_for_windows = app.clone();
     let _ = app_for_windows.clone().run_on_main_thread(move || {
-        for (_, window) in app_for_windows.webview_windows() {
+        for (_label, window) in app_for_windows.webview_windows() {
             #[cfg(target_os = "macos")]
             crate::platform::window::apply_window_appearance(&window, &mode);
             #[cfg(not(target_os = "macos"))]
