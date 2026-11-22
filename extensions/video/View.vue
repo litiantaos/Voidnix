@@ -264,15 +264,6 @@ const items = computed<SettingItem[]>(() => {
     group: t('video.group.common'),
   })
 
-  // 剪辑入口：独立剪辑窗口（裁剪 / 拼接 / 一键去停顿）。已选视频直接带入，否则先选文件。
-  list.push({
-    id: 'clip',
-    title: t('video.clip.entry'),
-    subtitle: t('video.clip.entryDesc'),
-    type: 'custom',
-    group: t('video.group.common'),
-  })
-
   // 操作行 = 处理态任务行（docs/design.md「处理态」）：独立「任务」分组，左侧与选项行同构
   //（无图标，标题对齐），右侧进度条 + 紧贴条尾的百分比 + 取消；空闲行尾主按钮。
   // 完成闪现 600ms 后复位。
@@ -440,6 +431,17 @@ const items = computed<SettingItem[]>(() => {
     subtitle: outputDir.value ? displayPath(outputDir.value) : t('video.sameAsSource'),
     type: 'custom',
     group: t('video.group.output'),
+  })
+
+  // 剪辑入口：独立剪辑窗口（裁剪 / 拼接 / 一键去停顿）。已选视频直接带入，否则先选文件。
+  // 「高级」组收在列表末尾——剪辑是另一个工作台的入口，不是流水线的设置项/模式，组边界
+  // 声明类别差异（同「任务」组为任务行单开一组的先例）；末尾位稳定（不随「任务」组的
+  // 条件出现跳动），也不打断表单阅读流（模式 → 输入 → 参数 → 输出）。
+  list.push({
+    id: 'clip',
+    title: t('video.clip.entry'),
+    type: 'custom',
+    group: t('video.group.advanced'),
   })
 
   return list

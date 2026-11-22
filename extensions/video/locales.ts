@@ -75,13 +75,10 @@ registerMessages({
   'video.canceled': { 'zh-CN': '已取消', en: 'Canceled' },
   'video.failed': { 'zh-CN': '失败', en: 'Failed' },
 
-  // 剪辑（独立剪辑窗口）
+  // 剪辑（独立剪辑窗口；入口行在「高级」组收尾，见 View.vue items）
+  'video.group.advanced': { 'zh-CN': '高级', en: 'Advanced' },
   'video.clip.export': { 'zh-CN': '导出', en: 'Export' },
-  'video.clip.entry': { 'zh-CN': '剪辑视频', en: 'Edit Video' },
-  'video.clip.entryDesc': {
-    'zh-CN': '裁剪 · 拼接 · 一键去停顿',
-    en: 'Trim, stitch, remove silence',
-  },
+  'video.clip.entry': { 'zh-CN': '剪辑', en: 'Edit' },
   'video.clip.open': { 'zh-CN': '打开', en: 'Open' },
   'video.clip.title': { 'zh-CN': '剪辑', en: 'Editor' },
   'video.clip.probing': { 'zh-CN': '正在分析素材…', en: 'Analyzing media…' },
