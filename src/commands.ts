@@ -188,6 +188,7 @@ export const CMD = {
   // —— video 剪辑（独立剪辑窗口 + 本地媒体预览）——
   videoClipOpen: 'video_clip_open',
   videoClipClose: 'video_clip_close',
+  videoClipZoom: 'video_clip_zoom',
   videoClipTakeInputs: 'video_clip_take_inputs',
   videoClipProbe: 'video_clip_probe',
   videoClipTimeline: 'video_clip_timeline',

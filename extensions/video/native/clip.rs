@@ -464,7 +464,10 @@ fn build_window(app: &AppHandle) -> Result<(), String> {
         log::warn!("[clip] set Regular activation policy failed: {e}");
     }
     // dev 裸二进制无 bundle 图标，Dock 会显示占位——用编译期内置的应用图标补设
-    //（build_window 恒在主线程运行）
+    //（build_window 恒在主线程运行）。**必须切 Regular 之后设**：Accessory 态下设置
+    // 会在策略切换、Dock tile 重新初始化时被抹掉（实测 Dock 图标消失）；而台前调度
+    // 角标读 LaunchServices 的 bundle 图标（dev 无 bundle 无解、prod 不受影响，详见
+    // docs/extensions/video.md 形态节边界记录），先后顺序对它无影响。
     if let Some(icon) = app.default_window_icon() {
         crate::platform::window::set_dock_icon(icon.rgba(), icon.width(), icon.height());
     }
@@ -588,6 +591,18 @@ pub fn video_clip_take_inputs() -> Vec<String> {
         .lock()
         .map(|mut p| std::mem::take(&mut *p))
         .unwrap_or_default()
+}
+
+/// 剪辑窗缩放还原切换（顶带双击）。tao toggle_maximize 对本窗静默失效（zoom no-op），
+/// 直调 platform 的原生 zoom 原语（NSWindow.zoom）；NSWindow 操作须主线程。
+#[tauri::command]
+pub fn video_clip_zoom(app: AppHandle) {
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return;
+    };
+    let _ = app.run_on_main_thread(move || {
+        crate::platform::window::toggle_zoom_fill(&window);
+    });
 }
 
 /// 关闭剪辑窗口（前端 Esc / 导出完成后调用）。

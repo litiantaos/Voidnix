@@ -156,6 +156,7 @@ macro_rules! configure_app {
             crate::extensions::video::clip::video_clip_probe,
             crate::extensions::video::clip::video_clip_take_inputs,
             crate::extensions::video::clip::video_clip_timeline,
+            crate::extensions::video::clip::video_clip_zoom,
             crate::extensions::video::clip_export::video_clip_cancel,
             crate::extensions::video::clip_export::video_clip_export,
             crate::extensions::video::media_server::video_media_close,

@@ -7,7 +7,7 @@
         :loading="phase !== 'error'"
         :icon="phase === 'error' ? 'i-ri-error-warning-line' : undefined"
         :title="statusText"
-        :description="phase !== 'error' ? playSourceName : undefined"
+        :description="phase !== 'error' ? loadingDescription : undefined"
       >
         <template v-if="phase === 'error'" #action>
           <BaseButton @click="closeWindow">{{ t('video.clip.exit') }}</BaseButton>
@@ -16,29 +16,10 @@
     </div>
 
     <template v-else>
-      <!-- 顶部工具条卡：文件名 + 元数据 chip + 导出（overlay 标题栏下 32px 红绿灯安全区，
-           卡内外空白区 mousedown 拖动窗口） -->
-      <header class="px-3 pb-3 pt-8 shrink-0 select-none" @mousedown="onHeaderDrag">
-        <div class="p-3 soft-card flex gap-3 items-center">
-          <span truncate class="text-sm font-medium max-w-[42%] min-w-0">{{ playSourceName }}</span>
-          <div class="flex flex-1 gap-1.5 min-w-0 items-center overflow-hidden">
-            <span v-for="part in fileMetaParts" :key="part" class="meta-chip shrink-0">
-              {{ part }}
-            </span>
-          </div>
-          <div class="ml-auto flex shrink-0 gap-2 items-center">
-            <BaseButton
-              icon="i-ri-export-line"
-              :disabled="exportDisabled"
-              :loading="exporting"
-              :title="t('video.clip.export')"
-              @click="onExport"
-            >
-              {{ exporting ? `${Math.round(exportPercent)}%` : t('video.clip.export') }}
-            </BaseButton>
-          </div>
-        </div>
-      </header>
+      <!-- 顶部拖动带：overlay 红绿灯安全区（32px），空白 mousedown 拖动窗口 / 双击缩放。
+           原生 NSView 叠加方案不可行（WKWebView 独占 hit-test，外来视图收不到事件或
+           破坏层级连红绿灯一起吞掉），手势判定只能在 web 层做 -->
+      <div class="pb-3 shrink-0 h-8 select-none" @mousedown="onHeaderDrag" />
 
       <!-- 主体：监视器 + 时间线段面板。间距两档：模块 12（px-3 外距 / pb-3 行距 / gap-3 卡距 / 卡内 p-3）、
            元素 8（gap-2：按钮组 / 卡片间隙与卡内边距） -->
@@ -81,7 +62,15 @@
 
           <!-- 传输控制条：监视器内底栏。ghost 24px 图标钮与 mark-chip 等高成一条基线；
                播放键 accent 着色为焦点 -->
-          <div class="px-3 border-t border-divider flex shrink-0 gap-2 h-10 items-center">
+          <div class="px-3 border-t border-divider flex shrink-0 h-10 items-center">
+            <div class="flex flex-1 gap-1.5 min-w-0 items-center">
+              <span class="text-xs font-medium font-mono tabular-nums">
+                {{ formatTimecode(playheadUs, playFps) }}
+              </span>
+              <span class="text-xs text-muted font-mono tabular-nums"
+                >/ {{ formatTimecode(totalUs, playFps) }}</span
+              >
+            </div>
             <div class="flex shrink-0 gap-1.5 items-center">
               <BaseButton
                 variant="ghost"
@@ -105,14 +94,7 @@
                 @click="stepFrames(1)"
               />
             </div>
-            <span class="bg-divider mx-2 shrink-0 h-4 w-px" />
-            <span class="text-xs font-medium font-mono tabular-nums">
-              {{ formatTimecode(playheadUs, playFps) }}
-            </span>
-            <span class="text-xs text-muted font-mono tabular-nums"
-              >/ {{ formatTimecode(totalUs, playFps) }}</span
-            >
-            <div class="ml-auto flex shrink-0 gap-2 items-center">
+            <div class="flex flex-1 gap-2 min-w-0 items-center justify-end">
               <BaseButton
                 variant="ghost"
                 icon="i-ri-pulse-line"
@@ -132,88 +114,139 @@
           </div>
         </section>
 
-        <!-- 时间线段面板：段列表即成片（顺序 = 播放序），拖拽排序 -->
+        <!-- 片段面板：双页签（片段 / 素材）。无总计底栏——成片时长即传输条 total -->
         <aside class="soft-card flex shrink-0 flex-col w-72 overflow-hidden">
-          <div class="px-3 flex gap-2 h-10 items-center">
-            <span class="text-xs text-secondary font-medium">{{ t('video.clip.segments') }}</span>
-            <span class="count-chip tabular-nums">{{ segments.length }}</span>
+          <div class="px-3 border-b border-divider flex shrink-0 gap-1.5 h-10 items-center">
+            <BaseButton
+              :class="{ '!text-accent': panelTab === 'segments' }"
+              @click="panelTab = 'segments'"
+            >
+              {{ t('video.clip.segments') }}
+              <span class="tab-count tabular-nums">{{ segments.length }}</span>
+            </BaseButton>
+            <BaseButton
+              :class="{ '!text-accent': panelTab === 'sources' }"
+              @click="panelTab = 'sources'"
+            >
+              {{ t('video.clip.sources') }}
+              <span class="tab-count tabular-nums">{{ clips.length }}</span>
+            </BaseButton>
           </div>
 
-          <div v-if="!segments.length" class="flex flex-1 min-h-0 items-center justify-center">
-            <BaseEmptyState icon="i-ri-scissors-cut-line" />
-          </div>
+          <!-- 片段页：段列表即成片（顺序 = 播放序），拖拽排序；播放到段内时卡底显示进度 -->
+          <template v-if="panelTab === 'segments'">
+            <div v-if="!segments.length" class="flex flex-1 min-h-0 items-center justify-center">
+              <BaseEmptyState icon="i-ri-scissors-cut-line" />
+            </div>
 
+            <div
+              v-else
+              class="clip-scroll px-3 py-3 flex flex-1 flex-col gap-2 min-h-0 overflow-y-auto"
+            >
+              <div
+                v-for="(seg, index) in segments"
+                :key="seg.id"
+                class="seg-card"
+                :class="{
+                  'is-selected': index === selectedSegment,
+                  'is-dragging': index === panelDragIndex,
+                }"
+                :data-seg-index="index"
+                @click="onSegmentClick(index)"
+              >
+                <span class="seg-progress" :style="{ width: `${segPlayProgress(index) * 100}%` }" />
+                <div class="seg-body">
+                  <!-- 序号即拖拽把手（合二为一）：按下拖动排序，点击行为留给卡身 -->
+                  <span
+                    class="seg-index seg-handle"
+                    :title="t('video.clip.dragSort')"
+                    @pointerdown="onCardPointerDown($event, index)"
+                  >
+                    <span class="seg-handle-num tabular-nums">{{ index + 1 }}</span>
+                    <!-- 容器与图标分离：图标类自带 display:inline-block，若同一元素
+                         兼任绝对定位容器会与其 flex 居中打架（类优先级随注入顺序漂移） -->
+                    <span class="seg-handle-grip">
+                      <i class="i-ri-draggable text-[10px]" />
+                    </span>
+                  </span>
+                  <div class="seg-main">
+                    <div class="seg-line">
+                      <span class="seg-range tabular-nums">{{ segmentRangeText(seg) }}</span>
+                      <span class="seg-dur tabular-nums">{{
+                        formatDuration(segVirtualUs(seg))
+                      }}</span>
+                    </div>
+                    <div class="seg-line">
+                      <span class="seg-src">{{ sourceNameOf(seg.sourceIndex) }}</span>
+                      <span v-if="seg.speed !== 1" class="seg-speed-tag tabular-nums">{{
+                        formatSpeed(seg.speed)
+                      }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- 素材页：源视频列表（点击跳到该源首个段实例；段已剪空的源置灰不可跳） -->
           <div
             v-else
             class="clip-scroll px-3 py-3 flex flex-1 flex-col gap-2 min-h-0 overflow-y-auto"
           >
             <button
-              v-for="(seg, index) in segments"
-              :key="seg.id"
-              class="seg-card group"
-              :class="{
-                'is-selected': index === selectedSegment,
-                'is-drop-target': index === dropTargetIndex,
-              }"
-              draggable="true"
-              @dragstart="onDragStart($event, index)"
-              @dragover.prevent="dropTargetIndex = index"
-              @dragleave="dropTargetIndex = -1"
-              @drop.prevent="onDrop(index)"
-              @dragend="dropTargetIndex = -1"
-              @click="onSegmentClick(index)"
+              v-for="(clip, i) in clips"
+              :key="clip.meta.path"
+              class="seg-card source-row"
+              :class="{ 'is-playing': i === playSourceIndex }"
+              :disabled="firstSegIndexOf(i) < 0"
+              @click="jumpToSource(i)"
             >
-              <span class="seg-index tabular-nums">{{ index + 1 }}</span>
-              <div class="flex flex-1 flex-col gap-0.5 min-w-0">
-                <span class="text-[11px] text-secondary font-mono truncate tabular-nums">{{
-                  segmentRangeText(seg)
-                }}</span>
-                <span class="text-[10px] text-muted truncate">{{
-                  sourceNameOf(seg.sourceIndex)
-                }}</span>
-              </div>
-              <span class="text-[11px] text-secondary shrink-0 tabular-nums">{{
-                formatDuration(segVirtualUs(seg))
-              }}</span>
-              <span
-                class="speed-chip shrink-0 tabular-nums"
-                :class="{ 'speed-set': seg.speed !== 1 }"
-                :title="t('video.clip.speed')"
-                @click.stop="toggleSpeedMenu(index)"
-              >
-                {{ formatSpeed(seg.speed) }}
-              </span>
-              <span
-                class="rounded-ctrl text-muted opacity-0 flex-center shrink-0 h-5 w-5 transition-opacity duration-[var(--duration-fast)] hover:text-danger group-hover:opacity-100"
-                :title="t('video.clip.deleteSegment')"
-                @click.stop="removeSegmentAt(index)"
-              >
-                <i class="i-ri-close-line text-xs" />
-              </span>
-              <!-- 倍速预设行：点击段上的倍速 chip 展开 -->
-              <div
-                v-if="speedMenuFor === index"
-                class="mt-1 pt-2 border-t border-divider flex flex-wrap gap-1 w-full"
-                @click.stop
-              >
-                <button
-                  v-for="preset in SPEED_PRESETS"
-                  :key="preset"
-                  class="speed-preset tabular-nums"
-                  :class="{ 'is-current': preset === seg.speed }"
-                  @click.stop="setSpeed(index, preset)"
-                >
-                  {{ formatSpeed(preset) }}
-                </button>
+              <div class="seg-main">
+                <div class="seg-line">
+                  <span class="seg-name">{{ sourceNameOf(i) }}</span>
+                  <span class="seg-dur tabular-nums">{{
+                    formatDuration(clip.meta.durationUs)
+                  }}</span>
+                </div>
+                <div class="seg-line">
+                  <span class="seg-src font-mono truncate tabular-nums">{{
+                    sourceMetaText(clip)
+                  }}</span>
+                  <span class="text-[10px] text-muted shrink-0">{{
+                    firstSegIndexOf(i) >= 0
+                      ? t('video.clip.sourceSegs', { n: segCountOf(i) })
+                      : t('video.clip.notOnTimeline')
+                  }}</span>
+                </div>
               </div>
             </button>
           </div>
 
-          <div class="px-3 border-t border-divider flex h-10 items-center justify-between">
-            <span class="text-xs text-muted">{{ t('video.clip.total') }}</span>
-            <span class="text-sm text-accent font-medium tabular-nums">{{
-              formatDuration(totalUs)
-            }}</span>
+          <!-- 底部常驻操作栏（纯图标控件，作用于选中段 = 播放头段）：倍速 = BaseSelect
+               触发器插槽（键盘/浮层/外点全复用通用 combobox）；删除 = BaseButton 图标钮 -->
+          <div
+            class="panel-actions px-3 border-t border-divider flex shrink-0 gap-1.5 h-10 items-center justify-end"
+          >
+            <BaseSelect
+              class="flex-center !px-0 !w-7"
+              :model-value="selectedSpeed"
+              :options="speedOptions"
+              :disabled="selectedSegment < 0"
+              :title="t('video.clip.speed')"
+              @update:model-value="onSpeedSelect"
+            >
+              <!-- 触发器插槽：纯图标触发；!w-7 !px-0 flex-center 与相邻 BaseButton
+                   图标钮同盒型（方形），soft-chip 边框示意控件身份、无需箭头 -->
+              <template #trigger>
+                <i class="i-ri-speed-line text-sm flex-none" />
+              </template>
+            </BaseSelect>
+            <BaseButton
+              icon="i-ri-delete-bin-line"
+              :disabled="selectedSegment < 0"
+              :title="t('video.clip.deleteSegment')"
+              @click="removeSelectedSegment"
+            />
           </div>
         </aside>
       </div>
@@ -231,14 +264,14 @@
         </div>
       </section>
 
-      <!-- 状态栏：去停顿审阅 / 导出进度 / 导出结果 / 常态快捷键提示 -->
+      <!-- 状态栏：左侧状态（去停顿审阅 / 导出进度 / 导出结果 / 常态提示）+ 右缘导出入口 -->
       <footer
         class="text-xs text-muted px-3 border-t border-divider flex shrink-0 gap-3 h-10 items-center"
       >
         <template v-if="pendingCuts.length">
           <i class="i-ri-pulse-line text-warning shrink-0" />
           <span class="text-warning">{{ silenceSummary }}</span>
-          <span class="ml-auto shrink-0">{{ t('video.clip.silenceApply') }}</span>
+          <span class="shrink-0">{{ t('video.clip.silenceApply') }}</span>
         </template>
         <template v-else-if="exporting">
           <span shrink="0" class="text-secondary">{{ t('video.clip.exportStage') }}</span>
@@ -249,22 +282,60 @@
             >{{ Math.round(exportPercent) }}%</span
           >
           <span truncate>{{ exportStage }}</span>
-          <BaseButton size="inline" class="ml-auto" @click="cancelExport">{{
-            t('video.cancel')
-          }}</BaseButton>
         </template>
         <template v-else-if="exportResult">
           <i class="i-ri-checkbox-circle-line text-success shrink-0" />
           <span class="text-success shrink-0">{{ t('video.clip.exported') }}</span>
           <span truncate class="text-secondary">{{ exportResultName }}</span>
           <BaseButton size="inline" @click="revealResult">{{ t('video.clip.reveal') }}</BaseButton>
-          <span class="ml-auto truncate">{{ t('video.clip.hintKeys') }}</span>
         </template>
         <template v-else>
           <!-- 常态只留快捷键提示：时间码/入出点已在传输条呈现，底栏不重复 -->
-          <span class="ml-auto truncate">{{ t('video.clip.hintKeys') }}</span>
+          <span truncate>{{ t('video.clip.hintKeys') }}</span>
         </template>
+        <!-- 导出入口（原顶栏迁入）：进行中变取消 -->
+        <div class="ml-auto pl-3 flex shrink-0 gap-2 items-center">
+          <BaseButton v-if="exporting" size="inline" @click="cancelExport">{{
+            t('video.cancel')
+          }}</BaseButton>
+          <BaseButton
+            v-else
+            icon="i-ri-export-line"
+            :disabled="exportDisabled"
+            :title="t('video.clip.export')"
+            @click="onExport"
+          >
+            {{ t('video.clip.export') }}
+          </BaseButton>
+        </div>
       </footer>
+
+      <!-- 面板拖拽幽灵卡：跟随指针（原卡原地半透明，指示线标落点） -->
+      <Teleport to="body">
+        <div
+          v-if="panelDragPos && segments[panelDragIndex]"
+          class="drag-ghost soft-card"
+          :style="{ left: `${panelDragPos.x + 14}px`, top: `${panelDragPos.y + 10}px` }"
+        >
+          <span class="seg-index tabular-nums">{{ panelDragIndex + 1 }}</span>
+          <span class="text-[11px] text-secondary font-mono truncate tabular-nums">{{
+            segmentRangeText(segments[panelDragIndex])
+          }}</span>
+          <span class="text-[11px] text-secondary shrink-0 tabular-nums">{{
+            formatDuration(segVirtualUs(segments[panelDragIndex]))
+          }}</span>
+        </div>
+        <!-- 插入线：两项之间（accent 满列表宽；末尾追加位在最后一张卡之后） -->
+        <div
+          v-if="dropLinePos"
+          class="drop-line"
+          :style="{
+            left: `${dropLinePos.x}px`,
+            top: `${dropLinePos.y}px`,
+            width: `${dropLinePos.w}px`,
+          }"
+        />
+      </Teleport>
     </template>
   </div>
 </template>
@@ -272,14 +343,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Channel, convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import BaseProgress from '@/components/ui/BaseProgress.vue'
 import { CMD } from '@/commands'
 import { showToast } from '@/composables/useToast'
+import { formatBytes } from '@/utils/format'
 import { t } from '@/runtime/i18n'
 import {
   SPEED_PRESETS,
@@ -360,7 +433,6 @@ const statusText = ref(t('video.clip.probing'))
 const clips = ref<LoadedClip[]>([])
 /** 时间线段列表 = 成片真相源（顺序即播放序）。 */
 const segments = ref<TimelineSegment[]>([])
-const selectedSegment = ref(-1)
 /** 播放头（虚拟时间线微秒）。 */
 const playheadUs = ref(0)
 /** 打点（虚拟时间线微秒，删除区间 [I, O)）。 */
@@ -387,6 +459,9 @@ const videoLoadError = ref(false)
 const totalUs = computed(() => timelineTotalUs(segments.value))
 const playLoc = computed(() => locateVirtual(segments.value, playheadUs.value))
 const playSegIndex = computed(() => playLoc.value?.index ?? loadedSegIndex.value)
+/** 选中段 = 播放头所在段（纯派生态：指针在哪哪段选中，无独立选中状态——定位/拖拽/
+ * Tab 全部经 seek 驱动，删除/倍速/排序消费此值）。 */
+const selectedSegment = computed(() => playSegIndex.value)
 const playSeg = computed(() => segments.value[playSegIndex.value] ?? null)
 const playFps = computed<FrameRate>(() => playSeg.value?.fps ?? { num: 30, den: 1 })
 const playSource = computed<LoadedClip | null>(() => {
@@ -394,12 +469,6 @@ const playSource = computed<LoadedClip | null>(() => {
   if (!seg) return clips.value[0] ?? null
   return clips.value[seg.sourceIndex] ?? null
 })
-const playSourceName = computed(() => {
-  const path = playSource.value?.meta.path ?? ''
-  return path.split('/').pop() || t('video.clip.title')
-})
-const exportDisabled = computed(() => phase.value !== 'ready' || segments.value.length === 0)
-
 const previewError = computed(() => {
   if (phase.value !== 'ready') return ''
   if (videoLoadError.value) return t('video.clip.previewFailed')
@@ -410,36 +479,76 @@ const previewError = computed(() => {
     : t('video.clip.notPreviewable', { codec: meta.codecTag || meta.videoCodec })
 })
 
-const fileMetaParts = computed<string[]>(() => {
-  const meta = playSource.value?.meta
-  if (!meta) return []
-  const fps = meta.fpsNum / meta.fpsDen
-  const parts = [
-    formatDuration(meta.durationUs),
-    `${meta.displayWidth}×${meta.displayHeight}`,
-    Number.isInteger(fps) ? `${fps}fps` : `${fps.toFixed(2)}fps`,
-  ]
-  const size = formatBytes(meta.sizeBytes)
-  if (size) parts.push(size)
-  return parts
+const playSourceName = computed(() => {
+  const path = playSource.value?.meta.path ?? ''
+  return path.split('/').pop() || t('video.clip.title')
 })
+const exportDisabled = computed(() => phase.value !== 'ready' || segments.value.length === 0)
+/** 加载态副标题：多素材显示计数（单文件名在多文件下误导），单素材显示文件名。 */
+const inputCount = ref(0)
+const loadingDescription = computed(() =>
+  inputCount.value > 1
+    ? t('video.clip.sourcesCount', { n: inputCount.value })
+    : playSourceName.value,
+)
 
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return ''
-  const units = ['B', 'KB', 'MB', 'GB']
-  let value = bytes
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)}${units[unit]}`
+/** 倍速下拉选项（BaseSelect 图标模式消费，作用于选中段）。 */
+const speedOptions = SPEED_PRESETS.map((preset) => ({ label: formatSpeed(preset), value: preset }))
+
+const selectedSpeed = computed(() => segments.value[selectedSegment.value]?.speed ?? 1)
+
+function onSpeedSelect(value: string | number) {
+  const index = selectedSegment.value
+  if (index >= 0) setSpeed(index, Number(value))
+}
+
+/** 源在其首个段实例中的索引（全部段被删则 -1，素材页签该项置灰）。 */
+function firstSegIndexOf(sourceIndex: number): number {
+  return segments.value.findIndex((seg) => seg.sourceIndex === sourceIndex)
+}
+
+/** 源在时间线上的段实例数（素材页签行尾）。 */
+function segCountOf(sourceIndex: number): number {
+  return segments.value.filter((seg) => seg.sourceIndex === sourceIndex).length
+}
+
+/** 素材页签：跳到该源首个段实例并选中（不切页签——监视器即时响应，段卡联动在回片段页时呈现）。 */
+function jumpToSource(sourceIndex: number) {
+  const index = firstSegIndexOf(sourceIndex)
+  if (index < 0) return
+  seekVirtual(segStartUs(segments.value, index))
+}
+
+// ---------------------------------------------------------------------------
+// 面板页签 / 派生辅助
+// ---------------------------------------------------------------------------
+
+/** 面板双页签：片段 / 素材。 */
+const panelTab = ref<'segments' | 'sources'>('segments')
+/** 当前播放段所属源索引（素材页签 is-playing 高亮）。 */
+const playSourceIndex = computed(() => playSeg.value?.sourceIndex ?? -1)
+
+/** 段内播放进度（0-1，仅播放头所在段；段卡背景进度条的宽度源）。 */
+function segPlayProgress(index: number): number {
+  if (index !== playSegIndex.value) return 0
+  const seg = segments.value[index]
+  if (!seg) return 0
+  const start = segStartUs(segments.value, index)
+  return Math.min(1, Math.max(0, (playheadUs.value - start) / segVirtualUs(seg)))
+}
+
+function formatSpeed(speed: number): string {
+  return `${speed}×`
 }
 
 function segmentRangeText(seg: TimelineSegment): string {
-  const start = formatTimecode(frameToUs(seg.inFrame, seg.fps), seg.fps)
-  const end = formatTimecode(frameToUs(seg.outFrame, seg.fps), seg.fps)
-  return `${start} → ${end}`
+  // 源时长 < 1h 时剥掉前导 00: 时段，区间显著变短（卡内不被截断的关键一环）
+  const underHour = segSourceUs(seg) < 3_600_000_000
+  const fmt = (us: number) => {
+    const text = formatTimecode(us, seg.fps)
+    return underHour ? text.replace(/^00:/, '') : text
+  }
+  return `${fmt(frameToUs(seg.inFrame, seg.fps))} → ${fmt(frameToUs(seg.outFrame, seg.fps))}`
 }
 
 function sourceNameOf(index: number): string {
@@ -447,8 +556,17 @@ function sourceNameOf(index: number): string {
   return path.split('/').pop() ?? ''
 }
 
-function formatSpeed(speed: number): string {
-  return `${speed}×`
+/** 悬停气泡段信息行的源名截断（窄块辨认行保持气泡紧凑）。 */
+function shortenSourceName(name: string, max = 14): string {
+  return name.length > max ? `${name.slice(0, max - 1)}…` : name
+}
+
+/** 素材行次行元数据（分辨率 · 帧率 · 体积——常态远短于行宽，不产生省略号）。 */
+function sourceMetaText(clip: LoadedClip): string {
+  const meta = clip.meta
+  const fps = meta.fpsNum / meta.fpsDen
+  const fpsText = Number.isInteger(fps) ? `${fps}fps` : `${fps.toFixed(2)}fps`
+  return `${meta.displayWidth}×${meta.displayHeight} · ${fpsText} · ${formatBytes(meta.sizeBytes, { compact: true })}`
 }
 
 // ---------------------------------------------------------------------------
@@ -470,6 +588,7 @@ let bootstrapSeq = 0
 async function bootstrap(paths: string[]) {
   const seq = ++bootstrapSeq
   const inputs = countInputs(paths)
+  inputCount.value = inputs.length
   if (!inputs.length) {
     fail(t('video.clip.openFailed'))
     return
@@ -478,9 +597,9 @@ async function bootstrap(paths: string[]) {
   playheadUs.value = 0
   inMarkUs.value = null
   outMarkUs.value = null
-  selectedSegment.value = -1
   exportResult.value = null
   pendingCuts.value = []
+  panelTab.value = 'segments'
   videoLoadError.value = false
   phase.value = 'probing'
   statusText.value = t('video.clip.probing')
@@ -955,11 +1074,32 @@ function stepFrames(delta: number) {
 }
 
 // ---------------------------------------------------------------------------
-// 时间轴指针交互（scrub + 悬停）
+// 时间轴指针交互：纵向分区——标尺带（含播放头手柄）擦洗；轨道区点击即定位 /
+// 播放头线附近拖动指针线，其余按住拖拽排序（选中派生于播放头，无独立选中状态）
 // ---------------------------------------------------------------------------
 
+/** 标尺带高度（时间刻度 + 擦洗区），与 drawTimeline 同源。 */
+const RULER_H = 15
+const TRACK_TOP = RULER_H + 4
+/** 段块最小可瞄准宽度（px）：低于它的块人手无法稳定点中，命中按中心就近容差。 */
+const MIN_SEG_PX = 8
+/** 点选与拖拽的位移判定阈值（px）。 */
+const DRAG_THRESHOLD_PX = 4
+/** 播放头手柄命中宽度（px）：指针落在播放头线两侧该范围内 = 抓指针线而非片段。 */
+const PLAYHEAD_GRAB_PX = 8
+
 let scrubbing = false
+/** 轨道区段拖拽进行中（悬停反馈让位）。 */
+let draggingSeg = false
 const hoverUs = ref<number | null>(null)
+/** 悬停是否在轨道区（气泡是否附段信息行）。 */
+const hoverOnTrack = ref(false)
+/** 拖拽排序插入边界（0..n：插到原列表第 k 位之前；-1 = 无 / 原位 no-op）。 */
+const dropBoundary = ref(-1)
+/** 画布拖拽中的段（块半透明指示；选中已派生，不承担拖拽标识）。 */
+const dragSegIndex = ref(-1)
+/** 画布拖拽中指针 x（canvas 坐标；-1 = 无）——幽灵块跟随。 */
+const dragPointerX = ref(-1)
 
 function ratioToVirtual(canvas: HTMLCanvasElement, clientX: number): number {
   const rect = canvas.getBoundingClientRect()
@@ -967,13 +1107,86 @@ function ratioToVirtual(canvas: HTMLCanvasElement, clientX: number): number {
   return ratio * totalUs.value
 }
 
+interface SegLayout {
+  x0: number
+  w: number
+  centerX: number
+}
+
+/** 段块布局：绘制与命中共用同一份累计几何（宽度 ∝ 虚拟时长，杜绝两套游标漂移）。 */
+function segLayouts(width: number): SegLayout[] {
+  const total = totalUs.value
+  if (total <= 0) return []
+  let cursor = 0
+  return segments.value.map((seg) => {
+    const len = segVirtualUs(seg)
+    const x0 = (cursor / total) * width
+    const w = (len / total) * width
+    cursor += len
+    return { x0, w, centerX: x0 + w / 2 }
+  })
+}
+
+/** 轨道区命中。宽块（≥ MIN_SEG_PX）按包含命中，点到即所得；窄块常成串出现（去停顿
+ * 碎段仅几像素），包含命中对瞄准误差零容忍，改按 ±MIN_SEG_PX 窗口内中心就近——
+ * 宽块不参与就近（其中心可能很远，会抢走本想点中的贴邻窄块）。 */
+function segmentAtX(x: number, layout: SegLayout[]): number {
+  let contained = -1
+  for (let i = 0; i < layout.length; i++) {
+    const { x0, w } = layout[i]
+    if (x >= x0 && x < x0 + w) {
+      contained = i
+      break
+    }
+  }
+  if (contained >= 0 && layout[contained].w >= MIN_SEG_PX) return contained
+  let best = contained
+  let bestDist = contained >= 0 ? Math.abs(x - layout[contained].centerX) : Infinity
+  for (let i = 0; i < layout.length; i++) {
+    if (layout[i].w >= MIN_SEG_PX) continue
+    const dist = Math.abs(x - layout[i].centerX)
+    if (dist <= MIN_SEG_PX && dist < bestDist) {
+      best = i
+      bestDist = dist
+    }
+  }
+  return best
+}
+
+/** 拖拽插入边界：最邻近指针 x 的段边界（k = 插到原列表第 k 位之前，n = 末尾）。 */
+function nearestBoundary(x: number, layout: SegLayout[], width: number): number {
+  let best = 0
+  let bestDist = Infinity
+  for (let k = 0; k <= layout.length; k++) {
+    const bx = k < layout.length ? layout[k].x0 : width
+    const dist = Math.abs(bx - x)
+    if (dist < bestDist) {
+      best = k
+      bestDist = dist
+    }
+  }
+  return best
+}
+
 function onTimelinePointerDown(event: PointerEvent) {
   const canvas = timelineRef.value
   if (!canvas || !segments.value.length) return
+  event.preventDefault() // 拦截拖拽手势的默认选择行为（同段卡把手）
+  if (event.clientY - canvas.getBoundingClientRect().top <= TRACK_TOP) {
+    startTimelineScrub(canvas, event)
+    return
+  }
+  startSegmentGrab(canvas, event)
+}
+
+/** 标尺带擦洗（原全幅行为）：按下即 seek，抬手统一续播 + 重定位预滚。气泡跟随
+ * 指针（拖动擦洗也要看得见时间码与段信息）。 */
+function startTimelineScrub(canvas: HTMLCanvasElement, event: PointerEvent) {
   scrubbing = true
-  hoverUs.value = null
+  updateScrubHover(canvas, event)
   seekVirtual(ratioToVirtual(canvas, event.clientX), isPlaying.value)
   const onMove = (move: PointerEvent) => {
+    updateScrubHover(canvas, move)
     seekVirtual(ratioToVirtual(canvas, move.clientX), isPlaying.value)
   }
   const onUp = () => {
@@ -989,16 +1202,84 @@ function onTimelinePointerDown(event: PointerEvent) {
   window.addEventListener('pointerup', onUp)
 }
 
+/** 擦洗期间同步悬停指示：气泡随指针移动，轨道区内仍附段信息行。 */
+function updateScrubHover(canvas: HTMLCanvasElement, event: PointerEvent) {
+  hoverUs.value = ratioToVirtual(canvas, event.clientX)
+  hoverOnTrack.value = event.clientY - canvas.getBoundingClientRect().top > TRACK_TOP
+  scheduleDraw()
+}
+
+/** 轨道区按下：指针落在播放头线 ±PLAYHEAD_GRAB_PX 内 = 抓指针线擦洗；其余位置
+ * 点击（未越阈值）= 移动播放指针（选中随播放头派生），拖过阈值 = 拖拽排序（插入线
+ * 随最近段边界，drop 复用 moveSegment 纯列表变换，涟漪由列表语义承载；拖动全程
+ * 播放头不动）。窄块命中由 segmentAtX 容差保障。 */
+function startSegmentGrab(canvas: HTMLCanvasElement, event: PointerEvent) {
+  const rect = canvas.getBoundingClientRect()
+  const headX = totalUs.value > 0 ? (playheadUs.value / totalUs.value) * canvas.clientWidth : 0
+  if (Math.abs(event.clientX - rect.left - headX) <= PLAYHEAD_GRAB_PX) {
+    startTimelineScrub(canvas, event) // 抓播放头手柄：拖指针线，不碰片段
+    return
+  }
+  const index = segmentAtX(event.clientX - rect.left, segLayouts(canvas.clientWidth))
+  if (index < 0) {
+    startTimelineScrub(canvas, event) // 防御：无段可拖时退化为擦洗
+    return
+  }
+  const startX = event.clientX
+  const startY = event.clientY
+  let dragging = false
+  const onMove = (move: PointerEvent) => {
+    if (!dragging) {
+      if (Math.hypot(move.clientX - startX, move.clientY - startY) < DRAG_THRESHOLD_PX) return
+      dragging = true
+      draggingSeg = true
+      dragSegIndex.value = index
+      hoverUs.value = null
+    }
+    if (dragging) {
+      dragPointerX.value = move.clientX - canvas.getBoundingClientRect().left
+    }
+    const k = nearestBoundary(
+      move.clientX - canvas.getBoundingClientRect().left,
+      segLayouts(canvas.clientWidth),
+      canvas.clientWidth,
+    )
+    // 原位边界（index / index+1）是 no-op：不画线，不产生「拖了没反应」的错觉
+    dropBoundary.value = k !== index && k !== index + 1 ? k : -1
+    scheduleDraw()
+  }
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    draggingSeg = false
+    dragSegIndex.value = -1
+    dragPointerX.value = -1
+    const k = dropBoundary.value
+    dropBoundary.value = -1
+    // 点击（未越阈值）= 移动播放指针；拖动 = 只排序片段，播放头全程不动
+    if (dragging) {
+      if (k >= 0) moveSegment(index, k > index ? k - 1 : k)
+    } else {
+      seekVirtual(ratioToVirtual(canvas, startX), isPlaying.value)
+    }
+    scheduleDraw()
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
+
 function onTimelineHover(event: PointerEvent) {
   const canvas = timelineRef.value
-  if (!canvas || scrubbing || !segments.value.length) return
+  if (!canvas || scrubbing || draggingSeg || !segments.value.length) return
   hoverUs.value = ratioToVirtual(canvas, event.clientX)
+  hoverOnTrack.value = event.clientY - canvas.getBoundingClientRect().top > TRACK_TOP
   scheduleDraw()
 }
 
 function onTimelineLeave() {
   if (hoverUs.value == null) return
   hoverUs.value = null
+  hoverOnTrack.value = false
   scheduleDraw()
 }
 
@@ -1057,10 +1338,8 @@ function drawTimeline() {
   const warning = cssVar('--color-warning', '#d9891a')
   const track = cssVar('--color-fill-4', 'rgba(120,120,130,0.18)')
   const muted = cssVar('--color-text-muted', 'rgba(110,120,145,0.72)')
-  const surface = cssVar('--color-surface', '#f8f8f9')
 
-  const RULER_H = 15
-  const trackTop = RULER_H + 4
+  const trackTop = TRACK_TOP
   const trackBottom = height - 4
   const trackH = Math.max(28, trackBottom - trackTop)
   const guideTop = RULER_H - 2
@@ -1082,13 +1361,17 @@ function drawTimeline() {
     ctx.roundRect(0, trackTop, width, trackH, 8)
     ctx.clip()
 
-    // ── 段块：宽度 ∝ 虚拟时长；缩略图按源时间采样铺块 ──
-    let cursor = 0
+    // ── 段块：宽度 ∝ 虚拟时长；每块圆角裁剪 + 细边框（选中的画 accent 边框，
+    //     在覆盖层之后单独画）；缩略图按源时间采样铺块（几何与命中共用 segLayouts） ──
+    const layout = segLayouts(width)
     segs.forEach((seg, index) => {
-      const len = segVirtualUs(seg)
-      const x0 = (cursor / total) * width
-      const w = (len / total) * width
-      cursor += len
+      const { x0, w } = layout[index]
+      const dragging = index === dragSegIndex.value
+      if (dragging) ctx.globalAlpha = 0.55
+      ctx.save()
+      ctx.beginPath()
+      ctx.roundRect(x0, trackTop, w, trackH, 6)
+      ctx.clip()
       const clip = clips.value[seg.sourceIndex]
       if (clip?.sprite && clip.timeline) {
         const sourceIn = frameToUs(seg.inFrame, seg.fps)
@@ -1116,21 +1399,23 @@ function drawTimeline() {
         ctx.fillStyle = cssVar('--color-fill-5', 'rgba(120,120,130,0.1)')
         ctx.fillRect(x0, trackTop, w, trackH)
       }
-      // 源边界分隔线
-      if (index > 0) {
-        ctx.strokeStyle = cssVar('--color-divider', 'rgba(120,120,160,0.2)')
-        ctx.lineWidth = 1
-        ctx.beginPath()
-        ctx.moveTo(x0 + 0.5, trackTop)
-        ctx.lineTo(x0 + 0.5, trackBottom)
-        ctx.stroke()
-      }
       // 倍速角标（≠1 时）
       if (seg.speed !== 1) {
         ctx.fillStyle = accent
         ctx.font = '600 9px ui-monospace, monospace'
         ctx.fillText(formatSpeed(seg.speed), Math.min(x0 + w - 20, x0 + 3), trackTop + 10)
       }
+      ctx.restore()
+      // 默认细边框（块自身周界，取代旧的段间分隔线；选中的块不画，由覆盖层后的
+      // accent 边框接管）
+      if (index !== selectedSegment.value) {
+        ctx.strokeStyle = cssVar('--color-divider', 'rgba(120,120,160,0.35)')
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.roundRect(x0 + 0.5, trackTop + 0.5, Math.max(2, w - 1), trackH - 1, 6)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
     })
 
     // ── 去停顿审阅：待删区间（源级映射到虚拟时间线） ──
@@ -1158,15 +1443,51 @@ function drawTimeline() {
     }
     ctx.restore()
 
-    // ── 选中段描边 ──
+    // ── 选中段描边（窄块最小可视宽度：居中扩展、可压邻块；圆角与轨道槽同心；
+    //     选中 = 播放头所在段（派生）） ──
     if (selectedSegment.value >= 0 && selectedSegment.value < segs.length) {
-      const x0 = usToX(segStartUs(segs, selectedSegment.value))
-      const x1 = usToX(
-        segStartUs(segs, selectedSegment.value) + segVirtualUs(segs[selectedSegment.value]),
-      )
+      const sel = layout[selectedSegment.value]
+      const drawW = Math.max(MIN_SEG_PX + 2, sel.w)
       ctx.strokeStyle = accent
       ctx.lineWidth = 1.5
-      ctx.strokeRect(x0 + 0.75, trackTop + 0.75, Math.max(2, x1 - x0) - 1.5, trackH - 1.5)
+      ctx.beginPath()
+      ctx.roundRect(sel.centerX - drawW / 2 + 0.75, trackTop + 0.75, drawW - 1.5, trackH - 1.5, 7)
+      ctx.stroke()
+    }
+
+    // ── 拖拽插入线：accent 竖线 + 顶部旗标（与段卡插入线同语义） ──
+    if (dropBoundary.value >= 0 && dropBoundary.value <= segs.length) {
+      const bx = dropBoundary.value < segs.length ? layout[dropBoundary.value].x0 : width
+      ctx.strokeStyle = accent
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(bx - 0.5, guideTop)
+      ctx.lineTo(bx - 0.5, trackBottom)
+      ctx.stroke()
+      ctx.fillStyle = accent
+      ctx.beginPath()
+      ctx.moveTo(bx - 4, guideTop)
+      ctx.lineTo(bx + 3, guideTop)
+      ctx.lineTo(bx, guideTop + 6)
+      ctx.closePath()
+      ctx.fill()
+    }
+
+    // ── 拖拽幽灵块：跟随指针居中（钳制轨道内；原块原地半透明，插入线标落点） ──
+    if (dragSegIndex.value >= 0 && dragSegIndex.value < segs.length && dragPointerX.value >= 0) {
+      const src = layout[dragSegIndex.value]
+      const gx = Math.min(width - src.w, Math.max(0, dragPointerX.value - src.w / 2))
+      ctx.globalAlpha = 0.75
+      ctx.fillStyle = cssVar('--color-fill-5', 'rgba(120,120,130,0.18)')
+      ctx.beginPath()
+      ctx.roundRect(gx, trackTop, src.w, trackH, 6)
+      ctx.fill()
+      ctx.strokeStyle = accent
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.roundRect(gx + 0.75, trackTop + 0.75, Math.max(2, src.w - 1.5), trackH - 1.5, 6)
+      ctx.stroke()
+      ctx.globalAlpha = 1
     }
 
     // ── I/O 标记：竖线 + 标尺位旗标字母 ──
@@ -1202,11 +1523,11 @@ function drawTimeline() {
     const seconds = total / 1_000_000
     const step = seconds <= 15 ? 1 : seconds <= 60 ? 5 : seconds <= 300 ? 30 : 60
     ctx.font = '9px ui-monospace, monospace'
-    for (let s = 0; s <= seconds; s += step) {
-      const x = (s / seconds) * width
+    for (let sec = 0; sec <= seconds; sec += step) {
+      const x = (sec / seconds) * width
       if (x > width - 26) break
       ctx.fillStyle = muted
-      ctx.fillText(formatClock(s), x + 2, 9)
+      ctx.fillText(formatClock(sec), x + 2, 9)
       ctx.strokeStyle = cssVar('--color-divider', 'rgba(120,120,160,0.1)')
       ctx.lineWidth = 1
       ctx.beginPath()
@@ -1215,29 +1536,48 @@ function drawTimeline() {
       ctx.stroke()
     }
 
-    // ── 悬停指示：muted 虚线 + 时间码气泡 ──
-    if (hoverUs.value != null && !scrubbing) {
+    // ── 悬停指示：muted 虚线 + 深色实底时间码气泡（擦洗时气泡跟随指针，虚线省略——
+    //     播放头已在指针处，虚线与之重合没有信息量） ──
+    if (hoverUs.value != null) {
       const x = Math.min(width, Math.max(0, usToX(hoverUs.value)))
-      ctx.strokeStyle = cssVar('--color-text-muted', muted)
-      ctx.lineWidth = 1
-      ctx.setLineDash([3, 3])
-      ctx.beginPath()
-      ctx.moveTo(x + 0.5, guideTop)
-      ctx.lineTo(x + 0.5, guideBottom)
-      ctx.stroke()
-      ctx.setLineDash([])
+      if (!scrubbing) {
+        ctx.strokeStyle = cssVar('--color-text-muted', muted)
+        ctx.lineWidth = 1
+        ctx.setLineDash([3, 3])
+        ctx.beginPath()
+        ctx.moveTo(x + 0.5, guideTop)
+        ctx.lineTo(x + 0.5, guideBottom)
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
       const label = formatTimecode(hoverUs.value, playFps.value)
+      // 轨道区悬停附段信息行（窄块辨认：序号 + 源名）
+      let segLine = ''
+      if (hoverOnTrack.value) {
+        const idx = segmentAtX(x, layout)
+        const seg = idx >= 0 ? segs[idx] : null
+        if (seg) segLine = `${idx + 1}·${shortenSourceName(sourceNameOf(seg.sourceIndex))}`
+      }
       ctx.font = '9px ui-monospace, monospace'
-      const tw = ctx.measureText(label).width
+      const tw = Math.max(ctx.measureText(label).width, ctx.measureText(segLine).width)
+      const bh = segLine ? 27 : 14
       const bx = Math.min(width - tw - 12, Math.max(2, x - tw / 2 - 4))
-      // 气泡贴轨道底部浮在缩略图上
-      const by = trackBottom - 18
-      ctx.fillStyle = cssVar('--color-fill-18', 'rgba(120,120,160,0.3)')
+      // 气泡贴轨道底部浮在缩略图上：深色实底（浮在任意明暗缩略图上恒可读——
+      // 监视器行业惯例，主题无关，同媒体井例外）
+      const by = trackBottom - bh - 4
+      ctx.fillStyle = '#24262b'
+      ctx.strokeStyle = 'rgba(255,255,255,0.14)'
+      ctx.lineWidth = 1
       ctx.beginPath()
-      ctx.roundRect(bx, by, tw + 8, 14, 4)
+      ctx.roundRect(bx + 0.5, by + 0.5, tw + 7, bh - 1, 4)
       ctx.fill()
-      ctx.fillStyle = surface
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(255,255,255,0.92)'
       ctx.fillText(label, bx + 4, by + 10)
+      if (segLine) {
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'
+        ctx.fillText(segLine, bx + 4, by + 21)
+      }
     }
   }
 }
@@ -1249,7 +1589,7 @@ function formatClock(totalSeconds: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// 打点 / 删除 / 切分 / 排序 / 倍速（三大核心操作）
+// 打点 / 删除 / 切分 / 排序（三大核心操作）；选中 = 播放头段（派生）
 // ---------------------------------------------------------------------------
 
 function setIn() {
@@ -1274,7 +1614,7 @@ function markText(us: number | null): string {
   return us == null ? t('video.clip.noOut') : formatTimecode(us, playFps.value)
 }
 
-/** Enter：删除打点区间（可跨段/切半段，余下涟漪前移），播放头停在删除起点。 */
+/** 删除打点区间（可跨段/切半段，余下涟漪前移），播放头停在删除起点（⌫ 统一删除入口）。 */
 function deleteMarkedRange() {
   const start = inMarkUs.value
   const end = outMarkUs.value
@@ -1283,8 +1623,6 @@ function deleteMarkedRange() {
     return
   }
   segments.value = deleteVirtualRange(segments.value, start, end)
-  selectedSegment.value = -1
-  speedMenuFor.value = null
   inMarkUs.value = null
   outMarkUs.value = null
   syncAfterEdit(start)
@@ -1294,9 +1632,6 @@ function removeSegmentAt(index: number) {
   if (index < 0 || index >= segments.value.length) return
   const at = segStartUs(segments.value, index)
   segments.value.splice(index, 1)
-  if (selectedSegment.value === index) selectedSegment.value = -1
-  else if (selectedSegment.value > index) selectedSegment.value -= 1
-  speedMenuFor.value = null
   syncAfterEdit(at)
 }
 
@@ -1310,36 +1645,98 @@ function splitAtPlayhead() {
   const before = segments.value.length
   segments.value = splitAtVirtual(segments.value, playheadUs.value)
   if (segments.value.length === before) return
-  speedMenuFor.value = null
   syncAfterEdit(playheadUs.value)
 }
 
 function onSegmentClick(index: number) {
-  selectedSegment.value = index
-  seekVirtual(segStartUs(segments.value, index))
+  if (suppressCardClick) return // 拖拽收尾的那次 click，不是跳转意图
+  seekVirtual(segStartUs(segments.value, index)) // 跳段首；选中随播放头派生
 }
 
-// 拖拽排序（故事板内）
-let dragIndex = -1
-const dropTargetIndex = ref(-1)
+// ---------------------------------------------------------------------------
+// 拖拽排序（段卡）：仅经序号把手（pointerdown）触发；选中派生于播放头，无独立状态
+// ---------------------------------------------------------------------------
 
-function onDragStart(event: DragEvent, index: number) {
-  dragIndex = index
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', String(index))
-  }
-}
+/** 面板拖拽插入边界（0..n，-1 = 无 / 原位）与指示线位置（viewport 坐标）。 */
+const panelDropBoundary = ref(-1)
+const dropLinePos = ref<{ x: number; y: number; w: number } | null>(null)
+/** 面板拖拽幽灵跟随点（viewport 坐标；null = 无拖拽）。 */
+const panelDragPos = ref<{ x: number; y: number } | null>(null)
+/** 面板拖拽中的段卡。 */
+const panelDragIndex = ref(-1)
+/** 拖拽刚结束的一次 click 抑制（pointerup 在原卡上仍派发 click，会把播放头拽到段首）。 */
+let suppressCardClick = false
 
-function onDrop(index: number) {
-  const target = dropTargetIndex.value
-  dropTargetIndex.value = -1
-  if (dragIndex < 0 || dragIndex === index || dragIndex === target) {
-    dragIndex = -1
+/** 由指针 Y 求插入边界：首个中点在指针下方的卡 = 该卡之前（0..n，n = 末尾追加位），
+ * 覆盖卡间 8px 间隙与列表上下沿；并定位两项之间的指示线。原位边界（自身 / 紧邻下
+ * 一位）不画线，与时间轴同纪律。 */
+function updatePanelDropLine(clientY: number, from: number) {
+  const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-seg-index]'))
+  const list = document.querySelector<HTMLElement>('.clip-scroll')
+  if (!cards.length || !list) {
+    panelDropBoundary.value = -1
+    dropLinePos.value = null
     return
   }
-  moveSegment(dragIndex, target >= 0 ? target : index)
-  dragIndex = -1
+  let k = cards.length
+  for (const el of cards) {
+    const r = el.getBoundingClientRect()
+    if (clientY < r.top + r.height / 2) {
+      k = Number(el.dataset.segIndex)
+      break
+    }
+  }
+  if (k === from || k === from + 1) {
+    panelDropBoundary.value = -1
+    dropLinePos.value = null
+    return
+  }
+  const anchor = k < cards.length ? cards[k]! : cards[cards.length - 1]!
+  const ar = anchor.getBoundingClientRect()
+  const lr = list.getBoundingClientRect()
+  panelDropBoundary.value = k
+  dropLinePos.value = {
+    x: lr.left,
+    w: lr.width,
+    y: k < cards.length ? ar.top - 5 : ar.bottom + 3, // 居中于卡间 8px 间隙
+  }
+}
+
+function onCardPointerDown(event: PointerEvent, index: number) {
+  if (event.button !== 0) return // 仅挂在序号把手上（卡身留给点击跳转）
+  // preventDefault 掐掉选择机制起点：user-select:none 之外，WebKit 拖拽手势仍可能
+  // 拉出选区（拖动中跨元素选择），pointerdown 默认行为拦截是最彻底的防线
+  event.preventDefault()
+  const startY = event.clientY
+  let dragging = false
+  const onMove = (move: PointerEvent) => {
+    if (!dragging) {
+      if (Math.abs(move.clientY - startY) < DRAG_THRESHOLD_PX) return
+      dragging = true
+      panelDragIndex.value = index
+    }
+    // 幽灵卡跟随指针（原卡原地半透明）；插入线随边界（两项之间 / 末尾追加位）
+    panelDragPos.value = { x: move.clientX, y: move.clientY }
+    updatePanelDropLine(move.clientY, index)
+  }
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    panelDragIndex.value = -1
+    panelDragPos.value = null
+    dropLinePos.value = null
+    const boundary = panelDropBoundary.value
+    panelDropBoundary.value = -1
+    if (!dragging) return // 未越阈值 = 纯点击，交给 @click
+    suppressCardClick = true
+    window.setTimeout(() => (suppressCardClick = false), 0)
+    if (boundary >= 0) {
+      // 边界 k = 插到原列表第 k 位之前（与时间轴插入线同语义）；下向拖拽移除后前移一位
+      moveSegment(index, index < boundary ? boundary - 1 : boundary)
+    }
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
 }
 
 /** 移动段到新位置（涟漪：列表重排天然承载）。 */
@@ -1349,24 +1746,13 @@ function moveSegment(from: number, to: number) {
   const [item] = next.splice(from, 1)
   next.splice(to, 0, item)
   segments.value = next
-  selectedSegment.value = to
-  speedMenuFor.value = null
   syncAfterEdit(playheadUs.value)
-}
-
-// 倍速：段卡 chip 展开/收起预设
-const speedMenuFor = ref<number | null>(null)
-
-function toggleSpeedMenu(index: number) {
-  selectedSegment.value = index
-  speedMenuFor.value = speedMenuFor.value === index ? null : index
 }
 
 function setSpeed(segIndex: number, speed: number) {
   const seg = segments.value[segIndex]
   if (!seg) return
   segments.value = segments.value.map((s, i) => (i === segIndex ? { ...s, speed } : s))
-  speedMenuFor.value = null
   // 总长变化：钳制播放头并同步已装载段的播放速率
   syncAfterEdit(playheadUs.value)
   const video = liveVideoEl()
@@ -1385,7 +1771,6 @@ function cycleSpeed(direction: 1 | -1) {
     SPEED_PRESETS.length - 1,
     Math.max(0, (current === -1 ? SPEED_PRESETS.indexOf(1) : current) + direction),
   )
-  selectedSegment.value = index
   setSpeed(index, SPEED_PRESETS[next])
 }
 
@@ -1475,8 +1860,6 @@ function applySilence() {
   segments.value = applySourceCuts(segments.value, pendingCutsSourceIndex, cuts)
   pendingCuts.value = []
   pendingCutsSourceIndex = -1
-  selectedSegment.value = -1
-  speedMenuFor.value = null
   void showToast(t('video.clip.silenceApplied', { n }))
   syncAfterEdit(playheadUs.value)
 }
@@ -1596,13 +1979,47 @@ async function revealResult() {
 // 窗口 / 键盘
 // ---------------------------------------------------------------------------
 
-/** 头部空白区拖动窗口（overlay 无原生标题栏）。按钮等交互元素不触发。 */
+/** 头部空白区：按下后位移越阈值 = 拖动窗口（overlay 无原生标题栏）。拖动必须延迟到
+ *  位移越阈值才 startDragging——首次按下即拖动会让系统拖拽会话吞掉后续鼠标事件。
+ *  双击用 mousedown 手动计时判定（WKWebView 的 mousedown event.detail 恒为 1、
+ *  dblclick 合成不可靠，均不能用作判定；延迟拖动后第二次 mousedown 必达页面，
+ *  计时可靠）；缩放底层走 AppKit 原生 zoom（tao 对可缩放窗口直调 NSWindow.zoom）。 */
+let lastHeaderDownMs = 0
+
 function onHeaderDrag(event: MouseEvent) {
   if (event.button !== 0) return
   if ((event.target as HTMLElement).closest('button')) return
-  void getCurrentWindow()
-    .startDragging()
-    .catch(() => {})
+  event.preventDefault() // 拦截拖拽手势的默认选择行为
+  const now = performance.now()
+  if (now - lastHeaderDownMs < 400) {
+    lastHeaderDownMs = 0
+    onHeaderZoom()
+    return // 双击不进拖动
+  }
+  lastHeaderDownMs = now
+  const startX = event.clientX
+  const startY = event.clientY
+  let dragging = false
+  const onMove = (move: PointerEvent) => {
+    if (!dragging) {
+      if (Math.hypot(move.clientX - startX, move.clientY - startY) < DRAG_THRESHOLD_PX) return
+      dragging = true
+      cleanup()
+      void getCurrentWindow()
+        .startDragging()
+        .catch(() => {})
+    }
+  }
+  const cleanup = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', cleanup)
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', cleanup)
+}
+
+function onHeaderZoom() {
+  void invoke(CMD.videoClipZoom).catch(() => {})
 }
 
 function closeWindow() {
@@ -1680,10 +2097,6 @@ function onKeyDown(event: KeyboardEvent) {
     case 'X':
       clearMarks()
       break
-    case 'Enter':
-      event.preventDefault()
-      deleteMarkedRange()
-      break
     case 's':
     case 'S':
       splitAtPlayhead()
@@ -1701,7 +2114,9 @@ function onKeyDown(event: KeyboardEvent) {
     case 'Backspace':
     case 'Delete':
       event.preventDefault()
-      removeSelectedSegment()
+      // 删除键统一删：优先打点区间（I/O 已设），否则选中段（= 播放头段）
+      if (inMarkUs.value != null && outMarkUs.value != null) deleteMarkedRange()
+      else removeSelectedSegment()
       break
     case 'ArrowLeft':
       event.preventDefault()
@@ -1717,20 +2132,15 @@ function onKeyDown(event: KeyboardEvent) {
       break
     case 'Tab':
       event.preventDefault()
-      // Tab 循环选中段（Shift 反向）：键盘可达的选中入口（排序/倍速/删除的前提）
-      if (segments.value.length) {
-        const cur = selectedSegment.value
-        const delta = event.shiftKey ? -1 : 1
-        selectedSegment.value = (cur + delta + segments.value.length) % segments.value.length
+      // Tab 段间跳转（Shift 反向）：播放头移到段首，选中随播放头派生（倍速/删除/排序的锚）
+      {
+        const n = segments.value.length
+        if (n) {
+          const cur = selectedSegment.value
+          const next = event.shiftKey ? (cur - 1 + n) % n : (cur + 1) % n
+          seekVirtual(segStartUs(segments.value, next))
+        }
       }
-      break
-    case 'Escape':
-      event.preventDefault()
-      if (speedMenuFor.value != null) {
-        speedMenuFor.value = null
-        return
-      }
-      closeWindow()
       break
     default:
       break
@@ -1780,6 +2190,13 @@ onBeforeUnmount(() => {
 
 watch(playheadUs, scheduleDraw)
 watch([inMarkUs, outMarkUs, selectedSegment], scheduleDraw)
+// 检查器滚动跟随：选中 = 播放头段（派生），列表随播放/定位/Tab 跳段滚动跟随
+// （block:nearest 只在出视野时滚动，窄块兜底）
+watch(selectedSegment, async (index) => {
+  if (index < 0) return
+  await nextTick()
+  document.querySelector(`[data-seg-index="${index}"]`)?.scrollIntoView({ block: 'nearest' })
+})
 </script>
 
 <style scoped>
@@ -1804,20 +2221,6 @@ watch([inMarkUs, outMarkUs, selectedSegment], scheduleDraw)
 
 .clip-layer.is-live {
   opacity: 1;
-}
-
-.meta-chip {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: var(--radius-ctrl);
-  background: var(--color-fill-4);
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 .mark-chip {
@@ -1846,31 +2249,132 @@ watch([inMarkUs, outMarkUs, selectedSegment], scheduleDraw)
   color: var(--color-warning);
 }
 
-.count-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 16px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--color-fill-5);
-  color: var(--color-text-muted);
-  font-size: 10px;
-  font-weight: 500;
-}
-
+/* 段卡：圆角 + 默认细边框；选中 = accent 边框（无填充底色，播放指示由进度底承载） */
 .seg-card {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  position: relative; /* 进度底 / 把手图标的定位锚 */
+  overflow: hidden; /* 浮层随卡圆角裁剪 */
   width: 100%;
   padding: 8px; /* 横纵一致：卡内边距 = 卡间隙 = 元素间距 8 */
+  border: 1px solid var(--color-divider);
   border-radius: var(--radius-ctrl);
   text-align: left;
   transition: background-color var(--duration-fast) var(--ease-out);
-  cursor: grab;
+  cursor: pointer; /* 卡身可点击（跳段/跳源）；拖拽光标只属于序号把手（.seg-handle） */
+  user-select: none; /* 防误选文本 */
+}
+
+/* 段卡行内容（相对定位压在进度底之上：DOM 序在进度底层之后） */
+.seg-body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 主信息列：两行——关键行（序号 + 源区间 + 成片时长）与次行（源名 + 倍速标记） */
+.seg-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.seg-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.seg-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.seg-range {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* 右缘指标（时长等）：不被挤压截断 */
+.seg-dur {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.seg-src {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+/* 倍速标记（≠1 时次行右缘；编辑入口在底部操作栏倍速 select） */
+.seg-speed-tag {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-accent);
+}
+
+/* 面板拖拽插入线：两项之间（与时间轴插入线同语义），accent 满列表宽 */
+.drop-line {
+  position: fixed;
+  z-index: 50;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-accent);
+  pointer-events: none;
+}
+
+/* 拖拽幽灵卡：跟随指针的紧凑单行卡影（accent 边框示「被拖的是这张」） */
+.drag-ghost {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 232px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-ctrl);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* 播放进度底：播放头所在段专属，宽度 = 段内进度（accent 浅染，不与选中底冲突） */
+.seg-progress {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--accent-line-soft);
+  pointer-events: none;
+}
+
+/* 页签计数：浅色纯文本（页签本体 = BaseButton ghost + active 接管选中态） */
+.tab-count {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 .seg-card:hover {
@@ -1878,89 +2382,76 @@ watch([inMarkUs, outMarkUs, selectedSegment], scheduleDraw)
 }
 
 .seg-card.is-selected {
-  background: var(--ui-active-fill);
+  border-color: var(--color-accent);
 }
 
-.seg-card.is-drop-target {
-  box-shadow: inset 0 2px 0 0 var(--color-accent);
+/* 素材行：不可拖拽（指针可点跳转）；播放源指示 = accent 边框（段卡选中同款观感，
+ * 段卡的播放指示仅由进度底承载，与选中态解耦） */
+
+.source-row.is-playing {
+  border-color: var(--color-accent);
 }
 
-.seg-card:active {
-  cursor: grabbing;
+/* 拖拽中的段卡半透明（拖拽标识与选中态解耦） */
+.seg-card.is-dragging {
+  opacity: 0.55;
+}
+
+.seg-card:disabled {
+  cursor: default;
 }
 
 .seg-index {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--color-fill-4);
-  color: var(--color-text-muted);
-  font-size: 10px;
-  transition:
-    background-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-
-.seg-card.is-selected .seg-index {
-  background: var(--accent-line-soft);
-  color: var(--color-accent);
-}
-
-.speed-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 20px;
-  min-width: 30px;
-  padding: 0 5px;
-  border-radius: var(--radius-ctrl);
+  min-width: 18px; /* 长数字自适应：min-width + 横向 padding 撑开，不定宽不截断 */
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
   background: var(--color-fill-4);
   color: var(--color-text-muted);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   transition:
     background-color var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out);
 }
 
-.speed-chip:hover {
-  background: var(--color-fill-8);
+/* 序号即拖拽把手：卡身 hover 时序号淡出、拖拽把手浮现（可拖暗示）；
+ * 按下抓取。两态绝对叠放交叉淡入，盒型恒定不跳动 */
+.seg-handle {
+  position: relative;
+  align-self: center;
+  cursor: grab;
 }
 
-.speed-chip.speed-set {
-  background: var(--accent-line-soft);
-  color: var(--color-accent);
-}
-
-.speed-preset {
-  display: inline-flex;
+.seg-handle-grip {
+  position: absolute;
+  inset: 0;
+  display: flex;
   align-items: center;
   justify-content: center;
-  height: 20px;
-  min-width: 34px;
-  padding: 0 6px;
-  border-radius: var(--radius-ctrl);
-  background: var(--color-fill-4);
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  transition:
-    background-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
-.speed-preset:hover {
-  background: var(--color-fill-8);
-  color: var(--color-text-secondary);
+.seg-handle-num {
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
-.speed-preset.is-current {
-  background: var(--color-accent);
-  color: #fff;
+.seg-card:hover .seg-handle-num,
+.seg-card.is-dragging .seg-handle-num {
+  opacity: 0;
+}
+
+.seg-card:hover .seg-handle-grip,
+.seg-card.is-dragging .seg-handle-grip {
+  opacity: 1;
+}
+
+.seg-handle:active {
+  cursor: grabbing;
 }
 
 .clip-scroll::-webkit-scrollbar {

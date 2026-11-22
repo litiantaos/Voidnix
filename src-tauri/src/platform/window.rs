@@ -383,6 +383,22 @@ unsafe fn animator_set_frame(ns_window: &NSWindow, frame: NSRect) {
     let _: () = objc2::msg_send![ctx_cls, endGrouping];
 }
 
+/// 窗口缩放还原切换（zoom 语义，**主线程**调用）：未缩放 → 铺满所在屏 visibleFrame，
+/// 已缩放 → 还原前 frame（frame 记忆与动画由 AppKit 原生 zoom 自管）。tao 的
+/// set_maximized 对 overlay 标题栏子窗实测静默失效（内部 zoom 路径 no-op），故绕开
+/// tao 直调原生 NSWindow.zoom（须窗口 Resizable——clip 窗 resizable(true) 满足）。
+/// 仅主线程调用。
+pub fn toggle_zoom_fill(window: &tauri::WebviewWindow) {
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    let raw = ptr.cast::<NSWindow>();
+    let Some(ns_window) = (unsafe { raw.as_ref() }) else {
+        return;
+    };
+    ns_window.zoom(None);
+}
+
 /// 授权会话避让专用：主窗动画移到指定 frame（Cocoa），并把 placement 切到该屏——
 /// 会话期间前端的高度/位置约束与目标屏一致；避让只影响当前显示期间，下次 show 仍按
 /// 光标屏复位（与拖动同语义）。与 animate_frame 的差异：采用显式坐标不做跨屏复位

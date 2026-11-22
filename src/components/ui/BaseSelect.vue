@@ -17,18 +17,22 @@
     @mousedown="onMousedownToggle"
     @click="onClickToggle"
   >
-    <span :class="selectedLabel ? 'text-primary' : 'text-muted'" class="min-w-0 truncate">
-      {{ selectedLabel || placeholder }}
-    </span>
-    <i
-      class="i-ri-arrow-down-s-line"
-      text="sm muted"
-      ml="2"
-      flex="none"
-      transition="transform"
-      duration="200"
-      :class="isOpen ? 'rotate-180' : ''"
-    />
+    <!-- 触发器插槽：任意内容（纯图标/图标+值/自定义 chip）；下拉箭头是否包含由
+         消费者决定（默认触发器自带，自定义触发器不重复渲染） -->
+    <slot name="trigger">
+      <span :class="selectedLabel ? 'text-primary' : 'text-muted'" class="min-w-0 truncate">
+        {{ selectedLabel || placeholder }}
+      </span>
+      <i
+        class="i-ri-arrow-down-s-line"
+        text="sm muted"
+        ml="2"
+        flex="none"
+        transition="transform"
+        duration="200"
+        :class="isOpen ? 'rotate-180' : ''"
+      />
+    </slot>
 
     <Teleport to="body">
       <Transition :css="false" @enter="onEnter" @leave="onLeave">
@@ -55,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, useSlots, Comment } from 'vue'
 import { useFloating } from '@/composables/useFloating'
 import BaseDropdownItems, { type PanelItem } from './BaseDropdownItems.vue'
 
@@ -94,12 +98,21 @@ const isOpen = ref(false)
 const selectRef = ref<HTMLElement | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const highlightedIndex = ref(0)
+/** 自定义触发器（#trigger 插槽）一次性判定：setup 期求值——useFloating 的
+ *  matchWidth 属静态 opts（setup 捕获），不随运行期插槽变化；判定与 BaseListItem.hasSlot
+ *  同源（过滤注释节点，防空 slot 误判） */
+const slots = useSlots()
+const hasCustomTrigger = (() => {
+  const vnodes = slots.trigger?.()
+  return !!vnodes && vnodes.some((n) => n.type !== Comment)
+})()
+
 const { onEnter, onLeave } = useFloating(selectRef, dropdownRef, {
   isOpen,
   placement: 'bottom-start',
   offset: 4,
   padding: 12,
-  matchWidth: true,
+  matchWidth: !hasCustomTrigger, // 自定义触发器（如纯图标）过窄，下拉不贴合宽度
 })
 
 interface FlatGroupItem {

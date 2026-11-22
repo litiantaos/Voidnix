@@ -94,11 +94,14 @@ registerMessages({
   'video.clip.previewFailed': { 'zh-CN': '预览加载失败', en: 'Preview failed to load' },
   'video.clip.segments': { 'zh-CN': '片段', en: 'Clips' },
   'video.clip.speed': { 'zh-CN': '倍速', en: 'Speed' },
-  'video.clip.total': { 'zh-CN': '成片', en: 'Result' },
+  'video.clip.sources': { 'zh-CN': '素材', en: 'Sources' },
+  'video.clip.sourcesCount': { 'zh-CN': '{n} 个素材', en: '{n} sources' },
+  'video.clip.sourceSegs': { 'zh-CN': '{n} 段', en: '{n} clips' },
+  'video.clip.notOnTimeline': { 'zh-CN': '未上轨', en: 'not on timeline' },
   'video.clip.noOut': { 'zh-CN': '未设', en: 'not set' },
   'video.clip.hintKeys': {
-    'zh-CN': 'Space 播放 · I/O 打点 · Enter 删段 · S 切分 · ⌘↑↓ 排序 · Esc 关闭',
-    en: 'Space play · I/O mark · Enter cut · S split · ⌘↑↓ reorder · Esc close',
+    'zh-CN': 'Space 播放 · I/O 打点 · ⌫ 删除 · S 切分 · ⌘↑↓ 排序',
+    en: 'Space play · I/O mark · ⌫ delete · S split · ⌘↑↓ reorder',
   },
   'video.clip.needRange': { 'zh-CN': '先设入点和出点', en: 'Set in and out points first' },
   'video.clip.exit': { 'zh-CN': '关闭', en: 'Close' },
@@ -129,4 +132,5 @@ registerMessages({
   'video.clip.prevFrame': { 'zh-CN': '上一帧', en: 'Previous frame' },
   'video.clip.nextFrame': { 'zh-CN': '下一帧', en: 'Next frame' },
   'video.clip.deleteSegment': { 'zh-CN': '删除片段', en: 'Delete clip' },
+  'video.clip.dragSort': { 'zh-CN': '拖拽排序', en: 'Drag to reorder' },
 })
