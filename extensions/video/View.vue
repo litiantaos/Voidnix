@@ -1,9 +1,9 @@
 <template>
   <div class="flex-col-view">
     <BaseSettingsList :items="items" @execute="onSettingsExecute">
-      <!-- 操作行 = 处理态任务行（独立「任务」分组）：左侧与选项行同构（无图标，标题对齐），
-           右侧紧凑进度组（进度条 + 紧贴条尾的百分比 + 取消）。
-           有视频 / 处理中 / 完成闪现时显示；回车执行主按钮动作（取消 / 开始） -->
+      <!-- 任务行 = 处理态任务行（「任务」分组，常驻表单第一组）：左侧与选项行同构（无图标，
+           标题对齐），右侧紧凑进度组（进度条 + 紧贴条尾的百分比 + 取消）。
+           空闲标题 = 任务名、行尾主按钮（未就绪禁用）；回车执行主按钮动作（取消 / 开始） -->
       <template #title-operations>
         <span flex items="center" gap="2" min-w="0">
           <span shrink="0">{{ taskTitle }}</span>
@@ -24,7 +24,7 @@
           <BaseButton v-if="st.busy" @click.stop="cancelJob">{{ t('video.cancel') }}</BaseButton>
         </div>
         <BaseButton v-else variant="primary" :disabled="!canRun" @click.stop="startJob">{{
-          t('video.start')
+          t('common.start')
         }}</BaseButton>
       </template>
       <!-- 「剪辑」入口行：独立剪辑窗口（选文件后直接进入） -->
@@ -186,7 +186,12 @@ const canRun = computed(
     !isDownloading.value,
 )
 
-/** 任务行主标题：动作短语；空闲 = 「操作」，完成闪现 = 「处理完成」（批量计数走 muted 后缀） */
+/** 任务行主标题：空闲 = 任务名（主操作含义），忙碌 = 进行时，完成闪现 = 「处理完成」 */
+const IDLE_TASK_TITLE_KEYS: Record<VideoMode, string> = {
+  compress: 'video.taskIdleCompress',
+  convert: 'video.taskIdleConvert',
+  'extract-audio': 'video.taskIdleExtractAudio',
+}
 const TASK_TITLE_KEYS: Record<VideoMode, string> = {
   compress: 'video.taskCompress',
   convert: 'video.taskConvert',
@@ -195,7 +200,7 @@ const TASK_TITLE_KEYS: Record<VideoMode, string> = {
 
 const taskTitle = computed(() => {
   if (st.doneFlash) return t('video.taskDone')
-  if (!st.busy) return t('video.operations')
+  if (!st.busy) return t(IDLE_TASK_TITLE_KEYS[mode.value])
   return t(TASK_TITLE_KEYS[st.taskMode])
 })
 
@@ -245,7 +250,17 @@ function ensureFormatForMode(next: VideoMode) {
 const items = computed<SettingItem[]>(() => {
   const list: SettingItem[] = []
 
-  // 模式选择：列表第一项（通用组，同 image 扩展——模式决定参数组形态）
+  // 任务行 = 处理态任务行（docs/design.md「处理态」）：常驻表单第一组，主操作始终首项。
+  // 左侧与选项行同构（无图标，标题对齐），右侧进度条 + 紧贴百分比 + 取消；
+  // 空闲行尾主按钮（未就绪禁用），完成闪现 600ms 后回到空闲任务名。
+  list.push({
+    id: 'operations',
+    title: taskTitle.value,
+    type: 'custom',
+    group: t('common.group.task'),
+  })
+
+  // 模式选择：任务行之后（通用组，同 image 扩展——模式决定任务名与参数组形态）
   list.push({
     id: 'mode',
     title: t('video.mode'),
@@ -263,20 +278,6 @@ const items = computed<SettingItem[]>(() => {
     },
     group: t('video.group.common'),
   })
-
-  // 操作行 = 处理态任务行（docs/design.md「处理态」）：独立「任务」分组，左侧与选项行同构
-  //（无图标，标题对齐），右侧进度条 + 紧贴条尾的百分比 + 取消；空闲行尾主按钮。
-  // 完成闪现 600ms 后复位。
-  // 孤儿观察态（页面重载后重开面板）paths 为空但 busy 置起，取消是唯一可达动作，
-  // 不能失去入口；回车执行主按钮动作（取消 / 开始），按钮经 trailing-operations 插槽
-  if (st.paths.length > 0 || st.busy || st.doneFlash) {
-    list.push({
-      id: 'operations',
-      title: taskTitle.value,
-      type: 'custom',
-      group: t('common.group.task'),
-    })
-  }
 
   // ── 输入视频 ⇌ 核心（右侧按钮见 trailing-source）──
   list.push({

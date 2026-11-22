@@ -6,6 +6,7 @@ type Msgs = Record<string, LocaleMsg>
 export const zhCNMessages: Msgs = {
   // ─── common ──────────────────────────────────
   'common.cancel': { 'zh-CN': '取消' },
+  'common.start': { 'zh-CN': '开始' },
   'common.confirm': { 'zh-CN': '确定' },
   'common.copied': { 'zh-CN': '已复制' },
   'common.pasted': { 'zh-CN': '已粘贴' },

@@ -5,8 +5,8 @@ import { test, expect, type Page } from '@playwright/test'
 // 回归锚点 1（布局）：BaseButton 标签必须走默认插槽——`:label` prop 不存在（fallthrough
 // 静默忽略），slot 缺席触发 isIconOnly() 的 icon-only chip 分支（w-7 + 无内容），在 auto
 // 高度上下文中高度解析失控（实测 384px），把所在行撑到 392px（「纵向很高很散」根因）。
-// 回归锚点 2（交互）：压缩模式为 BaseSettingsList 表单（操作行任务条 + 源行 + 名称/格式/
-// 级别/密码行 + 过滤开关），无待压缩列表；处理态进度只在操作行（docs/design.md「处理态」）；
+// 回归锚点 2（交互）：压缩模式为 BaseSettingsList 分组表单（任务 / 文件 / 参数 / 输出 / 过滤），
+// 无待压缩列表；处理态进度只在任务行（docs/design.md「处理态」）；
 // 密码经弹窗两次输入设置（zip/7z 均支持）。
 
 const ARCHIVE_ENTRIES = [
@@ -75,26 +75,25 @@ test.describe('archive', () => {
     await dispatch(page, ['/tmp/demo/demo-project.zip'])
     await page.waitForTimeout(1200)
 
-    // 表单四行：操作（尾随解压按钮）/ 压缩包 / 解压到（默认同目录 + 选择）/ 查看压缩包
+    // 表单四行：任务行（尾随开始按钮）/ 压缩包 / 查看压缩包 / 解压到（默认同目录 + 选择）
     const options = page.locator('.archive-view [role="option"]')
     await expect(options).toHaveCount(4, { timeout: 5000 })
     const opsRow = page.locator('[role="option"]').first()
-    await expect(opsRow).toContainText('操作')
-    await expect(opsRow.getByRole('button', { name: '解压', exact: true })).toBeVisible()
+    await expect(opsRow).toContainText('解压压缩包')
+    await expect(opsRow.getByRole('button', { name: '开始', exact: true })).toBeVisible()
     const archiveRow = page.locator('[role="option"]', { hasText: 'demo-project.zip' })
     await expect(archiveRow.getByText('ZIP · 5 个条目 · 105 KB')).toBeVisible()
-    // 信息行不再挂主操作按钮（按钮唯一入口 = 操作行）
+    // 信息行不再挂主操作按钮（按钮唯一入口 = 任务行）
     await expect(archiveRow.getByRole('button')).toHaveCount(0)
     await expect(page.getByRole('option', { name: /解压到/ })).toContainText('压缩包同目录')
     await expect(
       page.getByRole('option', { name: /查看压缩包/ }).locator('.fill-mist'),
     ).toBeVisible()
 
-    // 回车进入二级文件树（操作行插在最前 +1）：目录展开（首层默认展开），
+    // 回车进入二级文件树（任务行在最前 +1）：目录展开（首层默认展开），
     // 6 个可见行（assets/logo.png + src/lib.rs、main.rs + readme.md）
-    await page.keyboard.press('ArrowDown')
-    await page.keyboard.press('ArrowDown')
-    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('ArrowDown') // archive
+    await page.keyboard.press('ArrowDown') // browse
     await page.keyboard.press('Enter')
     const treeOptions = page.locator('.archive-view [role="option"]')
     await expect(treeOptions).toHaveCount(6, { timeout: 5000 })
@@ -123,11 +122,11 @@ test.describe('archive', () => {
     for (const h of btnHeights) expect(h).toBeLessThanOrEqual(40)
   })
 
-  test('空态：先选操作方式，再选文件', async ({ page }) => {
+  test('空态：先选模式，再选文件', async ({ page }) => {
     // 主界面搜索进入（无访达上下文）：默认解压 + 文件行（标题「文件」+ 右侧选择按钮）
-    await expect(page.getByText('操作')).toBeVisible()
+    await expect(page.getByText('模式', { exact: true })).toBeVisible()
     await expect(page.getByText('解压', { exact: true })).toBeVisible()
-    await expect(page.getByText('文件', { exact: true })).toBeVisible()
+    await expect(page.getByText('输入文件', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: '选择文件' })).toBeVisible()
 
     // 切「压缩」：按钮文案恒为「选择文件」，图标随操作切换
@@ -146,7 +145,7 @@ test.describe('archive', () => {
     await dispatch(page, ['/tmp/demo/报告.pdf', '/tmp/demo/图/截图.png'])
     await page.waitForTimeout(1000)
 
-    // 表单要素：操作行（尾随主按钮）/ 源行（信息行）/ 压缩到（默认源文件同目录）/ 名称输入 / 格式 / 级别预设 / 密码行 / 过滤开关
+    // 表单要素：任务行 / 文件（源）/ 参数（格式 / 级别 / 密码）/ 输出（压缩到 / 名称）/ 过滤
     await expect(page.getByText('压缩 2 项')).toBeVisible()
     await expect(page.getByRole('option', { name: /压缩到/ })).toContainText('源文件同目录')
     await expect(page.getByRole('button', { name: '选择目录' })).toBeVisible()
@@ -154,12 +153,12 @@ test.describe('archive', () => {
     await expect(page.getByText('压缩级别')).toBeVisible()
     await expect(page.getByText('过滤系统垃圾文件')).toBeVisible()
     await expect(page.getByText('过滤隐藏文件')).toBeVisible()
-    // 每行图标井：操作行与其它行同构（静态动作图标井），共 9
+    // 每行图标井：任务行与其它行同构（静态动作图标井），共 9
     await expect(page.locator('.archive-view [role="option"] .fill-mist')).toHaveCount(9)
-    // 操作行主按钮（压缩），源信息行不挂按钮
+    // 任务行主按钮（开始），源信息行不挂按钮
     const opsRow = page.locator('[role="option"]').first()
-    await expect(opsRow).toContainText('操作')
-    await expect(opsRow.getByRole('button', { name: '压缩', exact: true })).toBeVisible()
+    await expect(opsRow).toContainText('创建压缩包')
+    await expect(opsRow.getByRole('button', { name: '开始', exact: true })).toBeVisible()
     const sourceRow = page.locator('[role="option"]', { hasText: '压缩 2 项' })
     await expect(sourceRow.getByRole('button')).toHaveCount(0)
     await expect(page.getByText('重新选择')).toHaveCount(0)
@@ -171,8 +170,6 @@ test.describe('archive', () => {
     // 密码行回车 = 打开弹窗（键盘可达性，与行尾按钮同动作）；
     // 在任何 BaseSelect 交互前执行——select 收起后残留聚焦的控件会让列表键盘让位
     await page.keyboard.press('ArrowDown') // source
-    await page.keyboard.press('ArrowDown') // destDir
-    await page.keyboard.press('ArrowDown') // name
     await page.keyboard.press('ArrowDown') // format
     await page.keyboard.press('ArrowDown') // level
     await page.keyboard.press('ArrowDown') // password

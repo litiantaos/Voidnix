@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
-// 处理态任务行回归：操作行空闲 = 主按钮，处理中整行变进度条 + 取消，完成闪 600ms，
+import '@/locales'
+
+// 处理态任务行回归：任务行空闲 = 主按钮，处理中整行变进度条 + 取消，完成闪 600ms，
 // 失败统一 toast 且不落常驻错误行（见 docs/design.md「处理态」）。
 
 interface PendingRun {
@@ -67,11 +69,11 @@ async function mountCompress() {
 }
 
 describe('archive 处理态任务行', () => {
-  it('空闲 = 操作行主按钮；处理中 = 标题 + 进度条 + 取消；源行不再承载按钮', async () => {
+  it('空闲 = 任务行主按钮；处理中 = 标题 + 进度条 + 取消；源行不再承载按钮', async () => {
     const wrapper = await mountCompress()
-    expect(wrapper.find('#si-operations').text()).toContain('操作')
-    expect(wrapper.find('#si-operations button').text()).toBe('压缩')
-    // 源行只剩信息，按钮已上移到操作行
+    expect(wrapper.find('#si-operations').text()).toContain('创建压缩包')
+    expect(wrapper.find('#si-operations button').text()).toBe('开始')
+    // 源行只剩信息，按钮已上移到任务行
     expect(wrapper.find('#si-source button').exists()).toBe(false)
 
     await wrapper.find('#si-operations button').trigger('click')
@@ -100,7 +102,7 @@ describe('archive 处理态任务行', () => {
     runs[0].onEvent.onmessage({ type: 'error', message: '磁盘已满' })
     await flushPromises()
 
-    expect(wrapper.find('#si-operations').text()).toContain('操作')
+    expect(wrapper.find('#si-operations').text()).toContain('创建压缩包')
     expect(wrapper.find('#si-error').exists()).toBe(false)
     expect(spy).toHaveBeenCalledWith('磁盘已满', expect.anything())
 
@@ -128,15 +130,15 @@ describe('archive 处理态任务行', () => {
     await flushPromises()
     expect(invokeMock.mock.calls.some(([c]) => c === 'reveal_in_finder')).toBe(true)
     expect(invokeMock.mock.calls.some(([c]) => c === 'hide_window')).toBe(true)
-    expect(wrapper.find('#si-operations').text()).toContain('操作')
+    expect(wrapper.find('#si-operations').text()).toContain('创建压缩包')
     wrapper.unmount()
   })
 
-  it('解压模式同样走操作行任务条', async () => {
+  it('解压模式同样走任务行任务条', async () => {
     const wrapper = mount(View, { attachTo: document.body })
     pendingInputPaths.value = ['/tmp/pkg.zip']
     await flushPromises()
-    expect(wrapper.find('#si-operations button').text()).toBe('解压')
+    expect(wrapper.find('#si-operations button').text()).toBe('开始')
     expect(wrapper.find('#si-archive button').exists()).toBe(false)
 
     await wrapper.find('#si-operations button').trigger('click')

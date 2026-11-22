@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
-// 处理态任务行回归（见 docs/design.md「处理态」）：两个工具共用操作行——
+import '@/locales'
+
+// 处理态任务行回归（见 docs/design.md「处理态」）：两个工具共用任务行——
 // 处理中整行变不定进度条 + 阶段文案（图片链路无分母，不伪造百分比），
 // 完成闪 600ms 后换成结果操作按钮；拼接同样有进度反馈（旧实现零反馈）。
 
@@ -69,7 +71,7 @@ async function mountWithImage() {
 describe('image 处理态任务行', () => {
   it('移除背景：处理中 = 标题 + 不定进度条 + 阶段文案，完成后换结果按钮', async () => {
     const wrapper = await mountWithImage()
-    expect(wrapper.find('#si-operations button').text()).toBe('移除背景')
+    expect(wrapper.find('#si-operations button').text()).toBe('开始')
 
     await wrapper.find('#si-operations button').trigger('click')
     await flushPromises()
@@ -103,8 +105,8 @@ describe('image 处理态任务行', () => {
     await flushPromises()
     runs[0].reject('模型失败')
     await flushPromises()
-    expect(wrapper.find('#si-operations').text()).toContain('操作')
-    expect(wrapper.find('#si-operations button').text()).toBe('移除背景')
+    expect(wrapper.find('#si-operations').text()).toContain('图片去背景')
+    expect(wrapper.find('#si-operations button').text()).toBe('开始')
     wrapper.unmount()
   })
 
@@ -112,7 +114,7 @@ describe('image 处理态任务行', () => {
     const wrapper = mount(View, { attachTo: document.body })
     pendingInputPaths.value = ['/tmp/a.png', '/tmp/b.png']
     await flushPromises()
-    // 拼接模式操作行 = 复制 + 保存（生成在点击时触发）
+    // 拼接模式任务行 = 复制 + 保存（生成在点击时触发）
     expect(wrapper.findAll('#si-operations button').map((b) => b.text())).toEqual(['复制', '保存'])
 
     await wrapper.findAll('#si-operations button')[1].trigger('click')

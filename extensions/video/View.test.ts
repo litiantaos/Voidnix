@@ -38,6 +38,8 @@ beforeEach(() => {
 
 /** 重置模块注册表后加载全新模块状态（st 模块级 reactive 跨测试隔离）。 */
 async function setup() {
+  // resetModules 后重新注册框架文案（本文件 beforeEach 会重置模块注册表）
+  await import('@/locales')
   const { invoke } = await import('@tauri-apps/api/core')
   const { default: View } = await import('./View.vue')
   const { pendingInputPaths } = await import('./index')
@@ -129,8 +131,12 @@ describe('video 终态双投递去重', () => {
 
     await new Promise((r) => setTimeout(r, 700))
     await flushPromises()
-    // 全部成功：完成闪现后清空选择回到初始态，操作行随之消失
-    expect(ctx.wrapper.find('#si-operations').exists()).toBe(false)
+    // 任务行常驻置顶：完成闪现后回到空闲任务名 + 开始（选择已清空 → 禁用）
+    const idleOps = ctx.wrapper.find('#si-operations')
+    expect(idleOps.text()).toContain('视频压缩')
+    expect(idleOps.find('button').text()).toBe('开始')
+    expect(idleOps.find('button').attributes('disabled')).toBeDefined()
+    expect(idleOps.find('[role="progressbar"]').exists()).toBe(false)
     ctx.wrapper.unmount()
   })
 
@@ -141,7 +147,7 @@ describe('video 终态双投递去重', () => {
     const appStore = useAppStore()
     const spy = vi.spyOn(appStore, 'showStatus')
 
-    // 回归：孤儿态 paths 为空但 busy 置起，「操作」行仍渲染取消入口（Start 恒禁用）
+    // 回归：孤儿态 paths 为空但 busy 置起，任务行仍渲染取消入口（Start 恒禁用）
     const opsButtons = ctx.wrapper.findAll('#si-operations button')
     expect(opsButtons).toHaveLength(1)
     expect(opsButtons[0].text()).toBe('取消')

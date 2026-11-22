@@ -2,8 +2,13 @@ import { registerMessages } from '@/runtime/i18n'
 
 // 归档扩展文案
 registerMessages({
-  'archive.mode': { 'zh-CN': '操作', en: 'Action' },
-  'archive.file': { 'zh-CN': '文件', en: 'File' },
+  'archive.mode': { 'zh-CN': '模式', en: 'Mode' },
+  'archive.file': { 'zh-CN': '输入文件', en: 'Input File' },
+  'archive.group.common': { 'zh-CN': '通用', en: 'General' },
+  'archive.group.file': { 'zh-CN': '文件', en: 'File' },
+  'archive.group.params': { 'zh-CN': '参数', en: 'Parameters' },
+  'archive.group.output': { 'zh-CN': '输出', en: 'Output' },
+  'archive.group.filter': { 'zh-CN': '过滤', en: 'Filters' },
   'archive.extract': { 'zh-CN': '解压', en: 'Extract' },
   'archive.selectArchive': { 'zh-CN': '选择压缩包…', en: 'Select Archive…' },
   'archive.selectFiles': { 'zh-CN': '选择文件', en: 'Select Files' },
@@ -20,7 +25,8 @@ registerMessages({
   'archive.truncatedShort': { 'zh-CN': '条目过多', en: 'Truncated' },
   'archive.chooseDir': { 'zh-CN': '选择目录', en: 'Choose Folder' },
   // 处理态任务行标题（进度条由 BaseProgress 承载，见 docs/design.md「处理态」）
-  'archive.operations': { 'zh-CN': '操作', en: 'Actions' },
+  'archive.compressTask': { 'zh-CN': '创建压缩包', en: 'Create Archive' },
+  'archive.extractTask': { 'zh-CN': '解压压缩包', en: 'Extract Archive' },
   'archive.extracting': { 'zh-CN': '正在解压', en: 'Extracting' },
   'archive.compress': { 'zh-CN': '压缩', en: 'Compress' },
   'archive.compressing': { 'zh-CN': '正在压缩', en: 'Compressing' },

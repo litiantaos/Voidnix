@@ -5,8 +5,6 @@ registerMessages({
   'video.downloadFFmpeg': { 'zh-CN': '下载 FFmpeg', en: 'Download FFmpeg' },
   'video.select': { 'zh-CN': '选择', en: 'Select' },
   'video.cancel': { 'zh-CN': '取消', en: 'Cancel' },
-  'video.start': { 'zh-CN': '开始', en: 'Start' },
-  'video.operations': { 'zh-CN': '操作', en: 'Actions' },
   'video.sameDir': { 'zh-CN': '同目录', en: 'Same Folder' },
 
   // 核心下载
@@ -57,6 +55,9 @@ registerMessages({
   'video.sameAsSource': { 'zh-CN': '与源文件相同', en: 'Same as source' },
 
   // 处理态任务行（标题 + 进度条，见 docs/design.md「处理态」）
+  'video.taskIdleCompress': { 'zh-CN': '视频压缩', en: 'Compress Video' },
+  'video.taskIdleConvert': { 'zh-CN': '格式转换', en: 'Convert Format' },
+  'video.taskIdleExtractAudio': { 'zh-CN': '音频提取', en: 'Extract Audio' },
   'video.taskCompress': { 'zh-CN': '正在压缩', en: 'Compressing' },
   'video.taskConvert': { 'zh-CN': '正在转换格式', en: 'Converting' },
   'video.taskExtractAudio': { 'zh-CN': '正在提取音频', en: 'Extracting audio' },

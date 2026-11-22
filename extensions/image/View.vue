@@ -103,8 +103,9 @@
     </div>
 
     <BaseSettingsList :items="items" @execute="onExecute">
-      <!-- 操作行 = 处理态任务行（独立「任务」分组）：左侧与选项行同构（无图标，标题对齐），
-           右侧不定进度条（图片链路无分母）；完成闪 600ms 后换结果操作按钮（复制 / 保存） -->
+      <!-- 任务行 = 处理态任务行（「任务」分组，常驻表单第一组）：左侧与选项行同构（无图标，
+           标题对齐），右侧不定进度条（图片链路无分母）；空闲标题 = 任务名，未就绪时主按钮禁用；
+           完成闪 600ms 后换结果操作按钮（复制 / 保存） -->
       <template #title-operations>
         <span flex items="center" gap="2" min-w="0">
           <span shrink="0">{{ taskTitle }}</span>
@@ -119,12 +120,15 @@
           <BaseButton
             v-if="tool === 'removeBg' && !result"
             variant="primary"
+            :disabled="!hasImage"
             @click.stop="removeBg"
-            >{{ t('image.removeBg') }}</BaseButton
+            >{{ t('common.start') }}</BaseButton
           >
           <template v-else>
-            <BaseButton @click.stop="copyToClipboard">{{ t('image.copy') }}</BaseButton>
-            <BaseButton variant="primary" @click.stop="saveToFile">{{
+            <BaseButton :disabled="!canCopySave" @click.stop="copyToClipboard">{{
+              t('image.copy')
+            }}</BaseButton>
+            <BaseButton variant="primary" :disabled="!canCopySave" @click.stop="saveToFile">{{
               t('image.save')
             }}</BaseButton>
           </template>
@@ -263,7 +267,8 @@ const taskTitle = computed(() => {
   if (doneFlash.value) return t('image.taskDone')
   if (task.value === 'stitch') return t('image.taskStitch')
   if (task.value === 'removeBg') return t('image.taskRemoveBg')
-  return t('image.operations')
+  if (result.value) return t('image.taskResult')
+  return tool.value === 'stitch' ? t('image.taskStitchIdle') : t('image.taskRemoveBgIdle')
 })
 
 const taskProgress = computed<number | null | undefined>(() => {
@@ -286,6 +291,12 @@ const originalPreview = ref('')
 // ── 拼接 ──
 /** 共享图片集合：两工具单一输入源——removeBg 处理其中「当前张」，拼接消费全列表。 */
 const imageFiles = ref<string[]>([])
+/** 当前工具可操作输入：removeBg 需当前张；拼接需两张起 */
+const hasImage = computed(() =>
+  tool.value === 'removeBg' ? !!inputPath.value : imageFiles.value.length >= 2,
+)
+/** 复制/保存可用：已有结果，或拼接已凑够两张（点击时惰性生成） */
+const canCopySave = computed(() => !!result.value || hasImage.value)
 const stitchDirection = ref<StitchDirection>('vertical')
 const stitchGap = ref(0)
 const stitchResize = ref<number>(RESIZE_PRESETS[0])
@@ -469,7 +480,15 @@ const stitchTotalSubtitle = computed(() => {
 const items = computed<SettingItem[]>(() => {
   const list: SettingItem[] = []
 
-  // 模式选择：列表第一项（通用组——两工具共享的全局设置，区别于模式特有参数）
+  // 任务行常驻表单第一组：主操作始终首项，未就绪时按钮禁用（无图 / 拼接不足两张）
+  list.push({
+    id: 'operations',
+    title: taskTitle.value,
+    type: 'custom',
+    group: t('common.group.task'),
+  })
+
+  // 模式选择：任务行之后（通用组——两工具共享的全局设置，区别于模式特有参数）
   list.push({
     id: 'tool',
     title: t('image.mode'),
@@ -485,19 +504,6 @@ const items = computed<SettingItem[]>(() => {
     },
     group: t('image.group.common'),
   })
-
-  // 操作：通用组第二项，有图才显示（拼接需两张起——按钮零数量禁用，可操作性与显示同步）；
-  // 回车执行主按钮动作（removeBg 未处理=移除背景 / 其余=保存），按钮经 trailing 插槽
-  // （removeBg 的复制/保存等有结果后再显示）
-  const hasImage = tool.value === 'removeBg' ? !!inputPath.value : imageFiles.value.length >= 2
-  if (hasImage) {
-    list.push({
-      id: 'operations',
-      title: taskTitle.value,
-      type: 'custom',
-      group: t('common.group.task'),
-    })
-  }
 
   if (tool.value === 'removeBg') {
     list.push({
@@ -572,10 +578,13 @@ const items = computed<SettingItem[]>(() => {
 
 function onExecute(item: SettingItem) {
   if (item.id === 'operations') {
-    // 回车 = 主按钮动作：处理中/完成闪现期不响应；removeBg 未处理时移除背景，其余保存
+    // 回车 = 主按钮动作：处理中/完成闪现期不响应；未就绪（无图/不足两张）不响应
     if (processing.value || doneFlash.value) return
-    if (tool.value === 'removeBg' && !result.value) void removeBg()
-    else void saveToFile()
+    if (tool.value === 'removeBg' && !result.value) {
+      if (hasImage.value) void removeBg()
+      return
+    }
+    if (canCopySave.value) void saveToFile()
     return
   }
   if (item.id === 'outputDir') {
@@ -654,7 +663,7 @@ async function setInput(path: string) {
 
 // 跨扩展进入：finder-ext 等经同页 CustomEvent 投递的待处理图片路径，写入即加载。
 // 投递与 setActiveExtension 同步发生：缓存态（KeepAlive 存活）watch 在同一 flush 内
-// 先于渲染执行、inputPath 同步置位——跳转首帧列表即含 operations 行（形状定型）；
+// 先于渲染执行、inputPath 同步置位——跳转首帧 source 即带图（任务行常驻第一组，形状不随投递变）；
 // LRU 驱逐重挂载场景经 immediate 在 mount 时消费（watch 注册晚于投递写入，immediate 补齐）。
 // 单张投递按抠图意图直达 removeBg（只改本地不落盘默认）；多张 = 拼接意图，自动切拼接，
 // 选区序即拼接序（预览区序号可调），投递集合整体替换共享集合（不依赖「投递时本视图必已

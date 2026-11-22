@@ -4,8 +4,8 @@ import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 // 跨扩展投递同步达回归：finder-ext 跳转（投递 + setActiveExtension 同一同步任务）后，
-// image 视图首帧渲染即含 operations 行（index 1 不再是「选择文件」source 行）——
-// 经 IPC 往返投递会晚一拍，期间用户 ↓+Enter 会击中 source 行误开系统文件选择器。
+// image 视图首帧即消费输入；任务行常驻第一项，列表形状与投递时序无关——不会出现
+// 「首帧只有 source 行、用户 ↓+Enter 误开系统文件选择器」的未定型窗口。
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
 
@@ -77,61 +77,36 @@ describe('finder-ext → image 跨扩展同页投递', () => {
     alive.value = true
     await flush()
 
-    // 首帧 index 1 = operations（移除背景主操作行），不再是「选择文件」source 行
-    expect(rowIds(wrapper)).toEqual(['si-tool', 'si-operations', 'si-source', 'si-outputDir'])
+    // 任务行常驻第一项；投递后 source 行直接带图
+    expect(rowIds(wrapper)).toEqual(['si-operations', 'si-tool', 'si-source', 'si-outputDir'])
     expect(pendingInputPaths.value).toEqual([])
     wrapper.unmount()
   })
 
-  it('症状机制演示：未收到图片时（旧时序的投递空窗即此形态）index 1 为 source 行，↓+Enter 直接触发文件选择器', async () => {
+  it('投递经 macrotask 到达：任务行常驻，首帧形状已定型，仅 source 内容更新', async () => {
     await ensureSetup()
     const appStore = useAppStore()
     const { wrapper, alive } = mountHost()
     alive.value = true
     await flush()
 
-    // 无投递时列表形状 = [tool, source, outputDir]（source 占 index 1）
-    expect(rowIds(wrapper)).toEqual(['si-tool', 'si-source', 'si-outputDir'])
+    // 投递未达的首帧：任务行已在，形状不再依赖 operations 行插入
+    expect(rowIds(wrapper)).toEqual(['si-operations', 'si-tool', 'si-source', 'si-outputDir'])
 
-    // 模拟用户在跳转后立即 ↓ + Enter：真实 document keydown 走 BaseList 完整链路
-    appStore.setActiveExtension('image')
-    await flush()
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
-    )
-    await flush()
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
-    )
-    await flush()
-
-    // Enter 落在 items[1]（source）→ onExecute → pickInput → pick_files（NSOpenPanel）
-    const pick = mocks.invoke.mock.calls.find(([cmd]) => cmd === 'pick_files')
-    expect(pick).toBeDefined()
-    appStore.setActiveExtension(null)
-    wrapper.unmount()
-  })
-
-  it('旧时序演示：投递经 macrotask（旧 Tauri 总线往返）到达时，跳转首帧列表仍是 source@1 未定型形状', async () => {
-    await ensureSetup()
-    const appStore = useAppStore()
-    const { wrapper, alive } = mountHost()
-    alive.value = true
-    await flush()
-
-    // 模拟旧 emit + listen：投递经 macrotask 到达（setActiveExtension 同步先行，
-    // Vue flush 是 microtask 必先于 macrotask——与旧实现时序一致）
+    // 模拟旧 emit + listen：投递经 macrotask 到达（setActiveExtension 同步先行）
     setTimeout(() => {
       pendingInputPaths.value = ['/Users/x/a.jpg']
     }, 0)
     appStore.setActiveExtension('image')
     await nextTick()
-    // 跳转首帧：operations 行不在（旧实现的空窗——此间 ↓+Enter 即上一用例的 pick_files）
-    expect(rowIds(wrapper)).toEqual(['si-tool', 'si-source', 'si-outputDir'])
+    // 首帧形状稳定（无 operations 行插入空窗）
+    expect(rowIds(wrapper)).toEqual(['si-operations', 'si-tool', 'si-source', 'si-outputDir'])
     await new Promise((r) => setTimeout(r, 0))
     await flush()
-    // macrotask 投递到达后形状才定型（旧实现的第二次渲染）
-    expect(rowIds(wrapper)).toEqual(['si-tool', 'si-operations', 'si-source', 'si-outputDir'])
+    // 投递到达后仍是同一形状，只更新 source 内容
+    expect(rowIds(wrapper)).toEqual(['si-operations', 'si-tool', 'si-source', 'si-outputDir'])
+    expect(wrapper.find('[id="si-source"]').text()).toContain('a.jpg')
+    expect(pendingInputPaths.value).toEqual([])
     appStore.setActiveExtension(null)
     wrapper.unmount()
   })
@@ -149,7 +124,7 @@ describe('finder-ext → image 跨扩展同页投递', () => {
     // 仅一次 nextTick（对应跳转首帧）：operations 行必须已在——
     // 旧实现此刻列表仍为 [tool, source, outputDir]（IPC 未达），↓+Enter 会误中 source
     await nextTick()
-    expect(rowIds(wrapper)).toEqual(['si-tool', 'si-operations', 'si-source', 'si-outputDir'])
+    expect(rowIds(wrapper)).toEqual(['si-operations', 'si-tool', 'si-source', 'si-outputDir'])
     expect(pendingInputPaths.value).toEqual([])
     appStore.setActiveExtension(null)
     await flush()
@@ -168,8 +143,8 @@ describe('finder-ext → image 跨扩展同页投递', () => {
     appStore.setActiveExtension('image')
     await nextTick()
     expect(rowIds(wrapper)).toEqual([
-      'si-tool',
       'si-operations',
+      'si-tool',
       'si-source',
       'si-direction',
       'si-resize',

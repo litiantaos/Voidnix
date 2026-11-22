@@ -52,8 +52,10 @@ registerMessages({
   'image.group.output': { 'zh-CN': '输出', en: 'Output' },
   'image.copy': { 'zh-CN': '复制', en: 'Copy' },
   'image.save': { 'zh-CN': '保存', en: 'Save' },
-  'image.operations': { 'zh-CN': '操作', en: 'Actions' },
   // 处理态任务行标题（进度条由 BaseProgress 承载，见 docs/design.md「处理态」）
+  'image.taskRemoveBgIdle': { 'zh-CN': '图片去背景', en: 'Remove Background' },
+  'image.taskStitchIdle': { 'zh-CN': '长图拼接', en: 'Stitch Long Image' },
+  'image.taskResult': { 'zh-CN': '处理结果', en: 'Result' },
   'image.taskRemoveBg': { 'zh-CN': '正在移除背景', en: 'Removing background' },
   'image.taskStitch': { 'zh-CN': '正在拼接长图', en: 'Stitching images' },
   'image.taskDone': { 'zh-CN': '处理完成', en: 'Completed' },

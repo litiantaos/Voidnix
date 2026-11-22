@@ -15,8 +15,8 @@
     <!-- ── 压缩模式：BaseSettingsList 表单（源行 + 目标目录 + 名称/格式/级别/密码 + 过滤开关） ── -->
     <template v-if="mode === 'compress'">
       <BaseSettingsList :items="compressItems" @execute="onCompressExecute">
-        <!-- 操作行 = 处理态任务行（独立「任务」分组）：左侧与其它行同构（图标井 + 标题），
-             右侧紧凑进度组（进度条 + 紧贴条尾的百分比 + 取消） -->
+        <!-- 任务行 = 处理态任务行（「任务」分组，第一组、常驻）：左侧与其它行同构
+             （图标井 + 标题），右侧紧凑进度组（进度条 + 紧贴条尾的百分比 + 取消） -->
         <template #trailing-operations>
           <div v-if="job.busy || jobDone" flex items="center" gap="3">
             <!-- 条与百分比同组紧贴；百分比与操作按钮之间留宽一档（gap-3） -->
@@ -35,7 +35,7 @@
             variant="primary"
             :disabled="!outputName.trim()"
             @click.stop="runCompress"
-            >{{ t('archive.compress') }}</BaseButton
+            >{{ t('common.start') }}</BaseButton
           >
         </template>
         <!-- 目标目录行尾：源文件同目录重置 + 选择（与解压目录行同范式） -->
@@ -118,7 +118,7 @@
     <!-- ── 解压模式：BaseSettingsList 表单（压缩包 / 解压目录 / 查看文件） ── -->
     <template v-if="mode === 'extract' && info">
       <BaseSettingsList :items="extractItems" @execute="onExtractExecute">
-        <!-- 操作行 = 处理态任务行（同压缩模式） -->
+        <!-- 任务行 = 处理态任务行（同压缩模式，第一组、常驻） -->
         <template #trailing-operations>
           <div v-if="job.busy || jobDone" flex items="center" gap="3">
             <!-- 条与百分比同组紧贴；百分比与操作按钮之间留宽一档（gap-3） -->
@@ -133,7 +133,7 @@
             }}</BaseButton>
           </div>
           <BaseButton v-else variant="primary" @click.stop="runExtract">{{
-            t('archive.extract')
+            t('common.start')
           }}</BaseButton>
         </template>
         <!-- 解压目录行尾：同目录重置 + 选择（镜像 video 输出目录行范式） -->
@@ -255,7 +255,7 @@ const taskTitle = computed(() => {
       : t('archive.extractDoneLabel')
   if (job.value.busy)
     return mode.value === 'compress' ? t('archive.compressing') : t('archive.extracting')
-  return t('archive.operations')
+  return mode.value === 'compress' ? t('archive.compressTask') : t('archive.extractTask')
 })
 /** 0 视作尚未产出分母：按不定进度呈现（不假装 0% ） */
 const taskProgress = computed<number | null | undefined>(() => {
@@ -371,14 +371,14 @@ const entryItems = computed<SettingItemT[]>(() => [
     update: (v) => {
       idleMode.value = v as 'extract' | 'compress'
     },
-    group: '',
+    group: t('archive.group.common'),
   },
   {
     id: 'open_archive',
     title: t('archive.file'),
     icon: idleMode.value === 'extract' ? 'i-ri-folder-zip-line' : 'i-ri-archive-line',
     type: 'custom',
-    group: '',
+    group: t('archive.group.file'),
   },
 ])
 
@@ -395,7 +395,6 @@ const sourceSubtitle = computed(() => {
 
 const extractItems = computed<SettingItemT[]>(() => {
   if (!info.value) return []
-  const group = ''
   const meta = `${FORMAT_LABELS[info.value.format]} · ${info.value.entries.length} ${t('archive.entries')}${
     info.value.totalSize ? ` · ${formatBytes(info.value.totalSize)}` : ''
   }${info.value.truncated ? ` · ${t('archive.truncatedShort')}` : ''}`
@@ -407,7 +406,15 @@ const extractItems = computed<SettingItemT[]>(() => {
       subtitle: meta,
       icon: 'i-ri-file-zip-line',
       type: 'custom',
-      group,
+      group: t('archive.group.file'),
+    },
+    {
+      id: 'browse',
+      title: t('archive.browseFiles'),
+      icon: 'i-ri-folder-open-line',
+      type: 'action',
+      action: () => appStore.openSubview('entries'),
+      group: t('archive.group.file'),
     },
     {
       id: 'destDir',
@@ -415,22 +422,13 @@ const extractItems = computed<SettingItemT[]>(() => {
       subtitle: destDir.value ?? t('archive.sameDir'),
       icon: 'i-ri-folder-line',
       type: 'custom',
-      group,
+      group: t('archive.group.output'),
     },
   ]
-  list.push({
-    id: 'browse',
-    title: t('archive.browseFiles'),
-    icon: 'i-ri-folder-open-line',
-    type: 'action',
-    action: () => appStore.openSubview('entries'),
-    group,
-  })
   return list
 })
 
 const compressItems = computed<SettingItemT[]>(() => {
-  const group = ''
   const list: SettingItemT[] = [
     operationsItem.value,
     {
@@ -439,22 +437,7 @@ const compressItems = computed<SettingItemT[]>(() => {
       subtitle: sourceSubtitle.value,
       icon: 'i-ri-file-list-3-line',
       type: 'custom',
-      group,
-    },
-    {
-      id: 'destDir',
-      title: t('archive.compressTo'),
-      subtitle: compressDestDir.value ?? t('archive.sourceDir'),
-      icon: 'i-ri-folder-line',
-      type: 'custom',
-      group,
-    },
-    {
-      id: 'name',
-      title: t('archive.outputName'),
-      icon: 'i-ri-price-tag-3-line',
-      type: 'custom',
-      group,
+      group: t('archive.group.file'),
     },
     {
       id: 'format',
@@ -464,7 +447,7 @@ const compressItems = computed<SettingItemT[]>(() => {
       value: format.value,
       options: formatOptions,
       update: (v) => setFormat(v as CompressFormat),
-      group,
+      group: t('archive.group.params'),
     },
     {
       id: 'level',
@@ -477,19 +460,31 @@ const compressItems = computed<SettingItemT[]>(() => {
         preset.value = Number(v)
         config.level = preset.value
       },
-      group,
+      group: t('archive.group.params'),
     },
-  ]
-  // 密码（zip / 7z：AES-256，经弹窗两次输入设置；行尾按钮显状态）
-  list.push({
-    id: 'password',
-    title: t('archive.password'),
-    subtitle: t('archive.passwordHint'),
-    icon: 'i-ri-lock-line',
-    type: 'custom',
-    group,
-  })
-  list.push(
+    {
+      id: 'password',
+      title: t('archive.password'),
+      subtitle: t('archive.passwordHint'),
+      icon: 'i-ri-lock-line',
+      type: 'custom',
+      group: t('archive.group.params'),
+    },
+    {
+      id: 'destDir',
+      title: t('archive.compressTo'),
+      subtitle: compressDestDir.value ?? t('archive.sourceDir'),
+      icon: 'i-ri-folder-line',
+      type: 'custom',
+      group: t('archive.group.output'),
+    },
+    {
+      id: 'name',
+      title: t('archive.outputName'),
+      icon: 'i-ri-price-tag-3-line',
+      type: 'custom',
+      group: t('archive.group.output'),
+    },
     {
       id: 'junkFilter',
       title: t('archive.junkFilter'),
@@ -500,7 +495,7 @@ const compressItems = computed<SettingItemT[]>(() => {
       update: (v) => {
         junkFilter.value = Boolean(v)
       },
-      group,
+      group: t('archive.group.filter'),
     },
     {
       id: 'hiddenFilter',
@@ -512,9 +507,9 @@ const compressItems = computed<SettingItemT[]>(() => {
       update: (v) => {
         hiddenFilter.value = Boolean(v)
       },
-      group,
+      group: t('archive.group.filter'),
     },
-  )
+  ]
   return list
 })
 

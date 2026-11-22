@@ -6,6 +6,7 @@ type Msgs = Record<string, LocaleMsg>
 export const enMessages: Msgs = {
   // ─── common ──────────────────────────────────
   'common.cancel': { en: 'Cancel' },
+  'common.start': { en: 'Start' },
   'common.confirm': { en: 'Confirm' },
   'common.copied': { en: 'Copied' },
   'common.pasted': { en: 'Pasted' },
