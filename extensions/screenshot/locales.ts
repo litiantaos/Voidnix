@@ -10,7 +10,8 @@ registerMessages({
   'screenshot.trimSpaces': { 'zh-CN': '去空格', en: 'Trim Spaces' },
   'screenshot.trimNewlines': { 'zh-CN': '去换行', en: 'Trim Newlines' },
   'screenshot.trimEmptyLines': { 'zh-CN': '去空行', en: 'Trim Empty Lines' },
-  'screenshot.savePath': { 'zh-CN': '截屏保存位置', en: 'Screenshot Save Location' },
+  'screenshot.savePath': { 'zh-CN': '保存位置', en: 'Save Location' },
+  'screenshot.select': { 'zh-CN': '选择', en: 'Select' },
 
   // ─── 截图独立窗口（AnnotationPalette / PinWindow / Operation） ──
   'screenshot.save': { 'zh-CN': '保存', en: 'Save' },
@@ -42,4 +43,35 @@ registerMessages({
   'screenshot.copyColor': { 'zh-CN': '复制色值', en: 'Copy color value' },
   'screenshot.colorCopied': { 'zh-CN': '已复制 {color}', en: 'Copied {color}' },
   'screenshot.restoreSelection': { 'zh-CN': '恢复选区', en: 'Restore selection' },
+
+  // ─── 录屏（工具栏按钮 + settings + 结束反馈） ──
+  'screenshot.record': { 'zh-CN': '录屏', en: 'Record' },
+  'screenshot.startRecording': { 'zh-CN': '开始录屏', en: 'Start Recording' },
+  'screenshot.countdownHint': {
+    'zh-CN': '即将开始录屏 · Esc 取消',
+    en: 'Recording starts in a moment · Esc to cancel',
+  },
+  'screenshot.recordingStarted': {
+    'zh-CN': '开始录屏 · 再按截屏快捷键或点菜单栏停止',
+    en: 'Recording started — press the screenshot shortcut or use the menu bar to stop',
+  },
+  'screenshot.recordingSaved': {
+    'zh-CN': '录屏已保存 · {duration}',
+    en: 'Recording saved · {duration}',
+  },
+  'screenshot.recordingSavedIncomplete': {
+    'zh-CN': '录屏已保存，但收尾异常：{error}',
+    en: 'Recording saved with a finalize warning: {error}',
+  },
+  'screenshot.recordingStopping': {
+    'zh-CN': '正在保存录屏，请稍候',
+    en: 'Saving recording, please wait…',
+  },
+  'screenshot.recordFps': { 'zh-CN': '录制帧率', en: 'Recording Frame Rate' },
+  'screenshot.recordSystemAudio': { 'zh-CN': '录制系统声音', en: 'Record System Audio' },
+  'screenshot.recordMicrophone': { 'zh-CN': '录制麦克风', en: 'Record Microphone' },
+  'screenshot.openClipAfterRecord': {
+    'zh-CN': '录屏后打开剪辑',
+    en: 'Open Clip Editor After Recording',
+  },
 })

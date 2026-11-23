@@ -6,6 +6,13 @@ export interface WindowRect {
   owner: string
 }
 
+export interface RecordPrefs {
+  systemAudio: boolean
+  microphone: boolean
+  fps: number
+  openClip: boolean
+}
+
 export interface ScreenshotData {
   width: number
   height: number
@@ -14,6 +21,10 @@ export interface ScreenshotData {
   mouse_y: number
   windows: WindowRect[]
   last_selection: Sel | null
+  /** 截屏/录屏共用的保存位置（Rust 当前权威值，overlay 子窗口用它落盘）。 */
+  save_path: string
+  /** 录屏弹出菜单初始选项（Rust 当前权威值）。 */
+  record_prefs: RecordPrefs
 }
 
 export interface Sel {

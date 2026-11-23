@@ -26,6 +26,7 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "macos" {
         build_screenshot_overlay(&out_dir);
+        build_screen_recorder(&out_dir);
         link_skylight();
         link_service_management();
         link_iokit();
@@ -68,6 +69,46 @@ fn build_screenshot_overlay(out_dir: &str) {
     println!("cargo:rustc-link-lib=framework=QuartzCore");
     println!("cargo:rustc-link-lib=framework=ImageIO");
     println!("cargo:rerun-if-changed=../extensions/screenshot/native/screenshot_overlay.mm");
+}
+
+/// 编译 native/record.mm 为 libscreen_recorder.a（录屏桥：ScreenCaptureKit +
+/// SCRecordingOutput 直写 MP4）。
+///
+/// 与截图 overlay 桥分开归档/编译：`-mmacosx-version-min=15.0` 是
+/// SCRecordingOutput 的最低可用版本（截图桥仍是 11.0，互不牵制）。
+fn build_screen_recorder(out_dir: &str) {
+    let mm_src = "../extensions/screenshot/native/record.mm";
+    let mm_obj = Path::new(out_dir).join("record.o");
+    let lib_path = Path::new(out_dir).join("libscreen_recorder.a");
+
+    let compile = Command::new("clang++")
+        .args([
+            "-c",
+            "-fobjc-arc",
+            "-fmodules",
+            "-std=c++17",
+            "-mmacosx-version-min=15.0",
+            "-o",
+            mm_obj.to_str().unwrap(),
+            mm_src,
+        ])
+        .status()
+        .expect("failed to invoke clang++ for record.mm");
+    assert!(compile.success(), "clang++ failed to compile {mm_src}");
+
+    let _ = std::fs::remove_file(&lib_path);
+    let ar = Command::new("ar")
+        .args(["rcs", lib_path.to_str().unwrap(), mm_obj.to_str().unwrap()])
+        .status()
+        .expect("failed to invoke ar for libscreen_recorder.a");
+    assert!(ar.success(), "ar failed to archive libscreen_recorder.a");
+
+    println!("cargo:rustc-link-search=native={out_dir}");
+    println!("cargo:rustc-link-lib=static=screen_recorder");
+    println!("cargo:rustc-link-lib=framework=ScreenCaptureKit");
+    println!("cargo:rustc-link-lib=framework=AVFoundation");
+    println!("cargo:rustc-link-lib=framework=CoreMedia");
+    println!("cargo:rerun-if-changed=../extensions/screenshot/native/record.mm");
 }
 
 /// 链接 macOS 私有 framework SkyLight（用于 Space 迁移私有 API）。

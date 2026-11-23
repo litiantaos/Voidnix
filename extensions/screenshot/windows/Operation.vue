@@ -186,6 +186,7 @@
       <AnnotationPalette
         ref="paletteRef"
         v-if="hasSelection && (phase === 'annotate' || phase === 'scroll') && !selResizeHandle"
+        v-show="!recordCountdownActive"
         :sel="sel"
         :active-tool="activeTool"
         :color="annotColor"
@@ -205,7 +206,11 @@
         @text-bg="annotTextBg = $event"
         @blur-amount="annotBlurAmount = $event"
         @blur-mode="annotBlurMode = $event"
+        :record-prefs="initialScreenshot.record_prefs"
+        :record-loading="recordStarting"
         @ocr="doOcr"
+        @record-prefs="persistRecordPrefs"
+        @record-start="onRecordStart"
         @pin="doPin"
         @copy="doCopy"
         @save="doSave"
@@ -216,6 +221,21 @@
         @scroll-cancel="onScrollCancel"
       />
     </Transition>
+
+    <!-- 录屏 3 秒倒计时：整层吞掉鼠标（Palette 已隐藏），Esc 由键盘锁放行取消 -->
+    <div v-if="recordCountdown > 0" class="inset-0 fixed z-90" @mousedown.stop @click.stop>
+      <div
+        class="px-8 py-5 mica-panel flex flex-col gap-1 items-center absolute"
+        :style="{
+          left: `${sel.x + sel.w / 2}px`,
+          top: `${sel.y + sel.h / 2}px`,
+          transform: 'translate(-50%, -50%)',
+        }"
+      >
+        <span class="text-5xl font-semibold tabular-nums">{{ recordCountdown }}</span>
+        <span class="text-xs text-secondary">{{ t('screenshot.countdownHint') }}</span>
+      </div>
+    </div>
 
     <!-- 滚动截屏：右侧实时预览面板 -->
     <ScrollPreview
@@ -272,12 +292,13 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, type CSSProperties } from 'vue'
+import { emit as emitTauri } from '@tauri-apps/api/event'
 import { t } from '@/runtime/i18n'
 import AnnotationPalette from './AnnotationPalette.vue'
 import ScrollPreview from './ScrollPreview.vue'
 import SelectionChrome from './SelectionChrome.vue'
 import ShapeHandlesOverlay from './ShapeHandlesOverlay.vue'
-import type { ScreenshotData, Phase, Shape } from '../composables/useTypes'
+import type { ScreenshotData, Phase, RecordPrefs, Shape } from '../composables/useTypes'
 import { MAGNIFIER_SIZE, contrastInk, textBgHPad, textBgRadius } from '../composables/useTypes'
 import { textMaxLineWidth } from '../composables/wrapText'
 import { useSelection } from '../composables/useSelection'
@@ -292,6 +313,7 @@ import { useOverlayEvents } from '../composables/useOverlayEvents'
 import { useTextDetection } from '../composables/useTextDetection'
 import { useOperationScroll } from '../composables/useOperationScroll'
 import { useOperationLifecycle } from '../composables/useOperationLifecycle'
+import { useScreenRecord } from '../composables/useScreenRecord'
 
 const props = defineProps<{ initialScreenshot: ScreenshotData }>()
 const emit = defineEmits<{ close: [noRestoreFocus?: boolean] }>()
@@ -406,9 +428,28 @@ const actions = useScreenshotActions({
   annotateCanvas,
   bgImage: magnifier.bgImage,
   rootEl,
+  savePath: props.initialScreenshot.save_path,
   emit,
   canvasText: { begin: beginCanvasText, end: endCanvasText },
 })
+
+// 工具栏「录屏」：弹出选项 → 3 秒倒计时 → 录当前选区实时画面（标注不入镜）
+const record = useScreenRecord({
+  sel: selection.sel,
+  dpr,
+  onClose: () => actions.doCancel(),
+})
+const { starting: recordStarting, countdown: recordCountdown } = record
+const recordCountdownActive = computed(() => recordCountdown.value > 0)
+
+/** 录屏选项变更：同步持久化到 main 窗口 config（overlay 子窗口无 store 权限） */
+function persistRecordPrefs(prefs: RecordPrefs) {
+  void emitTauri('screenshot-record-prefs', prefs).catch(() => {})
+}
+
+function onRecordStart(prefs: RecordPrefs) {
+  void record.start(prefs)
+}
 
 const shapeHandlesComposable = useShapeHandles({
   sel: selection.sel,
@@ -450,6 +491,10 @@ const events = useOverlayEvents({
   applySelResize: selection.applySelResize,
   isInsideSel: selection.isInsideSel,
   lastSelection: props.initialScreenshot.last_selection,
+  // 锁覆盖倒计时 + native 启动在途（starting）：倒计时归零后 Palette 已重现但 SCK
+  // 仍在启动，此时 Enter/C/F 等会关 overlay 触发 cancel_pending_start，录制被静默
+  // 取消还弹「已取消」错误；锁只放行 Esc（onKeyDown 内先判 Escape）
+  keyboardLocked: recordStarting,
   phase,
   activeTool: annotation.activeTool,
   annotColor: annotation.annotColor,

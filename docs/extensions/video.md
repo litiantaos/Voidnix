@@ -185,7 +185,11 @@ macOS 14+ 前者可能被静默忽略）→ `makeKeyWindow` + `setFocus`；前�
 `core:webview:allow-set-webview-focus` 与事件监听）。反向（先 open 后 hide）会被主窗 hide 的
 `restore_captured` 抢走焦点。每次 `bootstrap`（新输入）重置播放头/打点/段列表/导出结果，
 窗口复用不残留上次会话（单调序号防挂载 take 与复用窗口输入事件交叠）。入口：video 面板
-末尾「高级」组的「剪辑」行（已选视频直接带入，否则先选文件）。
+末尾「高级」组的「剪辑」行（已选视频直接带入，否则先选文件）；另有截图扩展录屏结束后经
+同页 CustomEvent `video-clip-open` 直接投递录制文件（`extensions/video/index.ts` setup
+监听，不经面板中转，见 [screenshot.md](screenshot.md)「录屏」）；交接前查
+`video_core_status`，FFmpeg 核心未就绪时只 toast 提示（剪辑窗 bootstrap 依赖 ffprobe，
+开窗必然失败）。
 
 ### 预览
 

@@ -34,6 +34,27 @@ pub struct LastSelection {
     pub h: f64,
 }
 
+/// 录屏选项（overlay 弹出菜单的初始值；Rust 持有权威，main 窗口配置 watch 同步）。
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordPrefs {
+    pub system_audio: bool,
+    pub microphone: bool,
+    pub fps: u32,
+    pub open_clip: bool,
+}
+
+impl Default for RecordPrefs {
+    fn default() -> Self {
+        Self {
+            system_audio: true,
+            microphone: false,
+            fps: 30,
+            open_clip: true,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ScreenshotData {
     pub width: u32,
@@ -44,6 +65,12 @@ pub struct ScreenshotData {
     pub windows: Vec<WindowRect>,
     /// 会话开始时回灌的上次选区（无则 null）。
     pub last_selection: Option<LastSelection>,
+    /// 截屏/录屏共用的保存位置（Rust 当前权威值，overlay 子窗口用它落盘）。
+    #[serde(default)]
+    pub save_path: String,
+    /// overlay 录屏弹出菜单的初始选项。
+    #[serde(default)]
+    pub record_prefs: RecordPrefs,
 }
 
 #[cfg(target_os = "macos")]

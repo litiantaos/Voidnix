@@ -68,6 +68,8 @@ function mountOperation(overrides: Partial<ScreenshotData> = {}, attachTo?: HTML
         mouse_y: 100,
         windows: [],
         last_selection: null,
+        save_path: '',
+        record_prefs: { systemAudio: true, microphone: false, fps: 30, openClip: true },
         ...overrides,
       },
     },

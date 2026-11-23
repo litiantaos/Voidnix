@@ -728,6 +728,8 @@ pub fn capture_screen(frontmost_pid: i32) -> Result<ScreenshotData, String> {
             mouse_y: 0.0,
             windows,
             last_selection: current_last_selection(),
+            save_path: super::record::save_path(),
+            record_prefs: super::record::current_prefs(),
         })
     }
     #[cfg(not(target_os = "macos"))]
@@ -895,6 +897,8 @@ fn enter_impl(app: &tauri::AppHandle, data: &ScreenshotData, prev_pid: i32) -> R
         let mut d = data.clone();
         d.mouse_x = mouse_x;
         d.mouse_y = mouse_y;
+        d.save_path = super::record::save_path();
+        d.record_prefs = super::record::current_prefs();
 
         if let Ok(json) = serde_json::to_string(&d) {
             let _ = window.eval(format!(
@@ -1023,6 +1027,8 @@ fn exit_impl(app: &tauri::AppHandle, no_restore_focus: bool) -> Result<(), Strin
     stop_mouse_tracker();
     IS_IN_SCREENSHOT_SESSION.store(false, std::sync::atomic::Ordering::SeqCst);
     clear_capture_surface();
+    // 工具栏录屏按钮启动在途时 overlay 被关闭（Esc 等）：取消启动，避免后台开录
+    super::record::cancel_pending_start();
 
     let raw = crate::extensions::screenshot::screenshot_ns_window(app).ok_or("找不到截图窗口")?;
     let session_gen = SCREENSHOT_GEN.load(std::sync::atomic::Ordering::SeqCst);

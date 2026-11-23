@@ -1,6 +1,10 @@
 <template>
   <div class="flex-col-view">
-    <BaseSettingsList :items="items" shortcut-id="screenshot" />
+    <BaseSettingsList :items="items" shortcut-id="screenshot" @execute="onExecute">
+      <template #trailing-savePath>
+        <BaseButton @click.stop="pickSavePath">{{ t('screenshot.select') }}</BaseButton>
+      </template>
+    </BaseSettingsList>
   </div>
 </template>
 
@@ -12,6 +16,7 @@ import { withSuppressBlur } from '@/stores/app'
 import { t } from '@/runtime/i18n'
 import { config as screenshotConfig } from './config'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import type { SettingItem } from '@/types/settings'
 import { useShortcutConfig } from '@/composables/useShortcutConfig'
 
@@ -32,6 +37,10 @@ function savePathDisplay(path: string): string {
   return path.replace(/^\/Users\/[^/]+/, '~')
 }
 
+function onExecute(item: SettingItem) {
+  if (item.id === 'savePath') void pickSavePath()
+}
+
 const items = computed<SettingItem[]>(() => [
   {
     id: 'screenshot-shortcut',
@@ -45,8 +54,7 @@ const items = computed<SettingItem[]>(() => [
     id: 'savePath',
     title: t('screenshot.savePath'),
     subtitle: savePathDisplay(screenshotConfig.savePath),
-    type: 'action',
-    action: pickSavePath,
+    type: 'custom',
     group: t('common.group.general'),
   },
 ])

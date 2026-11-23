@@ -57,7 +57,7 @@ export const zhCNMessages: Msgs = {
   'welcome.permFullDisk': { 'zh-CN': '完全访问' },
   'welcome.permGrant': { 'zh-CN': '授权' },
   'welcome.permGranted': { 'zh-CN': '已授权' },
-  'welcome.permUseScreenRecording': { 'zh-CN': '截屏标注 · 窗口管理' },
+  'welcome.permUseScreenRecording': { 'zh-CN': '截屏标注 · 录屏 · 窗口管理' },
   'welcome.permUseAccessibility': { 'zh-CN': '划词翻译 · 访达隐藏文件切换' },
   'welcome.permUseFullDisk': { 'zh-CN': '文件搜索 · 截图保存' },
   'welcome.navHint': { 'zh-CN': 'Enter / → 下一步 · ← 上一步' },

@@ -119,6 +119,17 @@ pub fn register_shortcut_hook() {
     crate::runtime::shortcut::register_shortcut_hook(
         "screenshot",
         Box::new(|app, _ctx| {
+            // 录屏中：截屏快捷键作为停止入口（无独立录屏快捷键；菜单栏是主入口）。
+            // 收尾窗口给 toast，避免按键完全无反馈被误判卡死——文案归扩展入口的
+            // i18n（screenshot-recording-stopping），Rust 侧不硬编码语言。
+            if super::record::is_busy() {
+                if super::record::is_stopping() {
+                    let _ = app.emit("screenshot-recording-stopping", ());
+                } else {
+                    super::record::stop(app);
+                }
+                return true;
+            }
             // 已在会话中：再按 = 取消/解卡，避免 IS_IN_SCREENSHOT_SESSION 卡死后永远进不去
             if super::session::IS_IN_SCREENSHOT_SESSION.load(Ordering::SeqCst) {
                 let app_c = app.clone();

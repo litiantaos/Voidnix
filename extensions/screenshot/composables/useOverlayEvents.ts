@@ -20,6 +20,8 @@ export function useOverlayEvents(options: {
   isInsideSel: (cx: number, cy: number) => boolean
   /// 上次确认选区（屏内本地坐标），R 键恢复用；null 表示无历史
   lastSelection: Sel | null
+  /// 录屏倒计时/启动期间整体锁键盘（Esc 仍可取消），防 F/R/Enter 改写选区或复制
+  keyboardLocked?: Ref<boolean>
 
   // 标注相关
   phase: Ref<Phase>
@@ -547,6 +549,10 @@ export function useOverlayEvents(options: {
   }
 
   function onKeyDown(e: KeyboardEvent) {
+    if (options.keyboardLocked?.value) {
+      if (e.key === 'Escape') options.doCancel()
+      return
+    }
     // 选区确认：写入 sel、切 annotate 阶段、重置交互状态。F 全屏 / R 恢复共用。
     const commitSelection = (sel: { x: number; y: number; w: number; h: number }) => {
       options.sel.value = sel

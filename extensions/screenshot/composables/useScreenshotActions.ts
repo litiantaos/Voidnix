@@ -2,7 +2,6 @@ import type { Ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import type { Sel, Shape } from './useTypes'
-import { config as screenshotConfig } from '../config'
 
 export function useScreenshotActions(options: {
   sel: Ref<Sel>
@@ -11,6 +10,8 @@ export function useScreenshotActions(options: {
   annotateCanvas: Ref<HTMLCanvasElement | undefined>
   bgImage: Ref<HTMLImageElement | null>
   rootEl: Ref<HTMLElement | undefined>
+  /** 截屏/录屏共用保存位置（Rust 注入；overlay 子窗口无 store 权限） */
+  savePath: string
   emit: (e: 'close', noRestoreFocus?: boolean) => void
   // 导出前把 DOM 呈现的文字临时烧录进标注 canvas（begin 后 canvas 含文字，end 恢复 DOM 呈现）
   canvasText?: { begin: () => Promise<void>; end: () => void }
@@ -51,13 +52,17 @@ export function useScreenshotActions(options: {
     doCancel()
   }
 
+  /** 配置值 → 绝对路径（空 = ~/Downloads；与录屏默认一致）。 */
+  async function resolveSavePath(): Promise<string> {
+    const raw = options.savePath || '~/Downloads'
+    return raw.startsWith('~/')
+      ? raw.replace('~', await invoke<string>(CMD.getHomeDir).catch(() => ''))
+      : raw
+  }
+
   async function doSave() {
     const ann = await getAnnotationPng()
-
-    const savePath = screenshotConfig.savePath || '~/Downloads'
-    const path = savePath.startsWith('~/')
-      ? savePath.replace('~', await invoke<string>(CMD.getHomeDir).catch(() => ''))
-      : savePath
+    const path = await resolveSavePath()
     await invoke(CMD.saveScreenshot, {
       selX: options.sel.value.x,
       selY: options.sel.value.y,
@@ -155,10 +160,7 @@ export function useScreenshotActions(options: {
       return
     }
 
-    const savePath = screenshotConfig.savePath || '~/Downloads'
-    const path = savePath.startsWith('~/')
-      ? savePath.replace('~', await invoke<string>(CMD.getHomeDir).catch(() => ''))
-      : savePath
+    const path = await resolveSavePath()
     await invoke(CMD.saveScrollResult, { resultDataUrl: dataUrl, path })
     persistLastSelection()
     doCancel()

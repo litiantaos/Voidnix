@@ -87,6 +87,9 @@ export const CMD = {
   setPinWindowOpacity: 'set_pin_window_opacity',
   scalePinWindow: 'scale_pin_window',
   restorePinFocus: 'restore_pin_focus',
+  // —— screenshot 录屏（ScreenCaptureKit，选区复用截屏 overlay）——
+  screenRecordStart: 'start_screen_recording',
+  setScreenshotRecordConfig: 'set_screenshot_record_config',
 
   // —— awake ——
   setAwakeEnabled: 'set_awake_enabled',

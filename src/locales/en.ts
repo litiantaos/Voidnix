@@ -55,7 +55,7 @@ export const enMessages: Msgs = {
   'welcome.permFullDisk': { en: 'Full Access' },
   'welcome.permGrant': { en: 'Grant' },
   'welcome.permGranted': { en: 'Granted' },
-  'welcome.permUseScreenRecording': { en: 'Screenshot & window tools' },
+  'welcome.permUseScreenRecording': { en: 'Screenshot, recording & window tools' },
   'welcome.permUseAccessibility': { en: 'Translate · hidden files' },
   'welcome.permUseFullDisk': { en: 'Search · save screenshots' },
   'welcome.navHint': { en: 'Enter / → next · ← back' },

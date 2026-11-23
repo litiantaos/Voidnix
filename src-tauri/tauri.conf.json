@@ -40,6 +40,7 @@
       "icons/icon.icns"
     ],
     "macOS": {
+      "minimumSystemVersion": "26.0",
       "dmg": {
         "background": "icons/dmg-background.png",
         "windowPosition": { "x": 420, "y": 250 },

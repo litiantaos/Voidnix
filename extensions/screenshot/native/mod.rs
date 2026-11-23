@@ -7,6 +7,7 @@ mod ffi;
 mod crop;
 pub mod ocr;
 pub mod pin;
+pub mod record;
 pub mod scroll_capture;
 pub mod session;
 #[cfg(target_os = "macos")]
@@ -125,6 +126,7 @@ impl Extension for ScreenshotExtension {
                 session::load_last_selection(&app);
             });
             setup::register_shortcut_hook();
+            record::setup(_app);
         }
         Ok(())
     }

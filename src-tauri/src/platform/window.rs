@@ -14,24 +14,34 @@ use std::sync::Mutex;
 /// menubar 据此推迟重建——set_menu 替换 NSMenu 会立即关闭正在浏览的菜单。
 /// 主线程无响应时按打开处理（保守：宁可推迟重建，不关用户的菜单）。
 pub fn is_menu_open(app: &tauri::AppHandle) -> bool {
+    // 主线程（菜单事件回调 / set_menubar_visible 等 sync 命令）直接查：run_on_main_thread
+    // 在已处于主线程时仍可能排队，recv 500ms 超时会把「菜单已关」误判为打开；菜单事件
+    // 的 refresh 因此恒被跳过，只能等 500ms 重试。
+    if objc2_foundation::MainThreadMarker::new().is_some() {
+        return menu_open_now();
+    }
     let (tx, rx) = std::sync::mpsc::channel();
     let _ = app.run_on_main_thread(move || {
-        let open = objc2_foundation::MainThreadMarker::new()
-            .map(|mtm| {
-                use objc2_app_kit::NSApp;
-                NSApp(mtm).windows().iter().any(|w| {
-                    w.class()
-                        .name()
-                        .to_str()
-                        .is_ok_and(|n| n.contains("MenuWindow"))
-                        && w.isVisible()
-                })
-            })
-            .unwrap_or(false);
-        let _ = tx.send(open);
+        let _ = tx.send(menu_open_now());
     });
     rx.recv_timeout(std::time::Duration::from_millis(500))
         .unwrap_or(true)
+}
+
+/// 当前主线程视角下是否有打开的 NSMenu（须在主线程调用）。
+fn menu_open_now() -> bool {
+    objc2_foundation::MainThreadMarker::new()
+        .map(|mtm| {
+            use objc2_app_kit::NSApp;
+            NSApp(mtm).windows().iter().any(|w| {
+                w.class()
+                    .name()
+                    .to_str()
+                    .is_ok_and(|n| n.contains("MenuWindow"))
+                    && w.isVisible()
+            })
+        })
+        .unwrap_or(false)
 }
 
 /// 默认主窗逻辑尺寸（与 tauri.conf / WINDOW 常量一致）。

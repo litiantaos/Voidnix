@@ -1,6 +1,6 @@
 # screenshot
 
-区域截屏 + 标注 + OCR/二维码识别 + 钉图 + 滚动长截图。原生 CALayer 直接渲染 CGImage（零拷贝），WKWebView 透明覆盖做交互层。
+区域截屏 + 标注 + OCR/二维码识别 + 钉图 + 滚动长截图 + 区域录屏。原生 CALayer 直接渲染 CGImage（零拷贝），WKWebView 透明覆盖做交互层。
 
 ## 架构
 
@@ -16,8 +16,9 @@
 - 选区阶段（`phase === 'select'`，尚无工具栏）底部居中轻量快捷键提示：`Esc` 取消 / `F` 全屏 / `C` 复制色值；有上次选区时追加 `R` 恢复（`mica-panel` + kbd 样式，与 `onKeyDown` 对齐）
 - 取色复制（`C`）是终点动作：写入剪贴板成功后立即退出截屏（`doCancel`，交还原前台焦点），同时 toast「已复制 #RRGGBB」。toast 窗口层级为 `NSStatusWindowLevel + 2`（27，高于截图浮层 25），关窗淡出期间反馈即已可见；截图窗口是独立入口（无页内 toast）。写入失败时保留浮层不动、不报成功（用户可继续取色）
 - 提示条与标注工具栏进出场：`Transition` + 浮层范式（进 150ms `ease-out` opacity/translate-y/scale，出 100ms `ease-in` 反向；`appear` 首次挂载亦进场）
+- 工具栏位置 = `f(选区, 实测尺寸)`：尺寸由根节点 `ResizeObserver` 单一维护（不维护估算值）；尺寸未就绪时只渲染 `visibility:hidden` 占位，首次可见帧即正确 gap；工具切换/字体/语言等布局变化自动重算。`watch` 只消费结果（scroll 工具栏矩形 + 已打开子面板锚点），不再触发测量
 - crop 两条路径（PNG / CGImage）均整体包 `objc2::rc::autoreleasepool`——compose 与编码链上的便捷构造对象（NSGraphicsContext/NSDictionary/NSData/rep.CGImage）均 autoreleased，worker 线程无 pool 时 autorelease 永不执行，实测每次 OCR 泄漏约 12MB（40 次累计 475MB）；pool 修复后零增长。autoreleased（+0）对象一律交 pool 释放、禁止手动 release——`representationUsingType:properties:` 返回的 PNG NSData 曾被手动 release，加 pool 后变成过度释放，pool drain 二次释放已析构对象，走 PNG 路径的复制/保存/钉图即 SIGSEGV 崩溃（alloc+init 自持有的 rep/NSImage 除外，仍配对手动 release；OCR 走 CGImage 路径不受影响）。`compose_annotated_rep` 与 `detect_text_regions` 借用会话 CGImage 期间均 `CGImageRetain` 防合成/识别中 `store_cg_image` 换图释放旧图（use-after-free），出口配对 Release
-- `native/` 按职责分：session（截图会话）、ocr（Vision 进程内识别）、pin（钉图窗口）、scroll_capture/（滚动长截图：state / encode / stitch / mouse / 命令）、crop（裁剪 + 标注合成：`compose_annotated_rep` 统一合成，PNG 路径供 copy/save、CGImage 路径供 OCR）、ffi（ObjC++ 桥）、setup（启动钩子）
+- `native/` 按职责分：session（截图会话）、ocr（Vision 进程内识别）、pin（钉图窗口）、scroll_capture/（滚动长截图：state / encode / stitch / mouse / 命令）、crop（裁剪 + 标注合成：`compose_annotated_rep` 统一合成，PNG 路径供 copy/save、CGImage 路径供 OCR）、record（录屏：SCK 桥 + 状态机 + 菜单栏计时）、ffi（ObjC++ 桥）、setup（启动钩子/快捷键）
 
 ## 约束
 
@@ -64,6 +65,87 @@
 - 识别期间预览区覆磨砂加载遮罩（浅色磨砂底 `--mica-shell-fill` + `backdrop-blur-xs` + `BaseEmptyState` loading 居中，进出场 opacity 过渡；`ocrSession.loading` 驱动，识别中被 LRU 驱逐重挂载遮罩仍在）：预览图即时显示（注入 `pendingOcrData` 即写 `ocrSession.imageUrl`），结果到达即卸载遮罩渲染文本与操作按钮行。预览区滚动层与遮罩分层（同为外层容器直接子级）——滚动容器内的 absolute 遮罩只覆盖初始视口且随长图滚走，分层后遮罩钉住视口不参与滚动（e2e `screenshot.spec.ts` 回归锁）；外层 `overflow-hidden` + `radius-panel` 把图片与遮罩四角裁进圆角（分层后圆角与滚动不在同一元素，须显式裁剪防直角溢出）
 - 操作按钮行（横排 `BaseButton` + `gap-2`，识别完成后渲染）：左右键环形切换选中（`ui-active` 高亮），回车触发当前项，点击即选中并执行；默认选中首项（复制）。让位语义与 BaseList 对齐——textarea 聚焦（编辑识别结果）时左右键移动光标、回车换行，blur（点击预览区等）恢复导航；KeepAlive deactivate / 模态弹窗 / IME 合成 / 整窗视图期间不响应；Enter 执行即消费（`stopImmediatePropagation`，防全局导航重复响应），auto-repeat 不触发。跨扩展转移归首项，subview 往返与窗口唤起保留
 - Skylight `move_window_to_active_space` 跨 Space
+
+## 录屏（复用截屏选区 + 剪辑台）
+
+录屏是截屏域的第二条出口：**选区与入口完全复用截屏 overlay 的标注工具栏**（冻结画面 +
+智能窗口吸附 + 放大镜 + 上次选区 `R` 恢复），点工具栏「录屏」把「抓一帧」换成「录一段」，
+落盘后自动进 video 扩展的独立剪辑台，形成「截屏选区 → 录屏 → 剪辑 → 导出」闭环。
+
+### 交互
+
+- 入口：`Alt+S` 截屏 overlay → 拉选区（或 `F` 全屏 / `R` 恢复）→ 标注工具栏「录屏」
+  按钮（与 OCR / 滚动截屏 / 钉图同组）。**无独立录屏快捷键**。录制的是实时选区画面，
+  标注工具画的形状不入镜（overlay 被 SCK 排除，工具栏只是入口）。
+- 点「录屏」展开与主工具栏同款的**单行子面板**（同一 `palette-surface` 材质）：
+  系统声音 / 麦克风图标开关（按状态换 mute/mic-off 图标 + active 高亮）、帧率按钮
+  （显示 `30 fps` / `60 fps`，点击循环）、打开剪辑开关 + 图标主按钮（title 开始录屏）。改动即时经
+  `screenshot-record-prefs` 事件交给 main 窗口写 config 持久化（子窗口无 store
+  权限）；overlay 初始值由 Rust 注入 `ScreenshotData.record_prefs`（main 窗口
+  config watch 同步的当前值）。
+- 点「开始录屏」后 overlay 显示 **3 秒倒计时**（选区中心，Esc 取消；倒计时期间 Palette
+  隐藏、整层吞鼠标），倒计时结束才真正调用 SCK；启动失败则 Palette 恢复可重试。
+  **键盘锁覆盖倒计时到 native 启动返回的全程**（`starting`，仅放行 Esc）：倒计时归零后
+  Palette 已重现但 SCK 仍在启动，不锁则 Enter/C/F 会关 overlay 触发 `cancel_pending_start`，
+  录制被静默取消还弹「已取消」错误。`Starting` 的 native 在途取消仍保留（Esc / 再按截屏快捷键）。
+- 录制中再按截屏快捷键（`Alt+S`）= 停止（复用既有快捷键，不新增绑定）；菜单栏
+  「录屏」段「停止录屏 00:12」为主入口（每秒刷新）。开始 toast 提示这两个停止入口。
+  `Stopping` 期间再按不重复停流，Rust emit `screenshot-recording-stopping` → 扩展入口
+  模块级 `listen` 弹 i18n toast「正在保存录屏，请稍候」（Rust 侧不硬编码语言）。
+- **启动在途可取消**：`Starting` 期间 Esc 关 overlay / 再按截屏快捷键 → `Cancelling`，
+  启动命令返回后 abort 原生实例并删除半成品，不会出现「界面已关、后台在录」；
+  正常启动（毫秒级）完成后 overlay 才关闭，此时 Esc 已不触发取消。
+- 开始后 overlay 淡出并把焦点还给原前台 app。
+- 停止 → ScreenCaptureKit 收尾（moov 落盘）→ Rust emit `screenshot-recording-saved`
+  （或 `-failed`）→ 主窗 toast「录屏已保存 · 时长」；`openClipAfterRecord` 开启时
+  经同页 CustomEvent `video-clip-open` 交给 video 扩展打开剪辑窗口（video 侧先查
+  FFmpeg core，缺失时 toast 提示而不打开必然报错的窗口）。
+- **收尾异常不删数据**：停流报错 / moov 超时但文件非空时仍按 saved 上报（payload 带
+  `warning`，toast 提示「已保存但收尾异常」）并尝试进剪辑台；仅空文件按 failed 清理。
+- **麦克风预检**：开启麦克风且 TCC 已拒绝/受限时，启动前返回可读错误（而不是 SCK 的
+  `-3820` 英文错误）；未决时由 SCK 触发系统授权弹窗。
+- 录屏归属截屏扩展的边界：剪辑台交接只走跨扩展事件（`video/index.ts` setup 监听），
+  不在 Rust/TS 侧 import video 内部，保持扩展自治。
+
+### 采集（`native/record.mm` + `native/record.rs`）
+
+- **ScreenCaptureKit + `SCRecordingOutput`**（macOS 15+）：`SCContentFilter(display:
+excludingApplications:)` 排除本应用（overlay 淡出、toast、菜单栏都不入镜），
+  `SCStreamConfiguration.sourceRect` 取显示器**本地 points**（左上原点），
+  `width/height = 选区 × backing scale`（H.264 要求偶数）保住 Retina 原生分辨率；
+  H.264 + MP4 由系统直接落盘，无自建 AVAssetWriter/帧调度。
+- 音频：默认录系统声音（`capturesAudio` + `excludesCurrentProcessAudio`），麦克风可选
+  （`captureMicrophone`，需 `NSMicrophoneUsageDescription` 与 TCC）。两者同时开启时
+  系统混为一条 AAC 音轨（`mixesAudioWithMicrophone` 默认 YES）。
+- 帧率：设置里 30 / 60（Rust clamp 15–60）。SCK 按内容变化出帧，**产物是 VFR**
+  （静态画面帧少、平均帧率可能低于设定值），剪辑台按 ffprobe `avg_frame_rate`
+  量化时间线，属已知边界。
+- 状态机 `Idle → Starting → Recording → Stopping → Idle`（Starting 可被取消到
+  `Cancelling → Idle`）：启动/停止都是异步
+  completion，桥内信号量同步后由 `spawn_blocking` 承接（不占 tokio worker）；
+  终态收束统一走 `finish()`（delegate / 双端看门狗 / 启动失败），CAS 幂等。
+- 停止入口两处：截屏快捷键（录制中语义变为停止，`setup::register_shortcut_hook`）、
+  菜单栏贡献段（`menubar::register`，录制中才非空，1s ticker 刷新计时）。**停止时
+  显式 `stopCapture` 并释放 recorder**（系统录屏指示器/采集会话随之结束，不只等
+  RecordingOutput 收尾）；菜单项收尾后补一拍延迟刷新，防菜单打开期间重建被跳过导致
+  「停止录屏」项残留。app 退出中断录制不保证文件可播（v1 边界）。
+
+### 存储与配置
+
+- 输出与截屏**共用 `savePath`**（空 = `~/Downloads`）下 `recording_<unix-ms>.mp4`，
+  同毫秒冲突加序号。截屏保存也读 Rust 注入的同一路径（overlay 子窗口无 store 权限，
+  此前只读子窗口默认值导致设置不生效，现由 `ScreenshotData.save_path` 下发）。
+- 配置（`extensions/screenshot/config.ts`）：`savePath` / `recordFps` /
+  `recordSystemAudio` / `recordMicrophone` / `openClipAfterRecord`。四个录制选项在
+  工具栏弹出菜单里改（即时落 config）；设置页只保留「保存位置」一行（副标题显示
+  当前路径，右侧「选择」按钮打开目录选择器；空 = `~/Downloads`）。
+  **录屏参数权威在 Rust**（overlay 子窗口无 store 权限）：main 窗口 setup 内的
+  config watch（`immediate`）经 `set_screenshot_record_config` 同步；overlay 只发选区。
+- 录制依赖 `SCRecordingOutput`（macOS 15+）；bundle 声明 `LSMinimumSystemVersion 26.0`
+  （与 README 系统要求一致），避免更老系统在 dyld 解析 `SCRecordingOutput` 时整个
+  启动器起不来。
+- 命令：`start_screen_recording`（工具栏按钮 → 选区 + scale + 本次 prefs，返回启动结果）、
+  `set_screenshot_record_config`。停止由 Rust 内部（截屏快捷键/菜单栏）触发，不暴露 IPC。
 
 ## 数据存储
 

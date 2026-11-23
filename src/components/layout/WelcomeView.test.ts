@@ -615,7 +615,7 @@ describe('WelcomeView 首启引导视图', () => {
     expect(rows.map((r) => r.find('.w-perm-use').text())).toEqual([
       '划词翻译 · 访达隐藏文件切换',
       '文件搜索 · 截图保存',
-      '截屏标注 · 窗口管理',
+      '截屏标注 · 录屏 · 窗口管理',
     ])
 
     // 未授权按钮统一「授权」（不分手动/API 档）
@@ -667,7 +667,7 @@ describe('WelcomeView 首启引导视图', () => {
     expect(rows.map((r) => r.find('.w-perm-use').text())).toEqual([
       '划词翻译 · 访达隐藏文件切换',
       '文件搜索 · 截图保存',
-      '截屏标注 · 窗口管理',
+      '截屏标注 · 录屏 · 窗口管理',
     ])
     expect(rows.map((r) => r.find('.w-perm-btn').text())).toEqual(['授权', '授权', '授权'])
 

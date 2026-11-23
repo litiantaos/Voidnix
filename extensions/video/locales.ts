@@ -2,6 +2,10 @@ import { registerMessages } from '@/runtime/i18n'
 
 // 视频处理扩展文案
 registerMessages({
+  'video.clip.needCore': {
+    'zh-CN': '剪辑需要 FFmpeg，请先在视频处理中下载核心',
+    en: 'Clipping needs FFmpeg — download the core in Video Tools first',
+  },
   'video.downloadFFmpeg': { 'zh-CN': '下载 FFmpeg', en: 'Download FFmpeg' },
   'video.select': { 'zh-CN': '选择', en: 'Select' },
   'video.cancel': { 'zh-CN': '取消', en: 'Cancel' },

@@ -125,6 +125,8 @@ macro_rules! configure_app {
             crate::extensions::screenshot::pin::restore_pin_focus,
             crate::extensions::screenshot::pin::scale_pin_window,
             crate::extensions::screenshot::pin::set_pin_window_opacity,
+            crate::extensions::screenshot::record::set_screenshot_record_config,
+            crate::extensions::screenshot::record::start_screen_recording,
             crate::extensions::screenshot::scroll_capture::copy_scroll_result_to_clipboard,
             crate::extensions::screenshot::scroll_capture::enter_scroll_capture,
             crate::extensions::screenshot::scroll_capture::exit_scroll_capture,
