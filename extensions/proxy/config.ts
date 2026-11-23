@@ -14,6 +14,9 @@ export interface Subscription {
   updatedAt: string
   expiresAt: string
   proxyCount: number
+  /// 最近一次自动更新失败原因（空/未定义 = 正常）。手动更新失败走 toast 不落此。
+  /// 自动更新是后台静默路径，失败曾只进 console——落盘让订阅行可显示「自动更新失败」。
+  lastError?: string
 }
 
 /// prod 默认端口（行业默认，与其他工具兼容）。
@@ -98,7 +101,15 @@ export type ProxyMode = (typeof MODE_VALUES)[number]
 /// CRUD helpers（defineConfig reactive 数组变更自动持久化）
 export function addSubscription(name = '', url = ''): string {
   const id = generateRequestId()
-  config.subscriptions.push({ id, name, url, updatedAt: '', expiresAt: '', proxyCount: 0 })
+  config.subscriptions.push({
+    id,
+    name,
+    url,
+    updatedAt: '',
+    expiresAt: '',
+    proxyCount: 0,
+    lastError: '',
+  })
   return id
 }
 

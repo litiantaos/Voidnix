@@ -98,18 +98,30 @@ if (isTauri) {
 }
 
 /// 拉取订阅并回填元数据（节点数/更新时间/到期时间），手动（弹窗保存/行内更新）与
-/// 自动更新共用；expire 为 unix 秒（null = 订阅方未提供）。
-async function fetchSubscription(id: string, url: string): Promise<number> {
-  const res = await invoke<{ count: number; expire: number | null }>(CMD.proxyUpdateSubscription, {
-    id,
-    url,
-  })
+/// 自动更新共用；expire 为 unix 秒（null = 订阅方未提供）；skipped 为通用格式转换
+/// 跳过的行数（>0 时 UI 明示「跳过 M 行」，避免静默丢节点）。
+async function fetchSubscription(
+  id: string,
+  url: string,
+): Promise<{ count: number; skipped: number }> {
+  const res = await invoke<{ count: number; expire: number | null; skipped: number }>(
+    CMD.proxyUpdateSubscription,
+    { id, url },
+  )
   updateSubscription(id, {
     proxyCount: res.count,
     updatedAt: new Date().toISOString(),
     expiresAt: res.expire ? new Date(res.expire * 1000).toISOString() : '',
+    lastError: '', // 成功即清失败标记（自动更新恢复后行内警告消失）
   })
-  return res.count
+  return { count: res.count, skipped: res.skipped }
+}
+
+/// 更新成功文案：有跳过行时明示（通用格式里不支持的协议/垃圾行），否则常规节点数。
+function nodesUpdatedMessage(res: { count: number; skipped: number }): string {
+  return res.skipped > 0
+    ? t('proxy.nodesUpdatedSkipped', { count: res.count, skipped: res.skipped })
+    : t('proxy.nodesUpdated', { count: res.count })
 }
 
 // ── 订阅自动更新（模块级，app 启动即生效）──
@@ -147,6 +159,8 @@ async function autoUpdateSubscriptions(): Promise<void> {
         await fetchSubscription(s.id, s.url)
       } catch (e) {
         console.error('[proxy] auto update subscription failed:', e)
+        // 失败曾只进 console：后台静默路径用户无从知晓订阅已陈旧。落盘供订阅行标记
+        updateSubscription(s.id, { lastError: toErrorMessage(e, t('proxy.updateFailed')) })
       }
     }
   } finally {
@@ -692,10 +706,10 @@ export function useProxyPanel() {
     closeEditModal()
     if (!url) return
     try {
-      const count = await fetchSubscription(id, url)
-      appStore.showStatus(t('proxy.nodesUpdated', { count }), { duration: 2000 })
+      const res = await fetchSubscription(id, url)
+      appStore.showStatus(nodesUpdatedMessage(res), { duration: 2000 })
       // 新建订阅拉取成功即自动激活（首次添加即用，内部 loadProxies）；编辑则直接刷新
-      if (wasCreating && count > 0) {
+      if (wasCreating && res.count > 0) {
         await setActiveSubscription(id)
       } else {
         await loadProxies()
@@ -715,8 +729,8 @@ export function useProxyPanel() {
     if (!s.url || updatingSubId.value) return
     updatingSubId.value = s.id
     try {
-      const count = await fetchSubscription(s.id, s.url)
-      appStore.showStatus(t('proxy.nodesUpdated', { count }), { duration: 2000 })
+      const res = await fetchSubscription(s.id, s.url)
+      appStore.showStatus(nodesUpdatedMessage(res), { duration: 2000 })
       if (s.id === config.activeSubscriptionId) {
         selectedNodeName.value = ''
         delayMap.value = {}

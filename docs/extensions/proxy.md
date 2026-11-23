@@ -12,7 +12,8 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
   ├ 订阅组：导入/更新/删除           ├ lifecycle.rs  状态机（启停/热重载/健康监测/启动复用）
   └ 节点组：列表/切换/测速/分组切    ├ menu.rs       菜单栏贡献
                                      ├ core.rs       binary 写盘 + 版本
-                                     ├ subscription.rs 拉取+合并 Clash YAML
+                                     ├ subscription.rs 拉取+归一化+合并 Clash YAML
+                                      ├ subconv.rs    通用格式订阅→Clash YAML 转译
                                      ├ controller.rs ──reqwest──→ mihomo API
                                      ├ tun.rs        osascript 提权 root
                                      └ stream.rs     traffic/connections/logs WS
@@ -22,7 +23,7 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
 
 - mihomo 监听 **`mixed-port`**（HTTP+SOCKS5 共用）
 - mihomo 监听 **`external-controller`**（RESTful API，bearer secret 鉴权）
-- 扩展**不解析代理协议**，proxies/proxy-groups/rules 原样合并自订阅 Clash YAML
+- 订阅侧不解析协议语义：Clash YAML 的 proxies/proxy-groups/rules 原样合并；通用格式订阅（分享链接列表/整体 base64，vless/hysteria2/vmess/trojan/ss 五种 scheme，含 ws/grpc 传输、reality、alpn、自签放行、hy2 obfs/带宽）经 **`subconv.rs`** 机械转译为 `proxies:` 条目（字段映射不含协议逻辑、重名追加序号去重），产出仍走同一合并管线
 
 **UI 结构**：主界面三个分组（代理/订阅/节点）+ 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，菜单栏常显开关 + 订阅自动更新开关/间隔 + 重启内核/停止内核（daemon 已装才展示）+ 完全卸载入口）：
 
@@ -37,7 +38,7 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
 - 分别接 mihomo **`/connections`**（实时连接列表）、**`/rules`**（分流规则只读列表）、**`/logs`**（实时日志，环形缓冲 500 行，全级别推送由搜索过滤）
 - 三个子视图均用 BaseList
 
-**菜单栏**：贡献段由设置项 `menubarVisible` 控制常显（默认关）——开启时段内恒有「打开扩展」+ 连接状态 CheckItem（勾选态反映连接、可点切换，已连接显示当前节点）；其余控制全部在扩展视图。
+**菜单栏**：贡献段由设置项 `menubarVisible` 控制常显（默认关）——开启时段内恒有「打开扩展」+（核心有新版时）「更新内核（vX）」提示项 + 连接状态 CheckItem（勾选态反映连接、可点切换，已连接显示当前节点）；其余控制全部在扩展视图。
 
 ## mihomo binary 下载（运行时按需）
 
@@ -76,9 +77,10 @@ asset 名精确串等 **`mihomo-darwin-{arch}-{tag}.gz`**，排除 go120/go122/g
 
 **API 不可达时**：`fallback_asset` 用常量（`MIHOMO_VERSION` + `SHA256_ARM64`/`SHA256_AMD64`）拼装，首次下载仍可用（仅无法获取新版）——gh-proxy 仅代理 release 下载、不转发 API。
 
-**升级走 UI**：
+**升级入口**：
 
-1. 进视图时 **`proxy_check_update`** 后台拉 latest 比对本地 `mihomo.version`
+0. **启动静默检查**：setup 延后 3s 检查（已下载核心才查），有新版即写入 `ProxyState.core_update` 并在菜单栏代理段追加「更新内核（vX）」项（点击打开扩展走更新按钮）——更新入口在设置子视图里，不主动提示等于没有；`menubarVisible` 关闭时无菜单项（设计上随段显隐）
+1. 进视图时 **`proxy_check_update`** 后台拉 latest 比对本地 `mihomo.version`（同步写菜单状态，UI 与菜单同一真相源）
 2. 有新版时副标题显示「核心 vX.Y.Z（最新 vZ，可更新）」+ 出现「更新」按钮
 3. 点击触发 **`proxy_update_core`**：`tun_active` 时先 `uninstall_launchdaemon`（bootout + 删 plist，停进程）→ 删 binary + version → `ensure_bin` 重下最新 → 之前 enabled 则 `start_core` 重新安装恢复
 4. 中途下载失败：文件已删，下次 `ensure_bin` 自动重试
@@ -239,7 +241,7 @@ root mihomo 常驻但进程可能因出站失效/接口抖动/异常退出而「
 **`merge_yaml(texts, params)`**（纯函数）：
 
 - 多文本 **proxies** 按 name 去重拼接（单激活模型下通常仅 1 份，去重作单订阅内重名防御）
-- **proxy-groups / rules** 取首个非空文本，否则自动生成（groups 为 `节点选择` select + `自动选择` url-test；rules 为 `GEOIP,CN,DIRECT` + `MATCH,节点选择` 两条）
+- **proxy-groups / rules** 取首个非空文本，否则自动生成（groups 为 `节点选择` select + `自动选择` url-test；rules 为 default_rules——`GEOSITE,private` + 六段私有 IP-CIDR 直连 + `GEOSITE,cn` 先于 `GEOIP,CN` + `MATCH,节点选择` 兜底，见源码注释口径）
 
 订阅自带顶层字段被丢弃（仅取 proxies/groups/rules）。
 
@@ -269,13 +271,13 @@ interval/tolerance/lazy 等其他字段保留订阅原值。
 
 config 含 **`geox-url`**（geoip/geosite 镜像 URL，国内直连 GitHub 不可达致 mihomo 下载 EOF）。
 
-订阅原文存 **`subs/<id>.yaml`**，`build_run_config` 启动时读取合并。
+订阅内容存 **`subs/<id>.yaml`**（Clash YAML 原文或通用格式转译产物，均为合法 YAML），`build_run_config` 启动时读取合并。
 
 ### 订阅拉取与热重载
 
-- 订阅拉取走 **`http::client()`**（SSRF 校验 + Clash UA `clash.meta/v1.19.27`，确保机场返回 YAML 而非 Base64），同时解析响应头 **`subscription-userinfo`** 的 `expire` 字段（unix 秒，Clash 生态通用的订阅到期约定）回填前端 `expiresAt`（缺失 = 订阅方未提供，展示省略）
+- 订阅拉取走 **`http::client()`**（SSRF 校验 + Clash UA `clash.meta/v1.19.27` 优先要 YAML），同时解析响应头 **`subscription-userinfo`** 的 `expire` 字段（unix 秒，Clash 生态通用的订阅到期约定）回填前端 `expiresAt`（缺失 = 订阅方未提供，展示省略）。拉取后先做 **HTML 错误页识别**（正文以 `<!doctype html` / `<html` 起首 → 明确报「订阅返回网页内容，链接可能已失效、需要登录或拒绝当前 UA」，不再落进笼统的「格式不识别」）；再经 **`normalize_subscription`** 归一化：YAML 有节点原样通过；通用格式（base64/链接列表）转 YAML；都失败明确报错——杜绝通用格式被 YAML 解析器当纯量吞掉产出「0 节点」假成功。转换结果落盘 `subs/<id>.yaml`，后续合并无特殊分支。**转换统计可观测**：`convert_to_yaml` 返回 `{yaml, skipped}`，`SubUpdateResult` 透出 `skipped`，前端 toast 在 `skipped>0` 时显示「已更新 N 个节点（跳过 M 行不支持的协议）」——部分成功不再静默丢弃
 - 更新入口两个（编辑弹窗保存 / 订阅行内「更新」按钮），共用 `proxy_update_subscription` 命令（返回 `{count, expire}`）；行内更新单飞（任一更新中其余行按钮禁用，进行中行转 spinner）
-- **自动更新**（前端模块级，`useProxyPanel.ts`）：设置项 `autoUpdateEnabled`（开关）+ `autoUpdateIntervalHours`（间隔档位 1/6/12/24/72 小时，设置页 select）；配置回填后立即检查 + 每小时复查（复查频率与间隔解耦，间隔由阈值表达），`updatedAt` 超过间隔（或从未拉取成功）且配置了 URL 的订阅串行静默拉取（失败仅 console，每小时复查自愈离线场景；核心未运行时 Rust 侧 reload 为安全空操作）。设置变化即时生效（watch 触发按新阈值复查）；关闭开关后循环内逐轮短路止血。手动/自动并发无协调——命令幂等，最坏重复拉取一次
+- **自动更新**（前端模块级，`useProxyPanel.ts`）：设置项 `autoUpdateEnabled`（开关）+ `autoUpdateIntervalHours`（间隔档位 1/6/12/24/72 小时，设置页 select）；配置回填后立即检查 + 每小时复查（复查频率与间隔解耦，间隔由阈值表达），`updatedAt` 超过间隔（或从未拉取成功）且配置了 URL 的订阅串行静默拉取（失败除 console 外落订阅元数据 `lastError`：订阅行显示红色「自动更新失败」、悬停可见原因，成功拉取即清除——后台静默路径的失效必须可发现，每小时复查自愈离线场景；核心未运行时 Rust 侧 reload 为安全空操作）。设置变化即时生效（watch 触发按新阈值复查）；关闭开关后循环内逐轮短路止血。手动/自动并发无协调——命令幂等，最坏重复拉取一次
 - 激活订阅被更新后 Rust emit **`proxy-subscription-updated`(id)**：前端（含自动更新等非用户触发路径）据此清乐观选中与测速缓存并重载节点列表；手动行内更新路径（`updatingSubId` 命中同一订阅）由自身收尾，跳过防双载
 - 切换激活订阅 / 增删订阅触发 **`reload_running_config`**（按 enabled/idle 自适应重载）：重建 `config.yaml` 后 `PUT /configs {path}` 让 mihomo 原生热重载（root 进程常驻，免重启免再提权）。激活订阅切换即整体替换节点列表（清空乐观选中与测速缓存）
 
@@ -321,6 +323,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 **贡献项**：
 
 - **打开扩展**（Item，点击打开代理视图）
+- **更新内核（vX）**（Item，仅核心有新版时出现；数据源 `ProxyState.core_update`，由启动静默检查与视图内 `proxy_check_update` 写入，点击打开代理视图走更新按钮——更新含提权停内核，不从菜单直接发起）
 - **连接状态**（CheckItem 勾选态反映 enabled，点击切换连接；已连接 label 为「已连接：节点」，未连接为「开启代理」）
 
 点击切换的两条路径：

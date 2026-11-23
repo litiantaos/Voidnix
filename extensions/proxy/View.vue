@@ -134,6 +134,14 @@
               </template>
             </template>
             <span v-else truncate>{{ item.sub.url || t('proxy.notConfigured') }}</span>
+            <!-- 自动更新失败标记（Rust 拉取失败的持久化原因，悬停可见）：后台静默路径
+                 曾只进 console，用户无从发现订阅已陈旧；成功拉取即清除 -->
+            <template v-if="item.sub.lastError">
+              <span text="muted" shrink="0" ml="3">·</span>
+              <span text="danger" shrink="0" whitespace="nowrap" :title="item.sub.lastError">{{
+                t('proxy.autoUpdateFailed')
+              }}</span>
+            </template>
           </template>
           <template #trailing>
             <div flex gap="2">

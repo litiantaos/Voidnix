@@ -39,6 +39,9 @@ pub struct ProxyState {
     /// 开启时段恒在（打开扩展 + 已连接时附状态行），关闭时无贡献段——替代原
     /// 「已连接才显示」逻辑。
     pub menubar_visible: AtomicBool,
+    /// 最新可用核心版本（None = 无更新/未检查）。启动静默检查与视图内检查共同写入，
+    /// 菜单栏据此追加「更新内核」项——入口藏在设置子视图里，不主动提示等于没有。
+    pub core_update: Mutex<Option<String>>,
 }
 
 /// 健康事件 payload（emit "proxy-status"，前端 showStatus 反馈）。

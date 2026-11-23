@@ -6,6 +6,7 @@ mod core;
 mod lifecycle;
 mod menu;
 mod stream;
+mod subconv;
 mod subscription;
 mod tun;
 
@@ -100,7 +101,46 @@ pub async fn proxy_ensure_core(app: AppHandle) -> Result<bool, String> {
 /// 检查更新：拉 GitHub API latest 版本 → 比对本地版本。API 不可达时静默 has_update=false。
 #[tauri::command]
 pub async fn proxy_check_update(app: AppHandle) -> Result<core::UpdateInfo, String> {
-    Ok(core::check_update(&app).await)
+    let info = core::check_update(&app).await;
+    publish_core_update(&app, &info);
+    Ok(info)
+}
+
+/// 把检查结果写入菜单栏状态（有更新即出现在代理段「更新内核（vX）」项）并刷新菜单。
+/// 视图内检查与启动静默检查共用，保持 UI 与菜单同一真相源。
+fn publish_core_update(app: &AppHandle, info: &core::UpdateInfo) {
+    let state = app.state::<ProxyState>();
+    let latest = if info.has_update && !info.latest.is_empty() {
+        Some(info.latest.clone())
+    } else {
+        None
+    };
+    let changed = match state.core_update.lock() {
+        Ok(mut guard) => {
+            if *guard == latest {
+                false
+            } else {
+                *guard = latest;
+                true
+            }
+        }
+        Err(_) => false,
+    };
+    if changed {
+        crate::runtime::menubar::refresh(app);
+    }
+}
+
+/// 清除菜单栏「更新内核」提示（核心已更新/已卸载）。
+fn clear_core_update(app: &AppHandle) {
+    let state = app.state::<ProxyState>();
+    let changed = match state.core_update.lock() {
+        Ok(mut guard) => guard.take().is_some(),
+        Err(_) => false,
+    };
+    if changed {
+        crate::runtime::menubar::refresh(app);
+    }
 }
 
 /// 更新核心：卸载 LaunchDaemon → 删旧 binary → ensure_bin 重下最新 → 之前启用则恢复。
@@ -123,6 +163,7 @@ pub async fn proxy_update_core(app: AppHandle, state: State<'_, ProxyState>) -> 
     state.enabled.store(false, Ordering::Relaxed);
     core::remove_core_files(&app)?;
     core::ensure_bin(&app).await?;
+    clear_core_update(&app); // 已重下最新：菜单「更新内核」项随之撤下
     if was_enabled {
         if let Some(p) = params {
             start_core(&app, &state, p).await?; // 重新 install_launchdaemon（提权）
@@ -191,14 +232,17 @@ pub async fn proxy_uninstall(app: AppHandle, state: State<'_, ProxyState>) -> Re
     // 复位基元统一收尾（含此前手写复位缺的 invalidate_monitor/cancel_all）
     lifecycle::reset_stopped_state(&app);
     core::remove_runtime_files(&app)?;
+    clear_core_update(&app);
     Ok(())
 }
 
-/// 订阅拉取结果：proxies 数量 + 到期时间（unix 秒，None = 订阅方未提供）。
+/// 订阅拉取结果：proxies 数量 + 到期时间（unix 秒，None = 订阅方未提供）
+/// + 通用格式转换跳过行数（0 = Clash YAML 或全部识别）。
 #[derive(Serialize)]
 pub struct SubUpdateResult {
     pub count: usize,
     pub expire: Option<i64>,
+    pub skipped: usize,
 }
 
 /// 拉取订阅并持久化（subs/<id>.yaml），返回节点数与到期时间；核心运行中则热重载。
@@ -222,6 +266,7 @@ pub async fn proxy_update_subscription(
     Ok(SubUpdateResult {
         count: fetched.count,
         expire: fetched.expire,
+        skipped: fetched.skipped,
     })
 }
 
@@ -498,6 +543,7 @@ impl Extension for ProxyExtension {
             release_gen: AtomicU64::new(0),
             log_verify_window: AtomicBool::new(false),
             menubar_visible: AtomicBool::new(false),
+            core_update: Mutex::new(None),
         });
         app.manage(StreamRegistry::default());
         menu::register();
@@ -534,6 +580,15 @@ impl Extension for ProxyExtension {
         tauri::async_runtime::spawn(async move {
             lifecycle::reconnect_root_mihomo(&app2).await;
             let _ = core::ensure_geo_files(&app2).await;
+        });
+        // 启动静默检查核心更新：更新入口藏在设置子视图，不主动提示等于没有。延后 3s
+        // 避开启动网络高峰（对齐应用自身更新检查节奏）；未下载核心时无版本可比，跳过。
+        let app3 = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            if core::core_status(&app3).downloaded {
+                publish_core_update(&app3, &core::check_update(&app3).await);
+            }
         });
         Ok(())
     }

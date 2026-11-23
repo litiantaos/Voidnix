@@ -47,25 +47,33 @@ fn build_proxy(app: &AppHandle) -> Vec<MenuEntry> {
     } else {
         "开启代理".to_string()
     };
-    vec![
-        MenuEntry::Item {
-            id: "proxy_open".into(),
-            label: "打开扩展".into(),
+    let mut entries = vec![MenuEntry::Item {
+        id: "proxy_open".into(),
+        label: "打开扩展".into(),
+        enabled: true,
+    }];
+    // 核心有新版时追加提示项（数据源 ProxyState.core_update，视图检查/启动静默检查写入）：
+    // 点击打开扩展走现有「更新」按钮（更新涉及提权停内核，不从菜单路径直接发起）
+    if let Some(latest) = crate::runtime::lock_or_recover(&state.core_update).clone() {
+        entries.push(MenuEntry::Item {
+            id: "proxy_core_update".into(),
+            label: format!("更新内核（{latest}）"),
             enabled: true,
-        },
-        MenuEntry::CheckItem {
-            id: "proxy_toggle".into(),
-            label,
-            checked: enabled,
-        },
-    ]
+        });
+    }
+    entries.push(MenuEntry::CheckItem {
+        id: "proxy_toggle".into(),
+        label,
+        checked: enabled,
+    });
+    entries
 }
 
-/// 菜单点击：打开扩展 / 切换连接。断开走 stop_core（热重载 idle）；连接走 start_core，
+/// 菜单点击：打开扩展（含「更新内核」提示项，更新动作在视图内完成）/ 切换连接。断开走 stop_core（热重载 idle）；连接走 start_core，
 /// 未过首启流程（未确认 TUN 告知 / 核心未就绪 / 无运行参数）回退打开扩展走完整流程。
 fn on_proxy_event(app: &AppHandle, id: &str) {
     match id {
-        "proxy_open" => open_extension(app),
+        "proxy_open" | "proxy_core_update" => open_extension(app),
         "proxy_toggle" => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {

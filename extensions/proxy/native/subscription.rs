@@ -8,6 +8,7 @@ use tauri::AppHandle;
 
 use super::controller::DELAY_TEST_URL;
 use super::core::{RunParams, GEO_RELEASE_BASE, MIRROR_PREFIX};
+use super::subconv;
 
 /// 订阅请求 UA：部分机场据此返回 Clash YAML 而非 Base64 订阅，与 mihomo 版本对齐。
 const SUB_UA: &str = "clash.meta/v1.19.27";
@@ -31,11 +32,13 @@ fn sub_yaml_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
     Ok(sub_dir(app)?.join(format!("{id}.yaml")))
 }
 
-/// 拉取结果：proxies 数量 + 原始 YAML + 订阅到期时间（unix 秒，未提供为 None）。
+/// 拉取结果：proxies 数量 + 归一化后 YAML + 订阅到期时间（unix 秒，未提供为 None）
+/// + 通用格式转换时跳过的行数（供用户提示「跳过 M 行不支持的协议」）。
 pub struct FetchedSub {
     pub count: usize,
     pub text: String,
     pub expire: Option<i64>,
+    pub skipped: usize,
 }
 
 /// 拉取订阅（SSRF 校验 + Clash UA + subscription-userinfo 到期解析）。
@@ -61,12 +64,70 @@ pub async fn fetch(url: &str) -> Result<FetchedSub, String> {
         .text()
         .await
         .map_err(|e| format!("读取订阅失败: {e}"))?;
-    let count = count_proxies(&text)?;
+    // 订阅链接失效/需登录/拒绝 UA 时机场常回 200 + 网页，YAML 解析只会给出笼统的
+    // 「格式不识别」——先按正文特征明确告知，用户行动（换链接/重新登录）才清晰
+    if looks_like_html(&text) {
+        return Err("订阅返回网页内容（链接可能已失效、需要登录或拒绝当前 UA）".into());
+    }
+    let (count, text, skipped) = normalize_subscription(text)?;
     Ok(FetchedSub {
         count,
         text,
         expire,
+        skipped,
     })
+}
+
+/// 正文是否像 HTML 页面（订阅失效时机场常见返回）。只看开头声明，避免误伤节点名
+/// 恰含 `<` 的极端 YAML（YAML 顶层不会以 `<` 起首）。
+fn looks_like_html(text: &str) -> bool {
+    // 剥 BOM（部分服务端会带）后只看开头 32 字符——避免对 MB 级订阅整体小写复制
+    let head: String = text
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .chars()
+        .take(32)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    head.starts_with("<!doctype html") || head.starts_with("<html")
+}
+
+/// 订阅内容归一化：Clash YAML 原样通过；通用格式（base64/链接列表）经 subconv 转 YAML
+/// 后通过；两者都不是 → 明确报错。禁止静默产出 0 节点（通用格式曾被 YAML 解析器当
+/// 纯量吞掉，用户只看到「已更新 0 个节点」的假成功，见 subconv 模块说明）。
+fn normalize_subscription(text: String) -> Result<(usize, String, usize), String> {
+    let yaml_count = count_proxies(&text);
+    if let Ok(n) = yaml_count {
+        if n > 0 {
+            return Ok((n, text, 0));
+        }
+        // YAML 能解析但无 proxies：可能正是通用格式被当纯量吞掉，继续尝试转换
+    }
+    match subconv::convert_to_yaml(&text) {
+        Ok(converted) => {
+            let n = count_proxies(&converted.yaml)?;
+            Ok((n, converted.yaml, converted.skipped))
+        }
+        Err(e) => {
+            // 显式空订阅（根 mapping 带 proxies 键但为空，过期订阅常见形态）与格式不识别
+            // 分开提示——前者的行动是续费/换源，后者才是换格式。纯量文本虽也能被 YAML
+            // 解析为 0 节点，但那是「被当纯量吞掉」，归格式不识别
+            let explicit_empty_sub = matches!(yaml_count, Ok(0))
+                && serde_norway::from_str::<Value>(&text)
+                    .ok()
+                    .map(|v| v.is_mapping() && v.get("proxies").is_some())
+                    .unwrap_or(false);
+            if explicit_empty_sub {
+                Err(format!(
+                    "订阅内容为合法 Clash YAML 但 0 个节点（订阅可能已过期）: {e}"
+                ))
+            } else {
+                Err(format!(
+                    "无法识别的订阅格式（既不是 Clash YAML，也不是通用链接订阅）: {e}"
+                ))
+            }
+        }
+    }
 }
 
 /// 解析 subscription-userinfo 头的 expire 字段：`upload=..; download=..; total=..; expire=1735689600`。
@@ -175,7 +236,7 @@ pub fn build_run_config(app: &AppHandle, params: &RunParams) -> Result<String, S
 /// （单订阅内重名节点同样去重）。合并策略：
 /// - proxies：所有文本按 name 去重拼接
 /// - proxy-groups：取首个含非空 proxy-groups 的文本；否则自动生成 select + url-test
-/// - rules：取首个含非空 rules 的文本；否则默认 GEOIP CN 直连 + MATCH 代理
+/// - rules：取首个含非空 rules 的文本；否则 default_rules（私有直连 + GEOSITE/GEOIP CN 直连 + MATCH）
 pub fn merge_yaml(texts: &[String], params: &RunParams) -> Result<String, String> {
     let mut all_proxies: Vec<Value> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -378,8 +439,27 @@ fn auto_groups(proxies: &[Value]) -> Value {
     Value::Sequence(vec![Value::Mapping(select), Value::Mapping(url_test)])
 }
 
+/// 默认规则（订阅未自带 rules 时；通用格式订阅转出的 YAML 只有 proxies，必落此处）：
+/// 精简但不粗——名单靠 geox-url 已配置的 geosite/geoip 数据库（MetaCubeX meta-rules-dat），
+/// 规则只写类别口径、不内嵌域名清单：
+/// - 私有域名/私有 IP 直连：局域网设备与本机服务不绕代理；100.64.0.0/10（CGNAT）必含——
+///   Tailscale/ZeroTier 虚拟 IP 全在此段，纯 IP 无域名，漏掉会穿透到 MATCH 被送进代理
+/// - GEOSITE,cn 先于 GEOIP,CN：域名库判定不依赖解析结果——国内服务用海外 CDN 时
+///   GeoIP 会误送代理；GeoIP 只作域名未收录时的 IP 兜底（原默认仅 GeoIP 一条，属此类误判源）
+/// - MATCH 兜底走节点选择
 fn default_rules() -> Value {
-    Value::Sequence(vec![s("GEOIP,CN,DIRECT"), s("MATCH,节点选择")])
+    Value::Sequence(vec![
+        s("GEOSITE,private,DIRECT"),
+        s("IP-CIDR,127.0.0.0/8,DIRECT,no-resolve"),
+        s("IP-CIDR,10.0.0.0/8,DIRECT,no-resolve"),
+        s("IP-CIDR,100.64.0.0/10,DIRECT,no-resolve"),
+        s("IP-CIDR,169.254.0.0/16,DIRECT,no-resolve"),
+        s("IP-CIDR,172.16.0.0/12,DIRECT,no-resolve"),
+        s("IP-CIDR,192.168.0.0/16,DIRECT,no-resolve"),
+        s("GEOSITE,cn,DIRECT"),
+        s("GEOIP,CN,DIRECT"),
+        s("MATCH,节点选择"),
+    ])
 }
 
 /// 把 MULTIMEDIA_DIRECT_RULES 前置到 rules 序列（订阅自带/默认规则共用）。
@@ -594,8 +674,79 @@ proxy-groups:
         // 无订阅 rules：默认规则同样前置注入
         let yaml2 = "proxies:\n  - {name: N1, type: ss}\n".to_string();
         let out2 = merge_yaml(&[yaml2], &params()).unwrap();
-        assert!(out2.contains("DOMAIN-SUFFIX,qpic.cn,DIRECT"));
+        let v2: Value = serde_norway::from_str(&out2).unwrap();
+        let rules2: Vec<String> = v2
+            .get("rules")
+            .and_then(|r| r.as_sequence())
+            .unwrap()
+            .iter()
+            .filter_map(|r| r.as_str().map(str::to_string))
+            .collect();
+        // 注入规则仍居默认规则序列最前
+        for (i, r) in MULTIMEDIA_DIRECT_RULES.iter().enumerate() {
+            assert_eq!(&rules2[i], r);
+        }
         assert!(out2.contains("MATCH,节点选择"));
+    }
+
+    #[test]
+    fn normalize_subscription_distinguishes_empty_yaml_and_unknown_format() {
+        // 合法 YAML 0 节点（过期订阅形态）与格式不识别分开提示
+        let err = normalize_subscription("proxies: []\n".to_string()).unwrap_err();
+        assert!(err.contains("0 个节点"), "实际: {err}");
+        let err = normalize_subscription("not a subscription at all".to_string()).unwrap_err();
+        assert!(err.contains("无法识别的订阅格式"), "实际: {err}");
+        // 通用格式链接列表正常转换通过，跳过行数如实上报
+        let link = "hysteria2://pw@192.0.2.2:443?sni=a.com#hy2-node";
+        let (n, yaml, skipped) = normalize_subscription(format!("{link}\n")).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(skipped, 0);
+        assert!(yaml.contains("hysteria2"));
+        // 混合可识别/不可识别行：保留可识别部分并上报跳过数
+        let mixed = format!("unknown://x\n{link}\n");
+        let (n, _, skipped) = normalize_subscription(mixed).unwrap();
+        assert_eq!((n, skipped), (1, 1));
+    }
+
+    #[test]
+    fn looks_like_html_detects_error_pages() {
+        assert!(looks_like_html("  <!DOCTYPE html><html>..."));
+        // BOM 前缀（部分服务端带）同样识别
+        assert!(looks_like_html("\u{feff}<!doctype html><html>"));
+        assert!(looks_like_html("<html lang=\"zh\">"));
+        assert!(!looks_like_html("proxies:\n  - {name: A, type: ss}\n"));
+        assert!(!looks_like_html("vless://x@192.0.2.1:443#n"));
+    }
+
+    #[test]
+    fn merge_yaml_default_rules_ordering() {
+        // 默认规则口径（见 default_rules 注释）：私有直连在前、GEOSITE,cn 先于
+        // GEOIP,CN、MATCH 兜底在最后；CGNAT（Tailscale）与 link-local 段必含
+        let yaml = "proxies:\n  - {name: N1, type: ss}\n".to_string();
+        let out = merge_yaml(&[yaml], &params()).unwrap();
+        let v: Value = serde_norway::from_str(&out).unwrap();
+        let rules: Vec<String> = v
+            .get("rules")
+            .and_then(|r| r.as_sequence())
+            .unwrap()
+            .iter()
+            .filter_map(|r| r.as_str().map(str::to_string))
+            .collect();
+        let pos = |r: &str| rules.iter().position(|x| x == r).unwrap();
+        assert!(pos("GEOSITE,private,DIRECT") < pos("GEOSITE,cn,DIRECT"));
+        assert!(pos("GEOSITE,cn,DIRECT") < pos("GEOIP,CN,DIRECT"));
+        assert!(pos("GEOIP,CN,DIRECT") < pos("MATCH,节点选择"));
+        assert_eq!(rules.last().unwrap(), "MATCH,节点选择");
+        for cidr in [
+            "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+            "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
+            "IP-CIDR,100.64.0.0/10,DIRECT,no-resolve",
+            "IP-CIDR,169.254.0.0/16,DIRECT,no-resolve",
+            "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
+            "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+        ] {
+            assert!(rules.contains(&cidr.to_string()), "缺私有直连规则 {cidr}");
+        }
     }
 
     #[test]

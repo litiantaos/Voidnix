@@ -162,6 +162,11 @@ Subscriptions and port settings are kept; download the core again to reuse.`,
     en: 'Failed to switch subscription',
   },
   'proxy.nodesUpdated': { 'zh-CN': '已更新 {count} 个节点', en: 'Updated {count} nodes' },
+  'proxy.nodesUpdatedSkipped': {
+    'zh-CN': '已更新 {count} 个节点（跳过 {skipped} 行不支持的协议）',
+    en: 'Updated {count} nodes (skipped {skipped} unsupported lines)',
+  },
+  'proxy.autoUpdateFailed': { 'zh-CN': '自动更新失败', en: 'Auto-update failed' },
   'proxy.updateFailed': { 'zh-CN': '更新失败', en: 'Update failed' },
   'proxy.cleanupSubscriptionFailed': {
     'zh-CN': '清理订阅失败',
