@@ -143,7 +143,9 @@
             </template>
           </template>
           <template #trailing>
-            <i class="i-ri-arrow-right-s-line text-muted" aria-hidden="true" />
+            <BaseButton @click.stop="openSubscriptions">
+              {{ t('proxy.switchSubscription') }}
+            </BaseButton>
           </template>
         </BaseListItem>
 
@@ -198,6 +200,7 @@ const {
   activeSubscription,
   activeSubscriptionTitle,
   activeSubscriptionSubtitle,
+  openSubscriptions,
   hasSelectedNode,
   locateSelected,
   testing,

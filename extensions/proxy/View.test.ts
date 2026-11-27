@@ -175,11 +175,21 @@ describe('proxy View 实时流量面板与按钮主次', () => {
     const nav = rows.find((r) => r.text().includes('机场 A'))!
     expect(nav.text()).toContain('42 节点')
     expect(nav.text()).not.toContain('机场 B') // 非激活订阅不再平铺
-    expect(nav.find('.i-ri-arrow-right-s-line').exists()).toBe(true)
 
     const appStore = useAppStore()
     const openSubview = vi.spyOn(appStore, 'openSubview')
     const search = vi.spyOn(appStore, 'setSearchQuery')
+
+    // 行尾「切换」按钮：显式入口
+    const switchBtn = nav.find('button')
+    expect(switchBtn.text()).toBe('切换')
+    await switchBtn.trigger('click')
+    expect(openSubview).toHaveBeenCalledWith('subscriptions')
+    expect(search).toHaveBeenCalledWith('')
+
+    // 整行回车/双击同入口
+    openSubview.mockClear()
+    search.mockClear()
     await nav.trigger('dblclick')
     expect(openSubview).toHaveBeenCalledWith('subscriptions')
     expect(search).toHaveBeenCalledWith('')

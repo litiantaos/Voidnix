@@ -725,6 +725,7 @@ export function useProxyPanel() {
     activeSubscription,
     activeSubscriptionTitle,
     activeSubscriptionSubtitle,
+    openSubscriptions,
     fmtTrafficRate,
   }
 }
