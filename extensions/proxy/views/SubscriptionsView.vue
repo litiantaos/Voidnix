@@ -8,7 +8,7 @@
       @execute="onExecute"
     >
       <template #item="{ item }">
-        <!-- 添加订阅：底部独立「操作」组的动作行（与其他行一样可键盘选中回车） -->
+        <!-- 添加订阅：顶部独立「操作」组的动作行（与其他行一样可键盘选中回车） -->
         <BaseListItem v-if="item.type === 'add'" :title="t('proxy.addSubscription')" />
 
         <!-- 激活订阅 accent 强调；点击行切换激活，编辑按钮进编辑 -->
@@ -149,7 +149,7 @@ const {
   doRemoveSub,
 } = useSubscriptions()
 
-/// 分组：订阅列表一组；「添加订阅」动作行单独成组置底（与订阅行区分语义）
+/// 分组：置顶「添加订阅」动作行独立一组；其下订阅列表一组
 const groupField = (item: SubscriptionRow) =>
   item.type === 'add' ? t('proxy.group.actions') : t('proxy.group.subscription')
 </script>

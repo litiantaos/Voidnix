@@ -34,16 +34,20 @@ export function useSubscriptions() {
   /// 正在行内更新的订阅 id（空 = 无更新进行中）：该行按钮转 spinner，单飞禁用其余行更新按钮
   const updatingSubId = ref('')
 
-  /// 列表项：订阅行按名称 / 链接过滤，「添加订阅」行按自身标题过滤（与其他行同语义）。
+  /// 列表项：置顶「添加订阅」动作行（独立「操作」组），其下为订阅行。
+  /// 订阅行按名称 / 链接过滤，添加行按自身标题过滤（与其他行同语义）。
   /// 恒返回新数组——增删经引用变化驱动 BaseList 重落选中滑层；订阅元数据更新不改变
   /// 身份，行内文本由各自响应式字段直接刷新。
   const items = computed<SubscriptionRow[]>(() => {
     const q = appStore.searchQuery.trim().toLowerCase()
     const match = (text: string) => !q || text.toLowerCase().includes(q)
-    const rows: SubscriptionRow[] = config.subscriptions
-      .filter((s) => match(s.name || '') || match(s.url || ''))
-      .map((sub) => ({ type: 'subscription', sub }))
+    const rows: SubscriptionRow[] = []
     if (match(t('proxy.addSubscription'))) rows.push({ type: 'add' })
+    rows.push(
+      ...config.subscriptions
+        .filter((s) => match(s.name || '') || match(s.url || ''))
+        .map((sub): SubscriptionRow => ({ type: 'subscription', sub })),
+    )
     return rows
   })
 

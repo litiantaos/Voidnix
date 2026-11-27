@@ -79,15 +79,16 @@ afterEach(() => {
 
 describe('订阅二级界面动作', () => {
   it('回车分派：有节点切换激活；空订阅打开编辑弹窗', async () => {
-    config.activeSubscriptionId = 'b' // 当前激活为空订阅，首行 A 处于非激活态
+    config.activeSubscriptionId = 'b' // 当前激活为空订阅，A 处于非激活态
     const panel = await mountPanel()
 
-    panel.onExecute(panel.items.value[0]!)
+    // 行序：0=添加订阅（操作组），1=A，2=B
+    panel.onExecute(panel.items.value[1]!)
     await flushPromises()
     expect(callsOf(CMD.proxySetActiveSubscription)).toHaveLength(1)
     expect(callsOf(CMD.proxySetActiveSubscription)[0]![1]).toMatchObject({ id: 'a' })
 
-    panel.onExecute(panel.items.value[1]!)
+    panel.onExecute(panel.items.value[2]!)
     await flushPromises()
     expect(panel.showEditModal.value).toBe(true)
     expect(panel.isCreating.value).toBe(false)
@@ -131,7 +132,7 @@ describe('订阅二级界面动作', () => {
     config.subscriptions[0]!.lastError = 'timeout'
     const panel = await mountPanel()
 
-    await panel.refreshSub(subscriptionRow(panel.items.value[0]))
+    await panel.refreshSub(subscriptionRow(panel.items.value[1]))
     await flushPromises()
 
     expect(callsOf(CMD.proxyUpdateSubscription)[0]![1]).toMatchObject({
