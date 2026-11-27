@@ -17,6 +17,9 @@ import {
 } from './config'
 import { fetchSubscription, nodesUpdatedMessage } from './subscriptions'
 
+/// 二级界面列表行：订阅行 + 末尾独立的「添加订阅」动作行（可键盘选中回车）。
+export type SubscriptionRow = { type: 'subscription'; sub: Subscription } | { type: 'add' }
+
 export function useSubscriptions() {
   const appStore = useAppStore()
   const selectedIndex = ref(0)
@@ -31,16 +34,17 @@ export function useSubscriptions() {
   /// 正在行内更新的订阅 id（空 = 无更新进行中）：该行按钮转 spinner，单飞禁用其余行更新按钮
   const updatingSubId = ref('')
 
-  /// 列表项：按搜索词过滤（名称 / 订阅链接包含匹配）。恒返回新数组——
-  /// 增删经引用变化驱动 BaseList 重落选中滑层；订阅元数据更新不改变身份，
-  /// 行内文本由各自响应式字段直接刷新。
-  const items = computed<Subscription[]>(() => {
+  /// 列表项：订阅行按名称 / 链接过滤，「添加订阅」行按自身标题过滤（与其他行同语义）。
+  /// 恒返回新数组——增删经引用变化驱动 BaseList 重落选中滑层；订阅元数据更新不改变
+  /// 身份，行内文本由各自响应式字段直接刷新。
+  const items = computed<SubscriptionRow[]>(() => {
     const q = appStore.searchQuery.trim().toLowerCase()
-    const subs = config.subscriptions
-    if (!q) return [...subs]
-    return subs.filter(
-      (s) => (s.name || '').toLowerCase().includes(q) || (s.url || '').toLowerCase().includes(q),
-    )
+    const match = (text: string) => !q || text.toLowerCase().includes(q)
+    const rows: SubscriptionRow[] = config.subscriptions
+      .filter((s) => match(s.name || '') || match(s.url || ''))
+      .map((sub) => ({ type: 'subscription', sub }))
+    if (match(t('proxy.addSubscription'))) rows.push({ type: 'add' })
+    return rows
   })
 
   // 过滤收缩后选中归首项（防索引指向已滤除行）
@@ -48,10 +52,15 @@ export function useSubscriptions() {
     selectedIndex.value = 0
   })
 
-  /// 回车/双击分派：有节点的订阅切换激活（主操作，仅激活订阅的节点入 mihomo）；
-  /// 空订阅（未配置/未拉取）打开编辑配置。
-  function onExecute(s: Subscription) {
+  /// 回车/双击分派：添加行动作行；有节点的订阅切换激活（主操作，仅激活订阅的节点入
+  /// mihomo）；空订阅（未配置/未拉取）打开编辑配置。
+  function onExecute(row: SubscriptionRow) {
     if (appStore.isComposing) return
+    if (row.type === 'add') {
+      openCreateModal()
+      return
+    }
+    const s = row.sub
     if (s.proxyCount > 0) void setActiveSubscription(s.id)
     else openEditModal(s)
   }
@@ -71,7 +80,7 @@ export function useSubscriptions() {
     }
   }
 
-  /// 组标题「+」：打开新建弹窗（不预创建项，保存时才 add）
+  /// 添加订阅行：打开新建弹窗（不预创建项，保存时才 add）
   function openCreateModal() {
     editingId.value = ''
     isCreating.value = true

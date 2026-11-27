@@ -22,7 +22,7 @@ vi.mock('@/utils/tauri', () => ({ isTauri: false }))
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { config } from './config'
-import { useSubscriptions } from './useSubscriptions'
+import { useSubscriptions, type SubscriptionRow } from './useSubscriptions'
 
 function sub(partial: Partial<{ id: string; name: string; url: string; proxyCount: number }> = {}) {
   return {
@@ -52,6 +52,11 @@ async function mountPanel() {
 
 function callsOf(cmd: string) {
   return vi.mocked(invoke).mock.calls.filter(([c]) => c === cmd)
+}
+
+function subscriptionRow(row: SubscriptionRow | undefined) {
+  if (row?.type !== 'subscription') throw new Error('expected subscription row')
+  return row.sub
 }
 
 beforeEach(() => {
@@ -89,6 +94,18 @@ describe('订阅二级界面动作', () => {
     expect(panel.editForm.value).toEqual({ name: '', url: '' })
   })
 
+  it('添加订阅为独立行：回车打开新建弹窗，不预创建项', async () => {
+    const panel = await mountPanel()
+    const before = config.subscriptions.length
+    const addRow = panel.items.value.find((r) => r.type === 'add')!
+
+    panel.onExecute(addRow)
+
+    expect(panel.showEditModal.value).toBe(true)
+    expect(panel.isCreating.value).toBe(true)
+    expect(config.subscriptions).toHaveLength(before)
+  })
+
   it('新建并保存：拉取成功后落库并自动激活', async () => {
     const panel = await mountPanel()
     panel.openCreateModal()
@@ -114,7 +131,7 @@ describe('订阅二级界面动作', () => {
     config.subscriptions[0]!.lastError = 'timeout'
     const panel = await mountPanel()
 
-    await panel.refreshSub(panel.items.value[0]!)
+    await panel.refreshSub(subscriptionRow(panel.items.value[0]))
     await flushPromises()
 
     expect(callsOf(CMD.proxyUpdateSubscription)[0]![1]).toMatchObject({

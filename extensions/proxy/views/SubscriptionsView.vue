@@ -7,44 +7,45 @@
       :group-title="(g: string) => g"
       @execute="onExecute"
     >
-      <template #group-title="{ group }">
-        <span class="flex-1 min-w-0 truncate">{{ group }}</span>
-        <BaseButton
-          icon="i-ri-add-line"
-          :title="t('proxy.addSubscription')"
-          @click.stop="openCreateModal"
-        />
-      </template>
-
       <template #item="{ item }">
+        <!-- 添加订阅：独立动作行（与其他项同样可键盘选中回车），置于列表末尾 -->
+        <BaseListItem
+          v-if="item.type === 'add'"
+          :title="t('proxy.addSubscription')"
+          icon="i-ri-add-line"
+        />
+
         <!-- 激活订阅 accent 强调；点击行切换激活，编辑按钮进编辑 -->
         <BaseListItem
-          :title="item.name || t('proxy.unnamedSubscription')"
-          :tone="item.id === config.activeSubscriptionId ? 'accent' : undefined"
+          v-else
+          :title="item.sub.name || t('proxy.unnamedSubscription')"
+          :tone="item.sub.id === config.activeSubscriptionId ? 'accent' : undefined"
         >
           <template #subtitle>
-            <template v-if="item.proxyCount">
-              <span truncate>{{ t('proxy.subscriptionCount', { count: item.proxyCount }) }}</span>
+            <template v-if="item.sub.proxyCount">
+              <span truncate>{{
+                t('proxy.subscriptionCount', { count: item.sub.proxyCount })
+              }}</span>
               <!-- 到期时间取自订阅响应头 subscription-userinfo；未提供则省略，过期标 danger -->
-              <template v-if="formatSubExpiry(item.expiresAt)">
+              <template v-if="formatSubExpiry(item.sub.expiresAt)">
                 <span text="muted" shrink="0" ml="3">·</span>
                 <span
-                  :text="isSubExpired(item.expiresAt) ? 'danger' : 'muted'"
+                  :text="isSubExpired(item.sub.expiresAt) ? 'danger' : 'muted'"
                   shrink="0"
                   ml="2"
                   whitespace="nowrap"
                   >{{
-                    t('proxy.subscriptionExpires', { date: formatSubExpiry(item.expiresAt) })
+                    t('proxy.subscriptionExpires', { date: formatSubExpiry(item.sub.expiresAt) })
                   }}</span
                 >
               </template>
             </template>
-            <span v-else truncate>{{ item.url || t('proxy.notConfigured') }}</span>
+            <span v-else truncate>{{ item.sub.url || t('proxy.notConfigured') }}</span>
             <!-- 自动更新失败标记（Rust 拉取失败的持久化原因，悬停可见）：后台静默路径
                  曾只进 console，用户无从发现订阅已陈旧；成功拉取即清除 -->
-            <template v-if="item.lastError">
+            <template v-if="item.sub.lastError">
               <span text="muted" shrink="0" ml="3">·</span>
-              <span text="danger" shrink="0" whitespace="nowrap" :title="item.lastError">{{
+              <span text="danger" shrink="0" whitespace="nowrap" :title="item.sub.lastError">{{
                 t('proxy.autoUpdateFailed')
               }}</span>
             </template>
@@ -53,15 +54,15 @@
             <div flex gap="2">
               <BaseButton
                 icon="i-ri-refresh-line"
-                :loading="updatingSubId === item.id"
-                :disabled="!item.url || updatingSubId !== ''"
+                :loading="updatingSubId === item.sub.id"
+                :disabled="!item.sub.url || updatingSubId !== ''"
                 :title="t('proxy.updateSubscription')"
-                @click.stop="refreshSub(item)"
+                @click.stop="refreshSub(item.sub)"
               />
               <BaseButton
                 icon="i-ri-pencil-line"
                 :title="t('proxy.editSubscription')"
-                @click.stop="openEditModal(item)"
+                @click.stop="openEditModal(item.sub)"
               />
             </div>
           </template>
@@ -139,7 +140,6 @@ const {
   selectedIndex,
   config,
   onExecute,
-  openCreateModal,
   openEditModal,
   refreshSub,
   updatingSubId,
@@ -153,6 +153,6 @@ const {
   doRemoveSub,
 } = useSubscriptions()
 
-/// 单分组列表：组标题即「订阅」，+ 添加订阅（唯一分组，标题同时承担页内语境）
+/// 单分组列表：组标题即「订阅」（页内语境），「添加订阅」作为组内最后一行
 const groupField = () => t('proxy.group.subscription')
 </script>
