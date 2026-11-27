@@ -5,6 +5,7 @@ registerMessages({
   'proxy.group.proxy': { 'zh-CN': '代理', en: 'Proxy' },
   'proxy.group.subscription': { 'zh-CN': '订阅', en: 'Subscriptions' },
   'proxy.group.nodes': { 'zh-CN': '节点', en: 'Nodes' },
+  'proxy.group.actions': { 'zh-CN': '操作', en: 'Actions' },
 
   // ─── View 列表项 ────────────────────────────
   'proxy.enableProxy': { 'zh-CN': '开启代理', en: 'Enable Proxy' },

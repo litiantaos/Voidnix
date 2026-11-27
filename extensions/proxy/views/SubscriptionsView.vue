@@ -8,12 +8,8 @@
       @execute="onExecute"
     >
       <template #item="{ item }">
-        <!-- 添加订阅：独立动作行（与其他项同样可键盘选中回车），置于列表末尾 -->
-        <BaseListItem
-          v-if="item.type === 'add'"
-          :title="t('proxy.addSubscription')"
-          icon="i-ri-add-line"
-        />
+        <!-- 添加订阅：底部独立「操作」组的动作行（与其他行一样可键盘选中回车） -->
+        <BaseListItem v-if="item.type === 'add'" :title="t('proxy.addSubscription')" />
 
         <!-- 激活订阅 accent 强调；点击行切换激活，编辑按钮进编辑 -->
         <BaseListItem
@@ -133,7 +129,7 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import { t } from '@/runtime/i18n'
 import { formatSubExpiry, isSubExpired } from '../logic'
-import { useSubscriptions } from '../useSubscriptions'
+import { useSubscriptions, type SubscriptionRow } from '../useSubscriptions'
 
 const {
   items,
@@ -153,6 +149,7 @@ const {
   doRemoveSub,
 } = useSubscriptions()
 
-/// 单分组列表：组标题即「订阅」（页内语境），「添加订阅」作为组内最后一行
-const groupField = () => t('proxy.group.subscription')
+/// 分组：订阅列表一组；「添加订阅」动作行单独成组置底（与订阅行区分语义）
+const groupField = (item: SubscriptionRow) =>
+  item.type === 'add' ? t('proxy.group.actions') : t('proxy.group.subscription')
 </script>

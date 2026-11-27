@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
-// 订阅二级界面 UI 契约：单分组列表（末尾独立「添加订阅」行）、激活项 accent、
+// 订阅二级界面 UI 契约：订阅列表 + 底部「操作」组（添加订阅行，无图标）、激活项 accent、
 // 行内更新/编辑按钮、搜索过滤与空态。动作细节见 useSubscriptions.test.ts。
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }))
 
@@ -65,12 +65,14 @@ async function mountView() {
 }
 
 describe('proxy SubscriptionsView', () => {
-  it('单分组列表：组标题无按钮，添加订阅为末行，激活订阅 accent 强调', async () => {
+  it('订阅列表 + 底部「操作」组：添加订阅无图标且独占一组', async () => {
     const wrapper = await mountView()
 
-    const header = wrapper.find('.group-header')
-    expect(header.text()).toContain('订阅')
-    expect(header.find('button').exists()).toBe(false)
+    const headers = wrapper.findAll('.group-header')
+    expect(headers).toHaveLength(2)
+    expect(headers[0]!.text()).toContain('订阅')
+    expect(headers[1]!.text()).toContain('操作')
+    expect(headers[0]!.find('button').exists()).toBe(false)
 
     const rows = wrapper.findAll('[role="option"]')
     expect(rows).toHaveLength(3)
@@ -83,9 +85,10 @@ describe('proxy SubscriptionsView', () => {
     // 行内更新 / 编辑次级入口
     expect(rows[1]!.find('button[title="更新订阅"]').exists()).toBe(true)
     expect(rows[1]!.find('button[title="编辑订阅"]').exists()).toBe(true)
-    // 添加订阅：列表末尾独立动作行（与其他行一样参与选中/回车）
+    // 添加订阅：底部独立动作行，无图标
     expect(rows[2]!.text()).toContain('添加订阅')
-    expect(rows[2]!.find('.i-ri-add-line').exists()).toBe(true)
+    expect(rows[2]!.find('.i-ri-add-line').exists()).toBe(false)
+    expect(rows[2]!.find('.fill-mist').exists()).toBe(false)
   })
 
   it('搜索过滤命中名称/链接/添加行；无结果空态', async () => {
@@ -103,6 +106,7 @@ describe('proxy SubscriptionsView', () => {
     rows = wrapper.findAll('[role="option"]')
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('添加订阅')
+    expect(wrapper.findAll('.group-header').map((h) => h.text())).toEqual(['操作'])
 
     appStore.setSearchQuery('nothing-here')
     await nextTick()
