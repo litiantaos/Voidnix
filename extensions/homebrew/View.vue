@@ -464,7 +464,7 @@ function onExecute(item: ListItem) {
   openDetail({ name: item.name, kind: item.kind, version: item.version, desc: item.desc })
 }
 
-// KeepAlive（ContentView max=3）缓存下重进走 onActivated 而非 onMounted，数据拉取统一收口于此
+// KeepAlive 缓存下重进走 onActivated 而非 onMounted，数据拉取统一收口于此（缓存容量见 LIMITS.maxCachedViews）
 let unlistenDone: (() => void) | null = null
 // brew-run-done 已触发标记：事件与 invoke 响应投递通道不同、无顺序保证，查询返回过期
 // Some（操作在 Rust 侧读取后结束、done 先于响应到达）时丢弃恢复，防运行态卡死

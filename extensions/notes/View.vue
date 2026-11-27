@@ -165,6 +165,17 @@ const probeEl = ref<HTMLSpanElement>()
 
 /// text 是唯一真理(cells 是它的视图模型);textIds 维护 code point 索引 → cell id 映射
 const text = ref('')
+
+/// 最近使用行副标题：笔记内容首个非空行。
+const summaryProvider = () => {
+  const line = text.value
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean)
+  return line ?? ''
+}
+onMounted(() => appStore.registerScreenSummary('notes', null, summaryProvider))
+onUnmounted(() => appStore.unregisterScreenSummary('notes', null, summaryProvider))
 const cells = ref<CharCell[]>([])
 
 /** 内容坐标切分点:编辑行行尾 \n 之后(下方完整行块起点)。Infinity = 全在头部。 */

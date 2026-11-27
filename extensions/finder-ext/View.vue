@@ -27,7 +27,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+} from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
@@ -167,6 +176,21 @@ const selectionPaths = ref<string[]>([])
 /** 浏览模式：应用界面进入（非访达快捷键）——无访达上下文，显示全量操作目录，回车提示仅在访达中生效。 */
 const browseMode = ref(false)
 
+/// 最近使用行副标题：访达上下文里选中的文件（浏览模式无内容 → 空，回退 query）。
+const summaryProvider = () => {
+  if (browseMode.value) return ''
+  const paths = selectionPaths.value.length
+    ? selectionPaths.value
+    : videoPaths.value.length
+      ? videoPaths.value
+      : imagePaths.value
+  if (!paths.length) return ''
+  const names = paths.map(baseName)
+  return names.slice(0, 2).join(' / ') + (names.length > 2 ? ` +${names.length - 2}` : '')
+}
+onMounted(() => appStore.registerScreenSummary('finder-ext', null, summaryProvider))
+onUnmounted(() => appStore.unregisterScreenSummary('finder-ext', null, summaryProvider))
+
 /** 上下文可恢复标记：进入 openWith 二级界面（subview）/ 跨扩展跳转（视频 / 图片 / 压缩，
  * 带 from 记忆 Esc 返回目标）期间为 true，重激活 mainView 的 onActivated 消费——保持访达
  * 上下文（选区 / 媒体入口 / open_with 副标题），不重判模式。这些返回路径均无 entryViaShortcut
@@ -224,7 +248,19 @@ function consumeEntryViaShortcut(): boolean {
   return viaShortcut
 }
 
+let firstActivation = true
 onActivated(() => {
+  // 首次激活（含 navigate 重载后的重挂载）没有现场可保留，正常判定模式；
+  // 之后的激活才按 entryIntent 区分。
+  const first = firstActivation
+  firstActivation = false
+  // 最近使用恢复 / 子视图往返（entryIntent 非 fresh）：保留当时的模式与现场，
+  // 只清理一次性控制标记。
+  if (!first && appStore.entryIntent !== 'fresh') {
+    contextResumable = false
+    entryViaShortcut.value = false
+    return
+  }
   // 二级界面 / 跨扩展跳转的返回：保持访达上下文，不切浏览模式
   if (contextResumable) {
     contextResumable = false

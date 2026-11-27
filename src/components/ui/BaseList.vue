@@ -66,6 +66,11 @@ import {
 const inKeepAliveTree = ref(false)
 onActivated(() => {
   inKeepAliveTree.value = true
+  // 新会话进入（entryIntent=fresh）归首项并同步父级镜像；最近使用恢复（resume）与
+  // 内部子视图往返保留现场。仅在「本列表所在的屏被激活」时归零——不再监听
+  // activeExtId 做全局预归零（那会让缓存屏在恢复前就丢掉选中，离开时也一并清掉，
+  // 与最近使用还原现场相悖）；标准列表（KeepAlive 外）不受影响。
+  if (appStore.entryIntent === 'fresh') setSelectedIndex(0)
 })
 
 const instance = getCurrentInstance()
@@ -143,19 +148,6 @@ function setSelectedIndex(index: number) {
   emit('update:selectedIndex', index)
   emit('select', index)
 }
-
-// 跨会话转移（进入/退出/切换扩展）统一归首项；同扩展内 subview 往返（activeExtId
-// 不变）与窗口唤起（focus 不动 activeExtId）保留导航位置。仅作用于 KeepAlive 树内的
-// 自管列表（emit 同步父级镜像，deactivate 不销毁 watch——离开扩展时归零，回来首帧
-// 即首项）；标准列表受控于 MainView 不参与：其 selectedIndex 转移链（exitExtension
-// 的 savedToolIndex 恢复 / 进入扩展 watch 的捕获）自洽，子组件归零回写会覆盖同步
-// 恢复值，破坏受控单向数据流。
-watch(
-  () => appStore.activeExtId,
-  () => {
-    if (inKeepAliveTree.value) setSelectedIndex(0)
-  },
-)
 
 // ── Refs ──
 // 函数 ref 在节点卸载时会收到 null；必须同步释放旧 DOM 引用，否则搜索结果

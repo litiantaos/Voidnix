@@ -110,6 +110,7 @@ export default defineExtension({
   mainView: () => ClipboardView,
   searchBarAccessory: () => ClipboardActions,
   subviews: { config: () => ClipboardSettings },
+  subviewTitle: { config: { 'zh-CN': '设置', en: 'Settings' } },
   listOptions: { multiSelect: true },
   globalShortcuts: [
     {

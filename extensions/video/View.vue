@@ -144,6 +144,15 @@ import {
 
 const appStore = useAppStore()
 
+/// 最近使用行副标题：当前选择的输入文件（批处理折叠 +N）。
+const summaryProvider = () => {
+  const names = st.paths.map(fileNameFromPath)
+  if (!names.length) return ''
+  return names.slice(0, 2).join(' / ') + (names.length > 2 ? ` +${names.length - 2}` : '')
+}
+onMounted(() => appStore.registerScreenSummary('video', null, summaryProvider))
+onUnmounted(() => appStore.unregisterScreenSummary('video', null, summaryProvider))
+
 /** 未拉取完成前不展示「下载」按钮，避免进入时闪一下 */
 const coreLoaded = ref(false)
 const core = ref<CoreStatus>({
@@ -809,11 +818,14 @@ watch(
   { immediate: true },
 )
 
-// 重新进入扩展即新会话：未在处理中的选择清空重置（含 Escape 切走再进、窗口隐藏重唤起
-// 后重挂载——onMounted 后必触发 onActivated）。队列运行中（busy）保留进度上下文。
+// 新会话（搜索 / 工具列表 / 访达跳转进入）才清空未处理的选择；最近使用恢复
+// （resume）与内部视图切换保留现场。队列运行中（busy）一律保留进度上下文。
 // 同页投递（同步早于 activated）置位 holdSelection：跳转进入不是新会话，放行投递。
 onActivated(() => {
   if (st.busy) return
+  // 仅 fresh（搜索 / 工具列表 / 访达跳转进入）清空未处理的选择；最近使用恢复 /
+  // 内部返回 / 重载首挂载（entryIntent 非 fresh）保留现场。
+  if (appStore.entryIntent !== 'fresh') return
   if (holdSelection) {
     holdSelection = false
     return

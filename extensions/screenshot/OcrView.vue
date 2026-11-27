@@ -79,7 +79,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onActivated, onDeactivated } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { t } from '@/runtime/i18n'
@@ -107,6 +107,18 @@ const appStore = useAppStore()
 // 会话状态提升至模块级 ocrSession（见 index.ts）：组件销毁（KeepAlive LRU 驱逐 /
 // navigate 重载）后重挂载恢复现场；此处仅 previewRef / actionIndex 留组件局部
 const session = ocrSession
+
+/// 最近使用行副标题：识别文本的首个非空行。
+const summaryProvider = () => {
+  const line = session.value.ocrText
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean)
+  return line ?? ''
+}
+onMounted(() => appStore.registerScreenSummary('screenshot', 'ocr', summaryProvider))
+onUnmounted(() => appStore.unregisterScreenSummary('screenshot', 'ocr', summaryProvider))
+
 const previewRef = ref<HTMLElement>()
 const actionIndex = ref(0)
 

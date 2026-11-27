@@ -176,7 +176,13 @@ import AgentTextPart from './AgentTextPart.vue'
 import AgentToolStep from './AgentToolStep.vue'
 import AgentReasoningPart from './AgentReasoningPart.vue'
 import { useAgentChat, focusInputTick } from './agent'
-import { getMessageText, isStreamingText, streamLayoutKey, partKey } from './view-logic'
+import {
+  buildHistoryLabel,
+  getMessageText,
+  isStreamingText,
+  streamLayoutKey,
+  partKey,
+} from './view-logic'
 import './agent-step.css'
 
 /** 距底部多少 px 内视为贴底（自动滚底生效） */
@@ -350,15 +356,55 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
+/// 最近使用行副标题：最近一条用户消息（对话的当前任务），单行截断。
+const summaryProvider = () => {
+  const list = agent.messages.value
+  for (let i = list.length - 1; i >= 0; i--) {
+    const msg = list[i]
+    if (!msg || msg.role !== 'user') continue
+    const text = getMessageText(msg)
+    if (text.trim()) return buildHistoryLabel(text, 1)
+  }
+  return ''
+}
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  appStore.registerScreenSummary('agent', null, summaryProvider)
+})
+
+/// 消息 DOM 在 deactivate 时卸载（释放 WebKit 内存），滚动位置随之丢失；按
+/// 「贴底 / 阅读中」记下现场，激活重挂载后恢复：贴底仍贴底（含隐藏期间新增消息），
+/// 阅读中回到原偏移。会话内容常驻 messages 单例，不因卸载丢失。
+let savedScrollTop: number | null = null
+let savedAtBottom = true
+
 onActivated(() => {
   isViewActive.value = true
+  const restoreAtBottom = savedAtBottom && stickToBottom.value
+  nextTick(() => {
+    const el = scrollRef.value
+    if (!el) return
+    if (restoreAtBottom) {
+      scrollToBottomInstant()
+      return
+    }
+    if (savedScrollTop != null) {
+      el.scrollTop = savedScrollTop
+      stickToBottom.value = isNearBottom(el)
+    }
+  })
 })
 onDeactivated(() => {
+  const el = scrollRef.value
+  if (el) {
+    savedScrollTop = el.scrollTop
+    savedAtBottom = isNearBottom(el)
+  }
   isViewActive.value = false
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  appStore.unregisterScreenSummary('agent', null, summaryProvider)
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
 })
 </script>

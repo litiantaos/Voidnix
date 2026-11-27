@@ -29,9 +29,11 @@ vi.mock('@/runtime/search-engine', async (importOriginal) => {
     },
   }
 })
-// 扩展表打桩：两个可见扩展（工具列表断言用）
+// 扩展表打桩：两个可见扩展（工具列表 / 最近使用断言用）
 const mockExts = [
-  { meta: { id: 'ext-a', name: 'Ext A', icon: 'i-a', order: 1 } },
+  {
+    meta: { id: 'ext-a', name: 'Ext A', icon: 'i-a', order: 1 },
+  },
   { meta: { id: 'ext-b', name: 'Ext B', icon: 'i-b', order: 2 } },
 ]
 vi.mock('@/runtime/extension-registry', () => ({
@@ -41,7 +43,9 @@ vi.mock('@/runtime/extension-registry', () => ({
 
 import { useSearchInput } from './useSearchInput'
 import { useAppStore } from '@/stores/app'
-import { SEARCH } from '@/runtime/constants'
+import { useRecentsStore } from '@/stores/recents'
+import { LIMITS, SEARCH } from '@/runtime/constants'
+import { getExtension } from '@/runtime/extension-registry'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { SearchResult } from '@/runtime/types'
@@ -54,9 +58,15 @@ const appResult: SearchResult = {
 }
 
 function makeWrapper() {
+  const appStore = useAppStore()
   const searchInput = ref<HTMLInputElement>()
   const results = ref<SearchResult[]>([])
   const selectedIndex = ref(0)
+  // 真实 activeExtension：模式切换（主界面 ↔ 扩展）依赖 watch 落定现场暂存/恢复
+  const activeExtension = computed(() => {
+    const id = appStore.activeExtId
+    return id ? (getExtension(id) ?? null) : null
+  })
 
   const TestComp = defineComponent({
     setup() {
@@ -64,7 +74,7 @@ function makeWrapper() {
         searchInput,
         results,
         selectedIndex,
-        activeExtension: computed(() => null),
+        activeExtension,
         reset: () => {},
       })
       return { api, onInput: api.onInput }
@@ -84,6 +94,7 @@ const mountedWrappers: ReturnType<typeof mount>[] = []
 
 describe('useSearchInput 默认列表提示行', () => {
   beforeEach(() => {
+    sessionStorage.clear()
     setActivePinia(createPinia())
     searchMock.mockReset()
   })
@@ -129,6 +140,282 @@ describe('useSearchInput 默认列表提示行', () => {
     expect(searchInput.value?.value).toBe('/')
     // 工具列表 = 可见扩展入口（不含提示行）
     expect(results.value.map((r) => r.id)).toEqual(['ext-entry-ext-a', 'ext-entry-ext-b'])
+  })
+
+  it('有最近记录时默认列表顶部平铺最近屏（按屏、副标题区分子视图）', async () => {
+    searchMock.mockImplementation(async (_q: string, onUpdate?: (r: SearchResult[]) => void) => {
+      onUpdate?.([appResult])
+      return [appResult]
+    })
+    // 先无记录：只有 app + 提示行
+    const first = makeWrapper()
+    await flushPromises()
+    expect(first.results.value.map((r) => r.id)).toEqual(['app-1', SEARCH.TOOLS_HINT_ID])
+
+    // 记录两屏后重建：最近行直接置顶（kind=recent，携带恢复目标），无二级入口
+    useRecentsStore().record('ext-a', 'ocr', 'foo')
+    useRecentsStore().record('ext-b', null, '')
+    const second = makeWrapper()
+    await flushPromises()
+    expect(second.results.value.map((r) => r.id)).toEqual([
+      `${SEARCH.RECENT_ID}:ext-b:main`,
+      `${SEARCH.RECENT_ID}:ext-a:ocr`,
+      'app-1',
+      SEARCH.TOOLS_HINT_ID,
+    ])
+    expect(second.results.value[0].data).toMatchObject({ kind: 'recent', extId: 'ext-b' })
+    expect(second.results.value[1].data).toMatchObject({
+      kind: 'recent',
+      extId: 'ext-a',
+      subview: 'ocr',
+      query: 'foo',
+    })
+  })
+
+  it('最近屏超过上限：默认列表只平铺最近 3 条', async () => {
+    const recents = useRecentsStore()
+    recents.record('ext-a', null, '')
+    recents.record('ext-a', 'ocr', '')
+    recents.record('ext-b', null, '')
+    recents.record('ext-b', 'config', '')
+    searchMock.mockResolvedValue([appResult])
+    const { results } = makeWrapper()
+    await flushPromises()
+
+    const recentRows = results.value.filter((r) => r.data?.kind === 'recent')
+    expect(recentRows).toHaveLength(LIMITS.maxRecentViews)
+    expect(recentRows.map((r) => r.id)).toEqual([
+      `${SEARCH.RECENT_ID}:ext-b:config`,
+      `${SEARCH.RECENT_ID}:ext-b:main`,
+      `${SEARCH.RECENT_ID}:ext-a:ocr`,
+    ])
+  })
+
+  it('最近行副标题：内容摘要优先，无摘要回退过滤词，均无为 undefined', async () => {
+    const recents = useRecentsStore()
+    recents.record('ext-a', 'ocr', 'filter', 'report.zip · 12 项')
+    recents.record('ext-b', null, 'foo')
+    recents.record('ext-b', 'config', '')
+    searchMock.mockResolvedValue([appResult])
+    const { results } = makeWrapper()
+    await flushPromises()
+
+    const rows = results.value.filter((r) => r.data?.kind === 'recent')
+    expect(rows.map((r) => r.description)).toEqual([undefined, 'foo', 'report.zip · 12 项'])
+  })
+
+  it('从最近项进入后返回：保留进入前的列表顺序与选中行（不因最近记录置顶而跳位）', async () => {
+    const recents = useRecentsStore()
+    recents.record('ext-a', 'ocr', '')
+    recents.record('ext-b', null, '')
+    searchMock.mockResolvedValue([appResult])
+    const { wrapper, results, selectedIndex } = makeWrapper()
+    await flushPromises()
+    const before = results.value.map((r) => r.id)
+    expect(before[1]).toBe('voidnix:recent:ext-a:ocr')
+    selectedIndex.value = 1
+
+    wrapper.vm.api.resumeScreen('ext-a', 'ocr', '')
+    await flushPromises()
+    expect(useAppStore().activeExtId).toBe('ext-a')
+
+    wrapper.vm.api.exitExtension()
+    await flushPromises()
+
+    // 界面保持进入前的顺序与选中行；记录已更新（下次 fresh 加载才置顶）
+    expect(results.value.map((r) => r.id)).toEqual(before)
+    expect(selectedIndex.value).toBe(1)
+    expect(results.value[1].id).toBe('voidnix:recent:ext-a:ocr')
+    expect(useRecentsStore().views[0]).toMatchObject({ extId: 'ext-a', subview: 'ocr' })
+  })
+
+  it('主快捷键 fresh 唤起：不还原进入前现场（默认列表 + 首项）', async () => {
+    const recents = useRecentsStore()
+    recents.record('ext-a', 'ocr', '')
+    recents.record('ext-b', null, '')
+    searchMock.mockResolvedValue([appResult])
+    const { wrapper, results, selectedIndex } = makeWrapper()
+    await flushPromises()
+    selectedIndex.value = 1
+    wrapper.vm.api.resumeScreen('ext-a', 'ocr', '')
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('window-home'))
+    await flushPromises()
+
+    // fresh 重置读取最新最近记录（ext-a 置顶），选中归首项
+    expect(results.value.slice(0, 2).map((r) => r.id)).toEqual([
+      'voidnix:recent:ext-a:ocr',
+      'voidnix:recent:ext-b:main',
+    ])
+    expect(selectedIndex.value).toBe(0)
+  })
+
+  it('外部子视图 ESC（goHome）：恢复进入前现场', async () => {
+    const recents = useRecentsStore()
+    recents.record('ext-a', 'ocr', '')
+    recents.record('ext-b', null, '')
+    searchMock.mockResolvedValue([appResult])
+    const { wrapper, results, selectedIndex } = makeWrapper()
+    await flushPromises()
+    const before = results.value.map((r) => r.id)
+    selectedIndex.value = 1
+    wrapper.vm.api.resumeScreen('ext-a', 'ocr', '')
+    await flushPromises()
+
+    wrapper.vm.api.goHome()
+    await flushPromises()
+
+    expect(results.value.map((r) => r.id)).toEqual(before)
+    expect(selectedIndex.value).toBe(1)
+  })
+
+  it('工具列表进入扩展再返回：工具列表顺序 + 选中位置恢复', async () => {
+    searchMock.mockResolvedValue([appResult])
+    const { wrapper, results, selectedIndex } = makeWrapper()
+    await flushPromises()
+    wrapper.vm.api.openToolList()
+    await flushPromises()
+    const toolIds = results.value.map((r) => r.id)
+    expect(toolIds.length).toBeGreaterThan(1)
+    selectedIndex.value = 1
+
+    wrapper.vm.api.activateExtension('ext-a')
+    await flushPromises()
+    wrapper.vm.api.exitExtension()
+    await flushPromises()
+
+    expect(results.value.map((r) => r.id)).toEqual(toolIds)
+    expect(selectedIndex.value).toBe(1)
+    expect(useAppStore().searchQuery).toBe('/')
+  })
+
+  it('挂载时已处于扩展模式（navigate 重载恢复）：不加载主界面默认列表', async () => {
+    const appStore = useAppStore()
+    appStore.setActiveExtension('ext-a')
+    const { results } = makeWrapper()
+    await flushPromises()
+
+    // 主界面默认列表（含最近屏 / 提示行）不能落进扩展模式；mock 扩展无 search 无装填
+    expect(searchMock).not.toHaveBeenCalled()
+    expect(results.value).toEqual([])
+  })
+
+  it('从搜索结果进入扩展再返回：恢复 query、结果与选中行', async () => {
+    searchMock.mockResolvedValue([appResult])
+    const appStore = useAppStore()
+    const { wrapper, results, selectedIndex } = makeWrapper()
+    await flushPromises()
+    const searchResults: SearchResult[] = [
+      { id: 'app-1', title: 'App', extId: 'search', data: { kind: 'application' } },
+      { id: 'app-2', title: 'App2', extId: 'search', data: { kind: 'application' } },
+    ]
+    results.value = searchResults
+    appStore.setSearchQuery('safa')
+    selectedIndex.value = 1
+
+    wrapper.vm.api.activateExtension('ext-a')
+    await flushPromises()
+    expect(appStore.searchQuery).toBe('')
+    expect(appStore.activeExtId).toBe('ext-a')
+
+    wrapper.vm.api.exitExtension()
+    await flushPromises()
+
+    expect(appStore.searchQuery).toBe('safa')
+    expect(results.value).toEqual(searchResults)
+    expect(selectedIndex.value).toBe(1)
+  })
+
+  it('扩展间返回（back）不消费主界面现场：最终回主界面仍恢复', async () => {
+    const recents = useRecentsStore()
+    recents.record('ext-a', 'ocr', '')
+    recents.record('ext-b', null, '')
+    searchMock.mockResolvedValue([appResult])
+    const appStore = useAppStore()
+    const { wrapper, results, selectedIndex } = makeWrapper()
+    await flushPromises()
+    const before = results.value.map((r) => r.id)
+    selectedIndex.value = 1
+    wrapper.vm.api.activateExtension('ext-a')
+    await flushPromises()
+
+    // 模拟扩展间导航写入返回目标（真实路径：setActiveExtension(target, from)）
+    appStore.extensionReturnExtId = 'ext-b'
+    wrapper.vm.api.exitExtension()
+    await flushPromises()
+    expect(appStore.activeExtId).toBe('ext-b')
+
+    // 返回目标再 Esc：主界面现场仍在，整体恢复
+    wrapper.vm.api.exitExtension()
+    await flushPromises()
+    expect(results.value.map((r) => r.id)).toEqual(before)
+    expect(selectedIndex.value).toBe(1)
+  })
+
+  it('非主界面进入（快捷键/程序化 subview）退出：保持旧语义，重置默认列表', async () => {
+    searchMock.mockResolvedValue([appResult])
+    const appStore = useAppStore()
+    const { wrapper, results, selectedIndex } = makeWrapper()
+    await flushPromises()
+    selectedIndex.value = 1
+    appStore.setActiveExtension('ext-a')
+    await flushPromises()
+
+    wrapper.vm.api.exitExtension()
+    await flushPromises()
+
+    // 未标记 restorable：返回重置默认列表（同时消除残留结果被回车执行的窗口）
+    expect(selectedIndex.value).toBe(0)
+    expect(results.value[0].id).toBe('voidnix:recent:ext-a:main')
+  })
+
+  it('resumeScreen：resume 意图 + 还原过滤词 + 补开子视图', async () => {
+    searchMock.mockResolvedValue([appResult])
+    const appStore = useAppStore()
+    const { wrapper, searchInput } = makeWrapper()
+    await flushPromises()
+
+    wrapper.vm.api.resumeScreen('ext-a', 'ocr', 'foo')
+
+    expect(appStore.activeExtId).toBe('ext-a')
+    expect(appStore.activeSubview).toBe('ocr')
+    expect(appStore.subviewExternal).toBe(true)
+    expect(appStore.searchQuery).toBe('foo')
+    expect(searchInput.value?.value).toBe('foo')
+    expect(appStore.entryIntent).toBe('resume')
+
+    await flushPromises() // nextTick 清空进入意图（只在激活渲染周期内有效）
+    expect(appStore.entryIntent).toBe('none')
+  })
+
+  it('window-home：扩展屏回主界面并写入最近记录（最近行置顶）', async () => {
+    searchMock.mockResolvedValue([appResult])
+    const appStore = useAppStore()
+    const { results } = makeWrapper()
+    await flushPromises()
+
+    appStore.setActiveExtension('ext-a')
+    appStore.openSubview('ocr')
+    window.dispatchEvent(new CustomEvent('window-home'))
+    await flushPromises()
+
+    expect(appStore.activeExtId).toBeNull()
+    expect(appStore.activeSubview).toBeNull()
+    expect(useRecentsStore().views[0]).toMatchObject({ extId: 'ext-a', subview: 'ocr' })
+    expect(results.value[0].id).toBe(`${SEARCH.RECENT_ID}:ext-a:ocr`)
+  })
+
+  it('window-home：已在主界面时不重置（保留已输入 query）', async () => {
+    searchMock.mockResolvedValue([appResult])
+    const appStore = useAppStore()
+    makeWrapper()
+    await flushPromises()
+    appStore.setSearchQuery('abc')
+
+    window.dispatchEvent(new CustomEvent('window-home'))
+
+    expect(appStore.searchQuery).toBe('abc')
   })
 
   it('整窗视图接管时 window-invoked 不触发剪贴板填充（防 query 污染）', async () => {

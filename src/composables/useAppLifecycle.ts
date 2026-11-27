@@ -13,7 +13,7 @@ import { t, resolveLocalized } from '@/runtime/i18n'
 import { formatShortcutKeys } from '@/utils/format'
 import { isTauri, hideWindow, showWindow } from '@/utils/tauri'
 import { ensureRenderPulse } from '@/utils/render-pulse'
-import { resumeInfiniteAnimations } from '@/utils/dom'
+import { resumeInfiniteAnimations, isModalDialogOpen } from '@/utils/dom'
 import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 import type { ShortcutBinding } from '@/runtime/types'
 
@@ -229,17 +229,26 @@ export function useAppLifecycle(win: Win) {
               hideWindow()
               return
             }
+            // 无目标唤起 = 搜索：扩展屏回主界面（已输入的 query 保留，唤起的全选让
+            // 直接输入覆盖）。重置必须在 show 之前——窗口第一帧即主界面。
+            // 模态弹窗（如 agent 审批）期间不重置：setActiveExtension 会 resolveConfirm(false)
+            // 把审批误拒；整窗视图（首启引导）同理让位。
+            const resetHome =
+              !isModalDialogOpen() && !appStore.fullscreenView && !!appStore.activeExtId
+            if (resetHome) window.dispatchEvent(new CustomEvent('window-home'))
+            // 视图切换时等双帧 paint 再 show（避免合成上一帧旧视图）；未切换则直接 show
+            void showWindow({ waitForPaint: resetHome })
             // 主快捷键从隐藏唤起：通知搜索层检查剪贴板填充
             window.dispatchEvent(new CustomEvent('window-invoked'))
-          } else {
-            // 扩展快捷键动态分发
-            for (const ext of getAllExtensions()) {
-              if (ext.globalShortcuts) {
-                const sc = ext.globalShortcuts.find((s) => s.id === shortcutId)
-                if (sc) {
-                  sc.onExecute(wasVisible)
-                  return
-                }
+            return
+          }
+          // 扩展快捷键动态分发
+          for (const ext of getAllExtensions()) {
+            if (ext.globalShortcuts) {
+              const sc = ext.globalShortcuts.find((s) => s.id === shortcutId)
+              if (sc) {
+                sc.onExecute(wasVisible)
+                return
               }
             }
           }

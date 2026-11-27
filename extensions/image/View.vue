@@ -174,7 +174,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { currentMonitor } from '@tauri-apps/api/window'
 import { CMD } from '@/commands'
@@ -286,11 +286,24 @@ const taskSuffix = computed(() => {
 
 // ── 移除背景 ──
 const inputPath = ref('')
+
 const originalPreview = ref('')
 
 // ── 拼接 ──
 /** 共享图片集合：两工具单一输入源——removeBg 处理其中「当前张」，拼接消费全列表。 */
 const imageFiles = ref<string[]>([])
+
+/// 最近使用行副标题：当前工作区的输入文件（去背景单图 / 拼接多图）。
+const summaryProvider = () => {
+  if (tool.value === 'removeBg') {
+    return inputPath.value ? fileNameFromPath(inputPath.value) : ''
+  }
+  const names = imageFiles.value.map(fileNameFromPath)
+  if (!names.length) return ''
+  return names.slice(0, 2).join(' / ') + (names.length > 2 ? ` +${names.length - 2}` : '')
+}
+onMounted(() => appStore.registerScreenSummary('image', null, summaryProvider))
+onUnmounted(() => appStore.unregisterScreenSummary('image', null, summaryProvider))
 /** 当前工具可操作输入：removeBg 需当前张；拼接需两张起 */
 const hasImage = computed(() =>
   tool.value === 'removeBg' ? !!inputPath.value : imageFiles.value.length >= 2,
@@ -407,14 +420,21 @@ watch(tool, () => {
   }
 })
 
-// 退出扩展（KeepAlive deactivate）：自动清空重置（工具选择保留，同 video 模式语义）
-onDeactivated(() => {
+// 新会话（搜索 / 工具列表进入）清空现场（工具选择保留，同 video 模式语义）；
+// 最近使用恢复 / 子视图往返保留现场（entryIntent 只在进入渲染周期内有效）。
+// 跨扩展投递（pendingInputPaths）同步置位 holdInput：本次激活是投递，不自动清空。
+let holdInput = false
+onActivated(() => {
+  refreshScreenHeight()
+  // 仅 fresh（搜索 / 工具列表进入）清空现场；最近使用恢复 / 子视图往返 / 重载首挂载
+  // （entryIntent 非 fresh）一律保留（重挂载时本就没有组件现场，reset 等价于空操作）。
+  if (appStore.entryIntent !== 'fresh') return
+  if (holdInput) {
+    holdInput = false
+    return
+  }
   reset()
 })
-
-// 屏高刷新：进入扩展时触发（KeepAlive 树内首挂载即触发 activated）；跨屏唤起经
-// window-focused 补刷（获焦回调自带激活判断，deactivated 期间跳过）
-onActivated(refreshScreenHeight)
 onMounted(() => window.addEventListener('window-focused', refreshScreenHeightIfActive))
 onUnmounted(() => {
   clearDoneFlash()
@@ -677,6 +697,11 @@ watch(
   (paths) => {
     if (!paths.length) return
     pendingInputPaths.value = []
+    holdInput = true
+    // 投递未触发激活（本视图已激活）时本帧内即清零，避免残留标记吞掉下一次 fresh 重置
+    void nextTick(() => {
+      holdInput = false
+    })
     if (paths.length === 1) {
       tool.value = 'removeBg'
       addImage(paths[0])

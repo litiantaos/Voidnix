@@ -60,9 +60,9 @@ pub fn show_main(app: &tauri::AppHandle) {
 
 /// 显示主窗口（前端主动调用）。
 ///
-/// 扩展快捷键从隐藏呼出时，前端先 `setActiveExtension` 再调本命令 show，
-/// 确保窗口渲染第一帧时已是目标扩展视图（避免先渲染旧视图再切换的闪现）。
-/// `main` 快捷键无需切换视图，仍由 shortcut.rs callback 自动 show。
+/// 所有快捷键呼唤（含 main）统一由前端先切视图再调本命令 show：扩展快捷键切到目标
+/// 扩展视图；main 从隐藏唤起先重置回搜索主界面（`window-home`）。确保窗口渲染第一帧
+/// 就是目标视图（避免先合成上次的扩展视图再切换的闪现）。
 #[tauri::command]
 pub fn show_window(app: tauri::AppHandle) {
     // show_main 操作 NSWindow（cocoa API 必须 main thread），与 hide_window 同路径

@@ -153,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
@@ -190,6 +190,20 @@ const mode = ref<Mode>('idle')
 /** 当前压缩包信息（与 entries 二级界面共享） */
 const info = archiveInfo
 const inputs = ref<string[]>([])
+
+/// 最近使用行副标题：压缩任务显示源文件，包信息显示包名 + 条目数。
+const summaryProvider = () => {
+  if (mode.value === 'compress') {
+    const names = inputs.value.map(baseName)
+    if (!names.length) return ''
+    return names.slice(0, 2).join(' / ') + (names.length > 2 ? ` +${names.length - 2}` : '')
+  }
+  const i = info.value
+  if (!i) return ''
+  return `${baseName(i.path)} · ${i.entries.length} ${t('archive.entries')}`
+}
+onMounted(() => appStore.registerScreenSummary('archive', null, summaryProvider))
+onUnmounted(() => appStore.unregisterScreenSummary('archive', null, summaryProvider))
 
 /** 压缩密码（不落盘：仅请求体一次性传给命令；经弹窗两次输入设置） */
 const password = ref('')

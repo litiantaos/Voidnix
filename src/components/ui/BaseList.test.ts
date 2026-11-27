@@ -64,41 +64,64 @@ describe('BaseList', () => {
     expect(refs.filter(Boolean)).toHaveLength(0)
   })
 
-  it('跨会话转移（activeExtId 变化）统一归首项并同步父级镜像；受控列表（KeepAlive 外）不参与', async () => {
+  it('自管列表仅 fresh 激活归首项；离开 / resume / 受控列表均保留选中', async () => {
     const appStore = useAppStore()
-    // KeepAlive 包裹：自管列表场景（挂载即 activated，inKeepAliveTree 置位）
-    const selfManaged = mount({
-      setup: () => () => h(KeepAlive, () => h(BaseList, { items: items(10) })),
+    // KeepAlive 宿主：v-if 切换复刻「停用 → 重新激活」时序
+    const active = ref(true)
+    const Host = defineComponent({
+      setup: () => () =>
+        h(KeepAlive, () => (active.value ? h(BaseList, { items: items(10) }) : null)),
     })
-    // 泛型组件 findComponent 类型推断退化为 DOMWrapper，断言回 VueWrapper
-    const list = selfManaged.findComponent(BaseList) as unknown as VueWrapper
-    ;(
-      list.vm.$ as unknown as { setupState: { setSelectedIndex: (i: number) => void } }
-    ).setupState.setSelectedIndex(5)
-    expect(list.emitted('select')?.at(-1)).toEqual([5])
+    const host = mount(Host)
+    type SetupState = {
+      localIndex: number
+      setSelectedIndex: (i: number) => void
+    }
+    const setupState = () =>
+      (
+        (host.findComponent(BaseList) as unknown as VueWrapper).vm.$ as unknown as {
+          setupState: SetupState
+        }
+      ).setupState
 
-    // 进入扩展（null → ext）：归零 + emit 同步镜像
-    appStore.setActiveExtension('clipboard')
+    setupState().setSelectedIndex(5)
+    expect(setupState().localIndex).toBe(5)
+
+    // 离开（挂起）：不归零
+    active.value = false
     await nextTick()
-    expect(list.emitted('select')?.at(-1)).toEqual([0])
-
-    // 退出扩展（ext → null）：再次归零
     appStore.setActiveExtension(null)
     await nextTick()
-    expect(list.emitted('select')?.at(-1)).toEqual([0])
 
-    // 受控列表（KeepAlive 外，标准列表场景）：activeExtId 变化不归零不回写——
-    // exitExtension 同步恢复的 savedToolIndex 不被覆盖
+    // 最近使用恢复（resume）：保留选中
+    appStore.setActiveExtension('clipboard', null, 'resume')
+    active.value = true
+    await nextTick()
+    expect(setupState().localIndex).toBe(5)
+
+    // fresh 进入（回主界面后重新打开扩展）：归首项并同步父级镜像
+    setupState().setSelectedIndex(3)
+    active.value = false
+    await nextTick()
+    appStore.setActiveExtension(null)
+    await nextTick()
+    appStore.setActiveExtension('clipboard')
+    active.value = true
+    await nextTick()
+    expect(setupState().localIndex).toBe(0)
+
+    // 受控列表（KeepAlive 外，标准列表场景）：不走激活归零，也不回写 selectedIndex——
+    // 退出扩展后主界面模式现场（含工具列表选中）恢复不被覆盖
     const controlled = mount(BaseList<Item>, {
       props: { items: items(10), selectedIndex: 5 },
       slots: { item: ({ item }: { item: Item }) => item.title },
     })
-    appStore.setActiveExtension('clipboard')
+    appStore.setActiveExtension('clipboard2')
     await nextTick()
     expect(controlled.emitted('select')).toBeUndefined()
     expect(controlled.emitted('update:selectedIndex')).toBeUndefined()
     // 卸载清 document 键盘监听：残留监听会消费后续用例派发的按键（Enter 执行即消费）
-    selfManaged.unmount()
+    host.unmount()
     controlled.unmount()
   })
 

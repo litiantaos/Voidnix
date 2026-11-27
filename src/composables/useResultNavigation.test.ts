@@ -26,6 +26,7 @@ vi.mock('@/runtime/extension-registry', () => ({
 
 import { useResultNavigation } from './useResultNavigation'
 import { useAppStore } from '@/stores/app'
+import { SEARCH } from '@/runtime/constants'
 import type { SearchResult } from '@/runtime/types'
 
 /// 累积 wrapper：afterEach 统一 unmount，清理 onKeyStroke 注册的 document listener，
@@ -47,6 +48,7 @@ function makeWrapper(opts: {
   const goHome = vi.fn()
   const exitExtension = vi.fn()
   const activateExtension = vi.fn()
+  const resumeScreen = vi.fn()
 
   const TestComp = defineComponent({
     setup() {
@@ -59,6 +61,7 @@ function makeWrapper(opts: {
         activateExtension,
         goHome,
         exitExtension,
+        resumeScreen,
       })
       return { nav }
     },
@@ -78,6 +81,7 @@ function makeWrapper(opts: {
     activateExtension,
     goHome,
     exitExtension,
+    resumeScreen,
   }
 }
 
@@ -316,6 +320,38 @@ describe('useResultNavigation', () => {
 
       expect(exitExtension).not.toHaveBeenCalled()
       expect(hideWindow).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('最近使用行', () => {
+    it('最近项 → resumeScreen（带子视图与离开时过滤词），不走扩展激活', async () => {
+      const ctx = makeWrapper({})
+      const item: SearchResult = {
+        id: `${SEARCH.RECENT_ID}:screenshot:ocr`,
+        title: '截屏',
+        extId: 'voidnix',
+        data: { kind: 'recent', extId: 'screenshot', subview: 'ocr', query: 'foo' },
+      }
+
+      await ctx.wrapper.vm.nav.handleExecute(item)
+
+      expect(ctx.resumeScreen).toHaveBeenCalledWith('screenshot', 'ocr', 'foo')
+      expect(ctx.activateExtension).not.toHaveBeenCalled()
+    })
+
+    it('最近项无子视图 / 无过滤词 → resumeScreen 补空值', async () => {
+      const ctx = makeWrapper({})
+      const item: SearchResult = {
+        id: `${SEARCH.RECENT_ID}:agent:main`,
+        title: 'Agent',
+        extId: 'voidnix',
+        data: { kind: 'recent', extId: 'agent' },
+      }
+
+      await ctx.wrapper.vm.nav.handleExecute(item)
+
+      expect(ctx.resumeScreen).toHaveBeenCalledWith('agent', null, '')
+      expect(ctx.activateExtension).not.toHaveBeenCalled()
     })
   })
 })

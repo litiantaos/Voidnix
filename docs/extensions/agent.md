@@ -122,6 +122,7 @@ defineConfig(AGENT_CONFIG_PATH, {
 - **上翻不打断**：用户上翻阅读时不自动滚底
 - **发送强制贴底**：发送新消息时强制贴底
 - **布局 watch**：用轻量签名（条数 + streaming 长度）+ rAF 合并滚底，流式阶段不插值高度
+- **卸载恢复**：消息 DOM 在 KeepAlive deactivate 时卸载（释放 WebKit 内存），onDeactivated 记录 scrollTop + 是否贴底，onActivated 重挂载后恢复——贴底仍贴底（含隐藏期间新增消息），阅读中回到原偏移
 
 ### 悬浮输入岛
 

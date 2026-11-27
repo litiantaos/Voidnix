@@ -2,12 +2,13 @@ import { ref, watch, type Ref, type ComputedRef, onMounted, onUnmounted } from '
 import { invoke } from '@tauri-apps/api/core'
 import { useTauriListener } from '@/composables/useTauriListener'
 import { searchEngine, getGroupKey, groupRank } from '@/runtime/search-engine'
-import { getAllExtensions } from '@/runtime/extension-registry'
+import { getAllExtensions, getExtension } from '@/runtime/extension-registry'
 import { scoreExtensionEntry } from '@/utils/fuzzy'
 import { resolveLocalized, t } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
+import { useRecentsStore } from '@/stores/recents'
 import { CMD } from '@/commands'
-import { SEARCH } from '@/runtime/constants'
+import { LIMITS, SEARCH } from '@/runtime/constants'
 import type { Extension, SearchResult } from '@/runtime/types'
 import { isTauri } from '@/utils/tauri'
 import { buildOpenUrlResult, buildWebSearchResult, parseWebSearchQuery } from '@/utils/web-search'
@@ -21,6 +22,14 @@ interface SearchInputOptions {
   selectedIndex: Ref<number>
   activeExtension: ComputedRef<Extension | null>
   reset: () => void
+}
+
+/** 主界面模式现场：扩展模式期间暂存，返回主界面时整体恢复（两态模型：
+ *  活动 results/selectedIndex/query 始终属于当前模式，模式切换时交换）。 */
+interface HomeState {
+  results: SearchResult[]
+  selectedIndex: number
+  query: string
 }
 
 /** 全选但不触发系统选中动画：macOS 26 WKWebView 对聚焦元素的选区变更播放选中动画
@@ -87,6 +96,7 @@ function stableMerge(
 /// 搜索状态（results/selectedIndex）由调用方持有并传入，便于与键盘导航共享。
 export function useSearchInput(opts: SearchInputOptions) {
   const appStore = useAppStore()
+  const recents = useRecentsStore()
   const { searchInput, results, selectedIndex, activeExtension, reset } = opts
 
   let searchTimeout: ReturnType<typeof setTimeout> | null = null
@@ -98,8 +108,12 @@ export function useSearchInput(opts: SearchInputOptions) {
   // 下次获焦重跑直接落规范序，让频次/近因升位生效；普通显隐刷新仍走稳定合并，
   // 保持「唤起零重排零跳位」。
   let usageOrderDirty = false
-  // 进入扩展前保存工具列表选中位置，退出回工具列表时恢复
-  let savedToolIndex = 0
+  // 主界面模式现场：扩展模式期间暂存（结果列表 / 选中 / query），退出时整体恢复。
+  // 活动 results/selectedIndex/query 始终属于当前模式；主界面 → 扩展 / 扩展 → 主界面
+  // 由入口/退出函数显式保存与恢复（不依赖 watch 的批量时序）。
+  // 仅用户从主界面选中一行进入（activateExtension / resumeScreen）才暂存；快捷键 /
+  // 程序化 subview 等入口不暂存，退出按旧语义重置默认列表（兼防残留结果被紧接的回车执行）。
+  let homeState: HomeState | null = null
 
   const isLoading = ref(false)
 
@@ -114,19 +128,48 @@ export function useSearchInput(opts: SearchInputOptions) {
     if (searchInput.value) searchInput.value.value = value
   }
 
-  /** 激活扩展：store.setActiveExtension 自动快照入口 query。handleExecute 扩展入口专用。 */
+  /** 从主界面进入扩展（用户从主界面选中一行）时暂存主界面模式现场。 */
+  function saveHomeState() {
+    if (appStore.activeExtId) return
+    homeState = {
+      results: results.value,
+      selectedIndex: selectedIndex.value,
+      query: appStore.searchQuery,
+    }
+  }
+
+  /** 退出扩展回主界面：恢复暂存的主界面现场；无暂存（快捷键 / 程序化入口）重置默认列表。 */
+  function restoreHomeState() {
+    const home = homeState
+    homeState = null
+    ++currentSearchId
+    searchEngine.abort()
+    if (searchTimeout) {
+      clearTimeout(searchTimeout)
+      searchTimeout = null
+    }
+    if (home) {
+      results.value = home.results
+      selectedIndex.value = Math.min(home.selectedIndex, Math.max(0, home.results.length - 1))
+      clearSearch(home.query)
+      isLoading.value = false
+      searchInput.value?.focus()
+      return
+    }
+    clearSearch()
+    isLoading.value = false
+    loadDefaultResults(true)
+  }
+
+  /** 激活扩展：先暂存主界面模式现场，再切扩展模式并清空扩展内 query。handleExecute 专用。 */
   function activateExtension(extId: string) {
+    saveHomeState()
     appStore.setActiveExtension(extId)
     clearSearch()
   }
 
   /** 退出扩展：优先回扩展间导航的来源（setActiveExtension 带 from 记忆的返回目标，消费即
-   *  清空——返回跳转不带 from，来源扩展再 Esc 走下方原入口逻辑）；否则回到入口前状态：
-   *  query 决定返回目标（/ → 工具列表，其余 → 主界面）。
-   *  滚动位置由 setActiveExtension(null) 触发 scrollKey watch 自动 save/restore，此处不再手动处理。
-   *  / 分支先 clearSearch(query) 再 setActiveExtension(null)：让 scrollKey 单调 ext→tools 变化，
-   *  避免 setActiveExtension 先行产生 ext→home 中转态（虽 Vue 批处理合并 watch 不致误触发 clear，
-   *  但线性转换更稳健、不依赖 flush 时序细节）。setActiveExtension 退出分支不读 searchQuery，顺序安全。 */
+   *  清空——返回跳转不带 from，来源扩展再 Esc 回主界面）；否则回主界面并恢复主界面现场。 */
   function exitExtension() {
     const back = appStore.extensionReturnExtId
     if (back) {
@@ -135,29 +178,21 @@ export function useSearchInput(opts: SearchInputOptions) {
       clearSearch()
       return
     }
-    const query = appStore.entryQuery
-    searchEngine.abort()
-    if (query.startsWith('/')) {
-      clearSearch(query)
-      appStore.setActiveExtension(null)
-      results.value = buildToolListResults(query)
-      selectedIndex.value = savedToolIndex
-      if (selectedIndex.value >= results.value.length) selectedIndex.value = 0
-      searchInput.value?.focus()
-      searchInput.value?.select()
-    } else {
-      appStore.setActiveExtension(null)
-      clearSearch()
-      loadDefaultResults(true)
-    }
+    appStore.setActiveExtension(null)
+    restoreHomeState()
   }
 
-  /** 强制回主界面（清空 query + 默认结果）。外部 subview ESC 专用。 */
+  /** 回主界面（外部 subview ESC / 标签关闭）：恢复主界面模式现场。 */
   function goHome() {
-    searchEngine.abort()
     appStore.setActiveExtension(null)
-    clearSearch()
-    loadDefaultResults(true)
+    restoreHomeState()
+  }
+
+  /** 强制回主界面并重建默认列表（主快捷键 fresh 唤起 = 搜索）：丢弃暂存现场后重置。 */
+  function resetHome() {
+    homeState = null
+    if (appStore.activeExtId) appStore.setActiveExtension(null)
+    restoreHomeState()
   }
 
   useTauriListener('app-cache-updated', () => {
@@ -236,6 +271,45 @@ export function useSearchInput(opts: SearchInputOptions) {
     }
   }
 
+  /** 可展示的最近记录：扩展存在且非 hidden（陈旧 / 已卸载记录不占位）。 */
+  function visibleRecentViews() {
+    return recents.views.filter((v) => {
+      const ext = getExtension(v.extId)
+      return !!ext && !ext.meta.hidden
+    })
+  }
+
+  /** 最近使用行（平铺在默认列表顶部，无二级列表）：按屏（extId + subview）记录，
+   *  标题取扩展名；副标题优先用扩展上报的内容摘要（如打开的文件 / 对话 / 文本首行），
+   *  无摘要时回退离开时的过滤词。data 携带离开时的 query，回车经
+   *  useResultNavigation → resumeScreen 恢复。 */
+  function buildRecentResults(): SearchResult[] {
+    const out: SearchResult[] = []
+    for (const view of visibleRecentViews()) {
+      if (out.length >= LIMITS.maxRecentViews) break
+      const ext = getExtension(view.extId)!
+      out.push({
+        id: `${SEARCH.RECENT_ID}:${view.extId}:${view.subview ?? 'main'}`,
+        title: resolveLocalized(ext.meta.name),
+        description: view.summary || view.query.trim() || undefined,
+        icon: ext.meta.icon,
+        extId: 'voidnix',
+        data: {
+          kind: 'recent',
+          extId: view.extId,
+          subview: view.subview ?? undefined,
+          query: view.query,
+        },
+      })
+    }
+    return out
+  }
+
+  /** 默认列表固定行：顶部最近屏（平铺，最多 maxRecentViews 条）+ 尾部工具列表提示行。 */
+  function withPinned(list: SearchResult[]): SearchResult[] {
+    return [...buildRecentResults(), ...list, toolsHintResult()]
+  }
+
   /** 打开 `/` 工具列表（提示行回车入口）：等价于输入 / 的完整链路。 */
   function openToolList() {
     ++currentSearchId
@@ -248,25 +322,41 @@ export function useSearchInput(opts: SearchInputOptions) {
     searchInput.value?.select()
   }
 
+  /** 从最近使用恢复一屏：KeepAlive 命中同一实例（不触发扩展的新会话重置，见
+   *  appStore.entryIntent），同一 tick 内还原离开时的过滤词——搜索型扩展的激活
+   *  watch 在 flush 时读到并按其重跑，mainView 扩展直接按 query 重新过滤。 */
+  function resumeScreen(extId: string, subview: string | null, query: string) {
+    saveHomeState()
+    ++currentSearchId
+    searchEngine.abort()
+    if (searchTimeout) {
+      clearTimeout(searchTimeout)
+      searchTimeout = null
+    }
+    isLoading.value = false
+    appStore.setActiveExtension(extId, null, 'resume')
+    appStore.setSearchQuery(query)
+    if (searchInput.value) searchInput.value.value = query
+    if (subview) appStore.openSubview(subview, true)
+  }
+
   async function loadDefaultResults(resetSelection = false) {
     if (!isTauri) return
     const searchId = ++currentSearchId
-    // 转移入口（退出扩展/回主页/清空输入）显式归首项、规范序；后台刷新（图标就绪/缓存变更/
+    // 显式重置入口（主快捷键 fresh / 非主界面入口返回 / 清空输入）归首项、规范序；后台刷新（图标就绪/缓存变更/
     // 窗口获焦）同 query 稳定合并（旧序为基 + 选中身份跟随），外部 usage/recency 变化
     // 不改当前会话排序；从结果列表打开条目的本地 usage 升位经 search-usage-updated
     // 置脏，获焦重跑时落规范序。
     if (resetSelection) {
-      // 同步落提示行：默认列表异步到达前的窗口期（IPC + 缓存扫描约 10-50ms）内，残留的
-      // 上一会话结果仍占据列表且可被回车执行——退出扩展/goHome 后紧接的回车会把残留
-      // 剪贴板记录直接粘贴出去（无 toast 即关窗）。同步替换杜绝该窗口（与下方 catch
-      // 分支的兜底同款单行，无空态闪烁）。
-      results.value = [toolsHintResult()]
+      // 同步落固定行（最近使用入口 + 提示行）：默认列表异步到达前的窗口期（IPC + 缓存扫描
+      // 约 10-50ms）内，残留的上一会话结果仍占据列表且可被回车执行——非主界面入口返回后
+      // 紧接的回车会把残留剪贴板记录直接粘贴出去（无 toast 即关窗）。同步替换杜绝该窗口
+      // （与下方 catch 分支的兜底同款，无空态闪烁）。
+      results.value = withPinned([])
       selectedIndex.value = 0
     }
     const prevList = resetSelection ? [] : results.value
     const prevSel = resetSelection ? undefined : results.value[selectedIndex.value]
-    // 尾部固定提示行：随每次默认列表刷新（增量与最终）追加
-    const withHint = (list: SearchResult[]) => [...list, toolsHintResult()]
     const apply = (list: SearchResult[], final: boolean) => {
       // app-cache-updated（Rust 元数据代际变更：冷启动就绪/Spotlight 自愈/目录变更重建）
       // 与 search-usage-updated（刚打开过条目）置脏：默认列表的会话序 settle 在旧数据上，
@@ -281,19 +371,19 @@ export function useSearchInput(opts: SearchInputOptions) {
     }
     try {
       const defaultResults = await searchEngine.search('', (partial) => {
-        if (searchId === currentSearchId) apply(withHint(partial), false)
+        if (searchId === currentSearchId) apply(withPinned(partial), false)
       })
       if (searchId === currentSearchId) {
-        apply(withHint(defaultResults), true)
+        apply(withPinned(defaultResults), true)
         defaultOrderDirty = false
         usageOrderDirty = false
       }
     } catch {
       if (searchId === currentSearchId) {
         // 后台刷新失败保留现有列表（不闪空态）；转移入口（resetSelection）或本就为空
-        // 才落提示行单行兜底
+        // 才落固定行兜底
         if (resetSelection || results.value.length === 0) {
-          results.value = [toolsHintResult()]
+          results.value = withPinned([])
           selectedIndex.value = 0
         }
       }
@@ -544,6 +634,14 @@ export function useSearchInput(opts: SearchInputOptions) {
     }
   }
 
+  /** 无目标唤起（主快捷键从隐藏呼出）：扩展屏回主界面——fresh 重置（丢弃进入前暂存的
+   *  主界面现场，默认列表 + 首项，扩展内 query 一并清除）。已在主界面时本函数不动作，
+   *  已输入的 query 保留（唤起后的全选让直接输入覆盖）。由 useAppLifecycle 在 show
+   *  之前派发，保证窗口第一帧就是搜索主界面。 */
+  function onWindowHome() {
+    if (appStore.activeExtId) resetHome()
+  }
+
   /** 窗口唤起（主快捷键从隐藏呼出）时检查剪贴板：最新记录为文本且 3 秒内 → 填充搜索框。
    *  仅主界面填充（「快速搜刚复制内容」特性，query 变化属内容切换）；整窗视图接管 /
    *  扩展激活时跳过——扩展内 query 是列表过滤参数，填充会破坏浏览上下文（剪贴板等
@@ -610,11 +708,18 @@ export function useSearchInput(opts: SearchInputOptions) {
 
   onMounted(async () => {
     if (!activeExtension.value?.disableSearchInput) searchInput.value?.focus()
-    await loadDefaultResults(true)
+    if (appStore.activeExtId) {
+      // WebContent 重载恢复扩展模式：主界面默认列表不属于当前模式（带最近屏/提示行的
+      // 全局列表不能落进扩展标准列表）；搜索型扩展补一次自己的 dynamic 装填。
+      if (isTauri) refreshExtension()
+    } else {
+      await loadDefaultResults(true)
+    }
     // 启动基线：默认结果加载完成后的 JS 堆水位
     probeMem('boot')
     window.addEventListener('window-focused', focusHandler)
     window.addEventListener('window-invoked', maybeFillFromClipboard)
+    window.addEventListener('window-home', onWindowHome)
     window.addEventListener('window-hiding', onWindowHiding)
   })
 
@@ -626,19 +731,27 @@ export function useSearchInput(opts: SearchInputOptions) {
     cancelPendingSelect = null
     window.removeEventListener('window-focused', focusHandler)
     window.removeEventListener('window-invoked', maybeFillFromClipboard)
+    window.removeEventListener('window-home', onWindowHome)
     window.removeEventListener('window-hiding', onWindowHiding)
   })
 
-  // 进入搜索型扩展（无 mainView、有 search）：触发初始 dynamic 装填结果
+  // 进入扩展（含 ext→ext 切换）：失效上一模式在途搜索；搜索型扩展清空活动列表并装填
+  // 自己的 dynamic 结果。主界面现场的保存/恢复在入口/退出函数中显式完成——同 tick
+  // 批量 setActiveExtension（进入+退出）不会触发本 watch，现场恢复不能挂在 watch 上。
   watch(
     () => activeExtension.value?.meta.id,
     (newId, oldId) => {
       if (!newId || newId === oldId) return
-      savedToolIndex = selectedIndex.value
+      ++currentSearchId
+      searchEngine.abort()
+      if (searchTimeout) {
+        clearTimeout(searchTimeout)
+        searchTimeout = null
+      }
+      isLoading.value = false
       const ext = activeExtension.value
       if (!ext || ext.mainView || !ext.search) return
-      // 立即清空旧结果 + 显示 loading：避免 HTTP 返回前残留全局列表/工具列表
-      // （ContentView loading 占位条件 = loading && results.length === 0）
+      // 搜索型扩展：清空活动列表并装填自己的结果
       results.value = []
       selectedIndex.value = 0
       isLoading.value = true
@@ -657,5 +770,6 @@ export function useSearchInput(opts: SearchInputOptions) {
     refreshExtension,
     exitExtension,
     openToolList,
+    resumeScreen,
   }
 }

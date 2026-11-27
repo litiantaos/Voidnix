@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import type { Component } from 'vue'
+import { type Component } from 'vue'
 import { useAppStore } from './app'
+import { useRecentsStore } from './recents'
 import { showToast } from '@/composables/useToast'
 
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
@@ -56,67 +57,11 @@ describe('app store', () => {
       expect(store.activeExtId).toBeNull()
     })
 
-    it('进入扩展快照入口 query（entryQuery）', () => {
+    it('从主界面进入扩展不写最近使用', () => {
       const store = useAppStore()
-      store.setSearchQuery('/calc')
-      store.setActiveExtension('calculator')
-      expect(store.entryQuery).toBe('/calc')
-    })
-
-    it('带 from 的导航记忆 Esc 返回目标，其余激活路径清空', () => {
-      const store = useAppStore()
-      store.setActiveExtension('ai-gateway')
-      expect(store.extensionReturnExtId).toBeNull()
-
-      store.setActiveExtension('ai-providers', 'ai-gateway')
-      expect(store.extensionReturnExtId).toBe('ai-gateway')
-
-      // 返回跳转（不带 from）：目标消费即清空
-      store.setActiveExtension('ai-gateway')
-      expect(store.extensionReturnExtId).toBeNull()
-
-      // 导航后再切第三方扩展：过期目标清空
-      store.setActiveExtension('ai-providers', 'ai-gateway')
-      store.setActiveExtension('notes')
-      expect(store.extensionReturnExtId).toBeNull()
-    })
-
-    it('退出扩展清空 entryQuery', () => {
-      const store = useAppStore()
-      store.setSearchQuery('/calc')
-      store.setActiveExtension('calculator')
-      store.setActiveExtension(null)
-      expect(store.entryQuery).toBe('')
-    })
-
-    it('ext→ext 切换保留原入口（OCR→translate 等跨扩展导航）', () => {
-      const store = useAppStore()
-      store.setSearchQuery('/')
-      store.setActiveExtension('screenshot')
-      store.setSearchQuery('ocr text')
-      // 跨扩展切换不清空 entryQuery，ESC 回到最初进入点
-      store.setActiveExtension('translate')
-      expect(store.entryQuery).toBe('/')
-    })
-
-    it('全局快捷键 toggle 路径：setActiveExtension 后清 query，entryQuery 已先行快照', () => {
-      // 模拟 makeToggleHandler：从工具列表按快捷键进入扩展
-      const store = useAppStore()
-      store.setSearchQuery('/')
-      store.setActiveExtension('clipboard') // 快照 entryQuery='/'
-      store.setSearchQuery('') // toggle handler 清空搜索
-      expect(store.entryQuery).toBe('/')
-      expect(store.searchQuery).toBe('')
-    })
-
-    it('切换扩展时关闭全局 confirm（避免 Teleport 遮罩残留）', async () => {
-      const store = useAppStore()
-      store.setActiveExtension('clipboard')
-      const promise = store.showConfirm({ title: '确认？' })
-      expect(store.isDialogOpen).toBe(true)
-      store.setActiveExtension('translate')
-      expect(store.isDialogOpen).toBe(false)
-      expect(await promise).toBe(false)
+      const recents = useRecentsStore()
+      store.setActiveExtension('agent')
+      expect(recents.views).toHaveLength(0)
     })
   })
 

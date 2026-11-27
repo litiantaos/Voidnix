@@ -25,17 +25,19 @@ export function hideWindow(auto = false) {
   }
 }
 
-/** 显示主窗口（从隐藏呼出：先切视图再 show，避免渲染旧视图闪现）。 */
-export async function showWindow() {
+/** 显示主窗口（从隐藏呼出：先切视图再 show，避免渲染旧视图闪现）。
+ *  waitForPaint=false：视图未切换（同一界面续显），跳过双帧等待直接 show，守住唤起延迟。 */
+export async function showWindow(opts: { waitForPaint?: boolean } = {}) {
   // NSWindow.isVisible 区分两种状态（JS 事件循环 / IPC 不受窗口冻结影响，仅 rAF 被停摆）：
   //  - 从未 orderFront（WKWebView 冻结，rAF 不执行）→ false：直接 invoke 解冻，
   //    首帧无旧 bitmap 不会闪现。
   //  - show-then-hide（hide 不 orderOut，alpha=0 仍 ordered-in）→ true：两层 rAF
   //    等 Vue 视图切换 + paint 完成再 show，避免 orderFront 合成上一帧旧视图闪现。
   if (
-    await getCurrentWindow()
+    opts.waitForPaint !== false &&
+    (await getCurrentWindow()
       .isVisible()
-      .catch(() => false)
+      .catch(() => false))
   ) {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {

@@ -16,9 +16,12 @@ const mocks = vi.hoisted(() => ({
     activeExtId: 'finder-ext' as string | null,
     extensionReturnExtId: null as string | null,
     searchQuery: '',
+    entryIntent: 'fresh' as 'none' | 'fresh' | 'resume',
     openSubview: vi.fn(),
     setActiveExtension: vi.fn(),
     showStatus: vi.fn(),
+    registerScreenSummary: vi.fn(),
+    unregisterScreenSummary: vi.fn(),
   },
 }))
 

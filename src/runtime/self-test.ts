@@ -274,6 +274,11 @@ async function testExtensionViews(): Promise<TestResult[]> {
     )
   }
 
+  // 自测会批量进出扩展（每次离开写入最近使用），Layer 2 需要从干净主界面开始：
+  // 清掉本轮产生的最近记录（sessionStorage + 内存 store 一并清）
+  const { useRecentsStore } = await import('@/stores/recents')
+  useRecentsStore().clear()
+
   return results
 }
 

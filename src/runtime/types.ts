@@ -3,14 +3,20 @@ import type { LocalizedText } from './i18n'
 
 // ─── 搜索结果─────────────────────────────────────────────────
 
-/** 严格枚举：分组依据。file/folder 同属 'file' 组（getGroupKey 合并）。 */
-export type SearchResultKind = 'application' | 'folder' | 'file' | 'extension' | 'clipboard' | 'web'
+/** 严格枚举：分组依据。file/folder 同属 'file' 组（getGroupKey 合并）。
+ *  recent 为框架合成（默认列表顶部平铺的最近使用行），扩展禁止产出。 */
+export type SearchResultKind =
+  'application' | 'folder' | 'file' | 'extension' | 'clipboard' | 'web' | 'recent'
 
 export interface SearchData {
   /** 必填：分组依据（经 getGroupKey 映射到组）。扩展须正确设置。 */
   kind: SearchResultKind
   /** 扩展入口结果专用：kind==='extension' 时必填，框架内置激活此扩展。 */
   extId?: string
+  /** 最近使用结果专用（框架合成）：恢复目标的子视图 id；缺省 = 扩展主视图。 */
+  subview?: string
+  /** 最近使用结果专用（框架合成）：离开该屏时的搜索 / 过滤词，恢复时还原。 */
+  query?: string
   path?: string
   // ── 跨扩展高频共享字段（显式声明以获得类型安全；扩展私有字段走下方索引签名）──
   /** 复制值（currency/ip 等 onExecute 复制的内容）。 */

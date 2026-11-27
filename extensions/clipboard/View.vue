@@ -1,9 +1,8 @@
 <template>
   <!-- 恒在包裹层：无 contain（BaseList 根的 contain:layout 会使内容高度不参与
        撑开滚动容器），空态与列表共存其下；BaseList 常挂（v-show）——v-if 空态
-       切换会卸载 BaseList，其 activeExtId 归零 watch 在卸载期间缺席、重挂载不
-       触发 activated（inKeepAliveTree 停 false），跨会话归零旁路；常挂后归零
-       职责完全回归 BaseList 统一语义 -->
+       切换会卸载 BaseList，其 fresh 激活归零与 inKeepAliveTree 在停用期间缺席、
+       重挂载不触发 activated；常挂后归零职责完全回归 BaseList 统一语义 -->
   <div>
     <BaseEmptyState
       v-if="history.length === 0"
@@ -272,9 +271,8 @@ watch(
     if (id !== 'clipboard') {
       clearTimeout(debounceTimer)
       selectedIds.value = new Set()
-      // 选中归零由 BaseList 统一承载（watch activeExtId 跨会话转移归零；BaseList
-      // 常挂不卸载，归零 watch 恒在）；此处不重置：subview（config）往返也触发
-      // onActivated，重置会破坏往返保留语义
+      // 选中归零由 BaseList 统一承载（fresh 激活归零；BaseList 常挂不卸载，激活即执行）；
+      // 此处不重置：subview（config）往返也触发 onActivated，重置会破坏往返保留语义
     }
   },
 )
@@ -546,10 +544,14 @@ async function deleteItems(ids: string[]) {
 }
 
 onActivated(() => {
+  // 非 fresh（最近使用恢复 / 子视图往返 / 重载首挂载）：保留 tab/type/列表现场
+  // （query 由框架还原；变化时 watcher 会按新过滤条件重拉）。仅 fresh 进入
+  // （搜索 / 工具列表 / 快捷键）走下面的进入重置。
+  if (appStore.entryIntent !== 'fresh') return
   activeTab.value = 'all'
   activeType.value = 'all'
-  // 选中归首项由 BaseList 统一承载（watch activeExtId 跨会话转移归零）；
-  // 此处不重置：subview（config）往返也触发 onActivated，重置会破坏往返保留语义
+  // 选中归首项由 BaseList 统一承载（fresh 激活归零；BaseList 常挂不卸载，激活即执行）；
+  // 此处不重置选中：subview（config）往返也触发 onActivated，重置会破坏往返保留语义
   fetchClipboardHistory('', false)
 })
 

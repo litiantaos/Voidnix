@@ -311,6 +311,7 @@ const {
   goHome,
   exitExtension,
   openToolList,
+  resumeScreen,
 } = useSearchInput({
   searchInput,
   results,
@@ -328,6 +329,7 @@ const { handleExecute } = useResultNavigation({
   goHome,
   exitExtension,
   openToolList,
+  resumeScreen,
 })
 
 /// 整窗视图完结（视图 emit done）：恢复目标（fullscreenReturnExtId，如设置页重看引导）
@@ -354,10 +356,12 @@ useExtensionHeight({
   contentRef: computed(() => contentViewRef.value?.contentRef),
 })
 
-// 滚动位置：仅「工具列表 → 扩展 → 返回工具列表」保留，其余进入一律归顶。
-// - tools → ext：save(tools)（用户深入扩展，预期返回原位继续浏览）
-// - ext → tools：restore 命中记录恢复
-// - home → tools：clear 后 restore，归顶（home 期间记录无效）
+// 滚动位置：屏幕的滚动位属于该屏现场，随最近使用一起恢复。
+// - 离开扩展一律 save（ext→home / ext→ext / ext→tools）
+// - 进入扩展：fresh（搜索 / 工具列表 / 快捷键 / 跨扩展进入）归顶，与 BaseList 的 fresh
+//   归首项一致；resume 与内部子视图往返恢复该屏离开时的滚动位
+// - tools → ext：save(tools)，退出扩展回工具列表时恢复原位
+// - 回 home：恢复离开前位置（最近使用行平铺在默认列表内，随列表一起渲染）
 // 关窗走 alpha=0 不改 store，scrollKey 不变、不触发 watch → 记录与滚动位续读。
 // save 读 watch oldKey（切换前稳定值），clearSearch 改变 searchQuery 不影响判断。
 const scrollKey = computed(() => {
@@ -371,15 +375,24 @@ const scrollKey = computed(() => {
 })
 
 watch(scrollKey, (newKey, oldKey) => {
-  if (oldKey === 'tools' && newKey.startsWith('ext:')) {
+  const newIsExt = newKey.startsWith('ext:')
+  const oldIsExt = oldKey.startsWith('ext:')
+  // 离开一屏先保存它的滚动位
+  if (oldIsExt) {
     save(oldKey)
-  } else if (oldKey.startsWith('ext:') && newKey.startsWith('ext:')) {
-    // 主视图 ↔ 子视图切换：保存前者的滚动位置
+  } else if (oldKey === 'tools' && newIsExt) {
     save(oldKey)
-  } else if (newKey === 'tools' && !oldKey.startsWith('ext:')) {
+  } else if (newKey === 'tools' && !oldIsExt) {
     clear(newKey)
   }
-  restore(newKey)
+
+  if (newIsExt && appStore.entryIntent === 'fresh') {
+    // 新会话进入一屏（无论来自主界面 / 工具列表 / 另一扩展）：归顶
+    reset()
+  } else {
+    // resume / 内部子视图往返：恢复现场（无记录则归顶）
+    restore(newKey)
+  }
 })
 
 // 焦点管理：进入 subview 聚焦滚动容器（防失焦藏窗），离开回搜索框

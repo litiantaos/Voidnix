@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
-import { markRaw, ref, type Component } from 'vue'
+import { markRaw, nextTick, ref, type Component } from 'vue'
 import { searchEngine } from '@/runtime/search-engine'
 import { t } from '@/runtime/i18n'
 import { hideWindow, showWindow } from '@/utils/tauri'
 import { writeText } from '@/utils/clipboard'
 import { showToast, type ToastOptions } from '@/composables/useToast'
+import { useRecentsStore } from './recents'
 
 export interface ConfirmOptions {
   title: string
@@ -42,9 +43,9 @@ function restoreActiveExt(): string | null {
 export const useAppStore = defineStore('app', () => {
   const restoredExtId = restoreActiveExt()
   const activeExtId = ref<string | null>(restoredExtId)
+  /// 当前模式的活动 query（主界面 / 扩展共用同一个输入框；主界面模式现场由
+  /// useSearchInput 在模式切换时暂存/恢复，这里只存活动值）
   const searchQuery = ref('')
-  // 进入扩展时的入口 query 快照：ESC 退出据此决定返回目标（/ → 工具列表，其余 → 主界面）
-  const entryQuery = ref('')
   const isComposing = ref(false)
 
   const isDialogOpen = ref(false)
@@ -60,6 +61,49 @@ export const useAppStore = defineStore('app', () => {
   const subviewExternal = ref(false)
   const shortcutRecording = ref(false)
 
+  /// 本次进入视图的意图（仅在激活渲染周期内有效，本周期后归 none）：
+  /// - fresh：重新开一屏（搜索 / 工具列表 / 快捷键 / 外部事件进入）。扩展可据此清空
+  ///   上次现场（image / video / finder-ext 的「新会话」语义）。
+  /// - resume：从最近使用恢复。保留实例现场，扩展不得执行新会话重置。
+  /// - none：非进入动作的视图切换（子视图往返、内部导航），一律保留现场。
+  const entryIntent = ref<'none' | 'fresh' | 'resume'>('none')
+  // 进入意图代次：清空回调只清理自己写入的那一次（连续激活时旧回调不得覆盖新意图）
+  let entryIntentToken = 0
+
+  /// 每屏内容摘要供给（扩展 View 挂载时注册、卸载时注销；KeepAlive 停用保留——现场仍在，
+  /// 摘要读的是当前状态）。离开一屏时 setActiveExtension 按 extId+subview 读取，随最近
+  /// 记录落库，供默认列表最近行副标题展示（query 兜底）。
+  type ScreenSummaryProvider = () => string | null | undefined
+  const screenSummaryProviders = new Map<string, ScreenSummaryProvider>()
+  function screenSummaryKey(extId: string, subview: string | null) {
+    return `${extId}:${subview ?? ''}`
+  }
+  function registerScreenSummary(
+    extId: string,
+    subview: string | null,
+    provider: ScreenSummaryProvider,
+  ) {
+    screenSummaryProviders.set(screenSummaryKey(extId, subview), provider)
+  }
+  function unregisterScreenSummary(
+    extId: string,
+    subview: string | null,
+    provider: ScreenSummaryProvider,
+  ) {
+    const key = screenSummaryKey(extId, subview)
+    // 身份校验：重挂载新实例先注册时，旧实例的注销不得抹掉新供给
+    if (screenSummaryProviders.get(key) === provider) screenSummaryProviders.delete(key)
+  }
+  function readScreenSummary(extId: string, subview: string | null): string {
+    const provider = screenSummaryProviders.get(screenSummaryKey(extId, subview))
+    if (!provider) return ''
+    try {
+      return provider() ?? ''
+    } catch {
+      return ''
+    }
+  }
+
   /// 整窗视图（框架级）：非 null 时接管整个主窗口（搜索栏 + 内容区让位，MainView 统一渲染）。
   /// 视图组件以 done 事件请求完结；激活/退出策略由供给方（如首启引导）经 watch 驱动。
   const fullscreenView = ref<Component | null>(null)
@@ -70,7 +114,7 @@ export const useAppStore = defineStore('app', () => {
 
   /// 扩展间导航的 Esc 返回目标：setActiveExtension(id, from) 带来源时记忆（如 ai-gateway →
   /// ai-providers），exitExtension 消费；其余激活路径一律清空防过期——返回跳转本身不带
-  /// from，故返回后再 Esc 走原 entryQuery 逻辑，链自然收敛回主界面
+  /// from，故返回后再 Esc 回主界面（主界面模式现场恢复），链自然收敛
   const extensionReturnExtId = ref<string | null>(null)
 
   /// 自测模式一次性标志（main.ts 查询 is_self_test_mode 后置位）：接管式 UI（首启引导等）
@@ -84,16 +128,28 @@ export const useAppStore = defineStore('app', () => {
     return showToast(msg, opts)
   }
 
-  function setActiveExtension(id: string | null, from?: string | null) {
+  function setActiveExtension(
+    id: string | null,
+    from?: string | null,
+    intent: 'fresh' | 'resume' = 'fresh',
+  ) {
     const prevId = activeExtId.value
-    if (id && !prevId) {
-      // 从外部进入扩展：快照入口 query（统一所有激活路径——快捷键 toggle / open-extension
-      // 事件 / 扩展自激活等均经此，避免 useSearchInput 旁路漏存）
-      entryQuery.value = searchQuery.value
-    } else if (!id && prevId) {
-      // 退出扩展：清空
-      entryQuery.value = ''
+    // 离开一屏（ext→ext / ext→home）即写入最近记录——此前 activeSubview / searchQuery 仍是
+    // 离开前的现场。所有离开路径（主快捷键重置 / ESC / 标签关闭 / 快捷键切扩展 /
+    // open-extension 事件）都经本函数收口，扩展零参与；同一扩展重入不算离开。
+    if (prevId && prevId !== id) {
+      useRecentsStore().record(
+        prevId,
+        activeSubview.value,
+        searchQuery.value,
+        readScreenSummary(prevId, activeSubview.value),
+      )
     }
+    // 进入意图只在本次激活的渲染周期内有效（onActivated 为 flush 后置队列，能读到）。
+    // 清空必须排在本次状态变更之后调度：状态变更会先入队渲染 flush，nextTick 才排在其后；
+    // 若提前调度，intent 会在 flush 前被清掉，扩展的 fresh 重置永远读不到。
+    entryIntent.value = id ? intent : 'none'
+    const intentToken = ++entryIntentToken
     // 全局 confirm（App.vue Teleport，不在 KeepAlive 内）：切扩展时按取消收束，避免遮罩残留
     if (isDialogOpen.value && id !== prevId) {
       resolveConfirm(false)
@@ -110,6 +166,16 @@ export const useAppStore = defineStore('app', () => {
     // 扩展 onActivate/onDeactivate 由各 View 的 onActivated/onDeactivated（KeepAlive）承接。
     // 扩展内 BaseDialog 由自身 onDeactivated(dismiss) 关窗。
     searchEngine.setActiveExtension(id ?? undefined)
+    // 状态变更已排队渲染 flush：nextTick 回调排在其后（onActivated 之后）——子视图往返 /
+    // 内部导航不得继承 fresh/resume 语义。双重 nextTick 兜底「此刻没有任何待渲染任务」的
+    // 场景（如消费方尚未订阅 activeExtId）：首个微任务先让同 tick 内的激活入队，第二个
+    // 再挂到渲染之后，保证 onActivated 一定读到本次 intent。
+    void nextTick(() => {
+      void nextTick(() => {
+        // 仅清理本次写入的意图：更晚的激活可能已覆盖，旧回调不得清掉新意图
+        if (intentToken === entryIntentToken) entryIntent.value = 'none'
+      })
+    })
   }
 
   // navigate 重载后恢复：store 创建时若已有持久化激活扩展（重载前活跃），
@@ -174,7 +240,6 @@ export const useAppStore = defineStore('app', () => {
   return {
     activeExtId,
     searchQuery,
-    entryQuery,
     isComposing,
     isDialogOpen,
     dialogOptions,
@@ -191,6 +256,9 @@ export const useAppStore = defineStore('app', () => {
     closeSubview,
     shortcutRecording,
     setShortcutRecording,
+    registerScreenSummary,
+    unregisterScreenSummary,
+    entryIntent,
     fullscreenView,
     setFullscreenView,
     fullscreenReturnExtId,

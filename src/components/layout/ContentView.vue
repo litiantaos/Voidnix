@@ -25,11 +25,10 @@
         flex="~ col"
         :style="mergedContentStyle"
       >
-        <!-- max=3：日常高频扩展（agent/settings/proxy）不超过 3 个同时活跃，超出按 LRU 驱逐。
-             KeepAlive 常驻（v-if 下沉到动态组件）：切换/往返/窗口隐藏唤起一律保留视图
-             状态（选中/滚动/会话）——隐藏时的 layer 释放由 contentRef 的
-             content-visibility:hidden 承担（clearCache），不卸载 DOM。 -->
-        <KeepAlive :max="3">
+        <!-- max：最近使用（5 屏）+ 当前 + 主/子视图切换的父视图余量。KeepAlive 缓存实例的
+             DOM 在内部存储容器（脱离文档），不参与合成；窗口隐藏时 content-visibility
+             另行释放 tile。最近使用恢复依赖命中同一实例，勿按内存直觉调小。 -->
+        <KeepAlive :max="LIMITS.maxCachedViews">
           <component
             v-if="resolvedView"
             :is="resolvedView"
@@ -81,7 +80,7 @@ import { useAppStore } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { hideWindow } from '@/utils/tauri'
-import { WINDOW } from '@/runtime/constants'
+import { WINDOW, LIMITS } from '@/runtime/constants'
 import { t } from '@/runtime/i18n'
 import type { Extension, SearchResult } from '@/runtime/types'
 import BaseList from '@/components/ui/BaseList.vue'

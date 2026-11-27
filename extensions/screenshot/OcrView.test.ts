@@ -17,7 +17,11 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(() => Promise.resolve(() => {})),
 }))
 vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ setActiveExtension: mocks.setActiveExtension }),
+  useAppStore: () => ({
+    setActiveExtension: mocks.setActiveExtension,
+    registerScreenSummary: vi.fn(),
+    unregisterScreenSummary: vi.fn(),
+  }),
   copyAndHide: vi.fn(),
 }))
 // isTauri 置真以覆盖 onMounted 的 get_window_max_height 推导路径；

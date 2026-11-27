@@ -71,6 +71,7 @@ export const enMessages: Msgs = {
 
   // ─── group titles ────────────────────────────
   'group.application': { en: 'Apps' },
+  'group.recent': { en: 'Recent' },
   'group.file': { en: 'Files' },
   'group.extension': { en: 'Extensions' },
   'group.clipboard': { en: 'Clipboard' },

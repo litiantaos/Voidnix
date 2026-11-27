@@ -108,8 +108,20 @@ import { baseName, formatBytes, type EntryPreview } from './logic'
 
 const appStore = useAppStore()
 
-onMounted(() => document.addEventListener('keydown', onPreviewKey, true))
-onUnmounted(() => document.removeEventListener('keydown', onPreviewKey, true))
+/// 最近使用行副标题：包名 + 条目数。
+const summaryProvider = () => {
+  const i = archiveInfo.value
+  if (!i) return ''
+  return `${baseName(i.path)} · ${i.entries.length} ${t('archive.entries')}`
+}
+onMounted(() => {
+  document.addEventListener('keydown', onPreviewKey, true)
+  appStore.registerScreenSummary('archive', 'entries', summaryProvider)
+})
+onUnmounted(() => {
+  document.removeEventListener('keydown', onPreviewKey, true)
+  appStore.unregisterScreenSummary('archive', 'entries', summaryProvider)
+})
 
 /** 进入/重激活二级界面：聚焦顶部搜索框（MainView 的 subview watch 先聚焦滚动容器，
  * nextTick 后再聚焦输入框；KeepAlive 重激活无 onMounted 跟进，onActivated 补齐）。 */

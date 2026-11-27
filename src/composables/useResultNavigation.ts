@@ -22,6 +22,8 @@ interface ResultNavOptions {
   exitExtension: () => void
   /** 打开 `/` 工具列表（useSearchInput 提供；默认列表尾部提示行回车分派） */
   openToolList?: () => void
+  /** 恢复最近使用的一屏（useSearchInput 提供；保留实例现场 + 还原过滤词） */
+  resumeScreen?: (extId: string, subview: string | null, query: string) => void
 }
 
 /// 结果键盘导航：ArrowUp/Down 移动、Enter 执行分派、Escape 返回主界面/关闭窗口。
@@ -37,6 +39,7 @@ export function useResultNavigation(opts: ResultNavOptions) {
     goHome,
     exitExtension,
     openToolList,
+    resumeScreen,
   } = opts
 
   // --- execute ---
@@ -46,6 +49,17 @@ export function useResultNavigation(opts: ResultNavOptions) {
     // 框架合成提示行（空查询默认列表尾部）：打开 / 工具列表
     if (result.id === SEARCH.TOOLS_HINT_ID) {
       openToolList?.()
+      return
+    }
+    // 最近使用行（框架平铺在默认列表顶部）：恢复该活的视图实例（KeepAlive 命中，
+    // 不触发新会话重置），同一 tick 内还原离开时的过滤词；子视图以 external
+    // 打开（ESC 回主界面）。
+    if (result.data?.kind === 'recent' && result.data.extId) {
+      resumeScreen?.(
+        result.data.extId as string,
+        (result.data.subview as string | undefined) ?? null,
+        (result.data.query as string | undefined) ?? '',
+      )
       return
     }
     if (result.data?.kind === 'extension' && result.data.extId) {

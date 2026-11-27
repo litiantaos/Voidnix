@@ -86,6 +86,17 @@ import type { TranslateResult } from './index'
 
 const appStore = useAppStore()
 
+/// 最近使用行副标题：源文本首个非空行。
+const summaryProvider = () => {
+  const line = inputText.value
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean)
+  return line ?? ''
+}
+onMounted(() => appStore.registerScreenSummary('translate', null, summaryProvider))
+onUnmounted(() => appStore.unregisterScreenSummary('translate', null, summaryProvider))
+
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const selectedIndex = ref(0)
 /** 正在朗读的结果下标（null = 无）。自然结束 / 被取代 / 停止时复位。 */

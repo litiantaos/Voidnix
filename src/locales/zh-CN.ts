@@ -73,6 +73,7 @@ export const zhCNMessages: Msgs = {
 
   // ─── group titles ────────────────────────────
   'group.application': { 'zh-CN': '应用' },
+  'group.recent': { 'zh-CN': '最近' },
   'group.file': { 'zh-CN': '文件' },
   'group.extension': { 'zh-CN': '扩展' },
   'group.clipboard': { 'zh-CN': '剪贴板' },

@@ -22,6 +22,7 @@ export default defineExtension({
   mainView: () => AgentView,
   searchBarAccessory: () => AgentActions,
   subviews: { config: () => AgentSettings },
+  subviewTitle: { config: { 'zh-CN': '设置', en: 'Settings' } },
   windowHeight: 840,
   globalShortcuts: [
     {

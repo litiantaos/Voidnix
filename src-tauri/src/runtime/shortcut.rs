@@ -13,6 +13,9 @@ use crate::runtime::lock_or_recover;
 
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(false);
 static LAST_SHOW_MS: AtomicU64 = AtomicU64::new(0);
+/// 快捷键代次：每次按键自增。主快捷键的前端 show 有 200ms 兜底定时器——期间若又按了
+/// 任意快捷键（含再次按主键隐藏），代次变化即作废兜底，避免重复 show 把隐藏的窗口拽回来。
+static SHORTCUT_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -195,6 +198,7 @@ pub async fn register_global_shortcut(
                 }
 
                 let was_visible = WINDOW_VISIBLE.load(Ordering::Acquire);
+                let seq = SHORTCUT_SEQ.fetch_add(1, Ordering::AcqRel) + 1;
                 let _ = app.emit(
                     "shortcut-pressed",
                     serde_json::json!({ "id": sid, "wasVisible": was_visible }),
@@ -223,16 +227,36 @@ pub async fn register_global_shortcut(
 
                     if let Ok(hooks) = SHORTCUT_HOOKS.lock() {
                         if let Some(hook) = hooks.get(&id_for_check) {
-                            if hook(&app_handle, &ctx) {
-                                return;
-                            }
+                            // 返回值仅表示「钩子已消费」（旧契约：消费后跳过自动 show）；
+                            // show 已统一归前端，此处无后续动作，忽略即可。
+                            let _ = hook(&app_handle, &ctx);
                         }
                     }
 
-                    // 仅 main 快捷键自动 show；扩展快捷键由前端 onExecute 控制时序
-                    // （先 setActiveExtension 再 invoke show_window，避免渲染旧视图闪现）
+                    // 快捷键 show 统一由前端控制（先切视图 / 重置主界面再 invoke show_window，
+                    // 避免窗口先合成一帧上次的扩展视图）。main 从隐藏唤起同样走前端：
+                    // 「唤起 = 搜索」需要先 setActiveExtension(null) 再 show。
+                    //
+                    // 主快捷键是唯一常驻的唤醒通道：WebContent 冻结 / navigate 重载期间前端
+                    // 监听缺席，前端 show 不会发出。200ms 后若窗口仍隐藏且期间没有新按键，
+                    // Rust 兜底 show（代价是可能先呈现旧视图，随后前端恢复再重置——好过按键
+                    // 静默失效）。代次守卫防「主键唤起后 200ms 内又按主键隐藏」被兜底拽回。
                     if window_hidden && id_for_check == "main" {
-                        crate::runtime::window::show_main(&app_handle);
+                        let app_for_fallback = app_handle.clone();
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                            if SHORTCUT_SEQ.load(Ordering::Acquire) != seq
+                                || WINDOW_VISIBLE.load(Ordering::Acquire)
+                            {
+                                return;
+                            }
+                            let app_inner = app_for_fallback.clone();
+                            let _ = app_for_fallback.run_on_main_thread(move || {
+                                if !WINDOW_VISIBLE.load(Ordering::Acquire) {
+                                    crate::runtime::window::show_main(&app_inner);
+                                }
+                            });
+                        });
                     }
                 });
             }

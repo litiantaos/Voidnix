@@ -122,6 +122,7 @@ export default defineExtension({
   mainView: () => ScreenshotView,
   subviews: { ocr: () => ScreenshotOcr },
   subviewHeights: { ocr: 'auto' },
+  subviewTitle: { ocr: { 'zh-CN': '文字识别', en: 'Text Recognition' } },
   disableSearchInput: true,
   setup: () => {
     // 录屏参数权威在 Rust（overlay 是子窗口，无 store 权限、config 为纯内存默认值）。
