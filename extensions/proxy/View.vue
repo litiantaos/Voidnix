@@ -43,13 +43,7 @@
     >
       <template #group-title="{ group }">
         <span class="flex-1 min-w-0 truncate">{{ group }}</span>
-        <BaseButton
-          v-if="group === t('proxy.group.subscription')"
-          icon="i-ri-add-line"
-          :title="t('proxy.addSubscription')"
-          @click.stop="openCreateModal"
-        />
-        <template v-else-if="group === t('proxy.group.nodes')">
+        <template v-if="group === t('proxy.group.nodes')">
           <BaseButton
             icon="i-ri-focus-3-line"
             :disabled="!hasSelectedNode"
@@ -130,56 +124,25 @@
           </template>
         </BaseListItem>
 
-        <!-- 订阅项（active=激活订阅，accent 强调；点击行切换激活，编辑按钮进编辑） -->
-        <BaseListItem
-          v-else-if="item.type === 'subscription'"
-          :title="item.sub.name || t('proxy.unnamedSubscription')"
-          :tone="item.active ? 'accent' : undefined"
-        >
-          <template #subtitle>
-            <template v-if="item.sub.proxyCount">
-              <span truncate>{{
-                t('proxy.subscriptionCount', { count: item.sub.proxyCount })
-              }}</span>
-              <!-- 到期时间取自订阅响应头 subscription-userinfo；未提供则省略，过期标 danger -->
-              <template v-if="formatSubExpiry(item.sub.expiresAt)">
-                <span text="muted" shrink="0" ml="3">·</span>
-                <span
-                  :text="isSubExpired(item.sub.expiresAt) ? 'danger' : 'muted'"
-                  shrink="0"
-                  ml="2"
-                  whitespace="nowrap"
-                  >{{
-                    t('proxy.subscriptionExpires', { date: formatSubExpiry(item.sub.expiresAt) })
-                  }}</span
-                >
-              </template>
-            </template>
-            <span v-else truncate>{{ item.sub.url || t('proxy.notConfigured') }}</span>
-            <!-- 自动更新失败标记（Rust 拉取失败的持久化原因，悬停可见）：后台静默路径
-                 曾只进 console，用户无从发现订阅已陈旧；成功拉取即清除 -->
-            <template v-if="item.sub.lastError">
+        <!-- 订阅入口（二级界面）：标题=当前激活订阅，副标题=节点数/到期；
+             完整列表、添加、编辑、更新、激活切换均在 subscriptions 子视图 -->
+        <BaseListItem v-else-if="item.type === 'subscriptions'" :title="activeSubscriptionTitle">
+          <template v-if="activeSubscription" #subtitle>
+            <span truncate>{{ activeSubscriptionSubtitle }}</span>
+            <!-- 自动更新失败标记（Rust 拉取失败的持久化原因，悬停可见） -->
+            <template v-if="activeSubscription.lastError">
               <span text="muted" shrink="0" ml="3">·</span>
-              <span text="danger" shrink="0" whitespace="nowrap" :title="item.sub.lastError">{{
-                t('proxy.autoUpdateFailed')
-              }}</span>
+              <span
+                text="danger"
+                shrink="0"
+                whitespace="nowrap"
+                :title="activeSubscription.lastError"
+                >{{ t('proxy.autoUpdateFailed') }}</span
+              >
             </template>
           </template>
           <template #trailing>
-            <div flex gap="2">
-              <BaseButton
-                icon="i-ri-refresh-line"
-                :loading="updatingSubId === item.sub.id"
-                :disabled="!item.sub.url || updatingSubId !== ''"
-                :title="t('proxy.updateSubscription')"
-                @click.stop="refreshSub(item.sub)"
-              />
-              <BaseButton
-                icon="i-ri-pencil-line"
-                :title="t('proxy.editSubscription')"
-                @click.stop="openEditModal(item.sub)"
-              />
-            </div>
+            <i class="i-ri-arrow-right-s-line text-muted" aria-hidden="true" />
           </template>
         </BaseListItem>
 
@@ -213,66 +176,14 @@
         </BaseListItem>
       </template>
     </BaseList>
-
-    <!-- 订阅编辑弹窗 -->
-    <BaseDialog
-      v-if="showEditModal"
-      :title="isCreating ? t('proxy.addSubscription') : t('proxy.editSubscription')"
-      variant="form"
-      size="md"
-      show-footer
-      :ok-label="t('common.save')"
-      @confirm="saveSub"
-      @cancel="closeEditModal"
-    >
-      <div flex="~ col" gap="3">
-        <div class="form-field">
-          <span class="form-label">{{ t('proxy.subscriptionName') }}</span>
-          <BaseInput
-            v-model="editForm.name"
-            :placeholder="t('proxy.subscriptionNamePlaceholder')"
-          />
-        </div>
-        <div class="form-field">
-          <span class="form-label">{{ t('proxy.subscriptionUrl') }}</span>
-          <BaseInput v-model="editForm.url" :placeholder="t('proxy.subscriptionUrlPlaceholder')" />
-        </div>
-      </div>
-      <template #footer-start>
-        <BaseButton
-          v-if="!isCreating && config.subscriptions.length > 1"
-          variant="danger"
-          @click="confirmRemoveFromModal"
-        >
-          {{ t('common.delete') }}
-        </BaseButton>
-      </template>
-    </BaseDialog>
-
-    <!-- 删除订阅确认 -->
-    <BaseDialog
-      v-if="deletingSub"
-      :title="t('proxy.deleteSubscription')"
-      size="sm"
-      show-footer
-      :ok-label="t('common.delete')"
-      @confirm="doRemoveSub"
-      @cancel="deletingSub = null"
-    >
-      <div text="sm secondary">
-        {{ t('proxy.deleteConfirm', { name: deletingSub.name || t('proxy.unnamedSubscription') }) }}
-      </div>
-    </BaseDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
 import { useProxyPanel } from './useProxyPanel'
 import TrafficSparkline from './TrafficSparkline.vue'
 import { t } from '@/runtime/i18n'
@@ -283,7 +194,9 @@ const {
   items,
   selectedIndex,
   onExecute,
-  openCreateModal,
+  activeSubscription,
+  activeSubscriptionTitle,
+  activeSubscriptionSubtitle,
   hasSelectedNode,
   locateSelected,
   testing,
@@ -312,19 +225,6 @@ const {
   onGroupChange,
   delayColor,
   formatDelay,
-  formatSubExpiry,
-  isSubExpired,
-  showEditModal,
-  isCreating,
-  closeEditModal,
-  saveSub,
-  editForm,
-  openEditModal,
-  refreshSub,
-  updatingSubId,
-  confirmRemoveFromModal,
-  deletingSub,
-  doRemoveSub,
   fmtTrafficRate,
 } = p
 // template ref 须保持与 ref 同名顶层绑定（locateSelected / onExecute 在 composable 内消费）

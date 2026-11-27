@@ -35,8 +35,10 @@ vi.mock('@tauri-apps/plugin-store', () => ({
 }))
 
 import { invoke } from '@tauri-apps/api/core'
+import { useAppStore } from '@/stores/app'
 import '@/locales'
 import './locales'
+import { config } from './config'
 import View from './View.vue'
 
 let coreDownloaded = true
@@ -60,7 +62,13 @@ beforeEach(() => {
   coreDownloaded = true
   updateAvailable = false
   proxyEnabled = false
+  config.subscriptions = [emptySub('default')]
+  config.activeSubscriptionId = 'default'
 })
+
+function emptySub(id: string, name = '', url = '', proxyCount = 0) {
+  return { id, name, url, updatedAt: '', expiresAt: '', proxyCount }
+}
 
 const wrappers: ReturnType<typeof mount>[] = []
 
@@ -152,5 +160,28 @@ describe('proxy View 实时流量面板与按钮主次', () => {
     expect(buttons.map((b) => b.text())).toContain('已开启')
     expect(buttons.some((b) => b.attributes('title') === '下载更新')).toBe(false)
     expect(buttons.find((b) => b.text() === '已开启')!.classes()).toContain('ui-btn-primary')
+  })
+
+  it('订阅列表收束为单个入口：只显示激活订阅摘要，回车进入二级界面', async () => {
+    config.subscriptions = [
+      emptySub('a', '机场 A', 'https://a.example/sub', 42),
+      emptySub('b', '机场 B', 'https://b.example/sub', 88),
+    ]
+    config.activeSubscriptionId = 'a'
+    const wrapper = mountView()
+    await flush()
+
+    const rows = wrapper.findAll('[role="option"]')
+    const nav = rows.find((r) => r.text().includes('机场 A'))!
+    expect(nav.text()).toContain('42 节点')
+    expect(nav.text()).not.toContain('机场 B') // 非激活订阅不再平铺
+    expect(nav.find('.i-ri-arrow-right-s-line').exists()).toBe(true)
+
+    const appStore = useAppStore()
+    const openSubview = vi.spyOn(appStore, 'openSubview')
+    const search = vi.spyOn(appStore, 'setSearchQuery')
+    await nav.trigger('dblclick')
+    expect(openSubview).toHaveBeenCalledWith('subscriptions')
+    expect(search).toHaveBeenCalledWith('')
   })
 })

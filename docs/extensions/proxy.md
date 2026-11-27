@@ -5,19 +5,25 @@ Clash 风格代理扩展（统一 TUN 模式）。运行时按需下载 mihomo�
 ## 架构
 
 ```
-前端（Vue，单主界面分组列表）        Rust（native/）
-View.vue（模板）+ useProxyPanel.ts（状态/动作）+ logic.ts / config.ts
-Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规则/日志）
-  ├ 代理组：开启/模式    ──invoke──→ mod.rs 命令入口
-  ├ 订阅组：导入/更新/删除           ├ lifecycle.rs  状态机（启停/热重载/健康监测/启动复用）
-  └ 节点组：列表/切换/测速/分组切    ├ menu.rs       菜单栏贡献
-                                     ├ core.rs       binary 写盘 + 版本
-                                     ├ subscription.rs 拉取+归一化+合并 Clash YAML
-                                      ├ subconv.rs    通用格式订阅→Clash YAML 转译
-                                     ├ controller.rs ──reqwest──→ mihomo API
-                                     ├ tun.rs        osascript 提权 root
-                                     └ stream.rs     traffic/connections/logs WS
+前端（Vue）
+  View.vue / useProxyPanel.ts / logic.ts / config.ts   主视图
+  subscriptions.ts                                     拉取/自动更新/激活摘要
+  views/SubscriptionsView.vue + useSubscriptions.ts    订阅二级界面
+  Actions.vue + views/ 三诊断视图（连接/规则/日志）      搜索栏入口
+
+Rust（native/）
+  mod.rs          命令入口
+  lifecycle.rs    状态机（启停/热重载/健康监测/启动复用）
+  menu.rs         菜单栏贡献
+  core.rs         binary 写盘 + 版本
+  subscription.rs 拉取+归一化+合并 Clash YAML
+  subconv.rs      通用格式订阅→Clash YAML 转译
+  controller.rs   ──reqwest──→ mihomo API
+  tun.rs          osascript 提权 root
+  stream.rs       traffic/connections/logs WS
 ```
+
+主视图三组：**代理**（开启/模式）· **订阅**（入口行 → `subscriptions` 二级界面）· **节点**（列表/切换/测速/分组）。
 
 **端口与协议**：
 
@@ -25,13 +31,14 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
 - mihomo 监听 **`external-controller`**（RESTful API，bearer secret 鉴权）
 - 订阅侧不解析协议语义：Clash YAML 的 proxies/proxy-groups/rules 原样合并；通用格式订阅（分享链接列表/整体 base64，vless/hysteria2/vmess/trojan/ss 五种 scheme，含 ws/grpc 传输、reality、alpn、自签放行、hy2 obfs/带宽）经 **`subconv.rs`** 机械转译为 `proxies:` 条目（字段映射不含协议逻辑、重名追加序号去重），产出仍走同一合并管线
 
-**UI 结构**：主界面三个分组（代理/订阅/节点）+ 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，菜单栏常显开关 + 订阅自动更新开关/间隔 + 重启内核/停止内核（daemon 已装才展示）+ 完全卸载入口）：
+**UI 结构**：主界面三个分组（代理/订阅/节点）+ 订阅二级界面 + 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，菜单栏常显开关 + 订阅自动更新开关/间隔 + 重启内核/停止内核（daemon 已装才展示）+ 完全卸载入口）：
 
 - **代理分组**：含开启/规则模式两项；代理开启时视图顶部为**实时流量面板**（`soft-card` 容器对齐 ai-gateway 拓扑图：↓ 下载 / ↑ 上传两列，`/traffic` WS 每秒推送、`tabular-nums` 防抖；每列一条 60s 速率曲线——SVG 迷你折线 + 淡面积，窗口内峰值归一化、右对齐滚动，样本不足两点显示 0 横线占位，起线后 0 段垫在窗口左侧与真实曲线相接、随窗口填满自然退出）；开启项副标题只保留核心版本、健康异常与更新提示。开关为主操作，有核心新版时出现带框图标按钮「下载更新」（icon-only，title 提示）——回车/点击行的默认动作恒为开关连接
-- **订阅分组**：导入/更新/删除；多订阅时仅激活订阅生效（点击有节点的订阅行切换激活，accent 强调当前激活项；空订阅点击进编辑，编辑按钮随时进编辑）。行内「更新」按钮按现有 URL 重新拉取（与弹窗保存共用 `proxy_update_subscription`；激活订阅更新后节点列表整体替换并清测速缓存，非激活订阅仅回填元数据），新建订阅拉取成功自动激活。副标题展示节点数与**到期日期**（取自订阅响应头 `subscription-userinfo` 的 `expire` 字段，未提供则省略；已到期标 danger），另有可配置间隔的后台自动更新（见「订阅拉取与热重载」）
+- **订阅分组**：单行入口——标题为当前激活订阅（空配置回退「未命名订阅」），副标题为节点数与**到期日期**（取自订阅响应头 `subscription-userinfo` 的 `expire` 字段，未提供则省略；自动更新失败追加红色标记），行尾箭头提示可进入。回车/点击进入 **`subscriptions` 二级界面**（不再把全部订阅平铺在主列表），过滤词不进二级界面（节点搜索语义不同）
+- **订阅二级界面**（`views/SubscriptionsView.vue`，subview `subscriptions`，搜索栏 placeholder「搜索订阅」）：单分组列表 + 组标题「+」添加；搜索过滤订阅名称/链接，Esc 返回主视图。多订阅时仅激活订阅生效（点击有节点的订阅行切换激活，accent 强调当前激活项；空订阅点击进编辑，编辑按钮随时进编辑）。行内「更新」按钮按现有 URL 重新拉取（与弹窗保存共用 `proxy_update_subscription`；激活订阅更新后节点列表整体替换并清测速缓存，非激活订阅仅回填元数据），新建订阅拉取成功自动激活。另有可配置间隔的后台自动更新（见「订阅拉取与热重载」）；激活切换/激活订阅更新经 config 与 `proxy-subscription-updated` 事件通知主视图，主视图重新激活时统一重载节点列表（停用期间只置脏，不后台请求）
 - **节点分组**：列表/切换/测速；多 selector 分组订阅时节点组首项出现分组切换器
 
-**搜索过滤**：主搜索栏统一过滤当前视图——主界面按名过滤节点，诊断子视图过滤连接/规则/日志（切视图清空查询）。
+**搜索过滤**：主搜索栏统一过滤当前视图——主界面按名过滤节点与订阅入口，订阅二级界面过滤订阅名称/链接，诊断子视图过滤连接/规则/日志（切视图清空查询）。
 
 **诊断入口**（搜索栏右侧，toggle 切换）：连接/规则/日志三个子视图：
 

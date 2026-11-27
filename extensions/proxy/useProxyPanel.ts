@@ -1,4 +1,5 @@
-/// proxy 主视图状态与动作（View.vue 仅模板）。
+/// proxy 主视图状态与动作（View.vue 仅模板）。订阅数据/自动更新见 ./subscriptions，
+/// 订阅列表交互见订阅二级界面 ./useSubscriptions（本模块只保留入口行与节点列表联动）。
 
 import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, watch } from 'vue'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -7,15 +8,8 @@ import { isTauri } from '@/utils/tauri'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { t } from '@/runtime/i18n'
-import { whenConfigReady } from '@/runtime/storage'
-import { parseUtcMs } from '@/utils/datetime'
-import {
-  type Subscription,
-  config,
-  addSubscription,
-  updateSubscription,
-  removeSubscription,
-} from './config'
+import { config } from './config'
+import { activeSubscription } from './subscriptions'
 import { generateRequestId } from '@/utils/id'
 import {
   type ProxiesResponse,
@@ -25,7 +19,6 @@ import {
   filterNodes,
   formatDelay,
   formatSubExpiry,
-  isSubExpired,
   isUserSelectorGroup,
   latestDelay,
 } from './logic'
@@ -48,12 +41,7 @@ export interface TrafficFrame {
 export type ListItem =
   | { type: 'enabled'; group: string }
   | { type: 'mode'; group: string }
-  | {
-      type: 'subscription'
-      group: string
-      sub: Subscription
-      active: boolean
-    }
+  | { type: 'subscriptions'; group: string }
   | { type: 'groupSelector'; group: string }
   | { type: 'node'; group: string; node: NodeItem }
 
@@ -95,93 +83,6 @@ if (isTauri) {
     .catch(() => {
       preloaded.done = true
     })
-}
-
-/// 拉取订阅并回填元数据（节点数/更新时间/到期时间），手动（弹窗保存/行内更新）与
-/// 自动更新共用；expire 为 unix 秒（null = 订阅方未提供）；skipped 为通用格式转换
-/// 跳过的行数（>0 时 UI 明示「跳过 M 行」，避免静默丢节点）。
-async function fetchSubscription(
-  id: string,
-  url: string,
-): Promise<{ count: number; skipped: number }> {
-  const res = await invoke<{ count: number; expire: number | null; skipped: number }>(
-    CMD.proxyUpdateSubscription,
-    { id, url },
-  )
-  updateSubscription(id, {
-    proxyCount: res.count,
-    updatedAt: new Date().toISOString(),
-    expiresAt: res.expire ? new Date(res.expire * 1000).toISOString() : '',
-    lastError: '', // 成功即清失败标记（自动更新恢复后行内警告消失）
-  })
-  return { count: res.count, skipped: res.skipped }
-}
-
-/// 更新成功文案：有跳过行时明示（通用格式里不支持的协议/垃圾行），否则常规节点数。
-function nodesUpdatedMessage(res: { count: number; skipped: number }): string {
-  return res.skipped > 0
-    ? t('proxy.nodesUpdatedSkipped', { count: res.count, skipped: res.skipped })
-    : t('proxy.nodesUpdated', { count: res.count })
-}
-
-// ── 订阅自动更新（模块级，app 启动即生效）──
-// 阈值：上次拉取超过 autoUpdateIntervalHours（或从未拉取成功）视为过期，每小时复查一次
-// （启动时立即查；复查频率与用户设置的更新间隔解耦，间隔由阈值表达）。后台静默更新：
-// 失败仅 console（机场偶发不可达，toast 是噪音）；启动时离线等场景由每小时复查自愈。
-// 激活订阅被更新后节点列表经 proxy-subscription-updated 事件驱动刷新（见 onMounted 监听），
-// 核心未运行时 Rust 侧 reload 为安全空操作。
-const AUTO_UPDATE_CHECK_MS = 60 * 60 * 1000
-let autoUpdateInFlight = false
-
-/// 订阅是否超过自动更新间隔（含从未拉取成功）。间隔 clamp 防御磁盘手改非法值
-/// （0/负数会让每次复查都触发拉取；NaN 落 24h 档）。导出供单测。
-export function isSubscriptionStale(s: Subscription): boolean {
-  if (!s.url) return false
-  const hours = Number.isFinite(config.autoUpdateIntervalHours)
-    ? Math.max(1, config.autoUpdateIntervalHours)
-    : 24
-  const t = parseUtcMs(s.updatedAt)
-  // updatedAt 空/非法（从未拉取成功，如编辑保存时网络失败）同样视为过期，后台自动补拉
-  return Number.isNaN(t) || Date.now() - t >= hours * 60 * 60 * 1000
-}
-
-async function autoUpdateSubscriptions(): Promise<void> {
-  if (!config.autoUpdateEnabled || autoUpdateInFlight) return
-  const stale = config.subscriptions.filter(isSubscriptionStale)
-  if (stale.length === 0) return
-  autoUpdateInFlight = true
-  try {
-    // 串行拉取：对机场温和（部分按频率限流），逐条失败互不影响；
-    // 每轮复查开关（关闭即时止血，已发起的单次拉取跑完即止）
-    for (const s of stale) {
-      if (!config.autoUpdateEnabled) break
-      try {
-        await fetchSubscription(s.id, s.url)
-      } catch (e) {
-        console.error('[proxy] auto update subscription failed:', e)
-        // 失败曾只进 console：后台静默路径用户无从知晓订阅已陈旧。落盘供订阅行标记
-        updateSubscription(s.id, { lastError: toErrorMessage(e, t('proxy.updateFailed')) })
-      }
-    }
-  } finally {
-    autoUpdateInFlight = false
-  }
-}
-
-if (isTauri) {
-  // 等配置回填后再查（模块加载时 subscriptions 仍是默认空项）；timer 随页面文档
-  // 生命周期存活（navigate 重载后旧 timer 随旧文档销毁，模块重执行重建）
-  void whenConfigReady('extensions/proxy/config').then(() => {
-    void autoUpdateSubscriptions()
-    setInterval(() => void autoUpdateSubscriptions(), AUTO_UPDATE_CHECK_MS)
-  })
-  // 设置变化即时生效：开启/缩短间隔立即按新阈值复查（等一小时才反应不符合直觉）
-  watch(
-    () => [config.autoUpdateEnabled, config.autoUpdateIntervalHours] as const,
-    () => {
-      if (config.autoUpdateEnabled) void autoUpdateSubscriptions()
-    },
-  )
 }
 
 export function useProxyPanel() {
@@ -238,15 +139,24 @@ export function useProxyPanel() {
   let unlistenStatus: (() => void) | null = null
   let unlistenSubUpdated: (() => void) | null = null
 
-  // 订阅编辑弹窗（agent 模型提供商模式）
-  const editingId = ref('')
-  const isCreating = ref(false)
-  const showEditModal = ref(false)
-  const editForm = ref({ name: '', url: '' })
-  // 订阅删除确认
-  const deletingSub = ref<Subscription | null>(null)
-  /// 正在行内更新的订阅 id（空 = 无更新进行中）：该行按钮转 spinner，单飞禁用其余行更新按钮
-  const updatingSubId = ref('')
+  // ── 订阅入口 ──
+  /// 主视图只保留当前激活订阅入口（完整列表在二级界面）：标题=名称，
+  /// 副标题=节点数 + 到期日（无节点回退订阅链接）。行内红色失败标记在模板单列。
+  const activeSubscriptionTitle = computed(
+    () => activeSubscription.value?.name || t('proxy.unnamedSubscription'),
+  )
+  const activeSubscriptionSubtitle = computed(() => {
+    const s = activeSubscription.value
+    if (!s) return ''
+    if (!s.proxyCount) return s.url || t('proxy.notConfigured')
+    const parts = [t('proxy.subscriptionCount', { count: s.proxyCount })]
+    const expiry = formatSubExpiry(s.expiresAt)
+    if (expiry) parts.push(t('proxy.subscriptionExpires', { date: expiry }))
+    return parts.join(' · ')
+  })
+  /// 节点列表待重载：二级界面切换激活订阅 / 激活订阅内容更新时置脏，本视图停用期间
+  /// 不后台拉取，回到主视图的 onActivated 统一重载（避免隐藏视图渲染与请求抖动）。
+  let nodesDirty = false
 
   // ── 节点 ──
   // 全部用户可切的 selector 分组（排除 mihomo 隐式 GLOBAL）。多分组订阅时用户可在列表内切换。
@@ -316,16 +226,14 @@ export function useProxyPanel() {
     // 所有项（含控制项）按搜索过滤；节点在 nodes computed 已按名过滤
     if (match(t('proxy.enableProxy'))) list.push({ type: 'enabled', group: t('proxy.group.proxy') })
     if (match(t('proxy.ruleMode'))) list.push({ type: 'mode', group: t('proxy.group.proxy') })
-    list.push(
-      ...config.subscriptions
-        .filter((s) => match(s.name || s.url || ''))
-        .map((s) => ({
-          type: 'subscription' as const,
-          group: t('proxy.group.subscription'),
-          sub: s,
-          active: s.id === config.activeSubscriptionId,
-        })),
-    )
+    // 订阅收束为单个入口行（列表在二级界面）：名称 / 链接 / 「订阅」均可命中
+    if (
+      match(activeSubscriptionTitle.value) ||
+      match(activeSubscription.value?.url ?? '') ||
+      match(t('proxy.group.subscription'))
+    ) {
+      list.push({ type: 'subscriptions', group: t('proxy.group.subscription') })
+    }
     // 多 selector 分组：显示分组切换项（单分组或无分组时省略）
     if (userGroups.value.length > 1 && match(t('proxy.nodeGroup'))) {
       list.push({ type: 'groupSelector', group: t('proxy.group.nodes') })
@@ -629,165 +537,36 @@ export function useProxyPanel() {
       groupSelectRef.value?.focus()
       groupSelectRef.value?.toggleOpen()
     } else if (it.type === 'node') selectNode(it.node)
-    else if (it.type === 'subscription') {
-      // 有节点的订阅：点击切换激活（主操作，仅激活订阅的节点入 mihomo）；
-      // 空订阅（未配置/未拉取）：点击打开编辑配置
-      if (it.sub.proxyCount > 0) setActiveSubscription(it.sub.id)
-      else openEditModal(it.sub)
-    }
+    else if (it.type === 'subscriptions') openSubscriptions()
   }
 
-  // ── 订阅 ──
-  // 手动拉取走模块级 fetchSubscription（与自动更新共用回填逻辑），到期时间格式化在
-  // ./logic::formatSubExpiry（纯逻辑，可测）
+  /// 进入订阅二级界面（列表 / 添加 / 编辑 / 更新 / 激活切换）：清空主视图过滤词——
+  /// 节点搜索词不应带进订阅列表（两屏的 query 语义不同）。
+  function openSubscriptions() {
+    appStore.setSearchQuery('')
+    appStore.openSubview('subscriptions')
+  }
 
-  /// 切换激活订阅：写 config（持久化）+ 通知 Rust 更新 run_params + 热重载（含 idle 常驻）。
-  /// 仅激活订阅的节点参与合并，切换后节点列表整体替换，故清空乐观选中与测速缓存。
-  async function setActiveSubscription(id: string) {
-    if (config.activeSubscriptionId === id) return
-    config.activeSubscriptionId = id
+  /// 订阅变化致节点列表失效（切换激活订阅 / 激活订阅内容更新 / 删除激活订阅）：
+  /// 清乐观选中与测速缓存。本视图停用（二级界面正在操作）时只置脏，回到本视图的
+  /// onActivated 统一重载——隐藏期间不后台拉取，避免停用视图渲染与首帧旧数据闪烁。
+  function invalidateNodes() {
     selectedNodeName.value = ''
     delayMap.value = {}
-    try {
-      await invoke(CMD.proxySetActiveSubscription, { id })
-      await loadProxies()
-    } catch (e) {
-      appStore.showStatus(toErrorMessage(e, t('proxy.switchSubscriptionFailed')), {
-        duration: 4000,
-        kind: 'error',
-      })
-    }
+    nodesDirty = true
   }
 
-  /// 组标题「+」：打开新建弹窗（不预创建项，保存时才 add）
-  function openCreateModal() {
-    editingId.value = ''
-    isCreating.value = true
-    editForm.value = { name: '', url: '' }
-    showEditModal.value = true
-  }
-
-  function openEditModal(s: Subscription) {
-    editingId.value = s.id
-    isCreating.value = false
-    editForm.value = { name: s.name, url: s.url }
-    showEditModal.value = true
-  }
-
-  function closeEditModal() {
-    showEditModal.value = false
-    editingId.value = ''
-    isCreating.value = false
-  }
-
-  /// 从订阅链接提取域名主体作为默认名称（如 https://a.example.com → example）
-  function domainFromUrl(url: string): string {
-    try {
-      const parts = new URL(url).hostname.split('.')
-      return parts.length >= 2 ? parts[parts.length - 2] : (parts[0] ?? '')
-    } catch {
-      return ''
-    }
-  }
-
-  /// url 变化时，若用户未手填 name 则自动截取域名
+  // 激活订阅切换（二级界面写入 config）：节点列表整体替换，语义同失效。
   watch(
-    () => editForm.value.url,
-    (url) => {
-      if (!editForm.value.name.trim()) {
-        editForm.value.name = domainFromUrl(url)
+    () => config.activeSubscriptionId,
+    () => {
+      invalidateNodes()
+      if (viewActive.value) {
+        nodesDirty = false
+        void loadProxies()
       }
     },
   )
-
-  /// 保存：新建则 add，编辑则 update；url 非空则拉取（含热重启 + 节点刷新）
-  async function saveSub() {
-    const name = editForm.value.name.trim()
-    const url = editForm.value.url.trim()
-    const wasCreating = isCreating.value
-    let id: string
-    if (isCreating.value) {
-      id = addSubscription(name, url)
-    } else {
-      id = editingId.value
-      if (!id) return
-      updateSubscription(id, { name, url })
-    }
-    closeEditModal()
-    if (!url) return
-    try {
-      const res = await fetchSubscription(id, url)
-      appStore.showStatus(nodesUpdatedMessage(res), { duration: 2000 })
-      // 新建订阅拉取成功即自动激活（首次添加即用，内部 loadProxies）；编辑则直接刷新
-      if (wasCreating && res.count > 0) {
-        await setActiveSubscription(id)
-      } else {
-        await loadProxies()
-      }
-    } catch (e) {
-      appStore.showStatus(toErrorMessage(e, t('proxy.updateFailed')), {
-        duration: 4000,
-        kind: 'error',
-      })
-    }
-  }
-
-  /// 行内更新订阅：按现有 URL 重新拉取（Rust 拉取 + 保存 + 热重载一体）。更新的是激活订阅时
-  /// 节点列表整体替换，清空乐观选中与测速缓存（同 setActiveSubscription）；非激活订阅仅回填
-  /// 元数据（不参与合并，节点列表不变）。单飞：任一更新中其余行更新按钮禁用。
-  async function refreshSub(s: Subscription) {
-    if (!s.url || updatingSubId.value) return
-    updatingSubId.value = s.id
-    try {
-      const res = await fetchSubscription(s.id, s.url)
-      appStore.showStatus(nodesUpdatedMessage(res), { duration: 2000 })
-      if (s.id === config.activeSubscriptionId) {
-        selectedNodeName.value = ''
-        delayMap.value = {}
-        await loadProxies()
-      }
-    } catch (e) {
-      appStore.showStatus(toErrorMessage(e, t('proxy.updateFailed')), {
-        duration: 4000,
-        kind: 'error',
-      })
-    } finally {
-      updatingSubId.value = ''
-    }
-  }
-
-  /// 编辑弹窗内删除 → 二次确认
-  function confirmRemoveFromModal() {
-    const s = config.subscriptions.find((x) => x.id === editingId.value)
-    if (!s) return
-    closeEditModal()
-    deletingSub.value = s
-  }
-
-  async function doRemoveSub() {
-    const s = deletingSub.value
-    if (!s) return
-    deletingSub.value = null
-    // 新激活：删的若是当前激活则回退到剩余首项（splice 前 filter，规避 watch 异步补项时序）
-    const others = config.subscriptions.filter((x) => x.id !== s.id)
-    const newActive = others[0]?.id ?? ''
-    if (config.activeSubscriptionId === s.id) {
-      config.activeSubscriptionId = newActive
-    }
-    removeSubscription(s.id)
-    selectedNodeName.value = ''
-    delayMap.value = {}
-    try {
-      await invoke(CMD.proxyRemoveSubscription, { id: s.id, newActiveSubId: newActive })
-      // 热重启完成（含 wait_ready）后刷新，节点列表应用新激活订阅
-      await loadProxies()
-    } catch (e) {
-      appStore.showStatus(toErrorMessage(e, t('proxy.cleanupSubscriptionFailed')), {
-        duration: 4000,
-        kind: 'error',
-      })
-    }
-  }
 
   onMounted(async () => {
     unlistenProgress = await listen<{ received: number; total: number | null }>(
@@ -819,15 +598,15 @@ export function useProxyPanel() {
     unlistenMode = await listen<string>('proxy-mode', (e) => {
       config.mode = e.payload as typeof config.mode
     })
-    // 激活订阅被更新（手动行内更新之外的路径：自动更新等）：节点列表整体替换，
-    // 清乐观选中与测速缓存并重载。手动路径（updatingSubId 命中同一订阅）由
-    // refreshSub 自行收尾，跳过防双载。
+    // 激活订阅内容被更新（二级界面行内更新 / 自动更新 / 编辑保存）：节点列表整体替换。
+    // 二级界面操作期间本视图停用，仅置脏；回到本视图的 onActivated 统一重载。
     unlistenSubUpdated = await listen<string>('proxy-subscription-updated', (e) => {
       if (e.payload !== config.activeSubscriptionId) return
-      if (updatingSubId.value === e.payload) return
-      selectedNodeName.value = ''
-      delayMap.value = {}
-      void loadProxies()
+      invalidateNodes()
+      if (viewActive.value) {
+        nodesDirty = false
+        void loadProxies()
+      }
     })
     // 健康监测异常反馈：进程异常退出/出站失效自动恢复失败时，核心 emit proxy-status。
     // error 持久写入 coreError（开启代理项红色提示，enabled 态附重连按钮）；
@@ -874,10 +653,16 @@ export function useProxyPanel() {
   onActivated(() => {
     viewActive.value = true
     checkUpdate()
+    // 订阅二级界面期间切换激活订阅 / 更新激活订阅：节点列表已失效，回到本视图补拉
+    if (nodesDirty && coreStatus.value.downloaded) {
+      nodesDirty = false
+      void loadProxies()
+    }
     // 设置子视图可能已完全卸载（跨视图状态对账）：重激活拉权威核心状态，
     // 核心已删则清残留节点列表（enabled 已由 proxy-enabled 事件同步为 false）
     void loadCoreStatus().then(() => {
       if (!coreStatus.value.downloaded) {
+        nodesDirty = false
         proxiesData.value = null
         selectedNodeName.value = ''
         delayMap.value = {}
@@ -902,34 +687,11 @@ export function useProxyPanel() {
     stopTrafficStream()
   })
 
-  // 兜底：订阅列表至少一项（磁盘旧值可能为空数组，覆盖默认项；类似 agent 默认 provider 始终存在）
-  watch(
-    () => config.subscriptions.length,
-    (len) => {
-      if (len === 0) addSubscription('', '')
-    },
-    { immediate: true },
-  )
-
-  // 激活订阅归一化：activeSubscriptionId 失效（空 / 指向已删订阅）时回退首项，
-  // 保证前端与 Rust（build_run_config）始终对同一有效 id 达成共识。
-  watch(
-    () => config.subscriptions.map((s) => s.id).join('\0') + '\0' + config.activeSubscriptionId,
-    () => {
-      const ids = config.subscriptions.map((s) => s.id)
-      if (!ids.includes(config.activeSubscriptionId)) {
-        config.activeSubscriptionId = ids[0] ?? ''
-      }
-    },
-    { immediate: true },
-  )
-
   return {
     items,
     selectedIndex,
     baseListRef,
     onExecute,
-    openCreateModal,
     hasSelectedNode,
     locateSelected,
     testing,
@@ -960,20 +722,9 @@ export function useProxyPanel() {
     onGroupChange,
     delayColor,
     formatDelay,
-    formatSubExpiry,
-    isSubExpired,
-    showEditModal,
-    isCreating,
-    closeEditModal,
-    saveSub,
-    editForm,
-    openEditModal,
-    refreshSub,
-    updatingSubId,
-    setActiveSubscription,
-    confirmRemoveFromModal,
-    deletingSub,
-    doRemoveSub,
+    activeSubscription,
+    activeSubscriptionTitle,
+    activeSubscriptionSubtitle,
     fmtTrafficRate,
   }
 }
