@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
-// 订阅二级界面 UI 契约：顶部「操作」组（添加订阅行，无图标）+ 订阅列表、激活项 accent、
+// 订阅二级界面 UI 契约：顶部「通用」组（添加订阅行，无图标）+ 订阅列表、激活项 accent、
 // 行内更新/编辑按钮、搜索过滤与空态。动作细节见 useSubscriptions.test.ts。
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }))
 
@@ -65,12 +65,12 @@ async function mountView() {
 }
 
 describe('proxy SubscriptionsView', () => {
-  it('顶部「操作」组 + 订阅列表：添加订阅无图标且独占一组', async () => {
+  it('顶部「通用」组 + 订阅列表：添加订阅无图标且独占一组', async () => {
     const wrapper = await mountView()
 
     const headers = wrapper.findAll('.group-header')
     expect(headers).toHaveLength(2)
-    expect(headers[0]!.text()).toContain('操作')
+    expect(headers[0]!.text()).toContain('通用')
     expect(headers[1]!.text()).toContain('订阅')
     expect(headers[1]!.find('button').exists()).toBe(false)
 
@@ -108,7 +108,7 @@ describe('proxy SubscriptionsView', () => {
     rows = wrapper.findAll('[role="option"]')
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('添加订阅')
-    expect(wrapper.findAll('.group-header').map((h) => h.text())).toEqual(['操作'])
+    expect(wrapper.findAll('.group-header').map((h) => h.text())).toEqual(['通用'])
 
     appStore.setSearchQuery('nothing-here')
     await nextTick()

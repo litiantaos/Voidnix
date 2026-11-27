@@ -8,7 +8,7 @@
       @execute="onExecute"
     >
       <template #item="{ item }">
-        <!-- 添加订阅：顶部独立「操作」组的动作行（与其他行一样可键盘选中回车） -->
+        <!-- 添加订阅：顶部独立「通用」组的动作行（与其他行一样可键盘选中回车） -->
         <BaseListItem v-if="item.type === 'add'" :title="t('proxy.addSubscription')" />
 
         <!-- 激活订阅 accent 强调；点击行切换激活，编辑按钮进编辑 -->
@@ -41,9 +41,14 @@
                  曾只进 console，用户无从发现订阅已陈旧；成功拉取即清除 -->
             <template v-if="item.sub.lastError">
               <span text="muted" shrink="0" ml="3">·</span>
-              <span text="danger" shrink="0" whitespace="nowrap" :title="item.sub.lastError">{{
-                t('proxy.autoUpdateFailed')
-              }}</span>
+              <span
+                text="danger"
+                shrink="0"
+                ml="2"
+                whitespace="nowrap"
+                :title="item.sub.lastError"
+                >{{ t('proxy.autoUpdateFailed') }}</span
+              >
             </template>
           </template>
           <template #trailing>
@@ -151,5 +156,5 @@ const {
 
 /// 分组：置顶「添加订阅」动作行独立一组；其下订阅列表一组
 const groupField = (item: SubscriptionRow) =>
-  item.type === 'add' ? t('proxy.group.actions') : t('proxy.group.subscription')
+  item.type === 'add' ? t('proxy.group.general') : t('proxy.group.subscription')
 </script>

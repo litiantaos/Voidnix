@@ -135,6 +135,7 @@
               <span
                 text="danger"
                 shrink="0"
+                ml="2"
                 whitespace="nowrap"
                 :title="activeSubscription.lastError"
                 >{{ t('proxy.autoUpdateFailed') }}</span

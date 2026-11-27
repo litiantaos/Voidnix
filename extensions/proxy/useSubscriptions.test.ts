@@ -82,7 +82,7 @@ describe('订阅二级界面动作', () => {
     config.activeSubscriptionId = 'b' // 当前激活为空订阅，A 处于非激活态
     const panel = await mountPanel()
 
-    // 行序：0=添加订阅（操作组），1=A，2=B
+    // 行序：0=添加订阅（通用组），1=A，2=B
     panel.onExecute(panel.items.value[1]!)
     await flushPromises()
     expect(callsOf(CMD.proxySetActiveSubscription)).toHaveLength(1)
