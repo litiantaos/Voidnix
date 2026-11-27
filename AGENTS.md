@@ -32,7 +32,7 @@ bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.t
 bun run check:agent-bounds   # CI 校验（agent 资源上限 policy.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:wm-bounds      # CI 校验（window-manager mod.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:extension-orders # CI 校验（非 hidden 扩展 meta.order 唯一）
-bun run check:extension-subviews # CI 校验（subviews ↔ subviewTitle 完整、无悬空、同扩展标题唯一）
+bun run check:extension-subviews # CI 校验（每个 subview 的 title 非空、同扩展内唯一）
 python3 scripts/smoke-test.py  # 全功能回归测试（含应用自测 + 系统冒烟）
 bun run smoke-test             # 同上（package.json 别名）
 ```
@@ -175,7 +175,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 ### 扩展接口
 
-`Extension`（`src/runtime/types.ts`）= `meta` + **13 槽**（10 能力槽 + 3 行为槽，按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
+`Extension`（`src/runtime/types.ts`）= `meta` + **11 槽**（8 能力槽 + 3 行为槽，按需声明，均有真实消费者）+ `setup` 生命周期。槽位语义与消费者计数详见 [docs/extensions.md](docs/extensions.md)。
 
 ### 搜索引擎
 
@@ -192,7 +192,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **过滤规则**：
 
-- 空 query：默认列表按 `finalScore>0`（boost>0，主要是应用）；顶部由 `useSearchInput` 平铺最多 `LIMITS.maxRecentViews` 条最近屏（有可展示记录时，框架合成、`kind=recent`，data 携带恢复目标，id 前缀 `SEARCH.RECENT_ID`；标题=扩展名，子视图屏追加「· 子视图名」（`subviewTitle`）区分同一扩展的多级界面；副标题=扩展上报的内容摘要，无摘要回退离开时的过滤词；无入口行/二级列表），尾部固定追加一行「输入 / 浏览全部工具」提示行（id=`SEARCH.TOOLS_HINT_ID`，回车经 `useResultNavigation` 分派打开 `/` 工具列表）
+- 空 query：默认列表按 `finalScore>0`（boost>0，主要是应用）；顶部由 `useSearchInput` 平铺最多 `LIMITS.maxRecentViews` 条最近屏（有可展示记录时，框架合成、`kind=recent`，data 携带恢复目标，id 前缀 `SEARCH.RECENT_ID`；标题=扩展名，子视图屏追加「· 子视图名」（`subviews[id].title`）区分同一扩展的多级界面；副标题=扩展上报的内容摘要，无摘要回退离开时的过滤词；无入口行/二级列表），尾部固定追加一行「输入 / 浏览全部工具」提示行（id=`SEARCH.TOOLS_HINT_ID`，回车经 `useResultNavigation` 分派打开 `/` 工具列表）
 - 非空 query：查找型结果需 `fuzzy>0`，extension 类即时答案靠 `finalScore>0` 穿透
 
 `SearchContext.extensionMode` 供扩展区分全局/扩展内场景（即时答案型与扩展内响应型的取舍、编码模式见 [docs/extensions.md](docs/extensions.md)「搜索集成」）。
@@ -223,7 +223,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - **窗口拖动**：chrome 带（搜索栏周围空白间隙）设透明拖动层（z-5，搜索栏 z-10 之下），手动 `startDragging()` 替代 `data-tauri-drag-region`——后者 macOS 双击触发 `internal_toggle_maximize`，对 resizable:false 无标题栏窗口会直接填满全屏；拖动仅影响当前显示期间，每次 show 经 `present_on_cursor_screen` 自动复位
 - **剪贴板填充**：主快捷键从隐藏唤起时派发 `window-invoked`（DOM 事件），`useSearchInput` 查剪贴板最新记录，文本类且 3 秒内则填充搜索框并 select——**仅主界面**（query 变化属内容切换重置）；整窗视图接管或扩展激活时跳过（扩展内 query 是列表过滤参数，填充会破坏浏览上下文，窗口显隐不得改变扩展内容状态）。主快捷键唤起会先把扩展屏重置回主界面（见下条），因此该路径填充照常生效
 - **主快捷键唤起 = 搜索**：`useAppLifecycle` 的 `shortcut-pressed`（id=main、窗口隐藏）在 show 之前派发 `window-home`，`useSearchInput` 消费——扩展屏 → `resetHome()`（丢弃暂存现场，默认列表 + 首项）；已在主界面时不清已输入 query（唤起全选让直接输入覆盖）。模态弹窗打开（agent 审批等）、整窗视图接管期间不重置（`setActiveExtension` 会 `resolveConfirm(false)` 误拒审批）。**所有快捷键的 show 统一由前端 `showWindow()` 发起**（Rust shortcut callback 不再自动 show main）：视图切换时等双帧 paint 再 `invoke show_window`（避免合成上一帧旧视图），未切换（同一界面续显）直接 show 守住唤起延迟；扩展快捷键 / `open-extension` / `open-extension-subview` / 菜单栏扩展项仍直达目标视图。主快捷键另带 **Rust 200ms 兜底 show**：唤醒后 200ms 窗口仍隐藏且期间无任何新按键（WebContent 冻结 / navigate 重载导致前端监听缺席）则 Rust `show_main` 兜底——唯一常驻唤醒通道不得静默失效；`SHORTCUT_SEQ` 代次守卫防「唤起后 200ms 内再按主键隐藏」被兜底拽回
-- **最近使用**：`stores/recents.ts` 按屏记录（`extId + subview + query`，sessionStorage 与 active-ext 同作用域、冷启动不恢复；去重后置顶、上限 `LIMITS.maxRecentViews`=5）。记录点在 `setActiveExtension` 离开一屏时（主键重置 / ESC / 标签关闭 / 快捷键切扩展 / open-extension 事件的唯一收口；query 在框架清空搜索框之前捕获，内容摘要由扩展可选上报——`appStore.registerScreenSummary(extId, subview, getter)` 挂载时注册、卸载时注销，离开时框架按 extId+subview 读取，单行 ≤80 字落库）。默认列表顶部 `recent` 组**直接平铺最近屏**（每行标题=扩展名，子视图屏追加「· 子视图名」（`subviewTitle`）——同一扩展的主视图 / 多级子界面各自成行时靠标题区分，不能只靠副标题；副标题=扩展上报的内容摘要（agent 最近用户消息 / archive 包名+条目数 / OCR 首行 / finder·image·video 文件名 / translate、notes 首行 / proxy 当前订阅、订阅数、连接数、规则数），无摘要回退过滤词，均无为无副标题；`kind=recent` + data 带 extId/subview/query，id=`SEARCH.RECENT_ID:<extId>:<subview>`；陈旧/已卸载扩展不占位；无入口行、无二级列表、无浏览态），回车经 `resumeScreen` 恢复：`setActiveExtension(extId, null, 'resume')` + 同一 tick 还原过滤词 + 补开子视图（external）。**返回语义（两态现场）**：活动 `results/selectedIndex/query` 始终属于当前模式；主界面 → 扩展时，仅「用户从主界面选中一行进入」的入口（`activateExtension` / `resumeScreen`）在切模式前暂存主界面现场（结果列表 + 选中 + query），扩展 → 主界面时由退出函数（`exitExtension` / `goHome`）整体恢复——不重建列表、不复制 query、不依赖 watch 的批量时序；工具列表因此也自动恢复选中位置（原 `savedToolIndex` 删除）。非主界面路径（快捷键 / 程序化 subview / 事件）不暂存，退出即重置默认列表（兼防残留结果被紧接的回车执行，OcrEnterDispatch 回归）。主快捷键 fresh 唤起走独立 `resetHome()`（丢弃暂存现场 → 默认列表 + 首项）。**恢复是活屏**——KeepAlive 命中同一实例（`maxCachedViews` 覆盖最近 5 屏），不重新挂载、不触发扩展的新会话重置；`entryIntent`（`fresh` / `resume`，本次渲染周期后归 `none`）区分进入语义：image / video / finder-ext / clipboard 只在 `fresh` 时执行清空 / 模式判定 / 进入重置（历史恢复与内部子视图往返一律保留现场），滚动的 save/restore 跟随同一意图（fresh 归顶 / resume 还原该屏离开时的位置）。冷启动（新会话，按设计不保留）、LRU 超限、WebContent 内存重载仍会丢掉实例（此时 query 仍可还原，视图重挂载）；agent 消息 DOM 在 deactivate 时仍卸载以释放 WebKit 内存，但按「贴底 / 阅读中」记录并在激活重挂载后恢复滚动位置
+- **最近使用**：`stores/recents.ts` 按屏记录（`extId + subview + query`，sessionStorage 与 active-ext 同作用域、冷启动不恢复；去重后置顶、上限 `LIMITS.maxRecentViews`=5）。记录点在 `setActiveExtension` 离开一屏时（主键重置 / ESC / 标签关闭 / 快捷键切扩展 / open-extension 事件的唯一收口；query 在框架清空搜索框之前捕获，内容摘要由扩展可选上报——View 调 `useScreenSummary(getter)`，ContentView provide 当前屏身份、composable 挂载注册/卸载注销，离开时框架按 extId+subview 读取，单行 ≤80 字落库）。默认列表顶部 `recent` 组**直接平铺最近屏**（每行标题=扩展名，子视图屏追加「· 子视图名」（`subviews[id].title`）——同一扩展的主视图 / 多级子界面各自成行时靠标题区分，不能只靠副标题；副标题=扩展上报的内容摘要（agent 最近用户消息 / archive 包名+条目数 / OCR 首行 / finder·image·video 文件名 / translate、notes 首行 / proxy 当前订阅、订阅数、连接数、规则数），无摘要回退过滤词，均无为无副标题；`kind=recent` + data 带 extId/subview/query，id=`SEARCH.RECENT_ID:<extId>:<subview>`；陈旧/已卸载扩展不占位；无入口行、无二级列表、无浏览态），回车经 `resumeScreen` 恢复：`setActiveExtension(extId, null, 'resume')` + 同一 tick 还原过滤词 + 补开子视图（external）。**返回语义（两态现场）**：活动 `results/selectedIndex/query` 始终属于当前模式；主界面 → 扩展时，仅「用户从主界面选中一行进入」的入口（`activateExtension` / `resumeScreen`）在切模式前暂存主界面现场（结果列表 + 选中 + query），扩展 → 主界面时由退出函数（`exitExtension` / `goHome`）整体恢复——不重建列表、不复制 query、不依赖 watch 的批量时序；工具列表因此也自动恢复选中位置（原 `savedToolIndex` 删除）。非主界面路径（快捷键 / 程序化 subview / 事件）不暂存，退出即重置默认列表（兼防残留结果被紧接的回车执行，OcrEnterDispatch 回归）。主快捷键 fresh 唤起走独立 `resetHome()`（丢弃暂存现场 → 默认列表 + 首项）。**恢复是活屏**——KeepAlive 命中同一实例（`maxCachedViews` 覆盖最近 5 屏），不重新挂载、不触发扩展的新会话重置；`entryIntent`（`fresh` / `resume`，本次渲染周期后归 `none`）区分进入语义：image / video / finder-ext / clipboard 只在 `fresh` 时执行清空 / 模式判定 / 进入重置（历史恢复与内部子视图往返一律保留现场），滚动的 save/restore 跟随同一意图（fresh 归顶 / resume 还原该屏离开时的位置）。冷启动（新会话，按设计不保留）、LRU 超限、WebContent 内存重载仍会丢掉实例（此时 query 仍可还原，视图重挂载）；agent 消息 DOM 在 deactivate 时仍卸载以释放 WebKit 内存，但按「贴底 / 阅读中」记录并在激活重挂载后恢复滚动位置
 - **唤起全选时序**：`window-focused`/`window-invoked`（源自 `onFocusChanged`，即窗口 key 聚焦）先于 WebKit 页面焦点状态翻转到达，三重约束——页面获焦前 select 以非聚焦灰绘制（灰→蓝跳变）、获焦后对聚焦元素 select 触发系统选中动画、原生 focus 事件在无激活唤起下迟发/被 show 过程瞬时页面 blur 打断。两级加速 + 落位：`useAppLifecycle` 获焦分支派发 window-focused 后即调 `getCurrentWebview().setFocus()`（wry: `makeFirstResponder(webview)`，不 activate_app）主动接完 responder 链，页面焦点状态当帧翻转；`selectAllWhenPageFocused` 再以「原生 focus 事件 + rAF 轮询 hasFocus 状态」双通道探测、翻转即落位，落位一律经 `selectAllWithoutAnimation`（`blur` → 全选 → `focus` 同任务三步，选区变更落在元素未聚焦态不触发动画，下一帧直接聚焦蓝完整呈现）。清理只由 `window-hiding`（折叠残留选中 + 取消待定）/ 卸载 / 下次调用触发，瞬时页面 blur 不取消
 
 **hide 策略**：
@@ -253,7 +253,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
   - frontmost != 原前台 PID → 用户主动切换 → emit `frontmost-changed` → 前端 dismiss
 - **WKWebView 可编辑元素聚焦会激活应用**：应用未激活时对 textarea 等执行 focus() 触发 `activateIgnoringOtherApps` 抢走前台（违背 show 不抢 active）；激活事务的 key 重评估偶发夺走 panel key → 派生 blur 藏窗（agent 快捷键直开后约 0.5~1.5s 自行隐藏的根因，曾误报为「点击输入框隐藏」）。三重防线：`is_app_active` 判定 3 拦截自伤 blur 的藏窗；watcher 自身激活分支恢复 key；disableSearchInput 扩展（agent/notes/translate）不在窗口隐藏时聚焦（mount 时 `document.hasFocus()` 为假跳过，`window-focused` 事件补聚焦；补聚焦不设 hasFocus 守卫——事件先于 WebKit 页面焦点状态翻转到达，查则快捷键唤起路径永久错过，事件语义即窗口已 key 聚焦安全）。配套 `capture_frontmost()` 遇 frontmost=自身时保留上次记录（不写 0），防 prev 失效误判
 
-**窗口高度**——扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），subview 可经 `subviewHeights` 覆盖：
+**窗口高度**——扩展声明 `windowHeight`（`number` 固定 / `'auto'` 自适应 / 未声明默认 480），子视图可经 `subviews[id].height` 覆盖：
 
 - `useExtensionHeight`（MainView 全局唯一调用）读 `activeExtension` + `activeSubview` 解析模式
 - 一次 invoke 触发 Rust `set_main_frame` → `animate_frame` 用 `NSAnimationContext` + `animator setFrame:display:animate:` 系统级动画（CoreAnimation 接管，非 JS rAF 逐帧）
@@ -506,7 +506,7 @@ src/
 ├── commands.ts         # 命令名常量（CMD.xxx，禁止裸 invoke）
 ├── locales/            # 框架级文案（zh-CN.ts + en.ts + index.ts 注册）
 ├── runtime/            # 前端运行时
-│   ├── types.ts        # Extension / SearchProvider / SearchResult（13 槽：10 能力 + 3 行为）
+│   ├── types.ts        # Extension / SearchProvider / SearchResult（11 槽：8 能力 + 3 行为）
 │   ├── constants.ts    # 语义常量单一源（SEARCH.WEIGHTS / GROUP_ORDER / KEYWORD_EXTENSION_BOOST + LIMITS）
 │   ├── i18n.ts         # 轻量 i18n（locale ref + t() + resolveLocalized() + registerMessages + initI18n）
 │   ├── storage.ts      # defineConfig（reactive + watch 自动持久化 + race 保护 + 类型守卫 + 退出 flush）

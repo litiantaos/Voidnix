@@ -19,10 +19,11 @@ export default defineExtension({
   },
 
   disableSearchInput: true,
-  mainView: () => AgentView,
-  searchBarAccessory: () => AgentActions,
-  subviews: { config: () => AgentSettings },
-  subviewTitle: { config: { 'zh-CN': '设置', en: 'Settings' } },
+  mainView: AgentView,
+  searchBarAccessory: AgentActions,
+  subviews: {
+    config: { view: AgentSettings, title: { 'zh-CN': '设置', en: 'Settings' } },
+  },
   windowHeight: 840,
   globalShortcuts: [
     {

@@ -30,8 +30,8 @@ export default defineExtension({
 
   disableSearchInput: true,
   windowHeight: 'auto',
-  mainView: () => AiGatewayView,
-  searchBarAccessory: () => AiGatewayActions,
+  mainView: AiGatewayView,
+  searchBarAccessory: AiGatewayActions,
 
   async setup() {
     await setupAiGatewaySync()

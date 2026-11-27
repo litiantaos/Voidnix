@@ -5,6 +5,8 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import ContentView from './ContentView.vue'
 import { useAppStore } from '@/stores/app'
+import { useRecentsStore } from '@/stores/recents'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import type { Extension, SearchResult } from '@/runtime/types'
 import '@/locales'
 
@@ -22,9 +24,28 @@ const Probe = defineComponent({
   },
 })
 
+const SubProbe = defineComponent({
+  setup: () => () => h('div', { id: 'sub-probe' }, 'sub'),
+})
+
 const fakeExt = {
   meta: { id: 'probe', name: 'probe' },
-  mainView: () => Probe,
+  mainView: Probe,
+  subviews: {
+    detail: { view: SubProbe, title: 'Detail', height: 'auto' },
+  },
+} as unknown as Extension
+
+const SummaryProbe = defineComponent({
+  setup() {
+    useScreenSummary(() => 'SUMMARY')
+    return () => h('div', { id: 'summary-probe' })
+  },
+})
+const summaryExt = {
+  meta: { id: 'summary-probe', name: 'Summary Probe' },
+  mainView: SummaryProbe,
+  subviews: { detail: { view: SummaryProbe, title: 'Detail' } },
 } as unknown as Extension
 
 const mountedWrappers: ReturnType<typeof mount>[] = []
@@ -68,6 +89,45 @@ describe('ContentView KeepAlive 缓存语义', () => {
     await nextTick()
     expect(probeMounts).toBe(1)
     expect(wrapper.find('#probe').text()).toBe('1')
+  })
+
+  it('ContentView provide 屏身份：摘要注册到主视图 / 子视图正确 key', async () => {
+    const appStore = useAppStore()
+    const recents = useRecentsStore()
+    recents.clear()
+
+    appStore.setActiveExtension('summary-probe')
+    mountView(summaryExt)
+    await nextTick()
+    appStore.setActiveExtension(null)
+    expect(recents.views[0]).toMatchObject({
+      extId: 'summary-probe',
+      subview: null,
+      summary: 'SUMMARY',
+    })
+
+    // 同一 ContentView 内主视图 → 子视图：上下文切换后新挂载的实例注册到子视图 key
+    recents.clear()
+    appStore.setActiveExtension('summary-probe')
+    appStore.openSubview('detail')
+    await nextTick()
+    appStore.setActiveExtension(null)
+    expect(recents.views[0]).toMatchObject({
+      extId: 'summary-probe',
+      subview: 'detail',
+      summary: 'SUMMARY',
+    })
+  })
+
+  it('子视图描述符：渲染 view，height 覆盖进入 auto 高度模式', async () => {
+    const appStore = useAppStore()
+    appStore.openSubview('detail')
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.find('#sub-probe').exists()).toBe(true)
+    expect(wrapper.find('#probe').exists()).toBe(false)
+    expect(wrapper.find('.view-auto').exists()).toBe(true)
   })
 
   it('窗口隐藏不卸载视图（无缝继续）：仅 content-visibility 释放 layer，状态与实例冻结', async () => {

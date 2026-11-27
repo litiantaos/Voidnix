@@ -108,6 +108,7 @@ import {
 } from 'vue'
 import { t } from '@/runtime/i18n'
 import { useAppStore } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import { whenConfigReady } from '@/runtime/storage'
 import { config } from './config'
 import NotesPreview from './Preview.vue'
@@ -174,8 +175,7 @@ const summaryProvider = () => {
     .find(Boolean)
   return line ?? ''
 }
-onMounted(() => appStore.registerScreenSummary('notes', null, summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('notes', null, summaryProvider))
+useScreenSummary(summaryProvider)
 const cells = ref<CharCell[]>([])
 
 /** 内容坐标切分点:编辑行行尾 \n 之后(下方完整行块起点)。Infinity = 全在头部。 */

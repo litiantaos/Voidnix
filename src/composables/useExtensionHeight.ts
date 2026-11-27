@@ -108,9 +108,9 @@ export function useExtensionHeight(deps: {
     const ext = activeExtension.value
     if (!ext) return { mode: 'default' }
     const subId = activeSubview.value
-    if (subId && ext.subviewHeights?.[subId] !== undefined) {
-      const v = ext.subviewHeights[subId]
-      return v === 'auto' ? { mode: 'auto' } : { mode: 'fixed', value: v }
+    const def = subId ? ext.subviews?.[subId] : undefined
+    if (def?.height !== undefined) {
+      return def.height === 'auto' ? { mode: 'auto' } : { mode: 'fixed', value: def.height }
     }
     if (ext.windowHeight === 'auto') return { mode: 'auto' }
     if (typeof ext.windowHeight === 'number') return { mode: 'fixed', value: ext.windowHeight }

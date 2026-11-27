@@ -30,10 +30,14 @@ vi.mock('@/runtime/search-engine', async (importOriginal) => {
   }
 })
 // 扩展表打桩：两个可见扩展（工具列表 / 最近使用断言用）
+const DummyView = defineComponent({ render: () => null })
 const mockExts = [
   {
     meta: { id: 'ext-a', name: 'Ext A', icon: 'i-a', order: 1 },
-    subviewTitle: { ocr: 'OCR', config: 'Settings' },
+    subviews: {
+      ocr: { view: DummyView, title: 'OCR' },
+      config: { view: DummyView, title: 'Settings' },
+    },
   },
   { meta: { id: 'ext-b', name: 'Ext B', icon: 'i-b', order: 2 } },
 ]
@@ -209,7 +213,7 @@ describe('useSearchInput 默认列表提示行', () => {
 
     const rows = results.value.filter((r) => r.data?.kind === 'recent')
     expect(rows.map((r) => [r.title, r.description])).toEqual([
-      // ext-b 未声明该子视图的 subviewTitle：回退扩展名（不拼裸 id）
+      // ext-b 未声明该子视图：回退扩展名（不拼裸 id）
       ['Ext B', undefined],
       ['Ext A · OCR', undefined],
       ['Ext A', undefined],

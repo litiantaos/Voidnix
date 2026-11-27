@@ -235,10 +235,11 @@ export default defineExtension({
 
   disableSearchInput: true,
   windowHeight: 'auto',
-  mainView: () => TranslateView,
-  searchBarAccessory: () => TranslateActions,
-  subviews: { config: () => TranslateSettings },
-  subviewTitle: { config: { 'zh-CN': '设置', en: 'Settings' } },
+  mainView: TranslateView,
+  searchBarAccessory: TranslateActions,
+  subviews: {
+    config: { view: TranslateSettings, title: { 'zh-CN': '设置', en: 'Settings' } },
+  },
   setup: async () => {
     await listen<string>('translate-text-ready', (e) => {
       if (translateReadyResolver) {

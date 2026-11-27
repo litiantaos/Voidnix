@@ -34,6 +34,7 @@ import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted } fro
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import { formatBytes } from '@/utils/format'
 import { t } from '@/runtime/i18n'
 import BaseList from '@/components/ui/BaseList.vue'
@@ -113,8 +114,7 @@ const summaryProvider = () =>
   conns.value.length
     ? t('proxy.connectionsCount', { count: conns.value.length })
     : t('proxy.noActiveConnections')
-onMounted(() => appStore.registerScreenSummary('proxy', 'connections', summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('proxy', 'connections', summaryProvider))
+useScreenSummary(summaryProvider)
 
 // KeepAlive 缓存子视图：切走走 onDeactivated（非 onUnmounted），必须在此停流，
 // 否则 /connections WS 在用户不看时持续空转（2Hz 全量快照）。

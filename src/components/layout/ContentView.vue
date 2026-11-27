@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, provide } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
@@ -86,6 +86,7 @@ import type { Extension, SearchResult } from '@/runtime/types'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import ResultItem from '@/components/layout/ResultItem.vue'
+import { SCREEN_CONTEXT_KEY } from '@/composables/useScreenSummary'
 
 const props = defineProps<{
   extension?: Extension | null
@@ -152,21 +153,25 @@ onUnmounted(() => {
  */
 const resolvedView = computed(() => {
   const subviewId = appStore.activeSubview
-  if (subviewId && props.extension?.subviews?.[subviewId]) {
-    return props.extension.subviews[subviewId]()
-  }
-  return props.extension?.mainView?.()
+  const def = subviewId ? props.extension?.subviews?.[subviewId] : undefined
+  return def?.view ?? props.extension?.mainView
 })
 
-// auto 高度模式（windowHeight/subviewHeight === 'auto'）：View 根保留 min-content（min-height:auto 默认），
+/** 当前屏身份（供 View 内 useScreenSummary 自动注册摘要；与渲染的 key 同源）。 */
+const screenContext = computed(() => ({
+  extId: props.extension?.meta.id ?? '',
+  subview: appStore.activeSubview ?? null,
+}))
+provide(SCREEN_CONTEXT_KEY, screenContext)
+
+// auto 高度模式（windowHeight / subviews[id].height === 'auto'）：View 根保留 min-content（min-height:auto 默认），
 // 内容自然高撑开 contentRef 驱动 ResizeObserver 自适应窗口；fixed/default 模式 View 根 min-height:0 撑满可视区
 const isAutoHeight = computed(() => {
   const ext = props.extension
   if (!ext) return false
   const subId = appStore.activeSubview
-  if (subId && ext.subviewHeights?.[subId] !== undefined) {
-    return ext.subviewHeights[subId] === 'auto'
-  }
+  const def = subId ? ext.subviews?.[subId] : undefined
+  if (def?.height !== undefined) return def.height === 'auto'
   return ext.windowHeight === 'auto'
 })
 

@@ -16,10 +16,11 @@ export default defineExtension({
   },
 
   disableSearchInput: true,
-  mainView: () => NotesView,
-  searchBarAccessory: () => NotesActions,
-  subviews: { config: () => NotesSettings },
-  subviewTitle: { config: { 'zh-CN': '设置', en: 'Settings' } },
+  mainView: NotesView,
+  searchBarAccessory: NotesActions,
+  subviews: {
+    config: { view: NotesSettings, title: { 'zh-CN': '设置', en: 'Settings' } },
+  },
   // 固定默认窗高（未声明 = DEFAULT_HEIGHT），长文由输入区 / Markdown 预览内部滚动消化
   globalShortcuts: [
     {

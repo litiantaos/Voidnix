@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { computed } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 // 诊断子视图最近使用副标题：连接数 / 规则数（注册与离开时读取的接线测试）
@@ -30,6 +31,7 @@ import '../locales'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
 import { useRecentsStore } from '@/stores/recents'
+import { SCREEN_CONTEXT_KEY } from '@/composables/useScreenSummary'
 import ConnectionsView from './ConnectionsView.vue'
 import RulesView from './RulesView.vue'
 
@@ -38,8 +40,11 @@ afterEach(() => {
   while (wrappers.length) wrappers.pop()!.unmount()
 })
 
-function mountView(component: typeof ConnectionsView | typeof RulesView) {
-  const wrapper = mount(component)
+function mountView(component: typeof ConnectionsView | typeof RulesView, subview: string) {
+  const screenContext = computed(() => ({ extId: 'proxy', subview }))
+  const wrapper = mount(component, {
+    global: { provide: { [SCREEN_CONTEXT_KEY]: screenContext } },
+  })
   wrappers.push(wrapper)
   return wrapper
 }
@@ -74,7 +79,7 @@ function leaveScreen(subview: string) {
 
 describe('proxy 诊断子视图最近使用摘要', () => {
   it('连接界面：活动连接数', async () => {
-    mountView(ConnectionsView)
+    mountView(ConnectionsView, 'connections')
     await flushPromises()
 
     // 流帧推送两个连接（Channel 由 onMounted 创建）
@@ -94,7 +99,7 @@ describe('proxy 诊断子视图最近使用摘要', () => {
   })
 
   it('规则界面：规则总数', async () => {
-    mountView(RulesView)
+    mountView(RulesView, 'rules')
     await flushPromises()
 
     expect(leaveScreen('rules')).toMatchObject({

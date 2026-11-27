@@ -35,7 +35,7 @@ export default defineExtension({
   },
   disableSearchInput: true,
   windowHeight: 'auto',
-  mainView: () => VideoView,
+  mainView: VideoView,
   setup: async () => {
     // 跨扩展同页投递：finder-ext 等经 window CustomEvent 同步写入待处理视频路径
     // （多选区全量带入）。同步是硬要求——投递先于跳转首帧渲染，View watch 立即消费。

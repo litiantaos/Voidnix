@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { computed, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 // 订阅二级界面 UI 契约：顶部「通用」组（添加订阅行，无图标）+ 订阅列表、激活项 accent、
@@ -18,6 +18,7 @@ import '../locales'
 import { config } from '../config'
 import { useAppStore } from '@/stores/app'
 import { useRecentsStore } from '@/stores/recents'
+import { SCREEN_CONTEXT_KEY } from '@/composables/useScreenSummary'
 import SubscriptionsView from './SubscriptionsView.vue'
 
 function sub(partial: Partial<{ id: string; name: string; url: string; proxyCount: number }> = {}) {
@@ -59,7 +60,10 @@ afterEach(() => {
 })
 
 async function mountView() {
-  const wrapper = mount(SubscriptionsView)
+  const screenContext = computed(() => ({ extId: 'proxy', subview: 'subscriptions' }))
+  const wrapper = mount(SubscriptionsView, {
+    global: { provide: { [SCREEN_CONTEXT_KEY]: screenContext } },
+  })
   wrappers.push(wrapper)
   await flushPromises()
   return wrapper

@@ -31,11 +31,11 @@ export default defineExtension({
 
   placeholder: { 'zh-CN': '搜索软件包', en: 'Search packages' },
 
-  mainView: () => HomebrewView,
+  mainView: HomebrewView,
   subviews: {
-    detail: () => DetailView,
-  },
-  subviewTitle: {
-    detail: { 'zh-CN': '包详情', en: 'Package Details' },
+    detail: {
+      view: DetailView,
+      title: { 'zh-CN': '包详情', en: 'Package Details' },
+    },
   },
 })

@@ -98,6 +98,17 @@ export interface ShortcutBinding {
   onExecute: (wasVisible: boolean) => void
 }
 
+/** 子视图（一屏）的完整定义：组件、显示名、可选高度覆盖。
+ *  三者同属一个 key，合并声明避免平行 map 漂移（最近使用标题 / placeholder / 高度共用）。 */
+export interface SubviewDefinition {
+  /** 子视图组件（静态 import，框架按需渲染）。 */
+  view: Component
+  /** 屏显示名：搜索栏 placeholder「搜索 X」+ 最近使用行「扩展名 · X」。 */
+  title: LocalizedText
+  /** 高度覆盖；省略 = 沿用扩展 windowHeight。 */
+  height?: number | 'auto'
+}
+
 export interface Extension {
   meta: ExtensionMeta
 
@@ -110,21 +121,17 @@ export interface Extension {
   /** 搜索结果回车动作（扩展私有；扩展入口结果走框架内置激活，见下方「执行分派」）。 */
   onExecute?(result: SearchResult, selectedResults?: SearchResult[]): void | Promise<void>
   /** 主视图。 */
-  mainView?: () => Component
+  mainView?: Component
   /** 搜索栏右侧附属区域。 */
-  searchBarAccessory?: () => Component
-  /** 扩展私有命名子视图（如 screenshot 的 ocr、各扩展的 config）。 */
-  subviews?: Record<string, () => Component>
-  /** 子视图显示名（id → 名称），激活子视图时搜索栏 placeholder 用「搜索{name}」。 */
-  subviewTitle?: Record<string, LocalizedText>
+  searchBarAccessory?: Component
+  /** 扩展私有命名子视图（如 screenshot 的 ocr、各扩展的 config）：id → 屏定义。 */
+  subviews?: Record<string, SubviewDefinition>
   globalShortcuts?: ShortcutBinding[]
   /** 搜索框占位提示（激活扩展时显示）。 */
   placeholder?: LocalizedText
   /** 扩展激活时主窗口高度（逻辑像素）：number = 固定值（clamp 到 [MIN,MAX]）；'auto' = 随内容自适应；未声明 = 默认高度。
-   *  mainView 与所有 subviews 共用此值（subview 可经 subviewHeights 覆盖）。 */
+   *  mainView 与所有 subviews 共用此默认值；子视图可在 SubviewDefinition.height 覆盖。 */
   windowHeight?: number | 'auto'
-  /** subview 级高度覆盖：key 对应 subviews 字典键，值语义同 windowHeight。 */
-  subviewHeights?: Record<string, number | 'auto'>
 
   // ── 行为槽（与能力槽同等地位的扩展行为契约）──
   /** 扩展自管输入、禁用主搜索框。 */

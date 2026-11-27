@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -44,11 +44,27 @@ vi.mock('@/composables/useExtensionHeight', () => ({
   useExtensionHeight: vi.fn(),
 }))
 
+import { defineExtension } from '@/runtime/extension-registry'
 import MainView from './MainView.vue'
 import WelcomeView from './WelcomeView.vue'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import '@/locales'
+
+const AccessoryProbe = defineComponent({
+  setup: () => () => h('i', { id: 'accessory-probe' }),
+})
+const ViewProbe = defineComponent({
+  setup: () => () => h('div', { id: 'view-probe' }),
+})
+defineExtension({
+  meta: { id: 'mainview-meta-probe', name: 'Meta Probe', icon: 'i-ri-test-line', order: 999 },
+  mainView: ViewProbe,
+  searchBarAccessory: AccessoryProbe,
+  subviews: {
+    detail: { view: ViewProbe, title: { 'zh-CN': '详情', en: 'Details' } },
+  },
+})
 
 const mountedWrappers: ReturnType<typeof mount>[] = []
 
@@ -57,6 +73,27 @@ function mountView() {
   mountedWrappers.push(wrapper)
   return wrapper
 }
+
+describe('MainView 扩展视图元数据', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    sessionStorage.clear()
+  })
+  afterEach(() => {
+    while (mountedWrappers.length) mountedWrappers.pop()!.unmount()
+  })
+
+  it('搜索栏配件直接渲染组件；子视图 placeholder 取 subviews[id].title', async () => {
+    const appStore = useAppStore()
+    appStore.setActiveExtension('mainview-meta-probe')
+    appStore.openSubview('detail')
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.find('#accessory-probe').exists()).toBe(true)
+    expect(wrapper.find('#main-search-input').attributes('placeholder')).toBe('搜索详情')
+  })
+})
 
 describe('MainView 整窗视图完结路由', () => {
   beforeEach(() => {

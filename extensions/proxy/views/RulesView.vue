@@ -25,10 +25,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import { t } from '@/runtime/i18n'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
@@ -62,8 +63,7 @@ const summaryProvider = () => {
     ? t('proxy.rulesCount', { count: rules.value.length })
     : t('proxy.noRules')
 }
-onMounted(() => appStore.registerScreenSummary('proxy', 'rules', summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('proxy', 'rules', summaryProvider))
+useScreenSummary(summaryProvider)
 
 onMounted(async () => {
   try {

@@ -153,10 +153,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import { hideWindow } from '@/utils/tauri'
 import { t } from '@/runtime/i18n'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -202,8 +203,7 @@ const summaryProvider = () => {
   if (!i) return ''
   return `${baseName(i.path)} · ${i.entries.length} ${t('archive.entries')}`
 }
-onMounted(() => appStore.registerScreenSummary('archive', null, summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('archive', null, summaryProvider))
+useScreenSummary(summaryProvider)
 
 /** 压缩密码（不落盘：仅请求体一次性传给命令；经弹窗两次输入设置） */
 const password = ref('')

@@ -101,6 +101,7 @@ function makeHarness() {
   return {
     wrapper,
     activeExtension,
+    activeSubview,
     setContentHeight(h: number) {
       contentHeight = h
     },
@@ -251,6 +252,25 @@ describe('useExtensionHeight', () => {
     calls = await drainSetMainFrame(h)
     expect(calls[0].args?.height).toBe(WINDOW.DEFAULT_HEIGHT)
     expect(calls[0].args?.y).toBe(880 - WINDOW.DEFAULT_HEIGHT)
+    h.wrapper.unmount()
+  })
+
+  it('子视图 height 覆盖扩展 windowHeight', async () => {
+    const ext = {
+      meta: { id: 'sub-height-ext', name: 'Sub Height', icon: 'i', order: 1 },
+      windowHeight: 820,
+      subviews: {
+        detail: { view: defineComponent({}), title: 'Detail', height: 600 },
+      },
+    } as unknown as Extension
+    const h = makeHarness()
+    await drainSetMainFrame(h)
+
+    h.activeExtension.value = ext
+    h.activeSubview.value = 'detail'
+    const calls = await drainSetMainFrame(h)
+    expect(calls.length).toBe(1)
+    expect(calls[0].args?.height).toBe(600)
     h.wrapper.unmount()
   })
 

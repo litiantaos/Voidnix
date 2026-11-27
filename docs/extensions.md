@@ -32,7 +32,7 @@ export default defineExtension({
   placeholder: '输入要编码或解码的文本',
   search: { dynamic: (query, ctx) => [...] },
   onExecute: (result) => { ... },
-  mainView: () => View,
+  mainView: View,
 })
 ```
 
@@ -40,18 +40,16 @@ export default defineExtension({
 
 - `search`：SearchProvider.dynamic 单通道召回（消费者见下「搜索集成」）
 - `onExecute`：搜索结果回车动作，扩展私有（无消费者）
-- `mainView`：主视图组件（19 扩展）
-- `searchBarAccessory`：搜索栏右侧配件（7：clipboard/agent/translate/proxy/ai-providers/notes/system-status）
-- `subviews`：扩展私有命名子视图（11：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{subscriptions/config/connections/rules/logs}、homebrew{detail}、notes{config}、system-status{config}、finder-ext{openWith}、archive{entries}、image{config}）
-- `subviewTitle`：子视图显示名（id→中文名），激活子视图时搜索栏 placeholder 用「搜索{name}」，最近使用行标题追加「扩展名 · 子视图名」也消费它；`check:extension-subviews` 强制每个 `subviews` key 都有显示名、无悬空且同扩展内唯一（11：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{subscriptions/config/connections/rules/logs}、homebrew{detail}、notes{config}、system-status{config}、finder-ext{openWith}、archive{entries}、image{config}）
+- `mainView`：主视图组件（19 扩展；直接传组件，静态 import）
+- `searchBarAccessory`：搜索栏右侧配件（9：clipboard/agent/translate/proxy/ai-providers/notes/system-status/image/ai-gateway）
+- `subviews`：扩展私有命名子视图：`id → { view, title, height? }`，三者同属一屏、合并声明（11：screenshot{ocr}、clipboard{config}、agent{config}、translate{config}、proxy{subscriptions/config/connections/rules/logs}、homebrew{detail}、notes{config}、system-status{config}、finder-ext{openWith}、archive{entries}、image{config}）。`view` 直接传组件；`title` 是搜索栏 placeholder「搜索{title}」+ 最近使用行标题「扩展名 · {title}」的单一来源（必填，`check:extension-subviews` 校验非空且同扩展内唯一）；`height` 覆盖扩展 `windowHeight`（语义同下，可省略）
 - `globalShortcuts`：全局快捷键绑定（6：clipboard/screenshot/agent/translate/finder-ext/notes）
 - `placeholder`：搜索框占位提示，激活扩展时显示（7：clipboard/currency/ip/time/base64/calculator/homebrew）
-- `windowHeight`：扩展激活时主窗口高度，三种声明语义：
+- `windowHeight`：扩展激活时主窗口高度（主视图与未覆盖的子视图共用），三种声明语义：
   - **`number`**：固定高度，clamp `[MIN,MAX]`
   - **`'auto'`**：随内容自适应
   - **未声明**：默认高度
-  - 共 7 消费者：agent/proxy=840、translate/system-status/video/finder-ext/image='auto'（notes 固定默认高度，输入区内部滚动）
-- `subviewHeights`：subview 级高度覆盖，key→语义同 windowHeight（1：screenshot{ocr:'auto'}）
+  - 共 9 消费者：agent/proxy=840、archive/translate/system-status/video/finder-ext/image/ai-gateway='auto'（notes 固定默认高度，输入区内部滚动）
 
 **高度机制**：统一由 `useExtensionHeight`（MainView 全局唯一调用）处理，扩展只需声明，View 不用管——高度解析、系统级动画与顶边锚定位置模型见 [AGENTS.md](../AGENTS.md)「窗口高度」。
 
@@ -73,12 +71,12 @@ export default defineExtension({
 
 ### UI 规约补充
 
-- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免扩展列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / ai-providers=35 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / notes=105 / screenshot=110 / video=115 / image=116 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160 / homebrew=170；hidden 扩展 settings=998 / search=999。
+- **`order` 唯一性**：扩展 `meta.order` 在非 hidden 扩展间应唯一，避免扩展列表稳定排序抖动。当前分配：clipboard=10 / translate=20 / agent=30 / ai-providers=35 / ai-gateway=36 / proxy=40 / time=50 / ip=60 / uuid=70 / base64=80 / calculator=90 / currency=100 / notes=105 / screenshot=110 / video=115 / image=116 / archive=117 / window-manager=120 / finder-ext=130 / system-status=135 / zsh-autosuggestions=140 / clean-mode=150 / awake=160 / homebrew=170 / settings=998；hidden 扩展 search=999。
 - **`disableSearchInput` 决策**：与 `mainView` 独立——mainView 扩展若仍用主搜索框过滤列表（如 clipboard）则不声明；自管输入或无需搜索框（agent/translate/settings 等）声明 `true`。uuid 有 search 但 disableSearchInput（进入后只展示即时结果）。
 - **clipboard 敏感内容过滤**：monitor 对源 app 为已知密码管理器（1Password/Bitwarden/KeePassXC 等）或内容匹配 secret 启发规则（`password=`/长 base64/PEM 等）的文本不入库，避免明文密码落 SQLite。ConcealedType marker 是第一道防线，此为兜底。
 - **View 根禁止与 ContentView 竞争的纵向双滚**：经 ContentView 渲染的 View（mainView/subviews）根及主内容流不得设 `overflow-y-auto`/`overflow-auto`。ContentView 的 `scrollContainer` 是页面级唯一滚动容器，再设 overflow 形成双层滚动，`BaseList` 键盘导航的 `el.closest('.overflow-y-auto')` 命中内层失效 → 选中框出视口。固定高度局部区域可自滚（如 OCR 图预览、notes 输入区——固定窗高下 ContentView 恒不滚，无竞争）。独立窗口（screenshot/snap-panel/pin，经各自 HTML 入口加载）不经 ContentView，不受此约束。
 - **列表选中状态三态语义（BaseList 组件层统一承载）**：`ui-active` 高亮由 BaseList 内部 `localIndex` 驱动。归零只在「本列表所在的屏被激活且 `appStore.entryIntent === 'fresh'`」时执行并 emit 同步父级镜像——仅作用于 KeepAlive 树内的自管列表（首次 activated 标记）；**离开 / 挂起、最近使用恢复（resume）、同扩展 subview 往返、窗口隐藏唤起一律保留导航位置**（最近使用恢复依赖此点还原选中）——滚动侧对应 scrollKey watch 的 save/restore 与 `clearCache` 不卸载视图（content-visibility 释放 layer，DOM 冻结状态保留）。三个 View 侧补充约定：含 v-if 空态切换的 View 应保持 **BaseList 常挂**（`v-show` 切换；v-if 卸载会使 BaseList 在停用期间错过 activated（inKeepAliveTree 停 false）与 fresh 归零，重挂载不触发 activated 钩子对——消费者 clipboard 的包裹层写法见 [clipboard.md](extensions/clipboard.md)「进入重置」）；动态置顶列表（新记录不断插入顶部，保留索引指向已漂移记录）可按 View 数据语义覆盖「窗口唤起保留」——**会话结束即归位**（窗口隐藏 `window-hiding` + 粘贴成功分支双锚，DOM 更新在隐藏期完成，消除 hide 不 orderOut 下唤起首帧的旧位置残影；粘贴命令经 Rust 隐藏不经前端 hideWindow，`invoke` 返回时窗口已隐藏），消费者 clipboard；**需瞬时归零（滑层瞬落 + 滚顶、不走长距离导航动画）一律用 BaseList expose 的 `reset()`**（与 `reveal` 同族的视图复位契约）——不要在 View 侧拼装「改 selectedIndex + 引用替换」：归零经 props→watch 二跳会被调度拆成两次联动触发（先 items 后 index，各自落在动画路径或 moved 早退），fetch 缓存命中时 applyFilters 空过滤也原样返回旧引用。标准列表（KeepAlive 外，受控于 MainView）不参与归零：其 selectedIndex 由主界面模式现场整体保存/恢复（两态模型），子组件回写会覆盖同步恢复值。自管列表的 View 传 `v-model:selected-index`（或 `:selected-index` + `@select`）保持镜像传导——只接事件不传 prop 时父级镜像会与高亮错位（菜单/执行读镜像分裂）。设置类列表用 `BaseSettingsList`（内部已闭环）。items 替换时的越界/归零策略属各 View 数据语义（身份跟随或归零），BaseList 不介入。
-- **最近使用行（标题与副标题）**：默认列表顶部最近行按屏（`extId + subview`）平铺，标题取扩展名，子视图屏追加「· 子视图名」（`subviewTitle`）——同一扩展的主视图与多级子界面各自成行，只靠扩展名会出现两条同名项（如「代理」与进入订阅界面后的「代理」），声明了 `subviews` 的扩展必须同时声明 `subviewTitle`（`check:extension-subviews` 阻塞校验）。副标题优先展示扩展在现场上报的一行内容摘要（如打开的文件 / 最近一条对话 / 识别文本首行），无摘要时回退离开时的过滤词。View 在挂载时 `appStore.registerScreenSummary(extId, subview, () => string)`、卸载时 `unregisterScreenSummary(extId, subview, 同一个 getter)`（KeepAlive 停用不必注销——现场仍在、读的是当前状态；子视图用自己的 subview key）；离开一屏时框架按 `extId + subview` 读取，折叠空白、截断 80 字随最近记录落库。摘要应短、可读、来自屏内可见内容（不要放密钥等敏感信息）；无内容型现场可不实现，自动回退 query。
+- **最近使用行（标题与副标题）**：默认列表顶部最近行按屏（`extId + subview`）平铺，标题取扩展名，子视图屏追加「· {subviews[id].title}」——同一扩展的主视图与多级子界面各自成行，只靠扩展名会出现两条同名项（如「代理」与进入订阅界面后的「代理」）；`check:extension-subviews` 阻塞校验 title 非空且同扩展内唯一。副标题优先展示扩展在现场上报的一行内容摘要（如打开的文件 / 最近一条对话 / 识别文本首行），无摘要时回退离开时的过滤词。View 在 `setup()` 调 `useScreenSummary(() => string)`：ContentView 通过 provide/inject 注入当前屏身份（extId + activeSubview），composable 在挂载时自动注册、卸载时注销（KeepAlive 停用不注销——现场仍在、读的是当前状态）；View 不再手写 extId/subview 字符串。离开一屏时框架按 `extId + subview` 读取，折叠空白、截断 80 字随最近记录落库。摘要应短、可读、来自屏内可见内容（不要放密钥等敏感信息）；无内容型现场可不实现，自动回退 query。
 - **进入意图 `entryIntent`（新会话 vs 现场恢复）**：`appStore.entryIntent` 仅在每次 `setActiveExtension` 后的本次激活渲染周期内有效：`fresh`（搜索 / 工具列表 / 快捷键 / 外部事件进入）、`resume`（最近使用恢复）、`none`（子视图往返等内部切换）。需要「重新进入即新会话」语义的 View（现有消费者 image / video / finder-ext / clipboard）应在 `onActivated` 判断 `entryIntent === 'fresh'` 再清空现场；**不要**在 `onDeactivated` 里清空——窗口隐藏、主快捷键回搜索、最近使用恢复都会走 deactivate，会把要保留的现场误清。跨扩展投递（`pendingInputPaths` 等）在 watcher 里置位 hold 标记、由 `onActivated` 消费，避免被首页新会话清空吞掉。
 - **列表键盘响应的停用判定（BaseList）**：`canNavigate` 按键时沿组件父链查 `isDeactivated` 实时判定是否处于停用 KeepAlive 子树（Vue `registerKeepAliveHook` 钩子守卫同源语义，状态由框架维护）。不能用 `onDeactivated` 置位的 isActive 镜像：停用视图的响应式 watcher 仍活跃，其内部 v-if 分支翻转会使列表在停用树内卸载后重挂载（如剪贴板 history 随全局 query 过滤清空再回填），重挂载不触发 activated/deactivated 钩子对，镜像停在初值 true 会成为后台仍消费 ↑↓/Enter 的「僵尸列表」——用户在其它扩展内回车误触剪贴板粘贴的根因。
 - **列表键盘消费规则（BaseList）**：多选有选区时 ESC 先清选区不退出扩展——经捕获相 document 监听先行于 `useResultNavigation` 的 bubble 退出分派（扩展视图列表晚于 MainView 挂载，注册顺序不保证先行，捕获相是唯一确定性通道）；列表缩短致选中越界时 Enter 不派发（无有效目标不消费按键，方向键 `wrapIndex` 自愈）。

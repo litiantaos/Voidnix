@@ -168,6 +168,7 @@ import {
 import { open } from '@tauri-apps/plugin-shell'
 import { isAgentProviderReady } from './config'
 import { useAppStore } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import { t } from '@/runtime/i18n'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSetupState from '@/components/ui/BaseSetupState.vue'
@@ -367,9 +368,9 @@ const summaryProvider = () => {
   }
   return ''
 }
+useScreenSummary(summaryProvider)
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
-  appStore.registerScreenSummary('agent', null, summaryProvider)
 })
 
 /// 消息 DOM 在 deactivate 时卸载（释放 WebKit 内存），滚动位置随之丢失；按
@@ -404,7 +405,6 @@ onDeactivated(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
-  appStore.unregisterScreenSummary('agent', null, summaryProvider)
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
 })
 </script>

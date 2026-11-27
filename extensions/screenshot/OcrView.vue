@@ -79,12 +79,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, onDeactivated } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { t } from '@/runtime/i18n'
 import { isTauri } from '@/utils/tauri'
 import { copyAndHide, useAppStore } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import { onKeyStroke } from '@/composables/events'
 import { isComposing, isModalDialogOpen, wrapIndex } from '@/utils/dom'
 import { pendingOcrData, ocrSession } from './index'
@@ -116,8 +117,7 @@ const summaryProvider = () => {
     .find(Boolean)
   return line ?? ''
 }
-onMounted(() => appStore.registerScreenSummary('screenshot', 'ocr', summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('screenshot', 'ocr', summaryProvider))
+useScreenSummary(summaryProvider)
 
 const previewRef = ref<HTMLElement>()
 const actionIndex = ref(0)

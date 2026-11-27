@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
-// check:extension-subviews —— 扩展子视图显示名完整性（阻塞项）。
-// 最近使用行按屏平铺，标题由扩展名 + subviewTitle 合成；subviewTitle 缺失 / 重复会让
-// 同一扩展的多级界面重新变成同名项。校验三条不变量：
-//   1. subviews 的每个 key 都有对应 subviewTitle（含有效显示名）；
-//   2. subviewTitle 不得悬空（key 没有对应 subviews）；
-//   3. 同一扩展内不同子视图的显示名不得重复（按语言解析，与 runtime/i18n 同回退链）。
+// check:extension-subviews —— 子视图显示名完整性（阻塞项）。
+// subviews 每个屏声明为 { view, title, height? }；title 是搜索框 placeholder 与
+// 最近使用行标题的单一来源。TS 已保证 title 必填，本校验补类型表达不了的部分：
+//   1. subviews / 屏定义必须是静态对象字面量（AST 可读；动态构造拒绝）；
+//   2. 每个屏的 title 在 zh-CN / en 下解析非空（含 LocalizedText 回退）；
+//   3. 同一扩展内不同屏的 title 唯一（最近行只显示「扩展名 · title」，重复会再次同名）。
 // 用 TypeScript AST 读 defineExtension({...}) 的对象字面量，不依赖缩进/格式。
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -27,38 +27,46 @@ function findProperty(obj: ts.ObjectLiteralExpression, key: string): ts.Property
   return null
 }
 
-/** subviews / subviewTitle 要求是静态对象字面量；动态构造无法做注册期校验。 */
-function objectValue(prop: ts.PropertyAssignment): ts.ObjectLiteralExpression | null {
-  return ts.isObjectLiteralExpression(prop.initializer) ? prop.initializer : null
+/** 任意同名声明的存在性（简写属性 / getter / method 都算）。用于区分「缺失」与
+ *  「存在但非静态字面量」，避免脚本静默跳过。 */
+function hasProperty(obj: ts.ObjectLiteralExpression, key: string): boolean {
+  for (const p of obj.properties) {
+    if (!ts.isSpreadAssignment(p) && propKey(p.name) === key) return true
+  }
+  return false
 }
 
-function keysOf(obj: ts.ObjectLiteralExpression): string[] {
-  const keys: string[] = []
-  for (const p of obj.properties) {
-    if (
-      !ts.isPropertyAssignment(p) &&
-      !ts.isMethodDeclaration(p) &&
-      !ts.isShorthandPropertyAssignment(p)
-    ) {
-      continue
-    }
-    const key = propKey(p.name)
-    if (key) keys.push(key)
+/** 去掉不影响静态值的包裹层（as const / satisfies / 括号），保留可读的字面量。 */
+function unwrapExpression(expr: ts.Expression): ts.Expression {
+  let current = expr
+  while (
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isParenthesizedExpression(current)
+  ) {
+    current = current.expression
   }
-  return keys
+  return current
+}
+
+/** subviews / 屏定义要求是静态对象字面量；动态构造无法做注册期校验。 */
+function objectValue(prop: ts.PropertyAssignment): ts.ObjectLiteralExpression | null {
+  const init = unwrapExpression(prop.initializer)
+  return ts.isObjectLiteralExpression(init) ? init : null
 }
 
 /** 解析 LocalizedText 的展示值：字符串直用；对象按 locale → zh-CN → en → 首个值回退
  *  （与 runtime/i18n.ts::resolveLocalized 同语义）。 */
 function resolveTitle(prop: ts.PropertyAssignment, locale: string): string {
-  const init = prop.initializer
+  const init = unwrapExpression(prop.initializer)
   if (ts.isStringLiteral(init)) return init.text
   if (!ts.isObjectLiteralExpression(init)) return ''
   const map = new Map<string, string>()
   for (const p of init.properties) {
     if (!ts.isPropertyAssignment(p)) continue
     const key = propKey(p.name)
-    if (key && ts.isStringLiteral(p.initializer)) map.set(key, p.initializer.text)
+    const value = unwrapExpression(p.initializer)
+    if (key && ts.isStringLiteral(value)) map.set(key, value.text)
   }
   return map.get(locale) ?? map.get('zh-CN') ?? map.get('en') ?? [...map.values()][0] ?? ''
 }
@@ -100,52 +108,73 @@ for (const dir of readdirSync(EXT_DIR).sort()) {
     errors.push(`${dir}: 未找到 defineExtension({...})`)
     continue
   }
+  // 顶层 spread 可能注入任意 subviews（对象展开顺序还可能覆盖直接声明），
+  // AST 无法静态确认——要求扩展元数据显式声明，避免校验静默漏检。
+  if (extObj.properties.some(ts.isSpreadAssignment)) {
+    errors.push(`${dir}: defineExtension 不接受顶层展开（子视图元数据须显式静态声明）`)
+    continue
+  }
 
   const subviewProp = findProperty(extObj, 'subviews')
-  const titleProp = findProperty(extObj, 'subviewTitle')
-  const subviews = subviewProp ? objectValue(subviewProp) : null
-  const titles = titleProp ? objectValue(titleProp) : null
-  if (subviewProp && !subviews) {
+  if (!subviewProp) {
+    if (hasProperty(extObj, 'subviews')) {
+      errors.push(`${dir}: subviews 必须是静态对象字面量属性（不支持简写/getter/spread）`)
+    }
+    continue
+  }
+  const subviews = objectValue(subviewProp)
+  if (!subviews) {
     errors.push(`${dir}: subviews 必须是静态对象字面量（校验依赖静态键）`)
-    continue
-  }
-  if (titleProp && !titles) {
-    errors.push(`${dir}: subviewTitle 必须是静态对象字面量（校验依赖静态键）`)
-    continue
-  }
-
-  const subviewKeys = subviews ? keysOf(subviews) : []
-  const titleKeys = titles ? keysOf(titles) : []
-  if (subviewKeys.length === 0) {
-    if (titleKeys.length > 0) errors.push(`${dir}: subviewTitle 悬空（未声明 subviews）`)
     continue
   }
 
   checkedExts++
-  checkedSubviews += subviewKeys.length
+  const seenTitles = new Map<string, Map<string, string>>()
+  for (const locale of LOCALES) seenTitles.set(locale, new Map())
 
-  for (const key of subviewKeys) {
-    if (!titleKeys.includes(key)) errors.push(`${dir}: 子视图 ${key} 缺少 subviewTitle`)
-  }
-  for (const key of titleKeys) {
-    if (!subviewKeys.includes(key)) errors.push(`${dir}: subviewTitle.${key} 悬空（无对应子视图）`)
-  }
+  for (const p of subviews.properties) {
+    if (!ts.isPropertyAssignment(p)) {
+      errors.push(`${dir}: subviews 必须使用静态属性声明（不支持展开/方法）`)
+      continue
+    }
+    const key = propKey(p.name)
+    if (!key) {
+      errors.push(`${dir}: subviews 存在无法解析的 key`)
+      continue
+    }
+    checkedSubviews++
 
-  // 同一扩展内的子视图显示名必须唯一：最近使用行只显示「扩展名 · 子视图名」，
-  // 重复标题会让不同屏再次无法区分。按语言分别校验（含 LocalizedText 回退）。
-  for (const locale of LOCALES) {
-    const seen = new Map<string, string>()
-    for (const key of subviewKeys) {
-      const prop = titles ? findProperty(titles, key) : null
-      if (!prop) continue
-      const name = resolveTitle(prop, locale)
+    const def = objectValue(p)
+    if (!def) {
+      errors.push(`${dir}.${key}: 屏定义必须是 { view, title, height? } 对象字面量`)
+      continue
+    }
+    if (!hasProperty(def, 'view')) errors.push(`${dir}.${key}: 缺少 view`)
+    const titleProp = findProperty(def, 'title')
+    if (!titleProp) {
+      errors.push(
+        hasProperty(def, 'title')
+          ? `${dir}.${key}: title 必须是静态字符串或本地化对象字面量`
+          : `${dir}.${key}: 缺少 title`,
+      )
+      continue
+    }
+    const titleInit = unwrapExpression(titleProp.initializer)
+    if (!ts.isStringLiteral(titleInit) && !ts.isObjectLiteralExpression(titleInit)) {
+      errors.push(`${dir}.${key}: title 必须是静态字符串或本地化对象字面量`)
+      continue
+    }
+
+    for (const locale of LOCALES) {
+      const name = resolveTitle(titleProp, locale)
       if (!name) {
-        errors.push(`${dir}: 子视图 ${key} 的 subviewTitle 在 ${locale} 下为空`)
+        errors.push(`${dir}.${key}: title 在 ${locale} 下为空`)
         continue
       }
+      const seen = seenTitles.get(locale)!
       const prev = seen.get(name)
       if (prev) {
-        errors.push(`${dir}: subviewTitle 重复（${locale}）：「${name}」同时用于 ${prev} / ${key}`)
+        errors.push(`${dir}.${key}: title 与 ${prev} 重复（${locale}）：「${name}」`)
       } else {
         seen.set(name, key)
       }

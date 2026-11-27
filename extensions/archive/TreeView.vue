@@ -99,6 +99,7 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import { t } from '@/runtime/i18n'
 import BaseList from '@/components/ui/BaseList.vue'
 import { onKeyStroke } from '@/composables/events'
@@ -114,13 +115,12 @@ const summaryProvider = () => {
   if (!i) return ''
   return `${baseName(i.path)} · ${i.entries.length} ${t('archive.entries')}`
 }
+useScreenSummary(summaryProvider)
 onMounted(() => {
   document.addEventListener('keydown', onPreviewKey, true)
-  appStore.registerScreenSummary('archive', 'entries', summaryProvider)
 })
 onUnmounted(() => {
   document.removeEventListener('keydown', onPreviewKey, true)
-  appStore.unregisterScreenSummary('archive', 'entries', summaryProvider)
 })
 
 /** 进入/重激活二级界面：聚焦顶部搜索框（MainView 的 subview watch 先聚焦滚动容器，

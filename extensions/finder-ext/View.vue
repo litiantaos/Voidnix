@@ -27,19 +27,11 @@
 </template>
 
 <script setup lang="ts">
-import {
-  computed,
-  nextTick,
-  onActivated,
-  onDeactivated,
-  onMounted,
-  onUnmounted,
-  ref,
-  watch,
-} from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -188,8 +180,7 @@ const summaryProvider = () => {
   const names = paths.map(baseName)
   return names.slice(0, 2).join(' / ') + (names.length > 2 ? ` +${names.length - 2}` : '')
 }
-onMounted(() => appStore.registerScreenSummary('finder-ext', null, summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('finder-ext', null, summaryProvider))
+useScreenSummary(summaryProvider)
 
 /** 上下文可恢复标记：进入 openWith 二级界面（subview）/ 跨扩展跳转（视频 / 图片 / 压缩，
  * 带 from 记忆 Esc 返回目标）期间为 true，重激活 mainView 的 onActivated 消费——保持访达

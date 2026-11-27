@@ -284,7 +284,7 @@ export function useSearchInput(opts: SearchInputOptions) {
    *  无内容摘要且无过滤词时副标题也为空，用户无从判断哪条进哪一屏。 */
   function recentTitle(ext: Extension, subview: string | null): string {
     const name = resolveLocalized(ext.meta.name)
-    const subName = subview ? resolveLocalized(ext.subviewTitle?.[subview]) : ''
+    const subName = subview ? resolveLocalized(ext.subviews?.[subview]?.title) : ''
     return subName ? `${name} · ${subName}` : name
   }
 

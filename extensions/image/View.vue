@@ -179,6 +179,7 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { currentMonitor } from '@tauri-apps/api/window'
 import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import { isTauri } from '@/utils/tauri'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseProgress from '@/components/ui/BaseProgress.vue'
@@ -302,8 +303,7 @@ const summaryProvider = () => {
   if (!names.length) return ''
   return names.slice(0, 2).join(' / ') + (names.length > 2 ? ` +${names.length - 2}` : '')
 }
-onMounted(() => appStore.registerScreenSummary('image', null, summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('image', null, summaryProvider))
+useScreenSummary(summaryProvider)
 /** 当前工具可操作输入：removeBg 需当前张；拼接需两张起 */
 const hasImage = computed(() =>
   tool.value === 'removeBg' ? !!inputPath.value : imageFiles.value.length >= 2,

@@ -1,4 +1,26 @@
 import { test, expect } from '@playwright/test'
+import { LIMITS } from '../../src/runtime/constants'
+
+// 用于强制 LRU 驱逐 notes 的扩展入口（多于 KeepAlive 上限即可；取 id 精确匹配）
+const EVICT_KEYWORDS = [
+  '/translate',
+  '/image',
+  '/agent',
+  '/clipboard',
+  '/proxy',
+  '/finder-ext',
+  '/homebrew',
+  '/video',
+  '/system-status',
+  '/awake',
+  '/clean-mode',
+  '/window-manager',
+  '/zsh-autosuggestions',
+  '/ai-providers',
+  '/ai-gateway',
+  '/screenshot',
+  '/archive',
+]
 
 // notes 动效编辑器:渲染层结构 / 逐字进场 / ghost 离场 / 光标状态机 / IME / 选区。
 // 纯浏览器环境(Vite dev server),动效以 class 状态断言(时序窗口内捕获)。
@@ -616,9 +638,11 @@ test.describe('notes 记事本', () => {
     })
     await expect(page.locator('.ch')).toHaveCount(269)
     const input = page.locator('#main-search-input')
-    // 离开 notes 并依次激活 3 个其它扩展视图:KeepAlive max=3 按 LRU 驱逐 notes,
-    // 再次进入即全新挂载,走 config 恢复路径(onMounted → initText)
-    for (const kw of ['/translate', '/image', '/agent']) {
+    // 离开 notes 并依次激活足够多的其它扩展视图:KeepAlive 按 LRU 驱逐 notes,
+    // 再次进入即全新挂载,走 config 恢复路径(onMounted → initText)。
+    // 数量必须超过 LIMITS.maxCachedViews（上限调整时测试自动跟随）。
+    expect(EVICT_KEYWORDS.length).toBeGreaterThan(LIMITS.maxCachedViews)
+    for (const kw of EVICT_KEYWORDS.slice(0, LIMITS.maxCachedViews + 1)) {
       await input.press('Escape')
       await page.waitForTimeout(200)
       await input.fill(kw)

@@ -26,10 +26,12 @@ export default defineExtension({
   },
 
   windowHeight: 'auto',
-  mainView: () => FinderExtView,
-  subviews: { openWith: () => OpenWithView },
-  subviewTitle: {
-    openWith: { 'zh-CN': '用 App 打开', en: 'Open with App' },
+  mainView: FinderExtView,
+  subviews: {
+    openWith: {
+      view: OpenWithView,
+      title: { 'zh-CN': '用 App 打开', en: 'Open with App' },
+    },
   },
 
   globalShortcuts: [

@@ -32,23 +32,31 @@ export default defineExtension({
     order: 40,
   },
 
-  mainView: () => ProxyView,
-  searchBarAccessory: () => ProxyActions,
-  subviews: {
-    subscriptions: () => SubscriptionsView,
-    config: () => ProxySettings,
-    connections: () => ConnectionsView,
-    rules: () => RulesView,
-    logs: () => LogsView,
-  },
+  mainView: ProxyView,
+  searchBarAccessory: ProxyActions,
   /// config（完全卸载）内容少走 auto 自适应；订阅/诊断视图沿用固定 840
-  subviewHeights: { config: 'auto' },
-  subviewTitle: {
-    subscriptions: { 'zh-CN': '订阅', en: 'Subscriptions' },
-    config: { 'zh-CN': '设置', en: 'Settings' },
-    connections: { 'zh-CN': '连接', en: 'Connections' },
-    rules: { 'zh-CN': '规则', en: 'Rules' },
-    logs: { 'zh-CN': '日志', en: 'Logs' },
+  subviews: {
+    subscriptions: {
+      view: SubscriptionsView,
+      title: { 'zh-CN': '订阅', en: 'Subscriptions' },
+    },
+    config: {
+      view: ProxySettings,
+      title: { 'zh-CN': '设置', en: 'Settings' },
+      height: 'auto',
+    },
+    connections: {
+      view: ConnectionsView,
+      title: { 'zh-CN': '连接', en: 'Connections' },
+    },
+    rules: {
+      view: RulesView,
+      title: { 'zh-CN': '规则', en: 'Rules' },
+    },
+    logs: {
+      view: LogsView,
+      title: { 'zh-CN': '日志', en: 'Logs' },
+    },
   },
   windowHeight: 840,
 })

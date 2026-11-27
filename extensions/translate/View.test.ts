@@ -14,8 +14,6 @@ const mocks = vi.hoisted(() => ({
     activeSubview: null,
     isDialogOpen: false,
     showStatus: vi.fn(),
-    registerScreenSummary: vi.fn(),
-    unregisterScreenSummary: vi.fn(),
   },
 }))
 

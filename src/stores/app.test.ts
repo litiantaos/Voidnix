@@ -1,11 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { type Component } from 'vue'
+import { defineComponent, type Component } from 'vue'
+import { defineExtension } from '@/runtime/extension-registry'
 import { useAppStore } from './app'
 import { useRecentsStore } from './recents'
 import { showToast } from '@/composables/useToast'
 
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
+
+const SubViewProbe = defineComponent({ render: () => null })
+defineExtension({
+  meta: { id: 'app-subview-probe', name: 'Subview Probe', icon: 'i', order: 1 },
+  subviews: {
+    detail: { view: SubViewProbe, title: 'Detail' },
+  },
+})
 
 describe('app store', () => {
   beforeEach(() => {
@@ -119,6 +128,15 @@ describe('app store', () => {
       store.openSubview('config')
       expect(store.activeSubview).toBe('config')
       expect(store.subviewExternal).toBe(false)
+    })
+
+    it('openSubview 拒绝当前扩展未声明的子视图 id（外部事件 / 陈旧最近记录防御）', () => {
+      const store = useAppStore()
+      store.setActiveExtension('app-subview-probe')
+      store.openSubview('missing')
+      expect(store.activeSubview).toBeNull()
+      store.openSubview('detail')
+      expect(store.activeSubview).toBe('detail')
     })
 
     it('openSubview external=true 标记外部打开', () => {

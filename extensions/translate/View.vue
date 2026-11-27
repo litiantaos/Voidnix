@@ -74,6 +74,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { translateResults, isTranslating, translateText, pendingText, inputText } from './index'
 import { config as translateConfig, resolveAiTargets } from './config'
 import { copyAndHide, useAppStore } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import { t } from '@/runtime/i18n'
 import { CMD } from '@/commands'
 import { detectSpeechLang } from './logic'
@@ -94,8 +95,7 @@ const summaryProvider = () => {
     .find(Boolean)
   return line ?? ''
 }
-onMounted(() => appStore.registerScreenSummary('translate', null, summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('translate', null, summaryProvider))
+useScreenSummary(summaryProvider)
 
 const textareaRef = ref<InstanceType<typeof BaseTextarea>>()
 const selectedIndex = ref(0)

@@ -57,7 +57,7 @@ function load(): RecentView[] {
 
 /** 最近访问记录：离开一屏时写入（extId + subview），去重后置顶，超出上限淘汰最旧。
  *  记录点集中在 appStore.setActiveExtension（所有离开路径的唯一收口）；内容摘要由
- *  扩展经 registerScreenSummary 可选上报，框架读取后随记录落库。 */
+ *  View 经 useScreenSummary 可选上报，框架读取后随记录落库。 */
 export const useRecentsStore = defineStore('recents', () => {
   const views = ref<RecentView[]>(load())
 

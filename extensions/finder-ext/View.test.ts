@@ -20,8 +20,6 @@ const mocks = vi.hoisted(() => ({
     openSubview: vi.fn(),
     setActiveExtension: vi.fn(),
     showStatus: vi.fn(),
-    registerScreenSummary: vi.fn(),
-    unregisterScreenSummary: vi.fn(),
   },
 }))
 

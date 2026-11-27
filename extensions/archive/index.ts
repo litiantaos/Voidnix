@@ -39,13 +39,13 @@ export default defineExtension({
   disableSearchInput: true,
   // 自适应：空态/压缩表单按内容收缩；解压列表经 max-h 上限 + 内部滚动封顶（防超长包撑破）
   windowHeight: 'auto',
-  mainView: () => ArchiveView,
+  mainView: ArchiveView,
   subviews: {
-    entries: () => ArchiveTreeView,
-  },
-  subviewHeights: { entries: 'auto' },
-  subviewTitle: {
-    entries: { 'zh-CN': '压缩包文件', en: 'Archive Files' },
+    entries: {
+      view: ArchiveTreeView,
+      title: { 'zh-CN': '压缩包文件', en: 'Archive Files' },
+      height: 'auto',
+    },
   },
   setup: async () => {
     // 跨扩展同页投递：finder-ext 等经 window CustomEvent 同步写入待处理路径。

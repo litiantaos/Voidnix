@@ -30,8 +30,8 @@ export default defineExtension({
   },
 
   disableSearchInput: true,
-  mainView: () => AiProvidersView,
-  searchBarAccessory: () => AiProvidersActions,
+  mainView: AiProvidersView,
+  searchBarAccessory: AiProvidersActions,
 
   async setup() {
     await setupAiProvidersSync()

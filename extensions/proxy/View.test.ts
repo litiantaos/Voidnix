@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { KeepAlive, defineComponent, h, nextTick } from 'vue'
+import { KeepAlive, computed, defineComponent, h, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 // View.vue UI 契约：实时流量面板在顶部（容器同 ai-gateway 拓扑图），开启项副标题不再
@@ -37,6 +37,7 @@ vi.mock('@tauri-apps/plugin-store', () => ({
 import { invoke } from '@tauri-apps/api/core'
 import { useAppStore } from '@/stores/app'
 import { useRecentsStore } from '@/stores/recents'
+import { SCREEN_CONTEXT_KEY } from '@/composables/useScreenSummary'
 import '@/locales'
 import './locales'
 import { config } from './config'
@@ -74,7 +75,10 @@ function emptySub(id: string, name = '', url = '', proxyCount = 0) {
 const wrappers: ReturnType<typeof mount>[] = []
 
 function mountView() {
-  const wrapper = mount(defineComponent({ setup: () => () => h(KeepAlive, () => h(View)) }))
+  const screenContext = computed(() => ({ extId: 'proxy', subview: null }))
+  const wrapper = mount(defineComponent({ setup: () => () => h(KeepAlive, () => h(View)) }), {
+    global: { provide: { [SCREEN_CONTEXT_KEY]: screenContext } },
+  })
   wrappers.push(wrapper)
   return wrapper
 }

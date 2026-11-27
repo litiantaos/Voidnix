@@ -87,7 +87,7 @@
           </div>
 
           <!-- disableSearchInput 扩展 readonly（始终可聚焦）而非 disabled；子视图放开
-               输入（subviewTitle 即「搜索 X」placeholder，finder-ext openWith 同范式） -->
+               输入（subviews[id].title 即「搜索 X」placeholder，finder-ext openWith 同范式） -->
           <input
             ref="searchInput"
             id="main-search-input"
@@ -117,7 +117,7 @@
             items="center"
             shrink="0"
           >
-            <component :is="activeExtension.searchBarAccessory()" />
+            <component :is="activeExtension.searchBarAccessory" />
           </div>
 
           <BaseButton
@@ -281,15 +281,17 @@ watch(
 
 // placeholder：搜索说明
 // disableSearchInput 扩展仅当显式声明 placeholder 才显示（如 uuid），否则空
-// 子视图激活时：用「搜索{subviewTitle}」（扩展声明 subviewTitle 映射）
+// 子视图激活时：用「搜索{子视图显示名}」（扩展 subviews[id].title）
 const placeholderText = computed(() => {
   const ext = activeExtension.value
   if (!ext) {
     return t('search.placeholder')
   }
   const subview = appStore.activeSubview
-  if (subview && ext.subviewTitle?.[subview]) {
-    return t('search.searchIn', { name: resolveLocalized(ext.subviewTitle[subview]) })
+  const def = subview ? ext.subviews?.[subview] : undefined
+  const subName = def ? resolveLocalized(def.title) : ''
+  if (subName) {
+    return t('search.searchIn', { name: subName })
   }
   const ph = ext.placeholder
   if (ph) return resolveLocalized(ph)

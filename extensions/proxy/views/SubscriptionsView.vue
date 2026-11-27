@@ -126,7 +126,6 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -134,9 +133,9 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseEmptyState from '@/components/ui/BaseEmptyState.vue'
 import { t } from '@/runtime/i18n'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import { formatSubExpiry, isSubExpired } from '../logic'
 import { useSubscriptions, type SubscriptionRow } from '../useSubscriptions'
-import { useAppStore } from '@/stores/app'
 
 const {
   items,
@@ -160,14 +159,11 @@ const {
 const groupField = (item: SubscriptionRow) =>
   item.type === 'add' ? t('proxy.group.general') : t('proxy.group.subscription')
 
-const appStore = useAppStore()
-
 /// 最近使用行副标题：订阅总数 + 当前激活订阅名（未命名订阅只显示总数）。
 const summaryProvider = () => {
   const count = t('proxy.subscriptionTotal', { count: config.subscriptions.length })
   const active = config.subscriptions.find((s) => s.id === config.activeSubscriptionId)
   return active?.name ? `${count} · ${active.name}` : count
 }
-onMounted(() => appStore.registerScreenSummary('proxy', 'subscriptions', summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('proxy', 'subscriptions', summaryProvider))
+useScreenSummary(summaryProvider)
 </script>

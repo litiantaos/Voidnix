@@ -117,6 +117,7 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { CMD } from '@/commands'
 import { useAppStore, withSuppressBlur } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 import BaseSettingsList from '@/components/ui/BaseSettingsList.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseProgress from '@/components/ui/BaseProgress.vue'
@@ -150,8 +151,7 @@ const summaryProvider = () => {
   if (!names.length) return ''
   return names.slice(0, 2).join(' / ') + (names.length > 2 ? ` +${names.length - 2}` : '')
 }
-onMounted(() => appStore.registerScreenSummary('video', null, summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('video', null, summaryProvider))
+useScreenSummary(summaryProvider)
 
 /** 未拉取完成前不展示「下载」按钮，避免进入时闪一下 */
 const coreLoaded = ref(false)

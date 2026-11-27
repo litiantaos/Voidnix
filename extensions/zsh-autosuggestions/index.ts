@@ -13,5 +13,5 @@ export default defineExtension({
   },
 
   disableSearchInput: true,
-  mainView: () => View,
+  mainView: View,
 })

@@ -5,6 +5,7 @@ import { t } from '@/runtime/i18n'
 import { hideWindow, showWindow } from '@/utils/tauri'
 import { writeText } from '@/utils/clipboard'
 import { showToast, type ToastOptions } from '@/composables/useToast'
+import { getExtension } from '@/runtime/extension-registry'
 import { useRecentsStore } from './recents'
 
 export interface ConfirmOptions {
@@ -73,6 +74,8 @@ export const useAppStore = defineStore('app', () => {
   /// 每屏内容摘要供给（扩展 View 挂载时注册、卸载时注销；KeepAlive 停用保留——现场仍在，
   /// 摘要读的是当前状态）。离开一屏时 setActiveExtension 按 extId+subview 读取，随最近
   /// 记录落库，供默认列表最近行副标题展示（query 兜底）。
+  /// register/unregister 是低层注册表；扩展 View 一律用 useScreenSummary（ContentView
+  /// 注入屏身份，免手写 extId/subview 字符串）。
   type ScreenSummaryProvider = () => string | null | undefined
   const screenSummaryProviders = new Map<string, ScreenSummaryProvider>()
   function screenSummaryKey(extId: string, subview: string | null) {
@@ -208,6 +211,11 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function openSubview(subviewId: string, external = false) {
+    // 屏身份唯一真相源：activeSubview 必须命中所属扩展声明的 subviews。
+    // 外部事件 payload / 陈旧最近记录可能带来无效 id——丢弃，保持 mainView，
+    // 避免 KeepAlive key / 摘要注册 / 最近记录落入不存在的屏。
+    const ext = activeExtId.value ? getExtension(activeExtId.value) : null
+    if (ext && !ext.subviews?.[subviewId]) return
     activeSubview.value = subviewId
     subviewExternal.value = external
   }

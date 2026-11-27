@@ -34,12 +34,14 @@ export default defineExtension({
   },
   disableSearchInput: true,
   windowHeight: 'auto',
-  mainView: () => SystemStatusView,
-  searchBarAccessory: () => SystemStatusActions,
+  mainView: SystemStatusView,
+  searchBarAccessory: SystemStatusActions,
   /// config（设置）内容少走 auto 自适应
-  subviews: { config: () => SystemStatusSettings },
-  subviewHeights: { config: 'auto' },
-  subviewTitle: {
-    config: { 'zh-CN': '设置', en: 'Settings' },
+  subviews: {
+    config: {
+      view: SystemStatusSettings,
+      title: { 'zh-CN': '设置', en: 'Settings' },
+      height: 'auto',
+    },
   },
 })

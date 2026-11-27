@@ -183,7 +183,6 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
 import BaseList from '@/components/ui/BaseList.vue'
 import BaseListItem from '@/components/ui/BaseListItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -191,7 +190,7 @@ import BaseSelect from '@/components/ui/BaseSelect.vue'
 import { useProxyPanel } from './useProxyPanel'
 import TrafficSparkline from './TrafficSparkline.vue'
 import { t } from '@/runtime/i18n'
-import { useAppStore } from '@/stores/app'
+import { useScreenSummary } from '@/composables/useScreenSummary'
 
 // 不解构 template ref：解构后 vue-tsc 不识别 ref="" 为使用；整对象绑定模板也更稳
 const p = useProxyPanel()
@@ -238,8 +237,6 @@ const baseListRef = p.baseListRef
 const modeSelectRef = p.modeSelectRef
 const groupSelectRef = p.groupSelectRef
 
-const appStore = useAppStore()
-
 /// 最近使用行副标题：当前激活订阅 + 连接状态（状态未就绪只显示订阅，避免「已关闭」误报）。
 const summaryProvider = () => {
   const sub = activeSubscription.value
@@ -249,8 +246,7 @@ const summaryProvider = () => {
     ? `${name} · ${isEnabled.value ? t('common.enabled') : t('common.disabled')}`
     : name
 }
-onMounted(() => appStore.registerScreenSummary('proxy', null, summaryProvider))
-onUnmounted(() => appStore.unregisterScreenSummary('proxy', null, summaryProvider))
+useScreenSummary(summaryProvider)
 
 // vue-tsc 不把 ref="" 计为读取；expose 钉死绑定且便于调试
 defineExpose({ baseListRef, modeSelectRef, groupSelectRef })

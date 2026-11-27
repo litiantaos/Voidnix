@@ -41,5 +41,5 @@ export default defineExtension({
   },
 
   disableSearchInput: true,
-  mainView: () => AwakeView,
+  mainView: AwakeView,
 })

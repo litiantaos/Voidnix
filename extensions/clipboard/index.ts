@@ -107,10 +107,11 @@ export default defineExtension({
   },
 
   placeholder: { 'zh-CN': '搜索复制记录', en: 'Search copy history' },
-  mainView: () => ClipboardView,
-  searchBarAccessory: () => ClipboardActions,
-  subviews: { config: () => ClipboardSettings },
-  subviewTitle: { config: { 'zh-CN': '设置', en: 'Settings' } },
+  mainView: ClipboardView,
+  searchBarAccessory: ClipboardActions,
+  subviews: {
+    config: { view: ClipboardSettings, title: { 'zh-CN': '设置', en: 'Settings' } },
+  },
   listOptions: { multiSelect: true },
   globalShortcuts: [
     {

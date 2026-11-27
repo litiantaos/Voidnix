@@ -19,8 +19,6 @@ vi.mock('@tauri-apps/api/event', () => ({
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     setActiveExtension: mocks.setActiveExtension,
-    registerScreenSummary: vi.fn(),
-    unregisterScreenSummary: vi.fn(),
   }),
   copyAndHide: vi.fn(),
 }))

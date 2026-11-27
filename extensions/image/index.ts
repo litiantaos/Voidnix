@@ -36,12 +36,14 @@ export default defineExtension({
   },
   disableSearchInput: true,
   windowHeight: 'auto',
-  mainView: () => ImageView,
-  searchBarAccessory: () => ImageActions,
-  subviews: { config: () => ImageSettings },
-  subviewHeights: { config: 'auto' },
-  subviewTitle: {
-    config: { 'zh-CN': '设置', en: 'Settings' },
+  mainView: ImageView,
+  searchBarAccessory: ImageActions,
+  subviews: {
+    config: {
+      view: ImageSettings,
+      title: { 'zh-CN': '设置', en: 'Settings' },
+      height: 'auto',
+    },
   },
   setup: async () => {
     // 跨扩展同页投递：finder-ext 等经 window CustomEvent 同步写入待处理图片路径
