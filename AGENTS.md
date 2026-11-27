@@ -26,12 +26,13 @@ bun run lint                 # Prettier + ESLint（含 UnoCSS class 排序）
 bun run lint:check           # 只读校验（CI 用，不写）
 bun run typecheck            # vue-tsc 严格类型检查
 bun run sync:extensions      # 同步扩展注册（扫描 → 生成 extensions.rs）
-bun run check:drift          # 漂移校验聚合（extensions + commands + agent-bounds + wm-bounds + extension-orders）
+bun run check:drift          # 漂移校验聚合（extensions + commands + agent-bounds + wm-bounds + extension-orders + extension-subviews）
 bun run check:extensions     # CI 校验（extensions.rs 同步）
 bun run check:commands       # CI 校验（Rust #[tauri::command] ↔ commands.ts 双向差集）
 bun run check:agent-bounds   # CI 校验（agent 资源上限 policy.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:wm-bounds      # CI 校验（window-manager mod.rs ↔ config.ts BOUNDS 双向一致）
 bun run check:extension-orders # CI 校验（非 hidden 扩展 meta.order 唯一）
+bun run check:extension-subviews # CI 校验（subviews ↔ subviewTitle 完整、无悬空、同扩展标题唯一）
 python3 scripts/smoke-test.py  # 全功能回归测试（含应用自测 + 系统冒烟）
 bun run smoke-test             # 同上（package.json 别名）
 ```
@@ -71,7 +72,7 @@ e2e（`bun run test:e2e`，需起 Vite dev server + 浏览器）不在本地门�
 2. Rust `cargo fmt --check`
 3. `bun run typecheck`（vue-tsc 严格）
 4. Rust `cargo clippy --lib -- -D warnings`
-5. 漂移校验：`check:extensions` / `check:commands` / `check:agent-bounds` / `check:wm-bounds` / `check:extension-orders`
+5. 漂移校验：`check:extensions` / `check:commands` / `check:agent-bounds` / `check:wm-bounds` / `check:extension-orders` / `check:extension-subviews`
 6. 单测：`bun run test`（Vitest）+ `cargo test --lib` + `cargo test`（zsh crate）
 7. E2E：`bun run test:e2e`（Playwright，含浏览器安装）
 
@@ -191,7 +192,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 
 **过滤规则**：
 
-- 空 query：默认列表按 `finalScore>0`（boost>0，主要是应用）；顶部由 `useSearchInput` 平铺最多 `LIMITS.maxRecentViews` 条最近屏（有可展示记录时，框架合成、`kind=recent`，data 携带恢复目标，id 前缀 `SEARCH.RECENT_ID`；副标题=扩展上报的内容摘要，无摘要回退离开时的过滤词；无入口行/二级列表），尾部固定追加一行「输入 / 浏览全部工具」提示行（id=`SEARCH.TOOLS_HINT_ID`，回车经 `useResultNavigation` 分派打开 `/` 工具列表）
+- 空 query：默认列表按 `finalScore>0`（boost>0，主要是应用）；顶部由 `useSearchInput` 平铺最多 `LIMITS.maxRecentViews` 条最近屏（有可展示记录时，框架合成、`kind=recent`，data 携带恢复目标，id 前缀 `SEARCH.RECENT_ID`；标题=扩展名，子视图屏追加「· 子视图名」（`subviewTitle`）区分同一扩展的多级界面；副标题=扩展上报的内容摘要，无摘要回退离开时的过滤词；无入口行/二级列表），尾部固定追加一行「输入 / 浏览全部工具」提示行（id=`SEARCH.TOOLS_HINT_ID`，回车经 `useResultNavigation` 分派打开 `/` 工具列表）
 - 非空 query：查找型结果需 `fuzzy>0`，extension 类即时答案靠 `finalScore>0` 穿透
 
 `SearchContext.extensionMode` 供扩展区分全局/扩展内场景（即时答案型与扩展内响应型的取舍、编码模式见 [docs/extensions.md](docs/extensions.md)「搜索集成」）。
@@ -222,7 +223,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - **窗口拖动**：chrome 带（搜索栏周围空白间隙）设透明拖动层（z-5，搜索栏 z-10 之下），手动 `startDragging()` 替代 `data-tauri-drag-region`——后者 macOS 双击触发 `internal_toggle_maximize`，对 resizable:false 无标题栏窗口会直接填满全屏；拖动仅影响当前显示期间，每次 show 经 `present_on_cursor_screen` 自动复位
 - **剪贴板填充**：主快捷键从隐藏唤起时派发 `window-invoked`（DOM 事件），`useSearchInput` 查剪贴板最新记录，文本类且 3 秒内则填充搜索框并 select——**仅主界面**（query 变化属内容切换重置）；整窗视图接管或扩展激活时跳过（扩展内 query 是列表过滤参数，填充会破坏浏览上下文，窗口显隐不得改变扩展内容状态）。主快捷键唤起会先把扩展屏重置回主界面（见下条），因此该路径填充照常生效
 - **主快捷键唤起 = 搜索**：`useAppLifecycle` 的 `shortcut-pressed`（id=main、窗口隐藏）在 show 之前派发 `window-home`，`useSearchInput` 消费——扩展屏 → `resetHome()`（丢弃暂存现场，默认列表 + 首项）；已在主界面时不清已输入 query（唤起全选让直接输入覆盖）。模态弹窗打开（agent 审批等）、整窗视图接管期间不重置（`setActiveExtension` 会 `resolveConfirm(false)` 误拒审批）。**所有快捷键的 show 统一由前端 `showWindow()` 发起**（Rust shortcut callback 不再自动 show main）：视图切换时等双帧 paint 再 `invoke show_window`（避免合成上一帧旧视图），未切换（同一界面续显）直接 show 守住唤起延迟；扩展快捷键 / `open-extension` / `open-extension-subview` / 菜单栏扩展项仍直达目标视图。主快捷键另带 **Rust 200ms 兜底 show**：唤醒后 200ms 窗口仍隐藏且期间无任何新按键（WebContent 冻结 / navigate 重载导致前端监听缺席）则 Rust `show_main` 兜底——唯一常驻唤醒通道不得静默失效；`SHORTCUT_SEQ` 代次守卫防「唤起后 200ms 内再按主键隐藏」被兜底拽回
-- **最近使用**：`stores/recents.ts` 按屏记录（`extId + subview + query`，sessionStorage 与 active-ext 同作用域、冷启动不恢复；去重后置顶、上限 `LIMITS.maxRecentViews`=3）。记录点在 `setActiveExtension` 离开一屏时（主键重置 / ESC / 标签关闭 / 快捷键切扩展 / open-extension 事件的唯一收口；query 在框架清空搜索框之前捕获，内容摘要由扩展可选上报——`appStore.registerScreenSummary(extId, subview, getter)` 挂载时注册、卸载时注销，离开时框架按 extId+subview 读取，单行 ≤80 字落库）。默认列表顶部 `recent` 组**直接平铺最近屏**（每行标题=扩展名、副标题=扩展上报的内容摘要（agent 最近用户消息 / archive 包名+条目数 / OCR 首行 / finder·image·video 文件名 / translate、notes 首行），无摘要回退过滤词，均无为无副标题；`kind=recent` + data 带 extId/subview/query，id=`SEARCH.RECENT_ID:<extId>:<subview>`；陈旧/已卸载扩展不占位；无入口行、无二级列表、无浏览态），回车经 `resumeScreen` 恢复：`setActiveExtension(extId, null, 'resume')` + 同一 tick 还原过滤词 + 补开子视图（external）。**返回语义（两态现场）**：活动 `results/selectedIndex/query` 始终属于当前模式；主界面 → 扩展时，仅「用户从主界面选中一行进入」的入口（`activateExtension` / `resumeScreen`）在切模式前暂存主界面现场（结果列表 + 选中 + query），扩展 → 主界面时由退出函数（`exitExtension` / `goHome`）整体恢复——不重建列表、不复制 query、不依赖 watch 的批量时序；工具列表因此也自动恢复选中位置（原 `savedToolIndex` 删除）。非主界面路径（快捷键 / 程序化 subview / 事件）不暂存，退出即重置默认列表（兼防残留结果被紧接的回车执行，OcrEnterDispatch 回归）。主快捷键 fresh 唤起走独立 `resetHome()`（丢弃暂存现场 → 默认列表 + 首项）。**恢复是活屏**——KeepAlive 命中同一实例（`maxCachedViews` 覆盖最近 3 屏），不重新挂载、不触发扩展的新会话重置；`entryIntent`（`fresh` / `resume`，本次渲染周期后归 `none`）区分进入语义：image / video / finder-ext / clipboard 只在 `fresh` 时执行清空 / 模式判定 / 进入重置（历史恢复与内部子视图往返一律保留现场），滚动的 save/restore 跟随同一意图（fresh 归顶 / resume 还原该屏离开时的位置）。冷启动（新会话，按设计不保留）、LRU 超限、WebContent 内存重载仍会丢掉实例（此时 query 仍可还原，视图重挂载）；agent 消息 DOM 在 deactivate 时仍卸载以释放 WebKit 内存，但按「贴底 / 阅读中」记录并在激活重挂载后恢复滚动位置
+- **最近使用**：`stores/recents.ts` 按屏记录（`extId + subview + query`，sessionStorage 与 active-ext 同作用域、冷启动不恢复；去重后置顶、上限 `LIMITS.maxRecentViews`=5）。记录点在 `setActiveExtension` 离开一屏时（主键重置 / ESC / 标签关闭 / 快捷键切扩展 / open-extension 事件的唯一收口；query 在框架清空搜索框之前捕获，内容摘要由扩展可选上报——`appStore.registerScreenSummary(extId, subview, getter)` 挂载时注册、卸载时注销，离开时框架按 extId+subview 读取，单行 ≤80 字落库）。默认列表顶部 `recent` 组**直接平铺最近屏**（每行标题=扩展名，子视图屏追加「· 子视图名」（`subviewTitle`）——同一扩展的主视图 / 多级子界面各自成行时靠标题区分，不能只靠副标题；副标题=扩展上报的内容摘要（agent 最近用户消息 / archive 包名+条目数 / OCR 首行 / finder·image·video 文件名 / translate、notes 首行 / proxy 当前订阅、订阅数、连接数、规则数），无摘要回退过滤词，均无为无副标题；`kind=recent` + data 带 extId/subview/query，id=`SEARCH.RECENT_ID:<extId>:<subview>`；陈旧/已卸载扩展不占位；无入口行、无二级列表、无浏览态），回车经 `resumeScreen` 恢复：`setActiveExtension(extId, null, 'resume')` + 同一 tick 还原过滤词 + 补开子视图（external）。**返回语义（两态现场）**：活动 `results/selectedIndex/query` 始终属于当前模式；主界面 → 扩展时，仅「用户从主界面选中一行进入」的入口（`activateExtension` / `resumeScreen`）在切模式前暂存主界面现场（结果列表 + 选中 + query），扩展 → 主界面时由退出函数（`exitExtension` / `goHome`）整体恢复——不重建列表、不复制 query、不依赖 watch 的批量时序；工具列表因此也自动恢复选中位置（原 `savedToolIndex` 删除）。非主界面路径（快捷键 / 程序化 subview / 事件）不暂存，退出即重置默认列表（兼防残留结果被紧接的回车执行，OcrEnterDispatch 回归）。主快捷键 fresh 唤起走独立 `resetHome()`（丢弃暂存现场 → 默认列表 + 首项）。**恢复是活屏**——KeepAlive 命中同一实例（`maxCachedViews` 覆盖最近 5 屏），不重新挂载、不触发扩展的新会话重置；`entryIntent`（`fresh` / `resume`，本次渲染周期后归 `none`）区分进入语义：image / video / finder-ext / clipboard 只在 `fresh` 时执行清空 / 模式判定 / 进入重置（历史恢复与内部子视图往返一律保留现场），滚动的 save/restore 跟随同一意图（fresh 归顶 / resume 还原该屏离开时的位置）。冷启动（新会话，按设计不保留）、LRU 超限、WebContent 内存重载仍会丢掉实例（此时 query 仍可还原，视图重挂载）；agent 消息 DOM 在 deactivate 时仍卸载以释放 WebKit 内存，但按「贴底 / 阅读中」记录并在激活重挂载后恢复滚动位置
 - **唤起全选时序**：`window-focused`/`window-invoked`（源自 `onFocusChanged`，即窗口 key 聚焦）先于 WebKit 页面焦点状态翻转到达，三重约束——页面获焦前 select 以非聚焦灰绘制（灰→蓝跳变）、获焦后对聚焦元素 select 触发系统选中动画、原生 focus 事件在无激活唤起下迟发/被 show 过程瞬时页面 blur 打断。两级加速 + 落位：`useAppLifecycle` 获焦分支派发 window-focused 后即调 `getCurrentWebview().setFocus()`（wry: `makeFirstResponder(webview)`，不 activate_app）主动接完 responder 链，页面焦点状态当帧翻转；`selectAllWhenPageFocused` 再以「原生 focus 事件 + rAF 轮询 hasFocus 状态」双通道探测、翻转即落位，落位一律经 `selectAllWithoutAnimation`（`blur` → 全选 → `focus` 同任务三步，选区变更落在元素未聚焦态不触发动画，下一帧直接聚焦蓝完整呈现）。清理只由 `window-hiding`（折叠残留选中 + 取消待定）/ 卸载 / 下次调用触发，瞬时页面 blur 不取消
 
 **hide 策略**：
@@ -400,7 +401,7 @@ LaunchAgent 常驻方案，监控 release 构建主进程 + 扩展子进程的 R
 - **窗口按需创建**：screenshot 窗口首次截图时懒创建（`setup` 内 `WebviewWindowBuilder`，WKWebView 预加载页面）；snap-panel 窗口在 `set_window_manager_enabled(true)` 时懒创建，分两步避免主线程死锁：`build_snap_panel`（仅 `WebviewWindowBuilder::build`）在 worker 线程调用（build 内部 dispatch 到空闲主线程；**禁止**放进 `run_on_main_thread` 同步闭包——build 的 dispatch + 同步等待与执行闭包的主线程死锁，导致 UI 不响应），`configure_snap_panel`（`apply_mica_material` 需 `MainThreadMarker`）在 `run_on_main_thread` 闭包内调用；`false` 时**不销毁窗口**——WKWebView teardown 抛 C++ foreign exception（非 ObjC NSException，`objc2::exception::catch` 无法拦截），前端 `close()`/`destroy()` 均 abort 进程，改为仅停 drag monitor + 隐藏窗口（alpha=0），窗口保持存活，重新启用时 `build_snap_panel` 幂等跳过 + `configure_snap_panel` 重配置）；pin 窗口每次钉图创建、关闭时销毁
 - **子窗口主题**：独立入口窗口用 `runtime/child-theme.ts::initChildTheme`（无 Pinia 依赖，读 `get_cached_appearance` + 监听 `appearance-changed`），不初始化扩展系统
 - **vendor 分包 + pinyin 延迟加载**：`manualChunks` 拆 vendor(vue) / markdown(marked+dompurify) / pinyin 独立 chunk；pinyin-pro（拼音字典 289KB）改为首次 CJK 查询时 `import()` 异步加载，首屏零开销
-- **KeepAlive 状态保留**（`ContentView` 用 `KeepAlive`，`max=LIMITS.maxCachedViews`（10）、LRU 驱逐——覆盖最近使用 3 屏 + 当前 + 主/子视图父级余量；缓存实例 DOM 在内部存储容器内、不参与合成）：已访问扩展切换走 activate/deactivate 而非重挂载；KeepAlive 常驻（`v-if` 下沉到动态组件上），经主界面往返（如设置页重看引导的进出）与窗口隐藏唤起一律保留视图状态（选中/滚动位），仅 LRU 超限驱逐时清缓存。最近使用恢复直接命中同一实例（见窗口节「最近使用」）。列表选中语义（fresh 激活归首项 / 挂起、resume、subview 往返与窗口唤起保留）由 BaseList 组件层统一承载，规范见 [docs/extensions.md](docs/extensions.md)「UI 规约补充」——归零仅作用于 KeepAlive 树内自管列表（v-if 空态切换的 View 须保持 BaseList 常挂防归零旁路），标准列表受控于 MainView 不参与；动态置顶列表（clipboard）按 View 语义覆盖「窗口唤起保留」为会话结束即归位（`window-hiding` + 粘贴成功双锚，瞬时归零用 BaseList `reset()` 契约），完整语义见 [docs/extensions/clipboard.md](docs/extensions/clipboard.md)
+- **KeepAlive 状态保留**（`ContentView` 用 `KeepAlive`，`max=LIMITS.maxCachedViews`（12）、LRU 驱逐——覆盖最近使用 5 屏 + 当前 + 主/子视图父级余量；缓存实例 DOM 在内部存储容器内、不参与合成）：已访问扩展切换走 activate/deactivate 而非重挂载；KeepAlive 常驻（`v-if` 下沉到动态组件上），经主界面往返（如设置页重看引导的进出）与窗口隐藏唤起一律保留视图状态（选中/滚动位），仅 LRU 超限驱逐时清缓存。最近使用恢复直接命中同一实例（见窗口节「最近使用」）。列表选中语义（fresh 激活归首项 / 挂起、resume、subview 往返与窗口唤起保留）由 BaseList 组件层统一承载，规范见 [docs/extensions.md](docs/extensions.md)「UI 规约补充」——归零仅作用于 KeepAlive 树内自管列表（v-if 空态切换的 View 须保持 BaseList 常挂防归零旁路），标准列表受控于 MainView 不参与；动态置顶列表（clipboard）按 View 语义覆盖「窗口唤起保留」为会话结束即归位（`window-hiding` + 粘贴成功双锚，瞬时归零用 BaseList `reset()` 契约），完整语义见 [docs/extensions/clipboard.md](docs/extensions/clipboard.md)
 
 ## UI 规范
 

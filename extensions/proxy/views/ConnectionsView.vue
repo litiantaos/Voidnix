@@ -108,6 +108,14 @@ function closeStream() {
   channel = null
 }
 
+/// 最近使用行副标题：活动连接数（无连接时与空态同文案）。
+const summaryProvider = () =>
+  conns.value.length
+    ? t('proxy.connectionsCount', { count: conns.value.length })
+    : t('proxy.noActiveConnections')
+onMounted(() => appStore.registerScreenSummary('proxy', 'connections', summaryProvider))
+onUnmounted(() => appStore.unregisterScreenSummary('proxy', 'connections', summaryProvider))
+
 // KeepAlive 缓存子视图：切走走 onDeactivated（非 onUnmounted），必须在此停流，
 // 否则 /connections WS 在用户不看时持续空转（2Hz 全量快照）。
 onMounted(openStream)

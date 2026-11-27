@@ -36,6 +36,7 @@ vi.mock('@tauri-apps/plugin-store', () => ({
 
 import { invoke } from '@tauri-apps/api/core'
 import { useAppStore } from '@/stores/app'
+import { useRecentsStore } from '@/stores/recents'
 import '@/locales'
 import './locales'
 import { config } from './config'
@@ -160,6 +161,26 @@ describe('proxy View 实时流量面板与按钮主次', () => {
     expect(buttons.map((b) => b.text())).toContain('已开启')
     expect(buttons.some((b) => b.attributes('title') === '下载更新')).toBe(false)
     expect(buttons.find((b) => b.text() === '已开启')!.classes()).toContain('ui-btn-primary')
+  })
+
+  it('最近使用副标题：当前订阅 + 连接状态', async () => {
+    proxyEnabled = true
+    config.subscriptions = [emptySub('a', '机场 A', 'https://a.example/sub', 42)]
+    config.activeSubscriptionId = 'a'
+    useRecentsStore().clear()
+    mountView()
+    await flush()
+
+    const appStore = useAppStore()
+    appStore.setActiveExtension('proxy')
+    await flush()
+    appStore.setActiveExtension(null)
+
+    expect(useRecentsStore().views[0]).toMatchObject({
+      extId: 'proxy',
+      subview: null,
+      summary: '机场 A · 已开启',
+    })
   })
 
   it('订阅列表收束为单个入口：只显示激活订阅摘要，回车进入二级界面', async () => {

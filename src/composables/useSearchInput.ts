@@ -279,9 +279,18 @@ export function useSearchInput(opts: SearchInputOptions) {
     })
   }
 
+  /** 最近行的屏标题：扩展名；子视图屏追加「· 子视图名」。同一扩展的多级界面各自成行
+   *  （如 proxy 主视图 / 订阅），标题只取扩展名会得到两条无法区分的同名项——子视图
+   *  无内容摘要且无过滤词时副标题也为空，用户无从判断哪条进哪一屏。 */
+  function recentTitle(ext: Extension, subview: string | null): string {
+    const name = resolveLocalized(ext.meta.name)
+    const subName = subview ? resolveLocalized(ext.subviewTitle?.[subview]) : ''
+    return subName ? `${name} · ${subName}` : name
+  }
+
   /** 最近使用行（平铺在默认列表顶部，无二级列表）：按屏（extId + subview）记录，
-   *  标题取扩展名；副标题优先用扩展上报的内容摘要（如打开的文件 / 对话 / 文本首行），
-   *  无摘要时回退离开时的过滤词。data 携带离开时的 query，回车经
+   *  标题取屏标题（扩展名 + 子视图名）；副标题优先用扩展上报的内容摘要（如打开的文件 /
+   *  对话 / 文本首行），无摘要时回退离开时的过滤词。data 携带离开时的 query，回车经
    *  useResultNavigation → resumeScreen 恢复。 */
   function buildRecentResults(): SearchResult[] {
     const out: SearchResult[] = []
@@ -290,7 +299,7 @@ export function useSearchInput(opts: SearchInputOptions) {
       const ext = getExtension(view.extId)!
       out.push({
         id: `${SEARCH.RECENT_ID}:${view.extId}:${view.subview ?? 'main'}`,
-        title: resolveLocalized(ext.meta.name),
+        title: recentTitle(ext, view.subview),
         description: view.summary || view.query.trim() || undefined,
         icon: ext.meta.icon,
         extId: 'voidnix',

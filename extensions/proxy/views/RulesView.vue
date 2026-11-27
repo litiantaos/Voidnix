@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CMD } from '@/commands'
 import { useAppStore } from '@/stores/app'
@@ -54,6 +54,16 @@ const filtered = computed(() => {
       r.proxy.toLowerCase().includes(q),
   )
 })
+
+/// 最近使用行副标题：规则总数（加载中不产生摘要；空列表与空态同文案）。
+const summaryProvider = () => {
+  if (loading.value) return ''
+  return rules.value.length
+    ? t('proxy.rulesCount', { count: rules.value.length })
+    : t('proxy.noRules')
+}
+onMounted(() => appStore.registerScreenSummary('proxy', 'rules', summaryProvider))
+onUnmounted(() => appStore.unregisterScreenSummary('proxy', 'rules', summaryProvider))
 
 onMounted(async () => {
   try {

@@ -17,6 +17,7 @@ import '@/locales'
 import '../locales'
 import { config } from '../config'
 import { useAppStore } from '@/stores/app'
+import { useRecentsStore } from '@/stores/recents'
 import SubscriptionsView from './SubscriptionsView.vue'
 
 function sub(partial: Partial<{ id: string; name: string; url: string; proxyCount: number }> = {}) {
@@ -90,6 +91,22 @@ describe('proxy SubscriptionsView', () => {
     // 行内更新 / 编辑次级入口
     expect(rows[2]!.find('button[title="更新订阅"]').exists()).toBe(true)
     expect(rows[2]!.find('button[title="编辑订阅"]').exists()).toBe(true)
+  })
+
+  it('最近使用副标题：订阅总数 + 当前激活订阅名', async () => {
+    useRecentsStore().clear()
+    await mountView()
+
+    const appStore = useAppStore()
+    appStore.setActiveExtension('proxy')
+    appStore.openSubview('subscriptions')
+    appStore.setActiveExtension(null)
+
+    expect(useRecentsStore().views[0]).toMatchObject({
+      extId: 'proxy',
+      subview: 'subscriptions',
+      summary: '2 个订阅 · 机场 A',
+    })
   })
 
   it('搜索过滤命中名称/链接/添加行；无结果空态', async () => {

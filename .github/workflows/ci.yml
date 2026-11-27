@@ -67,6 +67,9 @@ jobs:
       - name: 扩展 meta.order 唯一校验
         run: bun run check:extension-orders
 
+      - name: 扩展子视图显示名完整 / 唯一校验
+        run: bun run check:extension-subviews
+
       # ── 单元测试 ──
       - name: 前端单元测试（Vitest）
         run: bun run test

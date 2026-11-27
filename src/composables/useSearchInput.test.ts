@@ -33,6 +33,7 @@ vi.mock('@/runtime/search-engine', async (importOriginal) => {
 const mockExts = [
   {
     meta: { id: 'ext-a', name: 'Ext A', icon: 'i-a', order: 1 },
+    subviewTitle: { ocr: 'OCR', config: 'Settings' },
   },
   { meta: { id: 'ext-b', name: 'Ext B', icon: 'i-b', order: 2 } },
 ]
@@ -142,7 +143,7 @@ describe('useSearchInput 默认列表提示行', () => {
     expect(results.value.map((r) => r.id)).toEqual(['ext-entry-ext-a', 'ext-entry-ext-b'])
   })
 
-  it('有最近记录时默认列表顶部平铺最近屏（按屏、副标题区分子视图）', async () => {
+  it('有最近记录时默认列表顶部平铺最近屏（按屏记录）', async () => {
     searchMock.mockImplementation(async (_q: string, onUpdate?: (r: SearchResult[]) => void) => {
       onUpdate?.([appResult])
       return [appResult]
@@ -172,12 +173,15 @@ describe('useSearchInput 默认列表提示行', () => {
     })
   })
 
-  it('最近屏超过上限：默认列表只平铺最近 3 条', async () => {
+  it(`最近屏超过上限：默认列表只平铺最近 ${LIMITS.maxRecentViews} 条`, async () => {
     const recents = useRecentsStore()
+    // 记录 6 屏（超上限 1 屏），断言最旧一条被淘汰
     recents.record('ext-a', null, '')
     recents.record('ext-a', 'ocr', '')
     recents.record('ext-b', null, '')
     recents.record('ext-b', 'config', '')
+    recents.record('ext-a', 'config', '')
+    recents.record('ext-b', 'ocr', '')
     searchMock.mockResolvedValue([appResult])
     const { results } = makeWrapper()
     await flushPromises()
@@ -185,9 +189,30 @@ describe('useSearchInput 默认列表提示行', () => {
     const recentRows = results.value.filter((r) => r.data?.kind === 'recent')
     expect(recentRows).toHaveLength(LIMITS.maxRecentViews)
     expect(recentRows.map((r) => r.id)).toEqual([
+      `${SEARCH.RECENT_ID}:ext-b:ocr`,
+      `${SEARCH.RECENT_ID}:ext-a:config`,
       `${SEARCH.RECENT_ID}:ext-b:config`,
       `${SEARCH.RECENT_ID}:ext-b:main`,
       `${SEARCH.RECENT_ID}:ext-a:ocr`,
+    ])
+  })
+
+  it('最近行标题带子视图名：同一扩展多级界面可区分（主视图 / 订阅）', async () => {
+    const recents = useRecentsStore()
+    // 主视图与子视图各一屏，均无内容摘要与过滤词——只能靠标题区分
+    recents.record('ext-a', null, '')
+    recents.record('ext-a', 'ocr', '')
+    recents.record('ext-b', 'config', '')
+    searchMock.mockResolvedValue([appResult])
+    const { results } = makeWrapper()
+    await flushPromises()
+
+    const rows = results.value.filter((r) => r.data?.kind === 'recent')
+    expect(rows.map((r) => [r.title, r.description])).toEqual([
+      // ext-b 未声明该子视图的 subviewTitle：回退扩展名（不拼裸 id）
+      ['Ext B', undefined],
+      ['Ext A · OCR', undefined],
+      ['Ext A', undefined],
     ])
   })
 

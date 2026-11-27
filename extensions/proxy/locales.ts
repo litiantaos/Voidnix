@@ -108,6 +108,7 @@ Subscriptions and port settings are kept; download the core again to reuse.`,
   'proxy.testAll': { 'zh-CN': '全部测速', en: 'Test All' },
   'proxy.unnamedSubscription': { 'zh-CN': '未命名订阅', en: 'Unnamed Subscription' },
   'proxy.subscriptionCount': { 'zh-CN': '{count} 节点', en: '{count} nodes' },
+  'proxy.subscriptionTotal': { 'zh-CN': '{count} 个订阅', en: '{count} subscriptions' },
   'proxy.subscriptionExpires': { 'zh-CN': '{date} 到期', en: '{date} expiry' },
   'proxy.notConfigured': { 'zh-CN': '未配置', en: 'Not configured' },
   'proxy.nodeGroup': { 'zh-CN': '节点分组', en: 'Node Group' },
@@ -143,6 +144,10 @@ Subscriptions and port settings are kept; download the core again to reuse.`,
   'proxy.noActiveConnections': { 'zh-CN': '无活动连接', en: 'No active connections' },
   'proxy.noLogs': { 'zh-CN': '无日志', en: 'No logs' },
   'proxy.noRules': { 'zh-CN': '无规则', en: 'No rules' },
+
+  // ─── 最近使用副标题（内容摘要）───────────────
+  'proxy.connectionsCount': { 'zh-CN': '{count} 个连接', en: '{count} connections' },
+  'proxy.rulesCount': { 'zh-CN': '{count} 条规则', en: '{count} rules' },
 
   // ─── 下载进度 ───────────────────────────────
   'proxy.extracting': { 'zh-CN': '解压中', en: 'Extracting' },

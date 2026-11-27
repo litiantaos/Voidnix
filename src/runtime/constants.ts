@@ -52,13 +52,13 @@ export const LIMITS = {
   /** 会话级结果缓存条目上限（LRU）：覆盖一次输入-回退（删除）路径的全部 query，限量控内存。 */
   maxCachedQueries: 16,
   /** 最近使用行上限（按屏记录，去重；默认列表顶部平铺）。 */
-  maxRecentViews: 3,
-  /** 视图实例缓存上限（ContentView KeepAlive max）：最近使用 3 屏各自的父视图（主视图 ↔
-   *  子视图切换各占一个 key，最多再 3 个）+ 当前激活 = 7，取 10 留内部导航余量；达到上限
+  maxRecentViews: 5,
+  /** 视图实例缓存上限（ContentView KeepAlive max）：最近使用 5 屏各自的父视图（主视图 ↔
+   *  子视图切换各占一个 key，最多再 5 个）+ 当前激活 = 11，取 12 留内部导航余量；达到上限
    *  才 LRU 驱逐（被驱逐的最近屏恢复时退化为重挂载，与 WebContent 重载同语义）。
    *  缓存实例的 DOM 存于 KeepAlive 内部存储容器（脱离文档、不参与合成），窗口隐藏时
    *  另由 content-visibility 释放 tile，因此放宽上限只增加 JS 堆/DOM 常驻，不叠合成层。 */
-  maxCachedViews: 10,
+  maxCachedViews: 12,
 } as const
 
 // 主窗口尺寸（不可配置；与 tauri.conf.json 主窗口 width/height 一致）。
