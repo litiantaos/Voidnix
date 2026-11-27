@@ -21,6 +21,8 @@ registerMessages({
   'proxy.disableToUpdate': { 'zh-CN': '，请关闭代理后更新', en: ' — disable proxy to update' },
   'proxy.clickToDownload': { 'zh-CN': '，点击下载更新', en: ' — click to download update' },
   'proxy.downloadUpdate': { 'zh-CN': '下载更新', en: 'Download Update' },
+  'proxy.download': { 'zh-CN': '下载', en: 'Download' },
+  'proxy.upload': { 'zh-CN': '上传', en: 'Upload' },
   'proxy.downloadCore': { 'zh-CN': '下载核心', en: 'Download Core' },
   'proxy.reconnect': { 'zh-CN': '重连', en: 'Reconnect' },
 

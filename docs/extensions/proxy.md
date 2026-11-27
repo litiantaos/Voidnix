@@ -27,7 +27,7 @@ Actions.vue（搜索栏诊断入口）+ views/ 三诊断子视图（连接/规�
 
 **UI 结构**：主界面三个分组（代理/订阅/节点）+ 设置子视图（搜索栏齿轮，`subviewHeights.config='auto'` 自适应高度，菜单栏常显开关 + 订阅自动更新开关/间隔 + 重启内核/停止内核（daemon 已装才展示）+ 完全卸载入口）：
 
-- **代理分组**：含开启/规则模式两项；开启项副标题经 `/traffic` WS 实时显示上下行速率
+- **代理分组**：含开启/规则模式两项；代理开启时视图顶部为**实时流量面板**（`soft-card` 容器对齐 ai-gateway 拓扑图：↓ 下载 / ↑ 上传两列，`/traffic` WS 每秒推送、`tabular-nums` 防抖；每列一条 60s 速率曲线——SVG 迷你折线 + 淡面积，窗口内峰值归一化、右对齐滚动，样本不足两点显示 0 横线占位，起线后 0 段垫在窗口左侧与真实曲线相接、随窗口填满自然退出）；开启项副标题只保留核心版本、健康异常与更新提示。开关为主操作，有核心新版时出现带框图标按钮「下载更新」（icon-only，title 提示）——回车/点击行的默认动作恒为开关连接
 - **订阅分组**：导入/更新/删除；多订阅时仅激活订阅生效（点击有节点的订阅行切换激活，accent 强调当前激活项；空订阅点击进编辑，编辑按钮随时进编辑）。行内「更新」按钮按现有 URL 重新拉取（与弹窗保存共用 `proxy_update_subscription`；激活订阅更新后节点列表整体替换并清测速缓存，非激活订阅仅回填元数据），新建订阅拉取成功自动激活。副标题展示节点数与**到期日期**（取自订阅响应头 `subscription-userinfo` 的 `expire` 字段，未提供则省略；已到期标 danger），另有可配置间隔的后台自动更新（见「订阅拉取与热重载」）
 - **节点分组**：列表/切换/测速；多 selector 分组订阅时节点组首项出现分组切换器
 
@@ -79,9 +79,9 @@ asset 名精确串等 **`mihomo-darwin-{arch}-{tag}.gz`**，排除 go120/go122/g
 
 **升级入口**：
 
-0. **启动静默检查**：setup 延后 3s 检查（已下载核心才查），有新版即写入 `ProxyState.core_update` 并在菜单栏代理段追加「更新内核（vX）」项（点击打开扩展走更新按钮）——更新入口在设置子视图里，不主动提示等于没有；`menubarVisible` 关闭时无菜单项（设计上随段显隐）
+0. **启动静默检查**：setup 延后 3s 检查（已下载核心才查），有新版即写入 `ProxyState.core_update` 并在菜单栏代理段追加「更新内核（vX）」项（点击打开扩展走更新按钮）——更新入口在主视图开启项里，不主动提示等于没有；`menubarVisible` 关闭时无菜单项（设计上随段显隐）
 1. 进视图时 **`proxy_check_update`** 后台拉 latest 比对本地 `mihomo.version`（同步写菜单状态，UI 与菜单同一真相源）
-2. 有新版时副标题显示「核心 vX.Y.Z（最新 vZ，可更新）」+ 出现「更新」按钮
+2. 有新版时副标题显示「核心版本：mihomo vX」+「有新核心 vZ」（关闭时后缀「点击下载更新」，开启时后缀「请关闭代理后更新」）；代理关闭时出现「下载更新」带框图标按钮（开启为主操作，回车默认开关连接）
 3. 点击触发 **`proxy_update_core`**：`tun_active` 时先 `uninstall_launchdaemon`（bootout + 删 plist，停进程）→ 删 binary + version → `ensure_bin` 重下最新 → 之前 enabled 则 `start_core` 重新安装恢复
 4. 中途下载失败：文件已删，下次 `ensure_bin` 自动重试
 
@@ -311,7 +311,7 @@ mihomo controller 的 WS 流式端点（`/traffic` `/connections` `/logs`）经 
 
 ### 四条流
 
-- **流量**（`/traffic`，每秒 `{ up, down }` bytes/s）：主界面开启项副标题实时显示，代理开关驱动（前端开/停）
+- **流量**（`/traffic`，每秒 `{ up, down }` bytes/s）：主界面视图顶部实时流量面板展示（数值 + 60s 速率曲线），代理开关驱动（前端开/停）
 - **连接**（`/connections?interval=500`，完整快照含 connections 数组 + 累计总量）：子视图实时列表，搜索 host/进程/IP
 - **规则**（`/rules`，`{ rules: [{ type, payload, proxy }] }`）：子视图只读列表，支持规则/策略搜索
 - **日志**（`/logs`，`{ type, payload }`，WS `level=debug` 拉取 mihomo 产出的全部级别；config `log-level=info` 故实际为 info+）：子视图实时流，前端上限 500 行超出头部丢弃，按 type 着色（error red / warning yellow / debug muted），搜索过滤 payload，贴底自动滚（用户上滚查历史时不打断）

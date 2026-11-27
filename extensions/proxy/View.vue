@@ -1,5 +1,38 @@
 <template>
   <div>
+    <!-- 实时流量：上下行速度从开启项副标题独立成面板（容器同 ai-gateway 拓扑图） -->
+    <section
+      v-if="isEnabled"
+      m="x-3"
+      mb="3"
+      p="3"
+      class="soft-card"
+      style="border-radius: var(--radius-panel)"
+    >
+      <div grid="~ cols-2">
+        <div flex="~ col" pr="3">
+          <div flex items="center" gap="2">
+            <span text="xs muted">{{ t('proxy.download') }}</span>
+            <i class="i-ri-arrow-down-line text-sm text-accent" shrink="0" />
+          </div>
+          <div mt="1" text="lg primary" font="semibold" tabular="nums">
+            {{ fmtTrafficRate(traffic?.down ?? 0) }}
+          </div>
+          <TrafficSparkline class="text-accent mt-4" :values="trafficDownHistory" />
+        </div>
+        <div flex="~ col" pl="3" class="border-l border-divider">
+          <div flex items="center" gap="2">
+            <span text="xs muted">{{ t('proxy.upload') }}</span>
+            <i class="i-ri-arrow-up-line text-sm text-warning" shrink="0" />
+          </div>
+          <div mt="1" text="lg primary" font="semibold" tabular="nums">
+            {{ fmtTrafficRate(traffic?.up ?? 0) }}
+          </div>
+          <TrafficSparkline class="text-warning mt-4" :values="trafficUpHistory" />
+        </div>
+      </div>
+    </section>
+
     <BaseList
       ref="baseListRef"
       :items="items"
@@ -43,20 +76,6 @@
             </template>
             <template v-else>
               <span truncate>{{ t('proxy.coreVersion', { version: coreStatus.version }) }}</span>
-              <span v-if="isEnabled && traffic" text="muted" shrink="0" ml="3">·</span>
-              <span
-                v-if="isEnabled && traffic"
-                text="muted"
-                shrink="0"
-                ml="2"
-                flex
-                items="center"
-                gap="3"
-                ><span tabular="nums" whitespace="nowrap">↑ {{ fmtTrafficRate(traffic.up) }}</span>
-                <span tabular="nums" whitespace="nowrap"
-                  >↓ {{ fmtTrafficRate(traffic.down) }}</span
-                ></span
-              >
               <span v-if="coreError" text="danger" shrink="0" ml="2">{{ coreError }}</span>
               <span v-else-if="updateInfo?.hasUpdate" text="success" shrink="0" ml="2">{{
                 t('proxy.newCoreAvailable', { version: updateInfo.latest }) +
@@ -83,9 +102,12 @@
               <BaseButton v-if="isEnabled && coreError" @click.stop="reconnect">{{
                 t('proxy.reconnect')
               }}</BaseButton>
-              <BaseButton v-if="!isEnabled && updateInfo?.hasUpdate" @click.stop="updateCore">{{
-                t('proxy.downloadUpdate')
-              }}</BaseButton>
+              <BaseButton
+                v-if="!isEnabled && updateInfo?.hasUpdate"
+                icon="i-ri-download-line"
+                :title="t('proxy.downloadUpdate')"
+                @click.stop="updateCore"
+              />
             </div>
             <!-- 未下载：下载入口 -->
             <BaseButton v-else @click.stop="downloadCore">{{ t('proxy.downloadCore') }}</BaseButton>
@@ -252,6 +274,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import { useProxyPanel } from './useProxyPanel'
+import TrafficSparkline from './TrafficSparkline.vue'
 import { t } from '@/runtime/i18n'
 
 // 不解构 template ref：解构后 vue-tsc 不识别 ref="" 为使用；整对象绑定模板也更稳
@@ -269,6 +292,8 @@ const {
   coreStatus,
   isDownloading,
   traffic,
+  trafficDownHistory,
+  trafficUpHistory,
   coreError,
   updateInfo,
   isEnabled,

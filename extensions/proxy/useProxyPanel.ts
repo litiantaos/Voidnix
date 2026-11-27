@@ -216,8 +216,14 @@ export function useProxyPanel() {
   const updateInfo = ref<{ hasUpdate: boolean; current: string; latest: string } | null>(null)
   /// 健康监测异常状态（proxy-status error 事件）：非空时开启代理项显示红色提示 + 重连按钮。
   const coreError = ref('')
-  /// 实时流量速率（开代理时经 /traffic WS 推送，开启项副标题展示）。
+  /// 实时流量速率（开代理时经 /traffic WS 推送，视图顶部流量面板展示）。
   const traffic = ref<TrafficFrame | null>(null)
+  /// 流量曲线窗口（60s，/traffic 每秒一帧，与 TrafficSparkline 的窗口容量对齐）；
+  /// 停止流即清空，重新开启从零起笔。
+  const TRAFFIC_HISTORY_SIZE = 60
+  const trafficHistory = ref<TrafficFrame[]>([])
+  const trafficDownHistory = computed(() => trafficHistory.value.map((f) => f.down))
+  const trafficUpHistory = computed(() => trafficHistory.value.map((f) => f.up))
   /// 视图当前是否激活（KeepAlive activate/deactivate 驱动）：外部置位 enabled 时
   /// 仅激活中才开流量流，非激活留给 onActivated 补开（避免后台空转 WS）。
   const viewActive = ref(false)
@@ -566,12 +572,14 @@ export function useProxyPanel() {
     if (idx >= 0) baseListRef.value?.reveal(idx)
   }
 
-  /// 开 /traffic WS 流（开启项副标题实时显示上下行速率）。代理开启时调用。
+  /// 开 /traffic WS 流（视图顶部流量面板实时显示上下行速率与曲线）。代理开启时调用。
   async function startTrafficStream() {
     if (trafficChannel) return
     const ch = new Channel<TrafficFrame>()
     ch.onmessage = (f) => {
       traffic.value = f
+      // 环形窗口：逐秒追加，满 60s 丢弃最老样本（曲线右端恒为最新）
+      trafficHistory.value = [...trafficHistory.value.slice(-(TRAFFIC_HISTORY_SIZE - 1)), f]
     }
     trafficChannel = ch
     await invoke(CMD.proxyTrafficStream, { onEvent: ch }).catch(() => {
@@ -585,6 +593,7 @@ export function useProxyPanel() {
     invoke(CMD.proxyStopStream, { id: 'traffic' }).catch(() => {})
     trafficChannel = null
     traffic.value = null
+    trafficHistory.value = []
   }
 
   async function onModeChange(value: string | number) {
@@ -610,6 +619,7 @@ export function useProxyPanel() {
     const it = item as ListItem | undefined
     if (!it) return
     if (it.type === 'enabled') {
+      // 默认动作恒为开关连接：有核心新版时更新按钮只是次级入口，回车不改变主行为
       if (coreStatus.value.downloaded) toggleEnabled()
       else downloadCore()
     } else if (it.type === 'mode') {
@@ -928,6 +938,8 @@ export function useProxyPanel() {
     coreStatus,
     isDownloading,
     traffic,
+    trafficDownHistory,
+    trafficUpHistory,
     coreError,
     updateInfo,
     isEnabled,

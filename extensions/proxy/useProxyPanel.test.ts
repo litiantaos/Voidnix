@@ -115,6 +115,36 @@ describe('useProxyPanel toggleEnabled 首启确认（只弹一次）', () => {
   })
 })
 
+describe('开启代理（主操作）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    config.tunConfirmed = true
+    config.secret = 'test-secret'
+    vi.mocked(invoke).mockImplementation((async (cmd: string) => {
+      if (cmd === CMD.proxyGetProxies) return { proxies: {} }
+      if (cmd === CMD.isProxyEnabled) return false
+      return undefined
+    }) as unknown as typeof invoke)
+  })
+  afterEach(() => {
+    while (mountedWrappers.length) mountedWrappers.pop()!.unmount()
+  })
+
+  it('有核心新版时回车仍开启代理，不触发核心更新', async () => {
+    const panel = await mountPanel()
+    panel.coreStatus.value = { downloaded: true, version: 'v1.19.7', downloading: false }
+    panel.updateInfo.value = { hasUpdate: true, current: 'v1.19.7', latest: 'v1.19.9' }
+
+    panel.onExecute({ type: 'enabled', group: '代理' })
+    await flushPromises()
+
+    expect(setProxyInvocations()).toHaveLength(1)
+    expect(setProxyInvocations()[0]![1]).toMatchObject({ enabled: true })
+    expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === CMD.proxyUpdateCore)).toBe(false)
+  })
+})
+
 describe('isSubscriptionStale 自动更新过期判定', () => {
   const HOUR = 3600_000
   const ago = (h: number) => new Date(Date.now() - h * HOUR).toISOString()

@@ -10,7 +10,7 @@
     <template v-else>
       <!-- 活跃链路:提供商(模型)→ 网关 → 消费者,事件驱动粒子;内存事件流、重启清零;
            空态左列陈列路由表模型(待命),零请求也有信息量 -->
-      <section m="x-3" p="3" class="soft-card" style="border-radius: var(--radius-panel)">
+      <section m="x-3" mb="3" p="3" class="soft-card" style="border-radius: var(--radius-panel)">
         <FlowStage
           :events="usageEvents"
           :port="gatewayStatus?.port ?? 8788"
