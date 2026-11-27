@@ -109,7 +109,7 @@ describe('订阅二级界面动作', () => {
 
   it('新建并保存：拉取成功后落库并自动激活', async () => {
     const panel = await mountPanel()
-    panel.openCreateModal()
+    panel.onExecute(panel.items.value.find((r) => r.type === 'add')!)
     panel.editForm.value = { name: '新机场', url: 'https://new.example/sub' }
 
     await panel.saveSub()

@@ -116,6 +116,16 @@ describe('proxy SubscriptionsView', () => {
     expect(wrapper.text()).toContain('无结果')
   })
 
+  it('自动更新失败标记与前置点号有间距', async () => {
+    config.subscriptions[1]!.lastError = 'timeout'
+    const wrapper = await mountView()
+
+    const marker = wrapper.findAll('span').find((el) => el.text() === '自动更新失败')!
+    expect(marker.exists()).toBe(true)
+    // Vitest 不启 UnoCSS 转换，断言源码级间距标记（构建期转成 ml-2）
+    expect(marker.attributes('ml')).toBe('2')
+  })
+
   it('添加订阅行双击打开新建弹窗（不预创建订阅项）', async () => {
     const wrapper = await mountView()
     const before = config.subscriptions.length

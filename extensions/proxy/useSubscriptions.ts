@@ -17,8 +17,10 @@ import {
 } from './config'
 import { fetchSubscription, nodesUpdatedMessage } from './subscriptions'
 
-/// 二级界面列表行：订阅行 + 末尾独立的「添加订阅」动作行（可键盘选中回车）。
-export type SubscriptionRow = { type: 'subscription'; sub: Subscription } | { type: 'add' }
+/// 二级界面列表行：顶部「添加订阅」动作行 + 订阅行（均可键盘选中回车）。
+/// id 供 BaseList 稳定 key（订阅行 sub.id，添加行固定 'add'）。
+export type SubscriptionRow =
+  { type: 'subscription'; id: string; sub: Subscription } | { type: 'add'; id: 'add' }
 
 export function useSubscriptions() {
   const appStore = useAppStore()
@@ -42,11 +44,11 @@ export function useSubscriptions() {
     const q = appStore.searchQuery.trim().toLowerCase()
     const match = (text: string) => !q || text.toLowerCase().includes(q)
     const rows: SubscriptionRow[] = []
-    if (match(t('proxy.addSubscription'))) rows.push({ type: 'add' })
+    if (match(t('proxy.addSubscription'))) rows.push({ type: 'add', id: 'add' })
     rows.push(
       ...config.subscriptions
         .filter((s) => match(s.name || '') || match(s.url || ''))
-        .map((sub): SubscriptionRow => ({ type: 'subscription', sub })),
+        .map((sub): SubscriptionRow => ({ type: 'subscription', id: sub.id, sub })),
     )
     return rows
   })
@@ -56,7 +58,7 @@ export function useSubscriptions() {
     selectedIndex.value = 0
   })
 
-  /// 回车/双击分派：添加行动作行；有节点的订阅切换激活（主操作，仅激活订阅的节点入
+  /// 回车/双击分派：添加订阅动作；有节点的订阅切换激活（主操作，仅激活订阅的节点入
   /// mihomo）；空订阅（未配置/未拉取）打开编辑配置。
   function onExecute(row: SubscriptionRow) {
     if (appStore.isComposing) return
@@ -217,7 +219,6 @@ export function useSubscriptions() {
     selectedIndex,
     config,
     onExecute,
-    openCreateModal,
     openEditModal,
     refreshSub,
     updatingSubId,
